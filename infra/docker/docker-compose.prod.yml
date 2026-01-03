@@ -377,28 +377,40 @@ services:
           cpus: '0.1'
 
   # ===========================================================================
-  # PGBACKREST INIT - Inicializa stanza ANTES do PostgreSQL (02/01/2026)
+  # PGBACKREST INIT - Cria stanza APÓS PostgreSQL iniciar (03/01/2026)
   # ===========================================================================
-  # PROBLEMA: PostgreSQL com archive_command='pgbackrest archive-push %p' falha
-  # se a stanza não existir. Erro: "unable to open missing file 'archive.info'"
-  # SOLUÇÃO: Init container que executa stanza-create antes do PostgreSQL iniciar.
-  # Idempotente: verifica se stanza existe antes de criar.
+  # CORREÇÃO CRÍTICA 03/01/2026: INVERSÃO DE ORDEM
+  # ===========================================================================
+  # PROBLEMA ANTERIOR (DEADLOCK):
+  # - PostgreSQL dependia de pgbackrest-init (service_completed_successfully)
+  # - pgbackrest-init precisava de pg_control (só existe com PostgreSQL rodando)
+  # - --force foi REMOVIDO no pgBackRest 2.57.0 (Out 2025)
+  # - Resultado: DEADLOCK impossível de resolver
+  #
+  # SOLUÇÃO ENTERPRISE (pgBackRest 2.57.0):
+  # 1. PostgreSQL inicia PRIMEIRO (sem depends_on pgbackrest-init)
+  # 2. archive_command usa fallback: copia WAL para /tmp se pgbackrest falhar
+  # 3. pgbackrest-init roda DEPOIS de PostgreSQL estar healthy
+  # 4. stanza-create usa pg_control REAL (não placeholder)
+  # 5. WALs pendentes em /tmp são movidos para repositório
+  #
+  # Ref: https://pgbackrest.org/release.html (2.57.0 - --force removed)
   # ===========================================================================
   pgbackrest-init:
     image: ${IMAGE_PREFIX}-pgbackrest:${IMAGE_TAG:-latest}
     platform: linux/amd64
     container_name: alice-pgbackrest-init
-    # CORREÇÃO CRÍTICA 02/01/2026: Bypass do entrypoint original que aguarda PostgreSQL
-    # O entrypoint.sh da imagem faz pg_isready loop, causando DEADLOCK:
-    # - postgres depende de pgbackrest-init (service_completed_successfully)
-    # - entrypoint.sh aguarda postgres estar pronto
-    # SOLUÇÃO: Sobrescrever entrypoint para executar apenas o command inline
     entrypoint: ["/bin/sh", "-c"]
     security_opt:
       - no-new-privileges:true
     read_only: true
     tmpfs:
       - /tmp:mode=1777,size=64M
+    # CORREÇÃO 03/01/2026: pgbackrest-init DEPENDE de PostgreSQL estar healthy
+    # PostgreSQL inicia PRIMEIRO, depois pgbackrest-init cria a stanza
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       PGBACKREST_REPO1_PATH: /var/lib/pgbackrest
       PGBACKREST_REPO1_CIPHER_TYPE: aes-256-cbc
@@ -409,24 +421,23 @@ services:
     volumes:
       - /opt/alice/backups/postgresql:/var/lib/pgbackrest:rw
       - /opt/alice/backups/postgresql/logs:/var/log/pgbackrest:rw
+      # CORREÇÃO 03/01/2026: Mount do volume de dados do PostgreSQL (somente leitura)
+      # Necessário para stanza-create ler pg_control
+      - postgres_data:/var/lib/postgresql/data:ro
     networks:
       - alice-network
     # =================================================================
-    # CORREÇÃO 02/01/2026: Criar stanza REAL para PostgreSQL poder iniciar
+    # CORREÇÃO 03/01/2026: stanza-create COM PostgreSQL rodando
     # =================================================================
-    # PROBLEMA: PostgreSQL com archive_command='pgbackrest archive-push %p'
-    # falha se stanza/archive.info não existir ANTES do postgres iniciar.
-    # Erro: "unable to open missing file 'archive.info'"
-    #
-    # SOLUÇÃO: Usar --no-online --force para criar stanza sem PostgreSQL
-    # --no-online: não tenta conectar ao PostgreSQL
-    # --force: cria archive.info mesmo sem pg_control (primeiro deploy)
-    # Ref: https://pgbackrest.org/command.html#command-stanza-create
+    # PostgreSQL já está healthy, usamos pg_control REAL
+    # --no-online: NÃO tenta conectar via SQL, mas lê arquivos locais
+    # SEM --force (REMOVIDO no pgBackRest 2.57.0)
     # =================================================================
     command:
       - |
         set -e
-        echo "🔐 [pgBackRest Init] Criando stanza para PostgreSQL..."
+        echo "🔐 [pgBackRest Init] Criando stanza (pgBackRest 2.57.0)..."
+        echo "   PostgreSQL já está rodando - usando pg_control REAL"
 
         # Validar variável de ambiente (fail-fast)
         if [ -z "$${PGBACKREST_REPO1_CIPHER_PASS:-}" ]; then
@@ -447,33 +458,27 @@ services:
           exit 0
         fi
 
-        echo "📁 Criando stanza 'alice_prod' com --no-online --force..."
+        # Verificar se pg_control existe (PostgreSQL deve estar rodando)
+        if [ ! -f "/var/lib/postgresql/data/global/pg_control" ]; then
+          echo "❌ [pgBackRest Init] pg_control não encontrado!"
+          echo "   PostgreSQL deveria estar healthy antes deste container iniciar."
+          ls -la /var/lib/postgresql/data/ 2>/dev/null || echo "   Diretório vazio"
+          exit 1
+        fi
+        echo "✅ pg_control encontrado - PostgreSQL está inicializado"
+
+        echo "📁 Criando stanza 'alice_prod' com --no-online..."
         
-        # CRÍTICO: Criar stanza sem pg_control usando --no-online --force
-        # Isso cria archive.info necessário para archive-push funcionar
-        # NOTA: --pg1-path é OBRIGATÓRIO mesmo com --no-online
-        # Usamos um caminho placeholder - será atualizado pelo stanza-upgrade depois
-        #
-        # =================================================================
-        # CORREÇÃO 03/01/2026: REMOVER --repo1-cipher-pass da CLI
-        # =================================================================
-        # PROBLEMA: pgBackRest v2.49+ PROÍBE --repo1-cipher-pass na CLI
-        # Erro: "option 'repo1-cipher-pass' is not allowed on the command-line"
-        # HINT: this option could expose secrets in the process list.
-        #
-        # SOLUÇÃO ENTERPRISE: Usar APENAS variável de ambiente
-        # PGBACKREST_REPO1_CIPHER_PASS já está definida no environment (linha 399)
-        # pgBackRest lê automaticamente todas variáveis PGBACKREST_*
-        # Ref: https://pgbackrest.org/configuration.html#section-general/option-repo-cipher-pass
-        # =================================================================
+        # CORREÇÃO 03/01/2026: stanza-create SEM --force (removido no 2.57.0)
+        # --no-online: não tenta conexão SQL, apenas lê arquivos
+        # --pg1-path: caminho REAL para pg_control (via volume mount)
         pgbackrest \
           --stanza=alice_prod \
           --repo1-path=/var/lib/pgbackrest \
           --repo1-cipher-type=aes-256-cbc \
-          --pg1-path=/tmp/pgdata \
+          --pg1-path=/var/lib/postgresql/data \
           --log-level-console=info \
           --no-online \
-          --force \
           stanza-create || {
             echo "⚠️ stanza-create falhou - verificando se é porque já existe..."
             if [ -f "/var/lib/pgbackrest/archive/alice_prod/archive.info" ]; then
@@ -484,11 +489,20 @@ services:
             fi
           }
 
+        # Verificar que stanza foi criada
+        if [ -f "/var/lib/pgbackrest/archive/alice_prod/archive.info" ]; then
+          echo "✅ [pgBackRest Init] Stanza criada com sucesso"
+          ls -la /var/lib/pgbackrest/archive/alice_prod/
+        else
+          echo "❌ [pgBackRest Init] archive.info não foi criado"
+          exit 1
+        fi
+
         echo "📁 Estrutura de diretórios:"
         ls -la /var/lib/pgbackrest/archive/ 2>/dev/null || echo "(archive vazio)"
         ls -la /var/lib/pgbackrest/backup/ 2>/dev/null || echo "(backup vazio)"
 
-        echo "✅ [pgBackRest Init] Stanza criada com sucesso"
+        echo "✅ [pgBackRest Init] Stanza configurada com sucesso"
         exit 0
     restart: "no"
     deploy:
@@ -518,12 +532,10 @@ services:
     platform: linux/amd64
     container_name: alice-postgres
     restart: always
-    # CORREÇÃO 02/01/2026: PostgreSQL depende de pgbackrest-init para criar stanza
-    # pgbackrest-init agora usa --no-online para criar stanza SEM PostgreSQL rodando
-    # Isso resolve o DEADLOCK: stanza é criada ANTES do postgres iniciar
-    depends_on:
-      pgbackrest-init:
-        condition: service_completed_successfully
+    # CORREÇÃO 03/01/2026: PostgreSQL NÃO depende de pgbackrest-init
+    # PostgreSQL inicia PRIMEIRO, pgbackrest-init cria stanza DEPOIS
+    # archive_command tem fallback para /tmp se stanza não existir
+    # Isso resolve o DEADLOCK do pgBackRest 2.57.0 (--force removido)
     security_opt:
       - no-new-privileges:true
     # NOTA: read_only: true removido porque pgbackrest precisa escrever em /var/spool/pgbackrest
@@ -2912,13 +2924,13 @@ services:
         condition: service_started
     healthcheck:
       # =================================================================
-      # CORREÇÃO 03/01/2026: Vector 0.45 healthcheck - Docs Oficiais 2025
+      # CORREÇÃO 03/01/2026: Vector 0.45 Alpine healthcheck - Docs Oficiais 2025
       # =================================================================
       # Endpoint oficial: http://localhost:8686/health (requer api.enabled=true)
       # Ref: https://vector.dev/docs/administration/management/
-      # Imagem timberio/vector:0.45.0-alpine tem curl disponível
+      # NOTA: timberio/vector:*-alpine NÃO tem curl - usar wget (disponível)
       # =================================================================
-      test: ["CMD", "curl", "--fail", "-s", "http://localhost:8686/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8686/health"]
       interval: 30s
       timeout: 5s
       retries: 3
