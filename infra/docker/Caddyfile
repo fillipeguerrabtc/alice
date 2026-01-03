@@ -19,9 +19,10 @@
 # =============================================================================
 {
 	# Email para Let's Encrypt (notificações de expiração)
-	# CORREÇÃO 03/01/2026: Sintaxe correta env.VAR para expansão de variável
+	# CORREÇÃO 03/01/2026: Fallback se ACME_EMAIL não definido (fail-safe)
+	# Sintaxe: {$VAR:default} - usa default se VAR vazio
 	# Ref: https://caddyserver.com/docs/caddyfile/concepts#environment-variables
-	email {$ACME_EMAIL}
+	email {$ACME_EMAIL:noreply@yesyoudeserve.duckdns.org}
 	
 	# Produção - Let's Encrypt oficial
 	# NOTA: Caddy automaticamente usa staging para domínios localhost/local

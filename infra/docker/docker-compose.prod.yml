@@ -356,19 +356,27 @@ services:
       - erpnext-network
     healthcheck:
       # =================================================================
-      # CORREÇÃO 03/01/2026: Caddy 2.8 healthcheck - Docs Oficiais 2025
+      # CORREÇÃO 03/01/2026: Caddy 2.8 healthcheck DUPLO - Docs Oficiais
       # =================================================================
-      # Admin API endpoint: http://localhost:2019/config/
+      # ROOT CAUSE: Healthcheck só testava Admin API (porta 2019)
+      # PROBLEMA: Se Caddyfile tem erro de sintaxe, Caddy nem inicia
+      #           → Admin API nunca sobe → healthcheck falha para sempre
+      # SOLUÇÃO: Teste DUPLO para detectar problemas de configuração
+      #   1. Admin API (porta 2019) - verifica se Caddy iniciou
+      #   2. HTTP porta 80 - verifica se Caddyfile foi parseado OK
       # Ref: https://caddyserver.com/docs/api
-      # Dockerfile.caddy instala wget (apk add --no-cache wget)
-      # CORREÇÃO FLAG ORDER: --spider deve vir antes de -q (wget man page)
-      # CORREÇÃO STARTUP: 120s para primeiro deploy (Let's Encrypt + DNS)
       # =================================================================
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:2019/config/"]
+      # CORREÇÃO START_PERIOD: 180s para primeiro deploy (Let's Encrypt + DNS)
+      # CORREÇÃO RETRIES: 10 (antes 8) para dar mais tempo
+      # TOTAL TIMEOUT: 180s + (10 × 30s) = 480s (8 minutos máximo)
+      # =================================================================
+      test:
+        - "CMD-SHELL"
+        - "wget --spider -q http://localhost:2019/config/ && wget --spider -q -O /dev/null http://localhost:80 || exit 1"
       interval: 30s
-      timeout: 5s
-      retries: 8
-      start_period: 120s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
     deploy:
       resources:
         limits:
