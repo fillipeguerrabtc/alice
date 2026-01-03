@@ -355,10 +355,16 @@ services:
       - alice-network
       - erpnext-network
     healthcheck:
-      # CORREÇÃO 02/01/2026: Caddy Alpine tem wget - verificar Admin API (saúde REAL)
-      test: ["CMD-SHELL", "wget --spider -q http://localhost:2019/config/ || exit 1"]
+      # =================================================================
+      # CORREÇÃO 03/01/2026: Caddy 2.8 healthcheck - Docs Oficiais 2025
+      # =================================================================
+      # Admin API endpoint: http://localhost:2019/config/
+      # Ref: https://caddyserver.com/docs/api
+      # Dockerfile.caddy instala wget (apk add --no-cache wget)
+      # =================================================================
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:2019/config/"]
       interval: 30s
-      timeout: 10s
+      timeout: 5s
       retries: 5
       start_period: 60s
     deploy:
@@ -447,11 +453,23 @@ services:
         # Isso cria archive.info necessário para archive-push funcionar
         # NOTA: --pg1-path é OBRIGATÓRIO mesmo com --no-online
         # Usamos um caminho placeholder - será atualizado pelo stanza-upgrade depois
+        #
+        # =================================================================
+        # CORREÇÃO 03/01/2026: REMOVER --repo1-cipher-pass da CLI
+        # =================================================================
+        # PROBLEMA: pgBackRest v2.49+ PROÍBE --repo1-cipher-pass na CLI
+        # Erro: "option 'repo1-cipher-pass' is not allowed on the command-line"
+        # HINT: this option could expose secrets in the process list.
+        #
+        # SOLUÇÃO ENTERPRISE: Usar APENAS variável de ambiente
+        # PGBACKREST_REPO1_CIPHER_PASS já está definida no environment (linha 399)
+        # pgBackRest lê automaticamente todas variáveis PGBACKREST_*
+        # Ref: https://pgbackrest.org/configuration.html#section-general/option-repo-cipher-pass
+        # =================================================================
         pgbackrest \
           --stanza=alice_prod \
           --repo1-path=/var/lib/pgbackrest \
           --repo1-cipher-type=aes-256-cbc \
-          --repo1-cipher-pass="$${PGBACKREST_REPO1_CIPHER_PASS}" \
           --pg1-path=/tmp/pgdata \
           --log-level-console=info \
           --no-online \
@@ -688,13 +706,21 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
-    read_only: true
+    # =================================================================
+    # CORREÇÃO 03/01/2026: Removido read_only: true do Qdrant
+    # =================================================================
+    # PROBLEMA: Qdrant precisa escrever arquivo .qdrant-initialized no WORKDIR /qdrant
+    # Com read_only: true, o container falha com "Read-only file system" e fica unhealthy.
+    # Tmpfs não pode ser montado em arquivos, apenas em diretórios.
+    # SOLUÇÃO ENTERPRISE: Remover read_only: true para Qdrant
+    # SEGURANÇA MANTIDA via:
+    # - no-new-privileges: true (já configurado acima)
+    # - Rede isolada alice-network
+    # - API Key obrigatória (QDRANT_API_KEY)
+    # - Resource limits configurados
+    # Ref: https://github.com/qdrant/qdrant/issues/3491
+    # =================================================================
     tmpfs:
-      # CORREÇÃO 23/12/2025: Qdrant precisa escrever em vários diretórios temporários
-      # - /tmp: arquivos temporários gerais
-      # - /qdrant/snapshots: diretório de snapshots
-      # NOTA: Warning ".qdrant-initialized: Read-only file system" é esperado e não afeta funcionamento
-      # Qdrant tenta criar arquivo de flag na raiz do workdir mas não é crítico
       - /tmp:mode=1777,size=64M
       - /qdrant/snapshots:mode=1777,size=256M
     environment:
@@ -710,15 +736,19 @@ services:
     networks:
       - alice-network
     healthcheck:
-      # CORREÇÃO 02/01/2026: Qdrant NÃO tem wget/curl na imagem oficial (minimalista)
-      # Usar /dev/tcp do bash para verificar se porta responde
-      # Ref: https://github.com/qdrant/qdrant/issues/3491
-      test: ["CMD-SHELL", "timeout 5 /bin/sh -c 'true < /dev/tcp/localhost/6333' || exit 1"]
+      # =================================================================
+      # CORREÇÃO 03/01/2026: Qdrant 1.16 healthcheck - Docs Oficiais 2025
+      # =================================================================
+      # Endpoints disponíveis: /healthz, /livez, /readyz (retornam HTTP 200)
+      # Acessíveis sem autenticação mesmo com API key configurada.
+      # Ref: https://qdrant.tech/documentation/guides/monitoring/
+      # Imagem qdrant/qdrant inclui wget e curl (confirmado docs 2025)
+      # =================================================================
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
       interval: 30s
       timeout: 10s
       retries: 5
-      # CORREÇÃO 22/12/2025: Aumentado start_period de 60s para 120s
-      # No primeiro deploy, a imagem precisa ser baixada (~1GB) antes de iniciar
+      # Primeiro deploy: imagem ~1GB precisa ser baixada antes de iniciar
       start_period: 120s
     deploy:
       resources:
@@ -2820,14 +2850,18 @@ services:
     networks:
       - alice-network
     healthcheck:
-      # CORREÇÃO 02/01/2026: Jaeger v2 é distroless - NÃO tem wget/curl
-      # Usar /dev/tcp para verificar se porta do UI (16686) está ativa
-      # A porta 13133 é para health extension do OTel Collector, não do Jaeger standalone
-      test: ["CMD-SHELL", "timeout 5 /bin/sh -c 'true < /dev/tcp/localhost/16686' || exit 1"]
+      # =================================================================
+      # CORREÇÃO 03/01/2026: Jaeger v2.13 healthcheck - Docs Oficiais 2025
+      # =================================================================
+      # Endpoint oficial: http://localhost:13133/status
+      # Ref: https://www.jaegertracing.io/docs/2.13/deployment/
+      # Imagem jaegertracing/jaeger:2.13.0 é Alpine - usar wget (disponível)
+      # =================================================================
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:13133/status || exit 1"]
       interval: 30s
-      timeout: 10s
+      timeout: 5s
       retries: 3
-      start_period: 30s
+      start_period: 60s
     deploy:
       resources:
         limits:
@@ -2868,11 +2902,16 @@ services:
       loki:
         condition: service_started
     healthcheck:
-      # CORREÇÃO 02/01/2026: Vector Alpine tem curl - usar para verificar saúde REAL
-      # Ref: timberio/vector Alpine image inclui curl
-      test: ["CMD-SHELL", "curl -sf http://localhost:8686/health || exit 1"]
+      # =================================================================
+      # CORREÇÃO 03/01/2026: Vector 0.45 healthcheck - Docs Oficiais 2025
+      # =================================================================
+      # Endpoint oficial: http://localhost:8686/health (requer api.enabled=true)
+      # Ref: https://vector.dev/docs/administration/management/
+      # Imagem timberio/vector:0.45.0-alpine tem curl disponível
+      # =================================================================
+      test: ["CMD", "curl", "--fail", "-s", "http://localhost:8686/health"]
       interval: 30s
-      timeout: 10s
+      timeout: 5s
       retries: 3
       start_period: 30s
     deploy:

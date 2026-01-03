@@ -12,11 +12,17 @@ deleteDatasources:
     orgId: 1
 
 datasources:
+  # =================================================================
+  # CORREÇÃO 03/01/2026: URL hardcoded para Loki
+  # =================================================================
+  # Grafana provisioning NÃO expande variáveis de ambiente em YAML.
+  # Containers estão na mesma rede Docker (alice-network).
+  # =================================================================
   - name: Loki
     type: loki
     uid: loki
     access: proxy
-    url: ${LOKI_URL:-http://loki:3100}
+    url: http://loki:3100
     isDefault: false
     editable: false
     jsonData:

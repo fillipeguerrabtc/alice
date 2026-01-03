@@ -12,11 +12,20 @@ deleteDatasources:
     orgId: 1
 
 datasources:
+  # =================================================================
+  # CORREÇÃO 03/01/2026: URL hardcoded para Prometheus
+  # =================================================================
+  # PROBLEMA: Grafana provisioning NÃO expande variáveis de ambiente
+  # em arquivos YAML automaticamente. O erro "parse '': empty url"
+  # ocorre porque ${PROMETHEUS_URL:-...} é tratado como string literal.
+  # SOLUÇÃO: Usar URL direta - containers estão na mesma rede Docker.
+  # Ref: https://github.com/grafana/grafana/issues/48543
+  # =================================================================
   - name: Prometheus
     type: prometheus
     uid: prometheus
     access: proxy
-    url: ${PROMETHEUS_URL:-http://prometheus:9090}
+    url: http://prometheus:9090
     isDefault: true
     editable: false
     jsonData:

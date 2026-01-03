@@ -3,6 +3,14 @@
 # =============================================================================
 # Configuração automática de dashboards
 # Documentação: https://grafana.com/docs/grafana/latest/dashboards/provisioning/
+#
+# CORREÇÃO 03/01/2026: Path corrigido para diretório montado via volume
+# PROBLEMA: "/var/lib/grafana/dashboards" não existia - diretório não montado.
+# SOLUÇÃO: Usar path dentro de /etc/grafana/provisioning (montado via volume)
+# Volume: ../observability/grafana/provisioning:/etc/grafana/provisioning:ro
+#
+# Author: Fillipe Guerra
+# Data: 03 de Janeiro de 2026
 # =============================================================================
 
 apiVersion: 1
@@ -17,4 +25,5 @@ providers:
     updateIntervalSeconds: 30
     allowUiUpdates: true
     options:
-      path: /var/lib/grafana/dashboards
+      # Path relativo ao volume montado em /etc/grafana/provisioning
+      path: /etc/grafana/provisioning/dashboards/json

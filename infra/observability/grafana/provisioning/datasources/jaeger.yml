@@ -12,11 +12,17 @@ deleteDatasources:
     orgId: 1
 
 datasources:
+  # =================================================================
+  # CORREÇÃO 03/01/2026: URL hardcoded para Jaeger
+  # =================================================================
+  # Grafana provisioning NÃO expande variáveis de ambiente em YAML.
+  # Containers estão na mesma rede Docker (alice-network).
+  # =================================================================
   - name: Jaeger
     type: jaeger
     uid: jaeger
     access: proxy
-    url: ${JAEGER_URL:-http://jaeger:16686}
+    url: http://jaeger:16686
     isDefault: false
     editable: false
     jsonData:
