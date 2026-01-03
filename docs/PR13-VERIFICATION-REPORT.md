@@ -109,7 +109,7 @@ fi
 
 **Verificação Realizada:**
 ```bash
-✅ Email fallback correto: {$ACME_EMAIL:noreply@yesyoudeserve.duckdns.org}
+✅ Email fallback correto: {$ACME_EMAIL:fillipe.backup@gmail.com}
 ✅ Sintaxe Caddy 2.8 correta: {$VAR:default}
 ```
 
@@ -120,7 +120,7 @@ fi
   # CORREÇÃO 03/01/2026: Fallback se ACME_EMAIL não definido (fail-safe)
   # Sintaxe: {$VAR:default} - usa default se VAR vazio
   # Ref: https://caddyserver.com/docs/caddyfile/concepts#environment-variables
-  email {$ACME_EMAIL:noreply@yesyoudeserve.duckdns.org}
+  email {$ACME_EMAIL:fillipe.backup@gmail.com}
 }
 ```
 

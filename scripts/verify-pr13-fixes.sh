@@ -137,7 +137,7 @@ if [ ! -f "$CADDYFILE" ]; then
   FAILURES=$((FAILURES + 1))
 else
   # Verificar sintaxe de fallback
-  if grep -q 'email {\$ACME_EMAIL:noreply@yesyoudeserve.duckdns.org}' "$CADDYFILE"; then
+  if grep -q 'email {\$ACME_EMAIL:fillipe.backup@gmail.com}' "$CADDYFILE"; then
     echo -e "${GREEN}  ✅ Email fallback correto${NC}"
   else
     echo -e "${RED}  ❌ Email fallback incorreto ou ausente${NC}"

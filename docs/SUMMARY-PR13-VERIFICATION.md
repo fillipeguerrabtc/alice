@@ -108,7 +108,7 @@ Verificação PR #13: Caddy Healthcheck Fixes
 ### FIX 3: Email Fallback
 **Why it matters:**
 - Prevents Caddy crash if ACME_EMAIL is empty
-- Uses valid default: noreply@yesyoudeserve.duckdns.org
+- Uses valid default: fillipe.backup@gmail.com
 - Graceful degradation pattern
 - Let's Encrypt requires email for ACME protocol
 
