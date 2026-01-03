@@ -2855,26 +2855,22 @@ services:
       - /opt/alice/data/jaeger:/badger
     networks:
       - alice-network
-    healthcheck:
-      # =================================================================
-      # CORREÇÃO 03/01/2026: Jaeger v2.13 - Usar HEALTHCHECK EMBUTIDO
-      # =================================================================
-      # PROBLEMA: Imagem jaegertracing/jaeger:2.13.0 é MINIMAL (sem shell)
-      # NÃO é possível usar CMD-SHELL, bash, curl ou wget
-      #
-      # SOLUÇÃO ENTERPRISE: Herdar healthcheck embutido da imagem oficial
-      # A imagem Jaeger v2 JÁ DEFINE HEALTHCHECK no Dockerfile oficial
-      # que usa a extensão healthcheckv2 (porta 13133, endpoint /status)
-      # test: ["NONE"] = herdar healthcheck da imagem base
-      #
-      # Ref: https://www.jaegertracing.io/docs/2.13/deployment/
-      # Ref: https://github.com/jaegertracing/jaeger (Dockerfile)
-      # =================================================================
-      test: ["NONE"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
+    # =================================================================
+    # CORREÇÃO 03/01/2026: Jaeger v2.13 - HERDAR HEALTHCHECK DA IMAGEM
+    # =================================================================
+    # PROBLEMA: Imagem jaegertracing/jaeger:2.13.0 é MINIMAL (sem shell)
+    # NÃO é possível usar CMD-SHELL, bash, curl ou wget
+    #
+    # SOLUÇÃO ENTERPRISE: OMITIR seção healthcheck para herdar da imagem
+    # A imagem Jaeger v2 JÁ DEFINE HEALTHCHECK no Dockerfile oficial
+    # que usa a extensão healthcheckv2 (porta 13133, endpoint /status)
+    #
+    # NOTA: test: ["NONE"] DESABILITA healthcheck (Docker Compose)
+    # Para HERDAR healthcheck da imagem base = REMOVER seção healthcheck
+    # Ref: https://docs.docker.com/compose/compose-file/05-services/#healthcheck
+    # Ref: https://www.jaegertracing.io/docs/2.13/deployment/
+    # =================================================================
+    # healthcheck: (REMOVIDO INTENCIONALMENTE - herda da imagem oficial)
     deploy:
       resources:
         limits:
