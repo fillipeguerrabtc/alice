@@ -19,19 +19,19 @@
 # =============================================================================
 {
 	# =================================================================
-	# CORREÇÃO 03/01/2026: Email OBRIGATÓRIO - Fail-fast se ausente
+	# CORREÇÃO 03/01/2026: Email com Fallback para Fail-Safe
 	# =================================================================
-	# PROBLEMA: Fallback noreply@ pode ser rejeitado por Let's Encrypt
-	# SOLUÇÃO: Remover fallback - Caddy FALHA IMEDIATAMENTE se não definido
-	# Permite diagnóstico rápido ao invés de timeout silencioso
+	# PROBLEMA: Caddy crashava se ACME_EMAIL estava vazio
+	# SOLUÇÃO: Adicionar fallback para email válido (fillipe.backup@gmail.com)
+	# Permite graceful degradation ao invés de crash total
 	# 
-	# SINTAXE CORRETA: {$VAR} - expandido em PARSE-TIME (antes do Caddyfile)
-	# SINTAXE ERRADA:  {env.VAR} - expandido em RUNTIME (durante requests)
+	# SINTAXE CORRETA: {$VAR:default} - usa default se VAR vazio
 	# A opção 'email' precisa de valor no STARTUP para registro ACME
 	# 
+	# Email fallback: fillipe.backup@gmail.com (mesmo usado em Grafana alerting)
 	# Ref: https://caddyserver.com/docs/caddyfile/concepts#environment-variables
 	# =================================================================
-	email {$ACME_EMAIL}
+	email {$ACME_EMAIL:fillipe.backup@gmail.com}
 	
 	# Produção - Let's Encrypt oficial
 	# NOTA: Caddy automaticamente usa staging para domínios localhost/local
