@@ -712,8 +712,11 @@ jobs:
             # CORREÇÃO 02/01/2026: Função progress() para indicadores de progresso
             # Conforme PROBLEMA #10 do relatório de deploy
             # MELHORIA 02/01/2026: Adiciona tempo decorrido e % de progresso
+            #
+            # NOTA (04/01/2026): Steps DEVEM ser inteiros. Bash não suporta decimais
+            # em aritmética ($((...))) e isso quebra o deploy com `set -euo pipefail`.
             # =================================================================
-            TOTAL_STEPS=13
+            TOTAL_STEPS=14
             DEPLOY_START=$(date +%s)
             progress() {
               local step="$1"
@@ -1083,30 +1086,6 @@ jobs:
             log "   Healthcheck retries: $HEALTHCHECK_RETRIES (tentativas máximas)"
             
             # =================================================================
-            # CORREÇÃO 16-18 (04/01/2026): Progress tracking enterprise
-            # =================================================================
-            # PROBLEMA: Progress indicators pouco claros, sem timestamps relativos
-            # SOLUÇÃO: Tracking detalhado com percentual, tempo decorrido, métricas
-            # =================================================================
-            DEPLOY_START_TIME=$(date +%s)
-            TOTAL_PHASES=13  # Total de fases principais do deploy
-            
-            show_progress() {
-              local phase="$1"
-              local description="$2"
-              local current_time=$(date +%s)
-              local elapsed=$((current_time - DEPLOY_START_TIME))
-              local percentage=$((phase * 100 / TOTAL_PHASES))
-              
-              echo ""
-              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-              echo "📊 PROGRESSO: [$phase/$TOTAL_PHASES - ${percentage}%] $description"
-              echo "⏱️  Tempo decorrido: ${elapsed}s"
-              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-              echo ""
-            }
-            
-            # =================================================================
             # FASE 2: Estrutura de diretórios (volumes Docker)
             # =================================================================
             progress 4 "Criando estrutura de diretórios para volumes Docker"
@@ -1319,7 +1298,7 @@ jobs:
             # desperdiçando tempo se secrets estiverem ausentes
             # SOLUÇÃO: Validar secrets CRÍTICOS antes de qualquer operação pesada
             # =================================================================
-            progress 7.5 "Validação PRÉ-DEPLOY de secrets obrigatórias"
+            progress 8 "Validação PRÉ-DEPLOY de secrets obrigatórias"
             log "🔐 Validando secrets obrigatórias (PRÉ-DEPLOY)..."
             
             # Lista de secrets CRÍTICAS que DEVEM estar presentes no .env.prod
@@ -1366,7 +1345,7 @@ jobs:
             # =================================================================
             # FASE 6: Criar networks Docker
             # =================================================================
-            progress 8 "Criando networks Docker"
+            progress 9 "Criando networks Docker"
             echo "🌐 Criando networks Docker..."
             docker network create alice-network 2>/dev/null || echo "ℹ️ alice-network já existe"
             docker network create erpnext-network 2>/dev/null || echo "ℹ️ erpnext-network já existe"
@@ -1385,7 +1364,7 @@ jobs:
             # CORREÇÃO 01/01/2026: Pull com retry e exponential backoff
             # Docker Hub pode ter rate limiting ou falhas temporárias
             # =================================================================
-            progress 9 "Pull das imagens Docker (serviços core)"
+            progress 10 "Pull das imagens Docker (serviços core)"
             echo "📥 Baixando imagens Docker (serviços core)..."
             
             pull_with_retry() {
@@ -1426,7 +1405,7 @@ jobs:
               exit 1
             fi
             
-            progress 10 "Iniciando containers CORE (51 serviços)"
+            progress 11 "Iniciando containers CORE (51 serviços)"
             echo "🚀 Iniciando containers CORE (sem GPU)..."
             
             # =================================================================
@@ -2793,7 +2772,7 @@ jobs:
             # =================================================================
             # FASE 8: Iniciar serviços GPU (OBRIGATÓRIO)
             # =================================================================
-            progress 11 "Iniciando serviços GPU (OBRIGATÓRIO)"
+            progress 12 "Iniciando serviços GPU (OBRIGATÓRIO)"
             # GPU PROFILE: gpu-llm (Mixtral para chat/inference)
             # Outros profiles disponíveis: gpu-embeddings, gpu-flux, gpu-asr, gpu-training
             # NOTA: Apenas UM profile GPU deve estar ativo por vez (GPU única de 20GB)
@@ -2832,7 +2811,7 @@ jobs:
             # Validar serviços críticos ANTES de marcar deploy como sucesso
             # Detecta problemas de conectividade/funcionalidade cedo
             # =================================================================
-            progress 12 "Executando smoke tests"
+            progress 13 "Executando smoke tests"
             echo ""
             echo "=============================================="
             echo "🧪 SMOKE TESTS PÓS-DEPLOY"
@@ -2916,7 +2895,7 @@ jobs:
             # Status final
             TOTAL_RUNNING=$(docker ps --format "{{.Names}}" | wc -l)
             echo ""
-            progress 13 "Deploy COMPLETO - Verificando resultado"
+            progress 14 "Deploy COMPLETO - Verificando resultado"
             echo "=============================================="
             echo "✅ Deploy COMPLETO:"
             echo "   - Total containers: ${TOTAL_RUNNING}"
