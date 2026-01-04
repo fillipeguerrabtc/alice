@@ -79,7 +79,7 @@ jobs:
       version: ${{ inputs.version }}
       previous_tag: ${{ steps.previous-tag.outputs.previous_tag }}
       changelog: ${{ steps.changelog.outputs.changes }}
-    
+
     steps:
       - name: Checkout código
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -118,34 +118,34 @@ jobs:
         id: changelog
         run: |
           PREVIOUS_TAG="${{ steps.previous-tag.outputs.previous_tag }}"
-          
+
           if [ -z "$PREVIOUS_TAG" ]; then
             COMMITS=$(git log --pretty=format:"%s (%h)" --no-merges | head -50)
           else
             COMMITS=$(git log $PREVIOUS_TAG..HEAD --pretty=format:"%s (%h)" --no-merges)
           fi
-          
+
           # BREAKING: Captura commits com ! (QUALQUER tipo!) e BREAKING CHANGE:
           # Conventional Commits 1.0.0: feat!, fix!, chore!, refactor!, docs!, etc.
           # CRÍTICO: Deve vir ANTES de FEATURES/FIXES para não duplicar
           BREAKING=$(echo "$COMMITS" | grep -E "^[a-z]+(\(.+\))?!:|BREAKING CHANGE:" | sed 's/^/- /' || echo "")
-          
+
           # FEATURES: feat sem ! (com ! vai para BREAKING)
           FEATURES=$(echo "$COMMITS" | grep -E "^feat(\(.+\))?:" | grep -v "^feat(\(.+\))?!:" | sed 's/^/- /' || echo "")
-          
+
           # FIXES: fix sem ! (com ! vai para BREAKING)
           FIXES=$(echo "$COMMITS" | grep -E "^fix(\(.+\))?:" | grep -v "^fix(\(.+\))?!:" | sed 's/^/- /' || echo "")
-          
+
           # OTHERS: tudo que não é feat/fix E não tem ! (breaking)
           OTHERS=$(echo "$COMMITS" | grep -v -E "^(feat|fix)(\(.+\))?:" | grep -v -E "^[a-z]+(\(.+\))?!:" | grep -v "BREAKING CHANGE:" | sed 's/^/- /' || echo "")
-          
+
           # Construir changelog com BREAKING primeiro (destaque máximo)
           CHANGELOG=""
           [ -n "$BREAKING" ] && CHANGELOG="$CHANGELOG\n#### ⚠️ Breaking Changes\n$BREAKING\n"
           [ -n "$FEATURES" ] && CHANGELOG="$CHANGELOG\n#### ✨ Features\n$FEATURES\n"
           [ -n "$FIXES" ] && CHANGELOG="$CHANGELOG\n#### 🐛 Bug Fixes\n$FIXES\n"
           [ -n "$OTHERS" ] && CHANGELOG="$CHANGELOG\n#### 📦 Other Changes\n$OTHERS\n"
-          
+
           echo "changes<<EOF" >> $GITHUB_OUTPUT
           echo -e "$CHANGELOG" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -167,10 +167,10 @@ jobs:
           generate_release_notes: true
           body: |
             ## 🚀 Alice Enterprise Platform ${{ inputs.version }}
-            
+
             ### Changelog
             ${{ steps.changelog.outputs.changes }}
-            
+
             ### 🐳 Docker Images
             ```
             ${{ env.IMAGE_PREFIX }}-auth:${{ inputs.version }}
@@ -240,7 +240,7 @@ jobs:
           set -e
           VERSION="${{ needs.create-release.outputs.version }}"
           PREVIOUS_TAG="${{ needs.create-release.outputs.previous_tag }}"
-          
+
           echo "Building microservices for $VERSION"
           if [ -n "$PREVIOUS_TAG" ]; then
             echo "Previous tag for retagging: $PREVIOUS_TAG"
@@ -279,7 +279,7 @@ jobs:
               -t "${{ env.IMAGE_PREFIX }}-${image_name}:latest" \
               "$full_from"
           }
-          
+
           # ✅ CORREÇÃO CRÍTICA: Formato IMAGE:DOCKERFILE:CONTEXT
           # - Microservices Node.js: contexto raiz (precisam de packages/ compartilhados)
           # - Infra (caddy/postgres/pgbackrest): contexto específico (não precisam packages/)
@@ -297,18 +297,18 @@ jobs:
             "postgres:./infra/postgres/Dockerfile.postgres:./infra/postgres"
             "caddy:./infra/docker/Dockerfile.caddy:./infra/docker"
           )
-          
+
           for entry in "${SERVICES[@]}"; do
             # ✅ CORREÇÃO: Extrair 3 campos (IMAGE:DOCKERFILE:CONTEXT)
             IMAGE="${entry%%:*}"
             REST="${entry#*:}"
             DOCKERFILE="${REST%%:*}"
             CONTEXT="${REST#*:}"
-            
+
             echo "📦 Processing: $IMAGE"
             echo "   Dockerfile: $DOCKERFILE"
             echo "   Context: $CONTEXT"
-            
+
             # Build condicional por mudanças:
             # - Microservices: rebuild se mudou o service, packages/, lockfile, scripts de build, tsconfigs
             # - pgbackrest: rebuild se mudou infra/backup/
@@ -382,7 +382,7 @@ jobs:
               echo "✅ $IMAGE (build)"
             fi
           done
-          
+
           echo "✅ All 12 services built!"
 
       # ==========================================================================
@@ -397,9 +397,9 @@ jobs:
         run: |
           set -e
           VERSION="${{ needs.create-release.outputs.version }}"
-          
+
           echo "🧪 Iniciando smoke test da imagem PostgreSQL..."
-          
+
           # Iniciar container temporário
           docker run -d \
             --name postgres-smoke-test \
@@ -408,7 +408,7 @@ jobs:
             -e POSTGRES_USER=smoketest \
             -e POSTGRES_DB=smoketest_db \
             "${{ env.IMAGE_PREFIX }}-postgres:${VERSION}"
-          
+
           # Aguardar PostgreSQL iniciar (até 60s)
           echo "⏳ Aguardando PostgreSQL iniciar..."
           for i in $(seq 1 60); do
@@ -425,11 +425,11 @@ jobs:
             fi
             sleep 1
           done
-          
+
           # Aguardar script init executar (cria extensão pgvector)
           echo "⏳ Aguardando inicialização completa..."
           sleep 5
-          
+
           # TESTE CRÍTICO: Verificar se extensão pgvector foi criada
           echo "🧪 Verificando extensão pgvector..."
           VECTOR_EXISTS=$(docker exec postgres-smoke-test psql -U smoketest -d smoketest_db -tAc "SELECT COUNT(*) FROM pg_extension WHERE extname='vector';")
@@ -442,7 +442,7 @@ jobs:
             exit 1
           fi
           echo "✅ Extensão pgvector criada"
-          
+
           # TESTE CRÍTICO: Verificar operações vetoriais (detectar SIGILL)
           echo "🧪 Testando operações pgvector (verificar SIGILL)..."
           if docker exec postgres-smoke-test psql -U smoketest -d smoketest_db -v ON_ERROR_STOP=1 <<'EOSQL' 2>&1 | tee /tmp/pgvector-ops-test.log; then
@@ -462,11 +462,11 @@ jobs:
             docker rm postgres-smoke-test || true
             exit 1
           fi
-          
+
           # Cleanup
           docker stop postgres-smoke-test
           docker rm postgres-smoke-test
-          
+
           echo "✅ SMOKE TEST PostgreSQL + pgvector PASSOU!"
 
       # Build de serviços GPU (pesados - ~5-10GB cada)
@@ -475,12 +475,12 @@ jobs:
           set -e
           VERSION="${{ needs.create-release.outputs.version }}"
           PREVIOUS_TAG="${{ needs.create-release.outputs.previous_tag }}"
-          
+
           echo "Building GPU services for $VERSION"
           if [ -n "$PREVIOUS_TAG" ]; then
             echo "Previous tag for retagging: $PREVIOUS_TAG"
           fi
-          
+
           # Limpar cache antigo antes dos builds pesados
           docker system prune -f --filter "until=24h" || true
 
@@ -516,7 +516,7 @@ jobs:
               -t "${{ env.IMAGE_PREFIX }}-${image_name}:latest" \
               "$full_from"
           }
-          
+
           GPU_SERVICES=(
             "mixtral-vllm:./docker/gpu/mixtral-vllm"
             "embeddings-gpu:./docker/gpu/embeddings-gpu"
@@ -524,11 +524,11 @@ jobs:
             "asr-canary:./docker/gpu/asr-canary"
             "lora-trainer:./docker/gpu/lora-trainer"
           )
-          
+
           for entry in "${GPU_SERVICES[@]}"; do
             IMAGE="${entry%%:*}"
             CONTEXT="${entry#*:}"
-            
+
             # Rebuild apenas se mudou o contexto específico do serviço GPU (enterprise: evita rebuild desnecessário)
             BUILD_PATTERN="^docker/gpu/${IMAGE}/"
 
@@ -567,7 +567,7 @@ jobs:
               echo "✅ $IMAGE (build)"
             fi
           done
-          
+
           echo "✅ All 17 images built (12 services + 5 GPU)"
 
   # ===========================================================================
@@ -577,31 +577,106 @@ jobs:
   trigger-deploy:
     name: Trigger Deploy
     runs-on: [self-hosted, linux, deploy]
-    timeout-minutes: 2
+    timeout-minutes: 5  # CORREÇÃO 04/01/2026: Aumentado para 5min (retry logic + API calls)
     needs: [create-release, build-images]
     if: ${{ !inputs.prerelease && needs.build-images.result == 'success' }}
-    
+
     steps:
-      - name: Disparar workflow de deploy
+      # CORREÇÃO 04/01/2026: Validar workflow existe ANTES de disparar
+      # CAUSA RAIZ: workflow_id com filename + ref (tag) busca arquivo NAQUELA tag
+      # Se tag foi criada ANTES do workflow, arquivo não existe naquela referência
+      # Ref: https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event
+      - name: Validar que workflow de deploy existe
+        id: validate-workflow
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
         with:
           github-token: ${{ secrets.GH_PAT }}
           script: |
             const version = '${{ needs.create-release.outputs.version }}';
-            
-            console.log('🚀 Iniciando deploy automático');
-            console.log('📦 Versão: ' + version);
-            
-            await github.rest.actions.createWorkflowDispatch({
+
+            console.log('🔍 Validando workflow de deploy...');
+
+            // Buscar workflow pelo nome do arquivo
+            const { data: workflows } = await github.rest.actions.listRepoWorkflows({
               owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'deploy-production.yml',
-              ref: version,
-              inputs: {
-                version: version,
-                services: 'all',
-                triggered_by: 'release-workflow'
-              }
+              repo: context.repo.repo
             });
-            
-            console.log('✅ Deploy disparado!');
+
+            const deployWorkflow = workflows.workflows.find(w => w.path === '.github/workflows/deploy-production.yml');
+
+            if (!deployWorkflow) {
+              throw new Error('❌ ERRO: Workflow deploy-production.yml não encontrado no repositório');
+            }
+
+            console.log(`✅ Workflow encontrado: ${deployWorkflow.name} (ID: ${deployWorkflow.id})`);
+            console.log(`   Estado: ${deployWorkflow.state}`);
+            console.log(`   Path: ${deployWorkflow.path}`);
+
+            if (deployWorkflow.state !== 'active') {
+              throw new Error(`❌ ERRO: Workflow está ${deployWorkflow.state}, esperado 'active'`);
+            }
+
+            // Salvar ID e versão para próximo step
+            core.setOutput('workflow_id', deployWorkflow.id);
+            core.setOutput('version', version);
+
+            return { workflowId: deployWorkflow.id, version };
+
+      # CORREÇÃO CRÍTICA 04/01/2026: ref deve ser BRANCH (main), não TAG
+      # TAG é passada como INPUT version
+      # MELHORIA: Retry com exponential backoff (3 tentativas)
+      - name: Disparar workflow de deploy com retry
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          script: |
+            const version = '${{ steps.validate-workflow.outputs.version }}';
+            const workflowId = '${{ steps.validate-workflow.outputs.workflow_id }}';
+
+            console.log('🚀 Iniciando deploy automático');
+            console.log(`📦 Versão: ${version}`);
+            console.log(`🔧 Workflow ID: ${workflowId}`);
+
+            // CORREÇÃO CRÍTICA: ref deve ser a BRANCH (main), não a TAG
+            // A tag é passada como INPUT version
+            const maxRetries = 3;
+            const retryDelayMs = 5000; // 5 segundos
+
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+              try {
+                console.log(`🔄 Tentativa ${attempt}/${maxRetries}...`);
+
+                await github.rest.actions.createWorkflowDispatch({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  workflow_id: workflowId,  // Usar ID numérico (mais confiável)
+                  ref: 'main',  // ✅ CORREÇÃO: Branch onde workflow está, não a tag
+                  inputs: {
+                    version: version,  // Tag passada como input
+                    services: 'all',
+                    triggered_by: 'release-workflow'
+                  }
+                });
+
+                console.log('✅ Deploy disparado com sucesso!');
+                console.log(`📍 Acompanhe em: https://github.com/${context.repo.owner}/${context.repo.repo}/actions/workflows/deploy-production.yml`);
+                return; // Sucesso, sair do loop
+
+              } catch (error) {
+                console.error(`❌ Tentativa ${attempt} falhou: ${error.message}`);
+
+                if (attempt < maxRetries) {
+                  console.log(`⏳ Aguardando ${retryDelayMs/1000}s antes de retry...`);
+                  await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+                } else {
+                  // Última tentativa falhou
+                  console.error('❌ ERRO CRÍTICO: Todas as tentativas falharam');
+                  console.error('📋 Troubleshooting:');
+                  console.error('  1. Verificar se GH_PAT tem permissão actions:write');
+                  console.error('  2. Verificar se workflow deploy-production.yml existe em main');
+                  console.error('  3. Verificar se workflow tem trigger workflow_dispatch');
+                  console.error(`  4. Verificar logs: ${error.stack}`);
+                  throw error;
+                }
+              }
+            }
