@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 04 de Janeiro de 2026  
-**Versão:** 7.21 - Collect Logs Job Level Condition + DB Audit Always
+**Versão:** 7.22 - Log Download if:always + DB Metrics Columns
 
 > **Migração 100% Self-Hosted (27/12/2025):** Pipeline completo migrado para runner próprio (Hetzner CPX32 - 4 vCPU, 8GB RAM) seguindo melhores práticas enterprise 2025. Todos os workflows (CI, Release, Deploy) executam no self-hosted runner para controle total, custos previsíveis e compliance.
 
@@ -828,6 +828,8 @@ Logs de deploy são automaticamente baixados do servidor Hetzner e publicados co
 
 > **CORREÇÃO CRÍTICA 04/01/2026 (Bug 1):** A coleta de logs foi movida para um **job separado `collect-logs`** com `if: always()` no **nível do job**. PROBLEMA ANTERIOR: Os steps de logs estavam no job `register-success` que só executa quando deploy tem sucesso. Mesmo com `if: always()` nos steps, eles nunca executavam em falhas porque a condição do job (`needs.deploy.result == 'success'`) impedia o job de iniciar. IRONIA: Logs são mais necessários em cenários de falha para troubleshooting. SOLUÇÃO: Job independente que SEMPRE executa após deploy/health-check/rollback.
 
+> **CORREÇÃO 04/01/2026 (Download Step):** Adicionado `if: always()` no step "Baixar logs do Hetzner". PROBLEMA ANTERIOR: Step de download não tinha `if: always()` mas step de upload tinha. Se SSH falhasse, download era pulado, `mkdir -p ./deploy-logs` não executava, e upload falhava porque path não existia (`if-no-files-found: warn` só trata diretórios VAZIOS, não paths inexistentes). SOLUÇÃO: Step de download agora executa sempre, garantindo que diretório seja criado.
+
 #### Auditoria de Deploys no PostgreSQL (04/01/2026)
 
 Cada deploy bem-sucedido é registrado na tabela `deployments` do PostgreSQL para auditoria enterprise completa:
@@ -839,6 +841,8 @@ CREATE TABLE deployments (
   version TEXT NOT NULL,           -- Ex: v1.2.3
   deployed_at TIMESTAMPTZ,         -- Timestamp do deploy
   deployed_by TEXT,                -- GitHub actor que disparou
+  duration_seconds INTEGER,        -- Duração do deploy em segundos
+  containers_count INTEGER,        -- Número de containers running após deploy
   status TEXT NOT NULL,            -- 'success', 'failed', 'rolled_back'
   triggered_by TEXT,               -- 'release-workflow', 'manual', etc
   services TEXT,                   -- 'all' ou lista específica
@@ -848,8 +852,8 @@ CREATE TABLE deployments (
 
 **Consultas úteis:**
 ```sql
--- Últimos 10 deploys
-SELECT version, deployed_at, deployed_by, status 
+-- Últimos 10 deploys com métricas
+SELECT version, deployed_at, deployed_by, status, duration_seconds, containers_count 
 FROM deployments ORDER BY deployed_at DESC LIMIT 10;
 
 -- Deploys por mês
@@ -859,6 +863,10 @@ FROM deployments GROUP BY 1 ORDER BY 1 DESC;
 -- Taxa de sucesso
 SELECT status, COUNT(*), ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER(), 2) AS pct
 FROM deployments GROUP BY status;
+
+-- Tempo médio de deploy (sucesso apenas)
+SELECT AVG(duration_seconds)::INTEGER AS avg_duration_s
+FROM deployments WHERE status = 'success' AND duration_seconds IS NOT NULL;
 ```
 
 > **CORREÇÃO SEGURANÇA 04/01/2026:** O INSERT usa variáveis psql (`-v var=value`) com interpolação segura (`:'var'`) ao invés de interpolação shell direta. Isso previne SQL injection e erros de sintaxe com valores contendo aspas simples (ex: "O'Brien"). Ref: PostgreSQL docs "psql Variables".
@@ -866,6 +874,8 @@ FROM deployments GROUP BY status;
 > **CORREÇÃO CRÍTICA 04/01/2026 (Bug 2):** Adicionado `if: always()` no step de registro no banco. PROBLEMA ANTERIOR: Se o step de notificação de sucesso falhasse, o registro no PostgreSQL era pulado (default é `if: success()`), quebrando a trilha de auditoria enterprise. SOLUÇÃO: Step agora executa SEMPRE dentro do job `register-success`.
 
 > **MELHORIA 04/01/2026:** Adicionado registro de falha no job `rollback`. Quando um deploy falha e rollback é executado, um registro com `status: 'rolled_back'` é inserido na tabela `deployments` (com `continue-on-error: true` pois o PostgreSQL pode não estar disponível após falha grave). Isso garante auditoria completa de TODOS os deploys, não apenas os bem-sucedidos.
+
+> **CORREÇÃO 04/01/2026 (Métricas BD):** Colunas `duration_seconds` e `containers_count` agora são populadas. PROBLEMA ANTERIOR: Essas colunas existiam no schema mas os INSERTs nunca as preenchiam (sempre NULL). Os dados estavam disponíveis (`DEPLOY_DURATION` e `TOTAL_RUNNING` eram calculados e usados no JSON e notificações Slack), mas não eram passados para o registro BD. SOLUÇÃO: Job `deploy` agora exporta outputs `duration_seconds` e `containers_count` via steps capture-metrics/export-metrics. Jobs `register-success` e `rollback` recebem esses valores e os inserem no BD. Usa `NULLIF(:v_var, 0)` para evitar inserir 0 quando valor indisponível.
 
 #### Validação do Repositório pgBackRest
 

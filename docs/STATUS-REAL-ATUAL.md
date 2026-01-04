@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 04 de Janeiro de 2026  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.76 - Bug Fix Collect Logs Job Level Condition + DB Audit Always
+> **Versão:** 4.77 - Bug Fix Log Download if:always + DB Metrics Columns
 
 ---
 

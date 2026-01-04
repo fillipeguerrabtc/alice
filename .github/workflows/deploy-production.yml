@@ -471,6 +471,13 @@ jobs:
     permissions:
       contents: read
 
+    # CORREÇÃO 04/01/2026: Outputs para métricas de deploy (usados no registro BD)
+    # Problema: Colunas duration_seconds e containers_count nunca eram populadas
+    # Solução: Exportar valores calculados durante deploy para uso em register-success
+    outputs:
+      duration_seconds: ${{ steps.export-metrics.outputs.duration_seconds }}
+      containers_count: ${{ steps.export-metrics.outputs.containers_count }}
+
     env:
       IMAGE_TAG: ${{ needs.validate-and-prepare.outputs.image_tag }}
 
@@ -3725,6 +3732,69 @@ METRICS_EOF
 
             send_deploy_notification "success" "Alice Enterprise Platform v${IMAGE_TAG} deployed successfully"
 
+      # ==========================================================================
+      # CORREÇÃO 04/01/2026: Capturar métricas de deploy para registro BD
+      # Lê valores do arquivo JSON criado pelo deploy via SSH e exporta outputs
+      # Esses valores são usados no job register-success para popular as colunas
+      # duration_seconds e containers_count na tabela deployments
+      # ==========================================================================
+      - name: Capturar métricas de deploy
+        id: capture-metrics
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
+        with:
+          host: ${{ secrets.HETZNER_VM_HOST }}
+          username: ${{ secrets.HETZNER_VM_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          script: |
+            # Buscar arquivo de métricas mais recente
+            METRICS_FILE=$(ls -t /opt/alice/logs/deploy-metrics-*.json 2>/dev/null | head -1)
+            
+            if [ -f "$METRICS_FILE" ]; then
+              # Extrair valores com jq
+              DURATION=$(jq -r '.duration_seconds // 0' "$METRICS_FILE")
+              CONTAINERS=$(jq -r '.containers_total // 0' "$METRICS_FILE")
+              
+              echo "📊 Métricas capturadas:"
+              echo "   Duration: ${DURATION}s"
+              echo "   Containers: ${CONTAINERS}"
+              
+              # Exportar para arquivo temporário (SSH não pode escrever em $GITHUB_OUTPUT diretamente)
+              echo "${DURATION}" > /tmp/deploy_duration.txt
+              echo "${CONTAINERS}" > /tmp/deploy_containers.txt
+            else
+              echo "⚠️ Arquivo de métricas não encontrado"
+              echo "0" > /tmp/deploy_duration.txt
+              echo "0" > /tmp/deploy_containers.txt
+            fi
+
+      - name: Exportar métricas como outputs
+        id: export-metrics
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+        run: |
+          # Configurar SSH temporariamente para este step
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.HETZNER_VM_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+          
+          # Baixar valores do servidor via SSH
+          DURATION=$(ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key \
+            ${{ secrets.HETZNER_VM_USER }}@${{ secrets.HETZNER_VM_HOST }} \
+            "cat /tmp/deploy_duration.txt 2>/dev/null || echo 0")
+          
+          CONTAINERS=$(ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key \
+            ${{ secrets.HETZNER_VM_USER }}@${{ secrets.HETZNER_VM_HOST }} \
+            "cat /tmp/deploy_containers.txt 2>/dev/null || echo 0")
+          
+          # Limpar chave SSH
+          rm -f ~/.ssh/deploy_key
+          
+          echo "duration_seconds=${DURATION}" >> $GITHUB_OUTPUT
+          echo "containers_count=${CONTAINERS}" >> $GITHUB_OUTPUT
+          
+          echo "✅ Métricas exportadas: ${DURATION}s, ${CONTAINERS} containers"
+
   # ===========================================================================
   # Job 4: Health Check
   # Timeout: 5min (90s espera + checks rápidos)
@@ -4074,11 +4144,14 @@ METRICS_EOF
           WORKFLOW_RUN_ID: ${{ github.run_id }}
           WORKFLOW_RUN_NUMBER: ${{ github.run_number }}
           REPOSITORY: ${{ github.repository }}
+          # CORREÇÃO 04/01/2026: Adicionar métricas do job deploy (podem ser vazias se deploy falhou antes)
+          DURATION_SECONDS: ${{ needs.deploy.outputs.duration_seconds }}
+          CONTAINERS_COUNT: ${{ needs.deploy.outputs.containers_count }}
         with:
           host: ${{ secrets.HETZNER_VM_HOST }}
           username: ${{ secrets.HETZNER_VM_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          envs: VERSION,GITHUB_ACTOR,TRIGGERED_BY,SERVICES,COMMIT_SHA,WORKFLOW_RUN_ID,WORKFLOW_RUN_NUMBER,REPOSITORY
+          envs: VERSION,GITHUB_ACTOR,TRIGGERED_BY,SERVICES,COMMIT_SHA,WORKFLOW_RUN_ID,WORKFLOW_RUN_NUMBER,REPOSITORY,DURATION_SECONDS,CONTAINERS_COUNT
           script: |
             # Tentar registrar falha - best-effort (BD pode não estar disponível)
             # CORREÇÃO 04/01/2026: Usando variáveis psql para SQL injection prevention
@@ -4107,6 +4180,7 @@ METRICS_EOF
             EOSQL
               
               # STEP 2: INSERT com variáveis psql (SQL injection safe)
+              # CORREÇÃO 04/01/2026: Adicionados duration_seconds e containers_count
               docker exec alice-postgres psql -U alice -d alice_prod \
                 -v v_version="$VERSION" \
                 -v v_actor="$GITHUB_ACTOR" \
@@ -4116,11 +4190,15 @@ METRICS_EOF
                 -v v_run_id="$WORKFLOW_RUN_ID" \
                 -v v_run_num="$WORKFLOW_RUN_NUMBER" \
                 -v v_repo="$REPOSITORY" \
+                -v v_duration="${DURATION_SECONDS:-0}" \
+                -v v_containers="${CONTAINERS_COUNT:-0}" \
                 << 'EOSQL'
-              INSERT INTO deployments (version, deployed_by, status, triggered_by, services, metadata)
+              INSERT INTO deployments (version, deployed_by, duration_seconds, containers_count, status, triggered_by, services, metadata)
               VALUES (
                 :'v_version',
                 :'v_actor',
+                NULLIF(:v_duration, 0),
+                NULLIF(:v_containers, 0),
                 'rolled_back',
                 :'v_triggered',
                 :'v_services',
@@ -4245,7 +4323,12 @@ METRICS_EOF
             fi
 
       # STEP 3: Baixar logs do Hetzner via SCP
+      # CORREÇÃO 04/01/2026: Adicionado if: always() para garantir que diretório
+      # ./deploy-logs seja criado mesmo se step SSH anterior falhar. Sem isso,
+      # o step de upload-artifact (que tem if: always()) falha porque o path não existe.
+      # if-no-files-found: warn só trata diretórios VAZIOS, não paths inexistentes.
       - name: Baixar logs do Hetzner
+        if: always()
         run: |
           echo "📥 Baixando logs do Hetzner..."
           mkdir -p ./deploy-logs
@@ -4387,11 +4470,14 @@ METRICS_EOF
           WORKFLOW_RUN_ID: ${{ github.run_id }}
           WORKFLOW_RUN_NUMBER: ${{ github.run_number }}
           REPOSITORY: ${{ github.repository }}
+          # CORREÇÃO 04/01/2026: Adicionar métricas do job deploy
+          DURATION_SECONDS: ${{ needs.deploy.outputs.duration_seconds }}
+          CONTAINERS_COUNT: ${{ needs.deploy.outputs.containers_count }}
         with:
           host: ${{ secrets.HETZNER_VM_HOST }}
           username: ${{ secrets.HETZNER_VM_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          envs: VERSION,GITHUB_ACTOR,TRIGGERED_BY,SERVICES,COMMIT_SHA,WORKFLOW_RUN_ID,WORKFLOW_RUN_NUMBER,REPOSITORY
+          envs: VERSION,GITHUB_ACTOR,TRIGGERED_BY,SERVICES,COMMIT_SHA,WORKFLOW_RUN_ID,WORKFLOW_RUN_NUMBER,REPOSITORY,DURATION_SECONDS,CONTAINERS_COUNT
           script: |
             # Registrar metadata do deploy em PostgreSQL para auditoria
             
@@ -4421,6 +4507,7 @@ METRICS_EOF
             # STEP 2: INSERT usando variáveis psql (-v) para escape automático
             # CORREÇÃO 04/01/2026: Variáveis passadas via -v são escapadas pelo psql
             # Usar :'var' para interpolação segura com aspas (text literals)
+            # CORREÇÃO 04/01/2026: Adicionados duration_seconds e containers_count
             # Ref: https://www.postgresql.org/docs/current/app-psql.html#APP-PSQL-INTERPOLATION
             docker exec alice-postgres psql -U alice -d alice_prod \
               -v v_version="$VERSION" \
@@ -4431,11 +4518,15 @@ METRICS_EOF
               -v v_run_id="$WORKFLOW_RUN_ID" \
               -v v_run_num="$WORKFLOW_RUN_NUMBER" \
               -v v_repo="$REPOSITORY" \
+              -v v_duration="${DURATION_SECONDS:-0}" \
+              -v v_containers="${CONTAINERS_COUNT:-0}" \
               << 'EOSQL'
-            INSERT INTO deployments (version, deployed_by, status, triggered_by, services, metadata)
+            INSERT INTO deployments (version, deployed_by, duration_seconds, containers_count, status, triggered_by, services, metadata)
             VALUES (
               :'v_version',
               :'v_actor',
+              NULLIF(:v_duration, 0),
+              NULLIF(:v_containers, 0),
               'success',
               :'v_triggered',
               :'v_services',
