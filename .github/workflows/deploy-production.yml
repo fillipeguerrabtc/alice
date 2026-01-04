@@ -1980,6 +1980,79 @@ jobs:
             log "✅ Containers de inicialização OK (ou ainda em execução)"
             
             # =================================================================
+            # CORREÇÃO 04/01/2026: Espera inteligente para init containers
+            # =================================================================
+            # PROBLEMA: check_container_health() pode executar ANTES dos init 
+            # containers completarem, causando falso positivo
+            # SOLUÇÃO: Aguardar TODOS init containers completarem ANTES de 
+            # verificar saúde dos containers normais
+            # =================================================================
+            log "⏱️  Aguardando init containers completarem (timeout: 2 minutos)..."
+            
+            INIT_TIMEOUT=120
+            INIT_ELAPSED=0
+            
+            while [ $INIT_ELAPSED -lt $INIT_TIMEOUT ]; do
+              ALL_INIT_COMPLETED=1
+              
+              for init_container in "${INIT_CONTAINERS[@]}"; do
+                if docker ps -a --format '{{.Names}}' | grep -q "^${init_container}$"; then
+                  STATUS=$(docker inspect --format='{{.State.Status}}' "$init_container" 2>/dev/null || echo "unknown")
+                  
+                  if [ "$STATUS" = "running" ]; then
+                    echo "   ⏳ $init_container ainda executando..."
+                    ALL_INIT_COMPLETED=0
+                  elif [ "$STATUS" = "exited" ]; then
+                    EXIT_CODE=$(docker inspect --format='{{.State.ExitCode}}' "$init_container" 2>/dev/null || echo "")
+                    if [ "$EXIT_CODE" != "0" ]; then
+                      log "❌ FAIL-FAST: Init container $init_container falhou (exit $EXIT_CODE)"
+                      docker logs --tail 50 "$init_container" || true
+                      exit 1
+                    fi
+                    # exit code 0 = sucesso, container pode ser ignorado no próximo loop
+                  fi
+                fi
+              done
+              
+              if [ $ALL_INIT_COMPLETED -eq 1 ]; then
+                log "✅ Todos os init containers completaram com sucesso"
+                break
+              fi
+              
+              sleep 5
+              INIT_ELAPSED=$((INIT_ELAPSED + 5))
+              
+              # Progress indicator a cada 15 segundos
+              if [ $((INIT_ELAPSED % 15)) -eq 0 ]; then
+                echo "   ⏱️  Tempo decorrido: ${INIT_ELAPSED}s / ${INIT_TIMEOUT}s"
+              fi
+            done
+            
+            if [ $INIT_ELAPSED -ge $INIT_TIMEOUT ]; then
+              log "❌ FAIL-FAST: Timeout aguardando init containers completarem"
+              log "📋 Status dos init containers:"
+              for init_container in "${INIT_CONTAINERS[@]}"; do
+                if docker ps -a --format '{{.Names}}' | grep -q "^${init_container}$"; then
+                  STATUS=$(docker inspect --format='{{.State.Status}}' "$init_container" 2>/dev/null || echo "unknown")
+                  echo "   $init_container: $STATUS"
+                  docker logs --tail 50 "$init_container" || true
+                fi
+              done
+              exit 1
+            fi
+            
+            # =================================================================
+            # CORREÇÃO 04/01/2026: Aguardar 30s para service containers iniciarem
+            # =================================================================
+            # PROBLEMA: Healthchecks podem levar 30-60s para ficarem prontos
+            # Verificar muito cedo gera falsos positivos (status: starting)
+            # SOLUÇÃO: Aguardar tempo adequado para containers iniciarem
+            # healthchecks antes de validar
+            # =================================================================
+            log "⏱️  Aguardando 30s para service containers iniciarem healthchecks..."
+            sleep 30
+            
+            # =================================================================
             # FAIL-FAST ENTERPRISE: Verificação de saúde dos containers
             # =================================================================
             # PROBLEMA: docker compose up -d retorna 0 mesmo com falhas
@@ -2184,6 +2257,50 @@ jobs:
               log "✅ $context_msg: OK (init containers completaram, containers normais healthy)"
               return 0
             }
+            
+            # =================================================================
+            # CORREÇÃO 04/01/2026: Validação específica do Caddy
+            # =================================================================
+            # PROBLEMA: Caddy pode demorar para ficar healthy (ACME SSL, DNS, etc)
+            # SOLUÇÃO: Validar Caddy separadamente com timeout adequado antes de
+            # verificar outros containers
+            # =================================================================
+            log "🔍 VALIDAÇÃO CADDY (FAIL-FAST)..."
+            
+            # Aguardar Caddy iniciar (mínimo)
+            sleep 10
+            
+            # Verificar se Caddy está rodando
+            if ! docker ps --filter "name=alice-caddy" --filter "status=running" | grep -q alice-caddy; then
+              log "❌ FAIL-FAST: Caddy não está rodando"
+              docker logs --tail 100 alice-caddy || true
+              exit 1
+            fi
+            
+            # Verificar healthcheck do Caddy
+            CADDY_HEALTH=$(docker inspect alice-caddy --format '{{.State.Health.Status}}' 2>/dev/null || echo "none")
+            
+            # Aguardar até 60s para Caddy ficar healthy
+            CADDY_TIMEOUT=60
+            CADDY_ELAPSED=0
+            
+            while [ "$CADDY_HEALTH" != "healthy" ] && [ $CADDY_ELAPSED -lt $CADDY_TIMEOUT ]; do
+              echo "   ⏳ Aguardando Caddy ficar healthy (${CADDY_ELAPSED}s/${CADDY_TIMEOUT}s)... Status atual: $CADDY_HEALTH"
+              sleep 5
+              CADDY_ELAPSED=$((CADDY_ELAPSED + 5))
+              CADDY_HEALTH=$(docker inspect alice-caddy --format '{{.State.Health.Status}}' 2>/dev/null || echo "none")
+            done
+            
+            if [ "$CADDY_HEALTH" != "healthy" ]; then
+              log "❌ FAIL-FAST: Caddy não ficou healthy após ${CADDY_TIMEOUT}s"
+              log "📋 Logs do Caddy:"
+              docker logs --tail 100 alice-caddy || true
+              log "📋 Healthcheck do Caddy:"
+              docker inspect alice-caddy --format '{{json .State.Health}}' | jq '.' || true
+              exit 1
+            fi
+            
+            log "✅ Caddy está healthy e operacional"
             
             # Verificar imediatamente após docker compose up
             if ! check_container_health "Verificando erros de dependência"; then

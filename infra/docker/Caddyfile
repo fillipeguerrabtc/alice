@@ -98,19 +98,22 @@
 }
 
 # Proxy headers padrão
+# CORREÇÃO 04/01/2026: Removidos X-Forwarded-For e X-Forwarded-Proto
+# Caddy adiciona automaticamente esses headers, causando avisos desnecessários
+# Ref: https://caddyserver.com/docs/caddyfile/directives/reverse_proxy#defaults
 (proxy_headers) {
 	header_up Host {host}
 	header_up X-Real-IP {remote_host}
-	header_up X-Forwarded-For {remote_host}
-	header_up X-Forwarded-Proto {scheme}
+	# X-Forwarded-For e X-Forwarded-Proto são adicionados automaticamente pelo Caddy
 }
 
 # WebSocket headers
+# CORREÇÃO 04/01/2026: Removidos X-Forwarded-For e X-Forwarded-Proto
+# Caddy adiciona automaticamente esses headers, causando avisos desnecessários
 (websocket_headers) {
 	header_up Host {host}
 	header_up X-Real-IP {remote_host}
-	header_up X-Forwarded-For {remote_host}
-	header_up X-Forwarded-Proto {scheme}
+	# X-Forwarded-For e X-Forwarded-Proto são adicionados automaticamente pelo Caddy
 	header_up Connection {header.Connection}
 	header_up Upgrade {header.Upgrade}
 }
