@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 02 de Janeiro de 2026  
-**Versão:** 7.17 - Deploy Enterprise Hardening (Smoke Tests + Persistência de Logs)
+**Data:** 04 de Janeiro de 2026  
+**Versão:** 7.18 - Trap Handler Unificado (Diagnóstico + Rollback)
 
 > **Migração 100% Self-Hosted (27/12/2025):** Pipeline completo migrado para runner próprio (Hetzner CPX32 - 4 vCPU, 8GB RAM) seguindo melhores práticas enterprise 2025. Todos os workflows (CI, Release, Deploy) executam no self-hosted runner para controle total, custos previsíveis e compliance.
 
@@ -1049,9 +1049,23 @@ frappe/erpnext:v15.91.1
 
 ## Rollback
 
-### Automático
+### Automático (Handler Unificado de Exit - 04/01/2026)
 
-Rollback automático acontece se health checks falharem após deploy.
+O rollback automático acontece se health checks falharem após deploy. A arquitetura usa um **handler unificado de exit** que executa duas fases:
+
+1. **Diagnóstico** (`capture_failure_diagnostics`):
+   - Captura estado de todos os containers (running/exited/dead)
+   - Logs específicos do Caddy (healthcheck, env vars, validação Caddyfile)
+   - Logs de containers com exit code != 0
+   - Estado de containers exited/dead
+
+2. **Rollback** (`perform_rollback`):
+   - Para containers iniciados neste deploy
+   - Preserva dados persistentes em `/opt/alice/data/`
+   - Salva métricas de falha em JSON
+   - Envia notificação Slack (se configurado)
+
+> **CORREÇÃO CRÍTICA (04/01/2026):** Em bash, `trap X EXIT` substitui traps anteriores (não adiciona). Antes tínhamos dois traps separados e o segundo sobrescrevia o primeiro, fazendo diagnósticos nunca executarem. Agora há um único trap `combined_exit_handler` que chama ambas as funções na ordem correta.
 
 ### Manual
 

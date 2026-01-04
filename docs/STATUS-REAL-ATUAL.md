@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 04 de Janeiro de 2026  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.72 - Bug Fix Init Container Wait Loop Race Condition
+> **Versão:** 4.73 - Bug Fix Bash Trap Overwrite (Handler Unificado de Exit)
 
 ---
 
