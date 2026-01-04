@@ -713,8 +713,9 @@ jobs:
             # Conforme PROBLEMA #10 do relatório de deploy
             # MELHORIA 02/01/2026: Adiciona tempo decorrido e % de progresso
             #
-            # NOTA (04/01/2026): Steps DEVEM ser inteiros. Bash não suporta decimais
-            # em aritmética ($((...))) e isso quebra o deploy com `set -euo pipefail`.
+            # NOTA (04/01/2026): Steps podem ser inteiros OU decimais (ex: 7.5).
+            # Bash não suporta decimais em aritmética ($((...))), então o percentual
+            # é calculado com awk para evitar falhas do workflow com `set -euo pipefail`.
             # =================================================================
             TOTAL_STEPS=14
             DEPLOY_START=$(date +%s)
@@ -724,7 +725,12 @@ jobs:
               local elapsed=$(($(date +%s) - DEPLOY_START))
               local mins=$((elapsed / 60))
               local secs=$((elapsed % 60))
-              local percent=$((step * 100 / TOTAL_STEPS))
+              if ! [[ "$step" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+                log "❌ ERRO: progress() recebeu step inválido: '$step' (esperado número, ex: 7 ou 7.5)"
+                exit 1
+              fi
+              local percent
+              percent="$(awk -v s="$step" -v t="$TOTAL_STEPS" 'BEGIN { if (t <= 0) { print 0; exit } printf "%.0f", (s * 100.0) / t }')"
               log "[$step/$TOTAL_STEPS - ${percent}% - ${mins}m${secs}s] $desc"
             }
             
