@@ -1136,17 +1136,17 @@ jobs:
                 
                 # Capturar métricas de falha
                 local deploy_duration=$(($(date +%s) - DEPLOY_START))
-                cat > /opt/alice/logs/deploy-metrics-failed-$(date +%Y%m%d-%H%M%S).json <<EOF
-{
-  "version": "${IMAGE_TAG:-unknown}",
-  "timestamp": "$(date -Iseconds)",
-  "duration_seconds": ${deploy_duration},
-  "status": "failed",
-  "exit_code": ${exit_code},
-  "initiated_by": "${GITHUB_ACTOR:-unknown}",
-  "commit_sha": "${GITHUB_SHA:-unknown}"
-}
-EOF
+                cat > /opt/alice/logs/deploy-metrics-failed-$(date +%Y%m%d-%H%M%S).json << METRICS_EOF
+                {
+                  "version": "${IMAGE_TAG:-unknown}",
+                  "timestamp": "$(date -Iseconds)",
+                  "duration_seconds": ${deploy_duration},
+                  "status": "failed",
+                  "exit_code": ${exit_code},
+                  "initiated_by": "${GITHUB_ACTOR:-unknown}",
+                  "commit_sha": "${GITHUB_SHA:-unknown}"
+                }
+                METRICS_EOF
                 
                 # MELHORIA #2: Enviar notificação de falha
                 if [ -n "${SLACK_WEBHOOK_URL:-}" ]; then
@@ -3601,21 +3601,21 @@ EOF
             collect_deploy_metrics() {
               log "📊 Coletando métricas de deploy..."
               
-              cat > /opt/alice/logs/deploy-metrics-$(date +%Y%m%d-%H%M%S).json <<EOF
-{
-  "version": "${IMAGE_TAG}",
-  "timestamp": "$(date -Iseconds)",
-  "duration_seconds": ${DEPLOY_DURATION},
-  "duration_minutes": $((DEPLOY_DURATION / 60)),
-  "status": "success",
-  "containers_total": ${TOTAL_RUNNING},
-  "containers_gpu": ${GPU_RUNNING:-0},
-  "gpu_profile": "${GPU_PROFILE:-none}",
-  "smoke_tests": "passed",
-  "initiated_by": "${GITHUB_ACTOR:-unknown}",
-  "commit_sha": "${GITHUB_SHA:-unknown}"
-}
-EOF
+              cat > /opt/alice/logs/deploy-metrics-$(date +%Y%m%d-%H%M%S).json << METRICS_EOF
+              {
+                "version": "${IMAGE_TAG}",
+                "timestamp": "$(date -Iseconds)",
+                "duration_seconds": ${DEPLOY_DURATION},
+                "duration_minutes": $((DEPLOY_DURATION / 60)),
+                "status": "success",
+                "containers_total": ${TOTAL_RUNNING},
+                "containers_gpu": ${GPU_RUNNING:-0},
+                "gpu_profile": "${GPU_PROFILE:-none}",
+                "smoke_tests": "passed",
+                "initiated_by": "${GITHUB_ACTOR:-unknown}",
+                "commit_sha": "${GITHUB_SHA:-unknown}"
+              }
+              METRICS_EOF
               
               log "✅ Métricas salvas em /opt/alice/logs/deploy-metrics-*.json"
             }
