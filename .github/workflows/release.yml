@@ -115,7 +115,9 @@ jobs:
             PATCH=$(echo "$CURRENT" | cut -d- -f1 | cut -d. -f3)
             
             # Analisar commits desde última tag
-            COMMITS=$(git log "$PREVIOUS_TAG..HEAD" --pretty=format:"%s" --no-merges)
+            # IMPORTANTE: Usa %B (mensagem completa) para capturar BREAKING CHANGE: no body/footer
+            # %s captura apenas o subject, mas Conventional Commits permite BREAKING CHANGE: no body
+            COMMITS=$(git log "$PREVIOUS_TAG..HEAD" --pretty=format:"%B" --no-merges)
             
             # Detectar tipo de mudança (mesma lógica do changelog)
             if echo "$COMMITS" | grep -qE "^[a-z]+(\(.+\))?!:|BREAKING CHANGE:"; then

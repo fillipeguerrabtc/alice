@@ -15,6 +15,9 @@ echo "=== Teste de Cálculo Automático de Versão ==="
 echo ""
 
 # Função auxiliar para testar cálculo de versão
+# NOTA: Este teste simula o output de `git log --pretty=format:"%B"` (mensagem completa)
+# O argumento $commits deve representar a mensagem completa (subject + body) dos commits,
+# não apenas os subjects. Isso é necessário para detectar BREAKING CHANGE: no footer.
 test_version_calculation() {
   local test_name="$1"
   local previous_tag="$2"
@@ -24,7 +27,7 @@ test_version_calculation() {
   echo "📋 Teste: $test_name"
   echo "   Tag anterior: ${previous_tag:-<nenhuma>}"
   
-  # Lógica idêntica ao workflow
+  # Lógica idêntica ao workflow (usa %B para capturar subject + body)
   if [ -z "$previous_tag" ]; then
     # Primeiro release
     NEXT_VERSION="v1.0.0"
@@ -121,12 +124,15 @@ else
   TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
-# Teste 5: MAJOR bump (BREAKING CHANGE:)
+# Teste 5: MAJOR bump (BREAKING CHANGE: no footer/body)
+# Simula output de git log --pretty=format:"%B" com subject + body
+# IMPORTANTE: Este teste valida que BREAKING CHANGE: no body é detectado
 echo ""
 if test_version_calculation \
-  "MAJOR bump - BREAKING CHANGE:" \
+  "MAJOR bump - BREAKING CHANGE: no footer" \
   "v2.7.0" \
   "refactor: reescreve módulo
+
 BREAKING CHANGE: API completamente alterada" \
   "v3.0.0"; then
   TESTS_PASSED=$((TESTS_PASSED + 1))

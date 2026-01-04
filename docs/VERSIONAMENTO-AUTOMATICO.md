@@ -27,10 +27,14 @@ version: <deixe vazio>
 A versão é calculada seguindo **Conventional Commits**:
 
 ### 1. MAJOR (Breaking Changes)
-Incrementa quando há commits com `!` ou `BREAKING CHANGE:`:
+Incrementa quando há commits com `!` no subject ou `BREAKING CHANGE:` no body/footer:
 - `feat!: remove API antiga` → `v2.7.0` → `v3.0.0`
 - `refactor!: reescreve módulo` → `v2.7.0` → `v3.0.0`
-- Commit com `BREAKING CHANGE:` no corpo → `v2.7.0` → `v3.0.0`
+- Commit com `BREAKING CHANGE:` no body/footer → `v2.7.0` → `v3.0.0`
+
+> **Nota técnica**: O workflow usa `git log --pretty=format:"%B"` para capturar a mensagem
+> completa do commit (subject + body), garantindo detecção de `BREAKING CHANGE:` no footer
+> conforme especificação Conventional Commits.
 
 ### 2. MINOR (Novas Features)
 Incrementa quando há commits com `feat:`:
@@ -161,8 +165,8 @@ O script testa 8 cenários diferentes:
 1. ✅ Primeiro release
 2. ✅ PATCH bump (fix)
 3. ✅ MINOR bump (feat)
-4. ✅ MAJOR bump (breaking change com !)
-5. ✅ MAJOR bump (BREAKING CHANGE:)
+4. ✅ MAJOR bump (breaking change com `!` no subject)
+5. ✅ MAJOR bump (`BREAKING CHANGE:` no footer/body)
 6. ✅ PATCH bump (commit sem tipo)
 7. ✅ MINOR bump (múltiplos commits)
 8. ✅ MAJOR bump (prioridade sobre feat/fix)
@@ -184,9 +188,14 @@ O script testa 8 cenários diferentes:
 **Causa:** Commits não seguem Conventional Commits corretamente
 
 **Solução:**
-1. Verifique se commits breaking usam `!` ou `BREAKING CHANGE:`
-2. Verifique se features usam `feat:`
+1. Para breaking changes, use uma das opções:
+   - `!` após o tipo no **subject**: `feat!: remove API antiga`
+   - `BREAKING CHANGE:` no **footer/body** do commit (linha separada)
+2. Verifique se features usam `feat:` no início do subject
 3. Ou use versão manual para override
+
+> **Dica**: O workflow captura a mensagem completa do commit (`git log --pretty=format:"%B"`),
+> então `BREAKING CHANGE:` no body é corretamente detectado.
 
 ### Problema: Primeira release não é v1.0.0
 **Sintoma:** Primeira release calculou v2.0.0
