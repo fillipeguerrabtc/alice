@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 04 de Janeiro de 2026  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.72 - Bug Fix Init Container Wait Loop Race Condition
+> **Versão:** 4.73 - Bug Fix release.yml Previous Tag Detection for workflow_dispatch
 
 ---
 
@@ -968,6 +968,8 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 > **NOTA (14/12/2025):** **CORREÇÃO ENTERPRISE - Versionamento Consistente**: Corrigido bug crítico no `release.yml` onde `createWorkflowDispatch` usava `ref: 'main'` ao invés da TAG da release. Isso causava inconsistência: imagens Docker eram buildadas da TAG (commit específico), mas deploy usava scripts/docker-compose da main (potencialmente diferente). Correção: `ref` agora usa `${{ needs.create-release.outputs.version }}` (a TAG). Garante reprodutibilidade total: mesma tag = mesmo resultado. Cache enterprise (Registry Cache GHCR) não é afetado pois usa tag fixa `:cache` compartilhada entre branches/tags.
 
 > **NOTA (14/12/2025):** **CORREÇÃO ENTERPRISE - Contexto inputs.* Obsoleto**: Corrigido bug no `deploy-production.yml` onde o código ainda referenciava `inputs.version` e `inputs.services` (contexto de `workflow_call`), mas o workflow agora usa apenas `workflow_dispatch`. O contexto `inputs.*` só está disponível com `workflow_call`, sendo `github.event.inputs.*` o correto para `workflow_dispatch`. Expressões simplificadas para usar apenas `github.event.inputs.*` e comentários atualizados para refletir arquitetura atual.
+
+> **NOTA (04/01/2026):** **CORREÇÃO ENTERPRISE - Detecção de Tag Anterior em workflow_dispatch**: Corrigido bug no `release.yml` onde `git describe --tags --abbrev=0 "$VERSION^"` falhava silenciosamente quando disparado via `workflow_dispatch`. **Causa**: A tag `$VERSION` ainda não existe (será criada), então `$VERSION^` é uma referência inválida. **Impacto**: `PREVIOUS_TAG` ficava vazio, changelog mostrava 50 commits genéricos, e otimização de retagging não funcionava (rebuild desnecessário de todas imagens). **Solução**: Lógica diferenciada por trigger - `push` usa `"$VERSION^"` (tag existe), `workflow_dispatch` usa `git describe --tags --abbrev=0` sem argumentos (do HEAD).
 
 > **NOTA (14/12/2025):** **LIMPEZA DE DOCUMENTAÇÃO**: Removidos 3 documentos obsoletos/redundantes para evitar confusão: (1) `GAPS-CRITICOS-ENCONTRADOS.md` - gaps já corrigidos, (2) `ANALISE-COMPLETA-TAKEOVER-HANDOVER.md` - redundante com STATUS-REAL-ATUAL, (3) `AUDITORIA-SECRETS.md` - redundante com SECRETS.md. Total de documentos ativos em `/docs`: 8 arquivos focados e sem redundância.
 
