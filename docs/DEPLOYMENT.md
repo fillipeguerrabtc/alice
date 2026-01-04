@@ -1772,7 +1772,227 @@ docker system df
 - **pgBackRest 2.57.0 Release:** https://pgbackrest.org/release.html
 - **GitHub Workflow Deploy:** `.github/workflows/deploy-production.yml`
 
+### Secrets Ausentes (CORREÇÃO 5)
+
+**Problema:** Deploy falha imediatamente com erro "Secrets obrigatórias ausentes".
+
+**Causa Raiz:** Validação PRÉ-DEPLOY (v4.61) verifica 12 secrets críticas ANTES do docker compose up.
+
+**Sintoma:**
+```bash
+❌ ERRO CRÍTICO: Secrets obrigatórias ausentes ou vazias no .env.prod!
+
+📋 Secrets faltantes:
+   - POSTGRES_PASSWORD
+   - BACKUP_CIPHER_PASS
+```
+
+**Solução:**
+
+1. Configure secrets no GitHub:
+```
+Settings → Secrets → Actions → New repository secret
+```
+
+2. Secrets obrigatórias (v4.61):
+- `POSTGRES_PASSWORD` - Senha do PostgreSQL
+- `REDIS_PASSWORD` - Senha do Redis
+- `BACKUP_CIPHER_PASS` - Senha de criptografia pgBackRest (32+ chars)
+- `SESSION_SECRET` - Secret para sessões web
+- `INTERNAL_API_SECRET` - Secret para APIs internas
+- `QDRANT_API_KEY` - API key do Qdrant
+- `GMAIL_USER` - Email Gmail para SMTP
+- `GMAIL_APP_PASSWORD` - App Password do Gmail
+- `GRAFANA_ADMIN_USER` - Usuário admin Grafana
+- `GRAFANA_ADMIN_PASSWORD` - Senha admin Grafana
+- `ERPNEXT_ADMIN_PASSWORD` - Senha admin ERPNext
+- `MINIO_ROOT_PASSWORD` - Senha root MinIO
+
+3. Gerar secrets seguras:
+```bash
+# Geral (16 bytes = 32 chars hex)
+openssl rand -hex 16
+
+# pgBackRest (32 bytes = 64 chars hex, OBRIGATÓRIO)
+openssl rand -hex 32
+```
+
+### Inodes Insuficientes (CORREÇÃO 6)
+
+**Problema:** Warning sobre poucos inodes disponíveis.
+
+**Causa Raiz:** Sistema pode ter GB livres mas sem inodes (limite de arquivos).
+
+**Sintoma:**
+```bash
+⚠️ AVISO: Poucos inodes disponíveis!
+   Disponível: 5000 inodes
+   Recomendado: 10000 inodes
+```
+
+**Diagnóstico:**
+```bash
+# Verificar inodes
+df -i /opt/alice
+
+# Encontrar diretórios com muitos arquivos
+find /opt/alice -xdev -printf '%h\n' | sort | uniq -c | sort -rn | head -20
+```
+
+**Solução:**
+```bash
+# Limpar logs fragmentados
+find /opt/alice/logs -type f -name "*.log.*" -mtime +7 -delete
+
+# Limpar cache de pacotes
+docker system prune -af
+
+# Se persistir, considere aumentar inodes no filesystem
+```
+
+### Logs de Init Containers Vazios (CORREÇÃO 7-8)
+
+**Problema:** Logs de init containers aparecem vazios em troubleshooting.
+
+**Solução (Implementada em v4.61):**
+
+Logs são **automaticamente preservados** em `/tmp` após docker compose up:
+
+```bash
+# Ver logs preservados
+cat /tmp/init_logs_alice-pgbackrest-init.txt
+cat /tmp/init_logs_alice-minio-init.txt
+cat /tmp/init_logs_erpnext-configurator.txt
+
+# Quantidade de linhas capturadas
+wc -l /tmp/init_logs_*.txt
+```
+
+Captura acontece ANTES de containers serem removidos pelo Docker.
+
+### Container Unhealthy Sem Causa (CORREÇÃO 9-10)
+
+**Problema:** Mensagem "unhealthy" sem explicar WHY.
+
+**Solução (Implementada em v4.61):**
+
+Agora mostra última linha do healthcheck log:
+
+```bash
+📦 Init Container: alice-pgbackrest-init - status=exited, exit=0 (completou com sucesso)
+🐳 Container: alice-postgres - status=running, exit=0 (unhealthy - connection refused on port 5432)
+```
+
+**Emojis indicam tipo:**
+- 📦 = Init container (status exited é OK)
+- 🐳 = Container normal (status exited é PROBLEMA)
+
+### Análise de Causa Raiz (CORREÇÃO 11-12)
+
+**Problema:** Falhas sem correlação clara da causa.
+
+**Solução (Implementada em v4.61):**
+
+Deploy agora mostra análise automática:
+
+```bash
+🔍 ANÁLISE DE CAUSA RAIZ
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔍 Container: alice-auth
+
+📊 Dependências do container:
+   alice-postgres alice-redis
+
+🔐 Variáveis de ambiente críticas:
+   POSTGRES_PASSWORD=***
+   SESSION_SECRET=***
+   INTERNAL_API_SECRET=***
+
+❌ Exit code 137 - Possíveis causas:
+   - SIGKILL (OOM killer? Memória insuficiente?)
+```
+
+**Interpretação de Exit Codes:**
+- `1` - Erro genérico (verificar logs)
+- `2` - Comando incorreto ou parâmetros inválidos
+- `126` - Comando não executável (permissões?)
+- `127` - Comando não encontrado (PATH incorreto?)
+- `137` - SIGKILL (OOM killer, memória insuficiente)
+- `143` - SIGTERM (terminado por outro processo)
+
+### Timeouts Configuráveis (CORREÇÃO 13-15)
+
+**Problema:** Timeouts hardcoded não adequados para ambiente.
+
+**Solução (Implementada em v4.61):**
+
+Configure via variáveis de ambiente no workflow:
+
+```yaml
+env:
+  MONITOR_INTERVAL: 10      # Segundos entre checks (default: 5)
+  MAX_WAIT_TIME: 900        # Timeout total em segundos (default: 600)
+  HEALTHCHECK_RETRIES: 50   # Tentativas máximas (default: 30)
+```
+
+**Ver configuração usada:**
+```bash
+⏱️  Configuração de timeouts para monitoramento:
+   Monitor interval: 10s (tempo entre verificações)
+   Max wait time: 900s (timeout total)
+   Healthcheck retries: 50 (tentativas máximas)
+```
+
+**Casos de uso:**
+- **Ambiente lento:** Aumentar `MONITOR_INTERVAL` e `MAX_WAIT_TIME`
+- **Ambiente rápido:** Diminuir para fail-fast mais rápido
+- **Primeiro deploy:** Aumentar `HEALTHCHECK_RETRIES` (pull de imagens demora)
+
+### Progress Tracking (CORREÇÃO 16-18)
+
+**Problema:** Deploy parece travado sem feedback de progresso.
+
+**Solução (Implementada em v4.61):**
+
+Progress tracking visual em tempo real:
+
+```bash
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 PROGRESSO: [7/13 - 53%] Validação PRÉ-DEPLOY de secrets obrigatórias
+⏱️  Tempo decorrido: 145s
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+**Métricas periódicas durante retry:**
+
+A cada 3 tentativas de operações críticas (ex: pgvector), mostra:
+
+```bash
+📊 Métricas do sistema durante retry (tentativa 6):
+CONTAINER       CPU %    MEM USAGE
+alice-postgres  2.5%     450MB / 2GB
+alice-redis     0.8%     120MB / 1GB
+```
+
+**Fases do deploy (13 total):**
+1. Validação do servidor
+2. Pre-flight checks
+3. Validação .env.prod
+4. Estrutura de diretórios
+5. Secrets
+6. Clone repositório
+7. Login registries
+7.5. Validação PRÉ-DEPLOY secrets (NOVO v4.61)
+8. Networks Docker
+9. Pull imagens
+10. Deploy containers
+11. Deploy GPU
+12. Smoke tests
+13. Verificação final
+
 ---
 
 *Seção de Troubleshooting adicionada em: 04 de Janeiro de 2026*
+*Atualizada com Correções 5-18 em: 04 de Janeiro de 2026*
 *Autor: Fillipe Guerra*

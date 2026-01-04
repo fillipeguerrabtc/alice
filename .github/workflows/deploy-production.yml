@@ -712,8 +712,12 @@ jobs:
             # CORREÇÃO 02/01/2026: Função progress() para indicadores de progresso
             # Conforme PROBLEMA #10 do relatório de deploy
             # MELHORIA 02/01/2026: Adiciona tempo decorrido e % de progresso
+            #
+            # NOTA (04/01/2026): Steps podem ser inteiros OU decimais (ex: 7.5).
+            # Bash não suporta decimais em aritmética ($((...))), então o percentual
+            # é calculado com awk para evitar falhas do workflow com `set -euo pipefail`.
             # =================================================================
-            TOTAL_STEPS=13
+            TOTAL_STEPS=14
             DEPLOY_START=$(date +%s)
             progress() {
               local step="$1"
@@ -721,7 +725,12 @@ jobs:
               local elapsed=$(($(date +%s) - DEPLOY_START))
               local mins=$((elapsed / 60))
               local secs=$((elapsed % 60))
-              local percent=$((step * 100 / TOTAL_STEPS))
+              if ! [[ "$step" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+                log "❌ ERRO: progress() recebeu step inválido: '$step' (esperado número, ex: 7 ou 7.5)"
+                exit 1
+              fi
+              local percent
+              percent="$(awk -v s="$step" -v t="$TOTAL_STEPS" 'BEGIN { if (t <= 0) { print 0; exit } printf "%.0f", (s * 100.0) / t }')"
               log "[$step/$TOTAL_STEPS - ${percent}% - ${mins}m${secs}s] $desc"
             }
             
@@ -1067,6 +1076,22 @@ jobs:
             echo "✅ Chaves críticas presentes e com valores"
             
             # =================================================================
+            # CORREÇÃO 13-15 (04/01/2026): Timeouts configuráveis via env vars
+            # =================================================================
+            # PROBLEMA: Timeouts hardcoded em múltiplos lugares dificultam ajuste
+            # SOLUÇÃO: Centralizar configuração de timeouts com valores padrão
+            # =================================================================
+            # Timeouts configuráveis (podem ser sobrescritos via env vars)
+            MONITOR_INTERVAL="${MONITOR_INTERVAL:-5}"       # segundos entre checks de health
+            MAX_WAIT_TIME="${MAX_WAIT_TIME:-600}"          # timeout total para containers ficarem healthy (10 min)
+            HEALTHCHECK_RETRIES="${HEALTHCHECK_RETRIES:-30}" # quantas tentativas de healthcheck
+            
+            log "⏱️  Configuração de timeouts para monitoramento:"
+            log "   Monitor interval: ${MONITOR_INTERVAL}s (tempo entre verificações)"
+            log "   Max wait time: ${MAX_WAIT_TIME}s (timeout total)"
+            log "   Healthcheck retries: $HEALTHCHECK_RETRIES (tentativas máximas)"
+            
+            # =================================================================
             # FASE 2: Estrutura de diretórios (volumes Docker)
             # =================================================================
             progress 4 "Criando estrutura de diretórios para volumes Docker"
@@ -1273,9 +1298,60 @@ jobs:
             fi
             
             # =================================================================
+            # CORREÇÃO 5 (04/01/2026): Validação de secrets ANTES do docker compose
+            # =================================================================
+            # PROBLEMA: Validação de secrets acontecia APÓS docker compose up,
+            # desperdiçando tempo se secrets estiverem ausentes
+            # SOLUÇÃO: Validar secrets CRÍTICOS antes de qualquer operação pesada
+            # =================================================================
+            progress 8 "Validação PRÉ-DEPLOY de secrets obrigatórias"
+            log "🔐 Validando secrets obrigatórias (PRÉ-DEPLOY)..."
+            
+            # Lista de secrets CRÍTICAS que DEVEM estar presentes no .env.prod
+            REQUIRED_KEYS=(
+              "POSTGRES_PASSWORD"
+              "REDIS_PASSWORD"
+              "BACKUP_CIPHER_PASS"
+              "SESSION_SECRET"
+              "INTERNAL_API_SECRET"
+              "QDRANT_API_KEY"
+              "GMAIL_USER"
+              "GMAIL_APP_PASSWORD"
+              "GRAFANA_ADMIN_USER"
+              "GRAFANA_ADMIN_PASSWORD"
+              "ERPNEXT_ADMIN_PASSWORD"
+              "MINIO_ROOT_PASSWORD"
+            )
+            
+            MISSING_SECRETS=()
+            for key in "${REQUIRED_KEYS[@]}"; do
+              # Verificar se secret existe E tem valor não vazio
+              if ! grep -qE "^${key}=.+" .env.prod 2>/dev/null; then
+                MISSING_SECRETS+=("$key")
+              fi
+            done
+            
+            if [ ${#MISSING_SECRETS[@]} -gt 0 ]; then
+              echo "❌ ERRO CRÍTICO: Secrets obrigatórias ausentes ou vazias no .env.prod!"
+              echo ""
+              echo "📋 Secrets faltantes:"
+              for secret in "${MISSING_SECRETS[@]}"; do
+                echo "   - $secret"
+              done
+              echo ""
+              echo "🔧 Ação necessária:"
+              echo "   1. Configure os secrets no GitHub: Settings → Secrets → Actions"
+              echo "   2. Verifique se generate-env-prod.sh está gerando corretamente"
+              echo "   3. Execute workflow novamente após configurar secrets"
+              exit 1
+            fi
+            
+            log "✅ Todas as secrets obrigatórias validadas (${#REQUIRED_KEYS[@]} verificadas)"
+            
+            # =================================================================
             # FASE 6: Criar networks Docker
             # =================================================================
-            progress 8 "Criando networks Docker"
+            progress 9 "Criando networks Docker"
             echo "🌐 Criando networks Docker..."
             docker network create alice-network 2>/dev/null || echo "ℹ️ alice-network já existe"
             docker network create erpnext-network 2>/dev/null || echo "ℹ️ erpnext-network já existe"
@@ -1294,7 +1370,7 @@ jobs:
             # CORREÇÃO 01/01/2026: Pull com retry e exponential backoff
             # Docker Hub pode ter rate limiting ou falhas temporárias
             # =================================================================
-            progress 9 "Pull das imagens Docker (serviços core)"
+            progress 10 "Pull das imagens Docker (serviços core)"
             echo "📥 Baixando imagens Docker (serviços core)..."
             
             pull_with_retry() {
@@ -1335,7 +1411,7 @@ jobs:
               exit 1
             fi
             
-            progress 10 "Iniciando containers CORE (51 serviços)"
+            progress 11 "Iniciando containers CORE (51 serviços)"
             echo "🚀 Iniciando containers CORE (sem GPU)..."
             
             # =================================================================
@@ -1409,6 +1485,38 @@ jobs:
               exit 1
             else
               log "✅ Espaço em disco suficiente: ${AVAILABLE_GB}GB disponível"
+            fi
+            
+            # =================================================================
+            # CORREÇÃO 6 (04/01/2026): Validação de inodes disponíveis
+            # =================================================================
+            # PROBLEMA: Sistema pode ter GB livres mas sem inodes, causando
+            # "No space left on device" ao criar novos arquivos
+            # SOLUÇÃO: Verificar inodes disponíveis e alertar se baixo
+            # =================================================================
+            log "💾 Verificando inodes disponíveis..."
+            
+            AVAILABLE_INODES=$(df -i /opt/alice 2>/dev/null | awk 'NR==2 {print $4}')
+            if [ -z "$AVAILABLE_INODES" ]; then
+              AVAILABLE_INODES=$(df -i / 2>/dev/null | awk 'NR==2 {print $4}')
+            fi
+            
+            REQUIRED_INODES=10000
+            
+            if [ -n "$AVAILABLE_INODES" ] && [ "$AVAILABLE_INODES" -lt "$REQUIRED_INODES" ]; then
+              echo "⚠️ AVISO: Poucos inodes disponíveis!"
+              echo "   Disponível: $AVAILABLE_INODES inodes"
+              echo "   Recomendado: $REQUIRED_INODES inodes"
+              echo ""
+              echo "📊 Informações de inodes:"
+              df -i /opt/alice 2>/dev/null || df -i /
+              echo ""
+              echo "⚠️ Deploy pode falhar com 'No space left on device' mesmo com GB livres"
+              echo "   Considere limpar arquivos temporários ou aumentar filesystem"
+            else
+              if [ -n "$AVAILABLE_INODES" ]; then
+                log "✅ Inodes suficientes: $AVAILABLE_INODES disponíveis"
+              fi
             fi
             
             # =================================================================
@@ -1765,6 +1873,35 @@ jobs:
             fi
             
             # =================================================================
+            # CORREÇÃO 7-8 (04/01/2026): Captura proativa de logs de init containers
+            # =================================================================
+            # PROBLEMA: Init containers removem logs após exit (--rm ou auto-cleanup)
+            # Captura de logs só acontece APÓS falha - pode ser tarde demais
+            # SOLUÇÃO: Capturar logs IMEDIATAMENTE após docker compose up,
+            # ANTES que containers sejam removidos ou logs sejam perdidos
+            # =================================================================
+            log "📋 Capturando logs de init containers (preservação proativa)..."
+            
+            for init_container in "alice-pgbackrest-init" "alice-minio-init" "erpnext-configurator"; do
+              if docker ps -a --format '{{.Names}}' | grep -q "^${init_container}$"; then
+                LOG_FILE="/tmp/init_logs_${init_container}.txt"
+                docker logs "$init_container" > "$LOG_FILE" 2>&1 || true
+                
+                # Verificar se logs foram capturados (arquivo não vazio)
+                if [ -s "$LOG_FILE" ]; then
+                  LOG_SIZE=$(wc -l < "$LOG_FILE")
+                  echo "   ✅ $init_container: $LOG_SIZE linhas preservadas em $LOG_FILE"
+                else
+                  echo "   ⚠️  $init_container: logs vazios ou container ainda não iniciou"
+                fi
+              else
+                echo "   ℹ️  $init_container: container não encontrado (ainda não criado)"
+              fi
+            done
+            
+            log "✅ Logs de init containers preservados (disponíveis em /tmp para análise)"
+            
+            # =================================================================
             # FAIL-FAST: Verificar containers INIT imediatamente (01/01/2026)
             # Docker Compose --detach retorna 0 mesmo se init containers falharem
             # Precisamos verificar ATIVAMENTE se eles falharam
@@ -1897,7 +2034,13 @@ jobs:
                     REASON="restarting (crash loop)"
                   elif [ "$HEALTH" = "unhealthy" ]; then
                     IS_PROBLEM=1
-                    REASON="unhealthy"
+                    # CORREÇÃO 9-10: Capturar ÚLTIMA LINHA do healthcheck (WHY unhealthy)
+                    HEALTH_LOG=$(docker inspect --format='{{range .State.Health.Log}}{{.Output}}{{end}}' "$container" 2>/dev/null | tail -n 1 | tr -d '\n' | cut -c1-80)
+                    if [ -n "$HEALTH_LOG" ]; then
+                      REASON="unhealthy - ${HEALTH_LOG}"
+                    else
+                      REASON="unhealthy (sem logs disponíveis)"
+                    fi
                   elif [ "$RESTART_COUNT" -gt 2 ] 2>/dev/null; then
                     IS_PROBLEM=1
                     REASON="RestartCount=$RESTART_COUNT (instável)"
@@ -1917,7 +2060,21 @@ jobs:
                 echo "📋 Containers problemáticos:"
                 echo -e "$PROBLEM_CONTAINERS" | while IFS='|' read -r name status exit_code reason; do
                   if [ -n "$name" ]; then
-                    echo "   - $name: status=$status, exit=$exit_code ($reason)"
+                    # CORREÇÃO 9-10: Emoji específico por tipo de container
+                    # Verificar se é init container
+                    IS_INIT_DISPLAY=0
+                    for init_check in "alice-pgbackrest-init" "alice-minio-init" "erpnext-configurator"; do
+                      if [ "$name" = "$init_check" ]; then
+                        IS_INIT_DISPLAY=1
+                        break
+                      fi
+                    done
+                    
+                    if [ "$IS_INIT_DISPLAY" -eq 1 ]; then
+                      echo "   📦 Init Container: $name - status=$status, exit=$exit_code ($reason)"
+                    else
+                      echo "   🐳 Container: $name - status=$status, exit=$exit_code ($reason)"
+                    fi
                   fi
                 done
                 
@@ -1931,6 +2088,73 @@ jobs:
                     docker logs --tail=100 "$name" 2>&1 || true
                   fi
                 done
+                
+                # =================================================================
+                # CORREÇÃO 11-12 (04/01/2026): Análise de causa raiz
+                # =================================================================
+                # PROBLEMA: Logs vazios ou falta correlação entre falha e causa raiz
+                # SOLUÇÃO: Análise automática de dependências, variáveis e exit codes
+                # =================================================================
+                echo ""
+                echo "🔍 ANÁLISE DE CAUSA RAIZ"
+                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                
+                analyze_root_cause() {
+                  local failed_container="$1"
+                  local exit_code="$2"
+                  
+                  echo ""
+                  echo "🔍 Container: $failed_container"
+                  echo ""
+                  
+                  # Verificar dependências
+                  echo "📊 Dependências do container:"
+                  DEPENDS=$(docker inspect --format='{{range $key, $value := .HostConfig.DependsOn}}{{$key}} {{end}}' "$failed_container" 2>/dev/null || echo "(nenhuma)")
+                  if [ "$DEPENDS" = "(nenhuma)" ]; then
+                    echo "   (nenhuma dependência explícita)"
+                  else
+                    echo "   $DEPENDS"
+                  fi
+                  
+                  # Verificar variáveis de ambiente críticas (secrets)
+                  echo ""
+                  echo "🔐 Variáveis de ambiente críticas:"
+                  ENV_SECRETS=$(docker inspect --format='{{range .Config.Env}}{{.}}{{"\n"}}{{end}}' "$failed_container" 2>/dev/null | grep -E "(PASSWORD|SECRET|KEY|TOKEN)" | head -10 || echo "(nenhuma)")
+                  if [ "$ENV_SECRETS" = "(nenhuma)" ]; then
+                    echo "   (nenhuma variável crítica detectada)"
+                  else
+                    echo "$ENV_SECRETS" | while read -r line; do
+                      # Mascarar valores de secrets
+                      VAR_NAME=$(echo "$line" | cut -d'=' -f1)
+                      echo "   $VAR_NAME=***"
+                    done
+                  fi
+                  
+                  # Interpretar exit code
+                  if [ -n "$exit_code" ] && [ "$exit_code" != "0" ] && [ "$exit_code" != "N/A" ]; then
+                    echo ""
+                    echo "❌ Exit code $exit_code - Possíveis causas:"
+                    case $exit_code in
+                      1) echo "   - Erro genérico (verificar logs para detalhes)" ;;
+                      2) echo "   - Uso incorreto de comando ou parâmetros inválidos" ;;
+                      126) echo "   - Comando não executável (permissões?)" ;;
+                      127) echo "   - Comando não encontrado (PATH incorreto?)" ;;
+                      137) echo "   - SIGKILL (OOM killer? Memória insuficiente?)" ;;
+                      143) echo "   - SIGTERM (terminado por outro processo)" ;;
+                      *) echo "   - Código desconhecido (consultar documentação específica)" ;;
+                    esac
+                  fi
+                }
+                
+                # Analisar cada container problemático
+                echo -e "$PROBLEM_CONTAINERS" | head -5 | while IFS='|' read -r name status exit_code reason; do
+                  if [ -n "$name" ]; then
+                    analyze_root_cause "$name" "$exit_code"
+                  fi
+                done
+                
+                echo ""
+                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                 
                 echo ""
                 echo "📋 Status completo de todos containers:"
@@ -1977,7 +2201,7 @@ jobs:
             done
             
             # Verificar status dos serviços core
-            sleep 5
+            sleep "$MONITOR_INTERVAL"
             
             # =================================================================
             # CORREÇÃO 29/12/2025: Criar extensão pgvector no PostgreSQL
@@ -1997,7 +2221,7 @@ jobs:
             echo "🔍 Validando schema do banco de dados..."
             
             # Aguardar PostgreSQL estar completamente pronto
-            sleep 5
+            sleep "$MONITOR_INTERVAL"
             
             # =================================================================
             # CORREÇÃO CRÍTICA 29/12/2025: Extrair credenciais do .env.prod ANTES
@@ -2055,6 +2279,15 @@ jobs:
               fi
               
               echo "⚠️ Tentativa ${PGVECTOR_RETRY_COUNT}/${PGVECTOR_MAX_RETRIES} falhou, aguardando ${PGVECTOR_DELAY}s..."
+              
+              # CORREÇÃO 16-18: Métricas periódicas durante retry (a cada 3 tentativas)
+              if [ $((PGVECTOR_RETRY_COUNT % 3)) -eq 0 ]; then
+                echo ""
+                echo "📊 Métricas do sistema durante retry (tentativa $PGVECTOR_RETRY_COUNT):"
+                docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}" alice-postgres alice-redis 2>/dev/null || true
+                echo ""
+              fi
+              
               sleep $PGVECTOR_DELAY
               # Exponential backoff com cap em 15s
               PGVECTOR_DELAY=$((PGVECTOR_DELAY * 2))
@@ -2105,7 +2338,7 @@ jobs:
 
               if [ "$PGBACKREST_FOUND" = "true" ]; then
                 # Aguardar container estar totalmente inicializado
-                sleep 5
+                sleep "$MONITOR_INTERVAL"
                 echo "🔧 Verificando stanza pgBackRest..."
                 if docker exec alice-pgbackrest pgbackrest --stanza=alice_prod info 2>/dev/null | grep -q "status.*ok"; then
                 echo "✅ Stanza alice_prod já existe e está OK"
@@ -2327,7 +2560,7 @@ jobs:
                   exit 1
                 fi
                 echo "   PostgreSQL não está pronto, tentativa $RETRY_COUNT/$MAX_RETRIES..."
-                sleep 5
+                sleep "$MONITOR_INTERVAL"
               done
               echo "   ✅ PostgreSQL está pronto e acessível"
               
@@ -2545,7 +2778,7 @@ jobs:
             # =================================================================
             # FASE 8: Iniciar serviços GPU (OBRIGATÓRIO)
             # =================================================================
-            progress 11 "Iniciando serviços GPU (OBRIGATÓRIO)"
+            progress 12 "Iniciando serviços GPU (OBRIGATÓRIO)"
             # GPU PROFILE: gpu-llm (Mixtral para chat/inference)
             # Outros profiles disponíveis: gpu-embeddings, gpu-flux, gpu-asr, gpu-training
             # NOTA: Apenas UM profile GPU deve estar ativo por vez (GPU única de 20GB)
@@ -2584,7 +2817,7 @@ jobs:
             # Validar serviços críticos ANTES de marcar deploy como sucesso
             # Detecta problemas de conectividade/funcionalidade cedo
             # =================================================================
-            progress 12 "Executando smoke tests"
+            progress 13 "Executando smoke tests"
             echo ""
             echo "=============================================="
             echo "🧪 SMOKE TESTS PÓS-DEPLOY"
@@ -2668,7 +2901,7 @@ jobs:
             # Status final
             TOTAL_RUNNING=$(docker ps --format "{{.Names}}" | wc -l)
             echo ""
-            progress 13 "Deploy COMPLETO - Verificando resultado"
+            progress 14 "Deploy COMPLETO - Verificando resultado"
             echo "=============================================="
             echo "✅ Deploy COMPLETO:"
             echo "   - Total containers: ${TOTAL_RUNNING}"
