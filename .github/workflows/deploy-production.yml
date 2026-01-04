@@ -4482,6 +4482,7 @@ METRICS_EOF
       # ===========================================================================
       - name: Registrar deploy no banco de dados
         if: always()
+        continue-on-error: true  # Best-effort: Auditoria não deve falhar deploy bem-sucedido
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
         env:
           VERSION: ${{ inputs.version }}

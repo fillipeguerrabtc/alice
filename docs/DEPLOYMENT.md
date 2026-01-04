@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 04 de Janeiro de 2026  
-**Versão:** 7.23 - JSON Status Written as Tarball Fix
+**Versão:** 7.24 - DB Audit Continue-On-Error Consistency Fix
 
 > **Migração 100% Self-Hosted (27/12/2025):** Pipeline completo migrado para runner próprio (Hetzner CPX32 - 4 vCPU, 8GB RAM) seguindo melhores práticas enterprise 2025. Todos os workflows (CI, Release, Deploy) executam no self-hosted runner para controle total, custos previsíveis e compliance.
 
@@ -878,6 +878,8 @@ FROM deployments WHERE status = 'success' AND duration_seconds IS NOT NULL;
 > **MELHORIA 04/01/2026:** Adicionado registro de falha no job `rollback`. Quando um deploy falha e rollback é executado, um registro com `status: 'rolled_back'` é inserido na tabela `deployments` (com `continue-on-error: true` pois o PostgreSQL pode não estar disponível após falha grave). Isso garante auditoria completa de TODOS os deploys, não apenas os bem-sucedidos.
 
 > **CORREÇÃO 04/01/2026 (Métricas BD):** Colunas `duration_seconds` e `containers_count` agora são populadas. PROBLEMA ANTERIOR: Essas colunas existiam no schema mas os INSERTs nunca as preenchiam (sempre NULL). Os dados estavam disponíveis (`DEPLOY_DURATION` e `TOTAL_RUNNING` eram calculados e usados no JSON e notificações Slack), mas não eram passados para o registro BD. SOLUÇÃO: Job `deploy` agora exporta outputs `duration_seconds` e `containers_count` via steps capture-metrics/export-metrics. Jobs `register-success` e `rollback` recebem esses valores e os inserem no BD. Usa `NULLIF(:v_var, 0)` para evitar inserir 0 quando valor indisponível.
+
+> **CORREÇÃO 04/01/2026 (Consistência Best-Effort):** Adicionado `continue-on-error: true` no step "Registrar deploy no banco de dados" do job `register-success` para consistência com o job `rollback` que já tinha essa flag. PROBLEMA ANTERIOR: Se o PostgreSQL INSERT falhasse por motivo transitório (SSH drop, BD momentaneamente indisponível), o workflow era marcado como "failed" mesmo que o deploy tenha sido bem-sucedido. Isso causava confusão na análise de deploys. SOLUÇÃO: Auditoria tratada como best-effort em ambos os jobs - não deve causar falso-positivo de falha quando deploy foi bem-sucedido.
 
 #### Validação do Repositório pgBackRest
 
