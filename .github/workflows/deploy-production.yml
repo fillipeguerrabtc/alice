@@ -794,6 +794,42 @@ jobs:
                   fi
                 done
                 
+                # =============================================================
+                # CORREÇÃO 04/01/2026: Capturar containers UNHEALTHY (ROOT CAUSE #1)
+                # =============================================================
+                # PROBLEMA: Containers unhealthy estão status=running (não exited)
+                # então nunca eram capturados pelos filtros acima
+                # RESULTADO: "(sem logs disponíveis)" no relatório de falha
+                # SOLUÇÃO: Adicionar captura específica de containers unhealthy
+                # com logs + healthcheck JSON para diagnóstico completo
+                # =============================================================
+                log "🩺 [CLEANUP] Capturando containers UNHEALTHY (running mas healthcheck falhou)..."
+                
+                UNHEALTHY_FOUND=0
+                for c in $(docker ps --filter "health=unhealthy" --format "{{.Names}}" 2>/dev/null | head -20); do
+                  UNHEALTHY_FOUND=1
+                  log "--- Logs de $c (UNHEALTHY) - últimas 500 linhas ---"
+                  docker logs --tail=500 "$c" 2>&1 || true
+                  echo ""
+                  
+                  log "--- Estado do Healthcheck de $c (JSON) ---"
+                  docker inspect --format='{{json .State.Health}}' "$c" 2>/dev/null | jq . 2>/dev/null || \
+                  docker inspect --format='{{json .State.Health}}' "$c" 2>/dev/null || \
+                    echo "Não foi possível capturar healthcheck JSON"
+                  echo ""
+                  
+                  log "--- Healthcheck Output (últimas tentativas) ---"
+                  docker inspect --format='{{range .State.Health.Log}}Exit={{.ExitCode}} Output={{.Output}}{{"\n"}}{{end}}' "$c" 2>/dev/null | tail -n 5 || \
+                    echo "Não foi possível capturar healthcheck output"
+                  echo ""
+                done
+                
+                if [ $UNHEALTHY_FOUND -eq 0 ]; then
+                  log "✅ Nenhum container unhealthy encontrado"
+                else
+                  log "⚠️  Containers unhealthy capturados para análise"
+                fi
+                
                 log "🧹 [CLEANUP] Diagnóstico completo"
               fi
             }

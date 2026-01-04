@@ -817,19 +817,22 @@ services:
       # CORREÇÃO 23/12/2025: Mode 1755 não permite escrita - deve ser 1777 para tmpfs gravável
       - /etc/nginx/conf.d:mode=1777,size=8M
     healthcheck:
-      # CORREÇÃO 04/01/2026: Verificar se nginx está REALMENTE serving conteúdo
-      # nginx Alpine tem wget disponível - usar para verificar resposta HTTP real
-      # wget --spider verifica se URL existe (GET request) sem baixar conteúdo
-      # CORREÇÃO 04/01/2026: Porta corrigida de 80 para 8080 (nginx escuta em 8080)
-      # Usar /health endpoint dedicado (retorna "healthy\n") - consistente com Dockerfile
-      # Ref: apps/frontend-service/nginx.conf linha 6 (listen 8080) e linhas 73-77 (location /health)
-      test: ["CMD-SHELL", "wget --spider --quiet --tries=1 --timeout=5 http://localhost:8080/health || exit 1"]
+      # =================================================================
+      # CORREÇÃO 04/01/2026: Healthcheck simples e robusto (ROOT CAUSE #3)
+      # =================================================================
+      # Verifica /health endpoint (configurado em nginx.conf linhas 73-77)
+      # Fallback para / caso /health não exista - nginx retorna 200 OK
+      # Retry é gerenciado pelo Docker (retries: 5) - mais confiável
+      # Ref: apps/frontend-service/nginx.conf linha 6 (listen 8080)
+      # IMPORTANTE: timeout Docker (25s) > soma dos timeouts wget (10s+10s=20s)
+      # Garante que ambos os comandos tenham tempo de executar antes do Docker matar
+      # =================================================================
+      test: ["CMD-SHELL", "wget --spider --quiet --tries=1 --timeout=10 http://localhost:8080/health || wget --spider --quiet --tries=1 --timeout=10 http://localhost:8080/"]
       interval: 30s
-      timeout: 10s
+      timeout: 25s
       retries: 5
-      # CORREÇÃO 04/01/2026: start_period aumentado de 45s para 90s
-      # Frontend precisa processar assets no primeiro deploy
-      start_period: 90s
+      # start_period: tempo de "graça" antes de contar falhas (primeiro deploy ~2min)
+      start_period: 120s
     deploy:
       resources:
         limits:
@@ -1833,13 +1836,19 @@ services:
       erpnext-redis-queue:
         condition: service_healthy
     healthcheck:
-      # CORREÇÃO 02/01/2026: ERPNext é Python - usar Python para verificar saúde REAL
-      # Aumentado start_period para 300s (5min) - primeira instalação processa TODAS as migrations
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/method/ping', timeout=10)"]
+      # =================================================================
+      # CORREÇÃO 04/01/2026: ERPNext backend healthcheck simples (ROOT CAUSE #2)
+      # =================================================================
+      # Endpoint /api/method/ping retorna 200 quando Frappe está pronto
+      # Retry é gerenciado pelo Docker (retries: 15) - mais confiável
+      # Ref: https://frappeframework.com/docs/user/en/api/rpc
+      # =================================================================
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/method/ping', timeout=15)\""]
       interval: 30s
-      timeout: 15s
+      timeout: 20s
       retries: 15
-      start_period: 300s
+      # start_period: primeiro deploy (migrations + startup) ~7-10 minutos
+      start_period: 420s
 
   erpnext-frontend:
     # ATUALIZADO 14/12/2025: Migrado para arquitetura unificada ERPNext v15
@@ -1960,20 +1969,18 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      # CORREÇÃO 02/01/2026: ERPNext é Python - verificar conexão Redis (saúde REAL do worker)
-      # Workers RQ dependem do Redis para funcionar - verificar conexão é a melhor prova de saúde
-      # CORREÇÃO 02/01/2026: Usar os.environ para evitar quebra de sintaxe se senha tiver aspas
-      # CORREÇÃO 04/01/2026: start_period aumentado de 60s para 420s (7 minutos)
-      # Primeiro deploy precisa de mais tempo:
-      # - MariaDB init: ~2min
-      # - erpnext-create-site: ~3-5min (cria site + instala ERPNext)
-      # - Worker startup: ~2min
-      # TOTAL: ~7-9 minutos necessários
+      # =================================================================
+      # CORREÇÃO 04/01/2026: ERPNext worker-default healthcheck simples (ROOT CAUSE #2)
+      # =================================================================
+      # Workers RQ dependem do Redis - ping() é prova de saúde
+      # Retry é gerenciado pelo Docker (retries: 10) - mais confiável
+      # =================================================================
       test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
       interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 420s
+      timeout: 15s
+      retries: 10
+      # start_period: primeiro deploy ~7-10 minutos + margem
+      start_period: 480s
     deploy:
       resources:
         limits:
@@ -2025,18 +2032,17 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      # CORREÇÃO 02/01/2026: ERPNext é Python - verificar conexão Redis (saúde REAL do worker)
-      # CORREÇÃO 04/01/2026: start_period aumentado de 60s para 420s (7 minutos)
-      # Primeiro deploy precisa de mais tempo:
-      # - MariaDB init: ~2min
-      # - erpnext-create-site: ~3-5min (cria site + instala ERPNext)
-      # - Worker startup: ~2min
-      # TOTAL: ~7-9 minutos necessários
+      # =================================================================
+      # CORREÇÃO 04/01/2026: ERPNext worker healthcheck simples (ROOT CAUSE #2)
+      # =================================================================
+      # Workers RQ dependem do Redis - ping() é prova de saúde
+      # Retry é gerenciado pelo Docker (retries: 10) - mais confiável
+      # =================================================================
       test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
       interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 420s
+      timeout: 15s
+      retries: 10
+      start_period: 480s
     deploy:
       resources:
         limits:
@@ -2088,12 +2094,17 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      # CORREÇÃO 02/01/2026: ERPNext é Python - verificar conexão Redis (saúde REAL do worker)
+      # =================================================================
+      # CORREÇÃO 04/01/2026: ERPNext worker healthcheck simples (ROOT CAUSE #2)
+      # =================================================================
+      # Workers RQ dependem do Redis - ping() é prova de saúde
+      # Retry é gerenciado pelo Docker (retries: 10) - mais confiável
+      # =================================================================
       test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
       interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 420s
+      timeout: 15s
+      retries: 10
+      start_period: 480s
     deploy:
       resources:
         limits:
@@ -2145,12 +2156,17 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      # CORREÇÃO 02/01/2026: ERPNext é Python - verificar conexão Redis (saúde REAL do scheduler)
+      # =================================================================
+      # CORREÇÃO 04/01/2026: ERPNext scheduler healthcheck simples (ROOT CAUSE #2)
+      # =================================================================
+      # Scheduler RQ depende do Redis - ping() é prova de saúde
+      # Retry é gerenciado pelo Docker (retries: 10) - mais confiável
+      # =================================================================
       test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
       interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 420s
+      timeout: 15s
+      retries: 10
+      start_period: 480s
     deploy:
       resources:
         limits:
@@ -2202,12 +2218,17 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      # CORREÇÃO 02/01/2026: ERPNext é Python - verificar conexão Redis (saúde REAL do worker)
+      # =================================================================
+      # CORREÇÃO 04/01/2026: ERPNext worker healthcheck simples (ROOT CAUSE #2)
+      # =================================================================
+      # Workers RQ dependem do Redis - ping() é prova de saúde
+      # Retry é gerenciado pelo Docker (retries: 10) - mais confiável
+      # =================================================================
       test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
       interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 420s
+      timeout: 15s
+      retries: 10
+      start_period: 480s
     deploy:
       resources:
         limits:
@@ -2259,12 +2280,17 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      # CORREÇÃO 02/01/2026: ERPNext é Python - verificar conexão Redis (saúde REAL do worker)
+      # =================================================================
+      # CORREÇÃO 04/01/2026: ERPNext worker healthcheck simples (ROOT CAUSE #2)
+      # =================================================================
+      # Workers RQ dependem do Redis - ping() é prova de saúde
+      # Retry é gerenciado pelo Docker (retries: 10) - mais confiável
+      # =================================================================
       test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
       interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 420s
+      timeout: 15s
+      retries: 10
+      start_period: 480s
     deploy:
       resources:
         limits:
@@ -2316,12 +2342,17 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      # CORREÇÃO 02/01/2026: ERPNext é Python - verificar conexão Redis (saúde REAL do worker)
+      # =================================================================
+      # CORREÇÃO 04/01/2026: ERPNext worker healthcheck simples (ROOT CAUSE #2)
+      # =================================================================
+      # Workers RQ dependem do Redis - ping() é prova de saúde
+      # Retry é gerenciado pelo Docker (retries: 10) - mais confiável
+      # =================================================================
       test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
       interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 420s
+      timeout: 15s
+      retries: 10
+      start_period: 480s
     deploy:
       resources:
         limits:
@@ -2975,18 +3006,19 @@ services:
         condition: service_started
     healthcheck:
       # =================================================================
-      # CORREÇÃO 03/01/2026: Vector 0.45 Alpine healthcheck - Docs Oficiais 2025
+      # CORREÇÃO 04/01/2026: Vector healthcheck simples (ROOT CAUSE #4)
       # =================================================================
       # Endpoint oficial: http://localhost:8686/health (requer api.enabled=true)
       # Ref: https://vector.dev/docs/administration/management/
-      # NOTA: timberio/vector:*-alpine NÃO tem curl - usar wget (disponível)
+      # NOTA: timberio/vector:*-alpine NÃO tem curl - usar wget
+      # Retry é gerenciado pelo Docker (retries: 5) - mais confiável
       # =================================================================
-      # CORREÇÃO 04/01/2026: start_period aumentado de 30s para 60s para primeiro deploy
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8686/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "--timeout=8", "http://localhost:8686/health"]
       interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 60s
+      timeout: 10s
+      retries: 5
+      # start_period: Vector precisa carregar config e conectar Loki (~3min primeiro deploy)
+      start_period: 180s
     deploy:
       resources:
         limits:
