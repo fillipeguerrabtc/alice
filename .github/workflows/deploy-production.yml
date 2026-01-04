@@ -4339,11 +4339,33 @@ METRICS_EOF
             ./deploy-logs/ 2>/dev/null || echo "⚠️ Nenhum bundle de logs encontrado"
 
           # Extrair se baixou com sucesso
+          # CORREÇÃO 04/01/2026: Verificar se arquivo é tarball válido ANTES de extrair
+          # PROBLEMA ANTERIOR: Quando não há logs, servidor escreve JSON em .tar.gz
+          # O arquivo "existe" mas tar -xzf falha silenciosamente, arquivo é deletado,
+          # e branch else nunca executa. Resultado: diretório vazio sem indicação.
+          # SOLUÇÃO: Usar tar -tzf (list) para validar, se falhar verificar se é JSON
           if [ -f ./deploy-logs/deploy-logs-bundle.tar.gz ]; then
             cd ./deploy-logs
-            tar -xzf deploy-logs-bundle.tar.gz 2>/dev/null || echo "⚠️ Arquivo não é tarball válido"
-            rm -f deploy-logs-bundle.tar.gz
-            echo "✅ Logs extraídos: $(ls -la)"
+            
+            # Verificar se é tarball válido (list mode não extrai, apenas valida)
+            if tar -tzf deploy-logs-bundle.tar.gz >/dev/null 2>&1; then
+              # É tarball válido, extrair
+              tar -xzf deploy-logs-bundle.tar.gz
+              rm -f deploy-logs-bundle.tar.gz
+              echo "✅ Logs extraídos: $(ls -la)"
+            else
+              # Não é tarball - verificar se é JSON de status
+              if head -c 1 deploy-logs-bundle.tar.gz | grep -q '{'; then
+                echo "ℹ️ Arquivo é JSON de status (sem logs disponíveis no servidor)"
+                mv deploy-logs-bundle.tar.gz bundle-status.json
+                echo "📋 Status: $(cat bundle-status.json)"
+              else
+                # Arquivo corrompido ou formato desconhecido
+                echo "⚠️ Arquivo não é tarball válido nem JSON"
+                echo '{"status": "invalid_bundle", "timestamp": "'$(date -Iseconds)'", "file_type": "'$(file -b deploy-logs-bundle.tar.gz 2>/dev/null || echo unknown)'"}' > bundle-status.json
+                rm -f deploy-logs-bundle.tar.gz
+              fi
+            fi
           else
             echo "ℹ️ Nenhum log disponível para download"
             echo '{"status": "download_failed", "timestamp": "'$(date -Iseconds)'"}' > ./deploy-logs/download-status.json

@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 04 de Janeiro de 2026  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.77 - Bug Fix Log Download if:always + DB Metrics Columns
+> **Versão:** 4.78 - Bug Fix JSON Status Written as Tarball
 
 ---
 

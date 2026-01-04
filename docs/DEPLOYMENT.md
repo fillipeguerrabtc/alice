@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 04 de Janeiro de 2026  
-**Versão:** 7.22 - Log Download if:always + DB Metrics Columns
+**Versão:** 7.23 - JSON Status Written as Tarball Fix
 
 > **Migração 100% Self-Hosted (27/12/2025):** Pipeline completo migrado para runner próprio (Hetzner CPX32 - 4 vCPU, 8GB RAM) seguindo melhores práticas enterprise 2025. Todos os workflows (CI, Release, Deploy) executam no self-hosted runner para controle total, custos previsíveis e compliance.
 
@@ -829,6 +829,8 @@ Logs de deploy são automaticamente baixados do servidor Hetzner e publicados co
 > **CORREÇÃO CRÍTICA 04/01/2026 (Bug 1):** A coleta de logs foi movida para um **job separado `collect-logs`** com `if: always()` no **nível do job**. PROBLEMA ANTERIOR: Os steps de logs estavam no job `register-success` que só executa quando deploy tem sucesso. Mesmo com `if: always()` nos steps, eles nunca executavam em falhas porque a condição do job (`needs.deploy.result == 'success'`) impedia o job de iniciar. IRONIA: Logs são mais necessários em cenários de falha para troubleshooting. SOLUÇÃO: Job independente que SEMPRE executa após deploy/health-check/rollback.
 
 > **CORREÇÃO 04/01/2026 (Download Step):** Adicionado `if: always()` no step "Baixar logs do Hetzner". PROBLEMA ANTERIOR: Step de download não tinha `if: always()` mas step de upload tinha. Se SSH falhasse, download era pulado, `mkdir -p ./deploy-logs` não executava, e upload falhava porque path não existia (`if-no-files-found: warn` só trata diretórios VAZIOS, não paths inexistentes). SOLUÇÃO: Step de download agora executa sempre, garantindo que diretório seja criado.
+
+> **CORREÇÃO CRÍTICA 04/01/2026 (JSON como Tarball):** Quando não existem logs no Hetzner, o servidor escrevia um JSON de status (`{"status": "no_logs_found", ...}`) diretamente em `/tmp/deploy-logs-bundle.tar.gz`. Este arquivo era baixado via SCP, e a lógica downstream: (1) verificava se arquivo existe (SIM), (2) tentava `tar -xzf` que falhava silenciosamente por ser JSON, (3) deletava o arquivo. O branch `else` que criaria `download-status.json` nunca executava porque arquivo existia. RESULTADO: Diretório vazio sem indicação do que aconteceu. SOLUÇÃO: Validar se arquivo é tarball ANTES de extrair usando `tar -tzf` (list mode, não extrai). Se não é tarball mas começa com `{` (JSON), renomeia para `bundle-status.json` preservando a informação de status. Se formato desconhecido, cria status com diagnóstico via `file -b`.
 
 #### Auditoria de Deploys no PostgreSQL (04/01/2026)
 
