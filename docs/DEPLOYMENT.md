@@ -1595,3 +1595,404 @@ Os 7 serviços Node.js usam imagens `node:22-alpine3.21` (CVE-2023-45853 fix). H
 *Redis Alice: 7.4.7-alpine - Cache distribuído (node-redis 5.x suporta Redis 7.x)*
 *Redis ERPNext: 6.2.21-alpine - ERPNext v15 requer Redis 6.x (docs.frappe.io)*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
+
+---
+
+## 🔧 Troubleshooting
+
+### Init Containers Marcados como Unhealthy
+
+**Problema:** Container `alice-pgbackrest-init`, `alice-minio-init` ou `erpnext-configurator` marcado como unhealthy causando falha no deploy, embora tenha completado com sucesso (exit 0).
+
+**Causa Raiz:** Init containers (`restart: "no"`) têm comportamento diferente de containers normais:
+- **Init containers:** Status `exited` com exit code 0 = **SUCESSO** ✅
+- **Containers normais:** Status `exited` (qualquer exit code) = **PROBLEMA** ❌
+
+**Sintoma:**
+```bash
+❌ FAIL-FAST: Containers com problemas detectados!
+📋 Containers problemáticos:
+   - alice-pgbackrest-init: status=exited, exit=0 (unhealthy)
+```
+
+**Solução (Implementada em 04/01/2026):**
+
+A função `check_container_health()` no workflow de deploy agora distingue corretamente entre init containers e containers normais:
+
+```bash
+# Init containers conhecidos
+INIT_CONTAINERS=("alice-pgbackrest-init" "alice-minio-init" "erpnext-configurator")
+
+# Lógica específica
+if [ "$IS_INIT" -eq 1 ]; then
+  # Init container: status "exited" com exit 0 é SUCESSO
+  if [ "$STATUS" = "exited" ] && [ "$EXIT_CODE" != "0" ]; then
+    IS_PROBLEM=1  # Apenas exit code != 0 é problema
+  fi
+else
+  # Container normal: status "exited" SEMPRE é problema
+  if [ "$STATUS" = "exited" ]; then
+    IS_PROBLEM=1  # Qualquer exit code
+  fi
+fi
+```
+
+**Diagnóstico Manual:**
+
+Se você suspeitar que um init container falhou, verifique:
+
+```bash
+# Verificar status e exit code
+docker inspect --format='{{.State.Status}} {{.State.ExitCode}}' alice-pgbackrest-init
+
+# Ver logs completos
+docker logs alice-pgbackrest-init
+
+# Ver timestamps
+docker inspect --format='Started: {{.State.StartedAt}}' alice-pgbackrest-init
+docker inspect --format='Finished: {{.State.FinishedAt}}' alice-pgbackrest-init
+```
+
+**Valores Esperados:**
+- ✅ **Status:** `exited`
+- ✅ **Exit Code:** `0`
+- ✅ **Duração:** Geralmente < 30 segundos
+
+**Valores Problemáticos:**
+- ❌ Exit code != 0 → Verificar logs para erro específico
+- ❌ Status = `created` → Container nunca iniciou (dependency failed)
+- ❌ Duração > 2 minutos → Pode estar travado
+
+### Disk Space Insuficiente
+
+**Problema:** Deploy falha com erro "Espaço insuficiente".
+
+**Causa Raiz:** `/opt/alice` precisa de mínimo 10GB livre para deploy seguro.
+
+**Sintoma:**
+```bash
+❌ ERRO CRÍTICO: Espaço insuficiente em /opt/alice
+   Disponível: 3GB
+   Requerido: 10GB
+```
+
+**Solução:**
+
+1. Verificar uso atual:
+```bash
+df -h /opt/alice
+du -h --max-depth=2 /opt/alice | sort -rh | head -20
+```
+
+2. Limpar dados antigos:
+```bash
+# Remover logs antigos (> 30 dias)
+find /opt/alice/logs -type f -mtime +30 -delete
+
+# Limpar backups antigos (manter últimos 7 dias)
+find /opt/alice/backups -type f -mtime +7 -delete
+
+# Remover imagens Docker não utilizadas
+docker system prune -af --volumes
+```
+
+3. Expandir volume (se necessário):
+```bash
+# No Hetzner Cloud Console, expandir volume para 200GB+
+# Depois redimensionar filesystem:
+sudo resize2fs /dev/disk/by-id/scsi-0HC_Volume_XXXXX
+```
+
+### Container Normal com Status "Exited"
+
+**Problema:** Container normal (long-running) tem status `exited`.
+
+**Causa Raiz:** Containers normais devem ter status `running`. Se tiverem `exited`, significa problema:
+- Restart policy failed
+- Dependency failed  
+- Crash gracefully (exit 0 ainda é problema)
+- Manual stop
+
+**Sintoma:**
+```bash
+📋 Containers problemáticos:
+   - alice-postgres: status=exited, exit=0 (container normal não deve parar)
+```
+
+**Diagnóstico:**
+
+```bash
+# Ver por que container parou
+docker logs --tail=100 alice-postgres
+
+# Verificar restart count (> 2 indica instabilidade)
+docker inspect --format='{{.RestartCount}}' alice-postgres
+
+# Verificar health checks
+docker inspect --format='{{.State.Health.Status}}' alice-postgres
+
+# Tentar restart manual
+docker restart alice-postgres
+
+# Verificar dependências
+docker-compose -f docker-compose.prod.yml ps
+```
+
+### Métricas do Sistema Durante Deploy
+
+**Implementado em 04/01/2026:** Deploy agora captura métricas automaticamente:
+
+**Baseline (antes do deploy):**
+```bash
+📊 MÉTRICAS DO SISTEMA:
+💾 Disco: 85GB disponível em /opt/alice
+🧠 Memória: 48GB livre de 64GB
+⚙️ CPU Load: 0.52, 0.48, 0.45
+🐳 Docker: 12GB em uso (images: 8GB, containers: 4GB)
+```
+
+**Após falha (diagnóstico):**
+- Mesmo output é capturado automaticamente
+- Permite comparar antes/depois
+- Identifica se falha foi por falta de recursos
+
+**Acesso Manual:**
+```bash
+# Ver métricas atuais
+df -h /opt/alice
+free -h
+uptime
+docker system df
+```
+
+### Referências
+
+- **CLAUDE.md v4.60:** Changelog completo da correção de init containers
+- **Docker Compose Healthcheck:** https://docs.docker.com/compose/compose-file/compose-file-v3/#healthcheck
+- **pgBackRest 2.57.0 Release:** https://pgbackrest.org/release.html
+- **GitHub Workflow Deploy:** `.github/workflows/deploy-production.yml`
+
+### Secrets Ausentes (CORREÇÃO 5)
+
+**Problema:** Deploy falha imediatamente com erro "Secrets obrigatórias ausentes".
+
+**Causa Raiz:** Validação PRÉ-DEPLOY (v4.61) verifica 12 secrets críticas ANTES do docker compose up.
+
+**Sintoma:**
+```bash
+❌ ERRO CRÍTICO: Secrets obrigatórias ausentes ou vazias no .env.prod!
+
+📋 Secrets faltantes:
+   - POSTGRES_PASSWORD
+   - BACKUP_CIPHER_PASS
+```
+
+**Solução:**
+
+1. Configure secrets no GitHub:
+```
+Settings → Secrets → Actions → New repository secret
+```
+
+2. Secrets obrigatórias (v4.61):
+- `POSTGRES_PASSWORD` - Senha do PostgreSQL
+- `REDIS_PASSWORD` - Senha do Redis
+- `BACKUP_CIPHER_PASS` - Senha de criptografia pgBackRest (32+ chars)
+- `SESSION_SECRET` - Secret para sessões web
+- `INTERNAL_API_SECRET` - Secret para APIs internas
+- `QDRANT_API_KEY` - API key do Qdrant
+- `GMAIL_USER` - Email Gmail para SMTP
+- `GMAIL_APP_PASSWORD` - App Password do Gmail
+- `GRAFANA_ADMIN_USER` - Usuário admin Grafana
+- `GRAFANA_ADMIN_PASSWORD` - Senha admin Grafana
+- `ERPNEXT_ADMIN_PASSWORD` - Senha admin ERPNext
+- `MINIO_ROOT_PASSWORD` - Senha root MinIO
+
+3. Gerar secrets seguras:
+```bash
+# Geral (16 bytes = 32 chars hex)
+openssl rand -hex 16
+
+# pgBackRest (32 bytes = 64 chars hex, OBRIGATÓRIO)
+openssl rand -hex 32
+```
+
+### Inodes Insuficientes (CORREÇÃO 6)
+
+**Problema:** Warning sobre poucos inodes disponíveis.
+
+**Causa Raiz:** Sistema pode ter GB livres mas sem inodes (limite de arquivos).
+
+**Sintoma:**
+```bash
+⚠️ AVISO: Poucos inodes disponíveis!
+   Disponível: 5000 inodes
+   Recomendado: 10000 inodes
+```
+
+**Diagnóstico:**
+```bash
+# Verificar inodes
+df -i /opt/alice
+
+# Encontrar diretórios com muitos arquivos
+find /opt/alice -xdev -printf '%h\n' | sort | uniq -c | sort -rn | head -20
+```
+
+**Solução:**
+```bash
+# Limpar logs fragmentados
+find /opt/alice/logs -type f -name "*.log.*" -mtime +7 -delete
+
+# Limpar cache de pacotes
+docker system prune -af
+
+# Se persistir, considere aumentar inodes no filesystem
+```
+
+### Logs de Init Containers Vazios (CORREÇÃO 7-8)
+
+**Problema:** Logs de init containers aparecem vazios em troubleshooting.
+
+**Solução (Implementada em v4.61):**
+
+Logs são **automaticamente preservados** em `/tmp` após docker compose up:
+
+```bash
+# Ver logs preservados
+cat /tmp/init_logs_alice-pgbackrest-init.txt
+cat /tmp/init_logs_alice-minio-init.txt
+cat /tmp/init_logs_erpnext-configurator.txt
+
+# Quantidade de linhas capturadas
+wc -l /tmp/init_logs_*.txt
+```
+
+Captura acontece ANTES de containers serem removidos pelo Docker.
+
+### Container Unhealthy Sem Causa (CORREÇÃO 9-10)
+
+**Problema:** Mensagem "unhealthy" sem explicar WHY.
+
+**Solução (Implementada em v4.61):**
+
+Agora mostra última linha do healthcheck log:
+
+```bash
+📦 Init Container: alice-pgbackrest-init - status=exited, exit=0 (completou com sucesso)
+🐳 Container: alice-postgres - status=running, exit=0 (unhealthy - connection refused on port 5432)
+```
+
+**Emojis indicam tipo:**
+- 📦 = Init container (status exited é OK)
+- 🐳 = Container normal (status exited é PROBLEMA)
+
+### Análise de Causa Raiz (CORREÇÃO 11-12)
+
+**Problema:** Falhas sem correlação clara da causa.
+
+**Solução (Implementada em v4.61):**
+
+Deploy agora mostra análise automática:
+
+```bash
+🔍 ANÁLISE DE CAUSA RAIZ
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔍 Container: alice-auth
+
+📊 Dependências do container:
+   alice-postgres alice-redis
+
+🔐 Variáveis de ambiente críticas:
+   POSTGRES_PASSWORD=***
+   SESSION_SECRET=***
+   INTERNAL_API_SECRET=***
+
+❌ Exit code 137 - Possíveis causas:
+   - SIGKILL (OOM killer? Memória insuficiente?)
+```
+
+**Interpretação de Exit Codes:**
+- `1` - Erro genérico (verificar logs)
+- `2` - Comando incorreto ou parâmetros inválidos
+- `126` - Comando não executável (permissões?)
+- `127` - Comando não encontrado (PATH incorreto?)
+- `137` - SIGKILL (OOM killer, memória insuficiente)
+- `143` - SIGTERM (terminado por outro processo)
+
+### Timeouts Configuráveis (CORREÇÃO 13-15)
+
+**Problema:** Timeouts hardcoded não adequados para ambiente.
+
+**Solução (Implementada em v4.61):**
+
+Configure via variáveis de ambiente no workflow:
+
+```yaml
+env:
+  MONITOR_INTERVAL: 10      # Segundos entre checks (default: 5)
+  MAX_WAIT_TIME: 900        # Timeout total em segundos (default: 600)
+  HEALTHCHECK_RETRIES: 50   # Tentativas máximas (default: 30)
+```
+
+**Ver configuração usada:**
+```bash
+⏱️  Configuração de timeouts para monitoramento:
+   Monitor interval: 10s (tempo entre verificações)
+   Max wait time: 900s (timeout total)
+   Healthcheck retries: 50 (tentativas máximas)
+```
+
+**Casos de uso:**
+- **Ambiente lento:** Aumentar `MONITOR_INTERVAL` e `MAX_WAIT_TIME`
+- **Ambiente rápido:** Diminuir para fail-fast mais rápido
+- **Primeiro deploy:** Aumentar `HEALTHCHECK_RETRIES` (pull de imagens demora)
+
+### Progress Tracking (CORREÇÃO 16-18)
+
+**Problema:** Deploy parece travado sem feedback de progresso.
+
+**Solução (Implementada em v4.61):**
+
+Progress tracking visual em tempo real:
+
+```bash
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 PROGRESSO: [7/13 - 53%] Validação PRÉ-DEPLOY de secrets obrigatórias
+⏱️  Tempo decorrido: 145s
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+**Métricas periódicas durante retry:**
+
+A cada 3 tentativas de operações críticas (ex: pgvector), mostra:
+
+```bash
+📊 Métricas do sistema durante retry (tentativa 6):
+CONTAINER       CPU %    MEM USAGE
+alice-postgres  2.5%     450MB / 2GB
+alice-redis     0.8%     120MB / 1GB
+```
+
+**Fases do deploy (13 total):**
+1. Validação do servidor
+2. Pre-flight checks
+3. Validação .env.prod
+4. Estrutura de diretórios
+5. Secrets
+6. Clone repositório
+7. Login registries
+7.5. Validação PRÉ-DEPLOY secrets (NOVO v4.61)
+8. Networks Docker
+9. Pull imagens
+10. Deploy containers
+11. Deploy GPU
+12. Smoke tests
+13. Verificação final
+
+---
+
+*Seção de Troubleshooting adicionada em: 04 de Janeiro de 2026*
+*Atualizada com Correções 5-18 em: 04 de Janeiro de 2026*
+*Autor: Fillipe Guerra*
