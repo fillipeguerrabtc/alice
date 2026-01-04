@@ -46,6 +46,11 @@
 # - workflow_dispatch sem versão agora funciona corretamente
 # - Validação ocorre em 3 pontos: push (imediato), manual (imediato), automático (após cálculo)
 #
+# CORREÇÃO (04/01/2026): Loop de colisão de tags para primeiro release
+# - Loop de verificação de colisão estava apenas dentro do "else" (versão calculada)
+# - Se v1.0.0 já existisse (criada manualmente/outra branch), workflow falhava
+# - Loop movido para FORA do if/else, aplica-se a ambos os casos (primeiro release e incremento)
+#
 # Author: Fillipe Guerra
 # Data: 04/01/2026
 # =============================================================================
@@ -163,9 +168,12 @@ jobs:
           PREVIOUS_TAG="${{ steps.previous-tag.outputs.previous_tag }}"
           
           if [ -z "$PREVIOUS_TAG" ]; then
-            # Primeiro release
-            NEXT_VERSION="v1.0.0"
-            echo "ℹ️ Nenhuma tag anterior - usando v1.0.0"
+            # Primeiro release - iniciar com v1.0.0
+            MAJOR=1
+            MINOR=0
+            PATCH=0
+            NEXT_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+            echo "ℹ️ Nenhuma tag anterior - iniciando com v1.0.0"
           else
             # Remover prefixo v para cálculo
             CURRENT=$(echo "$PREVIOUS_TAG" | sed 's/^v//')
@@ -202,25 +210,27 @@ jobs:
             echo "✅ Versão anterior: $PREVIOUS_TAG"
             echo "✅ Tipo de mudança: $CHANGE_TYPE"
             echo "✅ Versão calculada: $NEXT_VERSION"
-            
-            # ✅ ENTERPRISE: Se tag calculada JÁ EXISTE, incrementar PATCH automaticamente
-            ATTEMPT=0
-            MAX_ATTEMPTS=100
-            while git rev-parse "$NEXT_VERSION" >/dev/null 2>&1; do
-              ATTEMPT=$((ATTEMPT + 1))
-              if [ $ATTEMPT -ge $MAX_ATTEMPTS ]; then
-                echo "❌ ERRO: Não foi possível encontrar versão disponível após $MAX_ATTEMPTS tentativas"
-                exit 1
-              fi
-              
-              echo "⚠️ Tag $NEXT_VERSION já existe, incrementando PATCH..."
-              PATCH=$((PATCH + 1))
-              NEXT_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
-            done
-            
-            if [ $ATTEMPT -gt 0 ]; then
-              echo "✅ Versão final (após $ATTEMPT incrementos): $NEXT_VERSION"
+          fi
+          
+          # ✅ ENTERPRISE: Se tag calculada JÁ EXISTE, incrementar PATCH automaticamente
+          # NOTA: Este loop está FORA do if/else para aplicar tanto ao primeiro release
+          # quanto às versões calculadas (correção de bug - v1.0.0 também pode já existir)
+          ATTEMPT=0
+          MAX_ATTEMPTS=100
+          while git rev-parse "$NEXT_VERSION" >/dev/null 2>&1; do
+            ATTEMPT=$((ATTEMPT + 1))
+            if [ $ATTEMPT -ge $MAX_ATTEMPTS ]; then
+              echo "❌ ERRO: Não foi possível encontrar versão disponível após $MAX_ATTEMPTS tentativas"
+              exit 1
             fi
+            
+            echo "⚠️ Tag $NEXT_VERSION já existe, incrementando PATCH..."
+            PATCH=$((PATCH + 1))
+            NEXT_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+          done
+          
+          if [ $ATTEMPT -gt 0 ]; then
+            echo "✅ Versão final (após $ATTEMPT incrementos): $NEXT_VERSION"
           fi
           
           echo "version=$NEXT_VERSION" >> $GITHUB_OUTPUT

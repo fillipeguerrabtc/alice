@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 04 de Janeiro de 2026  
-**Versão:** 7.18 - Fix Versionamento Automático Funcional
+**Versão:** 7.19 - Fix Tag Collision Loop para Primeiro Release
 
 > **Migração 100% Self-Hosted (27/12/2025):** Pipeline completo migrado para runner próprio (Hetzner CPX32 - 4 vCPU, 8GB RAM) seguindo melhores práticas enterprise 2025. Todos os workflows (CI, Release, Deploy) executam no self-hosted runner para controle total, custos previsíveis e compliance.
 
@@ -723,6 +723,8 @@ O workflow de release (`release.yml`) suporta versionamento automático baseado 
 
 **Cálculo de versão inteligente (04/01/2026):**
 - Usa a tag mais recente como base (`git describe --tags --abbrev=0` do HEAD)
+- Se nenhuma tag existir (primeiro release), inicia com v1.0.0
+- Loop de verificação de colisão aplica-se a TODOS os cenários (primeiro release e incrementos)
 - Se versão calculada já existe (releases paralelos), incrementa PATCH automaticamente até 100 tentativas
 - Exemplo: se v1.6.0 existe e MINOR bump seria v1.7.0, mas v1.7.0 já existe → usa v1.7.1
 - Validação de formato semver só ocorre após a versão ser determinada (manual ou automática)
