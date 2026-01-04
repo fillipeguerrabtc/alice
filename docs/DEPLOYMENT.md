@@ -1633,6 +1633,71 @@ Os init containers executam em ordem de dependência:
    - **Logs:** `/tmp/init_logs_erpnext-create-site.txt`
    - **Nota:** Pode demorar até 10min - timeout de 90min no workflow é adequado
 
+### ⏱️ Espera Inteligente (Implementado em 04/01/2026)
+
+O workflow de deploy agora aguarda **ativamente** que TODOS os init containers completem antes de verificar containers normais:
+
+```bash
+# Aguarda até 2 minutos para init containers completarem
+INIT_TIMEOUT=120
+while [ $INIT_ELAPSED -lt $INIT_TIMEOUT ]; do
+  for init_container in "${INIT_CONTAINERS[@]}"; do
+    STATUS=$(docker inspect --format='{{.State.Status}}' "$init_container")
+    
+    case "$STATUS" in
+      "running")
+        echo "⏳ $init_container ainda executando..."
+        ALL_INIT_COMPLETED=0  # Continuar esperando
+        ;;
+      "exited")
+        # Verificar exit code
+        EXIT_CODE=$(docker inspect --format='{{.State.ExitCode}}' "$init_container")
+        if [ "$EXIT_CODE" != "0" ]; then
+          exit 1  # Fail-fast imediato
+        fi
+        ;;
+      "created")
+        # Container ainda não iniciou - continuar esperando
+        echo "⏳ $init_container ainda não iniciou..."
+        ALL_INIT_COMPLETED=0
+        ;;
+      "dead"|"restarting"|"paused")
+        # Estados problemáticos - fail-fast imediato
+        exit 1
+        ;;
+      *)
+        # Estado desconhecido - fail-fast imediato
+        exit 1
+        ;;
+    esac
+  done
+done
+
+# Aguarda 30s para service containers iniciarem healthchecks
+sleep 30
+```
+
+**Estados de Container Tratados (Correção 04/01/2026):**
+
+| Estado | Ação | Motivo |
+|--------|------|--------|
+| `running` | Continuar esperando | Container ainda executando |
+| `exited` (exit 0) | Marcar como completado | Init container terminou com sucesso |
+| `exited` (exit != 0) | **Fail-fast** | Init container falhou |
+| `created` | Continuar esperando | Container ainda não iniciou |
+| `dead` | **Fail-fast** | Container morreu (OOM, crash fatal) |
+| `restarting` | **Fail-fast** | Init containers NÃO devem restartar |
+| `paused` | **Fail-fast** | Estado inesperado para init container |
+| `unknown`/outro | **Fail-fast** | Estado desconhecido = problema grave |
+| Container não existe | Continuar esperando | Ainda não criado pelo Docker Compose |
+
+**Benefícios:**
+- ✅ Elimina race condition (check executando antes de inits completarem)
+- ✅ Progress indicator mostra tempo decorrido (a cada 15s)
+- ✅ Fail-fast imediato se init container falhar
+- ✅ Service containers têm tempo adequado para iniciar healthchecks
+- ✅ **Tratamento completo de TODOS os estados Docker** (correção 04/01/2026)
+
 ### ✅ Comportamento Esperado vs ❌ Problemas
 
 | Status | Exit Code | Container Tipo | Interpretação |
@@ -1641,6 +1706,11 @@ Os init containers executam em ordem de dependência:
 | `exited` | `0` | Container normal | ❌ **PROBLEMA** - Não deve parar |
 | `exited` | `!= 0` | Qualquer | ❌ **PROBLEMA** - Falha na execução |
 | `running` | N/A | Qualquer | ✅ **OK** - Funcionando normalmente |
+| `created` | N/A | **Init container** | ⏳ **AGUARDANDO** - Ainda não iniciou |
+| `dead` | N/A | Qualquer | ❌ **PROBLEMA** - OOM ou crash fatal |
+| `restarting` | N/A | **Init container** | ❌ **PROBLEMA** - Crash loop (NÃO deve restartar) |
+| `paused` | N/A | Qualquer | ❌ **PROBLEMA** - Estado inesperado |
+| `unknown` | N/A | Qualquer | ❌ **PROBLEMA** - Falha de comunicação Docker |
 
 ### 🔍 Troubleshooting Init Containers
 
@@ -1757,6 +1827,50 @@ docker inspect --format='Finished: {{.State.FinishedAt}}' alice-pgbackrest-init
 - ❌ Exit code != 0 → Verificar logs para erro específico
 - ❌ Status = `created` → Container nunca iniciou (dependency failed)
 - ❌ Duração > 2 minutos → Pode estar travado
+
+### 🔒 Validação Específica do Caddy (Implementado em 04/01/2026)
+
+O workflow de deploy agora valida o **Caddy separadamente** antes de verificar outros containers:
+
+```bash
+# Aguardar Caddy iniciar
+sleep 10
+
+# Verificar se está rodando
+docker ps --filter "name=alice-caddy" --filter "status=running"
+
+# Aguardar até 60s para ficar healthy
+CADDY_TIMEOUT=60
+while [ "$CADDY_HEALTH" != "healthy" ] && [ $CADDY_ELAPSED -lt $CADDY_TIMEOUT ]; do
+  echo "⏳ Aguardando Caddy ficar healthy (${CADDY_ELAPSED}s/${CADDY_TIMEOUT}s)..."
+  sleep 5
+done
+
+# Fail-fast se não ficou healthy
+if [ "$CADDY_HEALTH" != "healthy" ]; then
+  docker logs --tail 100 alice-caddy
+  exit 1
+fi
+```
+
+**Por que validar Caddy separadamente?**
+- ✅ Caddy pode demorar 30-60s para obter certificado SSL (ACME/Let's Encrypt)
+- ✅ Fail-fast específico se Caddy falhar (com logs detalhados)
+- ✅ Evita falso positivo se Caddy ainda estiver em processo de SSL
+- ✅ Captura logs do Caddy IMEDIATAMENTE se houver problema
+
+**Logs do Caddy sem avisos (Caddyfile otimizado em 04/01/2026):**
+
+Removidos headers redundantes que causavam 32 avisos:
+```bash
+# ANTES (causava avisos)
+header_up X-Forwarded-For {remote_host}
+header_up X-Forwarded-Proto {scheme}
+
+# DEPOIS (sem avisos)
+# Caddy adiciona esses headers automaticamente
+# Ref: https://caddyserver.com/docs/caddyfile/directives/reverse_proxy#defaults
+```
 
 ### Disk Space Insuficiente
 
