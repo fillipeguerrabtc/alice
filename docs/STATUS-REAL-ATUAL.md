@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 04 de Janeiro de 2026  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.75 - Bug Fix SQL Injection Prevention Deployments Table
+> **Versão:** 4.76 - Bug Fix Collect Logs Job Level Condition + DB Audit Always
 
 ---
 

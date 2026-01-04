@@ -4055,53 +4055,109 @@ METRICS_EOF
           echo "Commit: ${{ github.sha }}"
           echo "Por: ${{ github.actor }}"
 
-  # ===========================================================================
-  # Job 6: Registrar Sucesso
-  # Timeout: 2min (apenas SSH + escrita arquivo)
-  # ===========================================================================
-  register-success:
-    name: Register Success
-    runs-on: [self-hosted, linux, deploy]
-    timeout-minutes: 2
-    needs: [deploy, health-check]
-    if: |
-      needs.deploy.result == 'success' &&
-      needs.health-check.result == 'success' &&
-      needs.health-check.outputs.health_status == 'success'
-
-    steps:
-      - name: Registrar Deploy
+      # =========================================================================
+      # CORREÇÃO 04/01/2026: Registrar falha no banco PostgreSQL
+      # Auditoria enterprise completa - registra TODOS os deploys (sucesso E falha)
+      # CRÍTICO: Se o PostgreSQL não está rodando (falhou antes), este step falha
+      # silenciosamente (|| true) - auditoria best-effort em cenário de falha
+      # =========================================================================
+      - name: Registrar falha no banco de dados
+        if: always()
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
+        continue-on-error: true  # Best-effort: BD pode não estar disponível após rollback
         env:
-          GITHUB_SHA: ${{ github.sha }}
-          GITHUB_ACTOR: ${{ github.actor }}
           VERSION: ${{ inputs.version }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          TRIGGERED_BY: ${{ inputs.triggered_by }}
+          SERVICES: ${{ inputs.services }}
+          COMMIT_SHA: ${{ github.sha }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+          WORKFLOW_RUN_NUMBER: ${{ github.run_number }}
+          REPOSITORY: ${{ github.repository }}
         with:
           host: ${{ secrets.HETZNER_VM_HOST }}
           username: ${{ secrets.HETZNER_VM_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          envs: GITHUB_SHA,GITHUB_ACTOR,VERSION
+          envs: VERSION,GITHUB_ACTOR,TRIGGERED_BY,SERVICES,COMMIT_SHA,WORKFLOW_RUN_ID,WORKFLOW_RUN_NUMBER,REPOSITORY
           script: |
-            export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-            MANIFEST_DIR="/opt/alice/backups/manifests"
-            mkdir -p "$MANIFEST_DIR"
+            # Tentar registrar falha - best-effort (BD pode não estar disponível)
+            # CORREÇÃO 04/01/2026: Usando variáveis psql para SQL injection prevention
+            
+            if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^alice-postgres$'; then
+              echo "📝 Registrando falha no banco de dados..."
+              
+              # STEP 1: DDL (sem variáveis - seguro)
+              docker exec alice-postgres psql -U alice -d alice_prod << 'EOSQL'
+              CREATE TABLE IF NOT EXISTS deployments (
+                id SERIAL PRIMARY KEY,
+                version TEXT NOT NULL,
+                deployed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                deployed_by TEXT,
+                duration_seconds INTEGER,
+                containers_count INTEGER,
+                status TEXT NOT NULL,
+                triggered_by TEXT,
+                services TEXT,
+                metadata JSONB,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+              );
+              CREATE INDEX IF NOT EXISTS idx_deployments_version ON deployments(version);
+              CREATE INDEX IF NOT EXISTS idx_deployments_deployed_at ON deployments(deployed_at DESC);
+              CREATE INDEX IF NOT EXISTS idx_deployments_status ON deployments(status);
+            EOSQL
+              
+              # STEP 2: INSERT com variáveis psql (SQL injection safe)
+              docker exec alice-postgres psql -U alice -d alice_prod \
+                -v v_version="$VERSION" \
+                -v v_actor="$GITHUB_ACTOR" \
+                -v v_triggered="$TRIGGERED_BY" \
+                -v v_services="$SERVICES" \
+                -v v_commit="$COMMIT_SHA" \
+                -v v_run_id="$WORKFLOW_RUN_ID" \
+                -v v_run_num="$WORKFLOW_RUN_NUMBER" \
+                -v v_repo="$REPOSITORY" \
+                << 'EOSQL'
+              INSERT INTO deployments (version, deployed_by, status, triggered_by, services, metadata)
+              VALUES (
+                :'v_version',
+                :'v_actor',
+                'rolled_back',
+                :'v_triggered',
+                :'v_services',
+                jsonb_build_object(
+                  'commit', :'v_commit',
+                  'workflow_run_id', :'v_run_id',
+                  'workflow_run_number', :'v_run_num',
+                  'repository', :'v_repo',
+                  'rollback_reason', 'health_check_failed_or_deploy_error'
+                )
+              );
+            EOSQL
+              
+              echo "✅ Falha registrada no banco de dados"
+            else
+              echo "⚠️ PostgreSQL não disponível - registro de falha ignorado"
+            fi
 
-            echo "${GITHUB_SHA}" > "$MANIFEST_DIR/last-successful-deploy.txt"
+  # ===========================================================================
+  # Job 6: Coletar Logs (SEMPRE executa - troubleshooting)
+  # CORREÇÃO 04/01/2026: Job separado com if: always() no NÍVEL DO JOB
+  # PROBLEMA ANTERIOR: Steps com if: always() dentro de job condicional não
+  # executam se a condição do job for falsa. Logs são MAIS necessários em
+  # falhas, mas job register-success só roda em sucesso.
+  # SOLUÇÃO: Job dedicado que SEMPRE executa após deploy/health-check/rollback
+  # Timeout: 5min (SSH + SCP + upload pode demorar)
+  # ===========================================================================
+  collect-logs:
+    name: Collect Deploy Logs
+    runs-on: [self-hosted, linux, deploy]
+    timeout-minutes: 5
+    needs: [deploy, health-check, rollback]
+    if: always()  # ✅ CRÍTICO: Executa SEMPRE, independente de sucesso ou falha
 
-            cat > "$MANIFEST_DIR/deploy-$(date +%Y%m%d-%H%M%S).json" << EOF
-            {
-              "timestamp": "$(date -Iseconds)",
-              "commit": "${GITHUB_SHA}",
-              "version": "${VERSION}",
-              "actor": "${GITHUB_ACTOR}",
-              "status": "success"
-            }
-            EOF
-
-            echo "✅ Deploy $VERSION registrado com sucesso"
-
-      # ===========================================================================
-      # MELHORIA #1 (04/01/2026): Upload logs como artifacts
+    steps:
+      # =========================================================================
+      # MELHORIA (04/01/2026): Upload logs como artifacts
       # Troubleshooting facilitado - logs preservados por 90 dias
       #
       # CORREÇÃO 04/01/2026: Os logs são criados no servidor HETZNER via SSH,
@@ -4111,11 +4167,10 @@ METRICS_EOF
       #   - /tmp/compose_up_attempt_*.log (tentativas de docker compose up)
       #   - /tmp/init_logs_*.txt (logs de containers init)
       #   - /opt/alice/logs/deploy-metrics-*.json (métricas de sucesso/falha)
-      # ===========================================================================
+      # =========================================================================
 
       # STEP 1: Configurar chave SSH no runner
       - name: Configurar SSH para download de logs
-        if: always()
         run: |
           echo "🔐 Configurando SSH para download de logs do Hetzner..."
           mkdir -p ~/.ssh
@@ -4129,7 +4184,6 @@ METRICS_EOF
 
       # STEP 2: Preparar logs no Hetzner (compactar em único arquivo)
       - name: Preparar logs no Hetzner para download
-        if: always()
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
         with:
           host: ${{ secrets.HETZNER_VM_HOST }}
@@ -4173,7 +4227,7 @@ METRICS_EOF
               cd /opt/alice 2>/dev/null || cd /root/alice 2>/dev/null || true
 
               for container in alice-api-gateway alice-auth alice-chat alice-frontend alice-rag alice-training alice-gpu-manager alice-integrations alice-observability alice-caddy alice-postgres alice-redis alice-qdrant; do
-                if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${container}$"; then
+                if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^${container}$"; then
                   docker logs --tail 500 "$container" > "$LOGS_DIR/${container}-logs.txt" 2>&1 || true
                 fi
               done
@@ -4192,7 +4246,6 @@ METRICS_EOF
 
       # STEP 3: Baixar logs do Hetzner via SCP
       - name: Baixar logs do Hetzner
-        if: always()
         run: |
           echo "📥 Baixando logs do Hetzner..."
           mkdir -p ./deploy-logs
@@ -4229,8 +4282,59 @@ METRICS_EOF
           retention-days: 90
           if-no-files-found: warn
 
+  # ===========================================================================
+  # Job 7: Registrar Sucesso
+  # Timeout: 3min (SSH + escrita arquivo + registro BD)
+  # CORREÇÃO 04/01/2026: Aumentado timeout de 2 para 3min (inclui registro BD)
+  # ===========================================================================
+  register-success:
+    name: Register Success
+    runs-on: [self-hosted, linux, deploy]
+    timeout-minutes: 3
+    needs: [deploy, health-check]
+    if: |
+      needs.deploy.result == 'success' &&
+      needs.health-check.result == 'success' &&
+      needs.health-check.outputs.health_status == 'success'
+
+    steps:
+      - name: Registrar Deploy
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          VERSION: ${{ inputs.version }}
+        with:
+          host: ${{ secrets.HETZNER_VM_HOST }}
+          username: ${{ secrets.HETZNER_VM_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          envs: GITHUB_SHA,GITHUB_ACTOR,VERSION
+          script: |
+            export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            MANIFEST_DIR="/opt/alice/backups/manifests"
+            mkdir -p "$MANIFEST_DIR"
+
+            echo "${GITHUB_SHA}" > "$MANIFEST_DIR/last-successful-deploy.txt"
+
+            cat > "$MANIFEST_DIR/deploy-$(date +%Y%m%d-%H%M%S).json" << EOF
+            {
+              "timestamp": "$(date -Iseconds)",
+              "commit": "${GITHUB_SHA}",
+              "version": "${VERSION}",
+              "actor": "${GITHUB_ACTOR}",
+              "status": "success"
+            }
+            EOF
+
+            echo "✅ Deploy $VERSION registrado com sucesso"
+
       # ===========================================================================
-      # MELHORIA #2 (04/01/2026): Notificação de sucesso
+      # NOTA (04/01/2026): Coleta de logs movida para job separado 'collect-logs'
+      # que executa if: always() no nível do job para capturar logs em falhas
+      # ===========================================================================
+
+      # ===========================================================================
+      # Notificação de sucesso
       # Feedback imediato para equipe - complementa notificação de falha
       # ===========================================================================
       - name: Notificar sucesso do deploy
@@ -4265,8 +4369,14 @@ METRICS_EOF
       #   - quote_literal() escapa valores para SQL
       #   - Imune a SQL injection completamente
       # Ref: https://www.postgresql.org/docs/current/app-psql.html#APP-PSQL-INTERPOLATION
+      #
+      # CORREÇÃO 04/01/2026 (Bug 2): Adicionado if: always()
+      # PROBLEMA: Se o step de notificação falhar, o registro no banco era pulado
+      # (default é success()). Isso quebra a auditoria enterprise.
+      # SOLUÇÃO: Garantir que o registro SEMPRE execute dentro do job.
       # ===========================================================================
       - name: Registrar deploy no banco de dados
+        if: always()
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
         env:
           VERSION: ${{ inputs.version }}
