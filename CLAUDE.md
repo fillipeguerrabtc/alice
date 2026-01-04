@@ -806,6 +806,18 @@ git commit -a -m "test: adiciona testes unitários"
 *Versão: 4.58 - 03 de Janeiro de 2026*
 
 *Versão: 4.59 - 03 de Janeiro de 2026*
+
+*Versão: 4.60 - 04 de Janeiro de 2026*
+*Deploy Production Init Containers Healthcheck Fix (04/01/2026):*
+- *CORREÇÃO CRÍTICA: alice-pgbackrest-init marcado como unhealthy causando falha no deploy, embora tenha completado com sucesso (exit 0).*
+- *CAUSA RAIZ: check_container_health() não distinguia init containers (restart: "no") de containers normais.*
+- *CORREÇÃO 1: Refatorada check_container_health() para distinguir init containers - validar exit code 0 para init containers (status "exited" é esperado e correto), validar health "healthy" para containers normais.*
+- *CORREÇÃO 2: Adicionado diagnóstico específico de init containers - captura status completo (exit code, started/finished timestamps), logs completos quando init container falha, diferenciação visual no output (📦 Init Container).*
+- *CORREÇÃO 3: Validação de disk space antes do deploy - verifica espaço mínimo em /opt/alice (10GB), fallback sequencial (/opt/alice → /opt → /), fail-fast com diagnóstico detalhado se insuficiente.*
+- *CORREÇÃO 4: Métricas de sistema durante deploy - função capture_system_metrics() para diagnóstico, captura baseline ANTES de docker compose up, captura métricas APÓS falha para análise, mostra disco, memória, CPU load, Docker usage.*
+- *Init containers agora SEMPRE completam corretamente: alice-pgbackrest-init, alice-minio-init, erpnext-configurator.*
+- *Implementação 100% enterprise-grade (Regras 6, 7, 9 - SEM WORKAROUNDS, mudanças cirúrgicas, validação contínua).*
+- *Ref: Docker Compose healthcheck docs, CLAUDE.md Regra 6.*
 *Bug Fix: Caddy Healthcheck Failing Deployment (03/01/2026):*
 - *Corrigido healthcheck do Caddy que usava Admin API (porta 2019) durante startup - ACME pode demorar minutos.*
 - *Adicionado endpoint /health simples na porta 80 que responde imediatamente quando Caddy inicia.*
