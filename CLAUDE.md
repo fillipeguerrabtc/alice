@@ -852,3 +852,30 @@ git commit -a -m "test: adiciona testes unitários"
 - *Implementação 100% enterprise-grade (Regras 2, 6 - usar padrões existentes, sem workarounds).*
 - *Ref: Bash arithmetic expansion docs, df(1) man page.*
 
+
+
+*Versão: 4.63 - 04 de Janeiro de 2026*
+*Bug Fix: erpnext-create-site Missing from Init Containers Lists (04/01/2026):*
+- *CAUSA RAIZ CRÍTICA: Container erpnext-create-site não estava nas listas de INIT_CONTAINERS no deploy workflow, causando FAIL-FAST incorreto quando completava com exit 0.*
+- *PROBLEMA: check_container_health() tratava erpnext-create-site como container normal (que deve ficar "running"), mas é init container que DEVE ter status "exited" com exit code 0.*
+- *SINTOMA: Deploy falhava com "Container erpnext-create-site - status=exited, exit=0 (container normal não deve parar)".*
+- *CORREÇÃO: Adicionado erpnext-create-site em 5 locais do workflow:*
+  - *Linha 1900: Log capture loop (preservação proativa de logs)*
+  - *Linha 1933: INIT_CONTAINERS validation array (fail-fast check)*
+  - *Linha 1999: check_container_health() function (array principal)*
+  - *Linha 2082: Display emoji selection (identificação para output)*
+  - *Linha 2195: Diagnostic loop (verificação detalhada)*
+- *TIMEOUT AUMENTADO: Deploy job timeout de 60min para 90min (linha 439) para acomodar erpnext-create-site que pode demorar 3-10min no primeiro deploy.*
+- *DOCUMENTAÇÃO COMPLETA:*
+  - *Nova seção em DEPLOYMENT.md: "📦 Init Containers - Sequência de Execução"*
+  - *Sequência detalhada dos 4 init containers com tempos estimados*
+  - *Tabela de comportamento esperado vs problemas*
+  - *Troubleshooting com comandos práticos de validação*
+  - *Comentários explicativos no docker-compose.prod.yml sobre restart: "no" e service_completed_successfully*
+- *ARQUIVOS MODIFICADOS:*
+  - *.github/workflows/deploy-production.yml: 20 linhas modificadas (5 locais + timeout)*
+  - *docs/DEPLOYMENT.md: 101 linhas adicionadas (nova seção completa)*
+  - *infra/docker/docker-compose.prod.yml: 14 linhas adicionadas (comentários)*
+- *IMPACTO: Deploy agora reconhece corretamente todos os 4 init containers (alice-pgbackrest-init, alice-minio-init, erpnext-configurator, erpnext-create-site) e permite que completem com exit 0 sem erro.*
+- *Implementação 100% enterprise-grade (Regras 1, 6, 7, 10 - ler antes de agir, sem workarounds, mudanças cirúrgicas, documentação PT-BR).*
+- *Ref: Problem Statement #19, Docker Compose depends_on service_completed_successfully docs.*
