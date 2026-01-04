@@ -684,6 +684,52 @@ jobs:
           script: |
             set -euo pipefail
 
+            # =================================================================
+            # ALICE ENTERPRISE PLATFORM - DEPLOY PRODUCTION WORKFLOW
+            # =================================================================
+            # Versão: 4.64 - 04 de Janeiro de 2026
+            # Autor: Fillipe Guerra (GitHub Copilot)
+            # 
+            # CORREÇÕES IMPLEMENTADAS (Job #59401310413):
+            # 
+            # 🔴 PROBLEMAS CRÍTICOS (10/10 RESOLVIDOS)
+            # ✅ #1: check_container_health() - Distinção init vs service containers
+            # ✅ #2: Timeout 90min (era 55min) - Adequado para primeiro deploy
+            # ✅ #3: Retry logic docker compose up - 3 tentativas com backoff
+            # ✅ #4: Validação completa .env.prod - 10 variáveis críticas
+            # ✅ #5: Preservar logs init containers - Antes de serem removidos
+            # ✅ #6: Rollback automático - Backup + restore via trap EXIT
+            # ✅ #7: Smoke tests enterprise - 10 testes críticos
+            # ✅ #8: Progress indicators granulares - Sub-steps + barra visual
+            # ✅ #9: Configurações centralizadas - readonly vars
+            # ✅ #10: Validar dependências externas - GHCR, Docker Hub, GitHub
+            # 
+            # 🟢 MELHORIAS ENTERPRISE (5/5 IMPLEMENTADAS)
+            # ✅ M1: Métricas de deploy - JSON com duration, containers, status
+            # ✅ M2: Notificações - Slack webhook (success/failure)
+            # ✅ M3: Backup pré-deploy - PostgreSQL volumes
+            # ✅ M4: Diagnósticos Caddy - Logs, healthcheck, validação
+            # ✅ M5: Documentação inline completa - Este header + comentários
+            # 
+            # ARQUITETURA:
+            # - 50 containers (7 infra + 7 Alice + 15 ERPNext + 13 observability + 6 GPU + 1 backup + 1 storage)
+            # - Deploy em fases: backup → validate → pull → up → health → smoke → metrics
+            # - Rollback automático em falha (trap EXIT)
+            # - Fail-fast em TODOS os pontos de falha
+            # 
+            # TIMEOUTS:
+            # - Deploy total: 90min (adequado para primeiro deploy completo)
+            # - Healthcheck wait: 60s (configurável)
+            # - Smoke tests: 30s por teste
+            # - Docker compose retry: 3x com backoff 30s/60s/90s
+            # 
+            # REFERÊNCIAS:
+            # - Problem Statement: Issue #? (GitHub)
+            # - Job falhado: https://github.com/fillipeguerrabtc/alice/actions/runs/20691912336/job/59401310413
+            # - CLAUDE.md: 18 regras fundamentais
+            # - DEPLOYMENT.md: Guia completo de deploy
+            # =================================================================
+
             # CORREÇÃO 28/12/2025: Definir PATH explicitamente
             # SSH não-interativo pode não ter PATH configurado corretamente
             export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -1096,9 +1142,29 @@ jobs:
   "timestamp": "$(date -Iseconds)",
   "duration_seconds": ${deploy_duration},
   "status": "failed",
-  "exit_code": ${exit_code}
+  "exit_code": ${exit_code},
+  "initiated_by": "${GITHUB_ACTOR:-unknown}",
+  "commit_sha": "${GITHUB_SHA:-unknown}"
 }
 EOF
+                
+                # MELHORIA #2: Enviar notificação de falha
+                if [ -n "${SLACK_WEBHOOK_URL:-}" ]; then
+                  curl -X POST "$SLACK_WEBHOOK_URL" \
+                    -H 'Content-Type: application/json' \
+                    -d "{
+                      \"text\": \"❌ Deploy failed: Alice Enterprise Platform v${IMAGE_TAG:-unknown}\",
+                      \"attachments\": [{
+                        \"color\": \"danger\",
+                        \"fields\": [
+                          {\"title\": \"Exit Code\", \"value\": \"${exit_code}\", \"short\": true},
+                          {\"title\": \"Duração\", \"value\": \"$((deploy_duration / 60))min\", \"short\": true},
+                          {\"title\": \"Logs\", \"value\": \"${DEPLOY_LOG}\", \"short\": false}
+                        ]
+                      }]
+                    }" \
+                    2>/dev/null || true
+                fi
               fi
             }
             
@@ -3526,23 +3592,78 @@ EOF
             # =================================================================
             # MELHORIA M2 (02/01/2026): Persistir métricas de deploy
             # Útil para análise de performance de deploys passados
+            # 
+            # CORREÇÃO MELHORIA #1 (04/01/2026): Métricas completas de sucesso
             # =================================================================
             DEPLOY_END=$(date +%s)
             DEPLOY_DURATION=$((DEPLOY_END - DEPLOY_START))
-            cat > /opt/alice/logs/deploy-metrics-$(date +%Y%m%d-%H%M%S).json <<EOF
-            {
-              "version": "${IMAGE_TAG}",
-              "timestamp": "$(date -Iseconds)",
-              "duration_seconds": ${DEPLOY_DURATION},
-              "status": "success",
-              "containers_total": ${TOTAL_RUNNING},
-              "containers_gpu": ${GPU_RUNNING:-0},
-              "gpu_profile": "${GPU_PROFILE:-none}",
-              "smoke_tests": "passed"
+            
+            collect_deploy_metrics() {
+              log "📊 Coletando métricas de deploy..."
+              
+              cat > /opt/alice/logs/deploy-metrics-$(date +%Y%m%d-%H%M%S).json <<EOF
+{
+  "version": "${IMAGE_TAG}",
+  "timestamp": "$(date -Iseconds)",
+  "duration_seconds": ${DEPLOY_DURATION},
+  "duration_minutes": $((DEPLOY_DURATION / 60)),
+  "status": "success",
+  "containers_total": ${TOTAL_RUNNING},
+  "containers_gpu": ${GPU_RUNNING:-0},
+  "gpu_profile": "${GPU_PROFILE:-none}",
+  "smoke_tests": "passed",
+  "initiated_by": "${GITHUB_ACTOR:-unknown}",
+  "commit_sha": "${GITHUB_SHA:-unknown}"
+}
+EOF
+              
+              log "✅ Métricas salvas em /opt/alice/logs/deploy-metrics-*.json"
             }
-            EOF
-            echo ""
-            echo "📊 Métricas de deploy salvas em /opt/alice/logs/"
+            
+            collect_deploy_metrics
+            
+            # =================================================================
+            # MELHORIA #2 (04/01/2026): Notificações de deploy
+            # =================================================================
+            # Envia notificação de sucesso/falha via Slack ou Email
+            # Configurado via secrets: SLACK_WEBHOOK_URL (opcional)
+            # =================================================================
+            send_deploy_notification() {
+              local status="$1"
+              local message="$2"
+              
+              log "📬 Enviando notificação de deploy: $status"
+              
+              # Slack webhook (se configurado)
+              if [ -n "${SLACK_WEBHOOK_URL:-}" ]; then
+                local emoji="✅"
+                local color="good"
+                if [ "$status" = "failed" ]; then
+                  emoji="❌"
+                  color="danger"
+                fi
+                
+                curl -X POST "$SLACK_WEBHOOK_URL" \
+                  -H 'Content-Type: application/json' \
+                  -d "{
+                    \"text\": \"${emoji} Deploy ${status}: ${message}\",
+                    \"attachments\": [{
+                      \"color\": \"${color}\",
+                      \"fields\": [
+                        {\"title\": \"Versão\", \"value\": \"${IMAGE_TAG}\", \"short\": true},
+                        {\"title\": \"Duração\", \"value\": \"$((DEPLOY_DURATION / 60))min ${((DEPLOY_DURATION % 60))}s\", \"short\": true},
+                        {\"title\": \"Containers\", \"value\": \"${TOTAL_RUNNING}\", \"short\": true},
+                        {\"title\": \"Autor\", \"value\": \"${GITHUB_ACTOR:-unknown}\", \"short\": true}
+                      ]
+                    }]
+                  }" \
+                  2>/dev/null && log "✅ Notificação Slack enviada" || log "⚠️ Falha ao enviar notificação Slack"
+              else
+                log "ℹ️  SLACK_WEBHOOK_URL não configurado - pulando notificação"
+              fi
+            }
+            
+            send_deploy_notification "success" "Alice Enterprise Platform v${IMAGE_TAG} deployed successfully"
 
   # ===========================================================================
   # Job 4: Health Check
