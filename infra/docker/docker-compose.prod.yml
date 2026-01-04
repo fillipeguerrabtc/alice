@@ -316,7 +316,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 420s
+      start_period: 60s
     deploy:
       resources:
         limits:
@@ -901,7 +901,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 420s
+      start_period: 60s
     # Docs 2025: Node.js 20 light service - 0.5 CPU, 512MB
     deploy:
       resources:
@@ -969,7 +969,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 420s
+      start_period: 60s
     deploy:
       resources:
         limits:
@@ -1126,7 +1126,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 420s
+      start_period: 60s
     deploy:
       resources:
         limits:
@@ -1224,7 +1224,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 420s
+      start_period: 60s
     deploy:
       resources:
         limits:
@@ -1296,7 +1296,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 420s
+      start_period: 60s
     deploy:
       resources:
         limits:
@@ -1370,7 +1370,7 @@ services:
       interval: 15s
       timeout: 10s
       retries: 10
-      start_period: 420s
+      start_period: 60s
     deploy:
       resources:
         limits:
