@@ -850,69 +850,69 @@ jobs:
             }
             
             # =================================================================
-            # CORREÇÃO 02/01/2026: Cleanup automático em caso de falha
-            # Conforme PROBLEMA #9 do relatório de deploy
-            # MELHORIA: Captura logs de TODOS containers com erro (incluindo init)
+            # CORREÇÃO CRÍTICA 04/01/2026: Diagnóstico detalhado em falha
             # =================================================================
-            cleanup_on_failure() {
-              local exit_code=$?
-              if [ $exit_code -ne 0 ]; then
-                log "❌ [CLEANUP] Script falhou com exit code $exit_code na linha $LINENO"
-                log "🧹 [CLEANUP] Capturando estado dos containers para diagnóstico..."
-                docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null | head -60 || true
+            # Original: PROBLEMA #9 (02/01/2026) - Captura logs de containers com erro
+            # Atualizado: 04/01/2026 - Integrado ao combined_exit_handler
+            # =================================================================
+            # NOTA: Esta função é chamada por combined_exit_handler()
+            # NÃO usar trap diretamente aqui (seria sobrescrito pelo rollback)
+            # =================================================================
+            capture_failure_diagnostics() {
+              log "❌ [DIAGNOSTICS] Capturando informações de diagnóstico..."
+              log "🧹 [DIAGNOSTICS] Estado dos containers:"
+              docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null | head -60 || true
+              
+              # =============================================================
+              # CORREÇÃO 03/01/2026: Diagnóstico específico do Caddy
+              # =============================================================
+              # PROBLEMA: Caddy fica unhealthy mas não capturávamos seus logs
+              # SOLUÇÃO: Capturar logs, healthcheck e env vars do Caddy
+              # =============================================================
+              if docker ps -a --format '{{.Names}}' | grep -q '^alice-caddy$'; then
+                log "🔍 [CADDY DIAGNOSTICS] Capturando informações específicas do Caddy..."
                 
-                # =============================================================
-                # CORREÇÃO 03/01/2026: Diagnóstico específico do Caddy
-                # =============================================================
-                # PROBLEMA: Caddy fica unhealthy mas não capturávamos seus logs
-                # SOLUÇÃO: Capturar logs, healthcheck e env vars do Caddy
-                # =============================================================
-                if docker ps -a --format '{{.Names}}' | grep -q '^alice-caddy$'; then
-                  log "🔍 [CADDY DIAGNOSTICS] Capturando informações específicas do Caddy..."
-                  
-                  log "--- Logs do alice-caddy (últimas 200 linhas) ---"
-                  docker logs --tail=200 alice-caddy 2>&1 || true
-                  
-                  log "--- Estado do Healthcheck do alice-caddy ---"
-                  docker inspect --format='{{json .State.Health}}' alice-caddy 2>/dev/null | jq . || \
-                  docker inspect --format='{{json .State.Health}}' alice-caddy 2>/dev/null || true
-                  
-                  log "--- Variáveis de Ambiente do alice-caddy (ACME/EMAIL) ---"
-                  docker exec alice-caddy env 2>/dev/null | grep -E '(ACME|EMAIL|LOG_LEVEL)' || \
-                    echo "Não foi possível capturar env vars (container pode estar parado)"
-                  
-                  log "--- Configuração do Caddy (validação) ---"
-                  docker exec alice-caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1 || \
-                    echo "Não foi possível validar Caddyfile (container pode estar parado)"
-                  
-                  log "🔍 [CADDY DIAGNOSTICS] Diagnóstico do Caddy completo"
-                  echo ""
-                fi
+                log "--- Logs do alice-caddy (últimas 200 linhas) ---"
+                docker logs --tail=200 alice-caddy 2>&1 || true
                 
-                # CORREÇÃO 02/01/2026: Incluir init containers que completaram com erro
-                # Init containers podem ter exit code != 0 mas não aparecem em "exited" se já foram removidos
-                log "🧹 [CLEANUP] Logs dos containers com erro (últimas 200 linhas cada):"
+                log "--- Estado do Healthcheck do alice-caddy ---"
+                docker inspect --format='{{json .State.Health}}' alice-caddy 2>/dev/null | jq . || \
+                docker inspect --format='{{json .State.Health}}' alice-caddy 2>/dev/null || true
                 
-                # Capturar containers com exit code != 0 (incluindo init que já saíram)
-                for c in $(docker ps -a --filter "exited!=0" --format "{{.Names}}" 2>/dev/null | head -15); do
-                  CONTAINER_EXIT=$(docker inspect --format='{{.State.ExitCode}}' "$c" 2>/dev/null || echo "?")
-                  log "--- Logs de $c (exit code: $CONTAINER_EXIT) ---"
-                  docker logs --tail=200 "$c" 2>&1 || true
-                done
+                log "--- Variáveis de Ambiente do alice-caddy (ACME/EMAIL) ---"
+                docker exec alice-caddy env 2>/dev/null | grep -E '(ACME|EMAIL|LOG_LEVEL)' || \
+                  echo "Não foi possível capturar env vars (container pode estar parado)"
                 
-                # Também capturar containers com status exited/dead (podem ter exit 0 mas falharam depois)
-                for c in $(docker ps -a --filter "status=exited" --filter "status=dead" --format "{{.Names}}" 2>/dev/null | head -10); do
-                  # Evitar duplicatas
-                  if ! docker ps -a --filter "exited!=0" --format "{{.Names}}" 2>/dev/null | grep -q "^${c}$"; then
-                    log "--- Logs de $c (status: exited/dead) ---"
-                    docker logs --tail=100 "$c" 2>&1 || true
-                  fi
-                done
+                log "--- Configuração do Caddy (validação) ---"
+                docker exec alice-caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1 || \
+                  echo "Não foi possível validar Caddyfile (container pode estar parado)"
                 
-                log "🧹 [CLEANUP] Diagnóstico completo"
+                log "🔍 [CADDY DIAGNOSTICS] Diagnóstico do Caddy completo"
+                echo ""
               fi
+              
+              # CORREÇÃO 02/01/2026: Incluir init containers que completaram com erro
+              # Init containers podem ter exit code != 0 mas não aparecem em "exited" se já foram removidos
+              log "🧹 [DIAGNOSTICS] Logs dos containers com erro (últimas 200 linhas cada):"
+              
+              # Capturar containers com exit code != 0 (incluindo init que já saíram)
+              for c in $(docker ps -a --filter "exited!=0" --format "{{.Names}}" 2>/dev/null | head -15); do
+                CONTAINER_EXIT=$(docker inspect --format='{{.State.ExitCode}}' "$c" 2>/dev/null || echo "?")
+                log "--- Logs de $c (exit code: $CONTAINER_EXIT) ---"
+                docker logs --tail=200 "$c" 2>&1 || true
+              done
+              
+              # Também capturar containers com status exited/dead (podem ter exit 0 mas falharam depois)
+              for c in $(docker ps -a --filter "status=exited" --filter "status=dead" --format "{{.Names}}" 2>/dev/null | head -10); do
+                # Evitar duplicatas
+                if ! docker ps -a --filter "exited!=0" --format "{{.Names}}" 2>/dev/null | grep -q "^${c}$"; then
+                  log "--- Logs de $c (status: exited/dead) ---"
+                  docker logs --tail=100 "$c" 2>&1 || true
+                fi
+              done
+              
+              log "🧹 [DIAGNOSTICS] Diagnóstico completo"
             }
-            trap cleanup_on_failure EXIT
             
             # =================================================================
             # CORREÇÃO PROBLEMA #3 (04/01/2026): Retry logic para docker compose up
@@ -1107,69 +1107,98 @@ jobs:
               echo "$state_file" > /tmp/last_deploy_state.txt
             }
             
-            # Restaurar estado anterior em caso de falha
-            rollback_on_failure() {
-              local exit_code=$?
-              if [ $exit_code -ne 0 ]; then
-                log "🔄 ROLLBACK AUTOMÁTICO: Deploy falhou, restaurando estado anterior..."
-                
-                # Verificar se há estado para restaurar
-                if [ -f /tmp/last_deploy_state.txt ]; then
-                  local state_file=$(cat /tmp/last_deploy_state.txt)
-                  if [ -f "$state_file" ]; then
-                    log "📋 Usando backup de estado: $state_file"
-                    
-                    # Parar containers que foram iniciados neste deploy
-                    log "🛑 Parando containers iniciados neste deploy..."
-                    docker compose -f /opt/alice/app/infra/docker/docker-compose.prod.yml \
-                      --env-file /opt/alice/app/infra/docker/.env.prod down --remove-orphans 2>/dev/null || true
-                    
-                    log "✅ Rollback concluído - containers parados"
-                    log "📝 Dados persistentes PRESERVADOS em /opt/alice/data/"
-                    log "📝 Logs disponíveis em: $DEPLOY_LOG"
-                  else
-                    log "⚠️ Arquivo de estado não encontrado: $state_file"
-                  fi
+            # =================================================================
+            # CORREÇÃO CRÍTICA 04/01/2026: Handler unificado de exit
+            # =================================================================
+            # PROBLEMA: Em bash, `trap X EXIT` SUBSTITUI traps anteriores.
+            #           Definir trap cleanup_on_failure e depois trap rollback_on_failure
+            #           fazia cleanup_on_failure NUNCA executar.
+            # SOLUÇÃO: Handler único que executa AMBAS as lógicas:
+            #          1. Primeiro: Diagnósticos (capture_failure_diagnostics)
+            #          2. Depois: Rollback + Notificação (perform_rollback)
+            # =================================================================
+            
+            # Executa rollback e notificação (NÃO chamar diretamente - usar combined_exit_handler)
+            perform_rollback() {
+              local exit_code="$1"
+              log "🔄 ROLLBACK AUTOMÁTICO: Deploy falhou, restaurando estado anterior..."
+              
+              # Verificar se há estado para restaurar
+              if [ -f /tmp/last_deploy_state.txt ]; then
+                local state_file=$(cat /tmp/last_deploy_state.txt)
+                if [ -f "$state_file" ]; then
+                  log "📋 Usando backup de estado: $state_file"
+                  
+                  # Parar containers que foram iniciados neste deploy
+                  log "🛑 Parando containers iniciados neste deploy..."
+                  docker compose -f /opt/alice/app/infra/docker/docker-compose.prod.yml \
+                    --env-file /opt/alice/app/infra/docker/.env.prod down --remove-orphans 2>/dev/null || true
+                  
+                  log "✅ Rollback concluído - containers parados"
+                  log "📝 Dados persistentes PRESERVADOS em /opt/alice/data/"
+                  log "📝 Logs disponíveis em: $DEPLOY_LOG"
                 else
-                  log "⚠️ Nenhum estado anterior para restaurar (primeiro deploy?)"
+                  log "⚠️ Arquivo de estado não encontrado: $state_file"
                 fi
-                
-                # Capturar métricas de falha
-                local deploy_duration=$(($(date +%s) - DEPLOY_START))
-                cat > /opt/alice/logs/deploy-metrics-failed-$(date +%Y%m%d-%H%M%S).json << METRICS_EOF
-                {
-                  "version": "${IMAGE_TAG:-unknown}",
-                  "timestamp": "$(date -Iseconds)",
-                  "duration_seconds": ${deploy_duration},
-                  "status": "failed",
-                  "exit_code": ${exit_code},
-                  "initiated_by": "${GITHUB_ACTOR:-unknown}",
-                  "commit_sha": "${GITHUB_SHA:-unknown}"
-                }
-                METRICS_EOF
-                
-                # MELHORIA #2: Enviar notificação de falha
-                if [ -n "${SLACK_WEBHOOK_URL:-}" ]; then
-                  curl -X POST "$SLACK_WEBHOOK_URL" \
-                    -H 'Content-Type: application/json' \
-                    -d "{
-                      \"text\": \"❌ Deploy failed: Alice Enterprise Platform v${IMAGE_TAG:-unknown}\",
-                      \"attachments\": [{
-                        \"color\": \"danger\",
-                        \"fields\": [
-                          {\"title\": \"Exit Code\", \"value\": \"${exit_code}\", \"short\": true},
-                          {\"title\": \"Duração\", \"value\": \"$((deploy_duration / 60))min\", \"short\": true},
-                          {\"title\": \"Logs\", \"value\": \"${DEPLOY_LOG}\", \"short\": false}
-                        ]
-                      }]
-                    }" \
-                    2>/dev/null || true
-                fi
+              else
+                log "⚠️ Nenhum estado anterior para restaurar (primeiro deploy?)"
+              fi
+              
+              # Capturar métricas de falha
+              local deploy_duration=$(($(date +%s) - DEPLOY_START))
+              cat > /opt/alice/logs/deploy-metrics-failed-$(date +%Y%m%d-%H%M%S).json << METRICS_EOF
+              {
+                "version": "${IMAGE_TAG:-unknown}",
+                "timestamp": "$(date -Iseconds)",
+                "duration_seconds": ${deploy_duration},
+                "status": "failed",
+                "exit_code": ${exit_code},
+                "initiated_by": "${GITHUB_ACTOR:-unknown}",
+                "commit_sha": "${GITHUB_SHA:-unknown}"
+              }
+              METRICS_EOF
+              
+              # MELHORIA #2: Enviar notificação de falha
+              if [ -n "${SLACK_WEBHOOK_URL:-}" ]; then
+                curl -X POST "$SLACK_WEBHOOK_URL" \
+                  -H 'Content-Type: application/json' \
+                  -d "{
+                    \"text\": \"❌ Deploy failed: Alice Enterprise Platform v${IMAGE_TAG:-unknown}\",
+                    \"attachments\": [{
+                      \"color\": \"danger\",
+                      \"fields\": [
+                        {\"title\": \"Exit Code\", \"value\": \"${exit_code}\", \"short\": true},
+                        {\"title\": \"Duração\", \"value\": \"$((deploy_duration / 60))min\", \"short\": true},
+                        {\"title\": \"Logs\", \"value\": \"${DEPLOY_LOG}\", \"short\": false}
+                      ]
+                    }]
+                  }" \
+                  2>/dev/null || true
               fi
             }
             
-            # Registrar trap para rollback automático
-            trap rollback_on_failure EXIT
+            # =================================================================
+            # Handler ÚNICO de EXIT - executa diagnósticos E rollback
+            # =================================================================
+            combined_exit_handler() {
+              local exit_code=$?
+              
+              if [ $exit_code -ne 0 ]; then
+                log "❌ [EXIT HANDLER] Script falhou com exit code $exit_code"
+                
+                # FASE 1: Capturar diagnósticos detalhados (logs, Caddy, containers)
+                # Isso DEVE rodar ANTES do rollback para preservar estado dos containers
+                capture_failure_diagnostics
+                
+                # FASE 2: Rollback + Notificação
+                perform_rollback "$exit_code"
+                
+                log "🔄 [EXIT HANDLER] Handler de falha completo"
+              fi
+            }
+            
+            # Registrar ÚNICO trap que executa ambas as lógicas
+            trap combined_exit_handler EXIT
             
             # =================================================================
             # MELHORIA #3 (04/01/2026): Backup pré-deploy

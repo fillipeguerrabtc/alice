@@ -1,13 +1,13 @@
 # Alice - Plataforma Enterprise de IA Autônoma
 
 **Autor:** Fillipe Guerra  
-**Data:** 02 de Janeiro de 2026  
-**Versão:** 4.59
+**Data:** 04 de Janeiro de 2026  
+**Versão:** 4.73
 
 <div align="center">
 
 ![Alice Logo](https://img.shields.io/badge/Alice-IA%20Enterprise-blue?style=for-the-badge&logo=robot&logoColor=white)
-![Version](https://img.shields.io/badge/versão-4.59-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/versão-4.73-green?style=for-the-badge)
 ![License](https://img.shields.io/badge/licença-Proprietária-red?style=for-the-badge)
 ![LLM](https://img.shields.io/badge/LLM-Mixtral%208x7B%20vLLM-purple?style=for-the-badge)
 
