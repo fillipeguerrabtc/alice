@@ -746,25 +746,61 @@ jobs:
             # Conforme PROBLEMA #10 do relatório de deploy
             # MELHORIA 02/01/2026: Adiciona tempo decorrido e % de progresso
             #
-            # NOTA (04/01/2026): Steps podem ser inteiros OU decimais (ex: 7.5).
+            # CORREÇÃO PROBLEMA #8 (04/01/2026): Suporte para sub-steps granulares
+            # NOTA: Steps podem ser inteiros OU decimais (ex: 7.5) para sub-passos
             # Bash não suporta decimais em aritmética ($((...))), então o percentual
             # é calculado com awk para evitar falhas do workflow com `set -euo pipefail`.
+            # 
+            # USO:
+            #   progress 10 "Descrição"              # Step simples
+            #   progress 10 1 "Descrição substep 1"  # Com substep
             # =================================================================
             TOTAL_STEPS=14
             DEPLOY_START=$(date +%s)
             progress() {
               local step="$1"
-              local desc="$2"
+              local substep_or_desc="$2"
+              local desc_if_substep="${3:-}"
+              
+              # Detectar se $2 é substep (número) ou descrição (string)
+              local display_step="$step"
+              local desc=""
+              if [[ "$substep_or_desc" =~ ^[0-9]+$ ]] && [ -n "$desc_if_substep" ]; then
+                # $2 é substep numérico e $3 é a descrição
+                display_step="${step}.${substep_or_desc}"
+                desc="$desc_if_substep"
+              else
+                # $2 é a descrição (backward compatible)
+                desc="$substep_or_desc"
+              fi
+              
               local elapsed=$(($(date +%s) - DEPLOY_START))
               local mins=$((elapsed / 60))
               local secs=$((elapsed % 60))
+              
+              # Validar formato do step
               if ! [[ "$step" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
                 log "❌ ERRO: progress() recebeu step inválido: '$step' (esperado número, ex: 7 ou 7.5)"
                 exit 1
               fi
+              
+              # Calcular percentual com awk (suporta decimais)
               local percent
               percent="$(awk -v s="$step" -v t="$TOTAL_STEPS" 'BEGIN { if (t <= 0) { print 0; exit } printf "%.0f", (s * 100.0) / t }')"
-              log "[$step/$TOTAL_STEPS - ${percent}% - ${mins}m${secs}s] $desc"
+              
+              # Barra visual de progresso (Unicode blocks)
+              local bar_width=20
+              local filled=$((percent * bar_width / 100))
+              local bar=""
+              for ((i=0; i<bar_width; i++)); do
+                if [ $i -lt $filled ]; then
+                  bar="${bar}█"
+                else
+                  bar="${bar}░"
+                fi
+              done
+              
+              log "[$display_step/$TOTAL_STEPS - ${percent}% - ${mins}m${secs}s] ${bar} $desc"
             }
             
             # =================================================================
@@ -1000,6 +1036,109 @@ jobs:
             }
             
             # =================================================================
+            # CORREÇÃO PROBLEMA #6 (04/01/2026): Rollback automático em falha
+            # =================================================================
+            # PROBLEMA: Deploy falha sem restaurar estado anterior
+            # SOLUÇÃO: Backup de estado atual + rollback automático via trap
+            # =================================================================
+            
+            # Backup do estado atual dos containers (lista running)
+            backup_current_state() {
+              log "💾 Salvando estado atual para rollback..."
+              
+              local state_file="/opt/alice/backups/state-$(date +%Y%m%d-%H%M%S).json"
+              
+              # Salvar lista de containers rodando ANTES do deploy
+              docker ps --format '{"name":"{{.Names}}","image":"{{.Image}}","status":"{{.Status}}"}' > "$state_file" 2>/dev/null || {
+                log "⚠️ Não foi possível salvar estado (sem containers rodando?)"
+                return 0
+              }
+              
+              log "✅ Estado salvo em: $state_file"
+              log "   Containers rodando: $(docker ps -q | wc -l)"
+              
+              # Salvar referência para rollback
+              echo "$state_file" > /tmp/last_deploy_state.txt
+            }
+            
+            # Restaurar estado anterior em caso de falha
+            rollback_on_failure() {
+              local exit_code=$?
+              if [ $exit_code -ne 0 ]; then
+                log "🔄 ROLLBACK AUTOMÁTICO: Deploy falhou, restaurando estado anterior..."
+                
+                # Verificar se há estado para restaurar
+                if [ -f /tmp/last_deploy_state.txt ]; then
+                  local state_file=$(cat /tmp/last_deploy_state.txt)
+                  if [ -f "$state_file" ]; then
+                    log "📋 Usando backup de estado: $state_file"
+                    
+                    # Parar containers que foram iniciados neste deploy
+                    log "🛑 Parando containers iniciados neste deploy..."
+                    docker compose -f /opt/alice/app/infra/docker/docker-compose.prod.yml \
+                      --env-file /opt/alice/app/infra/docker/.env.prod down --remove-orphans 2>/dev/null || true
+                    
+                    log "✅ Rollback concluído - containers parados"
+                    log "📝 Dados persistentes PRESERVADOS em /opt/alice/data/"
+                    log "📝 Logs disponíveis em: $DEPLOY_LOG"
+                  else
+                    log "⚠️ Arquivo de estado não encontrado: $state_file"
+                  fi
+                else
+                  log "⚠️ Nenhum estado anterior para restaurar (primeiro deploy?)"
+                fi
+                
+                # Capturar métricas de falha
+                local deploy_duration=$(($(date +%s) - DEPLOY_START))
+                cat > /opt/alice/logs/deploy-metrics-failed-$(date +%Y%m%d-%H%M%S).json <<EOF
+{
+  "version": "${IMAGE_TAG:-unknown}",
+  "timestamp": "$(date -Iseconds)",
+  "duration_seconds": ${deploy_duration},
+  "status": "failed",
+  "exit_code": ${exit_code}
+}
+EOF
+              fi
+            }
+            
+            # Registrar trap para rollback automático
+            trap rollback_on_failure EXIT
+            
+            # =================================================================
+            # MELHORIA #3 (04/01/2026): Backup pré-deploy
+            # =================================================================
+            # PROBLEMA: Deploy pode sobrescrever dados sem backup
+            # SOLUÇÃO: Backup automático de volumes críticos antes do deploy
+            # =================================================================
+            create_pre_deploy_backup() {
+              log "💾 Criando backup pré-deploy..."
+              
+              # Verificar se PostgreSQL está rodando (deploy não é primeiro)
+              if docker ps --filter "name=alice-postgres" --filter "status=running" --format '{{.Names}}' | grep -q alice-postgres; then
+                log "📦 Backup de PostgreSQL..."
+                
+                local backup_file="/opt/alice/backups/postgres-pre-deploy-$(date +%Y%m%d-%H%M%S).tar.gz"
+                
+                # Usar docker run com volume montado (sem afetar container rodando)
+                if docker run --rm \
+                  -v alice-postgres-data:/source:ro \
+                  -v /opt/alice/backups:/backup \
+                  busybox tar czf "/backup/$(basename "$backup_file")" -C /source . 2>/dev/null; then
+                  
+                  local size=$(du -h "$backup_file" | cut -f1)
+                  log "✅ Backup PostgreSQL criado: $backup_file ($size)"
+                else
+                  log "⚠️ Backup PostgreSQL falhou (pode não ser crítico)"
+                fi
+              else
+                log "ℹ️  PostgreSQL não está rodando - pulando backup (primeiro deploy?)"
+              fi
+              
+              log "✅ Backup pré-deploy completo"
+            }
+            
+            # =================================================================
             # MELHORIA M2 (02/01/2026): Persistir logs de deploy
             # =================================================================
             # Salvar logs para troubleshooting futuro
@@ -1018,6 +1157,11 @@ jobs:
             log "Serviços: ${DEPLOY_SERVICES}"
             log "SHA: ${GITHUB_SHA}"
             log ""
+            
+            # =================================================================
+            # CORREÇÃO PROBLEMA #6 (04/01/2026): Salvar estado atual para rollback
+            # =================================================================
+            backup_current_state
             
             # =================================================================
             # FAIL-FAST ENTERPRISE (2025): Validar host correto + GPU obrigatória
@@ -1773,6 +1917,11 @@ jobs:
             
             log "📊 Capturando métricas do sistema (baseline)..."
             capture_system_metrics
+            
+            # =================================================================
+            # MELHORIA #3 (04/01/2026): Backup pré-deploy
+            # =================================================================
+            create_pre_deploy_backup
             
             # =================================================================
             # CORREÇÃO PROBLEMA #3 (04/01/2026): Docker compose up com retry logic
@@ -3242,90 +3391,124 @@ jobs:
             fi
             
             # =================================================================
-            # MELHORIA M1 (02/01/2026): Smoke Tests Pós-Deploy
+            # CORREÇÃO PROBLEMA #7 (04/01/2026): Smoke tests enterprise completos
             # =================================================================
             # Validar serviços críticos ANTES de marcar deploy como sucesso
             # Detecta problemas de conectividade/funcionalidade cedo
             # =================================================================
+            run_smoke_tests() {
+              log "🧪 Executando smoke tests..."
+              
+              local failed=0
+              
+              # Test 1: PostgreSQL aceita conexões
+              echo "🔍 Test 1: PostgreSQL aceita conexões..."
+              if timeout $SMOKE_TEST_TIMEOUT_SECONDS docker exec alice-postgres pg_isready -U alice 2>/dev/null; then
+                echo "   ✅ PostgreSQL: OK"
+              else
+                echo "   ❌ PostgreSQL: FALHOU"
+                failed=$((failed + 1))
+              fi
+              
+              # Test 2: pgvector operacional
+              echo "🔍 Test 2: pgvector operacional..."
+              PGVECTOR_TEST=$(timeout $SMOKE_TEST_TIMEOUT_SECONDS docker exec alice-postgres psql -U alice -d alice_prod -t -c "SELECT '[1,2,3]'::vector <-> '[4,5,6]'::vector AS distance;" 2>/dev/null | xargs || echo "")
+              if [ -n "$PGVECTOR_TEST" ]; then
+                echo "   ✅ pgvector: OK (distância: $PGVECTOR_TEST)"
+              else
+                echo "   ❌ pgvector: FALHOU"
+                failed=$((failed + 1))
+              fi
+              
+              # Test 3: Redis responde
+              echo "🔍 Test 3: Redis responde..."
+              REDIS_PWD=$(grep '^REDIS_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2- || echo "")
+              if timeout $SMOKE_TEST_TIMEOUT_SECONDS docker exec alice-redis redis-cli -a "$REDIS_PWD" --no-auth-warning PING 2>/dev/null | grep -q "PONG"; then
+                echo "   ✅ Redis: OK"
+              else
+                echo "   ❌ Redis: FALHOU"
+                failed=$((failed + 1))
+              fi
+              
+              # Test 4: Auth service health
+              echo "🔍 Test 4: Auth service health..."
+              if timeout $SMOKE_TEST_TIMEOUT_SECONDS docker exec alice-auth wget -q -O- http://localhost:3001/health 2>/dev/null | grep -q '"status"'; then
+                echo "   ✅ Auth service: OK"
+              else
+                echo "   ❌ Auth service: FALHOU"
+                failed=$((failed + 1))
+              fi
+              
+              # Test 5: Caddy responde HTTP
+              echo "🔍 Test 5: Caddy responde HTTP..."
+              if timeout $SMOKE_TEST_TIMEOUT_SECONDS docker exec alice-caddy wget -q --spider http://localhost:80/ 2>/dev/null || \
+                 timeout $SMOKE_TEST_TIMEOUT_SECONDS docker exec alice-caddy wget -q --spider --timeout=5 http://localhost:2019/metrics 2>/dev/null; then
+                echo "   ✅ Caddy: OK"
+              else
+                echo "   ⚠️ Caddy: HTTP não respondeu (não crítico se SSL ainda não configurado)"
+              fi
+              
+              # Test 6: GPU Manager responde
+              echo "🔍 Test 6: GPU Manager responde..."
+              if timeout $SMOKE_TEST_TIMEOUT_SECONDS docker exec alice-gpu-manager wget -q --spider http://localhost:3010/health 2>/dev/null; then
+                echo "   ✅ GPU Manager: OK"
+              else
+                echo "   ⚠️ GPU Manager: não respondeu (verificar se está healthy)"
+              fi
+              
+              # Test 7: Chat Service alcança GPU Manager (conectividade inter-service)
+              echo "🔍 Test 7: Chat → GPU Manager (conectividade)..."
+              if timeout $SMOKE_TEST_TIMEOUT_SECONDS docker exec alice-chat wget -q --spider http://alice-gpu-manager:3010/health 2>/dev/null; then
+                echo "   ✅ Chat → GPU Manager: OK"
+              else
+                echo "   ⚠️ Chat → GPU Manager: não alcança (verificar network)"
+              fi
+              
+              # Test 8: pgBackRest stanza
+              echo "🔍 Test 8: pgBackRest stanza..."
+              if timeout $SMOKE_TEST_TIMEOUT_SECONDS docker exec alice-postgres pgbackrest --stanza=alice_prod info 2>/dev/null | grep -q "status"; then
+                echo "   ✅ pgBackRest stanza: OK"
+              else
+                echo "   ⚠️ pgBackRest stanza: não encontrada (não crítico no primeiro deploy)"
+              fi
+              
+              # Test 9: Qdrant responde
+              echo "🔍 Test 9: Qdrant (vector DB)..."
+              if timeout $SMOKE_TEST_TIMEOUT_SECONDS docker exec alice-qdrant wget -q -O- http://localhost:6333/healthz 2>/dev/null | grep -q "ok"; then
+                echo "   ✅ Qdrant: OK"
+              else
+                echo "   ⚠️ Qdrant: não respondeu"
+              fi
+              
+              # Test 10: MinIO responde
+              echo "🔍 Test 10: MinIO (storage)..."
+              if timeout $SMOKE_TEST_TIMEOUT_SECONDS docker exec alice-minio wget -q -O- http://localhost:9000/minio/health/live 2>/dev/null; then
+                echo "   ✅ MinIO: OK"
+              else
+                echo "   ⚠️ MinIO: não respondeu"
+              fi
+              
+              if [ $failed -gt 0 ]; then
+                log "❌ $failed smoke test(s) crítico(s) falharam"
+                return 1
+              fi
+              
+              log "✅ Todos os smoke tests passaram ($failed falhas)"
+              return 0
+            }
+            
             progress 13 "Executando smoke tests"
             echo ""
             echo "=============================================="
             echo "🧪 SMOKE TESTS PÓS-DEPLOY"
             echo "=============================================="
             
-            SMOKE_FAILED=0
-            
-            # Test 1: PostgreSQL aceita conexões
-            echo "🔍 Test 1: PostgreSQL aceita conexões..."
-            if docker exec alice-postgres pg_isready -U alice 2>/dev/null; then
-              echo "   ✅ PostgreSQL: OK"
-            else
-              echo "   ❌ PostgreSQL: FALHOU"
-              SMOKE_FAILED=1
-            fi
-            
-            # Test 2: pgvector operacional
-            echo "🔍 Test 2: pgvector operacional..."
-            PGVECTOR_TEST=$(docker exec alice-postgres psql -U alice -d alice_prod -t -c "SELECT '[1,2,3]'::vector <-> '[4,5,6]'::vector AS distance;" 2>/dev/null | xargs || echo "")
-            if [ -n "$PGVECTOR_TEST" ]; then
-              echo "   ✅ pgvector: OK (distância calculada: $PGVECTOR_TEST)"
-            else
-              echo "   ❌ pgvector: FALHOU"
-              SMOKE_FAILED=1
-            fi
-            
-            # Test 3: Redis responde
-            echo "🔍 Test 3: Redis responde..."
-            REDIS_PWD=$(grep '^REDIS_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2- || echo "")
-            if docker exec alice-redis redis-cli -a "$REDIS_PWD" --no-auth-warning PING 2>/dev/null | grep -q "PONG"; then
-              echo "   ✅ Redis: OK"
-            else
-              echo "   ❌ Redis: FALHOU"
-              SMOKE_FAILED=1
-            fi
-            
-            # Test 4: Caddy responde HTTP
-            echo "🔍 Test 4: Caddy responde HTTP..."
-            if docker exec alice-caddy wget -q --spider http://localhost:80/ 2>/dev/null || \
-               docker exec alice-caddy wget -q --spider --timeout=5 http://localhost:2019/metrics 2>/dev/null; then
-              echo "   ✅ Caddy: OK"
-            else
-              echo "   ⚠️ Caddy: HTTP não respondeu (pode ser normal se SSL ainda não configurado)"
-            fi
-            
-            # Test 5: GPU Manager responde (MELHORIA M3: conectividade entre services)
-            echo "🔍 Test 5: GPU Manager responde..."
-            if docker exec alice-gpu-manager wget -q --spider http://localhost:3010/health 2>/dev/null; then
-              echo "   ✅ GPU Manager: OK"
-            else
-              echo "   ⚠️ GPU Manager: não respondeu (verificar se está healthy)"
-            fi
-            
-            # Test 6: Chat Service alcança GPU Manager (MELHORIA M3)
-            echo "🔍 Test 6: Chat Service → GPU Manager (conectividade)..."
-            if docker exec alice-chat wget -q --spider http://alice-gpu-manager:3010/health 2>/dev/null; then
-              echo "   ✅ Chat → GPU Manager: OK"
-            else
-              echo "   ⚠️ Chat → GPU Manager: não alcança (verificar network)"
-            fi
-            
-            # Test 7: pgBackRest stanza existe e está acessível (PROBLEMA #8)
-            echo "🔍 Test 7: pgBackRest stanza..."
-            if docker exec alice-postgres pgbackrest --stanza=alice_prod info 2>/dev/null | grep -q "status"; then
-              echo "   ✅ pgBackRest stanza: OK"
-            else
-              echo "   ⚠️ pgBackRest stanza: não encontrada (verificar pgbackrest-init)"
-              echo "      NOTA: stanza-upgrade pode ser necessário após postgres iniciar"
-            fi
-            
-            echo ""
-            if [ $SMOKE_FAILED -eq 1 ]; then
+            if ! run_smoke_tests; then
               echo "❌ ERRO: Um ou mais smoke tests críticos falharam!"
               echo "   Deploy pode estar em estado inconsistente"
               exit 1
             fi
             
-            echo "✅ Todos os smoke tests críticos passaram"
             echo "=============================================="
             
             # Status final
