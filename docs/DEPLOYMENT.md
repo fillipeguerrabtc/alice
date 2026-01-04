@@ -1633,6 +1633,35 @@ Os init containers executam em ordem de dependência:
    - **Logs:** `/tmp/init_logs_erpnext-create-site.txt`
    - **Nota:** Pode demorar até 10min - timeout de 90min no workflow é adequado
 
+### ⏱️ Espera Inteligente (Implementado em 04/01/2026)
+
+O workflow de deploy agora aguarda **ativamente** que TODOS os init containers completem antes de verificar containers normais:
+
+```bash
+# Aguarda até 2 minutos para init containers completarem
+INIT_TIMEOUT=120
+for init_container in "${INIT_CONTAINERS[@]}"; do
+  while [ "$STATUS" = "running" ]; do
+    echo "⏳ $init_container ainda executando..."
+    sleep 5
+  done
+  
+  # Fail-fast se exit code != 0
+  if [ "$EXIT_CODE" != "0" ]; then
+    exit 1  # Deploy falha IMEDIATAMENTE
+  fi
+done
+
+# Aguarda 30s para service containers iniciarem healthchecks
+sleep 30
+```
+
+**Benefícios:**
+- ✅ Elimina race condition (check executando antes de inits completarem)
+- ✅ Progress indicator mostra tempo decorrido (a cada 15s)
+- ✅ Fail-fast imediato se init container falhar
+- ✅ Service containers têm tempo adequado para iniciar healthchecks
+
 ### ✅ Comportamento Esperado vs ❌ Problemas
 
 | Status | Exit Code | Container Tipo | Interpretação |
@@ -1757,6 +1786,50 @@ docker inspect --format='Finished: {{.State.FinishedAt}}' alice-pgbackrest-init
 - ❌ Exit code != 0 → Verificar logs para erro específico
 - ❌ Status = `created` → Container nunca iniciou (dependency failed)
 - ❌ Duração > 2 minutos → Pode estar travado
+
+### 🔒 Validação Específica do Caddy (Implementado em 04/01/2026)
+
+O workflow de deploy agora valida o **Caddy separadamente** antes de verificar outros containers:
+
+```bash
+# Aguardar Caddy iniciar
+sleep 10
+
+# Verificar se está rodando
+docker ps --filter "name=alice-caddy" --filter "status=running"
+
+# Aguardar até 60s para ficar healthy
+CADDY_TIMEOUT=60
+while [ "$CADDY_HEALTH" != "healthy" ] && [ $CADDY_ELAPSED -lt $CADDY_TIMEOUT ]; do
+  echo "⏳ Aguardando Caddy ficar healthy (${CADDY_ELAPSED}s/${CADDY_TIMEOUT}s)..."
+  sleep 5
+done
+
+# Fail-fast se não ficou healthy
+if [ "$CADDY_HEALTH" != "healthy" ]; then
+  docker logs --tail 100 alice-caddy
+  exit 1
+fi
+```
+
+**Por que validar Caddy separadamente?**
+- ✅ Caddy pode demorar 30-60s para obter certificado SSL (ACME/Let's Encrypt)
+- ✅ Fail-fast específico se Caddy falhar (com logs detalhados)
+- ✅ Evita falso positivo se Caddy ainda estiver em processo de SSL
+- ✅ Captura logs do Caddy IMEDIATAMENTE se houver problema
+
+**Logs do Caddy sem avisos (Caddyfile otimizado em 04/01/2026):**
+
+Removidos headers redundantes que causavam 32 avisos:
+```bash
+# ANTES (causava avisos)
+header_up X-Forwarded-For {remote_host}
+header_up X-Forwarded-Proto {scheme}
+
+# DEPOIS (sem avisos)
+# Caddy adiciona esses headers automaticamente
+# Ref: https://caddyserver.com/docs/caddyfile/directives/reverse_proxy#defaults
+```
 
 ### Disk Space Insuficiente
 
