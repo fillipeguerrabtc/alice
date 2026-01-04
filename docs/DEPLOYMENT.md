@@ -1595,3 +1595,184 @@ Os 7 serviços Node.js usam imagens `node:22-alpine3.21` (CVE-2023-45853 fix). H
 *Redis Alice: 7.4.7-alpine - Cache distribuído (node-redis 5.x suporta Redis 7.x)*
 *Redis ERPNext: 6.2.21-alpine - ERPNext v15 requer Redis 6.x (docs.frappe.io)*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
+
+---
+
+## 🔧 Troubleshooting
+
+### Init Containers Marcados como Unhealthy
+
+**Problema:** Container `alice-pgbackrest-init`, `alice-minio-init` ou `erpnext-configurator` marcado como unhealthy causando falha no deploy, embora tenha completado com sucesso (exit 0).
+
+**Causa Raiz:** Init containers (`restart: "no"`) têm comportamento diferente de containers normais:
+- **Init containers:** Status `exited` com exit code 0 = **SUCESSO** ✅
+- **Containers normais:** Status `exited` (qualquer exit code) = **PROBLEMA** ❌
+
+**Sintoma:**
+```bash
+❌ FAIL-FAST: Containers com problemas detectados!
+📋 Containers problemáticos:
+   - alice-pgbackrest-init: status=exited, exit=0 (unhealthy)
+```
+
+**Solução (Implementada em 04/01/2026):**
+
+A função `check_container_health()` no workflow de deploy agora distingue corretamente entre init containers e containers normais:
+
+```bash
+# Init containers conhecidos
+INIT_CONTAINERS=("alice-pgbackrest-init" "alice-minio-init" "erpnext-configurator")
+
+# Lógica específica
+if [ "$IS_INIT" -eq 1 ]; then
+  # Init container: status "exited" com exit 0 é SUCESSO
+  if [ "$STATUS" = "exited" ] && [ "$EXIT_CODE" != "0" ]; then
+    IS_PROBLEM=1  # Apenas exit code != 0 é problema
+  fi
+else
+  # Container normal: status "exited" SEMPRE é problema
+  if [ "$STATUS" = "exited" ]; then
+    IS_PROBLEM=1  # Qualquer exit code
+  fi
+fi
+```
+
+**Diagnóstico Manual:**
+
+Se você suspeitar que um init container falhou, verifique:
+
+```bash
+# Verificar status e exit code
+docker inspect --format='{{.State.Status}} {{.State.ExitCode}}' alice-pgbackrest-init
+
+# Ver logs completos
+docker logs alice-pgbackrest-init
+
+# Ver timestamps
+docker inspect --format='Started: {{.State.StartedAt}}' alice-pgbackrest-init
+docker inspect --format='Finished: {{.State.FinishedAt}}' alice-pgbackrest-init
+```
+
+**Valores Esperados:**
+- ✅ **Status:** `exited`
+- ✅ **Exit Code:** `0`
+- ✅ **Duração:** Geralmente < 30 segundos
+
+**Valores Problemáticos:**
+- ❌ Exit code != 0 → Verificar logs para erro específico
+- ❌ Status = `created` → Container nunca iniciou (dependency failed)
+- ❌ Duração > 2 minutos → Pode estar travado
+
+### Disk Space Insuficiente
+
+**Problema:** Deploy falha com erro "Espaço insuficiente".
+
+**Causa Raiz:** `/opt/alice` precisa de mínimo 10GB livre para deploy seguro.
+
+**Sintoma:**
+```bash
+❌ ERRO CRÍTICO: Espaço insuficiente em /opt/alice
+   Disponível: 3GB
+   Requerido: 10GB
+```
+
+**Solução:**
+
+1. Verificar uso atual:
+```bash
+df -h /opt/alice
+du -h --max-depth=2 /opt/alice | sort -rh | head -20
+```
+
+2. Limpar dados antigos:
+```bash
+# Remover logs antigos (> 30 dias)
+find /opt/alice/logs -type f -mtime +30 -delete
+
+# Limpar backups antigos (manter últimos 7 dias)
+find /opt/alice/backups -type f -mtime +7 -delete
+
+# Remover imagens Docker não utilizadas
+docker system prune -af --volumes
+```
+
+3. Expandir volume (se necessário):
+```bash
+# No Hetzner Cloud Console, expandir volume para 200GB+
+# Depois redimensionar filesystem:
+sudo resize2fs /dev/disk/by-id/scsi-0HC_Volume_XXXXX
+```
+
+### Container Normal com Status "Exited"
+
+**Problema:** Container normal (long-running) tem status `exited`.
+
+**Causa Raiz:** Containers normais devem ter status `running`. Se tiverem `exited`, significa problema:
+- Restart policy failed
+- Dependency failed  
+- Crash gracefully (exit 0 ainda é problema)
+- Manual stop
+
+**Sintoma:**
+```bash
+📋 Containers problemáticos:
+   - alice-postgres: status=exited, exit=0 (container normal não deve parar)
+```
+
+**Diagnóstico:**
+
+```bash
+# Ver por que container parou
+docker logs --tail=100 alice-postgres
+
+# Verificar restart count (> 2 indica instabilidade)
+docker inspect --format='{{.RestartCount}}' alice-postgres
+
+# Verificar health checks
+docker inspect --format='{{.State.Health.Status}}' alice-postgres
+
+# Tentar restart manual
+docker restart alice-postgres
+
+# Verificar dependências
+docker-compose -f docker-compose.prod.yml ps
+```
+
+### Métricas do Sistema Durante Deploy
+
+**Implementado em 04/01/2026:** Deploy agora captura métricas automaticamente:
+
+**Baseline (antes do deploy):**
+```bash
+📊 MÉTRICAS DO SISTEMA:
+💾 Disco: 85GB disponível em /opt/alice
+🧠 Memória: 48GB livre de 64GB
+⚙️ CPU Load: 0.52, 0.48, 0.45
+🐳 Docker: 12GB em uso (images: 8GB, containers: 4GB)
+```
+
+**Após falha (diagnóstico):**
+- Mesmo output é capturado automaticamente
+- Permite comparar antes/depois
+- Identifica se falha foi por falta de recursos
+
+**Acesso Manual:**
+```bash
+# Ver métricas atuais
+df -h /opt/alice
+free -h
+uptime
+docker system df
+```
+
+### Referências
+
+- **CLAUDE.md v4.60:** Changelog completo da correção de init containers
+- **Docker Compose Healthcheck:** https://docs.docker.com/compose/compose-file/compose-file-v3/#healthcheck
+- **pgBackRest 2.57.0 Release:** https://pgbackrest.org/release.html
+- **GitHub Workflow Deploy:** `.github/workflows/deploy-production.yml`
+
+---
+
+*Seção de Troubleshooting adicionada em: 04 de Janeiro de 2026*
+*Autor: Fillipe Guerra*
