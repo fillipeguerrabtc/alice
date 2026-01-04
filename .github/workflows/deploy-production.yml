@@ -687,29 +687,40 @@ jobs:
             # =================================================================
             # ALICE ENTERPRISE PLATFORM - DEPLOY PRODUCTION WORKFLOW
             # =================================================================
-            # Versão: 4.64 - 04 de Janeiro de 2026
+            # Versão: 4.65 - 04 de Janeiro de 2026
             # Autor: Fillipe Guerra (GitHub Copilot)
             # 
-            # CORREÇÕES IMPLEMENTADAS (Job #59401310413):
+            # CORREÇÃO CRÍTICA (Job #59402882845): BASH SYNTAX ERROR
+            # ⚠️  Deploy nunca funcionou devido a here-document syntax error
+            # 🔴 PROBLEMA #1 (BLOQUEADOR): Here-document closing delimiter com indentação
+            #     - Linhas 1159 e 3647: METRICS_EOF com 14 espaços de indentação
+            #     - Bash requer delimiter at column 0 (sem indentação)
+            #     - Erro: "bash: -c: line 3023: syntax error: unexpected end of file"
+            # ✅ SOLUÇÃO: Remover indentação dos delimiters METRICS_EOF (linhas 1159, 3647)
+            #     - JSON content permanece indentado (dentro do here-document)
+            #     - Closing delimiter METRICS_EOF agora em column 0
+            # 
+            # CORREÇÕES ANTERIORES (Job #59401310413):
             # 
             # 🔴 PROBLEMAS CRÍTICOS (10/10 RESOLVIDOS)
-            # ✅ #1: check_container_health() - Distinção init vs service containers
-            # ✅ #2: Timeout 90min (era 55min) - Adequado para primeiro deploy
-            # ✅ #3: Retry logic docker compose up - 3 tentativas com backoff
-            # ✅ #4: Validação completa .env.prod - 10 variáveis críticas
-            # ✅ #5: Preservar logs init containers - Antes de serem removidos
-            # ✅ #6: Rollback automático - Backup + restore via trap EXIT
-            # ✅ #7: Smoke tests enterprise - 10 testes críticos
-            # ✅ #8: Progress indicators granulares - Sub-steps + barra visual
-            # ✅ #9: Configurações centralizadas - readonly vars
-            # ✅ #10: Validar dependências externas - GHCR, Docker Hub, GitHub
+            # ✅ #1: Here-document syntax error - CRÍTICO BLOQUEADOR (v4.65)
+            # ✅ #2: check_container_health() - Distinção init vs service containers (v4.64)
+            # ✅ #3: Timeout 90min (era 55min) - Adequado para primeiro deploy (v4.64)
+            # ✅ #4: Retry logic docker compose up - 3 tentativas com backoff (v4.64)
+            # ✅ #5: Validação completa .env.prod - 20+ variáveis críticas (v4.64)
+            # ✅ #6: Preservar logs init containers - Antes de serem removidos (v4.64)
+            # ✅ #7: Rollback automático - Backup + restore via trap EXIT (v4.64)
+            # ✅ #8: Smoke tests enterprise - 10 testes críticos (v4.64)
+            # ✅ #9: Progress indicators granulares - Sub-steps + barra visual (v4.64)
+            # ✅ #10: Configurações centralizadas - readonly vars (v4.64)
+            # ✅ #11: Validar dependências externas - GHCR, Docker Hub, GitHub (v4.64)
             # 
             # 🟢 MELHORIAS ENTERPRISE (5/5 IMPLEMENTADAS)
-            # ✅ M1: Métricas de deploy - JSON com duration, containers, status
-            # ✅ M2: Notificações - Slack webhook (success/failure)
-            # ✅ M3: Backup pré-deploy - PostgreSQL volumes
-            # ✅ M4: Diagnósticos Caddy - Logs, healthcheck, validação
-            # ✅ M5: Documentação inline completa - Este header + comentários
+            # ✅ M1: Métricas de deploy - JSON com duration, containers, status (v4.64)
+            # ✅ M2: Notificações - Slack webhook (success/failure) (v4.64)
+            # ✅ M3: Backup pré-deploy - PostgreSQL volumes (v4.64)
+            # ✅ M4: Diagnósticos Caddy - Logs, healthcheck, validação (v4.64)
+            # ✅ M5: Documentação inline completa - Este header + comentários (v4.65)
             # 
             # ARQUITETURA:
             # - 50 containers (7 infra + 7 Alice + 15 ERPNext + 13 observability + 6 GPU + 1 backup + 1 storage)
@@ -1146,17 +1157,17 @@ jobs:
               
               # Capturar métricas de falha
               local deploy_duration=$(($(date +%s) - DEPLOY_START))
-              cat > /opt/alice/logs/deploy-metrics-failed-$(date +%Y%m%d-%H%M%S).json << METRICS_EOF
-              {
-                "version": "${IMAGE_TAG:-unknown}",
-                "timestamp": "$(date -Iseconds)",
-                "duration_seconds": ${deploy_duration},
-                "status": "failed",
-                "exit_code": ${exit_code},
-                "initiated_by": "${GITHUB_ACTOR:-unknown}",
-                "commit_sha": "${GITHUB_SHA:-unknown}"
-              }
-              METRICS_EOF
+              cat > /opt/alice/logs/deploy-metrics-failed-$(date +%Y%m%d-%H%M%S).json <<METRICS_EOF
+{
+  "version": "${IMAGE_TAG:-unknown}",
+  "timestamp": "$(date -Iseconds)",
+  "duration_seconds": ${deploy_duration},
+  "status": "failed",
+  "exit_code": ${exit_code},
+  "initiated_by": "${GITHUB_ACTOR:-unknown}",
+  "commit_sha": "${GITHUB_SHA:-unknown}"
+}
+METRICS_EOF
               
               # MELHORIA #2: Enviar notificação de falha
               if [ -n "${SLACK_WEBHOOK_URL:-}" ]; then
@@ -3630,21 +3641,21 @@ jobs:
             collect_deploy_metrics() {
               log "📊 Coletando métricas de deploy..."
               
-              cat > /opt/alice/logs/deploy-metrics-$(date +%Y%m%d-%H%M%S).json << METRICS_EOF
-              {
-                "version": "${IMAGE_TAG}",
-                "timestamp": "$(date -Iseconds)",
-                "duration_seconds": ${DEPLOY_DURATION},
-                "duration_minutes": $((DEPLOY_DURATION / 60)),
-                "status": "success",
-                "containers_total": ${TOTAL_RUNNING},
-                "containers_gpu": ${GPU_RUNNING:-0},
-                "gpu_profile": "${GPU_PROFILE:-none}",
-                "smoke_tests": "passed",
-                "initiated_by": "${GITHUB_ACTOR:-unknown}",
-                "commit_sha": "${GITHUB_SHA:-unknown}"
-              }
-              METRICS_EOF
+              cat > /opt/alice/logs/deploy-metrics-$(date +%Y%m%d-%H%M%S).json <<METRICS_EOF
+{
+  "version": "${IMAGE_TAG}",
+  "timestamp": "$(date -Iseconds)",
+  "duration_seconds": ${DEPLOY_DURATION},
+  "duration_minutes": $((DEPLOY_DURATION / 60)),
+  "status": "success",
+  "containers_total": ${TOTAL_RUNNING},
+  "containers_gpu": ${GPU_RUNNING:-0},
+  "gpu_profile": "${GPU_PROFILE:-none}",
+  "smoke_tests": "passed",
+  "initiated_by": "${GITHUB_ACTOR:-unknown}",
+  "commit_sha": "${GITHUB_SHA:-unknown}"
+}
+METRICS_EOF
               
               log "✅ Métricas salvas em /opt/alice/logs/deploy-metrics-*.json"
             }
