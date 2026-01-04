@@ -94,7 +94,7 @@ docker exec <container_name> nc -zv erpnext-mariadb 3306
 
 | Serviço | start_period | timeout | retries | Tempo Total Max |
 |---------|--------------|---------|---------|-----------------|
-| **alice-frontend** | 120s | 15s | 5 | 120s + (15s × 5) = 195s (~3min) |
+| **alice-frontend** | 120s | 25s | 5 | 120s + (25s × 5) = 245s (~4min) |
 | **alice-vector** | 180s | 10s | 5 | 180s + (10s × 5) = 230s (~4min) |
 | **erpnext-backend** | 420s | 20s | 15 | 420s + (20s × 15) = 720s (~12min) |
 | **erpnext-workers** | 480s | 15s | 10 | 480s + (15s × 10) = 630s (~10min) |

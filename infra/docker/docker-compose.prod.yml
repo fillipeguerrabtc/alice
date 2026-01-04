@@ -824,10 +824,12 @@ services:
       # Fallback para / caso /health não exista - nginx retorna 200 OK
       # Retry é gerenciado pelo Docker (retries: 5) - mais confiável
       # Ref: apps/frontend-service/nginx.conf linha 6 (listen 8080)
+      # IMPORTANTE: timeout Docker (25s) > soma dos timeouts wget (10s+10s=20s)
+      # Garante que ambos os comandos tenham tempo de executar antes do Docker matar
       # =================================================================
       test: ["CMD-SHELL", "wget --spider --quiet --tries=1 --timeout=10 http://localhost:8080/health || wget --spider --quiet --tries=1 --timeout=10 http://localhost:8080/"]
       interval: 30s
-      timeout: 15s
+      timeout: 25s
       retries: 5
       # start_period: tempo de "graça" antes de contar falhas (primeiro deploy ~2min)
       start_period: 120s
