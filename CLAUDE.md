@@ -842,3 +842,13 @@ git commit -a -m "test: adiciona testes unitários"
 - *Implementação 100% enterprise-grade (Regras 6, 7, 9 - SEM WORKAROUNDS, mudanças cirúrgicas, validação contínua, documentação PT-BR).*
 - *Ref: Docker Compose healthcheck docs, Docker inspect format reference, Bash arithmetic expansion docs, ISO 8601 timestamp format.*
 
+*Versão: 4.62 - 04 de Janeiro de 2026*
+*Bug Fix: AVAILABLE_INODES Integer Comparison Without Numeric Validation (04/01/2026):*
+- *CAUSA RAIZ: Variável AVAILABLE_INODES era usada em comparação de inteiros (`-lt`) sem validar se era numérica primeiro.*
+- *PROBLEMA: df -i pode retornar "-" para filesystems sem suporte a inodes (ex: alguns filesystems remotos). Com set -euo pipefail, a comparação falhava com "integer expression expected" crashando o deploy.*
+- *INCONSISTÊNCIA: Validação de disk space (linhas 1452-1458) usava `[ "$space" -eq "$space" ] 2>/dev/null` para validar numérico, mas validação de inodes apenas verificava `[ -n "$AVAILABLE_INODES" ]` que NÃO garante valor numérico.*
+- *CORREÇÃO: Criada função get_available_inodes() seguindo mesmo padrão de get_disk_space() - valida se valor é numérico antes de retorná-lo, retorna string vazia se não-numérico.*
+- *ARQUIVO MODIFICADO: .github/workflows/deploy-production.yml (linhas 1501-1511).*
+- *Implementação 100% enterprise-grade (Regras 2, 6 - usar padrões existentes, sem workarounds).*
+- *Ref: Bash arithmetic expansion docs, df(1) man page.*
+

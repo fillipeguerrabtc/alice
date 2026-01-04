@@ -1493,12 +1493,26 @@ jobs:
             # PROBLEMA: Sistema pode ter GB livres mas sem inodes, causando
             # "No space left on device" ao criar novos arquivos
             # SOLUÇÃO: Verificar inodes disponíveis e alertar se baixo
+            # CORREÇÃO 04/01/2026: Validar se valor é numérico antes de comparação
+            # (df -i pode retornar "-" para filesystems sem suporte a inodes)
             # =================================================================
             log "💾 Verificando inodes disponíveis..."
             
-            AVAILABLE_INODES=$(df -i /opt/alice 2>/dev/null | awk 'NR==2 {print $4}')
+            # Função auxiliar para obter inodes disponíveis (validado como numérico)
+            get_available_inodes() {
+              local path="$1"
+              local inodes=$(df -i "$path" 2>/dev/null | awk 'NR==2 {print $4}')
+              # Validar se é número (mesmo padrão de get_disk_space)
+              if [ "$inodes" -eq "$inodes" ] 2>/dev/null; then
+                echo "$inodes"
+              else
+                echo ""
+              fi
+            }
+            
+            AVAILABLE_INODES=$(get_available_inodes "/opt/alice")
             if [ -z "$AVAILABLE_INODES" ]; then
-              AVAILABLE_INODES=$(df -i / 2>/dev/null | awk 'NR==2 {print $4}')
+              AVAILABLE_INODES=$(get_available_inodes "/")
             fi
             
             REQUIRED_INODES=10000
