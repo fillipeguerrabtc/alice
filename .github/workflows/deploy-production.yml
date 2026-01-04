@@ -1362,6 +1362,81 @@ jobs:
             
             echo "✅ BACKUP_CIPHER_PASS presente no .env.prod (${BACKUP_LEN} chars)"
             
+            # =================================================================
+            # CORREÇÃO 04/01/2026: Validação de disk space ANTES do deploy
+            # PROBLEMA #6: Deploy pode falhar silenciosamente por falta de espaço
+            # SOLUÇÃO: Verificar espaço mínimo obrigatório antes de continuar
+            # =================================================================
+            log "💾 Verificando espaço em disco disponível..."
+            
+            # Função auxiliar para obter espaço disponível em GB
+            get_disk_space() {
+              local path="$1"
+              # df -BG retorna espaço em GB, awk extrai coluna 4 (available), sed remove 'G'
+              local space=$(df -BG "$path" 2>/dev/null | awk 'NR==2 {print $4}' | sed 's/G//')
+              # Validar se é número
+              if [ "$space" -eq "$space" ] 2>/dev/null; then
+                echo "$space"
+              else
+                echo ""
+              fi
+            }
+            
+            # Verificar /opt/alice (dados persistentes) - fallback sequencial
+            AVAILABLE_GB=$(get_disk_space "/opt/alice")
+            if [ -z "$AVAILABLE_GB" ]; then
+              AVAILABLE_GB=$(get_disk_space "/opt")
+            fi
+            if [ -z "$AVAILABLE_GB" ]; then
+              AVAILABLE_GB=$(get_disk_space "/")
+            fi
+            
+            REQUIRED_GB=10  # Mínimo 10GB livre para deploy seguro
+            
+            if [ -z "$AVAILABLE_GB" ]; then
+              echo "⚠️ AVISO: Não foi possível determinar espaço em disco"
+              echo "   Continuando deploy (verificação manual recomendada após deploy)"
+            elif [ "$AVAILABLE_GB" -lt "$REQUIRED_GB" ]; then
+              echo "❌ ERRO CRÍTICO: Espaço insuficiente em /opt/alice"
+              echo "   Disponível: ${AVAILABLE_GB}GB"
+              echo "   Requerido: ${REQUIRED_GB}GB"
+              echo ""
+              echo "📊 Uso detalhado de disco:"
+              df -h /opt/alice 2>/dev/null || df -h /
+              echo ""
+              echo "📁 Maiores diretórios em /opt/alice:"
+              du -h --max-depth=2 /opt/alice 2>/dev/null | sort -rh | head -20
+              exit 1
+            else
+              log "✅ Espaço em disco suficiente: ${AVAILABLE_GB}GB disponível"
+            fi
+            
+            # =================================================================
+            # CORREÇÃO 04/01/2026: Capturar métricas de sistema antes do deploy
+            # PROBLEMA #16-18: Falta observabilidade durante deploy
+            # SOLUÇÃO: Capturar métricas ANTES do deploy para baseline
+            # =================================================================
+            capture_system_metrics() {
+              echo ""
+              echo "📊 MÉTRICAS DO SISTEMA:"
+              echo ""
+              echo "💾 Disco:"
+              df -h /opt/alice 2>/dev/null | tail -n +2 || df -h / | tail -n +2
+              echo ""
+              echo "🧠 Memória:"
+              free -h
+              echo ""
+              echo "⚙️  CPU Load:"
+              uptime
+              echo ""
+              echo "🐳 Docker:"
+              docker system df 2>/dev/null || echo "(docker system df não disponível)"
+              echo ""
+            }
+            
+            log "📊 Capturando métricas do sistema (baseline)..."
+            capture_system_metrics
+            
             # CORREÇÃO 03/01/2026: Mostrar output em TEMPO REAL durante docker compose up
             # PROBLEMA: Capturar saída com $() oculta progresso - workflow parece travado
             # SOLUÇÃO: Usar tee para mostrar em tempo real E capturar para análise
@@ -1630,6 +1705,11 @@ jobs:
             
             if [ $COMPOSE_EXIT -ne 0 ]; then
               echo "❌ ERRO: docker compose up (core) falhou com exit code $COMPOSE_EXIT. Capturando diagnóstico..."
+              
+              # CORREÇÃO 04/01/2026: Capturar métricas do sistema após falha
+              log "📊 Capturando métricas do sistema (após falha)..."
+              capture_system_metrics
+              
               docker compose -f docker-compose.prod.yml --env-file .env.prod ps || true
               echo ""
               # CORREÇÃO 01/01/2026: Capturar logs de TODOS os containers críticos
@@ -1752,9 +1832,19 @@ jobs:
             # SOLUÇÃO: Usar docker ps diretamente (mais confiável que JSON)
             # DETECTA: created, dead, exited, restarting, unhealthy
             # =================================================================
+            # =================================================================
+            # CORREÇÃO 04/01/2026: check_container_health() distingue init containers
+            # =================================================================
+            # PROBLEMA: Init containers (restart: "no") têm status "exited" após 
+            #           completarem com sucesso, mas função os marcava como unhealthy
+            # SOLUÇÃO: Validar exit code 0 para init containers, health para normais
+            # =================================================================
             check_container_health() {
               local context_msg="${1:-Verificação de containers}"
               log "🔍 FAIL-FAST: $context_msg..."
+              
+              # Lista de init containers (restart: "no") - devem ter status "exited" com exit code 0
+              local INIT_CONTAINERS=("alice-pgbackrest-init" "alice-minio-init" "erpnext-configurator")
               
               # Usar docker ps com filtros diretos (mais confiável que JSON parsing)
               PROBLEM_CONTAINERS=""
@@ -1766,28 +1856,50 @@ jobs:
                 HEALTH=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container" 2>/dev/null || echo "none")
                 RESTART_COUNT=$(docker inspect --format='{{.RestartCount}}' "$container" 2>/dev/null || echo "0")
                 
-                # Estados problemáticos: created (nunca iniciou), dead, exited com erro, restarting (crash loop)
+                # Verificar se é init container
+                IS_INIT=0
+                for init_container in "${INIT_CONTAINERS[@]}"; do
+                  if [ "$container" = "$init_container" ]; then
+                    IS_INIT=1
+                    break
+                  fi
+                done
+                
                 IS_PROBLEM=0
                 REASON=""
                 
-                if [ "$STATUS" = "created" ]; then
-                  IS_PROBLEM=1
-                  REASON="nunca iniciou (dependency failed?)"
-                elif [ "$STATUS" = "dead" ]; then
-                  IS_PROBLEM=1
-                  REASON="dead"
-                elif [ "$STATUS" = "exited" ] && [ "$EXIT_CODE" != "0" ]; then
-                  IS_PROBLEM=1
-                  REASON="exited com exit code $EXIT_CODE"
-                elif [ "$STATUS" = "restarting" ]; then
-                  IS_PROBLEM=1
-                  REASON="restarting (crash loop)"
-                elif [ "$HEALTH" = "unhealthy" ]; then
-                  IS_PROBLEM=1
-                  REASON="unhealthy"
-                elif [ "$RESTART_COUNT" -gt 2 ] 2>/dev/null; then
-                  IS_PROBLEM=1
-                  REASON="RestartCount=$RESTART_COUNT (instável)"
+                if [ "$IS_INIT" -eq 1 ]; then
+                  # INIT CONTAINER: validar exit code 0 (status "exited" é esperado)
+                  if [ "$STATUS" = "exited" ] && [ "$EXIT_CODE" != "0" ]; then
+                    IS_PROBLEM=1
+                    REASON="init container falhou (exit code $EXIT_CODE)"
+                  elif [ "$STATUS" != "exited" ] && [ "$STATUS" != "running" ]; then
+                    # Init container ainda rodando ou em estado inválido
+                    IS_PROBLEM=1
+                    REASON="init container em estado inesperado ($STATUS)"
+                  fi
+                  # NOTA: status "exited" com exit code 0 é SUCESSO para init containers (não é problema)
+                else
+                  # CONTAINER NORMAL: validar health status e estados
+                  if [ "$STATUS" = "created" ]; then
+                    IS_PROBLEM=1
+                    REASON="nunca iniciou (dependency failed?)"
+                  elif [ "$STATUS" = "dead" ]; then
+                    IS_PROBLEM=1
+                    REASON="dead"
+                  elif [ "$STATUS" = "exited" ] && [ "$EXIT_CODE" != "0" ]; then
+                    IS_PROBLEM=1
+                    REASON="exited com exit code $EXIT_CODE"
+                  elif [ "$STATUS" = "restarting" ]; then
+                    IS_PROBLEM=1
+                    REASON="restarting (crash loop)"
+                  elif [ "$HEALTH" = "unhealthy" ]; then
+                    IS_PROBLEM=1
+                    REASON="unhealthy"
+                  elif [ "$RESTART_COUNT" -gt 2 ] 2>/dev/null; then
+                    IS_PROBLEM=1
+                    REASON="RestartCount=$RESTART_COUNT (instável)"
+                  fi
                 fi
                 
                 if [ "$IS_PROBLEM" = "1" ]; then
@@ -1824,7 +1936,7 @@ jobs:
                 return 1
               fi
               
-              log "✅ $context_msg: OK"
+              log "✅ $context_msg: OK (init containers completaram, containers normais healthy)"
               return 0
             }
             
@@ -1832,6 +1944,35 @@ jobs:
             if ! check_container_health "Verificando erros de dependência"; then
               exit 1
             fi
+            
+            # =================================================================
+            # CORREÇÃO 04/01/2026: Diagnóstico específico de init containers
+            # =================================================================
+            log "🔍 DIAGNÓSTICO: Verificando init containers específicos..."
+            
+            for init_container in "alice-pgbackrest-init" "alice-minio-init" "erpnext-configurator"; do
+              if docker ps -a --format '{{.Names}}' | grep -q "^${init_container}$"; then
+                EXIT_CODE=$(docker inspect --format='{{.State.ExitCode}}' "$init_container" 2>/dev/null || echo "N/A")
+                STATUS=$(docker inspect --format='{{.State.Status}}' "$init_container" 2>/dev/null || echo "unknown")
+                STARTED_AT=$(docker inspect --format='{{.State.StartedAt}}' "$init_container" 2>/dev/null || echo "N/A")
+                FINISHED_AT=$(docker inspect --format='{{.State.FinishedAt}}' "$init_container" 2>/dev/null || echo "N/A")
+                
+                echo ""
+                echo "📦 Init Container: $init_container"
+                echo "   Status: $STATUS"
+                echo "   Exit Code: $EXIT_CODE"
+                echo "   Started: $STARTED_AT"
+                echo "   Finished: $FINISHED_AT"
+                
+                if [ "$EXIT_CODE" != "0" ] && [ "$EXIT_CODE" != "N/A" ]; then
+                  echo "   ⚠️  FALHOU - Capturando logs completos..."
+                  echo ""
+                  docker logs "$init_container" 2>&1 || echo "(logs não disponíveis)"
+                elif [ "$STATUS" = "exited" ] && [ "$EXIT_CODE" = "0" ]; then
+                  echo "   ✅ Completou com sucesso"
+                fi
+              fi
+            done
             
             # Verificar status dos serviços core
             sleep 5
