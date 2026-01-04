@@ -1929,10 +1929,12 @@ jobs:
             # Lista de containers init CRÍTICOS (restart: "no", devem completar com sucesso)
             # CORREÇÃO 01/01/2026: Nomes devem corresponder exatamente ao container_name no docker-compose
             # MIGRAÇÃO 02/01/2026: traefik-init removido (Caddy não precisa de init), pgbackrest-init adicionado
+            # CORREÇÃO 04/01/2026: Adicionado erpnext-create-site (faltava na lista)
             INIT_CONTAINERS=(
               "alice-minio-init"
               "alice-pgbackrest-init"
               "erpnext-configurator"
+              "erpnext-create-site"
             )
             
             INIT_FAILED=0

@@ -1618,11 +1618,21 @@ services:
           memory: 256M
           cpus: '0.25'
 
+  # =============================================================================
+  # INIT CONTAINER 4: ERPNext Site Creation (One-time Job)
+  # =============================================================================
+  # FUNÇÃO: Cria site ERPNext completo (database + arquivos + app installation)
+  # COMPORTAMENTO ESPERADO: Status "exited" com exit code 0 após completion
+  # TEMPO ESTIMADO: 3-10 minutos no primeiro deploy
+  # CRÍTICO: Workers ERPNext dependem deste container (service_completed_successfully)
+  # =============================================================================
   erpnext-create-site:
     # ATUALIZADO 14/12/2025: ERPNext v15.91.3 (última versão estável) com SHA256 digest
     image: frappe/erpnext:v15.91.3
     platform: linux/amd64
     container_name: erpnext-create-site
+    # INIT CONTAINER: restart: "no" significa "executar uma vez e parar"
+    # NÃO é um erro - é o comportamento correto para init containers
     restart: "no"
     # REGRA 16: Security Hardening - no-new-privileges (init precisa escrever, não pode ter read_only)
     security_opt:
@@ -1741,6 +1751,8 @@ services:
       - erpnext-network
     depends_on:
       erpnext-configurator:
+        # service_completed_successfully: Aguarda container exit 0
+        # Docker Compose v2 espera status "exited" + exit code 0
         condition: service_completed_successfully
       erpnext-mariadb:
         condition: service_healthy
@@ -1805,6 +1817,8 @@ services:
       - erpnext-network
     depends_on:
       erpnext-create-site:
+        # CRÍTICO: Workers precisam que site esteja criado
+        # service_completed_successfully aguarda exit 0 do create-site
         condition: service_completed_successfully
       erpnext-mariadb:
         condition: service_healthy
