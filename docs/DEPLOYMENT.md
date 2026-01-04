@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 04 de Janeiro de 2026  
-**Versão:** 7.18 - Trap Handler Unificado (Diagnóstico + Rollback)
+**Versão:** 7.19 - Upload Artifact Logs via SCP
 
 > **Migração 100% Self-Hosted (27/12/2025):** Pipeline completo migrado para runner próprio (Hetzner CPX32 - 4 vCPU, 8GB RAM) seguindo melhores práticas enterprise 2025. Todos os workflows (CI, Release, Deploy) executam no self-hosted runner para controle total, custos previsíveis e compliance.
 
@@ -801,6 +801,30 @@ Todos os logs de deploy são salvos automaticamente para troubleshooting futuro:
 # Visualizar logs de um deploy específico
 cat /opt/alice/logs/deploy-20260102-141530.log | less
 ```
+
+#### Upload de Logs como GitHub Artifacts (04/01/2026)
+
+Logs de deploy são automaticamente baixados do servidor Hetzner e publicados como GitHub Artifacts para troubleshooting facilitado:
+
+**Arquivos coletados:**
+- `/tmp/compose_up_attempt_*.log` - Logs de tentativas de docker compose up
+- `/tmp/init_logs_*.txt` - Logs de init containers
+- `/opt/alice/logs/deploy-metrics-*.json` - Métricas de deploy (sucesso/falha)
+- Logs das últimas 500 linhas de cada container Alice
+
+**Acesso aos artifacts:**
+1. Acesse a aba "Actions" do repositório
+2. Clique na run do workflow de deploy
+3. Na seção "Artifacts", baixe `deploy-logs-vX.Y.Z`
+
+**Processo técnico (5 steps):**
+1. **Configurar SSH** - Chave SSH configurada no runner
+2. **Preparar logs no Hetzner** - Agrega todos os logs em tarball
+3. **Baixar via SCP** - Transfere tarball para o runner
+4. **Limpar SSH** - Remove chave por segurança
+5. **Upload artifact** - Publica logs no GitHub Actions
+
+> **CORREÇÃO 04/01/2026:** Os logs são criados no servidor Hetzner via SSH, não no runner GitHub Actions. O workflow agora baixa os logs via SCP antes de fazer o upload-artifact. Retenção: 90 dias.
 
 #### Validação do Repositório pgBackRest
 
