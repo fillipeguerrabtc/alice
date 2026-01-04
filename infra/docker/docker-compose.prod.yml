@@ -316,7 +316,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 420s
     deploy:
       resources:
         limits:
@@ -817,13 +817,16 @@ services:
       # CORREÇÃO 23/12/2025: Mode 1755 não permite escrita - deve ser 1777 para tmpfs gravável
       - /etc/nginx/conf.d:mode=1777,size=8M
     healthcheck:
-      # CORREÇÃO 02/01/2026: nginx Alpine NÃO tem wget/curl - usar /dev/tcp do busybox
-      # Verificar se porta 80 responde (nginx pronto para aceitar conexões)
-      test: ["CMD-SHELL", "timeout 5 /bin/sh -c 'true < /dev/tcp/localhost/80' || exit 1"]
+      # CORREÇÃO 04/01/2026: Verificar se nginx está REALMENTE serving conteúdo
+      # nginx Alpine tem wget disponível - usar para verificar resposta HTTP real
+      # wget --spider verifica se URL existe (GET request) sem baixar conteúdo
+      test: ["CMD-SHELL", "wget --spider --quiet --tries=1 --timeout=5 http://localhost:80/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 45s
+      # CORREÇÃO 04/01/2026: start_period aumentado de 45s para 90s
+      # Frontend precisa processar assets no primeiro deploy
+      start_period: 90s
     deploy:
       resources:
         limits:
@@ -898,7 +901,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 420s
     # Docs 2025: Node.js 20 light service - 0.5 CPU, 512MB
     deploy:
       resources:
@@ -966,7 +969,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 420s
     deploy:
       resources:
         limits:
@@ -1123,7 +1126,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 420s
     deploy:
       resources:
         limits:
@@ -1221,7 +1224,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 420s
     deploy:
       resources:
         limits:
@@ -1293,7 +1296,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 420s
     deploy:
       resources:
         limits:
@@ -1367,7 +1370,7 @@ services:
       interval: 15s
       timeout: 10s
       retries: 10
-      start_period: 60s
+      start_period: 420s
     deploy:
       resources:
         limits:
@@ -1957,11 +1960,17 @@ services:
       # CORREÇÃO 02/01/2026: ERPNext é Python - verificar conexão Redis (saúde REAL do worker)
       # Workers RQ dependem do Redis para funcionar - verificar conexão é a melhor prova de saúde
       # CORREÇÃO 02/01/2026: Usar os.environ para evitar quebra de sintaxe se senha tiver aspas
+      # CORREÇÃO 04/01/2026: start_period aumentado de 60s para 420s (7 minutos)
+      # Primeiro deploy precisa de mais tempo:
+      # - MariaDB init: ~2min
+      # - erpnext-create-site: ~3-5min (cria site + instala ERPNext)
+      # - Worker startup: ~2min
+      # TOTAL: ~7-9 minutos necessários
       test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 420s
     deploy:
       resources:
         limits:
@@ -2014,11 +2023,17 @@ services:
       - erpnext-network
     healthcheck:
       # CORREÇÃO 02/01/2026: ERPNext é Python - verificar conexão Redis (saúde REAL do worker)
+      # CORREÇÃO 04/01/2026: start_period aumentado de 60s para 420s (7 minutos)
+      # Primeiro deploy precisa de mais tempo:
+      # - MariaDB init: ~2min
+      # - erpnext-create-site: ~3-5min (cria site + instala ERPNext)
+      # - Worker startup: ~2min
+      # TOTAL: ~7-9 minutos necessários
       test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 420s
     deploy:
       resources:
         limits:
@@ -2075,7 +2090,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 420s
     deploy:
       resources:
         limits:
@@ -2132,7 +2147,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 420s
     deploy:
       resources:
         limits:
@@ -2189,7 +2204,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 420s
     deploy:
       resources:
         limits:
@@ -2246,7 +2261,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 420s
     deploy:
       resources:
         limits:
@@ -2303,7 +2318,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 420s
     deploy:
       resources:
         limits:
@@ -2963,11 +2978,12 @@ services:
       # Ref: https://vector.dev/docs/administration/management/
       # NOTA: timberio/vector:*-alpine NÃO tem curl - usar wget (disponível)
       # =================================================================
+      # CORREÇÃO 04/01/2026: start_period aumentado de 30s para 60s para primeiro deploy
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8686/health"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 30s
+      start_period: 60s
     deploy:
       resources:
         limits:

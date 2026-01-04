@@ -1082,8 +1082,12 @@ jobs:
             # SOLUÇÃO: Centralizar configuração de timeouts com valores padrão
             # =================================================================
             # Timeouts configuráveis (podem ser sobrescritos via env vars)
+            # CORREÇÃO 04/01/2026: MAX_WAIT_TIME aumentado de 600s para 900s (15 minutos)
+            # ERPNext workers agora têm start_period de 420s (7 min), precisamos dar margem
+            # para eles passarem pelos retries se necessário
+            # Cálculo: 420s (start_period) + 5 retries × 30s interval + margem = ~900s
             MONITOR_INTERVAL="${MONITOR_INTERVAL:-5}"       # segundos entre checks de health
-            MAX_WAIT_TIME="${MAX_WAIT_TIME:-600}"          # timeout total para containers ficarem healthy (10 min)
+            MAX_WAIT_TIME="${MAX_WAIT_TIME:-900}"          # timeout total para containers ficarem healthy (15 min)
             HEALTHCHECK_RETRIES="${HEALTHCHECK_RETRIES:-30}" # quantas tentativas de healthcheck
             
             log "⏱️  Configuração de timeouts para monitoramento:"
