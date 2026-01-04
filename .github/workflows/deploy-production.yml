@@ -1887,9 +1887,11 @@ jobs:
                   elif [ "$STATUS" = "dead" ]; then
                     IS_PROBLEM=1
                     REASON="dead"
-                  elif [ "$STATUS" = "exited" ] && [ "$EXIT_CODE" != "0" ]; then
+                  elif [ "$STATUS" = "exited" ]; then
+                    # Container normal NÃO deve ter status "exited" (mesmo com exit code 0)
+                    # Se exited, algo está errado (restart failed, dependency failed, etc)
                     IS_PROBLEM=1
-                    REASON="exited com exit code $EXIT_CODE"
+                    REASON="exited com exit code $EXIT_CODE (container normal não deve parar)"
                   elif [ "$STATUS" = "restarting" ]; then
                     IS_PROBLEM=1
                     REASON="restarting (crash loop)"
