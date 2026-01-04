@@ -46,8 +46,8 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Versão para release (ex: v1.0.0, v1.0.0-beta.1)'
-        required: true
+        description: 'Versão para release (ex: v1.0.0, v1.0.0-beta.1) - OPCIONAL: deixe vazio para cálculo automático via Conventional Commits'
+        required: false
         type: string
       prerelease:
         description: 'É uma pré-release (alpha/beta)?'
@@ -76,7 +76,7 @@ jobs:
     runs-on: [self-hosted, linux, deploy]
     timeout-minutes: 5
     outputs:
-      version: ${{ inputs.version }}
+      version: ${{ steps.final-version.outputs.version }}
       previous_tag: ${{ steps.previous-tag.outputs.previous_tag }}
       changelog: ${{ steps.changelog.outputs.changes }}
     
@@ -85,23 +85,6 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
-
-      - name: Validar formato da versão
-        run: |
-          VERSION="${{ inputs.version }}"
-          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
-            echo "❌ Formato de versão inválido: $VERSION"
-            exit 1
-          fi
-          echo "✅ Versão válida: $VERSION"
-
-      - name: Verificar se tag já existe
-        run: |
-          if git rev-parse "${{ inputs.version }}" >/dev/null 2>&1; then
-            echo "❌ Tag ${{ inputs.version }} já existe!"
-            exit 1
-          fi
-          echo "✅ Tag ${{ inputs.version }} disponível"
 
       - name: Detectar tag anterior (para retagging)
         id: previous-tag
@@ -113,6 +96,83 @@ jobs:
           else
             echo "⚠️ Nenhuma tag anterior encontrada (primeiro release?)"
           fi
+
+      - name: Calcular próxima versão automaticamente
+        id: auto-version
+        if: ${{ inputs.version == '' }}
+        run: |
+          PREVIOUS_TAG="${{ steps.previous-tag.outputs.previous_tag }}"
+          
+          if [ -z "$PREVIOUS_TAG" ]; then
+            # Primeiro release
+            NEXT_VERSION="v1.0.0"
+            echo "ℹ️ Nenhuma tag anterior - usando v1.0.0"
+          else
+            # Remover prefixo v para cálculo
+            CURRENT=$(echo "$PREVIOUS_TAG" | sed 's/^v//')
+            MAJOR=$(echo "$CURRENT" | cut -d. -f1)
+            MINOR=$(echo "$CURRENT" | cut -d. -f2)
+            PATCH=$(echo "$CURRENT" | cut -d- -f1 | cut -d. -f3)
+            
+            # Analisar commits desde última tag
+            COMMITS=$(git log "$PREVIOUS_TAG..HEAD" --pretty=format:"%s" --no-merges)
+            
+            # Detectar tipo de mudança (mesma lógica do changelog)
+            if echo "$COMMITS" | grep -qE "^[a-z]+(\(.+\))?!:|BREAKING CHANGE:"; then
+              # MAJOR: Breaking change
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              CHANGE_TYPE="MAJOR (breaking change detectado)"
+            elif echo "$COMMITS" | grep -qE "^feat(\(.+\))?:"; then
+              # MINOR: Nova feature
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              CHANGE_TYPE="MINOR (feat detectado)"
+            else
+              # PATCH: Bug fix ou outros
+              PATCH=$((PATCH + 1))
+              CHANGE_TYPE="PATCH (fix ou outros)"
+            fi
+            
+            NEXT_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+            echo "✅ Versão anterior: $PREVIOUS_TAG"
+            echo "✅ Tipo de mudança: $CHANGE_TYPE"
+            echo "✅ Próxima versão (calculada): $NEXT_VERSION"
+          fi
+          
+          echo "version=$NEXT_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Definir versão final
+        id: final-version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            # Versão manual fornecida
+            VERSION="${{ inputs.version }}"
+            echo "ℹ️ Usando versão manual fornecida: $VERSION"
+          else
+            # Versão calculada automaticamente
+            VERSION="${{ steps.auto-version.outputs.version }}"
+            echo "ℹ️ Usando versão calculada automaticamente: $VERSION"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Validar formato da versão
+        run: |
+          VERSION="${{ steps.final-version.outputs.version }}"
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+            echo "❌ Formato de versão inválido: $VERSION"
+            exit 1
+          fi
+          echo "✅ Versão válida: $VERSION"
+
+      - name: Verificar se tag já existe
+        run: |
+          if git rev-parse "${{ steps.final-version.outputs.version }}" >/dev/null 2>&1; then
+            echo "❌ Tag ${{ steps.final-version.outputs.version }} já existe!"
+            exit 1
+          fi
+          echo "✅ Tag ${{ steps.final-version.outputs.version }} disponível"
 
       - name: Gerar changelog
         id: changelog
@@ -154,34 +214,34 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a ${{ inputs.version }} -m "Release ${{ inputs.version }}"
-          git push origin ${{ inputs.version }}
-          echo "✅ Tag ${{ inputs.version }} criada"
+          git tag -a ${{ steps.final-version.outputs.version }} -m "Release ${{ steps.final-version.outputs.version }}"
+          git push origin ${{ steps.final-version.outputs.version }}
+          echo "✅ Tag ${{ steps.final-version.outputs.version }} criada"
 
       - name: Criar GitHub Release
         uses: softprops/action-gh-release@01570a1f39cb168c169c802c3bceb9e93fb10974
         with:
-          tag_name: ${{ inputs.version }}
-          name: Alice Enterprise Platform ${{ inputs.version }}
+          tag_name: ${{ steps.final-version.outputs.version }}
+          name: Alice Enterprise Platform ${{ steps.final-version.outputs.version }}
           prerelease: ${{ inputs.prerelease }}
           generate_release_notes: true
           body: |
-            ## 🚀 Alice Enterprise Platform ${{ inputs.version }}
+            ## 🚀 Alice Enterprise Platform ${{ steps.final-version.outputs.version }}
             
             ### Changelog
             ${{ steps.changelog.outputs.changes }}
             
             ### 🐳 Docker Images
             ```
-            ${{ env.IMAGE_PREFIX }}-auth:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-chat:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-frontend:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-rag:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-training:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-integrations:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-observability:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-gpu-manager:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-api-gateway:${{ inputs.version }}
+            ${{ env.IMAGE_PREFIX }}-auth:${{ steps.final-version.outputs.version }}
+            ${{ env.IMAGE_PREFIX }}-chat:${{ steps.final-version.outputs.version }}
+            ${{ env.IMAGE_PREFIX }}-frontend:${{ steps.final-version.outputs.version }}
+            ${{ env.IMAGE_PREFIX }}-rag:${{ steps.final-version.outputs.version }}
+            ${{ env.IMAGE_PREFIX }}-training:${{ steps.final-version.outputs.version }}
+            ${{ env.IMAGE_PREFIX }}-integrations:${{ steps.final-version.outputs.version }}
+            ${{ env.IMAGE_PREFIX }}-observability:${{ steps.final-version.outputs.version }}
+            ${{ env.IMAGE_PREFIX }}-gpu-manager:${{ steps.final-version.outputs.version }}
+            ${{ env.IMAGE_PREFIX }}-api-gateway:${{ steps.final-version.outputs.version }}
             ```
 
   # ===========================================================================
