@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 02 de Janeiro de 2026  
-**Versão:** 7.17 - Deploy Enterprise Hardening (Smoke Tests + Persistência de Logs)
+**Data:** 04 de Janeiro de 2026  
+**Versão:** 7.18 - Fix Versionamento Automático Funcional
 
 > **Migração 100% Self-Hosted (27/12/2025):** Pipeline completo migrado para runner próprio (Hetzner CPX32 - 4 vCPU, 8GB RAM) seguindo melhores práticas enterprise 2025. Todos os workflows (CI, Release, Deploy) executam no self-hosted runner para controle total, custos previsíveis e compliance.
 
@@ -619,18 +619,20 @@ O deploy é **100% automático** via GitHub Actions:
 
 **Tag única e determinística:** a pipeline de deploy usa a versão recebida pelo `release.yml` (`inputs.version` ou calculada automaticamente) como tag principal das imagens. Build, security scan (Trivy) e deploy consomem exatamente a mesma tag, garantindo alinhamento entre imagens analisadas e imagens publicadas.
 
-### Versionamento Automático (30/12/2025)
+### Versionamento Automático (04/01/2026)
 
 O workflow de release (`release.yml`) suporta versionamento automático baseado em Conventional Commits:
 
-- **Versão automática**: Use `version: "auto"` ou deixe vazio para calcular automaticamente a próxima versão baseada em:
+- **Versão automática**: Deixe o campo `version` **vazio** no workflow_dispatch para calcular automaticamente a próxima versão baseada em:
   - **BREAKING CHANGE** ou commits com `!` (ex: `feat!:`, `fix!:`) → **MAJOR** bump (v2.0.0)
   - **feat:** (sem `!`) → **MINOR** bump (v1.1.0)
   - **fix:** ou outros → **PATCH** bump (v1.0.1)
 
-- **Reutilização de tags**: Se uma tag já existe e aponta para o mesmo commit atual, ela é reutilizada automaticamente (útil para rollbacks). Se a tag aponta para um commit diferente, o workflow falha com erro claro.
+- **Versão manual**: Forneça a versão explicitamente (ex: `v1.4.25`) para usar uma versão específica.
 
-- **Cache e retagging**: O sistema de cache e retagging funciona corretamente mesmo quando tags são reutilizadas, garantindo que imagens Docker sejam reutilizadas quando apropriado (sem rebuilds desnecessários).
+- **Validação inteligente**: A validação de formato semver só ocorre quando a versão é conhecida - para push de tag (imediato), para versão manual fornecida (imediato), e para versionamento automático (após cálculo).
+
+- **Cache e retagging**: O sistema de cache e retagging funciona corretamente, garantindo que imagens Docker sejam reutilizadas quando apropriado (sem rebuilds desnecessários).
 
 ### Pipeline Unificada (17/12/2025)
 
@@ -708,22 +710,22 @@ O workflow de release (`release.yml`) suporta versionamento automático baseado 
 
 Pipeline: push para `main` → CI → Release → Deploy (100% automático - todos os 50 containers no servidor único).
 
-### Versionamento Automático (30/12/2025)
+### Versionamento Automático - Detalhes (04/01/2026)
 
 O workflow de release (`release.yml`) suporta versionamento automático baseado em Conventional Commits:
 
 **Opções de versionamento:**
-- **Automático**: Use `version: "auto"` ou deixe vazio no workflow_dispatch para calcular automaticamente a próxima versão baseada em:
+- **Automático**: Deixe o campo `version` **vazio** no workflow_dispatch para calcular automaticamente a próxima versão baseada em:
   - **BREAKING CHANGE** ou commits com `!` (ex: `feat!:`, `fix!:`) → **MAJOR** bump (v2.0.0)
   - **feat:** (sem `!`) → **MINOR** bump (v1.1.0)
   - **fix:** ou outros → **PATCH** bump (v1.0.1)
-- **Manual**: Forneça a versão explicitamente (ex: `v1.4.25`)
-- **Reutilização de tags**: Se uma tag já existe e aponta para o mesmo commit atual, ela é reutilizada automaticamente (útil para rollbacks)
+- **Manual**: Forneça a versão explicitamente (ex: `v1.4.25`) - validação de formato ocorre imediatamente
 
-**Cálculo de versão inteligente (30/12/2025):**
-- Usa a **MAIOR versão existente** como base (não `git describe` que pega tag mais próxima)
-- Se versão calculada já existe (releases paralelos), incrementa PATCH automaticamente
+**Cálculo de versão inteligente (04/01/2026):**
+- Usa a tag mais recente como base (`git describe --tags --abbrev=0` do HEAD)
+- Se versão calculada já existe (releases paralelos), incrementa PATCH automaticamente até 100 tentativas
 - Exemplo: se v1.6.0 existe e MINOR bump seria v1.7.0, mas v1.7.0 já existe → usa v1.7.1
+- Validação de formato semver só ocorre após a versão ser determinada (manual ou automática)
 
 **Deploy automático (30/12/2025):**
 - O Deploy workflow aceita versão vazia e obtém automaticamente da tag mais recente quando disparado pelo Release workflow

@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 04 de Janeiro de 2026  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.73 - Bug Fix release.yml Previous Tag Detection for workflow_dispatch
+> **Versão:** 4.74 - Fix Versionamento Automático release.yml (validação ordem corrigida)
 
 ---
 
@@ -970,6 +970,8 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 > **NOTA (14/12/2025):** **CORREÇÃO ENTERPRISE - Contexto inputs.* Obsoleto**: Corrigido bug no `deploy-production.yml` onde o código ainda referenciava `inputs.version` e `inputs.services` (contexto de `workflow_call`), mas o workflow agora usa apenas `workflow_dispatch`. O contexto `inputs.*` só está disponível com `workflow_call`, sendo `github.event.inputs.*` o correto para `workflow_dispatch`. Expressões simplificadas para usar apenas `github.event.inputs.*` e comentários atualizados para refletir arquitetura atual.
 
 > **NOTA (04/01/2026):** **CORREÇÃO ENTERPRISE - Detecção de Tag Anterior em workflow_dispatch**: Corrigido bug no `release.yml` onde `git describe --tags --abbrev=0 "$VERSION^"` falhava silenciosamente quando disparado via `workflow_dispatch`. **Causa**: A tag `$VERSION` ainda não existe (será criada), então `$VERSION^` é uma referência inválida. **Impacto**: `PREVIOUS_TAG` ficava vazio, changelog mostrava 50 commits genéricos, e otimização de retagging não funcionava (rebuild desnecessário de todas imagens). **Solução**: Lógica diferenciada por trigger - `push` usa `"$VERSION^"` (tag existe), `workflow_dispatch` usa `git describe --tags --abbrev=0` sem argumentos (do HEAD).
+
+> **NOTA (04/01/2026):** **CORREÇÃO ENTERPRISE - Versionamento Automático Funcional**: Corrigido bug crítico no `release.yml` onde a feature de versionamento automático (deixar campo `version` vazio no workflow_dispatch) estava completamente quebrada. **Causa**: A validação de formato semver (linhas 111-117) ocorria ANTES do step de cálculo automático de versão (linha 138). Quando `inputs.version` estava vazio, `VERSION=""` e a validação falhava imediatamente com "Formato de versão inválido". **Solução**: Validação de formato agora só ocorre quando a versão é conhecida - para `push` (versão da tag), para `workflow_dispatch` com versão manual (validação imediata), e para versionamento automático (validação após cálculo no step "Definir versão final"). Também corrigida a condição do step `auto-version` para incluir `github.event_name == 'workflow_dispatch'` (evita execução desnecessária em push de tag).
 
 > **NOTA (14/12/2025):** **LIMPEZA DE DOCUMENTAÇÃO**: Removidos 3 documentos obsoletos/redundantes para evitar confusão: (1) `GAPS-CRITICOS-ENCONTRADOS.md` - gaps já corrigidos, (2) `ANALISE-COMPLETA-TAKEOVER-HANDOVER.md` - redundante com STATUS-REAL-ATUAL, (3) `AUDITORIA-SECRETS.md` - redundante com SECRETS.md. Total de documentos ativos em `/docs`: 8 arquivos focados e sem redundância.
 

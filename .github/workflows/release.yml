@@ -41,6 +41,11 @@
 # - Agora usa git describe sem argumentos (do HEAD) para workflow_dispatch
 # - Garante changelog correto e otimização de retagging em releases manuais
 #
+# CORREÇÃO (04/01/2026): Versionamento automático funcional
+# - Validação de formato movida para DEPOIS do cálculo automático de versão
+# - workflow_dispatch sem versão agora funciona corretamente
+# - Validação ocorre em 3 pontos: push (imediato), manual (imediato), automático (após cálculo)
+#
 # Author: Fillipe Guerra
 # Data: 04/01/2026
 # =============================================================================
@@ -98,24 +103,38 @@ jobs:
         id: previous-tag
         run: |
           # Determinar versão baseada em como o workflow foi disparado
+          # NOTA: Validação de formato movida para step "Definir versão final"
+          # para permitir versionamento automático (inputs.version vazio)
           if [ "${{ github.event_name }}" = "push" ]; then
             # Disparado por tag push - usar nome da tag
             VERSION="${{ github.ref_name }}"
             echo "ℹ️ Versão detectada do push de tag: $VERSION"
+            
+            # Validar formato APENAS para push de tag (versão já conhecida)
+            if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+              echo "❌ Formato de versão inválido: $VERSION"
+              echo "   Formato esperado: vX.Y.Z ou vX.Y.Z-sufixo"
+              echo "   Exemplos válidos: v1.0.0, v2.3.1, v1.0.0-beta.1"
+              exit 1
+            fi
+            echo "✅ Versão válida: $VERSION"
           else
-            # Disparado manualmente - usar input
+            # Disparado manualmente - versão pode ser vazia (automático) ou fornecida
             VERSION="${{ inputs.version }}"
-            echo "ℹ️ Versão fornecida manualmente: $VERSION"
+            if [ -n "$VERSION" ]; then
+              echo "ℹ️ Versão fornecida manualmente: $VERSION"
+              # Validar formato se versão foi fornecida
+              if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+                echo "❌ Formato de versão inválido: $VERSION"
+                echo "   Formato esperado: vX.Y.Z ou vX.Y.Z-sufixo"
+                echo "   Exemplos válidos: v1.0.0, v2.3.1, v1.0.0-beta.1"
+                exit 1
+              fi
+              echo "✅ Versão válida: $VERSION"
+            else
+              echo "ℹ️ Versão não fornecida - será calculada automaticamente"
+            fi
           fi
-          
-          # Validar formato da versão
-          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
-            echo "❌ Formato de versão inválido: $VERSION"
-            echo "   Formato esperado: vX.Y.Z ou vX.Y.Z-sufixo"
-            echo "   Exemplos válidos: v1.0.0, v2.3.1, v1.0.0-beta.1"
-            exit 1
-          fi
-          echo "✅ Versão válida: $VERSION"
           
           # Detectar tag anterior (para changelog e retagging)
           # CORREÇÃO 04/01/2026: Lógica diferente para cada trigger
@@ -137,7 +156,9 @@ jobs:
 
       - name: Calcular próxima versão automaticamente
         id: auto-version
-        if: ${{ inputs.version == '' }}
+        # ✅ ENTERPRISE: Só calcula versão se workflow_dispatch SEM versão manual
+        # Para push de tag, a versão já é conhecida (github.ref_name)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.version == '' }}
         run: |
           PREVIOUS_TAG="${{ steps.previous-tag.outputs.previous_tag }}"
           
@@ -229,7 +250,17 @@ jobs:
             # Versão calculada automaticamente
             VERSION="${{ steps.auto-version.outputs.version }}"
             echo "ℹ️ Usando versão calculada automaticamente: $VERSION"
+            
+            # ✅ ENTERPRISE: Validar formato da versão calculada (sanity check)
+            if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+              echo "❌ ERRO INTERNO: Versão calculada tem formato inválido: $VERSION"
+              echo "   Isso indica um bug no step 'Calcular próxima versão automaticamente'"
+              echo "   Formato esperado: vX.Y.Z ou vX.Y.Z-sufixo"
+              exit 1
+            fi
           fi
+          
+          echo "✅ Versão final definida: $VERSION"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Gerar changelog
