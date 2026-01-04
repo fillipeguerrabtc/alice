@@ -1598,11 +1598,106 @@ Os 7 serviços Node.js usam imagens `node:22-alpine3.21` (CVE-2023-45853 fix). H
 
 ---
 
+## 📦 Init Containers - Sequência de Execução
+
+Alice Platform usa **init containers** (one-time jobs com `restart: "no"`) para setup inicial do sistema. Estes containers executam uma única vez, completam com exit 0, e permanecem em estado "exited" - **isto é comportamento esperado e correto**.
+
+### Sequência de Execução (Primeiro Deploy)
+
+Os init containers executam em ordem de dependência:
+
+#### 1. **alice-pgbackrest-init** (30s-60s)
+   - **Função:** Cria stanza pgBackRest para backups PostgreSQL PITR
+   - **Exit 0 significa:** PostgreSQL pode iniciar WAL archiving
+   - **Dependência:** PostgreSQL deve estar healthy
+   - **Logs:** `/tmp/init_logs_alice-pgbackrest-init.txt`
+
+#### 2. **alice-minio-init** (10s-30s)
+   - **Função:** Cria buckets MinIO para Langfuse v3 object storage
+   - **Exit 0 significa:** Langfuse pode armazenar traces/eventos
+   - **Dependência:** MinIO deve estar healthy
+   - **Logs:** `/tmp/init_logs_alice-minio-init.txt`
+
+#### 3. **erpnext-configurator** (60s-120s)
+   - **Função:** Inicializa Frappe Bench no volume compartilhado
+   - **Exit 0 significa:** create-site pode executar bench commands
+   - **Dependência:** MariaDB e Redis (cache + queue) devem estar healthy
+   - **Logs:** `/tmp/init_logs_erpnext-configurator.txt`
+
+#### 4. **erpnext-create-site** (3min-10min) ⚠️ **CRÍTICO - MAIS DEMORADO**
+   - **Função:** Cria site ERPNext completo (database schema + arquivos + instalação do app)
+   - **Exit 0 significa:** Workers ERPNext podem iniciar e processar jobs
+   - **Dependência:** erpnext-configurator completado + MariaDB healthy
+   - **Comando:** `bench new-site --install-app erpnext` (atômico)
+   - **Tempo esperado:** 3-10 minutos no primeiro deploy (cria ~300 tabelas)
+   - **Logs:** `/tmp/init_logs_erpnext-create-site.txt`
+   - **Nota:** Pode demorar até 10min - timeout de 90min no workflow é adequado
+
+### ✅ Comportamento Esperado vs ❌ Problemas
+
+| Status | Exit Code | Container Tipo | Interpretação |
+|--------|-----------|----------------|---------------|
+| `exited` | `0` | **Init container** | ✅ **SUCESSO** - Completou tarefa |
+| `exited` | `0` | Container normal | ❌ **PROBLEMA** - Não deve parar |
+| `exited` | `!= 0` | Qualquer | ❌ **PROBLEMA** - Falha na execução |
+| `running` | N/A | Qualquer | ✅ **OK** - Funcionando normalmente |
+
+### 🔍 Troubleshooting Init Containers
+
+**Container exitou com exit 0 mas deploy falhou:**
+```bash
+# Isto PODE ser correto se for init container
+docker ps -a | grep init
+
+# Verificar se é realmente init container
+docker inspect --format='{{.HostConfig.RestartPolicy.Name}}' erpnext-create-site
+# Resultado esperado: "no" (init container)
+
+# Verificar exit code
+docker inspect --format='{{.State.ExitCode}}' erpnext-create-site
+# Resultado esperado: 0 (sucesso)
+```
+
+**Logs de init containers preservados:**
+```bash
+# Logs são capturados automaticamente durante deploy
+ls -la /tmp/init_logs_*.txt
+
+# Ver logs específicos
+cat /tmp/init_logs_erpnext-create-site.txt
+```
+
+**Validar manualmente se site ERPNext foi criado:**
+```bash
+# Verificar estrutura de arquivos no volume
+ls -la /opt/alice/data/erpnext-sites/erp.yesyoudeserve.duckdns.org/
+
+# Arquivos críticos esperados:
+# - site_config.json (configuração do site)
+# - currentsite.txt (nome do site ativo)
+```
+
+**Retry manual se init container falhou:**
+```bash
+# Remover container com problema
+docker rm -f erpnext-create-site
+
+# Re-executar apenas o init container
+docker compose -f /opt/alice/app/infra/docker/docker-compose.prod.yml \
+  --env-file /opt/alice/app/infra/docker/.env.prod \
+  up -d erpnext-create-site
+
+# Monitorar logs em tempo real
+docker logs -f erpnext-create-site
+```
+
+---
+
 ## 🔧 Troubleshooting
 
 ### Init Containers Marcados como Unhealthy
 
-**Problema:** Container `alice-pgbackrest-init`, `alice-minio-init` ou `erpnext-configurator` marcado como unhealthy causando falha no deploy, embora tenha completado com sucesso (exit 0).
+**Problema:** Container `alice-pgbackrest-init`, `alice-minio-init`, `erpnext-configurator` ou `erpnext-create-site` marcado como unhealthy causando falha no deploy, embora tenha completado com sucesso (exit 0).
 
 **Causa Raiz:** Init containers (`restart: "no"`) têm comportamento diferente de containers normais:
 - **Init containers:** Status `exited` com exit code 0 = **SUCESSO** ✅
@@ -1620,8 +1715,8 @@ Os 7 serviços Node.js usam imagens `node:22-alpine3.21` (CVE-2023-45853 fix). H
 A função `check_container_health()` no workflow de deploy agora distingue corretamente entre init containers e containers normais:
 
 ```bash
-# Init containers conhecidos
-INIT_CONTAINERS=("alice-pgbackrest-init" "alice-minio-init" "erpnext-configurator")
+# Init containers conhecidos (CORREÇÃO 04/01/2026: adicionado erpnext-create-site)
+INIT_CONTAINERS=("alice-pgbackrest-init" "alice-minio-init" "erpnext-configurator" "erpnext-create-site")
 
 # Lógica específica
 if [ "$IS_INIT" -eq 1 ]; then

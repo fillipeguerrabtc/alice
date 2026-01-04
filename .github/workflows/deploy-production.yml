@@ -434,9 +434,9 @@ jobs:
   deploy:
     name: Deploy Hetzner
     runs-on: [self-hosted, linux, deploy]
-    # CORREÇÃO 02/01/2026: Aumentado de 45 para 60 minutos
-    # Primeiro deploy: 51 containers + init scripts (ERPNext create-site, migrations) podem demorar
-    timeout-minutes: 60
+    # CORREÇÃO 04/01/2026: Aumentado para 90min (primeiro deploy completo)
+    # Breakdown: pull imagens (20min) + up core (15min) + create-site (10min) + health (20min) + GPU (10min) + margin (15min)
+    timeout-minutes: 90
     needs: [validate-and-prepare, image-security-scan]
     if: always() && needs.validate-and-prepare.result == 'success' && (needs.image-security-scan.result == 'success' || needs.image-security-scan.result == 'skipped')
     
@@ -1896,7 +1896,8 @@ jobs:
             # =================================================================
             log "📋 Capturando logs de init containers (preservação proativa)..."
             
-            for init_container in "alice-pgbackrest-init" "alice-minio-init" "erpnext-configurator"; do
+            # CORREÇÃO 04/01/2026: Adicionado erpnext-create-site (faltava na lista)
+            for init_container in "alice-pgbackrest-init" "alice-minio-init" "erpnext-configurator" "erpnext-create-site"; do
               if docker ps -a --format '{{.Names}}' | grep -q "^${init_container}$"; then
                 LOG_FILE="/tmp/init_logs_${init_container}.txt"
                 docker logs "$init_container" > "$LOG_FILE" 2>&1 || true
@@ -1928,10 +1929,12 @@ jobs:
             # Lista de containers init CRÍTICOS (restart: "no", devem completar com sucesso)
             # CORREÇÃO 01/01/2026: Nomes devem corresponder exatamente ao container_name no docker-compose
             # MIGRAÇÃO 02/01/2026: traefik-init removido (Caddy não precisa de init), pgbackrest-init adicionado
+            # CORREÇÃO 04/01/2026: Adicionado erpnext-create-site (faltava na lista)
             INIT_CONTAINERS=(
               "alice-minio-init"
               "alice-pgbackrest-init"
               "erpnext-configurator"
+              "erpnext-create-site"
             )
             
             INIT_FAILED=0
@@ -1995,7 +1998,8 @@ jobs:
               log "🔍 FAIL-FAST: $context_msg..."
               
               # Lista de init containers (restart: "no") - devem ter status "exited" com exit code 0
-              local INIT_CONTAINERS=("alice-pgbackrest-init" "alice-minio-init" "erpnext-configurator")
+              # CORREÇÃO 04/01/2026: Adicionado erpnext-create-site (faltava na lista)
+              local INIT_CONTAINERS=("alice-pgbackrest-init" "alice-minio-init" "erpnext-configurator" "erpnext-create-site")
               
               # Usar docker ps com filtros diretos (mais confiável que JSON parsing)
               PROBLEM_CONTAINERS=""
@@ -2077,7 +2081,8 @@ jobs:
                     # CORREÇÃO 9-10: Emoji específico por tipo de container
                     # Verificar se é init container
                     IS_INIT_DISPLAY=0
-                    for init_check in "alice-pgbackrest-init" "alice-minio-init" "erpnext-configurator"; do
+                    # CORREÇÃO 04/01/2026: Adicionado erpnext-create-site (faltava na lista)
+                    for init_check in "alice-pgbackrest-init" "alice-minio-init" "erpnext-configurator" "erpnext-create-site"; do
                       if [ "$name" = "$init_check" ]; then
                         IS_INIT_DISPLAY=1
                         break
@@ -2190,7 +2195,8 @@ jobs:
             # =================================================================
             log "🔍 DIAGNÓSTICO: Verificando init containers específicos..."
             
-            for init_container in "alice-pgbackrest-init" "alice-minio-init" "erpnext-configurator"; do
+            # CORREÇÃO 04/01/2026: Adicionado erpnext-create-site (faltava na lista)
+            for init_container in "alice-pgbackrest-init" "alice-minio-init" "erpnext-configurator" "erpnext-create-site"; do
               if docker ps -a --format '{{.Names}}' | grep -q "^${init_container}$"; then
                 EXIT_CODE=$(docker inspect --format='{{.State.ExitCode}}' "$init_container" 2>/dev/null || echo "N/A")
                 STATUS=$(docker inspect --format='{{.State.Status}}' "$init_container" 2>/dev/null || echo "unknown")
