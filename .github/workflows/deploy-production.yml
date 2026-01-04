@@ -2010,7 +2010,50 @@ jobs:
                       exit 1
                     fi
                     # exit code 0 = sucesso, container pode ser ignorado no próximo loop
+                  elif [ "$STATUS" = "created" ]; then
+                    # =================================================================
+                    # CORREÇÃO 04/01/2026: Container ainda não iniciou - continuar esperando
+                    # =================================================================
+                    # PROBLEMA: Status "created" significa container criado mas ainda não
+                    # iniciou. Se não tratarmos, ALL_INIT_COMPLETED fica 1 e loop termina
+                    # prematuramente, causando race condition.
+                    # SOLUÇÃO: Marcar como não completado para continuar esperando
+                    # =================================================================
+                    echo "   ⏳ $init_container ainda não iniciou (status: created)..."
+                    ALL_INIT_COMPLETED=0
+                  elif [ "$STATUS" = "dead" ] || [ "$STATUS" = "restarting" ] || [ "$STATUS" = "paused" ]; then
+                    # =================================================================
+                    # CORREÇÃO 04/01/2026: Estados problemáticos - fail-fast imediato
+                    # =================================================================
+                    # dead: container morreu (OOM, crash fatal)
+                    # restarting: crash loop (init containers NÃO devem restartar)
+                    # paused: container pausado (não deve ocorrer em init containers)
+                    # =================================================================
+                    log "❌ FAIL-FAST: Init container $init_container em estado problemático ($STATUS)"
+                    docker logs --tail 50 "$init_container" || true
+                    docker inspect "$init_container" --format '{{json .State}}' | jq '.' || true
+                    exit 1
+                  else
+                    # =================================================================
+                    # CORREÇÃO 04/01/2026: Estado desconhecido - fail-fast imediato
+                    # =================================================================
+                    # Status "unknown" ou qualquer outro estado não esperado
+                    # indica problema grave - falhar imediatamente com diagnóstico
+                    # =================================================================
+                    log "❌ FAIL-FAST: Init container $init_container em estado inesperado ($STATUS)"
+                    docker logs --tail 50 "$init_container" || true
+                    docker inspect "$init_container" --format '{{json .State}}' | jq '.' || true
+                    exit 1
                   fi
+                else
+                  # =================================================================
+                  # CORREÇÃO 04/01/2026: Container ainda não criado pelo Docker Compose
+                  # =================================================================
+                  # Container não aparece em 'docker ps -a' = ainda não foi criado
+                  # Isso é esperado logo após 'docker compose up' - continuar esperando
+                  # =================================================================
+                  echo "   ⏳ $init_container ainda não criado pelo Docker Compose..."
+                  ALL_INIT_COMPLETED=0
                 fi
               done
               

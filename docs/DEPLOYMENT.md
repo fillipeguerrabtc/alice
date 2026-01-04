@@ -1640,27 +1640,63 @@ O workflow de deploy agora aguarda **ativamente** que TODOS os init containers c
 ```bash
 # Aguarda até 2 minutos para init containers completarem
 INIT_TIMEOUT=120
-for init_container in "${INIT_CONTAINERS[@]}"; do
-  while [ "$STATUS" = "running" ]; do
-    echo "⏳ $init_container ainda executando..."
-    sleep 5
+while [ $INIT_ELAPSED -lt $INIT_TIMEOUT ]; do
+  for init_container in "${INIT_CONTAINERS[@]}"; do
+    STATUS=$(docker inspect --format='{{.State.Status}}' "$init_container")
+    
+    case "$STATUS" in
+      "running")
+        echo "⏳ $init_container ainda executando..."
+        ALL_INIT_COMPLETED=0  # Continuar esperando
+        ;;
+      "exited")
+        # Verificar exit code
+        EXIT_CODE=$(docker inspect --format='{{.State.ExitCode}}' "$init_container")
+        if [ "$EXIT_CODE" != "0" ]; then
+          exit 1  # Fail-fast imediato
+        fi
+        ;;
+      "created")
+        # Container ainda não iniciou - continuar esperando
+        echo "⏳ $init_container ainda não iniciou..."
+        ALL_INIT_COMPLETED=0
+        ;;
+      "dead"|"restarting"|"paused")
+        # Estados problemáticos - fail-fast imediato
+        exit 1
+        ;;
+      *)
+        # Estado desconhecido - fail-fast imediato
+        exit 1
+        ;;
+    esac
   done
-  
-  # Fail-fast se exit code != 0
-  if [ "$EXIT_CODE" != "0" ]; then
-    exit 1  # Deploy falha IMEDIATAMENTE
-  fi
 done
 
 # Aguarda 30s para service containers iniciarem healthchecks
 sleep 30
 ```
 
+**Estados de Container Tratados (Correção 04/01/2026):**
+
+| Estado | Ação | Motivo |
+|--------|------|--------|
+| `running` | Continuar esperando | Container ainda executando |
+| `exited` (exit 0) | Marcar como completado | Init container terminou com sucesso |
+| `exited` (exit != 0) | **Fail-fast** | Init container falhou |
+| `created` | Continuar esperando | Container ainda não iniciou |
+| `dead` | **Fail-fast** | Container morreu (OOM, crash fatal) |
+| `restarting` | **Fail-fast** | Init containers NÃO devem restartar |
+| `paused` | **Fail-fast** | Estado inesperado para init container |
+| `unknown`/outro | **Fail-fast** | Estado desconhecido = problema grave |
+| Container não existe | Continuar esperando | Ainda não criado pelo Docker Compose |
+
 **Benefícios:**
 - ✅ Elimina race condition (check executando antes de inits completarem)
 - ✅ Progress indicator mostra tempo decorrido (a cada 15s)
 - ✅ Fail-fast imediato se init container falhar
 - ✅ Service containers têm tempo adequado para iniciar healthchecks
+- ✅ **Tratamento completo de TODOS os estados Docker** (correção 04/01/2026)
 
 ### ✅ Comportamento Esperado vs ❌ Problemas
 
@@ -1670,6 +1706,11 @@ sleep 30
 | `exited` | `0` | Container normal | ❌ **PROBLEMA** - Não deve parar |
 | `exited` | `!= 0` | Qualquer | ❌ **PROBLEMA** - Falha na execução |
 | `running` | N/A | Qualquer | ✅ **OK** - Funcionando normalmente |
+| `created` | N/A | **Init container** | ⏳ **AGUARDANDO** - Ainda não iniciou |
+| `dead` | N/A | Qualquer | ❌ **PROBLEMA** - OOM ou crash fatal |
+| `restarting` | N/A | **Init container** | ❌ **PROBLEMA** - Crash loop (NÃO deve restartar) |
+| `paused` | N/A | Qualquer | ❌ **PROBLEMA** - Estado inesperado |
+| `unknown` | N/A | Qualquer | ❌ **PROBLEMA** - Falha de comunicação Docker |
 
 ### 🔍 Troubleshooting Init Containers
 

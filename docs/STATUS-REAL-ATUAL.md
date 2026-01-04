@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 02 de Janeiro de 2026  
+> **Data:** 04 de Janeiro de 2026  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.59 - Deploy Enterprise Hardening (Smoke Tests + Persistência de Logs)
+> **Versão:** 4.72 - Bug Fix Init Container Wait Loop Race Condition
 
 ---
 
@@ -58,6 +58,8 @@
 > **Migração Traefik→Caddy 02/01/2026:** Traefik, traefik-init e dockerproxy substituídos por Caddy. Vantagens: SSL automático com retry inteligente (evita rate limits Let's Encrypt), HTTP/3 nativo (QUIC protocol), footprint 40MB (vs 100MB Traefik), configuração declarativa via Caddyfile (vs labels Docker). Elimina necessidade de Docker Socket Proxy. Adicionado pgBackRest Init container para criar stanza ANTES do PostgreSQL iniciar.
 
 > **Deploy Enterprise Hardening 02/01/2026:** Workflow de deploy com validações enterprise completas. **Smoke Tests Pós-Deploy:** PostgreSQL (pg_isready), pgvector (operação vetorial real), Redis (PING), Caddy (HTTP), GPU Manager (health endpoint), conectividade inter-serviços (Chat→GPU Manager). **Persistência de Logs:** Todos os logs salvos em `/opt/alice/logs/deploy-YYYYMMDD-HHMMSS.log` para troubleshooting futuro. **Validação pgBackRest:** Verifica permissões (999:999), estrutura e corrige automaticamente se necessário. **pgBackRest Fix:** Stanza criada sem pg1-path (não requer pg_control), sincronizada após PostgreSQL iniciar. **Caddy Healthcheck:** Melhorado para verificar HTTP (80/443) além de admin API (2019).
+
+> **Bug Fix Init Container Wait Loop Race Condition 04/01/2026 (v4.72):** CORREÇÃO CRÍTICA no loop de espera de init containers no deploy-production.yml. O loop só verificava estados "running" e "exited", ignorando "created", "dead", "restarting", "paused" e "unknown". Se um container estivesse em "created" (ainda não iniciou), a variável ALL_INIT_COMPLETED permanecia em 1 e o loop terminava prematuramente, causando a mesma race condition que o código pretendia corrigir. **SOLUÇÃO:** Tratamento completo de TODOS os estados Docker com ações específicas para cada um. Documentação DEPLOYMENT.md atualizada com tabela de estados. Ref: CLAUDE.md v4.72, Regra 6 (Zero workarounds), Regra 16 (Healthchecks robustos).
 
 > **Deploy Enterprise Hardening Completo 04/01/2026 (v4.61):** Implementadas TODAS as 18 correções (4 anteriores + 14 novas) para hardening enterprise completo. **CORREÇÃO 5 (Validação PRÉ-DEPLOY):** Validação de 12 secrets críticas ANTES do docker compose up - fail-fast imediato economiza 5-10min por deploy falhado. **CORREÇÃO 6 (Inodes):** Validação de inodes disponíveis (mín 10000) - previne "No space left on device" mesmo com GB livres. **CORREÇÃO 7-8 (Logs Proativos):** Captura automática de logs em /tmp/init_logs_*.txt IMEDIATAMENTE após docker compose up, ANTES de containers serem removidos. **CORREÇÃO 9-10 (WHY Unhealthy):** Mensagens mostram última linha do healthcheck + emoji por tipo (📦 init, 🐳 normal). **CORREÇÃO 11-12 (Causa Raiz):** Análise automática de dependências, variáveis críticas e exit codes (1/2/126/127/137/143). **CORREÇÃO 13-15 (Timeouts Configuráveis):** MONITOR_INTERVAL (5s), MAX_WAIT_TIME (600s), HEALTHCHECK_RETRIES (30) via env vars. **CORREÇÃO 16-18 (Progress Tracking):** Barra visual com percentual, tempo decorrido, métricas periódicas (docker stats a cada 3 tentativas). 13 fases rastreadas com timestamps relativos. **BENEFÍCIOS:** Fail-fast em secrets (-5-10min), logs preservados (elimina "logs vazios"), análise automática (-50% MTTR), timeouts ajustáveis, progress tracking completo. Ref: CLAUDE.md v4.61, DEPLOYMENT.md troubleshooting completo.
 
