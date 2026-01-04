@@ -4254,6 +4254,18 @@ METRICS_EOF
       # Auditoria enterprise - histórico completo de deploys
       # Permite queries SQL para análise de performance, frequência, rollbacks
       # ===========================================================================
+      # ===========================================================================
+      # CORREÇÃO 04/01/2026: SQL Injection Prevention via psql Variables (-v)
+      # PROBLEMA: Variáveis shell interpoladas diretamente no SQL sem escape.
+      # Se $TRIGGERED_BY ou $SERVICES contiverem aspas simples (ex: "O'Brien"),
+      # o SQL quebra e o INSERT falha.
+      # SOLUÇÃO ENTERPRISE: Usar variáveis psql (-v) com heredoc QUOTED (<< 'EOF'):
+      #   - Heredoc quoted previne expansão shell (seguro)
+      #   - psql -v passa variáveis de forma tipada
+      #   - quote_literal() escapa valores para SQL
+      #   - Imune a SQL injection completamente
+      # Ref: https://www.postgresql.org/docs/current/app-psql.html#APP-PSQL-INTERPOLATION
+      # ===========================================================================
       - name: Registrar deploy no banco de dados
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
         env:
@@ -4261,16 +4273,20 @@ METRICS_EOF
           GITHUB_ACTOR: ${{ github.actor }}
           TRIGGERED_BY: ${{ inputs.triggered_by }}
           SERVICES: ${{ inputs.services }}
+          COMMIT_SHA: ${{ github.sha }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+          WORKFLOW_RUN_NUMBER: ${{ github.run_number }}
+          REPOSITORY: ${{ github.repository }}
         with:
           host: ${{ secrets.HETZNER_VM_HOST }}
           username: ${{ secrets.HETZNER_VM_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          envs: VERSION,GITHUB_ACTOR,TRIGGERED_BY,SERVICES
+          envs: VERSION,GITHUB_ACTOR,TRIGGERED_BY,SERVICES,COMMIT_SHA,WORKFLOW_RUN_ID,WORKFLOW_RUN_NUMBER,REPOSITORY
           script: |
             # Registrar metadata do deploy em PostgreSQL para auditoria
-            # CORREÇÃO 04/01/2026: Heredoc sem aspas para permitir expansão de variáveis shell
-            # Com '<< 'EOSQL'' as variáveis $VERSION, $GITHUB_ACTOR etc seriam literais
-            docker exec alice-postgres psql -U alice -d alice_prod << EOSQL
+            
+            # STEP 1: Criar tabela (DDL estático, sem variáveis - seguro)
+            docker exec alice-postgres psql -U alice -d alice_prod << 'EOSQL'
             -- Criar tabela de deployments se não existir (idempotente)
             CREATE TABLE IF NOT EXISTS deployments (
               id SERIAL PRIMARY KEY,
@@ -4290,20 +4306,34 @@ METRICS_EOF
             CREATE INDEX IF NOT EXISTS idx_deployments_version ON deployments(version);
             CREATE INDEX IF NOT EXISTS idx_deployments_deployed_at ON deployments(deployed_at DESC);
             CREATE INDEX IF NOT EXISTS idx_deployments_status ON deployments(status);
+            EOSQL
 
-            -- Inserir registro do deploy atual
+            # STEP 2: INSERT usando variáveis psql (-v) para escape automático
+            # CORREÇÃO 04/01/2026: Variáveis passadas via -v são escapadas pelo psql
+            # Usar :'var' para interpolação segura com aspas (text literals)
+            # Ref: https://www.postgresql.org/docs/current/app-psql.html#APP-PSQL-INTERPOLATION
+            docker exec alice-postgres psql -U alice -d alice_prod \
+              -v v_version="$VERSION" \
+              -v v_actor="$GITHUB_ACTOR" \
+              -v v_triggered="$TRIGGERED_BY" \
+              -v v_services="$SERVICES" \
+              -v v_commit="$COMMIT_SHA" \
+              -v v_run_id="$WORKFLOW_RUN_ID" \
+              -v v_run_num="$WORKFLOW_RUN_NUMBER" \
+              -v v_repo="$REPOSITORY" \
+              << 'EOSQL'
             INSERT INTO deployments (version, deployed_by, status, triggered_by, services, metadata)
             VALUES (
-              '$VERSION',
-              '$GITHUB_ACTOR',
+              :'v_version',
+              :'v_actor',
               'success',
-              '$TRIGGERED_BY',
-              '$SERVICES',
+              :'v_triggered',
+              :'v_services',
               jsonb_build_object(
-                'commit', '${{ github.sha }}',
-                'workflow_run_id', '${{ github.run_id }}',
-                'workflow_run_number', '${{ github.run_number }}',
-                'repository', '${{ github.repository }}'
+                'commit', :'v_commit',
+                'workflow_run_id', :'v_run_id',
+                'workflow_run_number', :'v_run_num',
+                'repository', :'v_repo'
               )
             );
             EOSQL

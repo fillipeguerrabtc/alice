@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 04 de Janeiro de 2026  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.74 - Bug Fix Upload Artifact Logs via SCP
+> **Versão:** 4.75 - Bug Fix SQL Injection Prevention Deployments Table
 
 ---
 

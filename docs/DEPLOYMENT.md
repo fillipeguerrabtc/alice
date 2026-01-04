@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 04 de Janeiro de 2026  
-**Versão:** 7.19 - Upload Artifact Logs via SCP
+**Versão:** 7.20 - SQL Injection Prevention Deployments Table
 
 > **Migração 100% Self-Hosted (27/12/2025):** Pipeline completo migrado para runner próprio (Hetzner CPX32 - 4 vCPU, 8GB RAM) seguindo melhores práticas enterprise 2025. Todos os workflows (CI, Release, Deploy) executam no self-hosted runner para controle total, custos previsíveis e compliance.
 
@@ -825,6 +825,41 @@ Logs de deploy são automaticamente baixados do servidor Hetzner e publicados co
 5. **Upload artifact** - Publica logs no GitHub Actions
 
 > **CORREÇÃO 04/01/2026:** Os logs são criados no servidor Hetzner via SSH, não no runner GitHub Actions. O workflow agora baixa os logs via SCP antes de fazer o upload-artifact. Retenção: 90 dias.
+
+#### Auditoria de Deploys no PostgreSQL (04/01/2026)
+
+Cada deploy bem-sucedido é registrado na tabela `deployments` do PostgreSQL para auditoria enterprise completa:
+
+**Estrutura da tabela:**
+```sql
+CREATE TABLE deployments (
+  id SERIAL PRIMARY KEY,
+  version TEXT NOT NULL,           -- Ex: v1.2.3
+  deployed_at TIMESTAMPTZ,         -- Timestamp do deploy
+  deployed_by TEXT,                -- GitHub actor que disparou
+  status TEXT NOT NULL,            -- 'success', 'failed', 'rolled_back'
+  triggered_by TEXT,               -- 'release-workflow', 'manual', etc
+  services TEXT,                   -- 'all' ou lista específica
+  metadata JSONB                   -- commit, workflow_run_id, etc
+);
+```
+
+**Consultas úteis:**
+```sql
+-- Últimos 10 deploys
+SELECT version, deployed_at, deployed_by, status 
+FROM deployments ORDER BY deployed_at DESC LIMIT 10;
+
+-- Deploys por mês
+SELECT date_trunc('month', deployed_at) AS mes, COUNT(*) 
+FROM deployments GROUP BY 1 ORDER BY 1 DESC;
+
+-- Taxa de sucesso
+SELECT status, COUNT(*), ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER(), 2) AS pct
+FROM deployments GROUP BY status;
+```
+
+> **CORREÇÃO SEGURANÇA 04/01/2026:** O INSERT usa variáveis psql (`-v var=value`) com interpolação segura (`:'var'`) ao invés de interpolação shell direta. Isso previne SQL injection e erros de sintaxe com valores contendo aspas simples (ex: "O'Brien"). Ref: PostgreSQL docs "psql Variables".
 
 #### Validação do Repositório pgBackRest
 
