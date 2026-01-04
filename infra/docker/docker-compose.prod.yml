@@ -820,7 +820,10 @@ services:
       # CORREÇÃO 04/01/2026: Verificar se nginx está REALMENTE serving conteúdo
       # nginx Alpine tem wget disponível - usar para verificar resposta HTTP real
       # wget --spider verifica se URL existe (GET request) sem baixar conteúdo
-      test: ["CMD-SHELL", "wget --spider --quiet --tries=1 --timeout=5 http://localhost:80/ || exit 1"]
+      # CORREÇÃO 04/01/2026: Porta corrigida de 80 para 8080 (nginx escuta em 8080)
+      # Usar /health endpoint dedicado (retorna "healthy\n") - consistente com Dockerfile
+      # Ref: apps/frontend-service/nginx.conf linha 6 (listen 8080) e linhas 73-77 (location /health)
+      test: ["CMD-SHELL", "wget --spider --quiet --tries=1 --timeout=5 http://localhost:8080/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
