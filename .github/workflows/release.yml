@@ -36,8 +36,13 @@
 # - Microservices mantêm contexto raiz (precisam de packages/ compartilhados)
 # - Infra services usam contextos específicos
 #
+# CORREÇÃO (04/01/2026): Detecção de tag anterior para workflow_dispatch
+# - git describe "$VERSION^" falha quando $VERSION não existe (workflow_dispatch)
+# - Agora usa git describe sem argumentos (do HEAD) para workflow_dispatch
+# - Garante changelog correto e otimização de retagging em releases manuais
+#
 # Author: Fillipe Guerra
-# Data: 02/01/2026
+# Data: 04/01/2026
 # =============================================================================
 
 name: Release & Tag
@@ -113,7 +118,16 @@ jobs:
           echo "✅ Versão válida: $VERSION"
           
           # Detectar tag anterior (para changelog e retagging)
-          PREVIOUS_TAG=$(git describe --tags --abbrev=0 "$VERSION^" 2>/dev/null || echo "")
+          # CORREÇÃO 04/01/2026: Lógica diferente para cada trigger
+          # - push: tag já existe, usar "$VERSION^" para encontrar tag anterior à atual
+          # - workflow_dispatch: tag ainda NÃO existe, usar HEAD para encontrar tag mais recente
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # Tag existe: encontrar a tag imediatamente anterior
+            PREVIOUS_TAG=$(git describe --tags --abbrev=0 "$VERSION^" 2>/dev/null || echo "")
+          else
+            # Tag NÃO existe: encontrar a tag mais recente do HEAD
+            PREVIOUS_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          fi
           echo "previous_tag=$PREVIOUS_TAG" >> $GITHUB_OUTPUT
           if [ -n "$PREVIOUS_TAG" ]; then
             echo "✅ Tag anterior detectada: $PREVIOUS_TAG"
