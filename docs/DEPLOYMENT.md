@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 04 de Janeiro de 2026  
-**Versão:** 7.18 - Trap Handler Unificado (Diagnóstico + Rollback)
+**Versão:** 7.24 - DB Audit Continue-On-Error Consistency Fix
 
 > **Migração 100% Self-Hosted (27/12/2025):** Pipeline completo migrado para runner próprio (Hetzner CPX32 - 4 vCPU, 8GB RAM) seguindo melhores práticas enterprise 2025. Todos os workflows (CI, Release, Deploy) executam no self-hosted runner para controle total, custos previsíveis e compliance.
 
@@ -801,6 +801,85 @@ Todos os logs de deploy são salvos automaticamente para troubleshooting futuro:
 # Visualizar logs de um deploy específico
 cat /opt/alice/logs/deploy-20260102-141530.log | less
 ```
+
+#### Upload de Logs como GitHub Artifacts (04/01/2026)
+
+Logs de deploy são automaticamente baixados do servidor Hetzner e publicados como GitHub Artifacts para troubleshooting facilitado:
+
+**Arquivos coletados:**
+- `/tmp/compose_up_attempt_*.log` - Logs de tentativas de docker compose up
+- `/tmp/init_logs_*.txt` - Logs de init containers
+- `/opt/alice/logs/deploy-metrics-*.json` - Métricas de deploy (sucesso/falha)
+- Logs das últimas 500 linhas de cada container Alice
+
+**Acesso aos artifacts:**
+1. Acesse a aba "Actions" do repositório
+2. Clique na run do workflow de deploy
+3. Na seção "Artifacts", baixe `deploy-logs-vX.Y.Z`
+
+**Processo técnico (job separado `collect-logs`):**
+1. **Configurar SSH** - Chave SSH configurada no runner
+2. **Preparar logs no Hetzner** - Agrega todos os logs em tarball
+3. **Baixar via SCP** - Transfere tarball para o runner
+4. **Limpar SSH** - Remove chave por segurança
+5. **Upload artifact** - Publica logs no GitHub Actions
+
+> **CORREÇÃO 04/01/2026:** Os logs são criados no servidor Hetzner via SSH, não no runner GitHub Actions. O workflow agora baixa os logs via SCP antes de fazer o upload-artifact. Retenção: 90 dias.
+
+> **CORREÇÃO CRÍTICA 04/01/2026 (Bug 1):** A coleta de logs foi movida para um **job separado `collect-logs`** com `if: always()` no **nível do job**. PROBLEMA ANTERIOR: Os steps de logs estavam no job `register-success` que só executa quando deploy tem sucesso. Mesmo com `if: always()` nos steps, eles nunca executavam em falhas porque a condição do job (`needs.deploy.result == 'success'`) impedia o job de iniciar. IRONIA: Logs são mais necessários em cenários de falha para troubleshooting. SOLUÇÃO: Job independente que SEMPRE executa após deploy/health-check/rollback.
+
+> **CORREÇÃO 04/01/2026 (Download Step):** Adicionado `if: always()` no step "Baixar logs do Hetzner". PROBLEMA ANTERIOR: Step de download não tinha `if: always()` mas step de upload tinha. Se SSH falhasse, download era pulado, `mkdir -p ./deploy-logs` não executava, e upload falhava porque path não existia (`if-no-files-found: warn` só trata diretórios VAZIOS, não paths inexistentes). SOLUÇÃO: Step de download agora executa sempre, garantindo que diretório seja criado.
+
+> **CORREÇÃO CRÍTICA 04/01/2026 (JSON como Tarball):** Quando não existem logs no Hetzner, o servidor escrevia um JSON de status (`{"status": "no_logs_found", ...}`) diretamente em `/tmp/deploy-logs-bundle.tar.gz`. Este arquivo era baixado via SCP, e a lógica downstream: (1) verificava se arquivo existe (SIM), (2) tentava `tar -xzf` que falhava silenciosamente por ser JSON, (3) deletava o arquivo. O branch `else` que criaria `download-status.json` nunca executava porque arquivo existia. RESULTADO: Diretório vazio sem indicação do que aconteceu. SOLUÇÃO: Validar se arquivo é tarball ANTES de extrair usando `tar -tzf` (list mode, não extrai). Se não é tarball mas começa com `{` (JSON), renomeia para `bundle-status.json` preservando a informação de status. Se formato desconhecido, cria status com diagnóstico via `file -b`.
+
+#### Auditoria de Deploys no PostgreSQL (04/01/2026)
+
+Cada deploy bem-sucedido é registrado na tabela `deployments` do PostgreSQL para auditoria enterprise completa:
+
+**Estrutura da tabela:**
+```sql
+CREATE TABLE deployments (
+  id SERIAL PRIMARY KEY,
+  version TEXT NOT NULL,           -- Ex: v1.2.3
+  deployed_at TIMESTAMPTZ,         -- Timestamp do deploy
+  deployed_by TEXT,                -- GitHub actor que disparou
+  duration_seconds INTEGER,        -- Duração do deploy em segundos
+  containers_count INTEGER,        -- Número de containers running após deploy
+  status TEXT NOT NULL,            -- 'success', 'failed', 'rolled_back'
+  triggered_by TEXT,               -- 'release-workflow', 'manual', etc
+  services TEXT,                   -- 'all' ou lista específica
+  metadata JSONB                   -- commit, workflow_run_id, etc
+);
+```
+
+**Consultas úteis:**
+```sql
+-- Últimos 10 deploys com métricas
+SELECT version, deployed_at, deployed_by, status, duration_seconds, containers_count 
+FROM deployments ORDER BY deployed_at DESC LIMIT 10;
+
+-- Deploys por mês
+SELECT date_trunc('month', deployed_at) AS mes, COUNT(*) 
+FROM deployments GROUP BY 1 ORDER BY 1 DESC;
+
+-- Taxa de sucesso
+SELECT status, COUNT(*), ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER(), 2) AS pct
+FROM deployments GROUP BY status;
+
+-- Tempo médio de deploy (sucesso apenas)
+SELECT AVG(duration_seconds)::INTEGER AS avg_duration_s
+FROM deployments WHERE status = 'success' AND duration_seconds IS NOT NULL;
+```
+
+> **CORREÇÃO SEGURANÇA 04/01/2026:** O INSERT usa variáveis psql (`-v var=value`) com interpolação segura (`:'var'`) ao invés de interpolação shell direta. Isso previne SQL injection e erros de sintaxe com valores contendo aspas simples (ex: "O'Brien"). Ref: PostgreSQL docs "psql Variables".
+
+> **CORREÇÃO CRÍTICA 04/01/2026 (Bug 2):** Adicionado `if: always()` no step de registro no banco. PROBLEMA ANTERIOR: Se o step de notificação de sucesso falhasse, o registro no PostgreSQL era pulado (default é `if: success()`), quebrando a trilha de auditoria enterprise. SOLUÇÃO: Step agora executa SEMPRE dentro do job `register-success`.
+
+> **MELHORIA 04/01/2026:** Adicionado registro de falha no job `rollback`. Quando um deploy falha e rollback é executado, um registro com `status: 'rolled_back'` é inserido na tabela `deployments` (com `continue-on-error: true` pois o PostgreSQL pode não estar disponível após falha grave). Isso garante auditoria completa de TODOS os deploys, não apenas os bem-sucedidos.
+
+> **CORREÇÃO 04/01/2026 (Métricas BD):** Colunas `duration_seconds` e `containers_count` agora são populadas. PROBLEMA ANTERIOR: Essas colunas existiam no schema mas os INSERTs nunca as preenchiam (sempre NULL). Os dados estavam disponíveis (`DEPLOY_DURATION` e `TOTAL_RUNNING` eram calculados e usados no JSON e notificações Slack), mas não eram passados para o registro BD. SOLUÇÃO: Job `deploy` agora exporta outputs `duration_seconds` e `containers_count` via steps capture-metrics/export-metrics. Jobs `register-success` e `rollback` recebem esses valores e os inserem no BD. Usa `NULLIF(:v_var, 0)` para evitar inserir 0 quando valor indisponível.
+
+> **CORREÇÃO 04/01/2026 (Consistência Best-Effort):** Adicionado `continue-on-error: true` no step "Registrar deploy no banco de dados" do job `register-success` para consistência com o job `rollback` que já tinha essa flag. PROBLEMA ANTERIOR: Se o PostgreSQL INSERT falhasse por motivo transitório (SSH drop, BD momentaneamente indisponível), o workflow era marcado como "failed" mesmo que o deploy tenha sido bem-sucedido. Isso causava confusão na análise de deploys. SOLUÇÃO: Auditoria tratada como best-effort em ambos os jobs - não deve causar falso-positivo de falha quando deploy foi bem-sucedido.
 
 #### Validação do Repositório pgBackRest
 
