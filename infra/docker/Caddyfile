@@ -69,6 +69,18 @@
 }
 
 # =============================================================================
+# HEALTH ENDPOINT (Docker Healthcheck)
+# =============================================================================
+# Endpoint simples para verificação de saúde do container
+# Responde em porta 80 sem requerer SSL ou DNS
+# Ref: https://caddyserver.com/docs/caddyfile/directives/respond
+:80 {
+	handle /health {
+		respond "OK" 200
+	}
+}
+
+# =============================================================================
 # SNIPPETS REUTILIZÁVEIS
 # =============================================================================
 

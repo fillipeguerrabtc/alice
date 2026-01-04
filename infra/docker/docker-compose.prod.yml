@@ -356,35 +356,29 @@ services:
       - erpnext-network
     healthcheck:
       # =================================================================
-      # CORREÇÃO 03/01/2026: Timeout Enterprise para Let's Encrypt
+      # CORREÇÃO 03/01/2026: Health Endpoint Simples
       # =================================================================
-      # PROBLEMA: Primeiro deploy com Let's Encrypt + DNS pode demorar:
-      # - DuckDNS propagation: até 5 min
-      # - Let's Encrypt ACME challenge: até 3 min
-      # - Network latency + retry backoff: variável
+      # PROBLEMA: Admin API (2019) pode não estar pronto durante startup
+      #           ACME pode bloquear inicialização por vários minutos
       # 
-      # SOLUÇÃO: start_period 600s (10 min) + retries 15
-      # TOTAL TIMEOUT: 600s + (15 × 30s) = 1050s (17.5 minutos máximo)
+      # SOLUÇÃO: Endpoint /health em porta 80 (sempre disponível)
+      #          Responde imediatamente quando Caddy está rodando
+      #          Não depende de SSL, ACME, DNS ou backends
       # 
-      # Referência: Docker + Let's Encrypt Best Practices 2026
-      # https://caddyserver.com/docs/automatic-https
-      # =================================================================
-      # CORREÇÃO HEALTHCHECK: Admin API APENAS (porta 2019)
-      # =================================================================
-      # PROBLEMA: Teste porta 80 falha porque Caddyfile não tem rota catch-all
-      #           Todas as rotas exigem Host header específico
-      #           (yesyoudeserve.duckdns.org, observability.*, etc)
-      # SOLUÇÃO: Admin API sempre responde quando Caddy está rodando
-      #          Não depende de rotas, SSL, DNS ou backends
-      # Ref: https://caddyserver.com/docs/api
+      # BENEFÍCIOS:
+      # - Startup mais rápido (sem aguardar ACME)
+      # - Healthcheck confiável (endpoint simples)
+      # - Caddy pode obter certificados em background
+      # 
+      # Ref: https://caddyserver.com/docs/caddyfile/directives/respond
       # =================================================================
       test:
         - "CMD-SHELL"
-        - "wget --spider -q http://localhost:2019/config/ || exit 1"
+        - "wget --spider -q http://localhost/health || exit 1"
       interval: 30s
       timeout: 10s
-      retries: 15
-      start_period: 600s
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
