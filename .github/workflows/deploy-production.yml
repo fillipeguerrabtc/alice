@@ -1086,13 +1086,20 @@ jobs:
             # ERPNext workers agora têm start_period de 420s (7 min), precisamos dar margem
             # para eles passarem pelos retries se necessário
             # Cálculo: 420s (start_period) + 5 retries × 30s interval + margem = ~900s
+            #
+            # USO DO MAX_WAIT_TIME (agora realmente usado, não apenas logado):
+            # - INIT_TIMEOUT = MAX_WAIT_TIME / 3 = 300s (init containers)
+            # - SERVICE_TIMEOUT = MAX_WAIT_TIME - INIT_ELAPSED (service containers)
+            # - MONITOR_TIMEOUT = 300s fixo (containers CORE são rápidos)
             MONITOR_INTERVAL="${MONITOR_INTERVAL:-5}"       # segundos entre checks de health
             MAX_WAIT_TIME="${MAX_WAIT_TIME:-900}"          # timeout total para containers ficarem healthy (15 min)
             HEALTHCHECK_RETRIES="${HEALTHCHECK_RETRIES:-30}" # quantas tentativas de healthcheck
             
             log "⏱️  Configuração de timeouts para monitoramento:"
             log "   Monitor interval: ${MONITOR_INTERVAL}s (tempo entre verificações)"
-            log "   Max wait time: ${MAX_WAIT_TIME}s (timeout total)"
+            log "   Max wait time: ${MAX_WAIT_TIME}s (timeout total para deploy)"
+            log "   → Init containers: ~$((MAX_WAIT_TIME / 3))s (MAX_WAIT_TIME / 3)"
+            log "   → Service containers: até ${MAX_WAIT_TIME}s (respeita start_period)"
             log "   Healthcheck retries: $HEALTHCHECK_RETRIES (tentativas máximas)"
             
             # =================================================================
@@ -1668,10 +1675,13 @@ jobs:
             # CORREÇÃO 03/01/2026: Workflow ficava "agarrado" quando containers
             # entravam em crash loop sem detectar. Agora monitora ativamente.
             # =================================================================
-            log "📊 Iniciando MONITORAMENTO ATIVO de containers (max 5 min)..."
+            log "📊 Iniciando MONITORAMENTO ATIVO de containers CORE (max 5 min)..."
             
             MONITOR_START=$(date +%s)
-            MONITOR_TIMEOUT=300  # 5 minutos
+            # NOTA: MONITOR_TIMEOUT é 300s fixo para containers CORE (postgres, redis, caddy)
+            # Containers CORE são leves e iniciam em < 60s, 5 min é margem suficiente
+            # Service containers (ERPNext workers) usam SERVICE_TIMEOUT derivado de MAX_WAIT_TIME
+            MONITOR_TIMEOUT=300  # 5 minutos para CORE containers
             MONITOR_INTERVAL=15  # Verificar a cada 15 segundos
             ITERATION=0
             
@@ -1991,9 +2001,17 @@ jobs:
             # SOLUÇÃO: Aguardar TODOS init containers completarem ANTES de 
             # verificar saúde dos containers normais
             # =================================================================
-            log "⏱️  Aguardando init containers completarem (timeout: 2 minutos)..."
+            # =================================================================
+            # CORREÇÃO 04/01/2026: INIT_TIMEOUT usa MAX_WAIT_TIME centralizado
+            # =================================================================
+            # PROBLEMA: INIT_TIMEOUT=120 era insuficiente para erpnext-create-site
+            # que leva 3-5 minutos (cria site + instala ERPNext app)
+            # SOLUÇÃO: Usar MAX_WAIT_TIME/3 (300s) como timeout para init containers
+            # Isso dá margem para init containers + service containers ficarem healthy
+            # =================================================================
+            INIT_TIMEOUT=$((MAX_WAIT_TIME / 3))  # 300s (5 min) para init containers
+            log "⏱️  Aguardando init containers completarem (timeout: ${INIT_TIMEOUT}s)..."
             
-            INIT_TIMEOUT=120
             INIT_ELAPSED=0
             
             while [ $INIT_ELAPSED -lt $INIT_TIMEOUT ]; do
@@ -2089,15 +2107,95 @@ jobs:
             fi
             
             # =================================================================
-            # CORREÇÃO 04/01/2026: Aguardar 30s para service containers iniciarem
+            # CORREÇÃO 04/01/2026: Loop inteligente para service containers
             # =================================================================
-            # PROBLEMA: Healthchecks podem levar 30-60s para ficarem prontos
-            # Verificar muito cedo gera falsos positivos (status: starting)
-            # SOLUÇÃO: Aguardar tempo adequado para containers iniciarem
-            # healthchecks antes de validar
+            # PROBLEMA ANTERIOR: sleep 30 era completamente insuficiente
+            # ERPNext workers têm start_period: 420s (7 min), então após 30s
+            # ainda estarão em "starting" e check_container_health() falharia
+            # 
+            # SOLUÇÃO ENTERPRISE: Loop que espera containers ficarem healthy
+            # usando MAX_WAIT_TIME como timeout (900s = 15 min)
+            # Isso respeita o start_period de todos containers, incluindo
+            # ERPNext workers (420s) + retries + margem de segurança
             # =================================================================
-            log "⏱️  Aguardando 30s para service containers iniciarem healthchecks..."
-            sleep 30
+            
+            # Calcular timeout restante após init containers
+            SERVICE_TIMEOUT=$((MAX_WAIT_TIME - INIT_ELAPSED))
+            if [ $SERVICE_TIMEOUT -lt 300 ]; then
+              SERVICE_TIMEOUT=300  # Mínimo 5 minutos para service containers
+            fi
+            
+            log "⏱️  Aguardando service containers ficarem healthy (timeout: ${SERVICE_TIMEOUT}s)..."
+            log "   Nota: ERPNext workers têm start_period de 420s - aguardando pacientemente..."
+            
+            SERVICE_ELAPSED=0
+            SERVICE_INTERVAL=15  # Verificar a cada 15 segundos
+            
+            while [ $SERVICE_ELAPSED -lt $SERVICE_TIMEOUT ]; do
+              # Contar containers com healthcheck que ainda não estão healthy
+              STARTING_COUNT=0
+              HEALTHY_COUNT=0
+              UNHEALTHY_COUNT=0
+              NO_HEALTH_RUNNING=0
+              
+              for container in $(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -E '^alice-|^gpu-|^erpnext-|^langfuse|^grafana|^prometheus|^loki|^jaeger|^minio|^clickhouse|^vector'); do
+                STATUS=$(docker inspect --format='{{.State.Status}}' "$container" 2>/dev/null || echo "unknown")
+                HEALTH=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container" 2>/dev/null || echo "none")
+                
+                # Ignorar init containers (já verificados acima)
+                IS_INIT=0
+                for init_container in "alice-pgbackrest-init" "alice-minio-init" "erpnext-configurator" "erpnext-create-site"; do
+                  if [ "$container" = "$init_container" ]; then
+                    IS_INIT=1
+                    break
+                  fi
+                done
+                
+                if [ "$IS_INIT" -eq 1 ]; then
+                  continue  # Ignorar init containers
+                fi
+                
+                if [ "$STATUS" = "running" ]; then
+                  if [ "$HEALTH" = "starting" ]; then
+                    STARTING_COUNT=$((STARTING_COUNT + 1))
+                  elif [ "$HEALTH" = "healthy" ]; then
+                    HEALTHY_COUNT=$((HEALTHY_COUNT + 1))
+                  elif [ "$HEALTH" = "unhealthy" ]; then
+                    UNHEALTHY_COUNT=$((UNHEALTHY_COUNT + 1))
+                  elif [ "$HEALTH" = "none" ]; then
+                    # Container sem healthcheck mas running - considerado OK
+                    NO_HEALTH_RUNNING=$((NO_HEALTH_RUNNING + 1))
+                  fi
+                fi
+              done
+              
+              TOTAL_HEALTHY=$((HEALTHY_COUNT + NO_HEALTH_RUNNING))
+              
+              # Progress indicator
+              if [ $((SERVICE_ELAPSED % 30)) -eq 0 ]; then
+                log "   📊 Status (${SERVICE_ELAPSED}s/${SERVICE_TIMEOUT}s): healthy=$HEALTHY_COUNT, starting=$STARTING_COUNT, unhealthy=$UNHEALTHY_COUNT, no-health=$NO_HEALTH_RUNNING"
+              fi
+              
+              # Se não há containers em "starting", podemos sair do loop
+              if [ $STARTING_COUNT -eq 0 ]; then
+                if [ $UNHEALTHY_COUNT -eq 0 ]; then
+                  log "✅ Todos os service containers com healthcheck estão healthy!"
+                  break
+                else
+                  # Containers unhealthy - deixar check_container_health() lidar
+                  log "⚠️ $UNHEALTHY_COUNT containers unhealthy detectados - verificando detalhes..."
+                  break
+                fi
+              fi
+              
+              # Aguardar antes da próxima verificação
+              sleep $SERVICE_INTERVAL
+              SERVICE_ELAPSED=$((SERVICE_ELAPSED + SERVICE_INTERVAL))
+            done
+            
+            if [ $SERVICE_ELAPSED -ge $SERVICE_TIMEOUT ]; then
+              log "⚠️ Timeout aguardando service containers (alguns ainda em starting) - verificando estado final..."
+            fi
             
             # =================================================================
             # FAIL-FAST ENTERPRISE: Verificação de saúde dos containers
