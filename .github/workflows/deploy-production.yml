@@ -4155,7 +4155,9 @@ METRICS_EOF
           envs: VERSION,GITHUB_ACTOR,TRIGGERED_BY,SERVICES
           script: |
             # Registrar metadata do deploy em PostgreSQL para auditoria
-            docker exec alice-postgres psql -U alice -d alice_prod << 'EOSQL'
+            # CORREÇÃO 04/01/2026: Heredoc sem aspas para permitir expansão de variáveis shell
+            # Com '<< 'EOSQL'' as variáveis $VERSION, $GITHUB_ACTOR etc seriam literais
+            docker exec alice-postgres psql -U alice -d alice_prod << EOSQL
             -- Criar tabela de deployments se não existir (idempotente)
             CREATE TABLE IF NOT EXISTS deployments (
               id SERIAL PRIMARY KEY,
