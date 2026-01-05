@@ -53,6 +53,17 @@ on:
         description: 'É uma pré-release (alpha/beta)?'
         type: boolean
         default: false
+  
+  workflow_call:
+    inputs:
+      version:
+        description: 'Versão para release'
+        required: true
+        type: string
+      prerelease:
+        description: 'É uma pré-release?'
+        type: boolean
+        default: false
 
 concurrency:
   group: release-${{ github.ref }}
@@ -596,7 +607,7 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               workflow_id: 'deploy-production.yml',
-              ref: version,
+              ref: 'main',
               inputs: {
                 version: version,
                 services: 'all',
