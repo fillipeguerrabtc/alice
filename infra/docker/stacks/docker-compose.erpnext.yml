@@ -350,8 +350,10 @@ services:
         fi
         
         echo "🔧 Criando site $${SITE_NAME}..."
-        # NOTA: Usar || true para evitar saída imediata por set -e
-        # Isso permite capturar PIPESTATUS e exibir diagnósticos antes de falhar
+        # CORREÇÃO 05/01/2026: Remover || true que sobrescrevia PIPESTATUS
+        # O || true fazia PIPESTATUS ser [0] mesmo quando bench falhava
+        # Desabilitar set -e temporariamente para capturar exit code correto
+        set +e
         timeout 1800 bench new-site "$${SITE_NAME}" \
           --db-host erpnext-mariadb \
           --db-port 3306 \
@@ -359,15 +361,19 @@ services:
           --admin-password "$${ADMIN_PASSWORD}" \
           --mariadb-user-host-login-scope='%' \
           --install-app erpnext \
-          --verbose 2>&1 | tee /tmp/bench-new-site.log || true
-        
-        # Capturar código de saída do comando bench (não do tee)
+          --verbose 2>&1 | tee /tmp/bench-new-site.log
         BENCH_EXIT_CODE=$${PIPESTATUS[0]:-$$?}
+        set -e
         
         if [ "$${BENCH_EXIT_CODE}" -ne 0 ]; then
+          echo ""
           echo "❌ ERRO: Falha ao criar site - exit code: $${BENCH_EXIT_CODE}"
-          echo "📋 Últimas 50 linhas do log:"
-          tail -50 /tmp/bench-new-site.log 2>/dev/null || true
+          echo ""
+          echo "=== LOG COMPLETO DO BENCH ==="
+          cat /tmp/bench-new-site.log 2>/dev/null || echo "Sem output disponível"
+          echo ""
+          echo "=== VERIFICANDO CONECTIVIDADE COM MariaDB ==="
+          mysql --host=erpnext-mariadb --port=3306 --user=root --password="$${MYSQL_ROOT_PASSWORD}" -e "SELECT 1" 2>&1 || echo "MariaDB inacessível"
           exit 1
         fi
         echo "✅ Site $${SITE_NAME} criado com sucesso!"
