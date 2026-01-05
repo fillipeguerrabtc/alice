@@ -35,10 +35,10 @@ A plataforma foi refatorada em **5 stacks independentes** para permitir:
 
 #### Deploy Automático (100% pipeline)
 
-- **Gatilho**: **GitHub Release publicada** (`release: published`)
-- **Fonte de verdade**: **TAG** da release (`vX.Y.Z`)
+- **Gatilho**: **Workflow "Release & Tag" termina com sucesso** (`workflow_run: completed`)
+- **Fonte de verdade**: **TAG** da release (`vX.Y.Z`) extraída do commit SHA do Release workflow
 - **Comportamento**: deploy automático do stack `all` (sequência: infra → drizzle → alice → observability → erpnext → backup)
-- **Observação**: **pré-release não dispara deploy automático** (alpha/beta)
+- **Observação**: Deploy só acontece DEPOIS que Release terminar completamente (build de imagens + publicação da Release). Evita deploy aparecer "junto" com CI na UI do GitHub.
 
 ```bash
 # Deploy de um stack específico

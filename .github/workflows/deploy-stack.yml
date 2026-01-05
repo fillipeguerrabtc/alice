@@ -34,10 +34,17 @@
 name: Deploy - Production (Stacks)
 
 on:
-  # Disparo AUTOMÁTICO: somente quando a Release (tag) for publicada
-  # IMPORTANTE: a Release é publicada APÓS o build das imagens no `release.yml` (evita corrida).
-  release:
-    types: [published]
+  # Disparo AUTOMÁTICO: somente quando o workflow Release & Tag terminar com sucesso
+  # IMPORTANTE: workflow_run garante que deploy só acontece DEPOIS que Release terminar completamente
+  # (build de imagens + publicação da Release). Evita deploy aparecer "junto" com CI na UI.
+  workflow_run:
+    # IMPORTANTE: usar nome do workflow (não caminho do arquivo) para referência
+    workflows: ["Release & Tag"]
+    types:
+      - completed
+    branches:
+      - main
+  # NOTA: workflow_run dispara mesmo em falha, então adicionamos verificação no job validate
   workflow_dispatch:
     inputs:
       stack:
@@ -73,7 +80,7 @@ on:
         default: false
 
 concurrency:
-  group: deploy-stack-${{ github.event_name }}-${{ github.event_name == 'release' && github.event.release.tag_name || github.event.inputs.stack }}
+  group: deploy-stack-${{ github.event_name }}-${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.event.inputs.stack }}
   cancel-in-progress: false
 
 permissions:
@@ -100,8 +107,11 @@ jobs:
     name: Validate Deploy
     runs-on: [self-hosted, linux, deploy]
     timeout-minutes: 5
-    # PRÉ-RELEASE não deve disparar deploy automaticamente
-    if: github.event_name != 'release' || github.event.release.prerelease == false
+    # Deploy automático só se Release & Tag terminou com sucesso (não falhou/cancelado)
+    # IMPORTANTE: workflow_run dispara mesmo em falha, então verificamos conclusion aqui
+    if: |
+      github.event_name != 'workflow_run' || 
+      github.event.workflow_run.conclusion == 'success'
     outputs:
       stack: ${{ steps.context.outputs.stack }}
       version: ${{ steps.context.outputs.version }}
@@ -112,19 +122,37 @@ jobs:
       depends_on: ${{ steps.prepare.outputs.depends_on }}
     
     steps:
+      - name: Checkout (para buscar tag)
+        if: github.event_name == 'workflow_run'
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      
       - name: Determine trigger context
         id: context
         shell: bash
         run: |
           set -euo pipefail
           
-          if [ "${{ github.event_name }}" = "release" ]; then
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            # Deploy automático após Release terminar: extrair tag do commit SHA do Release workflow
+            # O workflow_run dispara quando Release & Tag termina, precisamos encontrar a tag que aponta para o commit
             STACK="all"
-            VERSION="${{ github.event.release.tag_name }}"
+            COMMIT_SHA="${{ github.event.workflow_run.head_sha }}"
+            echo "🔍 Buscando tag para commit: $COMMIT_SHA"
+            # Buscar tag que aponta para o commit (pode ser múltiplas tags, pegar a mais recente)
+            VERSION=$(git describe --tags --exact-match "$COMMIT_SHA" 2>/dev/null || git describe --tags --abbrev=0 "$COMMIT_SHA" 2>/dev/null || echo "")
+            if [ -z "$VERSION" ]; then
+              echo "❌ ERRO: Nenhuma tag encontrada para commit $COMMIT_SHA!"
+              echo "   O Release workflow deve criar uma tag antes de terminar."
+              exit 1
+            fi
             ROLLBACK="false"
             ROLLBACK_VERSION=""
             DRY_RUN="false"
-            echo "🔔 Trigger: release published"
+            echo "🔔 Trigger: workflow_run (Release & Tag concluído)"
+            echo "📦 Tag encontrada: $VERSION"
           else
             STACK="${{ github.event.inputs.stack }}"
             VERSION="${{ github.event.inputs.version }}"
@@ -155,18 +183,19 @@ jobs:
             echo "| Versão (TAG) | \`$VERSION\` |"
             echo "| Rollback | \`$ROLLBACK\` |"
             echo "| Dry run | \`$DRY_RUN\` |"
-            if [ "${{ github.event_name }}" = "release" ]; then
-              echo "| Release prerelease | \`${{ github.event.release.prerelease }}\` |"
-              echo "| Release URL | ${{ github.event.release.html_url }} |"
+            if [ "${{ github.event_name }}" = "workflow_run" ]; then
+              echo "| Release Workflow Run | [${{ github.event.workflow_run.id }}](${{ github.event.workflow_run.html_url }}) |"
+              echo "| Release Workflow Conclusion | \`${{ github.event.workflow_run.conclusion }}\` |"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Checkout (tag da versão)
         uses: actions/checkout@v4
         with:
-          # Forçar ref explícita de TAG para evitar ambiguidade com branch (ex: "main")
-          # e facilitar troubleshooting quando o GitHub UI mostra "Branch: main".
-          ref: refs/tags/${{ steps.context.outputs.version }}
+          # Para workflow_run: já fizemos checkout de main no step anterior, agora checkout da tag encontrada
+          # Para workflow_dispatch: usar tag fornecida manualmente
+          ref: ${{ github.event_name == 'workflow_run' && format('refs/tags/{0}', steps.context.outputs.version) || format('refs/tags/{0}', steps.context.outputs.version) }}
+          fetch-depth: 0
 
       - name: Debug trigger + git ref (troubleshooting)
         shell: bash
