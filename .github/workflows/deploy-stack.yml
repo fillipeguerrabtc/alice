@@ -773,18 +773,24 @@ EOF
               POSTGRES_DB=$(grep '^POSTGRES_DB=' .env.prod | cut -d'=' -f2 | tr -d ' ')
               
               # Função para URL encode (necessário se senha tiver @, :, ?, #, %)
+              # CLAUDE.md Bug Fix 23/12/2025: printf "'$c" não converte corretamente
+              # quando $c é variável expandida. Usar dois passos: ASCII primeiro, depois hex.
               urlencode() {
                 local string="$1"
                 local strlen=${#string}
                 local encoded=""
-                local pos c o
+                local pos c ascii hex
                 for (( pos=0 ; pos<strlen ; pos++ )); do
                   c=${string:$pos:1}
                   case "$c" in
-                    [-_.~a-zA-Z0-9] ) o="$c" ;;
-                    * ) printf -v o '%%%02X' "'$c" ;;
+                    [-_.~a-zA-Z0-9] ) encoded+="$c" ;;
+                    * )
+                      # LC_ALL=C garante comportamento consistente com caracteres multibyte
+                      LC_ALL=C printf -v ascii '%d' "'$c"
+                      printf -v hex '%%%02X' "$ascii"
+                      encoded+="$hex"
+                      ;;
                   esac
-                  encoded+="$o"
                 done
                 echo "$encoded"
               }
@@ -912,7 +918,8 @@ EOF
                 ;;
               all)
                 # Para deploy completo, verificar containers críticos de TODOS os stacks
-                CONTAINERS="alice-postgres alice-redis alice-qdrant alice-caddy alice-minio alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations alice-gpu-manager prometheus grafana loki jaeger langfuse"
+                # Inclui alice-clickhouse (Langfuse v3 depende de ClickHouse)
+                CONTAINERS="alice-postgres alice-redis alice-qdrant alice-caddy alice-minio alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations alice-gpu-manager prometheus grafana loki jaeger langfuse alice-clickhouse"
                 ;;
             esac
             

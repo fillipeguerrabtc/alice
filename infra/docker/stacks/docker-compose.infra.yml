@@ -375,6 +375,10 @@ services:
   # ===========================================================================
   # QDRANT - Banco Vetorial para Texto (4096 dim)
   # ===========================================================================
+  # NOTA (03/01/2026): NÃO usar read_only: true aqui!
+  # Qdrant precisa escrever arquivo .qdrant-initialized no WORKDIR /qdrant.
+  # Com read_only: true, o container falha com 'Read-only file system' e fica unhealthy.
+  # tmpfs em /tmp e /qdrant/tmp não ajudam porque o arquivo é em /qdrant root.
   alice-qdrant:
     image: qdrant/qdrant:v1.16.2
     platform: linux/amd64
@@ -382,10 +386,6 @@ services:
     restart: always
     security_opt:
       - no-new-privileges:true
-    read_only: true
-    tmpfs:
-      - /tmp:mode=1777,size=64M
-      - /qdrant/tmp:mode=1777,size=256M
     environment:
       QDRANT__SERVICE__GRPC_PORT: "6334"
       QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY é obrigatório em produção}
