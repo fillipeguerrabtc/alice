@@ -1,22 +1,25 @@
 # Guia Completo de Secrets - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 02 de Janeiro de 2026
+**Data:** 05 de Janeiro de 2026  
+**Versão:** 5.0 - Arquitetura Multi-Stack Modular
 
 ## Visão Geral
 
 Este documento contém a lista completa de todos os secrets necessários para a plataforma Alice Enterprise, incluindo instruções de configuração para webhooks e OAuth.
 
-**Total de Secrets:** ~50 configurados no repositório GitHub (verificado em 02/01/2026)
+**Total de Secrets:** ~50 configurados no repositório GitHub (verificado em 05/01/2026)
 **Arquitetura:** Deploy Server (CPX32 - 4 vCPU, 8GB RAM) + Production Server (GEX44 GPU)
-**Arquitetura:** Cursor IDE é APENAS editor de código. Produção 100% na Hetzner Cloud.
-**Total de Containers:** 50 em produção (7 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)
+**Arquitetura Multi-Stack:** 5 stacks independentes (INFRA, ALICE, OBSERVABILITY, ERPNEXT, BACKUP)
+**Total de Containers:** 50 em produção (10 infra + 8 Alice + 5 GPU + 13 observability + 15 ERPNext + 1 backup)
 **Redis Alice:** Container dedicado para cache distribuído (segregação enterprise do ERPNext)
 **LLM:** Mixtral 8x7B (MoE ~12B ativos, vLLM) via GPU Manager Service (Hetzner GPU)
 **Trading:** KuCoin Futures BTC Perpetuals (XBTUSDTM)
 **URL de Produção:** `https://yesyoudeserve.duckdns.org`
 **URL ERPNext:** `https://erp.yesyoudeserve.duckdns.org`
 **IP:** 178.63.41.108
+
+> **ATUALIZAÇÃO 05/01/2026:** Arquitetura refatorada para 5 stacks independentes com deploy/rollback modular. Workflow `deploy-stack.yml` permite deploy individual por stack.
 
 > Atualização 21/12/2025: Fluxo CI deduplicado (push somente em `main` + PR em `main`) e correções de tipos no frontend destravando Release & Tag.
 

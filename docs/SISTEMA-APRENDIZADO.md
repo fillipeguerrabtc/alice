@@ -1,10 +1,10 @@
 # Sistema de Aprendizado da Alice
 
 **Autor:** Fillipe Guerra  
-**Versão:** 4.1 - Critical Pipeline Fixes  
-**Data:** 02 de Janeiro de 2026
+**Versão:** 5.0 - Arquitetura Multi-Stack Modular  
+**Data:** 05 de Janeiro de 2026
 
-> Atualização 21/12/2025: Ajuste no CI para evitar duplicação de execuções (push apenas em `main` + PR) e correção de tipos do frontend (SignalApprovalPanel/TechnicalAnalysisPanel) garantindo sucesso do Release.
+> **ATUALIZAÇÃO 05/01/2026:** Arquitetura refatorada para 5 stacks independentes com deploy/rollback modular. Sistema de aprendizado integrado ao stack ALICE, com GPU containers gerenciados pelo GPU Manager Service.
 
 > Atualização 26/12/2025: Padronização de line endings com `.gitattributes` e `.editorconfig` (LF padrão; CRLF apenas para scripts Windows) para eliminar diffs ruidosos e manter consistência enterprise.
 

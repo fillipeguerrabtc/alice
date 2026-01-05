@@ -274,7 +274,7 @@ Consulte [docs/SECRETS.md](docs/SECRETS.md) para a lista completa de secrets nec
 ### Pipeline CI/CD Unificada (Best Practices 2025)
 
 ```
-Push → CI (auto) → Release (auto) → Deploy Hetzner (auto) → Validate GPU (auto)
+Push → CI (auto) → Release (auto) → Deploy Multi-Stack (auto) → Health Checks → Rollback Inteligente
 
 1. Push para branch main
 2. CI - Build & Test (automático):
@@ -283,17 +283,17 @@ Push → CI (auto) → Release (auto) → Deploy Hetzner (auto) → Validate GPU
    ├── Build packages/services
    └── Security scan (Trivy)
 3. Release & Tag (automático se CI passar):
-   ├── Cria tag v1.0.X (incremental)
+   ├── Cria tag v1.0.X (Semantic Versioning via Conventional Commits)
    ├── Publica imagens Docker no GHCR (rebuild apenas do que mudou; retag do restante)
    └── Push para GHCR
-4. Deploy Production (100% automático):
+4. Deploy Multi-Stack (100% automático):
    ├── Dispara automaticamente após Release
-   ├── Deploy Hetzner GPU (50 containers: 7 infra + 7 Alice + 15 ERPNext + 14 obs + 6 GPU + 1 backup)
-   ├── Health checks + Rollback automático
-   └── GPU: RTX 4000 Ada (20GB VRAM) - Mixtral, FLUX, ASR, Embeddings (gerenciados pelo GPU Manager Service)
+   ├── Deploy sequencial: INFRA → Drizzle push → ALICE → OBSERVABILITY → ERPNEXT → BACKUP
+   ├── Health checks por stack + Rollback inteligente POR STACK
+   └── Produção parcial: Alice funciona mesmo se ERPNext falhar
 ```
 
-**Hetzner GPU 100% Automático:** Push para `main` aciona CI → Release → Deploy com health checks e rollback. Todos os 50 containers (7 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup) rodam no mesmo servidor Hetzner GPU único, eliminando latência de rede e simplificando gerenciamento.
+**Arquitetura Multi-Stack (05/01/2026):** Push para `main` aciona CI → Release → Deploy com health checks e rollback POR STACK. Os 50 containers são organizados em 5 stacks independentes (INFRA, ALICE, OBSERVABILITY, ERPNEXT, BACKUP), permitindo produção parcial e rollback cirúrgico.
 
 **GPU Manager Service:**
 - Gerenciamento centralizado de todas as requisições GPU (LLM, Embeddings, FLUX, ASR)
@@ -382,7 +382,7 @@ alice/
 │   └── workflows/                  # CI/CD (3 workflows)
 │       ├── ci.yml                  # Build & Test (otimizado 27/12/2025)
 │       ├── release.yml             # Versionamento semântico
-│       └── deploy-production.yml   # Deploy Hetzner GPU (100% automático)
+│       └── deploy-stack.yml        # Deploy modular por stack (05/01/2026)
 │
 ├── client/                         # Frontend React
 │   └── src/
@@ -514,21 +514,20 @@ Todos os 50 containers têm security hardening completo aplicado. Containers que
 **Desenvolvido para empresas que exigem IA autônoma, privada e customizável**
 
 *Autor: Fillipe Guerra*
-*Versão 4.51 - 02 de Janeiro de 2026*
+*Versão 5.0 - 05 de Janeiro de 2026*
 *Tecnologias: Node.js 22 LTS, Express 5.2, Vite 7.3, Tailwind CSS 4.1, React 19.2, pnpm 10.26.1, TypeScript 5.9.3*
-*Total de Containers: 50 (7 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)*
+*Total de Containers: 50 (10 infra + 8 Alice + 5 GPU + 13 observability + 15 ERPNext + 1 backup)*
+*Arquitetura Multi-Stack (05/01/2026): 5 stacks independentes com deploy/rollback modular*
 *Production Audit: 100% Compliant | Zero CVEs (Distroless) | Docker Compose v5.0.0*
-*Performance (02/01/2026): HTTP Compression (gzip), HTTP/3 (Caddy), SHA Pinning 95%+*
-*PostgreSQL (21/12/2025): HNSW indexes + 10 índices compostos + 12 tabelas Trading com RLS*
+*Performance: HTTP Compression (gzip), HTTP/3 (Caddy), SHA Pinning 95%+*
+*PostgreSQL: HNSW indexes + 10 índices compostos + 12 tabelas Trading com RLS*
 *Storage: Servidor GEX44 1.92TB interno (/opt/alice) - SEM S3 externo*
 *ARQUITETURA ENTERPRISE: Texto 4096 dim Qwen3-Embedding-8B (Qdrant) | Imagem 1024 dim OpenCLIP (pgvector)*
 *Trading BTC Futures: KuCoin Perpetuals + Indicadores Técnicos Determinísticos + Validação Cruzada Anti-Alucinação*
-*Trading Analysis (21/12/2025): RSI, MACD, EMA, SMA, Bollinger, ATR, Stochastic, ADX, Pivot Points + Aprovação de Sinais*
 *LLM: Mixtral 8x7B (vLLM AWQ) via Hetzner GPU Server GEX44 (RTX 4000 Ada 20GB)*
-*GPU Services (Hetzner): LLM (Mixtral vLLM), FLUX.1 Schnell, Qwen3-Embedding-8B, OpenCLIP, Canary-1B (ASR) - gerenciados pelo GPU Manager Service*
-*Pipeline Unificada: Hetzner GPU 100% automático - todos os 51 containers no servidor único*
-*Otimização CI (27/12/2025): Composite action reutilizável elimina duplicação de setup (14x → 1x), economia de ~6-10min por run*
-*Runner Enterprise Hardening (27/12/2025): Kernel tuning, Docker daemon otimizado, limits, systemd override, cron cleanup diário 3h*
+*GPU Services: LLM, FLUX.1 Schnell, Qwen3-Embedding-8B, OpenCLIP, Canary-1B (ASR) - gerenciados pelo GPU Manager Service*
+*Pipeline Multi-Stack: Deploy modular por stack (INFRA → ALICE → OBSERVABILITY → ERPNEXT → BACKUP)*
+*Rollback Inteligente: Rollback cirúrgico por stack sem afetar outros*
 
 </div>
 

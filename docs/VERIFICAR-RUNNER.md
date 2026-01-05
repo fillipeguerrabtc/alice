@@ -1,7 +1,10 @@
 # Como Verificar se o Pipeline Está Usando Runner Próprio
 
 **Autor:** Fillipe Guerra  
-**Data:** 02 de Janeiro de 2026
+**Data:** 05 de Janeiro de 2026  
+**Versão:** 5.0 - Arquitetura Multi-Stack Modular
+
+> **ATUALIZAÇÃO 05/01/2026:** Novo workflow `deploy-stack.yml` substitui `deploy-production.yml` para deploy modular por stack.
 
 ## Status Atual dos Runners
 

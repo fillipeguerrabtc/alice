@@ -1,8 +1,10 @@
 # Arquitetura GPU Manager Service
 
 **Autor:** Fillipe Guerra  
-**Data:** 02 de Janeiro de 2026  
-**Versão:** 1.7.0 - Critical Pipeline Fixes
+**Data:** 05 de Janeiro de 2026  
+**Versão:** 2.0.0 - Arquitetura Multi-Stack Modular
+
+> **ATUALIZAÇÃO 05/01/2026:** GPU Manager Service agora faz parte do **stack ALICE**. Deploy/rollback independente via `gh workflow run deploy-stack.yml -f stack=alice -f version=vX.Y.Z`.
 
 ---
 
