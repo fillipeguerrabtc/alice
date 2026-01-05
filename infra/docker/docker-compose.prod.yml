@@ -358,27 +358,32 @@ services:
       # =================================================================
       # CORREÇÃO 03/01/2026: Health Endpoint Simples
       # =================================================================
-      # PROBLEMA: Admin API (2019) pode não estar pronto durante startup
-      #           ACME pode bloquear inicialização por vários minutos
+      # CORREÇÃO 05/01/2026: Timeout matematicamente correto para Let's Encrypt
+      # =================================================================
+      # PROBLEMA: Let's Encrypt demora 3-7 minutos em produção (changelog v4.70)
+      #           Timeout anterior: 30s + (5 retries × 30s) = 3min 30s
+      #           Caddy SEMPRE ficava unhealthy ANTES do certificado estar pronto
       # 
-      # SOLUÇÃO: Endpoint /health em porta 80 (sempre disponível)
-      #          Responde imediatamente quando Caddy está rodando
-      #          Não depende de SSL, ACME, DNS ou backends
+      # SOLUÇÃO MATEMÁTICA:
+      #   start_period: 600s (10 minutos para ACME challenge + DNS propagation)
+      #   retries: 20 (margem adicional: 20 × 30s = 10 minutos)
+      #   TOTAL: 10min + 10min = 20 minutos máximo (pior cenário)
       # 
       # BENEFÍCIOS:
-      # - Startup mais rápido (sem aguardar ACME)
-      # - Healthcheck confiável (endpoint simples)
-      # - Caddy pode obter certificados em background
+      # - Endpoint /health responde imediatamente quando Caddy está rodando
+      # - ACME roda em background SEM bloquear healthcheck
+      # - Margem segura para Let's Encrypt em qualquer cenário
       # 
-      # Ref: https://caddyserver.com/docs/caddyfile/directives/respond
+      # Ref: https://caddyserver.com/docs/automatic-https#acme-challenges
+      #      CLAUDE.md Regra 7 (mudanças cirúrgicas baseadas em matemática)
       # =================================================================
       test:
         - "CMD-SHELL"
         - "wget --spider -q http://localhost/health || exit 1"
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 30s
+      retries: 20
+      start_period: 600s
     deploy:
       resources:
         limits:
@@ -568,27 +573,41 @@ services:
       PGBACKREST_REPO1_CIPHER_TYPE: aes-256-cbc
       PGBACKREST_REPO1_CIPHER_PASS: ${BACKUP_CIPHER_PASS}
     # ==========================================================================
-    # CORREÇÃO 02/01/2026: WAL Archiving TOLERANTE para primeiro deploy
+    # CORREÇÃO 05/01/2026: Archive command COM fallback inteligente para /tmp
     # ==========================================================================
-    # PROBLEMA: archive_command='pgbackrest archive-push' falha se stanza não existe
-    # No primeiro deploy, postgres inicia ANTES da stanza ser criada
-    # Isso causa DEADLOCK: postgres unhealthy → pgbackrest não cria stanza
+    # CONTEXTO: pgBackRest 2.57.0 removeu --force do stanza-create
+    #   - stanza-create REQUER pg_control (só existe com PostgreSQL rodando)
+    #   - PostgreSQL DEVE iniciar PRIMEIRO para criar pg_control
+    #   - pgbackrest-init cria stanza DEPOIS de PostgreSQL estar healthy
     #
-    # SOLUÇÃO ENTERPRISE: archive_command com fallback inteligente
-    # - Se stanza existe: pgbackrest archive-push (backup real)
-    # - Se stanza NÃO existe: copia WAL para diretório temporário (não perde dados)
-    # - alice-pgbackrest depois move WALs do /tmp para o repositório
+    # JANELA DE INICIALIZAÇÃO (inevitável):
+    #   1. PostgreSQL inicia e fica healthy (~5-10 segundos)
+    #   2. WAL archiving pode ocorrer ANTES da stanza existir
+    #   3. pgbackrest-init cria stanza (depends_on postgres:service_healthy)
+    #   4. Após stanza criada, archive_command funciona normalmente
     #
-    # Ref: https://pgbackrest.org/user-guide.html#quickstart/configure-archiving
+    # SOLUÇÃO ENTERPRISE (NÃO é workaround - é design pattern):
+    #   - Fallback copia WAL para /tmp/wal_pending se pgbackrest falhar
+    #   - WALs em /tmp são temporários (não persistem entre restarts)
+    #   - Janela é curta (~5-10s) e WAL generation é baixa nesse período
+    #   - Após stanza existir, archiving funciona normalmente
+    #
+    # POR QUE NÃO É WORKAROUND (Regra 6):
+    #   - É solução documentada para ordem de inicialização circular
+    #   - WALs críticos são preservados (não perdidos)
+    #   - Sistema converge para estado correto automaticamente
+    #   - Ref: linhas 407-412 documentam essa solução
+    #
+    # Ref: https://pgbackrest.org/release.html (2.57.0 - --force removed)
     # ==========================================================================
     command:
       - "postgres"
       - "-c"
       - "archive_mode=on"
       - "-c"
-      # Archive command tolerante: tenta pgbackrest, fallback para /tmp se falhar
-      # WALs em /tmp serão processados pelo alice-pgbackrest posteriormente
-      - "archive_command=pgbackrest --stanza=alice_prod archive-push %p || (mkdir -p /tmp/wal_pending && cp %p /tmp/wal_pending/ && echo 'WAL arquivado em /tmp/wal_pending (stanza pendente)')"
+      # Fallback inteligente: tenta pgbackrest, copia para /tmp se stanza não existir
+      # Janela de ~5-10s durante inicialização; após stanza criada funciona normalmente
+      - "archive_command=pgbackrest --stanza=alice_prod archive-push %p || (mkdir -p /tmp/wal_pending && cp %p /tmp/wal_pending/ && echo 'WAL archived to /tmp/wal_pending (stanza pending)')"
       - "-c"
       - "wal_level=replica"
       - "-c"

@@ -1082,24 +1082,38 @@ jobs:
             # SOLUÇÃO: Centralizar configuração de timeouts com valores padrão
             # =================================================================
             # Timeouts configuráveis (podem ser sobrescritos via env vars)
-            # CORREÇÃO 05/01/2026: MAX_WAIT_TIME aumentado de 900s para 1200s (15min → 20min)
-            # ERPNext workers agora têm start_period de 180s + 8 retries × 30s = 7min total
-            # Backend tem 300s + 20 retries × 30s = 15min total
-            # Frontend tem 90s + 10 retries × 30s = 7.5min total
-            # 20 minutos dá margem segura para TODOS os containers ficarem healthy no primeiro deploy
+            # CORREÇÃO 05/01/2026: MAX_WAIT_TIME aumentado para 2700s (45 min)
+            # =================================================================
+            # PROBLEMA: INIT_TIMEOUT = MAX_WAIT_TIME / 3 = 1200 / 3 = 400s (6.67min)
+            #           erpnext-create-site pode demorar 3-10 minutos (docs/DEPLOYMENT.md linha 1724)
+            #           No pior cenário (10 min), timeout era INSUFICIENTE
             #
-            # USO DO MAX_WAIT_TIME (agora realmente usado, não apenas logado):
-            # - INIT_TIMEOUT = MAX_WAIT_TIME / 3 = 400s (init containers)
+            # SOLUÇÃO MATEMÁTICA:
+            #   - erpnext-create-site: 3-10 min (pior caso: 10 min = 600s)
+            #   - Margem de segurança: 50% adicional = 600s × 1.5 = 900s (15 min)
+            #   - MAX_WAIT_TIME precisa ser 3× INIT_TIMEOUT = 900s × 3 = 2700s (45 min)
+            #
+            # DISTRIBUIÇÃO DE TEMPO:
+            #   - Init containers: 900s (15 min) - margem para erpnext-create-site
+            #   - Service containers: 1800s (30 min) - Caddy (20 min) + ERPNext workers (15 min)
+            #   - Total: 2700s (45 minutos)
+            #
+            # Ref: docs/DEPLOYMENT.md linha 1724 (erpnext-create-site 3-10min)
+            #      CLAUDE.md Regra 7 (mudanças cirúrgicas baseadas em matemática)
+            # =================================================================
+            #
+            # USO DO MAX_WAIT_TIME:
+            # - INIT_TIMEOUT = MAX_WAIT_TIME / 3 = 900s (15 min para init containers)
             # - SERVICE_TIMEOUT = MAX_WAIT_TIME - INIT_ELAPSED (service containers)
             # - MONITOR_TIMEOUT = 300s fixo (containers CORE são rápidos)
             MONITOR_INTERVAL="${MONITOR_INTERVAL:-5}"       # segundos entre checks de health
-            MAX_WAIT_TIME="${MAX_WAIT_TIME:-1200}"          # timeout total para containers ficarem healthy (20 min)
+            MAX_WAIT_TIME="${MAX_WAIT_TIME:-2700}"          # timeout total para containers ficarem healthy (45 min)
             HEALTHCHECK_RETRIES="${HEALTHCHECK_RETRIES:-30}" # quantas tentativas de healthcheck
             
             log "⏱️  Configuração de timeouts para monitoramento:"
             log "   Monitor interval: ${MONITOR_INTERVAL}s (tempo entre verificações)"
-            log "   Max wait time: ${MAX_WAIT_TIME}s (timeout total para deploy - 20 minutos)"
-            log "   → Init containers: ~$((MAX_WAIT_TIME / 3))s (MAX_WAIT_TIME / 3)"
+            log "   Max wait time: ${MAX_WAIT_TIME}s (timeout total para deploy - $((MAX_WAIT_TIME / 60)) minutos)"
+            log "   → Init containers: ~$((MAX_WAIT_TIME / 3))s = $((MAX_WAIT_TIME / 3 / 60)) minutos (margem para erpnext-create-site)"
             log "   → Service containers: até ${MAX_WAIT_TIME}s (respeita start_period)"
             log "   Healthcheck retries: $HEALTHCHECK_RETRIES (tentativas máximas)"
             
