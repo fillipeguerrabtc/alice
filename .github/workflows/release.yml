@@ -36,36 +36,18 @@
 # - Microservices mantêm contexto raiz (precisam de packages/ compartilhados)
 # - Infra services usam contextos específicos
 #
-# CORREÇÃO (04/01/2026): Detecção de tag anterior para workflow_dispatch
-# - git describe "$VERSION^" falha quando $VERSION não existe (workflow_dispatch)
-# - Agora usa git describe sem argumentos (do HEAD) para workflow_dispatch
-# - Garante changelog correto e otimização de retagging em releases manuais
-#
-# CORREÇÃO (04/01/2026): Versionamento automático funcional
-# - Validação de formato movida para DEPOIS do cálculo automático de versão
-# - workflow_dispatch sem versão agora funciona corretamente
-# - Validação ocorre em 3 pontos: push (imediato), manual (imediato), automático (após cálculo)
-#
-# CORREÇÃO (04/01/2026): Loop de colisão de tags para primeiro release
-# - Loop de verificação de colisão estava apenas dentro do "else" (versão calculada)
-# - Se v1.0.0 já existisse (criada manualmente/outra branch), workflow falhava
-# - Loop movido para FORA do if/else, aplica-se a ambos os casos (primeiro release e incremento)
-#
 # Author: Fillipe Guerra
-# Data: 04/01/2026
+# Data: 02/01/2026
 # =============================================================================
 
 name: Release & Tag
 
 on:
-  push:
-    tags:
-      - 'v*.*.*'
   workflow_dispatch:
     inputs:
       version:
-        description: 'Versão para release (deixe vazio para versionamento automático)'
-        required: false
+        description: 'Versão para release (ex: v1.0.0, v1.0.0-beta.1)'
+        required: true
         type: string
       prerelease:
         description: 'É uma pré-release (alpha/beta)?'
@@ -94,7 +76,7 @@ jobs:
     runs-on: [self-hosted, linux, deploy]
     timeout-minutes: 5
     outputs:
-      version: ${{ steps.final-version.outputs.version }}
+      version: ${{ inputs.version }}
       previous_tag: ${{ steps.previous-tag.outputs.previous_tag }}
       changelog: ${{ steps.changelog.outputs.changes }}
     
@@ -104,54 +86,27 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Detectar versão e tag anterior
+      - name: Validar formato da versão
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+            echo "❌ Formato de versão inválido: $VERSION"
+            exit 1
+          fi
+          echo "✅ Versão válida: $VERSION"
+
+      - name: Verificar se tag já existe
+        run: |
+          if git rev-parse "${{ inputs.version }}" >/dev/null 2>&1; then
+            echo "❌ Tag ${{ inputs.version }} já existe!"
+            exit 1
+          fi
+          echo "✅ Tag ${{ inputs.version }} disponível"
+
+      - name: Detectar tag anterior (para retagging)
         id: previous-tag
         run: |
-          # Determinar versão baseada em como o workflow foi disparado
-          # NOTA: Validação de formato movida para step "Definir versão final"
-          # para permitir versionamento automático (inputs.version vazio)
-          if [ "${{ github.event_name }}" = "push" ]; then
-            # Disparado por tag push - usar nome da tag
-            VERSION="${{ github.ref_name }}"
-            echo "ℹ️ Versão detectada do push de tag: $VERSION"
-            
-            # Validar formato APENAS para push de tag (versão já conhecida)
-            if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
-              echo "❌ Formato de versão inválido: $VERSION"
-              echo "   Formato esperado: vX.Y.Z ou vX.Y.Z-sufixo"
-              echo "   Exemplos válidos: v1.0.0, v2.3.1, v1.0.0-beta.1"
-              exit 1
-            fi
-            echo "✅ Versão válida: $VERSION"
-          else
-            # Disparado manualmente - versão pode ser vazia (automático) ou fornecida
-            VERSION="${{ inputs.version }}"
-            if [ -n "$VERSION" ]; then
-              echo "ℹ️ Versão fornecida manualmente: $VERSION"
-              # Validar formato se versão foi fornecida
-              if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
-                echo "❌ Formato de versão inválido: $VERSION"
-                echo "   Formato esperado: vX.Y.Z ou vX.Y.Z-sufixo"
-                echo "   Exemplos válidos: v1.0.0, v2.3.1, v1.0.0-beta.1"
-                exit 1
-              fi
-              echo "✅ Versão válida: $VERSION"
-            else
-              echo "ℹ️ Versão não fornecida - será calculada automaticamente"
-            fi
-          fi
-          
-          # Detectar tag anterior (para changelog e retagging)
-          # CORREÇÃO 04/01/2026: Lógica diferente para cada trigger
-          # - push: tag já existe, usar "$VERSION^" para encontrar tag anterior à atual
-          # - workflow_dispatch: tag ainda NÃO existe, usar HEAD para encontrar tag mais recente
-          if [ "${{ github.event_name }}" = "push" ]; then
-            # Tag existe: encontrar a tag imediatamente anterior
-            PREVIOUS_TAG=$(git describe --tags --abbrev=0 "$VERSION^" 2>/dev/null || echo "")
-          else
-            # Tag NÃO existe: encontrar a tag mais recente do HEAD
-            PREVIOUS_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          fi
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
           echo "previous_tag=$PREVIOUS_TAG" >> $GITHUB_OUTPUT
           if [ -n "$PREVIOUS_TAG" ]; then
             echo "✅ Tag anterior detectada: $PREVIOUS_TAG"
@@ -159,124 +114,9 @@ jobs:
             echo "⚠️ Nenhuma tag anterior encontrada (primeiro release?)"
           fi
 
-      - name: Calcular próxima versão automaticamente
-        id: auto-version
-        # ✅ ENTERPRISE: Só calcula versão se workflow_dispatch SEM versão manual
-        # Para push de tag, a versão já é conhecida (github.ref_name)
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.version == '' }}
-        run: |
-          PREVIOUS_TAG="${{ steps.previous-tag.outputs.previous_tag }}"
-          
-          if [ -z "$PREVIOUS_TAG" ]; then
-            # Primeiro release - iniciar com v1.0.0
-            MAJOR=1
-            MINOR=0
-            PATCH=0
-            NEXT_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
-            echo "ℹ️ Nenhuma tag anterior - iniciando com v1.0.0"
-          else
-            # Remover prefixo v para cálculo
-            CURRENT=$(echo "$PREVIOUS_TAG" | sed 's/^v//')
-            MAJOR=$(echo "$CURRENT" | cut -d. -f1)
-            MINOR=$(echo "$CURRENT" | cut -d. -f2)
-            PATCH=$(echo "$CURRENT" | cut -d. -f3 | cut -d- -f1)
-            
-            # Analisar commits desde última tag
-            COMMITS=$(git log "$PREVIOUS_TAG..HEAD" --pretty=format:"%s" --no-merges)
-            
-            echo "📊 Commits desde $PREVIOUS_TAG:"
-            echo "$COMMITS"
-            echo ""
-            
-            # Detectar tipo de mudança (mesma lógica do changelog)
-            if echo "$COMMITS" | grep -qE "^[a-z]+(\(.+\))?!:|BREAKING CHANGE:"; then
-              # MAJOR: Breaking change
-              MAJOR=$((MAJOR + 1))
-              MINOR=0
-              PATCH=0
-              CHANGE_TYPE="MAJOR (breaking change detectado)"
-            elif echo "$COMMITS" | grep -qE "^feat(\(.+\))?:"; then
-              # MINOR: Nova feature
-              MINOR=$((MINOR + 1))
-              PATCH=0
-              CHANGE_TYPE="MINOR (feat detectado)"
-            else
-              # PATCH: Bug fix ou outros
-              PATCH=$((PATCH + 1))
-              CHANGE_TYPE="PATCH (fix ou outros)"
-            fi
-            
-            NEXT_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
-            echo "✅ Versão anterior: $PREVIOUS_TAG"
-            echo "✅ Tipo de mudança: $CHANGE_TYPE"
-            echo "✅ Versão calculada: $NEXT_VERSION"
-          fi
-          
-          # ✅ ENTERPRISE: Se tag calculada JÁ EXISTE, incrementar PATCH automaticamente
-          # NOTA: Este loop está FORA do if/else para aplicar tanto ao primeiro release
-          # quanto às versões calculadas (correção de bug - v1.0.0 também pode já existir)
-          ATTEMPT=0
-          MAX_ATTEMPTS=100
-          while git rev-parse "$NEXT_VERSION" >/dev/null 2>&1; do
-            ATTEMPT=$((ATTEMPT + 1))
-            if [ $ATTEMPT -ge $MAX_ATTEMPTS ]; then
-              echo "❌ ERRO: Não foi possível encontrar versão disponível após $MAX_ATTEMPTS tentativas"
-              exit 1
-            fi
-            
-            echo "⚠️ Tag $NEXT_VERSION já existe, incrementando PATCH..."
-            PATCH=$((PATCH + 1))
-            NEXT_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
-          done
-          
-          if [ $ATTEMPT -gt 0 ]; then
-            echo "✅ Versão final (após $ATTEMPT incrementos): $NEXT_VERSION"
-          fi
-          
-          echo "version=$NEXT_VERSION" >> $GITHUB_OUTPUT
-
-      - name: Definir versão final
-        id: final-version
-        run: |
-          # Determinar versão baseada em como o workflow foi disparado
-          if [ "${{ github.event_name }}" = "push" ]; then
-            # Disparado por tag push - usar nome da tag (já existe)
-            VERSION="${{ github.ref_name }}"
-            echo "ℹ️ Usando versão do push de tag: $VERSION"
-          elif [ -n "${{ inputs.version }}" ]; then
-            # Versão manual fornecida
-            VERSION="${{ inputs.version }}"
-            echo "ℹ️ Usando versão manual fornecida: $VERSION"
-            
-            # ✅ ENTERPRISE: Validar que versão manual NÃO existe
-            if git rev-parse "$VERSION" >/dev/null 2>&1; then
-              echo "❌ ERRO: Tag $VERSION já existe!"
-              echo "   Para versionamento automático, deixe o campo 'version' vazio"
-              echo "   Para forçar recriação, delete a tag existente primeiro:"
-              echo "   git push --delete origin $VERSION"
-              exit 1
-            fi
-          else
-            # Versão calculada automaticamente
-            VERSION="${{ steps.auto-version.outputs.version }}"
-            echo "ℹ️ Usando versão calculada automaticamente: $VERSION"
-            
-            # ✅ ENTERPRISE: Validar formato da versão calculada (sanity check)
-            if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
-              echo "❌ ERRO INTERNO: Versão calculada tem formato inválido: $VERSION"
-              echo "   Isso indica um bug no step 'Calcular próxima versão automaticamente'"
-              echo "   Formato esperado: vX.Y.Z ou vX.Y.Z-sufixo"
-              exit 1
-            fi
-          fi
-          
-          echo "✅ Versão final definida: $VERSION"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
       - name: Gerar changelog
         id: changelog
         run: |
-          VERSION="${{ steps.final-version.outputs.version }}"
           PREVIOUS_TAG="${{ steps.previous-tag.outputs.previous_tag }}"
           
           if [ -z "$PREVIOUS_TAG" ]; then
@@ -312,44 +152,36 @@ jobs:
 
       - name: Criar Git Tag
         run: |
-          VERSION="${{ steps.final-version.outputs.version }}"
-          
-          # Se disparado por tag push, a tag já existe
-          # Se disparado manualmente, criamos a tag
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo "✅ Tag $VERSION já existe (criada pelo push)"
-          else
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git tag -a "$VERSION" -m "Release $VERSION"
-            git push origin "$VERSION"
-            echo "✅ Tag $VERSION criada e enviada"
-          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a ${{ inputs.version }} -m "Release ${{ inputs.version }}"
+          git push origin ${{ inputs.version }}
+          echo "✅ Tag ${{ inputs.version }} criada"
 
       - name: Criar GitHub Release
         uses: softprops/action-gh-release@01570a1f39cb168c169c802c3bceb9e93fb10974
         with:
-          tag_name: ${{ steps.final-version.outputs.version }}
-          name: Alice Enterprise Platform ${{ steps.final-version.outputs.version }}
+          tag_name: ${{ inputs.version }}
+          name: Alice Enterprise Platform ${{ inputs.version }}
           prerelease: ${{ inputs.prerelease }}
           generate_release_notes: true
           body: |
-            ## 🚀 Alice Enterprise Platform ${{ steps.final-version.outputs.version }}
+            ## 🚀 Alice Enterprise Platform ${{ inputs.version }}
             
             ### Changelog
             ${{ steps.changelog.outputs.changes }}
             
             ### 🐳 Docker Images
             ```
-            ${{ env.IMAGE_PREFIX }}-auth:${{ steps.final-version.outputs.version }}
-            ${{ env.IMAGE_PREFIX }}-chat:${{ steps.final-version.outputs.version }}
-            ${{ env.IMAGE_PREFIX }}-frontend:${{ steps.final-version.outputs.version }}
-            ${{ env.IMAGE_PREFIX }}-rag:${{ steps.final-version.outputs.version }}
-            ${{ env.IMAGE_PREFIX }}-training:${{ steps.final-version.outputs.version }}
-            ${{ env.IMAGE_PREFIX }}-integrations:${{ steps.final-version.outputs.version }}
-            ${{ env.IMAGE_PREFIX }}-observability:${{ steps.final-version.outputs.version }}
-            ${{ env.IMAGE_PREFIX }}-gpu-manager:${{ steps.final-version.outputs.version }}
-            ${{ env.IMAGE_PREFIX }}-api-gateway:${{ steps.final-version.outputs.version }}
+            ${{ env.IMAGE_PREFIX }}-auth:${{ inputs.version }}
+            ${{ env.IMAGE_PREFIX }}-chat:${{ inputs.version }}
+            ${{ env.IMAGE_PREFIX }}-frontend:${{ inputs.version }}
+            ${{ env.IMAGE_PREFIX }}-rag:${{ inputs.version }}
+            ${{ env.IMAGE_PREFIX }}-training:${{ inputs.version }}
+            ${{ env.IMAGE_PREFIX }}-integrations:${{ inputs.version }}
+            ${{ env.IMAGE_PREFIX }}-observability:${{ inputs.version }}
+            ${{ env.IMAGE_PREFIX }}-gpu-manager:${{ inputs.version }}
+            ${{ env.IMAGE_PREFIX }}-api-gateway:${{ inputs.version }}
             ```
 
   # ===========================================================================
