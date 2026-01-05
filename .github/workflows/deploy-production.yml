@@ -1112,8 +1112,8 @@ jobs:
             
             log "⏱️  Configuração de timeouts para monitoramento:"
             log "   Monitor interval: ${MONITOR_INTERVAL}s (tempo entre verificações)"
-            log "   Max wait time: ${MAX_WAIT_TIME}s (timeout total para deploy - 45 minutos)"
-            log "   → Init containers: ~$((MAX_WAIT_TIME / 3))s = 900s = 15 minutos (margem para erpnext-create-site)"
+            log "   Max wait time: ${MAX_WAIT_TIME}s (timeout total para deploy - $((MAX_WAIT_TIME / 60)) minutos)"
+            log "   → Init containers: ~$((MAX_WAIT_TIME / 3))s = $((MAX_WAIT_TIME / 3 / 60)) minutos (margem para erpnext-create-site)"
             log "   → Service containers: até ${MAX_WAIT_TIME}s (respeita start_period)"
             log "   Healthcheck retries: $HEALTHCHECK_RETRIES (tentativas máximas)"
             
