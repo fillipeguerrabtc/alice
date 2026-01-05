@@ -36,7 +36,7 @@
 # Data: 27/12/2025
 # =============================================================================
 
-name: Deploy Production
+name: Deploy to Production (Hetzner Cloud)
 
 on:
   workflow_dispatch:
@@ -55,21 +55,6 @@ on:
         type: string
         required: false
         default: 'manual'
-  
-  workflow_call:
-    inputs:
-      version:
-        description: 'Versão para deploy'
-        required: true
-        type: string
-      services:
-        description: 'Serviços para deploy'
-        type: string
-        default: 'all'
-      triggered_by:
-        description: 'Origem do disparo'
-        type: string
-        default: 'release-workflow'
 
 concurrency:
   group: deploy-production
@@ -117,90 +102,63 @@ jobs:
       pgvector_tag: ${{ steps.versions.outputs.pgvector_tag }}
 
     steps:
-      # CORREÇÃO 04/01/2026: Validação expandida de 20 para 26 secrets críticos
+      # CORREÇÃO 01/01/2026: Validar secrets CRÍTICOS antes de qualquer operação
       # Evita deploy parcial que falha no meio por secret ausente
-      # PROBLEMAS CORRIGIDOS:
-      #   - ACME_EMAIL validado separadamente (linha 171) mas não na lista obrigatória
-      #   - GH_PAT usado (linha 662) mas não validado
-      #   - HETZNER_* usados (linhas 636-677) mas não validados
-      #   - DOCKERHUB_* opcionais mas podem causar rate limit sem aviso
-      - name: Validar TODOS os secrets obrigatórios (26 completos)
+      # CORREÇÃO 01/01/2026: Validação expandida de 10 para 20 secrets críticos
+      # Evita deploy parcial que falha no meio por secret ausente
+      - name: Validar secrets obrigatórios
         run: |
-          echo "🔐 Validando TODOS os 26 secrets obrigatórios..."
+          echo "🔐 Validando secrets obrigatórios..."
           MISSING=()
-
-          # === BANCO DE DADOS (4) ===
+          
+          # === BANCO DE DADOS ===
           [ -z "${{ secrets.POSTGRES_PASSWORD }}" ] && MISSING+=("POSTGRES_PASSWORD")
           [ -z "${{ secrets.REDIS_PASSWORD }}" ] && MISSING+=("REDIS_PASSWORD")
           [ -z "${{ secrets.QDRANT_API_KEY }}" ] && MISSING+=("QDRANT_API_KEY")
           [ -z "${{ secrets.CLICKHOUSE_PASSWORD }}" ] && MISSING+=("CLICKHOUSE_PASSWORD")
-
-          # === APLICAÇÃO (3) ===
+          
+          # === APLICAÇÃO ===
           [ -z "${{ secrets.SESSION_SECRET }}" ] && MISSING+=("SESSION_SECRET")
           [ -z "${{ secrets.INTERNAL_API_SECRET }}" ] && MISSING+=("INTERNAL_API_SECRET")
           [ -z "${{ secrets.SEARXNG_SECRET_KEY }}" ] && MISSING+=("SEARXNG_SECRET_KEY")
-
-          # === ADMIN ACCOUNTS (5) ===
+          
+          # === ADMIN ACCOUNTS ===
           [ -z "${{ secrets.ADMIN_USER }}" ] && MISSING+=("ADMIN_USER")
           [ -z "${{ secrets.ADMIN_PWD }}" ] && MISSING+=("ADMIN_PWD")
           [ -z "${{ secrets.GRAFANA_ADMIN_PASSWORD }}" ] && MISSING+=("GRAFANA_ADMIN_PASSWORD")
           [ -z "${{ secrets.ERPNEXT_ADMIN_PASSWORD }}" ] && MISSING+=("ERPNEXT_ADMIN_PASSWORD")
-          [ -z "${{ secrets.ACME_EMAIL }}" ] && MISSING+=("ACME_EMAIL")  # ✅ ADICIONADO 04/01/2026
-
-          # === STORAGE & BACKUP (2) ===
+          
+          # === STORAGE & BACKUP ===
           [ -z "${{ secrets.BACKUP_CIPHER_PASS }}" ] && MISSING+=("BACKUP_CIPHER_PASS")
           [ -z "${{ secrets.MINIO_ROOT_PASSWORD }}" ] && MISSING+=("MINIO_ROOT_PASSWORD")
-
-          # === OBSERVABILITY (Langfuse v3) (4) ===
+          
+          # === OBSERVABILITY (Langfuse v3) ===
           [ -z "${{ secrets.LANGFUSE_SECRET_KEY }}" ] && MISSING+=("LANGFUSE_SECRET_KEY")
           [ -z "${{ secrets.LANGFUSE_NEXT_AUTH_SECRET }}" ] && MISSING+=("LANGFUSE_NEXT_AUTH_SECRET")
           [ -z "${{ secrets.LANGFUSE_SALT }}" ] && MISSING+=("LANGFUSE_SALT")
           [ -z "${{ secrets.LANGFUSE_ENCRYPTION_KEY }}" ] && MISSING+=("LANGFUSE_ENCRYPTION_KEY")
-
-          # === SMTP (2) ===
+          
+          # === SMTP ===
           [ -z "${{ secrets.GMAIL_USER }}" ] && MISSING+=("GMAIL_USER")
           [ -z "${{ secrets.GMAIL_APP_PASSWORD }}" ] && MISSING+=("GMAIL_APP_PASSWORD")
-
-          # === GPU & AI (1) ===
+          
+          # === GPU & AI ===
           [ -z "${{ secrets.HUGGINGFACE_TOKEN }}" ] && MISSING+=("HUGGINGFACE_TOKEN")
-
-          # === INFRA HETZNER (3) === ✅ ADICIONADO 04/01/2026
-          [ -z "${{ secrets.HETZNER_VM_HOST }}" ] && MISSING+=("HETZNER_VM_HOST")
-          [ -z "${{ secrets.HETZNER_VM_USER }}" ] && MISSING+=("HETZNER_VM_USER")
-          [ -z "${{ secrets.HETZNER_SSH_PRIVATE_KEY }}" ] && MISSING+=("HETZNER_SSH_PRIVATE_KEY")
-
-          # === CI/CD (1) === ✅ ADICIONADO 04/01/2026
-          [ -z "${{ secrets.GH_PAT }}" ] && MISSING+=("GH_PAT")
-
-          # === DOCKER REGISTRY (2 - OPCIONAIS VIRAM OBRIGATÓRIOS) === ✅ ADICIONADO 04/01/2026
-          # Rate limit anônimo: 100 pulls/6h → Com autenticação: 200.000/day
-          [ -z "${{ secrets.DOCKERHUB_USERNAME }}" ] && MISSING+=("DOCKERHUB_USERNAME")
-          [ -z "${{ secrets.DOCKERHUB_TOKEN }}" ] && MISSING+=("DOCKERHUB_TOKEN")
-
+          
           if [ ${#MISSING[@]} -gt 0 ]; then
             echo "❌ ERRO: Secrets obrigatórios ausentes:"
             printf '  - %s\n' "${MISSING[@]}"
             echo ""
-            echo "Total faltando: ${#MISSING[@]} de 26 secrets obrigatórios"
+            echo "Total faltando: ${#MISSING[@]} de 20 secrets obrigatórios"
             echo ""
-            echo "📋 AÇÃO NECESSÁRIA:"
+            echo "Ação necessária:"
             echo "  1. Acesse GitHub → Settings → Secrets and variables → Actions"
             echo "  2. Adicione os secrets listados acima"
             echo "  3. Consulte docs/SECRETS.md para valores corretos"
-            echo ""
-            echo "🔧 Gerando secrets ausentes (quando aplicável):"
-            echo "   Executar localmente:"
-            for secret in "${MISSING[@]}"; do
-              case "$secret" in
-                *PASSWORD*|*SECRET*|*KEY*|*TOKEN*)
-                  echo "   export $secret=\$(openssl rand -base64 32)"
-                  ;;
-              esac
-            done
             exit 1
           fi
-
-          echo "✅ Todos os 26 secrets obrigatórios estão presentes"
+          
+          echo "✅ Todos os 20 secrets obrigatórios estão presentes"
 
       # ==========================================================================
       # CORREÇÃO 03/01/2026: Validação ACME_EMAIL obrigatório (fail-fast)
@@ -215,9 +173,9 @@ jobs:
           echo "=============================================="
           echo "VALIDANDO ACME_EMAIL"
           echo "=============================================="
-
+          
           ACME_EMAIL="${{ secrets.ACME_EMAIL }}"
-
+          
           # Verificar se está vazio
           if [ -z "$ACME_EMAIL" ]; then
             echo "❌ ERRO: ACME_EMAIL secret está vazio ou não definido"
@@ -233,7 +191,7 @@ jobs:
             echo "   Container fica unhealthy → Deploy falha após 3min 57s"
             exit 1
           fi
-
+          
           # Validar formato de email básico (RFC 5322 simplificado)
           if ! echo "$ACME_EMAIL" | grep -qE '^[^@]+@[^@]+\.[^@]+$'; then
             echo "❌ ERRO: ACME_EMAIL tem formato inválido"
@@ -247,7 +205,7 @@ jobs:
             echo "  3. Use um email válido (ex: admin@yesyoudeserve.duckdns.org)"
             exit 1
           fi
-
+          
           # Sucesso - mascarar domínio para segurança
           MASKED_EMAIL=$(echo "$ACME_EMAIL" | sed 's/@.*/***/')
           echo "✅ ACME_EMAIL validado: $MASKED_EMAIL"
@@ -262,24 +220,24 @@ jobs:
         id: validate
         run: |
           VERSION="${{ inputs.version }}"
-
+          
           echo "=============================================="
           echo "VALIDANDO DEPLOY"
           echo "=============================================="
           echo "📋 Versão: ${VERSION:-'(não informado)'}"
           echo "📋 Serviços: ${{ inputs.services }}"
           echo "📋 Origem: ${{ inputs.triggered_by }}"
-
+          
           if [ -z "${VERSION}" ] || [ "${VERSION}" = "latest" ]; then
             echo "❌ ERRO: Parâmetro 'version' é OBRIGATÓRIO!"
             exit 1
           fi
-
+          
           if ! echo "${VERSION}" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
             echo "❌ ERRO: Formato de versão inválido: ${VERSION}"
             exit 1
           fi
-
+          
           echo "image_tag=$VERSION" >> $GITHUB_OUTPUT
           echo "✅ Validação OK: $VERSION"
 
@@ -295,7 +253,7 @@ jobs:
         run: |
           VERSION="${{ steps.validate.outputs.image_tag }}"
           echo "🔍 Verificando imagens no GHCR para versão $VERSION..."
-
+          
           # Serviços críticos que DEVEM existir (buildados pelo Release)
           # CORREÇÃO 02/01/2026: Lista COMPLETA de imagens customizadas
           # Corresponde EXATAMENTE ao array SERVICES em release.yml (11 imagens)
@@ -313,7 +271,7 @@ jobs:
             "postgres"
             "caddy"
           )
-
+          
           MISSING=0
           for svc in "${CRITICAL_SERVICES[@]}"; do
             IMAGE="${{ env.IMAGE_PREFIX }}-${svc}:${VERSION}"
@@ -324,7 +282,7 @@ jobs:
               MISSING=$((MISSING + 1))
             fi
           done
-
+          
           if [ $MISSING -gt 0 ]; then
             echo ""
             echo "❌ ERRO CRÍTICO: $MISSING imagem(s) obrigatória(s) NÃO ENCONTRADA(S) no GHCR"
@@ -381,12 +339,12 @@ jobs:
         id: versions
         run: |
           echo "📄 Carregando versões de .github/component-versions.json..."
-
+          
           if [ ! -f ".github/component-versions.json" ]; then
             echo "::error::Arquivo .github/component-versions.json não encontrado!"
             exit 1
           fi
-
+          
           # Extrair versões do JSON
           echo "pgbackrest_version=$(jq -r '.pgbackrest' .github/component-versions.json)" >> $GITHUB_OUTPUT
           echo "caddy_version=$(jq -r '.caddy' .github/component-versions.json)" >> $GITHUB_OUTPUT
@@ -401,7 +359,7 @@ jobs:
           echo "redis_version=$(jq -r '.redis' .github/component-versions.json)" >> $GITHUB_OUTPUT
           echo "mariadb_version=$(jq -r '.mariadb' .github/component-versions.json)" >> $GITHUB_OUTPUT
           echo "pgvector_tag=$(jq -r '.pgvector' .github/component-versions.json)" >> $GITHUB_OUTPUT
-
+          
           echo "✅ Versões carregadas"
 
   # ===========================================================================
@@ -415,12 +373,12 @@ jobs:
     timeout-minutes: 10
     needs: validate-and-prepare
     if: needs.validate-and-prepare.outputs.images_exist == 'true'
-
+    
     permissions:
       contents: read
       packages: read
       security-events: write
-
+    
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
@@ -436,22 +394,21 @@ jobs:
         run: |
           set -e
           VERSION="${{ needs.validate-and-prepare.outputs.image_tag }}"
-
+          
           echo "=============================================="
           echo "SECURITY SCAN - IMAGENS DOCKER"
           echo "=============================================="
-
+          
           # CORREÇÃO 31/12/2025: Scan TODAS as 11 imagens custom (não apenas 3)
-          # CORREÇÃO 04/01/2026: Adicionado "caddy" - total 12 imagens custom
           # Vulnerabilidades podem existir em qualquer serviço
           # Lista DEVE corresponder exatamente ao SERVICES array em release.yml
-          SERVICES=("api-gateway" "auth" "chat" "frontend" "rag" "training" "gpu-manager" "integrations" "observability" "pgbackrest" "postgres" "caddy")
-
+          SERVICES=("api-gateway" "auth" "chat" "frontend" "rag" "training" "gpu-manager" "integrations" "observability" "pgbackrest" "postgres")
+          
           for svc in "${SERVICES[@]}"; do
             echo ""
             echo "🔍 Scanning $svc..."
             IMAGE="${{ env.IMAGE_PREFIX }}-${svc}:${VERSION}"
-
+            
             # exit-code 1 = BLOQUEIA em vulnerabilidades CRITICAL
             # Versão fixa para supply chain security (Best Practice 2025)
             docker run --rm \
@@ -461,10 +418,10 @@ jobs:
               --exit-code 1 \
               --quiet \
               "$IMAGE"
-
+            
             echo "✅ $svc: OK"
           done
-
+          
           echo ""
           echo "✅ Todas as imagens passaram no security scan"
 
@@ -482,20 +439,13 @@ jobs:
     timeout-minutes: 90
     needs: [validate-and-prepare, image-security-scan]
     if: always() && needs.validate-and-prepare.result == 'success' && (needs.image-security-scan.result == 'success' || needs.image-security-scan.result == 'skipped')
-
+    
     permissions:
       contents: read
-
-    # CORREÇÃO 04/01/2026: Outputs para métricas de deploy (usados no registro BD)
-    # Problema: Colunas duration_seconds e containers_count nunca eram populadas
-    # Solução: Exportar valores calculados durante deploy para uso em register-success
-    outputs:
-      duration_seconds: ${{ steps.export-metrics.outputs.duration_seconds }}
-      containers_count: ${{ steps.export-metrics.outputs.containers_count }}
-
+    
     env:
       IMAGE_TAG: ${{ needs.validate-and-prepare.outputs.image_tag }}
-
+    
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -611,17 +561,17 @@ jobs:
       - name: Validar .env.prod gerado
         run: |
           echo "🔐 Validando .env.prod gerado..."
-
+          
           if [ ! -f .env.prod ]; then
             echo "❌ ERRO: .env.prod NÃO foi gerado!"
             exit 1
           fi
-
+          
           if [ ! -s .env.prod ]; then
             echo "❌ ERRO: .env.prod está VAZIO!"
             exit 1
           fi
-
+          
           # Validar presença de variáveis CRÍTICAS
           REQUIRED_KEYS=(
             "IMAGE_PREFIX"
@@ -636,7 +586,7 @@ jobs:
             "ADMIN_USER"
             "ADMIN_PWD"
           )
-
+          
           MISSING=0
           for key in "${REQUIRED_KEYS[@]}"; do
             # CORREÇÃO 02/01/2026: Verificar se chave existe E tem valor (não apenas se linha existe)
@@ -647,14 +597,14 @@ jobs:
               MISSING=$((MISSING + 1))
             fi
           done
-
+          
           if [ $MISSING -gt 0 ]; then
             echo ""
             echo "❌ ERRO: $MISSING variável(is) obrigatória(s) ausente(s) ou vazia(s)"
             echo "Ação necessária: Verifique se os secrets estão configurados no GitHub (Settings → Secrets → Actions)"
             exit 1
           fi
-
+          
           ENV_LINES=$(wc -l < .env.prod)
           ENV_SIZE=$(stat -c%s .env.prod 2>/dev/null || stat -f%z .env.prod 2>/dev/null || echo "?")
           echo "✅ .env.prod validado (${ENV_LINES} linhas, ${ENV_SIZE} bytes)"
@@ -678,7 +628,7 @@ jobs:
       #
       # Referência: https://github.com/appleboy/scp-action (Best Practices 2025)
       # ==========================================================================
-
+      
       # ETAPA 1: Preparar servidor para receber arquivo
       - name: Preparar servidor para transferência
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
@@ -727,61 +677,10 @@ jobs:
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           envs: GH_PAT,IMAGE_PREFIX,IMAGE_TAG,DEPLOY_SERVICES,DEPLOY_VERSION,REPO_FULL_NAME,GITHUB_SHA,GITHUB_ACTOR,DOCKERHUB_USERNAME,DOCKERHUB_TOKEN,EXPECTED_HOST_IP
           # CORREÇÃO 02/01/2026: Aumentado de 40m para 55m
-          # CORREÇÃO PROBLEMA #2 (04/01/2026): Timeout aumentado para primeiro deploy
-          # Breakdown: pull(20m) + up(15m) + create-site(10m) + health(20m) + GPU(10m) + margin(15m)
-          # Primeiro deploy completo pode demorar até 75min, necessário 90min de buffer
-          command_timeout: 90m
+          # Primeiro deploy: 51 containers + init scripts podem demorar muito
+          command_timeout: 55m
           script: |
             set -euo pipefail
-
-            # =================================================================
-            # ALICE ENTERPRISE PLATFORM - DEPLOY PRODUCTION WORKFLOW
-            # =================================================================
-            # Versão: 5.0 - 04 de Janeiro de 2026
-            # Autor: Fillipe Guerra (GitHub Copilot)
-            #
-            # CORREÇÕES IMPLEMENTADAS (15/15 COMPLETAS):
-            #
-            # 🔴 PROBLEMAS CRÍTICOS (10/10 RESOLVIDOS)
-            # ✅ #1: Here-document não fechado - METRICS_EOF corrigido (PR #24)
-            # ✅ #2: Timeout 90min (era 60min) - Adequado para primeiro deploy
-            # ✅ #3: Retry logic docker compose up - 3 tentativas com backoff
-            # ✅ #4: Validação completa .env.prod - 10 variáveis críticas
-            # ✅ #5: Preservar logs init containers - Antes de serem removidos
-            # ✅ #6: Rollback automático - Backup + restore via trap EXIT
-            # ✅ #7: Smoke tests enterprise - 10 testes críticos
-            # ✅ #8: Progress indicators granulares - Sub-steps + barra visual
-            # ✅ #9: Configurações centralizadas - readonly vars
-            # ✅ #10: Validar dependências externas - GHCR, Docker Hub, GitHub
-            #
-            # 🟢 MELHORIAS ENTERPRISE (5/5 IMPLEMENTADAS)
-            # ✅ #11: Métricas de deploy - JSON com duration, containers, status
-            # ✅ #12: Notificações Slack - Success/failure webhooks
-            # ✅ #13: Backup pré-deploy - PostgreSQL volumes
-            # ✅ #14: Diagnósticos Caddy - Logs, healthcheck, validação
-            # ✅ #15: Documentação inline completa - Este header + comentários
-            #
-            # ARQUITETURA:
-            # - 50 containers (7 infra + 7 Alice + 15 ERPNext + 13 observability + 6 GPU + 1 backup + 1 storage)
-            # - Deploy em fases: backup → validate → pull → up → health → smoke → metrics
-            # - Rollback automático em falha (trap EXIT)
-            # - Fail-fast em TODOS os pontos de falha
-            #
-            # TIMEOUTS:
-            # - Deploy total: 90min (adequado para primeiro deploy completo)
-            # - Healthcheck wait: 60s (configurável)
-            # - Smoke tests: 30s por teste
-            # - Docker compose retry: 3x com backoff 30s/60s/90s
-            #
-            # REFERÊNCIAS:
-            # - CLAUDE.md: 18 regras fundamentais
-            # - DEPLOYMENT.md: Guia completo de deploy
-            # - Bash here-documents: https://www.gnu.org/software/bash/manual/html_node/Redirections.html
-            # - Docker Compose retry: https://docs.docker.com/compose/
-            # - GitHub Actions: https://docs.github.com/en/actions
-            #
-            # **DEPLOY EM PRODUÇÃO VAI FUNCIONAR 100%!** 🚀
-            # =================================================================
 
             # CORREÇÃO 28/12/2025: Definir PATH explicitamente
             # SSH não-interativo pode não ter PATH configurado corretamente
@@ -791,38 +690,7 @@ jobs:
             log() {
               echo "[$(date +'%Y-%m-%d %H:%M:%S')] $*"
             }
-
-            # =================================================================
-            # CORREÇÃO PROBLEMA #9 (04/01/2026): Configurações Enterprise Centralizadas
-            # =================================================================
-            # Single Source of Truth - TODOS os valores configuráveis em um único lugar
-            # Elimina hardcoded values espalhados pelo script
-            # =================================================================
-            readonly DEPLOY_TIMEOUT_MINUTES=90
-            readonly HEALTHCHECK_WAIT_SECONDS=60
-            readonly DOCKER_COMPOSE_MAX_RETRIES=3
-            readonly DOCKER_COMPOSE_RETRY_BACKOFF_INITIAL=30
-            readonly SMOKE_TEST_TIMEOUT_SECONDS=30
-            readonly MIN_DISK_SPACE_GB=10
-            readonly MIN_INODES=10000
-
-            # Lista COMPLETA de init containers (restart: "no")
-            readonly INIT_CONTAINERS=(
-              "alice-pgbackrest-init"
-              "alice-minio-init"
-              "erpnext-configurator"
-              "erpnext-create-site"
-            )
-
-            # Serviços críticos que DEVEM estar rodando
-            readonly CRITICAL_SERVICES=(
-              "alice-postgres"
-              "alice-redis"
-              "alice-caddy"
-              "alice-auth"
-              "alice-chat"
-            )
-
+            
             # =================================================================
             # CORREÇÃO 02/01/2026: Função log_cmd() para rastrear cada comando
             # Conforme PROBLEMA #5 do relatório de deploy
@@ -839,453 +707,98 @@ jobs:
                 return $exit_code
               fi
             }
-
+            
             # =================================================================
             # CORREÇÃO 02/01/2026: Função progress() para indicadores de progresso
             # Conforme PROBLEMA #10 do relatório de deploy
             # MELHORIA 02/01/2026: Adiciona tempo decorrido e % de progresso
             #
-            # CORREÇÃO PROBLEMA #8 (04/01/2026): Suporte para sub-steps granulares
-            # NOTA: Steps podem ser inteiros OU decimais (ex: 7.5) para sub-passos
+            # NOTA (04/01/2026): Steps podem ser inteiros OU decimais (ex: 7.5).
             # Bash não suporta decimais em aritmética ($((...))), então o percentual
             # é calculado com awk para evitar falhas do workflow com `set -euo pipefail`.
-            #
-            # USO:
-            #   progress 10 "Descrição"              # Step simples
-            #   progress 10 1 "Descrição substep 1"  # Com substep
             # =================================================================
             TOTAL_STEPS=14
             DEPLOY_START=$(date +%s)
             progress() {
               local step="$1"
-              local substep_or_desc="$2"
-              local desc_if_substep="${3:-}"
-
-              # Detectar se $2 é substep (número) ou descrição (string)
-              local display_step="$step"
-              local desc=""
-              if [[ "$substep_or_desc" =~ ^[0-9]+$ ]] && [ -n "$desc_if_substep" ]; then
-                # $2 é substep numérico e $3 é a descrição
-                display_step="${step}.${substep_or_desc}"
-                desc="$desc_if_substep"
-              else
-                # $2 é a descrição (backward compatible)
-                desc="$substep_or_desc"
-              fi
-
+              local desc="$2"
               local elapsed=$(($(date +%s) - DEPLOY_START))
               local mins=$((elapsed / 60))
               local secs=$((elapsed % 60))
-
-              # Validar formato do step
               if ! [[ "$step" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
                 log "❌ ERRO: progress() recebeu step inválido: '$step' (esperado número, ex: 7 ou 7.5)"
                 exit 1
               fi
-
-              # Calcular percentual com awk (suporta decimais)
               local percent
               percent="$(awk -v s="$step" -v t="$TOTAL_STEPS" 'BEGIN { if (t <= 0) { print 0; exit } printf "%.0f", (s * 100.0) / t }')"
-
-              # Barra visual de progresso (Unicode blocks)
-              local bar_width=20
-              local filled=$((percent * bar_width / 100))
-              local bar=""
-              for ((i=0; i<bar_width; i++)); do
-                if [ $i -lt $filled ]; then
-                  bar="${bar}█"
-                else
-                  bar="${bar}░"
-                fi
-              done
-
-              log "[$display_step/$TOTAL_STEPS - ${percent}% - ${mins}m${secs}s] ${bar} $desc"
+              log "[$step/$TOTAL_STEPS - ${percent}% - ${mins}m${secs}s] $desc"
             }
-
+            
             # =================================================================
-            # CORREÇÃO CRÍTICA 04/01/2026: Diagnóstico detalhado em falha
+            # CORREÇÃO 02/01/2026: Cleanup automático em caso de falha
+            # Conforme PROBLEMA #9 do relatório de deploy
+            # MELHORIA: Captura logs de TODOS containers com erro (incluindo init)
             # =================================================================
-            # Original: PROBLEMA #9 (02/01/2026) - Captura logs de containers com erro
-            # Atualizado: 04/01/2026 - Integrado ao combined_exit_handler
-            # =================================================================
-            # NOTA: Esta função é chamada por combined_exit_handler()
-            # NÃO usar trap diretamente aqui (seria sobrescrito pelo rollback)
-            # =================================================================
-            capture_failure_diagnostics() {
-              log "❌ [DIAGNOSTICS] Capturando informações de diagnóstico..."
-              log "🧹 [DIAGNOSTICS] Estado dos containers:"
-              docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null | head -60 || true
-
-              # =============================================================
-              # CORREÇÃO 03/01/2026: Diagnóstico específico do Caddy
-              # =============================================================
-              # PROBLEMA: Caddy fica unhealthy mas não capturávamos seus logs
-              # SOLUÇÃO: Capturar logs, healthcheck e env vars do Caddy
-              # =============================================================
-              if docker ps -a --format '{{.Names}}' | grep -q '^alice-caddy$'; then
-                log "🔍 [CADDY DIAGNOSTICS] Capturando informações específicas do Caddy..."
-
-                log "--- Logs do alice-caddy (últimas 200 linhas) ---"
-                docker logs --tail=200 alice-caddy 2>&1 || true
-
-                log "--- Estado do Healthcheck do alice-caddy ---"
-                docker inspect --format='{{json .State.Health}}' alice-caddy 2>/dev/null | jq . || \
-                docker inspect --format='{{json .State.Health}}' alice-caddy 2>/dev/null || true
-
-                log "--- Variáveis de Ambiente do alice-caddy (ACME/EMAIL) ---"
-                docker exec alice-caddy env 2>/dev/null | grep -E '(ACME|EMAIL|LOG_LEVEL)' || \
-                  echo "Não foi possível capturar env vars (container pode estar parado)"
-
-                log "--- Configuração do Caddy (validação) ---"
-                docker exec alice-caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1 || \
-                  echo "Não foi possível validar Caddyfile (container pode estar parado)"
-
-                log "🔍 [CADDY DIAGNOSTICS] Diagnóstico do Caddy completo"
-                echo ""
-              fi
-
-              # CORREÇÃO 02/01/2026: Incluir init containers que completaram com erro
-              # Init containers podem ter exit code != 0 mas não aparecem em "exited" se já foram removidos
-              log "🧹 [DIAGNOSTICS] Logs dos containers com erro (últimas 200 linhas cada):"
-
-              # Capturar containers com exit code != 0 (incluindo init que já saíram)
-              for c in $(docker ps -a --filter "exited!=0" --format "{{.Names}}" 2>/dev/null | head -15); do
-                CONTAINER_EXIT=$(docker inspect --format='{{.State.ExitCode}}' "$c" 2>/dev/null || echo "?")
-                log "--- Logs de $c (exit code: $CONTAINER_EXIT) ---"
-                docker logs --tail=200 "$c" 2>&1 || true
-              done
-
-              # Também capturar containers com status exited/dead (podem ter exit 0 mas falharam depois)
-              for c in $(docker ps -a --filter "status=exited" --filter "status=dead" --format "{{.Names}}" 2>/dev/null | head -10); do
-                # Evitar duplicatas
-                if ! docker ps -a --filter "exited!=0" --format "{{.Names}}" 2>/dev/null | grep -q "^${c}$"; then
-                  log "--- Logs de $c (status: exited/dead) ---"
-                  docker logs --tail=100 "$c" 2>&1 || true
-                fi
-              done
-
-              log "🧹 [DIAGNOSTICS] Diagnóstico completo"
-            }
-
-            # =================================================================
-            # CORREÇÃO PROBLEMA #3 (04/01/2026): Retry logic para docker compose up
-            # =================================================================
-            # PROBLEMA: docker compose up falha por rate limit, rede instável, conflitos
-            # SOLUÇÃO: Retry automático com exponential backoff (3 tentativas)
-            # =================================================================
-            docker_compose_up_with_retry() {
-              local compose_file="$1"
-              local env_file="$2"
-              local profile="${3:-}"
-              local retry=0
-
-              while [ $retry -lt $DOCKER_COMPOSE_MAX_RETRIES ]; do
-                log "🔄 Tentativa $((retry + 1))/$DOCKER_COMPOSE_MAX_RETRIES: docker compose up..."
-
-                local cmd="docker compose -f \"$compose_file\" --env-file \"$env_file\""
-                [ -n "$profile" ] && cmd="$cmd --profile \"$profile\""
-                cmd="$cmd up -d --remove-orphans"
-
-                log "🔄 Executando: $cmd"
-                if eval "$cmd" 2>&1 | tee "/tmp/compose_up_attempt_$((retry+1)).log"; then
-                  log "✅ docker compose up: SUCESSO na tentativa $((retry + 1))"
-                  return 0
-                fi
-
-                retry=$((retry + 1))
-                if [ $retry -lt $DOCKER_COMPOSE_MAX_RETRIES ]; then
-                  local wait_time=$((retry * DOCKER_COMPOSE_RETRY_BACKOFF_INITIAL))
-                  log "⚠️ docker compose up falhou, aguardando ${wait_time}s antes de retry..."
-                  log "📝 Logs da tentativa falhada salvos em: /tmp/compose_up_attempt_$retry.log"
-                  sleep $wait_time
-                fi
-              done
-
-              log "❌ docker compose up falhou após $DOCKER_COMPOSE_MAX_RETRIES tentativas"
-              log "📝 Logs de todas as tentativas disponíveis em /tmp/compose_up_attempt_*.log"
-              return 1
-            }
-
-            # =================================================================
-            # CORREÇÃO PROBLEMA #4 (04/01/2026): Validação completa de .env.prod
-            # =================================================================
-            # PROBLEMA: Validação só verificava se arquivo existe, não o conteúdo
-            # SOLUÇÃO: Validar que variáveis críticas existem E têm valor não-vazio
-            # =================================================================
-            validate_env_file() {
-              local env_file="$1"
-
-              log "🔐 Validando conteúdo de .env.prod..."
-
-              if [ ! -f "$env_file" ]; then
-                log "❌ ERRO: $env_file não existe"
-                return 1
-              fi
-
-              if [ ! -s "$env_file" ]; then
-                log "❌ ERRO: $env_file está vazio"
-                return 1
-              fi
-
-              # Validar variáveis CRÍTICAS têm valor não-vazio
-              local CRITICAL_VARS=(
-                "POSTGRES_PASSWORD"
-                "REDIS_PASSWORD"
-                "SESSION_SECRET"
-                "INTERNAL_API_SECRET"
-                "QDRANT_API_KEY"
-                "ADMIN_USER"
-                "ADMIN_PWD"
-                "ACME_EMAIL"
-                "BACKUP_CIPHER_PASS"
-                "MINIO_ROOT_PASSWORD"
-              )
-
-              local missing=0
-              local missing_vars=()
-              for var in "${CRITICAL_VARS[@]}"; do
-                if ! grep -qE "^${var}=.+" "$env_file"; then
-                  log "❌ ERRO: Variável crítica ausente ou vazia: $var"
-                  missing_vars+=("$var")
-                  missing=$((missing + 1))
-                fi
-              done
-
-              if [ $missing -gt 0 ]; then
-                log "❌ ERRO: $missing variável(is) crítica(s) ausente(s) ou vazia(s)"
-                log "📋 Variáveis faltantes:"
-                for var in "${missing_vars[@]}"; do
-                  log "   - $var"
-                done
-                log ""
-                log "🔧 Ação necessária:"
-                log "   1. Configure os secrets no GitHub: Settings → Secrets → Actions"
-                log "   2. Verifique se generate-env-prod.sh está gerando corretamente"
-                log "   3. Execute workflow novamente após configurar secrets"
-                return 1
-              fi
-
-              local line_count=$(wc -l < "$env_file")
-              log "✅ .env.prod validado: $line_count linhas, todas as variáveis críticas presentes"
-              return 0
-            }
-
-            # =================================================================
-            # CORREÇÃO PROBLEMA #5 (04/01/2026): Preservar logs de init containers
-            # =================================================================
-            # PROBLEMA: Init containers removidos perdem logs antes de serem capturados
-            # SOLUÇÃO: Salvar logs ANTES que containers sejam removidos
-            # =================================================================
-            preserve_init_container_logs() {
-              log "📝 Preservando logs de init containers..."
-              for init in "${INIT_CONTAINERS[@]}"; do
-                if docker ps -a --format '{{.Names}}' | grep -q "^${init}$"; then
-                  local log_file="/opt/alice/logs/init_${init}_$(date +%Y%m%d-%H%M%S).log"
-                  if docker logs "$init" > "$log_file" 2>&1; then
-                    local lines=$(wc -l < "$log_file")
-                    log "✅ $init: logs salvos ($lines linhas) em $log_file"
-                  else
-                    log "⚠️ $init: não foi possível capturar logs"
-                  fi
-                fi
-              done
-            }
-
-            # =================================================================
-            # CORREÇÃO PROBLEMA #10 (04/01/2026): Validar dependências externas
-            # =================================================================
-            # PROBLEMA: Deploy falha por problemas de conectividade não detectados
-            # SOLUÇÃO: Verificar acesso a registries e APIs antes de iniciar
-            # =================================================================
-            validate_external_dependencies() {
-              log "🔍 Validando dependências externas..."
-
-              local failed=0
-
-              # GHCR (GitHub Container Registry)
-              if ! timeout 10 curl -fsS https://ghcr.io >/dev/null 2>&1; then
-                log "❌ ERRO: GHCR não acessível"
-                failed=$((failed + 1))
-              else
-                log "✅ GHCR: acessível"
-              fi
-
-              # Docker Hub
-              if ! timeout 10 curl -fsS https://hub.docker.com >/dev/null 2>&1; then
-                log "⚠️ AVISO: Docker Hub não acessível (pode causar rate limit)"
-              else
-                log "✅ Docker Hub: acessível"
-              fi
-
-              # GitHub API
-              if ! timeout 10 curl -fsS https://api.github.com >/dev/null 2>&1; then
-                log "❌ ERRO: GitHub API não acessível"
-                failed=$((failed + 1))
-              else
-                log "✅ GitHub API: acessível"
-              fi
-
-              if [ $failed -gt 0 ]; then
-                log "❌ $failed dependência(s) externa(s) não acessível(is)"
-                return 1
-              fi
-
-              log "✅ Todas as dependências externas acessíveis"
-              return 0
-            }
-
-            # =================================================================
-            # CORREÇÃO PROBLEMA #6 (04/01/2026): Rollback automático em falha
-            # =================================================================
-            # PROBLEMA: Deploy falha sem restaurar estado anterior
-            # SOLUÇÃO: Backup de estado atual + rollback automático via trap
-            # =================================================================
-
-            # Backup do estado atual dos containers (lista running)
-            backup_current_state() {
-              log "💾 Salvando estado atual para rollback..."
-
-              local state_file="/opt/alice/backups/state-$(date +%Y%m%d-%H%M%S).json"
-
-              # Salvar lista de containers rodando ANTES do deploy
-              docker ps --format '{"name":"{{.Names}}","image":"{{.Image}}","status":"{{.Status}}"}' > "$state_file" 2>/dev/null || {
-                log "⚠️ Não foi possível salvar estado (sem containers rodando?)"
-                return 0
-              }
-
-              log "✅ Estado salvo em: $state_file"
-              log "   Containers rodando: $(docker ps -q | wc -l)"
-
-              # Salvar referência para rollback
-              echo "$state_file" > /tmp/last_deploy_state.txt
-            }
-
-            # =================================================================
-            # CORREÇÃO CRÍTICA 04/01/2026: Handler unificado de exit
-            # =================================================================
-            # PROBLEMA: Em bash, `trap X EXIT` SUBSTITUI traps anteriores.
-            #           Definir trap cleanup_on_failure e depois trap rollback_on_failure
-            #           fazia cleanup_on_failure NUNCA executar.
-            # SOLUÇÃO: Handler único que executa AMBAS as lógicas:
-            #          1. Primeiro: Diagnósticos (capture_failure_diagnostics)
-            #          2. Depois: Rollback + Notificação (perform_rollback)
-            # =================================================================
-
-            # Executa rollback e notificação (NÃO chamar diretamente - usar combined_exit_handler)
-            perform_rollback() {
-              local exit_code="$1"
-              log "🔄 ROLLBACK AUTOMÁTICO: Deploy falhou, restaurando estado anterior..."
-
-              # Verificar se há estado para restaurar
-              if [ -f /tmp/last_deploy_state.txt ]; then
-                local state_file=$(cat /tmp/last_deploy_state.txt)
-                if [ -f "$state_file" ]; then
-                  log "📋 Usando backup de estado: $state_file"
-
-                  # Parar containers que foram iniciados neste deploy
-                  log "🛑 Parando containers iniciados neste deploy..."
-                  docker compose -f /opt/alice/app/infra/docker/docker-compose.prod.yml \
-                    --env-file /opt/alice/app/infra/docker/.env.prod down --remove-orphans 2>/dev/null || true
-
-                  log "✅ Rollback concluído - containers parados"
-                  log "📝 Dados persistentes PRESERVADOS em /opt/alice/data/"
-                  log "📝 Logs disponíveis em: $DEPLOY_LOG"
-                else
-                  log "⚠️ Arquivo de estado não encontrado: $state_file"
-                fi
-              else
-                log "⚠️ Nenhum estado anterior para restaurar (primeiro deploy?)"
-              fi
-
-              # Capturar métricas de falha
-              local deploy_duration=$(($(date +%s) - DEPLOY_START))
-              cat > /opt/alice/logs/deploy-metrics-failed-$(date +%Y%m%d-%H%M%S).json <<METRICS_EOF
-{
-  "version": "${IMAGE_TAG:-unknown}",
-  "timestamp": "$(date -Iseconds)",
-  "duration_seconds": ${deploy_duration},
-  "status": "failed",
-  "exit_code": ${exit_code},
-  "initiated_by": "${GITHUB_ACTOR:-unknown}",
-  "commit_sha": "${GITHUB_SHA:-unknown}"
-}
-METRICS_EOF
-
-              # MELHORIA #2: Enviar notificação de falha
-              if [ -n "${SLACK_WEBHOOK_URL:-}" ]; then
-                curl -X POST "$SLACK_WEBHOOK_URL" \
-                  -H 'Content-Type: application/json' \
-                  -d "{
-                    \"text\": \"❌ Deploy failed: Alice Enterprise Platform v${IMAGE_TAG:-unknown}\",
-                    \"attachments\": [{
-                      \"color\": \"danger\",
-                      \"fields\": [
-                        {\"title\": \"Exit Code\", \"value\": \"${exit_code}\", \"short\": true},
-                        {\"title\": \"Duração\", \"value\": \"$((deploy_duration / 60))min\", \"short\": true},
-                        {\"title\": \"Logs\", \"value\": \"${DEPLOY_LOG}\", \"short\": false}
-                      ]
-                    }]
-                  }" \
-                  2>/dev/null || true
-              fi
-            }
-
-            # =================================================================
-            # Handler ÚNICO de EXIT - executa diagnósticos E rollback
-            # =================================================================
-            combined_exit_handler() {
+            cleanup_on_failure() {
               local exit_code=$?
-
               if [ $exit_code -ne 0 ]; then
-                log "❌ [EXIT HANDLER] Script falhou com exit code $exit_code"
-
-                # FASE 1: Capturar diagnósticos detalhados (logs, Caddy, containers)
-                # Isso DEVE rodar ANTES do rollback para preservar estado dos containers
-                capture_failure_diagnostics
-
-                # FASE 2: Rollback + Notificação
-                perform_rollback "$exit_code"
-
-                log "🔄 [EXIT HANDLER] Handler de falha completo"
-              fi
-            }
-
-            # Registrar ÚNICO trap que executa ambas as lógicas
-            trap combined_exit_handler EXIT
-
-            # =================================================================
-            # MELHORIA #3 (04/01/2026): Backup pré-deploy
-            # =================================================================
-            # PROBLEMA: Deploy pode sobrescrever dados sem backup
-            # SOLUÇÃO: Backup automático de volumes críticos antes do deploy
-            # =================================================================
-            create_pre_deploy_backup() {
-              log "💾 Criando backup pré-deploy..."
-
-              # Verificar se PostgreSQL está rodando (deploy não é primeiro)
-              if docker ps --filter "name=alice-postgres" --filter "status=running" --format '{{.Names}}' | grep -q alice-postgres; then
-                log "📦 Backup de PostgreSQL..."
-
-                local backup_file="/opt/alice/backups/postgres-pre-deploy-$(date +%Y%m%d-%H%M%S).tar.gz"
-
-                # Usar docker run com volume montado (sem afetar container rodando)
-                if docker run --rm \
-                  -v alice-postgres-data:/source:ro \
-                  -v /opt/alice/backups:/backup \
-                  busybox tar czf "/backup/$(basename "$backup_file")" -C /source . 2>/dev/null; then
-
-                  local size=$(du -h "$backup_file" | cut -f1)
-                  log "✅ Backup PostgreSQL criado: $backup_file ($size)"
-                else
-                  log "⚠️ Backup PostgreSQL falhou (pode não ser crítico)"
+                log "❌ [CLEANUP] Script falhou com exit code $exit_code na linha $LINENO"
+                log "🧹 [CLEANUP] Capturando estado dos containers para diagnóstico..."
+                docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null | head -60 || true
+                
+                # =============================================================
+                # CORREÇÃO 03/01/2026: Diagnóstico específico do Caddy
+                # =============================================================
+                # PROBLEMA: Caddy fica unhealthy mas não capturávamos seus logs
+                # SOLUÇÃO: Capturar logs, healthcheck e env vars do Caddy
+                # =============================================================
+                if docker ps -a --format '{{.Names}}' | grep -q '^alice-caddy$'; then
+                  log "🔍 [CADDY DIAGNOSTICS] Capturando informações específicas do Caddy..."
+                  
+                  log "--- Logs do alice-caddy (últimas 200 linhas) ---"
+                  docker logs --tail=200 alice-caddy 2>&1 || true
+                  
+                  log "--- Estado do Healthcheck do alice-caddy ---"
+                  docker inspect --format='{{json .State.Health}}' alice-caddy 2>/dev/null | jq . || \
+                  docker inspect --format='{{json .State.Health}}' alice-caddy 2>/dev/null || true
+                  
+                  log "--- Variáveis de Ambiente do alice-caddy (ACME/EMAIL) ---"
+                  docker exec alice-caddy env 2>/dev/null | grep -E '(ACME|EMAIL|LOG_LEVEL)' || \
+                    echo "Não foi possível capturar env vars (container pode estar parado)"
+                  
+                  log "--- Configuração do Caddy (validação) ---"
+                  docker exec alice-caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1 || \
+                    echo "Não foi possível validar Caddyfile (container pode estar parado)"
+                  
+                  log "🔍 [CADDY DIAGNOSTICS] Diagnóstico do Caddy completo"
+                  echo ""
                 fi
-              else
-                log "ℹ️  PostgreSQL não está rodando - pulando backup (primeiro deploy?)"
+                
+                # CORREÇÃO 02/01/2026: Incluir init containers que completaram com erro
+                # Init containers podem ter exit code != 0 mas não aparecem em "exited" se já foram removidos
+                log "🧹 [CLEANUP] Logs dos containers com erro (últimas 200 linhas cada):"
+                
+                # Capturar containers com exit code != 0 (incluindo init que já saíram)
+                for c in $(docker ps -a --filter "exited!=0" --format "{{.Names}}" 2>/dev/null | head -15); do
+                  CONTAINER_EXIT=$(docker inspect --format='{{.State.ExitCode}}' "$c" 2>/dev/null || echo "?")
+                  log "--- Logs de $c (exit code: $CONTAINER_EXIT) ---"
+                  docker logs --tail=200 "$c" 2>&1 || true
+                done
+                
+                # Também capturar containers com status exited/dead (podem ter exit 0 mas falharam depois)
+                for c in $(docker ps -a --filter "status=exited" --filter "status=dead" --format "{{.Names}}" 2>/dev/null | head -10); do
+                  # Evitar duplicatas
+                  if ! docker ps -a --filter "exited!=0" --format "{{.Names}}" 2>/dev/null | grep -q "^${c}$"; then
+                    log "--- Logs de $c (status: exited/dead) ---"
+                    docker logs --tail=100 "$c" 2>&1 || true
+                  fi
+                done
+                
+                log "🧹 [CLEANUP] Diagnóstico completo"
               fi
-
-              log "✅ Backup pré-deploy completo"
             }
-
+            trap cleanup_on_failure EXIT
+            
             # =================================================================
             # MELHORIA M2 (02/01/2026): Persistir logs de deploy
             # =================================================================
@@ -1305,12 +818,7 @@ METRICS_EOF
             log "Serviços: ${DEPLOY_SERVICES}"
             log "SHA: ${GITHUB_SHA}"
             log ""
-
-            # =================================================================
-            # CORREÇÃO PROBLEMA #6 (04/01/2026): Salvar estado atual para rollback
-            # =================================================================
-            backup_current_state
-
+            
             # =================================================================
             # FAIL-FAST ENTERPRISE (2025): Validar host correto + GPU obrigatória
             # =================================================================
@@ -1387,23 +895,14 @@ METRICS_EOF
 
             echo "=============================================="
             echo ""
-
+            
             # =================================================================
             # PRE-FLIGHT CHECKS ADICIONAIS (01/01/2026)
             # =================================================================
-            progress 2 "PRE-FLIGHT CHECKS (disco, Docker, Docker Compose, conectividade)"
+            progress 2 "PRE-FLIGHT CHECKS (disco, Docker, Docker Compose)"
             log "🔍 PRE-FLIGHT CHECKS ADICIONAIS..."
-
-            # =================================================================
-            # CORREÇÃO PROBLEMA #10 (04/01/2026): Validar dependências externas
-            # =================================================================
-            if ! validate_external_dependencies; then
-              log "⚠️ AVISO: Algumas dependências externas não estão acessíveis"
-              log "   Deploy pode falhar por problemas de conectividade"
-              log "   Continuando mesmo assim (timeout adequado configurado)..."
-            fi
-
-            # Check 1: Espaço em disco (mínimo configurado em MIN_DISK_SPACE_GB)
+            
+            # Check 1: Espaço em disco (mínimo 50GB para primeiro deploy)
             # CORREÇÃO 01/01/2026: Bug fix - sed sempre retorna 0, então || echo "0" nunca executava
             # Se parsing falhasse, comparação -lt falhava silenciosamente e ia para else
             get_disk_space() {
@@ -1417,7 +916,7 @@ METRICS_EOF
                 echo ""
               fi
             }
-
+            
             AVAILABLE_GB=$(get_disk_space "/opt/alice")
             if [ -z "$AVAILABLE_GB" ]; then
               AVAILABLE_GB=$(get_disk_space "/opt")
@@ -1425,7 +924,7 @@ METRICS_EOF
             if [ -z "$AVAILABLE_GB" ]; then
               AVAILABLE_GB=$(get_disk_space "/")
             fi
-
+            
             # Se ainda vazio, avisar mas não bloquear
             if [ -z "$AVAILABLE_GB" ]; then
               echo "⚠️ AVISO: Não foi possível determinar espaço em disco"
@@ -1437,7 +936,7 @@ METRICS_EOF
             else
               echo "✅ Espaço em disco OK: ${AVAILABLE_GB}GB disponível"
             fi
-
+            
             # Check 2: Docker e Docker Compose
             if ! command -v docker >/dev/null 2>&1; then
               echo "❌ ERRO: Docker não está instalado"
@@ -1449,12 +948,12 @@ METRICS_EOF
             fi
             echo "✅ Docker $(docker --version | cut -d' ' -f3 | tr -d ',') OK"
             echo "✅ Docker Compose $(docker compose version --short) OK"
-
+            
             echo "=============================================="
             echo "✅ PRE-FLIGHT CHECKS COMPLETOS"
             echo "=============================================="
             echo ""
-
+            
             echo "🔧 Ajustando kernel vm.overcommit_memory=1 (recomendação Redis)..."
             sysctl -w vm.overcommit_memory=1 || true
             echo "vm.overcommit_memory=1 aplicado (não persistente)."
@@ -1480,17 +979,17 @@ METRICS_EOF
             ensure_network "erpnext-network"
             echo "=============================================="
             echo ""
-
+            
             # =================================================================
             # FASE 1: Validar .env.prod transferido
             # =================================================================
             progress 3 "Validando .env.prod transferido"
             echo "🔐 Validando .env.prod..."
-
+            
             # scp-action pode criar estrutura: /opt/alice/app/infra/docker/.env.prod
             # ou pode criar: /opt/alice/app/infra/docker/.env.prod/.env.prod
             ENV_FILE="/opt/alice/app/infra/docker/.env.prod"
-
+            
             if [ -f "$ENV_FILE" ]; then
               echo "✅ .env.prod encontrado como arquivo"
             elif [ -d "$ENV_FILE" ] && [ -f "$ENV_FILE/.env.prod" ]; then
@@ -1505,26 +1004,20 @@ METRICS_EOF
               ls -la /opt/alice/app/infra/docker/ || true
               exit 1
             fi
-
+            
             # Validar que não está vazio
             if [ ! -s "$ENV_FILE" ]; then
               echo "❌ ERRO: .env.prod está vazio"
               exit 1
             fi
-
+            
             chmod 600 "$ENV_FILE"
             ENV_LINES=$(wc -l < "$ENV_FILE")
             echo "✅ .env.prod validado (${ENV_LINES} linhas)"
 
             # =================================================================
-            # CORREÇÃO PROBLEMA #4 (04/01/2026): Validação completa de .env.prod
+            # Validação fail-fast de variáveis CRÍTICAS no .env.prod (sem vazar valores)
             # =================================================================
-            # Usar função validate_env_file() que verifica CONTEÚDO crítico
-            # =================================================================
-            if ! validate_env_file "$ENV_FILE"; then
-              echo "❌ ERRO CRÍTICO: Validação de .env.prod falhou"
-              exit 1
-            fi
             # Objetivo: evitar que docker compose falhe tarde (ex: ${REDIS_URL:?} vazio)
             echo "🔎 Validando chaves críticas no .env.prod (sem expor secrets)..."
             REQUIRED_KEYS=(
@@ -1581,7 +1074,7 @@ METRICS_EOF
               fi
             done
             echo "✅ Chaves críticas presentes e com valores"
-
+            
             # =================================================================
             # CORREÇÃO 13-15 (04/01/2026): Timeouts configuráveis via env vars
             # =================================================================
@@ -1589,21 +1082,32 @@ METRICS_EOF
             # SOLUÇÃO: Centralizar configuração de timeouts com valores padrão
             # =================================================================
             # Timeouts configuráveis (podem ser sobrescritos via env vars)
+            # CORREÇÃO 04/01/2026: MAX_WAIT_TIME aumentado de 600s para 900s (15 minutos)
+            # ERPNext workers agora têm start_period de 420s (7 min), precisamos dar margem
+            # para eles passarem pelos retries se necessário
+            # Cálculo: 420s (start_period) + 5 retries × 30s interval + margem = ~900s
+            #
+            # USO DO MAX_WAIT_TIME (agora realmente usado, não apenas logado):
+            # - INIT_TIMEOUT = MAX_WAIT_TIME / 3 = 300s (init containers)
+            # - SERVICE_TIMEOUT = MAX_WAIT_TIME - INIT_ELAPSED (service containers)
+            # - MONITOR_TIMEOUT = 300s fixo (containers CORE são rápidos)
             MONITOR_INTERVAL="${MONITOR_INTERVAL:-5}"       # segundos entre checks de health
-            MAX_WAIT_TIME="${MAX_WAIT_TIME:-600}"          # timeout total para containers ficarem healthy (10 min)
+            MAX_WAIT_TIME="${MAX_WAIT_TIME:-900}"          # timeout total para containers ficarem healthy (15 min)
             HEALTHCHECK_RETRIES="${HEALTHCHECK_RETRIES:-30}" # quantas tentativas de healthcheck
-
+            
             log "⏱️  Configuração de timeouts para monitoramento:"
             log "   Monitor interval: ${MONITOR_INTERVAL}s (tempo entre verificações)"
-            log "   Max wait time: ${MAX_WAIT_TIME}s (timeout total)"
+            log "   Max wait time: ${MAX_WAIT_TIME}s (timeout total para deploy)"
+            log "   → Init containers: ~$((MAX_WAIT_TIME / 3))s (MAX_WAIT_TIME / 3)"
+            log "   → Service containers: até ${MAX_WAIT_TIME}s (respeita start_period)"
             log "   Healthcheck retries: $HEALTHCHECK_RETRIES (tentativas máximas)"
-
+            
             # =================================================================
             # FASE 2: Estrutura de diretórios (volumes Docker)
             # =================================================================
             progress 4 "Criando estrutura de diretórios para volumes Docker"
             echo "📁 Criando estrutura de diretórios para volumes Docker..."
-
+            
             # Diretórios de dados
             mkdir -p /opt/alice/data/postgres
             mkdir -p /opt/alice/data/redis-alice
@@ -1642,7 +1146,7 @@ METRICS_EOF
             mkdir -p /opt/alice/backups/manifests
             # REMOVIDO 01/01/2026: secrets/alertmanager - Grafana usa variáveis de ambiente GF_SMTP_*
             # NOTA: langfuse_db_password é um ARQUIVO, não diretório (criado na FASE 2.5)
-
+            
             # Permissões específicas por serviço (UIDs dos containers)
             chown -R 472:472 /opt/alice/data/grafana 2>/dev/null || true
             chown -R 65534:65534 /opt/alice/data/prometheus 2>/dev/null || true
@@ -1661,36 +1165,36 @@ METRICS_EOF
             chown -R 1000:1000 /opt/alice/data/caddy /opt/alice/data/caddy-config /opt/alice/logs/caddy 2>/dev/null || true
 
             echo "✅ Estrutura de diretórios criada"
-
+            
             # =================================================================
             # CORREÇÃO 02/01/2026: Validação EXPLÍCITA do repositório pgBackRest
             # =================================================================
             # PROBLEMA #3: Deploy pode continuar silenciosamente se repositório
             # estiver corrompido ou com permissões erradas
-            #
+            # 
             # VALIDAÇÃO: Verificar estrutura e permissões ANTES de docker compose
             # =================================================================
             # CORREÇÃO 02/01/2026: Usar inteiro (bash não suporta decimais em aritmética)
             progress 4 "Validando repositório pgBackRest"
             echo "🔍 Validando repositório pgBackRest..."
-
+            
             # Verificar se diretório principal existe
             if [ ! -d "/opt/alice/backups/postgresql" ]; then
               echo "❌ ERRO: Repositório pgBackRest não existe: /opt/alice/backups/postgresql"
               echo "   Ação necessária: Verificar se diretório foi criado corretamente"
               exit 1
             fi
-
+            
             # Verificar permissões (999:999 = postgres user/group)
             REPO_UID=$(stat -c '%u' /opt/alice/backups/postgresql 2>/dev/null || echo "unknown")
             REPO_GID=$(stat -c '%g' /opt/alice/backups/postgresql 2>/dev/null || echo "unknown")
-
+            
             if [ "$REPO_UID" != "999" ] || [ "$REPO_GID" != "999" ]; then
               echo "⚠️ Permissões incorretas no repositório pgBackRest: UID=$REPO_UID GID=$REPO_GID (esperado 999:999)"
               echo "   Corrigindo permissões..."
               chown -R 999:999 /opt/alice/backups/postgresql
               chmod -R 755 /opt/alice/backups/postgresql
-
+              
               # Verificar novamente
               REPO_UID_AFTER=$(stat -c '%u' /opt/alice/backups/postgresql 2>/dev/null || echo "unknown")
               if [ "$REPO_UID_AFTER" != "999" ]; then
@@ -1699,7 +1203,7 @@ METRICS_EOF
               fi
               echo "   ✅ Permissões corrigidas"
             fi
-
+            
             # Verificar se há repositório corrompido (partial de deploy anterior)
             if [ -f "/opt/alice/backups/postgresql/backup.info" ]; then
               echo "   ℹ️ Repositório pgBackRest existente detectado (backup.info presente)"
@@ -1708,9 +1212,9 @@ METRICS_EOF
               echo "   ℹ️ Repositório pgBackRest vazio (primeiro deploy)"
               echo "   Stanza será criada pelo pgbackrest-init"
             fi
-
+            
             echo "✅ Repositório pgBackRest validado"
-
+            
             # =================================================================
             # FASE 2.5: Criar arquivos de secrets a partir do .env.prod
             # =================================================================
@@ -1719,14 +1223,14 @@ METRICS_EOF
             # CORREÇÃO 28/12/2025: Verificar e remover diretórios conflitantes antes de criar arquivos
             progress 5 "Criando arquivos de secrets"
             echo "🔐 Criando arquivos de secrets..."
-
+            
             # CORREÇÃO 28/12/2025: Remover diretórios conflitantes (bug onde mkdir -p criou diretório ao invés de arquivo)
             if [ -d /opt/alice/secrets/langfuse_db_password ]; then
               echo "⚠️ Removendo diretório conflitante: /opt/alice/secrets/langfuse_db_password"
               rm -rf /opt/alice/secrets/langfuse_db_password
             fi
             # REMOVIDO 01/01/2026: alertmanager/smtp_password - Grafana Alerting usa GF_SMTP_PASSWORD via variável de ambiente
-
+            
             # Extrair LANGFUSE_DB_PASSWORD do .env.prod e criar arquivo de secret
             LANGFUSE_DB_PWD=$(grep '^LANGFUSE_DB_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2-)
             if [ -n "$LANGFUSE_DB_PWD" ]; then
@@ -1737,7 +1241,7 @@ METRICS_EOF
             else
               echo "⚠️ LANGFUSE_DB_PASSWORD não encontrado no .env.prod"
             fi
-
+            
             # =============================================================
             # REMOVIDO 01/01/2026: Alertmanager SMTP Secret
             # =============================================================
@@ -1745,14 +1249,14 @@ METRICS_EOF
             # GMAIL_APP_PASSWORD é passado diretamente via GF_SMTP_PASSWORD
             # Ver docker-compose.prod.yml seção grafana para configuração SMTP
             # =============================================================
-
+            
             # =================================================================
             # FASE 3: Clonar/atualizar repositório
             # =================================================================
             progress 6 "Clonando/atualizando repositório"
             # Salvar .env.prod antes de modificar o diretório
             cp "$ENV_FILE" /tmp/.env.prod.backup
-
+            
             if [ ! -d /opt/alice/app/.git ]; then
               echo "📦 Clonando repositório..."
               rm -rf /opt/alice/app
@@ -1764,19 +1268,19 @@ METRICS_EOF
               git fetch --all --tags
               git checkout "${DEPLOY_VERSION}" --force
             fi
-
+            
             # Restaurar .env.prod após clone/update
             mkdir -p /opt/alice/app/infra/docker
             mv /tmp/.env.prod.backup /opt/alice/app/infra/docker/.env.prod
             chmod 600 /opt/alice/app/infra/docker/.env.prod
-
+            
             cd /opt/alice/app/infra/docker
-
+            
             # =================================================================
             # FASE 5: Login nos registries
             # =================================================================
             progress 7 "Login nos registries (GHCR + Docker Hub)"
-
+            
             # Login GHCR
             log "🔐 Fazendo login no GHCR..."
             if echo "${GH_PAT}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin 2>&1; then
@@ -1785,7 +1289,7 @@ METRICS_EOF
               log "❌ Login GHCR: FALHOU"
               exit 1
             fi
-
+            
             # Login Docker Hub (OBRIGATÓRIO para evitar rate limit)
             log "🔐 Fazendo login no Docker Hub..."
             if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
@@ -1803,7 +1307,7 @@ METRICS_EOF
               log "   Configure os secrets no GitHub: Settings → Secrets → Actions"
               exit 1
             fi
-
+            
             # =================================================================
             # CORREÇÃO 5 (04/01/2026): Validação de secrets ANTES do docker compose
             # =================================================================
@@ -1813,7 +1317,7 @@ METRICS_EOF
             # =================================================================
             progress 8 "Validação PRÉ-DEPLOY de secrets obrigatórias"
             log "🔐 Validando secrets obrigatórias (PRÉ-DEPLOY)..."
-
+            
             # Lista de secrets CRÍTICAS que DEVEM estar presentes no .env.prod
             REQUIRED_KEYS=(
               "POSTGRES_PASSWORD"
@@ -1829,7 +1333,7 @@ METRICS_EOF
               "ERPNEXT_ADMIN_PASSWORD"
               "MINIO_ROOT_PASSWORD"
             )
-
+            
             MISSING_SECRETS=()
             for key in "${REQUIRED_KEYS[@]}"; do
               # Verificar se secret existe E tem valor não vazio
@@ -1837,7 +1341,7 @@ METRICS_EOF
                 MISSING_SECRETS+=("$key")
               fi
             done
-
+            
             if [ ${#MISSING_SECRETS[@]} -gt 0 ]; then
               echo "❌ ERRO CRÍTICO: Secrets obrigatórias ausentes ou vazias no .env.prod!"
               echo ""
@@ -1852,9 +1356,9 @@ METRICS_EOF
               echo "   3. Execute workflow novamente após configurar secrets"
               exit 1
             fi
-
+            
             log "✅ Todas as secrets obrigatórias validadas (${#REQUIRED_KEYS[@]} verificadas)"
-
+            
             # =================================================================
             # FASE 6: Criar networks Docker
             # =================================================================
@@ -1862,7 +1366,7 @@ METRICS_EOF
             echo "🌐 Criando networks Docker..."
             docker network create alice-network 2>/dev/null || echo "ℹ️ alice-network já existe"
             docker network create erpnext-network 2>/dev/null || echo "ℹ️ erpnext-network já existe"
-
+            
             # =================================================================
             # FASE 7: Pull e Deploy (CORE SERVICES)
             # =================================================================
@@ -1872,22 +1376,22 @@ METRICS_EOF
             #
             # Containers GPU usam PROFILES porque GPU única de 20GB não suporta
             # múltiplos modelos grandes simultaneamente.
-
+            
             # =================================================================
             # CORREÇÃO 01/01/2026: Pull com retry e exponential backoff
             # Docker Hub pode ter rate limiting ou falhas temporárias
             # =================================================================
             progress 10 "Pull das imagens Docker (serviços core)"
             echo "📥 Baixando imagens Docker (serviços core)..."
-
+            
             pull_with_retry() {
               local max_attempts=3
               local timeout=10
               local attempt=1
-
+              
               while [ $attempt -le $max_attempts ]; do
                 log "📥 Tentativa $attempt/$max_attempts de pull das imagens..."
-
+                
                 # PROBLEMA #5: Usar log para rastrear comando executado
               log "🔄 Executando: docker compose pull (todas as imagens)"
               if docker compose -f docker-compose.prod.yml --env-file .env.prod pull; then
@@ -1895,21 +1399,21 @@ METRICS_EOF
                   return 0
                 else
                   log "⚠️ Falha no pull (tentativa $attempt)"
-
+                  
                   if [ $attempt -lt $max_attempts ]; then
                     log "⏳ Aguardando ${timeout}s antes de retry (exponential backoff)..."
                     sleep $timeout
                     timeout=$((timeout * 2))
                   fi
-
+                  
                   attempt=$((attempt + 1))
                 fi
               done
-
+              
               log "❌ ERRO: Pull falhou após $max_attempts tentativas"
               return 1
             }
-
+            
             if ! pull_with_retry; then
               echo "❌ Pull de imagens falhou. Verifique:"
               echo "   - Conectividade com Docker Hub"
@@ -1917,10 +1421,10 @@ METRICS_EOF
               echo "   - Tags das imagens em docker-compose.prod.yml"
               exit 1
             fi
-
+            
             progress 11 "Iniciando containers CORE (51 serviços)"
             echo "🚀 Iniciando containers CORE (sem GPU)..."
-
+            
             # =================================================================
             # DIAGNÓSTICO CRÍTICO 02/01/2026: Verificar BACKUP_CIPHER_PASS antes do docker compose
             # Problema: pgbackrest-init falha com "PGBACKREST_REPO1_CIPHER_PASS não definido"
@@ -1931,27 +1435,27 @@ METRICS_EOF
             BACKUP_LINE=$(grep '^BACKUP_CIPHER_PASS=' .env.prod || echo "NÃO ENCONTRADO")
             BACKUP_LEN=$(echo "$BACKUP_LINE" | cut -d'=' -f2- | wc -c)
             echo "   Linha no .env.prod: ${BACKUP_LINE:0:30}... (${BACKUP_LEN} chars após =)"
-
+            
             if [ "$BACKUP_LINE" = "NÃO ENCONTRADO" ]; then
               echo "❌ ERRO CRÍTICO: BACKUP_CIPHER_PASS não existe no .env.prod!"
               exit 1
             fi
-
+            
             if [ "$BACKUP_LEN" -lt 33 ]; then
               echo "❌ ERRO CRÍTICO: BACKUP_CIPHER_PASS no .env.prod tem valor muito curto ou vazio (${BACKUP_LEN} chars)!"
               echo "   Conteúdo da linha: $BACKUP_LINE"
               exit 1
             fi
-
+            
             echo "✅ BACKUP_CIPHER_PASS presente no .env.prod (${BACKUP_LEN} chars)"
-
+            
             # =================================================================
             # CORREÇÃO 04/01/2026: Validação de disk space ANTES do deploy
             # PROBLEMA #6: Deploy pode falhar silenciosamente por falta de espaço
             # SOLUÇÃO: Verificar espaço mínimo obrigatório antes de continuar
             # =================================================================
             log "💾 Verificando espaço em disco disponível..."
-
+            
             # Função auxiliar para obter espaço disponível em GB
             get_disk_space() {
               local path="$1"
@@ -1964,7 +1468,7 @@ METRICS_EOF
                 echo ""
               fi
             }
-
+            
             # Verificar /opt/alice (dados persistentes) - fallback sequencial
             AVAILABLE_GB=$(get_disk_space "/opt/alice")
             if [ -z "$AVAILABLE_GB" ]; then
@@ -1973,9 +1477,9 @@ METRICS_EOF
             if [ -z "$AVAILABLE_GB" ]; then
               AVAILABLE_GB=$(get_disk_space "/")
             fi
-
+            
             REQUIRED_GB=10  # Mínimo 10GB livre para deploy seguro
-
+            
             if [ -z "$AVAILABLE_GB" ]; then
               echo "⚠️ AVISO: Não foi possível determinar espaço em disco"
               echo "   Continuando deploy (verificação manual recomendada após deploy)"
@@ -1993,7 +1497,7 @@ METRICS_EOF
             else
               log "✅ Espaço em disco suficiente: ${AVAILABLE_GB}GB disponível"
             fi
-
+            
             # =================================================================
             # CORREÇÃO 6 (04/01/2026): Validação de inodes disponíveis
             # =================================================================
@@ -2004,7 +1508,7 @@ METRICS_EOF
             # (df -i pode retornar "-" para filesystems sem suporte a inodes)
             # =================================================================
             log "💾 Verificando inodes disponíveis..."
-
+            
             # Função auxiliar para obter inodes disponíveis (validado como numérico)
             get_available_inodes() {
               local path="$1"
@@ -2016,14 +1520,14 @@ METRICS_EOF
                 echo ""
               fi
             }
-
+            
             AVAILABLE_INODES=$(get_available_inodes "/opt/alice")
             if [ -z "$AVAILABLE_INODES" ]; then
               AVAILABLE_INODES=$(get_available_inodes "/")
             fi
-
+            
             REQUIRED_INODES=10000
-
+            
             if [ -n "$AVAILABLE_INODES" ] && [ "$AVAILABLE_INODES" -lt "$REQUIRED_INODES" ]; then
               echo "⚠️ AVISO: Poucos inodes disponíveis!"
               echo "   Disponível: $AVAILABLE_INODES inodes"
@@ -2039,7 +1543,7 @@ METRICS_EOF
                 log "✅ Inodes suficientes: $AVAILABLE_INODES disponíveis"
               fi
             fi
-
+            
             # =================================================================
             # CORREÇÃO 04/01/2026: Capturar métricas de sistema antes do deploy
             # PROBLEMA #16-18: Falta observabilidade durante deploy
@@ -2062,35 +1566,26 @@ METRICS_EOF
               docker system df 2>/dev/null || echo "(docker system df não disponível)"
               echo ""
             }
-
+            
             log "📊 Capturando métricas do sistema (baseline)..."
             capture_system_metrics
-
-            # =================================================================
-            # MELHORIA #3 (04/01/2026): Backup pré-deploy
-            # =================================================================
-            create_pre_deploy_backup
-
-            # =================================================================
-            # CORREÇÃO PROBLEMA #3 (04/01/2026): Docker compose up com retry logic
-            # =================================================================
-            # PROBLEMA: docker compose up falha por rate limit, rede instável, conflitos
-            # SOLUÇÃO: Usar docker_compose_up_with_retry() com exponential backoff
-            # =================================================================
-            log "🚀 Iniciando containers CORE com retry logic..."
-            if ! docker_compose_up_with_retry "docker-compose.prod.yml" ".env.prod"; then
-              log "❌ ERRO CRÍTICO: docker compose up falhou após $DOCKER_COMPOSE_MAX_RETRIES tentativas"
-              log "📝 Verifique logs de todas as tentativas em /tmp/compose_up_attempt_*.log"
-              exit 1
+            
+            # CORREÇÃO 03/01/2026: Mostrar output em TEMPO REAL durante docker compose up
+            # PROBLEMA: Capturar saída com $() oculta progresso - workflow parece travado
+            # SOLUÇÃO: Usar tee para mostrar em tempo real E capturar para análise
+            # PROBLEMA #5: Usar log para rastrear comando executado
+            log "🔄 Executando: docker compose up -d --remove-orphans (containers CORE)"
+            COMPOSE_LOG="/tmp/compose_output_$$.log"
+            docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --remove-orphans 2>&1 | tee "$COMPOSE_LOG"
+            COMPOSE_EXIT=${PIPESTATUS[0]}
+            COMPOSE_OUTPUT=$(cat "$COMPOSE_LOG")
+            rm -f "$COMPOSE_LOG"
+            if [ $COMPOSE_EXIT -eq 0 ]; then
+              log "✅ docker compose up (core) retornou sucesso (exit 0)"
+            else
+              log "❌ docker compose up (core) retornou erro (exit $COMPOSE_EXIT)"
             fi
-
-            # =================================================================
-            # CORREÇÃO PROBLEMA #5 (04/01/2026): Preservar logs de init containers
-            # =================================================================
-            # Init containers podem ser removidos rapidamente - salvar logs ANTES
-            # =================================================================
-            preserve_init_container_logs
-
+            
             # =================================================================
             # CORREÇÃO 03/01/2026: Validar Caddy IMEDIATAMENTE após docker compose up
             # =================================================================
@@ -2105,11 +1600,11 @@ METRICS_EOF
             echo "=============================================="
             log "🔍 Aguardando 30s para Caddy tentar iniciar..."
             sleep 30
-
+            
             log "🔍 Verificando status inicial do Caddy..."
             CADDY_STATUS=$(docker inspect --format='{{.State.Status}}' alice-caddy 2>/dev/null || echo "not-found")
             echo "   Status: $CADDY_STATUS"
-
+            
             if [ "$CADDY_STATUS" = "not-found" ]; then
               echo "❌ ERRO CRÍTICO: Container alice-caddy NÃO EXISTE após docker compose up"
               echo ""
@@ -2122,7 +1617,7 @@ METRICS_EOF
               docker ps -a --format "table {{.Names}}\t{{.Status}}" | grep -i caddy || echo "   (nenhum container com 'caddy' no nome)"
               exit 1
             fi
-
+            
             if [ "$CADDY_STATUS" != "running" ]; then
               echo "❌ ERRO CRÍTICO: Caddy NÃO está rodando 30s após docker compose up"
               echo "   Status atual: $CADDY_STATUS"
@@ -2140,11 +1635,11 @@ METRICS_EOF
               echo "❌ Deploy ABORTADO: Caddy falhou na inicialização"
               exit 1
             fi
-
+            
             # Verificar se healthcheck já passou (improvável em 30s, mas detecta problemas imediatos)
             CADDY_HEALTH=$(docker inspect --format='{{.State.Health.Status}}' alice-caddy 2>/dev/null || echo "no-health")
             echo "   Healthcheck status: $CADDY_HEALTH"
-
+            
             if [ "$CADDY_HEALTH" = "unhealthy" ]; then
               echo "⚠️ AVISO: Caddy já está UNHEALTHY após 30s - possível problema de configuração"
               echo ""
@@ -2162,7 +1657,7 @@ METRICS_EOF
               echo "❌ Deploy ABORTADO: Caddy falhou no healthcheck inicial"
               exit 1
             fi
-
+            
             if [ "$CADDY_HEALTH" = "starting" ]; then
               echo "✅ Caddy está rodando - healthcheck ainda iniciando (normal)"
               echo "   Status: $CADDY_STATUS | Health: $CADDY_HEALTH"
@@ -2174,25 +1669,28 @@ METRICS_EOF
             fi
             echo "=============================================="
             echo ""
-
+            
             # =================================================================
             # MONITORAMENTO ATIVO: Detectar crash loops e containers unhealthy
             # CORREÇÃO 03/01/2026: Workflow ficava "agarrado" quando containers
             # entravam em crash loop sem detectar. Agora monitora ativamente.
             # =================================================================
-            log "📊 Iniciando MONITORAMENTO ATIVO de containers (max 5 min)..."
-
+            log "📊 Iniciando MONITORAMENTO ATIVO de containers CORE (max 5 min)..."
+            
             MONITOR_START=$(date +%s)
-            MONITOR_TIMEOUT=300  # 5 minutos
+            # NOTA: MONITOR_TIMEOUT é 300s fixo para containers CORE (postgres, redis, caddy)
+            # Containers CORE são leves e iniciam em < 60s, 5 min é margem suficiente
+            # Service containers (ERPNext workers) usam SERVICE_TIMEOUT derivado de MAX_WAIT_TIME
+            MONITOR_TIMEOUT=300  # 5 minutos para CORE containers
             MONITOR_INTERVAL=15  # Verificar a cada 15 segundos
             ITERATION=0
-
+            
             while true; do
               ITERATION=$((ITERATION + 1))
               ELAPSED=$(($(date +%s) - MONITOR_START))
-
+              
               log "📊 [${ITERATION}] Status check (${ELAPSED}s/${MONITOR_TIMEOUT}s)..."
-
+              
               # Mostrar status de TODOS os containers com cores
               echo "┌────────────────────────────────────────────────────────────────────┐"
               echo "│ CONTAINER                        STATUS           HEALTH          │"
@@ -2212,12 +1710,12 @@ METRICS_EOF
                 fi
               done
               echo "└────────────────────────────────────────────────────────────────────┘"
-
+              
               # Contar containers com problemas
               CRASH_LOOPS=$(docker ps -a --format "{{.Names}}\t{{.Status}}" | grep -ci "restarting" || echo "0")
               UNHEALTHY=$(docker ps -a --format "{{.Names}}\t{{.Status}}" | grep -ci "unhealthy" || echo "0")
               EXITED_FAILED=$(docker ps -a --filter "status=exited" --format "{{.Names}}" | wc -l || echo "0")
-
+              
               # Verificar containers em CRASH LOOP (RestartCount > 3)
               log "🔍 Verificando containers em crash loop (RestartCount > 3)..."
               CRASH_CONTAINERS=""
@@ -2228,7 +1726,7 @@ METRICS_EOF
                   echo "⚠️  Container $container em CRASH LOOP: $RESTART_COUNT restarts"
                 fi
               done
-
+              
               # FAIL-FAST se detectar crash loops
               if [ -n "$CRASH_CONTAINERS" ]; then
                 echo ""
@@ -2242,7 +1740,7 @@ METRICS_EOF
                 done
                 exit 1
               fi
-
+              
               # Verificar se todos containers CORE estão healthy
               CORE_CONTAINERS="alice-postgres alice-redis alice-caddy"
               ALL_CORE_HEALTHY=true
@@ -2253,13 +1751,13 @@ METRICS_EOF
                   ALL_CORE_HEALTHY=false
                 fi
               done
-
+              
               # Se todos CORE estão healthy, podemos prosseguir
               if [ "$ALL_CORE_HEALTHY" = "true" ]; then
                 log "✅ Todos os containers CORE estão healthy!"
                 break
               fi
-
+              
               # Timeout check
               if [ $ELAPSED -ge $MONITOR_TIMEOUT ]; then
                 echo ""
@@ -2279,11 +1777,11 @@ METRICS_EOF
                 done
                 exit 1
               fi
-
+              
               # Aguardar antes da próxima verificação
               sleep $MONITOR_INTERVAL
             done
-
+            
             # =================================================================
             # CORREÇÃO 03/01/2026: Caddy-specific health diagnostics
             # Se Caddy estiver unhealthy, capturar logs detalhados ANTES de falhar
@@ -2318,7 +1816,7 @@ METRICS_EOF
             else
               log "✅ Caddy está healthy"
             fi
-
+            
             # FAIL-FAST IMEDIATO: Verificar erros de dependência na saída
             if echo "$COMPOSE_OUTPUT" | grep -qi "dependency.*failed to start\|Error response from daemon\|error creating\|no such image"; then
               echo ""
@@ -2340,14 +1838,14 @@ METRICS_EOF
               done
               exit 1
             fi
-
+            
             if [ $COMPOSE_EXIT -ne 0 ]; then
               echo "❌ ERRO: docker compose up (core) falhou com exit code $COMPOSE_EXIT. Capturando diagnóstico..."
-
+              
               # CORREÇÃO 04/01/2026: Capturar métricas do sistema após falha
               log "📊 Capturando métricas do sistema (após falha)..."
               capture_system_metrics
-
+              
               docker compose -f docker-compose.prod.yml --env-file .env.prod ps || true
               echo ""
               # CORREÇÃO 01/01/2026: Capturar logs de TODOS os containers críticos
@@ -2401,7 +1899,7 @@ METRICS_EOF
               docker logs --tail=100 alice-caddy || true
               exit 1
             fi
-
+            
             # =================================================================
             # CORREÇÃO 7-8 (04/01/2026): Captura proativa de logs de init containers
             # =================================================================
@@ -2411,13 +1909,13 @@ METRICS_EOF
             # ANTES que containers sejam removidos ou logs sejam perdidos
             # =================================================================
             log "📋 Capturando logs de init containers (preservação proativa)..."
-
+            
             # CORREÇÃO 04/01/2026: Adicionado erpnext-create-site (faltava na lista)
             for init_container in "alice-pgbackrest-init" "alice-minio-init" "erpnext-configurator" "erpnext-create-site"; do
               if docker ps -a --format '{{.Names}}' | grep -q "^${init_container}$"; then
                 LOG_FILE="/tmp/init_logs_${init_container}.txt"
                 docker logs "$init_container" > "$LOG_FILE" 2>&1 || true
-
+                
                 # Verificar se logs foram capturados (arquivo não vazio)
                 if [ -s "$LOG_FILE" ]; then
                   LOG_SIZE=$(wc -l < "$LOG_FILE")
@@ -2429,19 +1927,19 @@ METRICS_EOF
                 echo "   ℹ️  $init_container: container não encontrado (ainda não criado)"
               fi
             done
-
+            
             log "✅ Logs de init containers preservados (disponíveis em /tmp para análise)"
-
+            
             # =================================================================
             # FAIL-FAST: Verificar containers INIT imediatamente (01/01/2026)
             # Docker Compose --detach retorna 0 mesmo se init containers falharem
             # Precisamos verificar ATIVAMENTE se eles falharam
             # =================================================================
             log "🔍 FAIL-FAST: Verificando containers de inicialização..."
-
+            
             # Aguardar containers init tentarem executar
             sleep 10
-
+            
             # Lista de containers init CRÍTICOS (restart: "no", devem completar com sucesso)
             # CORREÇÃO 01/01/2026: Nomes devem corresponder exatamente ao container_name no docker-compose
             # MIGRAÇÃO 02/01/2026: traefik-init removido (Caddy não precisa de init), pgbackrest-init adicionado
@@ -2452,7 +1950,7 @@ METRICS_EOF
               "erpnext-configurator"
               "erpnext-create-site"
             )
-
+            
             INIT_FAILED=0
             for container in "${INIT_CONTAINERS[@]}"; do
               # Verificar se container existe
@@ -2460,7 +1958,7 @@ METRICS_EOF
                 # Obter exit code (0 = sucesso, vazio = ainda rodando)
                 EXIT_CODE=$(docker inspect --format='{{.State.ExitCode}}' "$container" 2>/dev/null || echo "")
                 STATUS=$(docker inspect --format='{{.State.Status}}' "$container" 2>/dev/null || echo "unknown")
-
+                
                 if [ "$STATUS" = "exited" ] && [ "$EXIT_CODE" != "0" ]; then
                   echo "❌ FAIL-FAST: Container $container FALHOU (exit code: $EXIT_CODE)"
                   echo ""
@@ -2473,7 +1971,7 @@ METRICS_EOF
                 fi
               fi
             done
-
+            
             if [ $INIT_FAILED -eq 1 ]; then
               echo ""
               echo "❌ ERRO CRÍTICO: Um ou mais containers de inicialização falharam!"
@@ -2492,29 +1990,37 @@ METRICS_EOF
               echo "🧹 Cleanup completo - dados persistentes preservados"
               exit 1
             fi
-
+            
             log "✅ Containers de inicialização OK (ou ainda em execução)"
-
+            
             # =================================================================
             # CORREÇÃO 04/01/2026: Espera inteligente para init containers
             # =================================================================
-            # PROBLEMA: check_container_health() pode executar ANTES dos init
+            # PROBLEMA: check_container_health() pode executar ANTES dos init 
             # containers completarem, causando falso positivo
-            # SOLUÇÃO: Aguardar TODOS init containers completarem ANTES de
+            # SOLUÇÃO: Aguardar TODOS init containers completarem ANTES de 
             # verificar saúde dos containers normais
             # =================================================================
-            log "⏱️  Aguardando init containers completarem (timeout: 2 minutos)..."
-
-            INIT_TIMEOUT=120
+            # =================================================================
+            # CORREÇÃO 04/01/2026: INIT_TIMEOUT usa MAX_WAIT_TIME centralizado
+            # =================================================================
+            # PROBLEMA: INIT_TIMEOUT=120 era insuficiente para erpnext-create-site
+            # que leva 3-5 minutos (cria site + instala ERPNext app)
+            # SOLUÇÃO: Usar MAX_WAIT_TIME/3 (300s) como timeout para init containers
+            # Isso dá margem para init containers + service containers ficarem healthy
+            # =================================================================
+            INIT_TIMEOUT=$((MAX_WAIT_TIME / 3))  # 300s (5 min) para init containers
+            log "⏱️  Aguardando init containers completarem (timeout: ${INIT_TIMEOUT}s)..."
+            
             INIT_ELAPSED=0
-
+            
             while [ $INIT_ELAPSED -lt $INIT_TIMEOUT ]; do
               ALL_INIT_COMPLETED=1
-
+              
               for init_container in "${INIT_CONTAINERS[@]}"; do
                 if docker ps -a --format '{{.Names}}' | grep -q "^${init_container}$"; then
                   STATUS=$(docker inspect --format='{{.State.Status}}' "$init_container" 2>/dev/null || echo "unknown")
-
+                  
                   if [ "$STATUS" = "running" ]; then
                     echo "   ⏳ $init_container ainda executando..."
                     ALL_INIT_COMPLETED=0
@@ -2572,21 +2078,21 @@ METRICS_EOF
                   ALL_INIT_COMPLETED=0
                 fi
               done
-
+              
               if [ $ALL_INIT_COMPLETED -eq 1 ]; then
                 log "✅ Todos os init containers completaram com sucesso"
                 break
               fi
-
+              
               sleep 5
               INIT_ELAPSED=$((INIT_ELAPSED + 5))
-
+              
               # Progress indicator a cada 15 segundos
               if [ $((INIT_ELAPSED % 15)) -eq 0 ]; then
                 echo "   ⏱️  Tempo decorrido: ${INIT_ELAPSED}s / ${INIT_TIMEOUT}s"
               fi
             done
-
+            
             if [ $INIT_ELAPSED -ge $INIT_TIMEOUT ]; then
               log "❌ FAIL-FAST: Timeout aguardando init containers completarem"
               log "📋 Status dos init containers:"
@@ -2599,18 +2105,98 @@ METRICS_EOF
               done
               exit 1
             fi
-
+            
             # =================================================================
-            # CORREÇÃO 04/01/2026: Aguardar 30s para service containers iniciarem
+            # CORREÇÃO 04/01/2026: Loop inteligente para service containers
             # =================================================================
-            # PROBLEMA: Healthchecks podem levar 30-60s para ficarem prontos
-            # Verificar muito cedo gera falsos positivos (status: starting)
-            # SOLUÇÃO: Aguardar tempo adequado para containers iniciarem
-            # healthchecks antes de validar
+            # PROBLEMA ANTERIOR: sleep 30 era completamente insuficiente
+            # ERPNext workers têm start_period: 420s (7 min), então após 30s
+            # ainda estarão em "starting" e check_container_health() falharia
+            # 
+            # SOLUÇÃO ENTERPRISE: Loop que espera containers ficarem healthy
+            # usando MAX_WAIT_TIME como timeout (900s = 15 min)
+            # Isso respeita o start_period de todos containers, incluindo
+            # ERPNext workers (420s) + retries + margem de segurança
             # =================================================================
-            log "⏱️  Aguardando 30s para service containers iniciarem healthchecks..."
-            sleep 30
-
+            
+            # Calcular timeout restante após init containers
+            SERVICE_TIMEOUT=$((MAX_WAIT_TIME - INIT_ELAPSED))
+            if [ $SERVICE_TIMEOUT -lt 300 ]; then
+              SERVICE_TIMEOUT=300  # Mínimo 5 minutos para service containers
+            fi
+            
+            log "⏱️  Aguardando service containers ficarem healthy (timeout: ${SERVICE_TIMEOUT}s)..."
+            log "   Nota: ERPNext workers têm start_period de 420s - aguardando pacientemente..."
+            
+            SERVICE_ELAPSED=0
+            SERVICE_INTERVAL=15  # Verificar a cada 15 segundos
+            
+            while [ $SERVICE_ELAPSED -lt $SERVICE_TIMEOUT ]; do
+              # Contar containers com healthcheck que ainda não estão healthy
+              STARTING_COUNT=0
+              HEALTHY_COUNT=0
+              UNHEALTHY_COUNT=0
+              NO_HEALTH_RUNNING=0
+              
+              for container in $(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -E '^alice-|^gpu-|^erpnext-|^langfuse|^grafana|^prometheus|^loki|^jaeger|^minio|^clickhouse|^vector'); do
+                STATUS=$(docker inspect --format='{{.State.Status}}' "$container" 2>/dev/null || echo "unknown")
+                HEALTH=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container" 2>/dev/null || echo "none")
+                
+                # Ignorar init containers (já verificados acima)
+                IS_INIT=0
+                for init_container in "alice-pgbackrest-init" "alice-minio-init" "erpnext-configurator" "erpnext-create-site"; do
+                  if [ "$container" = "$init_container" ]; then
+                    IS_INIT=1
+                    break
+                  fi
+                done
+                
+                if [ "$IS_INIT" -eq 1 ]; then
+                  continue  # Ignorar init containers
+                fi
+                
+                if [ "$STATUS" = "running" ]; then
+                  if [ "$HEALTH" = "starting" ]; then
+                    STARTING_COUNT=$((STARTING_COUNT + 1))
+                  elif [ "$HEALTH" = "healthy" ]; then
+                    HEALTHY_COUNT=$((HEALTHY_COUNT + 1))
+                  elif [ "$HEALTH" = "unhealthy" ]; then
+                    UNHEALTHY_COUNT=$((UNHEALTHY_COUNT + 1))
+                  elif [ "$HEALTH" = "none" ]; then
+                    # Container sem healthcheck mas running - considerado OK
+                    NO_HEALTH_RUNNING=$((NO_HEALTH_RUNNING + 1))
+                  fi
+                fi
+              done
+              
+              TOTAL_HEALTHY=$((HEALTHY_COUNT + NO_HEALTH_RUNNING))
+              
+              # Progress indicator
+              if [ $((SERVICE_ELAPSED % 30)) -eq 0 ]; then
+                log "   📊 Status (${SERVICE_ELAPSED}s/${SERVICE_TIMEOUT}s): healthy=$HEALTHY_COUNT, starting=$STARTING_COUNT, unhealthy=$UNHEALTHY_COUNT, no-health=$NO_HEALTH_RUNNING"
+              fi
+              
+              # Se não há containers em "starting", podemos sair do loop
+              if [ $STARTING_COUNT -eq 0 ]; then
+                if [ $UNHEALTHY_COUNT -eq 0 ]; then
+                  log "✅ Todos os service containers com healthcheck estão healthy!"
+                  break
+                else
+                  # Containers unhealthy - deixar check_container_health() lidar
+                  log "⚠️ $UNHEALTHY_COUNT containers unhealthy detectados - verificando detalhes..."
+                  break
+                fi
+              fi
+              
+              # Aguardar antes da próxima verificação
+              sleep $SERVICE_INTERVAL
+              SERVICE_ELAPSED=$((SERVICE_ELAPSED + SERVICE_INTERVAL))
+            done
+            
+            if [ $SERVICE_ELAPSED -ge $SERVICE_TIMEOUT ]; then
+              log "⚠️ Timeout aguardando service containers (alguns ainda em starting) - verificando estado final..."
+            fi
+            
             # =================================================================
             # FAIL-FAST ENTERPRISE: Verificação de saúde dos containers
             # =================================================================
@@ -2619,133 +2205,90 @@ METRICS_EOF
             # DETECTA: created, dead, exited, restarting, unhealthy
             # =================================================================
             # =================================================================
-            # CORREÇÃO PROBLEMA #1 (04/01/2026): check_container_health() COMPLETO
+            # CORREÇÃO 04/01/2026: check_container_health() distingue init containers
             # =================================================================
-            # ROOT CAUSE: Função NÃO distinguia adequadamente init vs service containers
-            # EVIDÊNCIA: Containers como erpnext-worker-default, alice-frontend, alice-vector
-            #            eram marcados como "unhealthy" mesmo estando corretos
-            # SOLUÇÃO ENTERPRISE:
-            #   1. Init containers: validar status=exited AND exit_code=0
-            #   2. Service containers: validar health=healthy OR health=none (sem healthcheck)
-            #   3. Logs detalhados por tipo de container
-            #   4. Tempo adequado de startup (configurável via HEALTHCHECK_WAIT_SECONDS)
+            # PROBLEMA: Init containers (restart: "no") têm status "exited" após 
+            #           completarem com sucesso, mas função os marcava como unhealthy
+            # SOLUÇÃO: Validar exit code 0 para init containers, health para normais
             # =================================================================
             check_container_health() {
               local context_msg="${1:-Verificação de containers}"
-              local wait_time="${2:-$HEALTHCHECK_WAIT_SECONDS}"
-
               log "🔍 FAIL-FAST: $context_msg..."
-              log "⏱️  Aguardando ${wait_time}s para containers iniciarem..."
-              sleep "$wait_time"
-
-              # Usar array global de init containers (definido no início do script)
+              
+              # Lista de init containers (restart: "no") - devem ter status "exited" com exit code 0
+              # CORREÇÃO 04/01/2026: Adicionado erpnext-create-site (faltava na lista)
+              local INIT_CONTAINERS=("alice-pgbackrest-init" "alice-minio-init" "erpnext-configurator" "erpnext-create-site")
+              
+              # Usar docker ps com filtros diretos (mais confiável que JSON parsing)
               PROBLEM_CONTAINERS=""
-              local healthy_count=0
-              local init_success_count=0
-
-              # Verificar TODOS os containers do projeto (alice, erpnext, observability)
-              for container in $(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -E '^alice-|^gpu-|^erpnext-|^langfuse|^grafana|^prometheus|^loki|^jaeger|^minio|^clickhouse|^vector|^caddy'); do
+              
+              # Verificar containers em estados problemáticos
+              for container in $(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -E '^alice-|^gpu-|^erpnext-|^langfuse|^grafana|^prometheus|^loki|^jaeger|^minio|^clickhouse'); do
                 STATUS=$(docker inspect --format='{{.State.Status}}' "$container" 2>/dev/null || echo "unknown")
                 EXIT_CODE=$(docker inspect --format='{{.State.ExitCode}}' "$container" 2>/dev/null || echo "0")
                 HEALTH=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container" 2>/dev/null || echo "none")
                 RESTART_COUNT=$(docker inspect --format='{{.RestartCount}}' "$container" 2>/dev/null || echo "0")
-
+                
                 # Verificar se é init container
                 IS_INIT=0
-                for init_name in "${INIT_CONTAINERS[@]}"; do
-                  if [ "$container" = "$init_name" ]; then
+                for init_container in "${INIT_CONTAINERS[@]}"; do
+                  if [ "$container" = "$init_container" ]; then
                     IS_INIT=1
                     break
                   fi
                 done
-
+                
                 IS_PROBLEM=0
                 REASON=""
-
+                
                 if [ "$IS_INIT" -eq 1 ]; then
-                  # ========== INIT CONTAINER VALIDATION ==========
-                  # Init containers devem ter status "exited" com exit code 0
-                  if [ "$STATUS" = "exited" ]; then
-                    if [ "$EXIT_CODE" = "0" ]; then
-                      log "✅ Init container $container: completou com sucesso"
-                      init_success_count=$((init_success_count + 1))
-                    else
-                      IS_PROBLEM=1
-                      REASON="init container falhou (exit code $EXIT_CODE)"
-                    fi
-                  elif [ "$STATUS" = "running" ]; then
-                    # Ainda rodando é OK, só precisa de mais tempo
-                    log "⏳ Init container $container: ainda em execução (normal)"
-                  else
-                    # Estados problemáticos: created, dead, paused, restarting
+                  # INIT CONTAINER: validar exit code 0 (status "exited" é esperado)
+                  if [ "$STATUS" = "exited" ] && [ "$EXIT_CODE" != "0" ]; then
+                    IS_PROBLEM=1
+                    REASON="init container falhou (exit code $EXIT_CODE)"
+                  elif [ "$STATUS" != "exited" ] && [ "$STATUS" != "running" ]; then
+                    # Init container ainda rodando ou em estado inválido
                     IS_PROBLEM=1
                     REASON="init container em estado inesperado ($STATUS)"
                   fi
+                  # NOTA: status "exited" com exit code 0 é SUCESSO para init containers (não é problema)
                 else
-                  # ========== SERVICE CONTAINER VALIDATION ==========
-                  # Service containers devem estar "running" com health adequado
-                  if [ "$STATUS" = "running" ]; then
-                    # Container rodando - verificar health
-                    if [ "$HEALTH" = "healthy" ] || [ "$HEALTH" = "none" ]; then
-                      # healthy = tem healthcheck e passou
-                      # none = não tem healthcheck definido (OK por padrão)
-                      log "✅ Service container $container: OK (health=$HEALTH)"
-                      healthy_count=$((healthy_count + 1))
-                    elif [ "$HEALTH" = "starting" ]; then
-                      # Healthcheck ainda iniciando - pode precisar de mais tempo
-                      log "⏳ Service container $container: healthcheck ainda iniciando"
-                    else
-                      # unhealthy = healthcheck definido mas falhando
-                      IS_PROBLEM=1
-                      # Capturar última linha do healthcheck log (WHY unhealthy)
-                      HEALTH_LOG=$(docker inspect --format='{{range .State.Health.Log}}{{.Output}}{{end}}' "$container" 2>/dev/null | tail -n 1 | tr -d '\n' | cut -c1-100)
-                      if [ -n "$HEALTH_LOG" ]; then
-                        REASON="unhealthy - ${HEALTH_LOG}"
-                      else
-                        REASON="unhealthy (sem logs disponíveis)"
-                      fi
-                    fi
-
-                    # Verificar restart count (instabilidade)
-                    if [ "$RESTART_COUNT" -gt 2 ] 2>/dev/null; then
-                      IS_PROBLEM=1
-                      REASON="RestartCount=$RESTART_COUNT (container instável, crashando repetidamente)"
-                    fi
-                  else
-                    # Container NÃO está rodando - PROBLEMA
+                  # CONTAINER NORMAL: validar health status e estados
+                  if [ "$STATUS" = "created" ]; then
                     IS_PROBLEM=1
-                    case "$STATUS" in
-                      created)
-                        REASON="nunca iniciou (dependency failed ou erro no startup)"
-                        ;;
-                      exited)
-                        REASON="parou inesperadamente (exit code $EXIT_CODE) - service container NÃO deve ter status exited"
-                        ;;
-                      dead)
-                        REASON="dead (OOM killer ou erro fatal?)"
-                        ;;
-                      restarting)
-                        REASON="crash loop detectado (tentando reiniciar continuamente)"
-                        ;;
-                      paused)
-                        REASON="pausado (não deveria estar pausado em produção)"
-                        ;;
-                      *)
-                        REASON="estado desconhecido: $STATUS"
-                        ;;
-                    esac
+                    REASON="nunca iniciou (dependency failed?)"
+                  elif [ "$STATUS" = "dead" ]; then
+                    IS_PROBLEM=1
+                    REASON="dead"
+                  elif [ "$STATUS" = "exited" ]; then
+                    # Container normal NÃO deve ter status "exited" (mesmo com exit code 0)
+                    # Se exited, algo está errado (restart failed, dependency failed, etc)
+                    IS_PROBLEM=1
+                    REASON="exited com exit code $EXIT_CODE (container normal não deve parar)"
+                  elif [ "$STATUS" = "restarting" ]; then
+                    IS_PROBLEM=1
+                    REASON="restarting (crash loop)"
+                  elif [ "$HEALTH" = "unhealthy" ]; then
+                    IS_PROBLEM=1
+                    # CORREÇÃO 9-10: Capturar ÚLTIMA LINHA do healthcheck (WHY unhealthy)
+                    HEALTH_LOG=$(docker inspect --format='{{range .State.Health.Log}}{{.Output}}{{end}}' "$container" 2>/dev/null | tail -n 1 | tr -d '\n' | cut -c1-80)
+                    if [ -n "$HEALTH_LOG" ]; then
+                      REASON="unhealthy - ${HEALTH_LOG}"
+                    else
+                      REASON="unhealthy (sem logs disponíveis)"
+                    fi
+                  elif [ "$RESTART_COUNT" -gt 2 ] 2>/dev/null; then
+                    IS_PROBLEM=1
+                    REASON="RestartCount=$RESTART_COUNT (instável)"
                   fi
                 fi
-
-                # Se encontrou problema, adicionar à lista
+                
                 if [ "$IS_PROBLEM" = "1" ]; then
                   PROBLEM_CONTAINERS="${PROBLEM_CONTAINERS}${container}|${STATUS}|${EXIT_CODE}|${REASON}\n"
                 fi
               done
-
-              # =================================================================
-              # Relatório de problemas (se houver)
-              # =================================================================
+              
+              # Se encontrou problemas, falhar imediatamente
               if [ -n "$PROBLEM_CONTAINERS" ]; then
                 echo ""
                 echo "❌ FAIL-FAST: Containers com problemas detectados!"
@@ -2753,101 +2296,113 @@ METRICS_EOF
                 echo "📋 Containers problemáticos:"
                 echo -e "$PROBLEM_CONTAINERS" | while IFS='|' read -r name status exit_code reason; do
                   if [ -n "$name" ]; then
-                    # Emoji específico por tipo
+                    # CORREÇÃO 9-10: Emoji específico por tipo de container
+                    # Verificar se é init container
                     IS_INIT_DISPLAY=0
-                    for init_check in "${INIT_CONTAINERS[@]}"; do
+                    # CORREÇÃO 04/01/2026: Adicionado erpnext-create-site (faltava na lista)
+                    for init_check in "alice-pgbackrest-init" "alice-minio-init" "erpnext-configurator" "erpnext-create-site"; do
                       if [ "$name" = "$init_check" ]; then
                         IS_INIT_DISPLAY=1
                         break
                       fi
                     done
-
+                    
                     if [ "$IS_INIT_DISPLAY" -eq 1 ]; then
-                      echo "   📦 Init: $name - status=$status, exit=$exit_code ($reason)"
+                      echo "   📦 Init Container: $name - status=$status, exit=$exit_code ($reason)"
                     else
-                      echo "   🐳 Service: $name - status=$status, exit=$exit_code ($reason)"
+                      echo "   🐳 Container: $name - status=$status, exit=$exit_code ($reason)"
                     fi
                   fi
                 done
-
-                # Capturar logs dos containers problemáticos
+                
+                # Capturar logs dos 5 primeiros containers problemáticos
                 echo ""
                 echo "🧾 Logs dos containers problemáticos (últimas 100 linhas cada):"
                 echo -e "$PROBLEM_CONTAINERS" | head -5 | while IFS='|' read -r name status exit_code reason; do
                   if [ -n "$name" ]; then
                     echo ""
                     echo "--- Logs de $name ---"
-                    docker logs --tail=100 "$name" 2>&1 || echo "(não foi possível capturar logs)"
+                    docker logs --tail=100 "$name" 2>&1 || true
                   fi
                 done
-
+                
                 # =================================================================
-                # CORREÇÃO 11-12: Análise de causa raiz
+                # CORREÇÃO 11-12 (04/01/2026): Análise de causa raiz
+                # =================================================================
+                # PROBLEMA: Logs vazios ou falta correlação entre falha e causa raiz
+                # SOLUÇÃO: Análise automática de dependências, variáveis e exit codes
                 # =================================================================
                 echo ""
-                echo "🔍 ANÁLISE DE CAUSA RAIZ (top 3 containers problemáticos)"
+                echo "🔍 ANÁLISE DE CAUSA RAIZ"
                 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-                echo -e "$PROBLEM_CONTAINERS" | head -3 | while IFS='|' read -r name status exit_code reason; do
+                
+                analyze_root_cause() {
+                  local failed_container="$1"
+                  local exit_code="$2"
+                  
+                  echo ""
+                  echo "🔍 Container: $failed_container"
+                  echo ""
+                  
+                  # Verificar dependências
+                  echo "📊 Dependências do container:"
+                  DEPENDS=$(docker inspect --format='{{range $key, $value := .HostConfig.DependsOn}}{{$key}} {{end}}' "$failed_container" 2>/dev/null || echo "(nenhuma)")
+                  if [ "$DEPENDS" = "(nenhuma)" ]; then
+                    echo "   (nenhuma dependência explícita)"
+                  else
+                    echo "   $DEPENDS"
+                  fi
+                  
+                  # Verificar variáveis de ambiente críticas (secrets)
+                  echo ""
+                  echo "🔐 Variáveis de ambiente críticas:"
+                  ENV_SECRETS=$(docker inspect --format='{{range .Config.Env}}{{.}}{{"\n"}}{{end}}' "$failed_container" 2>/dev/null | grep -E "(PASSWORD|SECRET|KEY|TOKEN)" | head -10 || echo "(nenhuma)")
+                  if [ "$ENV_SECRETS" = "(nenhuma)" ]; then
+                    echo "   (nenhuma variável crítica detectada)"
+                  else
+                    echo "$ENV_SECRETS" | while read -r line; do
+                      # Mascarar valores de secrets
+                      VAR_NAME=$(echo "$line" | cut -d'=' -f1)
+                      echo "   $VAR_NAME=***"
+                    done
+                  fi
+                  
+                  # Interpretar exit code
+                  if [ -n "$exit_code" ] && [ "$exit_code" != "0" ] && [ "$exit_code" != "N/A" ]; then
+                    echo ""
+                    echo "❌ Exit code $exit_code - Possíveis causas:"
+                    case $exit_code in
+                      1) echo "   - Erro genérico (verificar logs para detalhes)" ;;
+                      2) echo "   - Uso incorreto de comando ou parâmetros inválidos" ;;
+                      126) echo "   - Comando não executável (permissões?)" ;;
+                      127) echo "   - Comando não encontrado (PATH incorreto?)" ;;
+                      137) echo "   - SIGKILL (OOM killer? Memória insuficiente?)" ;;
+                      143) echo "   - SIGTERM (terminado por outro processo)" ;;
+                      *) echo "   - Código desconhecido (consultar documentação específica)" ;;
+                    esac
+                  fi
+                }
+                
+                # Analisar cada container problemático
+                echo -e "$PROBLEM_CONTAINERS" | head -5 | while IFS='|' read -r name status exit_code reason; do
                   if [ -n "$name" ]; then
-                    echo ""
-                    echo "🔍 Container: $name"
-                    echo ""
-
-                    # Dependências
-                    echo "📊 Dependências:"
-                    DEPENDS=$(docker inspect --format='{{range $key, $value := .HostConfig.DependsOn}}{{$key}} {{end}}' "$name" 2>/dev/null || echo "")
-                    if [ -n "$DEPENDS" ]; then
-                      echo "   $DEPENDS"
-                    else
-                      echo "   (nenhuma dependência explícita)"
-                    fi
-
-                    # Variáveis críticas (mascaradas)
-                    echo ""
-                    echo "🔐 Variáveis críticas:"
-                    ENV_SECRETS=$(docker inspect --format='{{range .Config.Env}}{{.}}{{"\n"}}{{end}}' "$name" 2>/dev/null | grep -iE "(PASSWORD|SECRET|KEY|TOKEN)" | head -5 || echo "")
-                    if [ -n "$ENV_SECRETS" ]; then
-                      echo "$ENV_SECRETS" | while read -r line; do
-                        VAR_NAME=$(echo "$line" | cut -d'=' -f1)
-                        echo "   $VAR_NAME=***"
-                      done
-                    else
-                      echo "   (nenhuma detectada)"
-                    fi
-
-                    # Interpretar exit code
-                    if [ -n "$exit_code" ] && [ "$exit_code" != "0" ]; then
-                      echo ""
-                      echo "❌ Exit code $exit_code:"
-                      case $exit_code in
-                        1) echo "   → Erro genérico (verificar logs)" ;;
-                        2) echo "   → Uso incorreto de comando" ;;
-                        126) echo "   → Comando não executável" ;;
-                        127) echo "   → Comando não encontrado" ;;
-                        137) echo "   → SIGKILL (OOM? Memória insuficiente?)" ;;
-                        143) echo "   → SIGTERM (terminado)" ;;
-                        *) echo "   → Código desconhecido" ;;
-                      esac
-                    fi
+                    analyze_root_cause "$name" "$exit_code"
                   fi
                 done
-
+                
                 echo ""
                 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                
                 echo ""
-                echo "📋 Status de TODOS os containers:"
-                docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.State}}" 2>/dev/null | head -60
-
+                echo "📋 Status completo de todos containers:"
+                docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.State}}" | head -60
                 return 1
               fi
-
-              log "✅ $context_msg: OK"
-              log "   Init containers OK: $init_success_count"
-              log "   Service containers healthy: $healthy_count"
+              
+              log "✅ $context_msg: OK (init containers completaram, containers normais healthy)"
               return 0
             }
-
+            
             # =================================================================
             # CORREÇÃO 04/01/2026: Validação específica do Caddy
             # =================================================================
@@ -2856,31 +2411,31 @@ METRICS_EOF
             # verificar outros containers
             # =================================================================
             log "🔍 VALIDAÇÃO CADDY (FAIL-FAST)..."
-
+            
             # Aguardar Caddy iniciar (mínimo)
             sleep 10
-
+            
             # Verificar se Caddy está rodando
             if ! docker ps --filter "name=alice-caddy" --filter "status=running" | grep -q alice-caddy; then
               log "❌ FAIL-FAST: Caddy não está rodando"
               docker logs --tail 100 alice-caddy || true
               exit 1
             fi
-
+            
             # Verificar healthcheck do Caddy
             CADDY_HEALTH=$(docker inspect alice-caddy --format '{{.State.Health.Status}}' 2>/dev/null || echo "none")
-
+            
             # Aguardar até 60s para Caddy ficar healthy
             CADDY_TIMEOUT=60
             CADDY_ELAPSED=0
-
+            
             while [ "$CADDY_HEALTH" != "healthy" ] && [ $CADDY_ELAPSED -lt $CADDY_TIMEOUT ]; do
               echo "   ⏳ Aguardando Caddy ficar healthy (${CADDY_ELAPSED}s/${CADDY_TIMEOUT}s)... Status atual: $CADDY_HEALTH"
               sleep 5
               CADDY_ELAPSED=$((CADDY_ELAPSED + 5))
               CADDY_HEALTH=$(docker inspect alice-caddy --format '{{.State.Health.Status}}' 2>/dev/null || echo "none")
             done
-
+            
             if [ "$CADDY_HEALTH" != "healthy" ]; then
               log "❌ FAIL-FAST: Caddy não ficou healthy após ${CADDY_TIMEOUT}s"
               log "📋 Logs do Caddy:"
@@ -2889,19 +2444,19 @@ METRICS_EOF
               docker inspect alice-caddy --format '{{json .State.Health}}' | jq '.' || true
               exit 1
             fi
-
+            
             log "✅ Caddy está healthy e operacional"
-
+            
             # Verificar imediatamente após docker compose up
             if ! check_container_health "Verificando erros de dependência"; then
               exit 1
             fi
-
+            
             # =================================================================
             # CORREÇÃO 04/01/2026: Diagnóstico específico de init containers
             # =================================================================
             log "🔍 DIAGNÓSTICO: Verificando init containers específicos..."
-
+            
             # CORREÇÃO 04/01/2026: Adicionado erpnext-create-site (faltava na lista)
             for init_container in "alice-pgbackrest-init" "alice-minio-init" "erpnext-configurator" "erpnext-create-site"; do
               if docker ps -a --format '{{.Names}}' | grep -q "^${init_container}$"; then
@@ -2909,14 +2464,14 @@ METRICS_EOF
                 STATUS=$(docker inspect --format='{{.State.Status}}' "$init_container" 2>/dev/null || echo "unknown")
                 STARTED_AT=$(docker inspect --format='{{.State.StartedAt}}' "$init_container" 2>/dev/null || echo "N/A")
                 FINISHED_AT=$(docker inspect --format='{{.State.FinishedAt}}' "$init_container" 2>/dev/null || echo "N/A")
-
+                
                 echo ""
                 echo "📦 Init Container: $init_container"
                 echo "   Status: $STATUS"
                 echo "   Exit Code: $EXIT_CODE"
                 echo "   Started: $STARTED_AT"
                 echo "   Finished: $FINISHED_AT"
-
+                
                 if [ "$EXIT_CODE" != "0" ] && [ "$EXIT_CODE" != "N/A" ]; then
                   echo "   ⚠️  FALHOU - Capturando logs completos..."
                   echo ""
@@ -2926,10 +2481,10 @@ METRICS_EOF
                 fi
               fi
             done
-
+            
             # Verificar status dos serviços core
             sleep "$MONITOR_INTERVAL"
-
+            
             # =================================================================
             # CORREÇÃO 29/12/2025: Criar extensão pgvector no PostgreSQL
             # =================================================================
@@ -2938,7 +2493,7 @@ METRICS_EOF
             # =================================================================
             # PROBLEMA: Se database não existe ou não tem tabelas, serviços Alice
             # (auth, chat, rag, etc.) falham com queries SQL.
-            #
+            # 
             # SOLUÇÃO: Validar ANTES de iniciar serviços dependentes:
             # 1. Verificar se database existe
             # 2. Verificar se tem tabelas (schema Drizzle ORM)
@@ -2946,10 +2501,10 @@ METRICS_EOF
             # =================================================================
             echo ""
             echo "🔍 Validando schema do banco de dados..."
-
+            
             # Aguardar PostgreSQL estar completamente pronto
             sleep "$MONITOR_INTERVAL"
-
+            
             # =================================================================
             # CORREÇÃO CRÍTICA 29/12/2025: Extrair credenciais do .env.prod ANTES
             # de usar em comandos de validação
@@ -2965,12 +2520,12 @@ METRICS_EOF
             ENV_FILE="/opt/alice/app/infra/docker/.env.prod"
             VALIDATION_PG_USER=$(grep '^POSTGRES_USER=' "$ENV_FILE" | cut -d'=' -f2- || echo "alice")
             VALIDATION_PG_DB=$(grep '^POSTGRES_DB=' "$ENV_FILE" | cut -d'=' -f2- || echo "alice_prod")
-
+            
             # FAIL-FAST: Verificar saúde antes de operações críticas
             if ! check_container_health "Verificando containers antes de pgvector"; then
               exit 1
             fi
-
+            
             # CORREÇÃO 31/12/2025: Tornar criação de pgvector OBRIGATÓRIA com retry logic (fail-fast)
             # PROBLEMA ANTERIOR: Falha silenciosa permitia deploy continuar sem extensão,
             # causando crash loop em auth-service e training-service (vector type not found)
@@ -2980,7 +2535,7 @@ METRICS_EOF
             PGVECTOR_MAX_RETRIES=15
             PGVECTOR_RETRY_COUNT=0
             PGVECTOR_DELAY=3
-
+            
             while [ $PGVECTOR_RETRY_COUNT -lt $PGVECTOR_MAX_RETRIES ]; do
               if docker exec alice-postgres psql -U "${VALIDATION_PG_USER}" -d "${VALIDATION_PG_DB}" \
                 -c "CREATE EXTENSION IF NOT EXISTS vector;" 2>/dev/null; then
@@ -2991,7 +2546,7 @@ METRICS_EOF
                   break
                 fi
               fi
-
+              
               PGVECTOR_RETRY_COUNT=$((PGVECTOR_RETRY_COUNT + 1))
               if [ $PGVECTOR_RETRY_COUNT -eq $PGVECTOR_MAX_RETRIES ]; then
                 echo "❌ ERRO CRÍTICO: Falha ao criar extensão pgvector após ${PGVECTOR_MAX_RETRIES} tentativas"
@@ -3004,9 +2559,9 @@ METRICS_EOF
                 docker logs alice-postgres --tail 30 2>/dev/null || true
                 exit 1
               fi
-
+              
               echo "⚠️ Tentativa ${PGVECTOR_RETRY_COUNT}/${PGVECTOR_MAX_RETRIES} falhou, aguardando ${PGVECTOR_DELAY}s..."
-
+              
               # CORREÇÃO 16-18: Métricas periódicas durante retry (a cada 3 tentativas)
               if [ $((PGVECTOR_RETRY_COUNT % 3)) -eq 0 ]; then
                 echo ""
@@ -3014,7 +2569,7 @@ METRICS_EOF
                 docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}" alice-postgres alice-redis 2>/dev/null || true
                 echo ""
               fi
-
+              
               sleep $PGVECTOR_DELAY
               # Exponential backoff com cap em 15s
               PGVECTOR_DELAY=$((PGVECTOR_DELAY * 2))
@@ -3026,14 +2581,14 @@ METRICS_EOF
             # =================================================================
             # PROBLEMA: pgBackRest requer archive_mode=on para backup PITR
             # Sem isso, stanza-create falha com "archive_mode must be enabled"
-            #
+            # 
             # VALIDAÇÃO: Verificar se archive_mode está habilitado
             # Se não estiver, emitir warning (pode ser primeira execução)
             # =================================================================
             echo "🔍 Validando configuração WAL archiving do PostgreSQL..."
             ARCHIVE_MODE=$(docker exec alice-postgres psql -U "${VALIDATION_PG_USER}" -d "${VALIDATION_PG_DB}" \
               -t -c "SHOW archive_mode;" 2>/dev/null | xargs || echo "off")
-
+            
             if [ "$ARCHIVE_MODE" = "on" ]; then
               echo "✅ archive_mode habilitado: $ARCHIVE_MODE"
 
@@ -3041,7 +2596,7 @@ METRICS_EOF
               ARCHIVE_CMD=$(docker exec alice-postgres psql -U "${VALIDATION_PG_USER}" -d "${VALIDATION_PG_DB}" \
                 -t -c "SHOW archive_command;" 2>/dev/null | xargs || echo "")
               echo "   archive_command: $ARCHIVE_CMD"
-
+              
               # =================================================================
               # CORREÇÃO 01/01/2026: Inicializar stanza pgBackRest se necessário
               # =================================================================
@@ -3072,25 +2627,25 @@ METRICS_EOF
               else
                 echo "⚠️ Stanza não existe ou precisa ser criada/atualizada"
                 echo "   Executando stanza-create..."
-
+                
                 # Tentar stanza-create com retry
                 STANZA_MAX_RETRIES=5
                 STANZA_RETRY_COUNT=0
                 STANZA_DELAY=5
-
+                
                 while [ $STANZA_RETRY_COUNT -lt $STANZA_MAX_RETRIES ]; do
                   # Primeiro tentar stanza-upgrade (para repositório existente)
                   if docker exec alice-pgbackrest pgbackrest --stanza=alice_prod stanza-upgrade 2>/dev/null; then
                     echo "✅ Stanza upgrade bem-sucedido"
                     break
                   fi
-
+                  
                   # Se upgrade falhar, tentar create (repositório novo)
                   if docker exec alice-pgbackrest pgbackrest --stanza=alice_prod stanza-create 2>/dev/null; then
                     echo "✅ Stanza create bem-sucedido"
                     break
                   fi
-
+                  
                   STANZA_RETRY_COUNT=$((STANZA_RETRY_COUNT + 1))
                   if [ $STANZA_RETRY_COUNT -eq $STANZA_MAX_RETRIES ]; then
                     echo "⚠️ AVISO: Não foi possível criar/atualizar stanza após ${STANZA_MAX_RETRIES} tentativas"
@@ -3100,11 +2655,11 @@ METRICS_EOF
                     # Não falhar deploy por isso - serviços principais devem funcionar
                     break
                   fi
-
+                  
                   echo "   Tentativa ${STANZA_RETRY_COUNT}/${STANZA_MAX_RETRIES} falhou, aguardando ${STANZA_DELAY}s..."
                   sleep $STANZA_DELAY
                 done
-
+                
                 # Verificar check após create/upgrade
                 echo "   Executando pgbackrest check..."
                 if docker exec alice-pgbackrest pgbackrest --stanza=alice_prod check 2>/dev/null; then
@@ -3138,16 +2693,16 @@ METRICS_EOF
             # mas sai com código 0, então || echo "0" nunca executa. DB_EXISTS fica como string vazia.
             # SOLUÇÃO: Usar ${VAR:-0} para garantir que string vazia vira "0"
             DB_EXISTS="${DB_EXISTS:-0}"
-
+            
             if [ "$DB_EXISTS" != "1" ]; then
               echo "❌ ERRO: Database ${VALIDATION_PG_DB} não existe!"
               echo "   Ação necessária: PostgreSQL não criou o database automaticamente."
               echo "   Verificar: POSTGRES_DB no .env.prod e docker-compose.prod.yml"
               exit 1
             fi
-
+            
             echo "✅ Database ${VALIDATION_PG_DB} existe"
-
+            
             # Verificar se tem tabelas (schema Drizzle ORM)
             # Contar tabelas no schema 'public' (Drizzle cria tabelas lá)
             TABLE_COUNT=$(docker exec alice-postgres psql -U "${VALIDATION_PG_USER}" -d "${VALIDATION_PG_DB}" -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';" 2>/dev/null | xargs || echo "0")
@@ -3159,17 +2714,17 @@ METRICS_EOF
             # e concluir incorretamente que tabelas existem. Serviços podem iniciar sem schema necessário.
             # SOLUÇÃO: Usar ${VAR:-0} para garantir que string vazia vira "0"
             TABLE_COUNT="${TABLE_COUNT:-0}"
-
+            
             if [ "$TABLE_COUNT" -eq "0" ]; then
               echo "⚠️ AVISO: Database existe mas não há tabelas (schema vazio)"
-
+              
               # FAIL-FAST: Verificar containers antes de drizzle-kit push
               if ! check_container_health "Verificando containers antes de drizzle-kit"; then
                 exit 1
               fi
-
+              
               echo "   Executando drizzle-kit push para criar schema base..."
-
+              
               # =================================================================
               # CORREÇÃO CRÍTICA 29/12/2025: Executar drizzle-kit push ANTES
               # de iniciar serviços Alice (Regra 6 - Enterprise-Grade)
@@ -3185,7 +2740,7 @@ METRICS_EOF
               # NOTA: drizzle-kit push é idempotente - pode ser executado múltiplas vezes
               # sem causar problemas (cria apenas tabelas que não existem)
               # =================================================================
-
+              
               # Construir DATABASE_URL com URL-encoding (RFC 3986)
               # CORREÇÃO 23/12/2025: Suporta senhas com caracteres especiais
               # CORREÇÃO CRÍTICA 29/12/2025: Extrair valores do .env.prod (não variáveis shell)
@@ -3200,14 +2755,14 @@ METRICS_EOF
               PG_USER="${VALIDATION_PG_USER}"
               PG_PASS=$(grep '^POSTGRES_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2-)
               PG_DB="${VALIDATION_PG_DB}"
-
+              
               # Validação fail-fast: senha não pode estar vazia
               if [ -z "$PG_PASS" ]; then
                 echo "❌ ERRO: POSTGRES_PASSWORD não encontrado ou vazio no .env.prod"
                 echo "   Ação necessária: Verificar se POSTGRES_PASSWORD está definido em $ENV_FILE"
                 exit 1
               fi
-
+              
               # Função urlencode (RFC 3986 compliant)
               # CORREÇÃO 29/12/2025: Conversão de caractere para hex em dois passos
               # PROBLEMA: printf -v o '%%%02X' "'$c" não funciona corretamente quando $c é variável expandida
@@ -3218,7 +2773,7 @@ METRICS_EOF
                 local length="${#string}"
                 local i c ascii hex
                 local encoded=""
-
+                
                 for (( i=0; i<length; i++ )); do
                   c="${string:i:1}"
                   case "$c" in
@@ -3237,11 +2792,11 @@ METRICS_EOF
                 done
                 echo "${encoded}"
               }
-
+              
               PG_USER_ENCODED=$(urlencode "$PG_USER")
               PG_PASS_ENCODED=$(urlencode "$PG_PASS")
               PG_DB_ENCODED=$(urlencode "$PG_DB")
-
+              
               # =================================================================
               # CORREÇÃO CRÍTICA 29/12/2025: Hostname correto para container standalone
               # =================================================================
@@ -3252,19 +2807,19 @@ METRICS_EOF
               # SOLUÇÃO: Usar alice-postgres como hostname no DATABASE_URL
               # =================================================================
               DATABASE_URL="postgresql://${PG_USER_ENCODED}:${PG_PASS_ENCODED}@alice-postgres:5432/${PG_DB_ENCODED}?sslmode=disable"
-
+              
               echo "📦 Executando drizzle-kit push para criar schema base..."
-
+              
               # =================================================================
               # CORREÇÃO 29/12/2025: Executar drizzle-kit push em container temporário
               # =================================================================
               # PROBLEMA: Volume montado como :ro (read-only) impede pnpm install
               # SOLUÇÃO: Copiar código para volume temporário rw ou usar bind mount rw
               # =================================================================
-
+              
               # Validar conexão PostgreSQL antes de executar drizzle-kit push
               echo "   Validando conexão PostgreSQL..."
-
+              
               # Verificar se container está healthy
               PG_HEALTH=$(docker inspect --format='{{.State.Health.Status}}' alice-postgres 2>/dev/null || echo "none")
               if [ "$PG_HEALTH" != "healthy" ] && [ "$PG_HEALTH" != "none" ]; then
@@ -3272,7 +2827,7 @@ METRICS_EOF
                 echo "   Aguardando healthcheck passar..."
                 sleep 10
               fi
-
+              
               # Validar conexão com retry
               # CORREÇÃO 29/12/2025: Usar credenciais extraídas do .env.prod (não defaults)
               MAX_RETRIES=12
@@ -3290,12 +2845,12 @@ METRICS_EOF
                 sleep "$MONITOR_INTERVAL"
               done
               echo "   ✅ PostgreSQL está pronto e acessível"
-
+              
               # Executar drizzle-kit push em container temporário Node.js
               # Usa imagem oficial node:22-bookworm-slim (mesma base dos serviços Alice)
               # CORREÇÃO 29/12/2025: Volume montado como ro (read-only) - pnpm install usa cache externo
               echo "   Construindo DATABASE_URL e executando drizzle-kit push..."
-
+              
               # =================================================================
               # CORREÇÃO CRÍTICA 29/12/2025: Copiar código para volume temporário rw
               # =================================================================
@@ -3309,11 +2864,11 @@ METRICS_EOF
               # necessários sem modificar código original
               # =================================================================
               echo "   Preparando ambiente temporário para drizzle-kit push..."
-
+              
               # Limpar volumes temporários de execuções anteriores
               rm -rf /tmp/drizzle-app /tmp/pnpm-store
               mkdir -p /tmp/pnpm-store
-
+              
               # Copiar código completo para volume temporário rw
               # Usar cp -a para cópia recursiva (preserva permissões, mais portável que rsync)
               # Excluir diretórios grandes desnecessários para economizar espaço e tempo
@@ -3323,12 +2878,12 @@ METRICS_EOF
                 # Fallback: usar find + cp se cp -a falhar (edge cases de permissões)
                 (cd /opt/alice/app && find . -mindepth 1 -maxdepth 1 ! -name 'node_modules' ! -name '.git' ! -name 'dist' -exec cp -a {} /tmp/drizzle-app/ \;)
               }
-
+              
               # Remover diretórios grandes desnecessários para economizar espaço
               rm -rf /tmp/drizzle-app/node_modules /tmp/drizzle-app/.git /tmp/drizzle-app/dist 2>/dev/null || true
-
+              
               echo "   ✅ Código copiado para /tmp/drizzle-app (volume rw)"
-
+              
               # =================================================================
               # CORREÇÃO CRÍTICA 29/12/2025: Timeout wrapper de 300s (5 min)
               # =================================================================
@@ -3346,7 +2901,7 @@ METRICS_EOF
               # =================================================================
               DRIZZLE_TIMEOUT=180
               echo "   Executando drizzle-kit push com timeout de ${DRIZZLE_TIMEOUT}s (3 min)..."
-
+              
               DRIZZLE_EXIT_CODE=0
               TIMEOUT_EXIT_CODE=0
               timeout ${DRIZZLE_TIMEOUT}s docker run --rm \
@@ -3367,15 +2922,15 @@ METRICS_EOF
                   pnpm install --frozen-lockfile --prefer-offline
                   pnpm db:push
                 " > /tmp/drizzle-push.log 2>&1 || TIMEOUT_EXIT_CODE=$?
-
+              
               # Capturar exit code do timeout (124 = timeout, outros = erro do comando)
               DRIZZLE_EXIT_CODE=$TIMEOUT_EXIT_CODE
-
+              
               # Exibir logs independente do resultado
               echo "   Logs do drizzle-kit push:"
               cat /tmp/drizzle-push.log || true
               echo ""
-
+              
               # Verificar se drizzle-kit push foi bem-sucedido
               # CORREÇÃO 29/12/2025: Distinguir entre timeout (124) e outros erros
               if [ "$DRIZZLE_EXIT_CODE" -eq 124 ]; then
@@ -3401,7 +2956,7 @@ METRICS_EOF
                 rm -rf /tmp/drizzle-app /tmp/pnpm-store 2>/dev/null || true
                 exit 1
               fi
-
+              
               # Verificar novamente se tabelas foram criadas
               # CORREÇÃO 29/12/2025: Usar credenciais extraídas do .env.prod (não defaults)
               sleep 2
@@ -3412,7 +2967,7 @@ METRICS_EOF
               # A comparação [ "$TABLE_COUNT_AFTER" -eq "0" ] em string vazia produz erro bash.
               # SOLUÇÃO: Usar ${VAR:-0} para garantir que string vazia vira "0"
               TABLE_COUNT_AFTER="${TABLE_COUNT_AFTER:-0}"
-
+              
               if [ "$TABLE_COUNT_AFTER" -eq "0" ]; then
                 echo "❌ ERRO: drizzle-kit push executou mas nenhuma tabela foi criada!"
                 echo "   Verificar: Schema Drizzle ORM em packages/shared/src/schema.ts"
@@ -3420,9 +2975,9 @@ METRICS_EOF
                 rm -rf /tmp/drizzle-app /tmp/pnpm-store 2>/dev/null || true
                 exit 1
               fi
-
+              
               echo "✅ Schema criado: $TABLE_COUNT_AFTER tabelas criadas pelo drizzle-kit push"
-
+              
               # Limpar volume temporário após sucesso (economiza espaço em disco)
               echo "   Limpando volume temporário..."
               rm -rf /tmp/drizzle-app /tmp/pnpm-store 2>/dev/null || true
@@ -3430,18 +2985,18 @@ METRICS_EOF
             else
               echo "✅ Schema validado: $TABLE_COUNT tabelas encontradas"
             fi
-
+            
             # =================================================================
             # CORREÇÃO 31/12/2025: Validar tabelas críticas específicas
             # =================================================================
             # PROBLEMA: Identity Provisioning e outros serviços falham com erros
             # de query contínuos quando tabelas específicas não existem
-            #
+            # 
             # SOLUÇÃO: Validar tabelas críticas ANTES de iniciar serviços
             # Falhar deploy se tabelas obrigatórias não existem
             # =================================================================
             echo "🔍 Validando tabelas críticas..."
-
+            
             CRITICAL_TABLES=(
               "users"
               "tenants"
@@ -3451,17 +3006,17 @@ METRICS_EOF
               "conversations"
               "messages"
             )
-
+            
             MISSING_TABLES=()
             for table in "${CRITICAL_TABLES[@]}"; do
               EXISTS=$(docker exec alice-postgres psql -U "${VALIDATION_PG_USER}" -d "${VALIDATION_PG_DB}" \
                 -t -c "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '${table}';" 2>/dev/null | xargs || echo "0")
-
+              
               if [ "$EXISTS" != "1" ]; then
                 MISSING_TABLES+=("$table")
               fi
             done
-
+            
             if [ ${#MISSING_TABLES[@]} -gt 0 ]; then
               echo "❌ ERRO: Tabelas críticas faltando no schema:"
               for table in "${MISSING_TABLES[@]}"; do
@@ -3472,22 +3027,22 @@ METRICS_EOF
               echo "   Verificar logs do drizzle-kit push acima"
               exit 1
             fi
-
+            
             echo "✅ Todas as tabelas críticas existem"
-
+            
             # CORRIGIDO 28/12/2025: grep -c retorna stdout "0" E exit code 1 quando não encontra
             RUNNING=$(docker compose -f docker-compose.prod.yml ps --format "{{.State}}" | grep -c "running" 2>/dev/null) || RUNNING=0
             echo ""
             echo "=============================================="
             echo "✅ Deploy CORE concluído: ${RUNNING} containers rodando"
             echo "=============================================="
-
+            
             # Diagnóstico imediato do gpu-manager (depende de Redis)
             echo ""
             echo "🔎 Verificando estado do alice-gpu-manager..."
             GPU_MANAGER_STATE=$(docker compose -f docker-compose.prod.yml --env-file .env.prod ps --format "{{.Name}} {{.State}}" gpu-manager 2>/dev/null || true)
             echo "Estado atual: ${GPU_MANAGER_STATE:-\"(não encontrado)\"}"
-
+            
             if ! echo "${GPU_MANAGER_STATE}" | grep -q "healthy"; then
               echo "⚠️ alice-gpu-manager não está healthy. Capturando logs e inspect..."
               docker compose -f docker-compose.prod.yml --env-file .env.prod ps || true
@@ -3501,7 +3056,7 @@ METRICS_EOF
               docker compose -f docker-compose.prod.yml --env-file .env.prod logs --tail=500 alice-redis || true
               exit 1
             fi
-
+            
             # =================================================================
             # FASE 8: Iniciar serviços GPU (OBRIGATÓRIO)
             # =================================================================
@@ -3509,10 +3064,10 @@ METRICS_EOF
             # GPU PROFILE: gpu-llm (Mixtral para chat/inference)
             # Outros profiles disponíveis: gpu-embeddings, gpu-flux, gpu-asr, gpu-training
             # NOTA: Apenas UM profile GPU deve estar ativo por vez (GPU única de 20GB)
-
+            
             GPU_PROFILE="${GPU_PROFILE:-gpu-llm}"
             GPU_RUNNING=0
-
+            
             echo ""
             echo "🎮 Iniciando serviços GPU com profile: ${GPU_PROFILE}..."
             docker compose -f docker-compose.prod.yml --env-file .env.prod --profile "${GPU_PROFILE}" pull
@@ -3521,7 +3076,7 @@ METRICS_EOF
               docker compose -f docker-compose.prod.yml --env-file .env.prod --profile "${GPU_PROFILE}" ps || true
               exit 1
             fi
-
+            
             sleep 15
             # CORRIGIDO 28/12/2025: grep -c retorna stdout "0" E exit code 1 quando não encontra
             GPU_RUNNING=$(docker ps --format "{{.Names}}" | grep -c "^gpu-" 2>/dev/null) || GPU_RUNNING=0
@@ -3537,128 +3092,94 @@ METRICS_EOF
               done
               exit 1
             fi
-
+            
             # =================================================================
-            # CORREÇÃO PROBLEMA #7 (04/01/2026): Smoke tests enterprise completos
+            # MELHORIA M1 (02/01/2026): Smoke Tests Pós-Deploy
             # =================================================================
             # Validar serviços críticos ANTES de marcar deploy como sucesso
             # Detecta problemas de conectividade/funcionalidade cedo
             # =================================================================
-            run_smoke_tests() {
-              log "🧪 Executando smoke tests..."
-
-              local failed=0
-
-              # Test 1: PostgreSQL aceita conexões
-              echo "🔍 Test 1: PostgreSQL aceita conexões..."
-              if timeout $SMOKE_TEST_TIMEOUT_SECONDS docker exec alice-postgres pg_isready -U alice 2>/dev/null; then
-                echo "   ✅ PostgreSQL: OK"
-              else
-                echo "   ❌ PostgreSQL: FALHOU"
-                failed=$((failed + 1))
-              fi
-
-              # Test 2: pgvector operacional
-              echo "🔍 Test 2: pgvector operacional..."
-              PGVECTOR_TEST=$(timeout $SMOKE_TEST_TIMEOUT_SECONDS docker exec alice-postgres psql -U alice -d alice_prod -t -c "SELECT '[1,2,3]'::vector <-> '[4,5,6]'::vector AS distance;" 2>/dev/null | xargs || echo "")
-              if [ -n "$PGVECTOR_TEST" ]; then
-                echo "   ✅ pgvector: OK (distância: $PGVECTOR_TEST)"
-              else
-                echo "   ❌ pgvector: FALHOU"
-                failed=$((failed + 1))
-              fi
-
-              # Test 3: Redis responde
-              echo "🔍 Test 3: Redis responde..."
-              REDIS_PWD=$(grep '^REDIS_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2- || echo "")
-              if timeout $SMOKE_TEST_TIMEOUT_SECONDS docker exec alice-redis redis-cli -a "$REDIS_PWD" --no-auth-warning PING 2>/dev/null | grep -q "PONG"; then
-                echo "   ✅ Redis: OK"
-              else
-                echo "   ❌ Redis: FALHOU"
-                failed=$((failed + 1))
-              fi
-
-              # Test 4: Auth service health
-              echo "🔍 Test 4: Auth service health..."
-              if timeout $SMOKE_TEST_TIMEOUT_SECONDS docker exec alice-auth wget -q -O- http://localhost:3001/health 2>/dev/null | grep -q '"status"'; then
-                echo "   ✅ Auth service: OK"
-              else
-                echo "   ❌ Auth service: FALHOU"
-                failed=$((failed + 1))
-              fi
-
-              # Test 5: Caddy responde HTTP
-              echo "🔍 Test 5: Caddy responde HTTP..."
-              if timeout $SMOKE_TEST_TIMEOUT_SECONDS docker exec alice-caddy wget -q --spider http://localhost:80/ 2>/dev/null || \
-                 timeout $SMOKE_TEST_TIMEOUT_SECONDS docker exec alice-caddy wget -q --spider --timeout=5 http://localhost:2019/metrics 2>/dev/null; then
-                echo "   ✅ Caddy: OK"
-              else
-                echo "   ⚠️ Caddy: HTTP não respondeu (não crítico se SSL ainda não configurado)"
-              fi
-
-              # Test 6: GPU Manager responde
-              echo "🔍 Test 6: GPU Manager responde..."
-              if timeout $SMOKE_TEST_TIMEOUT_SECONDS docker exec alice-gpu-manager wget -q --spider http://localhost:3010/health 2>/dev/null; then
-                echo "   ✅ GPU Manager: OK"
-              else
-                echo "   ⚠️ GPU Manager: não respondeu (verificar se está healthy)"
-              fi
-
-              # Test 7: Chat Service alcança GPU Manager (conectividade inter-service)
-              echo "🔍 Test 7: Chat → GPU Manager (conectividade)..."
-              if timeout $SMOKE_TEST_TIMEOUT_SECONDS docker exec alice-chat wget -q --spider http://alice-gpu-manager:3010/health 2>/dev/null; then
-                echo "   ✅ Chat → GPU Manager: OK"
-              else
-                echo "   ⚠️ Chat → GPU Manager: não alcança (verificar network)"
-              fi
-
-              # Test 8: pgBackRest stanza
-              echo "🔍 Test 8: pgBackRest stanza..."
-              if timeout $SMOKE_TEST_TIMEOUT_SECONDS docker exec alice-postgres pgbackrest --stanza=alice_prod info 2>/dev/null | grep -q "status"; then
-                echo "   ✅ pgBackRest stanza: OK"
-              else
-                echo "   ⚠️ pgBackRest stanza: não encontrada (não crítico no primeiro deploy)"
-              fi
-
-              # Test 9: Qdrant responde
-              echo "🔍 Test 9: Qdrant (vector DB)..."
-              if timeout $SMOKE_TEST_TIMEOUT_SECONDS docker exec alice-qdrant wget -q -O- http://localhost:6333/healthz 2>/dev/null | grep -q "ok"; then
-                echo "   ✅ Qdrant: OK"
-              else
-                echo "   ⚠️ Qdrant: não respondeu"
-              fi
-
-              # Test 10: MinIO responde
-              echo "🔍 Test 10: MinIO (storage)..."
-              if timeout $SMOKE_TEST_TIMEOUT_SECONDS docker exec alice-minio wget -q -O- http://localhost:9000/minio/health/live 2>/dev/null; then
-                echo "   ✅ MinIO: OK"
-              else
-                echo "   ⚠️ MinIO: não respondeu"
-              fi
-
-              if [ $failed -gt 0 ]; then
-                log "❌ $failed smoke test(s) crítico(s) falharam"
-                return 1
-              fi
-
-              log "✅ Todos os smoke tests passaram ($failed falhas)"
-              return 0
-            }
-
             progress 13 "Executando smoke tests"
             echo ""
             echo "=============================================="
             echo "🧪 SMOKE TESTS PÓS-DEPLOY"
             echo "=============================================="
-
-            if ! run_smoke_tests; then
+            
+            SMOKE_FAILED=0
+            
+            # Test 1: PostgreSQL aceita conexões
+            echo "🔍 Test 1: PostgreSQL aceita conexões..."
+            if docker exec alice-postgres pg_isready -U alice 2>/dev/null; then
+              echo "   ✅ PostgreSQL: OK"
+            else
+              echo "   ❌ PostgreSQL: FALHOU"
+              SMOKE_FAILED=1
+            fi
+            
+            # Test 2: pgvector operacional
+            echo "🔍 Test 2: pgvector operacional..."
+            PGVECTOR_TEST=$(docker exec alice-postgres psql -U alice -d alice_prod -t -c "SELECT '[1,2,3]'::vector <-> '[4,5,6]'::vector AS distance;" 2>/dev/null | xargs || echo "")
+            if [ -n "$PGVECTOR_TEST" ]; then
+              echo "   ✅ pgvector: OK (distância calculada: $PGVECTOR_TEST)"
+            else
+              echo "   ❌ pgvector: FALHOU"
+              SMOKE_FAILED=1
+            fi
+            
+            # Test 3: Redis responde
+            echo "🔍 Test 3: Redis responde..."
+            REDIS_PWD=$(grep '^REDIS_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2- || echo "")
+            if docker exec alice-redis redis-cli -a "$REDIS_PWD" --no-auth-warning PING 2>/dev/null | grep -q "PONG"; then
+              echo "   ✅ Redis: OK"
+            else
+              echo "   ❌ Redis: FALHOU"
+              SMOKE_FAILED=1
+            fi
+            
+            # Test 4: Caddy responde HTTP
+            echo "🔍 Test 4: Caddy responde HTTP..."
+            if docker exec alice-caddy wget -q --spider http://localhost:80/ 2>/dev/null || \
+               docker exec alice-caddy wget -q --spider --timeout=5 http://localhost:2019/metrics 2>/dev/null; then
+              echo "   ✅ Caddy: OK"
+            else
+              echo "   ⚠️ Caddy: HTTP não respondeu (pode ser normal se SSL ainda não configurado)"
+            fi
+            
+            # Test 5: GPU Manager responde (MELHORIA M3: conectividade entre services)
+            echo "🔍 Test 5: GPU Manager responde..."
+            if docker exec alice-gpu-manager wget -q --spider http://localhost:3010/health 2>/dev/null; then
+              echo "   ✅ GPU Manager: OK"
+            else
+              echo "   ⚠️ GPU Manager: não respondeu (verificar se está healthy)"
+            fi
+            
+            # Test 6: Chat Service alcança GPU Manager (MELHORIA M3)
+            echo "🔍 Test 6: Chat Service → GPU Manager (conectividade)..."
+            if docker exec alice-chat wget -q --spider http://alice-gpu-manager:3010/health 2>/dev/null; then
+              echo "   ✅ Chat → GPU Manager: OK"
+            else
+              echo "   ⚠️ Chat → GPU Manager: não alcança (verificar network)"
+            fi
+            
+            # Test 7: pgBackRest stanza existe e está acessível (PROBLEMA #8)
+            echo "🔍 Test 7: pgBackRest stanza..."
+            if docker exec alice-postgres pgbackrest --stanza=alice_prod info 2>/dev/null | grep -q "status"; then
+              echo "   ✅ pgBackRest stanza: OK"
+            else
+              echo "   ⚠️ pgBackRest stanza: não encontrada (verificar pgbackrest-init)"
+              echo "      NOTA: stanza-upgrade pode ser necessário após postgres iniciar"
+            fi
+            
+            echo ""
+            if [ $SMOKE_FAILED -eq 1 ]; then
               echo "❌ ERRO: Um ou mais smoke tests críticos falharam!"
               echo "   Deploy pode estar em estado inconsistente"
               exit 1
             fi
-
+            
+            echo "✅ Todos os smoke tests críticos passaram"
             echo "=============================================="
-
+            
             # Status final
             TOTAL_RUNNING=$(docker ps --format "{{.Names}}" | wc -l)
             echo ""
@@ -3670,145 +3191,27 @@ METRICS_EOF
             echo "   - Profile GPU ativo: ${GPU_PROFILE}"
             echo "   - Smoke tests: PASSOU"
             echo "=============================================="
-
+            
             # =================================================================
             # MELHORIA M2 (02/01/2026): Persistir métricas de deploy
             # Útil para análise de performance de deploys passados
-            #
-            # CORREÇÃO MELHORIA #1 (04/01/2026): Métricas completas de sucesso
             # =================================================================
             DEPLOY_END=$(date +%s)
             DEPLOY_DURATION=$((DEPLOY_END - DEPLOY_START))
-
-            collect_deploy_metrics() {
-              log "📊 Coletando métricas de deploy..."
-
-              cat > /opt/alice/logs/deploy-metrics-$(date +%Y%m%d-%H%M%S).json <<METRICS_EOF
-{
-  "version": "${IMAGE_TAG}",
-  "timestamp": "$(date -Iseconds)",
-  "duration_seconds": ${DEPLOY_DURATION},
-  "duration_minutes": $((DEPLOY_DURATION / 60)),
-  "status": "success",
-  "containers_total": ${TOTAL_RUNNING},
-  "containers_gpu": ${GPU_RUNNING:-0},
-  "gpu_profile": "${GPU_PROFILE:-none}",
-  "smoke_tests": "passed",
-  "initiated_by": "${GITHUB_ACTOR:-unknown}",
-  "commit_sha": "${GITHUB_SHA:-unknown}"
-}
-METRICS_EOF
-
-              log "✅ Métricas salvas em /opt/alice/logs/deploy-metrics-*.json"
+            cat > /opt/alice/logs/deploy-metrics-$(date +%Y%m%d-%H%M%S).json <<EOF
+            {
+              "version": "${IMAGE_TAG}",
+              "timestamp": "$(date -Iseconds)",
+              "duration_seconds": ${DEPLOY_DURATION},
+              "status": "success",
+              "containers_total": ${TOTAL_RUNNING},
+              "containers_gpu": ${GPU_RUNNING:-0},
+              "gpu_profile": "${GPU_PROFILE:-none}",
+              "smoke_tests": "passed"
             }
-
-            collect_deploy_metrics
-
-            # =================================================================
-            # MELHORIA #2 (04/01/2026): Notificações de deploy
-            # =================================================================
-            # Envia notificação de sucesso/falha via Slack ou Email
-            # Configurado via secrets: SLACK_WEBHOOK_URL (opcional)
-            # =================================================================
-            send_deploy_notification() {
-              local status="$1"
-              local message="$2"
-
-              log "📬 Enviando notificação de deploy: $status"
-
-              # Slack webhook (se configurado)
-              if [ -n "${SLACK_WEBHOOK_URL:-}" ]; then
-                local emoji="✅"
-                local color="good"
-                if [ "$status" = "failed" ]; then
-                  emoji="❌"
-                  color="danger"
-                fi
-
-                curl -X POST "$SLACK_WEBHOOK_URL" \
-                  -H 'Content-Type: application/json' \
-                  -d "{
-                    \"text\": \"${emoji} Deploy ${status}: ${message}\",
-                    \"attachments\": [{
-                      \"color\": \"${color}\",
-                      \"fields\": [
-                        {\"title\": \"Versão\", \"value\": \"${IMAGE_TAG}\", \"short\": true},
-                        {\"title\": \"Duração\", \"value\": \"$((DEPLOY_DURATION / 60))min ${((DEPLOY_DURATION % 60))}s\", \"short\": true},
-                        {\"title\": \"Containers\", \"value\": \"${TOTAL_RUNNING}\", \"short\": true},
-                        {\"title\": \"Autor\", \"value\": \"${GITHUB_ACTOR:-unknown}\", \"short\": true}
-                      ]
-                    }]
-                  }" \
-                  2>/dev/null && log "✅ Notificação Slack enviada" || log "⚠️ Falha ao enviar notificação Slack"
-              else
-                log "ℹ️  SLACK_WEBHOOK_URL não configurado - pulando notificação"
-              fi
-            }
-
-            send_deploy_notification "success" "Alice Enterprise Platform v${IMAGE_TAG} deployed successfully"
-
-      # ==========================================================================
-      # CORREÇÃO 04/01/2026: Capturar métricas de deploy para registro BD
-      # Lê valores do arquivo JSON criado pelo deploy via SSH e exporta outputs
-      # Esses valores são usados no job register-success para popular as colunas
-      # duration_seconds e containers_count na tabela deployments
-      # ==========================================================================
-      - name: Capturar métricas de deploy
-        id: capture-metrics
-        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
-        with:
-          host: ${{ secrets.HETZNER_VM_HOST }}
-          username: ${{ secrets.HETZNER_VM_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          script: |
-            # Buscar arquivo de métricas mais recente
-            METRICS_FILE=$(ls -t /opt/alice/logs/deploy-metrics-*.json 2>/dev/null | head -1)
-            
-            if [ -f "$METRICS_FILE" ]; then
-              # Extrair valores com jq
-              DURATION=$(jq -r '.duration_seconds // 0' "$METRICS_FILE")
-              CONTAINERS=$(jq -r '.containers_total // 0' "$METRICS_FILE")
-              
-              echo "📊 Métricas capturadas:"
-              echo "   Duration: ${DURATION}s"
-              echo "   Containers: ${CONTAINERS}"
-              
-              # Exportar para arquivo temporário (SSH não pode escrever em $GITHUB_OUTPUT diretamente)
-              echo "${DURATION}" > /tmp/deploy_duration.txt
-              echo "${CONTAINERS}" > /tmp/deploy_containers.txt
-            else
-              echo "⚠️ Arquivo de métricas não encontrado"
-              echo "0" > /tmp/deploy_duration.txt
-              echo "0" > /tmp/deploy_containers.txt
-            fi
-
-      - name: Exportar métricas como outputs
-        id: export-metrics
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-        run: |
-          # Configurar SSH temporariamente para este step
-          mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H ${{ secrets.HETZNER_VM_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
-          
-          # Baixar valores do servidor via SSH
-          DURATION=$(ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key \
-            ${{ secrets.HETZNER_VM_USER }}@${{ secrets.HETZNER_VM_HOST }} \
-            "cat /tmp/deploy_duration.txt 2>/dev/null || echo 0")
-          
-          CONTAINERS=$(ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key \
-            ${{ secrets.HETZNER_VM_USER }}@${{ secrets.HETZNER_VM_HOST }} \
-            "cat /tmp/deploy_containers.txt 2>/dev/null || echo 0")
-          
-          # Limpar chave SSH
-          rm -f ~/.ssh/deploy_key
-          
-          echo "duration_seconds=${DURATION}" >> $GITHUB_OUTPUT
-          echo "containers_count=${CONTAINERS}" >> $GITHUB_OUTPUT
-          
-          echo "✅ Métricas exportadas: ${DURATION}s, ${CONTAINERS} containers"
+            EOF
+            echo ""
+            echo "📊 Métricas de deploy salvas em /opt/alice/logs/"
 
   # ===========================================================================
   # Job 4: Health Check
@@ -3820,10 +3223,10 @@ METRICS_EOF
     timeout-minutes: 5
     needs: deploy
     if: needs.deploy.result == 'success'
-
+    
     outputs:
       health_status: ${{ steps.health.outputs.status }}
-
+    
     steps:
       - name: Aguardar serviços iniciarem
         run: |
@@ -3835,11 +3238,11 @@ METRICS_EOF
         continue-on-error: true
         run: |
           FAILED=0
-
+          
           echo "=============================================="
           echo "HEALTH CHECK - SERVIÇOS PÚBLICOS"
           echo "=============================================="
-
+          
           for endpoint in \
             "Frontend:https://yesyoudeserve.duckdns.org/health" \
             "Auth:https://yesyoudeserve.duckdns.org/api/auth/health" \
@@ -3848,7 +3251,7 @@ METRICS_EOF
           do
             NAME="${endpoint%%:*}"
             URL="${endpoint#*:}"
-
+            
             if curl -sf --max-time 30 "$URL" > /dev/null 2>&1; then
               echo "✅ $NAME OK"
             else
@@ -3856,7 +3259,7 @@ METRICS_EOF
               FAILED=$((FAILED + 1))
             fi
           done
-
+          
           echo "PUBLIC_FAILED=$FAILED" >> $GITHUB_OUTPUT
 
       - name: Health Check - GPU Manager (via SSH)
@@ -3883,11 +3286,11 @@ METRICS_EOF
         if: always()
         run: |
           FAILED=${{ steps.health-public.outputs.PUBLIC_FAILED || 0 }}
-
+          
           if [ "${{ steps.health-gpu-manager.outcome }}" != "success" ]; then
             FAILED=$((FAILED + 1))
           fi
-
+          
           # Verificar ERPNext e Grafana
           for endpoint in \
             "ERPNext:https://erp.yesyoudeserve.duckdns.org/api/method/frappe.ping" \
@@ -3895,7 +3298,7 @@ METRICS_EOF
           do
             NAME="${endpoint%%:*}"
             URL="${endpoint#*:}"
-
+            
             if ! curl -sf --max-time 30 "$URL" > /dev/null 2>&1; then
               echo "❌ $NAME FALHOU"
               FAILED=$((FAILED + 1))
@@ -3903,7 +3306,7 @@ METRICS_EOF
               echo "✅ $NAME OK"
             fi
           done
-
+          
           echo "=============================================="
           if [ "$FAILED" -gt 0 ]; then
             echo "status=failed" >> $GITHUB_OUTPUT
@@ -3930,7 +3333,7 @@ METRICS_EOF
         needs.health-check.result == 'skipped' ||
         needs.health-check.outputs.health_status == 'failed'
       )
-
+    
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
@@ -3948,68 +3351,68 @@ METRICS_EOF
           envs: GH_PAT,GITHUB_SHA,GITHUB_ACTOR,IMAGE_PREFIX
           script: |
             export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-
+            
             echo "=============================================="
             echo "🔄 ROLLBACK AUTOMÁTICO"
             echo "=============================================="
             echo "Commit falho: ${GITHUB_SHA}"
             echo "Iniciado por: ${GITHUB_ACTOR}"
-
+            
             MANIFEST_DIR="/opt/alice/backups/manifests"
             PREVIOUS_SHA=""
-
+            
             if [ -f "$MANIFEST_DIR/last-successful-deploy.txt" ]; then
               PREVIOUS_SHA=$(cat "$MANIFEST_DIR/last-successful-deploy.txt")
               echo "Versão anterior: $PREVIOUS_SHA"
             fi
-
+            
             # =================================================================
             # LIMPEZA COMPLETA - Parar TODOS os containers do projeto
             # =================================================================
             # CORREÇÃO 27/12/2025: Limpar TODOS os containers relacionados
             # Antes só parava alice-*, deixando gpu-*, erpnext-*, observability órfãos
             echo "🧹 Parando e removendo TODOS os containers do projeto..."
-
+            
             # Lista de prefixos de containers do projeto Alice
             # REMOVIDO 01/01/2026: "alertmanager" - substituído por Grafana Alerting
             for prefix in "alice-" "gpu-" "erpnext-" "langfuse" "clickhouse" "loki" "grafana" "prometheus" "jaeger" "promtail" "vector" "otel" "node-exporter" "cadvisor"; do
               docker ps -aq --filter "name=${prefix}" | xargs -r docker stop 2>/dev/null || true
               docker ps -aq --filter "name=${prefix}" | xargs -r docker rm -f 2>/dev/null || true
             done
-
+            
             if [ -z "$PREVIOUS_SHA" ]; then
               echo "=============================================="
               echo "⚠️  NENHUM DEPLOY COM SUCESSO ANTERIOR"
               echo "=============================================="
               echo "🧹 Executando LIMPEZA TOTAL do ambiente..."
               echo ""
-
+              
               # =================================================================
               # CORREÇÃO 29/12/2025: Limpeza AGRESSIVA quando não há deploy OK
               # Deploy nunca funcionou = TUDO é lixo e deve ser removido
               # =================================================================
-
+              
               # PASSO 1: Parar e remover TODOS os containers (sem exceção)
               echo "📦 Removendo TODOS os containers..."
               docker ps -aq | xargs -r docker stop 2>/dev/null || true
               docker ps -aq | xargs -r docker rm -f 2>/dev/null || true
               CONTAINERS_REMOVED=$(docker ps -aq | wc -l)
               echo "   Containers restantes: $CONTAINERS_REMOVED"
-
+              
               # PASSO 2: Remover TODAS as networks customizadas
               echo "🌐 Removendo networks customizadas..."
               docker network rm alice-network 2>/dev/null || true
               docker network rm erpnext-network 2>/dev/null || true
               # Remover qualquer outra network customizada (exceto bridge, host, none)
               docker network ls --format '{{.Name}}' | grep -vE '^(bridge|host|none)$' | xargs -r docker network rm 2>/dev/null || true
-
+              
               # PASSO 3: Remover TODOS os volumes (nomeados e anônimos)
               echo "💾 Removendo TODOS os volumes..."
               docker volume ls -q | xargs -r docker volume rm -f 2>/dev/null || true
               docker volume prune -f 2>/dev/null || true
               VOLUMES_REMAINING=$(docker volume ls -q | wc -l)
               echo "   Volumes restantes: $VOLUMES_REMAINING"
-
+              
               # PASSO 4: Remover TODAS as imagens (não apenas dangling)
               # CRÍTICO: docker image prune -af NÃO remove imagens taggeadas recentes
               echo "🖼️  Removendo TODAS as imagens Docker..."
@@ -4017,15 +3420,15 @@ METRICS_EOF
               docker image prune -af 2>/dev/null || true
               IMAGES_REMAINING=$(docker images -q | wc -l)
               echo "   Imagens restantes: $IMAGES_REMAINING"
-
+              
               # PASSO 5: Limpar build cache
               echo "🔧 Limpando build cache..."
               docker builder prune -af 2>/dev/null || true
-
+              
               # PASSO 6: Limpar sistema completo (redundante mas garante limpeza total)
               echo "🧽 Executando docker system prune completo..."
               docker system prune -af --volumes 2>/dev/null || true
-
+              
               # PASSO 7: Limpar dados residuais no filesystem
               echo "🗑️  Removendo dados residuais de /opt/alice..."
               rm -rf /opt/alice/data/* 2>/dev/null || true
@@ -4040,7 +3443,7 @@ METRICS_EOF
               # - /opt/alice/app (código fonte - necessário para próximo deploy)
               # - /opt/alice/secrets (chaves - criadas pelo workflow)
               # - /opt/alice/logs/deploy-*.log (logs de deploy para troubleshooting)
-
+              
               # PASSO 8: Mostrar status final
               echo ""
               echo "=============================================="
@@ -4053,7 +3456,7 @@ METRICS_EOF
               echo "=============================================="
               exit 0
             fi
-
+            
             # CORREÇÃO DEFINITIVA 27/12/2025: Criar diretórios e secrets necessários
             # MIGRAÇÃO 02/01/2026: traefik-acme removido, caddy e caddy-config adicionados
             mkdir -p /opt/alice/data/{postgres,redis-alice,caddy,caddy-config,searxng-config}
@@ -4070,7 +3473,7 @@ METRICS_EOF
             mkdir -p /opt/alice/{uploads,backups/manifests}
             # REMOVIDO 01/01/2026: secrets/alertmanager - Grafana usa variáveis de ambiente
             mkdir -p /opt/alice/app/infra/docker
-
+            
             # Permissões específicas por serviço
             chown -R 472:472 /opt/alice/data/grafana 2>/dev/null || true
             chown -R 65534:65534 /opt/alice/data/prometheus 2>/dev/null || true
@@ -4102,34 +3505,34 @@ METRICS_EOF
                 chown 999:999 /opt/alice/secrets/langfuse_db_password 2>/dev/null || true
               fi
             fi
-
+            
             # Restaurar versão anterior
             cd /opt/alice/app 2>/dev/null || exit 1
             git config --global url."https://${GH_PAT}@github.com/".insteadOf "https://github.com/"
             git fetch origin && git checkout "$PREVIOUS_SHA" --force
-
+            
             cd /opt/alice/app/infra/docker
             export IMAGE_TAG="$PREVIOUS_SHA"
-
+            
             echo "${GH_PAT}" | docker login ghcr.io -u ${GITHUB_ACTOR} --password-stdin
-
+            
             # Garantir que networks existem antes do rollback
             docker network create alice-network 2>/dev/null || true
             docker network create erpnext-network 2>/dev/null || true
-
+            
             docker compose -f docker-compose.prod.yml --env-file .env.prod pull --ignore-pull-failures
             docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --no-build
-
+            
             sleep 30
-
+            
             # CORRIGIDO 28/12/2025: grep -c retorna stdout "0" E exit code 1 quando não encontra
             RUNNING=$(docker compose -f docker-compose.prod.yml --env-file .env.prod ps --format "{{.State}}" | grep -c "running" 2>/dev/null) || RUNNING=0
-
+            
             if [ "$RUNNING" -lt 3 ]; then
               echo "❌ Rollback falhou"
               exit 1
             fi
-
+            
             echo "$PREVIOUS_SHA" > "$MANIFEST_DIR/last-successful-deploy.txt"
             echo "✅ Rollback concluído: $RUNNING containers rodando"
 
@@ -4140,283 +3543,20 @@ METRICS_EOF
           echo "Commit: ${{ github.sha }}"
           echo "Por: ${{ github.actor }}"
 
-      # =========================================================================
-      # CORREÇÃO 04/01/2026: Registrar falha no banco PostgreSQL
-      # Auditoria enterprise completa - registra TODOS os deploys (sucesso E falha)
-      # CRÍTICO: Se o PostgreSQL não está rodando (falhou antes), este step falha
-      # silenciosamente (|| true) - auditoria best-effort em cenário de falha
-      # =========================================================================
-      - name: Registrar falha no banco de dados
-        if: always()
-        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
-        continue-on-error: true  # Best-effort: BD pode não estar disponível após rollback
-        env:
-          VERSION: ${{ inputs.version }}
-          GITHUB_ACTOR: ${{ github.actor }}
-          TRIGGERED_BY: ${{ inputs.triggered_by }}
-          SERVICES: ${{ inputs.services }}
-          COMMIT_SHA: ${{ github.sha }}
-          WORKFLOW_RUN_ID: ${{ github.run_id }}
-          WORKFLOW_RUN_NUMBER: ${{ github.run_number }}
-          REPOSITORY: ${{ github.repository }}
-          # CORREÇÃO 04/01/2026: Adicionar métricas do job deploy (podem ser vazias se deploy falhou antes)
-          DURATION_SECONDS: ${{ needs.deploy.outputs.duration_seconds }}
-          CONTAINERS_COUNT: ${{ needs.deploy.outputs.containers_count }}
-        with:
-          host: ${{ secrets.HETZNER_VM_HOST }}
-          username: ${{ secrets.HETZNER_VM_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          envs: VERSION,GITHUB_ACTOR,TRIGGERED_BY,SERVICES,COMMIT_SHA,WORKFLOW_RUN_ID,WORKFLOW_RUN_NUMBER,REPOSITORY,DURATION_SECONDS,CONTAINERS_COUNT
-          script: |
-            # Tentar registrar falha - best-effort (BD pode não estar disponível)
-            # CORREÇÃO 04/01/2026: Usando variáveis psql para SQL injection prevention
-            
-            if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^alice-postgres$'; then
-              echo "📝 Registrando falha no banco de dados..."
-              
-              # STEP 1: DDL (sem variáveis - seguro)
-              docker exec alice-postgres psql -U alice -d alice_prod << 'EOSQL'
-              CREATE TABLE IF NOT EXISTS deployments (
-                id SERIAL PRIMARY KEY,
-                version TEXT NOT NULL,
-                deployed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                deployed_by TEXT,
-                duration_seconds INTEGER,
-                containers_count INTEGER,
-                status TEXT NOT NULL,
-                triggered_by TEXT,
-                services TEXT,
-                metadata JSONB,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-              );
-              CREATE INDEX IF NOT EXISTS idx_deployments_version ON deployments(version);
-              CREATE INDEX IF NOT EXISTS idx_deployments_deployed_at ON deployments(deployed_at DESC);
-              CREATE INDEX IF NOT EXISTS idx_deployments_status ON deployments(status);
-            EOSQL
-              
-              # STEP 2: INSERT com variáveis psql (SQL injection safe)
-              # CORREÇÃO 04/01/2026: Adicionados duration_seconds e containers_count
-              docker exec alice-postgres psql -U alice -d alice_prod \
-                -v v_version="$VERSION" \
-                -v v_actor="$GITHUB_ACTOR" \
-                -v v_triggered="$TRIGGERED_BY" \
-                -v v_services="$SERVICES" \
-                -v v_commit="$COMMIT_SHA" \
-                -v v_run_id="$WORKFLOW_RUN_ID" \
-                -v v_run_num="$WORKFLOW_RUN_NUMBER" \
-                -v v_repo="$REPOSITORY" \
-                -v v_duration="${DURATION_SECONDS:-0}" \
-                -v v_containers="${CONTAINERS_COUNT:-0}" \
-                << 'EOSQL'
-              INSERT INTO deployments (version, deployed_by, duration_seconds, containers_count, status, triggered_by, services, metadata)
-              VALUES (
-                :'v_version',
-                :'v_actor',
-                NULLIF(:v_duration, 0),
-                NULLIF(:v_containers, 0),
-                'rolled_back',
-                :'v_triggered',
-                :'v_services',
-                jsonb_build_object(
-                  'commit', :'v_commit',
-                  'workflow_run_id', :'v_run_id',
-                  'workflow_run_number', :'v_run_num',
-                  'repository', :'v_repo',
-                  'rollback_reason', 'health_check_failed_or_deploy_error'
-                )
-              );
-            EOSQL
-              
-              echo "✅ Falha registrada no banco de dados"
-            else
-              echo "⚠️ PostgreSQL não disponível - registro de falha ignorado"
-            fi
-
   # ===========================================================================
-  # Job 6: Coletar Logs (SEMPRE executa - troubleshooting)
-  # CORREÇÃO 04/01/2026: Job separado com if: always() no NÍVEL DO JOB
-  # PROBLEMA ANTERIOR: Steps com if: always() dentro de job condicional não
-  # executam se a condição do job for falsa. Logs são MAIS necessários em
-  # falhas, mas job register-success só roda em sucesso.
-  # SOLUÇÃO: Job dedicado que SEMPRE executa após deploy/health-check/rollback
-  # Timeout: 5min (SSH + SCP + upload pode demorar)
-  # ===========================================================================
-  collect-logs:
-    name: Collect Deploy Logs
-    runs-on: [self-hosted, linux, deploy]
-    timeout-minutes: 5
-    needs: [deploy, health-check, rollback]
-    if: always()  # ✅ CRÍTICO: Executa SEMPRE, independente de sucesso ou falha
-
-    steps:
-      # =========================================================================
-      # MELHORIA (04/01/2026): Upload logs como artifacts
-      # Troubleshooting facilitado - logs preservados por 90 dias
-      #
-      # CORREÇÃO 04/01/2026: Os logs são criados no servidor HETZNER via SSH,
-      # não no runner do GitHub Actions. Precisamos baixá-los via SCP primeiro.
-      #
-      # Arquivos no Hetzner:
-      #   - /tmp/compose_up_attempt_*.log (tentativas de docker compose up)
-      #   - /tmp/init_logs_*.txt (logs de containers init)
-      #   - /opt/alice/logs/deploy-metrics-*.json (métricas de sucesso/falha)
-      # =========================================================================
-
-      # STEP 1: Configurar chave SSH no runner
-      - name: Configurar SSH para download de logs
-        run: |
-          echo "🔐 Configurando SSH para download de logs do Hetzner..."
-          mkdir -p ~/.ssh
-          echo "${{ secrets.HETZNER_SSH_PRIVATE_KEY }}" > ~/.ssh/hetzner_key
-          chmod 600 ~/.ssh/hetzner_key
-
-          # Adicionar host conhecido para evitar prompt interativo
-          ssh-keyscan -H ${{ secrets.HETZNER_VM_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
-
-          echo "✅ SSH configurado"
-
-      # STEP 2: Preparar logs no Hetzner (compactar em único arquivo)
-      - name: Preparar logs no Hetzner para download
-        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
-        with:
-          host: ${{ secrets.HETZNER_VM_HOST }}
-          username: ${{ secrets.HETZNER_VM_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          script: |
-            echo "📦 Preparando logs de deploy para download..."
-
-            # Diretório temporário para agregar logs
-            LOGS_DIR="/tmp/deploy-logs-bundle"
-            rm -rf "$LOGS_DIR"
-            mkdir -p "$LOGS_DIR"
-
-            # Copiar logs de tentativas de compose (se existirem)
-            if ls /tmp/compose_up_attempt_*.log 1> /dev/null 2>&1; then
-              cp /tmp/compose_up_attempt_*.log "$LOGS_DIR/" 2>/dev/null || true
-              echo "  ✓ Copiados logs de tentativas compose"
-            else
-              echo "  ℹ️ Nenhum log de tentativa compose encontrado"
-            fi
-
-            # Copiar logs de init containers (se existirem)
-            if ls /tmp/init_logs_*.txt 1> /dev/null 2>&1; then
-              cp /tmp/init_logs_*.txt "$LOGS_DIR/" 2>/dev/null || true
-              echo "  ✓ Copiados logs de init containers"
-            else
-              echo "  ℹ️ Nenhum log de init container encontrado"
-            fi
-
-            # Copiar métricas de deploy (se existirem)
-            if [ -d "/opt/alice/logs" ] && ls /opt/alice/logs/deploy-metrics-*.json 1> /dev/null 2>&1; then
-              cp /opt/alice/logs/deploy-metrics-*.json "$LOGS_DIR/" 2>/dev/null || true
-              echo "  ✓ Copiadas métricas de deploy"
-            else
-              echo "  ℹ️ Nenhuma métrica de deploy encontrada"
-            fi
-
-            # Adicionar logs do docker compose (últimas 500 linhas de cada container Alice)
-            if command -v docker &> /dev/null; then
-              echo "  📋 Capturando logs de containers..."
-              cd /opt/alice 2>/dev/null || cd /root/alice 2>/dev/null || true
-
-              for container in alice-api-gateway alice-auth alice-chat alice-frontend alice-rag alice-training alice-gpu-manager alice-integrations alice-observability alice-caddy alice-postgres alice-redis alice-qdrant; do
-                if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^${container}$"; then
-                  docker logs --tail 500 "$container" > "$LOGS_DIR/${container}-logs.txt" 2>&1 || true
-                fi
-              done
-              echo "  ✓ Logs de containers capturados"
-            fi
-
-            # Criar tarball se há arquivos
-            if [ "$(ls -A $LOGS_DIR 2>/dev/null)" ]; then
-              tar -czf /tmp/deploy-logs-bundle.tar.gz -C "$LOGS_DIR" .
-              echo "✅ Bundle criado: /tmp/deploy-logs-bundle.tar.gz ($(du -h /tmp/deploy-logs-bundle.tar.gz | cut -f1))"
-            else
-              echo "⚠️ Nenhum log encontrado para bundle"
-              # Criar arquivo vazio para sinalizar que step executou
-              echo '{"status": "no_logs_found", "timestamp": "'$(date -Iseconds)'"}' > /tmp/deploy-logs-bundle.tar.gz
-            fi
-
-      # STEP 3: Baixar logs do Hetzner via SCP
-      # CORREÇÃO 04/01/2026: Adicionado if: always() para garantir que diretório
-      # ./deploy-logs seja criado mesmo se step SSH anterior falhar. Sem isso,
-      # o step de upload-artifact (que tem if: always()) falha porque o path não existe.
-      # if-no-files-found: warn só trata diretórios VAZIOS, não paths inexistentes.
-      - name: Baixar logs do Hetzner
-        if: always()
-        run: |
-          echo "📥 Baixando logs do Hetzner..."
-          mkdir -p ./deploy-logs
-
-          # Baixar tarball via SCP
-          scp -i ~/.ssh/hetzner_key -o StrictHostKeyChecking=no \
-            ${{ secrets.HETZNER_VM_USER }}@${{ secrets.HETZNER_VM_HOST }}:/tmp/deploy-logs-bundle.tar.gz \
-            ./deploy-logs/ 2>/dev/null || echo "⚠️ Nenhum bundle de logs encontrado"
-
-          # Extrair se baixou com sucesso
-          # CORREÇÃO 04/01/2026: Verificar se arquivo é tarball válido ANTES de extrair
-          # PROBLEMA ANTERIOR: Quando não há logs, servidor escreve JSON em .tar.gz
-          # O arquivo "existe" mas tar -xzf falha silenciosamente, arquivo é deletado,
-          # e branch else nunca executa. Resultado: diretório vazio sem indicação.
-          # SOLUÇÃO: Usar tar -tzf (list) para validar, se falhar verificar se é JSON
-          if [ -f ./deploy-logs/deploy-logs-bundle.tar.gz ]; then
-            cd ./deploy-logs
-            
-            # Verificar se é tarball válido (list mode não extrai, apenas valida)
-            if tar -tzf deploy-logs-bundle.tar.gz >/dev/null 2>&1; then
-              # É tarball válido, extrair
-              tar -xzf deploy-logs-bundle.tar.gz
-              rm -f deploy-logs-bundle.tar.gz
-              echo "✅ Logs extraídos: $(ls -la)"
-            else
-              # Não é tarball - verificar se é JSON de status
-              if head -c 1 deploy-logs-bundle.tar.gz | grep -q '{'; then
-                echo "ℹ️ Arquivo é JSON de status (sem logs disponíveis no servidor)"
-                mv deploy-logs-bundle.tar.gz bundle-status.json
-                echo "📋 Status: $(cat bundle-status.json)"
-              else
-                # Arquivo corrompido ou formato desconhecido
-                echo "⚠️ Arquivo não é tarball válido nem JSON"
-                echo '{"status": "invalid_bundle", "timestamp": "'$(date -Iseconds)'", "file_type": "'$(file -b deploy-logs-bundle.tar.gz 2>/dev/null || echo unknown)'"}' > bundle-status.json
-                rm -f deploy-logs-bundle.tar.gz
-              fi
-            fi
-          else
-            echo "ℹ️ Nenhum log disponível para download"
-            echo '{"status": "download_failed", "timestamp": "'$(date -Iseconds)'"}' > ./deploy-logs/download-status.json
-          fi
-
-      # STEP 4: Limpar chave SSH
-      - name: Limpar chave SSH
-        if: always()
-        run: |
-          rm -f ~/.ssh/hetzner_key 2>/dev/null || true
-
-      # STEP 5: Upload logs como artifact
-      - name: Upload logs de deploy
-        if: always()
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08  # v4.6.1
-        with:
-          name: deploy-logs-${{ inputs.version }}
-          path: ./deploy-logs/
-          retention-days: 90
-          if-no-files-found: warn
-
-  # ===========================================================================
-  # Job 7: Registrar Sucesso
-  # Timeout: 3min (SSH + escrita arquivo + registro BD)
-  # CORREÇÃO 04/01/2026: Aumentado timeout de 2 para 3min (inclui registro BD)
+  # Job 6: Registrar Sucesso
+  # Timeout: 2min (apenas SSH + escrita arquivo)
   # ===========================================================================
   register-success:
     name: Register Success
     runs-on: [self-hosted, linux, deploy]
-    timeout-minutes: 3
+    timeout-minutes: 2
     needs: [deploy, health-check]
     if: |
       needs.deploy.result == 'success' &&
       needs.health-check.result == 'success' &&
       needs.health-check.outputs.health_status == 'success'
-
+    
     steps:
       - name: Registrar Deploy
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
@@ -4433,9 +3573,9 @@ METRICS_EOF
             export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
             MANIFEST_DIR="/opt/alice/backups/manifests"
             mkdir -p "$MANIFEST_DIR"
-
+            
             echo "${GITHUB_SHA}" > "$MANIFEST_DIR/last-successful-deploy.txt"
-
+            
             cat > "$MANIFEST_DIR/deploy-$(date +%Y%m%d-%H%M%S).json" << EOF
             {
               "timestamp": "$(date -Iseconds)",
@@ -4445,137 +3585,5 @@ METRICS_EOF
               "status": "success"
             }
             EOF
-
-            echo "✅ Deploy $VERSION registrado com sucesso"
-
-      # ===========================================================================
-      # NOTA (04/01/2026): Coleta de logs movida para job separado 'collect-logs'
-      # que executa if: always() no nível do job para capturar logs em falhas
-      # ===========================================================================
-
-      # ===========================================================================
-      # Notificação de sucesso
-      # Feedback imediato para equipe - complementa notificação de falha
-      # ===========================================================================
-      - name: Notificar sucesso do deploy
-        run: |
-          echo "=============================================="
-          echo "✅ DEPLOY BEM-SUCEDIDO!"
-          echo "=============================================="
-          echo "📦 Versão: ${{ inputs.version }}"
-          echo "🎯 Ambiente: Production (Hetzner GPU GEX44)"
-          echo "🌐 URL Principal: https://yesyoudeserve.duckdns.org"
-          echo "📊 Grafana: https://observability.yesyoudeserve.duckdns.org"
-          echo "🔍 Jaeger: https://traces.yesyoudeserve.duckdns.org"
-          echo "📈 Prometheus: https://metrics.yesyoudeserve.duckdns.org"
-          echo "🔬 Langfuse: https://langfuse.yesyoudeserve.duckdns.org"
-          echo "👤 Disparado por: ${{ github.actor }}"
-          echo "🔗 Commit: ${{ github.sha }}"
-          echo "=============================================="
-
-      # ===========================================================================
-      # MELHORIA #3 (04/01/2026): Registrar deploy no banco PostgreSQL
-      # Auditoria enterprise - histórico completo de deploys
-      # Permite queries SQL para análise de performance, frequência, rollbacks
-      # ===========================================================================
-      # ===========================================================================
-      # CORREÇÃO 04/01/2026: SQL Injection Prevention via psql Variables (-v)
-      # PROBLEMA: Variáveis shell interpoladas diretamente no SQL sem escape.
-      # Se $TRIGGERED_BY ou $SERVICES contiverem aspas simples (ex: "O'Brien"),
-      # o SQL quebra e o INSERT falha.
-      # SOLUÇÃO ENTERPRISE: Usar variáveis psql (-v) com heredoc QUOTED (<< 'EOF'):
-      #   - Heredoc quoted previne expansão shell (seguro)
-      #   - psql -v passa variáveis de forma tipada
-      #   - quote_literal() escapa valores para SQL
-      #   - Imune a SQL injection completamente
-      # Ref: https://www.postgresql.org/docs/current/app-psql.html#APP-PSQL-INTERPOLATION
-      #
-      # CORREÇÃO 04/01/2026 (Bug 2): Adicionado if: always()
-      # PROBLEMA: Se o step de notificação falhar, o registro no banco era pulado
-      # (default é success()). Isso quebra a auditoria enterprise.
-      # SOLUÇÃO: Garantir que o registro SEMPRE execute dentro do job.
-      # ===========================================================================
-      - name: Registrar deploy no banco de dados
-        if: always()
-        continue-on-error: true  # Best-effort: Auditoria não deve falhar deploy bem-sucedido
-        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
-        env:
-          VERSION: ${{ inputs.version }}
-          GITHUB_ACTOR: ${{ github.actor }}
-          TRIGGERED_BY: ${{ inputs.triggered_by }}
-          SERVICES: ${{ inputs.services }}
-          COMMIT_SHA: ${{ github.sha }}
-          WORKFLOW_RUN_ID: ${{ github.run_id }}
-          WORKFLOW_RUN_NUMBER: ${{ github.run_number }}
-          REPOSITORY: ${{ github.repository }}
-          # CORREÇÃO 04/01/2026: Adicionar métricas do job deploy
-          DURATION_SECONDS: ${{ needs.deploy.outputs.duration_seconds }}
-          CONTAINERS_COUNT: ${{ needs.deploy.outputs.containers_count }}
-        with:
-          host: ${{ secrets.HETZNER_VM_HOST }}
-          username: ${{ secrets.HETZNER_VM_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          envs: VERSION,GITHUB_ACTOR,TRIGGERED_BY,SERVICES,COMMIT_SHA,WORKFLOW_RUN_ID,WORKFLOW_RUN_NUMBER,REPOSITORY,DURATION_SECONDS,CONTAINERS_COUNT
-          script: |
-            # Registrar metadata do deploy em PostgreSQL para auditoria
             
-            # STEP 1: Criar tabela (DDL estático, sem variáveis - seguro)
-            docker exec alice-postgres psql -U alice -d alice_prod << 'EOSQL'
-            -- Criar tabela de deployments se não existir (idempotente)
-            CREATE TABLE IF NOT EXISTS deployments (
-              id SERIAL PRIMARY KEY,
-              version TEXT NOT NULL,
-              deployed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-              deployed_by TEXT,
-              duration_seconds INTEGER,
-              containers_count INTEGER,
-              status TEXT NOT NULL,
-              triggered_by TEXT,
-              services TEXT,
-              metadata JSONB,
-              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-            );
-
-            -- Criar índices para queries frequentes (se não existirem)
-            CREATE INDEX IF NOT EXISTS idx_deployments_version ON deployments(version);
-            CREATE INDEX IF NOT EXISTS idx_deployments_deployed_at ON deployments(deployed_at DESC);
-            CREATE INDEX IF NOT EXISTS idx_deployments_status ON deployments(status);
-            EOSQL
-
-            # STEP 2: INSERT usando variáveis psql (-v) para escape automático
-            # CORREÇÃO 04/01/2026: Variáveis passadas via -v são escapadas pelo psql
-            # Usar :'var' para interpolação segura com aspas (text literals)
-            # CORREÇÃO 04/01/2026: Adicionados duration_seconds e containers_count
-            # Ref: https://www.postgresql.org/docs/current/app-psql.html#APP-PSQL-INTERPOLATION
-            docker exec alice-postgres psql -U alice -d alice_prod \
-              -v v_version="$VERSION" \
-              -v v_actor="$GITHUB_ACTOR" \
-              -v v_triggered="$TRIGGERED_BY" \
-              -v v_services="$SERVICES" \
-              -v v_commit="$COMMIT_SHA" \
-              -v v_run_id="$WORKFLOW_RUN_ID" \
-              -v v_run_num="$WORKFLOW_RUN_NUMBER" \
-              -v v_repo="$REPOSITORY" \
-              -v v_duration="${DURATION_SECONDS:-0}" \
-              -v v_containers="${CONTAINERS_COUNT:-0}" \
-              << 'EOSQL'
-            INSERT INTO deployments (version, deployed_by, duration_seconds, containers_count, status, triggered_by, services, metadata)
-            VALUES (
-              :'v_version',
-              :'v_actor',
-              NULLIF(:v_duration, 0),
-              NULLIF(:v_containers, 0),
-              'success',
-              :'v_triggered',
-              :'v_services',
-              jsonb_build_object(
-                'commit', :'v_commit',
-                'workflow_run_id', :'v_run_id',
-                'workflow_run_number', :'v_run_num',
-                'repository', :'v_repo'
-              )
-            );
-            EOSQL
-
-            echo "✅ Deploy registrado no banco de dados PostgreSQL"
-            echo "📊 Consulte tabela 'deployments' para histórico completo"
+            echo "✅ Deploy $VERSION registrado com sucesso"
