@@ -850,14 +850,13 @@ EOF
               
               # 2b. AGUARDAR INIT CONTAINERS COMPLETAREM
               # NOTA 05/01/2026: Init containers criam recursos APÓS serviços ficarem healthy
-              # - minio-init: cria bucket langfuse-events (necessário para Langfuse)
-              # - pgbackrest-init: cria stanza de backup (necessário para pgbackrest)
-              # NOTA 05/01/2026 (Bug 2): Falhar se init containers críticos falharem
-              # - minio-init CRÍTICO para Langfuse (bucket S3)
-              # - pgbackrest-init necessário para backups (pode continuar sem)
+              # Classificação:
+              # - minio-init: CRÍTICO (cria bucket langfuse-events para Langfuse) → aborta deploy
+              # - pgbackrest-init: IMPORTANTE (cria stanza para backups) → warning mas continua
               echo ""
               echo "⏳ Aguardando init containers completarem..."
-              INIT_FAILED=""
+              INIT_CRITICAL_FAILED=""
+              INIT_NONCRITICAL_FAILED=""
               for init_svc in alice-minio-init alice-pgbackrest-init; do
                 MAX_WAIT=120
                 ELAPSED=0
@@ -875,9 +874,11 @@ EOF
                       echo "   ❌ $init_svc: failed (exit $EXIT_CODE)"
                       docker logs $init_svc --tail 30 2>&1 || true
                       INIT_STATUS="failed"
-                      # minio-init é CRÍTICO para Langfuse
+                      # Classificar por criticidade
                       if [ "$init_svc" = "alice-minio-init" ]; then
-                        INIT_FAILED="$INIT_FAILED $init_svc"
+                        INIT_CRITICAL_FAILED="$INIT_CRITICAL_FAILED $init_svc(exit:$EXIT_CODE)"
+                      else
+                        INIT_NONCRITICAL_FAILED="$INIT_NONCRITICAL_FAILED $init_svc(exit:$EXIT_CODE)"
                       fi
                       break
                     fi
@@ -887,25 +888,41 @@ EOF
                     ELAPSED=$((ELAPSED + 5))
                   else
                     # Container não existe ou estado desconhecido
-                    echo "   ⚠️ $init_svc: $STATE (não encontrado ou estado desconhecido)"
+                    echo "   ⚠️ $init_svc: $STATE"
                     INIT_STATUS="unknown"
+                    if [ "$init_svc" = "alice-minio-init" ]; then
+                      INIT_CRITICAL_FAILED="$INIT_CRITICAL_FAILED $init_svc($STATE)"
+                    else
+                      INIT_NONCRITICAL_FAILED="$INIT_NONCRITICAL_FAILED $init_svc($STATE)"
+                    fi
                     break
                   fi
                 done
                 if [ $ELAPSED -ge $MAX_WAIT ]; then
-                  echo "   ⚠️ $init_svc: timeout após ${MAX_WAIT}s"
-                  # minio-init timeout também é crítico
+                  echo "   ⏱️ $init_svc: timeout após ${MAX_WAIT}s"
                   if [ "$init_svc" = "alice-minio-init" ]; then
-                    INIT_FAILED="$INIT_FAILED $init_svc(timeout)"
+                    INIT_CRITICAL_FAILED="$INIT_CRITICAL_FAILED $init_svc(timeout)"
+                  else
+                    INIT_NONCRITICAL_FAILED="$INIT_NONCRITICAL_FAILED $init_svc(timeout)"
                   fi
                 fi
               done
               
-              # Falhar se init containers CRÍTICOS falharam
-              # minio-init é crítico pois Langfuse precisa do bucket
-              if [ -n "$INIT_FAILED" ]; then
+              # Reportar falhas não-críticas (pgbackrest-init)
+              # Backups não funcionarão mas deploy pode continuar
+              if [ -n "$INIT_NONCRITICAL_FAILED" ]; then
                 echo ""
-                echo "❌ ERRO CRÍTICO: Init containers falharam:$INIT_FAILED"
+                echo "⚠️ WARNING: Init containers falharam (não-críticos):$INIT_NONCRITICAL_FAILED"
+                echo "   pgbackrest-init cria stanza de backup. Backups automáticos NÃO funcionarão!"
+                echo "   Execute manualmente: docker exec alice-postgres pgbackrest stanza-create --stanza=alice_prod"
+                echo "   Deploy continuando pois não bloqueia operação da plataforma."
+              fi
+              
+              # Abortar se init containers CRÍTICOS falharam
+              # minio-init é crítico pois Langfuse precisa do bucket
+              if [ -n "$INIT_CRITICAL_FAILED" ]; then
+                echo ""
+                echo "❌ ERRO CRÍTICO: Init containers falharam:$INIT_CRITICAL_FAILED"
                 echo "   minio-init cria bucket langfuse-events necessário para Langfuse."
                 echo "   Deploy abortado para evitar falhas no observability stack."
                 exit 1
