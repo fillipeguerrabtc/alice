@@ -852,11 +852,16 @@ EOF
               # NOTA 05/01/2026: Init containers criam recursos APÓS serviços ficarem healthy
               # - minio-init: cria bucket langfuse-events (necessário para Langfuse)
               # - pgbackrest-init: cria stanza de backup (necessário para pgbackrest)
+              # NOTA 05/01/2026 (Bug 2): Falhar se init containers críticos falharem
+              # - minio-init CRÍTICO para Langfuse (bucket S3)
+              # - pgbackrest-init necessário para backups (pode continuar sem)
               echo ""
               echo "⏳ Aguardando init containers completarem..."
+              INIT_FAILED=""
               for init_svc in alice-minio-init alice-pgbackrest-init; do
                 MAX_WAIT=120
                 ELAPSED=0
+                INIT_STATUS="pending"
                 while [ $ELAPSED -lt $MAX_WAIT ]; do
                   # Init containers devem estar com State.Status = "exited" e ExitCode = 0
                   STATE=$(docker inspect --format='{{.State.Status}}' $init_svc 2>/dev/null || echo "not_found")
@@ -864,10 +869,16 @@ EOF
                     EXIT_CODE=$(docker inspect --format='{{.State.ExitCode}}' $init_svc 2>/dev/null || echo "1")
                     if [ "$EXIT_CODE" = "0" ]; then
                       echo "   ✅ $init_svc: completed (exit 0)"
+                      INIT_STATUS="success"
                       break
                     else
                       echo "   ❌ $init_svc: failed (exit $EXIT_CODE)"
-                      docker logs $init_svc --tail 20 2>&1 || true
+                      docker logs $init_svc --tail 30 2>&1 || true
+                      INIT_STATUS="failed"
+                      # minio-init é CRÍTICO para Langfuse
+                      if [ "$init_svc" = "alice-minio-init" ]; then
+                        INIT_FAILED="$INIT_FAILED $init_svc"
+                      fi
                       break
                     fi
                   elif [ "$STATE" = "running" ]; then
@@ -877,13 +888,28 @@ EOF
                   else
                     # Container não existe ou estado desconhecido
                     echo "   ⚠️ $init_svc: $STATE (não encontrado ou estado desconhecido)"
+                    INIT_STATUS="unknown"
                     break
                   fi
                 done
                 if [ $ELAPSED -ge $MAX_WAIT ]; then
                   echo "   ⚠️ $init_svc: timeout após ${MAX_WAIT}s"
+                  # minio-init timeout também é crítico
+                  if [ "$init_svc" = "alice-minio-init" ]; then
+                    INIT_FAILED="$INIT_FAILED $init_svc(timeout)"
+                  fi
                 fi
               done
+              
+              # Falhar se init containers CRÍTICOS falharam
+              # minio-init é crítico pois Langfuse precisa do bucket
+              if [ -n "$INIT_FAILED" ]; then
+                echo ""
+                echo "❌ ERRO CRÍTICO: Init containers falharam:$INIT_FAILED"
+                echo "   minio-init cria bucket langfuse-events necessário para Langfuse."
+                echo "   Deploy abortado para evitar falhas no observability stack."
+                exit 1
+              fi
               
               # 3. DRIZZLE PUSH (migrations)
               echo ""
