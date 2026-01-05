@@ -34,7 +34,7 @@
 name: Deploy - Production (Stacks)
 # run-name: Solução oficial GitHub Actions 2025 para exibir nome amigável quando workflow_run é usado
 # Ref: https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#run-name
-run-name: Deploy - Production (Stacks) - ${{ github.event.workflow_run && github.event.workflow_run.head_branch || github.ref_name }}
+run-name: Deploy - Production (Stacks) ${{ github.event.workflow_run && format('(triggered by {0})', github.event.workflow_run.name) || format('(manual)') }}
 
 on:
   # Disparo AUTOMÁTICO: somente quando o workflow Release & Tag terminar com sucesso
@@ -48,7 +48,8 @@ on:
       - completed
     branches:
       - main
-  # NOTA: workflow_run dispara mesmo em falha, então adicionamos verificação no job validate
+  # CRÍTICO: workflow_run dispara mesmo em falha/cancelado
+  # A verificação de sucesso está no job validate (if: conclusion == 'success')
   workflow_dispatch:
     inputs:
       stack:
