@@ -4,7 +4,7 @@
 **Data:** 05 de Janeiro de 2026  
 **Versão:** 5.0 - Arquitetura Multi-Stack Modular
 
-> **ATUALIZAÇÃO 05/01/2026:** Novo workflow `deploy-stack.yml` substitui `deploy-production.yml` para deploy modular por stack.
+> **ATUALIZAÇÃO 05/01/2026:** Workflow `.github/workflows/deploy-stack.yml` (**Deploy - Production (Stacks)**) substitui `deploy-production.yml` para deploy modular por stack.
 
 ## Status Atual dos Runners
 

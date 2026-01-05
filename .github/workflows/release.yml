@@ -11,9 +11,9 @@
 # RESPONSABILIDADES DESTE WORKFLOW:
 #   1. Validar e criar tag semântica (vX.Y.Z)
 #   2. Gerar changelog automático (Conventional Commits)
-#   3. Criar GitHub Release com notas
+#   3. Criar GitHub Release com notas (APÓS build das imagens)
 #   4. Build e push de TODAS as 17 imagens Docker (12 services + 5 GPU)
-#   5. Disparar workflow de Deploy
+#   5. Deploy é disparado automaticamente pelo evento "release published" no `deploy-stack.yml`
 #
 # OTIMIZAÇÃO (27/12/2025): Consolidação de builds Docker
 # - Matrix de 14 jobs → 1 job único com loop
@@ -157,32 +157,6 @@ jobs:
           git tag -a ${{ inputs.version }} -m "Release ${{ inputs.version }}"
           git push origin ${{ inputs.version }}
           echo "✅ Tag ${{ inputs.version }} criada"
-
-      - name: Criar GitHub Release
-        uses: softprops/action-gh-release@01570a1f39cb168c169c802c3bceb9e93fb10974
-        with:
-          tag_name: ${{ inputs.version }}
-          name: Alice Enterprise Platform ${{ inputs.version }}
-          prerelease: ${{ inputs.prerelease }}
-          generate_release_notes: true
-          body: |
-            ## 🚀 Alice Enterprise Platform ${{ inputs.version }}
-            
-            ### Changelog
-            ${{ steps.changelog.outputs.changes }}
-            
-            ### 🐳 Docker Images
-            ```
-            ${{ env.IMAGE_PREFIX }}-auth:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-chat:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-frontend:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-rag:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-training:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-integrations:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-observability:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-gpu-manager:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-api-gateway:${{ inputs.version }}
-            ```
 
   # ===========================================================================
   # Job 2: Build e Push Docker Images (CONSOLIDADO)
@@ -571,41 +545,115 @@ jobs:
           echo "✅ All 17 images built (12 services + 5 GPU)"
 
   # ===========================================================================
-  # Job 3: Disparar Deploy Automaticamente
+  # Job 3: Publicar GitHub Release (APÓS build das imagens)
+  #
+  # MOTIVO ENTERPRISE:
+  # - Evita condição de corrida: Release publicada antes das imagens existirem no GHCR
+  # - Permite que workflows de deploy sejam disparados pelo evento "release published"
+  #
   # Timeout: 2min (apenas API call)
   # ===========================================================================
-  trigger-deploy:
-    name: Trigger Deploy
+  publish-release:
+    name: Publish GitHub Release
     runs-on: [self-hosted, linux, deploy]
     timeout-minutes: 2
     needs: [create-release, build-images]
-    if: ${{ !inputs.prerelease && needs.build-images.result == 'success' }}
+    # - prerelease: build-images é skipped por design, mas ainda publicamos a release como prerelease
+    # - release normal: exige build-images success antes de publicar
+    if: needs.create-release.result == 'success' && (inputs.prerelease || needs.build-images.result == 'success')
     
     steps:
-      - name: Disparar workflow de deploy modular
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
+      - name: Checkout (tag da release)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          github-token: ${{ secrets.GH_PAT }}
-          script: |
-            const version = '${{ needs.create-release.outputs.version }}';
-            
-            console.log('🚀 Iniciando deploy automático (arquitetura multi-stack)');
-            console.log('📦 Versão: ' + version);
-            console.log('📋 Stack: all (todos os stacks em sequência)');
-            
-            // Deploy modular - usa novo workflow deploy-stack.yml
-            // Stack 'all' faz deploy de: infra → alice → observability → erpnext → backup
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'deploy-stack.yml',
-              ref: version,
-              inputs: {
-                stack: 'all',
-                version: version,
-                rollback: 'false',
-                dry_run: 'false'
-              }
-            });
-            
-            console.log('✅ Deploy modular disparado!');
+          ref: ${{ needs.create-release.outputs.version }}
+          fetch-depth: 0
+
+      - name: Gerar release notes (logs completos)
+        id: notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          
+          VERSION="${{ needs.create-release.outputs.version }}"
+          echo "📦 Publicando Release para tag: $VERSION"
+          echo "🧩 prerelease: ${{ inputs.prerelease }}"
+          
+          # Resolver commit da tag (anotada) e tag anterior (para changelog determinístico)
+          TAG_COMMIT="$(git rev-list -n 1 "$VERSION")"
+          PREVIOUS_TAG="$(git describe --tags --abbrev=0 "${TAG_COMMIT}^" 2>/dev/null || echo "")"
+          
+          echo "🔎 Tag commit: $TAG_COMMIT"
+          if [ -n "$PREVIOUS_TAG" ]; then
+            echo "🔙 Tag anterior: $PREVIOUS_TAG"
+          else
+            echo "⚠️ Nenhuma tag anterior encontrada (primeira release?)"
+          fi
+          
+          if [ -z "$PREVIOUS_TAG" ]; then
+            COMMITS="$(git log --pretty=format:"%s (%h)" --no-merges | head -50)"
+          else
+            COMMITS="$(git log "$PREVIOUS_TAG..$VERSION" --pretty=format:"%s (%h)" --no-merges)"
+          fi
+          
+          # Seções por Conventional Commits (mesma lógica do job create-release)
+          BREAKING="$(echo "$COMMITS" | grep -E "^[a-z]+(\(.+\))?!:|BREAKING CHANGE:" | sed 's/^/- /' || true)"
+          FEATURES="$(echo "$COMMITS" | grep -E "^feat(\(.+\))?:" | grep -v "^feat(\(.+\))?!:" | sed 's/^/- /' || true)"
+          FIXES="$(echo "$COMMITS" | grep -E "^fix(\(.+\))?:" | grep -v "^fix(\(.+\))?!:" | sed 's/^/- /' || true)"
+          OTHERS="$(echo "$COMMITS" | grep -v -E "^(feat|fix)(\(.+\))?:" | grep -v -E "^[a-z]+(\(.+\))?!:" | grep -v "BREAKING CHANGE:" | sed 's/^/- /' || true)"
+          
+          NOTES_FILE="/tmp/release-notes.md"
+          {
+            echo "## 🚀 Alice Enterprise Platform ${VERSION}"
+            echo ""
+            echo "### 📌 Referências"
+            echo "- **Tag**: \`${VERSION}\`"
+            echo "- **Commit**: \`${TAG_COMMIT}\`"
+            [ -n "$PREVIOUS_TAG" ] && echo "- **Tag anterior**: \`${PREVIOUS_TAG}\`"
+            echo ""
+            echo "### Changelog"
+            [ -n "${BREAKING}" ] && printf "\n#### ⚠️ Breaking Changes\n%s\n" "${BREAKING}"
+            [ -n "${FEATURES}" ] && printf "\n#### ✨ Features\n%s\n" "${FEATURES}"
+            [ -n "${FIXES}" ] && printf "\n#### 🐛 Bug Fixes\n%s\n" "${FIXES}"
+            [ -n "${OTHERS}" ] && printf "\n#### 📦 Other Changes\n%s\n" "${OTHERS}"
+            echo ""
+            echo "### 🐳 Docker Images"
+            echo '```'
+            echo "${{ env.IMAGE_PREFIX }}-auth:${VERSION}"
+            echo "${{ env.IMAGE_PREFIX }}-chat:${VERSION}"
+            echo "${{ env.IMAGE_PREFIX }}-frontend:${VERSION}"
+            echo "${{ env.IMAGE_PREFIX }}-rag:${VERSION}"
+            echo "${{ env.IMAGE_PREFIX }}-training:${VERSION}"
+            echo "${{ env.IMAGE_PREFIX }}-integrations:${VERSION}"
+            echo "${{ env.IMAGE_PREFIX }}-observability:${VERSION}"
+            echo "${{ env.IMAGE_PREFIX }}-gpu-manager:${VERSION}"
+            echo "${{ env.IMAGE_PREFIX }}-api-gateway:${VERSION}"
+            echo '```'
+          } > "$NOTES_FILE"
+          
+          echo "✅ Release notes geradas em: $NOTES_FILE"
+          echo "📏 Tamanho: $(wc -l < "$NOTES_FILE") linhas"
+          
+          # Resumo no GitHub Step Summary (troubleshooting)
+          {
+            echo "## 📦 Release Publish Summary"
+            echo ""
+            echo "| Campo | Valor |"
+            echo "|------|-------|"
+            echo "| Tag | \`${VERSION}\` |"
+            echo "| Commit | \`${TAG_COMMIT}\` |"
+            echo "| Tag anterior | \`${PREVIOUS_TAG:-N/A}\` |"
+            echo "| prerelease | \`${{ inputs.prerelease }}\` |"
+            echo ""
+            echo "### 🧾 Arquivo de Release Notes"
+            echo "- Caminho no runner: \`${NOTES_FILE}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Criar GitHub Release (publicada)
+        uses: softprops/action-gh-release@01570a1f39cb168c169c802c3bceb9e93fb10974
+        with:
+          tag_name: ${{ needs.create-release.outputs.version }}
+          name: Alice Enterprise Platform ${{ needs.create-release.outputs.version }}
+          prerelease: ${{ inputs.prerelease }}
+          generate_release_notes: false
+          body_path: /tmp/release-notes.md

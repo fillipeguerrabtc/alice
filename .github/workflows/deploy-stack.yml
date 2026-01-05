@@ -31,9 +31,13 @@
 # Data: 05/01/2026
 # =============================================================================
 
-name: Deploy Stack (Modular)
+name: Deploy - Production (Stacks)
 
 on:
+  # Disparo AUTOMÁTICO: somente quando a Release (tag) for publicada
+  # IMPORTANTE: a Release é publicada APÓS o build das imagens no `release.yml` (evita corrida).
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       stack:
@@ -69,7 +73,7 @@ on:
         default: false
 
 concurrency:
-  group: deploy-${{ github.event.inputs.stack }}
+  group: deploy-stack-${{ github.event_name }}-${{ github.event_name == 'release' && github.event.release.tag_name || github.event.inputs.stack }}
   cancel-in-progress: false
 
 permissions:
@@ -96,25 +100,80 @@ jobs:
     name: Validate Deploy
     runs-on: [self-hosted, linux, deploy]
     timeout-minutes: 5
+    # PRÉ-RELEASE não deve disparar deploy automaticamente
+    if: github.event_name != 'release' || github.event.release.prerelease == false
     outputs:
-      stack: ${{ github.event.inputs.stack }}
-      version: ${{ github.event.inputs.version }}
-      is_rollback: ${{ github.event.inputs.rollback }}
+      stack: ${{ steps.context.outputs.stack }}
+      version: ${{ steps.context.outputs.version }}
+      is_rollback: ${{ steps.context.outputs.rollback }}
+      rollback_version: ${{ steps.context.outputs.rollback_version }}
+      dry_run: ${{ steps.context.outputs.dry_run }}
       compose_files: ${{ steps.prepare.outputs.compose_files }}
       depends_on: ${{ steps.prepare.outputs.depends_on }}
     
     steps:
-      - name: Checkout
+      - name: Determine trigger context
+        id: context
+        shell: bash
+        run: |
+          set -euo pipefail
+          
+          if [ "${{ github.event_name }}" = "release" ]; then
+            STACK="all"
+            VERSION="${{ github.event.release.tag_name }}"
+            ROLLBACK="false"
+            ROLLBACK_VERSION=""
+            DRY_RUN="false"
+            echo "🔔 Trigger: release published"
+          else
+            STACK="${{ github.event.inputs.stack }}"
+            VERSION="${{ github.event.inputs.version }}"
+            ROLLBACK="${{ github.event.inputs.rollback }}"
+            ROLLBACK_VERSION="${{ github.event.inputs.rollback_version }}"
+            DRY_RUN="${{ github.event.inputs.dry_run }}"
+            echo "🖱️ Trigger: workflow_dispatch"
+          fi
+          
+          echo "stack=$STACK" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "rollback=$ROLLBACK" >> "$GITHUB_OUTPUT"
+          echo "rollback_version=$ROLLBACK_VERSION" >> "$GITHUB_OUTPUT"
+          echo "dry_run=$DRY_RUN" >> "$GITHUB_OUTPUT"
+          
+          echo "📦 Stack: $STACK"
+          echo "🏷️ Versão: $VERSION"
+          echo "🔄 Rollback: $ROLLBACK"
+          echo "🧪 Dry run: $DRY_RUN"
+          
+          {
+            echo "## 🚀 Deploy Stack - Contexto do Trigger"
+            echo ""
+            echo "| Campo | Valor |"
+            echo "|------|-------|"
+            echo "| Evento | \`${{ github.event_name }}\` |"
+            echo "| Stack | \`$STACK\` |"
+            echo "| Versão (TAG) | \`$VERSION\` |"
+            echo "| Rollback | \`$ROLLBACK\` |"
+            echo "| Dry run | \`$DRY_RUN\` |"
+            if [ "${{ github.event_name }}" = "release" ]; then
+              echo "| Release prerelease | \`${{ github.event.release.prerelease }}\` |"
+              echo "| Release URL | ${{ github.event.release.html_url }} |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Checkout (tag da versão)
         uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.context.outputs.version }}
 
       - name: Validate inputs
         id: validate
         run: |
           echo "🔍 Validando inputs..."
           
-          STACK="${{ github.event.inputs.stack }}"
-          VERSION="${{ github.event.inputs.version }}"
-          ROLLBACK="${{ github.event.inputs.rollback }}"
+          STACK="${{ steps.context.outputs.stack }}"
+          VERSION="${{ steps.context.outputs.version }}"
+          ROLLBACK="${{ steps.context.outputs.rollback }}"
           
           # Validar stack
           VALID_STACKS="all infra alice observability erpnext backup"
@@ -138,7 +197,7 @@ jobs:
       - name: Prepare compose files
         id: prepare
         run: |
-          STACK="${{ github.event.inputs.stack }}"
+          STACK="${{ steps.context.outputs.stack }}"
           
           # Mapear stack para compose files e dependências
           # NOTA: Para stack='all', o deploy é feito em SEQUÊNCIA no script SSH
@@ -219,7 +278,7 @@ jobs:
                     echo ""
                     echo "ERRO: Container $svc não está healthy!"
                     echo "Faça deploy do stack infra primeiro:"
-                    echo "  gh workflow run 'Deploy Stack (Modular)' -f stack=infra -f version=<versao>"
+                    echo "  gh workflow run 'Deploy - Production (Stacks)' -f stack=infra -f version=<versao>"
                     exit 1
                   fi
                 done
@@ -263,7 +322,7 @@ jobs:
   # Job 3: Deploy do Stack (ou Rollback Manual)
   # ===========================================================================
   deploy-stack:
-    name: ${{ github.event.inputs.rollback == 'true' && 'Rollback' || 'Deploy' }} ${{ github.event.inputs.stack }}
+    name: ${{ needs.validate.outputs.is_rollback == 'true' && 'Rollback' || 'Deploy' }} ${{ needs.validate.outputs.stack }}
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, check-dependencies]
     if: always() && needs.validate.result == 'success' && (needs.check-dependencies.result == 'success' || needs.check-dependencies.result == 'skipped')
@@ -272,6 +331,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.version }}
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -283,8 +344,8 @@ jobs:
       - name: Determinar versão para deploy
         id: version
         run: |
-          IS_ROLLBACK="${{ github.event.inputs.rollback }}"
-          ROLLBACK_VERSION="${{ github.event.inputs.rollback_version }}"
+          IS_ROLLBACK="${{ needs.validate.outputs.is_rollback }}"
+          ROLLBACK_VERSION="${{ needs.validate.outputs.rollback_version }}"
           INPUT_VERSION="${{ needs.validate.outputs.version }}"
           
           if [ "$IS_ROLLBACK" = "true" ]; then
@@ -609,7 +670,7 @@ EOF
           echo "✅ Todas as imagens necessárias existem no GHCR"
 
       - name: Sincronizar código e configs para servidor
-        if: github.event.inputs.dry_run != 'true'
+        if: needs.validate.outputs.dry_run != 'true'
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ env.HETZNER_HOST }}
@@ -624,7 +685,7 @@ EOF
           overwrite: true
 
       - name: Copiar .env.prod para servidor
-        if: github.event.inputs.dry_run != 'true'
+        if: needs.validate.outputs.dry_run != 'true'
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ env.HETZNER_HOST }}
@@ -636,7 +697,7 @@ EOF
           overwrite: true
 
       - name: Deploy stack via SSH
-        if: github.event.inputs.dry_run != 'true'
+        if: needs.validate.outputs.dry_run != 'true'
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ env.HETZNER_HOST }}
@@ -1047,7 +1108,7 @@ EOF
             fi
 
       - name: Dry run output
-        if: github.event.inputs.dry_run == 'true'
+        if: needs.validate.outputs.dry_run == 'true'
         run: |
           echo "🔍 DRY RUN - Nenhuma alteração foi feita"
           echo ""
@@ -1062,7 +1123,7 @@ EOF
     name: Health Check
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, deploy-stack]
-    if: github.event.inputs.dry_run != 'true'
+    if: needs.validate.outputs.dry_run != 'true'
     timeout-minutes: 15
     
     steps:
@@ -1202,10 +1263,10 @@ EOF
   # - Usa project name isolado para não afetar outros stacks
   # ===========================================================================
   rollback:
-    name: Rollback ${{ github.event.inputs.stack }}
+    name: Rollback ${{ needs.validate.outputs.stack }}
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, deploy-stack, health-check]
-    if: failure() && github.event.inputs.dry_run != 'true'
+    if: failure() && needs.validate.outputs.dry_run != 'true'
     timeout-minutes: 15
     
     steps:

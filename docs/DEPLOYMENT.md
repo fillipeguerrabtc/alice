@@ -31,6 +31,14 @@ A plataforma foi refatorada em **5 stacks independentes** para permitir:
 ### Deploy Modular via GitHub Actions
 
 **Workflow:** `.github/workflows/deploy-stack.yml`
+**Nome no GitHub Actions:** **Deploy - Production (Stacks)**
+
+#### Deploy Automático (100% pipeline)
+
+- **Gatilho**: **GitHub Release publicada** (`release: published`)
+- **Fonte de verdade**: **TAG** da release (`vX.Y.Z`)
+- **Comportamento**: deploy automático do stack `all` (sequência: infra → drizzle → alice → observability → erpnext → backup)
+- **Observação**: **pré-release não dispara deploy automático** (alpha/beta)
 
 ```bash
 # Deploy de um stack específico

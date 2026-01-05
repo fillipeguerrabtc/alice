@@ -19,7 +19,7 @@ Este documento contém a lista completa de todos os secrets necessários para a 
 **URL ERPNext:** `https://erp.yesyoudeserve.duckdns.org`
 **IP:** 178.63.41.108
 
-> **ATUALIZAÇÃO 05/01/2026:** Arquitetura refatorada para 5 stacks independentes com deploy/rollback modular. Workflow `deploy-stack.yml` permite deploy individual por stack.
+> **ATUALIZAÇÃO 05/01/2026:** Arquitetura refatorada para 5 stacks independentes com deploy/rollback modular. Workflow `.github/workflows/deploy-stack.yml` (**Deploy - Production (Stacks)**) permite deploy individual por stack.
 
 > Atualização 21/12/2025: Fluxo CI deduplicado (push somente em `main` + PR em `main`) e correções de tipos no frontend destravando Release & Tag.
 
