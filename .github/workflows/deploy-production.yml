@@ -1082,22 +1082,23 @@ jobs:
             # SOLUÇÃO: Centralizar configuração de timeouts com valores padrão
             # =================================================================
             # Timeouts configuráveis (podem ser sobrescritos via env vars)
-            # CORREÇÃO 04/01/2026: MAX_WAIT_TIME aumentado de 600s para 900s (15 minutos)
-            # ERPNext workers agora têm start_period de 420s (7 min), precisamos dar margem
-            # para eles passarem pelos retries se necessário
-            # Cálculo: 420s (start_period) + 5 retries × 30s interval + margem = ~900s
+            # CORREÇÃO 05/01/2026: MAX_WAIT_TIME aumentado de 900s para 1200s (15min → 20min)
+            # ERPNext workers agora têm start_period de 180s + 8 retries × 30s = 7min total
+            # Backend tem 300s + 20 retries × 30s = 15min total
+            # Frontend tem 90s + 10 retries × 30s = 7.5min total
+            # 20 minutos dá margem segura para TODOS os containers ficarem healthy no primeiro deploy
             #
             # USO DO MAX_WAIT_TIME (agora realmente usado, não apenas logado):
-            # - INIT_TIMEOUT = MAX_WAIT_TIME / 3 = 300s (init containers)
+            # - INIT_TIMEOUT = MAX_WAIT_TIME / 3 = 400s (init containers)
             # - SERVICE_TIMEOUT = MAX_WAIT_TIME - INIT_ELAPSED (service containers)
             # - MONITOR_TIMEOUT = 300s fixo (containers CORE são rápidos)
             MONITOR_INTERVAL="${MONITOR_INTERVAL:-5}"       # segundos entre checks de health
-            MAX_WAIT_TIME="${MAX_WAIT_TIME:-900}"          # timeout total para containers ficarem healthy (15 min)
+            MAX_WAIT_TIME="${MAX_WAIT_TIME:-1200}"          # timeout total para containers ficarem healthy (20 min)
             HEALTHCHECK_RETRIES="${HEALTHCHECK_RETRIES:-30}" # quantas tentativas de healthcheck
             
             log "⏱️  Configuração de timeouts para monitoramento:"
             log "   Monitor interval: ${MONITOR_INTERVAL}s (tempo entre verificações)"
-            log "   Max wait time: ${MAX_WAIT_TIME}s (timeout total para deploy)"
+            log "   Max wait time: ${MAX_WAIT_TIME}s (timeout total para deploy - 20 minutos)"
             log "   → Init containers: ~$((MAX_WAIT_TIME / 3))s (MAX_WAIT_TIME / 3)"
             log "   → Service containers: até ${MAX_WAIT_TIME}s (respeita start_period)"
             log "   Healthcheck retries: $HEALTHCHECK_RETRIES (tentativas máximas)"
