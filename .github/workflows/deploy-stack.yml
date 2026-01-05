@@ -164,7 +164,28 @@ jobs:
       - name: Checkout (tag da versão)
         uses: actions/checkout@v4
         with:
-          ref: ${{ steps.context.outputs.version }}
+          # Forçar ref explícita de TAG para evitar ambiguidade com branch (ex: "main")
+          # e facilitar troubleshooting quando o GitHub UI mostra "Branch: main".
+          ref: refs/tags/${{ steps.context.outputs.version }}
+
+      - name: Debug trigger + git ref (troubleshooting)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "=== GitHub Context (validate job) ==="
+          echo "event_name=$GITHUB_EVENT_NAME"
+          echo "ref=$GITHUB_REF"
+          echo "sha=$GITHUB_SHA"
+          echo "version(tag)=${{ steps.context.outputs.version }}"
+          echo "stack=${{ steps.context.outputs.stack }}"
+          echo "rollback=${{ steps.context.outputs.rollback }}"
+          echo "dry_run=${{ steps.context.outputs.dry_run }}"
+          echo ""
+          echo "=== Git State ==="
+          git --no-pager status -sb
+          git --no-pager log -1 --oneline
+          echo "HEAD=$(git rev-parse HEAD)"
+          echo "EXACT_TAG=$(git describe --tags --exact-match 2>/dev/null || echo 'N/A')"
 
       - name: Validate inputs
         id: validate
@@ -332,7 +353,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.validate.outputs.version }}
+          # Forçar ref explícita de TAG para garantir deploy determinístico pela versão.
+          ref: refs/tags/${{ needs.validate.outputs.version }}
+
+      - name: Debug git ref (deploy job)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "=== GitHub Context (deploy job) ==="
+          echo "event_name=$GITHUB_EVENT_NAME"
+          echo "ref=$GITHUB_REF"
+          echo "sha=$GITHUB_SHA"
+          echo "version(tag)=${{ needs.validate.outputs.version }}"
+          echo "stack=${{ needs.validate.outputs.stack }}"
+          echo ""
+          echo "=== Git State ==="
+          git --no-pager status -sb
+          git --no-pager log -1 --oneline
+          echo "HEAD=$(git rev-parse HEAD)"
+          echo "EXACT_TAG=$(git describe --tags --exact-match 2>/dev/null || echo 'N/A')"
 
       - name: Login to GHCR
         uses: docker/login-action@v3
