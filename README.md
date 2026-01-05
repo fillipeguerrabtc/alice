@@ -1,13 +1,13 @@
 # Alice - Plataforma Enterprise de IA Autônoma
 
 **Autor:** Fillipe Guerra  
-**Data:** 04 de Janeiro de 2026  
-**Versão:** 4.73
+**Data:** 05 de Janeiro de 2026  
+**Versão:** 5.0
 
 <div align="center">
 
 ![Alice Logo](https://img.shields.io/badge/Alice-IA%20Enterprise-blue?style=for-the-badge&logo=robot&logoColor=white)
-![Version](https://img.shields.io/badge/versão-4.73-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/versão-5.0-green?style=for-the-badge)
 ![License](https://img.shields.io/badge/licença-Proprietária-red?style=for-the-badge)
 ![LLM](https://img.shields.io/badge/LLM-Mixtral%208x7B%20vLLM-purple?style=for-the-badge)
 
@@ -96,9 +96,27 @@
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Arquitetura de Microsserviços - 50 Containers em Produção
+### Arquitetura Multi-Stack Modular - 50 Containers em Produção
 
-A plataforma Alice é composta por **50 containers** organizados em 7 categorias (todos rodando no servidor Hetzner GPU único):
+> **ATUALIZAÇÃO 05/01/2026:** Arquitetura refatorada para **5 stacks independentes** com deploy/rollback modular.
+
+A plataforma Alice é composta por **50 containers** organizados em **5 stacks independentes** (todos rodando no servidor Hetzner GPU único):
+
+#### Arquitetura de Stacks (Deploy Independente)
+
+| Stack | Containers | Propósito | Rollback |
+|-------|------------|-----------|----------|
+| **INFRA** | 10 | PostgreSQL, Redis, Qdrant, Caddy, MinIO | Independente |
+| **ALICE** | 8 + 5 GPU | Microsserviços core + GPU Manager | Independente |
+| **OBSERVABILITY** | 13 | Prometheus, Grafana, Loki, Jaeger, Langfuse | Independente |
+| **ERPNEXT** | 15 | ERP/CRM completo (100% isolado) | Independente |
+| **BACKUP** | 1 | pgBackRest enterprise | Independente |
+
+**Benefícios da Arquitetura Multi-Stack:**
+- ✅ **Produção Parcial**: Alice funciona mesmo se ERPNext falhar
+- ✅ **Rollback Cirúrgico**: Reverter apenas o stack com problema
+- ✅ **Deploy Independente**: Atualizar Observability sem downtime de Alice
+- ✅ **Isolamento de Falhas**: Problema em um stack não afeta outros
 
 #### Categoria 1: Infraestrutura Core (7 serviços)
 

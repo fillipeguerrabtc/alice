@@ -1,0 +1,1165 @@
+# =============================================================================
+# GitHub Actions Workflow - Deploy de Stacks Independentes
+# =============================================================================
+# Descrição: Deploy modular de stacks independentes para produção parcial
+#
+# ARQUITETURA MULTI-STACK (05/01/2026):
+# Este workflow é a base para deploys independentes por stack.
+# Cada stack pode ser deployado, rolledback e monitorado separadamente.
+#
+# STACKS DISPONÍVEIS:
+#   - infra: PostgreSQL, Redis, Qdrant, SearXNG, Tor, Caddy, MinIO
+#   - alice: Frontend, Auth, Chat, RAG, Training, Integrations, GPU Manager, GPU
+#   - observability: Prometheus, Grafana, Loki, Jaeger, Langfuse, ClickHouse
+#   - erpnext: MariaDB, Redis Cache/Queue, Backend, Workers (15 containers)
+#   - backup: pgBackRest
+#   - all: Todos os stacks em sequência
+#
+# ORDEM DE DEPLOY:
+#   1. infra (obrigatório primeiro - databases, caches, reverse proxy)
+#   2. drizzle push (migrações de schema)
+#   3. alice + observability (podem ser paralelos após infra)
+#   4. erpnext (independente, pode falhar sem afetar Alice)
+#   5. backup (depende de postgres healthy)
+#
+# ROLLBACK:
+#   - Cada stack tem rollback independente
+#   - Rollback de um stack NÃO afeta outros
+#   - Histórico de versões por stack mantido em /opt/alice/versions/
+#
+# Author: Fillipe Guerra
+# Data: 05/01/2026
+# =============================================================================
+
+name: Deploy Stack (Modular)
+
+on:
+  workflow_dispatch:
+    inputs:
+      stack:
+        description: 'Stack para deploy (infra, alice, observability, erpnext, backup, all)'
+        type: choice
+        required: true
+        default: 'all'
+        options:
+          - all
+          - infra
+          - alice
+          - observability
+          - erpnext
+          - backup
+      version:
+        description: 'Versão para deploy (ex: v1.0.0)'
+        type: string
+        required: true
+      rollback:
+        description: 'Executar rollback ao invés de deploy'
+        type: boolean
+        required: false
+        default: false
+      rollback_version:
+        description: 'Versão para rollback (apenas se rollback=true)'
+        type: string
+        required: false
+        default: ''
+      dry_run:
+        description: 'Apenas validar, não executar deploy'
+        type: boolean
+        required: false
+        default: false
+
+concurrency:
+  group: deploy-${{ github.event.inputs.stack }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: read
+  security-events: write
+  actions: read
+
+env:
+  DOMAIN: yesyoudeserve.duckdns.org
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/alice
+  HETZNER_HOST: 178.63.41.108
+  DEPLOY_PATH: /opt/alice
+
+jobs:
+  # ===========================================================================
+  # Job 1: Validação e Preparação
+  # ===========================================================================
+  validate:
+    name: Validate Deploy
+    runs-on: [self-hosted, linux, deploy]
+    timeout-minutes: 5
+    outputs:
+      stack: ${{ github.event.inputs.stack }}
+      version: ${{ github.event.inputs.version }}
+      is_rollback: ${{ github.event.inputs.rollback }}
+      compose_files: ${{ steps.prepare.outputs.compose_files }}
+      depends_on: ${{ steps.prepare.outputs.depends_on }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate inputs
+        id: validate
+        run: |
+          echo "🔍 Validando inputs..."
+          
+          STACK="${{ github.event.inputs.stack }}"
+          VERSION="${{ github.event.inputs.version }}"
+          ROLLBACK="${{ github.event.inputs.rollback }}"
+          
+          # Validar stack
+          VALID_STACKS="all infra alice observability erpnext backup"
+          if ! echo "$VALID_STACKS" | grep -qw "$STACK"; then
+            echo "❌ Stack inválido: $STACK"
+            echo "   Válidos: $VALID_STACKS"
+            exit 1
+          fi
+          
+          # Validar versão
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+            echo "❌ Versão inválida: $VERSION"
+            echo "   Formato esperado: v1.0.0 ou v1.0.0-rc.1"
+            exit 1
+          fi
+          
+          echo "✅ Stack: $STACK"
+          echo "✅ Versão: $VERSION"
+          echo "✅ Rollback: $ROLLBACK"
+
+      - name: Prepare compose files
+        id: prepare
+        run: |
+          STACK="${{ github.event.inputs.stack }}"
+          
+          # Mapear stack para compose files e dependências
+          # NOTA: Para stack='all', o deploy é feito em SEQUÊNCIA no script SSH
+          case "$STACK" in
+            infra)
+              COMPOSE_FILES="docker-compose.infra.yml"
+              DEPENDS_ON=""
+              ;;
+            alice)
+              COMPOSE_FILES="docker-compose.alice.yml"
+              DEPENDS_ON="infra"
+              ;;
+            observability)
+              COMPOSE_FILES="docker-compose.observability.yml"
+              DEPENDS_ON="infra"
+              ;;
+            erpnext)
+              COMPOSE_FILES="docker-compose.erpnext.yml"
+              DEPENDS_ON=""
+              ;;
+            backup)
+              COMPOSE_FILES="docker-compose.backup.yml"
+              DEPENDS_ON="infra"
+              ;;
+            all)
+              # Para 'all', o script SSH faz deploy em SEQUÊNCIA
+              # Não precisa de compose_files específico aqui
+              COMPOSE_FILES="ALL_STACKS_SEQUENTIAL"
+              DEPENDS_ON=""
+              ;;
+          esac
+          
+          echo "compose_files=$COMPOSE_FILES" >> $GITHUB_OUTPUT
+          echo "depends_on=$DEPENDS_ON" >> $GITHUB_OUTPUT
+          
+          echo "📁 Compose files: $COMPOSE_FILES"
+          echo "🔗 Dependências: ${DEPENDS_ON:-nenhuma}"
+
+  # ===========================================================================
+  # Job 2: Verificar Dependências
+  # ===========================================================================
+  check-dependencies:
+    name: Check Dependencies
+    runs-on: [self-hosted, linux, deploy]
+    needs: validate
+    if: needs.validate.outputs.depends_on != ''
+    timeout-minutes: 5
+    
+    steps:
+      - name: Verificar stack dependente
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: root
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          script_timeout: 2m
+          script: |
+            DEPENDS_ON="${{ needs.validate.outputs.depends_on }}"
+            
+            echo "🔍 Verificando se $DEPENDS_ON está healthy..."
+            
+            case "$DEPENDS_ON" in
+              infra)
+                echo "🔍 Verificando containers do stack infra..."
+                echo ""
+                
+                # Containers OBRIGATÓRIOS do infra
+                REQUIRED_CONTAINERS="alice-postgres alice-redis alice-caddy alice-qdrant alice-minio"
+                
+                for svc in $REQUIRED_CONTAINERS; do
+                  STATUS=$(docker inspect --format='{{.State.Health.Status}}' $svc 2>/dev/null || echo "not_found")
+                  
+                  if [ "$STATUS" = "healthy" ]; then
+                    echo "   ✅ $svc: healthy"
+                  else
+                    echo "   ❌ $svc: $STATUS"
+                    echo ""
+                    echo "ERRO: Container $svc não está healthy!"
+                    echo "Faça deploy do stack infra primeiro:"
+                    echo "  gh workflow run 'Deploy Stack (Modular)' -f stack=infra -f version=<versao>"
+                    exit 1
+                  fi
+                done
+                
+                # Containers OPCIONAIS (healthy ou não existem)
+                echo ""
+                echo "📋 Verificando containers opcionais..."
+                OPTIONAL_CONTAINERS="alice-searxng alice-tor"
+                for svc in $OPTIONAL_CONTAINERS; do
+                  STATUS=$(docker inspect --format='{{.State.Health.Status}}' $svc 2>/dev/null || echo "not_found")
+                  if [ "$STATUS" = "healthy" ]; then
+                    echo "   ✅ $svc: healthy"
+                  elif [ "$STATUS" = "not_found" ]; then
+                    echo "   ⚠️ $svc: não encontrado (opcional)"
+                  else
+                    echo "   ⏳ $svc: $STATUS"
+                  fi
+                done
+                
+                # Verificar networks
+                echo ""
+                echo "🌐 Verificando networks..."
+                for net in alice-network erpnext-network; do
+                  if docker network inspect $net > /dev/null 2>&1; then
+                    echo "   ✅ $net: existe"
+                  else
+                    echo "   ❌ $net: não existe!"
+                    exit 1
+                  fi
+                done
+                
+                echo ""
+                echo "✅ Stack infra está pronto!"
+                ;;
+              *)
+                echo "⚠️ Verificação de dependência não implementada para: $DEPENDS_ON"
+                ;;
+            esac
+
+  # ===========================================================================
+  # Job 3: Deploy do Stack (ou Rollback Manual)
+  # ===========================================================================
+  deploy-stack:
+    name: ${{ github.event.inputs.rollback == 'true' && 'Rollback' || 'Deploy' }} ${{ github.event.inputs.stack }}
+    runs-on: [self-hosted, linux, deploy]
+    needs: [validate, check-dependencies]
+    if: always() && needs.validate.result == 'success' && (needs.check-dependencies.result == 'success' || needs.check-dependencies.result == 'skipped')
+    timeout-minutes: 30
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determinar versão para deploy
+        id: version
+        run: |
+          IS_ROLLBACK="${{ github.event.inputs.rollback }}"
+          ROLLBACK_VERSION="${{ github.event.inputs.rollback_version }}"
+          INPUT_VERSION="${{ needs.validate.outputs.version }}"
+          
+          if [ "$IS_ROLLBACK" = "true" ]; then
+            if [ -n "$ROLLBACK_VERSION" ]; then
+              echo "🔄 ROLLBACK MANUAL para versão: $ROLLBACK_VERSION"
+              echo "deploy_version=$ROLLBACK_VERSION" >> $GITHUB_OUTPUT
+              echo "is_rollback=true" >> $GITHUB_OUTPUT
+            else
+              echo "❌ ERRO: rollback=true mas rollback_version não especificada!"
+              echo "   Para rollback manual, especifique a versão em rollback_version"
+              exit 1
+            fi
+          else
+            echo "🚀 DEPLOY para versão: $INPUT_VERSION"
+            echo "deploy_version=$INPUT_VERSION" >> $GITHUB_OUTPUT
+            echo "is_rollback=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate .env.prod
+        id: generate-env
+        env:
+          # Passar secrets como variáveis de ambiente para o script
+          DEPLOY_VERSION: ${{ steps.version.outputs.deploy_version }}
+          STACK_NAME: ${{ needs.validate.outputs.stack }}
+          IS_ROLLBACK: ${{ steps.version.outputs.is_rollback }}
+          ENV_IMAGE_PREFIX: ${{ env.IMAGE_PREFIX }}
+          ENV_DOMAIN: ${{ env.DOMAIN }}
+          # Secrets
+          SECRET_ACME_EMAIL: ${{ secrets.ACME_EMAIL }}
+          SECRET_POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          SECRET_POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          SECRET_POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          SECRET_REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+          SECRET_QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
+          SECRET_SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+          SECRET_INTERNAL_API_SECRET: ${{ secrets.INTERNAL_API_SECRET }}
+          SECRET_GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          SECRET_GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          SECRET_OAUTH_GITHUB_CLIENT_ID: ${{ secrets.OAUTH_GITHUB_CLIENT_ID }}
+          SECRET_OAUTH_GITHUB_CLIENT_SECRET: ${{ secrets.OAUTH_GITHUB_CLIENT_SECRET }}
+          SECRET_OIDC_COOKIE_KEYS: ${{ secrets.OIDC_COOKIE_KEYS }}
+          SECRET_ADMIN_USER: ${{ secrets.ADMIN_USER }}
+          SECRET_ADMIN_PWD: ${{ secrets.ADMIN_PWD }}
+          SECRET_GRAFANA_ADMIN_USER: ${{ secrets.GRAFANA_ADMIN_USER }}
+          SECRET_GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          SECRET_GRAFANA_OAUTH_CLIENT_SECRET: ${{ secrets.GRAFANA_OAUTH_CLIENT_SECRET }}
+          SECRET_BACKUP_CIPHER_PASS: ${{ secrets.BACKUP_CIPHER_PASS }}
+          SECRET_MINIO_ROOT_USER: ${{ secrets.MINIO_ROOT_USER }}
+          SECRET_MINIO_ROOT_PASSWORD: ${{ secrets.MINIO_ROOT_PASSWORD }}
+          SECRET_LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          SECRET_LANGFUSE_NEXT_AUTH_SECRET: ${{ secrets.LANGFUSE_NEXT_AUTH_SECRET }}
+          SECRET_LANGFUSE_SALT: ${{ secrets.LANGFUSE_SALT }}
+          SECRET_LANGFUSE_ENCRYPTION_KEY: ${{ secrets.LANGFUSE_ENCRYPTION_KEY }}
+          SECRET_LANGFUSE_DB_USER: ${{ secrets.LANGFUSE_DB_USER }}
+          SECRET_LANGFUSE_DB_PASSWORD: ${{ secrets.LANGFUSE_DB_PASSWORD }}
+          SECRET_LANGFUSE_DB_NAME: ${{ secrets.LANGFUSE_DB_NAME }}
+          SECRET_CLICKHOUSE_USER: ${{ secrets.CLICKHOUSE_USER }}
+          SECRET_CLICKHOUSE_PASSWORD: ${{ secrets.CLICKHOUSE_PASSWORD }}
+          SECRET_CLICKHOUSE_DB: ${{ secrets.CLICKHOUSE_DB }}
+          SECRET_CLICKHOUSE_MIGRATION_URL: ${{ secrets.CLICKHOUSE_MIGRATION_URL }}
+          SECRET_SEARXNG_SECRET_KEY: ${{ secrets.SEARXNG_SECRET_KEY }}
+          SECRET_GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          SECRET_GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          SECRET_HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
+          SECRET_ERPNEXT_MYSQL_ROOT_PASSWORD: ${{ secrets.ERPNEXT_MYSQL_ROOT_PASSWORD }}
+          SECRET_ERPNEXT_DB_NAME: ${{ secrets.ERPNEXT_DB_NAME }}
+          SECRET_ERPNEXT_DB_USER: ${{ secrets.ERPNEXT_DB_USER }}
+          SECRET_ERPNEXT_DB_PASSWORD: ${{ secrets.ERPNEXT_DB_PASSWORD }}
+          SECRET_ERPNEXT_ADMIN_PASSWORD: ${{ secrets.ERPNEXT_ADMIN_PASSWORD }}
+          SECRET_ERPNEXT_OAUTH_CLIENT_SECRET: ${{ secrets.ERPNEXT_OAUTH_CLIENT_SECRET }}
+          SECRET_REDIS_CACHE_PASSWORD: ${{ secrets.REDIS_CACHE_PASSWORD }}
+          SECRET_REDIS_QUEUE_PASSWORD: ${{ secrets.REDIS_QUEUE_PASSWORD }}
+          SECRET_STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          SECRET_STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
+          SECRET_STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          SECRET_TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+          SECRET_TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
+          SECRET_TWILIO_WHATSAPP_NUMBER: ${{ secrets.TWILIO_WHATSAPP_NUMBER }}
+          SECRET_WISE_API_KEY: ${{ secrets.WISE_API_KEY }}
+          SECRET_WISE_PROFILE_ID: ${{ secrets.WISE_PROFILE_ID }}
+          SECRET_KUCOIN_PRO_API_KEY: ${{ secrets.KUCOIN_PRO_API_KEY }}
+          SECRET_KUCOIN_PRO_API_SECRET: ${{ secrets.KUCOIN_PRO_API_SECRET }}
+          SECRET_KUCOIN_PRO_API_PASSPHRASE: ${{ secrets.KUCOIN_PRO_API_PASSPHRASE }}
+        run: |
+          echo "📝 Gerando .env.prod para $STACK_NAME (versão: $DEPLOY_VERSION)..."
+          
+          # Gerar .env.prod com interpolação de variáveis
+          cat > .env.prod << EOF
+# =============================================================================
+# ALICE PLATFORM - ENVIRONMENT VARIABLES (PRODUCTION)
+# =============================================================================
+# Auto-generated by GitHub Actions
+# Version: ${DEPLOY_VERSION}
+# Stack: ${STACK_NAME}
+# Rollback: ${IS_ROLLBACK}
+# Date: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+# =============================================================================
+
+# Container Registry
+IMAGE_PREFIX=${ENV_IMAGE_PREFIX}
+IMAGE_TAG=${DEPLOY_VERSION}
+
+# Domain
+ACME_EMAIL=${SECRET_ACME_EMAIL}
+CORS_ORIGINS=https://${ENV_DOMAIN},https://erp.${ENV_DOMAIN},https://observability.${ENV_DOMAIN}
+RAG_PUBLIC_BASE_URL=https://${ENV_DOMAIN}
+
+# Database
+POSTGRES_USER=${SECRET_POSTGRES_USER}
+POSTGRES_PASSWORD=${SECRET_POSTGRES_PASSWORD}
+POSTGRES_DB=${SECRET_POSTGRES_DB}
+
+# Redis
+REDIS_PASSWORD=${SECRET_REDIS_PASSWORD}
+REDIS_URL=redis://:${SECRET_REDIS_PASSWORD}@alice-redis:6379
+
+# Qdrant
+QDRANT_API_KEY=${SECRET_QDRANT_API_KEY}
+QDRANT_URL=http://alice-qdrant:6333
+
+# Auth
+SESSION_SECRET=${SECRET_SESSION_SECRET}
+INTERNAL_API_SECRET=${SECRET_INTERNAL_API_SECRET}
+GOOGLE_CLIENT_ID=${SECRET_GOOGLE_CLIENT_ID}
+GOOGLE_CLIENT_SECRET=${SECRET_GOOGLE_CLIENT_SECRET}
+OAUTH_GITHUB_CLIENT_ID=${SECRET_OAUTH_GITHUB_CLIENT_ID}
+OAUTH_GITHUB_CLIENT_SECRET=${SECRET_OAUTH_GITHUB_CLIENT_SECRET}
+OIDC_ISSUER=https://${ENV_DOMAIN}
+OIDC_COOKIE_KEYS=${SECRET_OIDC_COOKIE_KEYS}
+
+# Admin
+ADMIN_USER=${SECRET_ADMIN_USER}
+ADMIN_PWD=${SECRET_ADMIN_PWD}
+GRAFANA_ADMIN_USER=${SECRET_GRAFANA_ADMIN_USER}
+GRAFANA_ADMIN_PASSWORD=${SECRET_GRAFANA_ADMIN_PASSWORD}
+GRAFANA_OAUTH_CLIENT_SECRET=${SECRET_GRAFANA_OAUTH_CLIENT_SECRET}
+
+# Backup
+BACKUP_CIPHER_PASS=${SECRET_BACKUP_CIPHER_PASS}
+
+# MinIO
+MINIO_ROOT_USER=${SECRET_MINIO_ROOT_USER}
+MINIO_ROOT_PASSWORD=${SECRET_MINIO_ROOT_PASSWORD}
+
+# Langfuse
+LANGFUSE_SECRET_KEY=${SECRET_LANGFUSE_SECRET_KEY}
+LANGFUSE_NEXT_AUTH_SECRET=${SECRET_LANGFUSE_NEXT_AUTH_SECRET}
+LANGFUSE_SALT=${SECRET_LANGFUSE_SALT}
+LANGFUSE_ENCRYPTION_KEY=${SECRET_LANGFUSE_ENCRYPTION_KEY}
+LANGFUSE_DB_USER=${SECRET_LANGFUSE_DB_USER}
+LANGFUSE_DB_PASSWORD=${SECRET_LANGFUSE_DB_PASSWORD}
+LANGFUSE_DB_NAME=${SECRET_LANGFUSE_DB_NAME}
+
+# ClickHouse
+CLICKHOUSE_USER=${SECRET_CLICKHOUSE_USER}
+CLICKHOUSE_PASSWORD=${SECRET_CLICKHOUSE_PASSWORD}
+CLICKHOUSE_DB=${SECRET_CLICKHOUSE_DB}
+CLICKHOUSE_MIGRATION_URL=${SECRET_CLICKHOUSE_MIGRATION_URL}
+
+# SearXNG
+SEARXNG_SECRET_KEY=${SECRET_SEARXNG_SECRET_KEY}
+
+# SMTP
+GMAIL_USER=${SECRET_GMAIL_USER}
+GMAIL_APP_PASSWORD=${SECRET_GMAIL_APP_PASSWORD}
+
+# GPU
+GPU_MANAGER_URL=http://alice-gpu-manager:3010
+HUGGINGFACE_TOKEN=${SECRET_HUGGINGFACE_TOKEN}
+MIXTRAL_GPU_URL=http://gpu-mixtral:8000
+EMBEDDINGS_GPU_URL=http://gpu-embeddings:8000
+FLUX_GPU_URL=http://gpu-flux:8000
+ASR_GPU_URL=http://gpu-asr:8000
+TRAINING_GPU_URL=http://gpu-trainer:8000
+
+# ERPNext
+ERPNEXT_SITE_NAME=erp.${ENV_DOMAIN}
+ERPNEXT_MYSQL_ROOT_PASSWORD=${SECRET_ERPNEXT_MYSQL_ROOT_PASSWORD}
+ERPNEXT_DB_NAME=${SECRET_ERPNEXT_DB_NAME}
+ERPNEXT_DB_USER=${SECRET_ERPNEXT_DB_USER}
+ERPNEXT_DB_PASSWORD=${SECRET_ERPNEXT_DB_PASSWORD}
+ERPNEXT_ADMIN_PASSWORD=${SECRET_ERPNEXT_ADMIN_PASSWORD}
+ERPNEXT_OAUTH_CLIENT_SECRET=${SECRET_ERPNEXT_OAUTH_CLIENT_SECRET}
+ERPNEXT_URL=https://erp.${ENV_DOMAIN}
+REDIS_CACHE_PASSWORD=${SECRET_REDIS_CACHE_PASSWORD}
+REDIS_QUEUE_PASSWORD=${SECRET_REDIS_QUEUE_PASSWORD}
+
+# Integrations
+STRIPE_SECRET_KEY=${SECRET_STRIPE_SECRET_KEY}
+STRIPE_PUBLISHABLE_KEY=${SECRET_STRIPE_PUBLISHABLE_KEY}
+STRIPE_WEBHOOK_SECRET=${SECRET_STRIPE_WEBHOOK_SECRET}
+TWILIO_ACCOUNT_SID=${SECRET_TWILIO_ACCOUNT_SID}
+TWILIO_AUTH_TOKEN=${SECRET_TWILIO_AUTH_TOKEN}
+TWILIO_WHATSAPP_NUMBER=${SECRET_TWILIO_WHATSAPP_NUMBER}
+WISE_API_KEY=${SECRET_WISE_API_KEY}
+WISE_PROFILE_ID=${SECRET_WISE_PROFILE_ID}
+KUCOIN_PRO_API_KEY=${SECRET_KUCOIN_PRO_API_KEY}
+KUCOIN_PRO_API_SECRET=${SECRET_KUCOIN_PRO_API_SECRET}
+KUCOIN_PRO_API_PASSPHRASE=${SECRET_KUCOIN_PRO_API_PASSPHRASE}
+EOF
+          
+          echo "✅ .env.prod gerado com $(wc -l < .env.prod) linhas"
+          
+          # Validar que secrets foram interpolados (não devem conter ${ )
+          if grep -q '\${' .env.prod; then
+            echo "❌ ERRO: Variáveis não interpoladas encontradas no .env.prod!"
+            grep '\${' .env.prod
+            exit 1
+          fi
+          echo "✅ Todas as variáveis foram interpoladas corretamente"
+
+      - name: Verificar imagens no GHCR
+        id: check-images
+        run: |
+          echo "🔍 Verificando se imagens existem no GHCR..."
+          VERSION="${{ steps.version.outputs.deploy_version }}"
+          STACK="${{ needs.validate.outputs.stack }}"
+          
+          # Imagens por stack
+          case "$STACK" in
+            infra)
+              IMAGES="postgres caddy pgbackrest"
+              ;;
+            alice)
+              IMAGES="frontend auth chat rag training integrations gpu-manager"
+              ;;
+            observability)
+              # Observability usa imagens públicas (prometheus, grafana, etc.)
+              IMAGES=""
+              ;;
+            erpnext)
+              # ERPNext usa imagens públicas (frappe/erpnext)
+              IMAGES=""
+              ;;
+            backup)
+              IMAGES="pgbackrest"
+              ;;
+            all)
+              IMAGES="postgres caddy pgbackrest frontend auth chat rag training integrations gpu-manager"
+              ;;
+          esac
+          
+          # Verificar cada imagem
+          MISSING=""
+          for img in $IMAGES; do
+            FULL_IMAGE="${{ env.IMAGE_PREFIX }}-${img}:${VERSION}"
+            if ! docker manifest inspect "$FULL_IMAGE" > /dev/null 2>&1; then
+              echo "❌ Imagem não encontrada: $FULL_IMAGE"
+              MISSING="$MISSING $img"
+            else
+              echo "✅ Imagem existe: $FULL_IMAGE"
+            fi
+          done
+          
+          if [ -n "$MISSING" ]; then
+            echo "❌ ERRO: Imagens faltando no GHCR:$MISSING"
+            echo "   Execute o workflow 'Release & Tag' primeiro para buildar as imagens."
+            exit 1
+          fi
+          
+          echo "✅ Todas as imagens necessárias existem no GHCR"
+
+      - name: Sincronizar código e configs para servidor
+        if: github.event.inputs.dry_run != 'true'
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: root
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          source: "infra/docker/stacks/,infra/docker/Caddyfile,infra/observability/,drizzle.config.ts,shared/,packages/,migrations/"
+          target: "/opt/alice/app"
+          strip_components: 0
+          overwrite: true
+
+      - name: Copiar .env.prod para servidor
+        if: github.event.inputs.dry_run != 'true'
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: root
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          source: ".env.prod"
+          target: "/opt/alice/app/infra/docker"
+          overwrite: true
+
+      - name: Deploy stack via SSH
+        if: github.event.inputs.dry_run != 'true'
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: root
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          script_timeout: 30m
+          script: |
+            set -e
+            
+            STACK="${{ needs.validate.outputs.stack }}"
+            VERSION="${{ steps.version.outputs.deploy_version }}"
+            IS_ROLLBACK="${{ steps.version.outputs.is_rollback }}"
+            
+            echo ""
+            echo "═══════════════════════════════════════════════════════════"
+            if [ "$IS_ROLLBACK" = "true" ]; then
+              echo "🔄 ROLLBACK MANUAL - Stack: $STACK | Versão: $VERSION"
+            else
+              echo "🚀 DEPLOY AUTOMÁTICO - Stack: $STACK | Versão: $VERSION"
+            fi
+            echo "═══════════════════════════════════════════════════════════"
+            
+            cd /opt/alice/app/infra/docker
+            
+            # =========================================================
+            # INFRAESTRUTURA BASE - Networks, Diretórios e Volumes
+            # =========================================================
+            echo ""
+            echo "🏗️ INFRAESTRUTURA BASE"
+            echo "========================================"
+            
+            # 1. NETWORKS (externas - persistem entre stacks)
+            echo "🌐 Verificando networks externas..."
+            if ! docker network inspect alice-network > /dev/null 2>&1; then
+              echo "   📝 Criando network alice-network..."
+              docker network create --driver bridge --subnet 172.28.0.0/16 alice-network
+            else
+              echo "   ✅ alice-network existe"
+            fi
+            if ! docker network inspect erpnext-network > /dev/null 2>&1; then
+              echo "   📝 Criando network erpnext-network..."
+              docker network create --driver bridge erpnext-network
+            else
+              echo "   ✅ erpnext-network existe"
+            fi
+            
+            # 2. DIRETÓRIOS (para bind mounts dos volumes)
+            # Apenas se for deploy do stack infra ou all
+            if [ "$STACK" = "infra" ] || [ "$STACK" = "all" ]; then
+              echo ""
+              echo "📁 Criando estrutura de diretórios..."
+              
+              # Diretórios de dados (volumes)
+              mkdir -p /opt/alice/data/{postgres,redis-alice,qdrant,minio,caddy,caddy-config}
+              mkdir -p /opt/alice/data/{searxng-config,pgbackrest-spool,vector}
+              mkdir -p /opt/alice/data/{langfuse-db,clickhouse}
+              mkdir -p /opt/alice/data/{prometheus,grafana,loki,jaeger}
+              mkdir -p /opt/alice/data/{erpnext-sites,erpnext-mariadb,erpnext-redis-cache,erpnext-redis-queue}
+              
+              # Diretórios de logs
+              mkdir -p /opt/alice/logs/{caddy,erpnext,clickhouse,jaeger}
+              
+              # Diretórios de uploads e backups
+              mkdir -p /opt/alice/uploads/training
+              mkdir -p /opt/alice/backups/{postgresql,postgresql/logs,manifests}
+              
+              # Diretórios de secrets
+              mkdir -p /opt/alice/secrets
+              
+              # Criar arquivo de secret para Langfuse DB
+              # (monta em /run/secrets/langfuse_db_password no container)
+              LANGFUSE_DB_PWD=$(grep '^LANGFUSE_DB_PASSWORD=' /opt/alice/app/infra/docker/.env.prod | cut -d'=' -f2 | tr -d ' ')
+              if [ -n "$LANGFUSE_DB_PWD" ]; then
+                rm -f /opt/alice/secrets/langfuse_db_password
+                echo -n "$LANGFUSE_DB_PWD" > /opt/alice/secrets/langfuse_db_password
+                chmod 600 /opt/alice/secrets/langfuse_db_password
+                echo "   ✅ Secret langfuse_db_password criado"
+              else
+                echo "   ⚠️ LANGFUSE_DB_PASSWORD não encontrado no .env.prod"
+              fi
+              
+              # Permissões específicas por serviço
+              echo "🔐 Configurando permissões..."
+              chown -R 999:999 /opt/alice/data/postgres 2>/dev/null || true     # postgres
+              chown -R 1000:1000 /opt/alice/data/grafana 2>/dev/null || true   # grafana (se existir)
+              chown -R 65534:65534 /opt/alice/data/prometheus 2>/dev/null || true  # prometheus
+              chown -R 10001:10001 /opt/alice/data/loki 2>/dev/null || true    # loki
+              chown -R 101:101 /opt/alice/data/clickhouse /opt/alice/logs/clickhouse 2>/dev/null || true  # clickhouse
+              chown -R 10001:10001 /opt/alice/logs/jaeger 2>/dev/null || true  # jaeger
+              
+              echo "   ✅ Estrutura de diretórios criada"
+            fi
+            
+            # 3. VOLUMES DOCKER (usando docker-compose.base.yml)
+            if [ "$STACK" = "infra" ] || [ "$STACK" = "all" ]; then
+              echo ""
+              echo "📦 Criando volumes Docker..."
+              cd /opt/alice/app/infra/docker/stacks
+              docker compose -f docker-compose.base.yml up --no-start 2>/dev/null || {
+                echo "   ⚠️ Alguns volumes já existem (normal)"
+              }
+              echo "   ✅ Volumes verificados"
+            fi
+            
+            echo ""
+            echo "✅ Infraestrutura base pronta!"
+            echo "========================================"
+            
+            # =========================================================
+            # VERSIONAMENTO - Gerenciar versões para rollback
+            # =========================================================
+            mkdir -p /opt/alice/versions
+            
+            if [ "$IS_ROLLBACK" = "true" ]; then
+              # Em rollback manual: não alterar .previous, apenas atualizar .current
+              echo "🔄 Rollback: atualizando versão atual para $VERSION"
+              echo "$VERSION" > /opt/alice/versions/$STACK.current
+            else
+              # Em deploy normal: salvar versão atual como .previous
+              if [ -f /opt/alice/versions/$STACK.current ]; then
+                cp /opt/alice/versions/$STACK.current /opt/alice/versions/$STACK.previous
+                echo "📌 Versão anterior salva: $(cat /opt/alice/versions/$STACK.previous)"
+              fi
+              echo "$VERSION" > /opt/alice/versions/$STACK.current
+              echo "📌 Versão atual: $VERSION"
+            fi
+            
+            # =========================================================
+            # FUNÇÃO AUXILIAR: Deploy de um stack individual
+            # =========================================================
+            deploy_single_stack() {
+              local stack_name=$1
+              local compose_file=$2
+              
+              echo ""
+              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+              echo "📦 Deploy Stack: $stack_name"
+              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+              
+              cd /opt/alice/app/infra/docker/stacks
+              
+              echo "📥 Pull das imagens..."
+              docker compose -p alice-$stack_name -f $compose_file pull
+              
+              echo "🔄 Deploy..."
+              docker compose -p alice-$stack_name -f $compose_file up -d --remove-orphans
+              
+              echo "📋 Containers:"
+              docker compose -p alice-$stack_name -f $compose_file ps --format "table {{.Name}}\t{{.Status}}"
+              
+              # Registrar versão
+              echo "$VERSION" > /opt/alice/versions/$stack_name.current
+            }
+            
+            # =========================================================
+            # DEPLOY: Stack individual OU sequência completa
+            # =========================================================
+            cd /opt/alice/app/infra/docker/stacks
+            
+            if [ "$STACK" = "all" ]; then
+              echo ""
+              echo "🚀 DEPLOY COMPLETO - Todos os stacks em SEQUÊNCIA"
+              echo "   Ordem: infra → drizzle → alice → observability → erpnext → backup"
+              echo ""
+              
+              # 1. INFRA (obrigatório primeiro)
+              deploy_single_stack "infra" "docker-compose.infra.yml"
+              
+              # 2. AGUARDAR INFRA HEALTHY
+              echo ""
+              echo "⏳ Aguardando serviços de infraestrutura..."
+              for svc in alice-postgres alice-redis alice-qdrant alice-minio alice-caddy; do
+                MAX_WAIT=120
+                ELAPSED=0
+                while [ $ELAPSED -lt $MAX_WAIT ]; do
+                  STATUS=$(docker inspect --format='{{.State.Health.Status}}' $svc 2>/dev/null || echo "not_found")
+                  if [ "$STATUS" = "healthy" ]; then
+                    echo "   ✅ $svc: healthy"
+                    break
+                  fi
+                  sleep 5
+                  ELAPSED=$((ELAPSED + 5))
+                done
+                if [ "$STATUS" != "healthy" ]; then
+                  echo "   ⚠️ $svc: $STATUS (continuando...)"
+                fi
+              done
+              
+              # 3. DRIZZLE PUSH (migrations)
+              echo ""
+              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+              echo "🗃️ Executando Drizzle Push (migrations)"
+              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+              
+              # Extrair credenciais do .env.prod
+              cd /opt/alice/app/infra/docker
+              POSTGRES_USER=$(grep '^POSTGRES_USER=' .env.prod | cut -d'=' -f2 | tr -d ' ')
+              POSTGRES_PASSWORD=$(grep '^POSTGRES_PASSWORD=' .env.prod | cut -d'=' -f2 | tr -d ' ')
+              POSTGRES_DB=$(grep '^POSTGRES_DB=' .env.prod | cut -d'=' -f2 | tr -d ' ')
+              
+              # Verificar se há tabelas
+              TABLE_COUNT=$(docker exec alice-postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';" 2>/dev/null || echo "0")
+              
+              if [ "${TABLE_COUNT:-0}" = "0" ] || [ "${TABLE_COUNT:-0}" -lt 5 ]; then
+                echo "   📝 Banco vazio ou com poucas tabelas. Aplicando schema..."
+                
+                # Copiar código para diretório temporário e executar drizzle
+                rm -rf /tmp/drizzle-app
+                cp -r /opt/alice/app /tmp/drizzle-app
+                cd /tmp/drizzle-app
+                
+                # Construir DATABASE_URL
+                DATABASE_URL="postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@alice-postgres:5432/$POSTGRES_DB"
+                
+                # Executar via container node
+                docker run --rm \
+                  --network alice-network \
+                  -v /tmp/drizzle-app:/app \
+                  -w /app \
+                  -e DATABASE_URL="$DATABASE_URL" \
+                  node:22-alpine sh -c "
+                    npm install -g pnpm
+                    pnpm install --frozen-lockfile
+                    pnpm drizzle-kit push
+                  " && echo "   ✅ Schema aplicado!" || echo "   ⚠️ Drizzle push falhou (continuando...)"
+                
+                # Limpar
+                rm -rf /tmp/drizzle-app
+              else
+                echo "   ✅ Banco já possui $TABLE_COUNT tabelas (skip drizzle push)"
+              fi
+              
+              cd /opt/alice/app/infra/docker/stacks
+              
+              # 4. ALICE
+              deploy_single_stack "alice" "docker-compose.alice.yml"
+              
+              # 5. OBSERVABILITY
+              deploy_single_stack "observability" "docker-compose.observability.yml"
+              
+              # 6. ERPNEXT
+              deploy_single_stack "erpnext" "docker-compose.erpnext.yml"
+              
+              # 7. BACKUP
+              deploy_single_stack "backup" "docker-compose.backup.yml"
+              
+              echo ""
+              echo "═══════════════════════════════════════════════════════════"
+              echo "✅ DEPLOY COMPLETO FINALIZADO!"
+              echo "═══════════════════════════════════════════════════════════"
+              
+            else
+              # Deploy de stack individual
+              echo "📥 Pull das imagens (versão $VERSION)..."
+              COMPOSE_FILE="docker-compose.$STACK.yml"
+              docker compose -p alice-$STACK -f $COMPOSE_FILE pull
+              
+              echo "🔄 Executando deploy (project: alice-$STACK)..."
+              docker compose -p alice-$STACK -f $COMPOSE_FILE up -d --remove-orphans
+              
+              echo "✅ Deploy do stack $STACK concluído!"
+              echo "📋 Containers do stack:"
+              docker compose -p alice-$STACK -f $COMPOSE_FILE ps --format "table {{.Name}}\t{{.Status}}"
+            fi
+
+      - name: Dry run output
+        if: github.event.inputs.dry_run == 'true'
+        run: |
+          echo "🔍 DRY RUN - Nenhuma alteração foi feita"
+          echo ""
+          echo "Stack: ${{ needs.validate.outputs.stack }}"
+          echo "Versão: ${{ needs.validate.outputs.version }}"
+          echo "Compose files: ${{ needs.validate.outputs.compose_files }}"
+
+  # ===========================================================================
+  # Job 4: Health Check
+  # ===========================================================================
+  health-check:
+    name: Health Check
+    runs-on: [self-hosted, linux, deploy]
+    needs: [validate, deploy-stack]
+    if: github.event.inputs.dry_run != 'true'
+    timeout-minutes: 15
+    
+    steps:
+      - name: Verificar health dos containers
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: root
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          script_timeout: 10m
+          script: |
+            STACK="${{ needs.validate.outputs.stack }}"
+            COMPOSE_FILES="${{ needs.validate.outputs.compose_files }}"
+            
+            echo "🏥 Verificando health do stack $STACK..."
+            
+            # =========================================================
+            # CONTAINERS CRÍTICOS POR STACK (devem estar healthy)
+            # =========================================================
+            case "$STACK" in
+              infra)
+                CONTAINERS="alice-postgres alice-redis alice-qdrant alice-caddy alice-minio"
+                ;;
+              alice)
+                CONTAINERS="alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations alice-gpu-manager"
+                ;;
+              observability)
+                CONTAINERS="prometheus grafana loki jaeger langfuse alice-clickhouse"
+                ;;
+              erpnext)
+                CONTAINERS="erpnext-mariadb erpnext-redis-cache erpnext-redis-queue erpnext-backend erpnext-frontend"
+                ;;
+              backup)
+                CONTAINERS="alice-pgbackrest"
+                ;;
+              all)
+                # Para deploy completo, verificar containers críticos de TODOS os stacks
+                CONTAINERS="alice-postgres alice-redis alice-qdrant alice-caddy alice-minio alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations alice-gpu-manager prometheus grafana loki jaeger langfuse"
+                ;;
+            esac
+            
+            # =========================================================
+            # VERIFICAR NETWORKS (não devem ter sido removidas)
+            # =========================================================
+            echo ""
+            echo "🌐 Verificando networks..."
+            if ! docker network inspect alice-network > /dev/null 2>&1; then
+              echo "❌ ERRO CRÍTICO: alice-network foi removida!"
+              exit 1
+            fi
+            echo "   ✅ alice-network: OK"
+            
+            if ! docker network inspect erpnext-network > /dev/null 2>&1; then
+              echo "❌ ERRO CRÍTICO: erpnext-network foi removida!"
+              exit 1
+            fi
+            echo "   ✅ erpnext-network: OK"
+            
+            # =========================================================
+            # AGUARDAR CONTAINERS FICAREM HEALTHY
+            # =========================================================
+            echo ""
+            echo "⏳ Aguardando containers ficarem healthy..."
+            MAX_WAIT=300
+            INTERVAL=10
+            ELAPSED=0
+            
+            while [ $ELAPSED -lt $MAX_WAIT ]; do
+              ALL_HEALTHY=true
+              echo ""
+              echo "--- Tentativa $((ELAPSED/INTERVAL + 1)) ---"
+              
+              for container in $CONTAINERS; do
+                STATUS=$(docker inspect --format='{{.State.Health.Status}}' $container 2>/dev/null || echo "not_found")
+                
+                if [ "$STATUS" = "healthy" ]; then
+                  echo "✅ $container: healthy"
+                elif [ "$STATUS" = "not_found" ]; then
+                  echo "⚠️ $container: não encontrado (pode estar iniciando)"
+                  ALL_HEALTHY=false
+                else
+                  echo "⏳ $container: $STATUS"
+                  ALL_HEALTHY=false
+                fi
+              done
+              
+              if [ "$ALL_HEALTHY" = true ]; then
+                echo ""
+                echo "🎉 Todos os containers estão healthy!"
+                
+                # Mostrar versões dos stacks
+                echo ""
+                echo "📋 Versões dos stacks:"
+                for s in infra alice observability erpnext backup; do
+                  if [ -f "/opt/alice/versions/$s.current" ]; then
+                    echo "   $s: $(cat /opt/alice/versions/$s.current)"
+                  fi
+                done
+                
+                exit 0
+              fi
+              
+              sleep $INTERVAL
+              ELAPSED=$((ELAPSED + INTERVAL))
+              echo ""
+              echo "⏱️ Tempo decorrido: ${ELAPSED}s / ${MAX_WAIT}s"
+            done
+            
+            echo ""
+            echo "❌ Timeout: alguns containers não ficaram healthy"
+            echo ""
+            echo "📋 Status final dos containers:"
+            cd /opt/alice/app/infra/docker/stacks
+            if [ "$STACK" = "all" ]; then
+              # Mostrar todos os containers dos stacks
+              for s in infra alice observability erpnext backup; do
+                echo ""
+                echo "--- Stack: $s ---"
+                docker compose -p alice-$s -f docker-compose.$s.yml ps --format "table {{.Name}}\t{{.Status}}" 2>/dev/null || true
+              done
+            else
+              docker compose -p alice-$STACK -f docker-compose.$STACK.yml ps --format "table {{.Name}}\t{{.Status}}"
+            fi
+            exit 1
+
+  # ===========================================================================
+  # Job 5: Rollback (em caso de falha)
+  # ===========================================================================
+  # ROLLBACK INTELIGENTE:
+  # - Usa versão anterior salva em /opt/alice/versions/{stack}.previous
+  # - Verifica se imagens da versão anterior existem no GHCR
+  # - Preserva networks (alice-network, erpnext-network são externas)
+  # - Usa project name isolado para não afetar outros stacks
+  # ===========================================================================
+  rollback:
+    name: Rollback ${{ github.event.inputs.stack }}
+    runs-on: [self-hosted, linux, deploy]
+    needs: [validate, deploy-stack, health-check]
+    if: failure() && github.event.inputs.dry_run != 'true'
+    timeout-minutes: 15
+    
+    steps:
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Executar rollback inteligente
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: root
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          script_timeout: 10m
+          script: |
+            set -e
+            STACK="${{ needs.validate.outputs.stack }}"
+            
+            echo "⚠️ =============================================="
+            echo "⚠️ ROLLBACK INTELIGENTE - Stack: $STACK"
+            echo "⚠️ =============================================="
+            
+            # Navegar para diretório de stacks
+            cd /opt/alice/app/infra/docker/stacks
+            
+            # =========================================================
+            # 0. DETERMINAR COMPOSE FILE CORRETO
+            # =========================================================
+            if [ "$STACK" = "all" ]; then
+              echo "❌ ERRO: Rollback de 'all' não é suportado automaticamente!"
+              echo "   Para rollback de todos os stacks, execute o rollback"
+              echo "   de cada stack individualmente na ordem reversa:"
+              echo "   backup → erpnext → observability → alice → infra"
+              exit 1
+            fi
+            COMPOSE_FILE="docker-compose.$STACK.yml"
+            echo "📁 Compose file: $COMPOSE_FILE"
+            
+            # =========================================================
+            # 1. VERIFICAR VERSÃO ANTERIOR
+            # =========================================================
+            if [ ! -f /opt/alice/versions/$STACK.previous ]; then
+              echo "❌ Nenhuma versão anterior encontrada para rollback!"
+              echo "   Arquivo esperado: /opt/alice/versions/$STACK.previous"
+              echo "   Este é provavelmente o primeiro deploy deste stack."
+              echo ""
+              echo "🔄 Opções:"
+              echo "   1. Corrija o problema e faça novo deploy"
+              echo "   2. Para rollback manual, especifique a versão com rollback_version"
+              exit 1
+            fi
+            
+            PREV_VERSION=$(cat /opt/alice/versions/$STACK.previous)
+            CURRENT_VERSION=$(cat /opt/alice/versions/$STACK.current 2>/dev/null || echo "unknown")
+            
+            echo "📌 Versão atual (com problema): $CURRENT_VERSION"
+            echo "📌 Versão anterior (rollback): $PREV_VERSION"
+            
+            # =========================================================
+            # 2. PRESERVAR NETWORKS (CRÍTICO)
+            # =========================================================
+            echo ""
+            echo "🌐 Verificando networks (serão PRESERVADAS)..."
+            docker network inspect alice-network > /dev/null 2>&1 && echo "   ✅ alice-network existe" || echo "   ⚠️ alice-network não existe"
+            docker network inspect erpnext-network > /dev/null 2>&1 && echo "   ✅ erpnext-network existe" || echo "   ⚠️ erpnext-network não existe"
+            echo "   NOTA: Networks externas NUNCA são removidas pelo rollback"
+            
+            # =========================================================
+            # 3. LISTAR OUTROS STACKS (para confirmação)
+            # =========================================================
+            echo ""
+            echo "📋 Outros stacks em execução (NÃO serão afetados):"
+            for s in infra alice observability erpnext backup; do
+              if [ "$s" != "$STACK" ]; then
+                if docker compose -p alice-$s ps --quiet 2>/dev/null | head -1 > /dev/null; then
+                  VERSION_FILE="/opt/alice/versions/$s.current"
+                  if [ -f "$VERSION_FILE" ]; then
+                    echo "   ✅ alice-$s: $(cat $VERSION_FILE)"
+                  else
+                    echo "   ✅ alice-$s: (versão desconhecida)"
+                  fi
+                fi
+              fi
+            done
+            
+            # =========================================================
+            # 4. ATUALIZAR .env.prod COM VERSÃO ANTERIOR
+            # =========================================================
+            cd /opt/alice/app/infra/docker
+            
+            echo ""
+            echo "📝 Atualizando IMAGE_TAG para $PREV_VERSION..."
+            if [ -f .env.prod ]; then
+              sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=$PREV_VERSION/" .env.prod
+              echo "   ✅ .env.prod atualizado"
+            else
+              echo "   ⚠️ .env.prod não existe - criando..."
+              echo "IMAGE_TAG=$PREV_VERSION" > .env.prod
+            fi
+            
+            # =========================================================
+            # 5. PULL DAS IMAGENS DA VERSÃO ANTERIOR
+            # =========================================================
+            cd /opt/alice/app/infra/docker/stacks
+            echo ""
+            echo "📥 Pull das imagens (versão $PREV_VERSION)..."
+            if ! docker compose -p alice-$STACK -f $COMPOSE_FILE pull 2>&1; then
+              echo "❌ ERRO: Falha ao fazer pull das imagens!"
+              echo "   As imagens da versão $PREV_VERSION podem não existir no GHCR."
+              exit 1
+            fi
+            
+            # =========================================================
+            # 6. EXECUTAR ROLLBACK (project name isolado)
+            # =========================================================
+            echo ""
+            echo "🔄 Executando rollback (project: alice-$STACK)..."
+            docker compose -p alice-$STACK -f $COMPOSE_FILE up -d --remove-orphans
+            
+            # =========================================================
+            # 7. ATUALIZAR REGISTRO DE VERSÃO
+            # =========================================================
+            echo "$PREV_VERSION" > /opt/alice/versions/$STACK.current
+            # Manter .previous para histórico
+            
+            # =========================================================
+            # 8. VERIFICAÇÃO PÓS-ROLLBACK
+            # =========================================================
+            echo ""
+            echo "📋 Status dos containers após rollback:"
+            docker compose -p alice-$STACK -f $COMPOSE_FILE ps --format "table {{.Name}}\t{{.Status}}"
+            
+            echo ""
+            echo "🌐 Networks após rollback (confirmando preservação):"
+            docker network ls --filter "name=alice-network" --filter "name=erpnext-network" --format "table {{.Name}}\t{{.Driver}}"
+            
+            echo ""
+            echo "✅ =============================================="
+            echo "✅ ROLLBACK CONCLUÍDO - Stack: $STACK"
+            echo "✅ Versão: $PREV_VERSION"
+            echo "✅ Networks: PRESERVADAS"
+            echo "✅ Outros stacks: NÃO AFETADOS"
+            echo "✅ =============================================="
+
+  # ===========================================================================
+  # Job 6: Notificação
+  # ===========================================================================
+  notify:
+    name: Notify Result
+    runs-on: [self-hosted, linux, deploy]
+    needs: [validate, deploy-stack, health-check]
+    if: always()
+    timeout-minutes: 2
+    
+    steps:
+      - name: Summarize deployment
+        run: |
+          echo "## 📊 Deploy Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Stack | \`${{ needs.validate.outputs.stack }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | \`${{ needs.validate.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deploy Status | ${{ needs.deploy-stack.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Health Check | ${{ needs.health-check.result }} |" >> $GITHUB_STEP_SUMMARY

@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 04 de Janeiro de 2026  
+> **Data:** 05 de Janeiro de 2026  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.79 - Bug Fix DB Audit Continue-On-Error Consistency
+> **Versão:** 5.0 - Arquitetura Multi-Stack Modular
 
 ---
 
@@ -11,8 +11,8 @@
 
 | Aspecto | Valor |
 |---------|-------|
-| **Arquitetura** | Microsserviços containerizados |
-| **Total de Containers** | 50 (7 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup) |
+| **Arquitetura** | **Multi-Stack Modular** (5 stacks independentes) |
+| **Total de Containers** | 50 (10 infra + 8 Alice + 5 GPU + 13 observability + 15 ERPNext + 1 backup) |
 | **Servidor** | Hetzner GEX44 (Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD RAID 1, RTX 4000 Ada 20GB) |
 | **Volume Adicional** | Não necessário - servidor GEX44 possui 1.92TB interno (substitui volume externo) |
 | **SO** | Ubuntu 24.04.3 LTS |
@@ -52,6 +52,8 @@
 > **Server GPU Optimizations 28/12/2025:** Servidor de produção Hetzner GEX44 otimizado para máxima performance GPU. **Docker daemon:** default-runtime nvidia, live-restore, BuildKit GC 20GB. **NVIDIA:** Persistence Mode ENABLED (GPU sempre ativa), CDI configurado (/etc/cdi/nvidia.yaml), Container Toolkit 1.18.1. **Kernel sysctl:** vm.swappiness=10, vm.dirty_ratio=40, kernel.shmmax=64GB (CUDA shared memory), net.core.rmem_max=16MB (buffers rede), fs.file-max=2M. **Status:** GPU RTX 4000 Ada 20GB, Driver 580.95.05, CUDA 13.0. Servidor 100% limpo, 1.7TB disponível (99% livre).
 
 > **Rollback Inteligente 28/12/2025:** Rollback detecta automaticamente quando primeiro deploy funcionou via arquivo `last-successful-deploy.txt`. Se não existe = nunca teve deploy funcional = LIMPA TUDO (volumes, dados, logs). Se existe = PRESERVA dados e faz rollback para versão anterior. Dados de produção NUNCA são apagados após primeiro deploy bem-sucedido.
+
+> **ARQUITETURA MULTI-STACK MODULAR 05/01/2026 (v5.0):** Plataforma refatorada em **5 stacks independentes** para produção parcial e rollback cirúrgico. **STACKS:** INFRA (10 containers: PostgreSQL, Redis, Qdrant, Caddy, MinIO, SearXNG, Tor), ALICE (8+5 containers: microsserviços + GPU Manager + GPU), OBSERVABILITY (13 containers: Prometheus, Grafana, Loki, Jaeger, Langfuse), ERPNEXT (15 containers: MariaDB, Redis, Backend, Workers), BACKUP (1 container: pgBackRest). **WORKFLOW:** `deploy-stack.yml` permite deploy/rollback por stack (ex: `gh workflow run deploy-stack.yml -f stack=alice -f version=v1.0.0`). **HISTÓRICO:** Versões por stack em `/opt/alice/versions/{stack}.current|previous`. **BENEFÍCIOS:** ✅ Produção parcial (Alice funciona se ERPNext falhar), ✅ Rollback cirúrgico (só stack com problema), ✅ Deploy independente, ✅ Isolamento de falhas. Ref: ADR-007 em ARQUITETURA.md.
 
 > **Bug Fix Digests Rotacionados 27/12/2025:** Removidos digests SHA256 de 23 imagens de terceiros no docker-compose.prod.yml. Docker Hub rotaciona digests quando republica tags, causando falha no deploy. Tags versionadas (ex: `caddy:2.8.4-alpine`) são suficientemente determinísticas. Solução simples - KISS.
 

@@ -47,10 +47,35 @@ Alice is an autonomous AI enterprise platform powered by the **Mixtral 8x7B (MoE
 **IMPORTANTE**: Código em `apps/` (microsserviços) vai para produção via GitHub Actions. O `server/index-dev.ts` existe apenas para fluxo local, mas **sem preview/mocks** — ele exige integrações reais (PostgreSQL + GPU Manager Service).
 
 ## System Architecture
-Alice employs a microservices architecture with 50 containerized services orchestrated by Caddy reverse proxy, emphasizing data privacy, scalability, and resilience. All services run on a single Hetzner GPU server GEX44 (RTX 4000 Ada 20GB, Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD RAID 1) to eliminate network latency and simplify management.
+Alice employs a **modular multi-stack architecture** with 50 containerized services organized in **5 stacks independentes** for partial production capability. All services run on a single Hetzner GPU server GEX44 (RTX 4000 Ada 20GB, Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD RAID 1) to eliminate network latency and simplify management.
+
+### Arquitetura Multi-Stack (05/01/2026)
+
+| Stack | Containers | Descrição | Rollback |
+|-------|------------|-----------|----------|
+| **INFRA** | 10 | PostgreSQL, Redis, Qdrant, Caddy, MinIO, SearXNG, Tor | Independente |
+| **ALICE** | 8 + 5 GPU | Frontend, Auth, Chat, RAG, Training, Integrations, GPU Manager + GPU containers | Independente |
+| **OBSERVABILITY** | 13 | Prometheus, Grafana, Loki, Jaeger, Langfuse, ClickHouse | Independente |
+| **ERPNEXT** | 15 | MariaDB, Redis Cache/Queue, Backend, Workers (100% isolado) | Independente |
+| **BACKUP** | 1 | pgBackRest enterprise backups | Independente |
+
+**Benefícios da Arquitetura Multi-Stack:**
+- ✅ **Produção Parcial**: ERPNext pode falhar sem afetar Alice
+- ✅ **Rollback Cirúrgico**: Reverter apenas o stack com problema
+- ✅ **Deploy Independente**: Atualizar Observability sem downtime de Alice
+- ✅ **Isolamento de Falhas**: Problema em um stack não propaga para outros
+- ✅ **Manutenção Simplificada**: Restart/debug de stacks isolados
+
+**Arquivos Docker Compose (infra/docker/stacks/):**
+- `docker-compose.base.yml` - Networks e volumes compartilhados
+- `docker-compose.infra.yml` - Stack de infraestrutura
+- `docker-compose.alice.yml` - Microsserviços Alice + GPU
+- `docker-compose.observability.yml` - Stack de observabilidade
+- `docker-compose.erpnext.yml` - Stack ERPNext (100% isolado)
+- `docker-compose.backup.yml` - Stack de backup
 
 **Core Architectural Components:**
-- **Infrastructure Core (7 serviços)**: **Caddy (reverse proxy com SSL automático + HTTP/3)**, pgBackRest Init (stanza initialization), PostgreSQL (with pgvector for image embeddings and RLS for multi-tenancy), Alice Redis (dedicated cache), **SearXNG (metabusca interna para Web Search)**, **Qdrant (banco vetorial para texto 4096 dim)**, **Tor Proxy (acesso a .onion para SearXNG engines ahmia/torch)**.
+- **Infrastructure Core (10 serviços)**: **Caddy (reverse proxy com SSL automático + HTTP/3)**, pgBackRest Init (stanza initialization), PostgreSQL (with pgvector for image embeddings and RLS for multi-tenancy), Alice Redis (dedicated cache), **SearXNG (metabusca interna para Web Search)**, **Qdrant (banco vetorial para texto 4096 dim)**, **Tor Proxy (acesso a .onion para SearXNG engines ahmia/torch)**, **MinIO (S3 para Langfuse)**.
 - **Alice Microservices (7 serviços)**:
     - **Frontend**: React 18, Vite 5, shadcn/ui, i18n PT-BR.
     - **Auth Service**: OAuth 2.0, SAML 2.0, OIDC Provider, 6-level RBAC, PostgreSQL sessions.
@@ -121,6 +146,33 @@ Embeddings otimizados por caso de uso para máxima qualidade:
 - **Docker**: 29.1.3, Docker Compose v5.0.0
 - **Pipeline**: Push → CI (auto) → Release (auto) → Deploy (auto)
 - **Versionamento**: Semantic Versioning automático via Conventional Commits (BREAKING→MAJOR, feat→MINOR, fix→PATCH)
+
+### Deploy Modular por Stack (05/01/2026)
+
+**Workflow:** `.github/workflows/deploy-stack.yml`
+
+```bash
+# Deploy de um stack específico
+gh workflow run deploy-stack.yml -f stack=alice -f version=v1.0.0
+
+# Deploy de todos os stacks
+gh workflow run deploy-stack.yml -f stack=all -f version=v1.0.0
+
+# Rollback de um stack específico
+gh workflow run deploy-stack.yml -f stack=erpnext -f version=v1.0.0 -f rollback=true -f rollback_version=v0.9.0
+```
+
+**Ordem de Deploy (obrigatória):**
+1. `infra` - Databases, caches, reverse proxy (OBRIGATÓRIO primeiro)
+2. Drizzle push - Migrações de schema
+3. `alice` + `observability` - Podem ser paralelos após infra
+4. `erpnext` - Independente, pode falhar sem afetar Alice
+5. `backup` - Depende de postgres healthy
+
+**Rollback Inteligente por Stack:**
+- Cada stack mantém histórico em `/opt/alice/versions/{stack}.current` e `{stack}.previous`
+- Rollback de um stack NÃO afeta outros stacks
+- Health checks por stack determinam sucesso/falha do deploy
 
 ### Requisitos de CPU e Compatibilidade (CRÍTICO)
 
@@ -369,6 +421,9 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
+
+*Versão: 5.0 - 05 de Janeiro de 2026*
+*ARQUITETURA MULTI-STACK MODULAR (05/01/2026): Refatoração completa da arquitetura de deploy para suportar produção parcial e rollback cirúrgico. PROBLEMA: Deploy monolítico de 50 containers causava rollback total quando ERPNext falhava, derrubando Alice e Grafana que funcionavam. SOLUÇÃO ENTERPRISE: Separação em 5 stacks independentes (INFRA, ALICE, OBSERVABILITY, ERPNEXT, BACKUP) com: (1) Docker Compose files separados em infra/docker/stacks/; (2) Workflow deploy-stack.yml para deploy/rollback por stack; (3) Histórico de versões por stack em /opt/alice/versions/; (4) Health checks e rollback independentes por stack. BENEFÍCIOS: ✅ Produção parcial (Alice funciona mesmo se ERPNext falhar); ✅ Rollback cirúrgico (reverter apenas stack com problema); ✅ Deploy independente (atualizar Observability sem downtime de Alice); ✅ Isolamento de falhas (problema em um stack não propaga). ARQUIVOS CRIADOS: docker-compose.base.yml, docker-compose.infra.yml, docker-compose.alice.yml, docker-compose.observability.yml, docker-compose.erpnext.yml, docker-compose.backup.yml, deploy-stack.yml. Ref: Regras 6 (Enterprise), 11 (Melhores práticas 2025), 12 (Deploy Hetzner), 15 (Microsserviços).*
 
 *Versão: 4.80 - 05 de Janeiro de 2026*
 *RESTAURAÇÃO CRÍTICA - Release Workflow Funcional (05/01/2026): Restaurado workflow release.yml EXATAMENTE do commit 8168b236 (28/12/2025) que funcionou perfeitamente no Release #316 (2m 19s). PROBLEMA: PRs #27-#36 adicionaram 75 linhas de complexidade que QUEBRARAM o workflow - erro "Workflow does not have workflow_dispatch trigger". CAUSAS RAIZ: (1) ref mudou de 'version' (TAG) para 'main' (branch) - workflow não existe na tag durante disparo; (2) Validação complexa adicionada (150+ linhas) - desnecessária; (3) Retry logic com exponential backoff (100+ linhas) - não corrige causa raiz; (4) Versionamento automático opcional - quebra simplicidade. SOLUÇÃO ENTERPRISE: Arquivo EXATO do commit 8168b236 restaurado (607 linhas vs 682 linhas quebradas). FUNCIONALIDADES RESTAURADAS: ✅ Trigger simples workflow_dispatch com version required; ✅ Disparo deploy usa ref: version (TAG onde workflow existe); ✅ Build condicional por mudanças (git diff); ✅ Retagging automático quando imagem não mudou; ✅ Cache GHCR funcionando (type=registry mode=max); ✅ Smoke test PostgreSQL + pgvector (detecta SIGILL). SEM complexidade desnecessária: ❌ Validação complexa workflow; ❌ Retry logic; ❌ Versionamento automático; ❌ ref: 'main'. VALIDADO: 607 linhas, trigger correto, ref: version na linha 596. Ref: Regras 1, 2, 6, 7 (ler antes agir, não duplicar, sem workarounds, mudanças cirúrgicas). Commit 8168b236: https://github.com/fillipeguerrabtc/alice/commit/8168b2367cfebb24ba050f18017e3ec9b9790aaa*

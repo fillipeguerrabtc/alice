@@ -1,12 +1,75 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 04 de Janeiro de 2026  
-**Versão:** 7.24 - DB Audit Continue-On-Error Consistency Fix
+**Data:** 05 de Janeiro de 2026  
+**Versão:** 8.0 - Arquitetura Multi-Stack Modular
+
+> **ATUALIZAÇÃO MAJOR 05/01/2026:** Arquitetura refatorada para **5 stacks independentes** com deploy/rollback modular. Cada stack pode ser deployado, rolledback e monitorado separadamente. ERPNext pode falhar sem afetar Alice. Produção parcial agora é possível.
 
 > **Migração 100% Self-Hosted (27/12/2025):** Pipeline completo migrado para runner próprio (Hetzner CPX32 - 4 vCPU, 8GB RAM) seguindo melhores práticas enterprise 2025. Todos os workflows (CI, Release, Deploy) executam no self-hosted runner para controle total, custos previsíveis e compliance.
 
 > **Semantic Versioning Automático (27/12/2025):** Versionamento agora segue Conventional Commits automaticamente: `feat!:` ou `BREAKING CHANGE:` → MAJOR bump, `feat:` → MINOR bump, `fix:` → PATCH bump. Cache Docker otimizado com `--provenance=false`, `--sbom=false` e `BUILDKIT_INLINE_CACHE=1` para builds mais rápidos.
+
+## Arquitetura Multi-Stack (05/01/2026)
+
+A plataforma foi refatorada em **5 stacks independentes** para permitir:
+- ✅ **Produção Parcial**: Alice funciona mesmo se ERPNext falhar
+- ✅ **Rollback Cirúrgico**: Reverter apenas o stack com problema
+- ✅ **Deploy Independente**: Atualizar Observability sem downtime de Alice
+- ✅ **Isolamento de Falhas**: Problema em um stack não propaga para outros
+
+### Stacks Disponíveis
+
+| Stack | Containers | Descrição | Arquivo Docker Compose |
+|-------|------------|-----------|------------------------|
+| **INFRA** | 10 | PostgreSQL, Redis, Qdrant, Caddy, MinIO, SearXNG, Tor | `stacks/docker-compose.infra.yml` |
+| **ALICE** | 8 + 5 GPU | Microsserviços core + GPU Manager + GPU containers | `stacks/docker-compose.alice.yml` |
+| **OBSERVABILITY** | 13 | Prometheus, Grafana, Loki, Jaeger, Langfuse, ClickHouse | `stacks/docker-compose.observability.yml` |
+| **ERPNEXT** | 15 | MariaDB, Redis Cache/Queue, Backend, Workers | `stacks/docker-compose.erpnext.yml` |
+| **BACKUP** | 1 | pgBackRest enterprise | `stacks/docker-compose.backup.yml` |
+
+### Deploy Modular via GitHub Actions
+
+**Workflow:** `.github/workflows/deploy-stack.yml`
+
+```bash
+# Deploy de um stack específico
+gh workflow run deploy-stack.yml -f stack=alice -f version=v1.0.0
+
+# Deploy de todos os stacks (ordem correta automática)
+gh workflow run deploy-stack.yml -f stack=all -f version=v1.0.0
+
+# Dry run (validação sem deploy)
+gh workflow run deploy-stack.yml -f stack=observability -f version=v1.0.0 -f dry_run=true
+
+# Rollback de um stack específico
+gh workflow run deploy-stack.yml -f stack=erpnext -f version=v1.0.0 -f rollback=true -f rollback_version=v0.9.0
+```
+
+### Ordem de Deploy (Obrigatória)
+
+1. **INFRA** - Databases, caches, reverse proxy (OBRIGATÓRIO primeiro)
+2. **Drizzle push** - Migrações de schema
+3. **ALICE + OBSERVABILITY** - Podem ser paralelos após infra healthy
+4. **ERPNEXT** - Independente, pode falhar sem afetar Alice
+5. **BACKUP** - Depende de postgres healthy
+
+### Histórico de Versões por Stack
+
+Cada stack mantém seu histórico de versões em:
+- `/opt/alice/versions/{stack}.current` - Versão atual
+- `/opt/alice/versions/{stack}.previous` - Versão anterior (para rollback)
+
+Exemplo:
+```bash
+# Verificar versão atual de cada stack
+cat /opt/alice/versions/infra.current       # v1.0.0
+cat /opt/alice/versions/alice.current       # v1.0.0
+cat /opt/alice/versions/observability.current # v1.0.0
+cat /opt/alice/versions/erpnext.current     # v0.9.5 (versão diferente)
+```
+
+---
 
 ## Visão Geral da Arquitetura - 50 Containers em Produção
 

@@ -1,0 +1,505 @@
+# =============================================================================
+# ALICE PLATFORM - INFRA STACK
+# =============================================================================
+# Versão: 5.0 (Arquitetura Modular Multi-Stack)
+# Data: 05 de Janeiro de 2026
+# Autor: Fillipe Guerra
+#
+# PROPÓSITO: Infraestrutura base OBRIGATÓRIA para todos os outros stacks.
+# Este stack DEVE subir PRIMEIRO e estar healthy antes de qualquer outro.
+#
+# CONTAINERS (10):
+#   - postgres (com pgvector) - Banco principal
+#   - alice-redis - Cache distribuído
+#   - alice-qdrant - Banco vetorial para texto
+#   - alice-tor - Proxy SOCKS5 para .onion
+#   - alice-searxng - Metabusca (depende de tor)
+#   - caddy - Reverse proxy SSL (dual-network: alice + erpnext)
+#   - minio - Object storage S3 (para Langfuse v3)
+#   - minio-init - Init container para criar bucket
+#   - pgbackrest-init - Init container para criar stanza
+#
+# ORDEM DE DEPLOY:
+#   1. PRÉ-REQUISITOS: Networks externas criadas
+#   2. INFRA: Este stack
+#   3. Drizzle push (schema migration)
+#   4. ALICE/OBSERVABILITY/ERPNEXT (paralelos)
+#   5. BACKUP
+#
+# HEALTH CHECKS OBRIGATÓRIOS antes de prosseguir:
+#   ✓ postgres: pg_isready + pgvector extension
+#   ✓ alice-redis: redis-cli ping
+#   ✓ alice-qdrant: HTTP /health
+#   ✓ caddy: HTTP /health (porta 80)
+#   ✓ minio: HTTP /minio/health/live
+#   ✓ minio-init: service_completed_successfully
+#   ✓ pgbackrest-init: service_completed_successfully
+#
+# REGRA 6 CLAUDE.md: Enterprise-grade, sem workarounds
+# REGRA 11 CLAUDE.md: Seguir melhores práticas 2025
+# REGRA 12 CLAUDE.md: Deploy Hetzner GPU
+# =============================================================================
+
+# =============================================================================
+# NETWORKS (externas - definidas em docker-compose.base.yml)
+# =============================================================================
+networks:
+  alice-network:
+    external: true
+    name: alice-network
+  
+  erpnext-network:
+    external: true
+    name: erpnext-network
+
+# =============================================================================
+# VOLUMES (externos quando compartilhados, locais quando exclusivos)
+# =============================================================================
+volumes:
+  postgres_data:
+    external: true
+    name: alice-postgres-data
+
+  pgbackrest_spool:
+    external: true
+    name: alice-pgbackrest-spool
+
+  alice_redis_data:
+    external: true
+    name: alice-redis-data
+
+  caddy_data:
+    external: true
+    name: alice-caddy-data
+  
+  caddy_config:
+    external: true
+    name: alice-caddy-config
+  
+  caddy_logs:
+    external: true
+    name: alice-caddy-logs
+  
+  searxng_config:
+    external: true
+    name: alice-searxng-config
+
+  minio_data:
+    external: true
+    name: alice-minio-data
+
+  qdrant_data:
+    external: true
+    name: alice-qdrant-data
+
+# =============================================================================
+# SERVICES
+# =============================================================================
+services:
+
+  # ===========================================================================
+  # TOR PROXY - Proxy SOCKS5 para acesso a .onion (engines ahmia/torch)
+  # ===========================================================================
+  alice-tor:
+    # NOTA: Tor 0.4.8.x é a versão LTS estável (Dec 2025)
+    image: osminogin/tor-simple:0.4.8.16
+    platform: linux/amd64
+    container_name: alice-tor
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    # Porta SOCKS5 padrão: 9050
+    networks:
+      - alice-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 9050 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 64M
+          cpus: '0.1'
+
+  # ===========================================================================
+  # SEARXNG - Metabusca self-hosted para Web Search
+  # ===========================================================================
+  alice-searxng:
+    image: searxng/searxng:2025.12.15-87b2e7f8b
+    platform: linux/amd64
+    container_name: alice-searxng
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=32M
+      - /etc/ssl/certs:mode=1777,size=8M
+    environment:
+      - SEARXNG_SECRET_KEY=${SEARXNG_SECRET_KEY:?SEARXNG_SECRET_KEY é obrigatório}
+      - SEARXNG_BASE_URL=http://alice-searxng:8080/
+    volumes:
+      - searxng_config:/etc/searxng
+    depends_on:
+      alice-tor:
+        condition: service_healthy
+    networks:
+      - alice-network
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+
+  # ===========================================================================
+  # CADDY - Reverse Proxy com SSL Automático
+  # ===========================================================================
+  # NOTA: Caddy usa DUAL-NETWORK para rotear tráfego de Alice E ERPNext
+  # ===========================================================================
+  caddy:
+    image: ${IMAGE_PREFIX}-caddy:${IMAGE_TAG:-latest}
+    platform: linux/amd64
+    container_name: alice-caddy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"  # HTTP/3 (QUIC)
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+      - caddy_logs:/var/log/caddy
+    networks:
+      - alice-network
+      - erpnext-network
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - |
+          if wget -q --spider http://localhost:80/health 2>/dev/null; then
+            exit 0
+          else
+            exit 1
+          fi
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 600s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 64M
+          cpus: '0.1'
+
+  # ===========================================================================
+  # PGBACKREST INIT - Cria stanza APÓS PostgreSQL iniciar
+  # ===========================================================================
+  pgbackrest-init:
+    image: ${IMAGE_PREFIX}-pgbackrest:${IMAGE_TAG:-latest}
+    platform: linux/amd64
+    container_name: alice-pgbackrest-init
+    entrypoint: ["/bin/sh", "-c"]
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64M
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGBACKREST_REPO1_PATH: /var/lib/pgbackrest
+      PGBACKREST_REPO1_CIPHER_TYPE: aes-256-cbc
+      PGBACKREST_REPO1_CIPHER_PASS: ${BACKUP_CIPHER_PASS}
+      PGBACKREST_LOG_LEVEL_CONSOLE: info
+      PGBACKREST_LOG_LEVEL_FILE: detail
+      PGBACKREST_STANZA: alice_prod
+    volumes:
+      - /opt/alice/backups/postgresql:/var/lib/pgbackrest:rw
+      - /opt/alice/backups/postgresql/logs:/var/log/pgbackrest:rw
+      - postgres_data:/var/lib/postgresql/data:ro
+    networks:
+      - alice-network
+    command:
+      - |
+        set -e
+        echo "🔍 Verificando se stanza 'alice_prod' já existe..."
+        if pgbackrest info --stanza=alice_prod 2>/dev/null | grep -q "status: ok"; then
+          echo "✅ Stanza 'alice_prod' já existe e está OK"
+          exit 0
+        fi
+        echo "📦 Criando stanza 'alice_prod'..."
+        pgbackrest stanza-create --stanza=alice_prod --log-level-console=info
+        echo "✅ Stanza 'alice_prod' criada com sucesso!"
+        pgbackrest info --stanza=alice_prod
+
+  # ===========================================================================
+  # POSTGRESQL - Banco Principal com pgvector
+  # ===========================================================================
+  postgres:
+    image: ${IMAGE_PREFIX}-postgres:${IMAGE_TAG:-latest}
+    platform: linux/amd64
+    container_name: alice-postgres
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:mode=1777,size=64M
+      - /var/run/postgresql:mode=1777,size=8M
+    shm_size: '1g'
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-alice}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-alice_prod}
+      PGDATA: /var/lib/postgresql/data
+      PGBACKREST_REPO1_CIPHER_TYPE: aes-256-cbc
+      PGBACKREST_REPO1_CIPHER_PASS: ${BACKUP_CIPHER_PASS}
+    command:
+      - "postgres"
+      - "-c"
+      - "archive_mode=on"
+      - "-c"
+      - "archive_command=pgbackrest --stanza=alice_prod archive-push %p || (mkdir -p /tmp/wal_pending && cp %p /tmp/wal_pending/ && echo 'WAL archived to /tmp/wal_pending (stanza pending)')"
+      - "-c"
+      - "wal_level=replica"
+      - "-c"
+      - "max_wal_senders=10"
+      - "-c"
+      - "wal_keep_size=512MB"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+      - /opt/alice/backups/postgresql:/var/lib/pgbackrest:rw
+      - /opt/alice/backups/postgresql/logs:/var/log/pgbackrest:rw
+      - pgbackrest_spool:/var/spool/pgbackrest
+    networks:
+      - alice-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-alice} -d ${POSTGRES_DB:-alice_prod} && psql -U ${POSTGRES_USER:-alice} -d ${POSTGRES_DB:-alice_prod} -tAc \"SELECT 1 FROM pg_extension WHERE extname='vector'\" | grep -q 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          memory: 3G
+          cpus: '1.5'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+
+  # ===========================================================================
+  # ALICE REDIS - Cache Distribuído
+  # ===========================================================================
+  alice-redis:
+    image: redis:7.4.7-alpine
+    platform: linux/amd64
+    container_name: alice-redis
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=16M
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD é obrigatório em produção}
+    command:
+      - redis-server
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+      - --appendonly
+      - "yes"
+      - --save
+      - "900"
+      - "1"
+      - --save
+      - "300"
+      - "10"
+      - --requirepass
+      - "${REDIS_PASSWORD}"
+      - --rename-command
+      - FLUSHALL
+      - ""
+      - --rename-command
+      - FLUSHDB
+      - ""
+      - --rename-command
+      - CONFIG
+      - ""
+      - --rename-command
+      - DEBUG
+      - ""
+    volumes:
+      - alice_redis_data:/data
+    networks:
+      - alice-network
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a ${REDIS_PASSWORD} --no-auth-warning ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+
+  # ===========================================================================
+  # QDRANT - Banco Vetorial para Texto (4096 dim)
+  # ===========================================================================
+  alice-qdrant:
+    image: qdrant/qdrant:v1.16.2
+    platform: linux/amd64
+    container_name: alice-qdrant
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64M
+      - /qdrant/tmp:mode=1777,size=256M
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: "6334"
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY é obrigatório em produção}
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - alice-network
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 5 /bin/sh -c 'true < /dev/tcp/localhost/6333' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+
+  # ===========================================================================
+  # MINIO - Object Storage S3 (para Langfuse v3)
+  # ===========================================================================
+  minio:
+    image: minio/minio:RELEASE.2025-12-13T22-22-09Z
+    platform: linux/amd64
+    container_name: alice-minio
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - alice-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/minio/health/live || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+
+  # ===========================================================================
+  # MINIO INIT - Cria bucket para Langfuse
+  # ===========================================================================
+  minio-init:
+    image: minio/mc:RELEASE.2025-12-13T01-16-22Z
+    platform: linux/amd64
+    container_name: alice-minio-init
+    entrypoint: ["/bin/sh", "-c"]
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    networks:
+      - alice-network
+    command:
+      - |
+        set -e
+        echo '🔧 Configurando MinIO client...'
+        
+        MAX_RETRIES=30
+        RETRY_COUNT=0
+        
+        while [ $$RETRY_COUNT -lt $$MAX_RETRIES ]; do
+          if mc alias set myminio http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}" 2>/dev/null; then
+            echo '✅ Conectado ao MinIO'
+            break
+          fi
+          RETRY_COUNT=$$((RETRY_COUNT + 1))
+          echo "   Tentativa $$RETRY_COUNT/$$MAX_RETRIES - MinIO ainda inicializando..."
+          sleep 3
+        done
+        
+        if [ $$RETRY_COUNT -ge $$MAX_RETRIES ]; then
+          echo '❌ ERRO: Falha ao conectar ao MinIO após 30 tentativas'
+          exit 1
+        fi
+        
+        echo ''
+        echo '📦 Criando bucket langfuse-events...'
+        if mc mb --ignore-existing myminio/langfuse-events; then
+          echo '✅ Bucket langfuse-events criado/verificado'
+        else
+          echo '❌ ERRO: Falha ao criar bucket langfuse-events'
+          exit 1
+        fi
+        
+        echo '🔓 Configurando permissões de download...'
+        if mc anonymous set download myminio/langfuse-events; then
+          echo '✅ Permissões configuradas'
+        else
+          echo '⚠️ Aviso: Falha ao configurar permissões (bucket pode já existir com outras permissões)'
+        fi
+        
+        echo ''
+        echo '🎉 MinIO inicializado com sucesso!'
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.25'

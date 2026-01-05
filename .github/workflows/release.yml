@@ -582,26 +582,30 @@ jobs:
     if: ${{ !inputs.prerelease && needs.build-images.result == 'success' }}
     
     steps:
-      - name: Disparar workflow de deploy
+      - name: Disparar workflow de deploy modular
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
         with:
           github-token: ${{ secrets.GH_PAT }}
           script: |
             const version = '${{ needs.create-release.outputs.version }}';
             
-            console.log('🚀 Iniciando deploy automático');
+            console.log('🚀 Iniciando deploy automático (arquitetura multi-stack)');
             console.log('📦 Versão: ' + version);
+            console.log('📋 Stack: all (todos os stacks em sequência)');
             
+            // Deploy modular - usa novo workflow deploy-stack.yml
+            // Stack 'all' faz deploy de: infra → alice → observability → erpnext → backup
             await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              workflow_id: 'deploy-production.yml',
+              workflow_id: 'deploy-stack.yml',
               ref: version,
               inputs: {
+                stack: 'all',
                 version: version,
-                services: 'all',
-                triggered_by: 'release-workflow'
+                rollback: 'false',
+                dry_run: 'false'
               }
             });
             
-            console.log('✅ Deploy disparado!');
+            console.log('✅ Deploy modular disparado!');

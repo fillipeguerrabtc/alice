@@ -1,0 +1,211 @@
+# =============================================================================
+# ALICE PLATFORM - DOCKER COMPOSE BASE (Elementos Compartilhados)
+# =============================================================================
+# Versão: 5.0 (Arquitetura Modular Multi-Stack)
+# Data: 05 de Janeiro de 2026
+# Autor: Fillipe Guerra
+#
+# PROPÓSITO: Arquivo base com networks e volumes usados por TODOS os stacks.
+# Este arquivo é incluído via `docker compose -f ... -f docker-compose.base.yml`
+# 
+# ARQUITETURA MODULAR (05/01/2026):
+# - INFRA Stack: postgres, redis, qdrant, searxng, tor, caddy, minio
+# - ALICE Stack: frontend, auth, chat, rag, training, integrations, observability, gpu-manager
+# - GPU Stack: gpu-mixtral, gpu-embeddings, gpu-flux, gpu-asr, gpu-trainer (via profiles)
+# - OBSERVABILITY Stack: prometheus, grafana, loki, jaeger, langfuse, etc.
+# - ERPNEXT Stack: mariadb, redis-cache/queue, backend, workers (100% isolado)
+# - BACKUP Stack: pgbackrest
+#
+# BENEFÍCIOS:
+# - Deploy independente por stack (rollback cirúrgico)
+# - Graceful degradation (ERPNext pode falhar sem afetar Alice)
+# - Produção parcial (Alice funciona mesmo sem ERPNext)
+# - Manutenção isolada (atualizar observability sem downtime de Alice)
+#
+# REGRA 6 CLAUDE.md: Enterprise-grade, sem workarounds
+# REGRA 11 CLAUDE.md: Seguir melhores práticas 2025 (Docker Compose v2.20+)
+# =============================================================================
+
+# =============================================================================
+# NETWORKS - Redes externas (criadas uma vez no servidor antes do deploy)
+# =============================================================================
+# IMPORTANTE: Executar uma vez no servidor antes do primeiro deploy:
+#   docker network create --driver bridge --subnet 172.28.0.0/16 alice-network
+#   docker network create --driver bridge erpnext-network
+# =============================================================================
+networks:
+  alice-network:
+    external: true
+    name: alice-network
+  
+  erpnext-network:
+    external: true
+    name: erpnext-network
+
+# =============================================================================
+# VOLUMES - Persistência de dados (binds para /opt/alice)
+# =============================================================================
+# NOTA: Volumes são declarados como external quando compartilhados entre stacks.
+# Cada stack que usa um volume deve declará-lo como external: true
+# 
+# Estrutura de diretórios:
+#   /opt/alice/
+#   ├── data/          # Dados persistentes (PostgreSQL, Redis, Qdrant, etc.)
+#   ├── logs/          # Logs de serviços (Caddy, ERPNext, ClickHouse)
+#   ├── uploads/       # Uploads RAG (imagens, áudios, documentos)
+#   ├── backups/       # Backups (pgBackRest, manifests)
+#   └── secrets/       # Arquivos de secrets (langfuse_db_password)
+# =============================================================================
+volumes:
+  # =========================================================================
+  # INFRA STACK VOLUMES
+  # =========================================================================
+  postgres_data:
+    name: alice-postgres-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/data/postgres
+
+  pgbackrest_spool:
+    name: alice-pgbackrest-spool
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/data/pgbackrest-spool
+
+  alice_redis_data:
+    name: alice-redis-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/data/redis-alice
+
+  caddy_data:
+    name: alice-caddy-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/data/caddy
+  
+  caddy_config:
+    name: alice-caddy-config
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/data/caddy-config
+  
+  caddy_logs:
+    name: alice-caddy-logs
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/logs/caddy
+  
+  searxng_config:
+    name: alice-searxng-config
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/data/searxng-config
+
+  minio_data:
+    name: alice-minio-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/data/minio
+
+  qdrant_data:
+    name: alice-qdrant-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/data/qdrant
+
+  # =========================================================================
+  # ERPNEXT STACK VOLUMES
+  # =========================================================================
+  erpnext_sites:
+    name: erpnext-sites
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/data/erpnext-sites
+  
+  erpnext_logs:
+    name: erpnext-logs
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/logs/erpnext
+  
+  mariadb_data:
+    name: erpnext-mariadb-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/data/erpnext-mariadb
+  
+  redis_cache_data:
+    name: erpnext-redis-cache
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/data/erpnext-redis-cache
+  
+  redis_queue_data:
+    name: erpnext-redis-queue
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/data/erpnext-redis-queue
+
+  # =========================================================================
+  # OBSERVABILITY STACK VOLUMES
+  # =========================================================================
+  vector_data:
+    name: alice-vector-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/data/vector
+
+  langfuse_db_data:
+    name: alice-langfuse-db-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/data/langfuse-db
+
+  clickhouse_data:
+    name: alice-clickhouse-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/data/clickhouse
+
+  clickhouse_logs:
+    name: alice-clickhouse-logs
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/logs/clickhouse

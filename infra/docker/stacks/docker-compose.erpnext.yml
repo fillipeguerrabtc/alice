@@ -1,0 +1,731 @@
+# =============================================================================
+# ALICE PLATFORM - ERPNEXT STACK
+# =============================================================================
+# Versão: 5.0 (Arquitetura Modular Multi-Stack)
+# Data: 05 de Janeiro de 2026
+# Autor: Fillipe Guerra
+#
+# PROPÓSITO: Stack ERPNext completamente isolado da Alice.
+# Falha neste stack NÃO afeta Alice, Observability ou outros módulos.
+#
+# CONTAINERS (15):
+#   - erpnext-mariadb - MariaDB 10.8.8
+#   - erpnext-redis-cache - Redis 6.2.21 (cache)
+#   - erpnext-redis-queue - Redis 6.2.21 (jobs)
+#   - erpnext-configurator - Init container
+#   - erpnext-create-site - Init container
+#   - erpnext-backend - Gunicorn server
+#   - erpnext-frontend - NGINX
+#   - erpnext-websocket - Socket.IO
+#   - erpnext-scheduler - Job scheduler
+#   - erpnext-worker-default (x3) - Workers default
+#   - erpnext-worker-short (x3) - Workers curtos
+#   - erpnext-worker-long (x3) - Workers longos
+#
+# DEPENDÊNCIAS:
+#   - INFRA Stack: Caddy precisa estar healthy para roteamento
+#   - ALICE Stack: alice-integrations comunica com erpnext-backend
+#
+# ISOLAMENTO:
+#   - Rede própria: erpnext-network
+#   - Redis próprios: redis-cache e redis-queue (separados de alice-redis)
+#   - Database próprio: MariaDB (não compartilha PostgreSQL)
+#   - Volumes próprios: erpnext-sites, mariadb-data
+#
+# REGRA 6 CLAUDE.md: Enterprise-grade, sem workarounds
+# REGRA 15 CLAUDE.md: Microsserviços isolados
+# =============================================================================
+
+# =============================================================================
+# NETWORKS (usa somente erpnext-network)
+# =============================================================================
+networks:
+  erpnext-network:
+    external: true
+    name: erpnext-network
+
+# =============================================================================
+# VOLUMES (todos externos - definidos no base)
+# =============================================================================
+volumes:
+  erpnext_sites:
+    external: true
+    name: erpnext-sites
+  
+  erpnext_logs:
+    external: true
+    name: erpnext-logs
+  
+  mariadb_data:
+    external: true
+    name: erpnext-mariadb-data
+  
+  redis_cache_data:
+    external: true
+    name: erpnext-redis-cache
+  
+  redis_queue_data:
+    external: true
+    name: erpnext-redis-queue
+
+# =============================================================================
+# SERVICES
+# =============================================================================
+services:
+
+  # ===========================================================================
+  # MARIADB - Banco ERPNext (MariaDB 10.8.8)
+  # ===========================================================================
+  erpnext-mariadb:
+    image: mariadb:10.8.8
+    platform: linux/amd64
+    container_name: erpnext-mariadb
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64M
+      - /run/mysqld:mode=1777,size=8M
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-character-set-client-handshake
+      - --skip-innodb-read-only-compressed
+      - --innodb-buffer-pool-size=1400M
+      - --innodb-buffer-pool-instances=2
+      - --max-connections=50
+      - --query-cache-type=OFF
+      - --query-cache-size=0
+      - --tmp-table-size=32M
+      - --max-heap-table-size=32M
+      - --key-buffer-size=16M
+      - --table-open-cache=400
+      - --innodb-log-file-size=256M
+      - --innodb-flush-log-at-trx-commit=2
+      - --expire-logs-days=7
+    environment:
+      MYSQL_ROOT_PASSWORD: ${ERPNEXT_MYSQL_ROOT_PASSWORD:?ERPNEXT_MYSQL_ROOT_PASSWORD obrigatorio}
+      MYSQL_DATABASE: ${ERPNEXT_DB_NAME:-erpnext}
+      MYSQL_USER: ${ERPNEXT_DB_USER:-erpnext}
+      MYSQL_PASSWORD: ${ERPNEXT_DB_PASSWORD:?ERPNEXT_DB_PASSWORD obrigatorio}
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    networks:
+      - erpnext-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${ERPNEXT_MYSQL_ROOT_PASSWORD}"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.5'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+
+  # ===========================================================================
+  # REDIS CACHE - Cache ERPNext (Redis 6.x obrigatório)
+  # ===========================================================================
+  erpnext-redis-cache:
+    image: redis:6.2.21-alpine
+    platform: linux/amd64
+    container_name: erpnext-redis-cache
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=16M
+    command:
+      - redis-server
+      - --maxmemory
+      - 200mb
+      - --maxmemory-policy
+      - allkeys-lru
+      - --appendonly
+      - "yes"
+      - --save
+      - "900"
+      - "1"
+      - --save
+      - "300"
+      - "10"
+      - --requirepass
+      - ${REDIS_CACHE_PASSWORD:?REDIS_CACHE_PASSWORD obrigatorio}
+      - --rename-command
+      - FLUSHALL
+      - ""
+      - --rename-command
+      - FLUSHDB
+      - ""
+      - --rename-command
+      - CONFIG
+      - ""
+      - --rename-command
+      - DEBUG
+      - ""
+    volumes:
+      - redis_cache_data:/data
+    networks:
+      - erpnext-network
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a ${REDIS_CACHE_PASSWORD} --no-auth-warning ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.3'
+        reservations:
+          memory: 64M
+          cpus: '0.1'
+
+  # ===========================================================================
+  # REDIS QUEUE - Filas ERPNext (Redis 6.x obrigatório)
+  # ===========================================================================
+  erpnext-redis-queue:
+    image: redis:6.2.21-alpine
+    platform: linux/amd64
+    container_name: erpnext-redis-queue
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=16M
+    command:
+      - redis-server
+      - --maxmemory
+      - 200mb
+      - --maxmemory-policy
+      - noeviction
+      - --appendonly
+      - "yes"
+      - --save
+      - "900"
+      - "1"
+      - --save
+      - "300"
+      - "10"
+      - --requirepass
+      - ${REDIS_QUEUE_PASSWORD:?REDIS_QUEUE_PASSWORD obrigatorio}
+      - --rename-command
+      - FLUSHALL
+      - ""
+      - --rename-command
+      - FLUSHDB
+      - ""
+      - --rename-command
+      - CONFIG
+      - ""
+      - --rename-command
+      - DEBUG
+      - ""
+    volumes:
+      - redis_queue_data:/data
+    networks:
+      - erpnext-network
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a ${REDIS_QUEUE_PASSWORD} --no-auth-warning ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.3'
+        reservations:
+          memory: 64M
+          cpus: '0.1'
+
+  # ===========================================================================
+  # ERPNEXT CONFIGURATOR - Init Container
+  # ===========================================================================
+  erpnext-configurator:
+    image: frappe/erpnext:v15.91.3
+    platform: linux/amd64
+    container_name: erpnext-configurator
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - erpnext_sites:/home/frappe/frappe-bench/sites
+      - erpnext_logs:/home/frappe/frappe-bench/logs
+    command:
+      - bash
+      - -c
+      - |
+        set -euo pipefail
+        cd /home/frappe/frappe-bench
+        
+        if [ ! -d "apps" ]; then
+          echo "❌ ERRO: Diretório apps não existe em /home/frappe/frappe-bench"
+          exit 1
+        fi
+        
+        echo "📋 Criando apps.txt..."
+        if ! ls -1 apps > sites/apps.txt 2>/dev/null; then
+          echo "❌ ERRO: Falha ao listar apps"
+          exit 1
+        fi
+        cat sites/apps.txt || echo "(apps.txt vazio)"
+        
+        CACHE_URL="redis://:$${REDIS_CACHE_PASSWORD}@erpnext-redis-cache:6379"
+        QUEUE_URL="redis://:$${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379"
+        
+        echo "⚙️ Configurando bench..."
+        bench set-config -g db_host erpnext-mariadb
+        bench set-config -g db_port 3306
+        bench set-config -g redis_cache "$${CACHE_URL}"
+        bench set-config -g redis_queue "$${QUEUE_URL}"
+        bench set-config -g redis_socketio "$${QUEUE_URL}"
+        bench set-config -g socketio_port 9000
+        
+        if [ ! -f "sites/common_site_config.json" ]; then
+          echo "❌ ERRO: common_site_config.json não foi criado"
+          exit 1
+        fi
+        
+        echo "✅ ERPNext configurator concluído"
+    environment:
+      SITE_NAME: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+      DB_ROOT_USER: root
+      MYSQL_ROOT_PASSWORD: ${ERPNEXT_MYSQL_ROOT_PASSWORD}
+      ADMIN_PASSWORD: ${ERPNEXT_ADMIN_PASSWORD}
+      INSTALL_APPS: "erpnext"
+      REDIS_CACHE_PASSWORD: ${REDIS_CACHE_PASSWORD}
+      REDIS_QUEUE_PASSWORD: ${REDIS_QUEUE_PASSWORD}
+    networks:
+      - erpnext-network
+    depends_on:
+      erpnext-mariadb:
+        condition: service_healthy
+      erpnext-redis-cache:
+        condition: service_healthy
+      erpnext-redis-queue:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+
+  # ===========================================================================
+  # ERPNEXT CREATE SITE - Init Container
+  # ===========================================================================
+  erpnext-create-site:
+    image: frappe/erpnext:v15.91.3
+    platform: linux/amd64
+    container_name: erpnext-create-site
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    entrypoint:
+      - bash
+      - -c
+    command:
+      - |
+        set -euo pipefail
+        cd /home/frappe/frappe-bench
+        
+        echo "=== DEBUG: Verificando ambiente ==="
+        echo "SITE_NAME: $${SITE_NAME:-não definido}"
+        
+        if [ -f "sites/$${SITE_NAME}/site_config.json" ]; then
+          echo "✅ Site $${SITE_NAME} já existe. Pulando criação."
+          exit 0
+        fi
+        
+        echo "🔧 Criando site $${SITE_NAME}..."
+        timeout 1800 bench new-site "$${SITE_NAME}" \
+          --db-host erpnext-mariadb \
+          --db-port 3306 \
+          --mariadb-root-password "$${MYSQL_ROOT_PASSWORD}" \
+          --admin-password "$${ADMIN_PASSWORD}" \
+          --mariadb-user-host-login-scope='%' \
+          --install-app erpnext \
+          --verbose 2>&1 | tee /tmp/bench-new-site.log
+        
+        BENCH_EXIT_CODE=$${PIPESTATUS[0]:-$$?}
+        
+        if [ "$${BENCH_EXIT_CODE}" -ne 0 ]; then
+          echo "❌ ERRO: Falha ao criar site - exit code: $${BENCH_EXIT_CODE}"
+          cat /tmp/bench-new-site.log 2>/dev/null || true
+          exit 1
+        fi
+        echo "✅ Site $${SITE_NAME} criado com sucesso!"
+    environment:
+      SITE_NAME: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+      DB_ROOT_USER: root
+      DB_HOST: erpnext-mariadb
+      DB_PORT: 3306
+      MYSQL_ROOT_PASSWORD: ${ERPNEXT_MYSQL_ROOT_PASSWORD}
+      ADMIN_PASSWORD: ${ERPNEXT_ADMIN_PASSWORD}
+      INSTALL_APPS: "erpnext"
+      REDIS_CACHE_PASSWORD: ${REDIS_CACHE_PASSWORD}
+      REDIS_QUEUE_PASSWORD: ${REDIS_QUEUE_PASSWORD}
+    volumes:
+      - erpnext_sites:/home/frappe/frappe-bench/sites
+      - erpnext_logs:/home/frappe/frappe-bench/logs
+    networks:
+      - erpnext-network
+    depends_on:
+      erpnext-configurator:
+        condition: service_completed_successfully
+      erpnext-mariadb:
+        condition: service_healthy
+      erpnext-redis-cache:
+        condition: service_healthy
+      erpnext-redis-queue:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+          cpus: '1.0'
+
+  # ===========================================================================
+  # ERPNEXT BACKEND - Gunicorn Server
+  # ===========================================================================
+  erpnext-backend:
+    image: frappe/erpnext:v15.91.3
+    platform: linux/amd64
+    container_name: erpnext-backend
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command: ["bench", "serve", "--port", "8000"]
+    environment:
+      DB_HOST: erpnext-mariadb
+      DB_PORT: 3306
+      DB_NAME: ${ERPNEXT_DB_NAME:-erpnext}
+      DB_USER: ${ERPNEXT_DB_USER:-erpnext}
+      DB_PASSWORD: ${ERPNEXT_DB_PASSWORD}
+      REDIS_CACHE: redis://:${REDIS_CACHE_PASSWORD}@erpnext-redis-cache:6379
+      REDIS_QUEUE: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379
+      REDIS_SOCKETIO: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379/1
+      SOCKETIO_PORT: 9000
+      AUTO_MIGRATE: 1
+      FRAPPE_SITE_NAME_HEADER: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+      LETSENCRYPT_EMAIL: ${ACME_EMAIL}
+      ADMIN_PASSWORD: ${ERPNEXT_ADMIN_PASSWORD}
+      ERPNEXT_PY: /home/frappe/frappe-bench/sites
+      ALICE_OAUTH_CLIENT_ID: erpnext-sso
+      ALICE_OAUTH_CLIENT_SECRET: ${ERPNEXT_OAUTH_CLIENT_SECRET}
+      ALICE_OIDC_ISSUER: ${OIDC_ISSUER:-https://yesyoudeserve.duckdns.org}
+    volumes:
+      - erpnext_sites:/home/frappe/frappe-bench/sites
+      - erpnext_logs:/home/frappe/frappe-bench/logs
+    networks:
+      - erpnext-network
+    depends_on:
+      erpnext-create-site:
+        condition: service_completed_successfully
+      erpnext-mariadb:
+        condition: service_healthy
+      erpnext-redis-cache:
+        condition: service_healthy
+      erpnext-redis-queue:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/method/ping', timeout=10)"]
+      interval: 30s
+      timeout: 15s
+      retries: 20
+      start_period: 300s
+
+  # ===========================================================================
+  # ERPNEXT FRONTEND - NGINX
+  # ===========================================================================
+  erpnext-frontend:
+    image: frappe/erpnext:v15.91.3
+    platform: linux/amd64
+    container_name: erpnext-frontend
+    restart: unless-stopped
+    command: nginx-entrypoint.sh
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      FRAPPE_SITE_NAME_HEADER: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+      BACKEND: erpnext-backend:8000
+      SOCKETIO: erpnext-websocket:9000
+      UPSTREAM_REAL_IP_ADDRESS: 0.0.0.0/0
+      UPSTREAM_REAL_IP_HEADER: X-Forwarded-For
+      UPSTREAM_REAL_IP_RECURSIVE: "on"
+      PROXY_READ_TIMEOUT: 120
+      CLIENT_MAX_BODY_SIZE: 50m
+    volumes:
+      - erpnext_sites:/home/frappe/frappe-bench/sites:ro
+      - erpnext_logs:/home/frappe/frappe-bench/logs:ro
+    depends_on:
+      erpnext-backend:
+        condition: service_started
+      erpnext-websocket:
+        condition: service_started
+    networks:
+      - erpnext-network
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+  # ===========================================================================
+  # ERPNEXT WEBSOCKET - Socket.IO
+  # ===========================================================================
+  erpnext-websocket:
+    image: frappe/erpnext:v15.91.3
+    platform: linux/amd64
+    container_name: erpnext-websocket
+    restart: unless-stopped
+    command: node /home/frappe/frappe-bench/apps/frappe/socketio.js
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      SOCKETIO_PORT: 9000
+      REDIS_QUEUE: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379
+      REDIS_SOCKETIO: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379/1
+      SITES_PATH: /home/frappe/frappe-bench/sites
+      FRAPPE_SITE_NAME_HEADER: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+    volumes:
+      - erpnext_sites:/home/frappe/frappe-bench/sites:ro
+      - erpnext_logs:/home/frappe/frappe-bench/logs:ro
+    depends_on:
+      erpnext-redis-queue:
+        condition: service_healthy
+      erpnext-backend:
+        condition: service_started
+    networks:
+      - erpnext-network
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9000/socket.io/?EIO=4&transport=polling', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ===========================================================================
+  # ERPNEXT SCHEDULER
+  # ===========================================================================
+  erpnext-scheduler:
+    image: frappe/erpnext:v15.91.3
+    platform: linux/amd64
+    container_name: erpnext-scheduler
+    restart: unless-stopped
+    command: bench schedule
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      SITE_NAME: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+      DB_HOST: erpnext-mariadb
+      DB_PORT: 3306
+      REDIS_CACHE: redis://:${REDIS_CACHE_PASSWORD}@erpnext-redis-cache:6379
+      REDIS_QUEUE: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379
+      REDIS_SOCKETIO: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379/1
+      REDIS_QUEUE_PASSWORD: ${REDIS_QUEUE_PASSWORD}
+      FRAPPE_SITE_NAME_HEADER: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+    volumes:
+      - erpnext_sites:/home/frappe/frappe-bench/sites
+      - erpnext_logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      erpnext-create-site:
+        condition: service_completed_successfully
+      erpnext-mariadb:
+        condition: service_healthy
+      erpnext-redis-queue:
+        condition: service_healthy
+    networks:
+      - erpnext-network
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+
+  # ===========================================================================
+  # ERPNEXT WORKERS - Default Queue
+  # ===========================================================================
+  erpnext-worker-default:
+    image: frappe/erpnext:v15.91.3
+    platform: linux/amd64
+    container_name: erpnext-worker-default
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command: bench worker --queue default
+    environment:
+      SITE_NAME: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+      DB_HOST: erpnext-mariadb
+      DB_PORT: 3306
+      DB_NAME: ${ERPNEXT_DB_NAME:-erpnext}
+      DB_USER: ${ERPNEXT_DB_USER:-erpnext}
+      DB_PASSWORD: ${ERPNEXT_DB_PASSWORD}
+      REDIS_CACHE: redis://:${REDIS_CACHE_PASSWORD}@erpnext-redis-cache:6379
+      REDIS_QUEUE: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379
+      REDIS_SOCKETIO: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379/1
+      REDIS_QUEUE_PASSWORD: ${REDIS_QUEUE_PASSWORD}
+      SOCKETIO_PORT: 9000
+      AUTO_MIGRATE: 1
+      FRAPPE_SITE_NAME_HEADER: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+    volumes:
+      - erpnext_sites:/home/frappe/frappe-bench/sites
+      - erpnext_logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      erpnext-create-site:
+        condition: service_completed_successfully
+      erpnext-mariadb:
+        condition: service_healthy
+      erpnext-redis-cache:
+        condition: service_healthy
+      erpnext-redis-queue:
+        condition: service_healthy
+    networks:
+      - erpnext-network
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
+      interval: 30s
+      timeout: 10s
+      retries: 8
+      start_period: 180s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+
+  # ===========================================================================
+  # ERPNEXT WORKERS - Short Queue
+  # ===========================================================================
+  erpnext-worker-short:
+    image: frappe/erpnext:v15.91.3
+    platform: linux/amd64
+    container_name: erpnext-worker-short
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command: bench worker --queue short
+    environment:
+      SITE_NAME: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+      DB_HOST: erpnext-mariadb
+      DB_PORT: 3306
+      DB_NAME: ${ERPNEXT_DB_NAME:-erpnext}
+      DB_USER: ${ERPNEXT_DB_USER:-erpnext}
+      DB_PASSWORD: ${ERPNEXT_DB_PASSWORD}
+      REDIS_CACHE: redis://:${REDIS_CACHE_PASSWORD}@erpnext-redis-cache:6379
+      REDIS_QUEUE: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379
+      REDIS_SOCKETIO: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379/1
+      REDIS_QUEUE_PASSWORD: ${REDIS_QUEUE_PASSWORD}
+      SOCKETIO_PORT: 9000
+      AUTO_MIGRATE: 1
+      FRAPPE_SITE_NAME_HEADER: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+    volumes:
+      - erpnext_sites:/home/frappe/frappe-bench/sites
+      - erpnext_logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      erpnext-create-site:
+        condition: service_completed_successfully
+      erpnext-mariadb:
+        condition: service_healthy
+      erpnext-redis-cache:
+        condition: service_healthy
+      erpnext-redis-queue:
+        condition: service_healthy
+    networks:
+      - erpnext-network
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
+      interval: 30s
+      timeout: 10s
+      retries: 8
+      start_period: 180s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+
+  # ===========================================================================
+  # ERPNEXT WORKERS - Long Queue
+  # ===========================================================================
+  erpnext-worker-long:
+    image: frappe/erpnext:v15.91.3
+    platform: linux/amd64
+    container_name: erpnext-worker-long
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command: bench worker --queue long
+    environment:
+      SITE_NAME: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+      DB_HOST: erpnext-mariadb
+      DB_PORT: 3306
+      DB_NAME: ${ERPNEXT_DB_NAME:-erpnext}
+      DB_USER: ${ERPNEXT_DB_USER:-erpnext}
+      DB_PASSWORD: ${ERPNEXT_DB_PASSWORD}
+      REDIS_CACHE: redis://:${REDIS_CACHE_PASSWORD}@erpnext-redis-cache:6379
+      REDIS_QUEUE: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379
+      REDIS_SOCKETIO: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379/1
+      REDIS_QUEUE_PASSWORD: ${REDIS_QUEUE_PASSWORD}
+      SOCKETIO_PORT: 9000
+      AUTO_MIGRATE: 1
+      FRAPPE_SITE_NAME_HEADER: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+    volumes:
+      - erpnext_sites:/home/frappe/frappe-bench/sites
+      - erpnext_logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      erpnext-create-site:
+        condition: service_completed_successfully
+      erpnext-mariadb:
+        condition: service_healthy
+      erpnext-redis-cache:
+        condition: service_healthy
+      erpnext-redis-queue:
+        condition: service_healthy
+    networks:
+      - erpnext-network
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
+      interval: 30s
+      timeout: 10s
+      retries: 8
+      start_period: 180s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.75'
+        reservations:
+          memory: 256M
+          cpus: '0.25'

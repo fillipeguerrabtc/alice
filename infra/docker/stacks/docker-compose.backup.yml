@@ -1,0 +1,94 @@
+# =============================================================================
+# ALICE PLATFORM - BACKUP STACK
+# =============================================================================
+# Versão: 5.0 (Arquitetura Modular Multi-Stack)
+# Data: 05 de Janeiro de 2026
+# Autor: Fillipe Guerra
+#
+# PROPÓSITO: Stack de backup enterprise.
+#
+# CONTAINERS (1):
+#   - pgbackrest - Backup PostgreSQL enterprise (WAL archiving, incremental)
+#
+# DEPENDÊNCIAS:
+#   - INFRA Stack: postgres deve estar healthy
+#
+# OPERAÇÃO:
+#   - pgbackrest-init no INFRA stack cria a stanza
+#   - Este container executa backups programados
+#
+# REGRA 6 CLAUDE.md: Enterprise-grade, sem workarounds
+# =============================================================================
+
+# =============================================================================
+# NETWORKS
+# =============================================================================
+networks:
+  alice-network:
+    external: true
+    name: alice-network
+
+# =============================================================================
+# VOLUMES
+# =============================================================================
+volumes:
+  postgres_data:
+    external: true
+    name: alice-postgres-data
+
+  pgbackrest_spool:
+    external: true
+    name: alice-pgbackrest-spool
+
+# =============================================================================
+# SERVICES
+# =============================================================================
+services:
+
+  # ===========================================================================
+  # PGBACKREST - Backup Container
+  # ===========================================================================
+  pgbackrest:
+    image: ${IMAGE_PREFIX}-pgbackrest:${IMAGE_TAG:-latest}
+    platform: linux/amd64
+    container_name: alice-pgbackrest
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64M
+    environment:
+      PGBACKREST_STANZA: alice_prod
+      PGBACKREST_REPO1_PATH: /var/lib/pgbackrest
+      PGBACKREST_REPO1_CIPHER_TYPE: aes-256-cbc
+      PGBACKREST_REPO1_CIPHER_PASS: ${BACKUP_CIPHER_PASS}
+      PGBACKREST_REPO1_RETENTION_FULL: "2"
+      PGBACKREST_REPO1_RETENTION_DIFF: "7"
+      PGBACKREST_LOG_LEVEL_CONSOLE: info
+      PGBACKREST_LOG_LEVEL_FILE: detail
+      # Schedule: Full backup semanal, diff diário
+      BACKUP_SCHEDULE_FULL: "0 2 * * 0"
+      BACKUP_SCHEDULE_DIFF: "0 2 * * 1-6"
+    volumes:
+      - /opt/alice/backups/postgresql:/var/lib/pgbackrest:rw
+      - /opt/alice/backups/postgresql/logs:/var/log/pgbackrest:rw
+      - postgres_data:/var/lib/postgresql/data:ro
+      - pgbackrest_spool:/var/spool/pgbackrest
+    networks:
+      - alice-network
+    # NOTA: postgres e pgbackrest-init estão no stack infra - verificados pelo workflow
+    healthcheck:
+      test: ["CMD", "pgbackrest", "info", "--stanza=alice_prod", "--output=json"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'

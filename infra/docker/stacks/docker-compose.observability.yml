@@ -1,0 +1,595 @@
+# =============================================================================
+# ALICE PLATFORM - OBSERVABILITY STACK
+# =============================================================================
+# Versão: 5.0 (Arquitetura Modular Multi-Stack)
+# Data: 05 de Janeiro de 2026
+# Autor: Fillipe Guerra
+#
+# PROPÓSITO: Stack de observabilidade, métricas, logs e tracing.
+#
+# CONTAINERS (13):
+#   - prometheus - Métricas (scrape Alice services)
+#   - grafana - Dashboards + SSO com Alice Auth
+#   - loki - Logs agregados
+#   - promtail - Coleta de logs
+#   - jaeger - Distributed tracing
+#   - vector - Agregador de logs
+#   - otel-collector - OpenTelemetry pipeline
+#   - node-exporter - Métricas do host (network_mode: host)
+#   - cadvisor - Métricas de containers (privileged)
+#   - langfuse - LLM Observability
+#   - langfuse-worker - Processamento assíncrono
+#   - langfuse-db - PostgreSQL para Langfuse
+#   - clickhouse - OLAP para Langfuse v3
+#
+# DEPENDÊNCIAS:
+#   - INFRA Stack DEVE estar healthy (alice-redis, minio para Langfuse)
+#   - ALICE Stack PODE estar up (Grafana SSO via alice-auth)
+#
+# NOTAS ESPECIAIS:
+#   - node-exporter usa network_mode: host (acesso métricas host)
+#   - cadvisor usa privileged: true (acesso sistema)
+#   - Grafana SSO depende de alice-auth para OIDC
+#   - Langfuse v3 depende de ClickHouse + MinIO + Redis
+#
+# REGRA 11 CLAUDE.md: Seguir melhores práticas 2025
+# REGRA 16 CLAUDE.md: Health checks, circuit breakers
+# =============================================================================
+
+# =============================================================================
+# NETWORKS
+# =============================================================================
+networks:
+  alice-network:
+    external: true
+    name: alice-network
+
+# =============================================================================
+# VOLUMES (externos - definidos no INFRA stack ou base)
+# =============================================================================
+volumes:
+  vector_data:
+    external: true
+    name: alice-vector-data
+
+  langfuse_db_data:
+    external: true
+    name: alice-langfuse-db-data
+
+  clickhouse_data:
+    external: true
+    name: alice-clickhouse-data
+
+  clickhouse_logs:
+    external: true
+    name: alice-clickhouse-logs
+
+  minio_data:
+    external: true
+    name: alice-minio-data
+
+# =============================================================================
+# SERVICES
+# =============================================================================
+services:
+
+  # ===========================================================================
+  # PROMETHEUS - Métricas
+  # ===========================================================================
+  prometheus:
+    image: prom/prometheus:v3.8.1
+    platform: linux/amd64
+    container_name: prometheus
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-remote-write-receiver"
+      - "--web.enable-lifecycle"
+    volumes:
+      - /opt/alice/data/prometheus:/prometheus
+      - ../observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../observability/rules:/etc/prometheus/rules:ro
+    networks:
+      - alice-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:9090/-/healthy || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+
+  # ===========================================================================
+  # GRAFANA - Dashboards + SSO Alice Auth
+  # ===========================================================================
+  grafana:
+    image: grafana/grafana:12.3.1
+    platform: linux/amd64
+    container_name: grafana
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_USERS_ALLOW_ORG_CREATE: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_SECURITY_COOKIE_SECURE: "true"
+      GF_SECURITY_COOKIE_SAMESITE: strict
+      GF_SECURITY_STRICT_TRANSPORT_SECURITY: "true"
+      GF_SECURITY_X_CONTENT_TYPE_OPTIONS: "true"
+      GF_SECURITY_X_XSS_PROTECTION: "true"
+      GF_SERVER_ROOT_URL: https://observability.yesyoudeserve.duckdns.org
+      GF_SERVER_ENFORCE_DOMAIN: "true"
+      # SSO OAuth - Alice como IdP
+      GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
+      GF_AUTH_GENERIC_OAUTH_NAME: Alice Enterprise
+      GF_AUTH_GENERIC_OAUTH_CLIENT_ID: grafana-sso
+      GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET: ${GRAFANA_OAUTH_CLIENT_SECRET}
+      GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email
+      GF_AUTH_GENERIC_OAUTH_AUTH_URL: ${OIDC_ISSUER:-https://yesyoudeserve.duckdns.org}/oauth/authorize
+      GF_AUTH_GENERIC_OAUTH_TOKEN_URL: ${OIDC_ISSUER:-https://yesyoudeserve.duckdns.org}/oauth/token
+      GF_AUTH_GENERIC_OAUTH_API_URL: ${OIDC_ISSUER:-https://yesyoudeserve.duckdns.org}/oauth/userinfo
+      GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP: "true"
+      GF_AUTH_GENERIC_OAUTH_USE_PKCE: "true"
+      GF_AUTH_GENERIC_OAUTH_AUTO_LOGIN: "false"
+      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "contains(role, 'super_admin') && 'Admin' || contains(role, 'admin') && 'Editor' || 'Viewer'"
+      # SMTP - Grafana Alerting
+      GF_SMTP_ENABLED: "true"
+      GF_SMTP_HOST: smtp.gmail.com:587
+      GF_SMTP_USER: ${GMAIL_USER}
+      GF_SMTP_PASSWORD: ${GMAIL_APP_PASSWORD}
+      GF_SMTP_FROM_ADDRESS: ${GMAIL_USER}
+      GF_SMTP_FROM_NAME: Alice Enterprise Alerts
+      GF_SMTP_STARTTLS_POLICY: MandatoryStartTLS
+      GF_UNIFIED_ALERTING_ENABLED: "true"
+      GF_ALERTING_ENABLED: "false"
+    volumes:
+      - /opt/alice/data/grafana:/var/lib/grafana
+      - ../observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - alice-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+
+  # ===========================================================================
+  # LOKI - Log Aggregation
+  # ===========================================================================
+  loki:
+    image: grafana/loki:3.6.3
+    platform: linux/amd64
+    container_name: loki
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    volumes:
+      - ../observability/loki/local-config.yaml:/etc/loki/local-config.yaml:ro
+      - /opt/alice/data/loki:/loki
+    networks:
+      - alice-network
+    healthcheck:
+      test: ["CMD", "/usr/bin/loki", "-verify-config", "-config.file=/etc/loki/local-config.yaml"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.75'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+
+  # ===========================================================================
+  # PROMTAIL - Log Collection
+  # ===========================================================================
+  promtail:
+    image: grafana/promtail:3.6.3
+    platform: linux/amd64
+    container_name: promtail
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command: ["-config.file=/etc/promtail/config.yml"]
+    volumes:
+      - ../observability/promtail/config.yml:/etc/promtail/config.yml:ro
+      - /var/log:/var/log
+    networks:
+      - alice-network
+    healthcheck:
+      test: ["CMD", "/usr/bin/promtail", "-config.file=/etc/promtail/config.yml", "-check-syntax"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+
+  # ===========================================================================
+  # JAEGER - Distributed Tracing (v2.13)
+  # ===========================================================================
+  jaeger:
+    image: jaegertracing/jaeger:2.13.0
+    platform: linux/amd64
+    container_name: jaeger
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command: ["--config", "/etc/jaeger/jaeger-config.yml"]
+    volumes:
+      - ../observability/jaeger/jaeger-config.yml:/etc/jaeger/jaeger-config.yml:ro
+      - /opt/alice/data/jaeger:/badger
+    networks:
+      - alice-network
+    # Herda healthcheck da imagem oficial
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.1'
+
+  # ===========================================================================
+  # VECTOR - Log Aggregator
+  # ===========================================================================
+  vector:
+    image: timberio/vector:0.45.0-alpine
+    platform: linux/amd64
+    container_name: alice-vector
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command: ["--config", "/etc/vector/vector.toml"]
+    tmpfs:
+      - /tmp:mode=1777,size=32M
+    ports:
+      - "8686:8686"
+    volumes:
+      - ../docker/vector.toml:/etc/vector/vector.toml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - vector_data:/var/lib/vector
+      - /var/log/vector:/var/log/vector
+    networks:
+      - alice-network
+    depends_on:
+      loki:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8686/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+
+  # ===========================================================================
+  # OTEL COLLECTOR - OpenTelemetry Pipeline
+  # ===========================================================================
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.142.0
+    platform: linux/amd64
+    container_name: alice-otel-collector
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=32M
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ../observability/otel-collector/config.yaml:/etc/otelcol/config.yaml:ro
+    networks:
+      - alice-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:13133/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+
+  # ===========================================================================
+  # NODE EXPORTER - Métricas do Host
+  # ===========================================================================
+  # NOTA: Usa network_mode: host para acessar métricas do sistema
+  # ===========================================================================
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    platform: linux/amd64
+    container_name: alice-node-exporter
+    restart: unless-stopped
+    network_mode: host
+    pid: host
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.rootfs=/host"
+      - "--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($|/)"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host:ro
+    # NOTA: healthcheck omitido - network_mode: host requer healthcheck diferente
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.25'
+        reservations:
+          memory: 64M
+          cpus: '0.1'
+
+  # ===========================================================================
+  # CADVISOR - Container Metrics
+  # ===========================================================================
+  # NOTA: Usa privileged: true para acessar informações de containers
+  # ===========================================================================
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.52.1
+    platform: linux/amd64
+    container_name: alice-cadvisor
+    restart: unless-stopped
+    privileged: true
+    security_opt:
+      - no-new-privileges:true
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    networks:
+      - alice-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:8080/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+
+  # ===========================================================================
+  # CLICKHOUSE - OLAP para Langfuse v3
+  # ===========================================================================
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.12-alpine
+    platform: linux/amd64
+    container_name: alice-clickhouse
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      CLICKHOUSE_LISTEN_HOST: "0.0.0.0"
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-langfuse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-langfuse}
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - clickhouse_logs:/var/log/clickhouse-server
+    networks:
+      - alice-network
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --host localhost --user ${CLICKHOUSE_USER:-langfuse} --password ${CLICKHOUSE_PASSWORD} --query 'SELECT 1' 2>/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 8
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.75'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+
+  # ===========================================================================
+  # LANGFUSE DB - PostgreSQL para Langfuse
+  # ===========================================================================
+  langfuse-db:
+    image: postgres:16-alpine
+    platform: linux/amd64
+    container_name: alice-langfuse-db
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      POSTGRES_USER: ${LANGFUSE_DB_USER:-langfuse}
+      POSTGRES_PASSWORD_FILE: /run/secrets/langfuse_db_password
+      POSTGRES_DB: ${LANGFUSE_DB_NAME:-langfuse}
+    volumes:
+      - langfuse_db_data:/var/lib/postgresql/data
+      - /opt/alice/secrets/langfuse_db_password:/run/secrets/langfuse_db_password:ro
+    networks:
+      - alice-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${LANGFUSE_DB_USER:-langfuse} -d ${LANGFUSE_DB_NAME:-langfuse}"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+
+  # ===========================================================================
+  # LANGFUSE - LLM Observability v3
+  # ===========================================================================
+  langfuse:
+    image: langfuse/langfuse:3.85.0
+    platform: linux/amd64
+    container_name: langfuse
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXT_AUTH_SECRET}
+      NEXTAUTH_URL: https://langfuse.yesyoudeserve.duckdns.org
+      SALT: ${LANGFUSE_SALT}
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY}
+      DATABASE_URL: postgresql://${LANGFUSE_DB_USER:-langfuse}:${LANGFUSE_DB_PASSWORD}@langfuse-db:5432/${LANGFUSE_DB_NAME:-langfuse}?sslmode=disable
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-langfuse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_MIGRATION_URL: ${CLICKHOUSE_MIGRATION_URL}
+      CLICKHOUSE_CLUSTER_ENABLED: ${CLICKHOUSE_CLUSTER_ENABLED:-false}
+      REDIS_HOST: alice-redis
+      REDIS_PORT: 6379
+      REDIS_AUTH: ${REDIS_PASSWORD}
+      LANGFUSE_S3_EVENT_UPLOAD_ENABLED: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse-events
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: us-east-1
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_ENABLED: "false"
+      LANGFUSE_ENABLE_BACKGROUND_MIGRATIONS: "true"
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
+      NEXT_RUNTIME: nodejs
+      NODE_ENV: production
+      HOSTNAME: "0.0.0.0"
+    networks:
+      - alice-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:3000/api/public/health',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+      interval: 30s
+      timeout: 15s
+      retries: 15
+      start_period: 300s
+    # NOTA: alice-redis, minio, minio-init estão no stack infra - verificados pelo workflow
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.75'
+        reservations:
+          memory: 512M
+          cpus: '0.35'
+
+  # ===========================================================================
+  # LANGFUSE WORKER - Processamento Assíncrono v3
+  # ===========================================================================
+  langfuse-worker:
+    image: langfuse/langfuse-worker:3.85.0
+    platform: linux/amd64
+    container_name: langfuse-worker
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXT_AUTH_SECRET}
+      NEXTAUTH_URL: https://langfuse.yesyoudeserve.duckdns.org
+      SALT: ${LANGFUSE_SALT}
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY}
+      DATABASE_URL: postgresql://${LANGFUSE_DB_USER:-langfuse}:${LANGFUSE_DB_PASSWORD}@langfuse-db:5432/${LANGFUSE_DB_NAME:-langfuse}?sslmode=disable
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-langfuse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_MIGRATION_URL: ${CLICKHOUSE_MIGRATION_URL}
+      CLICKHOUSE_CLUSTER_ENABLED: ${CLICKHOUSE_CLUSTER_ENABLED:-false}
+      REDIS_HOST: alice-redis
+      REDIS_PORT: 6379
+      REDIS_AUTH: ${REDIS_PASSWORD}
+      LANGFUSE_S3_EVENT_UPLOAD_ENABLED: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse-events
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: us-east-1
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_ENABLED: "false"
+    networks:
+      - alice-network
+    # NOTA: minio, minio-init estão no stack infra - verificados pelo workflow
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      langfuse:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'

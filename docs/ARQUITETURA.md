@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Arquitetura de Software
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 02 de Janeiro de 2026  
-> **Versão:** 1.17.0 - Deploy Enterprise Hardening (Smoke Tests + Persistência de Logs)  
+> **Data:** 05 de Janeiro de 2026  
+> **Versão:** 2.0.0 - Arquitetura Multi-Stack Modular  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 
@@ -788,6 +788,37 @@ logger.info({
 | **Decisão** | Parser NLP + Orchestrator (handover/takeover) + KuCoin Client |
 | **Alternativas** | UI-only trading, Webhooks automáticos |
 | **Consequências** | + UX natural, + Controle IA/Manual, - Complexidade de parsing |
+
+### ADR-007: Arquitetura Multi-Stack Modular (05/01/2026)
+
+| Aspecto | Decisão |
+|---------|---------|
+| **Status** | Aceito |
+| **Data** | 05 de Janeiro de 2026 |
+| **Contexto** | Deploy monolítico de 50 containers causava rollback total quando ERPNext falhava, derrubando Alice e Grafana que funcionavam. Pipeline era "all-or-nothing" sem possibilidade de produção parcial. |
+| **Decisão** | Separar a plataforma em **5 stacks independentes** (INFRA, ALICE, OBSERVABILITY, ERPNEXT, BACKUP) com Docker Compose files separados e workflow de deploy modular (`deploy-stack.yml`). |
+| **Alternativas** | (1) Kubernetes com namespaces - rejeitado por complexidade excessiva para 50 containers; (2) Docker Swarm stacks - rejeitado por falta de GPU support nativo; (3) Manter monolítico - rejeitado pelo problema de rollback total |
+| **Consequências** | + Produção parcial (Alice funciona se ERPNext falhar); + Rollback cirúrgico por stack; + Deploy independente; + Isolamento de falhas; - Maior complexidade de orquestração; - Necessidade de manter dependências entre stacks |
+
+**Arquivos Criados:**
+- `infra/docker/stacks/docker-compose.base.yml` - Networks e volumes compartilhados
+- `infra/docker/stacks/docker-compose.infra.yml` - Stack de infraestrutura (10 containers)
+- `infra/docker/stacks/docker-compose.alice.yml` - Stack Alice + GPU (8 + 5 containers)
+- `infra/docker/stacks/docker-compose.observability.yml` - Stack de observabilidade (13 containers)
+- `infra/docker/stacks/docker-compose.erpnext.yml` - Stack ERPNext (15 containers)
+- `infra/docker/stacks/docker-compose.backup.yml` - Stack de backup (1 container)
+- `.github/workflows/deploy-stack.yml` - Workflow para deploy/rollback por stack
+
+**Ordem de Deploy:**
+1. INFRA (obrigatório primeiro)
+2. Drizzle push (migrações)
+3. ALICE + OBSERVABILITY (paralelos)
+4. ERPNEXT (independente)
+5. BACKUP (após postgres healthy)
+
+**Histórico de Versões:**
+- Cada stack mantém `/opt/alice/versions/{stack}.current` e `{stack}.previous`
+- Rollback usa versão anterior automaticamente
 
 ---
 
