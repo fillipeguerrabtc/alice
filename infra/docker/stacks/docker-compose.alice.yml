@@ -83,7 +83,10 @@ services:
       - /var/run:mode=1777,size=8M
       - /etc/nginx/conf.d:mode=1777,size=8M
     healthcheck:
-      test: ["CMD-SHELL", "timeout 5 /bin/sh -c 'true < /dev/tcp/localhost/80' || exit 1"]
+      # CORREÇÃO 05/01/2026: nginx:alpine usa ash/busybox - NÃO tem /dev/tcp
+      # /dev/tcp é bash-only. Alpine TEM wget disponível.
+      # Ref: CLAUDE.md documentação de bugs corrigidos
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:80/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 10

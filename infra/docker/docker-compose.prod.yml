@@ -836,11 +836,13 @@ services:
       # CORREÇÃO 23/12/2025: Mode 1755 não permite escrita - deve ser 1777 para tmpfs gravável
       - /etc/nginx/conf.d:mode=1777,size=8M
     healthcheck:
-      # CORREÇÃO 05/01/2026: Aumentar start_period e retries para primeiro deploy
+      # CORREÇÃO 05/01/2026: nginx:alpine usa ash/busybox - NÃO tem /dev/tcp
+      # /dev/tcp é bash-only. Alpine TEM wget disponível.
+      # Aumentar start_period e retries para primeiro deploy
       # Primeiro deploy: pull de imagem (~2-5min) + startup nginx (~10-30s)
       # start_period 90s garante que nginx tenha tempo adequado
       # retries 10 × 30s interval = 5min adicionais após start_period
-      test: ["CMD-SHELL", "timeout 5 /bin/sh -c 'true < /dev/tcp/localhost/80' || exit 1"]
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:80/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 10

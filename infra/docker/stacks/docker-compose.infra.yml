@@ -396,11 +396,14 @@ services:
     networks:
       - alice-network
     healthcheck:
-      test: ["CMD-SHELL", "timeout 5 /bin/sh -c 'true < /dev/tcp/localhost/6333' || exit 1"]
+      # CORREÇÃO 05/01/2026: Qdrant é Debian - usar bash (não sh) para /dev/tcp
+      # /dev/tcp é bash-only feature. Debian tem dash como /bin/sh.
+      # Ref: CLAUDE.md documentação de bugs corrigidos
+      test: ["CMD-SHELL", "timeout 5 bash -c 'true < /dev/tcp/localhost/6333' || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 120s
     deploy:
       resources:
         limits:
