@@ -382,10 +382,20 @@ jobs:
             echo "::error::POSTGRES_PASSWORD contém caracteres especiais de URL (+/=@:?#%). DATABASE_URL será malformada. Regenere com: openssl rand -hex 32"
             exit 1
           fi
+          # NOTA 05/01/2026: Espaços causam inconsistência entre .env.prod e arquivos de secret
+          # tr -d ' ' remove TODOS os espaços, mas ${VAR} no compose preserva espaços
+          if echo "${SECRET_POSTGRES_PASSWORD}" | grep -q ' '; then
+            echo "::error::POSTGRES_PASSWORD contém espaços. Espaços causam inconsistência de autenticação. Regenere com: openssl rand -hex 32"
+            exit 1
+          fi
           
           # Redis: usado em REDIS_URL
           if echo "${SECRET_REDIS_PASSWORD}" | grep -qE '[+/=@:?#%]'; then
             echo "::error::REDIS_PASSWORD contém caracteres especiais de URL (+/=@:?#%). REDIS_URL será malformada. Regenere com: openssl rand -hex 32"
+            exit 1
+          fi
+          if echo "${SECRET_REDIS_PASSWORD}" | grep -q ' '; then
+            echo "::error::REDIS_PASSWORD contém espaços. Espaços causam inconsistência de autenticação. Regenere com: openssl rand -hex 32"
             exit 1
           fi
           
@@ -394,16 +404,28 @@ jobs:
             echo "::error::LANGFUSE_DB_PASSWORD contém caracteres especiais de URL (+/=@:?#%). Langfuse DATABASE_URL será malformada. Regenere com: openssl rand -hex 32"
             exit 1
           fi
+          if echo "${SECRET_LANGFUSE_DB_PASSWORD}" | grep -q ' '; then
+            echo "::error::LANGFUSE_DB_PASSWORD contém espaços. Espaços causam inconsistência de autenticação. Regenere com: openssl rand -hex 32"
+            exit 1
+          fi
           
           # ERPNext Redis Cache: usado em REDIS_CACHE_URL
           if echo "${SECRET_REDIS_CACHE_PASSWORD}" | grep -qE '[+/=@:?#%]'; then
             echo "::error::REDIS_CACHE_PASSWORD contém caracteres especiais de URL (+/=@:?#%). REDIS_CACHE_URL será malformada. Regenere com: openssl rand -hex 32"
             exit 1
           fi
+          if echo "${SECRET_REDIS_CACHE_PASSWORD}" | grep -q ' '; then
+            echo "::error::REDIS_CACHE_PASSWORD contém espaços. Espaços causam inconsistência de autenticação. Regenere com: openssl rand -hex 32"
+            exit 1
+          fi
           
           # ERPNext Redis Queue: usado em REDIS_QUEUE_URL
           if echo "${SECRET_REDIS_QUEUE_PASSWORD}" | grep -qE '[+/=@:?#%]'; then
             echo "::error::REDIS_QUEUE_PASSWORD contém caracteres especiais de URL (+/=@:?#%). REDIS_QUEUE_URL será malformada. Regenere com: openssl rand -hex 32"
+            exit 1
+          fi
+          if echo "${SECRET_REDIS_QUEUE_PASSWORD}" | grep -q ' '; then
+            echo "::error::REDIS_QUEUE_PASSWORD contém espaços. Espaços causam inconsistência de autenticação. Regenere com: openssl rand -hex 32"
             exit 1
           fi
           
@@ -688,7 +710,9 @@ EOF
               # Criar arquivo de secret para Langfuse DB
               # (monta em /run/secrets/langfuse_db_password no container)
               # NOTA: Usar cut -d'=' -f2- (com traço) para capturar valores com '=' (ex: base64)
-              LANGFUSE_DB_PWD=$(grep '^LANGFUSE_DB_PASSWORD=' /opt/alice/app/infra/docker/.env.prod | cut -d'=' -f2- | tr -d ' ')
+              # NOTA 05/01/2026: Usar sed para trim (remover espaços só no início/fim)
+              # tr -d ' ' removia TODOS os espaços, causando inconsistência com ${VAR} no compose
+              LANGFUSE_DB_PWD=$(grep '^LANGFUSE_DB_PASSWORD=' /opt/alice/app/infra/docker/.env.prod | cut -d'=' -f2- | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
               if [ -n "$LANGFUSE_DB_PWD" ]; then
                 rm -f /opt/alice/secrets/langfuse_db_password
                 echo -n "$LANGFUSE_DB_PWD" > /opt/alice/secrets/langfuse_db_password
@@ -814,10 +838,12 @@ EOF
               
               # Extrair credenciais do .env.prod
               # NOTA: Usar cut -d'=' -f2- (com traço) para capturar valores com '=' (ex: base64)
+              # NOTA 05/01/2026: Usar sed para trim (remover espaços só no início/fim)
+              # tr -d ' ' removia TODOS os espaços, causando inconsistência com ${VAR} no compose
               cd /opt/alice/app/infra/docker
-              POSTGRES_USER=$(grep '^POSTGRES_USER=' .env.prod | cut -d'=' -f2- | tr -d ' ')
-              POSTGRES_PASSWORD=$(grep '^POSTGRES_PASSWORD=' .env.prod | cut -d'=' -f2- | tr -d ' ')
-              POSTGRES_DB=$(grep '^POSTGRES_DB=' .env.prod | cut -d'=' -f2- | tr -d ' ')
+              POSTGRES_USER=$(grep '^POSTGRES_USER=' .env.prod | cut -d'=' -f2- | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+              POSTGRES_PASSWORD=$(grep '^POSTGRES_PASSWORD=' .env.prod | cut -d'=' -f2- | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+              POSTGRES_DB=$(grep '^POSTGRES_DB=' .env.prod | cut -d'=' -f2- | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
               
               # Função para URL encode (necessário se senha tiver @, :, ?, #, %)
               # CLAUDE.md Bug Fix 23/12/2025: printf "'$c" não converte corretamente
