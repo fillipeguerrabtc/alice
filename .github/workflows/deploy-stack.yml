@@ -808,7 +808,9 @@ EOF
                 for (( pos=0 ; pos<strlen ; pos++ )); do
                   c=${string:$pos:1}
                   case "$c" in
-                    [-_.~a-zA-Z0-9] ) encoded+="$c" ;;
+                    # NOTA: Hífen no FINAL para evitar interpretação como range ASCII 45-95
+                    # Ref: Bug fix 23/12/2025 - padrão [-_.~] pode incluir <, >, [, ], \, ^
+                    [_.~a-zA-Z0-9-] ) encoded+="$c" ;;
                     * )
                       # LC_ALL=C garante comportamento consistente com caracteres multibyte
                       LC_ALL=C printf -v ascii '%d' "'$c"
