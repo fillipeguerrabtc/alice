@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 04 de Janeiro de 2026  
-**Versão:** 7.19 - Fix Tag Collision Loop para Primeiro Release
+**Data:** 05 de Janeiro de 2026  
+**Versão:** 7.20 - Restauração do Release Enterprise
 
 > **Migração 100% Self-Hosted (27/12/2025):** Pipeline completo migrado para runner próprio (Hetzner CPX32 - 4 vCPU, 8GB RAM) seguindo melhores práticas enterprise 2025. Todos os workflows (CI, Release, Deploy) executam no self-hosted runner para controle total, custos previsíveis e compliance.
 
