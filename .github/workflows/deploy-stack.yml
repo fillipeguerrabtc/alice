@@ -811,10 +811,17 @@ EOF
               deploy_single_stack "infra" "docker-compose.infra.yml"
               
               # 2. AGUARDAR INFRA HEALTHY
+              # NOTA 05/01/2026: Serviços de infra são CRÍTICOS - falhar se não healthy
+              # Continuar com serviços unhealthy causa cascata de falhas:
+              # - drizzle push falha (postgres)
+              # - Alice services falham (postgres, redis)
+              # - Langfuse falha (minio)
+              # - Todos os serviços falham (caddy)
               echo ""
-              echo "⏳ Aguardando serviços de infraestrutura..."
+              echo "⏳ Aguardando serviços de infraestrutura (críticos)..."
+              INFRA_FAILED=""
               for svc in alice-postgres alice-redis alice-qdrant alice-minio alice-caddy; do
-                MAX_WAIT=120
+                MAX_WAIT=180
                 ELAPSED=0
                 while [ $ELAPSED -lt $MAX_WAIT ]; do
                   STATUS=$(docker inspect --format='{{.State.Health.Status}}' $svc 2>/dev/null || echo "not_found")
@@ -826,9 +833,20 @@ EOF
                   ELAPSED=$((ELAPSED + 5))
                 done
                 if [ "$STATUS" != "healthy" ]; then
-                  echo "   ⚠️ $svc: $STATUS (continuando...)"
+                  echo "   ❌ $svc: $STATUS (CRÍTICO)"
+                  docker logs $svc --tail 30 2>&1 || true
+                  INFRA_FAILED="$INFRA_FAILED $svc"
                 fi
               done
+              
+              # Falhar se qualquer serviço crítico não estiver healthy
+              if [ -n "$INFRA_FAILED" ]; then
+                echo ""
+                echo "❌ ERRO CRÍTICO: Serviços de infraestrutura falharam:$INFRA_FAILED"
+                echo "   Deploy abortado para evitar cascata de falhas."
+                echo "   Verifique os logs acima e corrija antes de tentar novamente."
+                exit 1
+              fi
               
               # 2b. AGUARDAR INIT CONTAINERS COMPLETAREM
               # NOTA 05/01/2026: Init containers criam recursos APÓS serviços ficarem healthy
