@@ -368,6 +368,14 @@ jobs:
         run: |
           echo "📝 Gerando .env.prod para $STACK_NAME (versão: $DEPLOY_VERSION)..."
           
+          # VALIDAÇÃO: Senha Redis não pode conter caracteres especiais de URL
+          # Senhas com +, /, =, @, :, ?, #, % quebram URLs Redis (ex: redis://:senha@host:port)
+          # Ref: infra/scripts/generate-env-prod.sh linhas 81-87
+          if echo "${SECRET_REDIS_PASSWORD}" | grep -qE '[+/=@:?#%]'; then
+            echo "::error::REDIS_PASSWORD contém caracteres especiais de URL (+/=@:?#%). URLs Redis serão malformadas. Regenere com: openssl rand -hex 32"
+            exit 1
+          fi
+          
           # Gerar .env.prod com interpolação de variáveis
           cat > .env.prod << EOF
 # =============================================================================
