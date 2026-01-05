@@ -643,7 +643,8 @@ EOF
               
               # Criar arquivo de secret para Langfuse DB
               # (monta em /run/secrets/langfuse_db_password no container)
-              LANGFUSE_DB_PWD=$(grep '^LANGFUSE_DB_PASSWORD=' /opt/alice/app/infra/docker/.env.prod | cut -d'=' -f2 | tr -d ' ')
+              # NOTA: Usar cut -d'=' -f2- (com traço) para capturar valores com '=' (ex: base64)
+              LANGFUSE_DB_PWD=$(grep '^LANGFUSE_DB_PASSWORD=' /opt/alice/app/infra/docker/.env.prod | cut -d'=' -f2- | tr -d ' ')
               if [ -n "$LANGFUSE_DB_PWD" ]; then
                 rm -f /opt/alice/secrets/langfuse_db_password
                 echo -n "$LANGFUSE_DB_PWD" > /opt/alice/secrets/langfuse_db_password
@@ -767,10 +768,11 @@ EOF
               echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
               
               # Extrair credenciais do .env.prod
+              # NOTA: Usar cut -d'=' -f2- (com traço) para capturar valores com '=' (ex: base64)
               cd /opt/alice/app/infra/docker
-              POSTGRES_USER=$(grep '^POSTGRES_USER=' .env.prod | cut -d'=' -f2 | tr -d ' ')
-              POSTGRES_PASSWORD=$(grep '^POSTGRES_PASSWORD=' .env.prod | cut -d'=' -f2 | tr -d ' ')
-              POSTGRES_DB=$(grep '^POSTGRES_DB=' .env.prod | cut -d'=' -f2 | tr -d ' ')
+              POSTGRES_USER=$(grep '^POSTGRES_USER=' .env.prod | cut -d'=' -f2- | tr -d ' ')
+              POSTGRES_PASSWORD=$(grep '^POSTGRES_PASSWORD=' .env.prod | cut -d'=' -f2- | tr -d ' ')
+              POSTGRES_DB=$(grep '^POSTGRES_DB=' .env.prod | cut -d'=' -f2- | tr -d ' ')
               
               # Função para URL encode (necessário se senha tiver @, :, ?, #, %)
               # CLAUDE.md Bug Fix 23/12/2025: printf "'$c" não converte corretamente
