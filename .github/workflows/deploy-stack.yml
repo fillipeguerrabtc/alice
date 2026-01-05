@@ -82,7 +82,10 @@ env:
   DOMAIN: yesyoudeserve.duckdns.org
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/alice
-  HETZNER_HOST: 178.63.41.108
+  # NOTA: Host e User via secrets para não hardcodar credenciais
+  # Ref: Regra 6 CLAUDE.md - Enterprise-grade, sem hardcoded
+  HETZNER_HOST: ${{ secrets.HETZNER_VM_HOST }}
+  HETZNER_USER: ${{ secrets.HETZNER_VM_USER }}
   DEPLOY_PATH: /opt/alice
 
 jobs:
@@ -189,7 +192,7 @@ jobs:
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ env.HETZNER_HOST }}
-          username: root
+          username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
           script_timeout: 2m
@@ -365,6 +368,7 @@ jobs:
           SECRET_KUCOIN_PRO_API_KEY: ${{ secrets.KUCOIN_PRO_API_KEY }}
           SECRET_KUCOIN_PRO_API_SECRET: ${{ secrets.KUCOIN_PRO_API_SECRET }}
           SECRET_KUCOIN_PRO_API_PASSPHRASE: ${{ secrets.KUCOIN_PRO_API_PASSPHRASE }}
+          SECRET_KUCOIN_PRO_BASE_URL: ${{ secrets.KUCOIN_PRO_BASE_URL }}
         run: |
           echo "📝 Gerando .env.prod para $STACK_NAME (versão: $DEPLOY_VERSION)..."
           
@@ -498,6 +502,7 @@ WISE_PROFILE_ID=${SECRET_WISE_PROFILE_ID}
 KUCOIN_PRO_API_KEY=${SECRET_KUCOIN_PRO_API_KEY}
 KUCOIN_PRO_API_SECRET=${SECRET_KUCOIN_PRO_API_SECRET}
 KUCOIN_PRO_API_PASSPHRASE=${SECRET_KUCOIN_PRO_API_PASSPHRASE}
+KUCOIN_PRO_BASE_URL=${SECRET_KUCOIN_PRO_BASE_URL}
 EOF
           
           echo "✅ .env.prod gerado com $(wc -l < .env.prod) linhas"
@@ -566,7 +571,7 @@ EOF
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ env.HETZNER_HOST }}
-          username: root
+          username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
           source: "infra/docker/stacks/,infra/docker/Caddyfile,infra/docker/postgres-init/,infra/docker/vector.toml,infra/observability/,drizzle.config.ts,shared/,packages/,migrations/"
@@ -579,7 +584,7 @@ EOF
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ env.HETZNER_HOST }}
-          username: root
+          username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
           source: ".env.prod"
@@ -591,7 +596,7 @@ EOF
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ env.HETZNER_HOST }}
-          username: root
+          username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
           script_timeout: 30m
@@ -906,7 +911,7 @@ EOF
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ env.HETZNER_HOST }}
-          username: root
+          username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
           script_timeout: 10m
@@ -1054,7 +1059,7 @@ EOF
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ env.HETZNER_HOST }}
-          username: root
+          username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
           script_timeout: 10m
