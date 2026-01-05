@@ -737,13 +737,14 @@ EOF
               cd /opt/alice/app/infra/docker/stacks
               
               echo "📥 Pull das imagens..."
-              docker compose -p alice-$stack_name -f $compose_file pull
+              # NOTA: --env-file obrigatório pois compose roda de stacks/ e .env.prod está em ../
+              docker compose -p alice-$stack_name --env-file ../.env.prod -f $compose_file pull
               
               echo "🔄 Deploy..."
-              docker compose -p alice-$stack_name -f $compose_file up -d --remove-orphans
+              docker compose -p alice-$stack_name --env-file ../.env.prod -f $compose_file up -d --remove-orphans
               
               echo "📋 Containers:"
-              docker compose -p alice-$stack_name -f $compose_file ps --format "table {{.Name}}\t{{.Status}}"
+              docker compose -p alice-$stack_name --env-file ../.env.prod -f $compose_file ps --format "table {{.Name}}\t{{.Status}}"
               
               # Registrar versão
               echo "$VERSION" > /opt/alice/versions/$stack_name.current
@@ -837,7 +838,9 @@ EOF
                 DATABASE_URL="postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD_ENCODED@alice-postgres:5432/$POSTGRES_DB"
                 
                 # Executar via container node
-                docker run --rm \
+                # CRÍTICO: Drizzle push DEVE funcionar no primeiro deploy
+                # Se falhar, os serviços Alice não terão as tabelas necessárias
+                if ! docker run --rm \
                   --network alice-network \
                   -v /tmp/drizzle-app:/app \
                   -w /app \
@@ -846,7 +849,14 @@ EOF
                     npm install -g pnpm
                     pnpm install --frozen-lockfile
                     pnpm drizzle-kit push
-                  " && echo "   ✅ Schema aplicado!" || echo "   ⚠️ Drizzle push falhou (continuando...)"
+                  "; then
+                  echo "❌ ERRO CRÍTICO: Drizzle push falhou!"
+                  echo "   O schema do banco não foi criado."
+                  echo "   Os serviços Alice irão falhar sem as tabelas."
+                  rm -rf /tmp/drizzle-app
+                  exit 1
+                fi
+                echo "   ✅ Schema aplicado com sucesso!"
                 
                 # Limpar
                 rm -rf /tmp/drizzle-app
@@ -877,14 +887,15 @@ EOF
               # Deploy de stack individual
               echo "📥 Pull das imagens (versão $VERSION)..."
               COMPOSE_FILE="docker-compose.$STACK.yml"
-              docker compose -p alice-$STACK -f $COMPOSE_FILE pull
+              # NOTA: --env-file obrigatório pois compose roda de stacks/ e .env.prod está em ../
+              docker compose -p alice-$STACK --env-file ../.env.prod -f $COMPOSE_FILE pull
               
               echo "🔄 Executando deploy (project: alice-$STACK)..."
-              docker compose -p alice-$STACK -f $COMPOSE_FILE up -d --remove-orphans
+              docker compose -p alice-$STACK --env-file ../.env.prod -f $COMPOSE_FILE up -d --remove-orphans
               
               echo "✅ Deploy do stack $STACK concluído!"
               echo "📋 Containers do stack:"
-              docker compose -p alice-$STACK -f $COMPOSE_FILE ps --format "table {{.Name}}\t{{.Status}}"
+              docker compose -p alice-$STACK --env-file ../.env.prod -f $COMPOSE_FILE ps --format "table {{.Name}}\t{{.Status}}"
             fi
 
       - name: Dry run output
@@ -1024,10 +1035,10 @@ EOF
               for s in infra alice observability erpnext backup; do
                 echo ""
                 echo "--- Stack: $s ---"
-                docker compose -p alice-$s -f docker-compose.$s.yml ps --format "table {{.Name}}\t{{.Status}}" 2>/dev/null || true
+                docker compose -p alice-$s --env-file ../.env.prod -f docker-compose.$s.yml ps --format "table {{.Name}}\t{{.Status}}" 2>/dev/null || true
               done
             else
-              docker compose -p alice-$STACK -f docker-compose.$STACK.yml ps --format "table {{.Name}}\t{{.Status}}"
+              docker compose -p alice-$STACK --env-file ../.env.prod -f docker-compose.$STACK.yml ps --format "table {{.Name}}\t{{.Status}}"
             fi
             exit 1
 
@@ -1155,7 +1166,8 @@ EOF
             cd /opt/alice/app/infra/docker/stacks
             echo ""
             echo "📥 Pull das imagens (versão $PREV_VERSION)..."
-            if ! docker compose -p alice-$STACK -f $COMPOSE_FILE pull 2>&1; then
+            # NOTA: --env-file obrigatório pois compose roda de stacks/ e .env.prod está em ../
+            if ! docker compose -p alice-$STACK --env-file ../.env.prod -f $COMPOSE_FILE pull 2>&1; then
               echo "❌ ERRO: Falha ao fazer pull das imagens!"
               echo "   As imagens da versão $PREV_VERSION podem não existir no GHCR."
               exit 1
@@ -1166,7 +1178,7 @@ EOF
             # =========================================================
             echo ""
             echo "🔄 Executando rollback (project: alice-$STACK)..."
-            docker compose -p alice-$STACK -f $COMPOSE_FILE up -d --remove-orphans
+            docker compose -p alice-$STACK --env-file ../.env.prod -f $COMPOSE_FILE up -d --remove-orphans
             
             # =========================================================
             # 7. ATUALIZAR REGISTRO DE VERSÃO
@@ -1179,7 +1191,7 @@ EOF
             # =========================================================
             echo ""
             echo "📋 Status dos containers após rollback:"
-            docker compose -p alice-$STACK -f $COMPOSE_FILE ps --format "table {{.Name}}\t{{.Status}}"
+            docker compose -p alice-$STACK --env-file ../.env.prod -f $COMPOSE_FILE ps --format "table {{.Name}}\t{{.Status}}"
             
             echo ""
             echo "🌐 Networks após rollback (confirmando preservação):"
