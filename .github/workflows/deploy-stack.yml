@@ -830,6 +830,43 @@ EOF
                 fi
               done
               
+              # 2b. AGUARDAR INIT CONTAINERS COMPLETAREM
+              # NOTA 05/01/2026: Init containers criam recursos APÓS serviços ficarem healthy
+              # - minio-init: cria bucket langfuse-events (necessário para Langfuse)
+              # - pgbackrest-init: cria stanza de backup (necessário para pgbackrest)
+              echo ""
+              echo "⏳ Aguardando init containers completarem..."
+              for init_svc in alice-minio-init alice-pgbackrest-init; do
+                MAX_WAIT=120
+                ELAPSED=0
+                while [ $ELAPSED -lt $MAX_WAIT ]; do
+                  # Init containers devem estar com State.Status = "exited" e ExitCode = 0
+                  STATE=$(docker inspect --format='{{.State.Status}}' $init_svc 2>/dev/null || echo "not_found")
+                  if [ "$STATE" = "exited" ]; then
+                    EXIT_CODE=$(docker inspect --format='{{.State.ExitCode}}' $init_svc 2>/dev/null || echo "1")
+                    if [ "$EXIT_CODE" = "0" ]; then
+                      echo "   ✅ $init_svc: completed (exit 0)"
+                      break
+                    else
+                      echo "   ❌ $init_svc: failed (exit $EXIT_CODE)"
+                      docker logs $init_svc --tail 20 2>&1 || true
+                      break
+                    fi
+                  elif [ "$STATE" = "running" ]; then
+                    # Ainda executando, aguardar
+                    sleep 5
+                    ELAPSED=$((ELAPSED + 5))
+                  else
+                    # Container não existe ou estado desconhecido
+                    echo "   ⚠️ $init_svc: $STATE (não encontrado ou estado desconhecido)"
+                    break
+                  fi
+                done
+                if [ $ELAPSED -ge $MAX_WAIT ]; then
+                  echo "   ⚠️ $init_svc: timeout após ${MAX_WAIT}s"
+                fi
+              done
+              
               # 3. DRIZZLE PUSH (migrations)
               echo ""
               echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
