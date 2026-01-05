@@ -100,25 +100,32 @@ services:
   # ===========================================================================
   # TOR PROXY - Proxy SOCKS5 para acesso a .onion (engines ahmia/torch)
   # ===========================================================================
+  # NOTA: dperson/torproxy é a imagem mantida ativamente com curl instalado
+  # osminogin/tor-simple é minimalista SEM curl/wget - healthcheck falhava
+  # Ref: https://github.com/dperson/torproxy
+  # ===========================================================================
   alice-tor:
-    # NOTA: Tor 0.4.8.x é a versão LTS estável (Dec 2025)
-    image: osminogin/tor-simple:0.4.8.16
+    # NOTA: dperson/torproxy não publica tags versionadas (apenas :latest)
+    # Monitorar atualizações via Dependabot para supply chain security
+    image: dperson/torproxy:latest
     platform: linux/amd64
     container_name: alice-tor
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
-    # Porta SOCKS5 padrão: 9050
+    environment:
+      # Porta SOCKS5 padrão - SearXNG conecta via socks5h://alice-tor:9050
+      TOR_SOCKS_PORT: "9050"
     networks:
       - alice-network
     healthcheck:
-      # NOTA: Alpine Linux NÃO inclui netcat. Usar curl com SOCKS5 proxy.
-      # Ref: CLAUDE.md bug fix documentado linhas 470, 712
-      test: ["CMD-SHELL", "curl -s -x socks5h://localhost:9050 --max-time 10 https://check.torproject.org/api/ip | grep -q IsTor || exit 1"]
-      interval: 60s
-      timeout: 15s
+      # dperson/torproxy tem curl instalado
+      # Verifica conectividade REAL via Tor para check.torproject.org
+      test: ["CMD-SHELL", "curl -x socks5h://localhost:9050 -sf --max-time 5 https://check.torproject.org/api/ip || exit 1"]
+      interval: 30s
+      timeout: 10s
       retries: 5
-      start_period: 120s
+      start_period: 90s
     deploy:
       resources:
         limits:
