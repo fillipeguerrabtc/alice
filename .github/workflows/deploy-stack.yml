@@ -389,6 +389,24 @@ jobs:
             exit 1
           fi
           
+          # Langfuse DB: usado em DATABASE_URL para langfuse e langfuse-worker
+          if echo "${SECRET_LANGFUSE_DB_PASSWORD}" | grep -qE '[+/=@:?#%]'; then
+            echo "::error::LANGFUSE_DB_PASSWORD contém caracteres especiais de URL (+/=@:?#%). Langfuse DATABASE_URL será malformada. Regenere com: openssl rand -hex 32"
+            exit 1
+          fi
+          
+          # ERPNext Redis Cache: usado em REDIS_CACHE_URL
+          if echo "${SECRET_REDIS_CACHE_PASSWORD}" | grep -qE '[+/=@:?#%]'; then
+            echo "::error::REDIS_CACHE_PASSWORD contém caracteres especiais de URL (+/=@:?#%). REDIS_CACHE_URL será malformada. Regenere com: openssl rand -hex 32"
+            exit 1
+          fi
+          
+          # ERPNext Redis Queue: usado em REDIS_QUEUE_URL
+          if echo "${SECRET_REDIS_QUEUE_PASSWORD}" | grep -qE '[+/=@:?#%]'; then
+            echo "::error::REDIS_QUEUE_PASSWORD contém caracteres especiais de URL (+/=@:?#%). REDIS_QUEUE_URL será malformada. Regenere com: openssl rand -hex 32"
+            exit 1
+          fi
+          
           # Gerar .env.prod com interpolação de variáveis
           cat > .env.prod << EOF
 # =============================================================================
@@ -942,7 +960,8 @@ EOF
                 CONTAINERS="alice-postgres alice-redis alice-qdrant alice-caddy alice-minio"
                 ;;
               alice)
-                CONTAINERS="alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations alice-gpu-manager"
+                # 8 serviços Alice: 7 core + observability
+                CONTAINERS="alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager"
                 ;;
               observability)
                 CONTAINERS="prometheus grafana loki jaeger langfuse alice-clickhouse"
@@ -956,7 +975,8 @@ EOF
               all)
                 # Para deploy completo, verificar containers críticos de TODOS os stacks
                 # Inclui alice-clickhouse (Langfuse v3 depende de ClickHouse)
-                CONTAINERS="alice-postgres alice-redis alice-qdrant alice-caddy alice-minio alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations alice-gpu-manager prometheus grafana loki jaeger langfuse alice-clickhouse"
+                # Inclui alice-observability (microsserviço Alice para métricas)
+                CONTAINERS="alice-postgres alice-redis alice-qdrant alice-caddy alice-minio alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager prometheus grafana loki jaeger langfuse alice-clickhouse"
                 ;;
             esac
             
