@@ -592,7 +592,9 @@ EOF
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          source: "infra/docker/stacks/,infra/docker/Caddyfile,infra/docker/postgres-init/,infra/docker/vector.toml,infra/observability/,drizzle.config.ts,shared/,packages/,migrations/"
+          # NOTA: package.json, pnpm-lock.yaml e pnpm-workspace.yaml são obrigatórios
+          # para drizzle push funcionar (pnpm install --frozen-lockfile precisa deles)
+          source: "infra/docker/stacks/,infra/docker/Caddyfile,infra/docker/postgres-init/,infra/docker/vector.toml,infra/observability/,drizzle.config.ts,shared/,packages/,migrations/,package.json,pnpm-lock.yaml,pnpm-workspace.yaml"
           target: "/opt/alice/app"
           strip_components: 0
           overwrite: true
