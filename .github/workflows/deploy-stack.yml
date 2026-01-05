@@ -1186,7 +1186,9 @@ EOF
             echo "📋 Outros stacks em execução (NÃO serão afetados):"
             for s in infra alice observability erpnext backup; do
               if [ "$s" != "$STACK" ]; then
-                if docker compose -p alice-$s ps --quiet 2>/dev/null | head -1 > /dev/null; then
+                # NOTA 05/01/2026: head -1 > /dev/null sempre retorna 0 (mesmo sem output)
+                # Usar [ -n "$(...)"] para verificar se há containers rodando
+                if [ -n "$(docker compose -p alice-$s ps --quiet 2>/dev/null | head -1)" ]; then
                   VERSION_FILE="/opt/alice/versions/$s.current"
                   if [ -f "$VERSION_FILE" ]; then
                     echo "   ✅ alice-$s: $(cat $VERSION_FILE)"
