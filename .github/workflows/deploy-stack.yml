@@ -546,7 +546,8 @@ EOF
               IMAGES="postgres caddy pgbackrest"
               ;;
             alice)
-              IMAGES="frontend auth chat rag training integrations gpu-manager"
+              # 8 microsserviços Alice: 7 core + observability
+              IMAGES="frontend auth chat rag training integrations observability gpu-manager"
               ;;
             observability)
               # Observability usa imagens públicas (prometheus, grafana, etc.)
@@ -560,7 +561,8 @@ EOF
               IMAGES="pgbackrest"
               ;;
             all)
-              IMAGES="postgres caddy pgbackrest frontend auth chat rag training integrations gpu-manager"
+              # Todas as imagens custom: infra (3) + alice (8)
+              IMAGES="postgres caddy pgbackrest frontend auth chat rag training integrations observability gpu-manager"
               ;;
           esac
           
