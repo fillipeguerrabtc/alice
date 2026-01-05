@@ -817,13 +817,15 @@ services:
       # CORREÇÃO 23/12/2025: Mode 1755 não permite escrita - deve ser 1777 para tmpfs gravável
       - /etc/nginx/conf.d:mode=1777,size=8M
     healthcheck:
-      # CORREÇÃO 02/01/2026: nginx Alpine NÃO tem wget/curl - usar /dev/tcp do busybox
-      # Verificar se porta 80 responde (nginx pronto para aceitar conexões)
+      # CORREÇÃO 05/01/2026: Aumentar start_period e retries para primeiro deploy
+      # Primeiro deploy: pull de imagem (~2-5min) + startup nginx (~10-30s)
+      # start_period 90s garante que nginx tenha tempo adequado
+      # retries 10 × 30s interval = 5min adicionais após start_period
       test: ["CMD-SHELL", "timeout 5 /bin/sh -c 'true < /dev/tcp/localhost/80' || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 45s
+      retries: 10
+      start_period: 90s
     deploy:
       resources:
         limits:
@@ -1827,12 +1829,14 @@ services:
       erpnext-redis-queue:
         condition: service_healthy
     healthcheck:
-      # CORREÇÃO 02/01/2026: ERPNext é Python - usar Python para verificar saúde REAL
-      # Aumentado start_period para 300s (5min) - primeira instalação processa TODAS as migrations
+      # CORREÇÃO 05/01/2026: Aumentar retries para primeiro deploy
+      # Primeira instalação processa TODAS as migrations - pode demorar
+      # retries 20 × 30s interval = 10min adicionais após start_period de 300s
+      # Total: até 15min de tolerância para backend estar healthy
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/method/ping', timeout=10)"]
       interval: 30s
       timeout: 15s
-      retries: 15
+      retries: 20
       start_period: 300s
 
   erpnext-frontend:
@@ -1954,14 +1958,15 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      # CORREÇÃO 02/01/2026: ERPNext é Python - verificar conexão Redis (saúde REAL do worker)
-      # Workers RQ dependem do Redis para funcionar - verificar conexão é a melhor prova de saúde
-      # CORREÇÃO 02/01/2026: Usar os.environ para evitar quebra de sintaxe se senha tiver aspas
+      # CORREÇÃO 05/01/2026: Aumentar start_period e retries para primeiro deploy
+      # Workers dependem de erpnext-create-site completar (3-10min primeiro deploy)
+      # start_period 180s (3min) + retries 8 × 30s = 4min = total 7min de tolerância
+      # Verificar conexão Redis é prova de que worker está funcional
       test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 60s
+      retries: 8
+      start_period: 180s
     deploy:
       resources:
         limits:
@@ -2013,12 +2018,15 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      # CORREÇÃO 02/01/2026: ERPNext é Python - verificar conexão Redis (saúde REAL do worker)
+      # CORREÇÃO 05/01/2026: Aumentar start_period e retries para primeiro deploy
+      # Workers dependem de erpnext-create-site completar (3-10min primeiro deploy)
+      # start_period 180s (3min) + retries 8 × 30s = 4min = total 7min de tolerância
+      # Verificar conexão Redis é prova de que worker está funcional
       test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 60s
+      retries: 8
+      start_period: 180s
     deploy:
       resources:
         limits:
@@ -2070,12 +2078,15 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      # CORREÇÃO 02/01/2026: ERPNext é Python - verificar conexão Redis (saúde REAL do worker)
+      # CORREÇÃO 05/01/2026: Aumentar start_period e retries para primeiro deploy
+      # Workers dependem de erpnext-create-site completar (3-10min primeiro deploy)
+      # start_period 180s (3min) + retries 8 × 30s = 4min = total 7min de tolerância
+      # Verificar conexão Redis é prova de que worker está funcional
       test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 60s
+      retries: 8
+      start_period: 180s
     deploy:
       resources:
         limits:
@@ -2127,12 +2138,15 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      # CORREÇÃO 02/01/2026: ERPNext é Python - verificar conexão Redis (saúde REAL do scheduler)
+      # CORREÇÃO 05/01/2026: Aumentar start_period e retries para primeiro deploy
+      # Scheduler depende de erpnext-create-site completar (3-10min primeiro deploy)
+      # start_period 180s (3min) + retries 8 × 30s = 4min = total 7min de tolerância
+      # Verificar conexão Redis é prova de que scheduler está funcional
       test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 60s
+      retries: 8
+      start_period: 180s
     deploy:
       resources:
         limits:
@@ -2184,12 +2198,15 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      # CORREÇÃO 02/01/2026: ERPNext é Python - verificar conexão Redis (saúde REAL do worker)
+      # CORREÇÃO 05/01/2026: Aumentar start_period e retries para primeiro deploy
+      # Workers dependem de erpnext-create-site completar (3-10min primeiro deploy)
+      # start_period 180s (3min) + retries 8 × 30s = 4min = total 7min de tolerância
+      # Verificar conexão Redis é prova de que worker está funcional
       test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 60s
+      retries: 8
+      start_period: 180s
     deploy:
       resources:
         limits:
@@ -2241,12 +2258,15 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      # CORREÇÃO 02/01/2026: ERPNext é Python - verificar conexão Redis (saúde REAL do worker)
+      # CORREÇÃO 05/01/2026: Aumentar start_period e retries para primeiro deploy
+      # Workers dependem de erpnext-create-site completar (3-10min primeiro deploy)
+      # start_period 180s (3min) + retries 8 × 30s = 4min = total 7min de tolerância
+      # Verificar conexão Redis é prova de que worker está funcional
       test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 60s
+      retries: 8
+      start_period: 180s
     deploy:
       resources:
         limits:
@@ -2298,12 +2318,15 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      # CORREÇÃO 02/01/2026: ERPNext é Python - verificar conexão Redis (saúde REAL do worker)
+      # CORREÇÃO 05/01/2026: Aumentar start_period e retries para primeiro deploy
+      # Workers dependem de erpnext-create-site completar (3-10min primeiro deploy)
+      # start_period 180s (3min) + retries 8 × 30s = 4min = total 7min de tolerância
+      # Verificar conexão Redis é prova de que worker está funcional
       test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 60s
+      retries: 8
+      start_period: 180s
     deploy:
       resources:
         limits:
