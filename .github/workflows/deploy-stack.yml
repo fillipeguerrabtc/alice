@@ -32,6 +32,9 @@
 # =============================================================================
 
 name: Deploy - Production (Stacks)
+# run-name: Solução oficial GitHub Actions 2025 para exibir nome amigável quando workflow_run é usado
+# Ref: https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#run-name
+run-name: Deploy - Production (Stacks) - ${{ github.event.workflow_run && github.event.workflow_run.head_branch || github.ref_name }}
 
 on:
   # Disparo AUTOMÁTICO: somente quando o workflow Release & Tag terminar com sucesso
@@ -124,6 +127,29 @@ jobs:
       depends_on: ${{ steps.prepare.outputs.depends_on }}
     
     steps:
+      - name: 🔍 DEBUG - Log trigger context (troubleshooting)
+        run: |
+          echo "=========================================="
+          echo "🔍 DEBUG - Trigger Context"
+          echo "=========================================="
+          echo "event_name=${{ github.event_name }}"
+          echo "workflow=${{ github.workflow }}"
+          echo "ref=${{ github.ref }}"
+          echo "sha=${{ github.sha }}"
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo ""
+            echo "--- workflow_run details ---"
+            echo "workflow_run.id=${{ github.event.workflow_run.id }}"
+            echo "workflow_run.name=${{ github.event.workflow_run.name }}"
+            echo "workflow_run.head_branch=${{ github.event.workflow_run.head_branch }}"
+            echo "workflow_run.head_sha=${{ github.event.workflow_run.head_sha }}"
+            echo "workflow_run.conclusion=${{ github.event.workflow_run.conclusion }}"
+            echo "workflow_run.status=${{ github.event.workflow_run.status }}"
+            echo "workflow_run.event=${{ github.event.workflow_run.event }}"
+            echo "workflow_run.html_url=${{ github.event.workflow_run.html_url }}"
+          fi
+          echo "=========================================="
+      
       - name: Checkout (para buscar tag)
         if: github.event_name == 'workflow_run'
         uses: actions/checkout@v4
