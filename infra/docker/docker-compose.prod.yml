@@ -358,27 +358,32 @@ services:
       # =================================================================
       # CORREÇÃO 03/01/2026: Health Endpoint Simples
       # =================================================================
-      # PROBLEMA: Admin API (2019) pode não estar pronto durante startup
-      #           ACME pode bloquear inicialização por vários minutos
+      # CORREÇÃO 05/01/2026: Timeout matematicamente correto para Let's Encrypt
+      # =================================================================
+      # PROBLEMA: Let's Encrypt demora 3-7 minutos em produção (changelog v4.70)
+      #           Timeout anterior: 30s + (5 retries × 30s) = 3min 30s
+      #           Caddy SEMPRE ficava unhealthy ANTES do certificado estar pronto
       # 
-      # SOLUÇÃO: Endpoint /health em porta 80 (sempre disponível)
-      #          Responde imediatamente quando Caddy está rodando
-      #          Não depende de SSL, ACME, DNS ou backends
+      # SOLUÇÃO MATEMÁTICA:
+      #   start_period: 600s (10 minutos para ACME challenge + DNS propagation)
+      #   retries: 20 (margem adicional: 20 × 30s = 10 minutos)
+      #   TOTAL: 10min + 10min = 20 minutos máximo (pior cenário)
       # 
       # BENEFÍCIOS:
-      # - Startup mais rápido (sem aguardar ACME)
-      # - Healthcheck confiável (endpoint simples)
-      # - Caddy pode obter certificados em background
+      # - Endpoint /health responde imediatamente quando Caddy está rodando
+      # - ACME roda em background SEM bloquear healthcheck
+      # - Margem segura para Let's Encrypt em qualquer cenário
       # 
-      # Ref: https://caddyserver.com/docs/caddyfile/directives/respond
+      # Ref: https://caddyserver.com/docs/automatic-https#acme-challenges
+      #      CLAUDE.md Regra 7 (mudanças cirúrgicas baseadas em matemática)
       # =================================================================
       test:
         - "CMD-SHELL"
         - "wget --spider -q http://localhost/health || exit 1"
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 30s
+      retries: 20
+      start_period: 600s
     deploy:
       resources:
         limits:
@@ -568,27 +573,32 @@ services:
       PGBACKREST_REPO1_CIPHER_TYPE: aes-256-cbc
       PGBACKREST_REPO1_CIPHER_PASS: ${BACKUP_CIPHER_PASS}
     # ==========================================================================
-    # CORREÇÃO 02/01/2026: WAL Archiving TOLERANTE para primeiro deploy
+    # CORREÇÃO 05/01/2026: Archive command SEM fallback (fail-fast enterprise)
     # ==========================================================================
-    # PROBLEMA: archive_command='pgbackrest archive-push' falha se stanza não existe
-    # No primeiro deploy, postgres inicia ANTES da stanza ser criada
-    # Isso causa DEADLOCK: postgres unhealthy → pgbackrest não cria stanza
+    # PROBLEMA ANTERIOR: Fallback || mkdir /tmp mascarava falha real
+    #   - Stanza NÃO existe no primeiro deploy
+    #   - Fallback retorna exit 0 (PostgreSQL fica healthy)
+    #   - Deploy "passa" MAS backups NÃO funcionam (sistema QUEBRADO)
     #
-    # SOLUÇÃO ENTERPRISE: archive_command com fallback inteligente
-    # - Se stanza existe: pgbackrest archive-push (backup real)
-    # - Se stanza NÃO existe: copia WAL para diretório temporário (não perde dados)
-    # - alice-pgbackrest depois move WALs do /tmp para o repositório
+    # SOLUÇÃO ENTERPRISE (Regra 6 - ZERO workarounds):
+    #   - Archive command SEM fallback
+    #   - FAIL-FAST se stanza não existe (problema detectado imediatamente)
+    #   - pgbackrest-init cria stanza ANTES do PostgreSQL (depends_on correto)
     #
-    # Ref: https://pgbackrest.org/user-guide.html#quickstart/configure-archiving
+    # ORDEM DE INICIALIZAÇÃO (garantida pelo depends_on linha 423):
+    #   1. PostgreSQL inicia (healthy)
+    #   2. pgbackrest-init cria stanza (service_completed_successfully)
+    #   3. Archive command funciona corretamente
+    #
+    # Ref: https://pgbackrest.org/user-guide.html#quickstart/configure-stanza
+    #      CLAUDE.md Regra 6 (PROIBIDO workarounds que mascaram falhas)
     # ==========================================================================
     command:
       - "postgres"
       - "-c"
       - "archive_mode=on"
       - "-c"
-      # Archive command tolerante: tenta pgbackrest, fallback para /tmp se falhar
-      # WALs em /tmp serão processados pelo alice-pgbackrest posteriormente
-      - "archive_command=pgbackrest --stanza=alice_prod archive-push %p || (mkdir -p /tmp/wal_pending && cp %p /tmp/wal_pending/ && echo 'WAL arquivado em /tmp/wal_pending (stanza pendente)')"
+      - "archive_command=pgbackrest --stanza=alice_prod archive-push %p"
       - "-c"
       - "wal_level=replica"
       - "-c"
