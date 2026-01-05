@@ -137,22 +137,46 @@ jobs:
           
           if [ "${{ github.event_name }}" = "workflow_run" ]; then
             # Deploy automático após Release terminar: extrair tag do commit SHA do Release workflow
-            # O workflow_run dispara quando Release & Tag termina, precisamos encontrar a tag que aponta para o commit
+            # O workflow_run dispara quando Release & Tag termina, precisamos encontrar a tag que aponta EXATAMENTE para o commit
+            # IMPORTANTE: usar apenas --exact-match para evitar deploy de tag ancestral incorreta (bug crítico)
             STACK="all"
             COMMIT_SHA="${{ github.event.workflow_run.head_sha }}"
-            echo "🔍 Buscando tag para commit: $COMMIT_SHA"
-            # Buscar tag que aponta para o commit (pode ser múltiplas tags, pegar a mais recente)
-            VERSION=$(git describe --tags --exact-match "$COMMIT_SHA" 2>/dev/null || git describe --tags --abbrev=0 "$COMMIT_SHA" 2>/dev/null || echo "")
-            if [ -z "$VERSION" ]; then
-              echo "❌ ERRO: Nenhuma tag encontrada para commit $COMMIT_SHA!"
-              echo "   O Release workflow deve criar uma tag antes de terminar."
+            echo "🔍 Buscando tag EXATA para commit: $COMMIT_SHA"
+            
+            # Buscar tag que aponta EXATAMENTE para o commit (sem fallback para tag ancestral)
+            # --exact-match garante que a tag aponta diretamente para o commit, não para um ancestral
+            if ! VERSION=$(git describe --tags --exact-match "$COMMIT_SHA" 2>/dev/null); then
+              echo "❌ ERRO CRÍTICO: Nenhuma tag encontrada que aponte EXATAMENTE para commit $COMMIT_SHA!"
+              echo ""
+              echo "   Possíveis causas:"
+              echo "   1. Release workflow não criou a tag antes de terminar"
+              echo "   2. Tag foi criada em commit diferente"
+              echo "   3. Problema de timing (tag ainda não foi propagada)"
+              echo ""
+              echo "   Verificações:"
+              echo "   - Última tag: $(git describe --tags --abbrev=0 2>/dev/null || echo 'N/A')"
+              echo "   - Commit SHA: $COMMIT_SHA"
+              echo "   - Tags próximas: $(git tag --points-at "$COMMIT_SHA" 2>/dev/null | head -5 | tr '\n' ' ' || echo 'N/A')"
+              echo ""
+              echo "   AÇÃO: Não é seguro fazer deploy sem tag exata. Abortando."
               exit 1
             fi
+            
+            # Validação adicional: garantir que a tag realmente aponta para o commit
+            TAG_COMMIT=$(git rev-list -n 1 "$VERSION" 2>/dev/null || echo "")
+            if [ "$TAG_COMMIT" != "$COMMIT_SHA" ]; then
+              echo "❌ ERRO CRÍTICO: Tag $VERSION aponta para commit diferente!"
+              echo "   Tag commit: $TAG_COMMIT"
+              echo "   Esperado: $COMMIT_SHA"
+              echo "   AÇÃO: Abortando deploy para evitar versão incorreta."
+              exit 1
+            fi
+            
             ROLLBACK="false"
             ROLLBACK_VERSION=""
             DRY_RUN="false"
             echo "🔔 Trigger: workflow_run (Release & Tag concluído)"
-            echo "📦 Tag encontrada: $VERSION"
+            echo "✅ Tag EXATA encontrada e validada: $VERSION → $COMMIT_SHA"
           else
             STACK="${{ github.event.inputs.stack }}"
             VERSION="${{ github.event.inputs.version }}"
