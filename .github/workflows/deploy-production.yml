@@ -36,7 +36,7 @@
 # Data: 27/12/2025
 # =============================================================================
 
-name: Deploy to Production (Hetzner Cloud)
+name: Deploy Production
 
 on:
   workflow_dispatch:
@@ -55,6 +55,21 @@ on:
         type: string
         required: false
         default: 'manual'
+  
+  workflow_call:
+    inputs:
+      version:
+        description: 'Versão para deploy'
+        required: true
+        type: string
+      services:
+        description: 'Serviços para deploy'
+        type: string
+        default: 'all'
+      triggered_by:
+        description: 'Origem do disparo'
+        type: string
+        default: 'release-workflow'
 
 concurrency:
   group: deploy-production
