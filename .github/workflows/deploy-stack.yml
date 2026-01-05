@@ -552,7 +552,7 @@ EOF
           username: root
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          source: "infra/docker/stacks/,infra/docker/Caddyfile,infra/observability/,drizzle.config.ts,shared/,packages/,migrations/"
+          source: "infra/docker/stacks/,infra/docker/Caddyfile,infra/docker/postgres-init/,infra/docker/vector.toml,infra/observability/,drizzle.config.ts,shared/,packages/,migrations/"
           target: "/opt/alice/app"
           strip_components: 0
           overwrite: true
@@ -772,6 +772,26 @@ EOF
               POSTGRES_PASSWORD=$(grep '^POSTGRES_PASSWORD=' .env.prod | cut -d'=' -f2 | tr -d ' ')
               POSTGRES_DB=$(grep '^POSTGRES_DB=' .env.prod | cut -d'=' -f2 | tr -d ' ')
               
+              # Função para URL encode (necessário se senha tiver @, :, ?, #, %)
+              urlencode() {
+                local string="$1"
+                local strlen=${#string}
+                local encoded=""
+                local pos c o
+                for (( pos=0 ; pos<strlen ; pos++ )); do
+                  c=${string:$pos:1}
+                  case "$c" in
+                    [-_.~a-zA-Z0-9] ) o="$c" ;;
+                    * ) printf -v o '%%%02X' "'$c" ;;
+                  esac
+                  encoded+="$o"
+                done
+                echo "$encoded"
+              }
+              
+              # URL encode da senha para evitar problemas com caracteres especiais
+              POSTGRES_PASSWORD_ENCODED=$(urlencode "$POSTGRES_PASSWORD")
+              
               # Verificar se há tabelas
               TABLE_COUNT=$(docker exec alice-postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';" 2>/dev/null || echo "0")
               
@@ -783,8 +803,8 @@ EOF
                 cp -r /opt/alice/app /tmp/drizzle-app
                 cd /tmp/drizzle-app
                 
-                # Construir DATABASE_URL
-                DATABASE_URL="postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@alice-postgres:5432/$POSTGRES_DB"
+                # Construir DATABASE_URL com senha URL-encoded
+                DATABASE_URL="postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD_ENCODED@alice-postgres:5432/$POSTGRES_DB"
                 
                 # Executar via container node
                 docker run --rm \

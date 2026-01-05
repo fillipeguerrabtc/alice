@@ -289,7 +289,7 @@ services:
       - "wal_keep_size=512MB"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+      - ../postgres-init:/docker-entrypoint-initdb.d:ro
       - /opt/alice/backups/postgresql:/var/lib/pgbackrest:rw
       - /opt/alice/backups/postgresql/logs:/var/log/pgbackrest:rw
       - pgbackrest_spool:/var/spool/pgbackrest
