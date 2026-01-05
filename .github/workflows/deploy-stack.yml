@@ -37,9 +37,10 @@ on:
   # Disparo AUTOMÁTICO: somente quando o workflow Release & Tag terminar com sucesso
   # IMPORTANTE: workflow_run garante que deploy só acontece DEPOIS que Release terminar completamente
   # (build de imagens + publicação da Release). Evita deploy aparecer "junto" com CI na UI.
+  # CRÍTICO: usar nome exato do workflow (case-sensitive) para referência
   workflow_run:
-    # IMPORTANTE: usar nome do workflow (não caminho do arquivo) para referência
-    workflows: ["Release & Tag"]
+    workflows: 
+      - "Release & Tag"
     types:
       - completed
     branches:
@@ -109,9 +110,10 @@ jobs:
     timeout-minutes: 5
     # Deploy automático só se Release & Tag terminou com sucesso (não falhou/cancelado)
     # IMPORTANTE: workflow_run dispara mesmo em falha, então verificamos conclusion aqui
+    # CRÍTICO: workflow_run só deve rodar se Release terminou com sucesso
     if: |
-      github.event_name != 'workflow_run' || 
-      github.event.workflow_run.conclusion == 'success'
+      github.event_name == 'workflow_dispatch' || 
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     outputs:
       stack: ${{ steps.context.outputs.stack }}
       version: ${{ steps.context.outputs.version }}
