@@ -61,6 +61,7 @@ concurrency:
 permissions:
   contents: write
   packages: write
+  actions: write
 
 env:
   REGISTRY: ghcr.io
@@ -658,3 +659,27 @@ jobs:
           prerelease: ${{ inputs.prerelease }}
           generate_release_notes: false
           body_path: /tmp/release-notes.md
+
+      - name: Disparar Deploy em Produção (Stacks)
+        if: ${{ !inputs.prerelease }}
+        uses: actions/github-script@60a0d83039c6a60a0c8f2576385e6917b2c2dd41
+        with:
+          script: |
+            const version = '${{ needs.create-release.outputs.version }}';
+            console.log(`🚀 Disparando deploy para versão: ${version}`);
+            
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'deploy-stack.yml',
+              ref: 'main',
+              inputs: {
+                stack: 'all',
+                version: version,
+                rollback: 'false',
+                rollback_version: '',
+                dry_run: 'false'
+              }
+            });
+            
+            console.log('✅ Deploy disparado com sucesso!');
