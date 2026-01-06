@@ -45,28 +45,14 @@ networks:
     name: alice-network
 
 # =============================================================================
-# VOLUMES (externos - definidos no INFRA stack ou base)
+# VOLUMES
 # =============================================================================
-volumes:
-  vector_data:
-    external: true
-    name: alice-vector-data
-
-  langfuse_db_data:
-    external: true
-    name: alice-langfuse-db-data
-
-  clickhouse_data:
-    external: true
-    name: alice-clickhouse-data
-
-  clickhouse_logs:
-    external: true
-    name: alice-clickhouse-logs
-
-  minio_data:
-    external: true
-    name: alice-minio-data
+# NOTA IMPORTANTE (06/01/2026):
+# Volumes são HERDADOS de docker-compose.base.yml quando usado com -f
+# NÃO redeclarar aqui para evitar conflito "external" + "driver_opts"
+#
+# Referência: CLAUDE.md Regra 6 - Enterprise-grade, sem workarounds
+# =============================================================================
 
 # =============================================================================
 # SERVICES

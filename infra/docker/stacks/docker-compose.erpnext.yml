@@ -45,28 +45,14 @@ networks:
     name: erpnext-network
 
 # =============================================================================
-# VOLUMES (todos externos - definidos no base)
+# VOLUMES
 # =============================================================================
-volumes:
-  erpnext_sites:
-    external: true
-    name: erpnext-sites
-  
-  erpnext_logs:
-    external: true
-    name: erpnext-logs
-  
-  mariadb_data:
-    external: true
-    name: erpnext-mariadb-data
-  
-  redis_cache_data:
-    external: true
-    name: erpnext-redis-cache
-  
-  redis_queue_data:
-    external: true
-    name: erpnext-redis-queue
+# NOTA IMPORTANTE (06/01/2026):
+# Volumes são HERDADOS de docker-compose.base.yml quando usado com -f
+# NÃO redeclarar aqui para evitar conflito "external" + "driver_opts"
+#
+# Referência: CLAUDE.md Regra 6 - Enterprise-grade, sem workarounds
+# =============================================================================
 
 # =============================================================================
 # SERVICES

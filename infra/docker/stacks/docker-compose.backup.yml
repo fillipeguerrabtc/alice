@@ -31,14 +31,12 @@ networks:
 # =============================================================================
 # VOLUMES
 # =============================================================================
-volumes:
-  postgres_data:
-    external: true
-    name: alice-postgres-data
-
-  pgbackrest_spool:
-    external: true
-    name: alice-pgbackrest-spool
+# NOTA IMPORTANTE (06/01/2026):
+# Volumes são HERDADOS de docker-compose.base.yml quando usado com -f
+# NÃO redeclarar aqui para evitar conflito "external" + "driver_opts"
+#
+# Referência: CLAUDE.md Regra 6 - Enterprise-grade, sem workarounds
+# =============================================================================
 
 # =============================================================================
 # SERVICES

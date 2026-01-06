@@ -53,44 +53,19 @@ networks:
     name: erpnext-network
 
 # =============================================================================
-# VOLUMES (externos quando compartilhados, locais quando exclusivos)
+# VOLUMES
 # =============================================================================
-volumes:
-  postgres_data:
-    external: true
-    name: alice-postgres-data
-
-  pgbackrest_spool:
-    external: true
-    name: alice-pgbackrest-spool
-
-  alice_redis_data:
-    external: true
-    name: alice-redis-data
-
-  caddy_data:
-    external: true
-    name: alice-caddy-data
-  
-  caddy_config:
-    external: true
-    name: alice-caddy-config
-  
-  caddy_logs:
-    external: true
-    name: alice-caddy-logs
-  
-  searxng_config:
-    external: true
-    name: alice-searxng-config
-
-  minio_data:
-    external: true
-    name: alice-minio-data
-
-  qdrant_data:
-    external: true
-    name: alice-qdrant-data
+# NOTA IMPORTANTE (06/01/2026):
+# Volumes são HERDADOS de docker-compose.base.yml quando usado com -f
+# NÃO redeclarar aqui para evitar conflito "external" + "driver_opts"
+# 
+# Docker Compose NÃO permite volume com external=true E driver_opts simultaneamente.
+# Se redeclarar com external: true aqui, conflita com driver_opts do base.yml.
+#
+# Referência: https://docs.docker.com/reference/compose-file/volumes/
+# Issue fix: https://github.com/fillipeguerrabtc/alice/actions/runs/20764650206/job/59627992252
+# CLAUDE.md Regra 6: Enterprise-grade, sem workarounds
+# =============================================================================
 
 # =============================================================================
 # SERVICES
