@@ -755,11 +755,13 @@ jobs:
   drizzle-push:
     name: Apply Database Schema (Drizzle)
     runs-on: [self-hosted, linux, deploy]
-    needs: [validate, health-infra]
-    # CRITICAL FIX (06/01/2026): Aceitar health-infra skipped (deploy individual de alice)
-    # Quando stack=alice, infra não é deployado mas já deve estar rodando de deploy anterior
-    # O script interno valida se alice-postgres está acessível antes de tentar drizzle push
-    if: needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped'
+    needs: [validate, prepare, health-infra]
+    # CRITICAL FIX (06/01/2026): Verificar prepare success e health-infra success/skipped
+    # - prepare DEVE ter copiado arquivos (.env.prod, código) para servidor
+    # - Se prepare falhou, arquivos não existem → job falharia com "No such file"
+    # - health-infra pode ser skipped (deploy individual) ou success (deploy all)
+    # - Script interno valida se alice-postgres está acessível antes de tentar drizzle push
+    if: needs.prepare.result == 'success' && (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped')
     timeout-minutes: 10
     
     steps:
