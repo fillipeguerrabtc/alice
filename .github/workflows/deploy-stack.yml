@@ -44,12 +44,16 @@ on:
   workflow_run:
     # CRÍTICO: usar nome EXATO do workflow (case-sensitive, espaços e caracteres especiais)
     # O nome deve corresponder EXATAMENTE ao campo 'name:' do release.yml
+    # Nome do workflow Release: "Release & Tag" (verificado em release.yml linha 43)
     workflows: 
       - "Release & Tag"
     types:
       - completed
     branches:
       - main
+  # IMPORTANTE: workflow_run NÃO dispara no push - ele dispara quando o workflow "Release & Tag" termina
+  # Se aparece "pushed by" na UI, é porque o workflow_run foi disparado por um commit que foi pushed
+  # Mas o workflow só roda se a condição 'if: conclusion == success' passar no job validate
   # NOTA: workflow_run pode ser disparado prematuramente em alguns casos
   # A verificação de sucesso está no job validate (if: conclusion == 'success')
   # CRÍTICO: workflow_run dispara mesmo em falha/cancelado
@@ -251,9 +255,10 @@ jobs:
       - name: Checkout (tag da versão)
         uses: actions/checkout@v4
         with:
-          # Para workflow_run: já fizemos checkout de main no step anterior, agora checkout da tag encontrada
+          # CRÍTICO: SEMPRE usar tag, nunca main
+          # Para workflow_run: usar tag encontrada no step anterior
           # Para workflow_dispatch: usar tag fornecida manualmente
-          ref: ${{ github.event_name == 'workflow_run' && format('refs/tags/{0}', steps.context.outputs.version) || format('refs/tags/{0}', steps.context.outputs.version) }}
+          ref: refs/tags/${{ steps.context.outputs.version }}
           fetch-depth: 0
 
       - name: Debug trigger + git ref (troubleshooting)
