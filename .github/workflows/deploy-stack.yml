@@ -189,9 +189,6 @@ jobs:
             
             # Buscar tag que aponta EXATAMENTE para o commit (sem fallback para tag ancestral)
             # --exact-match garante que a tag aponta diretamente para o commit, não para um ancestral
-            
-            # Buscar tag que aponta EXATAMENTE para o commit (sem fallback para tag ancestral)
-            # --exact-match garante que a tag aponta diretamente para o commit, não para um ancestral
             if ! VERSION=$(git describe --tags --exact-match "$COMMIT_SHA" 2>/dev/null); then
               echo "❌ ERRO CRÍTICO: Nenhuma tag encontrada que aponte EXATAMENTE para commit $COMMIT_SHA!"
               echo ""
