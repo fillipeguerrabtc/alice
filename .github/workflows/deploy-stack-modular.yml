@@ -614,7 +614,8 @@ jobs:
     name: Deploy Stack INFRA
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare]
-    if: needs.validate.outputs.deploy_infra == 'true' && needs.prepare.result == 'success'
+    # CRITICAL: NÃO rodar em rollback manual (deploy seria sobrescrito pelo rollback)
+    if: needs.validate.outputs.deploy_infra == 'true' && needs.prepare.result == 'success' && needs.validate.outputs.is_rollback == 'false'
     timeout-minutes: 15
     
     steps:
@@ -701,44 +702,59 @@ jobs:
   rollback-infra:
     name: Rollback INFRA
     runs-on: [self-hosted, linux, deploy]
-    needs: [validate, deploy-infra, health-infra]
-    if: failure() && needs.deploy-infra.result == 'success' && needs.health-infra.result == 'failure'
+    needs: [validate, prepare, deploy-infra, health-infra]
+    # CRITICAL: 2 modos de rollback
+    # 1) MANUAL: Usuário solicitou (is_rollback=true) → usar rollback_version
+    # 2) AUTOMÁTICO: Deploy sucesso mas health falhou → usar .previous
+    if: |
+      (needs.validate.outputs.is_rollback == 'true' && needs.validate.outputs.deploy_infra == 'true' && needs.prepare.result == 'success') ||
+      (failure() && needs.deploy-infra.result == 'success' && needs.health-infra.result == 'failure')
     timeout-minutes: 10
     
     steps:
       - name: Execute rollback cirúrgico
         uses: appleboy/ssh-action@v1.2.2
+        env:
+          IS_ROLLBACK: ${{ needs.validate.outputs.is_rollback }}
+          ROLLBACK_VERSION: ${{ needs.validate.outputs.rollback_version }}
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
           script_timeout: 10m
+          envs: IS_ROLLBACK,ROLLBACK_VERSION
           script: |
             set -euo pipefail
             echo "🔄 Rollback INFRA stack (CIRÚRGICO - não afeta outros stacks)..."
             
-            # Verificar se existe versão anterior
-            if [ ! -f /opt/alice/versions/infra.previous ]; then
-              echo "❌ ERRO: Nenhuma versão anterior encontrada para rollback"
-              echo "   Este é provavelmente o primeiro deploy. Verifique logs manualmente."
-              exit 1
+            # Determinar versão de rollback (MANUAL ou AUTOMÁTICO)
+            if [ "${IS_ROLLBACK}" = "true" ]; then
+              # ROLLBACK MANUAL: usar versão especificada pelo usuário
+              TARGET_VERSION="${ROLLBACK_VERSION}"
+              echo "📌 ROLLBACK MANUAL para versão: $TARGET_VERSION"
+            else
+              # ROLLBACK AUTOMÁTICO: usar versão .previous
+              if [ ! -f /opt/alice/versions/infra.previous ]; then
+                echo "❌ ERRO: Nenhuma versão anterior encontrada para rollback automático"
+                echo "   Este é provavelmente o primeiro deploy. Verifique logs manualmente."
+                exit 1
+              fi
+              TARGET_VERSION=$(cat /opt/alice/versions/infra.previous)
+              echo "📌 ROLLBACK AUTOMÁTICO para versão anterior: $TARGET_VERSION"
             fi
-            
-            PREV_VERSION=$(cat /opt/alice/versions/infra.previous)
-            echo "📌 Revertendo para versão anterior: $PREV_VERSION"
             
             # CRITICAL FIX (06/01/2026): Passar IMAGE_TAG via env var para evitar race condition
             # Múltiplos rollbacks paralelos NÃO devem modificar o arquivo .env.prod compartilhado
             cd /opt/alice/app/infra/docker/stacks
-            echo "🐳 Puxando imagens da versão $PREV_VERSION..."
-            IMAGE_TAG=$PREV_VERSION docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.infra.yml pull
+            echo "🐳 Puxando imagens da versão $TARGET_VERSION..."
+            IMAGE_TAG=$TARGET_VERSION docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.infra.yml pull
             
-            echo "🚀 Deployando versão anterior..."
-            IMAGE_TAG=$PREV_VERSION docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.infra.yml up -d --remove-orphans
+            echo "🚀 Deployando versão de rollback..."
+            IMAGE_TAG=$TARGET_VERSION docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.infra.yml up -d --remove-orphans
             
             # Atualizar arquivo de versão atual
-            echo "$PREV_VERSION" > /opt/alice/versions/infra.current
+            echo "$TARGET_VERSION" > /opt/alice/versions/infra.current
             
             echo "✅ Rollback INFRA concluído com sucesso"
             echo "   Versão atual: $PREV_VERSION"
@@ -855,7 +871,8 @@ jobs:
     # Se infra foi deployado, DEVE estar healthy (success)
     # Se infra NÃO foi deployado (individual alice deploy), aceitar skipped
     # Se infra FALHOU (failure), BLOQUEAR para evitar race condition com rollback-infra
-    if: needs.validate.outputs.deploy_alice == 'true' && needs.prepare.result == 'success' && (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped') && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped')
+    # CRITICAL: NÃO rodar em rollback manual (deploy seria sobrescrito pelo rollback)
+    if: needs.validate.outputs.deploy_alice == 'true' && needs.prepare.result == 'success' && (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped') && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped') && needs.validate.outputs.is_rollback == 'false'
     timeout-minutes: 15
     
     steps:
@@ -942,41 +959,57 @@ jobs:
   rollback-alice:
     name: Rollback ALICE
     runs-on: [self-hosted, linux, deploy]
-    needs: [validate, deploy-alice, health-alice]
-    if: failure() && needs.deploy-alice.result == 'success' && needs.health-alice.result == 'failure'
+    needs: [validate, prepare, deploy-alice, health-alice]
+    # CRITICAL: 2 modos de rollback
+    # 1) MANUAL: Usuário solicitou (is_rollback=true) → usar rollback_version
+    # 2) AUTOMÁTICO: Deploy sucesso mas health falhou → usar .previous
+    if: |
+      (needs.validate.outputs.is_rollback == 'true' && needs.validate.outputs.deploy_alice == 'true' && needs.prepare.result == 'success') ||
+      (failure() && needs.deploy-alice.result == 'success' && needs.health-alice.result == 'failure')
     timeout-minutes: 10
     
     steps:
       - name: Execute rollback cirúrgico
         uses: appleboy/ssh-action@v1.2.2
+        env:
+          IS_ROLLBACK: ${{ needs.validate.outputs.is_rollback }}
+          ROLLBACK_VERSION: ${{ needs.validate.outputs.rollback_version }}
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
           script_timeout: 10m
+          envs: IS_ROLLBACK,ROLLBACK_VERSION
           script: |
             set -euo pipefail
             echo "🔄 Rollback ALICE stack (CIRÚRGICO - não afeta outros stacks)..."
             
-            if [ ! -f /opt/alice/versions/alice.previous ]; then
-              echo "❌ ERRO: Nenhuma versão anterior encontrada para rollback"
-              exit 1
+            # Determinar versão de rollback (MANUAL ou AUTOMÁTICO)
+            if [ "${IS_ROLLBACK}" = "true" ]; then
+              # ROLLBACK MANUAL: usar versão especificada pelo usuário
+              TARGET_VERSION="${ROLLBACK_VERSION}"
+              echo "📌 ROLLBACK MANUAL para versão: $TARGET_VERSION"
+            else
+              # ROLLBACK AUTOMÁTICO: usar versão .previous
+              if [ ! -f /opt/alice/versions/alice.previous ]; then
+                echo "❌ ERRO: Nenhuma versão anterior encontrada para rollback automático"
+                exit 1
+              fi
+              TARGET_VERSION=$(cat /opt/alice/versions/alice.previous)
+              echo "📌 ROLLBACK AUTOMÁTICO para versão anterior: $TARGET_VERSION"
             fi
-            
-            PREV_VERSION=$(cat /opt/alice/versions/alice.previous)
-            echo "📌 Revertendo para versão anterior: $PREV_VERSION"
             
             # CRITICAL FIX (06/01/2026): Passar IMAGE_TAG via env var para evitar race condition
             # Múltiplos rollbacks paralelos NÃO devem modificar o arquivo .env.prod compartilhado
             cd /opt/alice/app/infra/docker/stacks
-            echo "🐳 Puxando imagens da versão $PREV_VERSION..."
-            IMAGE_TAG=$PREV_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.alice.yml pull
+            echo "🐳 Puxando imagens da versão $TARGET_VERSION..."
+            IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.alice.yml pull
             
-            echo "🚀 Deployando versão anterior..."
-            IMAGE_TAG=$PREV_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.alice.yml up -d --remove-orphans
+            echo "🚀 Deployando versão de rollback..."
+            IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.alice.yml up -d --remove-orphans
             
-            echo "$PREV_VERSION" > /opt/alice/versions/alice.current
+            echo "$TARGET_VERSION" > /opt/alice/versions/alice.current
             
             echo "✅ Rollback ALICE concluído com sucesso"
             echo "⚠️ ATENÇÃO: Outros stacks NÃO foram afetados (rollback cirúrgico)"
@@ -991,7 +1024,8 @@ jobs:
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare, health-infra, drizzle-push]
     # CRITICAL FIX (06/01/2026): Verificar health-infra para evitar deploy contra infra quebrada
-    if: needs.validate.outputs.deploy_observability == 'true' && needs.prepare.result == 'success' && (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped') && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped')
+    # CRITICAL: NÃO rodar em rollback manual (deploy seria sobrescrito pelo rollback)
+    if: needs.validate.outputs.deploy_observability == 'true' && needs.prepare.result == 'success' && (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped') && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped') && needs.validate.outputs.is_rollback == 'false'
     timeout-minutes: 15
     
     steps:
@@ -1083,41 +1117,57 @@ jobs:
   rollback-observability:
     name: Rollback OBSERVABILITY
     runs-on: [self-hosted, linux, deploy]
-    needs: [validate, deploy-observability, health-observability]
-    if: failure() && needs.deploy-observability.result == 'success' && needs.health-observability.result == 'failure'
+    needs: [validate, prepare, deploy-observability, health-observability]
+    # CRITICAL: 2 modos de rollback
+    # 1) MANUAL: Usuário solicitou (is_rollback=true) → usar rollback_version
+    # 2) AUTOMÁTICO: Deploy sucesso mas health falhou → usar .previous
+    if: |
+      (needs.validate.outputs.is_rollback == 'true' && needs.validate.outputs.deploy_observability == 'true' && needs.prepare.result == 'success') ||
+      (failure() && needs.deploy-observability.result == 'success' && needs.health-observability.result == 'failure')
     timeout-minutes: 10
     
     steps:
       - name: Execute rollback cirúrgico
         uses: appleboy/ssh-action@v1.2.2
+        env:
+          IS_ROLLBACK: ${{ needs.validate.outputs.is_rollback }}
+          ROLLBACK_VERSION: ${{ needs.validate.outputs.rollback_version }}
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
           script_timeout: 10m
+          envs: IS_ROLLBACK,ROLLBACK_VERSION
           script: |
             set -euo pipefail
             echo "🔄 Rollback OBSERVABILITY stack (CIRÚRGICO - não afeta outros stacks)..."
             
-            if [ ! -f /opt/alice/versions/observability.previous ]; then
-              echo "❌ ERRO: Nenhuma versão anterior encontrada para rollback"
-              exit 1
+            # Determinar versão de rollback (MANUAL ou AUTOMÁTICO)
+            if [ "${IS_ROLLBACK}" = "true" ]; then
+              # ROLLBACK MANUAL: usar versão especificada pelo usuário
+              TARGET_VERSION="${ROLLBACK_VERSION}"
+              echo "📌 ROLLBACK MANUAL para versão: $TARGET_VERSION"
+            else
+              # ROLLBACK AUTOMÁTICO: usar versão .previous
+              if [ ! -f /opt/alice/versions/observability.previous ]; then
+                echo "❌ ERRO: Nenhuma versão anterior encontrada para rollback automático"
+                exit 1
+              fi
+              TARGET_VERSION=$(cat /opt/alice/versions/observability.previous)
+              echo "📌 ROLLBACK AUTOMÁTICO para versão anterior: $TARGET_VERSION"
             fi
-            
-            PREV_VERSION=$(cat /opt/alice/versions/observability.previous)
-            echo "📌 Revertendo para versão anterior: $PREV_VERSION"
             
             # CRITICAL FIX (06/01/2026): Observability NÃO usa IMAGE_TAG (só imagens públicas)
             # Não há necessidade de modificar .env.prod ou passar IMAGE_TAG
             cd /opt/alice/app/infra/docker/stacks
-            echo "🐳 Puxando imagens da versão $PREV_VERSION (hardcoded no compose)..."
+            echo "🐳 Puxando imagens (versão $TARGET_VERSION hardcoded no compose)..."
             docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.observability.yml pull
             
-            echo "🚀 Deployando versão anterior..."
+            echo "🚀 Deployando versão de rollback..."
             docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.observability.yml up -d --remove-orphans
             
-            echo "$PREV_VERSION" > /opt/alice/versions/observability.current
+            echo "$TARGET_VERSION" > /opt/alice/versions/observability.current
             
             echo "✅ Rollback OBSERVABILITY concluído com sucesso"
             echo "⚠️ ATENÇÃO: Outros stacks NÃO foram afetados (rollback cirúrgico)"
@@ -1132,7 +1182,8 @@ jobs:
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare, health-infra, drizzle-push]
     # CRITICAL FIX (06/01/2026): Verificar health-infra para evitar deploy contra infra quebrada
-    if: needs.validate.outputs.deploy_erpnext == 'true' && needs.prepare.result == 'success' && (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped') && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped')
+    # CRITICAL: NÃO rodar em rollback manual (deploy seria sobrescrito pelo rollback)
+    if: needs.validate.outputs.deploy_erpnext == 'true' && needs.prepare.result == 'success' && (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped') && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped') && needs.validate.outputs.is_rollback == 'false'
     timeout-minutes: 20
     
     steps:
@@ -1221,42 +1272,58 @@ jobs:
   rollback-erpnext:
     name: Rollback ERPNEXT
     runs-on: [self-hosted, linux, deploy]
-    needs: [validate, deploy-erpnext, health-erpnext]
-    if: failure() && needs.deploy-erpnext.result == 'success' && needs.health-erpnext.result == 'failure'
+    needs: [validate, prepare, deploy-erpnext, health-erpnext]
+    # CRITICAL: 2 modos de rollback
+    # 1) MANUAL: Usuário solicitou (is_rollback=true) → usar rollback_version
+    # 2) AUTOMÁTICO: Deploy sucesso mas health falhou → usar .previous
+    if: |
+      (needs.validate.outputs.is_rollback == 'true' && needs.validate.outputs.deploy_erpnext == 'true' && needs.prepare.result == 'success') ||
+      (failure() && needs.deploy-erpnext.result == 'success' && needs.health-erpnext.result == 'failure')
     timeout-minutes: 15
     
     steps:
       - name: Execute rollback cirúrgico
         uses: appleboy/ssh-action@v1.2.2
+        env:
+          IS_ROLLBACK: ${{ needs.validate.outputs.is_rollback }}
+          ROLLBACK_VERSION: ${{ needs.validate.outputs.rollback_version }}
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
           script_timeout: 15m
+          envs: IS_ROLLBACK,ROLLBACK_VERSION
           script: |
             set -euo pipefail
             echo "🔄 Rollback ERPNEXT stack (CIRÚRGICO - não afeta outros stacks)..."
             echo "⚠️ ERPNext pode falhar SEM afetar Alice - design proposital"
             
-            if [ ! -f /opt/alice/versions/erpnext.previous ]; then
-              echo "❌ ERRO: Nenhuma versão anterior encontrada para rollback"
-              exit 1
+            # Determinar versão de rollback (MANUAL ou AUTOMÁTICO)
+            if [ "${IS_ROLLBACK}" = "true" ]; then
+              # ROLLBACK MANUAL: usar versão especificada pelo usuário
+              TARGET_VERSION="${ROLLBACK_VERSION}"
+              echo "📌 ROLLBACK MANUAL para versão: $TARGET_VERSION"
+            else
+              # ROLLBACK AUTOMÁTICO: usar versão .previous
+              if [ ! -f /opt/alice/versions/erpnext.previous ]; then
+                echo "❌ ERRO: Nenhuma versão anterior encontrada para rollback automático"
+                exit 1
+              fi
+              TARGET_VERSION=$(cat /opt/alice/versions/erpnext.previous)
+              echo "📌 ROLLBACK AUTOMÁTICO para versão anterior: $TARGET_VERSION"
             fi
-            
-            PREV_VERSION=$(cat /opt/alice/versions/erpnext.previous)
-            echo "📌 Revertendo para versão anterior: $PREV_VERSION"
             
             # CRITICAL FIX (06/01/2026): ERPNext NÃO usa IMAGE_TAG (só imagens públicas Frappe)
             # Não há necessidade de modificar .env.prod ou passar IMAGE_TAG
             cd /opt/alice/app/infra/docker/stacks
-            echo "🐳 Puxando imagens da versão $PREV_VERSION (hardcoded no compose)..."
+            echo "🐳 Puxando imagens (versão $TARGET_VERSION hardcoded no compose)..."
             docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.erpnext.yml pull
             
-            echo "🚀 Deployando versão anterior..."
+            echo "🚀 Deployando versão de rollback..."
             docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.erpnext.yml up -d --remove-orphans
             
-            echo "$PREV_VERSION" > /opt/alice/versions/erpnext.current
+            echo "$TARGET_VERSION" > /opt/alice/versions/erpnext.current
             
             echo "✅ Rollback ERPNEXT concluído com sucesso"
             echo "⚠️ ATENÇÃO: Outros stacks NÃO foram afetados (rollback cirúrgico)"
@@ -1271,7 +1338,8 @@ jobs:
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare, health-infra, drizzle-push]
     # CRITICAL FIX (06/01/2026): Verificar health-infra para evitar deploy contra infra quebrada
-    if: needs.validate.outputs.deploy_backup == 'true' && needs.prepare.result == 'success' && (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped') && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped')
+    # CRITICAL: NÃO rodar em rollback manual (deploy seria sobrescrito pelo rollback)
+    if: needs.validate.outputs.deploy_backup == 'true' && needs.prepare.result == 'success' && (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped') && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped') && needs.validate.outputs.is_rollback == 'false'
     timeout-minutes: 10
     
     steps:
@@ -1356,41 +1424,57 @@ jobs:
   rollback-backup:
     name: Rollback BACKUP
     runs-on: [self-hosted, linux, deploy]
-    needs: [validate, deploy-backup, health-backup]
-    if: failure() && needs.deploy-backup.result == 'success' && needs.health-backup.result == 'failure'
+    needs: [validate, prepare, deploy-backup, health-backup]
+    # CRITICAL: 2 modos de rollback
+    # 1) MANUAL: Usuário solicitou (is_rollback=true) → usar rollback_version
+    # 2) AUTOMÁTICO: Deploy sucesso mas health falhou → usar .previous
+    if: |
+      (needs.validate.outputs.is_rollback == 'true' && needs.validate.outputs.deploy_backup == 'true' && needs.prepare.result == 'success') ||
+      (failure() && needs.deploy-backup.result == 'success' && needs.health-backup.result == 'failure')
     timeout-minutes: 5
     
     steps:
       - name: Execute rollback cirúrgico
         uses: appleboy/ssh-action@v1.2.2
+        env:
+          IS_ROLLBACK: ${{ needs.validate.outputs.is_rollback }}
+          ROLLBACK_VERSION: ${{ needs.validate.outputs.rollback_version }}
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
           script_timeout: 5m
+          envs: IS_ROLLBACK,ROLLBACK_VERSION
           script: |
             set -euo pipefail
             echo "🔄 Rollback BACKUP stack (CIRÚRGICO - não afeta outros stacks)..."
             
-            if [ ! -f /opt/alice/versions/backup.previous ]; then
-              echo "❌ ERRO: Nenhuma versão anterior encontrada para rollback"
-              exit 1
+            # Determinar versão de rollback (MANUAL ou AUTOMÁTICO)
+            if [ "${IS_ROLLBACK}" = "true" ]; then
+              # ROLLBACK MANUAL: usar versão especificada pelo usuário
+              TARGET_VERSION="${ROLLBACK_VERSION}"
+              echo "📌 ROLLBACK MANUAL para versão: $TARGET_VERSION"
+            else
+              # ROLLBACK AUTOMÁTICO: usar versão .previous
+              if [ ! -f /opt/alice/versions/backup.previous ]; then
+                echo "❌ ERRO: Nenhuma versão anterior encontrada para rollback automático"
+                exit 1
+              fi
+              TARGET_VERSION=$(cat /opt/alice/versions/backup.previous)
+              echo "📌 ROLLBACK AUTOMÁTICO para versão anterior: $TARGET_VERSION"
             fi
-            
-            PREV_VERSION=$(cat /opt/alice/versions/backup.previous)
-            echo "📌 Revertendo para versão anterior: $PREV_VERSION"
             
             # CRITICAL FIX (06/01/2026): Passar IMAGE_TAG via env var para evitar race condition
             # Múltiplos rollbacks paralelos NÃO devem modificar o arquivo .env.prod compartilhado
             cd /opt/alice/app/infra/docker/stacks
-            echo "🐳 Puxando imagens da versão $PREV_VERSION..."
-            IMAGE_TAG=$PREV_VERSION docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.backup.yml pull
+            echo "🐳 Puxando imagens da versão $TARGET_VERSION..."
+            IMAGE_TAG=$TARGET_VERSION docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.backup.yml pull
             
-            echo "🚀 Deployando versão anterior..."
-            IMAGE_TAG=$PREV_VERSION docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.backup.yml up -d --remove-orphans
+            echo "🚀 Deployando versão de rollback..."
+            IMAGE_TAG=$TARGET_VERSION docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.backup.yml up -d --remove-orphans
             
-            echo "$PREV_VERSION" > /opt/alice/versions/backup.current
+            echo "$TARGET_VERSION" > /opt/alice/versions/backup.current
             
             echo "✅ Rollback BACKUP concluído com sucesso"
             echo "⚠️ ATENÇÃO: Outros stacks NÃO foram afetados (rollback cirúrgico)"
