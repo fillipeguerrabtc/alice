@@ -539,191 +539,80 @@ jobs:
         run: |
           echo "📝 Gerando .env.prod para $STACK_NAME (versão: $DEPLOY_VERSION)..."
           
-          # VALIDAÇÃO: Senhas não podem conter caracteres especiais de URL
-          # Senhas com +, /, =, @, :, ?, #, % quebram URLs de conexão
-          # Ref: infra/scripts/generate-env-prod.sh linhas 81-87
+          # Mapear variáveis do workflow (SECRET_*) para formato esperado pelo script (*_SECRET)
+          # O script generate-env-prod.sh espera variáveis com sufixo _SECRET
+          export POSTGRES_PASSWORD_SECRET="${SECRET_POSTGRES_PASSWORD}"
+          export REDIS_PASSWORD_SECRET="${SECRET_REDIS_PASSWORD}"
+          export ADMIN_USER_SECRET="${SECRET_ADMIN_USER}"
+          export ADMIN_PWD_SECRET="${SECRET_ADMIN_PWD}"
+          export GRAFANA_ADMIN_USER_SECRET="${SECRET_GRAFANA_ADMIN_USER}"
+          export GRAFANA_ADMIN_PASSWORD_SECRET="${SECRET_GRAFANA_ADMIN_PASSWORD}"
+          export ERPNEXT_ADMIN_PASSWORD_SECRET="${SECRET_ERPNEXT_ADMIN_PASSWORD}"
+          export GRAFANA_OAUTH_CLIENT_SECRET="${SECRET_GRAFANA_OAUTH_CLIENT_SECRET}"
+          export ERPNEXT_OAUTH_CLIENT_SECRET="${SECRET_ERPNEXT_OAUTH_CLIENT_SECRET}"
+          export QDRANT_API_KEY_SECRET="${SECRET_QDRANT_API_KEY}"
+          export SESSION_SECRET_SECRET="${SECRET_SESSION_SECRET}"
+          export INTERNAL_API_SECRET_SECRET="${SECRET_INTERNAL_API_SECRET}"
+          export SEARXNG_SECRET_KEY_SECRET="${SECRET_SEARXNG_SECRET_KEY}"
+          export CLICKHOUSE_PASSWORD_SECRET="${SECRET_CLICKHOUSE_PASSWORD}"
+          export MINIO_ROOT_PASSWORD_SECRET="${SECRET_MINIO_ROOT_PASSWORD}"
+          export REDIS_CACHE_PASSWORD_SECRET="${SECRET_REDIS_CACHE_PASSWORD}"
+          export REDIS_QUEUE_PASSWORD_SECRET="${SECRET_REDIS_QUEUE_PASSWORD}"
+          export ERPNEXT_MYSQL_ROOT_PASSWORD_SECRET="${SECRET_ERPNEXT_MYSQL_ROOT_PASSWORD}"
           
-          # PostgreSQL: usado em DATABASE_URL de 6 serviços Alice
-          # Ex: postgresql://user:pass@word@host:5432/db parsearia "word" como hostname
-          if echo "${SECRET_POSTGRES_PASSWORD}" | grep -qE '[+/=@:?#%]'; then
-            echo "::error::POSTGRES_PASSWORD contém caracteres especiais de URL (+/=@:?#%). DATABASE_URL será malformada. Regenere com: openssl rand -hex 32"
-            exit 1
-          fi
-          # NOTA 05/01/2026: Espaços causam inconsistência entre .env.prod e arquivos de secret
-          # tr -d ' ' remove TODOS os espaços, mas ${VAR} no compose preserva espaços
-          if echo "${SECRET_POSTGRES_PASSWORD}" | grep -q ' '; then
-            echo "::error::POSTGRES_PASSWORD contém espaços. Espaços causam inconsistência de autenticação. Regenere com: openssl rand -hex 32"
-            exit 1
-          fi
+          # Variáveis que o script usa diretamente (sem sufixo _SECRET)
+          export POSTGRES_USER="${SECRET_POSTGRES_USER}"
+          export POSTGRES_DB="${SECRET_POSTGRES_DB}"
+          export OIDC_COOKIE_KEYS="${SECRET_OIDC_COOKIE_KEYS}"
+          export GOOGLE_CLIENT_ID="${SECRET_GOOGLE_CLIENT_ID}"
+          export GOOGLE_CLIENT_SECRET="${SECRET_GOOGLE_CLIENT_SECRET}"
+          export OAUTH_GITHUB_CLIENT_ID="${SECRET_OAUTH_GITHUB_CLIENT_ID}"
+          export OAUTH_GITHUB_CLIENT_SECRET="${SECRET_OAUTH_GITHUB_CLIENT_SECRET}"
+          export BACKUP_CIPHER_PASS="${SECRET_BACKUP_CIPHER_PASS}"
+          export MINIO_ROOT_USER="${SECRET_MINIO_ROOT_USER}"
+          export LANGFUSE_SECRET_KEY="${SECRET_LANGFUSE_SECRET_KEY}"
+          export LANGFUSE_NEXT_AUTH_SECRET="${SECRET_LANGFUSE_NEXT_AUTH_SECRET}"
+          export LANGFUSE_SALT="${SECRET_LANGFUSE_SALT}"
+          export LANGFUSE_ENCRYPTION_KEY="${SECRET_LANGFUSE_ENCRYPTION_KEY}"
+          export LANGFUSE_DB_USER="${SECRET_LANGFUSE_DB_USER}"
+          export LANGFUSE_DB_PASSWORD="${SECRET_LANGFUSE_DB_PASSWORD}"
+          export LANGFUSE_DB_NAME="${SECRET_LANGFUSE_DB_NAME}"
+          export CLICKHOUSE_USER="${SECRET_CLICKHOUSE_USER}"
+          export CLICKHOUSE_DB="${SECRET_CLICKHOUSE_DB}"
+          export CLICKHOUSE_MIGRATION_URL="${SECRET_CLICKHOUSE_MIGRATION_URL}"
+          export GMAIL_USER="${SECRET_GMAIL_USER}"
+          export GMAIL_APP_PASSWORD="${SECRET_GMAIL_APP_PASSWORD}"
+          export HUGGINGFACE_TOKEN="${SECRET_HUGGINGFACE_TOKEN}"
+          export ERPNEXT_DB_NAME="${SECRET_ERPNEXT_DB_NAME}"
+          export ERPNEXT_DB_USER="${SECRET_ERPNEXT_DB_USER}"
+          export ERPNEXT_DB_PASSWORD="${SECRET_ERPNEXT_DB_PASSWORD}"
+          export STRIPE_SECRET_KEY="${SECRET_STRIPE_SECRET_KEY}"
+          export STRIPE_PUBLISHABLE_KEY="${SECRET_STRIPE_PUBLISHABLE_KEY}"
+          export STRIPE_WEBHOOK_SECRET="${SECRET_STRIPE_WEBHOOK_SECRET}"
+          export TWILIO_ACCOUNT_SID="${SECRET_TWILIO_ACCOUNT_SID}"
+          export TWILIO_AUTH_TOKEN="${SECRET_TWILIO_AUTH_TOKEN}"
+          export TWILIO_WHATSAPP_NUMBER="${SECRET_TWILIO_WHATSAPP_NUMBER}"
+          export WISE_API_KEY="${SECRET_WISE_API_KEY}"
+          export WISE_PROFILE_ID="${SECRET_WISE_PROFILE_ID}"
+          export KUCOIN_PRO_API_KEY="${SECRET_KUCOIN_PRO_API_KEY}"
+          export KUCOIN_PRO_API_SECRET="${SECRET_KUCOIN_PRO_API_SECRET}"
+          export KUCOIN_PRO_API_PASSPHRASE="${SECRET_KUCOIN_PRO_API_PASSPHRASE}"
+          export KUCOIN_PRO_BASE_URL="${SECRET_KUCOIN_PRO_BASE_URL}"
           
-          # Redis: usado em REDIS_URL
-          if echo "${SECRET_REDIS_PASSWORD}" | grep -qE '[+/=@:?#%]'; then
-            echo "::error::REDIS_PASSWORD contém caracteres especiais de URL (+/=@:?#%). REDIS_URL será malformada. Regenere com: openssl rand -hex 32"
-            exit 1
-          fi
-          if echo "${SECRET_REDIS_PASSWORD}" | grep -q ' '; then
-            echo "::error::REDIS_PASSWORD contém espaços. Espaços causam inconsistência de autenticação. Regenere com: openssl rand -hex 32"
-            exit 1
-          fi
+          # Variáveis específicas da pipeline de Stacks
+          export IMAGE_PREFIX="${ENV_IMAGE_PREFIX}"
+          export IMAGE_TAG="${DEPLOY_VERSION}"
+          export DOMAIN="${ENV_DOMAIN}"
+          export ACME_EMAIL="${SECRET_ACME_EMAIL}"
+          export DEPLOY_VERSION="${DEPLOY_VERSION}"
+          export STACK_NAME="${STACK_NAME}"
+          export IS_ROLLBACK="${IS_ROLLBACK}"
           
-          # Langfuse DB: usado em DATABASE_URL para langfuse e langfuse-worker
-          if echo "${SECRET_LANGFUSE_DB_PASSWORD}" | grep -qE '[+/=@:?#%]'; then
-            echo "::error::LANGFUSE_DB_PASSWORD contém caracteres especiais de URL (+/=@:?#%). Langfuse DATABASE_URL será malformada. Regenere com: openssl rand -hex 32"
-            exit 1
-          fi
-          if echo "${SECRET_LANGFUSE_DB_PASSWORD}" | grep -q ' '; then
-            echo "::error::LANGFUSE_DB_PASSWORD contém espaços. Espaços causam inconsistência de autenticação. Regenere com: openssl rand -hex 32"
-            exit 1
-          fi
+          # Executar script existente (enterprise-grade, já testado e funcionando)
+          chmod +x infra/scripts/generate-env-prod.sh
+          ./infra/scripts/generate-env-prod.sh
           
-          # ERPNext Redis Cache: usado em REDIS_CACHE_URL
-          if echo "${SECRET_REDIS_CACHE_PASSWORD}" | grep -qE '[+/=@:?#%]'; then
-            echo "::error::REDIS_CACHE_PASSWORD contém caracteres especiais de URL (+/=@:?#%). REDIS_CACHE_URL será malformada. Regenere com: openssl rand -hex 32"
-            exit 1
-          fi
-          if echo "${SECRET_REDIS_CACHE_PASSWORD}" | grep -q ' '; then
-            echo "::error::REDIS_CACHE_PASSWORD contém espaços. Espaços causam inconsistência de autenticação. Regenere com: openssl rand -hex 32"
-            exit 1
-          fi
-          
-          # ERPNext Redis Queue: usado em REDIS_QUEUE_URL
-          if echo "${SECRET_REDIS_QUEUE_PASSWORD}" | grep -qE '[+/=@:?#%]'; then
-            echo "::error::REDIS_QUEUE_PASSWORD contém caracteres especiais de URL (+/=@:?#%). REDIS_QUEUE_URL será malformada. Regenere com: openssl rand -hex 32"
-            exit 1
-          fi
-          if echo "${SECRET_REDIS_QUEUE_PASSWORD}" | grep -q ' '; then
-            echo "::error::REDIS_QUEUE_PASSWORD contém espaços. Espaços causam inconsistência de autenticação. Regenere com: openssl rand -hex 32"
-            exit 1
-          fi
-          
-          # Gerar .env.prod com interpolação de variáveis
-          # Usar delimitador sem aspas para permitir interpolação via envsubst
-          # O parser YAML não interpreta o conteúdo do heredoc quando está dentro de run: |
-          cat > .env.prod <<ENVFILE_EOF
-# =============================================================================
-# ALICE PLATFORM - ENVIRONMENT VARIABLES (PRODUCTION)
-# =============================================================================
-# Auto-generated by GitHub Actions
-# Version: ${DEPLOY_VERSION}
-# Stack: ${STACK_NAME}
-# Rollback: ${IS_ROLLBACK}
-# Date: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
-# =============================================================================
-
-# Container Registry
-IMAGE_PREFIX=${ENV_IMAGE_PREFIX}
-IMAGE_TAG=${DEPLOY_VERSION}
-
-# Domain
-ACME_EMAIL=${SECRET_ACME_EMAIL}
-CORS_ORIGINS=https://${ENV_DOMAIN},https://erp.${ENV_DOMAIN},https://observability.${ENV_DOMAIN}
-RAG_PUBLIC_BASE_URL=https://${ENV_DOMAIN}
-
-# Database
-POSTGRES_USER=${SECRET_POSTGRES_USER}
-POSTGRES_PASSWORD=${SECRET_POSTGRES_PASSWORD}
-POSTGRES_DB=${SECRET_POSTGRES_DB}
-
-# Redis
-REDIS_PASSWORD=${SECRET_REDIS_PASSWORD}
-REDIS_URL=redis://:${SECRET_REDIS_PASSWORD}@alice-redis:6379
-
-# Qdrant
-QDRANT_API_KEY=${SECRET_QDRANT_API_KEY}
-QDRANT_URL=http://alice-qdrant:6333
-
-# Auth
-SESSION_SECRET=${SECRET_SESSION_SECRET}
-INTERNAL_API_SECRET=${SECRET_INTERNAL_API_SECRET}
-GOOGLE_CLIENT_ID=${SECRET_GOOGLE_CLIENT_ID}
-GOOGLE_CLIENT_SECRET=${SECRET_GOOGLE_CLIENT_SECRET}
-OAUTH_GITHUB_CLIENT_ID=${SECRET_OAUTH_GITHUB_CLIENT_ID}
-OAUTH_GITHUB_CLIENT_SECRET=${SECRET_OAUTH_GITHUB_CLIENT_SECRET}
-OIDC_ISSUER=https://${ENV_DOMAIN}
-OIDC_COOKIE_KEYS=${SECRET_OIDC_COOKIE_KEYS}
-
-# Admin
-ADMIN_USER=${SECRET_ADMIN_USER}
-ADMIN_PWD=${SECRET_ADMIN_PWD}
-GRAFANA_ADMIN_USER=${SECRET_GRAFANA_ADMIN_USER}
-GRAFANA_ADMIN_PASSWORD=${SECRET_GRAFANA_ADMIN_PASSWORD}
-GRAFANA_OAUTH_CLIENT_SECRET=${SECRET_GRAFANA_OAUTH_CLIENT_SECRET}
-
-# Backup
-BACKUP_CIPHER_PASS=${SECRET_BACKUP_CIPHER_PASS}
-
-# MinIO
-MINIO_ROOT_USER=${SECRET_MINIO_ROOT_USER}
-MINIO_ROOT_PASSWORD=${SECRET_MINIO_ROOT_PASSWORD}
-
-# Langfuse
-LANGFUSE_SECRET_KEY=${SECRET_LANGFUSE_SECRET_KEY}
-LANGFUSE_NEXT_AUTH_SECRET=${SECRET_LANGFUSE_NEXT_AUTH_SECRET}
-LANGFUSE_SALT=${SECRET_LANGFUSE_SALT}
-LANGFUSE_ENCRYPTION_KEY=${SECRET_LANGFUSE_ENCRYPTION_KEY}
-LANGFUSE_DB_USER=${SECRET_LANGFUSE_DB_USER}
-LANGFUSE_DB_PASSWORD=${SECRET_LANGFUSE_DB_PASSWORD}
-LANGFUSE_DB_NAME=${SECRET_LANGFUSE_DB_NAME}
-
-# ClickHouse
-CLICKHOUSE_USER=${SECRET_CLICKHOUSE_USER}
-CLICKHOUSE_PASSWORD=${SECRET_CLICKHOUSE_PASSWORD}
-CLICKHOUSE_DB=${SECRET_CLICKHOUSE_DB}
-CLICKHOUSE_MIGRATION_URL=${SECRET_CLICKHOUSE_MIGRATION_URL}
-
-# SearXNG
-SEARXNG_SECRET_KEY=${SECRET_SEARXNG_SECRET_KEY}
-
-# SMTP
-GMAIL_USER=${SECRET_GMAIL_USER}
-GMAIL_APP_PASSWORD=${SECRET_GMAIL_APP_PASSWORD}
-
-# GPU
-GPU_MANAGER_URL=http://alice-gpu-manager:3010
-HUGGINGFACE_TOKEN=${SECRET_HUGGINGFACE_TOKEN}
-MIXTRAL_GPU_URL=http://gpu-mixtral:8000
-EMBEDDINGS_GPU_URL=http://gpu-embeddings:8000
-FLUX_GPU_URL=http://gpu-flux:8000
-ASR_GPU_URL=http://gpu-asr:8000
-TRAINING_GPU_URL=http://gpu-trainer:8000
-
-# ERPNext
-ERPNEXT_SITE_NAME=erp.${ENV_DOMAIN}
-ERPNEXT_MYSQL_ROOT_PASSWORD=${SECRET_ERPNEXT_MYSQL_ROOT_PASSWORD}
-ERPNEXT_DB_NAME=${SECRET_ERPNEXT_DB_NAME}
-ERPNEXT_DB_USER=${SECRET_ERPNEXT_DB_USER}
-ERPNEXT_DB_PASSWORD=${SECRET_ERPNEXT_DB_PASSWORD}
-ERPNEXT_ADMIN_PASSWORD=${SECRET_ERPNEXT_ADMIN_PASSWORD}
-ERPNEXT_OAUTH_CLIENT_SECRET=${SECRET_ERPNEXT_OAUTH_CLIENT_SECRET}
-ERPNEXT_URL=https://erp.${ENV_DOMAIN}
-REDIS_CACHE_PASSWORD=${SECRET_REDIS_CACHE_PASSWORD}
-REDIS_QUEUE_PASSWORD=${SECRET_REDIS_QUEUE_PASSWORD}
-
-# Integrations
-STRIPE_SECRET_KEY=${SECRET_STRIPE_SECRET_KEY}
-STRIPE_PUBLISHABLE_KEY=${SECRET_STRIPE_PUBLISHABLE_KEY}
-STRIPE_WEBHOOK_SECRET=${SECRET_STRIPE_WEBHOOK_SECRET}
-TWILIO_ACCOUNT_SID=${SECRET_TWILIO_ACCOUNT_SID}
-TWILIO_AUTH_TOKEN=${SECRET_TWILIO_AUTH_TOKEN}
-TWILIO_WHATSAPP_NUMBER=${SECRET_TWILIO_WHATSAPP_NUMBER}
-WISE_API_KEY=${SECRET_WISE_API_KEY}
-WISE_PROFILE_ID=${SECRET_WISE_PROFILE_ID}
-KUCOIN_PRO_API_KEY=${SECRET_KUCOIN_PRO_API_KEY}
-KUCOIN_PRO_API_SECRET=${SECRET_KUCOIN_PRO_API_SECRET}
-KUCOIN_PRO_API_PASSPHRASE=${SECRET_KUCOIN_PRO_API_PASSPHRASE}
-KUCOIN_PRO_BASE_URL=${SECRET_KUCOIN_PRO_BASE_URL}
-ENVFILE_EOF
-          # Interpolar variáveis usando envsubst (mais simples e enterprise)
-          envsubst < .env.prod > .env.prod.tmp && mv .env.prod.tmp .env.prod
-          
-          echo "✅ .env.prod gerado com $(wc -l < .env.prod) linhas"
-          
-          # Validar que secrets foram interpolados (não devem conter ${ )
-          if grep -q '\${' .env.prod; then
-            echo "❌ ERRO: Variáveis não interpoladas encontradas no .env.prod!"
-            grep '\${' .env.prod
-            exit 1
-          fi
+          echo "✅ .env.prod gerado com sucesso pelo script generate-env-prod.sh"
           echo "✅ Todas as variáveis foram interpoladas corretamente"
 
       - name: Verificar imagens no GHCR
