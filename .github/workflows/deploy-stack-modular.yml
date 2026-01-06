@@ -797,11 +797,15 @@ jobs:
             # URL encode da senha PostgreSQL (evitar caracteres especiais)
             POSTGRES_PASSWORD_ENCODED=$(urlencode "$POSTGRES_PASSWORD")
             
-            # Verificar se banco já tem tabelas (skip se já tiver)
-            TABLE_COUNT=$(docker exec alice-postgres psql -U alice -d alice_prod -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';" 2>/dev/null | xargs || echo "0")
+            # CRITICAL FIX (06/01/2026): Verificar se banco já tem tabelas (skip se já tiver)
+            # - Usar variáveis ao invés de hardcoded (alice, alice_prod)
+            # - Usar || echo "0" diretamente no comando (xargs com input vazio retorna 0)
+            # - Usar ${TABLE_COUNT:-0} para fallback caso comando falhe
+            # - Usar -tAc ao invés de -t -c (mais robusto)
+            TABLE_COUNT=$(docker exec alice-postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';" 2>/dev/null || echo "0")
             
-            if [ "$TABLE_COUNT" -eq 0 ]; then
-              echo "📦 Banco vazio - aplicando schema via Drizzle Push..."
+            if [ "${TABLE_COUNT:-0}" = "0" ] || [ "${TABLE_COUNT:-0}" -lt 5 ]; then
+              echo "📦 Banco vazio ou incompleto ($TABLE_COUNT tabelas) - aplicando schema via Drizzle Push..."
               
               # Copiar código para diretório temporário
               rm -rf /tmp/drizzle-app
