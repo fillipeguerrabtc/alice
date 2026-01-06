@@ -748,11 +748,86 @@ jobs:
   # ALICE STACK - Deploy + Health + Rollback
   # ===========================================================================
   
+  # ===========================================================================
+  # DRIZZLE PUSH - Database Schema Migration (CRÍTICO para primeiro deploy)
+  # Roda após infra estar healthy, antes do deploy dos serviços Alice
+  # ===========================================================================
+  drizzle-push:
+    name: Apply Database Schema (Drizzle)
+    runs-on: [self-hosted, linux, deploy]
+    needs: [validate, health-infra]
+    if: needs.health-infra.result == 'success'
+    timeout-minutes: 10
+    
+    steps:
+      - name: Execute Drizzle Push via SSH
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          script_timeout: 10m
+          script: |
+            set -euo pipefail
+            echo "📊 Verificando schema do banco de dados..."
+            
+            # Carregar .env.prod para pegar credenciais
+            cd /opt/alice/app/infra/docker
+            source .env.prod
+            
+            # URL encode da senha PostgreSQL (evitar caracteres especiais)
+            POSTGRES_PASSWORD_ENCODED=$(printf %s "$POSTGRES_PASSWORD" | jq -sRr @uri)
+            
+            # Verificar se banco já tem tabelas (skip se já tiver)
+            TABLE_COUNT=$(docker exec alice-postgres psql -U alice -d alice_prod -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';" 2>/dev/null | xargs || echo "0")
+            
+            if [ "$TABLE_COUNT" -eq 0 ]; then
+              echo "📦 Banco vazio - aplicando schema via Drizzle Push..."
+              
+              # Copiar código para diretório temporário
+              rm -rf /tmp/drizzle-app
+              cp -r /opt/alice/app /tmp/drizzle-app
+              cd /tmp/drizzle-app
+              
+              # Construir DATABASE_URL com senha URL-encoded
+              DATABASE_URL="postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD_ENCODED@alice-postgres:5432/$POSTGRES_DB"
+              
+              # Executar drizzle-kit push via container node
+              # CRÍTICO: Se falhar, os serviços Alice não terão tabelas e crasharão
+              if ! docker run --rm \
+                --network alice-network \
+                -v /tmp/drizzle-app:/app \
+                -w /app \
+                -e DATABASE_URL="$DATABASE_URL" \
+                node:22-alpine sh -c "
+                  npm install -g pnpm
+                  pnpm install --frozen-lockfile
+                  pnpm drizzle-kit push
+                "; then
+                echo "❌ ERRO CRÍTICO: Drizzle push falhou!"
+                echo "   O schema do banco não foi criado."
+                echo "   Os serviços Alice irão falhar sem as tabelas."
+                rm -rf /tmp/drizzle-app
+                exit 1
+              fi
+              
+              echo "✅ Schema aplicado com sucesso!"
+              rm -rf /tmp/drizzle-app
+            else
+              echo "✅ Banco já possui $TABLE_COUNT tabelas (skip drizzle push)"
+            fi
+  
+  # ===========================================================================
+  # ALICE STACK - Deploy + Health + Rollback
+  # Roda em PARALELO com observability e erpnext após drizzle push
+  # ===========================================================================
+  
   deploy-alice:
     name: Deploy Stack ALICE
     runs-on: [self-hosted, linux, deploy]
-    needs: [validate, prepare, health-infra]
-    if: needs.validate.outputs.deploy_alice == 'true' && needs.prepare.result == 'success' && (needs.health-infra.result == 'success' || needs.validate.outputs.deploy_infra == 'false')
+    needs: [validate, prepare, drizzle-push]
+    if: needs.validate.outputs.deploy_alice == 'true' && needs.prepare.result == 'success' && needs.drizzle-push.result == 'success'
     timeout-minutes: 15
     
     steps:
@@ -886,8 +961,8 @@ jobs:
   deploy-observability:
     name: Deploy Stack OBSERVABILITY
     runs-on: [self-hosted, linux, deploy]
-    needs: [validate, prepare, health-infra]
-    if: needs.validate.outputs.deploy_observability == 'true' && needs.prepare.result == 'success' && (needs.health-infra.result == 'success' || needs.validate.outputs.deploy_infra == 'false')
+    needs: [validate, prepare, drizzle-push]
+    if: needs.validate.outputs.deploy_observability == 'true' && needs.prepare.result == 'success' && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped')
     timeout-minutes: 15
     
     steps:
@@ -941,7 +1016,12 @@ jobs:
             set -euo pipefail
             echo "🏥 Checking OBSERVABILITY stack health..."
             
-            CONTAINERS="prometheus grafana loki jaeger langfuse alice-clickhouse"
+            # CRITICAL FIX (06/01/2026): Adicionar todos os 11 containers com healthcheck
+            # Faltavam: promtail (logs), alice-vector (aggregator), alice-otel-collector (OTEL),
+            #           alice-cadvisor (métricas), alice-langfuse-db (PostgreSQL do Langfuse - CRÍTICO!)
+            # Nota: alice-node-exporter não tem healthcheck (network_mode: host)
+            # Nota: langfuse-worker não tem healthcheck (worker assíncrono)
+            CONTAINERS="prometheus grafana loki promtail jaeger alice-vector alice-otel-collector alice-cadvisor alice-clickhouse alice-langfuse-db langfuse"
             MAX_RETRIES=30
             SLEEP_TIME=10
             
@@ -1021,8 +1101,8 @@ jobs:
   deploy-erpnext:
     name: Deploy Stack ERPNEXT
     runs-on: [self-hosted, linux, deploy]
-    needs: [validate, prepare, health-infra]
-    if: needs.validate.outputs.deploy_erpnext == 'true' && needs.prepare.result == 'success' && (needs.health-infra.result == 'success' || needs.validate.outputs.deploy_infra == 'false')
+    needs: [validate, prepare, drizzle-push]
+    if: needs.validate.outputs.deploy_erpnext == 'true' && needs.prepare.result == 'success' && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped')
     timeout-minutes: 20
     
     steps:
@@ -1159,8 +1239,8 @@ jobs:
   deploy-backup:
     name: Deploy Stack BACKUP
     runs-on: [self-hosted, linux, deploy]
-    needs: [validate, prepare, health-infra]
-    if: needs.validate.outputs.deploy_backup == 'true' && needs.prepare.result == 'success' && (needs.health-infra.result == 'success' || needs.validate.outputs.deploy_infra == 'false')
+    needs: [validate, prepare, drizzle-push]
+    if: needs.validate.outputs.deploy_backup == 'true' && needs.prepare.result == 'success' && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped')
     timeout-minutes: 10
     
     steps:
@@ -1291,7 +1371,7 @@ jobs:
   notify:
     name: Notify & Report
     runs-on: [self-hosted, linux, deploy]
-    needs: [validate, prepare, deploy-infra, deploy-alice, deploy-observability, deploy-erpnext, deploy-backup, health-infra, health-alice, health-observability, health-erpnext, health-backup, rollback-infra, rollback-alice, rollback-observability, rollback-erpnext, rollback-backup]
+    needs: [validate, prepare, deploy-infra, health-infra, drizzle-push, deploy-alice, deploy-observability, deploy-erpnext, deploy-backup, health-alice, health-observability, health-erpnext, health-backup, rollback-infra, rollback-alice, rollback-observability, rollback-erpnext, rollback-backup]
     if: always()
     timeout-minutes: 3
     
@@ -1306,6 +1386,18 @@ jobs:
           echo "**Stack:** \`${{ needs.validate.outputs.stack }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Trigger:** \`${{ github.event_name }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Workflow:** \`deploy-stack-modular.yml\` (v3.0.0-modular)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "## 📊 Database Schema Migration" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          DRIZZLE_STATUS="${{ needs.drizzle-push.result || 'skipped' }}"
+          if [ "$DRIZZLE_STATUS" = "success" ]; then
+            echo "**Drizzle Push:** ✅ Schema aplicado com sucesso" >> $GITHUB_STEP_SUMMARY
+          elif [ "$DRIZZLE_STATUS" = "skipped" ]; then
+            echo "**Drizzle Push:** ⏭️ Skipped (banco já possui schema)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Drizzle Push:** ❌ FAILED - Schema não foi aplicado!" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "" >> $GITHUB_STEP_SUMMARY
           
           echo "## 🎯 Status por Stack (Independente)" >> $GITHUB_STEP_SUMMARY
