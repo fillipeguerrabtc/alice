@@ -844,9 +844,12 @@ jobs:
   deploy-alice:
     name: Deploy Stack ALICE
     runs-on: [self-hosted, linux, deploy]
-    needs: [validate, prepare, drizzle-push]
-    # CRITICAL FIX (06/01/2026): Aceitar drizzle-push skipped (deploy individual de alice)
-    if: needs.validate.outputs.deploy_alice == 'true' && needs.prepare.result == 'success' && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped')
+    needs: [validate, prepare, health-infra, drizzle-push]
+    # CRITICAL FIX (06/01/2026): Verificar health-infra para evitar deploy contra infra quebrada
+    # Se infra foi deployado, DEVE estar healthy (success)
+    # Se infra NÃO foi deployado (individual alice deploy), aceitar skipped
+    # Se infra FALHOU (failure), BLOQUEAR para evitar race condition com rollback-infra
+    if: needs.validate.outputs.deploy_alice == 'true' && needs.prepare.result == 'success' && (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped') && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped')
     timeout-minutes: 15
     
     steps:
@@ -980,8 +983,9 @@ jobs:
   deploy-observability:
     name: Deploy Stack OBSERVABILITY
     runs-on: [self-hosted, linux, deploy]
-    needs: [validate, prepare, drizzle-push]
-    if: needs.validate.outputs.deploy_observability == 'true' && needs.prepare.result == 'success' && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped')
+    needs: [validate, prepare, health-infra, drizzle-push]
+    # CRITICAL FIX (06/01/2026): Verificar health-infra para evitar deploy contra infra quebrada
+    if: needs.validate.outputs.deploy_observability == 'true' && needs.prepare.result == 'success' && (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped') && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped')
     timeout-minutes: 15
     
     steps:
@@ -1120,8 +1124,9 @@ jobs:
   deploy-erpnext:
     name: Deploy Stack ERPNEXT
     runs-on: [self-hosted, linux, deploy]
-    needs: [validate, prepare, drizzle-push]
-    if: needs.validate.outputs.deploy_erpnext == 'true' && needs.prepare.result == 'success' && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped')
+    needs: [validate, prepare, health-infra, drizzle-push]
+    # CRITICAL FIX (06/01/2026): Verificar health-infra para evitar deploy contra infra quebrada
+    if: needs.validate.outputs.deploy_erpnext == 'true' && needs.prepare.result == 'success' && (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped') && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped')
     timeout-minutes: 20
     
     steps:
@@ -1258,8 +1263,9 @@ jobs:
   deploy-backup:
     name: Deploy Stack BACKUP
     runs-on: [self-hosted, linux, deploy]
-    needs: [validate, prepare, drizzle-push]
-    if: needs.validate.outputs.deploy_backup == 'true' && needs.prepare.result == 'success' && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped')
+    needs: [validate, prepare, health-infra, drizzle-push]
+    # CRITICAL FIX (06/01/2026): Verificar health-infra para evitar deploy contra infra quebrada
+    if: needs.validate.outputs.deploy_backup == 'true' && needs.prepare.result == 'success' && (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped') && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped')
     timeout-minutes: 10
     
     steps:
