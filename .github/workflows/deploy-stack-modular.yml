@@ -756,7 +756,10 @@ jobs:
     name: Apply Database Schema (Drizzle)
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, health-infra]
-    if: needs.health-infra.result == 'success'
+    # CRITICAL FIX (06/01/2026): Aceitar health-infra skipped (deploy individual de alice)
+    # Quando stack=alice, infra não é deployado mas já deve estar rodando de deploy anterior
+    # O script interno valida se alice-postgres está acessível antes de tentar drizzle push
+    if: needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped'
     timeout-minutes: 10
     
     steps:
@@ -776,8 +779,23 @@ jobs:
             cd /opt/alice/app/infra/docker
             source .env.prod
             
+            # CRITICAL FIX (06/01/2026): Usar função bash pura ao invés de jq (não instalado por padrão)
+            # Função urlencode() RFC 3986 já existe em generate-env-prod.sh - replicada aqui
+            urlencode() {
+              local str="$1"
+              local length="${#str}"
+              local i c ascii hex
+              for (( i=0; i<length; i++ )); do
+                c="${str:i:1}"
+                case "$c" in
+                  [_.~a-zA-Z0-9-]) printf '%s' "$c" ;;
+                  *) printf -v ascii '%d' "'$c"; printf -v hex '%%%02X' "$ascii"; printf '%s' "$hex" ;;
+                esac
+              done
+            }
+            
             # URL encode da senha PostgreSQL (evitar caracteres especiais)
-            POSTGRES_PASSWORD_ENCODED=$(printf %s "$POSTGRES_PASSWORD" | jq -sRr @uri)
+            POSTGRES_PASSWORD_ENCODED=$(urlencode "$POSTGRES_PASSWORD")
             
             # Verificar se banco já tem tabelas (skip se já tiver)
             TABLE_COUNT=$(docker exec alice-postgres psql -U alice -d alice_prod -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';" 2>/dev/null | xargs || echo "0")
@@ -827,7 +845,8 @@ jobs:
     name: Deploy Stack ALICE
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare, drizzle-push]
-    if: needs.validate.outputs.deploy_alice == 'true' && needs.prepare.result == 'success' && needs.drizzle-push.result == 'success'
+    # CRITICAL FIX (06/01/2026): Aceitar drizzle-push skipped (deploy individual de alice)
+    if: needs.validate.outputs.deploy_alice == 'true' && needs.prepare.result == 'success' && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped')
     timeout-minutes: 15
     
     steps:
