@@ -418,6 +418,9 @@ jobs:
           export VERSIONS_FILE=./infra/versions.env
           ./infra/scripts/generate-env-prod.sh
           
+          # Fix permission for tar/scp to read the file
+          chmod 644 .env.prod
+          
           echo "✅ .env.prod gerado com sucesso"
 
       - name: Verificar imagens no GHCR
