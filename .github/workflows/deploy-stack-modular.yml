@@ -45,7 +45,7 @@
 name: Deploy - Production (Modular)
 
 on:
-  # Disparo via release-modular.yml (job trigger-deploy)
+  # Disparo via release.yml (job trigger-deploy)
   # OU manual via GitHub Actions UI
   workflow_dispatch:
     inputs:
@@ -126,7 +126,7 @@ jobs:
         run: |
           set -euo pipefail
           
-          # Sempre workflow_dispatch (disparado por release-modular.yml ou manual)
+          # Sempre workflow_dispatch (disparado por release.yml ou manual)
           STACK="${{ github.event.inputs.stack }}"
           VERSION="${{ github.event.inputs.version }}"
           ROLLBACK="${{ github.event.inputs.rollback }}"

@@ -218,46 +218,44 @@ gh workflow run deploy-stack-modular.yml -f stack=all -f version=v1.0.0 -f dry_r
 
 **Recomendação:** Use **`deploy-stack-modular.yml`** (v3) para todos os deploys novos. O workflow v2 permanece para compatibilidade mas será deprecado.
 
-### Release Modular via Matrix Strategy - ENTERPRISE (06/01/2026)
+### Release Enterprise Consolidado - (06/01/2026)
 
-**Workflow Legado (v2):** `.github/workflows/release.yml` (monolítico sequencial)  
-**Workflow Enterprise (v3):** `.github/workflows/release-modular.yml` ⭐ **RECOMENDADO**
+**Workflow Principal:** `.github/workflows/release.yml` ⭐ **EM USO**  
+**Workflow Alternativo:** `.github/workflows/release-modular.yml` (Matrix Strategy experimental)
 
-#### Arquitetura Enterprise Modular v3.0.0 (06/01/2026)
+#### Arquitetura Enterprise Consolidada (06/01/2026)
 
-**Matrix Strategy (Melhores Práticas Oficiais GitHub Actions 2025):**
+**Pipeline Completo (CI → Release → Deploy):**
 
-A arquitetura de Release utiliza **Matrix Strategy** (diferente do Deploy que usa jobs individuais) porque:
-- ✅ **MESMA lógica** para todas as 17 imagens (diff → build/retag → push)
-- ✅ **Melhores Práticas Oficiais**: Matrix para tarefas repetitivas (docs GitHub Actions)
-- ✅ **Regra 2 (NÃO DUPLICAR)**: Reutiliza lógica ao invés de repetir 17x
-- ✅ **Paralelização Total**: 17 builds simultâneos (~5-7min vs ~34min sequencial)
-
-**Características Enterprise:**
-- ✅ **Matrix Strategy**: 12 microservices + 5 GPU em paralelo
+O workflow `release.yml` é o workflow principal do pipeline enterprise:
+- ✅ **CI disparado por push** → dispara automaticamente `release.yml`
+- ✅ **Release builda imagens** → 12 microservices + 5 GPU
+- ✅ **Release dispara deploy** → `deploy-stack-modular.yml` automaticamente
 - ✅ **Retag Inteligente**: Diff analysis entre tags (só builda o que mudou)
-- ✅ **Isolamento de Falhas**: `fail-fast: false` (uma falha não para outras)
-- ✅ **Logs Isolados**: 1 job por imagem (troubleshooting facilitado)
-- ✅ **Cache GHCR**: Por imagem (máxima eficiência BuildKit)
 - ✅ **Smoke Test**: PostgreSQL + pgvector (detecta SIGILL/AVX-512)
 - ✅ **Changelog Automático**: Conventional Commits 1.0.0
 
+**Características Enterprise:**
+- ✅ **Builds Consolidados**: Loop otimizado para 12 microservices + 5 GPU
+- ✅ **Retag Inteligente**: Análise de diff entre tags (evita rebuilds)
+- ✅ **Cache GHCR**: Por imagem (máxima eficiência BuildKit)
+- ✅ **Smoke Test**: PostgreSQL + pgvector (detecta SIGILL/AVX-512)
+- ✅ **Changelog Automático**: Conventional Commits 1.0.0
+- ✅ **Deploy Automático**: Dispara `deploy-stack-modular.yml` após build
+
 ```bash
 # Criar release manualmente
-gh workflow run release-modular.yml -f version=v1.0.0
+gh workflow run release.yml -f version=v1.0.0
 
 # Criar pre-release (beta/alpha)
-gh workflow run release-modular.yml -f version=v1.0.0-beta.1 -f prerelease=true
+gh workflow run release.yml -f version=v1.0.0-beta.1 -f prerelease=true
 ```
 
-**Estrutura do Workflow (7 jobs):**
-1. **validate** - Criar tag, validar versão, detectar tag anterior
-2. **analyze-changes** - Git diff analysis (determinar o que mudou)
-3. **build-microservices** - Matrix 12 imagens (auth, chat, frontend, rag, training, integrations, observability, gpu-manager, api-gateway, postgres, pgbackrest, caddy)
-4. **build-gpu** - Matrix 5 imagens (mixtral-vllm, embeddings-gpu, flux-schnell, asr-canary, lora-trainer)
-5. **smoke-test** - PostgreSQL + pgvector (detecta incompatibilidade AVX-512)
-6. **publish-release** - Gera changelog + publica GitHub Release
-7. **trigger-deploy** - Dispara `deploy-stack-modular.yml` automaticamente
+**Estrutura do Workflow (4 jobs):**
+1. **create-release** - Criar tag, validar versão, gerar changelog
+2. **build-images** - Build consolidado de 12 microservices + 5 GPU com retag inteligente
+3. **publish-release** - Gera release notes + publica GitHub Release
+4. **trigger-deploy** - Dispara `deploy-stack-modular.yml` automaticamente
 
 **Lógica de Build Condicional (Retag Inteligente):**
 ```bash
@@ -268,25 +266,16 @@ gh workflow run release-modular.yml -f version=v1.0.0-beta.1 -f prerelease=true
 4. Nada mudou + imagem anterior não existe? → BUILD
 ```
 
-**Performance Enterprise:**
-- **v2 Monolítico**: 17 builds sequenciais = ~34min
-- **v3 Modular**: 17 builds paralelos = ~5-7min
-- **Ganho**: ~80% mais rápido ⚡
+**Pipeline Enterprise Completo:**
+```
+Push to main → CI Validation → Release (auto) → Deploy Modular (auto)
+                    ↓               ↓                    ↓
+               typecheck      build images         all stacks
+               lint           smoke test           paralelo
+               security       changelog            health checks
+```
 
-**Comparação Release v2 (Monolítico) vs v3 (Modular):**
-
-| Aspecto | v2 (release.yml) | v3 (release-modular.yml) |
-|---------|------------------|--------------------------|
-| Estratégia | 1 job sequencial (loop) | Matrix Strategy (17 jobs paralelos) |
-| Tempo | ~34min (sequencial) | ~5-7min (paralelo) ⚡ |
-| Falha | 1 falha para tudo | Isolada (fail-fast: false) 🎯 |
-| Logs | Misturados (1500 linhas) | Isolados (~100 linhas/job) 📊 |
-| Troubleshooting | Difícil (achar erro nos logs) | Fácil (job específico falhou) 🔍 |
-| Retry | Re-run completo (34min) | Re-run só o que falhou (~2min) ✅ |
-| Melhores Práticas | Workaround (loop bash) | Matrix Strategy oficial 🏆 |
-| Regra 2 (DRY) | Duplica lógica no loop | Reutiliza via matrix ✅ |
-
-**Recomendação:** Use **`release-modular.yml`** (v3) para todos os releases novos. O workflow v2 será deprecado.
+**Recomendação:** Use **`release.yml`** como workflow principal. O CI dispara automaticamente após push bem-sucedido na main.
 
 ### Requisitos de CPU e Compatibilidade (CRÍTICO)
 
