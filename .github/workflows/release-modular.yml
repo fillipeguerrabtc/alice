@@ -193,7 +193,7 @@ jobs:
     runs-on: [self-hosted, linux, deploy]
     timeout-minutes: 25
     needs: [validate, analyze-changes]
-    if: ${{ !inputs.prerelease }}
+    if: ${{ inputs.prerelease != 'true' }}
     strategy:
       fail-fast: false  # ENTERPRISE: Isolar falhas (uma não para outras)
       matrix:
@@ -374,7 +374,7 @@ jobs:
     runs-on: [self-hosted, linux, deploy]
     timeout-minutes: 90
     needs: [validate, analyze-changes]
-    if: ${{ !inputs.prerelease }}
+    if: ${{ inputs.prerelease != 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -519,7 +519,7 @@ jobs:
     needs: [validate, analyze-changes, build-microservices]
     # Só roda se postgres foi buildado (não apenas retagged)
     if: |
-      !inputs.prerelease &&
+      inputs.prerelease != 'true' &&
       (needs.analyze-changes.outputs.all_changed == 'true' ||
        contains(needs.analyze-changes.outputs.changed_files, 'infra/postgres/'))
     
@@ -615,7 +615,7 @@ jobs:
     if: |
       always() &&
       needs.validate.result == 'success' &&
-      (inputs.prerelease || 
+      (inputs.prerelease == 'true' || 
        (needs.build-microservices.result == 'success' && 
         needs.build-gpu.result == 'success' &&
         (needs.smoke-test.result == 'success' || needs.smoke-test.result == 'skipped')))
@@ -748,7 +748,7 @@ jobs:
     timeout-minutes: 1
     needs: [validate, publish-release]
     # Só dispara deploy para releases normais (não prereleases)
-    if: needs.publish-release.result == 'success' && !inputs.prerelease
+    if: needs.publish-release.result == 'success' && inputs.prerelease != 'true'
     
     permissions:
       actions: write
