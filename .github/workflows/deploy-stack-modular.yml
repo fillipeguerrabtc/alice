@@ -217,6 +217,42 @@ jobs:
           fi
           echo "✅ Versão válida: $VERSION"
 
+      - name: Validate rollback inputs
+        run: |
+          ROLLBACK="${{ steps.context.outputs.rollback }}"
+          ROLLBACK_VERSION="${{ steps.context.outputs.rollback_version }}"
+          
+          if [ "$ROLLBACK" = "true" ]; then
+            if [ -z "$ROLLBACK_VERSION" ]; then
+              echo "❌ ERRO: rollback=true requer rollback_version não vazio!"
+              echo ""
+              echo "Você solicitou rollback mas não especificou a versão de destino."
+              echo ""
+              echo "Uso correto:"
+              echo "  gh workflow run deploy-stack-modular.yml \\"
+              echo "    -f stack=alice \\"
+              echo "    -f version=v2.0.0 \\"
+              echo "    -f rollback=true \\"
+              echo "    -f rollback_version=v1.9.0"
+              echo ""
+              echo "⚠️ ATENÇÃO: rollback_version deve ser uma versão previamente deployada."
+              exit 1
+            fi
+            
+            # Validar formato da versão de rollback
+            if [[ ! "$ROLLBACK_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+              echo "❌ rollback_version inválida: $ROLLBACK_VERSION"
+              echo "   Formato esperado: vX.Y.Z (ex: v1.9.0)"
+              exit 1
+            fi
+            
+            echo "✅ Rollback inputs válidos:"
+            echo "   rollback: $ROLLBACK"
+            echo "   rollback_version: $ROLLBACK_VERSION"
+          else
+            echo "✅ Modo normal (rollback=false)"
+          fi
+
   # ===========================================================================
   # Job: Preparação Centralizada (DRY - Single Source of Truth)
   # Gera .env.prod, verifica imagens, sincroniza código
