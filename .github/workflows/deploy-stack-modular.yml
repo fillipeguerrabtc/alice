@@ -771,13 +771,14 @@ jobs:
   drizzle-push:
     name: Apply Database Schema (Drizzle)
     runs-on: [self-hosted, linux, deploy]
-    needs: [validate, prepare, health-infra]
+    needs: [validate, prepare, deploy-infra, health-infra]
     # CRITICAL FIX (06/01/2026): Verificar prepare success e health-infra success/skipped
     # - prepare DEVE ter copiado arquivos (.env.prod, código) para servidor
     # - Se prepare falhou, arquivos não existem → job falharia com "No such file"
     # - health-infra pode ser skipped (deploy individual) ou success (deploy all)
+    # - deploy-infra NÃO PODE ter falhado (evitar race condition com rollback-infra)
     # - Script interno valida se alice-postgres está acessível antes de tentar drizzle push
-    if: needs.prepare.result == 'success' && (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped')
+    if: needs.prepare.result == 'success' && needs.deploy-infra.result != 'failure' && (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped')
     timeout-minutes: 10
     
     steps:
@@ -871,13 +872,14 @@ jobs:
   deploy-alice:
     name: Deploy Stack ALICE
     runs-on: [self-hosted, linux, deploy]
-    needs: [validate, prepare, health-infra, drizzle-push]
+    needs: [validate, prepare, deploy-infra, health-infra, drizzle-push]
     # CRITICAL FIX (06/01/2026): Verificar health-infra para evitar deploy contra infra quebrada
     # Se infra foi deployado, DEVE estar healthy (success)
     # Se infra NÃO foi deployado (individual alice deploy), aceitar skipped
     # Se infra FALHOU (failure), BLOQUEAR para evitar race condition com rollback-infra
+    # - deploy-infra NÃO PODE ter falhado (needs.deploy-infra.result != 'failure')
     # CRITICAL: NÃO rodar em rollback manual (deploy seria sobrescrito pelo rollback)
-    if: needs.validate.outputs.deploy_alice == 'true' && needs.prepare.result == 'success' && (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped') && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped') && needs.validate.outputs.is_rollback == 'false'
+    if: needs.validate.outputs.deploy_alice == 'true' && needs.prepare.result == 'success' && needs.deploy-infra.result != 'failure' && (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped') && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped') && needs.validate.outputs.is_rollback == 'false'
     timeout-minutes: 15
     
     steps:
@@ -1027,10 +1029,11 @@ jobs:
   deploy-observability:
     name: Deploy Stack OBSERVABILITY
     runs-on: [self-hosted, linux, deploy]
-    needs: [validate, prepare, health-infra, drizzle-push]
+    needs: [validate, prepare, deploy-infra, health-infra, drizzle-push]
     # CRITICAL FIX (06/01/2026): Verificar health-infra para evitar deploy contra infra quebrada
+    # - deploy-infra NÃO PODE ter falhado (needs.deploy-infra.result != 'failure')
     # CRITICAL: NÃO rodar em rollback manual (deploy seria sobrescrito pelo rollback)
-    if: needs.validate.outputs.deploy_observability == 'true' && needs.prepare.result == 'success' && (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped') && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped') && needs.validate.outputs.is_rollback == 'false'
+    if: needs.validate.outputs.deploy_observability == 'true' && needs.prepare.result == 'success' && needs.deploy-infra.result != 'failure' && (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped') && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped') && needs.validate.outputs.is_rollback == 'false'
     timeout-minutes: 15
     
     steps:
@@ -1185,10 +1188,11 @@ jobs:
   deploy-erpnext:
     name: Deploy Stack ERPNEXT
     runs-on: [self-hosted, linux, deploy]
-    needs: [validate, prepare, health-infra, drizzle-push]
+    needs: [validate, prepare, deploy-infra, health-infra, drizzle-push]
     # CRITICAL FIX (06/01/2026): Verificar health-infra para evitar deploy contra infra quebrada
+    # - deploy-infra NÃO PODE ter falhado (needs.deploy-infra.result != 'failure')
     # CRITICAL: NÃO rodar em rollback manual (deploy seria sobrescrito pelo rollback)
-    if: needs.validate.outputs.deploy_erpnext == 'true' && needs.prepare.result == 'success' && (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped') && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped') && needs.validate.outputs.is_rollback == 'false'
+    if: needs.validate.outputs.deploy_erpnext == 'true' && needs.prepare.result == 'success' && needs.deploy-infra.result != 'failure' && (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped') && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped') && needs.validate.outputs.is_rollback == 'false'
     timeout-minutes: 20
     
     steps:
@@ -1341,10 +1345,11 @@ jobs:
   deploy-backup:
     name: Deploy Stack BACKUP
     runs-on: [self-hosted, linux, deploy]
-    needs: [validate, prepare, health-infra, drizzle-push]
+    needs: [validate, prepare, deploy-infra, health-infra, drizzle-push]
     # CRITICAL FIX (06/01/2026): Verificar health-infra para evitar deploy contra infra quebrada
+    # - deploy-infra NÃO PODE ter falhado (needs.deploy-infra.result != 'failure')
     # CRITICAL: NÃO rodar em rollback manual (deploy seria sobrescrito pelo rollback)
-    if: needs.validate.outputs.deploy_backup == 'true' && needs.prepare.result == 'success' && (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped') && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped') && needs.validate.outputs.is_rollback == 'false'
+    if: needs.validate.outputs.deploy_backup == 'true' && needs.prepare.result == 'success' && needs.deploy-infra.result != 'failure' && (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped') && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped') && needs.validate.outputs.is_rollback == 'false'
     timeout-minutes: 10
     
     steps:
