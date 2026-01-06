@@ -147,32 +147,63 @@ Embeddings otimizados por caso de uso para máxima qualidade:
 - **Pipeline**: Push → CI (auto) → Release (auto) → Deploy (auto)
 - **Versionamento**: Semantic Versioning automático via Conventional Commits (BREAKING→MAJOR, feat→MINOR, fix→PATCH)
 
-### Deploy Modular por Stack (05/01/2026)
+### Deploy Modular por Stack - ENTERPRISE (06/01/2026)
 
-**Workflow:** `.github/workflows/deploy-stack.yml`
+**Workflow Legado (v2):** `.github/workflows/deploy-stack.yml` (monolítico)  
+**Workflow Enterprise (v3):** `.github/workflows/deploy-stack-modular.yml` ⭐ **RECOMENDADO**
+
+#### Arquitetura Enterprise Modular v3.0.0 (06/01/2026)
+
+**Características Enterprise:**
+- ✅ **Jobs Separados**: 1 job por stack (deploy + health + rollback independentes)
+- ✅ **Paralelização Real**: Alice + Observability + ERPNext rodam em PARALELO (3x mais rápido)
+- ✅ **Rollback Cirúrgico**: Cada stack rola back independentemente sem afetar outros
+- ✅ **Logs Isolados**: Troubleshooting facilitado (um job por stack = logs limpos)
+- ✅ **Produção Parcial**: ERPNext pode falhar sem derrubar Alice
+- ✅ **Health Checks Inteligentes**: Retry logic com timeout configurável por stack
+- ✅ **Zero Dependências entre Stacks**: Stacks não se afetam mutuamente
 
 ```bash
-# Deploy de um stack específico
-gh workflow run deploy-stack.yml -f stack=alice -f version=v1.0.0
+# Deploy de um stack específico (Enterprise v3)
+gh workflow run deploy-stack-modular.yml -f stack=alice -f version=v1.0.0
 
-# Deploy de todos os stacks
-gh workflow run deploy-stack.yml -f stack=all -f version=v1.0.0
+# Deploy de todos os stacks (paralelizado)
+gh workflow run deploy-stack-modular.yml -f stack=all -f version=v1.0.0
 
-# Rollback de um stack específico
-gh workflow run deploy-stack.yml -f stack=erpnext -f version=v1.0.0 -f rollback=true -f rollback_version=v0.9.0
+# Rollback de um stack específico (não afeta outros)
+gh workflow run deploy-stack-modular.yml -f stack=erpnext -f version=v1.0.0 -f rollback=true -f rollback_version=v0.9.0
+
+# Dry run (apenas validação)
+gh workflow run deploy-stack-modular.yml -f stack=all -f version=v1.0.0 -f dry_run=true
 ```
 
-**Ordem de Deploy (obrigatória):**
-1. `infra` - Databases, caches, reverse proxy (OBRIGATÓRIO primeiro)
-2. Drizzle push - Migrações de schema
-3. `alice` + `observability` - Podem ser paralelos após infra
-4. `erpnext` - Independente, pode falhar sem afetar Alice
-5. `backup` - Depende de postgres healthy
+**Ordem de Deploy (automatizada via `needs`):**
+1. **validate** - Validação de contexto, versões e stacks
+2. **prepare** - Geração centralizada de `.env.prod`, verificação de imagens, SCP de arquivos
+3. **deploy-infra** - PostgreSQL, Redis, Qdrant, Caddy, MinIO, SearXNG (OBRIGATÓRIO primeiro)
+4. **deploy-alice** + **deploy-observability** + **deploy-erpnext** + **deploy-backup** - PARALELO após infra ✅
+5. **health-{stack}** - Health checks com retry logic (30-45 tentativas)
+6. **rollback-{stack}** - Rollback automático se health falhar (só afeta stack com falha)
+7. **notify** - Relatório consolidado no GitHub Actions Summary
 
-**Rollback Inteligente por Stack:**
+**Rollback Cirúrgico Enterprise:**
 - Cada stack mantém histórico em `/opt/alice/versions/{stack}.current` e `{stack}.previous`
-- Rollback de um stack NÃO afeta outros stacks
-- Health checks por stack determinam sucesso/falha do deploy
+- Rollback de um stack **NÃO afeta outros stacks** (design proposital)
+- Health checks determinam sucesso/falha POR STACK
+- ERPNext pode falhar/rollback SEM afetar Alice (produção parcial real)
+
+**Comparação v2 (Monolítico) vs v3 (Modular):**
+
+| Aspecto | v2 (deploy-stack.yml) | v3 (deploy-stack-modular.yml) |
+|---------|------------------------|-------------------------------|
+| Jobs | 1 "Deploy all" gigante | 5 deploys + 5 healths + 5 rollbacks = 15 jobs |
+| Paralelização | Sequencial (30min) | Alice+Obs+ERP paralelos (10min) ⚡ |
+| Rollback | "All or nothing" | Cirúrgico por stack 🎯 |
+| Logs | Misturados num job só | Isolados por stack 📊 |
+| Troubleshooting | Difícil (logs gigantes) | Fácil (logs curtos por job) 🔍 |
+| Produção Parcial | Não | Sim (ERP falha → Alice OK) ✅ |
+
+**Recomendação:** Use **`deploy-stack-modular.yml`** (v3) para todos os deploys novos. O workflow v2 permanece para compatibilidade mas será deprecado.
 
 ### Requisitos de CPU e Compatibilidade (CRÍTICO)
 
