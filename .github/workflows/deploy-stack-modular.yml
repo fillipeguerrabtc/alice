@@ -757,7 +757,7 @@ jobs:
             echo "$TARGET_VERSION" > /opt/alice/versions/infra.current
             
             echo "✅ Rollback INFRA concluído com sucesso"
-            echo "   Versão atual: $PREV_VERSION"
+            echo "   Versão atual: $TARGET_VERSION"
             echo "⚠️ ATENÇÃO: Outros stacks NÃO foram afetados (rollback cirúrgico)"
 
   # ===========================================================================
