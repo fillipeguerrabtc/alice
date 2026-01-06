@@ -32,30 +32,16 @@
 # =============================================================================
 
 name: Deploy - Production (Stacks)
-run-name: Deploy - Production (Stacks) ${{ github.event.workflow_run && format('(triggered by Release & Tag)') || format('(manual)') }}
+run-name: Deploy - Production (Stacks) ${{ github.event_name == 'release' && format('(triggered by Release {0})', github.event.release.tag_name) || format('(manual)') }}
 
 on:
-  # Disparo AUTOMÁTICO: somente quando o workflow Release & Tag terminar com sucesso
-  # IMPORTANTE: workflow_run garante que deploy só acontece DEPOIS que Release terminar completamente
+  # Disparo AUTOMÁTICO: somente quando GitHub Release é publicada com sucesso
+  # IMPORTANTE: release: published só dispara quando Release é publicada (APÓS build de imagens)
+  # Isso garante que deploy só acontece DEPOIS que Release terminar completamente
   # (build de imagens + publicação da Release). Evita deploy aparecer "junto" com CI na UI.
-  # CRÍTICO: usar nome exato do workflow (case-sensitive) para referência
-  workflow_run:
-    # CRÍTICO: usar nome EXATO do workflow (case-sensitive, espaços e caracteres especiais)
-    # O nome deve corresponder EXATAMENTE ao campo 'name:' do release.yml
-    # Nome do workflow Release: "Release & Tag" (verificado em release.yml linha 43)
-    workflows: 
-      - "Release & Tag"
+  release:
     types:
-      - completed
-    branches:
-      - main
-  # IMPORTANTE: workflow_run NÃO dispara no push - ele dispara quando o workflow "Release & Tag" termina
-  # Se aparece "pushed by" na UI, é porque o workflow_run foi disparado por um commit que foi pushed
-  # Mas o workflow só roda se a condição 'if: conclusion == success' passar no job validate
-  # NOTA: workflow_run pode ser disparado prematuramente em alguns casos
-  # A verificação de sucesso está no job validate (if: conclusion == 'success')
-  # CRÍTICO: workflow_run dispara mesmo em falha/cancelado
-  # A verificação de sucesso está no job validate (if: conclusion == 'success')
+      - published
   workflow_dispatch:
     inputs:
       stack:
@@ -112,51 +98,14 @@ env:
 
 jobs:
   # ===========================================================================
-  # Job 0: Verificar se Release foi bem-sucedido (FALHA IMEDIATAMENTE se não)
-  # ===========================================================================
-  # CRÍTICO: Este job FALHA IMEDIATAMENTE se Release não foi bem-sucedido
-  # Isso evita que o workflow apareça na UI quando não deveria rodar
-  # workflow_run dispara mesmo em falha/cancelado, então verificamos conclusion explicitamente
-  check-release-success:
-    name: Check Release Success
-    runs-on: [self-hosted, linux, deploy]
-    timeout-minutes: 1
-    # CRÍTICO: Se workflow_run e Release não foi bem-sucedido, FALHAR imediatamente
-    # Isso faz o workflow aparecer como "failed" na UI, não como "skipped"
-    # Para workflow_dispatch, este job é pulado (não precisa verificar Release)
-    if: github.event_name == 'workflow_run'
-    steps:
-      - name: Verificar conclusão do Release
-        run: |
-          if [ "${{ github.event.workflow_run.conclusion }}" != "success" ]; then
-            echo "❌ ERRO: Release & Tag não foi bem-sucedido (conclusion: ${{ github.event.workflow_run.conclusion }})"
-            echo "   Deploy automático só acontece após Release bem-sucedido."
-            exit 1
-          fi
-          if [ "${{ github.event.workflow_run.status }}" != "completed" ]; then
-            echo "❌ ERRO: Release & Tag ainda não foi concluído (status: ${{ github.event.workflow_run.status }})"
-            exit 1
-          fi
-          echo "✅ Release & Tag foi bem-sucedido. Prosseguindo com deploy..."
-  
-  # ===========================================================================
   # Job 1: Validação e Preparação
   # ===========================================================================
   validate:
     name: Validate Deploy
     runs-on: [self-hosted, linux, deploy]
     timeout-minutes: 5
-    # CRÍTICO: Deploy automático só se Release & Tag terminou com sucesso
-    # workflow_run dispara mesmo em falha/cancelado, então verificamos conclusion explicitamente
-    # Se não for workflow_dispatch manual E não for workflow_run com sucesso, SKIP o job
-    # needs: check-release-success só é necessário para workflow_run (job é skipped para workflow_dispatch)
-    needs: [check-release-success]
-    if: |
-      github.event_name == 'workflow_dispatch' || 
-      (github.event_name == 'workflow_run' && 
-       github.event.workflow_run.conclusion == 'success' && 
-       github.event.workflow_run.status == 'completed' &&
-       (needs.check-release-success.result == 'success' || needs.check-release-success.result == 'skipped'))
+    # CRÍTICO: release: published só dispara quando Release é publicada com sucesso
+    # Não precisa verificar conclusion porque release: published já garante sucesso
     outputs:
       stack: ${{ steps.context.outputs.stack }}
       version: ${{ steps.context.outputs.version }}
@@ -176,28 +125,15 @@ jobs:
           echo "workflow=${{ github.workflow }}"
           echo "ref=${{ github.ref }}"
           echo "sha=${{ github.sha }}"
-          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+          if [ "${{ github.event_name }}" = "release" ]; then
             echo ""
-            echo "--- workflow_run details ---"
-            echo "workflow_run.id=${{ github.event.workflow_run.id }}"
-            echo "workflow_run.name=${{ github.event.workflow_run.name }}"
-            echo "workflow_run.head_branch=${{ github.event.workflow_run.head_branch }}"
-            echo "workflow_run.head_sha=${{ github.event.workflow_run.head_sha }}"
-            echo "workflow_run.conclusion=${{ github.event.workflow_run.conclusion }}"
-            echo "workflow_run.status=${{ github.event.workflow_run.status }}"
-            echo "workflow_run.event=${{ github.event.workflow_run.event }}"
-            echo "workflow_run.html_url=${{ github.event.workflow_run.html_url }}"
+            echo "--- release details ---"
+            echo "release.tag_name=${{ github.event.release.tag_name }}"
+            echo "release.name=${{ github.event.release.name }}"
+            echo "release.prerelease=${{ github.event.release.prerelease }}"
+            echo "release.html_url=${{ github.event.release.html_url }}"
           fi
           echo "=========================================="
-      
-      - name: Checkout (commit SHA do Release workflow)
-        if: github.event_name == 'workflow_run'
-        uses: actions/checkout@v4
-        with:
-          # CRÍTICO: fazer checkout do commit SHA do Release workflow (não usar main)
-          # Isso garante que estamos trabalhando com o commit correto que gerou a Release
-          ref: ${{ github.event.workflow_run.head_sha }}
-          fetch-depth: 0
       
       - name: Determine trigger context
         id: context
@@ -205,51 +141,16 @@ jobs:
         run: |
           set -euo pipefail
           
-          if [ "${{ github.event_name }}" = "workflow_run" ]; then
-            # Deploy automático após Release terminar: extrair tag do commit SHA do Release workflow
-            # O workflow_run dispara quando Release & Tag termina, precisamos encontrar a tag que aponta EXATAMENTE para o commit
-            # IMPORTANTE: usar apenas --exact-match para evitar deploy de tag ancestral incorreta (bug crítico)
+          if [ "${{ github.event_name }}" = "release" ]; then
+            # Deploy automático após Release ser publicada: usar tag da Release
+            # release: published só dispara quando Release é publicada com sucesso (APÓS build de imagens)
             STACK="all"
-            COMMIT_SHA="${{ github.event.workflow_run.head_sha }}"
-            echo "🔍 Buscando tag EXATA para commit: $COMMIT_SHA"
-            
-            # Garantir que temos todas as tags (já fizemos checkout do commit SHA no step anterior)
-            git fetch --tags --force origin || true
-            
-            # Buscar tag que aponta EXATAMENTE para o commit (sem fallback para tag ancestral)
-            # --exact-match garante que a tag aponta diretamente para o commit, não para um ancestral
-            if ! VERSION=$(git describe --tags --exact-match "$COMMIT_SHA" 2>/dev/null); then
-              echo "❌ ERRO CRÍTICO: Nenhuma tag encontrada que aponte EXATAMENTE para commit $COMMIT_SHA!"
-              echo ""
-              echo "   Possíveis causas:"
-              echo "   1. Release workflow não criou a tag antes de terminar"
-              echo "   2. Tag foi criada em commit diferente"
-              echo "   3. Problema de timing (tag ainda não foi propagada)"
-              echo ""
-              echo "   Verificações:"
-              echo "   - Última tag: $(git describe --tags --abbrev=0 2>/dev/null || echo 'N/A')"
-              echo "   - Commit SHA: $COMMIT_SHA"
-              echo "   - Tags próximas: $(git tag --points-at "$COMMIT_SHA" 2>/dev/null | head -5 | tr '\n' ' ' || echo 'N/A')"
-              echo ""
-              echo "   AÇÃO: Não é seguro fazer deploy sem tag exata. Abortando."
-              exit 1
-            fi
-            
-            # Validação adicional: garantir que a tag realmente aponta para o commit
-            TAG_COMMIT=$(git rev-list -n 1 "$VERSION" 2>/dev/null || echo "")
-            if [ "$TAG_COMMIT" != "$COMMIT_SHA" ]; then
-              echo "❌ ERRO CRÍTICO: Tag $VERSION aponta para commit diferente!"
-              echo "   Tag commit: $TAG_COMMIT"
-              echo "   Esperado: $COMMIT_SHA"
-              echo "   AÇÃO: Abortando deploy para evitar versão incorreta."
-              exit 1
-            fi
-            
+            VERSION="${{ github.event.release.tag_name }}"
             ROLLBACK="false"
             ROLLBACK_VERSION=""
             DRY_RUN="false"
-            echo "🔔 Trigger: workflow_run (Release & Tag concluído)"
-            echo "✅ Tag EXATA encontrada e validada: $VERSION → $COMMIT_SHA"
+            echo "🔔 Trigger: release: published"
+            echo "✅ Tag da Release: $VERSION"
           else
             STACK="${{ github.event.inputs.stack }}"
             VERSION="${{ github.event.inputs.version }}"
@@ -280,9 +181,9 @@ jobs:
             echo "| Versão (TAG) | \`$VERSION\` |"
             echo "| Rollback | \`$ROLLBACK\` |"
             echo "| Dry run | \`$DRY_RUN\` |"
-            if [ "${{ github.event_name }}" = "workflow_run" ]; then
-              echo "| Release Workflow Run | [${{ github.event.workflow_run.id }}](${{ github.event.workflow_run.html_url }}) |"
-              echo "| Release Workflow Conclusion | \`${{ github.event.workflow_run.conclusion }}\` |"
+            if [ "${{ github.event_name }}" = "release" ]; then
+              echo "| Release | [${{ github.event.release.tag_name }}](${{ github.event.release.html_url }}) |"
+              echo "| Prerelease | \`${{ github.event.release.prerelease }}\` |"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
