@@ -549,7 +549,7 @@ jobs:
             nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
             
             # Verificar runtime Docker com GPU
-            if ! docker run --rm --gpus all nvidia/cuda:12.0-base-ubuntu22.04 nvidia-smi &> /dev/null; then
+            if ! docker run --rm --gpus all nvidia/cuda:12.0.0-base-ubuntu22.04 nvidia-smi &> /dev/null; then
               echo "::error::❌ Docker não consegue acessar GPU!"
               echo "::error::Verifique NVIDIA Container Toolkit e configuração Docker."
               exit 1
