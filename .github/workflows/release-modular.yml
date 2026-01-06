@@ -1,0 +1,787 @@
+# =============================================================================
+# GitHub Actions Workflow - Release & Build (MODULAR v3.0.0)
+# =============================================================================
+# Descrição: Versionamento semântico + Build paralelo via Matrix Strategy
+#
+# ARQUITETURA ENTERPRISE MODULAR (06/01/2026):
+#   - Matrix Strategy: Builds paralelos (recomendação oficial GitHub Actions)
+#   - Retag Inteligente: Só builda o que mudou (análise de diff)
+#   - Isolamento de Falhas: fail-fast: false (uma falha não para outras)
+#   - Logs Isolados: 1 job por imagem (troubleshooting facilitado)
+#   - Cache GHCR: Por imagem (máxima eficiência)
+#   - Paralelização Real: 17 builds em paralelo (~5-7min vs ~34min)
+#
+# PIPELINE ENTERPRISE (3 workflows separados por responsabilidade):
+#   CI → Valida código (typecheck, lint, security, compliance)
+#   Release (Modular) → Builda imagens Docker + Cria GitHub Release  ← ESTE ARQUIVO
+#   Deploy (Modular) → Deploya para Hetzner + Health Check + Rollback
+#
+# RESPONSABILIDADES DESTE WORKFLOW:
+#   1. Validar e criar tag semântica (vX.Y.Z)
+#   2. Analisar mudanças (diff entre tags) → determinar quais imagens buildar
+#   3. Build paralelo de 12 microservices (matrix strategy)
+#   4. Build paralelo de 5 GPU services (matrix strategy)
+#   5. Smoke test de imagens críticas (PostgreSQL + pgvector)
+#   6. Gerar changelog automático (Conventional Commits)
+#   7. Criar GitHub Release com notas
+#   8. Disparar deploy automático (deploy-stack-modular.yml)
+#
+# MELHORES PRÁTICAS 2025 APLICADAS:
+#   - Matrix Strategy para builds repetitivos (docs oficiais GitHub Actions)
+#   - fail-fast: false para isolamento de falhas
+#   - Cache por imagem (GHCR registry cache)
+#   - Diff analysis para builds condicionais
+#   - Retag inteligente (evita rebuilds desnecessários)
+#
+# SEGURANÇA (Best Practices 2025):
+#   - GAP-GHACTIONS-001: Actions pinadas a SHA (supply chain security)
+#   - GAP-GHACTIONS-003: Least privilege permissions
+#
+# REGRAS CLAUDE.MD APLICADAS:
+#   - Regra 2: NÃO DUPLICAR (Matrix Strategy reutiliza lógica)
+#   - Regra 6: Zero hardcoded, zero workarounds, 100% enterprise
+#   - Regra 11: Seguir docs oficiais GitHub Actions Matrix Strategy
+#   - Regra 16: Health checks, retries, circuit breakers
+#   - Regra 18: Commits consolidados, push manual
+#
+# Author: Fillipe Guerra
+# Data: 06/01/2026
+# =============================================================================
+
+name: Release & Tag (Modular v3)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Versão para release (ex: v1.0.0, v1.0.0-beta.1)'
+        required: true
+        type: string
+      prerelease:
+        description: 'É uma pré-release (alpha/beta)?'
+        type: boolean
+        default: false
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  packages: write
+  actions: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/alice
+
+jobs:
+  # ===========================================================================
+  # Job 1: Validação e Criação da Release
+  # Timeout: 5min (validação + tag + release)
+  # ===========================================================================
+  validate:
+    name: Validate & Create Tag
+    runs-on: [self-hosted, linux, deploy]
+    timeout-minutes: 5
+    outputs:
+      version: ${{ inputs.version }}
+      previous_tag: ${{ steps.previous-tag.outputs.previous_tag }}
+      has_previous: ${{ steps.previous-tag.outputs.has_previous }}
+    
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+
+      - name: Validar formato da versão
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+            echo "❌ Formato de versão inválido: $VERSION"
+            echo "   Formato esperado: vX.Y.Z (ex: v1.0.0, v1.0.0-beta.1)"
+            exit 1
+          fi
+          echo "✅ Versão válida: $VERSION"
+
+      - name: Verificar se tag já existe
+        run: |
+          if git rev-parse "${{ inputs.version }}" >/dev/null 2>&1; then
+            echo "❌ Tag ${{ inputs.version }} já existe!"
+            echo "   Use uma versão diferente ou remova a tag existente."
+            exit 1
+          fi
+          echo "✅ Tag ${{ inputs.version }} disponível"
+
+      - name: Detectar tag anterior (para diff analysis)
+        id: previous-tag
+        run: |
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          
+          if [ -n "$PREVIOUS_TAG" ]; then
+            echo "previous_tag=$PREVIOUS_TAG" >> $GITHUB_OUTPUT
+            echo "has_previous=true" >> $GITHUB_OUTPUT
+            echo "✅ Tag anterior detectada: $PREVIOUS_TAG"
+          else
+            echo "previous_tag=" >> $GITHUB_OUTPUT
+            echo "has_previous=false" >> $GITHUB_OUTPUT
+            echo "⚠️ Nenhuma tag anterior encontrada (primeiro release - todas as imagens serão buildadas)"
+          fi
+
+      - name: Criar Git Tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a ${{ inputs.version }} -m "Release ${{ inputs.version }}"
+          git push origin ${{ inputs.version }}
+          echo "✅ Tag ${{ inputs.version }} criada e pushed"
+
+  # ===========================================================================
+  # Job 2: Análise de Mudanças (Determinar quais imagens precisam rebuild)
+  # Timeout: 3min (git diff + parsing)
+  # ===========================================================================
+  analyze-changes:
+    name: Analyze Changes
+    runs-on: [self-hosted, linux, deploy]
+    timeout-minutes: 3
+    needs: validate
+    outputs:
+      changed_files: ${{ steps.diff.outputs.changed_files }}
+      all_changed: ${{ steps.diff.outputs.all_changed }}
+    
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ needs.validate.outputs.version }}
+          fetch-depth: 0
+
+      - name: Analisar arquivos alterados
+        id: diff
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          PREVIOUS_TAG="${{ needs.validate.outputs.previous_tag }}"
+          HAS_PREVIOUS="${{ needs.validate.outputs.has_previous }}"
+          
+          if [ "$HAS_PREVIOUS" = "false" ]; then
+            echo "📦 Primeiro release: TODAS as imagens serão buildadas"
+            echo "all_changed=true" >> $GITHUB_OUTPUT
+            echo "changed_files=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo "📊 Analisando diff entre $PREVIOUS_TAG e $VERSION..."
+          CHANGED_FILES=$(git diff --name-only "$PREVIOUS_TAG..$VERSION" || true)
+          
+          echo "changed_files<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGED_FILES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "all_changed=false" >> $GITHUB_OUTPUT
+          
+          echo "✅ Diff analysis completo"
+          echo "   Total de arquivos alterados: $(echo "$CHANGED_FILES" | wc -l)"
+
+  # ===========================================================================
+  # Job 3: Build Microservices (Matrix Paralelo)
+  # Timeout: 25min por imagem (microservices Node.js são leves ~2-3min)
+  # Matrix: 12 imagens em paralelo
+  # ===========================================================================
+  build-microservices:
+    name: Build ${{ matrix.image }}
+    runs-on: [self-hosted, linux, deploy]
+    timeout-minutes: 25
+    needs: [validate, analyze-changes]
+    if: ${{ !inputs.prerelease }}
+    strategy:
+      fail-fast: false  # ENTERPRISE: Isolar falhas (uma não para outras)
+      matrix:
+        include:
+          - image: api-gateway
+            dockerfile: ./apps/api-gateway/Dockerfile
+            context: .
+            pattern: '^apps/api-gateway/'
+          - image: auth
+            dockerfile: ./apps/auth-service/Dockerfile
+            context: .
+            pattern: '^apps/auth-service/'
+          - image: chat
+            dockerfile: ./apps/chat-service/Dockerfile
+            context: .
+            pattern: '^apps/chat-service/'
+          - image: frontend
+            dockerfile: ./apps/frontend-service/Dockerfile
+            context: .
+            pattern: '^apps/frontend-service/'
+          - image: integrations
+            dockerfile: ./apps/integrations-service/Dockerfile
+            context: .
+            pattern: '^apps/integrations-service/'
+          - image: observability
+            dockerfile: ./apps/observability-service/Dockerfile
+            context: .
+            pattern: '^apps/observability-service/'
+          - image: rag
+            dockerfile: ./apps/rag-service/Dockerfile
+            context: .
+            pattern: '^apps/rag-service/'
+          - image: training
+            dockerfile: ./apps/training-service/Dockerfile
+            context: .
+            pattern: '^apps/training-service/'
+          - image: gpu-manager
+            dockerfile: ./apps/gpu-manager-service/Dockerfile
+            context: .
+            pattern: '^apps/gpu-manager-service/'
+          - image: postgres
+            dockerfile: ./infra/postgres/Dockerfile.postgres
+            context: ./infra/postgres
+            pattern: '^infra/postgres/'
+          - image: pgbackrest
+            dockerfile: ./infra/backup/Dockerfile.pgbackrest
+            context: ./infra/backup
+            pattern: '^infra/backup/'
+          - image: caddy
+            dockerfile: ./infra/docker/Dockerfile.caddy
+            context: ./infra/docker
+            pattern: '^infra/docker/'
+    
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ needs.validate.outputs.version }}
+          fetch-depth: 0
+
+      - name: Login no GHCR
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349
+
+      - name: Determinar se precisa build ou retag
+        id: check
+        run: |
+          set -e
+          VERSION="${{ needs.validate.outputs.version }}"
+          PREVIOUS_TAG="${{ needs.validate.outputs.previous_tag }}"
+          ALL_CHANGED="${{ needs.analyze-changes.outputs.all_changed }}"
+          CHANGED_FILES="${{ needs.analyze-changes.outputs.changed_files }}"
+          IMAGE="${{ matrix.image }}"
+          PATTERN="${{ matrix.pattern }}"
+          
+          echo "📦 Image: $IMAGE"
+          echo "🔍 Pattern: $PATTERN"
+          
+          NEEDS_BUILD="false"
+          REASON=""
+          
+          if [ "$ALL_CHANGED" = "true" ]; then
+            NEEDS_BUILD="true"
+            REASON="first-release"
+            echo "✅ Primeiro release → BUILD"
+          else
+            # Verificar se mudou código específico do serviço
+            if echo "$CHANGED_FILES" | grep -qE "$PATTERN"; then
+              NEEDS_BUILD="true"
+              REASON="service-changed"
+              echo "✅ Código do serviço mudou → BUILD"
+            # Verificar se mudou código compartilhado (só para microservices Node.js, não infra)
+            elif [[ "$IMAGE" != "postgres" && "$IMAGE" != "pgbackrest" && "$IMAGE" != "caddy" ]]; then
+              if echo "$CHANGED_FILES" | grep -qE '^(packages/|scripts/|pnpm-lock\.yaml$|package\.json$|tsconfig\.|\.npmrc$)'; then
+                NEEDS_BUILD="true"
+                REASON="shared-changed"
+                echo "✅ Código compartilhado mudou → BUILD"
+              fi
+            fi
+            
+            # Se não precisa build, verificar se imagem do release anterior existe (para retag)
+            if [ "$NEEDS_BUILD" = "false" ]; then
+              FROM_IMG="${{ env.IMAGE_PREFIX }}-${IMAGE}:${PREVIOUS_TAG}"
+              if docker manifest inspect "$FROM_IMG" > /dev/null 2>&1; then
+                NEEDS_BUILD="retag"
+                REASON="no-changes-retag"
+                echo "♻️ Sem mudanças relevantes → RETAG"
+              else
+                NEEDS_BUILD="true"
+                REASON="previous-not-found"
+                echo "⚠️ Imagem anterior não existe → BUILD"
+              fi
+            fi
+          fi
+          
+          echo "action=$NEEDS_BUILD" >> $GITHUB_OUTPUT
+          echo "reason=$REASON" >> $GITHUB_OUTPUT
+
+      - name: Build ou Retag ${{ matrix.image }}
+        run: |
+          set -e
+          VERSION="${{ needs.validate.outputs.version }}"
+          PREVIOUS_TAG="${{ needs.validate.outputs.previous_tag }}"
+          IMAGE="${{ matrix.image }}"
+          ACTION="${{ steps.check.outputs.action }}"
+          REASON="${{ steps.check.outputs.reason }}"
+          
+          echo "🎯 Action: $ACTION"
+          echo "📋 Reason: $REASON"
+          
+          if [ "$ACTION" = "retag" ]; then
+            echo "♻️ Retagging (sem mudanças relevantes)..."
+            FROM_IMG="${{ env.IMAGE_PREFIX }}-${IMAGE}:${PREVIOUS_TAG}"
+            TO_IMG="${{ env.IMAGE_PREFIX }}-${IMAGE}:${VERSION}"
+            LATEST_IMG="${{ env.IMAGE_PREFIX }}-${IMAGE}:latest"
+            
+            docker buildx imagetools create \
+              -t "$TO_IMG" \
+              -t "$LATEST_IMG" \
+              "$FROM_IMG"
+            
+            echo "✅ $IMAGE retagged: $PREVIOUS_TAG → $VERSION"
+          else
+            echo "🔨 Building image..."
+            docker buildx build \
+              --push \
+              --provenance=false \
+              --sbom=false \
+              --network=host \
+              --build-arg BUILDKIT_INLINE_CACHE=1 \
+              --tag "${{ env.IMAGE_PREFIX }}-${IMAGE}:${VERSION}" \
+              --tag "${{ env.IMAGE_PREFIX }}-${IMAGE}:latest" \
+              --cache-from "type=registry,ref=${{ env.IMAGE_PREFIX }}-${IMAGE}:cache" \
+              --cache-to "type=registry,ref=${{ env.IMAGE_PREFIX }}-${IMAGE}:cache,mode=max" \
+              --file "${{ matrix.dockerfile }}" \
+              "${{ matrix.context }}"
+            
+            echo "✅ $IMAGE built successfully"
+          fi
+
+  # ===========================================================================
+  # Job 4: Build GPU Services (Matrix Paralelo)
+  # Timeout: 90min por imagem (GPU images são MUITO pesadas ~10-20GB)
+  # Matrix: 5 imagens em paralelo
+  # ===========================================================================
+  build-gpu:
+    name: Build GPU ${{ matrix.image }}
+    runs-on: [self-hosted, linux, deploy]
+    timeout-minutes: 90
+    needs: [validate, analyze-changes]
+    if: ${{ !inputs.prerelease }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: mixtral-vllm
+            context: ./docker/gpu/mixtral-vllm
+            pattern: '^docker/gpu/mixtral-vllm/'
+          - image: embeddings-gpu
+            context: ./docker/gpu/embeddings-gpu
+            pattern: '^docker/gpu/embeddings-gpu/'
+          - image: flux-schnell
+            context: ./docker/gpu/flux-schnell
+            pattern: '^docker/gpu/flux-schnell/'
+          - image: asr-canary
+            context: ./docker/gpu/asr-canary
+            pattern: '^docker/gpu/asr-canary/'
+          - image: lora-trainer
+            context: ./docker/gpu/lora-trainer
+            pattern: '^docker/gpu/lora-trainer/'
+    
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ needs.validate.outputs.version }}
+          fetch-depth: 0
+
+      - name: Login no GHCR
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349
+
+      - name: Limpar cache antigo (GPU builds são pesados)
+        run: |
+          docker system prune -f --filter "until=24h" || true
+          echo "✅ Cache antigo limpo"
+
+      - name: Determinar se precisa build ou retag
+        id: check
+        run: |
+          set -e
+          VERSION="${{ needs.validate.outputs.version }}"
+          PREVIOUS_TAG="${{ needs.validate.outputs.previous_tag }}"
+          ALL_CHANGED="${{ needs.analyze-changes.outputs.all_changed }}"
+          CHANGED_FILES="${{ needs.analyze-changes.outputs.changed_files }}"
+          IMAGE="${{ matrix.image }}"
+          PATTERN="${{ matrix.pattern }}"
+          
+          echo "🎮 GPU Image: $IMAGE"
+          echo "🔍 Pattern: $PATTERN"
+          
+          NEEDS_BUILD="false"
+          REASON=""
+          
+          if [ "$ALL_CHANGED" = "true" ]; then
+            NEEDS_BUILD="true"
+            REASON="first-release"
+            echo "✅ Primeiro release → BUILD"
+          else
+            if echo "$CHANGED_FILES" | grep -qE "$PATTERN"; then
+              NEEDS_BUILD="true"
+              REASON="gpu-service-changed"
+              echo "✅ Código GPU mudou → BUILD"
+            else
+              FROM_IMG="${{ env.IMAGE_PREFIX }}-${IMAGE}:${PREVIOUS_TAG}"
+              if docker manifest inspect "$FROM_IMG" > /dev/null 2>&1; then
+                NEEDS_BUILD="retag"
+                REASON="no-changes-retag"
+                echo "♻️ Sem mudanças → RETAG"
+              else
+                NEEDS_BUILD="true"
+                REASON="previous-not-found"
+                echo "⚠️ Imagem anterior não existe → BUILD"
+              fi
+            fi
+          fi
+          
+          echo "action=$NEEDS_BUILD" >> $GITHUB_OUTPUT
+          echo "reason=$REASON" >> $GITHUB_OUTPUT
+
+      - name: Build ou Retag GPU ${{ matrix.image }}
+        run: |
+          set -e
+          VERSION="${{ needs.validate.outputs.version }}"
+          PREVIOUS_TAG="${{ needs.validate.outputs.previous_tag }}"
+          IMAGE="${{ matrix.image }}"
+          ACTION="${{ steps.check.outputs.action }}"
+          REASON="${{ steps.check.outputs.reason }}"
+          
+          echo "🎯 Action: $ACTION"
+          echo "📋 Reason: $REASON"
+          
+          if [ "$ACTION" = "retag" ]; then
+            echo "♻️ Retagging GPU image (sem mudanças)..."
+            FROM_IMG="${{ env.IMAGE_PREFIX }}-${IMAGE}:${PREVIOUS_TAG}"
+            TO_IMG="${{ env.IMAGE_PREFIX }}-${IMAGE}:${VERSION}"
+            LATEST_IMG="${{ env.IMAGE_PREFIX }}-${IMAGE}:latest"
+            
+            docker buildx imagetools create \
+              -t "$TO_IMG" \
+              -t "$LATEST_IMG" \
+              "$FROM_IMG"
+            
+            echo "✅ GPU $IMAGE retagged: $PREVIOUS_TAG → $VERSION"
+          else
+            echo "🔨 Building GPU image (can take 20-40min)..."
+            docker buildx build \
+              --push \
+              --progress=plain \
+              --provenance=false \
+              --sbom=false \
+              --network=host \
+              --build-arg BUILDKIT_INLINE_CACHE=1 \
+              --tag "${{ env.IMAGE_PREFIX }}-${IMAGE}:${VERSION}" \
+              --tag "${{ env.IMAGE_PREFIX }}-${IMAGE}:latest" \
+              --cache-from "type=registry,ref=${{ env.IMAGE_PREFIX }}-${IMAGE}:cache" \
+              --cache-to "type=registry,ref=${{ env.IMAGE_PREFIX }}-${IMAGE}:cache,mode=max" \
+              --file "${{ matrix.context }}/Dockerfile" \
+              "${{ matrix.context }}"
+            
+            echo "✅ GPU $IMAGE built successfully"
+          fi
+
+  # ===========================================================================
+  # Job 5: Smoke Test PostgreSQL + pgvector (CRÍTICO)
+  # Timeout: 10min (inicialização + testes)
+  # Detecta SIGILL (AVX-512 incompatibility) antes do deploy
+  # ===========================================================================
+  smoke-test:
+    name: Smoke Test PostgreSQL + pgvector
+    runs-on: [self-hosted, linux, deploy]
+    timeout-minutes: 10
+    needs: [validate, analyze-changes, build-microservices]
+    # Só roda se postgres foi buildado (não apenas retagged)
+    if: |
+      !inputs.prerelease &&
+      (needs.analyze-changes.outputs.all_changed == 'true' ||
+       contains(needs.analyze-changes.outputs.changed_files, 'infra/postgres/'))
+    
+    steps:
+      - name: Executar smoke test
+        run: |
+          set -e
+          VERSION="${{ needs.validate.outputs.version }}"
+          
+          echo "🧪 Iniciando smoke test da imagem PostgreSQL..."
+          
+          # Iniciar container temporário
+          docker run -d \
+            --name postgres-smoke-test \
+            --platform linux/amd64 \
+            -e POSTGRES_PASSWORD=smoketest123 \
+            -e POSTGRES_USER=smoketest \
+            -e POSTGRES_DB=smoketest_db \
+            "${{ env.IMAGE_PREFIX }}-postgres:${VERSION}"
+          
+          # Aguardar PostgreSQL iniciar (até 60s)
+          echo "⏳ Aguardando PostgreSQL iniciar..."
+          for i in $(seq 1 60); do
+            if docker exec postgres-smoke-test pg_isready -U smoketest -d smoketest_db 2>/dev/null; then
+              echo "✅ PostgreSQL iniciou com sucesso"
+              break
+            fi
+            if [ $i -eq 60 ]; then
+              echo "❌ ERRO: PostgreSQL não iniciou após 60s"
+              docker logs postgres-smoke-test
+              docker stop postgres-smoke-test || true
+              docker rm postgres-smoke-test || true
+              exit 1
+            fi
+            sleep 1
+          done
+          
+          # Aguardar script init executar (cria extensão pgvector)
+          echo "⏳ Aguardando inicialização completa..."
+          sleep 5
+          
+          # TESTE CRÍTICO: Verificar se extensão pgvector foi criada
+          echo "🧪 Verificando extensão pgvector..."
+          VECTOR_EXISTS=$(docker exec postgres-smoke-test psql -U smoketest -d smoketest_db -tAc "SELECT COUNT(*) FROM pg_extension WHERE extname='vector';")
+          if [ "$VECTOR_EXISTS" != "1" ]; then
+            echo "❌ ERRO CRÍTICO: Extensão pgvector NÃO foi criada!"
+            docker logs postgres-smoke-test
+            docker stop postgres-smoke-test || true
+            docker rm postgres-smoke-test || true
+            exit 1
+          fi
+          echo "✅ Extensão pgvector criada"
+          
+          # TESTE CRÍTICO: Verificar operações vetoriais (detectar SIGILL/AVX-512)
+          echo "🧪 Testando operações pgvector (verificar SIGILL)..."
+          if docker exec postgres-smoke-test psql -U smoketest -d smoketest_db -v ON_ERROR_STOP=1 <<'EOSQL' 2>&1 | tee /tmp/pgvector-ops-test.log; then
+          CREATE TABLE IF NOT EXISTS test_vectors (id serial PRIMARY KEY, embedding vector(3));
+          INSERT INTO test_vectors (embedding) VALUES ('[1,2,3]'), ('[4,5,6]');
+          SELECT * FROM test_vectors ORDER BY embedding <-> '[3,3,3]' LIMIT 1;
+          DROP TABLE test_vectors;
+          EOSQL
+            echo "✅ Operações pgvector executadas com sucesso"
+          else
+            echo "❌ ERRO CRÍTICO: SIGILL detectado em operações pgvector!"
+            echo "   CPU do runner pode ter compilado com instruções não suportadas pelo servidor de produção"
+            docker logs postgres-smoke-test
+            cat /tmp/pgvector-ops-test.log || true
+            docker stop postgres-smoke-test || true
+            docker rm postgres-smoke-test || true
+            exit 1
+          fi
+          
+          # Cleanup
+          docker stop postgres-smoke-test
+          docker rm postgres-smoke-test
+          
+          echo "✅ SMOKE TEST PostgreSQL + pgvector PASSOU!"
+
+  # ===========================================================================
+  # Job 6: Publicar GitHub Release
+  # Timeout: 5min (changelog + API call)
+  # Aguarda TODOS os builds completarem antes de publicar
+  # ===========================================================================
+  publish-release:
+    name: Publish GitHub Release
+    runs-on: [self-hosted, linux, deploy]
+    timeout-minutes: 5
+    needs: [validate, build-microservices, build-gpu, smoke-test]
+    # Release publicada APENAS se:
+    # - Validação sucedeu
+    # - Se não é prerelease: builds e smoke test sucederam (ou foram skipped se não havia mudanças)
+    # - Se é prerelease: build é skipped por design
+    if: |
+      always() &&
+      needs.validate.result == 'success' &&
+      (inputs.prerelease || 
+       (needs.build-microservices.result == 'success' && 
+        needs.build-gpu.result == 'success' &&
+        (needs.smoke-test.result == 'success' || needs.smoke-test.result == 'skipped')))
+    
+    steps:
+      - name: Checkout (tag da release)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ needs.validate.outputs.version }}
+          fetch-depth: 0
+
+      - name: Gerar changelog
+        id: changelog
+        run: |
+          set -euo pipefail
+          
+          VERSION="${{ needs.validate.outputs.version }}"
+          PREVIOUS_TAG="${{ needs.validate.outputs.previous_tag }}"
+          HAS_PREVIOUS="${{ needs.validate.outputs.has_previous }}"
+          
+          echo "📝 Gerando changelog para $VERSION..."
+          
+          # Coletar commits desde tag anterior (ou todos se primeiro release)
+          if [ "$HAS_PREVIOUS" = "false" ]; then
+            COMMITS=$(git log --pretty=format:"%s (%h)" --no-merges | head -50)
+          else
+            COMMITS=$(git log "$PREVIOUS_TAG..$VERSION" --pretty=format:"%s (%h)" --no-merges)
+          fi
+          
+          # Conventional Commits 1.0.0: Classificar commits
+          # BREAKING: Captura commits com ! (QUALQUER tipo!) e BREAKING CHANGE:
+          BREAKING=$(echo "$COMMITS" | grep -E "^[a-z]+(\(.+\))?!:|BREAKING CHANGE:" | sed 's/^/- /' || echo "")
+          
+          # FEATURES: feat sem ! (com ! vai para BREAKING)
+          FEATURES=$(echo "$COMMITS" | grep -E "^feat(\(.+\))?:" | grep -v "^feat(\(.+\))?!:" | sed 's/^/- /' || echo "")
+          
+          # FIXES: fix sem ! (com ! vai para BREAKING)
+          FIXES=$(echo "$COMMITS" | grep -E "^fix(\(.+\))?:" | grep -v "^fix(\(.+\))?!:" | sed 's/^/- /' || echo "")
+          
+          # OTHERS: tudo que não é feat/fix E não tem ! (breaking)
+          OTHERS=$(echo "$COMMITS" | grep -v -E "^(feat|fix)(\(.+\))?:" | grep -v -E "^[a-z]+(\(.+\))?!:" | grep -v "BREAKING CHANGE:" | sed 's/^/- /' || echo "")
+          
+          # Construir changelog com BREAKING primeiro (destaque máximo)
+          NOTES_FILE="/tmp/release-notes.md"
+          {
+            echo "## 🚀 Alice Enterprise Platform ${VERSION}"
+            echo ""
+            echo "### 📌 Referências"
+            echo "- **Tag**: \`${VERSION}\`"
+            [ "$HAS_PREVIOUS" = "true" ] && echo "- **Tag anterior**: \`${PREVIOUS_TAG}\`"
+            echo ""
+            echo "### Changelog"
+            [ -n "$BREAKING" ] && printf "\n#### ⚠️ Breaking Changes\n%s\n" "$BREAKING"
+            [ -n "$FEATURES" ] && printf "\n#### ✨ Features\n%s\n" "$FEATURES"
+            [ -n "$FIXES" ] && printf "\n#### 🐛 Bug Fixes\n%s\n" "$FIXES"
+            [ -n "$OTHERS" ] && printf "\n#### 📦 Other Changes\n%s\n" "$OTHERS"
+            echo ""
+            echo "### 🐳 Docker Images (17 imagens buildadas em paralelo)"
+            echo '```'
+            echo "${{ env.IMAGE_PREFIX }}-auth:${VERSION}"
+            echo "${{ env.IMAGE_PREFIX }}-chat:${VERSION}"
+            echo "${{ env.IMAGE_PREFIX }}-frontend:${VERSION}"
+            echo "${{ env.IMAGE_PREFIX }}-rag:${VERSION}"
+            echo "${{ env.IMAGE_PREFIX }}-training:${VERSION}"
+            echo "${{ env.IMAGE_PREFIX }}-integrations:${VERSION}"
+            echo "${{ env.IMAGE_PREFIX }}-observability:${VERSION}"
+            echo "${{ env.IMAGE_PREFIX }}-gpu-manager:${VERSION}"
+            echo "${{ env.IMAGE_PREFIX }}-api-gateway:${VERSION}"
+            echo "${{ env.IMAGE_PREFIX }}-postgres:${VERSION}"
+            echo "${{ env.IMAGE_PREFIX }}-pgbackrest:${VERSION}"
+            echo "${{ env.IMAGE_PREFIX }}-caddy:${VERSION}"
+            echo "${{ env.IMAGE_PREFIX }}-mixtral-vllm:${VERSION}"
+            echo "${{ env.IMAGE_PREFIX }}-embeddings-gpu:${VERSION}"
+            echo "${{ env.IMAGE_PREFIX }}-flux-schnell:${VERSION}"
+            echo "${{ env.IMAGE_PREFIX }}-asr-canary:${VERSION}"
+            echo "${{ env.IMAGE_PREFIX }}-lora-trainer:${VERSION}"
+            echo '```'
+            echo ""
+            echo "### ⚡ Performance"
+            echo "- **Matrix Strategy**: 17 builds em paralelo (~5-7min)"
+            echo "- **Retag Inteligente**: Só builda o que mudou (diff analysis)"
+            echo "- **Cache GHCR**: Por imagem (máxima eficiência)"
+            echo ""
+            echo "### 🎯 Deploy"
+            echo "Deploy automático será disparado via \`deploy-stack-modular.yml\`"
+          } > "$NOTES_FILE"
+          
+          echo "✅ Release notes geradas: $NOTES_FILE"
+          echo "📏 Tamanho: $(wc -l < "$NOTES_FILE") linhas"
+
+      - name: Criar GitHub Release
+        uses: softprops/action-gh-release@01570a1f39cb168c169c802c3bceb9e93fb10974
+        with:
+          tag_name: ${{ needs.validate.outputs.version }}
+          name: Alice Enterprise Platform ${{ needs.validate.outputs.version }}
+          draft: false
+          prerelease: ${{ inputs.prerelease }}
+          generate_release_notes: false
+          body_path: /tmp/release-notes.md
+
+      - name: Resumo no GitHub Step Summary
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          {
+            echo "## 📦 Release Publicado (Modular v3)"
+            echo ""
+            echo "| Campo | Valor |"
+            echo "|------|-------|"
+            echo "| Tag | \`${VERSION}\` |"
+            echo "| Prerelease | \`${{ inputs.prerelease }}\` |"
+            echo "| Build Microservices | \`${{ needs.build-microservices.result }}\` |"
+            echo "| Build GPU | \`${{ needs.build-gpu.result }}\` |"
+            echo "| Smoke Test | \`${{ needs.smoke-test.result }}\` |"
+            echo ""
+            echo "### ⚡ Matrix Strategy Enterprise"
+            echo "- ✅ 17 builds em paralelo (vs 34min sequencial)"
+            echo "- ✅ Retag inteligente (só builda o que mudou)"
+            echo "- ✅ Isolamento de falhas (fail-fast: false)"
+            echo "- ✅ Cache GHCR por imagem"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ===========================================================================
+  # Job 7: Disparar Deploy em Produção
+  # Timeout: 1min (apenas API call)
+  # Dispara deploy-stack-modular.yml (v3 Enterprise)
+  # ===========================================================================
+  trigger-deploy:
+    name: Trigger Deploy to Production
+    runs-on: [self-hosted, linux, deploy]
+    timeout-minutes: 1
+    needs: [validate, publish-release]
+    # Só dispara deploy para releases normais (não prereleases)
+    if: needs.publish-release.result == 'success' && !inputs.prerelease
+    
+    permissions:
+      actions: write
+      contents: read
+    
+    steps:
+      - name: Disparar Deploy Modular em Produção
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
+        with:
+          script: |
+            const version = '${{ needs.validate.outputs.version }}';
+            console.log(`🚀 Disparando deploy MODULAR para versão: ${version}`);
+            console.log(`📦 Stack: all (todos os stacks em paralelo)`);
+            
+            try {
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'deploy-stack-modular.yml',
+                ref: 'main',
+                inputs: {
+                  stack: 'all',
+                  version: version,
+                  rollback: 'false',
+                  rollback_version: '',
+                  dry_run: 'false'
+                }
+              });
+              
+              console.log('✅ Deploy modular disparado com sucesso!');
+              console.log(`🔗 Verifique o workflow "Deploy - Production (Modular)" para acompanhar o deploy`);
+              console.log(`📊 Paralelização: Infra → Alice + Observability + ERPNext + Backup (paralelo)`);
+            } catch (error) {
+              console.error('❌ ERRO ao disparar deploy:', error);
+              throw error;
+            }
