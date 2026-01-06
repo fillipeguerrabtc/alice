@@ -1,4 +1,7 @@
 # =============================================================================
+# WORKFLOW VERSION: 2.0.0-fix-triggers (06/01/2026)
+# ÚLTIMA MODIFICAÇÃO: Correção de triggers - deploy só via release:published
+# =============================================================================
 # GitHub Actions Workflow - Deploy de Stacks Independentes
 # =============================================================================
 # Descrição: Deploy modular de stacks independentes para produção parcial
@@ -28,20 +31,39 @@
 #   - Histórico de versões por stack mantido em /opt/alice/versions/
 #
 # Author: Fillipe Guerra
-# Data: 05/01/2026
+# Data: 06/01/2026
 # =============================================================================
 
-name: Deploy - Production (Stacks)
-run-name: Deploy - Production (Stacks) ${{ github.event_name == 'release' && format('(triggered by Release {0})', github.event.release.tag_name) || format('(manual)') }}
+name: 🚀 Deploy Production (Stacks)
+run-name: 🚀 Deploy ${{ github.event_name == 'release' && format('{0} → Production (auto via Release)', github.event.release.tag_name) || format('{0} → Production (manual)', github.event.inputs.version) }}
 
+# =============================================================================
+# TRIGGERS (CRÍTICO - NÃO MODIFICAR SEM REVISAR PIPELINE ENTERPRISE):
+# 
+# ✅ ÚNICO trigger automático: release:published
+#    - Dispara SOMENTE quando GitHub Release é publicada (APÓS build de imagens)
+#    - Garante que deploy só acontece DEPOIS do Release workflow completar
+#    - Evita deploy aparecer "junto" com CI na UI
+#
+# ✅ Trigger manual: workflow_dispatch
+#    - Permite deploys manuais para rollback ou hotfix
+#    - Requer versão explícita (ex: v1.0.0)
+#
+# ❌ PROIBIDO:
+#    - on: push (causaria deploy em todo commit)
+#    - on: workflow_run (causaria execução duplicada - CI já dispara Release)
+#    - on: [push, release] (ambíguo e perigoso)
+#
+# Pipeline esperado: PUSH → CI → Release → Deploy
+# Ref: PIPELINE ENTERPRISE em CLAUDE.md
+# =============================================================================
 on:
   # Disparo AUTOMÁTICO: somente quando GitHub Release é publicada com sucesso
-  # IMPORTANTE: release: published só dispara quando Release é publicada (APÓS build de imagens)
-  # Isso garante que deploy só acontece DEPOIS que Release terminar completamente
-  # (build de imagens + publicação da Release). Evita deploy aparecer "junto" com CI na UI.
   release:
     types:
       - published
+  
+  # Disparo MANUAL: para rollback ou hotfix
   workflow_dispatch:
     inputs:
       stack:
@@ -116,6 +138,46 @@ jobs:
       depends_on: ${{ steps.prepare.outputs.depends_on }}
     
     steps:
+      - name: 🛡️ VALIDAÇÃO CRÍTICA - Verificar trigger (ABORTA se incorreto)
+        shell: bash
+        run: |
+          set -euo pipefail
+          
+          echo "=========================================="
+          echo "🛡️ VALIDAÇÃO DE TRIGGER (SEGURANÇA)"
+          echo "=========================================="
+          echo "event_name=${{ github.event_name }}"
+          echo "ref=${{ github.ref }}"
+          echo "=========================================="
+          
+          # WHITELIST de eventos permitidos
+          ALLOWED_EVENTS=("release" "workflow_dispatch")
+          
+          if [[ ! " ${ALLOWED_EVENTS[@]} " =~ " ${{ github.event_name }} " ]]; then
+            echo ""
+            echo "❌ ERRO CRÍTICO: Trigger inválido detectado!"
+            echo ""
+            echo "Este workflow (deploy-stack.yml) só pode rodar em:"
+            echo "  ✅ release (tipo: published) - Deploy automático após Release"
+            echo "  ✅ workflow_dispatch - Deploy manual via UI"
+            echo ""
+            echo "Trigger recebido: ${{ github.event_name }}"
+            echo ""
+            echo "SE VOCÊ ESTÁ VENDO ESTE ERRO:"
+            echo "1. O workflow foi disparado incorretamente (bug ou configuração errada)"
+            echo "2. Verifique se existe 'on: push' ou 'on: workflow_run' no arquivo"
+            echo "3. Limpe o cache do GitHub Actions: Settings → Actions → Clear cache"
+            echo ""
+            echo "Pipeline esperado: CI → Release → Deploy"
+            echo "Ref: PIPELINE ENTERPRISE em CLAUDE.md"
+            echo ""
+            exit 1
+          fi
+          
+          echo ""
+          echo "✅ Trigger válido: ${{ github.event_name }}"
+          echo "=========================================="
+      
       - name: 🔍 DEBUG - Log trigger context (troubleshooting)
         run: |
           echo "=========================================="
