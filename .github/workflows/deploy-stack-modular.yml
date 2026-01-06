@@ -676,8 +676,9 @@ jobs:
             fi
             
             # Pull e deploy
-            docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.infra.yml pull
-            docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.infra.yml up -d --remove-orphans
+            # CRITICAL: Incluir base.yml para criar volumes/networks externos
+            docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.infra.yml pull
+            docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.infra.yml up -d --remove-orphans
             
             # Salvar versão atual
             echo "${{ needs.validate.outputs.version }}" > /opt/alice/versions/infra.current
@@ -782,12 +783,13 @@ jobs:
             
             # CRITICAL FIX (06/01/2026): Passar IMAGE_TAG via env var para evitar race condition
             # Múltiplos rollbacks paralelos NÃO devem modificar o arquivo .env.prod compartilhado
+            # CRITICAL: Incluir base.yml para volumes/networks externos
             cd /opt/alice/app/infra/docker/stacks
             echo "🐳 Puxando imagens da versão $TARGET_VERSION..."
-            IMAGE_TAG=$TARGET_VERSION docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.infra.yml pull
+            IMAGE_TAG=$TARGET_VERSION docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.infra.yml pull
             
             echo "🚀 Deployando versão de rollback..."
-            IMAGE_TAG=$TARGET_VERSION docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.infra.yml up -d --remove-orphans
+            IMAGE_TAG=$TARGET_VERSION docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.infra.yml up -d --remove-orphans
             
             # Atualizar arquivo de versão atual
             echo "$TARGET_VERSION" > /opt/alice/versions/infra.current
@@ -940,8 +942,9 @@ jobs:
             fi
             
             # Pull e deploy
-            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.alice.yml pull
-            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.alice.yml up -d --remove-orphans
+            # CRITICAL: Incluir base.yml para criar volumes/networks externos
+            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull
+            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml up -d --remove-orphans
             
             # Salvar versão atual
             echo "${{ needs.validate.outputs.version }}" > /opt/alice/versions/alice.current
@@ -1045,12 +1048,13 @@ jobs:
             
             # CRITICAL FIX (06/01/2026): Passar IMAGE_TAG via env var para evitar race condition
             # Múltiplos rollbacks paralelos NÃO devem modificar o arquivo .env.prod compartilhado
+            # CRITICAL: Incluir base.yml para volumes/networks externos
             cd /opt/alice/app/infra/docker/stacks
             echo "🐳 Puxando imagens da versão $TARGET_VERSION..."
-            IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.alice.yml pull
+            IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull
             
             echo "🚀 Deployando versão de rollback..."
-            IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.alice.yml up -d --remove-orphans
+            IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml up -d --remove-orphans
             
             echo "$TARGET_VERSION" > /opt/alice/versions/alice.current
             
@@ -1094,7 +1098,8 @@ jobs:
             fi
             
             # Pull e deploy
-            docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.observability.yml pull
+            # CRITICAL: Incluir base.yml para criar volumes/networks externos
+            docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.observability.yml pull
             docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.observability.yml up -d --remove-orphans
             
             # Salvar versão atual
@@ -1204,12 +1209,13 @@ jobs:
             
             # CRITICAL FIX (06/01/2026): Observability NÃO usa IMAGE_TAG (só imagens públicas)
             # Não há necessidade de modificar .env.prod ou passar IMAGE_TAG
+            # CRITICAL: Incluir base.yml para volumes/networks externos
             cd /opt/alice/app/infra/docker/stacks
             echo "🐳 Puxando imagens (versão $TARGET_VERSION hardcoded no compose)..."
-            docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.observability.yml pull
+            docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.observability.yml pull
             
             echo "🚀 Deployando versão de rollback..."
-            docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.observability.yml up -d --remove-orphans
+            docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.observability.yml up -d --remove-orphans
             
             echo "$TARGET_VERSION" > /opt/alice/versions/observability.current
             
@@ -1253,7 +1259,8 @@ jobs:
             fi
             
             # Pull e deploy
-            docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.erpnext.yml pull
+            # CRITICAL: Incluir base.yml para criar volumes/networks externos
+            docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml pull
             docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.erpnext.yml up -d --remove-orphans
             
             # Salvar versão atual
@@ -1361,12 +1368,13 @@ jobs:
             
             # CRITICAL FIX (06/01/2026): ERPNext NÃO usa IMAGE_TAG (só imagens públicas Frappe)
             # Não há necessidade de modificar .env.prod ou passar IMAGE_TAG
+            # CRITICAL: Incluir base.yml para volumes/networks externos
             cd /opt/alice/app/infra/docker/stacks
             echo "🐳 Puxando imagens (versão $TARGET_VERSION hardcoded no compose)..."
-            docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.erpnext.yml pull
+            docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml pull
             
             echo "🚀 Deployando versão de rollback..."
-            docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.erpnext.yml up -d --remove-orphans
+            docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml up -d --remove-orphans
             
             echo "$TARGET_VERSION" > /opt/alice/versions/erpnext.current
             
@@ -1410,7 +1418,8 @@ jobs:
             fi
             
             # Pull e deploy
-            docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.backup.yml pull
+            # CRITICAL: Incluir base.yml para criar volumes/networks externos
+            docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.backup.yml pull
             docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.backup.yml up -d --remove-orphans
             
             # Salvar versão atual
@@ -1513,12 +1522,13 @@ jobs:
             
             # CRITICAL FIX (06/01/2026): Passar IMAGE_TAG via env var para evitar race condition
             # Múltiplos rollbacks paralelos NÃO devem modificar o arquivo .env.prod compartilhado
+            # CRITICAL: Incluir base.yml para volumes/networks externos
             cd /opt/alice/app/infra/docker/stacks
             echo "🐳 Puxando imagens da versão $TARGET_VERSION..."
-            IMAGE_TAG=$TARGET_VERSION docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.backup.yml pull
+            IMAGE_TAG=$TARGET_VERSION docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.backup.yml pull
             
             echo "🚀 Deployando versão de rollback..."
-            IMAGE_TAG=$TARGET_VERSION docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.backup.yml up -d --remove-orphans
+            IMAGE_TAG=$TARGET_VERSION docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.backup.yml up -d --remove-orphans
             
             echo "$TARGET_VERSION" > /opt/alice/versions/backup.current
             
