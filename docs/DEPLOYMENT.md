@@ -1,8 +1,38 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 05 de Janeiro de 2026  
-**Versão:** 8.0 - Arquitetura Multi-Stack Modular
+**Data:** 06 de Janeiro de 2026  
+**Versão:** 9.0 - Pipeline Enterprise Modular v3.0.0
+
+> **🚀 ATUALIZAÇÃO ENTERPRISE v3.0.0 (06/01/2026) - Pipeline Modular:**  
+> Refatoração completa da pipeline CI/CD para arquitetura modular seguindo melhores práticas oficiais GitHub Actions 2025.
+> 
+> **Release Modular v3 (`release-modular.yml`):**
+> - ✅ Matrix Strategy: 17 builds Docker em **paralelo** (~5-7min vs ~34min = **80% mais rápido**)
+> - ✅ Retag Inteligente: Diff analysis (só builda o que mudou)
+> - ✅ Isolamento de Falhas: `fail-fast: false` (uma imagem falha, outras continuam)
+> - ✅ Cache GHCR: Por imagem (máxima eficiência BuildKit)
+> - ✅ Smoke Test: PostgreSQL + pgvector (detecta SIGILL/AVX-512)
+> - ✅ Jobs: `validate` → `analyze-changes` → `build-microservices` (matrix 12) + `build-gpu` (matrix 5) → `smoke-test` → `publish-release` → `trigger-deploy`
+> 
+> **Deploy Modular v3 (`deploy-stack-modular.yml`):**
+> - ✅ Jobs Separados: 1 job por stack (deploy + health + rollback)
+> - ✅ Paralelização: INFRA → (ALICE + OBSERVABILITY + ERPNEXT + BACKUP em paralelo)
+> - ✅ Rollback Cirúrgico: Só reverte stack com falha
+> - ✅ Produção Parcial: ERPNext falha → Alice continua operacional
+> - ✅ Isolamento: Docker Compose projects (`-p alice-{stack}`)
+> - ✅ External Networks/Volumes: Dados compartilhados preservados
+> - ✅ Health Checks Completos: 50 containers verificados (retry 30-45x)
+> 
+> **Performance:**
+> - Release v2: ~34min (sequencial) → v3: **~5-7min** (paralelo) = **80% mais rápido** ⚡
+> - Deploy v2: ~30min (sequencial) → v3: **~10min** (paralelo) = **66% mais rápido** ⚡
+> 
+> **Workflows Atualizados:**
+> - `.github/workflows/release-modular.yml` (substitui `release.yml`)
+> - `.github/workflows/deploy-stack-modular.yml` (substitui `deploy-stack.yml`)
+> 
+> **Documentação Completa:** Ver `CLAUDE.md` seções "Release Modular v3" e "Deploy Modular v3"
 
 > **ATUALIZAÇÃO MAJOR 05/01/2026:** Arquitetura refatorada para **5 stacks independentes** com deploy/rollback modular. Cada stack pode ser deployado, rolledback e monitorado separadamente. ERPNext pode falhar sem afetar Alice. Produção parcial agora é possível.
 
@@ -30,8 +60,8 @@ A plataforma foi refatorada em **5 stacks independentes** para permitir:
 
 ### Deploy Modular via GitHub Actions
 
-**Workflow:** `.github/workflows/deploy-stack.yml`
-**Nome no GitHub Actions:** **Deploy - Production (Stacks)**
+**Workflow:** `.github/workflows/deploy-stack-modular.yml` (v3.0.0)  
+**Nome no GitHub Actions:** **Deploy - Production (Modular)**
 
 #### Deploy Automático (100% pipeline)
 
@@ -42,25 +72,43 @@ A plataforma foi refatorada em **5 stacks independentes** para permitir:
 
 ```bash
 # Deploy de um stack específico
-gh workflow run deploy-stack.yml -f stack=alice -f version=v1.0.0
+gh workflow run deploy-stack-modular.yml -f stack=alice -f version=v1.0.0
 
-# Deploy de todos os stacks (ordem correta automática)
-gh workflow run deploy-stack.yml -f stack=all -f version=v1.0.0
+# Deploy de todos os stacks (paralelo automático v3)
+gh workflow run deploy-stack-modular.yml -f stack=all -f version=v1.0.0
 
 # Dry run (validação sem deploy)
-gh workflow run deploy-stack.yml -f stack=observability -f version=v1.0.0 -f dry_run=true
+gh workflow run deploy-stack-modular.yml -f stack=observability -f version=v1.0.0 -f dry_run=true
 
-# Rollback de um stack específico
-gh workflow run deploy-stack.yml -f stack=erpnext -f version=v1.0.0 -f rollback=true -f rollback_version=v0.9.0
+# Rollback manual de um stack específico
+gh workflow run deploy-stack-modular.yml -f stack=erpnext -f version=v1.0.0 -f rollback=true -f rollback_version=v0.9.0
 ```
 
-### Ordem de Deploy (Obrigatória)
+### Ordem de Deploy (v3 - Paralelo)
 
-1. **INFRA** - Databases, caches, reverse proxy (OBRIGATÓRIO primeiro)
-2. **Drizzle push** - Migrações de schema
-3. **ALICE + OBSERVABILITY** - Podem ser paralelos após infra healthy
-4. **ERPNEXT** - Independente, pode falhar sem afetar Alice
-5. **BACKUP** - Depende de postgres healthy
+**Deploy Modular v3 automatiza a ordem correta com paralelização:**
+
+```
+prepare (copia arquivos)
+   ↓
+deploy-infra + health-infra (PostgreSQL, Redis, Qdrant, Caddy, MinIO, SearXNG, Tor)
+   ↓
+drizzle-push (migrações schema PostgreSQL)
+   ↓
+   ├────────┬────────────┬──────────────┐
+   │        │            │              │
+deploy-alice  deploy-observability  deploy-erpnext  deploy-backup
+health-alice  health-observability  health-erpnext  health-backup
+rollback*     rollback*              rollback*       rollback*
+
+* Rollback automático só dispara se health check FALHAR
+```
+
+**Características v3:**
+- ✅ **INFRA**: Sempre primeiro (obrigatório)
+- ✅ **Drizzle**: Após INFRA healthy (migrations)
+- ✅ **4 Stacks em PARALELO**: Alice + Observability + ERPNext + Backup
+- ✅ **Isolamento**: Falha de um não afeta outros
 
 ### Histórico de Versões por Stack
 

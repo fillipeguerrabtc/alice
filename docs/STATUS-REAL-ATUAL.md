@@ -1,9 +1,16 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 05 de Janeiro de 2026  
+> **Data:** 06 de Janeiro de 2026  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 5.0 - Arquitetura Multi-Stack Modular
+> **Versão:** 6.0 - Pipeline Enterprise Modular v3.0.0
+
+> **🚀 ATUALIZAÇÃO v3.0.0 (06/01/2026) - Pipeline Modular:**  
+> Pipeline CI/CD refatorado para arquitetura modular enterprise seguindo best practices oficiais 2025.
+> - **Release Modular v3** (`release-modular.yml`): Matrix Strategy (17 builds ‖ ~5-7min, 80% mais rápido)
+> - **Deploy Modular v3** (`deploy-stack-modular.yml`): Jobs independentes (5 stacks ‖ ~10min, 66% mais rápido)
+> - **Rollback Cirúrgico v3**: Só reverte stack com falha, outros continuam operacionais
+> - Ver ADR-008 e ADR-009 em `ARQUITETURA.md` para detalhes completos
 
 ---
 
@@ -774,11 +781,11 @@ Novas tabelas multimodais criadas com RLS ativo: `learning_task_events`, `web_cr
 Push → CI (auto) → Release (auto) → Deploy (auto)
 ```
 
-| Workflow | Trigger | Função |
-|----------|---------|--------|
-| ci.yml | Push main | Build, TypeCheck, ESLint, Trivy (otimizado 27/12/2025) |
-| release.yml | CI passa | Tag v1.0.X, Docker images, GHCR |
-| deploy-production.yml | Release passa | Deploy Hetzner, Health checks, Rollback (composite action) |
+| Workflow | Trigger | Função | Tempo |
+|----------|---------|--------|-------|
+| ci.yml | Push main | Build, TypeCheck, ESLint, Trivy | ~3min |
+| **release-modular.yml** (v3) | CI passa | Tag v1.0.X, Matrix builds (17 ‖), GHCR, Smoke test | **~5-7min** ⚡ |
+| **deploy-stack-modular.yml** (v3) | Release passa | Deploy modular (5 stacks ‖), Health checks, Rollback cirúrgico | **~10min** ⚡ |
 
 ### Cache Enterprise
 

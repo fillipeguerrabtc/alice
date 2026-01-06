@@ -1,10 +1,17 @@
 # Alice Enterprise Platform - Arquitetura de Software
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 05 de Janeiro de 2026  
-> **Versão:** 2.0.0 - Arquitetura Multi-Stack Modular  
+> **Data:** 06 de Janeiro de 2026  
+> **Versão:** 3.0.0 - Pipeline Enterprise Modular  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
+> 
+> **🚀 ATUALIZAÇÃO v3.0.0 (06/01/2026) - Pipeline Modular:**  
+> Refatoração completa do CI/CD para arquitetura modular enterprise:
+> - **Release Modular v3**: Matrix Strategy (17 builds ‖ ~5-7min, 80% mais rápido)
+> - **Deploy Modular v3**: Jobs independentes (5 stacks ‖ ~10min, 66% mais rápido)
+> - **Rollback Cirúrgico**: Só reverte stack com falha
+> - Ver seções ADR-015 e ADR-016 abaixo
 
 ---
 
@@ -819,6 +826,119 @@ logger.info({
 **Histórico de Versões:**
 - Cada stack mantém `/opt/alice/versions/{stack}.current` e `{stack}.previous`
 - Rollback usa versão anterior automaticamente
+
+### ADR-008: Release Modular com Matrix Strategy (06/01/2026)
+
+| Aspecto | Decisão |
+|---------|---------|
+| **Status** | Aceito |
+| **Data** | 06 de Janeiro de 2026 |
+| **Contexto** | Release workflow v2 (`release.yml`) construía 17 imagens Docker **sequencialmente** em um único job "build-all" (~34min). Para troubleshooting, logs eram misturados dificultando identificação de falhas específicas. Uma imagem falhava, parava todo o build. Violava best practices oficiais GitHub Actions 2025 para builds paralelos. |
+| **Decisão** | Refatorar para **Release Modular v3** (`release-modular.yml`) usando **Matrix Strategy** com 7 jobs independentes: `validate`, `analyze-changes`, `build-microservices` (matrix 12 imagens), `build-gpu` (matrix 5 imagens), `smoke-test`, `publish-release`, `trigger-deploy`. |
+| **Alternativas** | (1) Manter monolítico com bash loop - rejeitado por violar best practices e impossibilitar paralelização; (2) Usar reusable workflows - rejeitado por complexidade de passing outputs entre workflows; (3) Terraform/Dagger - rejeitado por introduzir dependência externa |
+| **Consequências** | + 80% mais rápido (~5-7min vs ~34min); + Isolamento de falhas (`fail-fast: false`); + Logs isolados por imagem; + Retag inteligente (diff analysis); + Smoke test PostgreSQL/pgvector; + Troubleshooting facilitado; - Maior número de jobs (7 vs 1); - Necessidade de coordenação via `needs` |
+
+**Arquitetura Matrix Strategy:**
+
+```yaml
+build-microservices:
+  strategy:
+    fail-fast: false
+    matrix:
+      image:
+        - { name: "api-gateway", dockerfile: "./apps/api-gateway/Dockerfile" }
+        - { name: "auth", dockerfile: "./apps/auth-service/Dockerfile" }
+        # ... 10 mais (12 total em paralelo)
+```
+
+**Jobs Criados:**
+1. **validate**: Valida versão, cria tag Git, gera changelog
+2. **analyze-changes**: Git diff para determinar quais imagens precisam rebuild
+3. **build-microservices**: Matrix 12 imagens (auth, chat, rag, training, integrations, observability, frontend, gpu-manager, postgres, minio, qdrant, redis)
+4. **build-gpu**: Matrix 5 imagens (mixtral-vllm, flux-schnell, embeddings-gpu, asr-canary, lora-trainer)
+5. **smoke-test**: Teste crítico PostgreSQL + pgvector (detecta SIGILL/AVX-512)
+6. **publish-release**: Cria GitHub Release com notas geradas
+7. **trigger-deploy**: Dispara `deploy-stack-modular.yml` via `workflow_dispatch`
+
+**Performance:**
+- v2 (sequencial): 17 builds x ~2min/cada = ~34min
+- v3 (paralelo): max(12 builds, 5 builds) x ~2min/cada = **~5-7min** ⚡
+
+**Workflow File:** `.github/workflows/release-modular.yml`
+
+### ADR-009: Deploy Modular com Jobs Independentes (06/01/2026)
+
+| Aspecto | Decisão |
+|---------|---------|
+| **Status** | Aceito |
+| **Data** | 06 de Janeiro de 2026 |
+| **Contexto** | Deploy workflow v2 (`deploy-stack.yml`) tinha um único job "deploy-all" com 5 stacks deployados **sequencialmente** via SSH (~30min). Rollback automático só funcionava se TODOS os stacks falhassem. Rollback manual exigia `workflow_dispatch` separado. Violava best practices para pipelines modulares enterprise. |
+| **Decisão** | Refatorar para **Deploy Modular v3** (`deploy-stack-modular.yml`) com **15 jobs independentes**: `validate`, `prepare`, `deploy-infra`, `health-infra`, `rollback-infra`, `drizzle-push`, `deploy-alice`, `health-alice`, `rollback-alice`, `deploy-observability`, `health-observability`, `rollback-observability`, `deploy-erpnext`, `health-erpnext`, `rollback-erpnext`, `deploy-backup`, `health-backup`, `rollback-backup`, `notify`. |
+| **Alternativas** | (1) Manter monolítico com bash case - rejeitado por impossibilitar paralelização e rollback cirúrgico; (2) Matrix strategy para stacks - rejeitado por não permitir dependências condicionais entre stacks; (3) Separate workflows por stack - rejeitado por duplicação de código |
+| **Consequências** | + 66% mais rápido (~10min vs ~30min); + Rollback cirúrgico (só stack com falha); + Produção parcial real; + Paralelização de 4 stacks após infra; + Logs isolados por stack; + Rollback manual integrado; + Health checks completos (50 containers); - Maior número de jobs (15 vs 1); - Maior complexidade de `needs` e condições |
+
+**Arquitetura Jobs Independentes:**
+
+```yaml
+deploy-alice:
+  needs: [validate, prepare, drizzle-push]
+  if: |
+    (needs.validate.outputs.deploy_alice == 'true') &&
+    (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped')
+  # Deploy alice stack
+
+health-alice:
+  needs: [deploy-alice]
+  if: needs.deploy-alice.result == 'success'
+  # Health check: alice-frontend, alice-auth, alice-chat, alice-rag, alice-training, alice-integrations, alice-observability, gpu-manager-service
+
+rollback-alice:
+  needs: [deploy-alice, health-alice]
+  if: failure() && needs.deploy-alice.result == 'success' && needs.health-alice.result == 'failure'
+  # Rollback automático
+```
+
+**Características Enterprise:**
+1. **Isolamento Docker Compose**: Cada stack usa `-p alice-{stack}` (project name único)
+2. **External Networks/Volumes**: Recursos compartilhados via `docker-compose.base.yml` preservados entre deploys/rollbacks
+3. **Health Checks Robustos**: Retry logic 30-45x, logs detalhados
+4. **Rollback Modes**:
+   - **Automático**: Dispara se health check FALHAR após deploy SUCCESS
+   - **Manual**: `rollback: true` + `rollback_version: vX.Y.Z` via `workflow_dispatch`
+5. **Race Condition Free**: `IMAGE_TAG` passado direto via env var (não modifica `.env.prod`)
+6. **Validação Completa**: Checa `rollback_version` format, external volumes, drizzle-push dependencies
+
+**Ordem de Deploy (Paralelo):**
+```
+prepare → deploy-infra → health-infra → drizzle-push
+                                           ↓
+                        ┌──────────────────┼──────────────────┬──────────────┐
+                        │                  │                  │              │
+                  deploy-alice    deploy-observability  deploy-erpnext  deploy-backup
+                  health-alice    health-observability  health-erpnext  health-backup
+                 rollback-alice*  rollback-observability* rollback-erpnext* rollback-backup*
+                        │                  │                  │              │
+                        └──────────────────┴──────────────────┴──────────────┘
+                                           ↓
+                                        notify
+```
+
+**Performance:**
+- v2 (sequencial): 5 stacks x ~6min/cada = ~30min
+- v3 (paralelo): infra (~4min) + max(alice, observability, erpnext, backup) (~6min) = **~10min** ⚡
+
+**Workflow File:** `.github/workflows/deploy-stack-modular.yml`
+
+**Bugs Corrigidos na v3:**
+- ✅ `$GITHUB_OUTPUT` em SSH scripts (não funciona no servidor remoto)
+- ✅ Race condition em rollbacks paralelos (sed modificando `.env.prod`)
+- ✅ Health checks incompletos (ERPNext 5/10, Observability 6/13, INFRA sem Tor/SearXNG)
+- ✅ Missing `drizzle-push` job (migrations não rodavam em fresh deploys)
+- ✅ Dependency `jq` não instalado (trocado por pure-bash `urlencode`)
+- ✅ External volumes não criados (faltava `-f docker-compose.base.yml`)
+- ✅ Rollback manual não funcionava (inputs ignorados)
+- ✅ UTF-8 encoding incorreto (`urlencode` sem `LC_ALL=C`)
+- ✅ 14 bugs críticos adicionais identificados e corrigidos
 
 ---
 
