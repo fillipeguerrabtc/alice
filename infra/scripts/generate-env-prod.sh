@@ -34,6 +34,64 @@ echo "GERANDO .env.prod PARA PRODUÇÃO"
 echo "=============================================="
 
 # =============================================================================
+# FASE 0: Carregar versões dos componentes (Single Source of Truth)
+# =============================================================================
+echo "📦 Carregando versões dos componentes..."
+
+VERSIONS_FILE="${VERSIONS_FILE:-./infra/versions.env}"
+
+if [ ! -f "$VERSIONS_FILE" ]; then
+  echo "::error::Arquivo de versões não encontrado: $VERSIONS_FILE" >&2
+  echo "   O arquivo infra/versions.env é obrigatório para definir versões dos componentes." >&2
+  exit 1
+fi
+
+# Carregar variáveis do arquivo (export automático)
+set -a
+source "$VERSIONS_FILE"
+set +a
+
+# Validar que todas as versões obrigatórias foram carregadas
+REQUIRED_VERSIONS=(
+  "PGBACKREST_VERSION"
+  "CADDY_VERSION"
+  "PROMETHEUS_VERSION"
+  "GRAFANA_VERSION"
+  "LOKI_VERSION"
+  "PROMTAIL_VERSION"
+  "JAEGER_VERSION"
+  "LANGFUSE_VERSION"
+  "ERPNEXT_VERSION"
+  "BUSYBOX_VERSION"
+  "REDIS_VERSION"
+  "MARIADB_VERSION"
+  "PGVECTOR_TAG"
+)
+
+MISSING_VERSIONS=()
+for ver in "${REQUIRED_VERSIONS[@]}"; do
+  if [ -z "${!ver:-}" ]; then
+    MISSING_VERSIONS+=("$ver")
+  fi
+done
+
+if [ ${#MISSING_VERSIONS[@]} -gt 0 ]; then
+  echo "::error::Versões obrigatórias não definidas em $VERSIONS_FILE:" >&2
+  printf '  - %s\n' "${MISSING_VERSIONS[@]}" >&2
+  exit 1
+fi
+
+echo "✅ Versões dos componentes carregadas:"
+echo "   PGBACKREST: ${PGBACKREST_VERSION}"
+echo "   CADDY: ${CADDY_VERSION}"
+echo "   PROMETHEUS: ${PROMETHEUS_VERSION}"
+echo "   GRAFANA: ${GRAFANA_VERSION}"
+echo "   LOKI: ${LOKI_VERSION}"
+echo "   LANGFUSE: ${LANGFUSE_VERSION}"
+echo "   ERPNEXT: ${ERPNEXT_VERSION}"
+echo ""
+
+# =============================================================================
 # FASE 1: GPU Services (Hetzner GPU Server)
 # =============================================================================
 echo "🔍 Configurando GPU Services (Hetzner GPU Server)..."
@@ -558,20 +616,20 @@ echo "📄 Gerando arquivo .env.prod..."
   printf 'IMAGE_PREFIX=%s\n' "${IMAGE_PREFIX}"
   printf 'IMAGE_TAG=%s\n' "${IMAGE_TAG}"
   printf '\n'
-  printf '# Versões Automáticas dos Componentes\n'
-  printf 'PGBACKREST_VERSION=%s\n' "${PGBACKREST_VERSION}"
-  printf 'CADDY_VERSION=%s\n' "${CADDY_VERSION}"
-  printf 'PROMETHEUS_VERSION=%s\n' "${PROMETHEUS_VERSION}"
-  printf 'GRAFANA_VERSION=%s\n' "${GRAFANA_VERSION}"
-  printf 'LOKI_VERSION=%s\n' "${LOKI_VERSION}"
-  printf 'PROMTAIL_VERSION=%s\n' "${PROMTAIL_VERSION}"
-  printf 'JAEGER_VERSION=%s\n' "${JAEGER_VERSION}"
-  printf 'LANGFUSE_VERSION=%s\n' "${LANGFUSE_VERSION}"
-  printf 'ERPNEXT_VERSION=%s\n' "${ERPNEXT_VERSION}"
-  printf 'BUSYBOX_VERSION=%s\n' "${BUSYBOX_VERSION}"
-  printf 'REDIS_VERSION=%s\n' "${REDIS_VERSION}"
-  printf 'MARIADB_VERSION=%s\n' "${MARIADB_VERSION}"
-  printf 'PGVECTOR_TAG=%s\n' "${PGVECTOR_TAG}"
+  printf '# Versões Automáticas dos Componentes (com fallbacks de segurança)\n'
+  printf 'PGBACKREST_VERSION=%s\n' "${PGBACKREST_VERSION:-2.57.0}"
+  printf 'CADDY_VERSION=%s\n' "${CADDY_VERSION:-2.8.4}"
+  printf 'PROMETHEUS_VERSION=%s\n' "${PROMETHEUS_VERSION:-v2.54.1}"
+  printf 'GRAFANA_VERSION=%s\n' "${GRAFANA_VERSION:-11.3.0}"
+  printf 'LOKI_VERSION=%s\n' "${LOKI_VERSION:-3.2.0}"
+  printf 'PROMTAIL_VERSION=%s\n' "${PROMTAIL_VERSION:-3.2.0}"
+  printf 'JAEGER_VERSION=%s\n' "${JAEGER_VERSION:-2.2.0}"
+  printf 'LANGFUSE_VERSION=%s\n' "${LANGFUSE_VERSION:-3.32.0}"
+  printf 'ERPNEXT_VERSION=%s\n' "${ERPNEXT_VERSION:-v15.43.2}"
+  printf 'BUSYBOX_VERSION=%s\n' "${BUSYBOX_VERSION:-1.36.1}"
+  printf 'REDIS_VERSION=%s\n' "${REDIS_VERSION:-7.4-alpine}"
+  printf 'MARIADB_VERSION=%s\n' "${MARIADB_VERSION:-11.6}"
+  printf 'PGVECTOR_TAG=%s\n' "${PGVECTOR_TAG:-pg16}"
   printf '\n'
   printf '# PostgreSQL Alice\n'
   printf 'POSTGRES_USER=alice\n'

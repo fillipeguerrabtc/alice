@@ -606,8 +606,17 @@ jobs:
           export STACK_NAME="${STACK_NAME}"
           export IS_ROLLBACK="${IS_ROLLBACK}"
           
+          # Verificar que arquivo de versões existe (Single Source of Truth)
+          if [ ! -f "infra/versions.env" ]; then
+            echo "::error::Arquivo infra/versions.env não encontrado no checkout!"
+            echo "   Este arquivo é obrigatório para definir versões dos componentes."
+            exit 1
+          fi
+          echo "✅ Arquivo de versões encontrado: infra/versions.env"
+          
           # Executar script existente (enterprise-grade, já testado e funcionando)
           chmod +x infra/scripts/generate-env-prod.sh
+          export VERSIONS_FILE=./infra/versions.env
           ./infra/scripts/generate-env-prod.sh
           
           echo "✅ .env.prod gerado com sucesso pelo script generate-env-prod.sh"
@@ -676,7 +685,8 @@ jobs:
           port: 22
           # NOTA: package.json, pnpm-lock.yaml e pnpm-workspace.yaml são obrigatórios
           # para drizzle push funcionar (pnpm install --frozen-lockfile precisa deles)
-          source: "infra/docker/stacks/,infra/docker/Caddyfile,infra/docker/postgres-init/,infra/docker/vector.toml,infra/observability/,drizzle.config.ts,shared/,packages/,migrations/,package.json,pnpm-lock.yaml,pnpm-workspace.yaml"
+          # NOTA: infra/versions.env e infra/scripts/ são obrigatórios para generate-env-prod.sh
+          source: "infra/docker/stacks/,infra/docker/Caddyfile,infra/docker/postgres-init/,infra/docker/vector.toml,infra/observability/,infra/versions.env,infra/scripts/,drizzle.config.ts,shared/,packages/,migrations/,package.json,pnpm-lock.yaml,pnpm-workspace.yaml"
           target: "/opt/alice/app"
           strip_components: 0
           overwrite: true
