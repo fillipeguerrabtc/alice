@@ -402,7 +402,7 @@ jobs:
           echo "bump_type=$BUMP_TYPE" >> $GITHUB_OUTPUT
           echo "✅ Nova versão: $NEW_VERSION ($BUMP_TYPE bump)"
 
-      - name: Disparar Release Workflow
+      - name: Disparar Release Modular Workflow
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -410,11 +410,11 @@ jobs:
             await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              workflow_id: 'release.yml',
+              workflow_id: 'release-modular.yml',
               ref: 'main',
               inputs: {
                 version: '${{ steps.version.outputs.version }}',
                 prerelease: 'false'
               }
             });
-            console.log('🚀 Release ${{ steps.version.outputs.version }} disparado!');
+            console.log('🚀 Release Modular ${{ steps.version.outputs.version }} disparado!');
