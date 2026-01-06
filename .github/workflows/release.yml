@@ -13,7 +13,7 @@
 #   2. Gerar changelog automático (Conventional Commits)
 #   3. Criar GitHub Release com notas (APÓS build das imagens)
 #   4. Build e push de TODAS as 17 imagens Docker (12 services + 5 GPU)
-#   5. Deploy é disparado automaticamente pelo evento "release published" no `deploy-stack.yml`
+#   5. Deploy é disparado automaticamente via workflow_dispatch para `deploy-stack-modular.yml` (v3 Enterprise)
 #
 # OTIMIZAÇÃO (27/12/2025): Consolidação de builds Docker
 # - Matrix de 14 jobs → 1 job único com loop
@@ -695,7 +695,7 @@ jobs:
               await github.rest.actions.createWorkflowDispatch({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                workflow_id: 'deploy-stack.yml',
+                workflow_id: 'deploy-stack-modular.yml',
                 ref: 'main',
                 inputs: {
                   stack: 'all',
@@ -706,8 +706,8 @@ jobs:
                 }
               });
               
-              console.log('✅ Deploy disparado com sucesso!');
-              console.log(`🔗 Verifique o workflow "Deploy - Production (Stacks)" para acompanhar o deploy`);
+              console.log('✅ Deploy modular disparado com sucesso!');
+              console.log(`🔗 Verifique o workflow "Deploy - Production (Modular)" para acompanhar o deploy`);
             } catch (error) {
               console.error('❌ ERRO ao disparar deploy:', error);
               throw error;
