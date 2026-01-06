@@ -154,6 +154,19 @@ Embeddings otimizados por caso de uso para máxima qualidade:
 
 #### Arquitetura Enterprise Modular v3.0.0 (06/01/2026)
 
+**⚠️ PRÉ-REQUISITO OBRIGATÓRIO (Preparação Automática):**
+
+O workflow modular **prepara automaticamente** a infraestrutura base no job `prepare`:
+- ✅ **Networks Docker externas**: `alice-network` (subnet 172.28.0.0/16) + `erpnext-network`
+- ✅ **Estrutura de diretórios**: `/opt/alice/{data,logs,uploads,backups,secrets,versions}`
+- ✅ **Permissões específicas por serviço**: postgres (999:999), grafana (472:472), prometheus (65534:65534), etc. (conforme DEPLOYMENT.md Seção 8.2)
+- ✅ **Docker secrets**: `langfuse_db_password` (montado como arquivo em containers)
+
+**CRÍTICO:** Redes e volumes são **compartilhados** entre stacks via `external: true` no `docker-compose.base.yml`. Isso garante que:
+- Rollback de um stack NÃO remove redes/volumes compartilhados
+- Serviços de diferentes stacks podem comunicar via rede compartilhada
+- Dados persistem independente do estado de qualquer stack individual
+
 **Características Enterprise:**
 - ✅ **Jobs Separados**: 1 job por stack (deploy + health + rollback independentes)
 - ✅ **Paralelização Real**: Alice + Observability + ERPNext rodam em PARALELO (3x mais rápido)
