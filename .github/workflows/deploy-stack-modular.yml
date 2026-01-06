@@ -668,7 +668,7 @@ jobs:
             set -euo pipefail
             echo "🏥 Checking INFRA stack health..."
             
-            CONTAINERS="alice-postgres alice-redis alice-qdrant alice-caddy alice-minio"
+            CONTAINERS="alice-postgres alice-redis alice-qdrant alice-tor alice-searxng alice-caddy alice-minio"
             MAX_RETRIES=30
             SLEEP_TIME=10
             
