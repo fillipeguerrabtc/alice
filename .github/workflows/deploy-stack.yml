@@ -42,12 +42,16 @@ on:
   # (build de imagens + publicação da Release). Evita deploy aparecer "junto" com CI na UI.
   # CRÍTICO: usar nome exato do workflow (case-sensitive) para referência
   workflow_run:
+    # CRÍTICO: usar nome EXATO do workflow (case-sensitive, espaços e caracteres especiais)
+    # O nome deve corresponder EXATAMENTE ao campo 'name:' do release.yml
     workflows: 
       - "Release & Tag"
     types:
       - completed
     branches:
       - main
+  # NOTA: workflow_run pode ser disparado prematuramente em alguns casos
+  # A verificação de sucesso está no job validate (if: conclusion == 'success')
   # CRÍTICO: workflow_run dispara mesmo em falha/cancelado
   # A verificação de sucesso está no job validate (if: conclusion == 'success')
   workflow_dispatch:
@@ -112,12 +116,14 @@ jobs:
     name: Validate Deploy
     runs-on: [self-hosted, linux, deploy]
     timeout-minutes: 5
-    # Deploy automático só se Release & Tag terminou com sucesso (não falhou/cancelado)
-    # IMPORTANTE: workflow_run dispara mesmo em falha, então verificamos conclusion aqui
-    # CRÍTICO: workflow_run só deve rodar se Release terminou com sucesso
+    # CRÍTICO: Deploy automático só se Release & Tag terminou com sucesso
+    # workflow_run dispara mesmo em falha/cancelado, então verificamos conclusion explicitamente
+    # Se não for workflow_dispatch manual E não for workflow_run com sucesso, SKIP o job
     if: |
       github.event_name == 'workflow_dispatch' || 
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+      (github.event_name == 'workflow_run' && 
+       github.event.workflow_run.conclusion == 'success' && 
+       github.event.workflow_run.status == 'completed')
     outputs:
       stack: ${{ steps.context.outputs.stack }}
       version: ${{ steps.context.outputs.version }}
