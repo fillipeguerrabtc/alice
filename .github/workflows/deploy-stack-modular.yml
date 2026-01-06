@@ -1076,7 +1076,9 @@ jobs:
             set -euo pipefail
             echo "🏥 Checking ERPNEXT stack health..."
             
-            CONTAINERS="erpnext-mariadb erpnext-redis-cache erpnext-redis-queue erpnext-backend erpnext-frontend"
+            # CRITICAL FIX (06/01/2026): Adicionar todos os 10 containers com healthcheck
+            # Faltavam: websocket (Socket.IO), scheduler (cron), workers (job queues)
+            CONTAINERS="erpnext-mariadb erpnext-redis-cache erpnext-redis-queue erpnext-backend erpnext-frontend erpnext-websocket erpnext-scheduler erpnext-worker-default erpnext-worker-short erpnext-worker-long"
             MAX_RETRIES=45
             SLEEP_TIME=10
             
