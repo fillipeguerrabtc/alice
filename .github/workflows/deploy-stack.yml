@@ -99,7 +99,7 @@ on:
         default: false
 
 concurrency:
-  group: deploy-stack-${{ github.event_name }}-${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.event.inputs.stack }}
+  group: deploy-stack-${{ github.event.inputs.stack || 'auto-release' }}
   cancel-in-progress: false
 
 permissions:
