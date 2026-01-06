@@ -15,16 +15,21 @@
 
 set -euo pipefail
 
-# urlencode() RFC 3986 - suporta qualquer caractere (ASCII seguro)
+# urlencode() RFC 3986 - suporta qualquer caractere incluindo UTF-8 multi-byte
+# CRITICAL (06/01/2026): Usa LC_ALL=C para processar byte-a-byte (não caractere-a-caractere)
+# Sem LC_ALL=C, bash vê 'é' (UTF-8: 0xC3 0xA9) como 1 char e só encoda primeiro byte → %C3 (ERRADO)
+# Com LC_ALL=C, bash vê 'é' como 2 bytes (0xC3, 0xA9) e encoda ambos → %C3%A9 (CORRETO)
 urlencode() {
+  local LC_ALL=C  # Force byte-oriented string processing
   local str="$1"
   local length="${#str}"
-  local i c ascii hex
+  local i c
+  
   for (( i=0; i<length; i++ )); do
     c="${str:i:1}"
     case "$c" in
-      [_.~a-zA-Z0-9-]) printf '%s' "$c" ;;
-      *) printf -v ascii '%d' "'$c"; printf -v hex '%%%02X' "$ascii"; printf '%s' "$hex" ;;
+      [a-zA-Z0-9.~_-]) printf '%s' "$c" ;;
+      *) printf '%%%02X' "'$c" ;;
     esac
   done
 }
@@ -126,7 +131,8 @@ fi
 
 # CORREÇÃO 23/12/2025: Validação restritiva REMOVIDA - URL-encoding no workflow suporta qualquer senha
 # Antes: Validação rejeitava senhas com caracteres especiais (+/=@:?#%), forçando apenas hex
-# Agora: Workflow usa função urlencode() (RFC 3986 compliant) que suporta qualquer caractere
+# Agora: Função urlencode() (RFC 3986 compliant + UTF-8 multi-byte correto) suporta qualquer caractere
+# CORREÇÃO 06/01/2026: urlencode() agora processa UTF-8 multi-byte corretamente (LC_ALL=C)
 # Isso permite senhas mais complexas e seguras, mantendo compatibilidade com DATABASE_URL
 # NOTA: openssl rand -hex 32 ainda é recomendado para senhas URL-safe, mas não é mais obrigatório
 

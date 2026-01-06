@@ -800,14 +800,19 @@ jobs:
             # CRITICAL FIX (06/01/2026): Usar função bash pura ao invés de jq (não instalado por padrão)
             # Função urlencode() RFC 3986 já existe em generate-env-prod.sh - replicada aqui
             urlencode() {
+              local LC_ALL=C  # CRITICAL: Force byte-oriented processing for UTF-8 multi-byte chars
               local str="$1"
               local length="${#str}"
-              local i c ascii hex
+              local i c
+              
+              # Com LC_ALL=C, ${str:i:1} pega BYTES (não caracteres)
+              # Exemplo: 'é' (UTF-8: 0xC3 0xA9) → processa como 2 bytes separados
+              # Resultado: %C3%A9 (correto) ao invés de %C3 (bug anterior)
               for (( i=0; i<length; i++ )); do
                 c="${str:i:1}"
                 case "$c" in
-                  [_.~a-zA-Z0-9-]) printf '%s' "$c" ;;
-                  *) printf -v ascii '%d' "'$c"; printf -v hex '%%%02X' "$ascii"; printf '%s' "$hex" ;;
+                  [a-zA-Z0-9.~_-]) printf '%s' "$c" ;;
+                  *) printf '%%%02X' "'$c" ;;
                 esac
               done
             }
