@@ -783,7 +783,9 @@ echo "📄 Gerando arquivo .env.prod..."
   printf 'SEARXNG_SECRET_KEY=%s\n' "${SEARXNG_SECRET_KEY}"
 } > .env.prod
 
-chmod 600 .env.prod
+# NOTA: chmod 644 permite que tar/scp leiam o arquivo durante o deploy
+# As permissões são restringidas para 600 no servidor após o SCP (step SSH)
+chmod 644 .env.prod
 
 # =============================================================================
 # FASE 9: Validação pgbackrest.conf

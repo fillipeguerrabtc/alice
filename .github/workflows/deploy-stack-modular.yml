@@ -493,6 +493,72 @@ jobs:
           target: "/opt/alice/app/infra/docker"
           overwrite: true
 
+      - name: Restringir permissões .env.prod no servidor
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            chmod 600 /opt/alice/app/infra/docker/.env.prod
+            chown root:root /opt/alice/app/infra/docker/.env.prod
+            echo "✅ Permissões do .env.prod restringidas para 600 no servidor"
+
+      - name: Validar servidor de produção (fail-fast)
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            set -euo pipefail
+            echo "🔍 Validando servidor de produção..."
+            
+            # Verificar IP do servidor
+            SERVER_IP=$(hostname -I | awk '{print $1}')
+            echo "   IP do servidor: $SERVER_IP"
+            
+            # Verificar se é o Production Server (178.63.41.108) ou Deploy Server (46.224.46.93)
+            if [[ "$SERVER_IP" == "46.224.46.93" ]] || [[ "$SERVER_IP" == *"46.224"* ]]; then
+              echo "::error::❌ DEPLOY ESTÁ NO SERVIDOR ERRADO!"
+              echo "::error::Este é o Deploy Server (CPX32 - Runner CI/CD), NÃO o Production Server!"
+              echo ""
+              echo "O secret HETZNER_VM_HOST está configurado incorretamente."
+              echo ""
+              echo "CORREÇÃO NECESSÁRIA:"
+              echo "  1. Vá para GitHub → Settings → Secrets and variables → Actions"
+              echo "  2. Edite HETZNER_VM_HOST"
+              echo "  3. Mude de 46.224.46.93 para 178.63.41.108 (Production Server)"
+              echo ""
+              echo "Servidores:"
+              echo "  - Deploy Server (CPX32):    46.224.46.93  ← ERRADO para deploy"
+              echo "  - Production Server (GEX44): 178.63.41.108 ← CORRETO para deploy"
+              exit 1
+            fi
+            
+            # Verificar se GPU está disponível (obrigatório para Production Server)
+            if ! command -v nvidia-smi &> /dev/null; then
+              echo "::error::❌ nvidia-smi não encontrado!"
+              echo "::error::Este servidor NÃO tem GPU - provavelmente está no Deploy Server."
+              exit 1
+            fi
+            
+            echo "   ✅ nvidia-smi encontrado"
+            nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
+            
+            # Verificar runtime Docker com GPU
+            if ! docker run --rm --gpus all nvidia/cuda:12.0-base-ubuntu22.04 nvidia-smi &> /dev/null; then
+              echo "::error::❌ Docker não consegue acessar GPU!"
+              echo "::error::Verifique NVIDIA Container Toolkit e configuração Docker."
+              exit 1
+            fi
+            
+            echo "   ✅ Docker com GPU funcionando"
+            echo ""
+            echo "✅ Validação do servidor de produção OK (GPU disponível)"
+
       - name: Preparar infraestrutura base (networks, volumes, permissões)
         uses: appleboy/ssh-action@v1.2.2
         with:
