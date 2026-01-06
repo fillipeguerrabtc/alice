@@ -1003,6 +1003,10 @@ jobs:
             PREV_VERSION=$(cat /opt/alice/versions/observability.previous)
             echo "📌 Revertendo para versão anterior: $PREV_VERSION"
             
+            # CRITICAL FIX: Atualizar IMAGE_TAG no .env.prod antes de puxar imagens
+            cd /opt/alice/app/infra/docker
+            sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=$PREV_VERSION/" .env.prod
+            
             cd /opt/alice/app/infra/docker/stacks
             echo "🐳 Puxando imagens da versão $PREV_VERSION..."
             docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.observability.yml pull
@@ -1055,7 +1059,6 @@ jobs:
             # Salvar versão atual
             echo "${{ needs.validate.outputs.version }}" > /opt/alice/versions/erpnext.current
             
-            echo "deployed=true" >> "$GITHUB_OUTPUT"
             echo "✅ ERPNEXT stack deployed"
 
   health-erpnext:
@@ -1137,6 +1140,10 @@ jobs:
             
             PREV_VERSION=$(cat /opt/alice/versions/erpnext.previous)
             echo "📌 Revertendo para versão anterior: $PREV_VERSION"
+            
+            # CRITICAL FIX: Atualizar IMAGE_TAG no .env.prod antes de puxar imagens
+            cd /opt/alice/app/infra/docker
+            sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=$PREV_VERSION/" .env.prod
             
             cd /opt/alice/app/infra/docker/stacks
             echo "🐳 Puxando imagens da versão $PREV_VERSION..."
@@ -1268,6 +1275,10 @@ jobs:
             
             PREV_VERSION=$(cat /opt/alice/versions/backup.previous)
             echo "📌 Revertendo para versão anterior: $PREV_VERSION"
+            
+            # CRITICAL FIX: Atualizar IMAGE_TAG no .env.prod antes de puxar imagens
+            cd /opt/alice/app/infra/docker
+            sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=$PREV_VERSION/" .env.prod
             
             cd /opt/alice/app/infra/docker/stacks
             echo "🐳 Puxando imagens da versão $PREV_VERSION..."
