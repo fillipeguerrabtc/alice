@@ -466,6 +466,147 @@ jobs:
           target: "/opt/alice/app/infra/docker"
           overwrite: true
 
+      - name: Preparar infraestrutura base (networks, volumes, permissões)
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          script_timeout: 5m
+          script: |
+            set -euo pipefail
+            
+            echo ""
+            echo "🏗️ INFRAESTRUTURA BASE"
+            echo "========================================"
+            
+            # =========================================================
+            # 1. NETWORKS (externas - compartilhadas entre stacks)
+            # =========================================================
+            echo "🌐 Verificando networks externas..."
+            if ! docker network inspect alice-network > /dev/null 2>&1; then
+              echo "   📝 Criando network alice-network..."
+              docker network create --driver bridge --subnet 172.28.0.0/16 alice-network
+            else
+              echo "   ✅ alice-network existe"
+            fi
+            
+            if ! docker network inspect erpnext-network > /dev/null 2>&1; then
+              echo "   📝 Criando network erpnext-network..."
+              docker network create --driver bridge erpnext-network
+            else
+              echo "   ✅ erpnext-network existe"
+            fi
+            
+            # =========================================================
+            # 2. DIRETÓRIOS (para bind mounts dos volumes)
+            # =========================================================
+            echo ""
+            echo "📁 Criando estrutura de diretórios..."
+            
+            # Diretórios de dados (volumes) - INFRA stack
+            mkdir -p /opt/alice/data/{postgres,redis-alice,qdrant,minio,caddy,caddy-config}
+            mkdir -p /opt/alice/data/{searxng-config,pgbackrest-spool}
+            
+            # Diretórios de dados (volumes) - OBSERVABILITY stack
+            mkdir -p /opt/alice/data/{vector,langfuse-db,clickhouse}
+            mkdir -p /opt/alice/data/{prometheus,grafana,loki,jaeger}
+            
+            # Diretórios de dados (volumes) - ERPNEXT stack
+            mkdir -p /opt/alice/data/{erpnext-sites,erpnext-mariadb,erpnext-redis-cache,erpnext-redis-queue}
+            
+            # Diretórios de logs
+            mkdir -p /opt/alice/logs/{caddy,erpnext,clickhouse,jaeger}
+            
+            # Diretórios de uploads e backups
+            mkdir -p /opt/alice/uploads/training
+            mkdir -p /opt/alice/backups/{postgresql,postgresql/logs,manifests}
+            
+            # Diretórios de secrets e versões
+            mkdir -p /opt/alice/secrets
+            mkdir -p /opt/alice/versions
+            
+            # =========================================================
+            # 3. SECRETS (arquivos montados em containers)
+            # =========================================================
+            echo ""
+            echo "🔐 Criando secrets..."
+            
+            # Criar arquivo de secret para Langfuse DB
+            # (monta em /run/secrets/langfuse_db_password no container)
+            LANGFUSE_DB_PWD=$(grep '^LANGFUSE_DB_PASSWORD=' /opt/alice/app/infra/docker/.env.prod | cut -d'=' -f2- | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            if [ -n "$LANGFUSE_DB_PWD" ]; then
+              rm -f /opt/alice/secrets/langfuse_db_password
+              echo -n "$LANGFUSE_DB_PWD" > /opt/alice/secrets/langfuse_db_password
+              chmod 600 /opt/alice/secrets/langfuse_db_password
+              echo "   ✅ Secret langfuse_db_password criado"
+            else
+              echo "   ⚠️ LANGFUSE_DB_PASSWORD não encontrado no .env.prod"
+            fi
+            
+            # =========================================================
+            # 4. PERMISSÕES (específicas por serviço)
+            # =========================================================
+            echo ""
+            echo "🔐 Configurando permissões..."
+            
+            # PostgreSQL (UID 999)
+            chown -R 999:999 /opt/alice/data/postgres 2>/dev/null || true
+            chmod 700 /opt/alice/data/postgres 2>/dev/null || true
+            
+            # Grafana (UID 472 - Enterprise hardening per CLAUDE.md)
+            chown -R 472:472 /opt/alice/data/grafana 2>/dev/null || true
+            chmod 755 /opt/alice/data/grafana 2>/dev/null || true
+            
+            # Prometheus (UID 65534 - nobody)
+            chown -R 65534:65534 /opt/alice/data/prometheus 2>/dev/null || true
+            chmod 755 /opt/alice/data/prometheus 2>/dev/null || true
+            
+            # Loki (UID 10001)
+            chown -R 10001:10001 /opt/alice/data/loki 2>/dev/null || true
+            chmod 755 /opt/alice/data/loki 2>/dev/null || true
+            
+            # ClickHouse (UID 101)
+            chown -R 101:101 /opt/alice/data/clickhouse /opt/alice/logs/clickhouse 2>/dev/null || true
+            chmod 755 /opt/alice/data/clickhouse /opt/alice/logs/clickhouse 2>/dev/null || true
+            
+            # Langfuse DB PostgreSQL (UID 70)
+            chown -R 70:70 /opt/alice/data/langfuse-db 2>/dev/null || true
+            chmod 755 /opt/alice/data/langfuse-db 2>/dev/null || true
+            
+            # Redis (UID 999)
+            chown -R 999:999 /opt/alice/data/redis-alice 2>/dev/null || true
+            chmod 755 /opt/alice/data/redis-alice 2>/dev/null || true
+            
+            # Caddy (UID 1000)
+            chown -R 1000:1000 /opt/alice/data/caddy /opt/alice/data/caddy-config /opt/alice/logs/caddy 2>/dev/null || true
+            chmod 700 /opt/alice/data/caddy 2>/dev/null || true
+            chmod 755 /opt/alice/data/caddy-config /opt/alice/logs/caddy 2>/dev/null || true
+            
+            # SearXNG (UID 977)
+            chown -R 977:977 /opt/alice/data/searxng-config 2>/dev/null || true
+            chmod 755 /opt/alice/data/searxng-config 2>/dev/null || true
+            
+            # Qdrant, MinIO, Vector (root - permissões gerais)
+            chmod 755 /opt/alice/data/{qdrant,minio,vector} 2>/dev/null || true
+            
+            # ERPNext (UID 1000 para Frappe)
+            chown -R 1000:1000 /opt/alice/data/erpnext-sites /opt/alice/logs/erpnext 2>/dev/null || true
+            chmod 755 /opt/alice/data/erpnext-sites /opt/alice/logs/erpnext 2>/dev/null || true
+            
+            # Backups (root com permissões restritas)
+            chmod 750 /opt/alice/backups 2>/dev/null || true
+            chmod 750 /opt/alice/backups/postgresql 2>/dev/null || true
+            
+            # Uploads (para RAG multimodal)
+            chmod 755 /opt/alice/uploads 2>/dev/null || true
+            
+            echo "   ✅ Permissões configuradas"
+            
+            echo ""
+            echo "✅ Infraestrutura base preparada com sucesso"
+
       - name: Mark as prepared
         id: prepare
         run: |
