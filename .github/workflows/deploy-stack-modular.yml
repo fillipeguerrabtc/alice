@@ -755,7 +755,7 @@ jobs:
     name: Deploy Stack ALICE
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare, health-infra]
-    if: needs.validate.outputs.deploy_alice == 'true' && needs.prepare.result == 'success' && needs.health-infra.result == 'success'
+    if: needs.validate.outputs.deploy_alice == 'true' && needs.prepare.result == 'success' && (needs.health-infra.result == 'success' || needs.validate.outputs.deploy_infra == 'false')
     timeout-minutes: 15
     
     steps:
@@ -891,7 +891,7 @@ jobs:
     name: Deploy Stack OBSERVABILITY
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare, health-infra]
-    if: needs.validate.outputs.deploy_observability == 'true' && needs.prepare.result == 'success' && needs.health-infra.result == 'success'
+    if: needs.validate.outputs.deploy_observability == 'true' && needs.prepare.result == 'success' && (needs.health-infra.result == 'success' || needs.validate.outputs.deploy_infra == 'false')
     timeout-minutes: 15
     
     steps:
@@ -1024,7 +1024,7 @@ jobs:
     name: Deploy Stack ERPNEXT
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare, health-infra]
-    if: needs.validate.outputs.deploy_erpnext == 'true' && needs.prepare.result == 'success' && needs.health-infra.result == 'success'
+    if: needs.validate.outputs.deploy_erpnext == 'true' && needs.prepare.result == 'success' && (needs.health-infra.result == 'success' || needs.validate.outputs.deploy_infra == 'false')
     timeout-minutes: 20
     
     steps:
@@ -1159,7 +1159,7 @@ jobs:
     name: Deploy Stack BACKUP
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare, health-infra]
-    if: needs.validate.outputs.deploy_backup == 'true' && needs.prepare.result == 'success' && needs.health-infra.result == 'success'
+    if: needs.validate.outputs.deploy_backup == 'true' && needs.prepare.result == 'success' && (needs.health-infra.result == 'success' || needs.validate.outputs.deploy_infra == 'false')
     timeout-minutes: 10
     
     steps:
