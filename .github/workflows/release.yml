@@ -660,26 +660,55 @@ jobs:
           generate_release_notes: false
           body_path: /tmp/release-notes.md
 
+  # ===========================================================================
+  # Job 4: Disparar Deploy em Produção (Stacks)
+  #
+  # ENTERPRISE: Job separado para garantir visibilidade e execução
+  # - Aparece na sequência visual do workflow
+  # - Executa APÓS release ser publicada com sucesso
+  # - Apenas para releases normais (não prereleases)
+  #
+  # Timeout: 1min (apenas API call)
+  # ===========================================================================
+  trigger-deploy:
+    name: Trigger Deploy to Production
+    runs-on: [self-hosted, linux, deploy]
+    timeout-minutes: 1
+    needs: [create-release, publish-release]
+    # Só dispara deploy para releases normais (não prereleases)
+    if: needs.publish-release.result == 'success' && !inputs.prerelease
+    
+    permissions:
+      actions: write
+      contents: read
+    
+    steps:
       - name: Disparar Deploy em Produção (Stacks)
-        if: ${{ !inputs.prerelease }}
         uses: actions/github-script@60a0d83039c6a60a0c8f2576385e6917b2c2dd41
         with:
           script: |
             const version = '${{ needs.create-release.outputs.version }}';
             console.log(`🚀 Disparando deploy para versão: ${version}`);
+            console.log(`📦 Stack: all (todos os stacks)`);
             
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'deploy-stack.yml',
-              ref: 'main',
-              inputs: {
-                stack: 'all',
-                version: version,
-                rollback: 'false',
-                rollback_version: '',
-                dry_run: 'false'
-              }
-            });
-            
-            console.log('✅ Deploy disparado com sucesso!');
+            try {
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'deploy-stack.yml',
+                ref: 'main',
+                inputs: {
+                  stack: 'all',
+                  version: version,
+                  rollback: 'false',
+                  rollback_version: '',
+                  dry_run: 'false'
+                }
+              });
+              
+              console.log('✅ Deploy disparado com sucesso!');
+              console.log(`🔗 Verifique o workflow "Deploy - Production (Stacks)" para acompanhar o deploy`);
+            } catch (error) {
+              console.error('❌ ERRO ao disparar deploy:', error);
+              throw error;
+            }
