@@ -728,17 +728,14 @@ jobs:
             PREV_VERSION=$(cat /opt/alice/versions/infra.previous)
             echo "📌 Revertendo para versão anterior: $PREV_VERSION"
             
-            # Atualizar IMAGE_TAG no .env.prod
-            cd /opt/alice/app/infra/docker
-            sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=$PREV_VERSION/" .env.prod
-            
-            # Deploy da versão anterior
+            # CRITICAL FIX (06/01/2026): Passar IMAGE_TAG via env var para evitar race condition
+            # Múltiplos rollbacks paralelos NÃO devem modificar o arquivo .env.prod compartilhado
             cd /opt/alice/app/infra/docker/stacks
             echo "🐳 Puxando imagens da versão $PREV_VERSION..."
-            docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.infra.yml pull
+            IMAGE_TAG=$PREV_VERSION docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.infra.yml pull
             
             echo "🚀 Deployando versão anterior..."
-            docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.infra.yml up -d --remove-orphans
+            IMAGE_TAG=$PREV_VERSION docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.infra.yml up -d --remove-orphans
             
             # Atualizar arquivo de versão atual
             echo "$PREV_VERSION" > /opt/alice/versions/infra.current
@@ -867,15 +864,14 @@ jobs:
             PREV_VERSION=$(cat /opt/alice/versions/alice.previous)
             echo "📌 Revertendo para versão anterior: $PREV_VERSION"
             
-            cd /opt/alice/app/infra/docker
-            sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=$PREV_VERSION/" .env.prod
-            
+            # CRITICAL FIX (06/01/2026): Passar IMAGE_TAG via env var para evitar race condition
+            # Múltiplos rollbacks paralelos NÃO devem modificar o arquivo .env.prod compartilhado
             cd /opt/alice/app/infra/docker/stacks
             echo "🐳 Puxando imagens da versão $PREV_VERSION..."
-            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.alice.yml pull
+            IMAGE_TAG=$PREV_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.alice.yml pull
             
             echo "🚀 Deployando versão anterior..."
-            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.alice.yml up -d --remove-orphans
+            IMAGE_TAG=$PREV_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.alice.yml up -d --remove-orphans
             
             echo "$PREV_VERSION" > /opt/alice/versions/alice.current
             
@@ -1003,12 +999,10 @@ jobs:
             PREV_VERSION=$(cat /opt/alice/versions/observability.previous)
             echo "📌 Revertendo para versão anterior: $PREV_VERSION"
             
-            # CRITICAL FIX: Atualizar IMAGE_TAG no .env.prod antes de puxar imagens
-            cd /opt/alice/app/infra/docker
-            sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=$PREV_VERSION/" .env.prod
-            
+            # CRITICAL FIX (06/01/2026): Observability NÃO usa IMAGE_TAG (só imagens públicas)
+            # Não há necessidade de modificar .env.prod ou passar IMAGE_TAG
             cd /opt/alice/app/infra/docker/stacks
-            echo "🐳 Puxando imagens da versão $PREV_VERSION..."
+            echo "🐳 Puxando imagens da versão $PREV_VERSION (hardcoded no compose)..."
             docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.observability.yml pull
             
             echo "🚀 Deployando versão anterior..."
@@ -1141,12 +1135,10 @@ jobs:
             PREV_VERSION=$(cat /opt/alice/versions/erpnext.previous)
             echo "📌 Revertendo para versão anterior: $PREV_VERSION"
             
-            # CRITICAL FIX: Atualizar IMAGE_TAG no .env.prod antes de puxar imagens
-            cd /opt/alice/app/infra/docker
-            sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=$PREV_VERSION/" .env.prod
-            
+            # CRITICAL FIX (06/01/2026): ERPNext NÃO usa IMAGE_TAG (só imagens públicas Frappe)
+            # Não há necessidade de modificar .env.prod ou passar IMAGE_TAG
             cd /opt/alice/app/infra/docker/stacks
-            echo "🐳 Puxando imagens da versão $PREV_VERSION..."
+            echo "🐳 Puxando imagens da versão $PREV_VERSION (hardcoded no compose)..."
             docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.erpnext.yml pull
             
             echo "🚀 Deployando versão anterior..."
@@ -1276,16 +1268,14 @@ jobs:
             PREV_VERSION=$(cat /opt/alice/versions/backup.previous)
             echo "📌 Revertendo para versão anterior: $PREV_VERSION"
             
-            # CRITICAL FIX: Atualizar IMAGE_TAG no .env.prod antes de puxar imagens
-            cd /opt/alice/app/infra/docker
-            sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=$PREV_VERSION/" .env.prod
-            
+            # CRITICAL FIX (06/01/2026): Passar IMAGE_TAG via env var para evitar race condition
+            # Múltiplos rollbacks paralelos NÃO devem modificar o arquivo .env.prod compartilhado
             cd /opt/alice/app/infra/docker/stacks
             echo "🐳 Puxando imagens da versão $PREV_VERSION..."
-            docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.backup.yml pull
+            IMAGE_TAG=$PREV_VERSION docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.backup.yml pull
             
             echo "🚀 Deployando versão anterior..."
-            docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.backup.yml up -d --remove-orphans
+            IMAGE_TAG=$PREV_VERSION docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.backup.yml up -d --remove-orphans
             
             echo "$PREV_VERSION" > /opt/alice/versions/backup.current
             
