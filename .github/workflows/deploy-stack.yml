@@ -161,13 +161,6 @@ jobs:
           fi
           echo "=========================================="
       
-      - name: Checkout (para buscar tag)
-        if: github.event_name == 'workflow_run'
-        uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0
-      
       - name: Determine trigger context
         id: context
         shell: bash
@@ -181,6 +174,19 @@ jobs:
             STACK="all"
             COMMIT_SHA="${{ github.event.workflow_run.head_sha }}"
             echo "🔍 Buscando tag EXATA para commit: $COMMIT_SHA"
+            
+            # Fazer checkout do commit SHA diretamente (não usar main)
+            # Isso garante que estamos trabalhando com o commit correto do Release workflow
+            git fetch --tags --force origin
+            git checkout "$COMMIT_SHA" 2>/dev/null || {
+              echo "❌ ERRO: Não foi possível fazer checkout do commit $COMMIT_SHA"
+              echo "   Fazendo fetch completo do repositório..."
+              git fetch --all --tags --force
+              git checkout "$COMMIT_SHA" || {
+                echo "❌ ERRO CRÍTICO: Commit $COMMIT_SHA não encontrado no repositório!"
+                exit 1
+              }
+            }
             
             # Buscar tag que aponta EXATAMENTE para o commit (sem fallback para tag ancestral)
             # --exact-match garante que a tag aponta diretamente para o commit, não para um ancestral
