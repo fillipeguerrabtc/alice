@@ -31,39 +31,16 @@
 #   - Histórico de versões por stack mantido em /opt/alice/versions/
 #
 # Author: Fillipe Guerra
-# Data: 06/01/2026
+# Data: 05/01/2026
 # =============================================================================
 
-name: 🚀 Deploy Production (Stacks)
-run-name: 🚀 Deploy ${{ github.event_name == 'release' && format('{0} → Production (auto via Release)', github.event.release.tag_name) || format('{0} → Production (manual)', github.event.inputs.version) }}
+name: Deploy - Production (Stacks)
 
-# =============================================================================
-# TRIGGERS (CRÍTICO - NÃO MODIFICAR SEM REVISAR PIPELINE ENTERPRISE):
-# 
-# ✅ ÚNICO trigger automático: release:published
-#    - Dispara SOMENTE quando GitHub Release é publicada (APÓS build de imagens)
-#    - Garante que deploy só acontece DEPOIS do Release workflow completar
-#    - Evita deploy aparecer "junto" com CI na UI
-#
-# ✅ Trigger manual: workflow_dispatch
-#    - Permite deploys manuais para rollback ou hotfix
-#    - Requer versão explícita (ex: v1.0.0)
-#
-# ❌ PROIBIDO:
-#    - on: push (causaria deploy em todo commit)
-#    - on: workflow_run (causaria execução duplicada - CI já dispara Release)
-#    - on: [push, release] (ambíguo e perigoso)
-#
-# Pipeline esperado: PUSH → CI → Release → Deploy
-# Ref: PIPELINE ENTERPRISE em CLAUDE.md
-# =============================================================================
 on:
-  # Disparo AUTOMÁTICO: somente quando GitHub Release é publicada com sucesso
+  # Disparo AUTOMÁTICO: somente quando a Release (tag) for publicada
+  # IMPORTANTE: a Release é publicada APÓS o build das imagens no `release.yml` (evita corrida).
   release:
-    types:
-      - published
-  
-  # Disparo MANUAL: para rollback ou hotfix
+    types: [published]
   workflow_dispatch:
     inputs:
       stack:
@@ -99,7 +76,7 @@ on:
         default: false
 
 concurrency:
-  group: deploy-stack-${{ github.event.inputs.stack || 'auto-release' }}
+  group: deploy-stack-${{ github.event_name }}-${{ github.event_name == 'release' && github.event.release.tag_name || github.event.inputs.stack }}
   cancel-in-progress: false
 
 permissions:
