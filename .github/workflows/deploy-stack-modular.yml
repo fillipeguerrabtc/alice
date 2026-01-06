@@ -45,9 +45,8 @@
 name: Deploy - Production (Modular)
 
 on:
-  # Disparo AUTOMÁTICO: somente quando a Release (tag) for publicada
-  release:
-    types: [published]
+  # Disparo via release-modular.yml (job trigger-deploy)
+  # OU manual via GitHub Actions UI
   workflow_dispatch:
     inputs:
       stack:
@@ -83,7 +82,7 @@ on:
         default: false
 
 concurrency:
-  group: deploy-modular-${{ github.event_name }}-${{ github.event_name == 'release' && github.event.release.tag_name || github.event.inputs.stack }}
+  group: deploy-modular-${{ github.event.inputs.version }}-${{ github.event.inputs.stack }}
   cancel-in-progress: false
 
 permissions:
@@ -127,22 +126,13 @@ jobs:
         run: |
           set -euo pipefail
           
-          if [ "${{ github.event_name }}" = "release" ]; then
-            STACK="all"
-            VERSION="${{ github.event.release.tag_name }}"
-            ROLLBACK="false"
-            ROLLBACK_VERSION=""
-            DRY_RUN="false"
-            echo "🔔 Trigger: release: published"
-            echo "✅ Tag da Release: $VERSION"
-          else
-            STACK="${{ github.event.inputs.stack }}"
-            VERSION="${{ github.event.inputs.version }}"
-            ROLLBACK="${{ github.event.inputs.rollback }}"
-            ROLLBACK_VERSION="${{ github.event.inputs.rollback_version }}"
-            DRY_RUN="${{ github.event.inputs.dry_run }}"
-            echo "🖱️ Trigger: workflow_dispatch"
-          fi
+          # Sempre workflow_dispatch (disparado por release-modular.yml ou manual)
+          STACK="${{ github.event.inputs.stack }}"
+          VERSION="${{ github.event.inputs.version }}"
+          ROLLBACK="${{ github.event.inputs.rollback }}"
+          ROLLBACK_VERSION="${{ github.event.inputs.rollback_version }}"
+          DRY_RUN="${{ github.event.inputs.dry_run }}"
+          echo "🖱️ Trigger: workflow_dispatch"
           
           echo "stack=$STACK" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
