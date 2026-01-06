@@ -597,7 +597,9 @@ jobs:
           fi
           
           # Gerar .env.prod com interpolação de variáveis
-          cat > .env.prod << EOF
+          # Usar delimitador sem aspas para permitir interpolação via envsubst
+          # O parser YAML não interpreta o conteúdo do heredoc quando está dentro de run: |
+          cat > .env.prod <<ENVFILE_EOF
 # =============================================================================
 # ALICE PLATFORM - ENVIRONMENT VARIABLES (PRODUCTION)
 # =============================================================================
@@ -710,7 +712,9 @@ KUCOIN_PRO_API_KEY=${SECRET_KUCOIN_PRO_API_KEY}
 KUCOIN_PRO_API_SECRET=${SECRET_KUCOIN_PRO_API_SECRET}
 KUCOIN_PRO_API_PASSPHRASE=${SECRET_KUCOIN_PRO_API_PASSPHRASE}
 KUCOIN_PRO_BASE_URL=${SECRET_KUCOIN_PRO_BASE_URL}
-EOF
+ENVFILE_EOF
+          # Interpolar variáveis usando envsubst (mais simples e enterprise)
+          envsubst < .env.prod > .env.prod.tmp && mv .env.prod.tmp .env.prod
           
           echo "✅ .env.prod gerado com $(wc -l < .env.prod) linhas"
           
