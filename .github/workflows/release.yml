@@ -654,6 +654,7 @@ jobs:
         with:
           tag_name: ${{ needs.create-release.outputs.version }}
           name: Alice Enterprise Platform ${{ needs.create-release.outputs.version }}
+          draft: false
           prerelease: ${{ inputs.prerelease }}
           generate_release_notes: false
           body_path: /tmp/release-notes.md
