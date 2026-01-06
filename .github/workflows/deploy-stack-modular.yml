@@ -229,9 +229,7 @@ jobs:
     needs: [validate]
     if: needs.validate.outputs.dry_run != 'true'
     timeout-minutes: 10
-    outputs:
-      prepared: ${{ steps.prepare.outputs.prepared }}
-    
+
     steps:
       - name: Checkout código
         uses: actions/checkout@v4
@@ -606,12 +604,7 @@ jobs:
             
             echo ""
             echo "✅ Infraestrutura base preparada com sucesso"
-
-      - name: Mark as prepared
-        id: prepare
-        run: |
-          echo "prepared=true" >> "$GITHUB_OUTPUT"
-          echo "✅ Preparação concluída com sucesso"
+            echo "✅ Preparação concluída com sucesso"
 
   # ===========================================================================
   # INFRA STACK - Deploy + Health + Rollback
@@ -621,10 +614,8 @@ jobs:
     name: Deploy Stack INFRA
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare]
-    if: needs.validate.outputs.deploy_infra == 'true' && needs.prepare.outputs.prepared == 'true'
+    if: needs.validate.outputs.deploy_infra == 'true' && needs.prepare.result == 'success'
     timeout-minutes: 15
-    outputs:
-      deployed: ${{ steps.deploy.outputs.deployed }}
     
     steps:
       - name: Deploy stack infra via SSH
@@ -654,17 +645,14 @@ jobs:
             # Salvar versão atual
             echo "${{ needs.validate.outputs.version }}" > /opt/alice/versions/infra.current
             
-            echo "deployed=true" >> "$GITHUB_OUTPUT"
             echo "✅ INFRA stack deployed"
 
   health-infra:
     name: Health Check INFRA
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, deploy-infra]
-    if: needs.deploy-infra.outputs.deployed == 'true'
+    if: needs.deploy-infra.result == 'success'
     timeout-minutes: 10
-    outputs:
-      healthy: ${{ steps.check.outputs.healthy }}
     
     steps:
       - name: Check health with retry logic
@@ -767,10 +755,8 @@ jobs:
     name: Deploy Stack ALICE
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare, health-infra]
-    if: needs.validate.outputs.deploy_alice == 'true' && needs.prepare.outputs.prepared == 'true' && needs.health-infra.outputs.healthy == 'true'
+    if: needs.validate.outputs.deploy_alice == 'true' && needs.prepare.result == 'success' && needs.health-infra.result == 'success'
     timeout-minutes: 15
-    outputs:
-      deployed: ${{ steps.deploy.outputs.deployed }}
     
     steps:
       - name: Deploy stack alice via SSH
@@ -800,17 +786,14 @@ jobs:
             # Salvar versão atual
             echo "${{ needs.validate.outputs.version }}" > /opt/alice/versions/alice.current
             
-            echo "deployed=true" >> "$GITHUB_OUTPUT"
             echo "✅ ALICE stack deployed"
 
   health-alice:
     name: Health Check ALICE
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, deploy-alice]
-    if: needs.deploy-alice.outputs.deployed == 'true'
+    if: needs.deploy-alice.result == 'success'
     timeout-minutes: 10
-    outputs:
-      healthy: ${{ steps.check.outputs.healthy }}
     
     steps:
       - name: Check health with retry logic
@@ -908,10 +891,8 @@ jobs:
     name: Deploy Stack OBSERVABILITY
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare, health-infra]
-    if: needs.validate.outputs.deploy_observability == 'true' && needs.prepare.outputs.prepared == 'true' && needs.health-infra.outputs.healthy == 'true'
+    if: needs.validate.outputs.deploy_observability == 'true' && needs.prepare.result == 'success' && needs.health-infra.result == 'success'
     timeout-minutes: 15
-    outputs:
-      deployed: ${{ steps.deploy.outputs.deployed }}
     
     steps:
       - name: Deploy stack observability via SSH
@@ -941,17 +922,14 @@ jobs:
             # Salvar versão atual
             echo "${{ needs.validate.outputs.version }}" > /opt/alice/versions/observability.current
             
-            echo "deployed=true" >> "$GITHUB_OUTPUT"
             echo "✅ OBSERVABILITY stack deployed"
 
   health-observability:
     name: Health Check OBSERVABILITY
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, deploy-observability]
-    if: needs.deploy-observability.outputs.deployed == 'true'
+    if: needs.deploy-observability.result == 'success'
     timeout-minutes: 10
-    outputs:
-      healthy: ${{ steps.check.outputs.healthy }}
     
     steps:
       - name: Check health with retry logic
@@ -1046,10 +1024,8 @@ jobs:
     name: Deploy Stack ERPNEXT
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare, health-infra]
-    if: needs.validate.outputs.deploy_erpnext == 'true' && needs.prepare.outputs.prepared == 'true' && needs.health-infra.outputs.healthy == 'true'
+    if: needs.validate.outputs.deploy_erpnext == 'true' && needs.prepare.result == 'success' && needs.health-infra.result == 'success'
     timeout-minutes: 20
-    outputs:
-      deployed: ${{ steps.deploy.outputs.deployed }}
     
     steps:
       - name: Deploy stack erpnext via SSH
@@ -1086,10 +1062,8 @@ jobs:
     name: Health Check ERPNEXT
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, deploy-erpnext]
-    if: needs.deploy-erpnext.outputs.deployed == 'true'
+    if: needs.deploy-erpnext.result == 'success'
     timeout-minutes: 15
-    outputs:
-      healthy: ${{ steps.check.outputs.healthy }}
     
     steps:
       - name: Check health with retry logic
@@ -1185,10 +1159,8 @@ jobs:
     name: Deploy Stack BACKUP
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare, health-infra]
-    if: needs.validate.outputs.deploy_backup == 'true' && needs.prepare.outputs.prepared == 'true' && needs.health-infra.outputs.healthy == 'true'
+    if: needs.validate.outputs.deploy_backup == 'true' && needs.prepare.result == 'success' && needs.health-infra.result == 'success'
     timeout-minutes: 10
-    outputs:
-      deployed: ${{ steps.deploy.outputs.deployed }}
     
     steps:
       - name: Deploy stack backup via SSH
@@ -1218,17 +1190,14 @@ jobs:
             # Salvar versão atual
             echo "${{ needs.validate.outputs.version }}" > /opt/alice/versions/backup.current
             
-            echo "deployed=true" >> "$GITHUB_OUTPUT"
             echo "✅ BACKUP stack deployed"
 
   health-backup:
     name: Health Check BACKUP
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, deploy-backup]
-    if: needs.deploy-backup.outputs.deployed == 'true'
+    if: needs.deploy-backup.result == 'success'
     timeout-minutes: 5
-    outputs:
-      healthy: ${{ steps.check.outputs.healthy }}
     
     steps:
       - name: Check health with retry logic
