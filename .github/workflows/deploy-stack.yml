@@ -32,9 +32,7 @@
 # =============================================================================
 
 name: Deploy - Production (Stacks)
-# run-name: Solução oficial GitHub Actions 2025 para exibir nome amigável quando workflow_run é usado
-# Ref: https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#run-name
-run-name: Deploy - Production (Stacks) ${{ github.event.workflow_run && format('(triggered by {0})', github.event.workflow_run.name) || format('(manual)') }}
+run-name: Deploy - Production (Stacks) ${{ github.event.workflow_run && format('(triggered by Release & Tag)') || format('(manual)') }}
 
 on:
   # Disparo AUTOMÁTICO: somente quando o workflow Release & Tag terminar com sucesso
@@ -114,6 +112,34 @@ env:
 
 jobs:
   # ===========================================================================
+  # Job 0: Verificar se Release foi bem-sucedido (FALHA IMEDIATAMENTE se não)
+  # ===========================================================================
+  # CRÍTICO: Este job FALHA IMEDIATAMENTE se Release não foi bem-sucedido
+  # Isso evita que o workflow apareça na UI quando não deveria rodar
+  # workflow_run dispara mesmo em falha/cancelado, então verificamos conclusion explicitamente
+  check-release-success:
+    name: Check Release Success
+    runs-on: [self-hosted, linux, deploy]
+    timeout-minutes: 1
+    # CRÍTICO: Se workflow_run e Release não foi bem-sucedido, FALHAR imediatamente
+    # Isso faz o workflow aparecer como "failed" na UI, não como "skipped"
+    # Para workflow_dispatch, este job é pulado (não precisa verificar Release)
+    if: github.event_name == 'workflow_run'
+    steps:
+      - name: Verificar conclusão do Release
+        run: |
+          if [ "${{ github.event.workflow_run.conclusion }}" != "success" ]; then
+            echo "❌ ERRO: Release & Tag não foi bem-sucedido (conclusion: ${{ github.event.workflow_run.conclusion }})"
+            echo "   Deploy automático só acontece após Release bem-sucedido."
+            exit 1
+          fi
+          if [ "${{ github.event.workflow_run.status }}" != "completed" ]; then
+            echo "❌ ERRO: Release & Tag ainda não foi concluído (status: ${{ github.event.workflow_run.status }})"
+            exit 1
+          fi
+          echo "✅ Release & Tag foi bem-sucedido. Prosseguindo com deploy..."
+  
+  # ===========================================================================
   # Job 1: Validação e Preparação
   # ===========================================================================
   validate:
@@ -123,11 +149,14 @@ jobs:
     # CRÍTICO: Deploy automático só se Release & Tag terminou com sucesso
     # workflow_run dispara mesmo em falha/cancelado, então verificamos conclusion explicitamente
     # Se não for workflow_dispatch manual E não for workflow_run com sucesso, SKIP o job
+    # needs: check-release-success só é necessário para workflow_run (job é skipped para workflow_dispatch)
+    needs: [check-release-success]
     if: |
       github.event_name == 'workflow_dispatch' || 
       (github.event_name == 'workflow_run' && 
        github.event.workflow_run.conclusion == 'success' && 
-       github.event.workflow_run.status == 'completed')
+       github.event.workflow_run.status == 'completed' &&
+       (needs.check-release-success.result == 'success' || needs.check-release-success.result == 'skipped'))
     outputs:
       stack: ${{ steps.context.outputs.stack }}
       version: ${{ steps.context.outputs.version }}
