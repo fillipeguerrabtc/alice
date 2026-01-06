@@ -221,7 +221,9 @@ gh workflow run deploy-stack-modular.yml -f stack=all -f version=v1.0.0 -f dry_r
 ### Release Enterprise Consolidado - (06/01/2026)
 
 **Workflow Principal:** `.github/workflows/release.yml` ⭐ **EM USO**  
-**Workflow Alternativo:** `.github/workflows/release-modular.yml` (Matrix Strategy experimental)
+**Deploy Modular:** `.github/workflows/deploy-stack-modular.yml` (5 stacks independentes)
+
+> **NOTA (06/01/2026):** O workflow `release-modular.yml` foi **REMOVIDO**. A arquitetura atual usa `release.yml` (consolidado, testado) que dispara `deploy-stack-modular.yml` para deploy modular com 5 stacks independentes.
 
 #### Arquitetura Enterprise Consolidada (06/01/2026)
 

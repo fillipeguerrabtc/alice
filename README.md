@@ -47,19 +47,19 @@
 | **Customização** | Fine-tuning específico para cada cliente |
 | **Disponibilidade** | Sem dependência de SLAs externos |
 
-> **🚀 ATUALIZAÇÃO ENTERPRISE v3.0.0 (06/01/2026) - Pipeline Modular:**  
-> Refatoração completa da pipeline CI/CD para arquitetura modular seguindo melhores práticas oficiais GitHub Actions 2025.
+> **🚀 ATUALIZAÇÃO ENTERPRISE v3.0.0 (06/01/2026) - Pipeline CI/CD:**  
+> Pipeline CI/CD enterprise completo com deploy modular em 5 stacks independentes.
 > 
-> **Release Modular v3 (Matrix Strategy):**
-> - ✅ 17 builds Docker em **paralelo** (~5-7min vs ~34min sequencial = **80% mais rápido**)
-> - ✅ Retag inteligente (diff analysis - só builda o que mudou, economiza BuildKit cache)
-> - ✅ Isolamento de falhas (`fail-fast: false` - uma imagem falha, outras continuam)
+> **Release Consolidado (`release.yml`):**
+> - ✅ Build de 17 imagens Docker (12 microservices + 5 GPU)
+> - ✅ Retag inteligente (diff analysis - só builda o que mudou)
 > - ✅ Cache GHCR por imagem (máxima eficiência BuildKit)
 > - ✅ Smoke test PostgreSQL + pgvector (detecta SIGILL/AVX-512 antes do deploy)
-> - ✅ Jobs independentes: `validate` → `analyze-changes` → `build-microservices` (matrix) + `build-gpu` (matrix) → `smoke-test` → `publish-release` → `trigger-deploy`
+> - ✅ Jobs: `create-release` → `build-images` → `trigger-deploy`
+> - ✅ Dispara automaticamente `deploy-stack-modular.yml` após sucesso
 > 
-> **Deploy Modular v3 (Jobs Individuais):**
-> - ✅ 5 jobs separados por stack (deploy + health + rollback por stack)
+> **Deploy Modular v3 (`deploy-stack-modular.yml`):**
+> - ✅ 5 stacks independentes (INFRA, ALICE, OBSERVABILITY, ERPNEXT, BACKUP)
 > - ✅ Paralelização real: INFRA → (ALICE + OBSERVABILITY + ERPNEXT + BACKUP em paralelo)
 > - ✅ Rollback cirúrgico (só reverte stack com falha, outros continuam funcionando)
 > - ✅ Produção parcial real (ERPNext falha → Alice continua 100% operacional)
@@ -68,14 +68,12 @@
 > - ✅ Health checks completos (50 containers verificados com retry logic 30-45x)
 > 
 > **Performance:**
-> - Release v2 (monolítico): 17 builds sequenciais = ~34min
-> - Release v3 (modular): 17 builds paralelos = **~5-7min** ⚡
 > - Deploy v2 (sequencial): 5 stacks em série = ~30min
 > - Deploy v3 (modular): 5 stacks em paralelo = **~10min** ⚡
 > 
-> **Workflows Atualizados:**
-> - `.github/workflows/release-modular.yml` (substitui `release.yml`)
-> - `.github/workflows/deploy-stack-modular.yml` (substitui `deploy-stack.yml`)
+> **Workflows Ativos:**
+> - `.github/workflows/release.yml` ⭐ (Release & Tag - dispara builds e deploy)
+> - `.github/workflows/deploy-stack-modular.yml` (Deploy - Production Modular)
 
 > **Atualização 28/12/2025:** Pipeline 100% self-hosted com **Runner Enterprise Hardening** (Hetzner CPX32 - 4 vCPU AMD EPYC, 8GB RAM). Otimizações aplicadas: Kernel tuning (net.core.rmem_max=16MB, vm.swappiness=10), Docker daemon (BuildKit, max-downloads=10, GC=20GB), limits (nofile=1048576), systemd (NODE_OPTIONS=6GB, Nice=-5), cron cleanup diário. GPU dedicada Hetzner GEX44 (RTX 4000 Ada 20GB) 24/7 - containers Docker rodam continuamente, sem cold start.
 
@@ -375,42 +373,43 @@ Consulte [docs/SECRETS.md](docs/SECRETS.md) para a lista completa de secrets nec
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-**Workflows Enterprise v3:**
+**Workflows Enterprise:**
 
-| Workflow | Arquivo | Jobs | Estratégia | Tempo |
-|----------|---------|------|------------|-------|
-| **CI** | `ci.yml` | 1 | Validação sequencial | ~3min |
-| **Release** | `release-modular.yml` | 7 | Matrix (17 builds ‖) | **~5-7min** |
-| **Deploy** | `deploy-stack-modular.yml` | 15 | Jobs independentes | **~10min** |
+| Workflow | Arquivo | Descrição | Tempo |
+|----------|---------|-----------|-------|
+| **CI** | `ci.yml` | Validação (typecheck, lint, build, trivy) | ~3min |
+| **Release** | `release.yml` | Build imagens + Tag + GitHub Release | ~5-10min |
+| **Deploy** | `deploy-stack-modular.yml` | Deploy modular (5 stacks independentes) | **~10min** |
 
-**Características Enterprise Release Modular v3:**
-- ✅ **Matrix Strategy**: 17 builds Docker em paralelo (recomendação oficial GitHub Actions)
-- ✅ **Retag Inteligente**: Diff analysis (só builda o que mudou desde tag anterior)
-- ✅ **Isolamento de Falhas**: `fail-fast: false` (uma imagem falha, outras continuam)
-- ✅ **Cache GHCR**: Por imagem (máxima eficiência BuildKit)
+**Características Enterprise Release (`release.yml`):**
+- ✅ **Build Condicional**: Diff analysis (só builda o que mudou desde tag anterior)
+- ✅ **Retag Inteligente**: Imagens sem alterações são retagged (economiza tempo)
+- ✅ **Cache GHCR**: Registry cache por imagem (máxima eficiência BuildKit)
 - ✅ **Smoke Test**: PostgreSQL + pgvector (detecta SIGILL/AVX-512 antes do deploy)
-- ✅ **Logs Isolados**: Troubleshooting facilitado (logs curtos por job/imagem)
+- ✅ **17 Imagens**: 12 microservices + 5 GPU (sequencial otimizado)
+- ✅ **Disparo Automático**: Deploy disparado automaticamente após sucesso
 
-**Características Enterprise Deploy Modular v3:**
-- ✅ **Jobs Separados**: 1 job por stack (deploy + health + rollback independentes)
-- ✅ **Paralelização Real**: Alice + Observability + ERPNext + Backup em PARALELO
+**Características Enterprise Deploy Modular (`deploy-stack-modular.yml`):**
+- ✅ **5 Stacks Independentes**: INFRA, ALICE, OBSERVABILITY, ERPNEXT, BACKUP
+- ✅ **Paralelização Real**: Alice + Observability + ERPNext + Backup em PARALELO após INFRA
 - ✅ **Rollback Cirúrgico**: Só reverte stack com falha (outros continuam)
 - ✅ **Produção Parcial**: ERPNext falha → Alice continua 100% operacional
-- ✅ **Zero Dependências**: Stacks não se afetam mutuamente (isolamento Docker Compose)
+- ✅ **Isolamento**: Docker Compose projects (`-p alice-{stack}`)
 - ✅ **External Volumes/Networks**: Dados compartilhados preservados entre deploys/rollbacks
+- ✅ **Health Checks**: 50 containers verificados com retry logic (30-45x)
 
-**Performance v2 vs v3:**
+**Performance Pipeline Enterprise:**
 
-| Métrica | v2 (Monolítico) | v3 (Modular) | Ganho |
-|---------|-----------------|--------------|-------|
-| Release | ~34min (sequencial) | **~5-7min** (paralelo) | **80% mais rápido** ⚡ |
-| Deploy | ~30min (sequencial) | **~10min** (paralelo) | **66% mais rápido** ⚡ |
-| Rollback | Todos stacks | Stack específico | **Cirúrgico** 🎯 |
-| Logs | Misturados | Isolados por job | **Troubleshooting** 🔍 |
+| Métrica | Descrição | Tempo |
+|---------|-----------|-------|
+| CI | Validação (typecheck, lint, trivy) | ~3min |
+| Release | Build 17 imagens + GitHub Release | ~5-10min |
+| Deploy | 5 stacks em paralelo | **~10min** |
+| Rollback | Stack específico | **Cirúrgico** 🎯 |
 
 **Versionamento Semântico Automático:**
 - Conventional Commits (BREAKING→MAJOR, feat→MINOR, fix→PATCH)
-- Tags criadas automaticamente pelo `release-modular.yml`
+- Tags criadas automaticamente pelo `release.yml`
 - Changelog gerado automaticamente com classificação de commits
 - Retag inteligente (só builda imagens com código alterado)
 
@@ -498,10 +497,10 @@ alice/
 ├── .github/
 │   ├── actions/                    # Composite actions reutilizáveis
 │   │   └── setup-node-pnpm/        # Setup Node.js + pnpm (elimina duplicação)
-│   └── workflows/                  # CI/CD (3 workflows Enterprise v3)
-│       ├── ci.yml                  # Validação de código
-│       ├── release-modular.yml     # Matrix Strategy (17 builds ‖) - v3.0.0
-│       └── deploy-stack-modular.yml # Deploy modular (5 stacks ‖) - v3.0.0
+│   └── workflows/                  # CI/CD (3 workflows Enterprise)
+│       ├── ci.yml                  # Validação de código (dispara release.yml)
+│       ├── release.yml             # Build imagens + Tag + GitHub Release
+│       └── deploy-stack-modular.yml # Deploy modular (5 stacks independentes)
 │
 ├── client/                         # Frontend React
 │   └── src/
@@ -645,8 +644,8 @@ Todos os 50 containers têm security hardening completo aplicado. Containers que
 *Trading BTC Futures: KuCoin Perpetuals + Indicadores Técnicos Determinísticos + Validação Cruzada Anti-Alucinação*
 *LLM: Mixtral 8x7B (vLLM AWQ) via Hetzner GPU Server GEX44 (RTX 4000 Ada 20GB)*
 *GPU Services: LLM, FLUX.1 Schnell, Qwen3-Embedding-8B, OpenCLIP, Canary-1B (ASR) - gerenciados pelo GPU Manager Service*
-*Pipeline Enterprise Modular v3 (06/01/2026): Release Matrix (17 builds ‖ ~5-7min, 80% mais rápido) → Deploy Modular (5 stacks ‖ ~10min, 66% mais rápido)*
-*Rollback Cirúrgico v3: Só reverte stack com falha, outros continuam funcionando 100%*
+*Pipeline Enterprise (06/01/2026): Release (`release.yml`) → Deploy Modular (`deploy-stack-modular.yml` - 5 stacks independentes ~10min)*
+*Rollback Cirúrgico: Só reverte stack com falha, outros continuam funcionando 100%*
 
 </div>
 

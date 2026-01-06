@@ -4,19 +4,19 @@
 **Data:** 06 de Janeiro de 2026  
 **Versão:** 9.0 - Pipeline Enterprise Modular v3.0.0
 
-> **🚀 ATUALIZAÇÃO ENTERPRISE v3.0.0 (06/01/2026) - Pipeline Modular:**  
-> Refatoração completa da pipeline CI/CD para arquitetura modular seguindo melhores práticas oficiais GitHub Actions 2025.
+> **🚀 ATUALIZAÇÃO ENTERPRISE v3.0.0 (06/01/2026) - Pipeline CI/CD:**  
+> Pipeline CI/CD enterprise completo com deploy modular em 5 stacks independentes.
 > 
-> **Release Modular v3 (`release-modular.yml`):**
-> - ✅ Matrix Strategy: 17 builds Docker em **paralelo** (~5-7min vs ~34min = **80% mais rápido**)
+> **Release Consolidado (`release.yml`):**
+> - ✅ Build de 17 imagens Docker (12 microservices + 5 GPU)
 > - ✅ Retag Inteligente: Diff analysis (só builda o que mudou)
-> - ✅ Isolamento de Falhas: `fail-fast: false` (uma imagem falha, outras continuam)
 > - ✅ Cache GHCR: Por imagem (máxima eficiência BuildKit)
 > - ✅ Smoke Test: PostgreSQL + pgvector (detecta SIGILL/AVX-512)
-> - ✅ Jobs: `validate` → `analyze-changes` → `build-microservices` (matrix 12) + `build-gpu` (matrix 5) → `smoke-test` → `publish-release` → `trigger-deploy`
+> - ✅ Jobs: `create-release` → `build-images` → `trigger-deploy`
+> - ✅ Dispara automaticamente `deploy-stack-modular.yml` após sucesso
 > 
 > **Deploy Modular v3 (`deploy-stack-modular.yml`):**
-> - ✅ Jobs Separados: 1 job por stack (deploy + health + rollback)
+> - ✅ 5 stacks independentes (INFRA, ALICE, OBSERVABILITY, ERPNEXT, BACKUP)
 > - ✅ Paralelização: INFRA → (ALICE + OBSERVABILITY + ERPNEXT + BACKUP em paralelo)
 > - ✅ Rollback Cirúrgico: Só reverte stack com falha
 > - ✅ Produção Parcial: ERPNext falha → Alice continua operacional
@@ -25,14 +25,14 @@
 > - ✅ Health Checks Completos: 50 containers verificados (retry 30-45x)
 > 
 > **Performance:**
-> - Release v2: ~34min (sequencial) → v3: **~5-7min** (paralelo) = **80% mais rápido** ⚡
-> - Deploy v2: ~30min (sequencial) → v3: **~10min** (paralelo) = **66% mais rápido** ⚡
+> - Release: Build 17 imagens ~5-10min (retag inteligente otimiza)
+> - Deploy: 5 stacks em paralelo = **~10min** ⚡
 > 
-> **Workflows Atualizados:**
-> - `.github/workflows/release-modular.yml` (substitui `release.yml`)
-> - `.github/workflows/deploy-stack-modular.yml` (substitui `deploy-stack.yml`)
+> **Workflows Ativos:**
+> - `.github/workflows/release.yml` ⭐ (Release & Tag - dispara builds e deploy)
+> - `.github/workflows/deploy-stack-modular.yml` (Deploy - Production Modular)
 > 
-> **Documentação Completa:** Ver `CLAUDE.md` seções "Release Modular v3" e "Deploy Modular v3"
+> **Documentação Completa:** Ver `CLAUDE.md` seção "Release Enterprise Consolidado"
 
 > **ATUALIZAÇÃO MAJOR 05/01/2026:** Arquitetura refatorada para **5 stacks independentes** com deploy/rollback modular. Cada stack pode ser deployado, rolledback e monitorado separadamente. ERPNext pode falhar sem afetar Alice. Produção parcial agora é possível.
 

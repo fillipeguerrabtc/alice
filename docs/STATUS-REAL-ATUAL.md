@@ -5,12 +5,12 @@
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
 > **Versão:** 6.0 - Pipeline Enterprise Modular v3.0.0
 
-> **🚀 ATUALIZAÇÃO v3.0.0 (06/01/2026) - Pipeline Modular:**  
-> Pipeline CI/CD refatorado para arquitetura modular enterprise seguindo best practices oficiais 2025.
-> - **Release Modular v3** (`release-modular.yml`): Matrix Strategy (17 builds ‖ ~5-7min, 80% mais rápido)
-> - **Deploy Modular v3** (`deploy-stack-modular.yml`): Jobs independentes (5 stacks ‖ ~10min, 66% mais rápido)
-> - **Rollback Cirúrgico v3**: Só reverte stack com falha, outros continuam operacionais
-> - Ver ADR-008 e ADR-009 em `ARQUITETURA.md` para detalhes completos
+> **🚀 ATUALIZAÇÃO v3.0.0 (06/01/2026) - Pipeline Enterprise:**  
+> Pipeline CI/CD enterprise completo com deploy modular em 5 stacks independentes.
+> - **Release** (`release.yml`): Build 17 imagens (12 microservices + 5 GPU), retag inteligente, dispara deploy
+> - **Deploy Modular** (`deploy-stack-modular.yml`): Jobs independentes (5 stacks ‖ ~10min, 66% mais rápido)
+> - **Rollback Cirúrgico**: Só reverte stack com falha, outros continuam operacionais
+> - Ver ADR-007 em `ARQUITETURA.md` para detalhes completos
 
 ---
 
@@ -784,8 +784,8 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 | Workflow | Trigger | Função | Tempo |
 |----------|---------|--------|-------|
 | ci.yml | Push main | Build, TypeCheck, ESLint, Trivy | ~3min |
-| **release-modular.yml** (v3) | CI passa | Tag v1.0.X, Matrix builds (17 ‖), GHCR, Smoke test | **~5-7min** ⚡ |
-| **deploy-stack-modular.yml** (v3) | Release passa | Deploy modular (5 stacks ‖), Health checks, Rollback cirúrgico | **~10min** ⚡ |
+| **release.yml** | CI passa | Tag v1.0.X, Build 17 imagens, GHCR, Smoke test | ~5-10min |
+| **deploy-stack-modular.yml** | Release passa | Deploy modular (5 stacks ‖), Health checks, Rollback cirúrgico | **~10min** ⚡ |
 
 ### Cache Enterprise
 
