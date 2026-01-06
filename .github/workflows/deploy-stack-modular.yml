@@ -1100,7 +1100,7 @@ jobs:
             # Pull e deploy
             # CRITICAL: Incluir base.yml para criar volumes/networks externos
             docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.observability.yml pull
-            docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.observability.yml up -d --remove-orphans
+            docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.observability.yml up -d --remove-orphans
             
             # Salvar versão atual
             echo "${{ needs.validate.outputs.version }}" > /opt/alice/versions/observability.current
@@ -1261,7 +1261,7 @@ jobs:
             # Pull e deploy
             # CRITICAL: Incluir base.yml para criar volumes/networks externos
             docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml pull
-            docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.erpnext.yml up -d --remove-orphans
+            docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml up -d --remove-orphans
             
             # Salvar versão atual
             echo "${{ needs.validate.outputs.version }}" > /opt/alice/versions/erpnext.current
@@ -1420,7 +1420,7 @@ jobs:
             # Pull e deploy
             # CRITICAL: Incluir base.yml para criar volumes/networks externos
             docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.backup.yml pull
-            docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.backup.yml up -d --remove-orphans
+            docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.backup.yml up -d --remove-orphans
             
             # Salvar versão atual
             echo "${{ needs.validate.outputs.version }}" > /opt/alice/versions/backup.current
