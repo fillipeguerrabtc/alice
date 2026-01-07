@@ -103,8 +103,11 @@ updates:
   # ============================================================================
   # pip - Dependências Python (GPU containers)
   # ============================================================================
+  # NOTA: requirements.txt criados em 07/01/2026 para permitir Dependabot
+  # Anteriormente pip install era inline nos Dockerfiles (Dependabot não parseava)
+  # ============================================================================
   - package-ecosystem: "pip"
-    directory: "/infra/docker/gpu-embeddings"
+    directory: "/docker/gpu/embeddings-gpu"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -123,7 +126,7 @@ updates:
       - "fillipeguerrabtc"
 
   - package-ecosystem: "pip"
-    directory: "/infra/docker/mixtral-vllm"
+    directory: "/docker/gpu/mixtral-vllm"
     schedule:
       interval: "weekly"
       day: "monday"

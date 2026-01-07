@@ -42,24 +42,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
 RUN useradd -m -u 1000 embeddings
 WORKDIR /app
 
-# Instalar dependências - PyTorch JÁ INSTALADO na imagem NGC!
-# ENTERPRISE 28/12/2025: Versões mais recentes de todas as dependências
-# NOTA: torchvision omitido - NGC 25.12 já inclui versão compatível
+# Instalar dependências - PyTorch JÁ INSTALADO na imagem base!
+# ENTERPRISE 07/01/2026: Usar requirements.txt para SSOT (Dependabot monitora)
+# NOTA: torchvision omitido - imagem base já inclui versão compatível
+COPY requirements.txt /app/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
-    pip install \
-    transformers==4.57.3 \
-    sentence-transformers==5.2.0 \
-    open_clip_torch==3.2.0 \
-    accelerate==1.12.0 \
-    safetensors==0.7.0 \
-    fastapi==0.127.0 \
-    uvicorn==0.40.0 \
-    python-multipart==0.0.21 \
-    pillow==12.0.0 \
-    numpy==2.4.0 \
-    prometheus-client==0.23.1 \
-    pybreaker==1.2.0
+    pip install -r /app/requirements.txt
 
 COPY app/ /app/
 COPY healthcheck.py /app/healthcheck.py

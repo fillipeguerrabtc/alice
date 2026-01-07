@@ -40,10 +40,11 @@ ENV PIP_ROOT_USER_ACTION=ignore
 WORKDIR /app
 
 # Dependências adicionais para API e métricas (vLLM já está instalado)
+# ENTERPRISE 07/01/2026: Usar requirements.txt para SSOT (Dependabot monitora)
+COPY requirements.txt /app/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
-    pip install \
-    prometheus-client==0.23.1
+    pip install -r /app/requirements.txt
 
 # Copiar scripts customizados
 COPY healthcheck.py /app/healthcheck.py
