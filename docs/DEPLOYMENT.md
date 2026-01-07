@@ -2665,50 +2665,103 @@ docker exec grafana wget --spider -q http://localhost:3000/api/health
 
 ---
 
-### Failure Mode #2: PostgreSQL Não Inicia (Permissões Incorretas)
+### Failure Mode #2: Permissões Incorretas em Volumes (Restart Loop)
 
 **Sintoma:**
 ```
-Container: alice-postgres
-Status: unhealthy ou exited(1)
-Log: FATAL: data directory "/var/lib/postgresql/data" has invalid permissions
+Container: alice-postgres ou jaeger
+Status: unhealthy (restart loop 100+x)
+Log PostgreSQL: 
+  initdb: error: could not access directory "/var/lib/postgresql/data": Permission denied
+  chmod: /var/lib/postgresql/data: Operation not permitted
+
+Log Jaeger:
+  Error: failed to initialize storage 'badger_main': 
+  Error Creating Dir: "/badger/key" err: mkdir /badger/key: permission denied
 ```
 
 **Causa Raiz:**
-- Diretório /opt/alice/data/postgres com owner/group incorreto
-- PostgreSQL requer UID 999:999 com permissões 700
-- `|| true` no workflow suprimia erros silenciosamente
+- Volumes bind montados com ownership incorreto
+- **PostgreSQL** (`postgres:16-alpine`) usa **UID 70**, mas volume criado com UID 999
+- **Jaeger v2** (`jaegertracing/jaeger:2.13.0`) usa **UID 10001**, mas volume criado como root
+- Docker não consegue fazer `chown` em bind mounts quando container é `read_only: true`
 
-**Solução (Implementada em v5.0):**
+**Solução (Implementada em v5.1 - 07/01/2026):**
+
+Script enterprise `setup-production-volumes.sh` corrige permissões automaticamente:
+
 ```bash
-# Workflow agora usa fail-fast explícito (sem || true)
-if ! sudo chown -R 999:999 /opt/alice/data/postgres; then
-  echo "❌ ERRO: Falha ao configurar owner do diretório PostgreSQL"
-  exit 1
-fi
-sudo chmod 700 /opt/alice/data/postgres
+# Script para corrigir permissões
+cd /opt/alice/app/infra/scripts
+sudo ./setup-production-volumes.sh --fix-existing
 
-# Validação em 4 estágios:
-# 1. Diretório existe
-# 2. Owner/group correto (999:999)
-# 3. Permissões corretas (700)
-# 4. Teste de escrita como UID 999
+# Restart containers após correção
+cd /opt/alice/app/infra/docker/stacks
+docker compose -f docker-compose.base.yml -f docker-compose.infra.yml -p alice-infra restart postgres
+docker compose -f docker-compose.base.yml -f docker-compose.observability.yml -p alice-observability restart jaeger
+```
+
+**Como Validar:**
+```bash
+# Verificar ownership atual
+ls -ld /opt/alice/data/postgres
+# Esperado: drwx------ 19 70 70 4096 Jan 7 15:23 /opt/alice/data/postgres
+
+ls -ld /opt/alice/data/jaeger
+# Esperado: drwxr-xr-x 2 10001 10001 4096 Jan 7 15:23 /opt/alice/data/jaeger
+
+# Verificar container PostgreSQL
+docker exec alice-postgres id postgres
+# Esperado: uid=70(postgres) gid=70(postgres)
+
+# Verificar container Jaeger
+docker exec jaeger id
+# Esperado: uid=10001 gid=0(root)
 ```
 
 **Como Corrigir Manualmente:**
 ```bash
 # SSH no servidor
-sudo chown -R 999:999 /opt/alice/data/postgres
+# 1. PARAR containers afetados
+docker stop alice-postgres jaeger
+
+# 2. Corrigir ownership
+sudo chown -R 70:70 /opt/alice/data/postgres
 sudo chmod 700 /opt/alice/data/postgres
 
-# Validar permissões
-ls -ld /opt/alice/data/postgres
-# Esperado: drwx------ 2 999 999 ...
+sudo chown -R 10001:10001 /opt/alice/data/jaeger
+sudo chmod 755 /opt/alice/data/jaeger
 
-# Testar escrita
-sudo -u "#999" touch /opt/alice/data/postgres/.test && echo "OK" || echo "FAIL"
-sudo rm -f /opt/alice/data/postgres/.test
+# 3. INICIAR containers
+docker start alice-postgres jaeger
+
+# 4. Verificar logs
+docker logs alice-postgres --tail 50
+docker logs jaeger --tail 50
 ```
+
+**Tabela de UIDs/GIDs por Serviço:**
+
+| Serviço | UID:GID | Imagem | Diretório |
+|---------|---------|--------|-----------|
+| PostgreSQL | **70:70** | postgres:16-alpine | /opt/alice/data/postgres |
+| Jaeger | **10001:10001** | jaegertracing/jaeger:2.13.0 | /opt/alice/data/jaeger |
+| Grafana | 472:472 | grafana/grafana:12.3.1 | /opt/alice/data/grafana |
+| Prometheus | 65534:65534 | prom/prometheus (nobody) | /opt/alice/data/prometheus |
+| Loki | 10001:10001 | grafana/loki:3.6.3 | /opt/alice/data/loki |
+| ClickHouse | 101:101 | clickhouse-server | /opt/alice/data/clickhouse |
+| Redis Alice | 999:999 | redis:7.4.7-alpine | /opt/alice/data/redis-alice |
+| Caddy | 1000:1000 | Custom Dockerfile | /opt/alice/data/caddy |
+| SearXNG | 977:977 | searxng/searxng | /opt/alice/data/searxng-config |
+| ERPNext | 1000:1000 | Frappe Bench | /opt/alice/data/erpnext-sites |
+| MariaDB | 999:999 | mariadb:11.6.2-ubi9 | /opt/alice/data/erpnext-mariadb |
+| Langfuse DB | **70:70** | postgres:16-alpine | /opt/alice/data/langfuse-db |
+
+**CORREÇÃO CRÍTICA 07/01/2026:**
+- PostgreSQL Alpine usa **UID 70** (não 999 como Debian antigas)
+- Jaeger v2 usa **UID 10001** (non-root security best practice)
+- Script `prepare-production-server.sh` corrigido para UIDs corretos
+- Novo script `setup-production-volumes.sh` para correção idempotente
 
 ---
 
@@ -2860,7 +2913,8 @@ docker compose -f docker-compose.base.yml -f docker-compose.infra.yml -p alice-i
 | Sintoma | Failure Mode | Ação Imediata |
 |---------|--------------|---------------|
 | Browser: ERR_TOO_MANY_REDIRECTS | #1 - Grafana | Verificar `GF_SECURITY_COOKIE_SECURE` |
-| PostgreSQL: data directory has invalid permissions | #2 - Permissões | `sudo chown -R 999:999 /opt/alice/data/postgres` |
+| PostgreSQL: Permission denied data directory | #2 - Permissões | `sudo chown -R 70:70 /opt/alice/data/postgres` |
+| Jaeger: Error Creating Dir permission denied | #2 - Permissões | `sudo chown -R 10001:10001 /opt/alice/data/jaeger` |
 | Caddy: adapting config error | #3 - Caddyfile | `caddy validate --config Caddyfile` |
 | PostgreSQL: No space left on device | #4 - Disco | `df -h /opt/alice` + limpar backups |
 | Container: ECONNREFUSED postgres:5432 | #5 - Networks | `docker network create alice-network` |

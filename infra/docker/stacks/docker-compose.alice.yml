@@ -81,10 +81,10 @@ services:
       - /var/run:mode=1777,size=8M
       - /etc/nginx/conf.d:mode=1777,size=8M
     healthcheck:
-      # CORREÇÃO 05/01/2026: nginx:alpine usa ash/busybox - NÃO tem /dev/tcp
-      # /dev/tcp é bash-only. Alpine TEM wget disponível.
-      # Ref: CLAUDE.md documentação de bugs corrigidos
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:80/ || exit 1"]
+      # CORREÇÃO 07/01/2026: nginx:alpine non-root usa porta 8080 (não 80)
+      # Dockerfile frontend expõe porta 8080 (USER nginx - non-root)
+      # Ref: apps/frontend-service/Dockerfile linha 118 (EXPOSE 8080)
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 10

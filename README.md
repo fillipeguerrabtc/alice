@@ -297,6 +297,16 @@ Consulte [docs/SECRETS.md](docs/SECRETS.md) para a lista completa de secrets nec
 | `/opt/alice/uploads` | Uploads RAG (imagens, áudios e documentos) |
 | `/opt/alice/backups` | Backups locais (pgBackRest, MariaDB, Redis) |
 
+> **⚠️ IMPORTANTE - Permissões de Volumes (07/01/2026):**  
+> Cada serviço requer ownership específico no volume bind:
+> - **PostgreSQL**: UID 70 (postgres:16-alpine)
+> - **Jaeger**: UID 10001 (jaegertracing/jaeger:2.13.0)
+> - **Grafana**: UID 472, **Prometheus**: UID 65534
+> 
+> **Correção automática:** Execute `sudo ./infra/scripts/setup-production-volumes.sh --fix-existing` antes do primeiro deploy para configurar permissões corretas e evitar restart loops.
+>
+> **Documentação completa:** Ver `docs/DEPLOYMENT.md` seção "Failure Mode #2: Permissões Incorretas em Volumes"
+
 ### Pipeline CI/CD Enterprise Modular v3.0.0 (06/01/2026)
 
 **Arquitetura completa seguindo melhores práticas oficiais GitHub Actions 2025:**

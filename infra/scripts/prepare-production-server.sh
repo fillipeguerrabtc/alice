@@ -201,9 +201,11 @@ echo ""
 echo "🔐 CONFIGURANDO PERMISSÕES POR SERVIÇO"
 echo "============================================="
 
-# PostgreSQL (UID 999)
-echo "📝 PostgreSQL (UID 999)..."
-sudo chown -R 999:999 /opt/alice/data/postgres
+# PostgreSQL (UID 70 - postgres:16-alpine)
+# CORREÇÃO CRÍTICA 07/01/2026: UID 70, NÃO 999!
+# postgres:16-alpine usa UID 70 (não 999 como imagens Debian antigas)
+echo "📝 PostgreSQL (UID 70 - postgres:16-alpine)..."
+sudo chown -R 70:70 /opt/alice/data/postgres
 sudo chmod 700 /opt/alice/data/postgres
 echo "   ✅ PostgreSQL configurado"
 
@@ -225,8 +227,9 @@ sudo chown -R 10001:10001 /opt/alice/data/loki
 sudo chmod 755 /opt/alice/data/loki
 echo "   ✅ Loki configurado"
 
-# Jaeger (UID 10001)
-echo "📝 Jaeger (UID 10001)..."
+# Jaeger (UID 10001 - jaegertracing/jaeger v2)
+# CORREÇÃO CRÍTICA 07/01/2026: v2 usa non-root UID 10001
+echo "📝 Jaeger (UID 10001 - jaegertracing/jaeger v2)..."
 sudo chown -R 10001:10001 /opt/alice/data/jaeger
 sudo chmod 755 /opt/alice/data/jaeger
 echo "   ✅ Jaeger configurado"
@@ -237,8 +240,8 @@ sudo chown -R 101:101 /opt/alice/data/clickhouse /opt/alice/logs/clickhouse
 sudo chmod 755 /opt/alice/data/clickhouse /opt/alice/logs/clickhouse
 echo "   ✅ ClickHouse configurado"
 
-# Langfuse DB PostgreSQL (UID 70)
-echo "📝 Langfuse DB (UID 70)..."
+# Langfuse DB PostgreSQL (UID 70 - postgres:16-alpine)
+echo "📝 Langfuse DB (UID 70 - postgres:16-alpine)..."
 sudo chown -R 70:70 /opt/alice/data/langfuse-db
 sudo chmod 755 /opt/alice/data/langfuse-db
 echo "   ✅ Langfuse DB configurado"
@@ -273,8 +276,11 @@ sudo chown -R 1000:1000 /opt/alice/data/erpnext-sites /opt/alice/logs/erpnext
 sudo chmod 755 /opt/alice/data/erpnext-sites /opt/alice/logs/erpnext
 echo "   ✅ ERPNext configurado"
 
-# Backups (root com permissões restritas)
+# Backups (UID 70 para pgBackRest acesso, root owner)
+# pgBackRest precisa escrever em /opt/alice/backups/postgresql
 echo "📝 Backups..."
+sudo chown -R 70:70 /opt/alice/backups/postgresql
+sudo chown -R 70:70 /opt/alice/backups/postgresql/logs
 sudo chmod 750 /opt/alice/backups
 sudo chmod 750 /opt/alice/backups/postgresql
 echo "   ✅ Backups configurado"
