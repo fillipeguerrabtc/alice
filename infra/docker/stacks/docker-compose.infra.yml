@@ -398,8 +398,12 @@ services:
   # ===========================================================================
   # MINIO - Object Storage S3 (para Langfuse v3)
   # ===========================================================================
+  # NOTA (07/01/2026): MinIO descontinuou Docker Hub em 23/10/2025
+  # Migração para Quay.io (registro oficial mantido pela MinIO)
+  # Ref: https://quay.io/repository/minio/minio
+  # ===========================================================================
   minio:
-    image: minio/minio:RELEASE.2025-12-13T22-22-09Z
+    image: ${MINIO_IMAGE:-quay.io/minio/minio}:${MINIO_VERSION:-latest}
     platform: linux/amd64
     container_name: alice-minio
     restart: unless-stopped
@@ -432,7 +436,7 @@ services:
   # MINIO INIT - Cria bucket para Langfuse
   # ===========================================================================
   minio-init:
-    image: minio/mc:RELEASE.2025-12-13T01-16-22Z
+    image: ${MINIO_MC_IMAGE:-quay.io/minio/mc}:${MINIO_MC_VERSION:-latest}
     platform: linux/amd64
     container_name: alice-minio-init
     entrypoint: ["/bin/sh", "-c"]
