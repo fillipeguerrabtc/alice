@@ -32,4 +32,4 @@ numpy==2.4.0
 prometheus-client==0.23.1
 
 # Resilience
-pybreaker==1.2.0
+pybreaker==1.4.1
