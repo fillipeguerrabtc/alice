@@ -114,7 +114,7 @@ services:
   # SEARXNG - Metabusca self-hosted para Web Search
   # ===========================================================================
   alice-searxng:
-    image: searxng/searxng:${SEARXNG_VERSION:-latest}
+    image: searxng/searxng:${SEARXNG_VERSION:-2025.12.30-a5c946a32}
     platform: linux/amd64
     container_name: alice-searxng
     restart: unless-stopped
