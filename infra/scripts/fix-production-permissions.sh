@@ -112,6 +112,7 @@ declare -a DIRECTORIES=(
     
     # BACKUPS
     "${BACKUPS_DIR}/postgresql:999:999:755"
+    "${BACKUPS_DIR}/postgresql/logs:70:70:755"
     
     # UPLOADS (alice microservices)
     "${UPLOADS_DIR}:1000:1000:755"
