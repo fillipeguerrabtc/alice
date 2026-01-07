@@ -583,6 +583,30 @@ jobs:
           echo ""
           echo "✅ Todas as imagens públicas validadas com sucesso"
 
+      - name: Validar Caddyfile (syntax check)
+        id: validate-caddyfile
+        run: |
+          set -euo pipefail
+          # =================================================================
+          # CORREÇÃO #6: Validação Caddyfile antes do deploy
+          # =================================================================
+          # PROBLEMA: Se Caddyfile tiver erro de sintaxe, Caddy não inicia
+          #           mas workflow só descobre no health check (timeout)
+          # SOLUÇÃO: Validar sintaxe antes de fazer deploy
+          # REF: CLAUDE.md Regra 9 (Validação contínua)
+          # =================================================================
+          echo "🔍 Validando sintaxe do Caddyfile..."
+          
+          if ! docker run --rm -v "$(pwd)/infra/docker/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            caddy:2.8.4-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile; then
+            echo ""
+            echo "::error::❌ ERRO: Caddyfile inválido!"
+            echo "::error::Corrija os erros de sintaxe antes de fazer deploy."
+            exit 1
+          fi
+          
+          echo "✅ Caddyfile válido"
+
       - name: Sincronizar código e configs para servidor
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -629,27 +653,37 @@ jobs:
             set -euo pipefail
             echo "🔍 Validando servidor de produção..."
             
-            # Verificar IP do servidor
-            SERVER_IP=$(hostname -I | awk '{print $1}')
-            echo "   IP do servidor: $SERVER_IP"
+            # =================================================================
+            # CORREÇÃO #5: Validação de IP para múltiplas interfaces
+            # =================================================================
+            # PROBLEMA: hostname -I | awk '{print $1}' pode pegar IP errado
+            #           Ex: 172.17.0.1 (Docker bridge) ao invés de 178.63.41.108
+            # SOLUÇÃO: Buscar IP em QUALQUER interface com grep -qw
+            # REF: CLAUDE.md Regra 7 (Mudanças cirúrgicas - diagnosticar causa raiz)
+            # =================================================================
+            echo "   IPs disponíveis: $(hostname -I)"
             
-            # Verificar se é o Production Server (178.63.41.108) ou Deploy Server (46.224.46.93)
-            if [[ "$SERVER_IP" == "46.224.46.93" ]] || [[ "$SERVER_IP" == *"46.224"* ]]; then
+            # Verificar se IP de produção está em qualquer interface
+            if ! hostname -I | grep -qw "178.63.41.108"; then
               echo "::error::❌ DEPLOY ESTÁ NO SERVIDOR ERRADO!"
-              echo "::error::Este é o Deploy Server (CPX32 - Runner CI/CD), NÃO o Production Server!"
+              echo "::error::IP 178.63.41.108 não encontrado em nenhuma interface."
+              echo ""
+              echo "   IPs encontrados: $(hostname -I)"
+              echo "   IP esperado: 178.63.41.108"
               echo ""
               echo "O secret HETZNER_VM_HOST está configurado incorretamente."
               echo ""
               echo "CORREÇÃO NECESSÁRIA:"
               echo "  1. Vá para GitHub → Settings → Secrets and variables → Actions"
               echo "  2. Edite HETZNER_VM_HOST"
-              echo "  3. Mude de 46.224.46.93 para 178.63.41.108 (Production Server)"
+              echo "  3. Configure para 178.63.41.108 (Production Server GEX44)"
               echo ""
               echo "Servidores:"
               echo "  - Deploy Server (CPX32):    46.224.46.93  ← ERRADO para deploy"
               echo "  - Production Server (GEX44): 178.63.41.108 ← CORRETO para deploy"
               exit 1
             fi
+            echo "   ✅ Servidor de produção correto (178.63.41.108 encontrado)"
             
             # Verificar se GPU está disponível (obrigatório para Production Server)
             if ! command -v nvidia-smi &> /dev/null; then
@@ -671,6 +705,34 @@ jobs:
             echo "   ✅ Docker com GPU funcionando"
             echo ""
             echo "✅ Validação do servidor de produção OK (GPU disponível)"
+
+      - name: Executar script de preparação do servidor (idempotente)
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          command_timeout: 5m
+          script: |
+            set -euo pipefail
+            # =================================================================
+            # CORREÇÃO #7: Script de preparação idempotente
+            # =================================================================
+            # PROPÓSITO: Preparar servidor automaticamente com estrutura completa
+            # BENEFÍCIO: Servidor limpo → pronto para deploy em um único comando
+            # REF: CLAUDE.md Regra 16 (Idempotência, fail-fast)
+            # =================================================================
+            
+            if [ -f /opt/alice/app/infra/scripts/prepare-production-server.sh ]; then
+              echo "🚀 Executando script de preparação do servidor..."
+              chmod +x /opt/alice/app/infra/scripts/prepare-production-server.sh
+              sudo /opt/alice/app/infra/scripts/prepare-production-server.sh
+            else
+              echo "⚠️  Script de preparação não encontrado (primeiro deploy?)"
+              echo "   O script será executado na próxima vez"
+              echo "   Continuando com preparação manual inline..."
+            fi
 
       - name: Preparar infraestrutura base (networks, volumes, permissões)
         uses: appleboy/ssh-action@v1.2.2
@@ -757,77 +819,134 @@ jobs:
             echo ""
             echo "🔐 Configurando permissões..."
             
-            # PostgreSQL (UID 999)
-            chown -R 999:999 /opt/alice/data/postgres 2>/dev/null || true
-            chmod 700 /opt/alice/data/postgres 2>/dev/null || true
+            # =================================================================
+            # CORREÇÃO #2: PostgreSQL Fail-Fast (remover || true)
+            # CORREÇÃO #4: Adicionar sudo em TODOS os comandos chmod/chown/rm
+            # =================================================================
+            # PROBLEMA: || true suprimia erros silenciosamente
+            # PROBLEMA: chmod sem sudo após chown causava "Permission denied"
+            # SOLUÇÃO: Fail-fast explícito + sudo para manipular diretórios de outros users
+            # REF: CLAUDE.md Regra 6 (Zero workarounds), Regra 16 (Fail-fast)
+            # =================================================================
+            
+            # PostgreSQL (UID 999) - CRÍTICO para deploy funcionar
+            echo "   📝 Configurando PostgreSQL (UID 999)..."
+            if ! sudo chown -R 999:999 /opt/alice/data/postgres; then
+              echo "❌ ERRO: Falha ao configurar owner do diretório PostgreSQL"
+              ls -ld /opt/alice/data/postgres
+              exit 1
+            fi
+            sudo chmod 700 /opt/alice/data/postgres
             
             # Grafana (UID 472 - Enterprise hardening per CLAUDE.md)
-            chown -R 472:472 /opt/alice/data/grafana 2>/dev/null || true
-            chmod 755 /opt/alice/data/grafana 2>/dev/null || true
+            echo "   📝 Configurando Grafana (UID 472)..."
+            sudo chown -R 472:472 /opt/alice/data/grafana
+            sudo chmod 755 /opt/alice/data/grafana
             
             # Prometheus (UID 65534 - nobody)
-            chown -R 65534:65534 /opt/alice/data/prometheus 2>/dev/null || true
-            chmod 755 /opt/alice/data/prometheus 2>/dev/null || true
+            echo "   📝 Configurando Prometheus (UID 65534)..."
+            sudo chown -R 65534:65534 /opt/alice/data/prometheus
+            sudo chmod 755 /opt/alice/data/prometheus
             
             # Loki (UID 10001)
-            chown -R 10001:10001 /opt/alice/data/loki 2>/dev/null || true
-            chmod 755 /opt/alice/data/loki 2>/dev/null || true
+            echo "   📝 Configurando Loki (UID 10001)..."
+            sudo chown -R 10001:10001 /opt/alice/data/loki
+            sudo chmod 755 /opt/alice/data/loki
             
             # ClickHouse (UID 101)
-            chown -R 101:101 /opt/alice/data/clickhouse /opt/alice/logs/clickhouse 2>/dev/null || true
-            chmod 755 /opt/alice/data/clickhouse /opt/alice/logs/clickhouse 2>/dev/null || true
+            echo "   📝 Configurando ClickHouse (UID 101)..."
+            sudo chown -R 101:101 /opt/alice/data/clickhouse /opt/alice/logs/clickhouse
+            sudo chmod 755 /opt/alice/data/clickhouse /opt/alice/logs/clickhouse
             
             # Langfuse DB PostgreSQL (UID 70)
-            chown -R 70:70 /opt/alice/data/langfuse-db 2>/dev/null || true
-            chmod 755 /opt/alice/data/langfuse-db 2>/dev/null || true
+            echo "   📝 Configurando Langfuse DB (UID 70)..."
+            sudo chown -R 70:70 /opt/alice/data/langfuse-db
+            sudo chmod 755 /opt/alice/data/langfuse-db
             
             # Redis (UID 999)
-            chown -R 999:999 /opt/alice/data/redis-alice 2>/dev/null || true
-            chmod 755 /opt/alice/data/redis-alice 2>/dev/null || true
+            echo "   📝 Configurando Redis (UID 999)..."
+            sudo chown -R 999:999 /opt/alice/data/redis-alice
+            sudo chmod 755 /opt/alice/data/redis-alice
             
             # Caddy (UID 1000)
-            chown -R 1000:1000 /opt/alice/data/caddy /opt/alice/data/caddy-config /opt/alice/logs/caddy 2>/dev/null || true
-            chmod 700 /opt/alice/data/caddy 2>/dev/null || true
-            chmod 755 /opt/alice/data/caddy-config /opt/alice/logs/caddy 2>/dev/null || true
+            echo "   📝 Configurando Caddy (UID 1000)..."
+            sudo chown -R 1000:1000 /opt/alice/data/caddy /opt/alice/data/caddy-config /opt/alice/logs/caddy
+            sudo chmod 700 /opt/alice/data/caddy
+            sudo chmod 755 /opt/alice/data/caddy-config /opt/alice/logs/caddy
             
             # SearXNG (UID 977)
-            chown -R 977:977 /opt/alice/data/searxng-config 2>/dev/null || true
-            chmod 755 /opt/alice/data/searxng-config 2>/dev/null || true
+            echo "   📝 Configurando SearXNG (UID 977)..."
+            sudo chown -R 977:977 /opt/alice/data/searxng-config
+            sudo chmod 755 /opt/alice/data/searxng-config
             
             # Qdrant, MinIO, Vector (root - permissões gerais)
-            chmod 755 /opt/alice/data/{qdrant,minio,vector} 2>/dev/null || true
+            echo "   📝 Configurando Qdrant, MinIO, Vector..."
+            sudo chmod 755 /opt/alice/data/qdrant /opt/alice/data/minio /opt/alice/data/vector
             
             # ERPNext (UID 1000 para Frappe)
-            chown -R 1000:1000 /opt/alice/data/erpnext-sites /opt/alice/logs/erpnext 2>/dev/null || true
-            chmod 755 /opt/alice/data/erpnext-sites /opt/alice/logs/erpnext 2>/dev/null || true
+            echo "   📝 Configurando ERPNext (UID 1000)..."
+            sudo chown -R 1000:1000 /opt/alice/data/erpnext-sites /opt/alice/logs/erpnext
+            sudo chmod 755 /opt/alice/data/erpnext-sites /opt/alice/logs/erpnext
             
             # Backups (root com permissões restritas)
-            chmod 750 /opt/alice/backups 2>/dev/null || true
-            chmod 750 /opt/alice/backups/postgresql 2>/dev/null || true
+            echo "   📝 Configurando Backups..."
+            sudo chmod 750 /opt/alice/backups
+            sudo chmod 750 /opt/alice/backups/postgresql
             
             # Uploads (para RAG multimodal)
-            chmod 755 /opt/alice/uploads 2>/dev/null || true
+            echo "   📝 Configurando Uploads..."
+            sudo chmod 755 /opt/alice/uploads
             
             echo "   ✅ Permissões configuradas"
             
             # =========================================================
-            # 5. VALIDAR PERMISSÕES (FAIL-FAST)
+            # 5. VALIDAR PERMISSÕES (FAIL-FAST - 4 ESTÁGIOS)
+            # =========================================================
+            # CORREÇÃO #3: Validação robusta em 4 estágios
+            # REF: CLAUDE.md Regra 9 (Validação contínua)
             # =========================================================
             echo ""
-            echo "🧪 Validando permissões PostgreSQL..."
+            echo "🧪 Validando permissões PostgreSQL (4 estágios)..."
+            POSTGRES_DIR="/opt/alice/data/postgres"
             
-            # Criar arquivo de teste como usuário 999 (postgres)
-            if ! sudo -u "#999" touch /opt/alice/data/postgres/.write-test 2>/dev/null; then
-              echo "❌ ERRO: Usuário 999 (postgres) NÃO consegue escrever em /opt/alice/data/postgres"
-              echo "   Verificando diagnóstico:"
-              ls -ld /opt/alice/data/postgres
-              stat /opt/alice/data/postgres
+            # Estágio 1: Verificar que diretório existe
+            if [ ! -d "$POSTGRES_DIR" ]; then
+              echo "❌ ERRO: Diretório $POSTGRES_DIR não existe!"
+              exit 1
+            fi
+            echo "   ✅ Estágio 1: Diretório existe"
+            
+            # Estágio 2: Verificar owner/group (999:999)
+            ACTUAL_OWNER=$(stat -c '%u:%g' "$POSTGRES_DIR")
+            if [ "$ACTUAL_OWNER" != "999:999" ]; then
+              echo "❌ ERRO: Owner incorreto em $POSTGRES_DIR"
+              echo "   Esperado: 999:999"
+              echo "   Atual: $ACTUAL_OWNER"
+              ls -ld "$POSTGRES_DIR"
+              exit 1
+            fi
+            echo "   ✅ Estágio 2: Owner/group correto (999:999)"
+            
+            # Estágio 3: Verificar permissões numéricas (700)
+            ACTUAL_PERMS=$(stat -c '%a' "$POSTGRES_DIR")
+            if [ "$ACTUAL_PERMS" != "700" ]; then
+              echo "❌ ERRO: Permissões incorretas em $POSTGRES_DIR"
+              echo "   Esperado: 700"
+              echo "   Atual: $ACTUAL_PERMS"
+              exit 1
+            fi
+            echo "   ✅ Estágio 3: Permissões corretas (700)"
+            
+            # Estágio 4: Teste de escrita como UID 999
+            if ! sudo -u "#999" touch "$POSTGRES_DIR/.write-test" 2>/dev/null; then
+              echo "❌ ERRO: Usuário 999 (postgres) NÃO consegue escrever"
+              ls -ld "$POSTGRES_DIR"
               exit 1
             fi
             
-            # Limpar arquivo de teste
-            rm -f /opt/alice/data/postgres/.write-test
-            echo "   ✅ Permissões PostgreSQL validadas (UID 999 pode escrever)"
+            # Limpar arquivo de teste (com sudo)
+            sudo rm -f "$POSTGRES_DIR/.write-test"
+            echo "   ✅ Estágio 4: Teste de escrita OK"
             
             # Validar que diretório está VAZIO (primeiro deploy)
             if [ "$(ls -A /opt/alice/data/postgres 2>/dev/null)" ]; then
@@ -973,6 +1092,28 @@ jobs:
                 echo "   $container: NOT_FOUND"
               fi
             done
+            
+            # =================================================================
+            # CORREÇÃO #6: Diagnóstico específico para Caddy
+            # =================================================================
+            echo ""
+            echo "🔍 Diagnóstico específico do Caddy:"
+            echo "----------------------------------------"
+            if docker ps -a | grep -q "alice-caddy"; then
+              echo "📄 Logs completos do Caddy (últimas 100 linhas):"
+              docker logs alice-caddy --tail 100 2>&1 || echo "   (sem logs disponíveis)"
+              
+              echo ""
+              echo "🧪 Teste manual do endpoint /health:"
+              docker exec alice-caddy wget --spider -q http://localhost/health && echo "   ✅ Health endpoint OK" || echo "   ❌ Health endpoint FAIL"
+              
+              echo ""
+              echo "🔧 Validação da configuração dentro do container:"
+              docker exec alice-caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1 || echo "   ❌ Caddyfile inválido"
+            else
+              echo "   ⚠️ Container alice-caddy não encontrado"
+            fi
+            echo "----------------------------------------"
             
             # Verificar uso de disco (PostgreSQL precisa de espaço)
             echo ""

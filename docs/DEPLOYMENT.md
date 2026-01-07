@@ -127,6 +127,110 @@ cat /opt/alice/versions/erpnext.current     # v0.9.5 (versão diferente)
 
 ---
 
+## 🚀 Primeiro Deploy - Checklist Completo
+
+> **⚠️ IMPORTANTE:** Esta seção é CRÍTICA para primeiro deploy em servidor limpo.
+> O servidor Hetzner GEX44 (178.63.41.108) deve estar preparado antes do deploy.
+
+### Pré-Requisitos do Servidor
+
+Antes de executar o primeiro deploy, valide:
+
+| Item | Validação | Como Verificar |
+|------|-----------|----------------|
+| **IP Correto** | 178.63.41.108 | `hostname -I \| grep -w 178.63.41.108` |
+| **GPU Disponível** | NVIDIA RTX 4000 Ada | `nvidia-smi` |
+| **Docker** | 29.1.3+ | `docker --version` |
+| **Docker Compose** | 5.0.0+ | `docker compose version` |
+| **NVIDIA Container Toolkit** | Instalado | `docker run --rm --gpus all nvidia/cuda:12.0.0-base-ubuntu22.04 nvidia-smi` |
+| **Disco Disponível** | Mínimo 200GB livre | `df -h /opt/alice` |
+| **Memória RAM** | 64GB | `free -h` |
+
+### Preparação Automática do Servidor
+
+O workflow `deploy-stack-modular.yml` inclui preparação automática via script idempotente.
+
+**Script:** `infra/scripts/prepare-production-server.sh`
+
+**O que o script faz:**
+1. ✅ Valida servidor correto (178.63.41.108)
+2. ✅ Valida GPU disponível
+3. ✅ Cria estrutura /opt/alice (30+ diretórios)
+4. ✅ Configura permissões por serviço (13 UIDs diferentes)
+5. ✅ Cria networks Docker externas (alice-network, erpnext-network)
+6. ✅ Valida permissões PostgreSQL (fail-fast)
+
+**Execução manual (opcional):**
+```bash
+# SSH no servidor de produção
+ssh root@178.63.41.108
+
+# Executar script de preparação
+sudo /opt/alice/app/infra/scripts/prepare-production-server.sh
+```
+
+**⚠️ NOTA:** O workflow executa este script automaticamente no job `prepare`.
+Execução manual é opcional para validar antes do deploy.
+
+### Checklist do Primeiro Deploy
+
+- [ ] **1. Secrets Configurados no GitHub**
+  - [ ] 54 secrets configurados em `Settings → Secrets and variables → Actions`
+  - [ ] Ver lista completa em `docs/SECRETS.md`
+  - [ ] Validar secrets obrigatórios: `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `ADMIN_USER`, `ADMIN_PWD`
+
+- [ ] **2. SSH Key Configurada**
+  - [ ] `HETZNER_SSH_PRIVATE_KEY` configurado no GitHub Secrets
+  - [ ] Key permite acesso root@178.63.41.108
+  - [ ] Testar manualmente: `ssh -i ~/.ssh/alice-deploy root@178.63.41.108`
+
+- [ ] **3. GHCR Login Funcionando**
+  - [ ] PAT (Personal Access Token) com permissões `read:packages`, `write:packages`
+  - [ ] Token configurado em `GITHUB_TOKEN` (automático) ou `GH_TOKEN` (manual)
+
+- [ ] **4. Servidor Preparado**
+  - [ ] Script `prepare-production-server.sh` executado (manual ou automático)
+  - [ ] Networks Docker criadas: `alice-network`, `erpnext-network`
+  - [ ] Estrutura /opt/alice criada com permissões corretas
+
+- [ ] **5. Release Criada**
+  - [ ] Workflow `release.yml` executado com sucesso
+  - [ ] Imagens Docker buildadas e pushadas para GHCR
+  - [ ] Tag criada (ex: v1.0.0)
+
+- [ ] **6. Deploy Executado**
+  - [ ] Workflow `deploy-stack-modular.yml` disparado automaticamente ou manualmente
+  - [ ] Stack `all` deployado: infra → alice → observability → erpnext → backup
+  - [ ] Health checks passaram para todos os 50 containers
+
+- [ ] **7. Validação Pós-Deploy**
+  - [ ] Grafana acessível: https://observability.yesyoudeserve.duckdns.org
+  - [ ] Alice Frontend acessível: https://yesyoudeserve.duckdns.org
+  - [ ] ERPNext acessível: https://erp.yesyoudeserve.duckdns.org
+  - [ ] PostgreSQL healthy: `docker exec alice-postgres pg_isready`
+  - [ ] GPU containers rodando: `docker ps | grep gpu-`
+
+### Tempo Esperado
+
+| Fase | Tempo | Descrição |
+|------|-------|-----------|
+| **Preparação** | 2-3 min | Validar servidor, criar estrutura, networks |
+| **Deploy INFRA** | 3-5 min | PostgreSQL, Redis, Qdrant, Caddy, MinIO |
+| **Deploy ALICE** | 5-7 min | 7 microsserviços + GPU Manager |
+| **Deploy OBSERVABILITY** | 4-6 min | Prometheus, Grafana, Loki, Langfuse |
+| **Deploy ERPNEXT** | 6-8 min | 15 containers (MariaDB, Backend, Workers) |
+| **Deploy BACKUP** | 1-2 min | pgBackRest |
+| **Health Checks** | 2-3 min | 50 containers (retry 30-45x) |
+| **TOTAL** | **23-34 min** | Primeiro deploy completo |
+
+**⚠️ IMPORTANTE:** Primeiro deploy demora mais devido a:
+- Pull de imagens Docker (~10GB total)
+- Inicialização do PostgreSQL (criação de schemas)
+- Compilação do pgvector (primeira vez)
+- Let's Encrypt SSL (solicitação de certificados)
+
+---
+
 ## Visão Geral da Arquitetura - 50 Containers em Produção
 
 A plataforma Alice é composta por **50 containers** organizados em 7 categorias (44 serviços + 5 GPU + 1 backup):
@@ -2513,4 +2617,285 @@ alice-redis     0.8%     120MB / 1GB
 
 *Seção de Troubleshooting adicionada em: 04 de Janeiro de 2026*
 *Atualizada com Correções 5-18 em: 04 de Janeiro de 2026*
+*Atualizada com Primeiro Deploy e 5 Failure Modes em: 07 de Janeiro de 2026*
+*Autor: Fillipe Guerra*
+
+---
+
+## 🔧 Troubleshooting - 5 Failure Modes Comuns
+
+Esta seção documenta os **5 failure modes mais comuns** em deploy de produção e suas soluções.
+
+### Failure Mode #1: Grafana Redirect Loop (ERR_TOO_MANY_REDIRECTS)
+
+**Sintoma:**
+```
+Browser: ERR_TOO_MANY_REDIRECTS
+URL: https://observability.yesyoudeserve.duckdns.org
+```
+
+**Causa Raiz:**
+- Grafana configurado com `GF_SECURITY_COOKIE_SECURE: "true"`
+- Caddy termina SSL → envia HTTP para Grafana
+- Grafana com cookie_secure=true força HTTPS → **loop infinito**
+
+**Solução (Implementada em v5.0):**
+```yaml
+# infra/docker/stacks/docker-compose.observability.yml
+environment:
+  GF_SERVER_PROTOCOL: http                          # TLS terminado no Caddy
+  GF_SERVER_DOMAIN: observability.yesyoudeserve.duckdns.org
+  GF_SECURITY_COOKIE_SECURE: "false"                # Caddy adiciona Secure flag
+  GF_SECURITY_COOKIE_SAMESITE: lax                  # Compatível com OAuth
+  GF_SERVER_ENFORCE_DOMAIN: "false"                 # Evita problemas
+  GF_SECURITY_STRICT_TRANSPORT_SECURITY: "false"    # Caddy adiciona HSTS
+```
+
+**Referência:** https://grafana.com/docs/grafana/latest/setup-grafana/configure-grafana/reverse-proxy/
+
+**Como Validar:**
+```bash
+# SSH no servidor
+docker logs grafana | grep -i "redirect\|cookie"
+
+# Testar endpoint local (deve responder HTTP 200)
+docker exec grafana wget --spider -q http://localhost:3000/api/health
+```
+
+---
+
+### Failure Mode #2: PostgreSQL Não Inicia (Permissões Incorretas)
+
+**Sintoma:**
+```
+Container: alice-postgres
+Status: unhealthy ou exited(1)
+Log: FATAL: data directory "/var/lib/postgresql/data" has invalid permissions
+```
+
+**Causa Raiz:**
+- Diretório /opt/alice/data/postgres com owner/group incorreto
+- PostgreSQL requer UID 999:999 com permissões 700
+- `|| true` no workflow suprimia erros silenciosamente
+
+**Solução (Implementada em v5.0):**
+```bash
+# Workflow agora usa fail-fast explícito (sem || true)
+if ! sudo chown -R 999:999 /opt/alice/data/postgres; then
+  echo "❌ ERRO: Falha ao configurar owner do diretório PostgreSQL"
+  exit 1
+fi
+sudo chmod 700 /opt/alice/data/postgres
+
+# Validação em 4 estágios:
+# 1. Diretório existe
+# 2. Owner/group correto (999:999)
+# 3. Permissões corretas (700)
+# 4. Teste de escrita como UID 999
+```
+
+**Como Corrigir Manualmente:**
+```bash
+# SSH no servidor
+sudo chown -R 999:999 /opt/alice/data/postgres
+sudo chmod 700 /opt/alice/data/postgres
+
+# Validar permissões
+ls -ld /opt/alice/data/postgres
+# Esperado: drwx------ 2 999 999 ...
+
+# Testar escrita
+sudo -u "#999" touch /opt/alice/data/postgres/.test && echo "OK" || echo "FAIL"
+sudo rm -f /opt/alice/data/postgres/.test
+```
+
+---
+
+### Failure Mode #3: Caddyfile Inválido (Caddy Não Inicia)
+
+**Sintoma:**
+```
+Container: alice-caddy
+Status: unhealthy ou exited(1)
+Log: Error: adapting config using caddyfile: ...
+```
+
+**Causa Raiz:**
+- Erro de sintaxe no Caddyfile
+- Workflow só descobre no health check (timeout)
+- Perda de tempo (5-10 min) esperando falha
+
+**Solução (Implementada em v5.0):**
+```yaml
+# Workflow valida Caddyfile ANTES do deploy (job prepare)
+- name: Validar Caddyfile (syntax check)
+  run: |
+    docker run --rm -v "$(pwd)/infra/docker/Caddyfile:/etc/caddy/Caddyfile:ro" \
+      caddy:2.8.4-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+```
+
+**Como Validar Manualmente:**
+```bash
+# Validar sintaxe do Caddyfile
+docker run --rm -v "$(pwd)/infra/docker/Caddyfile:/etc/caddy/Caddyfile:ro" \
+  caddy:2.8.4-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+
+# Se Caddy já está rodando, validar dentro do container
+docker exec alice-caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+
+# Verificar logs do Caddy
+docker logs alice-caddy --tail 100
+
+# Testar endpoint /health
+docker exec alice-caddy wget --spider -q http://localhost/health && echo "OK" || echo "FAIL"
+```
+
+---
+
+### Failure Mode #4: Disco Cheio (PostgreSQL/Backups Falhando)
+
+**Sintoma:**
+```
+Container: alice-postgres ou alice-pgbackrest
+Status: unhealthy
+Log: ERROR: could not extend file ... No space left on device
+```
+
+**Causa Raiz:**
+- Servidor Hetzner GEX44 tem 1.92TB NVMe RAID 1
+- Backups full + incremental acumulam espaço
+- PostgreSQL WAL logs crescem rapidamente
+
+**Solução:**
+```bash
+# Verificar uso de disco
+df -h /opt/alice
+
+# Limpar backups antigos (manter últimos 7 dias)
+find /opt/alice/backups/postgresql -type f -mtime +7 -delete
+
+# Limpar logs antigos
+find /opt/alice/logs -type f -mtime +30 -delete
+
+# Verificar tamanho do PostgreSQL
+docker exec alice-postgres psql -U postgres -c "
+  SELECT pg_size_pretty(pg_database_size('postgres'));
+"
+
+# Compactar backups (se necessário)
+cd /opt/alice/backups/postgresql
+find . -name "*.gz" -exec gunzip {} \; -exec gzip -9 {} \;
+```
+
+**Prevenção (Implementada):**
+```bash
+# Workflow valida espaço em disco antes do deploy
+AVAILABLE=$(df -h /opt/alice | tail -1 | awk '{print $4}' | sed 's/G//')
+if [ "$AVAILABLE" -lt 50 ]; then
+  echo "❌ ERRO: Menos de 50GB disponíveis"
+  exit 1
+fi
+```
+
+---
+
+### Failure Mode #5: Networks Docker Faltando (Containers Não Se Comunicam)
+
+**Sintoma:**
+```
+Container: alice-auth ou alice-chat
+Status: unhealthy
+Log: Error: connect ECONNREFUSED postgres:5432
+```
+
+**Causa Raiz:**
+- Networks Docker externas não criadas (`alice-network`, `erpnext-network`)
+- Docker Compose espera networks externas (`external: true`)
+- Containers não conseguem se comunicar
+
+**Solução (Implementada em v5.0):**
+```bash
+# Script prepare-production-server.sh cria networks automaticamente
+docker network create --driver bridge --subnet 172.28.0.0/16 alice-network 2>/dev/null || true
+docker network create --driver bridge erpnext-network 2>/dev/null || true
+```
+
+**Como Validar:**
+```bash
+# Verificar networks existem
+docker network ls | grep -E "alice-network|erpnext-network"
+
+# Inspecionar network alice-network
+docker network inspect alice-network
+
+# Verificar containers conectados
+docker network inspect alice-network | grep -A5 "Containers"
+
+# Recriar network (se necessário)
+docker network rm alice-network
+docker network create --driver bridge --subnet 172.28.0.0/16 alice-network
+```
+
+**Como Corrigir Manualmente:**
+```bash
+# SSH no servidor
+# 1. Criar networks
+docker network create --driver bridge --subnet 172.28.0.0/16 alice-network
+docker network create --driver bridge erpnext-network
+
+# 2. Verificar criação
+docker network ls
+
+# 3. Reconectar containers (se necessário)
+cd /opt/alice/app/infra/docker/stacks
+docker compose -f docker-compose.base.yml -f docker-compose.infra.yml -p alice-infra down
+docker compose -f docker-compose.base.yml -f docker-compose.infra.yml -p alice-infra up -d
+```
+
+---
+
+### Matriz de Decisão - Troubleshooting Rápido
+
+| Sintoma | Failure Mode | Ação Imediata |
+|---------|--------------|---------------|
+| Browser: ERR_TOO_MANY_REDIRECTS | #1 - Grafana | Verificar `GF_SECURITY_COOKIE_SECURE` |
+| PostgreSQL: data directory has invalid permissions | #2 - Permissões | `sudo chown -R 999:999 /opt/alice/data/postgres` |
+| Caddy: adapting config error | #3 - Caddyfile | `caddy validate --config Caddyfile` |
+| PostgreSQL: No space left on device | #4 - Disco | `df -h /opt/alice` + limpar backups |
+| Container: ECONNREFUSED postgres:5432 | #5 - Networks | `docker network create alice-network` |
+
+---
+
+### Logs Úteis para Diagnóstico
+
+```bash
+# PostgreSQL
+docker logs alice-postgres --tail 100
+
+# Grafana
+docker logs grafana --tail 100
+
+# Caddy
+docker logs alice-caddy --tail 100
+
+# Todos os containers unhealthy
+docker ps -a --filter health=unhealthy
+
+# Verificar uso de recursos
+docker stats --no-stream
+
+# Verificar eventos Docker (últimos 1h)
+docker events --since 1h
+
+# Verificar permissões críticas
+ls -ld /opt/alice/data/{postgres,grafana,prometheus}
+
+# Verificar networks
+docker network ls
+docker network inspect alice-network
+```
+
+---
+
+*Seção de Troubleshooting 5 Failure Modes adicionada em: 07 de Janeiro de 2026*
 *Autor: Fillipe Guerra*
