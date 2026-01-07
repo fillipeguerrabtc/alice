@@ -27,21 +27,17 @@ echo ""
 # =============================================================================
 echo "🔍 Validando servidor..."
 
-# Verificar IP do servidor
-SERVER_IP=$(hostname -I | awk '{print $1}')
-echo "   IP do servidor: $SERVER_IP"
-
-# Verificar se é o Production Server correto (178.63.41.108 - Hetzner GEX44)
-if [ "$SERVER_IP" != "178.63.41.108" ]; then
+# Verificar IP do servidor (busca em todas as interfaces de rede)
+if ! hostname -I | grep -qw "178.63.41.108"; then
   echo "❌ ERRO: Servidor errado!"
-  echo "   IP atual: $SERVER_IP"
+  echo "   IPs encontrados: $(hostname -I)"
   echo "   IP esperado: 178.63.41.108 (Production Server Hetzner GEX44)"
   echo ""
   echo "Este script só deve rodar no Production Server."
   exit 1
 fi
 
-echo "✅ Servidor de produção correto (178.63.41.108)"
+echo "✅ Servidor de produção correto (178.63.41.108 encontrado)"
 
 # =============================================================================
 # 2. VALIDAR GPU

@@ -614,8 +614,8 @@ jobs:
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
           script: |
-            chmod 600 /opt/alice/app/infra/docker/.env.prod
-            chown root:root /opt/alice/app/infra/docker/.env.prod
+            sudo chmod 600 /opt/alice/app/infra/docker/.env.prod
+            sudo chown root:root /opt/alice/app/infra/docker/.env.prod
             echo "✅ Permissões do .env.prod restringidas para 600 no servidor"
 
       - name: Validar servidor de produção (fail-fast)
@@ -629,12 +629,12 @@ jobs:
             set -euo pipefail
             echo "🔍 Validando servidor de produção..."
             
-            # Verificar IP do servidor
-            SERVER_IP=$(hostname -I | awk '{print $1}')
-            echo "   IP do servidor: $SERVER_IP"
+            # Verificar IP do servidor (busca em todas as interfaces de rede)
+            ALL_IPS=$(hostname -I)
+            echo "   IPs encontrados: $ALL_IPS"
             
-            # Verificar se é o Production Server (178.63.41.108) ou Deploy Server (46.224.46.93)
-            if [[ "$SERVER_IP" == "46.224.46.93" ]] || [[ "$SERVER_IP" == *"46.224"* ]]; then
+            # Verificar se é o Deploy Server (ERRADO - não deve deployar aqui)
+            if echo "$ALL_IPS" | grep -qw "46.224.46.93"; then
               echo "::error::❌ DEPLOY ESTÁ NO SERVIDOR ERRADO!"
               echo "::error::Este é o Deploy Server (CPX32 - Runner CI/CD), NÃO o Production Server!"
               echo ""
@@ -650,6 +650,16 @@ jobs:
               echo "  - Production Server (GEX44): 178.63.41.108 ← CORRETO para deploy"
               exit 1
             fi
+            
+            # Verificar se é o Production Server (CORRETO)
+            if ! echo "$ALL_IPS" | grep -qw "178.63.41.108"; then
+              echo "::error::❌ IP do Production Server não encontrado!"
+              echo "::error::IPs encontrados: $ALL_IPS"
+              echo "::error::IP esperado: 178.63.41.108"
+              exit 1
+            fi
+            
+            echo "   ✅ Production Server correto (178.63.41.108 encontrado)"
             
             # Verificar se GPU está disponível (obrigatório para Production Server)
             if ! command -v nvidia-smi &> /dev/null; then
@@ -800,58 +810,58 @@ jobs:
               ls -ld /opt/alice/data/postgres
               exit 1
             fi
-            if ! chmod 700 /opt/alice/data/postgres; then
+            if ! sudo chmod 700 /opt/alice/data/postgres; then
               echo "❌ ERRO: Falha ao configurar permissões do diretório PostgreSQL"
               ls -ld /opt/alice/data/postgres
               exit 1
             fi
             
             # Grafana (UID 472 - Enterprise hardening per CLAUDE.md)
-            chown -R 472:472 /opt/alice/data/grafana 2>/dev/null || true
-            chmod 755 /opt/alice/data/grafana 2>/dev/null || true
+            sudo chown -R 472:472 /opt/alice/data/grafana 2>/dev/null || true
+            sudo chmod 755 /opt/alice/data/grafana 2>/dev/null || true
             
             # Prometheus (UID 65534 - nobody)
-            chown -R 65534:65534 /opt/alice/data/prometheus 2>/dev/null || true
-            chmod 755 /opt/alice/data/prometheus 2>/dev/null || true
+            sudo chown -R 65534:65534 /opt/alice/data/prometheus 2>/dev/null || true
+            sudo chmod 755 /opt/alice/data/prometheus 2>/dev/null || true
             
             # Loki (UID 10001)
-            chown -R 10001:10001 /opt/alice/data/loki 2>/dev/null || true
-            chmod 755 /opt/alice/data/loki 2>/dev/null || true
+            sudo chown -R 10001:10001 /opt/alice/data/loki 2>/dev/null || true
+            sudo chmod 755 /opt/alice/data/loki 2>/dev/null || true
             
             # ClickHouse (UID 101)
-            chown -R 101:101 /opt/alice/data/clickhouse /opt/alice/logs/clickhouse 2>/dev/null || true
-            chmod 755 /opt/alice/data/clickhouse /opt/alice/logs/clickhouse 2>/dev/null || true
+            sudo chown -R 101:101 /opt/alice/data/clickhouse /opt/alice/logs/clickhouse 2>/dev/null || true
+            sudo chmod 755 /opt/alice/data/clickhouse /opt/alice/logs/clickhouse 2>/dev/null || true
             
             # Langfuse DB PostgreSQL (UID 70)
-            chown -R 70:70 /opt/alice/data/langfuse-db 2>/dev/null || true
-            chmod 755 /opt/alice/data/langfuse-db 2>/dev/null || true
+            sudo chown -R 70:70 /opt/alice/data/langfuse-db 2>/dev/null || true
+            sudo chmod 755 /opt/alice/data/langfuse-db 2>/dev/null || true
             
             # Redis (UID 999)
-            chown -R 999:999 /opt/alice/data/redis-alice 2>/dev/null || true
-            chmod 755 /opt/alice/data/redis-alice 2>/dev/null || true
+            sudo chown -R 999:999 /opt/alice/data/redis-alice 2>/dev/null || true
+            sudo chmod 755 /opt/alice/data/redis-alice 2>/dev/null || true
             
             # Caddy (UID 1000)
-            chown -R 1000:1000 /opt/alice/data/caddy /opt/alice/data/caddy-config /opt/alice/logs/caddy 2>/dev/null || true
-            chmod 700 /opt/alice/data/caddy 2>/dev/null || true
-            chmod 755 /opt/alice/data/caddy-config /opt/alice/logs/caddy 2>/dev/null || true
+            sudo chown -R 1000:1000 /opt/alice/data/caddy /opt/alice/data/caddy-config /opt/alice/logs/caddy 2>/dev/null || true
+            sudo chmod 700 /opt/alice/data/caddy 2>/dev/null || true
+            sudo chmod 755 /opt/alice/data/caddy-config /opt/alice/logs/caddy 2>/dev/null || true
             
             # SearXNG (UID 977)
-            chown -R 977:977 /opt/alice/data/searxng-config 2>/dev/null || true
-            chmod 755 /opt/alice/data/searxng-config 2>/dev/null || true
+            sudo chown -R 977:977 /opt/alice/data/searxng-config 2>/dev/null || true
+            sudo chmod 755 /opt/alice/data/searxng-config 2>/dev/null || true
             
             # Qdrant, MinIO, Vector (root - permissões gerais)
-            chmod 755 /opt/alice/data/{qdrant,minio,vector} 2>/dev/null || true
+            sudo chmod 755 /opt/alice/data/{qdrant,minio,vector} 2>/dev/null || true
             
             # ERPNext (UID 1000 para Frappe)
-            chown -R 1000:1000 /opt/alice/data/erpnext-sites /opt/alice/logs/erpnext 2>/dev/null || true
-            chmod 755 /opt/alice/data/erpnext-sites /opt/alice/logs/erpnext 2>/dev/null || true
+            sudo chown -R 1000:1000 /opt/alice/data/erpnext-sites /opt/alice/logs/erpnext 2>/dev/null || true
+            sudo chmod 755 /opt/alice/data/erpnext-sites /opt/alice/logs/erpnext 2>/dev/null || true
             
             # Backups (root com permissões restritas)
-            chmod 750 /opt/alice/backups 2>/dev/null || true
-            chmod 750 /opt/alice/backups/postgresql 2>/dev/null || true
+            sudo chmod 750 /opt/alice/backups 2>/dev/null || true
+            sudo chmod 750 /opt/alice/backups/postgresql 2>/dev/null || true
             
             # Uploads (para RAG multimodal)
-            chmod 755 /opt/alice/uploads 2>/dev/null || true
+            sudo chmod 755 /opt/alice/uploads 2>/dev/null || true
             
             echo "   ✅ Permissões configuradas"
             
@@ -895,7 +905,7 @@ jobs:
               exit 1
             fi
             
-            rm -f "$POSTGRES_DIR/.write-test"
+            sudo rm -f "$POSTGRES_DIR/.write-test"
             echo "   ✅ Permissões PostgreSQL validadas (UID 999 pode escrever)"
             
             # Validar que diretório está VAZIO (primeiro deploy)
