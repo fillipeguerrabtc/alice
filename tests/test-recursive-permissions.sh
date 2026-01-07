@@ -157,7 +157,35 @@ test_script_structure() {
     log_test "TEST 3: Script Structure Validation"
     log_test "=========================================="
     
-    local script_path="/home/runner/work/alice/alice/infra/scripts/fix-production-permissions.sh"
+    # ==========================================================================
+    # CORREÇÃO BUG CURSOR REVIEW (PR#76): Path relativo ao invés de hardcoded
+    # ==========================================================================
+    # BUG ORIGINAL:
+    #   - Path era hardcoded para GitHub Actions: /home/runner/work/alice/alice/...
+    #   - Teste NÃO funcionava localmente (desenvolvedor executando)
+    #   - Teste NÃO funcionava em outros CI (GitLab, Jenkins, etc)
+    #
+    # SOLUÇÃO:
+    #   - Determinar diretório do script de teste dinamicamente
+    #   - Path relativo ao root do projeto (tests/ está no root)
+    #   - Funciona em qualquer ambiente (local, CI, etc)
+    # ==========================================================================
+    
+    # Determinar diretório do script de teste
+    local SCRIPT_DIR
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    
+    # Path relativo ao root do projeto (tests/ está no root)
+    local script_path="$SCRIPT_DIR/../infra/scripts/fix-production-permissions.sh"
+    
+    # Validar que script existe
+    if [[ ! -f "$script_path" ]]; then
+        log_fail "❌ Script não encontrado em $script_path"
+        log_test "   Esperado: infra/scripts/fix-production-permissions.sh"
+        return 1
+    fi
+    
+    log_test "📄 Script encontrado: $script_path"
     
     # Test 3a: Bash syntax
     if bash -n "$script_path" 2>/dev/null; then
