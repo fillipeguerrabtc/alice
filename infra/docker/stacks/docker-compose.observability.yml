@@ -242,7 +242,12 @@ services:
       - /opt/alice/data/jaeger:/badger
     networks:
       - alice-network
-    # Herda healthcheck da imagem oficial
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:16686/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     deploy:
       resources:
         limits:
@@ -349,7 +354,12 @@ services:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
       - /:/host:ro
-    # NOTA: healthcheck omitido - network_mode: host requer healthcheck diferente
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://127.0.0.1:9100/metrics || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -513,7 +523,7 @@ services:
       interval: 30s
       timeout: 15s
       retries: 15
-      start_period: 300s
+      start_period: 120s
     # NOTA: alice-redis, minio estão no stack infra (health check pelo workflow)
     # minio-init cria bucket langfuse-events (exit code verificado pelo workflow antes de deploy observability)
     depends_on:

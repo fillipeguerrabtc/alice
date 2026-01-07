@@ -948,9 +948,9 @@ prepare → deploy-infra → health-infra → drizzle-push
 | **Status** | Aceito |
 | **Data** | 07 de Janeiro de 2026 |
 | **Contexto** | Versões de imagens Docker públicas estavam hardcoded em múltiplos docker-compose files, causando: (1) inconsistência entre versões declaradas e deployadas; (2) dificuldade de atualização (modificar 30+ lugares); (3) falhas de deploy por imagens descontinuadas (ex: MinIO Docker Hub); (4) impossibilidade de validação automática antes do deploy. Violava Regra 6 (PROIBIDO hardcoded) e Regra 11 (seguir docs oficiais). |
-| **Decisão** | Centralizar TODAS as versões de imagens públicas em `infra/versions.env` (Single Source of Truth - SSOT). Docker-compose files usam `${VAR:-default}` para referenciar. Deploy workflow valida existência das imagens ANTES do deploy. Dependabot monitora e atualiza versões automaticamente. |
+| **Decisão** | Centralizar TODAS as versões de imagens públicas em `infra/versions.env` (Single Source of Truth - SSOT). Docker-compose files usam `${VAR:-default}` para referenciar. Deploy workflow valida existência das imagens ANTES do deploy. Atualizações feitas manualmente via processo quinzenal documentado em CLAUDE.md. |
 | **Alternativas** | (1) Manter hardcoded - rejeitado por violar Regra 6; (2) Usar apenas Dependabot - rejeitado por não resolver validação pré-deploy; (3) Versões no .env.prod apenas - rejeitado por não ser versionado no Git |
-| **Consequências** | + Consistência total entre docker-compose e deploy; + Validação automática de imagens públicas; + Git history completo de mudanças de versão; + Dependabot PRs automáticos para atualizações; + Fallbacks robustos `${VAR:-default}`; - Mais variáveis no versions.env (28+); - Dependência de arquivo externo em docker-compose |
+| **Consequências** | + Consistência total entre docker-compose e deploy; + Validação automática de imagens públicas; + Git history completo de mudanças de versão; + Atualizações manuais controladas e testadas; + Fallbacks robustos `${VAR:-default}`; - Mais variáveis no versions.env (28+); - Dependência de arquivo externo em docker-compose |
 
 **Arquitetura SSOT:**
 
@@ -981,11 +981,11 @@ generate-env-prod.sh (gera .env.prod com versões)
 - Fail-fast: detecta imagens inexistentes no CI, não no servidor
 - Evita falhas de deploy por imagens descontinuadas
 
-**Dependabot Automation:**
-- `.github/dependabot.yml` monitora: GitHub Actions, npm, Docker, pip
-- Cria PRs automaticamente para atualizações de segurança
-- Schedule: segundas-feiras 08:00 BRT
-- Grupos: typescript-types, eslint, testing
+**Atualização Manual de Versões (07/01/2026):**
+- Estratégia migrada para atualizações manuais quinzenais
+- Security alerts via GitHub continuam ativos automaticamente
+- Processo documentado em `CLAUDE.md` seção "Atualização de Dependências"
+- Critérios: CVE CRITICAL/HIGH (imediato), Major (quando necessário), Minor/Patch (quinzenal)
 
 **Workflow File:** `.github/workflows/deploy-stack-modular.yml` (step: `validate-public-images`)
 

@@ -945,10 +945,11 @@ REDIS_ERPNEXT_VERSION=6.2.21-alpine
 - Fail-fast: detecta imagens inexistentes no CI, não no servidor de produção
 - Evita falhas de deploy por imagens descontinuadas (ex: MinIO Docker Hub)
 
-**Dependabot (07/01/2026):**
-- `.github/dependabot.yml` monitora atualizações de dependências
-- Cria PRs automaticamente para: GitHub Actions, npm, Docker, pip
-- Atualização semanal (segundas-feiras 08:00 BRT)
+**Atualização Manual de Dependências (07/01/2026):**
+- Estratégia migrada de Dependabot automático para atualização manual quinzenal
+- GitHub Security Alerts continuam ativos para detecção de CVEs
+- Ver seção "Atualização de Dependências - Estratégia Manual" em `CLAUDE.md`
+- Processo: verificar CVEs → atualizar → testar local → staging → produção
 
 **Reutilização de tags:**
 - Se uma tag já existe e aponta para o mesmo commit atual, ela é reutilizada automaticamente (útil para rollbacks)
