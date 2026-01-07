@@ -225,6 +225,12 @@ sudo chown -R 10001:10001 /opt/alice/data/loki
 sudo chmod 755 /opt/alice/data/loki
 echo "   ✅ Loki configurado"
 
+# Jaeger (UID 10001)
+echo "📝 Jaeger (UID 10001)..."
+sudo chown -R 10001:10001 /opt/alice/data/jaeger
+sudo chmod 755 /opt/alice/data/jaeger
+echo "   ✅ Jaeger configurado"
+
 # ClickHouse (UID 101)
 echo "📝 ClickHouse (UID 101)..."
 sudo chown -R 101:101 /opt/alice/data/clickhouse /opt/alice/logs/clickhouse

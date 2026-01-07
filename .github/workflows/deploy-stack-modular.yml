@@ -659,6 +659,67 @@ jobs:
             chown root:root /opt/alice/app/infra/docker/.env.prod
             echo "✅ Permissões do .env.prod restringidas para 600 no servidor"
 
+      - name: Limpar e validar arquivos de configuração críticos
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            set -euo pipefail
+            # =================================================================
+            # CORREÇÃO CRÍTICA: Limpar configs que podem ter sido criados como diretórios
+            # =================================================================
+            # PROBLEMA: SCP pode criar diretórios ao invés de arquivos se destino já existia
+            # SOLUÇÃO: Limpar diretórios incorretos ANTES de validar
+            # REF: CLAUDE.md Regra 9 (Validação contínua)
+            # =================================================================
+            echo "🧹 Limpando configs que podem ter sido criados como diretórios..."
+            
+            # Lista de arquivos críticos que DEVEM ser arquivos (não diretórios)
+            CRITICAL_FILES=(
+              "/opt/alice/app/infra/observability/otel-collector/config.yaml"
+              "/opt/alice/app/infra/docker/Caddyfile"
+              "/opt/alice/app/infra/docker/vector.toml"
+              "/opt/alice/app/infra/observability/grafana/provisioning/datasources/datasources.yml"
+              "/opt/alice/app/infra/observability/prometheus.yml"
+            )
+            
+            for f in "${CRITICAL_FILES[@]}"; do
+              if [ -d "$f" ]; then
+                echo "   🗑️  REMOVENDO diretório incorreto: $f"
+                rm -rf "$f"
+              fi
+            done
+            
+            echo ""
+            echo "🔍 Validando que arquivos críticos são ARQUIVOS (não diretórios)..."
+            
+            FAILED_FILES=()
+            for f in "${CRITICAL_FILES[@]}"; do
+              if [ ! -f "$f" ]; then
+                echo "   ❌ $f - NÃO é um arquivo válido"
+                FAILED_FILES+=("$f")
+              else
+                echo "   ✅ $f - arquivo válido"
+              fi
+            done
+            
+            if [ ${#FAILED_FILES[@]} -gt 0 ]; then
+              echo ""
+              echo "::error::❌ ERRO CRÍTICO: ${#FAILED_FILES[@]} arquivo(s) não encontrado(s) ou não é arquivo:"
+              printf '   - %s\n' "${FAILED_FILES[@]}"
+              echo ""
+              echo "Possíveis causas:"
+              echo "  1. SCP falhou ao copiar o arquivo"
+              echo "  2. Arquivo foi criado como diretório em deploy anterior"
+              echo "  3. Caminho incorreto no source do SCP"
+              exit 1
+            fi
+            
+            echo "✅ Todos os arquivos críticos validados com sucesso"
+
       - name: Validar servidor de produção (fail-fast)
         uses: appleboy/ssh-action@v1.2.2
         with:
@@ -869,6 +930,11 @@ jobs:
             echo "   📝 Configurando Loki (UID 10001)..."
             sudo chown -R 10001:10001 /opt/alice/data/loki
             sudo chmod 755 /opt/alice/data/loki
+            
+            # Jaeger (UID 10001)
+            echo "   📝 Configurando Jaeger (UID 10001)..."
+            sudo chown -R 10001:10001 /opt/alice/data/jaeger
+            sudo chmod 755 /opt/alice/data/jaeger
             
             # ClickHouse (UID 101)
             echo "   📝 Configurando ClickHouse (UID 101)..."
