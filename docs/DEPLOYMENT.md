@@ -52,7 +52,7 @@ A plataforma foi refatorada em **5 stacks independentes** para permitir:
 
 | Stack | Containers | Descrição | Arquivo Docker Compose |
 |-------|------------|-----------|------------------------|
-| **INFRA** | 10 | PostgreSQL, Redis, Qdrant, Caddy, MinIO, SearXNG, Tor | `stacks/docker-compose.infra.yml` |
+| **INFRA** | 11 | PostgreSQL, PgBouncer, Redis, Qdrant, Caddy, MinIO, SearXNG, Tor | `stacks/docker-compose.infra.yml` |
 | **ALICE** | 8 + 5 GPU | Microsserviços core + GPU Manager + GPU containers | `stacks/docker-compose.alice.yml` |
 | **OBSERVABILITY** | 13 | Prometheus, Grafana, Loki, Jaeger, Langfuse, ClickHouse | `stacks/docker-compose.observability.yml` |
 | **ERPNEXT** | 15 | MariaDB, Redis Cache/Queue, Backend, Workers | `stacks/docker-compose.erpnext.yml` |
@@ -91,7 +91,7 @@ gh workflow run deploy-stack-modular.yml -f stack=erpnext -f version=v1.0.0 -f r
 ```
 prepare (copia arquivos)
    ↓
-deploy-infra + health-infra (PostgreSQL, Redis, Qdrant, Caddy, MinIO, SearXNG, Tor)
+deploy-infra + health-infra (PostgreSQL, PgBouncer, Redis, Qdrant, Caddy, MinIO, SearXNG, Tor)
    ↓
 drizzle-push (migrações schema PostgreSQL)
    ↓
@@ -215,7 +215,7 @@ Execução manual é opcional para validar antes do deploy.
 | Fase | Tempo | Descrição |
 |------|-------|-----------|
 | **Preparação** | 2-3 min | Validar servidor, criar estrutura, networks |
-| **Deploy INFRA** | 3-5 min | PostgreSQL, Redis, Qdrant, Caddy, MinIO |
+| **Deploy INFRA** | 3-5 min | PostgreSQL, PgBouncer, Redis, Qdrant, Caddy, MinIO |
 | **Deploy ALICE** | 5-7 min | 7 microsserviços + GPU Manager |
 | **Deploy OBSERVABILITY** | 4-6 min | Prometheus, Grafana, Loki, Langfuse |
 | **Deploy ERPNEXT** | 6-8 min | 15 containers (MariaDB, Backend, Workers) |
@@ -242,10 +242,11 @@ A plataforma Alice é composta por **50 containers** organizados em 7 categorias
 | 1 | **Caddy Gateway** | `alice-caddy` | Reverse proxy com SSL automático (Let's Encrypt), HTTP/3 nativo (QUIC), configuração declarativa. Substitui Traefik desde 02/01/2026. | Caddy 2.8.4 Alpine |
 | 2 | **pgBackRest Init** | `alice-pgbackrest-init` | Init container que cria stanza de backup ANTES do PostgreSQL iniciar. Corrige crash loop de archive_command. | pgBackRest 2.57.0 |
 | 3 | **PostgreSQL** | `alice-postgres` | Banco de dados principal com extensão pgvector para busca semântica, RLS para multi-tenancy. | PostgreSQL 16 + pgvector |
-| 4 | **Alice Redis** | `alice-redis` | Cache distribuído dedicado para serviços Alice (sessões, RBAC). Segregação enterprise do ERPNext. node-redis 5.x suporta Redis 7.x. | Redis 7.4.7 Alpine |
-| 5 | **Qdrant** | `alice-qdrant` | Banco vetorial para embeddings de texto (4096 dim Qwen3-Embedding-8B). HNSW index otimizado. | Qdrant v1.16.2 |
-| 6 | **Tor Proxy** | `alice-tor` | Proxy SOCKS5 Tor para engines .onion no SearXNG (ahmia, torch). Enterprise 23/12/2025. | dperson/torproxy |
-| 7 | **SearXNG** | `alice-searxng` | Metabusca interna para Web Search (auto-hospedado, protegido por secret) | searxng/searxng |
+| 4 | **PgBouncer** | `alice-pgbouncer` | Connection pooling para PostgreSQL. Reduz conexões idle de ~50 para ~10, economia de ~400MB RAM. Pool mode transaction. | PgBouncer 1.23.1 (Bitnami) |
+| 5 | **Alice Redis** | `alice-redis` | Cache distribuído dedicado para serviços Alice (sessões, RBAC). Segregação enterprise do ERPNext. node-redis 5.x suporta Redis 7.x. | Redis 7.4.7 Alpine |
+| 6 | **Qdrant** | `alice-qdrant` | Banco vetorial para embeddings de texto (4096 dim Qwen3-Embedding-8B). HNSW index otimizado. | Qdrant v1.16.2 |
+| 7 | **Tor Proxy** | `alice-tor` | Proxy SOCKS5 Tor para engines .onion no SearXNG (ahmia, torch). Enterprise 23/12/2025. | dperson/torproxy |
+| 8 | **SearXNG** | `alice-searxng` | Metabusca interna para Web Search (auto-hospedado, protegido por secret) | searxng/searxng |
 
 > **NOTA 02/01/2026**: Traefik, traefik-init e dockerproxy foram substituídos por **Caddy**. Vantagens: SSL automático com retry inteligente (evita rate limits Let's Encrypt), HTTP/3 nativo (QUIC protocol), footprint 40MB (vs 100MB Traefik), configuração declarativa via Caddyfile (vs labels Docker). Elimina necessidade de Docker Socket Proxy pois Caddy não precisa acessar a API Docker.
 

@@ -60,7 +60,7 @@ case $TYPE in
         
         # Parar serviços que usam o banco
         echo "Parando serviços..."
-        docker compose -f /opt/alice/docker-compose.prod.yml stop alice-auth alice-chat alice-rag alice-training alice-integrations 2>/dev/null || true
+        docker compose -p alice-app --env-file /opt/alice/app/infra/docker/.env.prod -f /opt/alice/app/infra/docker/stacks/docker-compose.base.yml -f /opt/alice/app/infra/docker/stacks/docker-compose.alice.yml stop alice-auth alice-chat alice-rag alice-training alice-integrations 2>/dev/null || true
         
         # Dropar e recriar banco
         echo "Recriando banco de dados..."
@@ -73,7 +73,7 @@ case $TYPE in
         
         # Reiniciar serviços
         echo "Reiniciando serviços..."
-        docker compose -f /opt/alice/docker-compose.prod.yml up -d alice-auth alice-chat alice-rag alice-training alice-integrations
+        docker compose -p alice-app --env-file /opt/alice/app/infra/docker/.env.prod -f /opt/alice/app/infra/docker/stacks/docker-compose.base.yml -f /opt/alice/app/infra/docker/stacks/docker-compose.alice.yml up -d alice-auth alice-chat alice-rag alice-training alice-integrations
         
         echo -e "${GREEN}✓ PostgreSQL restaurado com sucesso!${NC}"
         ;;
@@ -83,7 +83,7 @@ case $TYPE in
         
         # Parar ERPNext
         echo "Parando ERPNext..."
-        docker compose -f /opt/alice/docker-compose.prod.yml stop erpnext-frontend erpnext-backend 2>/dev/null || true
+        docker compose -p alice-erpnext --env-file /opt/alice/app/infra/docker/.env.prod -f /opt/alice/app/infra/docker/stacks/docker-compose.base.yml -f /opt/alice/app/infra/docker/stacks/docker-compose.erpnext.yml stop erpnext-frontend erpnext-backend 2>/dev/null || true
         
         # Ler senha
         MYSQL_ROOT_PASSWORD=$(docker exec erpnext-mariadb printenv MYSQL_ROOT_PASSWORD 2>/dev/null || echo "")
@@ -99,7 +99,7 @@ case $TYPE in
         
         # Reiniciar ERPNext
         echo "Reiniciando ERPNext..."
-        docker compose -f /opt/alice/docker-compose.prod.yml up -d erpnext-frontend erpnext-backend
+        docker compose -p alice-erpnext --env-file /opt/alice/app/infra/docker/.env.prod -f /opt/alice/app/infra/docker/stacks/docker-compose.base.yml -f /opt/alice/app/infra/docker/stacks/docker-compose.erpnext. yml up -d erpnext-frontend erpnext-backend
         
         echo -e "${GREEN}✓ MariaDB restaurado com sucesso!${NC}"
         ;;

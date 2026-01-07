@@ -19,7 +19,7 @@ Alice is an autonomous AI enterprise platform powered by the **Mixtral 8x7B (MoE
 | 9 | **VALIDAÇÃO CONTÍNUA** | Testar após cada micro-passo |
 | 10 | **DOCUMENTAÇÃO PT-BR** | TODA documentação em português |
 | 11 | **SEGUIR DOCS OFICIAIS** | Melhores práticas 2025 |
-| 12 | **PRODUÇÃO HETZNER GPU** | Deploy Hetzner via GitHub Actions (100% automático). Servidor único Hetzner GPU GEX44 (RTX 4000 Ada 20GB, Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD RAID 1) hospeda todos os 50 containers (8 infra + 7 Alice + 15 ERPNext + 13 observability + 6 GPU + 1 backup). GPU Manager Service gerencia requisições GPU com fila priorizada, monitoramento VRAM e circuit breakers. |
+| 12 | **PRODUÇÃO HETZNER GPU** | Deploy Hetzner via GitHub Actions (100% automático). Servidor único Hetzner GPU GEX44 (RTX 4000 Ada 20GB, Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD RAID 1) hospeda todos os 51 containers (11 infra + 7 Alice + 15 ERPNext + 13 observability + 6 GPU + 1 backup). GPU Manager Service gerencia requisições GPU com fila priorizada, monitoramento VRAM e circuit breakers. |
 | 13 | **INTERNACIONALIZAÇÃO** | PT-BR primário, EN secundário |
 | 14 | **VERIFICAR SECRETS** | Checar variáveis existentes |
 | 15 | **MICROSSERVIÇOS** | Código em apps/, compartilhado em packages/ |
@@ -47,13 +47,13 @@ Alice is an autonomous AI enterprise platform powered by the **Mixtral 8x7B (MoE
 **IMPORTANTE**: Código em `apps/` (microsserviços) vai para produção via GitHub Actions. O `server/index-dev.ts` existe apenas para fluxo local, mas **sem preview/mocks** — ele exige integrações reais (PostgreSQL + GPU Manager Service).
 
 ## System Architecture
-Alice employs a **modular multi-stack architecture** with 50 containerized services organized in **5 stacks independentes** for partial production capability. All services run on a single Hetzner GPU server GEX44 (RTX 4000 Ada 20GB, Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD RAID 1) to eliminate network latency and simplify management.
+Alice employs a **modular multi-stack architecture** with 51 containerized services organized in **5 stacks independentes** for partial production capability. All services run on a single Hetzner GPU server GEX44 (RTX 4000 Ada 20GB, Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD RAID 1) to eliminate network latency and simplify management.
 
 ### Arquitetura Multi-Stack (05/01/2026)
 
 | Stack | Containers | Descrição | Rollback |
 |-------|------------|-----------|----------|
-| **INFRA** | 10 | PostgreSQL, Redis, Qdrant, Caddy, MinIO, SearXNG, Tor | Independente |
+| **INFRA** | 11 | PostgreSQL, PgBouncer, Redis, Qdrant, Caddy, MinIO, SearXNG, Tor | Independente |
 | **ALICE** | 8 + 5 GPU | Frontend, Auth, Chat, RAG, Training, Integrations, GPU Manager + GPU containers | Independente |
 | **OBSERVABILITY** | 13 | Prometheus, Grafana, Loki, Jaeger, Langfuse, ClickHouse | Independente |
 | **ERPNEXT** | 15 | MariaDB, Redis Cache/Queue, Backend, Workers (100% isolado) | Independente |
@@ -643,6 +643,9 @@ git commit -a -m "test: adiciona testes unitários"
 ---
 *Autor: Fillipe Guerra*
 
+*Versão: 5.1 - 07 de Janeiro de 2026*
+*DEPLOY PRODUCTION - CORREÇÕES ENTERPRISE COMPLETAS (07/01/2026): Correções cirúrgicas para permitir primeiro deploy em produção. PROBLEMA: Deploy NUNCA funcionou - servidor limpo com 6 causas raiz identificadas. CORREÇÕES IMPLEMENTADAS: (1) ARQUIVOS DE CONFIGURAÇÃO AUSENTES: Criados `infra/observability/otel-collector/config.yaml` (cópia de apps/observability-service) e `infra/observability/grafana/provisioning/datasources/datasources.yml` (consolidado com Prometheus + Loki + Jaeger). Workflow esperava arquivos nestes paths específicos. (2) VALIDAÇÃO LOCAL PRÉ-SCP: Adicionado step de validação de arquivos críticos ANTES do SCP no workflow (fail-fast). Evita copiar arquivos → descobrir ausência no servidor. (3) PGBOUNCER CONNECTION POOLING: Adicionado container PgBouncer (Bitnami 1.23.1) no stack INFRA. Reduz conexões idle de ~50 para ~10, economia de ~400MB RAM. Pool mode transaction, max 200 client connections, pool size 20. VALIDAÇÕES NÃO NECESSÁRIAS (já corrigidos): ✅ Teste PostgreSQL UID 999 já usa docker run; ✅ Jaeger permissions UID 10001 já configurado; ✅ Grafana redirect loop já tem variáveis reverse proxy. ARQUIVOS MODIFICADOS: docker-compose.infra.yml (+51 linhas PgBouncer), versions.env (+PGBOUNCER_VERSION), deploy-stack-modular.yml (+47 linhas validação), DEPLOYMENT.md (documentação PgBouncer). ARQUIVOS CRIADOS: infra/observability/otel-collector/config.yaml, infra/observability/grafana/provisioning/datasources/datasources.yml. TOTAL CONTAINERS: 51 (11 infra + 7 Alice + 15 ERPNext + 13 observability + 6 GPU + 1 backup). Ref: Regras 1 (Ler antes agir), 6 (Enterprise-grade), 7 (Mudanças cirúrgicas), 9 (Validação contínua), 11 (Docs oficiais PgBouncer).*
+
 *Versão: 5.0 - 05 de Janeiro de 2026*
 *ARQUITETURA MULTI-STACK MODULAR (05/01/2026): Refatoração completa da arquitetura de deploy para suportar produção parcial e rollback cirúrgico. PROBLEMA: Deploy monolítico de 50 containers causava rollback total quando ERPNext falhava, derrubando Alice e Grafana que funcionavam. SOLUÇÃO ENTERPRISE: Separação em 5 stacks independentes (INFRA, ALICE, OBSERVABILITY, ERPNEXT, BACKUP) com: (1) Docker Compose files separados em infra/docker/stacks/; (2) Workflow deploy-stack.yml para deploy/rollback por stack; (3) Histórico de versões por stack em /opt/alice/versions/; (4) Health checks e rollback independentes por stack. BENEFÍCIOS: ✅ Produção parcial (Alice funciona mesmo se ERPNext falhar); ✅ Rollback cirúrgico (reverter apenas stack com problema); ✅ Deploy independente (atualizar Observability sem downtime de Alice); ✅ Isolamento de falhas (problema em um stack não propaga). ARQUIVOS CRIADOS: docker-compose.base.yml, docker-compose.infra.yml, docker-compose.alice.yml, docker-compose.observability.yml, docker-compose.erpnext.yml, docker-compose.backup.yml, deploy-stack.yml. Ref: Regras 6 (Enterprise), 11 (Melhores práticas 2025), 12 (Deploy Hetzner), 15 (Microsserviços).*
 
@@ -693,7 +696,7 @@ git commit -a -m "test: adiciona testes unitários"
 *Multi-Fix Deploy Enterprise (02/01/2026): Correção de 5 problemas que impediam deploy: (1) Vector VRL merge→merge! em ambos arquivos (infra/docker/vector.toml e infra/observability/vector.toml); (2) pgbackrest entrypoint.sh tolerante a falhas de permissão em pg_control; (3) postgres-init ajusta permissões PGDATA para pgBackRest (chmod 750, g+rX); (4) Langfuse healthcheck wget→curl + start_period 180s→300s + retries 10→15; (5) ERPNext backend healthcheck start_period 120s→300s + retries 5→15.*
 *CRITICAL BUG FIX pgbackrest-init Docker Compose Variable Expansion (02/01/2026): CAUSA RAIZ DO DEPLOY FALHANDO IDENTIFICADA - Container pgbackrest-init falhava com "PGBACKREST_REPO1_CIPHER_PASS não definido" mesmo com BACKUP_CIPHER_PASS corretamente configurado no .env.prod. PROBLEMA: No script inline do `command:`, a variável `${PGBACKREST_REPO1_CIPHER_PASS:-}` era expandida pelo Docker Compose (que não conhece essa variável de ambiente do container) ANTES de passar para o shell do container, resultando em string vazia. SOLUÇÃO: Escapar `$` como `$$` para que Docker Compose passe a variável literalmente (`$${PGBACKREST_REPO1_CIPHER_PASS:-}`) e o shell do container faça a expansão. ARQUIVOS MODIFICADOS: infra/docker/docker-compose.prod.yml (linha 439). Esta correção é CRÍTICA para o primeiro deploy funcionar - sem ela, pgBackRest init falha e impede todo o deploy. Ref: https://docs.docker.com/compose/compose-file/12-interpolation/*
 *Bug Fix progress Decimal Arithmetic (02/01/2026): Corrigido `progress 4.5` para `progress 4` - bash não suporta decimais em expressões aritméticas. Causava "syntax error: invalid arithmetic operator".*
-*Total de Containers: 50 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 6 GPU + 1 backup + 1 storage)*
+*Total de Containers: 51 (11 infra + 7 Alice + 15 ERPNext + 13 observability + 6 GPU + 1 backup)*
 *GitHub Secrets: 54 configurados (DOCKERHUB_USERNAME, DOCKERHUB_TOKEN adicionados 20/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*

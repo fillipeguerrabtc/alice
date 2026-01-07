@@ -1,0 +1,133 @@
+# OpenTelemetry Collector Configuration - Alice Enterprise Platform
+#
+# Configuração do OTel Collector para receber traces/métricas
+# dos microserviços Alice e exportar para Jaeger/Prometheus. 
+#
+# Documentação PT-BR (Regra 10 CLAUDE. md)
+
+receivers:
+  # Receptor OTLP para traces e métricas dos microserviços
+  otlp: 
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+        cors: 
+          allowed_origins:
+            - "https://yesyoudeserve.duckdns.org"
+            - "http://localhost:*"
+
+  # Receptor Prometheus para métricas existentes
+  prometheus: 
+    config: 
+      scrape_configs:
+        - job_name: 'otel-collector'
+          scrape_interval: 15s
+          static_configs:
+            - targets: ['localhost:8888']
+
+processors: 
+  # Batch processor para otimizar envio
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+    send_batch_max_size: 2048
+
+  # Memory limiter para evitar OOM
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+    spike_limit_mib: 128
+
+  # Resource processor para adicionar metadados
+  resource:
+    attributes: 
+      - key:  service.namespace
+        value: alice-enterprise
+        action: upsert
+      - key: deployment.environment
+        value: production
+        action: upsert
+
+  # Atributos específicos para LLM
+  attributes:
+    actions:
+      - key: llm.model
+        action: upsert
+        value: "mixtral-8x7b"
+      - key:  llm.provider
+        action: upsert
+        value:  "gpu-manager-service"
+
+  # Filtro para remover spans de health check
+  filter: 
+    spans:
+      exclude:
+        match_type: regexp
+        span_names:
+          - ".*health.*"
+          - ".*metrics.*"
+
+exporters:
+  # Exportar traces para Jaeger
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls: 
+      insecure:  true
+
+  # Exportar métricas para Prometheus
+  prometheus: 
+    endpoint: 0.0.0.0:8889
+    namespace: alice
+    const_labels:
+      cluster:  production
+
+  # Debug exporter (apenas em dev)
+  debug: 
+    verbosity: basic
+
+extensions:
+  # Health check do collector
+  health_check:
+    endpoint:  0.0.0.0:13133
+
+  # zPages para debugging
+  zpages: 
+    endpoint: 0.0.0.0:55679
+
+  # Pprof para profiling
+  pprof:
+    endpoint: 0.0.0.0:1777
+
+service: 
+  extensions:  [health_check, zpages, pprof]
+  
+  pipelines:
+    # Pipeline de traces
+    # CORREÇÃO 07/01/2026: Adicionado 'attributes' processor para LLM metadata
+    traces:
+      receivers:  [otlp]
+      processors: [memory_limiter, batch, resource, attributes, filter]
+      exporters: [otlp/jaeger]
+
+    # Pipeline de métricas
+    # CORREÇÃO 07/01/2026: Adicionado 'attributes' processor para LLM metadata
+    metrics: 
+      receivers: [otlp, prometheus]
+      processors: [memory_limiter, batch, resource, attributes]
+      exporters:  [prometheus]
+
+  telemetry:
+    logs:
+      level:  info
+    metrics:
+      # CORREÇÃO 19/12/2025: OTel Collector 0.123+ deprecou 'address'
+      # Nova sintaxe usa 'readers' com prometheus exporter
+      # Ref: https://opentelemetry.io/docs/collector/internal-telemetry/
+      readers:
+        - pull: 
+            exporter: 
+              prometheus:
+                host: '0.0.0.0'
+                port: 8888
