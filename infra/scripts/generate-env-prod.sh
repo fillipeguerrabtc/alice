@@ -169,6 +169,21 @@ if [ -z "${POSTGRES_PASSWORD}" ]; then
   exit 1
 fi
 
+# VALIDAÇÃO ENTERPRISE (07/01/2026): Comprimento mínimo e blacklist de senhas comuns
+# Ref: CLAUDE.md Regra 6 (Enterprise-grade), Regra 8 (Qualidade obrigatória)
+if [ ${#POSTGRES_PASSWORD} -lt 16 ]; then
+  echo "::error::POSTGRES_PASSWORD muito curta (${#POSTGRES_PASSWORD} caracteres). Use pelo menos 16 caracteres (recomendado: openssl rand -hex 32)." >&2
+  exit 1
+fi
+
+# Validar que não está usando senha default/exemplo
+if echo "${POSTGRES_PASSWORD}" | grep -qiE '^(postgres|alice|admin|password|changeme|123456)'; then
+  echo "::error::POSTGRES_PASSWORD usando senha insegura/default. Gere uma senha segura: openssl rand -hex 32" >&2
+  exit 1
+fi
+
+echo "✅ POSTGRES_PASSWORD validado (${#POSTGRES_PASSWORD} caracteres, seguro)"
+
 # CORREÇÃO 23/12/2025: Validação restritiva REMOVIDA - URL-encoding no workflow suporta qualquer senha
 # Antes: Validação rejeitava senhas com caracteres especiais (+/=@:?#%), forçando apenas hex
 # Agora: Função urlencode() (RFC 3986 compliant + UTF-8 multi-byte correto) suporta qualquer caractere

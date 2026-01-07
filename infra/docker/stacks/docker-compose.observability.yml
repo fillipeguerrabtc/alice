@@ -524,8 +524,13 @@ services:
       timeout: 15s
       retries: 15
       start_period: 120s
-    # NOTA: alice-redis, minio estão no stack infra (health check pelo workflow)
-    # minio-init cria bucket langfuse-events (exit code verificado pelo workflow antes de deploy observability)
+    # NOTA CROSS-STACK DEPENDENCY (07/01/2026):
+    # Langfuse depende de MinIO (S3 storage) que está no stack INFRA.
+    # O workflow deploy-stack-modular.yml garante que deploy-observability
+    # depende de health-infra (linha 1324), então MinIO está healthy antes
+    # de Langfuse iniciar. Não é possível adicionar depends_on direto aqui
+    # pois containers estão em stacks diferentes.
+    # Ref: CLAUDE.md Regra 16 (Health checks em cascata)
     depends_on:
       langfuse-db:
         condition: service_healthy
@@ -576,7 +581,13 @@ services:
       LANGFUSE_S3_MEDIA_UPLOAD_ENABLED: "false"
     networks:
       - alice-network
-    # NOTA: minio, minio-init estão no stack infra - verificados pelo workflow
+    # NOTA CROSS-STACK DEPENDENCY (07/01/2026):
+    # Langfuse Worker depende de MinIO (S3 storage) que está no stack INFRA.
+    # O workflow deploy-stack-modular.yml garante que deploy-observability
+    # depende de health-infra (linha 1324), então MinIO está healthy antes
+    # de Langfuse Worker iniciar. Não é possível adicionar depends_on direto
+    # aqui pois containers estão em stacks diferentes.
+    # Ref: CLAUDE.md Regra 16 (Health checks em cascata)
     depends_on:
       langfuse-db:
         condition: service_healthy

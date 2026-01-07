@@ -280,11 +280,15 @@ services:
     networks:
       - alice-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-alice} -d ${POSTGRES_DB:-alice_prod} && psql -U ${POSTGRES_USER:-alice} -d ${POSTGRES_DB:-alice_prod} -tAc \"SELECT 1 FROM pg_extension WHERE extname='vector'\" | grep -q 1"]
+      test:
+        - CMD-SHELL
+        - >-
+          pg_isready -U ${POSTGRES_USER:-alice} -d ${POSTGRES_DB:-alice_prod} &&
+          psql -U ${POSTGRES_USER:-alice} -d ${POSTGRES_DB:-alice_prod} -tAc "SELECT 1 FROM pg_extension WHERE extname = 'vector';" | grep -q 1
       interval: 10s
       timeout: 10s
-      retries: 15
-      start_period: 120s
+      retries: 20
+      start_period: 180s
     deploy:
       resources:
         limits:
@@ -440,6 +444,7 @@ services:
     platform: linux/amd64
     container_name: alice-minio-init
     entrypoint: ["/bin/sh", "-c"]
+    restart: "no"
     depends_on:
       minio:
         condition: service_healthy
