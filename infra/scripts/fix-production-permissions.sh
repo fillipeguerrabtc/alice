@@ -53,17 +53,28 @@ MODE=""
 # =============================================================================
 # Formato: "path:uid:gid:permissions"
 # 
-# UIDs de containers Docker:
-#   - postgres/mariadb: 999
-#   - pgbackrest (pgbackrest Bitnami): 70
-#   - redis: 999
-#   - caddy: 1000
-#   - searxng: 977
-#   - jaeger: 10001
-#   - clickhouse: 101
-#   - grafana (Bitnami): 472
-#   - prometheus: 65534 (nobody)
-#   - alice uploads: 1000 (Node.js containers rodam como node user)
+# =============================================================================
+# TABELA DE REFERÊNCIA DE UIDs/GIDs (Enterprise-Grade)
+# =============================================================================
+# | Serviço           | UID    | GID    | User Name       | Notas                |
+# |-------------------|--------|--------|-----------------|----------------------|
+# | PostgreSQL        | 999    | 999    | postgres        | Debian base          |
+# | pgBackRest        | 70     | 70     | postgres        | Alpine base          |
+# | Redis             | 999    | 999    | redis           | Alpine base          |
+# | Caddy             | 1000   | 1000   | caddy           | Custom UID           |
+# | SearXNG           | 977    | 977    | searxng         | Custom UID           |
+# | MinIO             | 0      | 0      | root            | Requires root        |
+# | Qdrant            | 0      | 0      | root            | Requires root        |
+# | Jaeger            | 10001  | 10001  | jaeger          | Distroless           |
+# | Prometheus        | 65534  | 65534  | nobody          | Alpine base          |
+# | Grafana           | 472    | 472    | grafana         | Custom UID           |
+# | Loki              | 10001  | 10001  | loki            | Distroless           |
+# | Langfuse DB       | 70     | 70     | postgres        | Alpine PostgreSQL    |
+# | ClickHouse        | 101    | 101    | clickhouse      | Alpine base          |
+# | Vector            | 0      | 0      | root            | Requires root        |
+# | MariaDB           | 999    | 999    | mysql           | Debian base          |
+# | ERPNext           | 1000   | 1000   | frappe          | Custom UID           |
+# | Alice Uploads     | 1000   | 1000   | node            | Node.js containers   |
 # =============================================================================
 declare -a DIRECTORIES=(
     # INFRA STACK
@@ -78,6 +89,9 @@ declare -a DIRECTORIES=(
     
     # OBSERVABILITY STACK
     "${DATA_DIR}/jaeger:10001:10001:755"
+    "${DATA_DIR}/prometheus:65534:65534:755"
+    "${DATA_DIR}/grafana:472:472:755"
+    "${DATA_DIR}/loki:10001:10001:755"
     "${DATA_DIR}/langfuse-db:70:70:700"
     "${DATA_DIR}/clickhouse:101:101:755"
     "${DATA_DIR}/vector:0:0:755"
@@ -215,12 +229,19 @@ create_mode() {
         local needs_update=false
         
         # Atualizar ownership se necessário
+        # CRÍTICO: Usar -R (recursive) para corrigir ownership de arquivos existentes
+        # Se houver arquivos de deploy anterior com UID errado, eles serão corrigidos
+        # Exemplo: PostgreSQL com base/, global/, pg_wal/ de UID root
+        # NOTA DE PERFORMANCE: Em diretórios grandes (ex: PostgreSQL com 10GB+ de dados),
+        # chown -R pode demorar. Isso é esperado e necessário para garantir que TODOS
+        # os arquivos tenham UID correto. Tempo estimado: ~5-10s por GB de dados.
         if [[ "$current_uid" != "$uid" ]] || [[ "$current_gid" != "$gid" ]]; then
-            if chown "${uid}:${gid}" "$path" 2>/dev/null; then
-                log_success "Ownership atualizado: $path → ${uid}:${gid}"
+            log_info "  ⏳ Ajustando ownership recursivo (pode demorar em diretórios grandes)..."
+            if chown -R "${uid}:${gid}" "$path" 2>/dev/null; then
+                log_success "Ownership atualizado recursivamente: $path → ${uid}:${gid}"
                 needs_update=true
             else
-                log_error "Falha ao atualizar ownership: $path"
+                log_error "Falha ao atualizar ownership recursivo: $path"
                 ((failed++))
                 continue
             fi
@@ -314,6 +335,61 @@ validate_mode() {
 }
 
 # =============================================================================
+# FUNÇÃO: validate_all_directories_have_correct_ownership
+# =============================================================================
+# Valida que TODOS os diretórios E SEUS CONTEÚDOS têm ownership correto
+# Esta validação é executada após create_mode para garantir que não apenas
+# os diretórios pai, mas também todos os arquivos e subdiretórios dentro
+# deles tenham as permissões corretas (incluindo arquivos de deploys anteriores)
+# =============================================================================
+validate_all_directories_have_correct_ownership() {
+    log_info "🔍 Validando Ownership Recursivo"
+    echo ""
+    
+    local errors=0
+    
+    for entry in "${DIRECTORIES[@]}"; do
+        IFS=':' read -r path uid gid perms <<< "$entry"
+        
+        if [[ ! -d "$path" ]]; then
+            continue  # Diretório não existe, pular
+        fi
+        
+        log_info "Validando $(basename "$path")..."
+        
+        # Verificar se TODOS os arquivos dentro têm UID/GID correto
+        # Usa find para procurar arquivos que NÃO tenham o UID ou GID esperado
+        local wrong_files
+        wrong_files=$(find "$path" \( ! -user "$uid" -o ! -group "$gid" \) 2>/dev/null | head -5)
+        
+        if [[ -n "$wrong_files" ]]; then
+            log_error "  ❌ Arquivos com ownership incorreto em ${path}:"
+            echo "$wrong_files" | while read -r file; do
+                local file_uid file_gid
+                file_uid=$(stat -c '%u' "$file" 2>/dev/null || stat -f '%u' "$file")
+                file_gid=$(stat -c '%g' "$file" 2>/dev/null || stat -f '%g' "$file")
+                log_warning "    ${file} (UID: ${file_uid}, GID: ${file_gid}) - esperado (UID: ${uid}, GID: ${gid})"
+            done
+            ((errors++))
+        else
+            log_success "  ✅ $(basename "$path"): Ownership correto (recursivo)"
+        fi
+    done
+    
+    echo ""
+    log_info "=========================================="
+    if [[ $errors -gt 0 ]]; then
+        log_error "❌ ${errors} diretório(s) com ownership incorreto!"
+        log_info "=========================================="
+        return 1
+    fi
+    
+    log_success "✅ Todos os diretórios têm ownership correto (recursivo)"
+    log_info "=========================================="
+    return 0
+}
+
+# =============================================================================
 # MAIN
 # =============================================================================
 
@@ -340,8 +416,15 @@ main() {
             fi
             
             if create_mode; then
-                log_success "Operação concluída com sucesso!"
-                exit 0
+                echo ""
+                # Validar que ownership recursivo está correto após create
+                if validate_all_directories_have_correct_ownership; then
+                    log_success "Operação concluída com sucesso!"
+                    exit 0
+                else
+                    log_error "Validação falhou - alguns arquivos têm ownership incorreto"
+                    exit 1
+                fi
             else
                 log_error "Operação concluída com erros"
                 exit 1
