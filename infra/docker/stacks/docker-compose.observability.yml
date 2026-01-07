@@ -114,13 +114,23 @@ services:
       GF_USERS_ALLOW_ORG_CREATE: "false"
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_SECURITY_DISABLE_GRAVATAR: "true"
-      GF_SECURITY_COOKIE_SECURE: "true"
-      GF_SECURITY_COOKIE_SAMESITE: strict
-      GF_SECURITY_STRICT_TRANSPORT_SECURITY: "true"
+      # =================================================================
+      # CORREÇÃO #1: Grafana Behind Reverse Proxy (Caddy)
+      # =================================================================
+      # PROBLEMA: cookie_secure=true forçava HTTPS mas Grafana roda em HTTP
+      # CAUSA RAIZ: Caddy termina SSL → envia HTTP → Grafana força HTTPS → loop
+      # SOLUÇÃO: Caddy adiciona Secure flag via headers, Grafana usa HTTP interno
+      # REF: https://grafana.com/docs/grafana/latest/setup-grafana/configure-grafana/reverse-proxy/
+      # =================================================================
+      GF_SERVER_PROTOCOL: http
+      GF_SERVER_DOMAIN: observability.yesyoudeserve.duckdns.org
+      GF_SECURITY_COOKIE_SECURE: "false"
+      GF_SECURITY_COOKIE_SAMESITE: lax
+      GF_SECURITY_STRICT_TRANSPORT_SECURITY: "false"
       GF_SECURITY_X_CONTENT_TYPE_OPTIONS: "true"
       GF_SECURITY_X_XSS_PROTECTION: "true"
       GF_SERVER_ROOT_URL: https://observability.yesyoudeserve.duckdns.org
-      GF_SERVER_ENFORCE_DOMAIN: "true"
+      GF_SERVER_ENFORCE_DOMAIN: "false"
       # SSO OAuth - Alice como IdP
       GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
       GF_AUTH_GENERIC_OAUTH_NAME: Alice Enterprise
