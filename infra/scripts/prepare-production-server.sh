@@ -335,13 +335,15 @@ if [ "$ACTUAL_PERMS" != "700" ]; then
   exit 1
 fi
 
-# Teste de escrita
-if ! sudo -u "#999" touch "$POSTGRES_DIR/.write-test" 2>/dev/null; then
-  echo "❌ ERRO: Usuário 999 (postgres) NÃO consegue escrever"
+# Teste de escrita via Docker (funciona em servidor limpo sem UID 999 no host)
+if ! docker run --rm --user 999:999 -v "$POSTGRES_DIR:/test:rw" alpine:3.19 touch /test/.write-test 2>/dev/null; then
+  echo "❌ ERRO: Usuário 999 (postgres) NÃO consegue escrever no volume Docker"
+  ls -ld "$POSTGRES_DIR"
   exit 1
 fi
 
-sudo rm -f "$POSTGRES_DIR/.write-test"
+# Limpar arquivo de teste (via Docker para consistência)
+docker run --rm --user 999:999 -v "$POSTGRES_DIR:/test:rw" alpine:3.19 rm -f /test/.write-test 2>/dev/null || true
 echo "   ✅ Permissões PostgreSQL OK"
 
 # Validar networks
