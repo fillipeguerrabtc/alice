@@ -193,7 +193,7 @@ jobs:
           echo "✅ Stacks selecionados para deploy"
 
       - name: Checkout código
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: refs/tags/${{ steps.context.outputs.version }}
           fetch-depth: 0
@@ -258,7 +258,7 @@ jobs:
 
     steps:
       - name: Checkout código
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: refs/tags/${{ needs.validate.outputs.version }}
           fetch-depth: 0

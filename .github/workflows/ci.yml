@@ -57,7 +57,7 @@ jobs:
       node-version: ${{ steps.versions.outputs.node-version }}
       pnpm-version: ${{ steps.versions.outputs.pnpm-version }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
 
       - name: Calcular versões Node.js e pnpm
         id: versions
@@ -96,7 +96,7 @@ jobs:
       contents: read
     needs: detect-changes
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
 
       - name: Setup Node.js e pnpm
         uses: ./.github/actions/setup-node-pnpm
@@ -149,7 +149,7 @@ jobs:
       security-events: write
     needs: detect-changes
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
 
       # -------------------------------------------------------------------------
       # SECURITY SCAN (Trivy - Código Fonte)
@@ -333,7 +333,7 @@ jobs:
     needs: [build-and-check, security-and-compliance]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.build-and-check.result == 'success' && needs.security-and-compliance.result == 'success'
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
         with:
           fetch-depth: 0
 
