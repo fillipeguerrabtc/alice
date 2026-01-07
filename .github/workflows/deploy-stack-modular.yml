@@ -891,31 +891,40 @@ jobs:
             fi
             
             # =========================================================
-            # 2. DIRETÓRIOS (para bind mounts dos volumes)
+            # 2. DIRETÓRIOS E PERMISSÕES (via script enterprise)
+            # =========================================================
+            # CORREÇÃO 07/01/2026: Substituir criação manual por script enterprise
+            # PROBLEMA: Diretórios criados sem permissões causavam restart loops
+            # SOLUÇÃO: Script centralizado com UIDs explícitos e validação
+            # REF: infra/scripts/fix-production-permissions.sh
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 11 (UIDs explícitos)
             # =========================================================
             echo ""
-            echo "📁 Criando estrutura de diretórios..."
+            echo "📁 Criando estrutura de diretórios com permissões corretas..."
             
-            # Diretórios de dados (volumes) - INFRA stack
-            mkdir -p /opt/alice/data/{postgres,redis-alice,qdrant,minio,caddy,caddy-config}
-            mkdir -p /opt/alice/data/{searxng-config,pgbackrest-spool}
+            # Executar script enterprise de permissões
+            chmod +x /opt/alice/app/infra/scripts/fix-production-permissions.sh
             
-            # Diretórios de dados (volumes) - OBSERVABILITY stack
-            mkdir -p /opt/alice/data/{vector,langfuse-db,clickhouse}
-            mkdir -p /opt/alice/data/{prometheus,grafana,loki,jaeger}
+            # Modo create (com sudo pois precisa alterar ownership)
+            if ! sudo /opt/alice/app/infra/scripts/fix-production-permissions.sh --create; then
+              echo "❌ ERRO: Falha ao configurar diretórios e permissões"
+              echo ""
+              echo "Tentando diagnóstico..."
+              sudo /opt/alice/app/infra/scripts/fix-production-permissions.sh --validate || true
+              exit 1
+            fi
             
-            # Diretórios de dados (volumes) - ERPNEXT stack
-            mkdir -p /opt/alice/data/{erpnext-sites,erpnext-mariadb,erpnext-redis-cache,erpnext-redis-queue}
+            # Validar que tudo está correto (fail-fast)
+            echo ""
+            echo "🧪 Validando permissões..."
+            if ! sudo /opt/alice/app/infra/scripts/fix-production-permissions.sh --validate; then
+              echo "❌ ERRO: Validação de permissões falhou"
+              exit 1
+            fi
             
-            # Diretórios de logs
-            mkdir -p /opt/alice/logs/{caddy,erpnext,clickhouse,jaeger}
+            echo "✅ Diretórios e permissões configurados com sucesso"
             
-            # Diretórios de uploads e backups
-            mkdir -p /opt/alice/uploads/training
-            mkdir -p /opt/alice/backups/{postgresql,postgresql/logs,manifests}
-            
-            # Diretórios de secrets e versões
-            mkdir -p /opt/alice/secrets
+            # Criar diretório para version tracking (usado pelo rollback system)
             mkdir -p /opt/alice/versions
             
             # =========================================================
@@ -937,101 +946,13 @@ jobs:
             fi
             
             # =========================================================
-            # 4. PERMISSÕES (específicas por serviço)
+            # 4. VALIDAÇÃO ESPECÍFICA DO POSTGRESQL (fail-fast)
             # =========================================================
-            echo ""
-            echo "🔐 Configurando permissões..."
-            
-            # =================================================================
-            # CORREÇÃO #2: PostgreSQL Fail-Fast (remover || true)
-            # CORREÇÃO #4: Adicionar sudo em TODOS os comandos chmod/chown/rm
-            # =================================================================
-            # PROBLEMA: || true suprimia erros silenciosamente
-            # PROBLEMA: chmod sem sudo após chown causava "Permission denied"
-            # SOLUÇÃO: Fail-fast explícito + sudo para manipular diretórios de outros users
-            # REF: CLAUDE.md Regra 6 (Zero workarounds), Regra 16 (Fail-fast)
-            # =================================================================
-            
-            # PostgreSQL (UID 999) - CRÍTICO para deploy funcionar
-            echo "   📝 Configurando PostgreSQL (UID 999)..."
-            if ! sudo chown -R 999:999 /opt/alice/data/postgres; then
-              echo "❌ ERRO: Falha ao configurar owner do diretório PostgreSQL"
-              ls -ld /opt/alice/data/postgres
-              exit 1
-            fi
-            sudo chmod 700 /opt/alice/data/postgres
-            
-            # Grafana (UID 472 - Enterprise hardening per CLAUDE.md)
-            echo "   📝 Configurando Grafana (UID 472)..."
-            sudo chown -R 472:472 /opt/alice/data/grafana
-            sudo chmod 755 /opt/alice/data/grafana
-            
-            # Prometheus (UID 65534 - nobody)
-            echo "   📝 Configurando Prometheus (UID 65534)..."
-            sudo chown -R 65534:65534 /opt/alice/data/prometheus
-            sudo chmod 755 /opt/alice/data/prometheus
-            
-            # Loki (UID 10001)
-            echo "   📝 Configurando Loki (UID 10001)..."
-            sudo chown -R 10001:10001 /opt/alice/data/loki
-            sudo chmod 755 /opt/alice/data/loki
-            
-            # Jaeger (UID 10001)
-            echo "   📝 Configurando Jaeger (UID 10001)..."
-            sudo chown -R 10001:10001 /opt/alice/data/jaeger
-            sudo chmod 755 /opt/alice/data/jaeger
-            
-            # ClickHouse (UID 101)
-            echo "   📝 Configurando ClickHouse (UID 101)..."
-            sudo chown -R 101:101 /opt/alice/data/clickhouse /opt/alice/logs/clickhouse
-            sudo chmod 755 /opt/alice/data/clickhouse /opt/alice/logs/clickhouse
-            
-            # Langfuse DB PostgreSQL (UID 70)
-            echo "   📝 Configurando Langfuse DB (UID 70)..."
-            sudo chown -R 70:70 /opt/alice/data/langfuse-db
-            sudo chmod 755 /opt/alice/data/langfuse-db
-            
-            # Redis (UID 999)
-            echo "   📝 Configurando Redis (UID 999)..."
-            sudo chown -R 999:999 /opt/alice/data/redis-alice
-            sudo chmod 755 /opt/alice/data/redis-alice
-            
-            # Caddy (UID 1000)
-            echo "   📝 Configurando Caddy (UID 1000)..."
-            sudo chown -R 1000:1000 /opt/alice/data/caddy /opt/alice/data/caddy-config /opt/alice/logs/caddy
-            sudo chmod 700 /opt/alice/data/caddy
-            sudo chmod 755 /opt/alice/data/caddy-config /opt/alice/logs/caddy
-            
-            # SearXNG (UID 977)
-            echo "   📝 Configurando SearXNG (UID 977)..."
-            sudo chown -R 977:977 /opt/alice/data/searxng-config
-            sudo chmod 755 /opt/alice/data/searxng-config
-            
-            # Qdrant, MinIO, Vector (root - permissões gerais)
-            echo "   📝 Configurando Qdrant, MinIO, Vector..."
-            sudo chmod 755 /opt/alice/data/qdrant /opt/alice/data/minio /opt/alice/data/vector
-            
-            # ERPNext (UID 1000 para Frappe)
-            echo "   📝 Configurando ERPNext (UID 1000)..."
-            sudo chown -R 1000:1000 /opt/alice/data/erpnext-sites /opt/alice/logs/erpnext
-            sudo chmod 755 /opt/alice/data/erpnext-sites /opt/alice/logs/erpnext
-            
-            # Backups (root com permissões restritas)
-            echo "   📝 Configurando Backups..."
-            sudo chmod 750 /opt/alice/backups
-            sudo chmod 750 /opt/alice/backups/postgresql
-            
-            # Uploads (para RAG multimodal)
-            echo "   📝 Configurando Uploads..."
-            sudo chmod 755 /opt/alice/uploads
-            
-            echo "   ✅ Permissões configuradas"
-            
-            # =========================================================
-            # 5. VALIDAR PERMISSÕES (FAIL-FAST - 4 ESTÁGIOS)
-            # =========================================================
-            # CORREÇÃO #3: Validação robusta em 4 estágios
+            # CORREÇÃO #3: Validação robusta PostgreSQL em 4 estágios
             # REF: CLAUDE.md Regra 9 (Validação contínua)
+            # NOTA: Script fix-production-permissions.sh já validou TUDO,
+            #       mas mantemos esta validação específica para PostgreSQL
+            #       por ser o serviço mais crítico.
             # =========================================================
             echo ""
             echo "🧪 Validando permissões PostgreSQL (4 estágios)..."

@@ -209,3 +209,11 @@ volumes:
       type: none
       o: bind
       device: /opt/alice/logs/clickhouse
+
+  jaeger_data:
+    name: alice-jaeger-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/data/jaeger

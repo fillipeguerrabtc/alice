@@ -250,7 +250,7 @@ services:
     command: ["--config", "/etc/jaeger/jaeger-config.yml"]
     volumes:
       - ../../observability/jaeger/jaeger-config.yml:/etc/jaeger/jaeger-config.yml:ro
-      - /opt/alice/data/jaeger:/badger
+      - jaeger_data:/badger
     networks:
       - alice-network
     healthcheck:

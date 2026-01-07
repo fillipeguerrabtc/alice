@@ -79,7 +79,10 @@ services:
       - /tmp:mode=1777,size=64M
       - /var/cache/nginx:mode=1777,size=32M
       - /var/run:mode=1777,size=8M
-      - /etc/nginx/conf.d:mode=1777,size=8M
+      # CORREÇÃO 07/01/2026: NGINX precisa escrever logs temporários em /var/lib/nginx
+      # Removido /etc/nginx/conf.d pois configs são read-only da imagem
+      # Ref: NGINX Alpine 2025 best practices
+      - /var/lib/nginx:mode=1777,size=16M
     healthcheck:
       # CORREÇÃO 05/01/2026: nginx:alpine usa ash/busybox - NÃO tem /dev/tcp
       # /dev/tcp é bash-only. Alpine TEM wget disponível.
@@ -410,7 +413,10 @@ services:
     networks:
       - alice-network
     healthcheck:
-      test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:3007/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+      # CORREÇÃO 07/01/2026: Usar endpoint /health SEM autenticação para Docker healthcheck
+      # /live requer header x-internal-api-secret que não pode ser passado via healthcheck
+      # Ref: apps/observability-service/src/index.ts linha 49 e 372
+      test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:3007/health',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
       retries: 5
