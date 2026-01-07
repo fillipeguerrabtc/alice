@@ -264,7 +264,7 @@ traces.yesyoudeserve.duckdns.org {
 langfuse.yesyoudeserve.duckdns.org {
 	import security_headers
 	
-	reverse_proxy langfuse-web:3000 {
+	reverse_proxy langfuse:3000 {
 		import proxy_headers
 	}
 }
@@ -277,7 +277,7 @@ erp.yesyoudeserve.duckdns.org {
 	
 	# WebSocket ERPNext (socket.io)
 	handle /socket.io/* {
-		reverse_proxy erpnext-socketio:9000 {
+		reverse_proxy erpnext-websocket:9000 {
 			import websocket_headers
 		}
 	}

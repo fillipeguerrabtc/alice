@@ -879,7 +879,7 @@ jobs:
             echo "🏥 Checking INFRA stack health..."
             
             CONTAINERS="alice-postgres alice-redis alice-qdrant alice-tor alice-searxng alice-caddy alice-minio"
-            MAX_RETRIES=30
+            MAX_RETRIES=15
             SLEEP_TIME=10
             
             for container in $CONTAINERS; do
@@ -1145,7 +1145,7 @@ jobs:
             echo "🏥 Checking ALICE stack health..."
             
             CONTAINERS="alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager"
-            MAX_RETRIES=30
+            MAX_RETRIES=15
             SLEEP_TIME=10
             
             for container in $CONTAINERS; do
@@ -1303,10 +1303,10 @@ jobs:
             # CRITICAL FIX (06/01/2026): Adicionar todos os 11 containers com healthcheck
             # Faltavam: promtail (logs), alice-vector (aggregator), alice-otel-collector (OTEL),
             #           alice-cadvisor (métricas), alice-langfuse-db (PostgreSQL do Langfuse - CRÍTICO!)
-            # Nota: alice-node-exporter não tem healthcheck (network_mode: host)
+            # AGORA: alice-node-exporter TEM healthcheck (adicionado em 07/01/2026)
             # Nota: langfuse-worker não tem healthcheck (worker assíncrono)
-            CONTAINERS="prometheus grafana loki promtail jaeger alice-vector alice-otel-collector alice-cadvisor alice-clickhouse alice-langfuse-db langfuse"
-            MAX_RETRIES=30
+            CONTAINERS="prometheus grafana loki promtail jaeger alice-vector alice-otel-collector alice-cadvisor alice-node-exporter alice-clickhouse alice-langfuse-db langfuse"
+            MAX_RETRIES=15
             SLEEP_TIME=10
             
             for container in $CONTAINERS; do
@@ -1464,7 +1464,7 @@ jobs:
             # CRITICAL FIX (06/01/2026): Adicionar todos os 10 containers com healthcheck
             # Faltavam: websocket (Socket.IO), scheduler (cron), workers (job queues)
             CONTAINERS="erpnext-mariadb erpnext-redis-cache erpnext-redis-queue erpnext-backend erpnext-frontend erpnext-websocket erpnext-scheduler erpnext-worker-default erpnext-worker-short erpnext-worker-long"
-            MAX_RETRIES=45
+            MAX_RETRIES=15
             SLEEP_TIME=10
             
             for container in $CONTAINERS; do
