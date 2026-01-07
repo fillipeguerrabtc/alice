@@ -114,13 +114,16 @@ services:
       GF_USERS_ALLOW_ORG_CREATE: "false"
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_SECURITY_DISABLE_GRAVATAR: "true"
-      GF_SECURITY_COOKIE_SECURE: "true"
-      GF_SECURITY_COOKIE_SAMESITE: strict
-      GF_SECURITY_STRICT_TRANSPORT_SECURITY: "true"
+      # Reverse Proxy Settings (Caddy termina SSL)
+      # Ref: https://grafana.com/docs/grafana/latest/setup-grafana/configure-grafana/reverse-proxy/
+      GF_SERVER_PROTOCOL: http  # TLS terminado no Caddy
+      GF_SECURITY_COOKIE_SECURE: "false"  # Caddy já faz SSL, evita redirect loop
+      GF_SECURITY_COOKIE_SAMESITE: lax  # Compatível com OAuth, strict quebra
+      GF_SECURITY_STRICT_TRANSPORT_SECURITY: "false"  # Caddy adiciona HSTS headers
       GF_SECURITY_X_CONTENT_TYPE_OPTIONS: "true"
       GF_SECURITY_X_XSS_PROTECTION: "true"
       GF_SERVER_ROOT_URL: https://observability.yesyoudeserve.duckdns.org
-      GF_SERVER_ENFORCE_DOMAIN: "true"
+      GF_SERVER_ENFORCE_DOMAIN: "false"  # Evita problemas com reverse proxy
       # SSO OAuth - Alice como IdP
       GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
       GF_AUTH_GENERIC_OAUTH_NAME: Alice Enterprise

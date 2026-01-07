@@ -672,6 +672,43 @@ jobs:
             echo ""
             echo "✅ Validação do servidor de produção OK (GPU disponível)"
 
+      - name: Validar Caddyfile antes de copiar
+        run: |
+          set -euo pipefail
+          echo "🔍 Validando Caddyfile..."
+          
+          # Validar usando container Caddy
+          if ! docker run --rm -v "$(pwd)/infra/docker/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            caddy:2.8.4-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile; then
+            echo "❌ ERRO: Caddyfile inválido!"
+            echo "   Verifique sintaxe em infra/docker/Caddyfile"
+            exit 1
+          fi
+          
+          echo "✅ Caddyfile válido"
+
+      - name: Executar script de preparação do servidor (idempotente)
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          command_timeout: 5m
+          script: |
+            set -euo pipefail
+            
+            # Verificar se script já existe no servidor
+            if [ -f /opt/alice/app/infra/scripts/prepare-production-server.sh ]; then
+              echo "📝 Executando script de preparação (idempotente)..."
+              chmod +x /opt/alice/app/infra/scripts/prepare-production-server.sh
+              sudo /opt/alice/app/infra/scripts/prepare-production-server.sh
+            else
+              echo "⚠️  Script de preparação não encontrado em /opt/alice/app/infra/scripts/"
+              echo "   Assumindo que servidor já foi preparado anteriormente."
+              echo "   (O script será copiado na próxima etapa e estará disponível no próximo deploy)"
+            fi
+
       - name: Preparar infraestrutura base (networks, volumes, permissões)
         uses: appleboy/ssh-action@v1.2.2
         with:
@@ -757,9 +794,17 @@ jobs:
             echo ""
             echo "🔐 Configurando permissões..."
             
-            # PostgreSQL (UID 999)
-            chown -R 999:999 /opt/alice/data/postgres 2>/dev/null || true
-            chmod 700 /opt/alice/data/postgres 2>/dev/null || true
+            # PostgreSQL (UID 999) - FAIL-FAST sem || true
+            if ! sudo chown -R 999:999 /opt/alice/data/postgres; then
+              echo "❌ ERRO: Falha ao configurar owner do diretório PostgreSQL"
+              ls -ld /opt/alice/data/postgres
+              exit 1
+            fi
+            if ! chmod 700 /opt/alice/data/postgres; then
+              echo "❌ ERRO: Falha ao configurar permissões do diretório PostgreSQL"
+              ls -ld /opt/alice/data/postgres
+              exit 1
+            fi
             
             # Grafana (UID 472 - Enterprise hardening per CLAUDE.md)
             chown -R 472:472 /opt/alice/data/grafana 2>/dev/null || true
@@ -816,17 +861,41 @@ jobs:
             echo ""
             echo "🧪 Validando permissões PostgreSQL..."
             
-            # Criar arquivo de teste como usuário 999 (postgres)
-            if ! sudo -u "#999" touch /opt/alice/data/postgres/.write-test 2>/dev/null; then
-              echo "❌ ERRO: Usuário 999 (postgres) NÃO consegue escrever em /opt/alice/data/postgres"
-              echo "   Verificando diagnóstico:"
-              ls -ld /opt/alice/data/postgres
-              stat /opt/alice/data/postgres
+            POSTGRES_DIR="/opt/alice/data/postgres"
+            
+            # Verificar que diretório existe
+            if [ ! -d "$POSTGRES_DIR" ]; then
+              echo "❌ ERRO: Diretório $POSTGRES_DIR não existe!"
               exit 1
             fi
             
-            # Limpar arquivo de teste
-            rm -f /opt/alice/data/postgres/.write-test
+            # Verificar owner/group
+            ACTUAL_OWNER=$(stat -c '%u:%g' "$POSTGRES_DIR")
+            if [ "$ACTUAL_OWNER" != "999:999" ]; then
+              echo "❌ ERRO: Owner incorreto em $POSTGRES_DIR"
+              echo "   Esperado: 999:999"
+              echo "   Atual: $ACTUAL_OWNER"
+              ls -ld "$POSTGRES_DIR"
+              exit 1
+            fi
+            
+            # Verificar permissões (700 = rwx------)
+            ACTUAL_PERMS=$(stat -c '%a' "$POSTGRES_DIR")
+            if [ "$ACTUAL_PERMS" != "700" ]; then
+              echo "❌ ERRO: Permissões incorretas em $POSTGRES_DIR"
+              echo "   Esperado: 700"
+              echo "   Atual: $ACTUAL_PERMS"
+              exit 1
+            fi
+            
+            # Teste de escrita como usuário 999
+            if ! sudo -u "#999" touch "$POSTGRES_DIR/.write-test" 2>/dev/null; then
+              echo "❌ ERRO: Usuário 999 (postgres) NÃO consegue escrever"
+              ls -ld "$POSTGRES_DIR"
+              exit 1
+            fi
+            
+            rm -f "$POSTGRES_DIR/.write-test"
             echo "   ✅ Permissões PostgreSQL validadas (UID 999 pode escrever)"
             
             # Validar que diretório está VAZIO (primeiro deploy)
@@ -984,6 +1053,26 @@ jobs:
             echo "🔐 Permissões PostgreSQL:"
             ls -ld /opt/alice/data/postgres
             stat /opt/alice/data/postgres
+            
+            # Diagnóstico específico Caddy (se unhealthy)
+            echo ""
+            echo "🔍 Diagnóstico Caddy:"
+            if docker ps -a | grep -q "alice-caddy"; then
+              CADDY_STATUS=$(docker inspect --format='{{.State.Health.Status}}' alice-caddy 2>/dev/null || echo "no_healthcheck")
+              echo "   Status: $CADDY_STATUS"
+              
+              if [ "$CADDY_STATUS" = "unhealthy" ] || [ "$CADDY_STATUS" = "starting" ]; then
+                echo ""
+                echo "📄 Logs completos do Caddy:"
+                docker logs --tail 100 alice-caddy 2>&1 || echo "   (sem logs disponíveis)"
+                echo ""
+                echo "🧪 Teste manual do endpoint /health:"
+                docker exec alice-caddy wget --spider -q http://localhost/health || echo "   ❌ FALHOU - endpoint /health não responde"
+                echo ""
+                echo "🔍 Validação do Caddyfile dentro do container:"
+                docker exec alice-caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile || echo "   ❌ FALHOU - Caddyfile inválido"
+              fi
+            fi
             
             echo ""
             echo "========================================"

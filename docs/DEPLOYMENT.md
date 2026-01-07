@@ -773,7 +773,41 @@ sudo -n whoami  # Deve retornar root sem pedir senha
 
 ### 6. Primeiro Deploy
 
-O deploy é **100% automático** via GitHub Actions:
+O deploy é **100% automático** via GitHub Actions. No entanto, para o **primeiro deploy em servidor limpo**, recomenda-se executar o script de preparação manualmente:
+
+#### Preparação Manual (Recomendado para Primeiro Deploy)
+
+```bash
+# SSH no servidor de produção (178.63.41.108 - Hetzner GEX44)
+ssh root@178.63.41.108
+
+# Fazer checkout do repositório (temporário)
+git clone https://github.com/fillipeguerrabtc/alice.git /tmp/alice-setup
+cd /tmp/alice-setup
+
+# Executar script de preparação (idempotente)
+chmod +x infra/scripts/prepare-production-server.sh
+sudo ./infra/scripts/prepare-production-server.sh
+
+# Limpar checkout temporário
+cd /
+rm -rf /tmp/alice-setup
+```
+
+**O que o script faz:**
+- ✅ Valida servidor correto (178.63.41.108 - Hetzner GEX44)
+- ✅ Valida GPU disponível (nvidia-smi)
+- ✅ Valida Docker e Docker Compose instalados
+- ✅ Cria estrutura `/opt/alice` com permissões corretas
+- ✅ Configura permissões específicas por serviço (PostgreSQL UID 999, Grafana UID 472, etc)
+- ✅ Valida permissões PostgreSQL (teste de escrita como UID 999)
+- ✅ Cria Docker networks externas (`alice-network`, `erpnext-network`)
+
+**Script é idempotente:** Pode ser executado múltiplas vezes sem quebrar.
+
+#### Deploy Automático via GitHub Actions
+
+Após preparação manual (ou em deploys subsequentes):
 
 1. Faça commit e push para a branch `main`
 2. O GitHub Actions irá automaticamente:
@@ -784,7 +818,110 @@ O deploy é **100% automático** via GitHub Actions:
    - Health checks
 3. Acesse: `https://yesyoudeserve.duckdns.org`
 
-**⚠️ IMPORTANTE:** Nenhum comando manual é necessário em produção. Todo deploy acontece automaticamente.
+**⚠️ IMPORTANTE:** Nenhum comando manual adicional é necessário após o primeiro deploy.
+
+#### Troubleshooting - Problemas Conhecidos
+
+##### 1. PostgreSQL não inicia (permissões)
+
+**Sintoma:** Container `alice-postgres` com status `unhealthy` ou logs mostrando `permission denied`.
+
+**Diagnóstico:**
+```bash
+# Verificar permissões do diretório PostgreSQL
+ls -ld /opt/alice/data/postgres
+# Esperado: drwx------ (700) owner 999:999
+
+# Verificar se UID 999 pode escrever
+sudo -u "#999" touch /opt/alice/data/postgres/.write-test && rm -f /opt/alice/data/postgres/.write-test
+```
+
+**Solução:**
+```bash
+# Reconfigurar permissões
+sudo chown -R 999:999 /opt/alice/data/postgres
+chmod 700 /opt/alice/data/postgres
+
+# Reiniciar container
+docker restart alice-postgres
+```
+
+##### 2. Grafana redirect loop (ERR_TOO_MANY_REDIRECTS)
+
+**Sintoma:** Ao acessar `https://observability.yesyoudeserve.duckdns.org`, navegador mostra `ERR_TOO_MANY_REDIRECTS`.
+
+**Causa:** Grafana com `GF_SECURITY_COOKIE_SECURE=true` força HTTPS, mas Caddy já terminou o SSL e envia HTTP para Grafana.
+
+**Solução:** Já corrigido em `docker-compose.observability.yml`:
+```yaml
+GF_SERVER_PROTOCOL: http
+GF_SECURITY_COOKIE_SECURE: "false"
+GF_SECURITY_COOKIE_SAMESITE: lax
+```
+
+##### 3. Caddy não inicia (configuração inválida)
+
+**Sintoma:** Container `alice-caddy` não fica healthy.
+
+**Diagnóstico:**
+```bash
+# Verificar logs do Caddy
+docker logs alice-caddy --tail 100
+
+# Teste manual do endpoint /health
+docker exec alice-caddy wget --spider -q http://localhost/health
+
+# Validar Caddyfile dentro do container
+docker exec alice-caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+```
+
+**Solução:** O workflow valida Caddyfile antes de copiar. Se falhar manualmente:
+```bash
+# Validar localmente
+docker run --rm -v /opt/alice/app/infra/docker/Caddyfile:/etc/caddy/Caddyfile:ro \
+  caddy:2.8.4-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+```
+
+##### 4. Falta de espaço em disco
+
+**Sintoma:** Deploy falha com erro `no space left on device`.
+
+**Diagnóstico:**
+```bash
+# Verificar uso de disco
+df -h /opt/alice
+
+# Verificar tamanho dos volumes Docker
+docker system df -v
+```
+
+**Solução:**
+```bash
+# Limpar imagens não utilizadas
+docker image prune -a -f
+
+# Limpar volumes órfãos (CUIDADO: verificar antes!)
+docker volume prune -f
+```
+
+##### 5. Networks Docker não criadas
+
+**Sintoma:** Containers não conseguem se comunicar, erro `network not found`.
+
+**Diagnóstico:**
+```bash
+# Listar networks
+docker network ls | grep -E 'alice-network|erpnext-network'
+```
+
+**Solução:**
+```bash
+# Criar networks manualmente (idempotente)
+docker network create --driver bridge --subnet 172.28.0.0/16 alice-network
+docker network create --driver bridge erpnext-network
+```
+
+**⚠️ NOTA:** O script de preparação cria as networks automaticamente.
 
 ---
 
