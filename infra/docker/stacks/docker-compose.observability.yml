@@ -523,7 +523,7 @@ services:
       interval: 30s
       timeout: 15s
       retries: 15
-      start_period: 300s
+      start_period: 120s
     # NOTA: alice-redis, minio estão no stack infra (health check pelo workflow)
     # minio-init cria bucket langfuse-events (exit code verificado pelo workflow antes de deploy observability)
     depends_on:
