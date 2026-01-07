@@ -1,0 +1,97 @@
+# =============================================================================
+# Alice Enterprise Platform - Grafana Datasources Consolidado
+# =============================================================================
+# Configuração automática de TODOS os datasources para Grafana.
+# Conecta Prometheus (métricas), Loki (logs) e Jaeger (traces).
+#
+# NOTA IMPORTANTE (07/01/2026):
+#   Este arquivo CONSOLIDA os datasources que existem separadamente.
+#   Grafana suporta múltiplos arquivos de provisioning, mas o workflow
+#   de deploy espera este arquivo consolidado em:
+#   infra/observability/grafana/provisioning/datasources/datasources.yml
+#
+# Os arquivos individuais (prometheus.yml, loki.yml, jaeger.yml) continuam
+# existindo para referência e podem ser usados alternativamente.
+#
+# Documentação PT-BR (Regra 10 CLAUDE.md)
+# =============================================================================
+
+apiVersion: 1
+
+# Remover datasources existentes para evitar duplicatas
+deleteDatasources:
+  - name: Prometheus
+    orgId: 1
+  - name: Loki
+    orgId: 1
+  - name: Jaeger
+    orgId: 1
+
+datasources:
+  # ===========================================================================
+  # PROMETHEUS - Métricas
+  # ===========================================================================
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      httpMethod: POST
+      manageAlerts: true
+      prometheusType: Prometheus
+      prometheusVersion: "3.0.1"
+      incrementalQuerying: true
+      incrementalQueryOverlapWindow: 10m
+      disableRecordingRules: false
+      cacheLevel: 'High'
+      exemplarTraceIdDestinations:
+        - name: trace_id
+          datasourceUid: jaeger
+    secureJsonFields: {}
+
+  # ===========================================================================
+  # LOKI - Logs Agregados
+  # ===========================================================================
+  - name: Loki
+    type: loki
+    uid: loki
+    access: proxy
+    url: http://loki:3100
+    isDefault: false
+    editable: false
+    jsonData:
+      maxLines: 1000
+      derivedFields:
+        - datasourceUid: jaeger
+          matcherRegex: '"trace_id":"([a-f0-9]+)"'
+          name: TraceID
+          url: '$${__value.raw}'
+    secureJsonFields: {}
+
+  # ===========================================================================
+  # JAEGER - Distributed Tracing
+  # ===========================================================================
+  - name: Jaeger
+    type: jaeger
+    uid: jaeger
+    access: proxy
+    url: http://jaeger:16686
+    isDefault: false
+    editable: false
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: '-1h'
+        spanEndTimeShift: '1h'
+        filterByTraceID: true
+        filterBySpanID: true
+      tracesToMetrics:
+        datasourceUid: prometheus
+        spanStartTimeShift: '-1h'
+        spanEndTimeShift: '1h'
+      nodeGraph:
+        enabled: true
+    secureJsonFields: {}

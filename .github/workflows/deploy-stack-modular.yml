@@ -624,6 +624,51 @@ jobs:
           
           echo "✅ Caddyfile válido"
 
+      - name: Validar arquivos críticos localmente (fail-fast)
+        id: validate-critical-files
+        run: |
+          set -euo pipefail
+          # =================================================================
+          # CORREÇÃO #7: Validação de arquivos críticos ANTES do SCP
+          # =================================================================
+          # PROBLEMA: Arquivos ausentes só são detectados no servidor APÓS SCP
+          # CAUSA RAIZ: Workflow copiava arquivos e servidor validava depois
+          # SOLUÇÃO: Validar localmente ANTES de copiar (fail-fast)
+          # REF: CLAUDE.md Regra 9 (Validação contínua)
+          # DATA: 07/01/2026
+          # =================================================================
+          echo "🔍 Validando arquivos críticos antes de copiar para servidor..."
+          
+          CRITICAL_FILES=(
+            "infra/observability/otel-collector/config.yaml"
+            "infra/observability/grafana/provisioning/datasources/datasources.yml"
+            "infra/docker/Caddyfile"
+            "infra/docker/vector.toml"
+            "infra/observability/prometheus.yml"
+          )
+          
+          MISSING=()
+          for f in "${CRITICAL_FILES[@]}"; do
+            if [ ! -f "$f" ]; then
+              MISSING+=("$f")
+            fi
+          done
+          
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo ""
+            echo "::error::❌ ERRO CRÍTICO: ${#MISSING[@]} arquivo(s) ausente(s) no repositório:"
+            printf '   - %s\n' "${MISSING[@]}"
+            echo ""
+            echo "Corrija o repositório adicionando os arquivos ausentes."
+            exit 1
+          fi
+          
+          echo ""
+          echo "✅ Todos os ${#CRITICAL_FILES[@]} arquivos críticos encontrados:"
+          for f in "${CRITICAL_FILES[@]}"; do
+            echo "   ✓ $f"
+          done
+
       - name: Sincronizar código e configs para servidor
         uses: appleboy/scp-action@v0.1.7
         with:
