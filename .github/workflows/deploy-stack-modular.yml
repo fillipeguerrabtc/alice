@@ -810,6 +810,34 @@ jobs:
             
             echo "   ✅ Permissões configuradas"
             
+            # =========================================================
+            # 5. VALIDAR PERMISSÕES (FAIL-FAST)
+            # =========================================================
+            echo ""
+            echo "🧪 Validando permissões PostgreSQL..."
+            
+            # Criar arquivo de teste como usuário 999 (postgres)
+            if ! sudo -u "#999" touch /opt/alice/data/postgres/.write-test 2>/dev/null; then
+              echo "❌ ERRO: Usuário 999 (postgres) NÃO consegue escrever em /opt/alice/data/postgres"
+              echo "   Verificando diagnóstico:"
+              ls -ld /opt/alice/data/postgres
+              stat /opt/alice/data/postgres
+              exit 1
+            fi
+            
+            # Limpar arquivo de teste
+            rm -f /opt/alice/data/postgres/.write-test
+            echo "   ✅ Permissões PostgreSQL validadas (UID 999 pode escrever)"
+            
+            # Validar que diretório está VAZIO (primeiro deploy)
+            if [ "$(ls -A /opt/alice/data/postgres 2>/dev/null)" ]; then
+              echo "   ⚠️  AVISO: /opt/alice/data/postgres NÃO está vazio (pode ser deploy anterior)"
+              echo "   Conteúdo:"
+              ls -lah /opt/alice/data/postgres | head -n 5
+            else
+              echo "   ✅ Diretório PostgreSQL vazio (primeiro deploy)"
+            fi
+            
             echo ""
             echo "✅ Infraestrutura base preparada com sucesso"
             echo "✅ Preparação concluída com sucesso"
@@ -907,6 +935,58 @@ jobs:
             done
             
             echo "✅ Todos os containers do INFRA stack estão healthy"
+      
+      - name: Troubleshoot unhealthy containers (se falhou)
+        if: failure()
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          command_timeout: 5m
+          script: |
+            set +e  # Não falhar se container não existir
+            
+            echo "🔍 DIAGNÓSTICO: Containers unhealthy"
+            echo "========================================"
+            
+            # Listar todos os containers do stack INFRA
+            echo "📋 Containers INFRA:"
+            docker ps -a --filter "name=alice-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+            
+            echo ""
+            echo "🏥 Status detalhado:"
+            for container in alice-postgres alice-redis alice-qdrant alice-tor alice-searxng alice-caddy alice-minio; do
+              if docker ps -a | grep -q "$container"; then
+                STATUS=$(docker inspect --format='{{.State.Health.Status}}' $container 2>/dev/null || echo "no_healthcheck")
+                echo "   $container: $STATUS"
+                
+                # Se unhealthy, mostrar últimos 50 linhas do log
+                if [ "$STATUS" = "unhealthy" ] || [ "$STATUS" = "starting" ]; then
+                  echo ""
+                  echo "📄 Últimas 50 linhas do log de $container:"
+                  docker logs --tail 50 $container 2>&1 || echo "   (sem logs disponíveis)"
+                  echo ""
+                fi
+              else
+                echo "   $container: NOT_FOUND"
+              fi
+            done
+            
+            # Verificar uso de disco (PostgreSQL precisa de espaço)
+            echo ""
+            echo "💾 Uso de disco:"
+            df -h /opt/alice/data/postgres
+            
+            # Verificar permissões do diretório
+            echo ""
+            echo "🔐 Permissões PostgreSQL:"
+            ls -ld /opt/alice/data/postgres
+            stat /opt/alice/data/postgres
+            
+            echo ""
+            echo "========================================"
 
   rollback-infra:
     name: Rollback INFRA
