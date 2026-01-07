@@ -607,7 +607,7 @@ jobs:
           overwrite: true
 
       - name: Restringir permissões .env.prod no servidor
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.4
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -619,7 +619,7 @@ jobs:
             echo "✅ Permissões do .env.prod restringidas para 600 no servidor"
 
       - name: Validar servidor de produção (fail-fast)
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.4
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -673,7 +673,7 @@ jobs:
             echo "✅ Validação do servidor de produção OK (GPU disponível)"
 
       - name: Preparar infraestrutura base (networks, volumes, permissões)
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.4
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -829,7 +829,7 @@ jobs:
     steps:
       - name: Deploy stack infra via SSH
         id: deploy
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.4
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -867,7 +867,7 @@ jobs:
     steps:
       - name: Check health with retry logic
         id: check
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.4
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -922,7 +922,7 @@ jobs:
     
     steps:
       - name: Execute rollback cirúrgico
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.4
         env:
           IS_ROLLBACK: ${{ needs.validate.outputs.is_rollback }}
           ROLLBACK_VERSION: ${{ needs.validate.outputs.rollback_version }}
@@ -993,7 +993,7 @@ jobs:
     
     steps:
       - name: Execute Drizzle Push via SSH
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.4
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -1095,7 +1095,7 @@ jobs:
     steps:
       - name: Deploy stack alice via SSH
         id: deploy
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.4
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -1133,7 +1133,7 @@ jobs:
     steps:
       - name: Check health with retry logic
         id: check
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.4
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -1188,7 +1188,7 @@ jobs:
     
     steps:
       - name: Execute rollback cirúrgico
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.4
         env:
           IS_ROLLBACK: ${{ needs.validate.outputs.is_rollback }}
           ROLLBACK_VERSION: ${{ needs.validate.outputs.rollback_version }}
@@ -1251,7 +1251,7 @@ jobs:
     steps:
       - name: Deploy stack observability via SSH
         id: deploy
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.4
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -1289,7 +1289,7 @@ jobs:
     steps:
       - name: Check health with retry logic
         id: check
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.4
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -1349,7 +1349,7 @@ jobs:
     
     steps:
       - name: Execute rollback cirúrgico
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.4
         env:
           IS_ROLLBACK: ${{ needs.validate.outputs.is_rollback }}
           ROLLBACK_VERSION: ${{ needs.validate.outputs.rollback_version }}
@@ -1412,7 +1412,7 @@ jobs:
     steps:
       - name: Deploy stack erpnext via SSH
         id: deploy
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.4
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -1450,7 +1450,7 @@ jobs:
     steps:
       - name: Check health with retry logic
         id: check
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.4
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -1507,7 +1507,7 @@ jobs:
     
     steps:
       - name: Execute rollback cirúrgico
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.4
         env:
           IS_ROLLBACK: ${{ needs.validate.outputs.is_rollback }}
           ROLLBACK_VERSION: ${{ needs.validate.outputs.rollback_version }}
@@ -1571,7 +1571,7 @@ jobs:
     steps:
       - name: Deploy stack backup via SSH
         id: deploy
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.4
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -1609,7 +1609,7 @@ jobs:
     steps:
       - name: Check health with retry logic
         id: check
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.4
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
@@ -1662,7 +1662,7 @@ jobs:
     
     steps:
       - name: Execute rollback cirúrgico
-        uses: appleboy/ssh-action@v1.2.2
+        uses: appleboy/ssh-action@v1.2.4
         env:
           IS_ROLLBACK: ${{ needs.validate.outputs.is_rollback }}
           ROLLBACK_VERSION: ${{ needs.validate.outputs.rollback_version }}
