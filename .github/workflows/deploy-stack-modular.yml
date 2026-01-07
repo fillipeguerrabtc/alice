@@ -566,7 +566,7 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          script_timeout: 5m
+          command_timeout: 5m
           script: |
             set -euo pipefail
             
@@ -722,7 +722,7 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          script_timeout: 15m
+          command_timeout: 15m
           script: |
             set -euo pipefail
             cd /opt/alice/app/infra/docker/stacks
@@ -760,7 +760,7 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          script_timeout: 10m
+          command_timeout: 10m
           script: |
             set -euo pipefail
             echo "🏥 Checking INFRA stack health..."
@@ -818,7 +818,7 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          script_timeout: 10m
+          command_timeout: 10m
           envs: IS_ROLLBACK,ROLLBACK_VERSION
           script: |
             set -euo pipefail
@@ -886,7 +886,7 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          script_timeout: 10m
+          command_timeout: 10m
           script: |
             set -euo pipefail
             echo "📊 Verificando schema do banco de dados..."
@@ -988,7 +988,7 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          script_timeout: 15m
+          command_timeout: 15m
           script: |
             set -euo pipefail
             cd /opt/alice/app/infra/docker/stacks
@@ -1026,7 +1026,7 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          script_timeout: 10m
+          command_timeout: 10m
           script: |
             set -euo pipefail
             echo "🏥 Checking ALICE stack health..."
@@ -1084,7 +1084,7 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          script_timeout: 10m
+          command_timeout: 10m
           envs: IS_ROLLBACK,ROLLBACK_VERSION
           script: |
             set -euo pipefail
@@ -1144,7 +1144,7 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          script_timeout: 15m
+          command_timeout: 15m
           script: |
             set -euo pipefail
             cd /opt/alice/app/infra/docker/stacks
@@ -1182,7 +1182,7 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          script_timeout: 10m
+          command_timeout: 10m
           script: |
             set -euo pipefail
             echo "🏥 Checking OBSERVABILITY stack health..."
@@ -1245,7 +1245,7 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          script_timeout: 10m
+          command_timeout: 10m
           envs: IS_ROLLBACK,ROLLBACK_VERSION
           script: |
             set -euo pipefail
@@ -1305,7 +1305,7 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          script_timeout: 20m
+          command_timeout: 20m
           script: |
             set -euo pipefail
             cd /opt/alice/app/infra/docker/stacks
@@ -1343,7 +1343,7 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          script_timeout: 15m
+          command_timeout: 15m
           script: |
             set -euo pipefail
             echo "🏥 Checking ERPNEXT stack health..."
@@ -1403,7 +1403,7 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          script_timeout: 15m
+          command_timeout: 15m
           envs: IS_ROLLBACK,ROLLBACK_VERSION
           script: |
             set -euo pipefail
@@ -1464,7 +1464,7 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          script_timeout: 10m
+          command_timeout: 10m
           script: |
             set -euo pipefail
             cd /opt/alice/app/infra/docker/stacks
@@ -1502,7 +1502,7 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          script_timeout: 5m
+          command_timeout: 5m
           script: |
             set -euo pipefail
             echo "🏥 Checking BACKUP stack health..."
@@ -1558,7 +1558,7 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          script_timeout: 5m
+          command_timeout: 5m
           envs: IS_ROLLBACK,ROLLBACK_VERSION
           script: |
             set -euo pipefail
