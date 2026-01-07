@@ -669,6 +669,56 @@ jobs:
             echo "   ✓ $f"
           done
 
+      - name: Limpar possíveis diretórios incorretos ANTES do SCP
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            set -euo pipefail
+            # =================================================================
+            # CORREÇÃO CRÍTICA #8: Limpar diretórios ANTES do SCP (07/01/2026)
+            # =================================================================
+            # PROBLEMA: SCP pode falhar se arquivo existe como diretório no destino
+            # CAUSA RAIZ: Deploys anteriores podem ter criado estruturas incorretas
+            # SOLUÇÃO: Remover diretórios incorretos ANTES de copiar arquivos
+            # REF: CLAUDE.md Regra 7 (Mudanças cirúrgicas - diagnosticar causa raiz)
+            # =================================================================
+            echo "🧹 Limpando possíveis diretórios incorretos ANTES do SCP..."
+            
+            # Lista de arquivos críticos que DEVEM ser arquivos (não diretórios)
+            # Se existem como diretórios, removê-los ANTES do SCP permite sobrescrever
+            CRITICAL_FILES=(
+              "/opt/alice/app/infra/observability/otel-collector/config.yaml"
+              "/opt/alice/app/infra/docker/Caddyfile"
+              "/opt/alice/app/infra/docker/vector.toml"
+              "/opt/alice/app/infra/observability/grafana/provisioning/datasources/datasources.yml"
+              "/opt/alice/app/infra/observability/prometheus.yml"
+            )
+            
+            CLEANED=0
+            for f in "${CRITICAL_FILES[@]}"; do
+              if [ -d "$f" ]; then
+                echo "   🗑️  REMOVENDO diretório incorreto: $f"
+                rm -rf "$f"
+                CLEANED=$((CLEANED + 1))
+              elif [ -f "$f" ]; then
+                echo "   ✓ $f já é arquivo (mantido)"
+              else
+                echo "   ℹ️  $f não existe ainda (será criado pelo SCP)"
+              fi
+            done
+            
+            if [ $CLEANED -gt 0 ]; then
+              echo ""
+              echo "✅ $CLEANED diretório(s) incorreto(s) removido(s)"
+              echo "   SCP agora pode sobrescrever com arquivos corretos"
+            else
+              echo "✅ Nenhum diretório incorreto encontrado"
+            fi
+
       - name: Sincronizar código e configs para servidor
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -704,7 +754,7 @@ jobs:
             chown root:root /opt/alice/app/infra/docker/.env.prod
             echo "✅ Permissões do .env.prod restringidas para 600 no servidor"
 
-      - name: Limpar e validar arquivos de configuração críticos
+      - name: Validar arquivos críticos APÓS SCP
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ env.HETZNER_HOST }}
@@ -714,15 +764,10 @@ jobs:
           script: |
             set -euo pipefail
             # =================================================================
-            # CORREÇÃO CRÍTICA: Limpar configs que podem ter sido criados como diretórios
+            # VALIDAÇÃO PÓS-SCP: Garantir que todos os arquivos existem
             # =================================================================
-            # PROBLEMA: SCP pode criar diretórios ao invés de arquivos se destino já existia
-            # SOLUÇÃO: Limpar diretórios incorretos ANTES de validar
-            # REF: CLAUDE.md Regra 9 (Validação contínua)
-            # =================================================================
-            echo "🧹 Limpando configs que podem ter sido criados como diretórios..."
+            echo "🔍 Validando arquivos críticos APÓS SCP..."
             
-            # Lista de arquivos críticos que DEVEM ser arquivos (não diretórios)
             CRITICAL_FILES=(
               "/opt/alice/app/infra/observability/otel-collector/config.yaml"
               "/opt/alice/app/infra/docker/Caddyfile"
@@ -731,21 +776,30 @@ jobs:
               "/opt/alice/app/infra/observability/prometheus.yml"
             )
             
-            for f in "${CRITICAL_FILES[@]}"; do
-              if [ -d "$f" ]; then
-                echo "   🗑️  REMOVENDO diretório incorreto: $f"
-                rm -rf "$f"
-              fi
-            done
-            
-            echo ""
-            echo "🔍 Validando que arquivos críticos são ARQUIVOS (não diretórios)..."
-            
             FAILED_FILES=()
             for f in "${CRITICAL_FILES[@]}"; do
               if [ ! -f "$f" ]; then
                 echo "   ❌ $f - NÃO é um arquivo válido"
                 FAILED_FILES+=("$f")
+                
+                # Diagnóstico adicional
+                if [ -d "$f" ]; then
+                  echo "      DIAGNÓSTICO: existe como DIRETÓRIO (deveria ser arquivo)"
+                  echo "      Conteúdo: $(ls -la "$f" 2>&1 | head -5)"
+                elif [ -e "$f" ]; then
+                  echo "      DIAGNÓSTICO: existe mas não é arquivo regular"
+                  ls -la "$f"
+                else
+                  echo "      DIAGNÓSTICO: não existe"
+                  # Verificar se diretório pai existe
+                  parent_dir=$(dirname "$f")
+                  if [ -d "$parent_dir" ]; then
+                    echo "      Diretório pai existe: $parent_dir"
+                    echo "      Conteúdo: $(ls -la "$parent_dir" | head -10)"
+                  else
+                    echo "      Diretório pai NÃO existe: $parent_dir"
+                  fi
+                fi
               else
                 echo "   ✅ $f - arquivo válido"
               fi
@@ -753,17 +807,23 @@ jobs:
             
             if [ ${#FAILED_FILES[@]} -gt 0 ]; then
               echo ""
-              echo "::error::❌ ERRO CRÍTICO: ${#FAILED_FILES[@]} arquivo(s) não encontrado(s) ou não é arquivo:"
+              echo "::error::❌ ERRO CRÍTICO: ${#FAILED_FILES[@]} arquivo(s) não encontrado(s) ou inválido(s):"
               printf '   - %s\n' "${FAILED_FILES[@]}"
               echo ""
               echo "Possíveis causas:"
-              echo "  1. SCP falhou ao copiar o arquivo"
-              echo "  2. Arquivo foi criado como diretório em deploy anterior"
-              echo "  3. Caminho incorreto no source do SCP"
+              echo "  1. SCP falhou ao copiar o arquivo (verificar logs do SCP acima)"
+              echo "  2. Arquivo ainda existe como diretório (cleanup pré-SCP não funcionou)"
+              echo "  3. Caminho incorreto no source do SCP action"
+              echo "  4. Permissões impedem criação do arquivo no destino"
+              echo ""
+              echo "Ações corretivas:"
+              echo "  - Verificar logs do step 'Sincronizar código e configs para servidor'"
+              echo "  - Verificar se source path existe no repositório"
+              echo "  - Verificar permissões em /opt/alice/app no servidor"
               exit 1
             fi
             
-            echo "✅ Todos os arquivos críticos validados com sucesso"
+            echo "✅ Todos os ${#CRITICAL_FILES[@]} arquivos críticos validados com sucesso"
 
       - name: Validar servidor de produção (fail-fast)
         uses: appleboy/ssh-action@v1.2.2
@@ -1494,7 +1554,10 @@ jobs:
             set -euo pipefail
             echo "🏥 Checking ALICE stack health..."
             
-            CONTAINERS="alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager"
+            # CORREÇÃO CRÍTICA #9 (07/01/2026): Lista correta de containers com healthcheck
+            # Containers COM healthcheck: frontend, chat, training, gpu-manager, gpu-flux, gpu-asr, gpu-trainer
+            # Containers SEM healthcheck: auth, rag, integrations, observability (validados via status running)
+            CONTAINERS="alice-frontend alice-chat alice-training alice-gpu-manager gpu-flux gpu-asr gpu-trainer"
             MAX_RETRIES=15
             SLEEP_TIME=10
             
@@ -1522,7 +1585,24 @@ jobs:
               fi
             done
             
-            echo "✅ Todos os containers do ALICE stack estão healthy"
+            echo "✅ Todos os containers com healthcheck do ALICE stack estão healthy"
+            
+            # Validar containers SEM healthcheck (devem estar running)
+            echo ""
+            echo "🔍 Validando containers sem healthcheck (status running)..."
+            NO_HEALTHCHECK="alice-auth alice-rag alice-integrations alice-observability"
+            
+            for container in $NO_HEALTHCHECK; do
+              STATUS=$(docker inspect --format='{{.State.Status}}' $container 2>/dev/null || echo "not_found")
+              if [ "$STATUS" = "running" ]; then
+                echo "✅ $container: running"
+              else
+                echo "❌ $container: $STATUS (esperado: running)"
+                exit 1
+              fi
+            done
+            
+            echo "✅ Todos os containers do ALICE stack estão funcionando corretamente"
 
   rollback-alice:
     name: Rollback ALICE
@@ -1650,12 +1730,12 @@ jobs:
             set -euo pipefail
             echo "🏥 Checking OBSERVABILITY stack health..."
             
-            # CRITICAL FIX (06/01/2026): Adicionar todos os 11 containers com healthcheck
-            # Faltavam: promtail (logs), alice-vector (aggregator), alice-otel-collector (OTEL),
-            #           alice-cadvisor (métricas), alice-langfuse-db (PostgreSQL do Langfuse - CRÍTICO!)
-            # AGORA: alice-node-exporter TEM healthcheck (adicionado em 07/01/2026)
-            # Nota: langfuse-worker não tem healthcheck (worker assíncrono)
-            CONTAINERS="prometheus grafana loki promtail jaeger alice-vector alice-otel-collector alice-cadvisor alice-node-exporter alice-clickhouse alice-langfuse-db langfuse"
+            # CORREÇÃO CRÍTICA #10 (07/01/2026): Lista correta de containers com healthcheck
+            # Containers COM healthcheck: prometheus, loki, promtail, jaeger, alice-vector, 
+            #   alice-otel-collector, alice-cadvisor, alice-node-exporter, alice-clickhouse, 
+            #   alice-langfuse-db (10 containers)
+            # Containers SEM healthcheck: grafana, langfuse, langfuse-worker (3 containers)
+            CONTAINERS="prometheus loki promtail jaeger alice-vector alice-otel-collector alice-cadvisor alice-node-exporter alice-clickhouse alice-langfuse-db"
             MAX_RETRIES=20
             SLEEP_TIME=10
             
@@ -1683,7 +1763,24 @@ jobs:
               fi
             done
             
-            echo "✅ Todos os containers do OBSERVABILITY stack estão healthy"
+            echo "✅ Todos os containers com healthcheck do OBSERVABILITY stack estão healthy"
+            
+            # Validar containers SEM healthcheck (devem estar running)
+            echo ""
+            echo "🔍 Validando containers sem healthcheck (status running)..."
+            NO_HEALTHCHECK="grafana langfuse langfuse-worker"
+            
+            for container in $NO_HEALTHCHECK; do
+              STATUS=$(docker inspect --format='{{.State.Status}}' $container 2>/dev/null || echo "not_found")
+              if [ "$STATUS" = "running" ]; then
+                echo "✅ $container: running"
+              else
+                echo "❌ $container: $STATUS (esperado: running)"
+                exit 1
+              fi
+            done
+            
+            echo "✅ Todos os containers do OBSERVABILITY stack estão funcionando corretamente"
 
   rollback-observability:
     name: Rollback OBSERVABILITY
