@@ -124,6 +124,7 @@ services:
       # =================================================================
       GF_SERVER_PROTOCOL: http
       GF_SERVER_DOMAIN: observability.yesyoudeserve.duckdns.org
+      GF_SERVER_SERVE_FROM_SUB_PATH: "false"
       GF_SECURITY_COOKIE_SECURE: "false"
       GF_SECURITY_COOKIE_SAMESITE: lax
       GF_SECURITY_STRICT_TRANSPORT_SECURITY: "false"
