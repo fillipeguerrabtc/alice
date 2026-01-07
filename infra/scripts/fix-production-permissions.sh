@@ -324,13 +324,33 @@ create_mode() {
             log_success "  ✅ Ownership correto (verificado recursivamente): $(basename "$path")"
         fi
         
-        # Verificar permissões do diretório pai
-        current_perms=$(stat -c '%a' "$path" 2>/dev/null)
+        # =======================================================================
+        # CORREÇÃO BUG CURSOR REVIEW (PR#77): Sintaxe cross-platform para stat
+        # =======================================================================
+        # PROBLEMA ORIGINAL:
+        #   - create_mode usava stat -c '%a' (SOMENTE Linux)
+        #   - Em macOS, current_perms ficava vazio, causando chmod desnecessário
+        #   - Inconsistência com dry_run_mode (que já usava sintaxe cross-platform)
+        #
+        # SOLUÇÃO:
+        #   - Padronizar TODOS os modos com mesma sintaxe cross-platform
+        #   - stat -c '%a' (Linux) || stat -f '%Lp' (macOS)
+        #   - Consistência: dry_run, create e validate usam mesma lógica
+        #
+        # BENEFÍCIOS:
+        #   - Desenvolvedores Mac podem testar script localmente
+        #   - chmod só roda quando necessário (eficiente)
+        #   - Zero impacto em produção (Linux continua usando primeiro comando)
+        # =======================================================================
+        
+        # Verificar permissões do diretório pai (cross-platform)
+        local current_perms
+        current_perms=$(stat -c '%a' "$path" 2>/dev/null || stat -f '%Lp' "$path" 2>/dev/null)
         
         # Atualizar permissões se necessário
         if [[ "$current_perms" != "$perms" ]]; then
             if chmod "$perms" "$path" 2>/dev/null; then
-                log_success "  ✅ Permissões atualizadas: $path → ${perms}"
+                log_success "  ✅ Permissões atualizadas de ${current_perms} para ${perms}: $path"
                 needs_update=true
             else
                 log_error "  ❌ Falha ao atualizar permissões: $path"
@@ -392,25 +412,42 @@ validate_mode() {
         local wrong_files
         wrong_files=$(find "$path" \( ! -user "$uid" -o ! -group "$gid" \) -print -quit 2>/dev/null)
         
-        # Verificar permissões do diretório pai
-        current_perms=$(stat -c '%a' "$path" 2>/dev/null)
+        # =======================================================================
+        # CORREÇÃO BUG CURSOR REVIEW (PR#77): Sintaxe cross-platform para stat
+        # =======================================================================
+        # PROBLEMA ORIGINAL:
+        #   - validate_mode usava stat -c '%a' (SOMENTE Linux)
+        #   - Em macOS, current_perms ficava vazio, causando validação sempre falhar
+        #   - Inconsistência com dry_run_mode (que já usava sintaxe cross-platform)
+        #
+        # SOLUÇÃO:
+        #   - Usar mesma sintaxe cross-platform de dry_run_mode e create_mode
+        #   - Consistência total entre os 3 modos
+        # =======================================================================
+        
+        # Verificar permissões do diretório pai (cross-platform)
+        local current_perms
+        current_perms=$(stat -c '%a' "$path" 2>/dev/null || stat -f '%Lp' "$path" 2>/dev/null)
         
         if [[ -n "$wrong_files" ]]; then
             log_error "  ❌ INVÁLIDO: Ownership incorreto detectado em $path"
             log_error "     Primeiro arquivo incorreto: ${wrong_files}"
             
-            # Mostrar detalhes do arquivo para debug
+            # Mostrar detalhes do arquivo para debug (cross-platform)
             local file_uid file_gid
-            file_uid=$(stat -c '%u' "$wrong_files" 2>/dev/null || echo "unknown")
-            file_gid=$(stat -c '%g' "$wrong_files" 2>/dev/null || echo "unknown")
+            file_uid=$(stat -c '%u' "$wrong_files" 2>/dev/null || stat -f '%u' "$wrong_files" 2>/dev/null || echo "unknown")
+            file_gid=$(stat -c '%g' "$wrong_files" 2>/dev/null || stat -f '%g' "$wrong_files" 2>/dev/null || echo "unknown")
             log_error "     UID/GID atual: ${file_uid}:${file_gid}"
             log_error "     UID/GID esperado: ${uid}:${gid}"
             
             ((invalid++))
-        elif [[ "$current_perms" != "$perms" ]]; then
+        elif [[ -n "$current_perms" && "$current_perms" != "$perms" ]]; then
             log_error "  ❌ INVÁLIDO: Permissões incorretas em $path"
             echo "          Esperado: ${perms}"
             echo "          Atual:    ${current_perms}"
+            ((invalid++))
+        elif [[ -z "$current_perms" ]]; then
+            log_error "  ❌ INVÁLIDO: Não foi possível determinar permissões de $path (stat falhou)"
             ((invalid++))
         else
             log_success "  ✅ VÁLIDO: $path (ownership e permissões corretos recursivamente)"
