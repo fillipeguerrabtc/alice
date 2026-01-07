@@ -45,8 +45,13 @@ if (!INTERNAL_API_SECRET && isProduction) {
 
 // Middleware de autenticação para endpoints internos
 function requireInternalAuth(req: Request, res: Response, next: NextFunction): void {
-  // Health check básico não requer auth (para docker healthcheck)
-  if (req.path === '/health') {
+  // Kubernetes probes e Docker healthcheck não requerem auth
+  // CORREÇÃO 07/01/2026: /live e /ready são endpoints de orquestração
+  // /health: healthcheck simples para load balancers
+  // /live: liveness probe Kubernetes/Docker (processo está vivo?)
+  // /ready: readiness probe Kubernetes (pronto para tráfego?)
+  // Ref: OWASP 2025 - healthchecks não expõem dados sensíveis, mas devem ser acessíveis
+  if (['/health', '/live', '/ready'].includes(req.path)) {
     return next();
   }
 
