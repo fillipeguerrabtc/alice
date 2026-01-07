@@ -1525,8 +1525,9 @@ jobs:
             
             # Pull e deploy
             # CRITICAL: Incluir base.yml para criar volumes/networks externos
-            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull
-            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml up -d --remove-orphans
+            # CRITICAL: Incluir profiles GPU para gpu-flux, gpu-asr, gpu-trainer
+            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-flux --profile gpu-asr --profile gpu-training pull
+            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-flux --profile gpu-asr --profile gpu-training up -d --remove-orphans
             
             # Salvar versão atual
             echo "${{ needs.validate.outputs.version }}" > /opt/alice/versions/alice.current
@@ -1554,10 +1555,10 @@ jobs:
             set -euo pipefail
             echo "🏥 Checking ALICE stack health..."
             
-            # CORREÇÃO CRÍTICA #9 (07/01/2026): Lista correta de containers com healthcheck
-            # Containers COM healthcheck: frontend, chat, training, gpu-manager, gpu-flux, gpu-asr, gpu-trainer
-            # Containers SEM healthcheck: auth, rag, integrations, observability (validados via status running)
-            CONTAINERS="alice-frontend alice-chat alice-training alice-gpu-manager gpu-flux gpu-asr gpu-trainer"
+            # CORREÇÃO CRÍTICA #10 (07/01/2026): Lista correta de containers com healthcheck
+            # Containers COM healthcheck: frontend, auth, chat, rag, training, integrations, observability, gpu-manager, gpu-flux, gpu-asr, gpu-trainer
+            # TODOS os serviços Alice têm healthcheck definidos em docker-compose.alice.yml
+            CONTAINERS="alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager gpu-flux gpu-asr gpu-trainer"
             MAX_RETRIES=15
             SLEEP_TIME=10
             
@@ -1585,24 +1586,7 @@ jobs:
               fi
             done
             
-            echo "✅ Todos os containers com healthcheck do ALICE stack estão healthy"
-            
-            # Validar containers SEM healthcheck (devem estar running)
-            echo ""
-            echo "🔍 Validando containers sem healthcheck (status running)..."
-            NO_HEALTHCHECK="alice-auth alice-rag alice-integrations alice-observability"
-            
-            for container in $NO_HEALTHCHECK; do
-              STATUS=$(docker inspect --format='{{.State.Status}}' $container 2>/dev/null || echo "not_found")
-              if [ "$STATUS" = "running" ]; then
-                echo "✅ $container: running"
-              else
-                echo "❌ $container: $STATUS (esperado: running)"
-                exit 1
-              fi
-            done
-            
-            echo "✅ Todos os containers do ALICE stack estão funcionando corretamente"
+            echo "✅ Todos os containers do ALICE stack estão healthy"
 
   rollback-alice:
     name: Rollback ALICE
@@ -1653,10 +1637,10 @@ jobs:
             # CRITICAL: Incluir base.yml para volumes/networks externos
             cd /opt/alice/app/infra/docker/stacks
             echo "🐳 Puxando imagens da versão $TARGET_VERSION..."
-            IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull
+            IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-flux --profile gpu-asr --profile gpu-training pull
             
             echo "🚀 Deployando versão de rollback..."
-            IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml up -d --remove-orphans
+            IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-flux --profile gpu-asr --profile gpu-training up -d --remove-orphans
             
             echo "$TARGET_VERSION" > /opt/alice/versions/alice.current
             
@@ -1731,11 +1715,11 @@ jobs:
             echo "🏥 Checking OBSERVABILITY stack health..."
             
             # CORREÇÃO CRÍTICA #10 (07/01/2026): Lista correta de containers com healthcheck
-            # Containers COM healthcheck: prometheus, loki, promtail, jaeger, alice-vector, 
+            # Containers COM healthcheck: prometheus, grafana, loki, promtail, jaeger, alice-vector, 
             #   alice-otel-collector, alice-cadvisor, alice-node-exporter, alice-clickhouse, 
-            #   alice-langfuse-db (10 containers)
-            # Containers SEM healthcheck: grafana, langfuse, langfuse-worker (3 containers)
-            CONTAINERS="prometheus loki promtail jaeger alice-vector alice-otel-collector alice-cadvisor alice-node-exporter alice-clickhouse alice-langfuse-db"
+            #   alice-langfuse-db, langfuse (12 containers)
+            # Containers SEM healthcheck: langfuse-worker (1 container)
+            CONTAINERS="prometheus grafana loki promtail jaeger alice-vector alice-otel-collector alice-cadvisor alice-node-exporter alice-clickhouse alice-langfuse-db langfuse"
             MAX_RETRIES=20
             SLEEP_TIME=10
             
@@ -1768,7 +1752,7 @@ jobs:
             # Validar containers SEM healthcheck (devem estar running)
             echo ""
             echo "🔍 Validando containers sem healthcheck (status running)..."
-            NO_HEALTHCHECK="grafana langfuse langfuse-worker"
+            NO_HEALTHCHECK="langfuse-worker"
             
             for container in $NO_HEALTHCHECK; do
               STATUS=$(docker inspect --format='{{.State.Status}}' $container 2>/dev/null || echo "not_found")
