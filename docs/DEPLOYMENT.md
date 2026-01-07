@@ -1958,19 +1958,71 @@ Os 7 serviços Node.js usam imagens `node:22-alpine3.21` (CVE-2023-45853 fix). H
 
 ### Permissões Enterprise por Serviço (19/12/2025)
 
+**Script Automatizado (07/01/2026):** A criação e configuração de permissões é gerenciada automaticamente pelo script `infra/scripts/fix-production-permissions.sh`. Este script enterprise garante UIDs explícitos, permissões corretas e validação fail-fast.
+
+#### Estrutura de Diretórios e Permissões
+
 | Serviço | UID | Permissão | Diretório |
 |---------|-----|-----------|-----------|
+| PostgreSQL | 999 | 700 | /opt/alice/data/postgres |
+| pgBackRest | 70 | 755 | /opt/alice/data/pgbackrest-spool |
+| Redis Alice | 999 | 755 | /opt/alice/data/redis-alice |
+| Caddy | 1000 | 755 | /opt/alice/data/caddy |
+| Caddy Config | 1000 | 755 | /opt/alice/data/caddy-config |
+| SearXNG | 977 | 755 | /opt/alice/data/searxng-config |
+| MinIO | 0 (root) | 755 | /opt/alice/data/minio |
+| Qdrant | 0 (root) | 755 | /opt/alice/data/qdrant |
+| Jaeger | 10001 | 755 | /opt/alice/data/jaeger |
+| Langfuse DB | 70 | 700 | /opt/alice/data/langfuse-db |
+| ClickHouse | 101 | 755 | /opt/alice/data/clickhouse |
+| Vector | 0 (root) | 755 | /opt/alice/data/vector |
 | Grafana | 472 | 755 | /opt/alice/data/grafana |
 | Prometheus | 65534 | 755 | /opt/alice/data/prometheus |
 | Loki | 10001 | 755 | /opt/alice/data/loki |
-| PostgreSQL | 999 | 700 | /opt/alice/data/postgres |
-| Langfuse DB | 70 | 755 | /opt/alice/data/langfuse-db |
-| Redis | 999 | 755 | /opt/alice/data/redis-alice |
-| Qdrant | root | 755 | /opt/alice/data/qdrant |
-| Caddy Data | 1000 | 700 | /opt/alice/data/caddy |
-| SearXNG | 977 | 755 | /opt/alice/data/searxng-config |
+| ERPNext Sites | 1000 | 755 | /opt/alice/data/erpnext-sites |
+| ERPNext MariaDB | 999 | 755 | /opt/alice/data/erpnext-mariadb |
+| ERPNext Redis Cache | 999 | 755 | /opt/alice/data/erpnext-redis-cache |
+| ERPNext Redis Queue | 999 | 755 | /opt/alice/data/erpnext-redis-queue |
+| Backups | 999 | 755 | /opt/alice/backups/postgresql |
+| Uploads | 1000 | 755 | /opt/alice/uploads |
+| Secrets | 0 (root) | 700 | /opt/alice/secrets |
 
-> **NOTA:** Workflow deploy-production.yml configura automaticamente todas essas permissões.
+#### Uso do Script de Permissões
+
+**Localização:** `infra/scripts/fix-production-permissions.sh`
+
+```bash
+# Preview das mudanças (não executa)
+./infra/scripts/fix-production-permissions.sh --dry-run
+
+# Criar diretórios e aplicar permissões (requer root)
+sudo ./infra/scripts/fix-production-permissions.sh --create
+
+# Validar permissões existentes (CI/CD)
+./infra/scripts/fix-production-permissions.sh --validate
+```
+
+**Características:**
+- ✅ **Idempotente**: Pode rodar múltiplas vezes sem problemas
+- ✅ **UIDs Explícitos**: Usa UIDs numéricos (999:999) ao invés de nomes (postgres:postgres)
+- ✅ **Validação Integrada**: Verifica diretório existe, owner correto, permissões corretas
+- ✅ **Logs Detalhados**: Mostra cada operação (criado, modificado, inalterado)
+- ✅ **Fail-Fast**: Para imediatamente em caso de erro
+
+**Integração CI/CD:**  
+O workflow `deploy-stack-modular.yml` executa automaticamente este script no job `prepare` antes de qualquer deploy:
+
+```yaml
+- name: Preparar infraestrutura base
+  script: |
+    # Executar script enterprise de permissões
+    sudo /opt/alice/app/infra/scripts/fix-production-permissions.sh --create
+    
+    # Validar que tudo está correto (fail-fast)
+    sudo /opt/alice/app/infra/scripts/fix-production-permissions.sh --validate
+```
+
+> **NOTA:** Workflow deploy-stack-modular.yml configura automaticamente todas essas permissões via script enterprise.
 - Vector 0.43.1: sink Loki ativo; sem mudanças de breaking para docker_logs.
 
 ### Notas Importantes
@@ -2669,35 +2721,38 @@ docker exec grafana wget --spider -q http://localhost:3000/api/health
 
 **Sintoma:**
 ```
-Container: alice-postgres
-Status: unhealthy ou exited(1)
+Container: alice-postgres (ou alice-jaeger)
+Status: unhealthy ou restart loop infinito
 Log: FATAL: data directory "/var/lib/postgresql/data" has invalid permissions
+Log (Jaeger): Error Creating Dir: "/badger/key" err: mkdir /badger/key: permission denied
 ```
 
 **Causa Raiz:**
-- Diretório /opt/alice/data/postgres com owner/group incorreto
+- Diretório não existe ou tem owner/group incorreto
 - PostgreSQL requer UID 999:999 com permissões 700
-- `|| true` no workflow suprimia erros silenciosamente
+- Jaeger requer UID 10001:10001 com permissões 755
+- Outros serviços têm UIDs específicos (ver tabela de permissões acima)
 
-**Solução (Implementada em v5.0):**
+**Solução Automática (Implementada em v5.0 - 07/01/2026):**
 ```bash
-# Workflow agora usa fail-fast explícito (sem || true)
-if ! sudo chown -R 999:999 /opt/alice/data/postgres; then
-  echo "❌ ERRO: Falha ao configurar owner do diretório PostgreSQL"
-  exit 1
-fi
-sudo chmod 700 /opt/alice/data/postgres
+# Script enterprise gerencia TODOS os 22 diretórios automaticamente
+# Executado pelo workflow deploy-stack-modular.yml no job 'prepare'
+sudo /opt/alice/app/infra/scripts/fix-production-permissions.sh --create
 
-# Validação em 4 estágios:
-# 1. Diretório existe
-# 2. Owner/group correto (999:999)
-# 3. Permissões corretas (700)
-# 4. Teste de escrita como UID 999
+# Validação fail-fast (CI/CD)
+sudo /opt/alice/app/infra/scripts/fix-production-permissions.sh --validate
 ```
 
 **Como Corrigir Manualmente:**
 ```bash
 # SSH no servidor
+sudo chown -R 999:999 /opt/alice/data/postgres
+```bash
+# OPÇÃO 1: Usar script enterprise (RECOMENDADO)
+cd /opt/alice/app
+sudo ./infra/scripts/fix-production-permissions.sh --create
+
+# OPÇÃO 2: Corrigir manualmente apenas PostgreSQL
 sudo chown -R 999:999 /opt/alice/data/postgres
 sudo chmod 700 /opt/alice/data/postgres
 
@@ -2708,6 +2763,23 @@ ls -ld /opt/alice/data/postgres
 # Testar escrita
 sudo -u "#999" touch /opt/alice/data/postgres/.test && echo "OK" || echo "FAIL"
 sudo rm -f /opt/alice/data/postgres/.test
+
+# OPÇÃO 3: Validar todas as permissões
+cd /opt/alice/app
+sudo ./infra/scripts/fix-production-permissions.sh --validate
+```
+
+**Verificação de Containers em Restart Loop:**
+```bash
+# Ver containers com problemas de restart
+docker ps -a --filter "status=restarting" --format "table {{.Names}}\t{{.Status}}\t{{.Image}}"
+
+# Ver logs de container específico
+docker logs alice-postgres --tail 50
+docker logs alice-jaeger --tail 50
+
+# Ver número de restarts
+docker ps --format "table {{.Names}}\t{{.Status}}"
 ```
 
 ---
