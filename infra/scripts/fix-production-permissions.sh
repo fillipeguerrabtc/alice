@@ -176,28 +176,71 @@ dry_run_mode() {
     log_info "Modo DRY-RUN - Nenhuma mudança será aplicada"
     echo ""
     
+    local changes=0
+    
     for entry in "${DIRECTORIES[@]}"; do
         IFS=':' read -r path uid gid perms <<< "$entry"
         
-        if [[ -d "$path" ]]; then
-            current_uid=$(stat -c '%u' "$path")
-            current_gid=$(stat -c '%g' "$path")
-            current_perms=$(stat -c '%a' "$path")
-            
-            if [[ "$current_uid" == "$uid" ]] && [[ "$current_gid" == "$gid" ]] && [[ "$current_perms" == "$perms" ]]; then
-                log_success "OK: $path (${uid}:${gid} ${perms})"
-            else
-                log_warning "MUDARIA: $path"
-                echo "          Atual: ${current_uid}:${current_gid} ${current_perms}"
-                echo "          Novo:  ${uid}:${gid} ${perms}"
-            fi
+        if [[ ! -d "$path" ]]; then
+            log_warning "  ⚠️  CRIARIA: $path (${uid}:${gid} ${perms})"
+            ((changes++))
+            continue
+        fi
+        
+        log_info "🔍 Verificando: $(basename "$path")..."
+        
+        # ==========================================================================
+        # CORREÇÃO BUG CURSOR REVIEW (PR#76): Verificação recursiva em dry-run
+        # ==========================================================================
+        # BUG ORIGINAL (PR#74):
+        #   - create_mode e validate_mode foram corrigidos para usar find (recursivo)
+        #   - dry_run_mode AINDA USAVA stat (só pai) - INCONSISTÊNCIA CRÍTICA
+        #
+        # IMPACTO:
+        #   - dry-run reportava "OK" quando pai tinha UID correto mas filhos errados
+        #   - Usuário executava --create e descobria mudanças NÃO previstas
+        #   - Perda de confiança no --dry-run (preview inútil)
+        #
+        # SOLUÇÃO:
+        #   - Aplicar MESMA LÓGICA de create_mode/validate_mode
+        #   - Usar find para verificar RECURSIVAMENTE
+        #   - Consistência entre os 3 modos
+        # ==========================================================================
+        
+        # Verificar se há QUALQUER arquivo com UID ou GID incorreto (recursivo)
+        # -print -quit: Para após encontrar primeiro arquivo (otimização de performance)
+        local wrong_files
+        wrong_files=$(find "$path" \( ! -user "$uid" -o ! -group "$gid" \) -print -quit 2>/dev/null)
+        
+        if [[ -n "$wrong_files" ]]; then
+            log_warning "  🔧 MUDARIA: chown -R $uid:$gid $path"
+            log_info "     Primeiro arquivo incorreto: $wrong_files"
+            ((changes++))
         else
-            log_info "CRIARIA: $path (${uid}:${gid} ${perms})"
+            log_success "  ✅ OK: Ownership correto (verificado recursivamente)"
+        fi
+        
+        # Verificar permissões do diretório pai
+        local current_perms
+        current_perms=$(stat -c '%a' "$path" 2>/dev/null || stat -f '%Lp' "$path" 2>/dev/null)
+        
+        if [[ "$current_perms" != "$perms" ]]; then
+            log_warning "  🔧 MUDARIA: chmod $perms $path (atual: $current_perms)"
+            ((changes++))
         fi
     done
     
     echo ""
-    log_info "Total de diretórios: ${#DIRECTORIES[@]}"
+    if [[ $changes -eq 0 ]]; then
+        log_success "✅ Nenhuma mudança necessária - todas as permissões estão corretas"
+    else
+        log_info "📊 Total de mudanças que seriam feitas: $changes"
+        echo ""
+        log_info "💡 Para aplicar as mudanças, execute:"
+        log_info "   sudo $0 --create"
+    fi
+    
+    return 0
 }
 
 create_mode() {

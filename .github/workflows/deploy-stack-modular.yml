@@ -924,12 +924,8 @@ jobs:
             
             echo "✅ Diretórios e permissões configurados com sucesso"
             
-            # Criar diretórios adicionais não gerenciados pelo script
-            # (versionamento, sub-diretórios específicos)
+            # Criar diretório para version tracking (usado pelo rollback system)
             mkdir -p /opt/alice/versions
-            mkdir -p /opt/alice/uploads/training
-            mkdir -p /opt/alice/backups/postgresql/logs
-            mkdir -p /opt/alice/backups/manifests
             
             # =========================================================
             # 3. SECRETS (arquivos montados em containers)
