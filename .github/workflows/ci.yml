@@ -179,7 +179,7 @@ jobs:
       - name: Check if Code Scanning is enabled
         id: check-code-scanning
         if: always()
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -403,7 +403,7 @@ jobs:
           echo "✅ Nova versão: $NEW_VERSION ($BUMP_TYPE bump)"
 
       - name: Disparar Release Workflow
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
