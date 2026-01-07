@@ -431,44 +431,61 @@ jobs:
           VERSION="${{ needs.validate.outputs.version }}"
           STACK="${{ needs.validate.outputs.stack }}"
           
-          # Determinar imagens por stack
+          # Determinar imagens por stack usando ARRAYS (não strings)
           case "$STACK" in
             infra)
-              IMAGES="postgres caddy pgbackrest"
+              IMAGES=(postgres caddy pgbackrest)
               ;;
             alice)
-              IMAGES="frontend auth chat rag training integrations observability gpu-manager"
+              IMAGES=(frontend auth chat rag training integrations observability gpu-manager)
               ;;
             observability|erpnext)
-              IMAGES=""  # Usam imagens públicas
+              IMAGES=()  # Usam imagens públicas
               ;;
             backup)
-              IMAGES="pgbackrest"
+              IMAGES=(pgbackrest)
               ;;
             all)
-              IMAGES="postgres caddy pgbackrest frontend auth chat rag training integrations observability gpu-manager"
+              IMAGES=(postgres caddy pgbackrest frontend auth chat rag training integrations observability gpu-manager)
               ;;
           esac
           
-          # Verificar cada imagem custom
-          MISSING=""
-          for img in $IMAGES; do
+          # Skip se não houver imagens custom para verificar
+          if [ ${#IMAGES[@]} -eq 0 ]; then
+            echo "ℹ️ Stack $STACK usa apenas imagens públicas"
+            echo "✅ Nada a verificar no GHCR"
+            exit 0
+          fi
+          
+          echo "📋 Verificando ${#IMAGES[@]} imagens custom..."
+          echo ""
+          
+          # Verificar CADA imagem com output ANTES do comando
+          MISSING=()
+          for img in "${IMAGES[@]}"; do
             FULL_IMAGE="${{ env.IMAGE_PREFIX }}-${img}:${VERSION}"
-            if ! docker manifest inspect "$FULL_IMAGE" > /dev/null 2>&1; then
-              echo "❌ Imagem não encontrada: $FULL_IMAGE"
-              MISSING="$MISSING $img"
+            echo "🔍 Verificando: $FULL_IMAGE"
+            
+            if docker manifest inspect "$FULL_IMAGE" > /dev/null 2>&1; then
+              echo "   ✅ OK"
             else
-              echo "✅ $FULL_IMAGE existe"
+              echo "   ❌ NÃO ENCONTRADA"
+              MISSING+=("$img")
             fi
+            echo ""
           done
           
-          if [ -n "$MISSING" ]; then
-            echo "❌ ERRO: Imagens faltando no GHCR:$MISSING"
-            echo "   Execute o workflow 'Release & Tag' primeiro"
+          # Relatório final
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "❌ ERRO: ${#MISSING[@]} imagem(ns) faltando no GHCR:"
+            printf '   - %s\n' "${MISSING[@]}"
+            echo ""
+            echo "Execute o workflow 'Release & Tag' primeiro para criar as imagens."
+            echo "Ou verifique manualmente: https://github.com/${{ github.repository }}/pkgs/container/alice-${MISSING[0]}"
             exit 1
           fi
           
-          echo "✅ Todas as imagens necessárias existem"
+          echo "✅ Todas as ${#IMAGES[@]} imagens validadas com sucesso"
 
       - name: Validar imagens públicas (Docker Hub + Quay.io)
         id: validate-public-images
