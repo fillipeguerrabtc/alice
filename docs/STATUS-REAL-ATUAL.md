@@ -16,7 +16,7 @@
 > - Todas as versões de imagens Docker públicas centralizadas em `infra/versions.env`
 > - Docker-compose files usam `${VAR:-default}` para referenciar versões do SSOT
 > - Deploy valida existência de imagens públicas ANTES do deploy (fail-fast)
-> - Dependabot monitora e atualiza versões automaticamente (`.github/dependabot.yml`)
+> - Atualizações manuais quinzenais via processo documentado em `CLAUDE.md`
 > - Ver ADR-010 em `ARQUITETURA.md` para detalhes completos
 
 ---
@@ -917,7 +917,7 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 
 ### Atualização Periódica (Dependências e Pacotes do Sistema)
 
-- **Dependências Node.js**: Dependabot configurado para atualizações automáticas via PR.
+- **Dependências (Node.js, Python, Docker, GitHub Actions)**: Atualização manual quinzenal seguindo processo documentado em `CLAUDE.md`. Security alerts via GitHub continuam ativos automaticamente. Critérios: CVE CRITICAL/HIGH (imediato), Major (quando necessário), Minor/Patch (batch quinzenal após testes).
 - **Pacotes do Sistema (Hetzner)**: **unattended-upgrades** nativo do Ubuntu (best practice 2025). Configurado diretamente no servidor com `APT::Periodic::Update-Package-Lists "1"` e `APT::Periodic::Unattended-Upgrade "1"`. Mais confiável que workflow externo - não depende de conexão SSH.
 
 > **NOTA (12/12/2025):** Corrigido erro que invalidava o workflow `update-dependencies.yml`. A causa raiz foi o uso de IDs com hífen (ex.: `check-updates`) referenciados em expressões (`steps.check-updates...` / `needs.check-updates...`), o que quebra o parser de expressões do GitHub Actions. O padrão adotado é usar IDs com underscore (ex.: `check_updates`) para garantir compatibilidade.

@@ -332,11 +332,74 @@ generate-env-prod.sh (gera .env.prod com versões)
 **Benefícios Enterprise:**
 - ✅ **Consistência**: Versões definidas em um único lugar
 - ✅ **Validação CI/CD**: Deploy valida imagens públicas ANTES de fazer deploy
-- ✅ **Dependabot**: Atualiza versões automaticamente via PRs
 - ✅ **Auditoria**: Git history mostra todas as mudanças de versão
 - ✅ **Fallbacks**: Docker-compose usa `${VAR:-default}` para robustez
 
 **REGRA 6 CLAUDE.md**: Proibido hardcoded. Todas as versões DEVEM vir do `versions.env`.
+
+### Atualização de Dependências - Estratégia Manual (07/01/2026)
+
+| Aspecto | Detalhes |
+|---------|----------|
+| **Estratégia** | Atualização manual quinzenal ao invés de Dependabot automático |
+| **Motivo** | Dependabot gerava ~8 PRs/semana com patches triviais, poluindo GitHub Actions |
+| **Security Alerts** | ✅ MANTIDOS - GitHub continua detectando CVEs automaticamente |
+
+**Processo de Atualização Manual:**
+
+1. **Verificar CVEs (quinzenal):**
+   ```bash
+   # GitHub Security → Dependabot alerts
+   https://github.com/fillipeguerrabtc/alice/security/dependabot
+   ```
+
+2. **Atualizar dependências quando necessário:**
+   ```bash
+   # Node.js (apps/ e packages/)
+   pnpm update
+   pnpm audit fix
+   
+   # Python (GPU containers)
+   cd docker/gpu/embeddings-gpu
+   pip install -U -r requirements.txt
+   pip freeze > requirements.txt
+   
+   # Docker (imagens públicas)
+   # Atualizar versões em infra/versions.env (SSOT)
+   # Ex: PROMETHEUS_VERSION=v3.9.0
+   
+   # GitHub Actions
+   # Atualizar manualmente em .github/workflows/*.yml
+   # Ex: actions/checkout@v4 → actions/checkout@v6
+   ```
+
+3. **Testar antes de deploy:**
+   ```bash
+   # Rodar testes locais
+   pnpm test
+   
+   # Deploy em staging (Deploy Server 46.224.46.93)
+   gh workflow run deploy-stack-modular.yml -f stack=all -f version=v1.0.0-beta.1
+   
+   # Se OK → deploy produção (Production Server 178.63.41.108)
+   gh workflow run deploy-stack-modular.yml -f stack=all -f version=v1.0.0
+   ```
+
+**Critérios para Atualizar:**
+- 🔴 **CVE CRITICAL/HIGH** → atualizar imediatamente
+- 🟡 **Major version** → atualizar quando necessário para nova feature
+- 🟢 **Minor/Patch** → atualizar em batch quinzenal (se estável)
+
+**Servidor Hetzner:**
+- ✅ `unattended-upgrades` ativo para pacotes do sistema Ubuntu
+- ✅ Atualizações de segurança aplicadas automaticamente
+- Ref: `/etc/apt/apt.conf.d/50unattended-upgrades`
+
+**Dependências Atuais (07/01/2026):**
+Todas as dependências principais estão nas versões mais recentes:
+- pnpm 10.26.2, React 19.2.3, Grafana 12.3.1, Prometheus 3.8.1
+- PostgreSQL 16.8, PyTorch 2.9.1, Docker 29.1.3
+- Ref: Seção "Technical Stack" e "Pente Fino Versoes Enterprise"
 
 ### MinIO Object Storage - Migração Enterprise (07/01/2026)
 
