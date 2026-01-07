@@ -470,6 +470,112 @@ jobs:
           
           echo "✅ Todas as imagens necessárias existem"
 
+      - name: Validar imagens públicas (Docker Hub + Quay.io)
+        id: validate-public-images
+        run: |
+          set -euo pipefail
+          echo "🔍 Validando imagens públicas..."
+          STACK="${{ needs.validate.outputs.stack }}"
+          
+          # Carregar versões do SSOT (para variáveis que existem)
+          source infra/versions.env
+          
+          # =================================================================
+          # IMAGENS POR STACK
+          # =================================================================
+          # NOTA: Versões extraídas diretamente dos docker-compose files
+          # Variáveis do versions.env são usadas onde disponíveis
+          # Ref: infra/docker/stacks/docker-compose.*.yml
+          # =================================================================
+          
+          # INFRA Stack (docker-compose.infra.yml)
+          INFRA_IMAGES=(
+            "dperson/torproxy:latest"
+            "searxng/searxng:${SEARXNG_VERSION}"
+            "redis:7.4.7-alpine"
+            "qdrant/qdrant:v1.16.2"
+            "${MINIO_IMAGE:-quay.io/minio/minio}:${MINIO_VERSION:-latest}"
+            "${MINIO_MC_IMAGE:-quay.io/minio/mc}:${MINIO_MC_VERSION:-latest}"
+          )
+          
+          # OBSERVABILITY Stack (docker-compose.observability.yml)
+          OBSERVABILITY_IMAGES=(
+            "prom/prometheus:v3.8.1"
+            "grafana/grafana:12.3.1"
+            "grafana/loki:3.6.3"
+            "grafana/promtail:3.6.3"
+            "jaegertracing/jaeger:2.13.0"
+            "timberio/vector:0.45.0-alpine"
+            "otel/opentelemetry-collector-contrib:0.142.0"
+            "prom/node-exporter:v1.9.1"
+            "gcr.io/cadvisor/cadvisor:v0.52.1"
+            "clickhouse/clickhouse-server:25.12-alpine"
+            "postgres:16-alpine"
+            "langfuse/langfuse:3.85.0"
+            "langfuse/langfuse-worker:3.85.0"
+          )
+          
+          # ERPNEXT Stack (docker-compose.erpnext.yml)
+          ERPNEXT_IMAGES=(
+            "mariadb:10.8.8"
+            "redis:6.2.21-alpine"
+            "frappe/erpnext:v15.91.3"
+          )
+          
+          # Determinar imagens a validar por stack
+          IMAGES_TO_CHECK=()
+          case "$STACK" in
+            infra)
+              IMAGES_TO_CHECK=("${INFRA_IMAGES[@]}")
+              ;;
+            observability)
+              IMAGES_TO_CHECK=("${OBSERVABILITY_IMAGES[@]}")
+              ;;
+            erpnext)
+              IMAGES_TO_CHECK=("${ERPNEXT_IMAGES[@]}")
+              ;;
+            all)
+              IMAGES_TO_CHECK=("${INFRA_IMAGES[@]}" "${OBSERVABILITY_IMAGES[@]}" "${ERPNEXT_IMAGES[@]}")
+              ;;
+            alice|backup)
+              echo "ℹ️ Stack $STACK usa apenas imagens custom (GHCR)"
+              IMAGES_TO_CHECK=()
+              ;;
+          esac
+          
+          # Validar cada imagem pública
+          MISSING=""
+          for img in "${IMAGES_TO_CHECK[@]}"; do
+            echo "   Validando: $img"
+            if ! docker manifest inspect "$img" > /dev/null 2>&1; then
+              echo "   ❌ FALHOU: $img"
+              MISSING="$MISSING $img"
+            else
+              echo "   ✅ OK: $img"
+            fi
+          done
+          
+          if [ -n "$MISSING" ]; then
+            echo ""
+            echo "::error::❌ ERRO CRÍTICO: Imagens públicas não encontradas:"
+            echo "$MISSING"
+            echo ""
+            echo "Possíveis causas:"
+            echo "  1. Versão especificada não existe no registry"
+            echo "  2. Registry descontinuou a imagem"
+            echo "  3. Typo na tag da imagem"
+            echo ""
+            echo "Ações corretivas:"
+            echo "  1. Verificar docker-compose files para versões corretas"
+            echo "  2. Consultar registries oficiais para tags disponíveis"
+            echo "  3. Docker Hub: https://hub.docker.com"
+            echo "  4. Quay.io: https://quay.io"
+            exit 1
+          fi
+          
+          echo ""
+          echo "✅ Todas as imagens públicas validadas com sucesso"
+
       - name: Sincronizar código e configs para servidor
         uses: appleboy/scp-action@v0.1.7
         with:
