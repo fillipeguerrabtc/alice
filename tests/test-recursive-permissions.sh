@@ -129,11 +129,12 @@ test_performance_optimization() {
     log_test "Created 100 test files"
     
     local current_uid=$(id -u)
+    local current_gid=$(id -g)
     local start_time=$(date +%s%N)
     
     # This should return quickly (first file only)
     local result
-    result=$(find "$test_dir" \( ! -user "$current_uid" -o ! -group "$current_uid" \) -print -quit 2>/dev/null)
+    result=$(find "$test_dir" \( ! -user "$current_uid" -o ! -group "$current_gid" \) -print -quit 2>/dev/null)
     
     local end_time=$(date +%s%N)
     local duration=$(( (end_time - start_time) / 1000000 )) # Convert to ms
@@ -241,11 +242,12 @@ test_no_infinite_loop() {
     touch "${test_dir}/subdir/file.txt"
     
     local current_uid=$(id -u)
+    local current_gid=$(id -g)
     local wrong_uid=999
     
     # Test 4a: With current UID (should find nothing)
     local wrong_files
-    wrong_files=$(find "$test_dir" \( ! -user "$current_uid" -o ! -group "$current_uid" \) -print -quit 2>/dev/null)
+    wrong_files=$(find "$test_dir" \( ! -user "$current_uid" -o ! -group "$current_gid" \) -print -quit 2>/dev/null)
     
     if [[ -z "$wrong_files" ]]; then
         log_pass "✅ Correctly identifies when all files have correct ownership"
