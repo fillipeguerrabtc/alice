@@ -654,7 +654,6 @@ fi
 # - Let's Encrypt (certificados SSL via Caddy)
 #
 # NOTA: Grafana Alerting usa GMAIL_USER para SMTP (NÃO ACME_EMAIL).
-# Ver docker-compose.prod.yml seção grafana: GF_SMTP_USER: ${GMAIL_USER}
 # =============================================================================
 if [ -z "${ACME_EMAIL:-}" ]; then
   echo "::warning::ACME_EMAIL não definido. Let's Encrypt não conseguirá emitir certificados SSL."
@@ -743,7 +742,6 @@ echo "📄 Gerando arquivo .env.prod..."
   printf '\n'
   printf '# GPU Services (Hetzner GPU Server)\n'
   printf 'HUGGINGFACE_TOKEN=%s\n' "${HUGGINGFACE_TOKEN:-}"
-  # BUG FIX 25/12/2025: Container name correto é alice-gpu-manager (definido em docker-compose.prod.yml)
   printf 'GPU_MANAGER_URL=http://alice-gpu-manager:3010\n'
   printf '\n'
   printf '# Qdrant - Banco Vetorial para Texto\n'

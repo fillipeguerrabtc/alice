@@ -117,7 +117,7 @@ services:
       NODE_ENV: production
       PORT: 3001
       SERVICE_NAME: auth-service
-      DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@alice-postgres:5432/${POSTGRES_DB:-alice_prod}?sslmode=disable
+      DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@alice-pgbouncer:6432/${POSTGRES_DB:-alice_prod}?sslmode=disable
       SESSION_SECRET: ${SESSION_SECRET}
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
@@ -169,7 +169,7 @@ services:
       NODE_ENV: production
       PORT: 3002
       SERVICE_NAME: chat-service
-      DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@alice-postgres:5432/${POSTGRES_DB:-alice_prod}?sslmode=disable
+      DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@alice-pgbouncer:6432/${POSTGRES_DB:-alice_prod}?sslmode=disable
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
       SESSION_SECRET: ${SESSION_SECRET}
       RAG_SERVICE_URL: http://alice-rag:3003
@@ -220,7 +220,7 @@ services:
       NODE_ENV: production
       PORT: 3003
       SERVICE_NAME: rag-service
-      DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@alice-postgres:5432/${POSTGRES_DB:-alice_prod}?sslmode=disable
+      DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@alice-pgbouncer:6432/${POSTGRES_DB:-alice_prod}?sslmode=disable
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:?INTERNAL_API_SECRET é obrigatório}
       QDRANT_URL: http://alice-qdrant:6333
       QDRANT_API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY é obrigatório em produção}
@@ -273,7 +273,7 @@ services:
       NODE_ENV: production
       PORT: 3004
       SERVICE_NAME: training-service
-      DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@alice-postgres:5432/${POSTGRES_DB:-alice_prod}?sslmode=disable
+      DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@alice-pgbouncer:6432/${POSTGRES_DB:-alice_prod}?sslmode=disable
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
       GPU_MANAGER_URL: ${GPU_MANAGER_URL:-http://alice-gpu-manager:3010}
       QDRANT_URL: http://alice-qdrant:6333
@@ -320,7 +320,7 @@ services:
       NODE_ENV: production
       PORT: 3005
       SERVICE_NAME: integrations-service
-      DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@alice-postgres:5432/${POSTGRES_DB:-alice_prod}?sslmode=disable
+      DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@alice-pgbouncer:6432/${POSTGRES_DB:-alice_prod}?sslmode=disable
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
       STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY}
@@ -395,7 +395,7 @@ services:
       SERVICE_NAME: observability-service
       BACKUP_DIR: /opt/alice/backups
       UPLOADS_DIR: /opt/alice/uploads
-      DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@alice-postgres:5432/${POSTGRES_DB:-alice_prod}?sslmode=disable
+      DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@alice-pgbouncer:6432/${POSTGRES_DB:-alice_prod}?sslmode=disable
       PROMETHEUS_URL: http://prometheus:9090
       GRAFANA_URL: http://grafana:3000
       JAEGER_URL: http://jaeger:16686
