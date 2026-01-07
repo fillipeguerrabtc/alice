@@ -413,6 +413,18 @@ Consulte [docs/SECRETS.md](docs/SECRETS.md) para a lista completa de secrets nec
 - Changelog gerado automaticamente com classificação de commits
 - Retag inteligente (só builda imagens com código alterado)
 
+**Single Source of Truth (SSOT) - Versões de Imagens:**
+- Todas as versões de imagens públicas centralizadas em `infra/versions.env`
+- Docker-compose files usam variáveis `${VAR:-default}` do SSOT
+- Deploy valida existência de imagens públicas ANTES do deploy
+- Dependabot monitora e atualiza versões automaticamente
+
+| Stack | Variáveis Principais |
+|-------|---------------------|
+| INFRA | `REDIS_ALICE_VERSION`, `QDRANT_VERSION`, `SEARXNG_VERSION`, `MINIO_*` |
+| OBSERVABILITY | `PROMETHEUS_VERSION`, `GRAFANA_VERSION`, `LANGFUSE_VERSION`, etc |
+| ERPNEXT | `ERPNEXT_VERSION`, `MARIADB_VERSION`, `REDIS_ERPNEXT_VERSION` |
+
 **GPU Manager Service:**
 - Gerenciamento centralizado de todas as requisições GPU (LLM, Embeddings, FLUX, ASR)
 - Fila priorizada (Redis) com monitoramento VRAM em tempo real (nvidia-smi)

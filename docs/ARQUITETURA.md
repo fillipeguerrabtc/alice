@@ -941,6 +941,54 @@ prepare → deploy-infra → health-infra → drizzle-push
 - ✅ UTF-8 encoding incorreto (`urlencode` sem `LC_ALL=C`)
 - ✅ 14 bugs críticos adicionais identificados e corrigidos
 
+### ADR-010: Single Source of Truth para Versões de Imagens Docker (07/01/2026)
+
+| Aspecto | Decisão |
+|---------|---------|
+| **Status** | Aceito |
+| **Data** | 07 de Janeiro de 2026 |
+| **Contexto** | Versões de imagens Docker públicas estavam hardcoded em múltiplos docker-compose files, causando: (1) inconsistência entre versões declaradas e deployadas; (2) dificuldade de atualização (modificar 30+ lugares); (3) falhas de deploy por imagens descontinuadas (ex: MinIO Docker Hub); (4) impossibilidade de validação automática antes do deploy. Violava Regra 6 (PROIBIDO hardcoded) e Regra 11 (seguir docs oficiais). |
+| **Decisão** | Centralizar TODAS as versões de imagens públicas em `infra/versions.env` (Single Source of Truth - SSOT). Docker-compose files usam `${VAR:-default}` para referenciar. Deploy workflow valida existência das imagens ANTES do deploy. Dependabot monitora e atualiza versões automaticamente. |
+| **Alternativas** | (1) Manter hardcoded - rejeitado por violar Regra 6; (2) Usar apenas Dependabot - rejeitado por não resolver validação pré-deploy; (3) Versões no .env.prod apenas - rejeitado por não ser versionado no Git |
+| **Consequências** | + Consistência total entre docker-compose e deploy; + Validação automática de imagens públicas; + Git history completo de mudanças de versão; + Dependabot PRs automáticos para atualizações; + Fallbacks robustos `${VAR:-default}`; - Mais variáveis no versions.env (28+); - Dependência de arquivo externo em docker-compose |
+
+**Arquitetura SSOT:**
+
+```
+infra/versions.env (SSOT - 28 variáveis)
+        ↓
+docker-compose.*.yml (usa ${VAR:-default})
+        ↓
+deploy-stack-modular.yml (valida imagens via SSOT)
+        ↓
+generate-env-prod.sh (gera .env.prod com versões)
+        ↓
+.env.prod (produção - com todas as versões)
+```
+
+**Categorias de Versões (versions.env):**
+
+| Stack | Variáveis | Quantidade |
+|-------|-----------|------------|
+| INFRA | `REDIS_ALICE_VERSION`, `QDRANT_VERSION`, `SEARXNG_VERSION`, `MINIO_*` | 8 |
+| OBSERVABILITY | `PROMETHEUS_VERSION`, `GRAFANA_VERSION`, `LOKI_VERSION`, `LANGFUSE_*`, etc | 14 |
+| ERPNEXT | `ERPNEXT_VERSION`, `MARIADB_VERSION`, `REDIS_ERPNEXT_VERSION` | 3 |
+| Utilities | `BUSYBOX_VERSION`, `PGVECTOR_TAG` | 3 |
+
+**Validação de Imagens Públicas:**
+- Step `Validar imagens públicas (Docker Hub + Quay.io)` no job `prepare`
+- Usa `docker manifest inspect` para verificar existência
+- Fail-fast: detecta imagens inexistentes no CI, não no servidor
+- Evita falhas de deploy por imagens descontinuadas
+
+**Dependabot Automation:**
+- `.github/dependabot.yml` monitora: GitHub Actions, npm, Docker, pip
+- Cria PRs automaticamente para atualizações de segurança
+- Schedule: segundas-feiras 08:00 BRT
+- Grupos: typescript-types, eslint, testing
+
+**Workflow File:** `.github/workflows/deploy-stack-modular.yml` (step: `validate-public-images`)
+
 ---
 
 ## 10. Aderência às 18 Regras

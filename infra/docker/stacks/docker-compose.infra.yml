@@ -298,7 +298,7 @@ services:
   # ALICE REDIS - Cache Distribuído
   # ===========================================================================
   alice-redis:
-    image: redis:7.4.7-alpine
+    image: redis:${REDIS_ALICE_VERSION:-7.4.7-alpine}
     platform: linux/amd64
     container_name: alice-redis
     restart: always
@@ -364,7 +364,7 @@ services:
   # Com read_only: true, o container falha com 'Read-only file system' e fica unhealthy.
   # tmpfs em /tmp e /qdrant/tmp não ajudam porque o arquivo é em /qdrant root.
   alice-qdrant:
-    image: qdrant/qdrant:v1.16.2
+    image: qdrant/qdrant:${QDRANT_VERSION:-v1.16.2}
     platform: linux/amd64
     container_name: alice-qdrant
     restart: always

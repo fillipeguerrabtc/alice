@@ -11,6 +11,13 @@
 > - **Deploy Modular** (`deploy-stack-modular.yml`): Jobs independentes (5 stacks ‖ ~10min, 66% mais rápido)
 > - **Rollback Cirúrgico**: Só reverte stack com falha, outros continuam operacionais
 > - Ver ADR-007 em `ARQUITETURA.md` para detalhes completos
+>
+> **📦 SSOT - Single Source of Truth (07/01/2026):**
+> - Todas as versões de imagens Docker públicas centralizadas em `infra/versions.env`
+> - Docker-compose files usam `${VAR:-default}` para referenciar versões do SSOT
+> - Deploy valida existência de imagens públicas ANTES do deploy (fail-fast)
+> - Dependabot monitora e atualiza versões automaticamente (`.github/dependabot.yml`)
+> - Ver ADR-010 em `ARQUITETURA.md` para detalhes completos
 
 ---
 

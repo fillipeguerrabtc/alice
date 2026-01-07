@@ -477,49 +477,56 @@ jobs:
           echo "🔍 Validando imagens públicas..."
           STACK="${{ needs.validate.outputs.stack }}"
           
-          # Carregar versões do SSOT (para variáveis que existem)
+          # =================================================================
+          # SINGLE SOURCE OF TRUTH (SSOT)
+          # =================================================================
+          # Todas as versões vêm de infra/versions.env
+          # REGRA 6 CLAUDE.md: Enterprise-grade, sem hardcoded
+          # =================================================================
           source infra/versions.env
           
-          # =================================================================
-          # IMAGENS POR STACK
-          # =================================================================
-          # NOTA: Versões extraídas diretamente dos docker-compose files
-          # Variáveis do versions.env são usadas onde disponíveis
-          # Ref: infra/docker/stacks/docker-compose.*.yml
-          # =================================================================
+          echo "📋 Versões carregadas do SSOT:"
+          echo "   REDIS_ALICE: ${REDIS_ALICE_VERSION}"
+          echo "   QDRANT: ${QDRANT_VERSION}"
+          echo "   SEARXNG: ${SEARXNG_VERSION}"
+          echo "   PROMETHEUS: ${PROMETHEUS_VERSION}"
+          echo "   GRAFANA: ${GRAFANA_VERSION}"
+          echo "   LANGFUSE: ${LANGFUSE_VERSION}"
+          echo "   ERPNEXT: ${ERPNEXT_VERSION}"
+          echo ""
           
           # INFRA Stack (docker-compose.infra.yml)
           INFRA_IMAGES=(
             "dperson/torproxy:latest"
             "searxng/searxng:${SEARXNG_VERSION}"
-            "redis:7.4.7-alpine"
-            "qdrant/qdrant:v1.16.2"
-            "${MINIO_IMAGE:-quay.io/minio/minio}:${MINIO_VERSION:-latest}"
-            "${MINIO_MC_IMAGE:-quay.io/minio/mc}:${MINIO_MC_VERSION:-latest}"
+            "redis:${REDIS_ALICE_VERSION}"
+            "qdrant/qdrant:${QDRANT_VERSION}"
+            "${MINIO_IMAGE}:${MINIO_VERSION}"
+            "${MINIO_MC_IMAGE}:${MINIO_MC_VERSION}"
           )
           
           # OBSERVABILITY Stack (docker-compose.observability.yml)
           OBSERVABILITY_IMAGES=(
-            "prom/prometheus:v3.8.1"
-            "grafana/grafana:12.3.1"
-            "grafana/loki:3.6.3"
-            "grafana/promtail:3.6.3"
-            "jaegertracing/jaeger:2.13.0"
-            "timberio/vector:0.45.0-alpine"
-            "otel/opentelemetry-collector-contrib:0.142.0"
-            "prom/node-exporter:v1.9.1"
-            "gcr.io/cadvisor/cadvisor:v0.52.1"
-            "clickhouse/clickhouse-server:25.12-alpine"
-            "postgres:16-alpine"
-            "langfuse/langfuse:3.85.0"
-            "langfuse/langfuse-worker:3.85.0"
+            "prom/prometheus:${PROMETHEUS_VERSION}"
+            "grafana/grafana:${GRAFANA_VERSION}"
+            "grafana/loki:${LOKI_VERSION}"
+            "grafana/promtail:${PROMTAIL_VERSION}"
+            "jaegertracing/jaeger:${JAEGER_VERSION}"
+            "timberio/vector:${VECTOR_VERSION}"
+            "otel/opentelemetry-collector-contrib:${OTEL_COLLECTOR_VERSION}"
+            "prom/node-exporter:${NODE_EXPORTER_VERSION}"
+            "gcr.io/cadvisor/cadvisor:${CADVISOR_VERSION}"
+            "clickhouse/clickhouse-server:${CLICKHOUSE_VERSION}"
+            "postgres:${POSTGRES_LANGFUSE_VERSION}"
+            "langfuse/langfuse:${LANGFUSE_VERSION}"
+            "langfuse/langfuse-worker:${LANGFUSE_WORKER_VERSION}"
           )
           
           # ERPNEXT Stack (docker-compose.erpnext.yml)
           ERPNEXT_IMAGES=(
-            "mariadb:10.8.8"
-            "redis:6.2.21-alpine"
-            "frappe/erpnext:v15.91.3"
+            "mariadb:${MARIADB_VERSION}"
+            "redis:${REDIS_ERPNEXT_VERSION}"
+            "frappe/erpnext:${ERPNEXT_VERSION}"
           )
           
           # Determinar imagens a validar por stack

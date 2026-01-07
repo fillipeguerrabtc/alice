@@ -63,7 +63,7 @@ services:
   # PROMETHEUS - Métricas
   # ===========================================================================
   prometheus:
-    image: prom/prometheus:v3.8.1
+    image: prom/prometheus:${PROMETHEUS_VERSION:-v3.8.1}
     platform: linux/amd64
     container_name: prometheus
     restart: unless-stopped
@@ -101,7 +101,7 @@ services:
   # GRAFANA - Dashboards + SSO Alice Auth
   # ===========================================================================
   grafana:
-    image: grafana/grafana:12.3.1
+    image: grafana/grafana:${GRAFANA_VERSION:-12.3.1}
     platform: linux/amd64
     container_name: grafana
     restart: unless-stopped
@@ -168,7 +168,7 @@ services:
   # LOKI - Log Aggregation
   # ===========================================================================
   loki:
-    image: grafana/loki:3.6.3
+    image: grafana/loki:${LOKI_VERSION:-3.6.3}
     platform: linux/amd64
     container_name: loki
     restart: unless-stopped
@@ -199,7 +199,7 @@ services:
   # PROMTAIL - Log Collection
   # ===========================================================================
   promtail:
-    image: grafana/promtail:3.6.3
+    image: grafana/promtail:${PROMTAIL_VERSION:-3.6.3}
     platform: linux/amd64
     container_name: promtail
     restart: unless-stopped
@@ -230,7 +230,7 @@ services:
   # JAEGER - Distributed Tracing (v2.13)
   # ===========================================================================
   jaeger:
-    image: jaegertracing/jaeger:2.13.0
+    image: jaegertracing/jaeger:${JAEGER_VERSION:-2.13.0}
     platform: linux/amd64
     container_name: jaeger
     restart: unless-stopped
@@ -256,7 +256,7 @@ services:
   # VECTOR - Log Aggregator
   # ===========================================================================
   vector:
-    image: timberio/vector:0.45.0-alpine
+    image: timberio/vector:${VECTOR_VERSION:-0.45.0-alpine}
     platform: linux/amd64
     container_name: alice-vector
     restart: unless-stopped
@@ -296,7 +296,7 @@ services:
   # OTEL COLLECTOR - OpenTelemetry Pipeline
   # ===========================================================================
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.142.0
+    image: otel/opentelemetry-collector-contrib:${OTEL_COLLECTOR_VERSION:-0.142.0}
     platform: linux/amd64
     container_name: alice-otel-collector
     restart: unless-stopped
@@ -331,7 +331,7 @@ services:
   # NOTA: Usa network_mode: host para acessar métricas do sistema
   # ===========================================================================
   node-exporter:
-    image: prom/node-exporter:v1.9.1
+    image: prom/node-exporter:${NODE_EXPORTER_VERSION:-v1.9.1}
     platform: linux/amd64
     container_name: alice-node-exporter
     restart: unless-stopped
@@ -365,7 +365,7 @@ services:
   # NOTA: Usa privileged: true para acessar informações de containers
   # ===========================================================================
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.52.1
+    image: gcr.io/cadvisor/cadvisor:${CADVISOR_VERSION:-v0.52.1}
     platform: linux/amd64
     container_name: alice-cadvisor
     restart: unless-stopped
@@ -401,7 +401,7 @@ services:
   # CLICKHOUSE - OLAP para Langfuse v3
   # ===========================================================================
   clickhouse:
-    image: clickhouse/clickhouse-server:25.12-alpine
+    image: clickhouse/clickhouse-server:${CLICKHOUSE_VERSION:-25.12-alpine}
     platform: linux/amd64
     container_name: alice-clickhouse
     restart: unless-stopped
@@ -437,7 +437,7 @@ services:
   # LANGFUSE DB - PostgreSQL para Langfuse
   # ===========================================================================
   langfuse-db:
-    image: postgres:16-alpine
+    image: postgres:${POSTGRES_LANGFUSE_VERSION:-16-alpine}
     platform: linux/amd64
     container_name: alice-langfuse-db
     restart: unless-stopped
@@ -471,7 +471,7 @@ services:
   # LANGFUSE - LLM Observability v3
   # ===========================================================================
   langfuse:
-    image: langfuse/langfuse:3.85.0
+    image: langfuse/langfuse:${LANGFUSE_VERSION:-3.85.0}
     platform: linux/amd64
     container_name: langfuse
     restart: unless-stopped
@@ -534,7 +534,7 @@ services:
   # LANGFUSE WORKER - Processamento Assíncrono v3
   # ===========================================================================
   langfuse-worker:
-    image: langfuse/langfuse-worker:3.85.0
+    image: langfuse/langfuse-worker:${LANGFUSE_WORKER_VERSION:-3.85.0}
     platform: linux/amd64
     container_name: langfuse-worker
     restart: unless-stopped

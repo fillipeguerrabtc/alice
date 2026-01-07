@@ -58,23 +58,36 @@ set +a
 
 # Validar que todas as versões obrigatórias foram carregadas
 REQUIRED_VERSIONS=(
+  # INFRA Stack
   "PGBACKREST_VERSION"
   "CADDY_VERSION"
-  "PROMETHEUS_VERSION"
-  "GRAFANA_VERSION"
-  "LOKI_VERSION"
-  "PROMTAIL_VERSION"
-  "JAEGER_VERSION"
+  "REDIS_ALICE_VERSION"
+  "QDRANT_VERSION"
   "SEARXNG_VERSION"
   "MINIO_IMAGE"
   "MINIO_VERSION"
   "MINIO_MC_IMAGE"
   "MINIO_MC_VERSION"
+  # OBSERVABILITY Stack
+  "PROMETHEUS_VERSION"
+  "GRAFANA_VERSION"
+  "LOKI_VERSION"
+  "PROMTAIL_VERSION"
+  "JAEGER_VERSION"
+  "VECTOR_VERSION"
+  "OTEL_COLLECTOR_VERSION"
+  "NODE_EXPORTER_VERSION"
+  "CADVISOR_VERSION"
+  "CLICKHOUSE_VERSION"
+  "POSTGRES_LANGFUSE_VERSION"
   "LANGFUSE_VERSION"
+  "LANGFUSE_WORKER_VERSION"
+  # ERPNEXT Stack
   "ERPNEXT_VERSION"
-  "BUSYBOX_VERSION"
-  "REDIS_VERSION"
   "MARIADB_VERSION"
+  "REDIS_ERPNEXT_VERSION"
+  # Utilities
+  "BUSYBOX_VERSION"
   "PGVECTOR_TAG"
 )
 
@@ -91,17 +104,36 @@ if [ ${#MISSING_VERSIONS[@]} -gt 0 ]; then
   exit 1
 fi
 
-echo "✅ Versões dos componentes carregadas:"
+echo "✅ Versões dos componentes carregadas (SSOT):"
+echo ""
+echo "   [INFRA Stack]"
 echo "   PGBACKREST: ${PGBACKREST_VERSION}"
 echo "   CADDY: ${CADDY_VERSION}"
-echo "   PROMETHEUS: ${PROMETHEUS_VERSION}"
-echo "   GRAFANA: ${GRAFANA_VERSION}"
-echo "   LOKI: ${LOKI_VERSION}"
-echo "   LANGFUSE: ${LANGFUSE_VERSION}"
-echo "   ERPNEXT: ${ERPNEXT_VERSION}"
+echo "   REDIS_ALICE: ${REDIS_ALICE_VERSION}"
+echo "   QDRANT: ${QDRANT_VERSION}"
 echo "   SEARXNG: ${SEARXNG_VERSION}"
 echo "   MINIO: ${MINIO_IMAGE}:${MINIO_VERSION}"
 echo "   MINIO_MC: ${MINIO_MC_IMAGE}:${MINIO_MC_VERSION}"
+echo ""
+echo "   [OBSERVABILITY Stack]"
+echo "   PROMETHEUS: ${PROMETHEUS_VERSION}"
+echo "   GRAFANA: ${GRAFANA_VERSION}"
+echo "   LOKI: ${LOKI_VERSION}"
+echo "   PROMTAIL: ${PROMTAIL_VERSION}"
+echo "   JAEGER: ${JAEGER_VERSION}"
+echo "   VECTOR: ${VECTOR_VERSION}"
+echo "   OTEL_COLLECTOR: ${OTEL_COLLECTOR_VERSION}"
+echo "   NODE_EXPORTER: ${NODE_EXPORTER_VERSION}"
+echo "   CADVISOR: ${CADVISOR_VERSION}"
+echo "   CLICKHOUSE: ${CLICKHOUSE_VERSION}"
+echo "   POSTGRES_LANGFUSE: ${POSTGRES_LANGFUSE_VERSION}"
+echo "   LANGFUSE: ${LANGFUSE_VERSION}"
+echo "   LANGFUSE_WORKER: ${LANGFUSE_WORKER_VERSION}"
+echo ""
+echo "   [ERPNEXT Stack]"
+echo "   ERPNEXT: ${ERPNEXT_VERSION}"
+echo "   MARIADB: ${MARIADB_VERSION}"
+echo "   REDIS_ERPNEXT: ${REDIS_ERPNEXT_VERSION}"
 echo ""
 
 # =============================================================================
@@ -630,24 +662,43 @@ echo "📄 Gerando arquivo .env.prod..."
   printf 'IMAGE_PREFIX=%s\n' "${IMAGE_PREFIX}"
   printf 'IMAGE_TAG=%s\n' "${IMAGE_TAG}"
   printf '\n'
-  printf '# Versões Automáticas dos Componentes (com fallbacks de segurança)\n'
+  printf '# ==============================================\n'
+  printf '# VERSÕES - SINGLE SOURCE OF TRUTH (SSOT)\n'
+  printf '# ==============================================\n'
+  printf '\n'
+  printf '# INFRA Stack\n'
   printf 'PGBACKREST_VERSION=%s\n' "${PGBACKREST_VERSION:-2.57.0}"
   printf 'CADDY_VERSION=%s\n' "${CADDY_VERSION:-2.8.4}"
-  printf 'PROMETHEUS_VERSION=%s\n' "${PROMETHEUS_VERSION:-v2.54.1}"
-  printf 'GRAFANA_VERSION=%s\n' "${GRAFANA_VERSION:-11.3.0}"
-  printf 'LOKI_VERSION=%s\n' "${LOKI_VERSION:-3.2.0}"
-  printf 'PROMTAIL_VERSION=%s\n' "${PROMTAIL_VERSION:-3.2.0}"
-  printf 'JAEGER_VERSION=%s\n' "${JAEGER_VERSION:-2.2.0}"
-  printf 'LANGFUSE_VERSION=%s\n' "${LANGFUSE_VERSION:-3.32.0}"
-  printf 'ERPNEXT_VERSION=%s\n' "${ERPNEXT_VERSION:-v15.43.2}"
-  printf 'BUSYBOX_VERSION=%s\n' "${BUSYBOX_VERSION:-1.36.1}"
-  printf 'REDIS_VERSION=%s\n' "${REDIS_VERSION:-7.4-alpine}"
-  printf 'MARIADB_VERSION=%s\n' "${MARIADB_VERSION:-11.6}"
+  printf 'REDIS_ALICE_VERSION=%s\n' "${REDIS_ALICE_VERSION:-7.4.7-alpine}"
+  printf 'QDRANT_VERSION=%s\n' "${QDRANT_VERSION:-v1.16.2}"
   printf 'SEARXNG_VERSION=%s\n' "${SEARXNG_VERSION:-2025.12.30-a5c946a32}"
   printf 'MINIO_IMAGE=%s\n' "${MINIO_IMAGE:-quay.io/minio/minio}"
   printf 'MINIO_VERSION=%s\n' "${MINIO_VERSION:-latest}"
   printf 'MINIO_MC_IMAGE=%s\n' "${MINIO_MC_IMAGE:-quay.io/minio/mc}"
   printf 'MINIO_MC_VERSION=%s\n' "${MINIO_MC_VERSION:-latest}"
+  printf '\n'
+  printf '# OBSERVABILITY Stack\n'
+  printf 'PROMETHEUS_VERSION=%s\n' "${PROMETHEUS_VERSION:-v3.8.1}"
+  printf 'GRAFANA_VERSION=%s\n' "${GRAFANA_VERSION:-12.3.1}"
+  printf 'LOKI_VERSION=%s\n' "${LOKI_VERSION:-3.6.3}"
+  printf 'PROMTAIL_VERSION=%s\n' "${PROMTAIL_VERSION:-3.6.3}"
+  printf 'JAEGER_VERSION=%s\n' "${JAEGER_VERSION:-2.13.0}"
+  printf 'VECTOR_VERSION=%s\n' "${VECTOR_VERSION:-0.45.0-alpine}"
+  printf 'OTEL_COLLECTOR_VERSION=%s\n' "${OTEL_COLLECTOR_VERSION:-0.142.0}"
+  printf 'NODE_EXPORTER_VERSION=%s\n' "${NODE_EXPORTER_VERSION:-v1.9.1}"
+  printf 'CADVISOR_VERSION=%s\n' "${CADVISOR_VERSION:-v0.52.1}"
+  printf 'CLICKHOUSE_VERSION=%s\n' "${CLICKHOUSE_VERSION:-25.12-alpine}"
+  printf 'POSTGRES_LANGFUSE_VERSION=%s\n' "${POSTGRES_LANGFUSE_VERSION:-16-alpine}"
+  printf 'LANGFUSE_VERSION=%s\n' "${LANGFUSE_VERSION:-3.85.0}"
+  printf 'LANGFUSE_WORKER_VERSION=%s\n' "${LANGFUSE_WORKER_VERSION:-3.85.0}"
+  printf '\n'
+  printf '# ERPNEXT Stack\n'
+  printf 'ERPNEXT_VERSION=%s\n' "${ERPNEXT_VERSION:-v15.91.3}"
+  printf 'MARIADB_VERSION=%s\n' "${MARIADB_VERSION:-10.8.8}"
+  printf 'REDIS_ERPNEXT_VERSION=%s\n' "${REDIS_ERPNEXT_VERSION:-6.2.21-alpine}"
+  printf '\n'
+  printf '# Utilities\n'
+  printf 'BUSYBOX_VERSION=%s\n' "${BUSYBOX_VERSION:-1.36.1}"
   printf 'PGVECTOR_TAG=%s\n' "${PGVECTOR_TAG:-pg16}"
   printf '\n'
   printf '# PostgreSQL Alice\n'

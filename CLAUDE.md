@@ -306,6 +306,59 @@ Push to main → CI Validation → Release (auto) → Deploy Modular (auto)
 - **SOLUÇÃO**: Dockerfile.postgres compila pgvector com `-march=x86-64-v3` (AVX/AVX2, sem AVX-512)
 - **VALIDAÇÃO**: Smoke test no CI (release.yml) testa operações pgvector antes do push
 
+### Versionamento SSOT - Single Source of Truth (07/01/2026)
+
+**Arquivo Central:** `infra/versions.env` ⭐
+
+Todas as versões de imagens Docker públicas são centralizadas em um único arquivo:
+
+| Stack | Variáveis | Descrição |
+|-------|-----------|-----------|
+| **INFRA** | `REDIS_ALICE_VERSION`, `QDRANT_VERSION`, `SEARXNG_VERSION`, `MINIO_*` | Infra base |
+| **OBSERVABILITY** | `PROMETHEUS_VERSION`, `GRAFANA_VERSION`, `LOKI_VERSION`, `LANGFUSE_*`, etc | Métricas/Logs |
+| **ERPNEXT** | `ERPNEXT_VERSION`, `MARIADB_VERSION`, `REDIS_ERPNEXT_VERSION` | ERP isolado |
+
+**Arquitetura SSOT:**
+```
+infra/versions.env (SSOT)
+        ↓
+docker-compose.*.yml (usa ${VAR:-default})
+        ↓
+deploy-stack-modular.yml (valida imagens via SSOT)
+        ↓
+generate-env-prod.sh (gera .env.prod com versões)
+```
+
+**Benefícios Enterprise:**
+- ✅ **Consistência**: Versões definidas em um único lugar
+- ✅ **Validação CI/CD**: Deploy valida imagens públicas ANTES de fazer deploy
+- ✅ **Dependabot**: Atualiza versões automaticamente via PRs
+- ✅ **Auditoria**: Git history mostra todas as mudanças de versão
+- ✅ **Fallbacks**: Docker-compose usa `${VAR:-default}` para robustez
+
+**REGRA 6 CLAUDE.md**: Proibido hardcoded. Todas as versões DEVEM vir do `versions.env`.
+
+### MinIO Object Storage - Migração Enterprise (07/01/2026)
+
+| Aspecto | Detalhes |
+|---------|----------|
+| **Mudança Crítica** | MinIO descontinuou imagens oficiais Docker Hub em 23/10/2025 |
+| **Solução Enterprise** | Migração para **Quay.io MinIO** (registro oficial mantido) |
+| **Registry Novo** | `quay.io/minio/minio:latest` |
+| **MinIO Client** | `quay.io/minio/mc:latest` |
+
+**Variáveis no SSOT (`versions.env`):**
+```bash
+MINIO_IMAGE=quay.io/minio/minio
+MINIO_VERSION=latest
+MINIO_MC_IMAGE=quay.io/minio/mc
+MINIO_MC_VERSION=latest
+```
+
+**Referências:**
+- https://quay.io/repository/minio/minio
+- https://min.io/docs/minio/container/index.html
+
 ## URLs de Produção
 | Serviço | URL | Descrição |
 |---------|-----|-----------|

@@ -509,6 +509,60 @@ ssh alice-prod
 | **IP** | 178.63.41.108 |
 | **Localização** | Hetzner Cloud |
 
+### Self-Hosted Runner (Deploy Server)
+
+O pipeline Alice usa **100% self-hosted runner** (Hetzner CPX32 - 4 vCPU, 8GB RAM) seguindo melhores práticas enterprise 2025.
+
+**Arquitetura de Runners:**
+
+| Tipo de Job | Runner | Motivo |
+|-------------|--------|--------|
+| **CI/Tests** | Self-hosted (`[self-hosted, linux, deploy]`) | Controle total, compliance |
+| **Builds Docker** | Self-hosted (`[self-hosted, linux, deploy]`) | Recursos dedicados, sem rate limits |
+| **Security Scans** | Self-hosted (`[self-hosted, linux, deploy]`) | Isolamento na infra própria |
+| **Deploy** | Self-hosted (`[self-hosted, linux, deploy]`) | Acesso SSH ao servidor de produção |
+
+**Verificar Status do Runner:**
+
+```bash
+# Conectar ao Deploy Server
+ssh alice-hetzner
+
+# Verificar se o runner está rodando
+systemctl status actions.runner.fillipeguerrabtc-alice.*.service
+
+# Ver logs do runner
+journalctl -u actions.runner.fillipeguerrabtc-alice.*.service -f
+
+# Verificar labels (deve ter: self-hosted, linux, deploy)
+cat /opt/actions-runner/.runner
+```
+
+**Verificar no GitHub:**
+1. Acesse: `https://github.com/fillipeguerrabtc/alice/settings/actions/runners`
+2. Verifique se há um runner **ativo** com labels: `self-hosted`, `linux`, `deploy`
+3. Status deve ser **"Online"** (verde)
+
+**Enterprise Hardening Aplicado:**
+
+| Categoria | Configuração |
+|-----------|--------------|
+| **Kernel** | `net.core.rmem_max=16MB`, `vm.swappiness=10`, `fs.inotify.max_user_watches=524288` |
+| **Docker** | BuildKit, `max-concurrent-downloads=10`, `builder.gc.defaultKeepStorage=20GB` |
+| **Limits** | `nofile=1048576`, `nproc=65535`, `memlock=unlimited` |
+| **Systemd** | `NODE_OPTIONS=--max-old-space-size=6144` (6GB), `Nice=-5` |
+| **Cron** | Limpeza diária 3h: Docker cache, workspaces antigos, logs |
+
+**Se Runner Offline:**
+
+```bash
+# Reiniciar o runner
+systemctl restart actions.runner.fillipeguerrabtc-alice.*.service
+
+# Verificar logs para diagnóstico
+journalctl -u actions.runner.fillipeguerrabtc-alice.*.service -n 50
+```
+
 ### 6. Configurar Servidor Hetzner (Primeira vez)
 
 ```bash
@@ -853,6 +907,48 @@ O workflow de release (`release.yml`) suporta versionamento automático baseado 
 - Builds só acontecem quando há mudanças relevantes nos arquivos do serviço
 - Retagging automático quando não há mudanças (evita rebuilds desnecessários)
 - Cache de registry (GHCR) mantido por imagem para builds mais rápidos
+
+### Single Source of Truth - SSOT (07/01/2026)
+
+**Arquivo Central:** `infra/versions.env`
+
+Todas as versões de imagens Docker públicas são centralizadas em um único arquivo SSOT:
+
+```bash
+# INFRA Stack
+REDIS_ALICE_VERSION=7.4.7-alpine
+QDRANT_VERSION=v1.16.2
+SEARXNG_VERSION=2025.12.30-a5c946a32
+MINIO_IMAGE=quay.io/minio/minio
+MINIO_VERSION=latest
+
+# OBSERVABILITY Stack
+PROMETHEUS_VERSION=v3.8.1
+GRAFANA_VERSION=12.3.1
+LANGFUSE_VERSION=3.85.0
+# ... mais variáveis
+
+# ERPNEXT Stack
+ERPNEXT_VERSION=v15.91.3
+MARIADB_VERSION=10.8.8
+REDIS_ERPNEXT_VERSION=6.2.21-alpine
+```
+
+**Fluxo de Versionamento:**
+1. **versions.env** define todas as versões (SSOT)
+2. **docker-compose.*.yml** usam `${VAR:-default}` para referenciar
+3. **deploy-stack-modular.yml** valida existência das imagens públicas ANTES do deploy
+4. **generate-env-prod.sh** gera `.env.prod` com todas as versões para o servidor
+
+**Validação de Imagens Públicas (07/01/2026):**
+- Deploy valida todas as imagens públicas via `docker manifest inspect`
+- Fail-fast: detecta imagens inexistentes no CI, não no servidor de produção
+- Evita falhas de deploy por imagens descontinuadas (ex: MinIO Docker Hub)
+
+**Dependabot (07/01/2026):**
+- `.github/dependabot.yml` monitora atualizações de dependências
+- Cria PRs automaticamente para: GitHub Actions, npm, Docker, pip
+- Atualização semanal (segundas-feiras 08:00 BRT)
 
 **Reutilização de tags:**
 - Se uma tag já existe e aponta para o mesmo commit atual, ela é reutilizada automaticamente (útil para rollbacks)
