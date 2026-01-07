@@ -45,6 +45,9 @@ readonly YELLOW='\033[1;33m'
 readonly BLUE='\033[0;34m'
 readonly NC='\033[0m' # No Color
 
+# Constantes de validação
+readonly MAX_WRONG_FILES_DISPLAY=5  # Máximo de arquivos incorretos a mostrar por diretório
+
 # Modo de operação
 MODE=""
 
@@ -233,8 +236,7 @@ create_mode() {
         # Se houver arquivos de deploy anterior com UID errado, eles serão corrigidos
         # Exemplo: PostgreSQL com base/, global/, pg_wal/ de UID root
         # NOTA DE PERFORMANCE: Em diretórios grandes (ex: PostgreSQL com 10GB+ de dados),
-        # chown -R pode demorar. Isso é esperado e necessário para garantir que TODOS
-        # os arquivos tenham UID correto. Tempo estimado: ~5-10s por GB de dados.
+        # chown -R pode demorar. O tempo varia conforme tipo de storage (SSD vs HDD vs rede).
         if [[ "$current_uid" != "$uid" ]] || [[ "$current_gid" != "$gid" ]]; then
             log_info "  ⏳ Ajustando ownership recursivo (pode demorar em diretórios grandes)..."
             if chown -R "${uid}:${gid}" "$path" 2>/dev/null; then
@@ -360,14 +362,15 @@ validate_all_directories_have_correct_ownership() {
         # Verificar se TODOS os arquivos dentro têm UID/GID correto
         # Usa find para procurar arquivos que NÃO tenham o UID ou GID esperado
         local wrong_files
-        wrong_files=$(find "$path" \( ! -user "$uid" -o ! -group "$gid" \) 2>/dev/null | head -5)
+        wrong_files=$(find "$path" \( ! -user "$uid" -o ! -group "$gid" \) 2>/dev/null | head -n "$MAX_WRONG_FILES_DISPLAY")
         
         if [[ -n "$wrong_files" ]]; then
             log_error "  ❌ Arquivos com ownership incorreto em ${path}:"
             echo "$wrong_files" | while read -r file; do
-                local file_uid file_gid
-                file_uid=$(stat -c '%u' "$file" 2>/dev/null || stat -f '%u' "$file")
-                file_gid=$(stat -c '%g' "$file" 2>/dev/null || stat -f '%g' "$file")
+                # Otimização: stat uma única vez e captura ambos UID e GID
+                local stat_output
+                stat_output=$(stat -c '%u:%g' "$file" 2>/dev/null || stat -f '%u:%g' "$file" 2>/dev/null || echo "?:?")
+                IFS=':' read -r file_uid file_gid <<< "$stat_output"
                 log_warning "    ${file} (UID: ${file_uid}, GID: ${file_gid}) - esperado (UID: ${uid}, GID: ${gid})"
             done
             ((errors++))
