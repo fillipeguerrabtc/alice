@@ -669,6 +669,107 @@ jobs:
             echo "   ✓ $f"
           done
 
+      - name: Limpar diretórios incorretos no servidor (PRÉ-SCP)
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            set -euo pipefail
+            # =================================================================
+            # CORREÇÃO CRÍTICA: Limpar ANTES do SCP (não depois)
+            # =================================================================
+            # PROBLEMA: SCP pode falhar se destino já é diretório
+            # SOLUÇÃO: Limpar diretórios incorretos ANTES de copiar (fail-safe)
+            # REF: CLAUDE.md Regra 9 (Validação contínua), Regra 16 (Idempotência)
+            # DATA: 08/01/2026
+            # =================================================================
+            echo "🧹 Limpando diretórios incorretos no servidor (PRÉ-SCP)..."
+            
+            # Lista de caminhos que DEVEM ser arquivos (não diretórios)
+            CRITICAL_PATHS=(
+              "/opt/alice/app/infra/observability/otel-collector/config.yaml"
+              "/opt/alice/app/infra/docker/Caddyfile"
+              "/opt/alice/app/infra/docker/vector.toml"
+              "/opt/alice/app/infra/observability/grafana/provisioning/datasources/datasources.yml"
+              "/opt/alice/app/infra/observability/prometheus.yml"
+            )
+            
+            REMOVED_COUNT=0
+            for path in "${CRITICAL_PATHS[@]}"; do
+              if [ -d "$path" ]; then
+                echo "   🗑️  REMOVENDO diretório incorreto: $path"
+                rm -rf "$path"
+                REMOVED_COUNT=$((REMOVED_COUNT + 1))
+              fi
+            done
+            
+            if [ $REMOVED_COUNT -gt 0 ]; then
+              echo "✅ Removidos $REMOVED_COUNT diretório(s) incorreto(s)"
+            else
+              echo "✅ Nenhum diretório incorreto encontrado (servidor limpo)"
+            fi
+
+      - name: Preparar servidor de produção (ANTES do SCP)
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          command_timeout: 5m
+          script: |
+            set -euo pipefail
+            # =================================================================
+            # CORREÇÃO #8: Preparar servidor ANTES do SCP (Enterprise-grade)
+            # =================================================================
+            # PROBLEMA: Script rodava APÓS SCP → se SCP falhasse, servidor nunca era preparado
+            # SOLUÇÃO: Mover preparação para ANTES do SCP → servidor pronto antes de copiar
+            # BENEFÍCIO: Primeiro deploy funciona automaticamente (zero intervenção manual)
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 16 (Idempotência)
+            # DATA: 08/01/2026
+            # =================================================================
+            
+            # ATENÇÃO: Este step roda ANTES do SCP, então o script ainda NÃO está no servidor.
+            # Solução: Baixar script direto do GitHub (public repo) e executar.
+            
+            echo "🚀 Preparando servidor de produção (antes do SCP)..."
+            
+            # Criar diretório temporário
+            TMPDIR=$(mktemp -d)
+            cd "$TMPDIR"
+            
+            # Baixar script do GitHub (tag específica)
+            TAG="${{ needs.validate.outputs.version }}"
+            SCRIPT_URL="https://raw.githubusercontent.com/fillipeguerrabtc/alice/${TAG}/infra/scripts/prepare-production-server.sh"
+            
+            echo "📥 Baixando script de preparação do GitHub..."
+            echo "   URL: $SCRIPT_URL"
+            
+            if ! curl -fsSL "$SCRIPT_URL" -o prepare-production-server.sh; then
+              echo "::error::❌ ERRO: Falha ao baixar script de preparação do GitHub"
+              echo "::error::Verifique se a tag $TAG existe e o script está no caminho correto."
+              exit 1
+            fi
+            
+            # Validar que script não está vazio
+            if [ ! -s prepare-production-server.sh ]; then
+              echo "::error::❌ ERRO: Script baixado está vazio!"
+              exit 1
+            fi
+            
+            # Executar script com sudo (requer permissões para criar diretórios e alterar ownership)
+            chmod +x prepare-production-server.sh
+            sudo ./prepare-production-server.sh
+            
+            # Limpar temporário
+            cd /
+            rm -rf "$TMPDIR"
+            
+            echo "✅ Servidor preparado com sucesso (ANTES do SCP)"
+
       - name: Sincronizar código e configs para servidor
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -676,7 +777,7 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          source: "infra/docker/stacks/,infra/docker/Caddyfile,infra/docker/postgres-init/,infra/docker/vector.toml,infra/observability/,infra/versions.env,infra/scripts/,drizzle.config.ts,shared/,packages/,migrations/,package.json,pnpm-lock.yaml,pnpm-workspace.yaml"
+          source: "infra/docker/stacks,infra/docker/Caddyfile,infra/docker/postgres-init,infra/docker/vector.toml,infra/observability,infra/versions.env,infra/scripts,drizzle.config.ts,shared,packages,migrations,package.json,pnpm-lock.yaml,pnpm-workspace.yaml"
           target: "/opt/alice/app"
           strip_components: 0
           overwrite: true
@@ -703,67 +804,6 @@ jobs:
             chmod 600 /opt/alice/app/infra/docker/.env.prod
             chown root:root /opt/alice/app/infra/docker/.env.prod
             echo "✅ Permissões do .env.prod restringidas para 600 no servidor"
-
-      - name: Limpar e validar arquivos de configuração críticos
-        uses: appleboy/ssh-action@v1.2.2
-        with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
-          script: |
-            set -euo pipefail
-            # =================================================================
-            # CORREÇÃO CRÍTICA: Limpar configs que podem ter sido criados como diretórios
-            # =================================================================
-            # PROBLEMA: SCP pode criar diretórios ao invés de arquivos se destino já existia
-            # SOLUÇÃO: Limpar diretórios incorretos ANTES de validar
-            # REF: CLAUDE.md Regra 9 (Validação contínua)
-            # =================================================================
-            echo "🧹 Limpando configs que podem ter sido criados como diretórios..."
-            
-            # Lista de arquivos críticos que DEVEM ser arquivos (não diretórios)
-            CRITICAL_FILES=(
-              "/opt/alice/app/infra/observability/otel-collector/config.yaml"
-              "/opt/alice/app/infra/docker/Caddyfile"
-              "/opt/alice/app/infra/docker/vector.toml"
-              "/opt/alice/app/infra/observability/grafana/provisioning/datasources/datasources.yml"
-              "/opt/alice/app/infra/observability/prometheus.yml"
-            )
-            
-            for f in "${CRITICAL_FILES[@]}"; do
-              if [ -d "$f" ]; then
-                echo "   🗑️  REMOVENDO diretório incorreto: $f"
-                rm -rf "$f"
-              fi
-            done
-            
-            echo ""
-            echo "🔍 Validando que arquivos críticos são ARQUIVOS (não diretórios)..."
-            
-            FAILED_FILES=()
-            for f in "${CRITICAL_FILES[@]}"; do
-              if [ ! -f "$f" ]; then
-                echo "   ❌ $f - NÃO é um arquivo válido"
-                FAILED_FILES+=("$f")
-              else
-                echo "   ✅ $f - arquivo válido"
-              fi
-            done
-            
-            if [ ${#FAILED_FILES[@]} -gt 0 ]; then
-              echo ""
-              echo "::error::❌ ERRO CRÍTICO: ${#FAILED_FILES[@]} arquivo(s) não encontrado(s) ou não é arquivo:"
-              printf '   - %s\n' "${FAILED_FILES[@]}"
-              echo ""
-              echo "Possíveis causas:"
-              echo "  1. SCP falhou ao copiar o arquivo"
-              echo "  2. Arquivo foi criado como diretório em deploy anterior"
-              echo "  3. Caminho incorreto no source do SCP"
-              exit 1
-            fi
-            
-            echo "✅ Todos os arquivos críticos validados com sucesso"
 
       - name: Validar servidor de produção (fail-fast)
         uses: appleboy/ssh-action@v1.2.2
@@ -828,34 +868,6 @@ jobs:
             echo "   ✅ Docker com GPU funcionando"
             echo ""
             echo "✅ Validação do servidor de produção OK (GPU disponível)"
-
-      - name: Executar script de preparação do servidor (idempotente)
-        uses: appleboy/ssh-action@v1.2.2
-        with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
-          command_timeout: 5m
-          script: |
-            set -euo pipefail
-            # =================================================================
-            # CORREÇÃO #7: Script de preparação idempotente
-            # =================================================================
-            # PROPÓSITO: Preparar servidor automaticamente com estrutura completa
-            # BENEFÍCIO: Servidor limpo → pronto para deploy em um único comando
-            # REF: CLAUDE.md Regra 16 (Idempotência, fail-fast)
-            # =================================================================
-            
-            if [ -f /opt/alice/app/infra/scripts/prepare-production-server.sh ]; then
-              echo "🚀 Executando script de preparação do servidor..."
-              chmod +x /opt/alice/app/infra/scripts/prepare-production-server.sh
-              sudo /opt/alice/app/infra/scripts/prepare-production-server.sh
-            else
-              echo "⚠️  Script de preparação não encontrado (primeiro deploy?)"
-              echo "   O script será executado na próxima vez"
-              echo "   Continuando com preparação manual inline..."
-            fi
 
       - name: Preparar infraestrutura base (networks, volumes, permissões)
         uses: appleboy/ssh-action@v1.2.2
