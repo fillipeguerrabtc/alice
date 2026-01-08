@@ -1213,20 +1213,37 @@ jobs:
             POSTGRES_DIR="/opt/alice/data/postgres"
             
             if [ -d "$POSTGRES_DIR" ]; then
-              # Remover PID lock file (previne "another server might be running")
+              # =================================================================
+              # CORREÇÃO BUG 1 (08/01/2026): Rastrear arquivos ANTES de deletar
+              # O tracking deve ocorrer ANTES da deleção para mensagem correta
+              # Ref: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Mudanças cirúrgicas)
+              # =================================================================
+              
+              # Rastrear ANTES de deletar
+              PID_FILE_FOUND=0
+              SOCKET_COUNT=0
+              
+              # Verificar PID lock file
               if [ -f "$POSTGRES_DIR/postmaster.pid" ]; then
+                PID_FILE_FOUND=1
+              fi
+              
+              # Contar Unix socket files
+              SOCKET_COUNT=$(sudo find "$POSTGRES_DIR" -name ".s.PGSQL.*" 2>/dev/null | wc -l)
+              
+              # Agora sim, deletar os arquivos encontrados
+              if [ $PID_FILE_FOUND -eq 1 ]; then
                 echo "   🔒 Removendo postmaster.pid"
                 sudo rm -f "$POSTGRES_DIR/postmaster.pid"
               fi
               
-              # Remover Unix socket files
-              SOCKET_COUNT=$(sudo find "$POSTGRES_DIR" -name ".s.PGSQL.*" 2>/dev/null | wc -l)
               if [ $SOCKET_COUNT -gt 0 ]; then
                 echo "   🔌 Removendo $SOCKET_COUNT socket file(s)"
                 sudo rm -f "$POSTGRES_DIR/.s.PGSQL."*
               fi
               
-              if [ -f "$POSTGRES_DIR/postmaster.pid" ] || [ $SOCKET_COUNT -gt 0 ]; then
+              # Usar tracking feito ANTES da deleção para mensagem correta
+              if [ $PID_FILE_FOUND -eq 1 ] || [ $SOCKET_COUNT -gt 0 ]; then
                 echo "✅ Lock files e sockets limpos"
               else
                 echo "✅ Nenhum lock file encontrado (servidor limpo)"
@@ -1716,38 +1733,63 @@ jobs:
             echo "   ✅ Removed $REMOVED_COUNT containers"
             
             # =========================================================
-            # STAGE 3: Prune Temporary Volumes (NOT persistent data)
+            # STAGE 3: Preservar Volumes de Dados (CRITICAL)
+            # =========================================================
+            # CORREÇÃO BUG 2 (08/01/2026): NÃO usar docker volume prune
+            # =========================================================
+            # PROBLEMA: `docker volume prune --filter "label!=external"` NÃO funciona
+            # porque `external: true` no Docker Compose é uma DIRETIVA, não um label Docker.
+            # O prune genérico poderia APAGAR volumes de dados persistentes!
+            #
+            # SOLUÇÃO ENTERPRISE (Regra 6 CLAUDE.md):
+            # - NÃO fazer volume prune automático
+            # - Volumes são bind mounts para /opt/alice/ (host filesystem)
+            # - Remoção de containers é suficiente - volumes persistem automaticamente
+            # - Se necessário limpar volumes órfãos: docker volume ls --filter "dangling=true"
+            #
+            # VOLUMES PRESERVADOS:
+            # - postgres_data, alice_redis_data, qdrant_data, minio_data, caddy_data
+            # - Todos são bind mounts em /opt/alice/data/*
             # =========================================================
             echo ""
-            echo "🧹 Stage 3: Pruning temporary volumes..."
-            
-            # CRITICAL: Only remove volumes without external: true
-            # Persistent data volumes (postgres_data, etc.) are PRESERVED
-            docker volume prune -f --filter "label!=external" 2>&1 || true
-            echo "   ✅ Temporary volumes pruned"
+            echo "🛡️  Stage 3: Preservando volumes de dados persistentes..."
+            echo "   ℹ️  Volumes são bind mounts para /opt/alice/data/"
+            echo "   ℹ️  Dados persistem automaticamente (sem prune automático)"
+            echo "   ✅ Volumes de dados protegidos"
             
             # =========================================================
             # STAGE 4: Validate Clean State
             # =========================================================
+            # CORREÇÃO BUG 4 (08/01/2026): Validar TODOS containers do Stage 2
+            # =========================================================
             echo ""
             echo "🧪 Stage 4: Validating clean state..."
             
+            # Lista DEVE corresponder EXATAMENTE aos containers do INFRA_CONTAINERS (Stage 2)
             REMAINING=$(docker ps -a --filter "name=alice-postgres" \
+                                     --filter "name=alice-pgbouncer" \
                                      --filter "name=alice-redis" \
                                      --filter "name=alice-qdrant" \
+                                     --filter "name=alice-tor" \
+                                     --filter "name=alice-searxng" \
                                      --filter "name=alice-caddy" \
                                      --filter "name=alice-minio" \
-                                     --filter "name=alice-pgbouncer" \
+                                     --filter "name=alice-minio-init" \
+                                     --filter "name=alice-pgbackrest-init" \
                                      -q | wc -l)
             
             if [ $REMAINING -gt 0 ]; then
               echo "   ⚠️  WARNING: $REMAINING INFRA containers still present"
               docker ps -a --filter "name=alice-postgres" \
+                          --filter "name=alice-pgbouncer" \
                           --filter "name=alice-redis" \
                           --filter "name=alice-qdrant" \
+                          --filter "name=alice-tor" \
+                          --filter "name=alice-searxng" \
                           --filter "name=alice-caddy" \
                           --filter "name=alice-minio" \
-                          --filter "name=alice-pgbouncer" \
+                          --filter "name=alice-minio-init" \
+                          --filter "name=alice-pgbackrest-init" \
                           --format "table {{.Names}}\t{{.Status}}"
             else
               echo "   ✅ All INFRA containers cleaned"
@@ -2085,18 +2127,32 @@ jobs:
             done
             echo "   ✅ Removed $REMOVED_COUNT containers"
             
-            # STAGE 3: Prune temporary volumes
+            # =========================================================
+            # STAGE 3: Preservar Volumes de Dados (CRITICAL)
+            # =========================================================
+            # CORREÇÃO BUG 2 (08/01/2026): NÃO usar docker volume prune
+            # Ver comentários no rollback-infra para detalhes completos
+            # =========================================================
             echo ""
-            echo "🧹 Stage 3: Pruning temporary volumes..."
-            docker volume prune -f --filter "label!=external" 2>&1 || true
+            echo "🛡️  Stage 3: Preservando volumes de dados persistentes..."
+            echo "   ℹ️  Volumes são bind mounts para /opt/alice/data/"
+            echo "   ✅ Volumes de dados protegidos"
             
+            # =========================================================
             # STAGE 4: Validate clean state
+            # =========================================================
+            # CORREÇÃO BUG 4 (08/01/2026): Validar TODOS containers removidos no Stage 2
+            # =========================================================
             echo ""
             echo "🧪 Stage 4: Validating clean state..."
             REMAINING=$(docker ps -a --filter "name=alice-frontend" \
-                                     --filter "name=alice-auth" \
-                                     --filter "name=alice-chat" \
-                                     --filter "name=alice-rag" \
+                                     --filter "name=alice-auth-service" \
+                                     --filter "name=alice-chat-service" \
+                                     --filter "name=alice-rag-service" \
+                                     --filter "name=alice-training-service" \
+                                     --filter "name=alice-integrations-service" \
+                                     --filter "name=alice-observability-service" \
+                                     --filter "name=alice-gpu-manager" \
                                      -q | wc -l)
             if [ $REMAINING -eq 0 ]; then
               echo "   ✅ All ALICE containers cleaned"
@@ -2329,17 +2385,37 @@ jobs:
             done
             echo "   ✅ Removed $REMOVED_COUNT containers"
             
-            # STAGE 3: Prune temporary volumes
+            # =========================================================
+            # STAGE 3: Preservar Volumes de Dados (CRITICAL)
+            # =========================================================
+            # CORREÇÃO BUG 2 (08/01/2026): NÃO usar docker volume prune
+            # Ver comentários no rollback-infra para detalhes completos
+            # =========================================================
             echo ""
-            echo "🧹 Stage 3: Pruning temporary volumes..."
-            docker volume prune -f --filter "label!=external" 2>&1 || true
+            echo "🛡️  Stage 3: Preservando volumes de dados persistentes..."
+            echo "   ℹ️  Volumes são bind mounts para /opt/alice/data/"
+            echo "   ✅ Volumes de dados protegidos"
             
+            # =========================================================
             # STAGE 4: Validate clean state
+            # =========================================================
+            # CORREÇÃO BUG 4 (08/01/2026): Validar TODOS containers removidos no Stage 2
+            # =========================================================
             echo ""
             echo "🧪 Stage 4: Validating clean state..."
             REMAINING=$(docker ps -a --filter "name=alice-prometheus" \
                                      --filter "name=alice-grafana" \
-                                     --filter "name=alice-langfuse" \
+                                     --filter "name=alice-loki" \
+                                     --filter "name=alice-promtail" \
+                                     --filter "name=alice-jaeger" \
+                                     --filter "name=alice-langfuse-web" \
+                                     --filter "name=alice-langfuse-worker" \
+                                     --filter "name=alice-langfuse-db" \
+                                     --filter "name=alice-clickhouse" \
+                                     --filter "name=alice-vector" \
+                                     --filter "name=alice-otel-collector" \
+                                     --filter "name=alice-node-exporter" \
+                                     --filter "name=alice-cadvisor" \
                                      -q | wc -l)
             if [ $REMAINING -eq 0 ]; then
               echo "   ✅ All OBSERVABILITY containers cleaned"

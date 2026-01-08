@@ -320,10 +320,23 @@ services:
           fi
           
           exit 0
+      # =================================================================
+      # CORREÇÃO BUG 3 (08/01/2026): Comentários corrigidos para refletir valores reais
+      # =================================================================
+      # ANÁLISE: Janela de tempo para health checks
+      # - ANTES: start_period=240s + (30 retries × 10s interval) = ~540s total
+      # - AGORA: start_period=120s + (10 retries × 10s interval × 90s timeout) = ~220s a ~1020s
+      #
+      # timeout AUMENTOU: 10s → 90s (mais tempo por tentativa individual)
+      # retries DIMINUIU: 30 → 10 (menos tentativas, mas cada uma com mais tempo)
+      # start_period DIMINUIU: 240s → 120s (menos grace period)
+      #
+      # REF: Regra 5 CLAUDE.md (Honestidade - não mentir sobre o que mudou)
+      # =================================================================
       interval: 10s
-      timeout: 90s        # INCREASED: from 10s (first initdb takes longer)
-      retries: 10         # INCREASED: from 30
-      start_period: 120s  # CRITICAL: Give 2min grace period for first initialization
+      timeout: 90s        # CHANGED: 10s → 90s (mais tempo por tentativa para initdb lento)
+      retries: 10         # CHANGED: 30 → 10 (menos tentativas, mas cada uma tem 90s de timeout)
+      start_period: 120s  # CHANGED: 240s → 120s (ajustado para fluxo de 3 estágios)
     deploy:
       resources:
         limits:
