@@ -181,7 +181,7 @@ echo "   ✅ Diretórios de logs criados"
 echo "📝 Criando diretórios de uploads e backups..."
 mkdir -p /opt/alice/uploads/training
 mkdir -p /opt/alice/backups/postgresql
-mkdir -p /opt/alice/backups/postgresql/logs
+# NOTA: postgresql/logs será criado pelo container pgBackRest conforme necessário
 mkdir -p /opt/alice/backups/manifests
 echo "   ✅ Diretórios de uploads e backups criados"
 
@@ -273,11 +273,12 @@ sudo chown -R 1000:1000 /opt/alice/data/erpnext-sites /opt/alice/logs/erpnext
 sudo chmod 755 /opt/alice/data/erpnext-sites /opt/alice/logs/erpnext
 echo "   ✅ ERPNext configurado"
 
-# Backups (root com permissões restritas)
-echo "📝 Backups..."
+# Backups PostgreSQL (UID 999 - postgres user)
+echo "📝 Backups PostgreSQL (UID 999)..."
+sudo chown -R 999:999 /opt/alice/backups/postgresql
 sudo chmod 750 /opt/alice/backups
 sudo chmod 750 /opt/alice/backups/postgresql
-echo "   ✅ Backups configurado"
+echo "   ✅ Backups PostgreSQL configurado"
 
 # Uploads (para RAG multimodal)
 echo "📝 Uploads..."
