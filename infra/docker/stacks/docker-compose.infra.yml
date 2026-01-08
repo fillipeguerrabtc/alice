@@ -200,6 +200,10 @@ services:
   # ===========================================================================
   # PGBACKREST INIT - Cria stanza APÓS PostgreSQL iniciar
   # ===========================================================================
+  # NOTA (08/01/2026): pg1-host OBRIGATÓRIO para conexão TCP entre containers
+  # Sem pg1-host, pgBackRest tenta socket Unix que não existe em container separado
+  # Ref: https://pgbackrest.org/configuration.html#section-stanza/option-pg-host
+  # ===========================================================================
   pgbackrest-init:
     image: ${IMAGE_PREFIX}-pgbackrest:${IMAGE_TAG:-latest}
     platform: linux/amd64
@@ -214,6 +218,15 @@ services:
       postgres:
         condition: service_healthy
     environment:
+      # Conexão TCP com PostgreSQL (OBRIGATÓRIO para containers separados)
+      # Ref: https://pgbackrest.org/configuration.html#section-stanza/option-pg-host
+      PGBACKREST_PG1_HOST: postgres
+      PGBACKREST_PG1_PORT: 5432
+      PGBACKREST_PG1_DATABASE: ${POSTGRES_DB:-alice_prod}
+      PGBACKREST_PG1_USER: ${POSTGRES_USER:-alice}
+      # Autenticação PostgreSQL via libpq (usado para verificar cluster)
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      # Configuração do repositório
       PGBACKREST_REPO1_PATH: /var/lib/pgbackrest
       PGBACKREST_REPO1_CIPHER_TYPE: aes-256-cbc
       PGBACKREST_REPO1_CIPHER_PASS: ${BACKUP_CIPHER_PASS}
@@ -304,6 +317,7 @@ services:
   # ===========================================================================
   # Conforme PostgreSQL High Connections Guide 2025
   # Reduz conexões idle de ~50 para ~10, economia de ~400MB RAM
+  # Porta 6432 é a porta oficial do PgBouncer (pgbouncer.org)
   # ===========================================================================
   pgbouncer:
     image: ${PGBOUNCER_IMAGE:-edoburu/pgbouncer}:${PGBOUNCER_VERSION:-latest}
@@ -314,12 +328,15 @@ services:
       - no-new-privileges:true
     environment:
       # edoburu/pgbouncer environment variables (simpler than Bitnami)
+      # Ref: https://github.com/edoburu/docker-pgbouncer
       DB_HOST: postgres
       DB_PORT: 5432
       DB_USER: ${POSTGRES_USER:-alice}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
       DB_NAME: ${POSTGRES_DB:-alice_prod}
       # PgBouncer Configuration
+      # LISTEN_PORT: Porta oficial do PgBouncer conforme pgbouncer.org (não usar 5432 que é do PostgreSQL)
+      LISTEN_PORT: 6432
       POOL_MODE: transaction
       MAX_CLIENT_CONN: 200
       DEFAULT_POOL_SIZE: 20

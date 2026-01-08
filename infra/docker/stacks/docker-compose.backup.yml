@@ -46,6 +46,9 @@ services:
   # ===========================================================================
   # PGBACKREST - Backup Container
   # ===========================================================================
+  # NOTA (08/01/2026): pg1-host OBRIGATÓRIO para conexão TCP entre containers
+  # Ref: https://pgbackrest.org/configuration.html#section-stanza/option-pg-host
+  # ===========================================================================
   pgbackrest:
     image: ${IMAGE_PREFIX}-pgbackrest:${IMAGE_TAG:-latest}
     platform: linux/amd64
@@ -57,6 +60,15 @@ services:
     tmpfs:
       - /tmp:mode=1777,size=64M
     environment:
+      # Conexão TCP com PostgreSQL (OBRIGATÓRIO para containers separados)
+      # Ref: https://pgbackrest.org/configuration.html#section-stanza/option-pg-host
+      PGBACKREST_PG1_HOST: postgres
+      PGBACKREST_PG1_PORT: 5432
+      PGBACKREST_PG1_DATABASE: ${POSTGRES_DB:-alice_prod}
+      PGBACKREST_PG1_USER: ${POSTGRES_USER:-alice}
+      # Autenticação PostgreSQL via libpq (usado para verificar cluster)
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      # Configuração do stanza
       PGBACKREST_STANZA: alice_prod
       PGBACKREST_REPO1_PATH: /var/lib/pgbackrest
       PGBACKREST_REPO1_CIPHER_TYPE: aes-256-cbc
