@@ -306,29 +306,29 @@ services:
   # Reduz conexões idle de ~50 para ~10, economia de ~400MB RAM
   # ===========================================================================
   pgbouncer:
-    image: bitnami/pgbouncer:${PGBOUNCER_VERSION:-1.23.1}
+    image: ${PGBOUNCER_IMAGE:-edoburu/pgbouncer}:${PGBOUNCER_VERSION:-latest}
     platform: linux/amd64
     container_name: alice-pgbouncer
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
     environment:
-      POSTGRESQL_HOST: postgres
-      POSTGRESQL_PORT: 5432
-      POSTGRESQL_USERNAME: ${POSTGRES_USER:-alice}
-      POSTGRESQL_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRESQL_DATABASE: ${POSTGRES_DB:-alice_prod}
-      PGBOUNCER_DATABASE: ${POSTGRES_DB:-alice_prod}
-      PGBOUNCER_PORT: 6432
-      PGBOUNCER_POOL_MODE: transaction
-      PGBOUNCER_MAX_CLIENT_CONN: 200
-      PGBOUNCER_DEFAULT_POOL_SIZE: 20
-      PGBOUNCER_MIN_POOL_SIZE: 5
-      PGBOUNCER_RESERVE_POOL_SIZE: 5
-      PGBOUNCER_RESERVE_POOL_TIMEOUT: 3
-      PGBOUNCER_MAX_DB_CONNECTIONS: 50
-      PGBOUNCER_MAX_USER_CONNECTIONS: 50
-      PGBOUNCER_STATS_USERS: ${POSTGRES_USER:-alice}
+      # edoburu/pgbouncer environment variables (simpler than Bitnami)
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${POSTGRES_USER:-alice}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: ${POSTGRES_DB:-alice_prod}
+      # PgBouncer Configuration
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 200
+      DEFAULT_POOL_SIZE: 20
+      MIN_POOL_SIZE: 5
+      RESERVE_POOL_SIZE: 5
+      RESERVE_POOL_TIMEOUT: 3
+      MAX_DB_CONNECTIONS: 50
+      MAX_USER_CONNECTIONS: 50
+      ADMIN_USERS: ${POSTGRES_USER:-alice}
     ports:
       - "6432:6432"
     networks:

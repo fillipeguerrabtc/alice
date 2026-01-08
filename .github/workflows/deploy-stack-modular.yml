@@ -520,6 +520,7 @@ jobs:
             "qdrant/qdrant:${QDRANT_VERSION}"
             "${MINIO_IMAGE}:${MINIO_VERSION}"
             "${MINIO_MC_IMAGE}:${MINIO_MC_VERSION}"
+            "${PGBOUNCER_IMAGE}:${PGBOUNCER_VERSION}"
           )
           
           # OBSERVABILITY Stack (docker-compose.observability.yml)
@@ -588,12 +589,14 @@ jobs:
             echo "  1. Versão especificada não existe no registry"
             echo "  2. Registry descontinuou a imagem"
             echo "  3. Typo na tag da imagem"
+            echo "  4. Bitnami descontinuou imagens FREE em Out/2025 (migramos para edoburu/pgbouncer)"
             echo ""
             echo "Ações corretivas:"
             echo "  1. Verificar docker-compose files para versões corretas"
             echo "  2. Consultar registries oficiais para tags disponíveis"
             echo "  3. Docker Hub: https://hub.docker.com"
             echo "  4. Quay.io: https://quay.io"
+            echo "  5. edoburu PgBouncer: https://hub.docker.com/r/edoburu/pgbouncer"
             exit 1
           fi
           
