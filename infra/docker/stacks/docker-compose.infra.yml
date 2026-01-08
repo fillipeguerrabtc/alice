@@ -306,17 +306,29 @@ services:
       test:
         - CMD-SHELL
         - |
+          # =================================================================
+          # CORREÇÃO 08/01/2026: Healthcheck com logging detalhado
+          # =================================================================
+          # PROBLEMA: Healthcheck falhava silenciosamente sem indicar causa
+          # SOLUÇÃO: Log detalhado de cada estágio para troubleshooting
+          # REF: CLAUDE.md Regra 9 (Validação contínua)
+          # =================================================================
+          
           # Estágio 1: PostgreSQL está aceitando conexões?
-          pg_isready -U ${POSTGRES_USER:-alice} -d ${POSTGRES_DB:-alice_prod} || exit 1
+          if ! pg_isready -U ${POSTGRES_USER:-alice} -d ${POSTGRES_DB:-alice_prod}; then
+            echo "HEALTHCHECK FAIL: PostgreSQL não está aceitando conexões" >&2
+            exit 1
+          fi
           
           # Estágio 2: Database existe e aceita queries?
-          psql -U ${POSTGRES_USER:-alice} -d ${POSTGRES_DB:-alice_prod} -tAc "SELECT 1;" | grep -q 1 || exit 1
+          if ! psql -U ${POSTGRES_USER:-alice} -d ${POSTGRES_DB:-alice_prod} -tAc "SELECT 1;" | grep -q 1; then
+            echo "HEALTHCHECK FAIL: Database não aceita queries" >&2
+            exit 1
+          fi
           
           # Estágio 3: Extensão vector está instalada? (SOFT CHECK - não falha em primeiro boot)
-          # Se falhar, retorna 0 para não bloquear healthcheck durante inicialização
           if ! psql -U ${POSTGRES_USER:-alice} -d ${POSTGRES_DB:-alice_prod} -tAc "SELECT 1 FROM pg_extension WHERE extname = 'vector';" | grep -q 1; then
-            # Log para debug mas não falha healthcheck
-            echo "WARNING: vector extension not found - may be initializing" >&2
+            echo "HEALTHCHECK WARN: vector extension not found - may be initializing" >&2
           fi
           
           exit 0

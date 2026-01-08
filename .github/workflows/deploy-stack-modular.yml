@@ -973,26 +973,92 @@ jobs:
             # =========================================================
             # 2. LOCK CLEANUP (ANTES de validações)
             # =========================================================
-            # CORREÇÃO 08/01/2026: Reordenar steps - lock cleanup ANTES de validações
-            # PROBLEMA: Lock files de deploys anteriores podem bloquear validações
-            # SOLUÇÃO: Cleanup ANTES para evitar false positives
-            # ORDEM ENTERPRISE: cleanup → create → validate
-            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 16 (Idempotência)
+            # 2. VALIDAR E CORRIGIR OWNERSHIP POSTGRESQL
             # =========================================================
-            # CORREÇÃO BUG #1 (PR#85 - 08/01/2026): Usar sudo test -f
-            # PROBLEMA ANTERIOR: [ -f ] sem sudo falhava silenciosamente porque
-            #                    diretório postgres tem modo 700 (owner-only access).
-            #                    Script reportava "Nenhum lock encontrado" mesmo
-            #                    quando lock existia (falso negativo).
-            # SOLUÇÃO: Usar "sudo test -f" para acesso privilegiado (consistente
-            #          com safety check posterior que já usa sudo test -f)
-            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Mudanças cirúrgicas)
+            # CORREÇÃO 08/01/2026: ROOT CAUSE #2 e #3 - Ownership validation
+            # PROBLEMA: Lock cleanup não validava ownership, causando Permission denied
+            # SOLUÇÃO: Validar e corrigir ownership ANTES de remover lock
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Root cause fix)
             # =========================================================
             echo ""
+            echo "🔒 Verificando e corrigindo ownership PostgreSQL..."
+            
+            POSTGRES_DIR="/opt/alice/data/postgres"
+            
+            # =================================================================
+            # CORREÇÃO ENTERPRISE (08/01/2026): Validar e corrigir ownership
+            # =================================================================
+            # PROBLEMA: Script só removia lock mas não validava ownership
+            # SOLUÇÃO: Validar ownership ANTES de remover lock
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Root cause)
+            # =================================================================
+            
+            # Função para validar e corrigir ownership (inline para evitar dependência de script externo)
+            fix_postgres_permissions() {
+              local dir="$1"
+              
+              # Criar se não existir
+              if [ ! -d "$dir" ]; then
+                echo "   📝 Criando diretório: $dir"
+                sudo mkdir -p "$dir"
+                sudo chown 999:999 "$dir"
+                sudo chmod 700 "$dir"
+                echo "   ✅ Diretório criado com ownership 999:999 e permissions 700"
+                return 0
+              fi
+              
+              # Diretório existe - verificar se está vazio OU tem ownership correto
+              local is_empty=false
+              if [ -z "$(sudo ls -A "$dir" 2>/dev/null)" ]; then
+                is_empty=true
+              fi
+              
+              local ACTUAL_OWNER
+              ACTUAL_OWNER=$(sudo stat -c "%u:%g" "$dir")
+              
+              # Se vazio ou ownership incorreto, corrigir
+              if [ "$is_empty" = true ] || [ "$ACTUAL_OWNER" != "999:999" ]; then
+                if [ "$is_empty" = true ]; then
+                  echo "   📝 Diretório vazio - configurando ownership..."
+                  sudo chown 999:999 "$dir"
+                else
+                  echo "   ⚠️  Ownership incorreto: $ACTUAL_OWNER → 999:999"
+                  echo "   🔧 CORREÇÃO: Aplicando chown -R 999:999 recursivamente..."
+                  
+                  # Corrigir ownership recursivamente (pode demorar em volumes grandes)
+                  if ! sudo chown -R 999:999 "$dir"; then
+                    echo "   ❌ Falha ao corrigir ownership!"
+                    return 1
+                  fi
+                  echo "   ✅ Ownership corrigido recursivamente"
+                fi
+              else
+                echo "   ✅ Ownership correto: 999:999"
+              fi
+              
+              # Validar e corrigir permissões
+              local ACTUAL_MODE
+              ACTUAL_MODE=$(sudo stat -c "%a" "$dir")
+              if [ "$ACTUAL_MODE" != "700" ]; then
+                echo "   🔧 Corrigindo permissions: $ACTUAL_MODE → 700"
+                sudo chmod 700 "$dir"
+              fi
+              
+              return 0
+            }
+            
+            # Executar correção
+            if ! fix_postgres_permissions "$POSTGRES_DIR"; then
+              echo "❌ ERRO CRÍTICO: Falha ao configurar diretório PostgreSQL"
+              exit 1
+            fi
+            
+            # APÓS corrigir ownership, remover lock se existir
+            echo ""
             echo "🔒 Verificando locks PostgreSQL..."
-            if sudo test -f "/opt/alice/data/postgres/postmaster.pid"; then
+            if sudo test -f "${POSTGRES_DIR}/postmaster.pid"; then
               echo "⚠️  Lock PostgreSQL detectado - removendo (safe durante deploy)"
-              sudo rm -f /opt/alice/data/postgres/postmaster.pid
+              sudo rm -f "${POSTGRES_DIR}/postmaster.pid"
               echo "✅ Lock removido"
             else
               echo "✅ Nenhum lock encontrado"
