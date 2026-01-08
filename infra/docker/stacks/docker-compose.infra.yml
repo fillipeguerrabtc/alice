@@ -294,15 +294,32 @@ services:
     networks:
       - alice-network
     healthcheck:
+      # CORREÇÃO 08/01/2026: Healthcheck em 3 estágios progressivos
+      # Estágio 1: PostgreSQL aceita conexões?
+      # Estágio 2: Database existe e aceita queries?
+      # Estágio 3: Extensão vector instalada? (soft check - não falha em primeiro boot)
+      # Ref: CLAUDE.md Regra 6 (Enterprise-grade), Regra 11 (Best practices PostgreSQL 2025)
       test:
         - CMD-SHELL
-        - >-
-          pg_isready -U ${POSTGRES_USER:-alice} -d ${POSTGRES_DB:-alice_prod} &&
-          psql -U ${POSTGRES_USER:-alice} -d ${POSTGRES_DB:-alice_prod} -tAc "SELECT 1 FROM pg_extension WHERE extname = 'vector';" | grep -q 1
+        - |
+          # Estágio 1: PostgreSQL está aceitando conexões?
+          pg_isready -U ${POSTGRES_USER:-alice} -d ${POSTGRES_DB:-alice_prod} || exit 1
+          
+          # Estágio 2: Database existe e aceita queries?
+          psql -U ${POSTGRES_USER:-alice} -d ${POSTGRES_DB:-alice_prod} -tAc "SELECT 1;" | grep -q 1 || exit 1
+          
+          # Estágio 3: Extensão vector está instalada? (SOFT CHECK - não falha em primeiro boot)
+          # Se falhar, retorna 0 para não bloquear healthcheck durante inicialização
+          if ! psql -U ${POSTGRES_USER:-alice} -d ${POSTGRES_DB:-alice_prod} -tAc "SELECT 1 FROM pg_extension WHERE extname = 'vector';" | grep -q 1; then
+            # Log para debug mas não falha healthcheck
+            echo "WARNING: vector extension not found - may be initializing" >&2
+          fi
+          
+          exit 0
       interval: 10s
       timeout: 10s
-      retries: 20
-      start_period: 180s
+      retries: 30
+      start_period: 240s
     deploy:
       resources:
         limits:

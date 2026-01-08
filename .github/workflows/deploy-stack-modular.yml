@@ -1039,6 +1039,144 @@ jobs:
     timeout-minutes: 15
     
     steps:
+      - name: Limpar containers parciais do deploy anterior (se existirem)
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          command_timeout: 5m
+          script: |
+            set -euo pipefail
+            # =================================================================
+            # CORREÇÃO 08/01/2026: Limpar containers parciais antes do deploy
+            # =================================================================
+            # PROBLEMA: Containers parciais de deploy anterior podem causar conflitos
+            # SOLUÇÃO: Parar e remover containers do stack INFRA antes de novo deploy
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 16 (Idempotência)
+            # =================================================================
+            echo "🧹 Limpando containers parciais do stack INFRA (se existirem)..."
+            
+            cd /opt/alice/app/infra/docker/stacks
+            
+            # Parar containers do stack INFRA (se existirem)
+            if docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.infra.yml ps -q 2>/dev/null | grep -q .; then
+              echo "   Parando containers existentes..."
+              docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.infra.yml down --remove-orphans 2>/dev/null || true
+            fi
+            
+            # Remover containers órfãos com nomes do stack INFRA
+            INFRA_CONTAINERS=(
+              "alice-postgres"
+              "alice-pgbouncer"
+              "alice-redis"
+              "alice-qdrant"
+              "alice-tor"
+              "alice-searxng"
+              "alice-caddy"
+              "alice-minio"
+              "alice-minio-init"
+              "alice-pgbackrest-init"
+            )
+            
+            REMOVED_COUNT=0
+            for container in "${INFRA_CONTAINERS[@]}"; do
+              if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
+                echo "   🗑️  Removendo container órfão: $container"
+                docker rm -f "$container" 2>/dev/null || true
+                REMOVED_COUNT=$((REMOVED_COUNT + 1))
+              fi
+            done
+            
+            if [ $REMOVED_COUNT -gt 0 ]; then
+              echo "✅ Removidos $REMOVED_COUNT container(s) órfão(s)"
+            else
+              echo "✅ Nenhum container órfão encontrado (servidor limpo)"
+            fi
+
+      - name: Validar estado do volume PostgreSQL (primeiro deploy)
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          command_timeout: 5m
+          script: |
+            set -euo pipefail
+            # =================================================================
+            # CORREÇÃO 08/01/2026: Validação pré-start do volume PostgreSQL
+            # =================================================================
+            # PROBLEMA: Volume pode ter ownership incorreto ou arquivos corrompidos
+            # SOLUÇÃO: Validar e corrigir ANTES de PostgreSQL iniciar
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 9 (Validação contínua)
+            # =================================================================
+            echo "🔍 Verificando estado do volume PostgreSQL..."
+            
+            POSTGRES_DIR="/opt/alice/data/postgres"
+            
+            # Se diretório não existe, criar com permissions corretas
+            if [ ! -d "$POSTGRES_DIR" ]; then
+              echo "📁 Criando $POSTGRES_DIR (primeiro deploy)"
+              sudo mkdir -p "$POSTGRES_DIR"
+              sudo chown 999:999 "$POSTGRES_DIR"
+              sudo chmod 700 "$POSTGRES_DIR"
+              echo "✅ Diretório criado com ownership 999:999 e permissions 700"
+              exit 0
+            fi
+            
+            # Diretório existe - verificar se está vazio OU tem ownership correto
+            if [ -z "$(ls -A "$POSTGRES_DIR")" ]; then
+              echo "✅ Diretório vazio (primeiro deploy limpo)"
+              
+              # Garantir ownership correto mesmo vazio
+              ACTUAL_OWNER=$(stat -c '%u:%g' "$POSTGRES_DIR")
+              if [ "$ACTUAL_OWNER" != "999:999" ]; then
+                echo "🔧 Corrigindo ownership de diretório vazio: $ACTUAL_OWNER → 999:999"
+                sudo chown 999:999 "$POSTGRES_DIR"
+              fi
+              
+              exit 0
+            fi
+            
+            # Diretório NÃO está vazio - validar ownership RECURSIVO
+            echo "⚠️  Diretório contém arquivos de deploy anterior"
+            echo "🔍 Validando ownership recursivo..."
+            
+            # Verificar se HÁ ALGUM arquivo com ownership errado
+            WRONG_FILES=$(sudo find "$POSTGRES_DIR" \( ! -user 999 -o ! -group 999 \) -print -quit 2>/dev/null)
+            
+            if [ -n "$WRONG_FILES" ]; then
+              echo "❌ ERRO CRÍTICO: Arquivos com ownership incorreto detectados!"
+              echo "   Primeiro arquivo incorreto: $WRONG_FILES"
+              echo ""
+              echo "   Listando primeiros 5 arquivos incorretos:"
+              sudo find "$POSTGRES_DIR" \( ! -user 999 -o ! -group 999 \) -ls 2>/dev/null | head -n 5
+              echo ""
+              echo "🔧 CORREÇÃO: Aplicando chown -R 999:999 recursivamente..."
+              
+              # Corrigir ownership recursivamente (pode demorar em volumes grandes)
+              if ! sudo chown -R 999:999 "$POSTGRES_DIR"; then
+                echo "❌ Falha ao corrigir ownership!"
+                exit 1
+              fi
+              
+              echo "✅ Ownership corrigido recursivamente"
+            else
+              echo "✅ Todos os arquivos têm ownership correto (999:999)"
+            fi
+            
+            # Validar permissions do diretório pai
+            ACTUAL_PERMS=$(stat -c '%a' "$POSTGRES_DIR")
+            if [ "$ACTUAL_PERMS" != "700" ]; then
+              echo "🔧 Corrigindo permissions: $ACTUAL_PERMS → 700"
+              sudo chmod 700 "$POSTGRES_DIR"
+            fi
+            
+            echo ""
+            echo "✅ Volume PostgreSQL validado e pronto para uso"
+
       - name: Deploy stack infra via SSH
         id: deploy
         uses: appleboy/ssh-action@v1.2.2
@@ -1077,7 +1215,7 @@ jobs:
     timeout-minutes: 10
     
     steps:
-      - name: Check health with retry logic
+      - name: Check health with retry logic and diagnostics
         id: check
         uses: appleboy/ssh-action@v1.2.2
         with:
@@ -1088,13 +1226,22 @@ jobs:
           command_timeout: 10m
           script: |
             set -euo pipefail
+            # =================================================================
+            # CORREÇÃO 08/01/2026: Health check com diagnóstico automático
+            # =================================================================
+            # PROBLEMA: Health check não mostrava logs quando PostgreSQL falhava
+            # SOLUÇÃO: Capturar logs e executar diagnósticos quando unhealthy
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 9 (Validação contínua)
+            # =================================================================
             echo "🏥 Checking INFRA stack health..."
             
             CONTAINERS="alice-postgres alice-redis alice-qdrant alice-tor alice-searxng alice-caddy alice-minio alice-pgbouncer"
-            MAX_RETRIES=15
+            MAX_RETRIES=30
             SLEEP_TIME=10
+            TIMEOUT=$((MAX_RETRIES * SLEEP_TIME))
             
             for container in $CONTAINERS; do
+              echo ""
               echo "Aguardando $container ficar healthy..."
               retry=0
               while [ $retry -lt $MAX_RETRIES ]; do
@@ -1106,18 +1253,67 @@ jobs:
                   echo "❌ $container: não encontrado"
                   exit 1
                 else
-                  echo "⏳ $container: $STATUS (tentativa $((retry+1))/$MAX_RETRIES)"
+                  ELAPSED=$((retry * SLEEP_TIME))
+                  echo "⏳ $container: $STATUS (tentativa $((retry+1))/$MAX_RETRIES, ${ELAPSED}s/${TIMEOUT}s)"
+                  
+                  # Se PostgreSQL está unhealthy após 60s, mostrar logs IMEDIATAMENTE
+                  if [ "$container" = "alice-postgres" ] && [ "$STATUS" = "unhealthy" ] && [ $ELAPSED -ge 60 ]; then
+                    echo ""
+                    echo "❌ ERRO: PostgreSQL está unhealthy após ${ELAPSED}s"
+                    echo ""
+                    echo "📋 LOGS DO POSTGRESQL (últimas 100 linhas):"
+                    echo "=========================================="
+                    docker logs "$container" --tail 100 2>&1 || echo "   (sem logs disponíveis)"
+                    echo "=========================================="
+                    echo ""
+                    echo "🔍 DIAGNÓSTICO AUTOMÁTICO:"
+                    
+                    # Verificar ownership do volume
+                    echo ""
+                    echo "📁 Ownership de /opt/alice/data/postgres:"
+                    sudo ls -la /opt/alice/data/postgres | head -n 20 || echo "   (diretório não acessível)"
+                    
+                    # Verificar se PostgreSQL consegue escrever no volume
+                    echo ""
+                    echo "✍️  Teste de escrita (como UID 999):"
+                    if docker run --rm --user 999:999 -v /opt/alice/data/postgres:/test alpine:3.19 touch /test/.write-test 2>&1; then
+                      echo "✅ Escrita OK"
+                      docker run --rm --user 999:999 -v /opt/alice/data/postgres:/test alpine:3.19 rm /test/.write-test 2>&1 || true
+                    else
+                      echo "❌ Escrita FALHOU - problema de permissions!"
+                    fi
+                    
+                    # Verificar estado do container
+                    echo ""
+                    echo "🐳 Estado do container:"
+                    docker inspect "$container" --format='{{.State.Status}}' 2>/dev/null || echo "   (container não encontrado)"
+                    docker inspect "$container" --format='{{.State.ExitCode}}' 2>/dev/null || echo ""
+                    
+                    # Se ainda não atingiu max retries, continuar tentando
+                    if [ $retry -lt $((MAX_RETRIES - 1)) ]; then
+                      echo ""
+                      echo "⏳ Continuando aguardar (ainda há tentativas restantes)..."
+                    fi
+                  fi
+                  
                   sleep $SLEEP_TIME
                   retry=$((retry+1))
                 fi
               done
               
               if [ $retry -eq $MAX_RETRIES ]; then
-                echo "❌ $container: timeout após $((MAX_RETRIES * SLEEP_TIME))s"
+                echo ""
+                echo "❌ $container: timeout após ${TIMEOUT}s"
+                echo ""
+                echo "📋 LOGS FINAIS DE $container (últimas 100 linhas):"
+                echo "=========================================="
+                docker logs "$container" --tail 100 2>&1 || echo "   (sem logs disponíveis)"
+                echo "=========================================="
                 exit 1
               fi
             done
             
+            echo ""
             echo "✅ Todos os containers do INFRA stack estão healthy"
       
       - name: Troubleshoot unhealthy containers (se falhou)
