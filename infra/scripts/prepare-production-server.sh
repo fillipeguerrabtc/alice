@@ -128,11 +128,86 @@ echo "📝 Criando diretórios raiz..."
 mkdir -p /opt/alice/{data,logs,uploads,backups,secrets,versions,app}
 echo "   ✅ Diretórios raiz criados"
 
+# =============================================================================
+# 4.1 PostgreSQL Data Directory - CRITICAL PERMISSIONS (ENTERPRISE FIX)
+# =============================================================================
+# CORREÇÃO 08/01/2026: ROOT CAUSE #1 - PostgreSQL permissions
+# PROBLEMA: Diretório criado com root:root ownership, container PostgreSQL
+#           (UID 999) não conseguia escrever, causando "Permission denied"
+# SOLUÇÃO: Função idempotente que cria/valida/corrige ownership ANTES de
+#          Docker Compose iniciar containers
+# REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Root cause fix)
+# =============================================================================
+echo ""
+echo "🐘 CONFIGURANDO DIRETÓRIO POSTGRESQL (CRÍTICO)..."
+echo "============================================="
+
+POSTGRES_DIR="/opt/alice/data/postgres"
+
+# Função para validar e corrigir ownership (idempotente)
+fix_postgres_ownership() {
+  local dir="$1"
+  
+  # Criar diretório se não existir
+  if [ ! -d "$dir" ]; then
+    echo "   📝 Criando $dir..."
+    sudo mkdir -p "$dir"
+    sudo chown 999:999 "$dir"
+    sudo chmod 700 "$dir"
+    echo "   ✅ Diretório criado com ownership 999:999 e permissions 700"
+    return 0
+  fi
+  
+  # Diretório existe - verificar se está vazio
+  if [ -z "$(sudo ls -A "$dir" 2>/dev/null)" ]; then
+    echo "   📝 Diretório vazio - configurando ownership..."
+    sudo chown 999:999 "$dir"
+    sudo chmod 700 "$dir"
+    echo "   ✅ Ownership configurado: 999:999, mode: 700"
+    return 0
+  fi
+  
+  # Diretório NÃO está vazio - validar ownership
+  ACTUAL_OWNER=$(sudo stat -c "%u:%g" "$dir")
+  
+  if [ "$ACTUAL_OWNER" != "999:999" ]; then
+    echo "   ⚠️  Ownership incorreto detectado: $ACTUAL_OWNER (esperado: 999:999)"
+    echo "   🔧 Corrigindo ownership recursivamente..."
+    
+    if ! sudo chown -R 999:999 "$dir"; then
+      echo "   ❌ ERRO: Falha ao corrigir ownership!"
+      return 1
+    fi
+    
+    echo "   ✅ Ownership corrigido para 999:999"
+  else
+    echo "   ✅ Ownership correto: 999:999"
+  fi
+  
+  # Validar permissões
+  ACTUAL_MODE=$(sudo stat -c "%a" "$dir")
+  if [ "$ACTUAL_MODE" != "700" ]; then
+    echo "   🔧 Corrigindo permissions: $ACTUAL_MODE → 700"
+    sudo chmod 700 "$dir"
+  fi
+  
+  return 0
+}
+
+# Executar correção
+if ! fix_postgres_ownership "$POSTGRES_DIR"; then
+  echo "❌ ERRO CRÍTICO: Falha ao configurar diretório PostgreSQL"
+  exit 1
+fi
+
+echo "   ✅ Diretório PostgreSQL configurado corretamente"
+echo ""
+
 # -----------------------------------------------------------------------------
 # Diretórios de dados (volumes) - INFRA Stack
 # -----------------------------------------------------------------------------
 echo "📝 Criando diretórios INFRA stack..."
-mkdir -p /opt/alice/data/postgres
+# NOTA: /opt/alice/data/postgres criado e configurado acima com ownership 999:999
 mkdir -p /opt/alice/data/redis-alice
 mkdir -p /opt/alice/data/qdrant
 mkdir -p /opt/alice/data/minio
@@ -202,10 +277,9 @@ echo "🔐 CONFIGURANDO PERMISSÕES POR SERVIÇO"
 echo "============================================="
 
 # PostgreSQL (UID 999)
+# NOTA: PostgreSQL já foi configurado acima com fix_postgres_ownership()
 echo "📝 PostgreSQL (UID 999)..."
-sudo chown -R 999:999 /opt/alice/data/postgres
-sudo chmod 700 /opt/alice/data/postgres
-echo "   ✅ PostgreSQL configurado"
+echo "   ✅ PostgreSQL já configurado anteriormente"
 
 # Grafana (UID 472)
 echo "📝 Grafana (UID 472)..."
