@@ -872,6 +872,71 @@ jobs:
             echo ""
             echo "✅ Validação do servidor de produção OK (GPU disponível)"
 
+      - name: Pre-deploy cleanup (força estado limpo)
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          command_timeout: 5m
+          script: |
+            set -euo pipefail
+            # =================================================================
+            # SEÇÃO 2.6: Pre-Deploy Cleanup (Mandatory)
+            # =================================================================
+            # PROBLEMA: Containers exited/dead de deploys anteriores acumulam
+            # SOLUÇÃO: Remover TODOS antes do novo deploy (fail-fast, estado limpo)
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 16 (Idempotência)
+            # =================================================================
+            echo "🧹 PRE-DEPLOY CLEANUP (Mandatory)"
+            echo "========================================"
+            
+            # Remover TODOS os containers exited (de qualquer stack)
+            echo "Removendo containers exited..."
+            EXITED=$(docker ps -a --filter "status=exited" -q | wc -l)
+            if [ $EXITED -gt 0 ]; then
+              docker ps -a --filter "status=exited" -q | xargs -r docker rm -f
+              echo "   ✅ Removidos $EXITED container(s) exited"
+            else
+              echo "   ✅ Nenhum container exited encontrado"
+            fi
+            
+            # Remover TODOS os containers dead (de qualquer stack)
+            echo "Removendo containers dead..."
+            DEAD=$(docker ps -a --filter "status=dead" -q | wc -l)
+            if [ $DEAD -gt 0 ]; then
+              docker ps -a --filter "status=dead" -q | xargs -r docker rm -f
+              echo "   ✅ Removidos $DEAD container(s) dead"
+            else
+              echo "   ✅ Nenhum container dead encontrado"
+            fi
+            
+            # Remover dangling images (economia de espaço)
+            echo "Removendo dangling images..."
+            DANGLING=$(docker images -f "dangling=true" -q | wc -l)
+            if [ $DANGLING -gt 0 ]; then
+              docker image prune -f
+              echo "   ✅ Removidas $DANGLING imagem(ns) dangling"
+            else
+              echo "   ✅ Nenhuma dangling image encontrada"
+            fi
+            
+            # Validação final
+            EXITED_FINAL=$(docker ps -a --filter "status=exited" -q | wc -l)
+            DEAD_FINAL=$(docker ps -a --filter "status=dead" -q | wc -l)
+            
+            if [ $EXITED_FINAL -eq 0 ] && [ $DEAD_FINAL -eq 0 ]; then
+              echo ""
+              echo "✅ Servidor limpo - ready for deploy"
+            else
+              echo ""
+              echo "⚠️  WARNING: $EXITED_FINAL exited + $DEAD_FINAL dead containers ainda presentes"
+              echo "Listando containers problemáticos:"
+              docker ps -a --filter "status=exited" --filter "status=dead" --format "table {{.Names}}\t{{.Status}}"
+            fi
+            echo "========================================"
+
       - name: Preparar infraestrutura base (networks, volumes, permissões)
         uses: appleboy/ssh-action@v1.2.2
         with:
@@ -974,25 +1039,28 @@ jobs:
             POSTGRES_DIR="/opt/alice/data/postgres"
             
             # Estágio 1: Verificar que diretório existe
-            if [ ! -d "$POSTGRES_DIR" ]; then
+            # CORREÇÃO 08/01/2026: Usar sudo para acessar diretório PostgreSQL (modo 700, UID 999)
+            if ! sudo test -d "$POSTGRES_DIR"; then
               echo "❌ ERRO: Diretório $POSTGRES_DIR não existe!"
               exit 1
             fi
             echo "   ✅ Estágio 1: Diretório existe"
             
             # Estágio 2: Verificar owner/group (999:999)
-            ACTUAL_OWNER=$(stat -c '%u:%g' "$POSTGRES_DIR")
+            # CORREÇÃO 08/01/2026: stat requer sudo para ler metadata de diretório 700
+            ACTUAL_OWNER=$(sudo stat -c '%u:%g' "$POSTGRES_DIR")
             if [ "$ACTUAL_OWNER" != "999:999" ]; then
               echo "❌ ERRO: Owner incorreto em $POSTGRES_DIR"
               echo "   Esperado: 999:999"
               echo "   Atual: $ACTUAL_OWNER"
-              ls -ld "$POSTGRES_DIR"
+              sudo ls -ld "$POSTGRES_DIR"
               exit 1
             fi
             echo "   ✅ Estágio 2: Owner/group correto (999:999)"
             
             # Estágio 3: Verificar permissões numéricas (700)
-            ACTUAL_PERMS=$(stat -c '%a' "$POSTGRES_DIR")
+            # CORREÇÃO 08/01/2026: stat requer sudo para ler metadata de diretório 700
+            ACTUAL_PERMS=$(sudo stat -c '%a' "$POSTGRES_DIR")
             if [ "$ACTUAL_PERMS" != "700" ]; then
               echo "❌ ERRO: Permissões incorretas em $POSTGRES_DIR"
               echo "   Esperado: 700"
@@ -1005,7 +1073,7 @@ jobs:
             # (funciona em servidor limpo sem UID 999 no host)
             if ! docker run --rm --user 999:999 -v "$POSTGRES_DIR:/test:rw" alpine:3.19 touch /test/.write-test 2>/dev/null; then
               echo "❌ ERRO: Usuário 999 (postgres) NÃO consegue escrever no volume Docker"
-              ls -ld "$POSTGRES_DIR"
+              sudo ls -ld "$POSTGRES_DIR"
               exit 1
             fi
             
@@ -1013,13 +1081,45 @@ jobs:
             docker run --rm --user 999:999 -v "$POSTGRES_DIR:/test:rw" alpine:3.19 rm -f /test/.write-test 2>/dev/null || true
             echo "   ✅ Estágio 4: Teste de escrita OK"
             
-            # Validar que diretório está VAZIO (primeiro deploy)
-            if [ "$(ls -A /opt/alice/data/postgres 2>/dev/null)" ]; then
-              echo "   ⚠️  AVISO: /opt/alice/data/postgres NÃO está vazio (pode ser deploy anterior)"
-              echo "   Conteúdo:"
-              ls -lah /opt/alice/data/postgres | head -n 5
+            # =================================================================
+            # SEÇÃO 1.2: Recursive Permission Validation (Estágio 5)
+            # =================================================================
+            # PROBLEMA: Volumes de deploys anteriores podem ter arquivos com UIDs incorretos
+            # SOLUÇÃO: Validar TODOS os arquivos/diretórios recursivamente
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 9 (Validação contínua)
+            # =================================================================
+            echo "   🔍 Estágio 5: Validando TODOS os arquivos/dirs recursivamente..."
+            
+            # Verificar se diretório está vazio
+            # CORREÇÃO 08/01/2026: ls -A requer sudo para listar conteúdo de diretório 700
+            if [ -z "$(sudo ls -A $POSTGRES_DIR 2>/dev/null)" ]; then
+              echo "   ✅ Estágio 5: Diretório vazio (primeiro deploy limpo)"
             else
-              echo "   ✅ Diretório PostgreSQL vazio (primeiro deploy)"
+              # Diretório NÃO está vazio - validar recursivamente
+              echo "   ⚠️  Diretório contém arquivos de deploy anterior - validando recursivamente..."
+              
+              # Contar arquivos com UID errado (não-999)
+              WRONG_PERMS=$(sudo find "$POSTGRES_DIR" -type f ! -user 999 2>/dev/null | wc -l)
+              WRONG_DIRS=$(sudo find "$POSTGRES_DIR" -type d ! -user 999 2>/dev/null | wc -l)
+              
+              if [ $WRONG_PERMS -gt 0 ] || [ $WRONG_DIRS -gt 0 ]; then
+                echo ""
+                echo "❌ ERRO CRÍTICO: Permissões incorretas detectadas recursivamente!"
+                echo "   Arquivos com UID errado: $WRONG_PERMS"
+                echo "   Diretórios com UID errado: $WRONG_DIRS"
+                echo ""
+                echo "   Primeiros 10 arquivos/dirs com problemas:"
+                sudo find "$POSTGRES_DIR" ! -user 999 -ls 2>/dev/null | head -10
+                echo ""
+                echo "💡 SOLUÇÃO: Rodar comando de correção:"
+                echo "   sudo chown -R 999:999 $POSTGRES_DIR"
+                echo ""
+                echo "   Ou usar o script enterprise:"
+                echo "   sudo /opt/alice/app/infra/scripts/fix-production-permissions.sh --fix"
+                exit 1
+              fi
+              
+              echo "   ✅ Estágio 5: Todas permissões recursivas OK (999:999)"
             fi
             
             echo ""
@@ -1095,6 +1195,71 @@ jobs:
               echo "✅ Nenhum container órfão encontrado (servidor limpo)"
             fi
 
+      - name: Limpar lock files e sockets do PostgreSQL
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          command_timeout: 2m
+          script: |
+            set -euo pipefail
+            # =================================================================
+            # SEÇÃO 1.1: Pre-Deploy Lock File Cleanup
+            # =================================================================
+            # PROBLEMA: Lock files e sockets de starts anteriores falhados bloqueiam PostgreSQL
+            # SOLUÇÃO: Remover ANTES do deploy para garantir start limpo
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), PostgreSQL Best Practices 2025
+            # =================================================================
+            echo "🧹 Limpando lock files e sockets do PostgreSQL..."
+            
+            POSTGRES_DIR="/opt/alice/data/postgres"
+            
+            # CORREÇÃO 08/01/2026: Usar sudo para consistência com outras verificações
+            if sudo test -d "$POSTGRES_DIR"; then
+              # =================================================================
+              # CORREÇÃO BUG 1 (08/01/2026): Rastrear arquivos ANTES de deletar
+              # O tracking deve ocorrer ANTES da deleção para mensagem correta
+              # Ref: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Mudanças cirúrgicas)
+              # =================================================================
+              
+              # Rastrear ANTES de deletar
+              PID_FILE_FOUND=0
+              SOCKET_COUNT=0
+              
+              # Verificar PID lock file
+              # CORREÇÃO 08/01/2026: Usar sudo para acessar diretório PostgreSQL (modo 700, UID 999)
+              # Sem sudo, [ -f ] falha silenciosamente se não tiver permissão no diretório
+              # Ref: CLAUDE.md Regra 7 (Mudanças cirúrgicas), consistência com socket check linha 1232
+              if sudo test -f "$POSTGRES_DIR/postmaster.pid"; then
+                PID_FILE_FOUND=1
+              fi
+              
+              # Contar Unix socket files
+              SOCKET_COUNT=$(sudo find "$POSTGRES_DIR" -name ".s.PGSQL.*" 2>/dev/null | wc -l)
+              
+              # Agora sim, deletar os arquivos encontrados
+              if [ $PID_FILE_FOUND -eq 1 ]; then
+                echo "   🔒 Removendo postmaster.pid"
+                sudo rm -f "$POSTGRES_DIR/postmaster.pid"
+              fi
+              
+              if [ $SOCKET_COUNT -gt 0 ]; then
+                echo "   🔌 Removendo $SOCKET_COUNT socket file(s)"
+                sudo rm -f "$POSTGRES_DIR/.s.PGSQL."*
+              fi
+              
+              # Usar tracking feito ANTES da deleção para mensagem correta
+              if [ $PID_FILE_FOUND -eq 1 ] || [ $SOCKET_COUNT -gt 0 ]; then
+                echo "✅ Lock files e sockets limpos"
+              else
+                echo "✅ Nenhum lock file encontrado (servidor limpo)"
+              fi
+            else
+              echo "✅ Diretório PostgreSQL não existe ainda (primeiro deploy)"
+            fi
+
       - name: Validar estado do volume PostgreSQL (primeiro deploy)
         uses: appleboy/ssh-action@v1.2.2
         with:
@@ -1117,7 +1282,8 @@ jobs:
             POSTGRES_DIR="/opt/alice/data/postgres"
             
             # Se diretório não existe, criar com permissions corretas
-            if [ ! -d "$POSTGRES_DIR" ]; then
+            # CORREÇÃO 08/01/2026: Usar sudo para verificar diretório PostgreSQL (modo 700, UID 999)
+            if ! sudo test -d "$POSTGRES_DIR"; then
               echo "📁 Criando $POSTGRES_DIR (primeiro deploy)"
               sudo mkdir -p "$POSTGRES_DIR"
               sudo chown 999:999 "$POSTGRES_DIR"
@@ -1127,11 +1293,13 @@ jobs:
             fi
             
             # Diretório existe - verificar se está vazio OU tem ownership correto
-            if [ -z "$(ls -A "$POSTGRES_DIR")" ]; then
+            # CORREÇÃO 08/01/2026: ls -A requer sudo para listar conteúdo de diretório 700
+            if [ -z "$(sudo ls -A "$POSTGRES_DIR")" ]; then
               echo "✅ Diretório vazio (primeiro deploy limpo)"
               
               # Garantir ownership correto mesmo vazio
-              ACTUAL_OWNER=$(stat -c '%u:%g' "$POSTGRES_DIR")
+              # CORREÇÃO 08/01/2026: stat requer sudo para ler metadata de diretório 700
+              ACTUAL_OWNER=$(sudo stat -c '%u:%g' "$POSTGRES_DIR")
               if [ "$ACTUAL_OWNER" != "999:999" ]; then
                 echo "🔧 Corrigindo ownership de diretório vazio: $ACTUAL_OWNER → 999:999"
                 sudo chown 999:999 "$POSTGRES_DIR"
@@ -1168,7 +1336,8 @@ jobs:
             fi
             
             # Validar permissions do diretório pai
-            ACTUAL_PERMS=$(stat -c '%a' "$POSTGRES_DIR")
+            # CORREÇÃO 08/01/2026: stat requer sudo para ler metadata de diretório 700
+            ACTUAL_PERMS=$(sudo stat -c '%a' "$POSTGRES_DIR")
             if [ "$ACTUAL_PERMS" != "700" ]; then
               echo "🔧 Corrigindo permissions: $ACTUAL_PERMS → 700"
               sudo chmod 700 "$POSTGRES_DIR"
@@ -1188,6 +1357,32 @@ jobs:
           command_timeout: 15m
           script: |
             set -euo pipefail
+            # =================================================================
+            # SEÇÃO 2.7: Trap Handler for Cleanup on Failure
+            # =================================================================
+            # PROBLEMA: Deploy falha e deixa containers parciais/quebrados
+            # SOLUÇÃO: Trap handler executa cleanup automático em caso de erro
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 16 (Idempotency)
+            # =================================================================
+            
+            # Trap handler para cleanup em caso de falha
+            cleanup_on_failure() {
+              local exit_code=$?
+              if [ $exit_code -ne 0 ]; then
+                echo ""
+                echo "🚨 Deploy failed - executing automatic cleanup..."
+                cd /opt/alice/app/infra/docker/stacks
+                docker compose -p alice-infra --env-file ../.env.prod \
+                               -f docker-compose.base.yml \
+                               -f docker-compose.infra.yml \
+                               down --remove-orphans --timeout 30 2>&1 || true
+                echo "✅ Cleanup completed"
+              fi
+            }
+            
+            # Instalar trap (executa cleanup_on_failure se script falhar)
+            trap cleanup_on_failure EXIT
+            
             cd /opt/alice/app/infra/docker/stacks
             
             echo "🚀 Deploying INFRA stack (postgres, redis, qdrant, caddy, minio, searxng, tor)..."
@@ -1206,6 +1401,68 @@ jobs:
             echo "${{ needs.validate.outputs.version }}" > /opt/alice/versions/infra.current
             
             echo "✅ INFRA stack deployed"
+
+      - name: Clean init containers (post-deploy)
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          command_timeout: 2m
+          script: |
+            set -euo pipefail
+            # =================================================================
+            # SEÇÃO 3.2: Post-Deploy Init Cleanup
+            # =================================================================
+            # PROBLEMA: Init containers completam mas permanecem no servidor
+            # SOLUÇÃO: Remover após conclusão bem-sucedida
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 16 (Cleanup)
+            # =================================================================
+            echo "🧹 Cleaning init containers (post-deploy)..."
+            
+            # Wait for init containers to complete (max 30s)
+            for init in alice-minio-init alice-pgbackrest-init; do
+              if docker ps -a --format '{{.Names}}' | grep -q "^${init}$"; then
+                echo "   Checking $init status..."
+                
+                # Wait up to 30 seconds for container to exit
+                WAIT_COUNT=0
+                while [ $WAIT_COUNT -lt 30 ]; do
+                  STATUS=$(docker inspect --format='{{.State.Status}}' $init 2>/dev/null || echo "not_found")
+                  
+                  if [ "$STATUS" = "exited" ]; then
+                    EXIT_CODE=$(docker inspect --format='{{.State.ExitCode}}' $init 2>/dev/null || echo "255")
+                    
+                    if [ "$EXIT_CODE" = "0" ]; then
+                      echo "   ✅ $init completed successfully (exit code 0) - removing"
+                      docker rm -f $init 2>/dev/null || true
+                    else
+                      echo "   ⚠️  $init failed (exit code $EXIT_CODE) - keeping for troubleshooting"
+                    fi
+                    break
+                  elif [ "$STATUS" = "running" ]; then
+                    echo "   ⏳ $init still running (${WAIT_COUNT}s)..."
+                    sleep 1
+                    WAIT_COUNT=$((WAIT_COUNT + 1))
+                  elif [ "$STATUS" = "not_found" ]; then
+                    echo "   ℹ️  $init not found (already cleaned or never created)"
+                    break
+                  else
+                    echo "   ⚠️  $init in unexpected state: $STATUS"
+                    break
+                  fi
+                done
+                
+                if [ $WAIT_COUNT -eq 30 ]; then
+                  echo "   ⚠️  $init still running after 30s - keeping for investigation"
+                fi
+              else
+                echo "   ℹ️  $init not found (already cleaned or never created)"
+              fi
+            done
+            
+            echo "✅ Init containers cleanup completed"
 
   health-infra:
     name: Health Check INFRA
@@ -1382,10 +1639,11 @@ jobs:
             df -h /opt/alice/data/postgres
             
             # Verificar permissões do diretório
+            # CORREÇÃO 08/01/2026: Usar sudo para acessar diretório PostgreSQL (modo 700, UID 999)
             echo ""
             echo "🔐 Permissões PostgreSQL:"
-            ls -ld /opt/alice/data/postgres
-            stat /opt/alice/data/postgres
+            sudo ls -ld /opt/alice/data/postgres
+            sudo stat /opt/alice/data/postgres
             
             echo ""
             echo "========================================"
@@ -1403,7 +1661,7 @@ jobs:
     timeout-minutes: 10
     
     steps:
-      - name: Execute rollback cirúrgico
+      - name: Execute rollback cirúrgico (5 estágios)
         uses: appleboy/ssh-action@v1.2.2
         env:
           IS_ROLLBACK: ${{ needs.validate.outputs.is_rollback }}
@@ -1417,7 +1675,15 @@ jobs:
           envs: IS_ROLLBACK,ROLLBACK_VERSION
           script: |
             set -euo pipefail
-            echo "🔄 Rollback INFRA stack (CIRÚRGICO - não afeta outros stacks)..."
+            # =================================================================
+            # SEÇÃO 2.1: Complete Rollback Implementation
+            # =================================================================
+            # PROBLEMA: Rollback incompleto deixa containers órfãos e volumes temporários
+            # SOLUÇÃO: Rollback cirúrgico em 5 estágios (stop, remove, prune, validate, preserve)
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Surgical), Regra 15 (Isolation)
+            # =================================================================
+            echo "🔄 ROLLBACK CIRÚRGICO - Stack INFRA"
+            echo "========================================"
             
             # Determinar versão de rollback (MANUAL ou AUTOMÁTICO)
             if [ "${IS_ROLLBACK}" = "true" ]; then
@@ -1435,22 +1701,142 @@ jobs:
               echo "📌 ROLLBACK AUTOMÁTICO para versão anterior: $TARGET_VERSION"
             fi
             
-            # CRITICAL FIX (06/01/2026): Passar IMAGE_TAG via env var para evitar race condition
-            # Múltiplos rollbacks paralelos NÃO devem modificar o arquivo .env.prod compartilhado
-            # CRITICAL: Incluir base.yml para volumes/networks externos
+            echo ""
             cd /opt/alice/app/infra/docker/stacks
-            echo "🐳 Puxando imagens da versão $TARGET_VERSION..."
-            IMAGE_TAG=$TARGET_VERSION docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.infra.yml pull
             
-            echo "🚀 Deployando versão de rollback..."
+            # =========================================================
+            # STAGE 1: Stop and Remove Containers (Surgical)
+            # =========================================================
+            echo "🛑 Stage 1: Stopping INFRA stack containers..."
+            docker compose -p alice-infra --env-file ../.env.prod \
+                           -f docker-compose.base.yml \
+                           -f docker-compose.infra.yml \
+                           down --remove-orphans --timeout 30 2>&1 || true
+            echo "   ✅ Containers stopped"
+            
+            # =========================================================
+            # STAGE 2: Remove Orphaned/Exited Containers
+            # =========================================================
+            echo ""
+            echo "🧹 Stage 2: Cleaning orphaned containers..."
+            
+            # List of INFRA stack containers (EXPLICIT - no wildcards)
+            INFRA_CONTAINERS=(
+              "alice-postgres"
+              "alice-pgbouncer"
+              "alice-redis"
+              "alice-qdrant"
+              "alice-tor"
+              "alice-searxng"
+              "alice-caddy"
+              "alice-minio"
+              "alice-minio-init"
+              "alice-pgbackrest-init"
+            )
+            
+            REMOVED_COUNT=0
+            for container in "${INFRA_CONTAINERS[@]}"; do
+              if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
+                echo "   🗑️  Removing: $container"
+                docker rm -f "$container" 2>/dev/null || true
+                REMOVED_COUNT=$((REMOVED_COUNT + 1))
+              fi
+            done
+            
+            echo "   ✅ Removed $REMOVED_COUNT containers"
+            
+            # =========================================================
+            # STAGE 3: Preservar Volumes de Dados (CRITICAL)
+            # =========================================================
+            # CORREÇÃO BUG 2 (08/01/2026): NÃO usar docker volume prune
+            # =========================================================
+            # PROBLEMA: `docker volume prune --filter "label!=external"` NÃO funciona
+            # porque `external: true` no Docker Compose é uma DIRETIVA, não um label Docker.
+            # O prune genérico poderia APAGAR volumes de dados persistentes!
+            #
+            # SOLUÇÃO ENTERPRISE (Regra 6 CLAUDE.md):
+            # - NÃO fazer volume prune automático
+            # - Volumes são bind mounts para /opt/alice/ (host filesystem)
+            # - Remoção de containers é suficiente - volumes persistem automaticamente
+            # - Se necessário limpar volumes órfãos: docker volume ls --filter "dangling=true"
+            #
+            # VOLUMES PRESERVADOS:
+            # - postgres_data, alice_redis_data, qdrant_data, minio_data, caddy_data
+            # - Todos são bind mounts em /opt/alice/data/*
+            # =========================================================
+            echo ""
+            echo "🛡️  Stage 3: Preservando volumes de dados persistentes..."
+            echo "   ℹ️  Volumes são bind mounts para /opt/alice/data/"
+            echo "   ℹ️  Dados persistem automaticamente (sem prune automático)"
+            echo "   ✅ Volumes de dados protegidos"
+            
+            # =========================================================
+            # STAGE 4: Validate Clean State
+            # =========================================================
+            # CORREÇÃO BUG 4 (08/01/2026): Validar TODOS containers do Stage 2
+            # =========================================================
+            echo ""
+            echo "🧪 Stage 4: Validating clean state..."
+            
+            # Lista DEVE corresponder EXATAMENTE aos containers do INFRA_CONTAINERS (Stage 2)
+            REMAINING=$(docker ps -a --filter "name=alice-postgres" \
+                                     --filter "name=alice-pgbouncer" \
+                                     --filter "name=alice-redis" \
+                                     --filter "name=alice-qdrant" \
+                                     --filter "name=alice-tor" \
+                                     --filter "name=alice-searxng" \
+                                     --filter "name=alice-caddy" \
+                                     --filter "name=alice-minio" \
+                                     --filter "name=alice-minio-init" \
+                                     --filter "name=alice-pgbackrest-init" \
+                                     -q | wc -l)
+            
+            if [ $REMAINING -gt 0 ]; then
+              echo "   ⚠️  WARNING: $REMAINING INFRA containers still present"
+              docker ps -a --filter "name=alice-postgres" \
+                          --filter "name=alice-pgbouncer" \
+                          --filter "name=alice-redis" \
+                          --filter "name=alice-qdrant" \
+                          --filter "name=alice-tor" \
+                          --filter "name=alice-searxng" \
+                          --filter "name=alice-caddy" \
+                          --filter "name=alice-minio" \
+                          --filter "name=alice-minio-init" \
+                          --filter "name=alice-pgbackrest-init" \
+                          --format "table {{.Names}}\t{{.Status}}"
+            else
+              echo "   ✅ All INFRA containers cleaned"
+            fi
+            
+            # =========================================================
+            # STAGE 5: Preserve Shared Resources (CRITICAL)
+            # =========================================================
+            echo ""
+            echo "🛡️  Stage 5: Verifying shared resources preserved..."
+            
+            # Validate networks still exist (shared with other stacks)
+            docker network inspect alice-network > /dev/null 2>&1 && echo "   ✅ alice-network preserved" || echo "   ⚠️  alice-network missing"
+            docker network inspect erpnext-network > /dev/null 2>&1 && echo "   ✅ erpnext-network preserved" || echo "   ⚠️  erpnext-network missing"
+            
+            # Validate persistent volumes still exist
+            docker volume inspect alice-postgres-data > /dev/null 2>&1 && echo "   ✅ postgres data preserved" || echo "   ⚠️  postgres data missing"
+            
+            echo ""
+            echo "========================================"
+            echo "🐳 Deploying rollback version: $TARGET_VERSION"
+            echo "========================================"
+            
+            # Pull e deploy da versão de rollback
+            IMAGE_TAG=$TARGET_VERSION docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.infra.yml pull
             IMAGE_TAG=$TARGET_VERSION docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.infra.yml up -d --remove-orphans
             
             # Atualizar arquivo de versão atual
             echo "$TARGET_VERSION" > /opt/alice/versions/infra.current
             
-            echo "✅ Rollback INFRA concluído com sucesso"
+            echo ""
+            echo "✅ ROLLBACK CIRÚRGICO CONCLUÍDO"
             echo "   Versão atual: $TARGET_VERSION"
-            echo "⚠️ ATENÇÃO: Outros stacks NÃO foram afetados (rollback cirúrgico)"
+            echo "⚠️  Outros stacks NÃO foram afetados (alice, observability, erpnext continuam rodando)"
 
   # ===========================================================================
   # ALICE STACK - Deploy + Health + Rollback
@@ -1586,6 +1972,24 @@ jobs:
           command_timeout: 15m
           script: |
             set -euo pipefail
+            # =================================================================
+            # SEÇÃO 2.7: Trap Handler for Cleanup on Failure
+            # =================================================================
+            cleanup_on_failure() {
+              local exit_code=$?
+              if [ $exit_code -ne 0 ]; then
+                echo ""
+                echo "🚨 Deploy failed - executing automatic cleanup..."
+                cd /opt/alice/app/infra/docker/stacks
+                docker compose -p alice-alice --env-file ../.env.prod \
+                               -f docker-compose.base.yml \
+                               -f docker-compose.alice.yml \
+                               down --remove-orphans --timeout 30 2>&1 || true
+                echo "✅ Cleanup completed"
+              fi
+            }
+            trap cleanup_on_failure EXIT
+            
             cd /opt/alice/app/infra/docker/stacks
             
             echo "🚀 Deploying ALICE stack (frontend, auth, chat, rag, training, integrations, gpu-manager)..."
@@ -1669,7 +2073,7 @@ jobs:
     timeout-minutes: 10
     
     steps:
-      - name: Execute rollback cirúrgico
+      - name: Execute rollback cirúrgico (5 estágios)
         uses: appleboy/ssh-action@v1.2.2
         env:
           IS_ROLLBACK: ${{ needs.validate.outputs.is_rollback }}
@@ -1683,37 +2087,111 @@ jobs:
           envs: IS_ROLLBACK,ROLLBACK_VERSION
           script: |
             set -euo pipefail
-            echo "🔄 Rollback ALICE stack (CIRÚRGICO - não afeta outros stacks)..."
+            # =================================================================
+            # SEÇÃO 2.2: Surgical Rollback for ALICE Stack
+            # =================================================================
+            echo "🔄 ROLLBACK CIRÚRGICO - Stack ALICE"
+            echo "========================================"
             
-            # Determinar versão de rollback (MANUAL ou AUTOMÁTICO)
+            # Determinar versão de rollback
             if [ "${IS_ROLLBACK}" = "true" ]; then
-              # ROLLBACK MANUAL: usar versão especificada pelo usuário
               TARGET_VERSION="${ROLLBACK_VERSION}"
               echo "📌 ROLLBACK MANUAL para versão: $TARGET_VERSION"
             else
-              # ROLLBACK AUTOMÁTICO: usar versão .previous
               if [ ! -f /opt/alice/versions/alice.previous ]; then
-                echo "❌ ERRO: Nenhuma versão anterior encontrada para rollback automático"
+                echo "❌ ERRO: Nenhuma versão anterior encontrada"
                 exit 1
               fi
               TARGET_VERSION=$(cat /opt/alice/versions/alice.previous)
               echo "📌 ROLLBACK AUTOMÁTICO para versão anterior: $TARGET_VERSION"
             fi
             
-            # CRITICAL FIX (06/01/2026): Passar IMAGE_TAG via env var para evitar race condition
-            # Múltiplos rollbacks paralelos NÃO devem modificar o arquivo .env.prod compartilhado
-            # CRITICAL: Incluir base.yml para volumes/networks externos
+            echo ""
             cd /opt/alice/app/infra/docker/stacks
-            echo "🐳 Puxando imagens da versão $TARGET_VERSION..."
-            IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull
             
-            echo "🚀 Deployando versão de rollback..."
+            # STAGE 1: Stop and Remove
+            echo "🛑 Stage 1: Stopping ALICE stack containers..."
+            docker compose -p alice-alice --env-file ../.env.prod \
+                           -f docker-compose.base.yml \
+                           -f docker-compose.alice.yml \
+                           down --remove-orphans --timeout 30 2>&1 || true
+            
+            # STAGE 2: Remove Orphans
+            echo ""
+            echo "🧹 Stage 2: Cleaning orphaned containers..."
+            ALICE_CONTAINERS=(
+              "alice-frontend"
+              "alice-auth-service"
+              "alice-chat-service"
+              "alice-rag-service"
+              "alice-training-service"
+              "alice-integrations-service"
+              "alice-observability-service"
+              "alice-gpu-manager"
+            )
+            
+            REMOVED_COUNT=0
+            for container in "${ALICE_CONTAINERS[@]}"; do
+              if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
+                echo "   🗑️  Removing: $container"
+                docker rm -f "$container" 2>/dev/null || true
+                REMOVED_COUNT=$((REMOVED_COUNT + 1))
+              fi
+            done
+            echo "   ✅ Removed $REMOVED_COUNT containers"
+            
+            # =========================================================
+            # STAGE 3: Preservar Volumes de Dados (CRITICAL)
+            # =========================================================
+            # CORREÇÃO BUG 2 (08/01/2026): NÃO usar docker volume prune
+            # Ver comentários no rollback-infra para detalhes completos
+            # =========================================================
+            echo ""
+            echo "🛡️  Stage 3: Preservando volumes de dados persistentes..."
+            echo "   ℹ️  Volumes são bind mounts para /opt/alice/data/"
+            echo "   ✅ Volumes de dados protegidos"
+            
+            # =========================================================
+            # STAGE 4: Validate clean state
+            # =========================================================
+            # CORREÇÃO BUG 4 (08/01/2026): Validar TODOS containers removidos no Stage 2
+            # =========================================================
+            echo ""
+            echo "🧪 Stage 4: Validating clean state..."
+            REMAINING=$(docker ps -a --filter "name=alice-frontend" \
+                                     --filter "name=alice-auth-service" \
+                                     --filter "name=alice-chat-service" \
+                                     --filter "name=alice-rag-service" \
+                                     --filter "name=alice-training-service" \
+                                     --filter "name=alice-integrations-service" \
+                                     --filter "name=alice-observability-service" \
+                                     --filter "name=alice-gpu-manager" \
+                                     -q | wc -l)
+            if [ $REMAINING -eq 0 ]; then
+              echo "   ✅ All ALICE containers cleaned"
+            else
+              echo "   ⚠️  WARNING: $REMAINING ALICE containers still present"
+            fi
+            
+            # STAGE 5: Preserve shared resources
+            echo ""
+            echo "🛡️  Stage 5: Verifying shared resources preserved..."
+            docker network inspect alice-network > /dev/null 2>&1 && echo "   ✅ alice-network preserved"
+            
+            echo ""
+            echo "========================================"
+            echo "🐳 Deploying rollback version: $TARGET_VERSION"
+            echo "========================================"
+            
+            IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull
             IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml up -d --remove-orphans
             
             echo "$TARGET_VERSION" > /opt/alice/versions/alice.current
             
-            echo "✅ Rollback ALICE concluído com sucesso"
-            echo "⚠️ ATENÇÃO: Outros stacks NÃO foram afetados (rollback cirúrgico)"
+            echo ""
+            echo "✅ ROLLBACK CIRÚRGICO CONCLUÍDO"
+            echo "   Versão atual: $TARGET_VERSION"
+            echo "⚠️  Outros stacks NÃO foram afetados"
 
   # ===========================================================================
   # OBSERVABILITY STACK - Deploy + Health + Rollback
@@ -1742,6 +2220,24 @@ jobs:
           command_timeout: 15m
           script: |
             set -euo pipefail
+            # =================================================================
+            # SEÇÃO 2.7: Trap Handler for Cleanup on Failure
+            # =================================================================
+            cleanup_on_failure() {
+              local exit_code=$?
+              if [ $exit_code -ne 0 ]; then
+                echo ""
+                echo "🚨 Deploy failed - executing automatic cleanup..."
+                cd /opt/alice/app/infra/docker/stacks
+                docker compose -p alice-observability --env-file ../.env.prod \
+                               -f docker-compose.base.yml \
+                               -f docker-compose.observability.yml \
+                               down --remove-orphans --timeout 30 2>&1 || true
+                echo "✅ Cleanup completed"
+              fi
+            }
+            trap cleanup_on_failure EXIT
+            
             cd /opt/alice/app/infra/docker/stacks
             
             echo "🚀 Deploying OBSERVABILITY stack (prometheus, grafana, loki, jaeger, langfuse, clickhouse)..."
@@ -1830,7 +2326,7 @@ jobs:
     timeout-minutes: 10
     
     steps:
-      - name: Execute rollback cirúrgico
+      - name: Execute rollback cirúrgico (5 estágios)
         uses: appleboy/ssh-action@v1.2.2
         env:
           IS_ROLLBACK: ${{ needs.validate.outputs.is_rollback }}
@@ -1844,37 +2340,122 @@ jobs:
           envs: IS_ROLLBACK,ROLLBACK_VERSION
           script: |
             set -euo pipefail
-            echo "🔄 Rollback OBSERVABILITY stack (CIRÚRGICO - não afeta outros stacks)..."
+            # =================================================================
+            # SEÇÃO 2.3: Surgical Rollback for OBSERVABILITY Stack
+            # =================================================================
+            echo "🔄 ROLLBACK CIRÚRGICO - Stack OBSERVABILITY"
+            echo "========================================"
             
-            # Determinar versão de rollback (MANUAL ou AUTOMÁTICO)
+            # Determinar versão de rollback
             if [ "${IS_ROLLBACK}" = "true" ]; then
-              # ROLLBACK MANUAL: usar versão especificada pelo usuário
               TARGET_VERSION="${ROLLBACK_VERSION}"
               echo "📌 ROLLBACK MANUAL para versão: $TARGET_VERSION"
             else
-              # ROLLBACK AUTOMÁTICO: usar versão .previous
               if [ ! -f /opt/alice/versions/observability.previous ]; then
-                echo "❌ ERRO: Nenhuma versão anterior encontrada para rollback automático"
+                echo "❌ ERRO: Nenhuma versão anterior encontrada"
                 exit 1
               fi
               TARGET_VERSION=$(cat /opt/alice/versions/observability.previous)
               echo "📌 ROLLBACK AUTOMÁTICO para versão anterior: $TARGET_VERSION"
             fi
             
-            # CRITICAL FIX (06/01/2026): Observability NÃO usa IMAGE_TAG (só imagens públicas)
-            # Não há necessidade de modificar .env.prod ou passar IMAGE_TAG
-            # CRITICAL: Incluir base.yml para volumes/networks externos
+            echo ""
             cd /opt/alice/app/infra/docker/stacks
-            echo "🐳 Puxando imagens (versão $TARGET_VERSION hardcoded no compose)..."
-            docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.observability.yml pull
             
-            echo "🚀 Deployando versão de rollback..."
+            # STAGE 1: Stop and Remove
+            echo "🛑 Stage 1: Stopping OBSERVABILITY stack containers..."
+            docker compose -p alice-observability --env-file ../.env.prod \
+                           -f docker-compose.base.yml \
+                           -f docker-compose.observability.yml \
+                           down --remove-orphans --timeout 30 2>&1 || true
+            
+            # STAGE 2: Remove Orphans
+            echo ""
+            echo "🧹 Stage 2: Cleaning orphaned containers..."
+            OBSERVABILITY_CONTAINERS=(
+              "alice-prometheus"
+              "alice-grafana"
+              "alice-loki"
+              "alice-promtail"
+              "alice-jaeger"
+              "alice-langfuse-web"
+              "alice-langfuse-worker"
+              "alice-langfuse-db"
+              "alice-clickhouse"
+              "alice-vector"
+              "alice-otel-collector"
+              "alice-node-exporter"
+              "alice-cadvisor"
+            )
+            
+            REMOVED_COUNT=0
+            for container in "${OBSERVABILITY_CONTAINERS[@]}"; do
+              if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
+                echo "   🗑️  Removing: $container"
+                docker rm -f "$container" 2>/dev/null || true
+                REMOVED_COUNT=$((REMOVED_COUNT + 1))
+              fi
+            done
+            echo "   ✅ Removed $REMOVED_COUNT containers"
+            
+            # =========================================================
+            # STAGE 3: Preservar Volumes de Dados (CRITICAL)
+            # =========================================================
+            # CORREÇÃO BUG 2 (08/01/2026): NÃO usar docker volume prune
+            # Ver comentários no rollback-infra para detalhes completos
+            # =========================================================
+            echo ""
+            echo "🛡️  Stage 3: Preservando volumes de dados persistentes..."
+            echo "   ℹ️  Volumes são bind mounts para /opt/alice/data/"
+            echo "   ✅ Volumes de dados protegidos"
+            
+            # =========================================================
+            # STAGE 4: Validate clean state
+            # =========================================================
+            # CORREÇÃO BUG 4 (08/01/2026): Validar TODOS containers removidos no Stage 2
+            # =========================================================
+            echo ""
+            echo "🧪 Stage 4: Validating clean state..."
+            REMAINING=$(docker ps -a --filter "name=alice-prometheus" \
+                                     --filter "name=alice-grafana" \
+                                     --filter "name=alice-loki" \
+                                     --filter "name=alice-promtail" \
+                                     --filter "name=alice-jaeger" \
+                                     --filter "name=alice-langfuse-web" \
+                                     --filter "name=alice-langfuse-worker" \
+                                     --filter "name=alice-langfuse-db" \
+                                     --filter "name=alice-clickhouse" \
+                                     --filter "name=alice-vector" \
+                                     --filter "name=alice-otel-collector" \
+                                     --filter "name=alice-node-exporter" \
+                                     --filter "name=alice-cadvisor" \
+                                     -q | wc -l)
+            if [ $REMAINING -eq 0 ]; then
+              echo "   ✅ All OBSERVABILITY containers cleaned"
+            else
+              echo "   ⚠️  WARNING: $REMAINING OBSERVABILITY containers still present"
+            fi
+            
+            # STAGE 5: Preserve shared resources
+            echo ""
+            echo "🛡️  Stage 5: Verifying shared resources preserved..."
+            docker network inspect alice-network > /dev/null 2>&1 && echo "   ✅ alice-network preserved"
+            
+            echo ""
+            echo "========================================"
+            echo "🐳 Deploying rollback version: $TARGET_VERSION"
+            echo "========================================"
+            echo "   NOTE: OBSERVABILITY uses public images only (no IMAGE_TAG)"
+            
+            docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.observability.yml pull
             docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.observability.yml up -d --remove-orphans
             
             echo "$TARGET_VERSION" > /opt/alice/versions/observability.current
             
-            echo "✅ Rollback OBSERVABILITY concluído com sucesso"
-            echo "⚠️ ATENÇÃO: Outros stacks NÃO foram afetados (rollback cirúrgico)"
+            echo ""
+            echo "✅ ROLLBACK CIRÚRGICO CONCLUÍDO"
+            echo "   Versão atual: $TARGET_VERSION"
+            echo "⚠️  Outros stacks NÃO foram afetados"
 
   # ===========================================================================
   # ERPNEXT STACK - Deploy + Health + Rollback
@@ -1903,6 +2484,24 @@ jobs:
           command_timeout: 20m
           script: |
             set -euo pipefail
+            # =================================================================
+            # SEÇÃO 2.7: Trap Handler for Cleanup on Failure
+            # =================================================================
+            cleanup_on_failure() {
+              local exit_code=$?
+              if [ $exit_code -ne 0 ]; then
+                echo ""
+                echo "🚨 Deploy failed - executing automatic cleanup..."
+                cd /opt/alice/app/infra/docker/stacks
+                docker compose -p alice-erpnext --env-file ../.env.prod \
+                               -f docker-compose.base.yml \
+                               -f docker-compose.erpnext.yml \
+                               down --remove-orphans --timeout 30 2>&1 || true
+                echo "✅ Cleanup completed"
+              fi
+            }
+            trap cleanup_on_failure EXIT
+            
             cd /opt/alice/app/infra/docker/stacks
             
             echo "🚀 Deploying ERPNEXT stack (mariadb, redis-cache, redis-queue, backend, frontend, workers)..."
@@ -1988,7 +2587,7 @@ jobs:
     timeout-minutes: 15
     
     steps:
-      - name: Execute rollback cirúrgico
+      - name: Execute rollback cirúrgico (5 estágios)
         uses: appleboy/ssh-action@v1.2.2
         env:
           IS_ROLLBACK: ${{ needs.validate.outputs.is_rollback }}
@@ -2002,38 +2601,106 @@ jobs:
           envs: IS_ROLLBACK,ROLLBACK_VERSION
           script: |
             set -euo pipefail
-            echo "🔄 Rollback ERPNEXT stack (CIRÚRGICO - não afeta outros stacks)..."
-            echo "⚠️ ERPNext pode falhar SEM afetar Alice - design proposital"
+            # =================================================================
+            # SEÇÃO 2.4: Surgical Rollback for ERPNEXT Stack
+            # =================================================================
+            echo "🔄 ROLLBACK CIRÚRGICO - Stack ERPNEXT"
+            echo "========================================"
+            echo "⚠️  ERPNext pode falhar SEM afetar Alice - design proposital"
             
-            # Determinar versão de rollback (MANUAL ou AUTOMÁTICO)
+            # Determinar versão de rollback
             if [ "${IS_ROLLBACK}" = "true" ]; then
-              # ROLLBACK MANUAL: usar versão especificada pelo usuário
               TARGET_VERSION="${ROLLBACK_VERSION}"
               echo "📌 ROLLBACK MANUAL para versão: $TARGET_VERSION"
             else
-              # ROLLBACK AUTOMÁTICO: usar versão .previous
               if [ ! -f /opt/alice/versions/erpnext.previous ]; then
-                echo "❌ ERRO: Nenhuma versão anterior encontrada para rollback automático"
+                echo "❌ ERRO: Nenhuma versão anterior encontrada"
                 exit 1
               fi
               TARGET_VERSION=$(cat /opt/alice/versions/erpnext.previous)
               echo "📌 ROLLBACK AUTOMÁTICO para versão anterior: $TARGET_VERSION"
             fi
             
-            # CRITICAL FIX (06/01/2026): ERPNext NÃO usa IMAGE_TAG (só imagens públicas Frappe)
-            # Não há necessidade de modificar .env.prod ou passar IMAGE_TAG
-            # CRITICAL: Incluir base.yml para volumes/networks externos
+            echo ""
             cd /opt/alice/app/infra/docker/stacks
-            echo "🐳 Puxando imagens (versão $TARGET_VERSION hardcoded no compose)..."
-            docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml pull
             
-            echo "🚀 Deployando versão de rollback..."
+            # STAGE 1: Stop and Remove
+            echo "🛑 Stage 1: Stopping ERPNEXT stack containers..."
+            docker compose -p alice-erpnext --env-file ../.env.prod \
+                           -f docker-compose.base.yml \
+                           -f docker-compose.erpnext.yml \
+                           down --remove-orphans --timeout 30 2>&1 || true
+            
+            # STAGE 2: Remove Orphans
+            echo ""
+            echo "🧹 Stage 2: Cleaning orphaned containers..."
+            ERPNEXT_CONTAINERS=(
+              "erpnext-mariadb"
+              "erpnext-redis-cache"
+              "erpnext-redis-queue"
+              "erpnext-backend"
+              "erpnext-frontend"
+              "erpnext-websocket"
+              "erpnext-scheduler"
+              "erpnext-worker-default"
+              "erpnext-worker-short"
+              "erpnext-worker-long"
+              "erpnext-configurator"
+              "erpnext-create-site"
+            )
+            
+            REMOVED_COUNT=0
+            for container in "${ERPNEXT_CONTAINERS[@]}"; do
+              if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
+                echo "   🗑️  Removing: $container"
+                docker rm -f "$container" 2>/dev/null || true
+                REMOVED_COUNT=$((REMOVED_COUNT + 1))
+              fi
+            done
+            echo "   ✅ Removed $REMOVED_COUNT containers"
+            
+            # =========================================================
+            # STAGE 3: Preservar Volumes de Dados (CRITICAL)
+            # =========================================================
+            # CORREÇÃO BUG 2 (08/01/2026): NÃO usar docker volume prune
+            # Ver comentários no rollback-infra para detalhes completos
+            # =========================================================
+            echo ""
+            echo "🛡️  Stage 3: Preservando volumes de dados persistentes..."
+            echo "   ℹ️  Volumes são bind mounts para /opt/alice/data/"
+            echo "   ✅ Volumes de dados protegidos"
+            
+            # STAGE 4: Validate clean state
+            echo ""
+            echo "🧪 Stage 4: Validating clean state..."
+            REMAINING=$(docker ps -a --filter "name=erpnext-" -q | wc -l)
+            if [ $REMAINING -eq 0 ]; then
+              echo "   ✅ All ERPNEXT containers cleaned"
+            else
+              echo "   ⚠️  WARNING: $REMAINING ERPNEXT containers still present"
+            fi
+            
+            # STAGE 5: Preserve shared resources
+            echo ""
+            echo "🛡️  Stage 5: Verifying shared resources preserved..."
+            docker network inspect erpnext-network > /dev/null 2>&1 && echo "   ✅ erpnext-network preserved"
+            docker network inspect alice-network > /dev/null 2>&1 && echo "   ✅ alice-network preserved (Caddy routing)"
+            
+            echo ""
+            echo "========================================"
+            echo "🐳 Deploying rollback version: $TARGET_VERSION"
+            echo "========================================"
+            echo "   NOTE: ERPNEXT uses public Frappe images only (no IMAGE_TAG)"
+            
+            docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml pull
             docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml up -d --remove-orphans
             
             echo "$TARGET_VERSION" > /opt/alice/versions/erpnext.current
             
-            echo "✅ Rollback ERPNEXT concluído com sucesso"
-            echo "⚠️ ATENÇÃO: Outros stacks NÃO foram afetados (rollback cirúrgico)"
+            echo ""
+            echo "✅ ROLLBACK CIRÚRGICO CONCLUÍDO"
+            echo "   Versão atual: $TARGET_VERSION"
+            echo "⚠️  Outros stacks NÃO foram afetados (Alice continua rodando)"
 
   # ===========================================================================
   # BACKUP STACK - Deploy + Health + Rollback
@@ -2062,6 +2729,24 @@ jobs:
           command_timeout: 10m
           script: |
             set -euo pipefail
+            # =================================================================
+            # SEÇÃO 2.7: Trap Handler for Cleanup on Failure
+            # =================================================================
+            cleanup_on_failure() {
+              local exit_code=$?
+              if [ $exit_code -ne 0 ]; then
+                echo ""
+                echo "🚨 Deploy failed - executing automatic cleanup..."
+                cd /opt/alice/app/infra/docker/stacks
+                docker compose -p alice-backup --env-file ../.env.prod \
+                               -f docker-compose.base.yml \
+                               -f docker-compose.backup.yml \
+                               down --remove-orphans --timeout 30 2>&1 || true
+                echo "✅ Cleanup completed"
+              fi
+            }
+            trap cleanup_on_failure EXIT
+            
             cd /opt/alice/app/infra/docker/stacks
             
             echo "🚀 Deploying BACKUP stack (pgbackrest)..."
@@ -2143,7 +2828,7 @@ jobs:
     timeout-minutes: 5
     
     steps:
-      - name: Execute rollback cirúrgico
+      - name: Execute rollback cirúrgico (5 estágios)
         uses: appleboy/ssh-action@v1.2.2
         env:
           IS_ROLLBACK: ${{ needs.validate.outputs.is_rollback }}
@@ -2157,37 +2842,113 @@ jobs:
           envs: IS_ROLLBACK,ROLLBACK_VERSION
           script: |
             set -euo pipefail
-            echo "🔄 Rollback BACKUP stack (CIRÚRGICO - não afeta outros stacks)..."
+            # =================================================================
+            # SEÇÃO 2.5: Surgical Rollback for BACKUP Stack
+            # =================================================================
+            echo "🔄 ROLLBACK CIRÚRGICO - Stack BACKUP"
+            echo "========================================"
             
-            # Determinar versão de rollback (MANUAL ou AUTOMÁTICO)
+            # Determinar versão de rollback
             if [ "${IS_ROLLBACK}" = "true" ]; then
-              # ROLLBACK MANUAL: usar versão especificada pelo usuário
               TARGET_VERSION="${ROLLBACK_VERSION}"
               echo "📌 ROLLBACK MANUAL para versão: $TARGET_VERSION"
             else
-              # ROLLBACK AUTOMÁTICO: usar versão .previous
               if [ ! -f /opt/alice/versions/backup.previous ]; then
-                echo "❌ ERRO: Nenhuma versão anterior encontrada para rollback automático"
+                echo "❌ ERRO: Nenhuma versão anterior encontrada"
                 exit 1
               fi
               TARGET_VERSION=$(cat /opt/alice/versions/backup.previous)
               echo "📌 ROLLBACK AUTOMÁTICO para versão anterior: $TARGET_VERSION"
             fi
             
-            # CRITICAL FIX (06/01/2026): Passar IMAGE_TAG via env var para evitar race condition
-            # Múltiplos rollbacks paralelos NÃO devem modificar o arquivo .env.prod compartilhado
-            # CRITICAL: Incluir base.yml para volumes/networks externos
+            echo ""
             cd /opt/alice/app/infra/docker/stacks
-            echo "🐳 Puxando imagens da versão $TARGET_VERSION..."
-            IMAGE_TAG=$TARGET_VERSION docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.backup.yml pull
             
-            echo "🚀 Deployando versão de rollback..."
+            # STAGE 1: Stop and Remove
+            echo "🛑 Stage 1: Stopping BACKUP stack containers..."
+            docker compose -p alice-backup --env-file ../.env.prod \
+                           -f docker-compose.base.yml \
+                           -f docker-compose.backup.yml \
+                           down --remove-orphans --timeout 30 2>&1 || true
+            
+            # STAGE 2: Remove Orphans
+            echo ""
+            echo "🧹 Stage 2: Cleaning orphaned containers..."
+            BACKUP_CONTAINERS=(
+              "alice-pgbackrest"
+            )
+            
+            REMOVED_COUNT=0
+            for container in "${BACKUP_CONTAINERS[@]}"; do
+              if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
+                echo "   🗑️  Removing: $container"
+                docker rm -f "$container" 2>/dev/null || true
+                REMOVED_COUNT=$((REMOVED_COUNT + 1))
+              fi
+            done
+            echo "   ✅ Removed $REMOVED_COUNT containers"
+            
+            # =========================================================
+            # STAGE 3: Preservar Volumes de Dados (CRITICAL)
+            # =========================================================
+            # CORREÇÃO BUG 2 (08/01/2026): NÃO usar docker volume prune
+            # Ver comentários no rollback-infra para detalhes completos
+            # =========================================================
+            echo ""
+            echo "🛡️  Stage 3: Preservando volumes de dados persistentes..."
+            echo "   ℹ️  Volumes são bind mounts para /opt/alice/data/"
+            echo "   ✅ Volumes de dados protegidos"
+            
+            # =========================================================
+            # STAGE 4: Validate Clean State
+            # =========================================================
+            # CORREÇÃO BUG 5 (08/01/2026): Filtro "name=alice-pgbackrest" fazia
+            # substring matching, encontrando alice-pgbackrest-init (infra stack)
+            # além de alice-pgbackrest (backup stack). Isso causava warning falso
+            # "BACKUP containers still present" quando infra init existia.
+            # 
+            # SOLUÇÃO: Usar grep exato igual ao Stage 2, consistente com outros
+            # rollbacks (INFRA, ALICE, OBSERVABILITY).
+            # 
+            # REF: Regra 7 CLAUDE.md (Mudanças cirúrgicas)
+            # =========================================================
+            echo ""
+            echo "🧪 Stage 4: Validating clean state..."
+            
+            # Validar apenas containers do BACKUP_CONTAINERS array (matching exato)
+            REMAINING=0
+            for container in "${BACKUP_CONTAINERS[@]}"; do
+              if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
+                REMAINING=$((REMAINING + 1))
+                echo "   ⚠️  Still present: $container"
+              fi
+            done
+            
+            if [ $REMAINING -eq 0 ]; then
+              echo "   ✅ All BACKUP containers cleaned"
+            else
+              echo "   ⚠️  WARNING: $REMAINING BACKUP containers still present"
+            fi
+            
+            # STAGE 5: Preserve shared resources
+            echo ""
+            echo "🛡️  Stage 5: Verifying shared resources preserved..."
+            docker network inspect alice-network > /dev/null 2>&1 && echo "   ✅ alice-network preserved"
+            
+            echo ""
+            echo "========================================"
+            echo "🐳 Deploying rollback version: $TARGET_VERSION"
+            echo "========================================"
+            
+            IMAGE_TAG=$TARGET_VERSION docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.backup.yml pull
             IMAGE_TAG=$TARGET_VERSION docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.backup.yml up -d --remove-orphans
             
             echo "$TARGET_VERSION" > /opt/alice/versions/backup.current
             
-            echo "✅ Rollback BACKUP concluído com sucesso"
-            echo "⚠️ ATENÇÃO: Outros stacks NÃO foram afetados (rollback cirúrgico)"
+            echo ""
+            echo "✅ ROLLBACK CIRÚRGICO CONCLUÍDO"
+            echo "   Versão atual: $TARGET_VERSION"
+            echo "⚠️  Outros stacks NÃO foram afetados"
 
   # ===========================================================================
   # Job Final: Notificação Consolidada e Relatório Enterprise

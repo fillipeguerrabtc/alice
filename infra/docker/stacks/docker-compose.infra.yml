@@ -209,6 +209,7 @@ services:
     platform: linux/amd64
     container_name: alice-pgbackrest-init
     entrypoint: ["/bin/sh", "-c"]
+    restart: "no"  # SEÇÃO 3.1: Never restart after completion
     security_opt:
       - no-new-privileges:true
     read_only: true
@@ -217,6 +218,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    labels:
+      - "autoclean=true"  # SEÇÃO 3.1: Mark for auto-removal
     environment:
       # Conexão TCP com PostgreSQL (OBRIGATÓRIO para containers separados)
       # Ref: https://pgbackrest.org/configuration.html#section-stanza/option-pg-host
@@ -295,6 +298,7 @@ services:
       - alice-network
     healthcheck:
       # CORREÇÃO 08/01/2026: Healthcheck em 3 estágios progressivos
+      # SEÇÃO 1.3: Progressive Timeout for PostgreSQL
       # Estágio 1: PostgreSQL aceita conexões?
       # Estágio 2: Database existe e aceita queries?
       # Estágio 3: Extensão vector instalada? (soft check - não falha em primeiro boot)
@@ -316,10 +320,23 @@ services:
           fi
           
           exit 0
+      # =================================================================
+      # CORREÇÃO BUG 3 (08/01/2026): Comentários corrigidos para refletir valores reais
+      # =================================================================
+      # ANÁLISE: Janela de tempo para health checks
+      # - ANTES: start_period=240s + (30 retries × 10s interval) = ~540s total
+      # - AGORA: start_period=120s + (10 retries × 10s interval × 90s timeout) = ~220s a ~1020s
+      #
+      # timeout AUMENTOU: 10s → 90s (mais tempo por tentativa individual)
+      # retries DIMINUIU: 30 → 10 (menos tentativas, mas cada uma com mais tempo)
+      # start_period DIMINUIU: 240s → 120s (menos grace period)
+      #
+      # REF: Regra 5 CLAUDE.md (Honestidade - não mentir sobre o que mudou)
+      # =================================================================
       interval: 10s
-      timeout: 10s
-      retries: 30
-      start_period: 240s
+      timeout: 90s        # CHANGED: 10s → 90s (mais tempo por tentativa para initdb lento)
+      retries: 10         # CHANGED: 30 → 10 (menos tentativas, mas cada uma tem 90s de timeout)
+      start_period: 120s  # CHANGED: 240s → 120s (ajustado para fluxo de 3 estágios)
     deploy:
       resources:
         limits:
@@ -535,6 +552,8 @@ services:
     depends_on:
       minio:
         condition: service_healthy
+    labels:
+      - "autoclean=true"  # SEÇÃO 3.1: Mark for auto-removal
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
