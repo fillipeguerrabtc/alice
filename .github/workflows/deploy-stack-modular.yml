@@ -1039,25 +1039,28 @@ jobs:
             POSTGRES_DIR="/opt/alice/data/postgres"
             
             # Estágio 1: Verificar que diretório existe
-            if [ ! -d "$POSTGRES_DIR" ]; then
+            # CORREÇÃO 08/01/2026: Usar sudo para acessar diretório PostgreSQL (modo 700, UID 999)
+            if ! sudo test -d "$POSTGRES_DIR"; then
               echo "❌ ERRO: Diretório $POSTGRES_DIR não existe!"
               exit 1
             fi
             echo "   ✅ Estágio 1: Diretório existe"
             
             # Estágio 2: Verificar owner/group (999:999)
-            ACTUAL_OWNER=$(stat -c '%u:%g' "$POSTGRES_DIR")
+            # CORREÇÃO 08/01/2026: stat requer sudo para ler metadata de diretório 700
+            ACTUAL_OWNER=$(sudo stat -c '%u:%g' "$POSTGRES_DIR")
             if [ "$ACTUAL_OWNER" != "999:999" ]; then
               echo "❌ ERRO: Owner incorreto em $POSTGRES_DIR"
               echo "   Esperado: 999:999"
               echo "   Atual: $ACTUAL_OWNER"
-              ls -ld "$POSTGRES_DIR"
+              sudo ls -ld "$POSTGRES_DIR"
               exit 1
             fi
             echo "   ✅ Estágio 2: Owner/group correto (999:999)"
             
             # Estágio 3: Verificar permissões numéricas (700)
-            ACTUAL_PERMS=$(stat -c '%a' "$POSTGRES_DIR")
+            # CORREÇÃO 08/01/2026: stat requer sudo para ler metadata de diretório 700
+            ACTUAL_PERMS=$(sudo stat -c '%a' "$POSTGRES_DIR")
             if [ "$ACTUAL_PERMS" != "700" ]; then
               echo "❌ ERRO: Permissões incorretas em $POSTGRES_DIR"
               echo "   Esperado: 700"
@@ -1070,7 +1073,7 @@ jobs:
             # (funciona em servidor limpo sem UID 999 no host)
             if ! docker run --rm --user 999:999 -v "$POSTGRES_DIR:/test:rw" alpine:3.19 touch /test/.write-test 2>/dev/null; then
               echo "❌ ERRO: Usuário 999 (postgres) NÃO consegue escrever no volume Docker"
-              ls -ld "$POSTGRES_DIR"
+              sudo ls -ld "$POSTGRES_DIR"
               exit 1
             fi
             
@@ -1088,7 +1091,8 @@ jobs:
             echo "   🔍 Estágio 5: Validando TODOS os arquivos/dirs recursivamente..."
             
             # Verificar se diretório está vazio
-            if [ -z "$(ls -A $POSTGRES_DIR 2>/dev/null)" ]; then
+            # CORREÇÃO 08/01/2026: ls -A requer sudo para listar conteúdo de diretório 700
+            if [ -z "$(sudo ls -A $POSTGRES_DIR 2>/dev/null)" ]; then
               echo "   ✅ Estágio 5: Diretório vazio (primeiro deploy limpo)"
             else
               # Diretório NÃO está vazio - validar recursivamente
@@ -1212,7 +1216,8 @@ jobs:
             
             POSTGRES_DIR="/opt/alice/data/postgres"
             
-            if [ -d "$POSTGRES_DIR" ]; then
+            # CORREÇÃO 08/01/2026: Usar sudo para consistência com outras verificações
+            if sudo test -d "$POSTGRES_DIR"; then
               # =================================================================
               # CORREÇÃO BUG 1 (08/01/2026): Rastrear arquivos ANTES de deletar
               # O tracking deve ocorrer ANTES da deleção para mensagem correta
@@ -1224,7 +1229,10 @@ jobs:
               SOCKET_COUNT=0
               
               # Verificar PID lock file
-              if [ -f "$POSTGRES_DIR/postmaster.pid" ]; then
+              # CORREÇÃO 08/01/2026: Usar sudo para acessar diretório PostgreSQL (modo 700, UID 999)
+              # Sem sudo, [ -f ] falha silenciosamente se não tiver permissão no diretório
+              # Ref: CLAUDE.md Regra 7 (Mudanças cirúrgicas), consistência com socket check linha 1232
+              if sudo test -f "$POSTGRES_DIR/postmaster.pid"; then
                 PID_FILE_FOUND=1
               fi
               
@@ -1274,7 +1282,8 @@ jobs:
             POSTGRES_DIR="/opt/alice/data/postgres"
             
             # Se diretório não existe, criar com permissions corretas
-            if [ ! -d "$POSTGRES_DIR" ]; then
+            # CORREÇÃO 08/01/2026: Usar sudo para verificar diretório PostgreSQL (modo 700, UID 999)
+            if ! sudo test -d "$POSTGRES_DIR"; then
               echo "📁 Criando $POSTGRES_DIR (primeiro deploy)"
               sudo mkdir -p "$POSTGRES_DIR"
               sudo chown 999:999 "$POSTGRES_DIR"
@@ -1284,11 +1293,13 @@ jobs:
             fi
             
             # Diretório existe - verificar se está vazio OU tem ownership correto
-            if [ -z "$(ls -A "$POSTGRES_DIR")" ]; then
+            # CORREÇÃO 08/01/2026: ls -A requer sudo para listar conteúdo de diretório 700
+            if [ -z "$(sudo ls -A "$POSTGRES_DIR")" ]; then
               echo "✅ Diretório vazio (primeiro deploy limpo)"
               
               # Garantir ownership correto mesmo vazio
-              ACTUAL_OWNER=$(stat -c '%u:%g' "$POSTGRES_DIR")
+              # CORREÇÃO 08/01/2026: stat requer sudo para ler metadata de diretório 700
+              ACTUAL_OWNER=$(sudo stat -c '%u:%g' "$POSTGRES_DIR")
               if [ "$ACTUAL_OWNER" != "999:999" ]; then
                 echo "🔧 Corrigindo ownership de diretório vazio: $ACTUAL_OWNER → 999:999"
                 sudo chown 999:999 "$POSTGRES_DIR"
@@ -1325,7 +1336,8 @@ jobs:
             fi
             
             # Validar permissions do diretório pai
-            ACTUAL_PERMS=$(stat -c '%a' "$POSTGRES_DIR")
+            # CORREÇÃO 08/01/2026: stat requer sudo para ler metadata de diretório 700
+            ACTUAL_PERMS=$(sudo stat -c '%a' "$POSTGRES_DIR")
             if [ "$ACTUAL_PERMS" != "700" ]; then
               echo "🔧 Corrigindo permissions: $ACTUAL_PERMS → 700"
               sudo chmod 700 "$POSTGRES_DIR"
@@ -1627,10 +1639,11 @@ jobs:
             df -h /opt/alice/data/postgres
             
             # Verificar permissões do diretório
+            # CORREÇÃO 08/01/2026: Usar sudo para acessar diretório PostgreSQL (modo 700, UID 999)
             echo ""
             echo "🔐 Permissões PostgreSQL:"
-            ls -ld /opt/alice/data/postgres
-            stat /opt/alice/data/postgres
+            sudo ls -ld /opt/alice/data/postgres
+            sudo stat /opt/alice/data/postgres
             
             echo ""
             echo "========================================"
