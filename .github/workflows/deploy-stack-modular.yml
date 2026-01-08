@@ -1347,6 +1347,68 @@ jobs:
             
             echo "✅ INFRA stack deployed"
 
+      - name: Clean init containers (post-deploy)
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          command_timeout: 2m
+          script: |
+            set -euo pipefail
+            # =================================================================
+            # SEÇÃO 3.2: Post-Deploy Init Cleanup
+            # =================================================================
+            # PROBLEMA: Init containers completam mas permanecem no servidor
+            # SOLUÇÃO: Remover após conclusão bem-sucedida
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 16 (Cleanup)
+            # =================================================================
+            echo "🧹 Cleaning init containers (post-deploy)..."
+            
+            # Wait for init containers to complete (max 30s)
+            for init in alice-minio-init alice-pgbackrest-init; do
+              if docker ps -a --format '{{.Names}}' | grep -q "^${init}$"; then
+                echo "   Checking $init status..."
+                
+                # Wait up to 30 seconds for container to exit
+                WAIT_COUNT=0
+                while [ $WAIT_COUNT -lt 30 ]; do
+                  STATUS=$(docker inspect --format='{{.State.Status}}' $init 2>/dev/null || echo "not_found")
+                  
+                  if [ "$STATUS" = "exited" ]; then
+                    EXIT_CODE=$(docker inspect --format='{{.State.ExitCode}}' $init 2>/dev/null || echo "255")
+                    
+                    if [ "$EXIT_CODE" = "0" ]; then
+                      echo "   ✅ $init completed successfully (exit code 0) - removing"
+                      docker rm -f $init 2>/dev/null || true
+                    else
+                      echo "   ⚠️  $init failed (exit code $EXIT_CODE) - keeping for troubleshooting"
+                    fi
+                    break
+                  elif [ "$STATUS" = "running" ]; then
+                    echo "   ⏳ $init still running (${WAIT_COUNT}s)..."
+                    sleep 1
+                    WAIT_COUNT=$((WAIT_COUNT + 1))
+                  elif [ "$STATUS" = "not_found" ]; then
+                    echo "   ℹ️  $init not found (already cleaned or never created)"
+                    break
+                  else
+                    echo "   ⚠️  $init in unexpected state: $STATUS"
+                    break
+                  fi
+                done
+                
+                if [ $WAIT_COUNT -eq 30 ]; then
+                  echo "   ⚠️  $init still running after 30s - keeping for investigation"
+                fi
+              else
+                echo "   ℹ️  $init not found (already cleaned or never created)"
+              fi
+            done
+            
+            echo "✅ Init containers cleanup completed"
+
   health-infra:
     name: Health Check INFRA
     runs-on: [self-hosted, linux, deploy]
@@ -2133,7 +2195,7 @@ jobs:
     timeout-minutes: 10
     
     steps:
-      - name: Execute rollback cirúrgico
+      - name: Execute rollback cirúrgico (5 estágios)
         uses: appleboy/ssh-action@v1.2.2
         env:
           IS_ROLLBACK: ${{ needs.validate.outputs.is_rollback }}
@@ -2147,37 +2209,102 @@ jobs:
           envs: IS_ROLLBACK,ROLLBACK_VERSION
           script: |
             set -euo pipefail
-            echo "🔄 Rollback OBSERVABILITY stack (CIRÚRGICO - não afeta outros stacks)..."
+            # =================================================================
+            # SEÇÃO 2.3: Surgical Rollback for OBSERVABILITY Stack
+            # =================================================================
+            echo "🔄 ROLLBACK CIRÚRGICO - Stack OBSERVABILITY"
+            echo "========================================"
             
-            # Determinar versão de rollback (MANUAL ou AUTOMÁTICO)
+            # Determinar versão de rollback
             if [ "${IS_ROLLBACK}" = "true" ]; then
-              # ROLLBACK MANUAL: usar versão especificada pelo usuário
               TARGET_VERSION="${ROLLBACK_VERSION}"
               echo "📌 ROLLBACK MANUAL para versão: $TARGET_VERSION"
             else
-              # ROLLBACK AUTOMÁTICO: usar versão .previous
               if [ ! -f /opt/alice/versions/observability.previous ]; then
-                echo "❌ ERRO: Nenhuma versão anterior encontrada para rollback automático"
+                echo "❌ ERRO: Nenhuma versão anterior encontrada"
                 exit 1
               fi
               TARGET_VERSION=$(cat /opt/alice/versions/observability.previous)
               echo "📌 ROLLBACK AUTOMÁTICO para versão anterior: $TARGET_VERSION"
             fi
             
-            # CRITICAL FIX (06/01/2026): Observability NÃO usa IMAGE_TAG (só imagens públicas)
-            # Não há necessidade de modificar .env.prod ou passar IMAGE_TAG
-            # CRITICAL: Incluir base.yml para volumes/networks externos
+            echo ""
             cd /opt/alice/app/infra/docker/stacks
-            echo "🐳 Puxando imagens (versão $TARGET_VERSION hardcoded no compose)..."
-            docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.observability.yml pull
             
-            echo "🚀 Deployando versão de rollback..."
+            # STAGE 1: Stop and Remove
+            echo "🛑 Stage 1: Stopping OBSERVABILITY stack containers..."
+            docker compose -p alice-observability --env-file ../.env.prod \
+                           -f docker-compose.base.yml \
+                           -f docker-compose.observability.yml \
+                           down --remove-orphans --timeout 30 2>&1 || true
+            
+            # STAGE 2: Remove Orphans
+            echo ""
+            echo "🧹 Stage 2: Cleaning orphaned containers..."
+            OBSERVABILITY_CONTAINERS=(
+              "alice-prometheus"
+              "alice-grafana"
+              "alice-loki"
+              "alice-promtail"
+              "alice-jaeger"
+              "alice-langfuse-web"
+              "alice-langfuse-worker"
+              "alice-langfuse-db"
+              "alice-clickhouse"
+              "alice-vector"
+              "alice-otel-collector"
+              "alice-node-exporter"
+              "alice-cadvisor"
+            )
+            
+            REMOVED_COUNT=0
+            for container in "${OBSERVABILITY_CONTAINERS[@]}"; do
+              if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
+                echo "   🗑️  Removing: $container"
+                docker rm -f "$container" 2>/dev/null || true
+                REMOVED_COUNT=$((REMOVED_COUNT + 1))
+              fi
+            done
+            echo "   ✅ Removed $REMOVED_COUNT containers"
+            
+            # STAGE 3: Prune temporary volumes
+            echo ""
+            echo "🧹 Stage 3: Pruning temporary volumes..."
+            docker volume prune -f --filter "label!=external" 2>&1 || true
+            
+            # STAGE 4: Validate clean state
+            echo ""
+            echo "🧪 Stage 4: Validating clean state..."
+            REMAINING=$(docker ps -a --filter "name=alice-prometheus" \
+                                     --filter "name=alice-grafana" \
+                                     --filter "name=alice-langfuse" \
+                                     -q | wc -l)
+            if [ $REMAINING -eq 0 ]; then
+              echo "   ✅ All OBSERVABILITY containers cleaned"
+            else
+              echo "   ⚠️  WARNING: $REMAINING OBSERVABILITY containers still present"
+            fi
+            
+            # STAGE 5: Preserve shared resources
+            echo ""
+            echo "🛡️  Stage 5: Verifying shared resources preserved..."
+            docker network inspect alice-network > /dev/null 2>&1 && echo "   ✅ alice-network preserved"
+            
+            echo ""
+            echo "========================================"
+            echo "🐳 Deploying rollback version: $TARGET_VERSION"
+            echo "========================================"
+            echo "   NOTE: OBSERVABILITY uses public images only (no IMAGE_TAG)"
+            
+            docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.observability.yml pull
             docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.observability.yml up -d --remove-orphans
             
             echo "$TARGET_VERSION" > /opt/alice/versions/observability.current
             
-            echo "✅ Rollback OBSERVABILITY concluído com sucesso"
-            echo "⚠️ ATENÇÃO: Outros stacks NÃO foram afetados (rollback cirúrgico)"
+            echo ""
+            echo "✅ ROLLBACK CIRÚRGICO CONCLUÍDO"
+            echo "   Versão atual: $TARGET_VERSION"
+            echo "⚠️  Outros stacks NÃO foram afetados"
 
   # ===========================================================================
   # ERPNEXT STACK - Deploy + Health + Rollback
@@ -2291,7 +2418,7 @@ jobs:
     timeout-minutes: 15
     
     steps:
-      - name: Execute rollback cirúrgico
+      - name: Execute rollback cirúrgico (5 estágios)
         uses: appleboy/ssh-action@v1.2.2
         env:
           IS_ROLLBACK: ${{ needs.validate.outputs.is_rollback }}
@@ -2305,38 +2432,100 @@ jobs:
           envs: IS_ROLLBACK,ROLLBACK_VERSION
           script: |
             set -euo pipefail
-            echo "🔄 Rollback ERPNEXT stack (CIRÚRGICO - não afeta outros stacks)..."
-            echo "⚠️ ERPNext pode falhar SEM afetar Alice - design proposital"
+            # =================================================================
+            # SEÇÃO 2.4: Surgical Rollback for ERPNEXT Stack
+            # =================================================================
+            echo "🔄 ROLLBACK CIRÚRGICO - Stack ERPNEXT"
+            echo "========================================"
+            echo "⚠️  ERPNext pode falhar SEM afetar Alice - design proposital"
             
-            # Determinar versão de rollback (MANUAL ou AUTOMÁTICO)
+            # Determinar versão de rollback
             if [ "${IS_ROLLBACK}" = "true" ]; then
-              # ROLLBACK MANUAL: usar versão especificada pelo usuário
               TARGET_VERSION="${ROLLBACK_VERSION}"
               echo "📌 ROLLBACK MANUAL para versão: $TARGET_VERSION"
             else
-              # ROLLBACK AUTOMÁTICO: usar versão .previous
               if [ ! -f /opt/alice/versions/erpnext.previous ]; then
-                echo "❌ ERRO: Nenhuma versão anterior encontrada para rollback automático"
+                echo "❌ ERRO: Nenhuma versão anterior encontrada"
                 exit 1
               fi
               TARGET_VERSION=$(cat /opt/alice/versions/erpnext.previous)
               echo "📌 ROLLBACK AUTOMÁTICO para versão anterior: $TARGET_VERSION"
             fi
             
-            # CRITICAL FIX (06/01/2026): ERPNext NÃO usa IMAGE_TAG (só imagens públicas Frappe)
-            # Não há necessidade de modificar .env.prod ou passar IMAGE_TAG
-            # CRITICAL: Incluir base.yml para volumes/networks externos
+            echo ""
             cd /opt/alice/app/infra/docker/stacks
-            echo "🐳 Puxando imagens (versão $TARGET_VERSION hardcoded no compose)..."
-            docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml pull
             
-            echo "🚀 Deployando versão de rollback..."
+            # STAGE 1: Stop and Remove
+            echo "🛑 Stage 1: Stopping ERPNEXT stack containers..."
+            docker compose -p alice-erpnext --env-file ../.env.prod \
+                           -f docker-compose.base.yml \
+                           -f docker-compose.erpnext.yml \
+                           down --remove-orphans --timeout 30 2>&1 || true
+            
+            # STAGE 2: Remove Orphans
+            echo ""
+            echo "🧹 Stage 2: Cleaning orphaned containers..."
+            ERPNEXT_CONTAINERS=(
+              "erpnext-mariadb"
+              "erpnext-redis-cache"
+              "erpnext-redis-queue"
+              "erpnext-backend"
+              "erpnext-frontend"
+              "erpnext-websocket"
+              "erpnext-scheduler"
+              "erpnext-worker-default"
+              "erpnext-worker-short"
+              "erpnext-worker-long"
+              "erpnext-configurator"
+              "erpnext-create-site"
+            )
+            
+            REMOVED_COUNT=0
+            for container in "${ERPNEXT_CONTAINERS[@]}"; do
+              if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
+                echo "   🗑️  Removing: $container"
+                docker rm -f "$container" 2>/dev/null || true
+                REMOVED_COUNT=$((REMOVED_COUNT + 1))
+              fi
+            done
+            echo "   ✅ Removed $REMOVED_COUNT containers"
+            
+            # STAGE 3: Prune temporary volumes
+            echo ""
+            echo "🧹 Stage 3: Pruning temporary volumes..."
+            docker volume prune -f --filter "label!=external" 2>&1 || true
+            
+            # STAGE 4: Validate clean state
+            echo ""
+            echo "🧪 Stage 4: Validating clean state..."
+            REMAINING=$(docker ps -a --filter "name=erpnext-" -q | wc -l)
+            if [ $REMAINING -eq 0 ]; then
+              echo "   ✅ All ERPNEXT containers cleaned"
+            else
+              echo "   ⚠️  WARNING: $REMAINING ERPNEXT containers still present"
+            fi
+            
+            # STAGE 5: Preserve shared resources
+            echo ""
+            echo "🛡️  Stage 5: Verifying shared resources preserved..."
+            docker network inspect erpnext-network > /dev/null 2>&1 && echo "   ✅ erpnext-network preserved"
+            docker network inspect alice-network > /dev/null 2>&1 && echo "   ✅ alice-network preserved (Caddy routing)"
+            
+            echo ""
+            echo "========================================"
+            echo "🐳 Deploying rollback version: $TARGET_VERSION"
+            echo "========================================"
+            echo "   NOTE: ERPNEXT uses public Frappe images only (no IMAGE_TAG)"
+            
+            docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml pull
             docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml up -d --remove-orphans
             
             echo "$TARGET_VERSION" > /opt/alice/versions/erpnext.current
             
-            echo "✅ Rollback ERPNEXT concluído com sucesso"
-            echo "⚠️ ATENÇÃO: Outros stacks NÃO foram afetados (rollback cirúrgico)"
+            echo ""
+            echo "✅ ROLLBACK CIRÚRGICO CONCLUÍDO"
+            echo "   Versão atual: $TARGET_VERSION"
+            echo "⚠️  Outros stacks NÃO foram afetados (Alice continua rodando)"
 
   # ===========================================================================
   # BACKUP STACK - Deploy + Health + Rollback
@@ -2446,7 +2635,7 @@ jobs:
     timeout-minutes: 5
     
     steps:
-      - name: Execute rollback cirúrgico
+      - name: Execute rollback cirúrgico (5 estágios)
         uses: appleboy/ssh-action@v1.2.2
         env:
           IS_ROLLBACK: ${{ needs.validate.outputs.is_rollback }}
@@ -2460,37 +2649,86 @@ jobs:
           envs: IS_ROLLBACK,ROLLBACK_VERSION
           script: |
             set -euo pipefail
-            echo "🔄 Rollback BACKUP stack (CIRÚRGICO - não afeta outros stacks)..."
+            # =================================================================
+            # SEÇÃO 2.5: Surgical Rollback for BACKUP Stack
+            # =================================================================
+            echo "🔄 ROLLBACK CIRÚRGICO - Stack BACKUP"
+            echo "========================================"
             
-            # Determinar versão de rollback (MANUAL ou AUTOMÁTICO)
+            # Determinar versão de rollback
             if [ "${IS_ROLLBACK}" = "true" ]; then
-              # ROLLBACK MANUAL: usar versão especificada pelo usuário
               TARGET_VERSION="${ROLLBACK_VERSION}"
               echo "📌 ROLLBACK MANUAL para versão: $TARGET_VERSION"
             else
-              # ROLLBACK AUTOMÁTICO: usar versão .previous
               if [ ! -f /opt/alice/versions/backup.previous ]; then
-                echo "❌ ERRO: Nenhuma versão anterior encontrada para rollback automático"
+                echo "❌ ERRO: Nenhuma versão anterior encontrada"
                 exit 1
               fi
               TARGET_VERSION=$(cat /opt/alice/versions/backup.previous)
               echo "📌 ROLLBACK AUTOMÁTICO para versão anterior: $TARGET_VERSION"
             fi
             
-            # CRITICAL FIX (06/01/2026): Passar IMAGE_TAG via env var para evitar race condition
-            # Múltiplos rollbacks paralelos NÃO devem modificar o arquivo .env.prod compartilhado
-            # CRITICAL: Incluir base.yml para volumes/networks externos
+            echo ""
             cd /opt/alice/app/infra/docker/stacks
-            echo "🐳 Puxando imagens da versão $TARGET_VERSION..."
-            IMAGE_TAG=$TARGET_VERSION docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.backup.yml pull
             
-            echo "🚀 Deployando versão de rollback..."
+            # STAGE 1: Stop and Remove
+            echo "🛑 Stage 1: Stopping BACKUP stack containers..."
+            docker compose -p alice-backup --env-file ../.env.prod \
+                           -f docker-compose.base.yml \
+                           -f docker-compose.backup.yml \
+                           down --remove-orphans --timeout 30 2>&1 || true
+            
+            # STAGE 2: Remove Orphans
+            echo ""
+            echo "🧹 Stage 2: Cleaning orphaned containers..."
+            BACKUP_CONTAINERS=(
+              "alice-pgbackrest"
+            )
+            
+            REMOVED_COUNT=0
+            for container in "${BACKUP_CONTAINERS[@]}"; do
+              if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
+                echo "   🗑️  Removing: $container"
+                docker rm -f "$container" 2>/dev/null || true
+                REMOVED_COUNT=$((REMOVED_COUNT + 1))
+              fi
+            done
+            echo "   ✅ Removed $REMOVED_COUNT containers"
+            
+            # STAGE 3: Prune temporary volumes
+            echo ""
+            echo "🧹 Stage 3: Pruning temporary volumes..."
+            docker volume prune -f --filter "label!=external" 2>&1 || true
+            
+            # STAGE 4: Validate clean state
+            echo ""
+            echo "🧪 Stage 4: Validating clean state..."
+            REMAINING=$(docker ps -a --filter "name=alice-pgbackrest" -q | wc -l)
+            if [ $REMAINING -eq 0 ]; then
+              echo "   ✅ All BACKUP containers cleaned"
+            else
+              echo "   ⚠️  WARNING: $REMAINING BACKUP containers still present"
+            fi
+            
+            # STAGE 5: Preserve shared resources
+            echo ""
+            echo "🛡️  Stage 5: Verifying shared resources preserved..."
+            docker network inspect alice-network > /dev/null 2>&1 && echo "   ✅ alice-network preserved"
+            
+            echo ""
+            echo "========================================"
+            echo "🐳 Deploying rollback version: $TARGET_VERSION"
+            echo "========================================"
+            
+            IMAGE_TAG=$TARGET_VERSION docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.backup.yml pull
             IMAGE_TAG=$TARGET_VERSION docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.backup.yml up -d --remove-orphans
             
             echo "$TARGET_VERSION" > /opt/alice/versions/backup.current
             
-            echo "✅ Rollback BACKUP concluído com sucesso"
-            echo "⚠️ ATENÇÃO: Outros stacks NÃO foram afetados (rollback cirúrgico)"
+            echo ""
+            echo "✅ ROLLBACK CIRÚRGICO CONCLUÍDO"
+            echo "   Versão atual: $TARGET_VERSION"
+            echo "⚠️  Outros stacks NÃO foram afetados"
 
   # ===========================================================================
   # Job Final: Notificação Consolidada e Relatório Enterprise

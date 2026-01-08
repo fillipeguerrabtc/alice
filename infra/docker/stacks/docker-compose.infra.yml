@@ -209,6 +209,7 @@ services:
     platform: linux/amd64
     container_name: alice-pgbackrest-init
     entrypoint: ["/bin/sh", "-c"]
+    restart: "no"  # SEÇÃO 3.1: Never restart after completion
     security_opt:
       - no-new-privileges:true
     read_only: true
@@ -217,6 +218,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    labels:
+      - "autoclean=true"  # SEÇÃO 3.1: Mark for auto-removal
     environment:
       # Conexão TCP com PostgreSQL (OBRIGATÓRIO para containers separados)
       # Ref: https://pgbackrest.org/configuration.html#section-stanza/option-pg-host
@@ -536,6 +539,8 @@ services:
     depends_on:
       minio:
         condition: service_healthy
+    labels:
+      - "autoclean=true"  # SEÇÃO 3.1: Mark for auto-removal
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
