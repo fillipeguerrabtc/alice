@@ -2899,10 +2899,31 @@ jobs:
             echo "   ℹ️  Volumes são bind mounts para /opt/alice/data/"
             echo "   ✅ Volumes de dados protegidos"
             
-            # STAGE 4: Validate clean state
+            # =========================================================
+            # STAGE 4: Validate Clean State
+            # =========================================================
+            # CORREÇÃO BUG 5 (08/01/2026): Filtro "name=alice-pgbackrest" fazia
+            # substring matching, encontrando alice-pgbackrest-init (infra stack)
+            # além de alice-pgbackrest (backup stack). Isso causava warning falso
+            # "BACKUP containers still present" quando infra init existia.
+            # 
+            # SOLUÇÃO: Usar grep exato igual ao Stage 2, consistente com outros
+            # rollbacks (INFRA, ALICE, OBSERVABILITY).
+            # 
+            # REF: Regra 7 CLAUDE.md (Mudanças cirúrgicas)
+            # =========================================================
             echo ""
             echo "🧪 Stage 4: Validating clean state..."
-            REMAINING=$(docker ps -a --filter "name=alice-pgbackrest" -q | wc -l)
+            
+            # Validar apenas containers do BACKUP_CONTAINERS array (matching exato)
+            REMAINING=0
+            for container in "${BACKUP_CONTAINERS[@]}"; do
+              if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
+                REMAINING=$((REMAINING + 1))
+                echo "   ⚠️  Still present: $container"
+              fi
+            done
+            
             if [ $REMAINING -eq 0 ]; then
               echo "   ✅ All BACKUP containers cleaned"
             else
