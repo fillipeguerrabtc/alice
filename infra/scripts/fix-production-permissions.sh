@@ -111,8 +111,9 @@ declare -a DIRECTORIES=(
     "${LOGS_DIR}/clickhouse:101:101:755"
     
     # BACKUPS
+    # NOTA: postgresql/logs será criado pelo container pgBackRest conforme necessário
+    # Não definimos ownership específico para evitar conflito na validação recursiva
     "${BACKUPS_DIR}/postgresql:999:999:755"
-    "${BACKUPS_DIR}/postgresql/logs:70:70:755"
     
     # UPLOADS (alice microservices)
     "${UPLOADS_DIR}:1000:1000:755"
