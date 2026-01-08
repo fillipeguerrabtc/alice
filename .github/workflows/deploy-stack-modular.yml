@@ -979,9 +979,18 @@ jobs:
             # ORDEM ENTERPRISE: cleanup → create → validate
             # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 16 (Idempotência)
             # =========================================================
+            # CORREÇÃO BUG #1 (PR#85 - 08/01/2026): Usar sudo test -f
+            # PROBLEMA ANTERIOR: [ -f ] sem sudo falhava silenciosamente porque
+            #                    diretório postgres tem modo 700 (owner-only access).
+            #                    Script reportava "Nenhum lock encontrado" mesmo
+            #                    quando lock existia (falso negativo).
+            # SOLUÇÃO: Usar "sudo test -f" para acesso privilegiado (consistente
+            #          com safety check posterior que já usa sudo test -f)
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Mudanças cirúrgicas)
+            # =========================================================
             echo ""
             echo "🔒 Verificando locks PostgreSQL..."
-            if [ -f "/opt/alice/data/postgres/postmaster.pid" ]; then
+            if sudo test -f "/opt/alice/data/postgres/postmaster.pid"; then
               echo "⚠️  Lock PostgreSQL detectado - removendo (safe durante deploy)"
               sudo rm -f /opt/alice/data/postgres/postmaster.pid
               echo "✅ Lock removido"

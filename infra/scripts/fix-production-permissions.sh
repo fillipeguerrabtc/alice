@@ -324,15 +324,28 @@ is_validation_exception() {
 #             de subdiretórios exceção (ex: logs/ 70:70 dentro de postgresql/ 999:999)
 #   SOLUÇÃO: Excluir paths de exceção do find que detecta arquivos incorretos
 #
+# CORREÇÃO BUG #2 (PR#85 - 08/01/2026):
+#   PROBLEMA ANTERIOR: Função excluía TODOS os arquivos em paths de exceção
+#                      baseado APENAS no path, sem verificar ownership.
+#                      Arquivos com ownership incorreto (ex: 80:80 ao invés
+#                      de 70:70) em diretórios de exceção eram silenciosamente
+#                      ignorados, tornando is_validation_exception() código morto.
+#   SOLUÇÃO: Excluir apenas arquivos que TANTO estão no path de exceção
+#            QUANTO têm o ownership CORRETO da exceção.
+#            Arquivos em paths de exceção com ownership incorreto NÃO são
+#            excluídos e serão reportados como erros.
+#
 # PARÂMETROS:
 #   $1 - base_path: Diretório base sendo verificado
 #
 # RETORNO (stdout):
-#   String com argumentos -not -path para cada exceção aplicável
+#   String com argumentos -not para cada exceção aplicável
 #
 # EXEMPLO:
 #   get_find_exclusions_for_path "/opt/alice/backups/postgresql"
-#   # Retorna: -not -path "/opt/alice/backups/postgresql/logs" -not -path "/opt/alice/backups/postgresql/logs/*"
+#   # Retorna exclusões que consideram path E ownership:
+#   # -not \( -path "/opt/alice/backups/postgresql/logs" -user 70 -group 70 \)
+#   # -not \( -path "/opt/alice/backups/postgresql/logs/*" -user 70 -group 70 \)
 #
 # REF: CLAUDE.md Regra 6 (Enterprise-grade), find(1) man page
 # =============================================================================
@@ -343,8 +356,23 @@ get_find_exclusions_for_path() {
     for exception_path in "${!VALIDATION_EXCEPTIONS[@]}"; do
         # Verificar se a exceção está dentro do base_path
         if [[ "$exception_path" == "$base_path"/* ]]; then
-            # Excluir o diretório de exceção E todo seu conteúdo
-            exclusions+=" -not -path \"${exception_path}\" -not -path \"${exception_path}/*\""
+            # Extrair UID e GID esperados da exceção
+            local exception_ownership="${VALIDATION_EXCEPTIONS[$exception_path]}"
+            local exception_uid="${exception_ownership%%:*}"
+            local exception_gid="${exception_ownership##*:}"
+            
+            # =================================================================
+            # CORREÇÃO BUG #2 (PR#85): Excluir apenas se path E ownership corretos
+            # =================================================================
+            # Exclui arquivos que:
+            #   1. Estão no path de exceção (ou descendentes)
+            #   2. E têm o ownership CORRETO da exceção
+            #
+            # Arquivos em paths de exceção com ownership INCORRETO (ex: 80:80
+            # ao invés de 70:70) NÃO são excluídos e serão reportados.
+            # =================================================================
+            exclusions+=" -not \\( -path \"${exception_path}\" -user ${exception_uid} -group ${exception_gid} \\)"
+            exclusions+=" -not \\( -path \"${exception_path}/*\" -user ${exception_uid} -group ${exception_gid} \\)"
         fi
     done
     
