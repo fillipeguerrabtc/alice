@@ -1166,7 +1166,15 @@ jobs:
     needs: [validate, prepare]
     # CRITICAL: NÃO rodar em rollback manual (deploy seria sobrescrito pelo rollback)
     if: needs.validate.outputs.deploy_infra == 'true' && needs.prepare.result == 'success' && needs.validate.outputs.is_rollback == 'false'
-    timeout-minutes: 15
+    # =================================================================
+    # CORREÇÃO PR#86 (08/01/2026): Timeout aumentado para primeiro boot
+    # =================================================================
+    # PROBLEMA: PostgreSQL no primeiro boot (initdb + extensions) demora ~5-8 min
+    #           Timeout de 15 min era apertado considerando pull + deploy + healthcheck
+    # SOLUÇÃO: 25 min = margem confortável para primeiro boot
+    # REF: CLAUDE.md Regra 6 (Enterprise-grade)
+    # =================================================================
+    timeout-minutes: 25
     
     steps:
       - name: Limpar containers parciais do deploy anterior (se existirem)
@@ -1387,7 +1395,14 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          command_timeout: 15m
+          # =================================================================
+          # CORREÇÃO PR#86 (08/01/2026): command_timeout aumentado
+          # =================================================================
+          # PROBLEMA: command_timeout de 15m era menor que --wait-timeout 600s + pull
+          # SOLUÇÃO: 20m = margem para pull (~2-3 min) + wait (10 min) + overhead
+          # REF: CLAUDE.md Regra 6 (Enterprise-grade)
+          # =================================================================
+          command_timeout: 20m
           script: |
             set -euo pipefail
             # =================================================================
@@ -1398,12 +1413,58 @@ jobs:
             # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 16 (Idempotency)
             # =================================================================
             
-            # Trap handler para cleanup em caso de falha
+            # =================================================================
+            # CORREÇÃO PR#86 (08/01/2026): Trap handler com diagnóstico detalhado
+            # =================================================================
+            # PROBLEMA: Quando deploy falhava, não havia logs suficientes para diagnóstico
+            # SOLUÇÃO: Capturar logs detalhados ANTES do cleanup
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 5 (Honestidade/transparência)
+            # =================================================================
             cleanup_on_failure() {
               local exit_code=$?
               if [ $exit_code -ne 0 ]; then
                 echo ""
-                echo "🚨 Deploy failed - executing automatic cleanup..."
+                echo "🚨 Deploy failed (exit code: $exit_code) - capturing diagnostics..."
+                echo ""
+                
+                # Capturar estado dos containers ANTES do cleanup
+                echo "📋 STATUS DOS CONTAINERS:"
+                echo "=========================================="
+                docker ps -a --filter "name=alice-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>&1 || true
+                echo "=========================================="
+                
+                # Verificar se PostgreSQL existe e capturar logs
+                if docker ps -a --format '{{.Names}}' | grep -q "alice-postgres"; then
+                  echo ""
+                  echo "📋 LOGS DO POSTGRESQL (últimas 150 linhas):"
+                  echo "=========================================="
+                  docker logs alice-postgres --tail 150 2>&1 || echo "   (sem logs disponíveis)"
+                  echo "=========================================="
+                  
+                  echo ""
+                  echo "🏥 HEALTH STATUS DO POSTGRESQL:"
+                  docker inspect alice-postgres --format='{{json .State.Health}}' 2>&1 | head -50 || echo "   (sem health data)"
+                  
+                  echo ""
+                  echo "📁 OWNERSHIP DO VOLUME POSTGRES:"
+                  sudo ls -la /opt/alice/data/postgres 2>&1 | head -15 || echo "   (diretório não acessível)"
+                fi
+                
+                # Capturar logs de outros containers críticos se existirem
+                for container in alice-pgbouncer alice-minio-init alice-pgbackrest-init; do
+                  if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
+                    echo ""
+                    echo "📋 LOGS DE $container (últimas 30 linhas):"
+                    docker logs "$container" --tail 30 2>&1 || echo "   (sem logs)"
+                  fi
+                done
+                
+                echo ""
+                echo "💾 DISK USAGE:"
+                df -h /opt/alice 2>&1 || true
+                
+                echo ""
+                echo "🧹 Executando cleanup..."
                 cd /opt/alice/app/infra/docker/stacks
                 docker compose -p alice-infra --env-file ../.env.prod \
                                -f docker-compose.base.yml \
@@ -1428,12 +1489,35 @@ jobs:
             # Pull e deploy
             # CRITICAL: Incluir base.yml para criar volumes/networks externos
             docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.infra.yml pull
-            docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.infra.yml up -d --remove-orphans
+            
+            # =================================================================
+            # CORREÇÃO PR#86 (08/01/2026): Usar --wait com timeout explícito
+            # =================================================================
+            # PROBLEMA: `up -d` retornava imediatamente, mas containers dependentes
+            #           (pgbouncer, pgbackrest-init) falhavam se PostgreSQL demorava
+            #           para ficar healthy, causando "dependency failed to start"
+            #
+            # SOLUÇÃO: --wait faz Docker Compose esperar TODOS containers ficarem
+            #          healthy antes de retornar. --wait-timeout=600s (10 min) é
+            #          suficiente para PostgreSQL primeiro boot (start_period 300s +
+            #          30 retries × 10s = 600s máximo)
+            #
+            # NOTA: Se QUALQUER container ficar unhealthy, o comando falha imediatamente
+            #       (comportamento desejado - fail-fast)
+            #
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 9 (Validação contínua)
+            # REF: https://docs.docker.com/reference/cli/docker/compose/up/#options
+            # =================================================================
+            echo "⏳ Aguardando containers ficarem healthy (timeout: 600s)..."
+            docker compose -p alice-infra --env-file ../.env.prod \
+                           -f docker-compose.base.yml \
+                           -f docker-compose.infra.yml \
+                           up -d --remove-orphans --wait --wait-timeout 600
             
             # Salvar versão atual
             echo "${{ needs.validate.outputs.version }}" > /opt/alice/versions/infra.current
             
-            echo "✅ INFRA stack deployed"
+            echo "✅ INFRA stack deployed e todos containers healthy"
 
       - name: Clean init containers (post-deploy)
         uses: appleboy/ssh-action@v1.2.2
