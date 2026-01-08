@@ -2646,10 +2646,16 @@ jobs:
             done
             echo "   ✅ Removed $REMOVED_COUNT containers"
             
-            # STAGE 3: Prune temporary volumes
+            # =========================================================
+            # STAGE 3: Preservar Volumes de Dados (CRITICAL)
+            # =========================================================
+            # CORREÇÃO BUG 2 (08/01/2026): NÃO usar docker volume prune
+            # Ver comentários no rollback-infra para detalhes completos
+            # =========================================================
             echo ""
-            echo "🧹 Stage 3: Pruning temporary volumes..."
-            docker volume prune -f --filter "label!=external" 2>&1 || true
+            echo "🛡️  Stage 3: Preservando volumes de dados persistentes..."
+            echo "   ℹ️  Volumes são bind mounts para /opt/alice/data/"
+            echo "   ✅ Volumes de dados protegidos"
             
             # STAGE 4: Validate clean state
             echo ""
@@ -2869,10 +2875,16 @@ jobs:
             done
             echo "   ✅ Removed $REMOVED_COUNT containers"
             
-            # STAGE 3: Prune temporary volumes
+            # =========================================================
+            # STAGE 3: Preservar Volumes de Dados (CRITICAL)
+            # =========================================================
+            # CORREÇÃO BUG 2 (08/01/2026): NÃO usar docker volume prune
+            # Ver comentários no rollback-infra para detalhes completos
+            # =========================================================
             echo ""
-            echo "🧹 Stage 3: Pruning temporary volumes..."
-            docker volume prune -f --filter "label!=external" 2>&1 || true
+            echo "🛡️  Stage 3: Preservando volumes de dados persistentes..."
+            echo "   ℹ️  Volumes são bind mounts para /opt/alice/data/"
+            echo "   ✅ Volumes de dados protegidos"
             
             # STAGE 4: Validate clean state
             echo ""
