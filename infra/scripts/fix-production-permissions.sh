@@ -281,7 +281,20 @@ is_validation_exception() {
     local expected_gid="$3"
     
     for exception_path in "${!VALIDATION_EXCEPTIONS[@]}"; do
-        if [[ "$file_path" == "$exception_path"* ]]; then
+        # =================================================================
+        # CORREÇÃO BUG #1 (PR#84 - 08/01/2026): Padrão de match preciso
+        # =================================================================
+        # PROBLEMA ANTERIOR: Padrão "$exception_path"* fazia match de strings
+        #                    que COMEÇAM com exception_path, mas não são descendants.
+        #                    Ex: /logs-backup/ incorretamente matchava /logs
+        #
+        # SOLUÇÃO: Verificar match EXATO ou descendente (com separador /)
+        #          - Match exato: file_path == exception_path
+        #          - Descendente: file_path == exception_path/*
+        #
+        # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Causa raiz)
+        # =================================================================
+        if [[ "$file_path" == "$exception_path" || "$file_path" == "$exception_path"/* ]]; then
             local exception_ownership="${VALIDATION_EXCEPTIONS[$exception_path]}"
             local exception_uid="${exception_ownership%%:*}"
             local exception_gid="${exception_ownership##*:}"
@@ -752,10 +765,24 @@ validate_all_directories_have_correct_ownership() {
         
         log_info "Validando $(basename "$path")..."
         
-        # Verificar se TODOS os arquivos dentro têm UID/GID correto
-        # Usa find para procurar arquivos que NÃO tenham o UID ou GID esperado
+        # =================================================================
+        # CORREÇÃO BUG #2 (PR#84 - 08/01/2026): Usar find_wrong_files_excluding_exceptions
+        # =================================================================
+        # PROBLEMA ANTERIOR: find direto com head -n 5 podia preencher todos os
+        #                    slots com arquivos de exceção, ocultando erros REAIS.
+        #                    Ex: /logs/ tem 10 arquivos 70:70 (exceção), find retorna
+        #                    os primeiros 5, código identifica como exceções, mas
+        #                    erros reais em /other/ nunca são vistos.
+        #
+        # SOLUÇÃO: Usar find_wrong_files_excluding_exceptions() que exclui paths
+        #          de exceção diretamente na query find (consistente com outras funções)
+        #
+        # CONSISTÊNCIA: dry_run_mode, create_mode, validate_mode já usam esta função
+        #
+        # REF: CLAUDE.md Regra 2 (Não duplicar), Regra 6 (Enterprise-grade)
+        # =================================================================
         local wrong_files
-        wrong_files=$(find "$path" \( ! -user "$uid" -o ! -group "$gid" \) 2>/dev/null | head -n "$MAX_WRONG_FILES_DISPLAY")
+        wrong_files=$(find_wrong_files_excluding_exceptions "$path" "$uid" "$gid" "$MAX_WRONG_FILES_DISPLAY")
         
         if [[ -n "$wrong_files" ]]; then
             # =================================================================
