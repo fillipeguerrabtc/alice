@@ -971,7 +971,26 @@ jobs:
             fi
             
             # =========================================================
-            # 2. DIRETÓRIOS E PERMISSÕES (via script enterprise)
+            # 2. LOCK CLEANUP (ANTES de validações)
+            # =========================================================
+            # CORREÇÃO 08/01/2026: Reordenar steps - lock cleanup ANTES de validações
+            # PROBLEMA: Lock files de deploys anteriores podem bloquear validações
+            # SOLUÇÃO: Cleanup ANTES para evitar false positives
+            # ORDEM ENTERPRISE: cleanup → create → validate
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 16 (Idempotência)
+            # =========================================================
+            echo ""
+            echo "🔒 Verificando locks PostgreSQL..."
+            if [ -f "/opt/alice/data/postgres/postmaster.pid" ]; then
+              echo "⚠️  Lock PostgreSQL detectado - removendo (safe durante deploy)"
+              sudo rm -f /opt/alice/data/postgres/postmaster.pid
+              echo "✅ Lock removido"
+            else
+              echo "✅ Nenhum lock encontrado"
+            fi
+            
+            # =========================================================
+            # 3. DIRETÓRIOS E PERMISSÕES (APÓS cleanup)
             # =========================================================
             # CORREÇÃO 07/01/2026: Substituir criação manual por script enterprise
             # PROBLEMA: Diretórios criados sem permissões causavam restart loops
@@ -994,7 +1013,9 @@ jobs:
               exit 1
             fi
             
-            # Validar que tudo está correto (fail-fast)
+            # =========================================================
+            # 4. VALIDAÇÃO (APÓS cleanup + create)
+            # =========================================================
             echo ""
             echo "🧪 Validando permissões..."
             if ! sudo /opt/alice/app/infra/scripts/fix-production-permissions.sh --validate; then
@@ -1195,7 +1216,7 @@ jobs:
               echo "✅ Nenhum container órfão encontrado (servidor limpo)"
             fi
 
-      - name: Limpar lock files e sockets do PostgreSQL
+      - name: Limpar lock files e sockets do PostgreSQL (redundant safety check)
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ env.HETZNER_HOST }}
@@ -1206,13 +1227,16 @@ jobs:
           script: |
             set -euo pipefail
             # =================================================================
-            # SEÇÃO 1.1: Pre-Deploy Lock File Cleanup
+            # SEÇÃO 1.1: Pre-Deploy Lock File Cleanup (Safety Check)
             # =================================================================
+            # NOTA: Lock cleanup principal já foi feito no step "prepare"
+            # Este é um safety check redundante antes do deploy (belt and suspenders)
             # PROBLEMA: Lock files e sockets de starts anteriores falhados bloqueiam PostgreSQL
             # SOLUÇÃO: Remover ANTES do deploy para garantir start limpo
             # REF: CLAUDE.md Regra 6 (Enterprise-grade), PostgreSQL Best Practices 2025
+            # CORREÇÃO 08/01/2026: Lock cleanup movido para ANTES de validações no prepare
             # =================================================================
-            echo "🧹 Limpando lock files e sockets do PostgreSQL..."
+            echo "🧹 Limpando lock files e sockets do PostgreSQL (safety check)..."
             
             POSTGRES_DIR="/opt/alice/data/postgres"
             

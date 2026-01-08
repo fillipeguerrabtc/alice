@@ -52,6 +52,33 @@ readonly MAX_WRONG_FILES_DISPLAY=5  # Máximo de arquivos incorretos a mostrar p
 MODE=""
 
 # =============================================================================
+# SISTEMA DE EXCEÇÕES PARA VALIDAÇÃO RECURSIVA
+# =============================================================================
+# PROPÓSITO: Permitir estruturas parent/child multi-UID documentadas
+# 
+# CASO DE USO: pgBackRest (Alpine, UID 70) cria subdiretório logs/ dentro
+#              do diretório PostgreSQL (Debian, UID 999). Isso é LEGÍTIMO
+#              e está documentado no docker-compose.infra.yml linhas 241-242.
+#
+# FORMATO: ["path"]="uid:gid"
+#
+# BENEFÍCIOS:
+#   - Validação continua robusta para casos não documentados
+#   - Sistema extensível para futuras exceções
+#   - Logs claros para debugging (CLAUDE.md Regra 5)
+#
+# REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 11 (Best practices 2025)
+# =============================================================================
+declare -A VALIDATION_EXCEPTIONS=(
+    # pgBackRest cria subdiretório logs/ com UID 70 (Alpine) dentro de postgresql/ (UID 999 Debian)
+    # Ref: docker-compose.infra.yml linhas 241-242 + pgBackRest docs
+    ["/opt/alice/backups/postgresql/logs"]="70:70"
+    
+    # Adicionar futuras exceções aqui conforme necessário
+    # Exemplo: ["/opt/alice/data/postgres/pg_wal"]="999:999"
+)
+
+# =============================================================================
 # DEFINIÇÃO DE DIRETÓRIOS E PERMISSÕES
 # =============================================================================
 # Formato: "path:uid:gid:permissions"
@@ -79,9 +106,60 @@ MODE=""
 # | ERPNext           | 1000   | 1000   | frappe          | Custom UID           |
 # | Alice Uploads     | 1000   | 1000   | node            | Node.js containers   |
 # =============================================================================
+
+# =============================================================================
+# FUNÇÃO: detect_postgres_uid
+# =============================================================================
+# PROPÓSITO: Detectar UID do PostgreSQL automaticamente baseado na imagem
+#
+# PROBLEMA RESOLVIDO:
+#   - PostgreSQL Debian base usa UID 999
+#   - PostgreSQL Alpine base usa UID 70
+#   - Hardcoded UID 999 falhava com Alpine
+#
+# SOLUÇÃO ENTERPRISE:
+#   1. Tentar extrair UID via docker inspect (se imagem já foi pulled)
+#   2. Fallback: Detectar base image (Debian vs Alpine)
+#   3. Retornar UID correto automaticamente
+#
+# BENEFÍCIOS:
+#   - Funciona com Debian E Alpine
+#   - Detecta UID correto automaticamente
+#   - Zero hardcoded values (CLAUDE.md Regra 6)
+#
+# REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 11 (Best practices 2025)
+# =============================================================================
+detect_postgres_uid() {
+    local image="${IMAGE_PREFIX:-ghcr.io/fillipeguerrabtc/alice}-postgres:${IMAGE_TAG:-latest}"
+    
+    # Tentar extrair UID via docker inspect (se imagem já foi pulled)
+    local uid
+    uid=$(docker inspect --format='{{.Config.User}}' "$image" 2>/dev/null | cut -d: -f1)
+    
+    if [[ -n "$uid" ]] && [[ "$uid" =~ ^[0-9]+$ ]]; then
+        echo "$uid"
+        return 0
+    fi
+    
+    # Fallback: Detectar base image (Debian vs Alpine)
+    if docker image inspect "$image" 2>/dev/null | grep -q "alpine"; then
+        echo "70"  # Alpine PostgreSQL
+    else
+        echo "999" # Debian PostgreSQL (padrão)
+    fi
+}
+
+# Detectar UID PostgreSQL automaticamente
+POSTGRES_UID=$(detect_postgres_uid)
+POSTGRES_GID=$POSTGRES_UID
+
 declare -a DIRECTORIES=(
     # INFRA STACK
-    "${DATA_DIR}/postgres:999:999:700"
+    # CORREÇÃO 08/01/2026: Usar UID dinâmico ao invés de hardcoded
+    # REGRESSÃO PR #80: Esta entrada foi removida causando falha no deploy
+    # RESTAURADO: Com detecção automática de UID (melhoria enterprise)
+    # REF: CLAUDE.md Regra 6 (Zero hardcoded), Regra 7 (Causa raiz identificada)
+    "${DATA_DIR}/postgres:${POSTGRES_UID}:${POSTGRES_GID}:700"
     "${DATA_DIR}/pgbackrest-spool:70:70:755"
     "${DATA_DIR}/redis-alice:999:999:755"
     "${DATA_DIR}/caddy:1000:1000:755"
@@ -247,6 +325,7 @@ dry_run_mode() {
 
 create_mode() {
     log_info "Modo CREATE - Aplicando mudanças reais"
+    log_info "PostgreSQL UID detectado automaticamente: ${POSTGRES_UID} (${POSTGRES_UID}:${POSTGRES_GID})"
     echo ""
     
     local created=0
@@ -484,6 +563,52 @@ validate_mode() {
 }
 
 # =============================================================================
+# FUNÇÃO: is_validation_exception
+# =============================================================================
+# PROPÓSITO: Verificar se path é uma exceção conhecida de multi-UID legítimo
+#
+# PARÂMETROS:
+#   $1 - file_path: Caminho do arquivo/diretório a verificar
+#   $2 - expected_uid: UID esperado do diretório pai
+#   $3 - expected_gid: GID esperado do diretório pai
+#
+# RETORNO:
+#   0 - Path é exceção válida (ignorar na validação)
+#   1 - Path NÃO é exceção (validar normalmente)
+#
+# EXEMPLO:
+#   /opt/alice/backups/postgresql/        (999:999) ✅ Parent correto
+#   └── logs/                             (70:70)   ✅ Exceção legítima
+#
+# REF: CLAUDE.md Regra 6 (Enterprise-grade), VALIDATION_EXCEPTIONS map
+# =============================================================================
+is_validation_exception() {
+    local file_path="$1"
+    local expected_uid="$2"
+    local expected_gid="$3"
+    
+    for exception_path in "${!VALIDATION_EXCEPTIONS[@]}"; do
+        if [[ "$file_path" == "$exception_path"* ]]; then
+            local exception_ownership="${VALIDATION_EXCEPTIONS[$exception_path]}"
+            local exception_uid="${exception_ownership%%:*}"
+            local exception_gid="${exception_ownership##*:}"
+            
+            # Verificar se arquivo tem ownership da exceção
+            local actual_uid
+            local actual_gid
+            actual_uid=$(stat -c '%u' "$file_path" 2>/dev/null || stat -f '%u' "$file_path" 2>/dev/null || echo "unknown")
+            actual_gid=$(stat -c '%g' "$file_path" 2>/dev/null || stat -f '%g' "$file_path" 2>/dev/null || echo "unknown")
+            
+            if [[ "$actual_uid" == "$exception_uid" ]] && [[ "$actual_gid" == "$exception_gid" ]]; then
+                return 0  # É exceção válida, ignorar
+            fi
+        fi
+    done
+    
+    return 1  # Não é exceção, validar normalmente
+}
+
+# =============================================================================
 # FUNÇÃO: validate_all_directories_have_correct_ownership
 # =============================================================================
 # Valida que TODOS os diretórios E SEUS CONTEÚDOS têm ownership correto
@@ -514,6 +639,12 @@ validate_all_directories_have_correct_ownership() {
         if [[ -n "$wrong_files" ]]; then
             log_error "  ❌ Arquivos com ownership incorreto em ${path}:"
             echo "$wrong_files" | while read -r file; do
+                # NOVO: Verificar se é exceção antes de reportar erro
+                if is_validation_exception "$file" "$uid" "$gid"; then
+                    log_info "    ℹ️  EXCEÇÃO CONHECIDA (multi-UID legítimo): $file"
+                    continue
+                fi
+                
                 # Otimização: stat uma única vez e captura ambos UID e GID
                 local stat_output
                 stat_output=$(stat -c '%u:%g' "$file" 2>/dev/null || stat -f '%u:%g' "$file" 2>/dev/null || echo "?:?")
