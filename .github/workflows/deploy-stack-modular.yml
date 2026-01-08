@@ -1328,6 +1328,32 @@ jobs:
           command_timeout: 15m
           script: |
             set -euo pipefail
+            # =================================================================
+            # SEÇÃO 2.7: Trap Handler for Cleanup on Failure
+            # =================================================================
+            # PROBLEMA: Deploy falha e deixa containers parciais/quebrados
+            # SOLUÇÃO: Trap handler executa cleanup automático em caso de erro
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 16 (Idempotency)
+            # =================================================================
+            
+            # Trap handler para cleanup em caso de falha
+            cleanup_on_failure() {
+              local exit_code=$?
+              if [ $exit_code -ne 0 ]; then
+                echo ""
+                echo "🚨 Deploy failed - executing automatic cleanup..."
+                cd /opt/alice/app/infra/docker/stacks
+                docker compose -p alice-infra --env-file ../.env.prod \
+                               -f docker-compose.base.yml \
+                               -f docker-compose.infra.yml \
+                               down --remove-orphans --timeout 30 2>&1 || true
+                echo "✅ Cleanup completed"
+              fi
+            }
+            
+            # Instalar trap (executa cleanup_on_failure se script falhar)
+            trap cleanup_on_failure EXIT
+            
             cd /opt/alice/app/infra/docker/stacks
             
             echo "🚀 Deploying INFRA stack (postgres, redis, qdrant, caddy, minio, searxng, tor)..."
@@ -1891,6 +1917,24 @@ jobs:
           command_timeout: 15m
           script: |
             set -euo pipefail
+            # =================================================================
+            # SEÇÃO 2.7: Trap Handler for Cleanup on Failure
+            # =================================================================
+            cleanup_on_failure() {
+              local exit_code=$?
+              if [ $exit_code -ne 0 ]; then
+                echo ""
+                echo "🚨 Deploy failed - executing automatic cleanup..."
+                cd /opt/alice/app/infra/docker/stacks
+                docker compose -p alice-alice --env-file ../.env.prod \
+                               -f docker-compose.base.yml \
+                               -f docker-compose.alice.yml \
+                               down --remove-orphans --timeout 30 2>&1 || true
+                echo "✅ Cleanup completed"
+              fi
+            }
+            trap cleanup_on_failure EXIT
+            
             cd /opt/alice/app/infra/docker/stacks
             
             echo "🚀 Deploying ALICE stack (frontend, auth, chat, rag, training, integrations, gpu-manager)..."
@@ -2107,6 +2151,24 @@ jobs:
           command_timeout: 15m
           script: |
             set -euo pipefail
+            # =================================================================
+            # SEÇÃO 2.7: Trap Handler for Cleanup on Failure
+            # =================================================================
+            cleanup_on_failure() {
+              local exit_code=$?
+              if [ $exit_code -ne 0 ]; then
+                echo ""
+                echo "🚨 Deploy failed - executing automatic cleanup..."
+                cd /opt/alice/app/infra/docker/stacks
+                docker compose -p alice-observability --env-file ../.env.prod \
+                               -f docker-compose.base.yml \
+                               -f docker-compose.observability.yml \
+                               down --remove-orphans --timeout 30 2>&1 || true
+                echo "✅ Cleanup completed"
+              fi
+            }
+            trap cleanup_on_failure EXIT
+            
             cd /opt/alice/app/infra/docker/stacks
             
             echo "🚀 Deploying OBSERVABILITY stack (prometheus, grafana, loki, jaeger, langfuse, clickhouse)..."
@@ -2333,6 +2395,24 @@ jobs:
           command_timeout: 20m
           script: |
             set -euo pipefail
+            # =================================================================
+            # SEÇÃO 2.7: Trap Handler for Cleanup on Failure
+            # =================================================================
+            cleanup_on_failure() {
+              local exit_code=$?
+              if [ $exit_code -ne 0 ]; then
+                echo ""
+                echo "🚨 Deploy failed - executing automatic cleanup..."
+                cd /opt/alice/app/infra/docker/stacks
+                docker compose -p alice-erpnext --env-file ../.env.prod \
+                               -f docker-compose.base.yml \
+                               -f docker-compose.erpnext.yml \
+                               down --remove-orphans --timeout 30 2>&1 || true
+                echo "✅ Cleanup completed"
+              fi
+            }
+            trap cleanup_on_failure EXIT
+            
             cd /opt/alice/app/infra/docker/stacks
             
             echo "🚀 Deploying ERPNEXT stack (mariadb, redis-cache, redis-queue, backend, frontend, workers)..."
@@ -2554,6 +2634,24 @@ jobs:
           command_timeout: 10m
           script: |
             set -euo pipefail
+            # =================================================================
+            # SEÇÃO 2.7: Trap Handler for Cleanup on Failure
+            # =================================================================
+            cleanup_on_failure() {
+              local exit_code=$?
+              if [ $exit_code -ne 0 ]; then
+                echo ""
+                echo "🚨 Deploy failed - executing automatic cleanup..."
+                cd /opt/alice/app/infra/docker/stacks
+                docker compose -p alice-backup --env-file ../.env.prod \
+                               -f docker-compose.base.yml \
+                               -f docker-compose.backup.yml \
+                               down --remove-orphans --timeout 30 2>&1 || true
+                echo "✅ Cleanup completed"
+              fi
+            }
+            trap cleanup_on_failure EXIT
+            
             cd /opt/alice/app/infra/docker/stacks
             
             echo "🚀 Deploying BACKUP stack (pgbackrest)..."
