@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 09 de Janeiro de 2026  
-**Versão:** 6.2 - Smart Deploy + Enterprise Bug Fixes
+**Versão:** 6.3 - SSOT Permissions + Smart Deploy + Enterprise Bug Fixes
 
 <div align="center">
 
@@ -103,13 +103,39 @@
 > - INFRA: `alice-redis` (7.4.7-alpine) - Cache Alice
 > - ERPNEXT: `erpnext-redis-cache` + `erpnext-redis-queue` (6.2.21-alpine) - Cache/Filas ERPNext
 
+> **🔧 SSOT PERMISSIONS v6.3 (09/01/2026) - Single Source of Truth:**  
+> Implementado sistema SSOT (Single Source of Truth) para gestão centralizada de permissões.
+> 
+> **Problema Resolvido:**
+> - ❌ Dois scripts (`prepare-production-server.sh`, `fix-production-permissions.sh`) com valores diferentes
+> - ❌ Inconsistências: langfuse-db (755 vs 700), caddy (700 vs 755), backups (750 vs 755)
+> - ❌ Validação falhava sempre por inconsistência entre scripts
+> 
+> **Solução Enterprise:**
+> - ✅ **SSOT**: `infra/scripts/permissions-config.sh` centraliza TODOS os UIDs/GIDs/permissões
+> - ✅ **Zero Duplicação**: `prepare-production-server.sh` delega para `fix-production-permissions.sh`
+> - ✅ **Bits Especiais**: Detecta e remove setuid/setgid/sticky bits (chmod 0755 com prefixo 0)
+> - ✅ **Validação Recursiva**: Verifica ownership de TODOS os arquivos/diretórios
+> - ✅ **Documentação**: `docs/PERMISSIONS.md` documenta todo o sistema
+> 
+> **Arquitetura:**
+> ```
+> permissions-config.sh (SSOT)
+>          ↓
+>     ┌────────────────────────────┬──────────────────────────────────┐
+>     ↓                            ↓                                  ↓
+> prepare-production-server.sh  fix-production-permissions.sh  (scripts futuros)
+> ```
+> 
+> **Referências:** `docs/PERMISSIONS.md`, `docs/DEPLOYMENT.md` (Seção 8.2)
+
 > **🛡️ CORREÇÃO CRÍTICA v6.1 (09/01/2026) - PostgreSQL Permissions Enterprise:**  
 > Implementada correção de 3 fases para resolver "container alice-postgres is unhealthy" em servidor limpo.
 > 
 > **FASE 1: Correção Crítica (Bloqueador)**
 > - ✅ Preparação inline do diretório PostgreSQL ANTES do `docker compose up`
-> - ✅ Teste de escrita REAL via Docker (`docker run --user 999:999 -v ... touch`)
-> - ✅ Validação de ownership (999:999) e permissions (700)
+> - ✅ Teste de escrita REAL via Docker (`docker run --user 70:70 -v ... touch`)
+> - ✅ Validação de ownership (70:70 Alpine) e permissions (700)
 > - ✅ Eliminação de race condition entre `prepare` e `deploy-infra`
 > 
 > **FASE 2: Defesa em Profundidade**
@@ -120,8 +146,10 @@
 > **FASE 3: Arquitetura Resiliente**
 > - ✅ Job `prepare-infrastructure` dedicado no workflow
 > - ✅ Validação completa do servidor (IP, GPU, Docker, disco)
-> - ✅ Criação atômica de diretórios com permissões corretas
+> - ✅ Criação atômica de diretórios via SSOT (`permissions-config.sh`)
 > - ✅ Healthcheck PostgreSQL com estágio 0 (`pgrep -x postgres`)
+> 
+> **NOTA (08/01/2026):** PostgreSQL migrou de Debian (UID 999) para Alpine (UID 70) por CVE-2023-45853.
 
 > **Atualização 28/12/2025:** Pipeline 100% self-hosted com **Runner Enterprise Hardening** (Hetzner CPX32 - 4 vCPU AMD EPYC, 8GB RAM). Otimizações aplicadas: Kernel tuning (net.core.rmem_max=16MB, vm.swappiness=10), Docker daemon (BuildKit, max-downloads=10, GC=20GB), limits (nofile=1048576), systemd (NODE_OPTIONS=6GB, Nice=-5), cron cleanup diário. GPU dedicada Hetzner GEX44 (RTX 4000 Ada 20GB) 24/7 - containers Docker rodam continuamente, sem cold start.
 

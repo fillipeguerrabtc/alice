@@ -30,13 +30,49 @@ set -euo pipefail
 # CONFIGURAÇÃO
 # =============================================================================
 
-# Base path para todos os dados
-readonly BASE_DIR="/opt/alice"
-readonly DATA_DIR="${BASE_DIR}/data"
-readonly LOGS_DIR="${BASE_DIR}/logs"
-readonly BACKUPS_DIR="${BASE_DIR}/backups"
-readonly UPLOADS_DIR="${BASE_DIR}/uploads"
-readonly SECRETS_DIR="${BASE_DIR}/secrets"
+# Obter diretório do script para source do SSOT
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# =============================================================================
+# SOURCE SSOT (Single Source of Truth)
+# =============================================================================
+# CORREÇÃO ENTERPRISE 09/01/2026:
+#
+# CAUSA RAIZ IDENTIFICADA:
+#   - Dois scripts (prepare-production-server.sh e fix-production-permissions.sh)
+#     gerenciavam as mesmas permissões com valores DIFERENTES
+#   - prepare-production-server.sh: langfuse-db=755, caddy=700, backups/postgresql=750
+#   - fix-production-permissions.sh: langfuse-db=700, caddy=755, backups/postgresql=755
+#   - RESULTADO: Validação sempre falhava por inconsistência
+#
+# SOLUÇÃO ENTERPRISE:
+#   - SSOT (Single Source of Truth) em permissions-config.sh
+#   - Ambos os scripts fazem source do mesmo arquivo
+#   - Zero duplicação, zero inconsistência
+#
+# REF: CLAUDE.md Regra 2 (Não duplicar), Regra 6 (Enterprise-grade)
+# REF: docs/PERMISSIONS.md para documentação completa
+# =============================================================================
+if [[ -f "${SCRIPT_DIR}/permissions-config.sh" ]]; then
+    # shellcheck source=permissions-config.sh
+    source "${SCRIPT_DIR}/permissions-config.sh"
+else
+    echo "❌ ERRO CRÍTICO: permissions-config.sh não encontrado em ${SCRIPT_DIR}"
+    echo "   Este arquivo é o SSOT (Single Source of Truth) para permissões."
+    echo "   REF: CLAUDE.md Regra 2 (Não duplicar)"
+    exit 1
+fi
+
+# Criar aliases para compatibilidade com código existente
+readonly BASE_DIR="${ALICE_BASE_DIR}"
+readonly DATA_DIR="${ALICE_DATA_DIR}"
+readonly LOGS_DIR="${ALICE_LOGS_DIR}"
+readonly BACKUPS_DIR="${ALICE_BACKUPS_DIR}"
+readonly UPLOADS_DIR="${ALICE_UPLOADS_DIR}"
+readonly SECRETS_DIR="${ALICE_SECRETS_DIR}"
+
+# Usar PERMISSIONS_CONFIG do SSOT
+declare -a DIRECTORIES=("${PERMISSIONS_CONFIG[@]}")
 
 # Cores para output
 readonly RED='\033[0;31m'
@@ -50,142 +86,6 @@ readonly MAX_WRONG_FILES_DISPLAY=5  # Máximo de arquivos incorretos a mostrar p
 
 # Modo de operação
 MODE=""
-
-# =============================================================================
-# SISTEMA DE EXCEÇÕES PARA VALIDAÇÃO RECURSIVA
-# =============================================================================
-# PROPÓSITO: Permitir estruturas parent/child multi-UID documentadas
-# 
-# CASO DE USO: pgBackRest (Alpine, UID 70) cria subdiretório logs/ dentro
-#              do diretório de backups PostgreSQL (também UID 70 após migração).
-#              Ref: docker-compose.infra.yml linhas 241-242.
-#
-# FORMATO: ["path"]="uid:gid"
-#
-# NOTA (08/01/2026): Após migração para Alpine (UID 70), PostgreSQL e pgBackRest
-#                    usam o mesmo UID, reduzindo necessidade de exceções.
-#
-# BENEFÍCIOS:
-#   - Validação continua robusta para casos não documentados
-#   - Sistema extensível para futuras exceções
-#   - Logs claros para debugging (CLAUDE.md Regra 5)
-#
-# REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 11 (Best practices 2025)
-# =============================================================================
-declare -A VALIDATION_EXCEPTIONS=(
-    # pgBackRest cria subdiretório logs/ com UID 70 (Alpine) dentro de postgresql/ (também UID 70)
-    # Ref: docker-compose.infra.yml linhas 241-242 + pgBackRest docs
-    ["/opt/alice/backups/postgresql/logs"]="70:70"
-    
-    # Adicionar futuras exceções aqui conforme necessário
-    # Exemplo: ["/opt/alice/data/postgres/pg_wal"]="70:70"
-)
-
-# =============================================================================
-# DEFINIÇÃO DE DIRETÓRIOS E PERMISSÕES
-# =============================================================================
-# Formato: "path:uid:gid:permissions"
-# 
-# =============================================================================
-# TABELA DE REFERÊNCIA DE UIDs/GIDs (Enterprise-Grade)
-# =============================================================================
-# | Serviço           | UID    | GID    | User Name       | Notas                |
-# |-------------------|--------|--------|-----------------|----------------------|
-# | PostgreSQL        | 70     | 70     | postgres        | Alpine base (31/12)  |
-# | pgBackRest        | 70     | 70     | postgres        | Alpine base          |
-# | Redis             | 999    | 999    | redis           | Alpine base          |
-# | Caddy             | 1000   | 1000   | caddy           | Custom UID           |
-# | SearXNG           | 977    | 977    | searxng         | Custom UID           |
-# | MinIO             | 0      | 0      | root            | Requires root        |
-# | Qdrant            | 0      | 0      | root            | Requires root        |
-# | Jaeger            | 10001  | 10001  | jaeger          | Distroless           |
-# | Prometheus        | 65534  | 65534  | nobody          | Alpine base          |
-# | Grafana           | 472    | 472    | grafana         | Custom UID           |
-# | Loki              | 10001  | 10001  | loki            | Distroless           |
-# | Langfuse DB       | 70     | 70     | postgres        | Alpine PostgreSQL    |
-# | ClickHouse        | 101    | 101    | clickhouse      | Alpine base          |
-# | Vector            | 0      | 0      | root            | Requires root        |
-# | MariaDB           | 999    | 999    | mysql           | Debian base          |
-# | ERPNext           | 1000   | 1000   | frappe          | Custom UID           |
-# | Alice Uploads     | 1000   | 1000   | node            | Node.js containers   |
-# =============================================================================
-
-# =============================================================================
-# CONSTANTE: POSTGRES_UID / POSTGRES_GID
-# =============================================================================
-# CORREÇÃO CRÍTICA 08/01/2026:
-#
-# CAUSA RAIZ IDENTIFICADA:
-#   - Em 31/12/2025, PostgreSQL migrou de Debian para Alpine (CVE-2023-45853)
-#   - Alpine PostgreSQL usa UID 70, Debian usa UID 999
-#   - A função detect_postgres_uid() falhava porque:
-#     1. docker inspect retorna "postgres" (string), não "70" (número)
-#     2. No servidor limpo, imagem não existe → fallback retornava 999
-#   - Todos os scripts configuravam UID 999, mas container usa UID 70
-#   - RESULTADO: "Permission denied" em 100% dos deploys
-#
-# SOLUÇÃO ENTERPRISE:
-#   - UID fixo em 70 (decisão arquitetural: Alpine é permanente por CVE)
-#   - Detectar base image (Debian vs Alpine) NÃO é confiável no primeiro deploy
-#   - Se mudar de volta para Debian, atualizar esta constante
-#
-# BENEFÍCIOS:
-#   - Funciona em servidor limpo (primeiro deploy)
-#   - Zero dependência de docker inspect
-#   - Comportamento previsível e documentado
-#
-# REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Causa raiz)
-# REF: Dockerfile.postgres linha 106: FROM postgres:16-alpine
-# =============================================================================
-readonly POSTGRES_UID=70
-readonly POSTGRES_GID=70
-
-declare -a DIRECTORIES=(
-    # INFRA STACK
-    # CORREÇÃO 08/01/2026: Usar UID dinâmico ao invés de hardcoded
-    # REGRESSÃO PR #80: Esta entrada foi removida causando falha no deploy
-    # RESTAURADO: Com detecção automática de UID (melhoria enterprise)
-    # REF: CLAUDE.md Regra 6 (Zero hardcoded), Regra 7 (Causa raiz identificada)
-    "${DATA_DIR}/postgres:${POSTGRES_UID}:${POSTGRES_GID}:700"
-    "${DATA_DIR}/pgbackrest-spool:70:70:755"
-    "${DATA_DIR}/redis-alice:999:999:755"
-    "${DATA_DIR}/caddy:1000:1000:755"
-    "${DATA_DIR}/caddy-config:1000:1000:755"
-    "${DATA_DIR}/searxng-config:977:977:755"
-    "${DATA_DIR}/minio:0:0:755"
-    "${DATA_DIR}/qdrant:0:0:755"
-    
-    # OBSERVABILITY STACK
-    "${DATA_DIR}/jaeger:10001:10001:755"
-    "${DATA_DIR}/prometheus:65534:65534:755"
-    "${DATA_DIR}/grafana:472:472:755"
-    "${DATA_DIR}/loki:10001:10001:755"
-    "${DATA_DIR}/langfuse-db:70:70:700"
-    "${DATA_DIR}/clickhouse:101:101:755"
-    "${DATA_DIR}/vector:0:0:755"
-    
-    # ERPNEXT STACK
-    "${DATA_DIR}/erpnext-sites:1000:1000:755"
-    "${DATA_DIR}/erpnext-mariadb:999:999:755"
-    "${DATA_DIR}/erpnext-redis-cache:999:999:755"
-    "${DATA_DIR}/erpnext-redis-queue:999:999:755"
-    
-    # LOGS
-    "${LOGS_DIR}/caddy:1000:1000:755"
-    "${LOGS_DIR}/erpnext:1000:1000:755"
-    "${LOGS_DIR}/clickhouse:101:101:755"
-    
-    # BACKUPS
-    # NOTA: postgresql/logs será criado pelo container pgBackRest conforme necessário
-    # CORREÇÃO 08/01/2026: pgBackRest roda como UID 70 (Alpine), não 999 (Debian)
-    "${BACKUPS_DIR}/postgresql:70:70:755"
-    
-    # UPLOADS (alice microservices)
-    "${UPLOADS_DIR}:1000:1000:755"
-    
-    # SECRETS
-    "${SECRETS_DIR}:0:0:700"
-)
 
 # =============================================================================
 # FUNÇÕES DE UTILIDADE
@@ -459,9 +359,17 @@ dry_run_mode() {
         # Verificar permissões do diretório pai
         local current_perms
         current_perms=$(stat -c '%a' "$path" 2>/dev/null || stat -f '%Lp' "$path" 2>/dev/null)
-        
-        if [[ "$current_perms" != "$perms" ]]; then
-            log_warning "  🔧 MUDARIA: chmod $perms $path (atual: $current_perms)"
+
+        # Detectar bits especiais (setuid/setgid/sticky)
+        local current_perms_normalized="${current_perms: -3}"
+        local has_special_bits=false
+        [[ "${#current_perms}" -gt 3 ]] && has_special_bits=true
+
+        if [[ "$current_perms_normalized" != "$perms" ]] || [[ "$has_special_bits" == "true" ]]; then
+            log_warning "  🔧 MUDARIA: chmod 0$perms $path (atual: $current_perms)"
+            if [[ "$has_special_bits" == "true" ]]; then
+                log_info "     NOTA: Bits especiais serão removidos (setuid/setgid/sticky)"
+            fi
             ((changes++))
         fi
     done
@@ -606,9 +514,24 @@ create_mode() {
         current_perms=$(stat -c '%a' "$path" 2>/dev/null || stat -f '%Lp' "$path" 2>/dev/null)
         
         # Atualizar permissões se necessário
-        if [[ "$current_perms" != "$perms" ]]; then
-            if chmod "$perms" "$path" 2>/dev/null; then
-                log_success "  ✅ Permissões atualizadas de ${current_perms} para ${perms}: $path"
+        # ==========================================================================
+        # CORREÇÃO BUG CRÍTICO (09/01/2026): Usar chmod com "0" prefixo
+        # ==========================================================================
+        # PROBLEMA: chmod 755 NÃO remove bits especiais (setgid/setuid/sticky)
+        #           Se diretório tinha 2755 (setgid), chmod 755 mantém 2755!
+        # SOLUÇÃO: Usar chmod 0755 (zero prefixo) para explicitamente zerar
+        #          os bits especiais (setuid=4, setgid=2, sticky=1)
+        # REF: chmod(1) man page, CLAUDE.md Regra 7 (Causa raiz)
+        # ==========================================================================
+        # Normalizar permissões: extrair últimos 3 dígitos (ignorar bits especiais)
+        local current_perms_normalized="${current_perms: -3}"
+        local has_special_bits=false
+        [[ "${#current_perms}" -gt 3 ]] && has_special_bits=true
+        
+        if [[ "$current_perms_normalized" != "$perms" ]] || [[ "$has_special_bits" == "true" ]]; then
+            # Usar "0" prefixo para garantir remoção de bits especiais
+            if chmod "0${perms}" "$path" 2>/dev/null; then
+                log_success "  ✅ Permissões atualizadas de ${current_perms} para 0${perms}: $path"
                 needs_update=true
             else
                 log_error "  ❌ Falha ao atualizar permissões: $path"
@@ -712,17 +635,34 @@ validate_mode() {
             log_error "     UID/GID esperado: ${uid}:${gid}"
             
             ((invalid++))
-        elif [[ -n "$current_perms" && "$current_perms" != "$perms" ]]; then
-            log_error "  ❌ INVÁLIDO: Permissões incorretas em $path"
-            echo "          Esperado: ${perms}"
-            echo "          Atual:    ${current_perms}"
-            ((invalid++))
         elif [[ -z "$current_perms" ]]; then
             log_error "  ❌ INVÁLIDO: Não foi possível determinar permissões de $path (stat falhou)"
             ((invalid++))
         else
-            log_success "  ✅ VÁLIDO: $path (ownership e permissões corretos recursivamente)"
-            ((valid++))
+            # ==========================================================================
+            # CORREÇÃO BUG CRÍTICO (09/01/2026): Detectar bits especiais na validação
+            # ==========================================================================
+            # PROBLEMA: Comparação direta "2755" != "755" falhava mesmo se
+            #           os bits de rwx (últimos 3 dígitos) estivessem corretos
+            # SOLUÇÃO: Detectar bits especiais (setuid/setgid/sticky) como inválidos
+            # REF: CLAUDE.md Regra 7 (Causa raiz)
+            # ==========================================================================
+            local current_perms_normalized="${current_perms: -3}"
+            local has_special_bits=false
+            [[ "${#current_perms}" -gt 3 ]] && has_special_bits=true
+            
+            if [[ "$current_perms_normalized" != "$perms" ]] || [[ "$has_special_bits" == "true" ]]; then
+                log_error "  ❌ INVÁLIDO: Permissões incorretas em $path"
+                echo "          Esperado: 0${perms} (sem bits especiais)"
+                echo "          Atual:    ${current_perms}"
+                if [[ "$has_special_bits" == "true" ]]; then
+                    echo "          NOTA: Bits especiais detectados (setuid/setgid/sticky) - devem ser removidos"
+                fi
+                ((invalid++))
+            else
+                log_success "  ✅ VÁLIDO: $path (ownership e permissões corretos recursivamente)"
+                ((valid++))
+            fi
         fi
     done
     

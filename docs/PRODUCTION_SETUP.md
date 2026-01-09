@@ -4,8 +4,8 @@
 
 Este guia documenta o processo de setup inicial do servidor de produção para a plataforma Alice Enterprise. O guia cobre a configuração de permissões de diretórios, estrutura de dados e troubleshooting de problemas comuns.
 
-**Versão:** 1.0.0  
-**Data:** 07 de Janeiro de 2026  
+**Versão:** 1.1.0 - SSOT Permissions  
+**Data:** 09 de Janeiro de 2026  
 **Autor:** Fillipe Guerra
 
 ## 🎯 Pré-requisitos
@@ -24,7 +24,7 @@ Este guia documenta o processo de setup inicial do servidor de produção para a
 ```
 /opt/alice/
 ├── data/              # Dados persistentes de bancos de dados
-│   ├── postgres/      # PostgreSQL + pgvector (UID 999:999, perms 700)
+│   ├── postgres/      # PostgreSQL + pgvector (UID 70:70 Alpine, perms 700)
 │   ├── pgbackrest-spool/  # pgBackRest working directory (UID 70:70, perms 755)
 │   ├── redis-alice/   # Redis cache Alice (UID 999:999, perms 755)
 │   ├── caddy/         # Caddy SSL certificates (UID 1000:1000, perms 755)
@@ -33,7 +33,7 @@ Este guia documenta o processo de setup inicial do servidor de produção para a
 │   ├── minio/         # MinIO S3 storage (UID 0:0, perms 755)
 │   ├── qdrant/        # Qdrant vector database (UID 0:0, perms 755)
 │   ├── jaeger/        # Jaeger BadgerDB storage (UID 10001:10001, perms 755)
-│   ├── langfuse-db/   # Langfuse PostgreSQL (UID 70:70, perms 700)
+│   ├── langfuse-db/   # Langfuse PostgreSQL (UID 70:70 Alpine, perms 700)
 │   ├── clickhouse/    # ClickHouse OLAP (UID 101:101, perms 755)
 │   ├── vector/        # Vector aggregator (UID 0:0, perms 755)
 │   ├── erpnext-sites/     # ERPNext sites data (UID 1000:1000, perms 755)
@@ -46,16 +46,28 @@ Este guia documenta o processo de setup inicial do servidor de produção para a
 │   └── clickhouse/    # ClickHouse logs (UID 101:101, perms 755)
 ├── uploads/           # Uploads multimodais (UID 1000:1000, perms 755)
 ├── backups/           # Backups enterprise
-│   └── postgresql/    # pgBackRest backups (UID 999:999, perms 755)
+│   └── postgresql/    # pgBackRest backups (UID 70:70 Alpine, perms 755)
 ├── secrets/           # Arquivos de secrets (UID 0:0, perms 700)
 └── versions/          # Histórico de versões por stack
+
+> **SSOT (09/01/2026):** Todas as permissões são definidas em `infra/scripts/permissions-config.sh`. Ver `docs/PERMISSIONS.md`.
 ```
 
-## 🔧 Script de Permissões Automático
+## 🔧 Script de Permissões Automático (SSOT)
+
+### Arquitetura SSOT (Single Source of Truth)
+
+```
+permissions-config.sh (SSOT - fonte única de verdade)
+         ↓
+    ┌────────────────────────────┬──────────────────────────────────┐
+    ↓                            ↓                                  ↓
+prepare-production-server.sh  fix-production-permissions.sh  (scripts futuros)
+```
 
 ### Uso do Script `fix-production-permissions.sh`
 
-O script enterprise automatiza a criação de diretórios com UIDs/GIDs corretos.
+O script enterprise automatiza a criação de diretórios com UIDs/GIDs corretos, lendo valores do SSOT (`permissions-config.sh`).
 
 #### Modos de Operação
 
@@ -104,7 +116,7 @@ RestartCount: 306
 
 **Causa Raiz:**
 - Diretório `/opt/alice/data/postgres` não existe ou tem owner incorreto
-- PostgreSQL container roda como UID 999
+- PostgreSQL Alpine container roda como **UID 70** (não 999)
 - Diretório criado como root:root pelo Docker
 
 **Solução:**
@@ -115,7 +127,7 @@ sudo bash /opt/alice/app/infra/scripts/fix-production-permissions.sh --create
 **Verificação:**
 ```bash
 ls -ld /opt/alice/data/postgres
-# Esperado: drwx------ 999 999 ... /opt/alice/data/postgres
+# Esperado: drwx------ 70 70 ... /opt/alice/data/postgres
 ```
 
 ### Jaeger - "mkdir /badger/key: permission denied"
@@ -265,26 +277,29 @@ O script de permissões está integrado no workflow `deploy-stack-modular.yml`:
 6. **rollback-{stack}** - Rollback automático se falhar
 7. **notify** - Relatório consolidado
 
-## 📊 Tabela de UIDs/GIDs de Containers
+## 📊 Tabela de UIDs/GIDs de Containers (SSOT)
 
-| Container | UID | GID | User Name | Permissão Recomendada |
-|-----------|-----|-----|-----------|----------------------|
-| PostgreSQL | 999 | 999 | postgres | 700 (owner-only) |
-| pgBackRest | 70 | 70 | pgbackrest | 755 |
-| Redis | 999 | 999 | redis | 755 |
-| MariaDB | 999 | 999 | mysql | 755 |
-| Caddy | 1000 | 1000 | caddy | 755 |
-| SearXNG | 977 | 977 | searxng | 755 |
-| Jaeger | 10001 | 10001 | jaeger | 755 |
-| ClickHouse | 101 | 101 | clickhouse | 755 |
-| Grafana | 472 | 472 | grafana | 755 |
-| Prometheus | 65534 | 65534 | nobody | 755 |
-| Node.js services | 1000 | 1000 | node | 755 |
-| MinIO | 0 | 0 | root | 755 |
-| Qdrant | 0 | 0 | root | 755 |
-| Vector | 0 | 0 | root | 755 |
+> **Fonte de verdade:** `infra/scripts/permissions-config.sh`
 
-**IMPORTANTE:** Sempre usar UIDs numéricos explícitos (ex: `999:999`) ao invés de nomes (ex: `postgres:postgres`) para evitar ambiguidade entre host e container.
+| Container | UID | GID | User Name | Permissão | Justificativa |
+|-----------|-----|-----|-----------|-----------|---------------|
+| **PostgreSQL** | **70** | **70** | postgres | **700** | Alpine UID - security hardening obrigatório |
+| **Langfuse DB** | **70** | **70** | postgres | **700** | PostgreSQL Alpine - strict mode |
+| **pgBackRest** | **70** | **70** | pgbackrest | 755 | Alpine UID - compartilha com PostgreSQL |
+| Redis | 999 | 999 | redis | 755 | - |
+| MariaDB | 999 | 999 | mysql | 755 | ERPNext |
+| Caddy | 1000 | 1000 | caddy | **755** | Serve certificados públicos |
+| SearXNG | 977 | 977 | searxng | 755 | - |
+| Jaeger | 10001 | 10001 | jaeger | 755 | - |
+| ClickHouse | 101 | 101 | clickhouse | 755 | - |
+| Grafana | 472 | 472 | grafana | 755 | - |
+| Prometheus | 65534 | 65534 | nobody | 755 | - |
+| Node.js services | 1000 | 1000 | node | 755 | - |
+| MinIO | 0 | 0 | root | 755 | - |
+| Qdrant | 0 | 0 | root | 755 | - |
+| Vector | 0 | 0 | root | 755 | - |
+
+**IMPORTANTE:** Sempre usar UIDs numéricos explícitos (ex: `70:70`) ao invés de nomes (ex: `postgres:postgres`) para evitar ambiguidade entre host e container.
 
 ## 🔐 Segurança e Boas Práticas
 
@@ -392,11 +407,13 @@ du -sh /opt/alice/data/*
 ## 📚 Referências
 
 - **CLAUDE.md** - Regras e convenções do projeto
+  - Regra 2: NÃO DUPLICAR (SSOT)
   - Regra 6: Enterprise-grade, sem workarounds
   - Regra 11: Melhores práticas 2025
   - Regra 12: Deploy Hetzner GPU
   - Regra 16: Health checks e circuit breakers
 
+- **PERMISSIONS.md** - **SSOT de permissões (UIDs/GIDs/permissões)**
 - **DEPLOYMENT.md** - Guia completo de deployment
 - **ARQUITETURA.md** - Arquitetura multi-stack modular
 - **Docker Compose Documentation** - https://docs.docker.com/compose/
@@ -404,7 +421,7 @@ du -sh /opt/alice/data/*
 
 ---
 
-**Versão:** 1.0.0  
-**Última Atualização:** 07 de Janeiro de 2026  
+**Versão:** 1.1.0  
+**Última Atualização:** 09 de Janeiro de 2026  
 **Autor:** Fillipe Guerra  
 **License:** MIT

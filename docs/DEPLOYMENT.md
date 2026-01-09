@@ -36,13 +36,13 @@
 
 > **ATUALIZAÇÃO MAJOR 05/01/2026:** Arquitetura refatorada para **5 stacks independentes** com deploy/rollback modular. Cada stack pode ser deployado, rolledback e monitorado separadamente. ERPNext pode falhar sem afetar Alice. Produção parcial agora é possível.
 
-> **🛡️ CORREÇÃO CRÍTICA 09/01/2026 - PostgreSQL Permissions Enterprise:**  
+> **🛡️ CORREÇÃO CRÍTICA 09/01/2026 - PostgreSQL Permissions Enterprise:**
 > Implementada correção completa de **3 FASES** para resolver "container alice-postgres is unhealthy" em servidor limpo:
-> 
+>
 > **FASE 1: Preparação Inline (deploy-stack-modular.yml)**
 > - Diretório PostgreSQL criado ANTES do `docker compose up`
-> - Teste de escrita REAL via Docker (`docker run --user 999:999 -v ... touch`)
-> - Validação de ownership (999:999) e mode (700)
+> - Teste de escrita REAL via Docker (`docker run --user 70:70 -v ... touch`)
+> - Validação de ownership (70:70 Alpine) e mode (700)
 > - Elimina race condition entre jobs `prepare` e `deploy-infra`
 > 
 > **FASE 2: Entrypoint Wrapper (infra/postgres/entrypoint-wrapper.sh)**
@@ -1268,9 +1268,9 @@ FROM deployments WHERE status = 'success' AND duration_seconds IS NOT NULL;
 Antes de iniciar o deploy, o workflow valida:
 
 1. **Existência do diretório**: `/opt/alice/backups/postgresql` deve existir
-2. **Permissões**: UID/GID devem ser 999:999 (postgres)
+2. **Permissões**: UID/GID devem ser 70:70 (postgres Alpine)
 3. **Estrutura**: Detecta se é primeiro deploy ou repositório existente
-4. **Correção automática**: Se permissões incorretas, corrige automaticamente
+4. **Correção automática**: Se permissões incorretas, corrige automaticamente via SSOT
 
 #### pgBackRest Stanza Creation (Fix Crítico)
 
@@ -2017,40 +2017,56 @@ Os 7 serviços Node.js usam imagens `node:22-alpine3.21` (CVE-2023-45853 fix). H
 - Jaeger 2.13.0: estável; OTLP habilitado por padrão. v1 EOL em 31/12/2025.
 - OTel Collector 0.142.0: configurações atuais (receivers/exporters) compatíveis.
 
-### Permissões Enterprise por Serviço (19/12/2025)
+### Permissões Enterprise por Serviço (Atualizado 09/01/2026)
 
-**Script Automatizado (07/01/2026):** A criação e configuração de permissões é gerenciada automaticamente pelo script `infra/scripts/fix-production-permissions.sh`. Este script enterprise garante UIDs explícitos, permissões corretas e validação fail-fast.
+> **🔧 SSOT (Single Source of Truth) 09/01/2026:** Todas as configurações de permissões são centralizadas em `infra/scripts/permissions-config.sh`. Este arquivo é o SSOT para UIDs, GIDs e permissões, usado por todos os scripts de infraestrutura.
+
+**Arquitetura SSOT:**
+```
+permissions-config.sh (SSOT)
+         ↓
+    ┌─────────────────────────────┬──────────────────────────────────┐
+    ↓                             ↓                                  ↓
+prepare-production-server.sh  fix-production-permissions.sh  (scripts futuros)
+```
+
+**Documentação Completa:** Ver `docs/PERMISSIONS.md` para detalhes sobre o sistema SSOT.
 
 #### Estrutura de Diretórios e Permissões
 
-| Serviço | UID | Permissão | Diretório |
-|---------|-----|-----------|-----------|
-| PostgreSQL | 999 | 700 | /opt/alice/data/postgres |
-| pgBackRest | 70 | 755 | /opt/alice/data/pgbackrest-spool |
-| Redis Alice | 999 | 755 | /opt/alice/data/redis-alice |
-| Caddy | 1000 | 755 | /opt/alice/data/caddy |
-| Caddy Config | 1000 | 755 | /opt/alice/data/caddy-config |
-| SearXNG | 977 | 755 | /opt/alice/data/searxng-config |
-| MinIO | 0 (root) | 755 | /opt/alice/data/minio |
-| Qdrant | 0 (root) | 755 | /opt/alice/data/qdrant |
-| Jaeger | 10001 | 755 | /opt/alice/data/jaeger |
-| Langfuse DB | 70 | 700 | /opt/alice/data/langfuse-db |
-| ClickHouse | 101 | 755 | /opt/alice/data/clickhouse |
-| Vector | 0 (root) | 755 | /opt/alice/data/vector |
-| Grafana | 472 | 755 | /opt/alice/data/grafana |
-| Prometheus | 65534 | 755 | /opt/alice/data/prometheus |
-| Loki | 10001 | 755 | /opt/alice/data/loki |
-| ERPNext Sites | 1000 | 755 | /opt/alice/data/erpnext-sites |
-| ERPNext MariaDB | 999 | 755 | /opt/alice/data/erpnext-mariadb |
-| ERPNext Redis Cache | 999 | 755 | /opt/alice/data/erpnext-redis-cache |
-| ERPNext Redis Queue | 999 | 755 | /opt/alice/data/erpnext-redis-queue |
-| Backups | 999 | 755 | /opt/alice/backups/postgresql |
-| Uploads | 1000 | 755 | /opt/alice/uploads |
-| Secrets | 0 (root) | 700 | /opt/alice/secrets |
+| Serviço | UID | Permissão | Diretório | Justificativa |
+|---------|-----|-----------|-----------|---------------|
+| PostgreSQL | 70 | 700 | /opt/alice/data/postgres | Alpine UID, security hardening obrigatório |
+| pgBackRest | 70 | 755 | /opt/alice/data/pgbackrest-spool | Mesmo UID do PostgreSQL (Alpine) |
+| Redis Alice | 999 | 755 | /opt/alice/data/redis-alice | Alpine Redis padrão |
+| Caddy | 1000 | 755 | /opt/alice/data/caddy | Web server, serve certificados públicos |
+| Caddy Config | 1000 | 755 | /opt/alice/data/caddy-config | Configurações Caddy |
+| SearXNG | 977 | 755 | /opt/alice/data/searxng-config | Metabusca interna |
+| MinIO | 0 (root) | 755 | /opt/alice/data/minio | Object storage (requer root) |
+| Qdrant | 0 (root) | 755 | /opt/alice/data/qdrant | Banco vetorial (requer root) |
+| Jaeger | 10001 | 755 | /opt/alice/data/jaeger | Tracing (distroless) |
+| Langfuse DB | 70 | 700 | /opt/alice/data/langfuse-db | PostgreSQL strict mode |
+| ClickHouse | 101 | 755 | /opt/alice/data/clickhouse | OLAP Langfuse |
+| Vector | 0 (root) | 755 | /opt/alice/data/vector | Agregador de logs |
+| Grafana | 472 | 755 | /opt/alice/data/grafana | Dashboards |
+| Prometheus | 65534 | 755 | /opt/alice/data/prometheus | Métricas (Alpine nobody) |
+| Loki | 10001 | 755 | /opt/alice/data/loki | Logs (distroless) |
+| ERPNext Sites | 1000 | 755 | /opt/alice/data/erpnext-sites | Sites Frappe |
+| ERPNext MariaDB | 999 | 755 | /opt/alice/data/erpnext-mariadb | Banco ERPNext |
+| ERPNext Redis Cache | 999 | 755 | /opt/alice/data/erpnext-redis-cache | Cache ERPNext |
+| ERPNext Redis Queue | 999 | 755 | /opt/alice/data/erpnext-redis-queue | Queue ERPNext |
+| Backups | 70 | 755 | /opt/alice/backups/postgresql | pgBackRest (Alpine UID 70) |
+| Uploads | 1000 | 755 | /opt/alice/uploads | RAG multimodal |
+| Secrets | 0 (root) | 700 | /opt/alice/secrets | Apenas root pode ler |
+
+> **NOTA IMPORTANTE (08/01/2026):** PostgreSQL migrou de Debian (UID 999) para Alpine (UID 70) por CVE-2023-45853. Todos os UIDs de PostgreSQL e pgBackRest agora usam UID 70.
 
 #### Uso do Script de Permissões
 
-**Localização:** `infra/scripts/fix-production-permissions.sh`
+**Arquivos:**
+- `infra/scripts/permissions-config.sh` - SSOT (Single Source of Truth)
+- `infra/scripts/fix-production-permissions.sh` - Script de criação/validação
+- `infra/scripts/prepare-production-server.sh` - Preparação do servidor (delega ao SSOT)
 
 ```bash
 # Preview das mudanças (não executa)
@@ -2064,9 +2080,11 @@ sudo ./infra/scripts/fix-production-permissions.sh --create
 ```
 
 **Características:**
+- ✅ **SSOT**: Configurações centralizadas em permissions-config.sh
 - ✅ **Idempotente**: Pode rodar múltiplas vezes sem problemas
-- ✅ **UIDs Explícitos**: Usa UIDs numéricos (999:999) ao invés de nomes (postgres:postgres)
-- ✅ **Validação Integrada**: Verifica diretório existe, owner correto, permissões corretas
+- ✅ **UIDs Explícitos**: Usa UIDs numéricos (70:70) ao invés de nomes (postgres:postgres)
+- ✅ **Validação Recursiva**: Verifica ownership de TODOS os arquivos/diretórios
+- ✅ **Bits Especiais**: Detecta e remove setuid/setgid/sticky bits indesejados
 - ✅ **Logs Detalhados**: Mostra cada operação (criado, modificado, inalterado)
 - ✅ **Fail-Fast**: Para imediatamente em caso de erro
 
@@ -2076,14 +2094,14 @@ O workflow `deploy-stack-modular.yml` executa automaticamente este script no job
 ```yaml
 - name: Preparar infraestrutura base
   script: |
-    # Executar script enterprise de permissões
+    # Executar script enterprise de permissões (usa SSOT)
     sudo /opt/alice/app/infra/scripts/fix-production-permissions.sh --create
     
     # Validar que tudo está correto (fail-fast)
     sudo /opt/alice/app/infra/scripts/fix-production-permissions.sh --validate
 ```
 
-> **NOTA:** Workflow deploy-stack-modular.yml configura automaticamente todas essas permissões via script enterprise.
+> **NOTA:** O script `prepare-production-server.sh` agora delega TODA lógica de permissões para `fix-production-permissions.sh`, garantindo consistência via SSOT.
 - Vector 0.43.1: sink Loki ativo; sem mudanças de breaking para docker_logs.
 
 ### Notas Importantes

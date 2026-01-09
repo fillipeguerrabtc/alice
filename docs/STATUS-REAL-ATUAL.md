@@ -73,7 +73,7 @@
 
 > **Migração Traefik→Caddy 02/01/2026:** Traefik, traefik-init e dockerproxy substituídos por Caddy. Vantagens: SSL automático com retry inteligente (evita rate limits Let's Encrypt), HTTP/3 nativo (QUIC protocol), footprint 40MB (vs 100MB Traefik), configuração declarativa via Caddyfile (vs labels Docker). Elimina necessidade de Docker Socket Proxy. Adicionado pgBackRest Init container para criar stanza ANTES do PostgreSQL iniciar.
 
-> **Deploy Enterprise Hardening 02/01/2026:** Workflow de deploy com validações enterprise completas. **Smoke Tests Pós-Deploy:** PostgreSQL (pg_isready), pgvector (operação vetorial real), Redis (PING), Caddy (HTTP), GPU Manager (health endpoint), conectividade inter-serviços (Chat→GPU Manager). **Persistência de Logs:** Todos os logs salvos em `/opt/alice/logs/deploy-YYYYMMDD-HHMMSS.log` para troubleshooting futuro. **Validação pgBackRest:** Verifica permissões (999:999), estrutura e corrige automaticamente se necessário. **pgBackRest Fix:** Stanza criada sem pg1-path (não requer pg_control), sincronizada após PostgreSQL iniciar. **Caddy Healthcheck:** Melhorado para verificar HTTP (80/443) além de admin API (2019).
+> **Deploy Enterprise Hardening 02/01/2026:** Workflow de deploy com validações enterprise completas. **Smoke Tests Pós-Deploy:** PostgreSQL (pg_isready), pgvector (operação vetorial real), Redis (PING), Caddy (HTTP), GPU Manager (health endpoint), conectividade inter-serviços (Chat→GPU Manager). **Persistência de Logs:** Todos os logs salvos em `/opt/alice/logs/deploy-YYYYMMDD-HHMMSS.log` para troubleshooting futuro. **Validação pgBackRest:** Verifica permissões via SSOT (70:70 Alpine), estrutura e corrige automaticamente se necessário. **pgBackRest Fix:** Stanza criada sem pg1-path (não requer pg_control), sincronizada após PostgreSQL iniciar. **Caddy Healthcheck:** Melhorado para verificar HTTP (80/443) além de admin API (2019).
 
 > **Bug Fix Init Container Wait Loop Race Condition 04/01/2026 (v4.72):** CORREÇÃO CRÍTICA no loop de espera de init containers no deploy-production.yml. O loop só verificava estados "running" e "exited", ignorando "created", "dead", "restarting", "paused" e "unknown". Se um container estivesse em "created" (ainda não iniciou), a variável ALL_INIT_COMPLETED permanecia em 1 e o loop terminava prematuramente, causando a mesma race condition que o código pretendia corrigir. **SOLUÇÃO:** Tratamento completo de TODOS os estados Docker com ações específicas para cada um. Documentação DEPLOYMENT.md atualizada com tabela de estados. Ref: CLAUDE.md v4.72, Regra 6 (Zero workarounds), Regra 16 (Healthchecks robustos).
 
@@ -81,7 +81,7 @@
 
 > **🧠 SMART DEPLOY 09/01/2026 (v6.2):** Implementado deploy inteligente que detecta stacks healthy no servidor e pula desnecessariamente. **FUNCIONALIDADES:** Detecção automática de estado (healthy/unhealthy/missing) via SSH, pula stacks healthy preservando dados, deploy cirúrgico apenas do necessário, força deploy se stack selecionado manualmente. **BUG FIXES PR#96:** (1) pgBackRest: Removido `PGBACKREST_PG1_HOST` que forçava SSH - erro: "unable to execute 'ssh': No such file or directory", solução: usar variáveis libpq (PGHOST, PGPORT, PGUSER, PGPASSWORD); (2) Vector: Healthcheck usava `bash` mas Alpine só tem `ash/sh`, /dev/tcp é bash-only, corrigido para usar `nc -z` (netcat disponível no Alpine); (3) Smart Deploy Outputs: Steps referenciavam `server-health` mas appleboy/ssh-action não produz GitHub Actions outputs, corrigido para `parse-health`; (4) Rollback Validation: Docker filter não suporta regex (^$), estava buscando literal "^prometheus$", corrigido para usar grep com regex exato em todos os rollbacks (INFRA, ALICE, OBSERVABILITY, ERPNEXT). **ARQUITETURA REDIS:** INFRA tem `alice-redis` (7.4.7-alpine) para cache Alice; ERPNEXT tem `erpnext-redis-cache` + `erpnext-redis-queue` (6.2.21-alpine) para ERPNext - são stacks separados.
 
-> **🛡️ CORREÇÃO CRÍTICA PostgreSQL Permissions 09/01/2026 (v6.1):** Implementada correção completa de 3 FASES para resolver "container alice-postgres is unhealthy" em servidor limpo. **FASE 1 (Bloqueador):** Preparação inline do diretório PostgreSQL ANTES do `docker compose up` no job `deploy-infra`, com teste de escrita REAL via Docker (`docker run --user 999:999 -v ... touch`). Elimina race condition entre `prepare` e `deploy-infra`. **FASE 2 (Defesa em Profundidade):** `entrypoint-wrapper.sh` no container PostgreSQL (`infra/postgres/entrypoint-wrapper.sh`) para fail-fast com validação de PGDATA, existência de diretório, gravabilidade e teste de escrita real. Mensagens de erro claras com diagnóstico automático e comandos de correção. Integrado via `Dockerfile.postgres`. **FASE 3 (Arquitetura Resiliente):** Job `prepare-infrastructure` dedicado no workflow `deploy-stack-modular.yml` que executa ANTES de `deploy-infra`, com validação completa do servidor (IP correto, GPU disponível, Docker/NVIDIA funcionando, disco mínimo 20GB), criação atômica de diretórios via `fix-production-permissions.sh`, e validação final fail-fast. **HEALTHCHECK MELHORADO:** Estágio 0 adicionado ao healthcheck PostgreSQL em `docker-compose.infra.yml` que verifica se processo `postgres` está rodando (`pgrep -x postgres`) ANTES de tentar `pg_isready` - detecta crash imediato por Permission denied. Ref: CLAUDE.md Regras 6 (Enterprise-grade), 9 (Validação contínua), 16 (Fail-fast).
+> **🛡️ CORREÇÃO CRÍTICA PostgreSQL Permissions 09/01/2026 (v6.1→v6.3 SSOT):** Implementada correção completa de 3 FASES para resolver "container alice-postgres is unhealthy" em servidor limpo. **FASE 1 (Bloqueador):** Preparação via SSOT (`permissions-config.sh`) ANTES do `docker compose up` no job `deploy-infra`, com teste de escrita REAL via Docker (`docker run --user 70:70 -v ... touch`) - UID 70 é Alpine PostgreSQL. Elimina race condition entre `prepare` e `deploy-infra`. **FASE 2 (Defesa em Profundidade):** `entrypoint-wrapper.sh` no container PostgreSQL (`infra/postgres/entrypoint-wrapper.sh`) para fail-fast com validação de PGDATA, existência de diretório, gravabilidade e teste de escrita real. Mensagens de erro claras com diagnóstico automático e comandos de correção. Integrado via `Dockerfile.postgres`. **FASE 3 (Arquitetura Resiliente):** Job `prepare-infrastructure` dedicado no workflow `deploy-stack-modular.yml` que executa ANTES de `deploy-infra`, com validação completa do servidor (IP correto, GPU disponível, Docker/NVIDIA funcionando, disco mínimo 20GB), criação atômica de diretórios via `fix-production-permissions.sh`, e validação final fail-fast. **HEALTHCHECK MELHORADO:** Estágio 0 adicionado ao healthcheck PostgreSQL em `docker-compose.infra.yml` que verifica se processo `postgres` está rodando (`pgrep -x postgres`) ANTES de tentar `pg_isready` - detecta crash imediato por Permission denied. Ref: CLAUDE.md Regras 6 (Enterprise-grade), 9 (Validação contínua), 16 (Fail-fast).
 
 > **Healthchecks 100% Saúde REAL 02/01/2026:** TODOS os 46 healthchecks corrigidos para verificar saúde REAL (não apenas portas abertas). REMOVIDO /proc/net/tcp de Tor e Qdrant. Metodologia: Node.js services usam `node -e "require('http').get(...)"`; Python services usam `python3 -c "urllib.request.urlopen(...)"`; ERPNext workers usam `python3 -c "redis.ping()"`; Databases usam CLIs nativos (pg_isready, mysqladmin, redis-cli); Alpine images usam wget/curl. pgBackRest entrypoint.sh implementa FAIL-FAST obrigatório (Regra 6 CLAUDE.md).
 
@@ -1468,27 +1468,46 @@ body = {
 - **Solução:** Comandos agora verificam se há containers antes de executar stop/rm
 - **Bonus:** Recria diretórios com permissões corretas após limpeza
 
-### Permissões Enterprise por Serviço
+### Permissões Enterprise por Serviço (SSOT - 09/01/2026)
+
+> **SSOT:** Todas as permissões são definidas em `infra/scripts/permissions-config.sh`. Ver `docs/PERMISSIONS.md`.
+
 | Serviço | UID | Permissão | Notas |
 |---------|-----|-----------|-------|
 | Grafana | 472 | 755 | - |
 | Prometheus | 65534 | 755 | - |
 | Loki | 10001 | 755 | - |
-| PostgreSQL | 999 | 700 | **FASE 2:** entrypoint-wrapper.sh valida permissões |
-| Langfuse DB | 70 | 755 | - |
+| PostgreSQL | **70** | 700 | **Alpine UID** - entrypoint-wrapper.sh valida permissões |
+| Langfuse DB | **70** | **700** | PostgreSQL Alpine - strict mode |
+| pgBackRest | **70** | 755 | PostgreSQL Alpine UID |
 | Redis | 999 | 755 | - |
-| Caddy Data | 1000 | 700 | - |
+| Caddy Data | 1000 | **755** | Serve certificados públicos |
 | SearXNG | 977 | 755 | - |
-| ERPNext | 999/1000 | 755 | - |
+| ERPNext | 1000 | 755 | Frappe user |
 
-### Validação de Permissões PostgreSQL Enterprise (09/01/2026)
+### Validação de Permissões Enterprise (SSOT - 09/01/2026)
 
-O container PostgreSQL agora inclui validação de permissões em múltiplas camadas:
+O sistema de permissões utiliza **SSOT (Single Source of Truth)** para garantir consistência:
 
-**FASE 1: Preparação Inline no Workflow**
-- Diretório criado ANTES do `docker compose up`
-- Teste de escrita REAL via Docker (`docker run --user 999:999 -v ... touch`)
-- Validação de ownership (999:999) e mode (700)
+**ARQUITETURA SSOT:**
+```
+permissions-config.sh (SSOT - fonte única)
+         ↓
+    ┌────────────────────────────┬──────────────────────────────────┐
+    ↓                            ↓                                  ↓
+prepare-production-server.sh  fix-production-permissions.sh  (scripts futuros)
+```
+
+**BENEFÍCIOS:**
+- ✅ Zero duplicação de valores de permissões
+- ✅ Consistência garantida entre scripts
+- ✅ chmod 0xxx (com prefixo 0) remove bits especiais (setgid/setuid/sticky)
+- ✅ Validação recursiva de ownership
+
+**FASE 1: Preparação via SSOT**
+- `prepare-production-server.sh` delega para `fix-production-permissions.sh --create`
+- Teste de escrita REAL via Docker (`docker run --user 70:70 -v ... touch`)
+- Validação de ownership (70:70 Alpine) e mode (700)
 
 **FASE 2: Entrypoint Wrapper (`infra/postgres/entrypoint-wrapper.sh`)**
 - Valida PGDATA configurado
@@ -1513,4 +1532,4 @@ O container PostgreSQL agora inclui validação de permissões em múltiplas cam
 *Documento gerado automaticamente pela auditoria completa da plataforma*  
 *Autor: Fillipe Guerra*  
 *Data: 09 de Janeiro de 2026*  
-*Versão: 6.1 - Enterprise PostgreSQL Permissions + Resilient Architecture*
+*Versão: 6.3 - SSOT Permissions + Smart Deploy + Enterprise Bug Fixes*

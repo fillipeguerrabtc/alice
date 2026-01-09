@@ -532,7 +532,7 @@ flowchart LR
 
 > **Server GPU Optimizations (28/12/2025):** Servidor de produção Hetzner GEX44 otimizado para máxima performance GPU. **Docker daemon:** default-runtime nvidia (GPU como runtime padrão), live-restore true, BuildKit GC 20GB. **NVIDIA:** Persistence Mode ENABLED (GPU sempre ativa, sem cold start), CDI configurado em /etc/cdi/nvidia.yaml (Container Device Interface - best practice 2025), Container Toolkit 1.18.1. **Kernel sysctl:** vm.swappiness=10 (prioriza RAM), vm.dirty_ratio=40 (I/O throughput), kernel.shmmax=64GB (CUDA shared memory), net.core.rmem_max=16MB (buffers rede), fs.file-max=2M. **Hardware:** RTX 4000 Ada 20GB, Driver 580.95.05, CUDA 13.0. Servidor 100% limpo, 1.7TB disponível.
 
-> **Deploy Enterprise Hardening (02/01/2026):** Workflow de deploy com validações enterprise completas. **Smoke Tests Pós-Deploy:** PostgreSQL (pg_isready), pgvector (operação vetorial real `SELECT '[1,2,3]'::vector <-> '[4,5,6]'::vector`), Redis (PING), Caddy (HTTP 80/443), GPU Manager (health endpoint), conectividade inter-serviços (Chat→GPU Manager via rede Docker). **Persistência de Logs:** Todos os logs de deploy salvos em `/opt/alice/logs/deploy-YYYYMMDD-HHMMSS.log` para troubleshooting futuro. **Validação pgBackRest:** Verifica existência do repositório, permissões (999:999), estrutura e corrige automaticamente se necessário. **pgBackRest Stanza Fix:** `pgbackrest-init` agora cria stanza sem precisar de `pg_control` (passa configs via CLI sem `pg1-*`), sincronizada após PostgreSQL iniciar. **Caddy Healthcheck:** Melhorado para verificar HTTP (portas 80/443) além de admin API (porta 2019).
+> **Deploy Enterprise Hardening (02/01/2026):** Workflow de deploy com validações enterprise completas. **Smoke Tests Pós-Deploy:** PostgreSQL (pg_isready), pgvector (operação vetorial real `SELECT '[1,2,3]'::vector <-> '[4,5,6]'::vector`), Redis (PING), Caddy (HTTP 80/443), GPU Manager (health endpoint), conectividade inter-serviços (Chat→GPU Manager via rede Docker). **Persistência de Logs:** Todos os logs de deploy salvos em `/opt/alice/logs/deploy-YYYYMMDD-HHMMSS.log` para troubleshooting futuro. **Validação pgBackRest:** Verifica existência do repositório, permissões (70:70 Alpine) via SSOT e corrige automaticamente se necessário. **pgBackRest Stanza Fix:** `pgbackrest-init` agora cria stanza sem precisar de `pg_control` (passa configs via CLI sem `pg1-*`), sincronizada após PostgreSQL iniciar. **Caddy Healthcheck:** Melhorado para verificar HTTP (portas 80/443) além de admin API (porta 2019). **SSOT Permissions (09/01/2026):** Permissões centralizadas em `infra/scripts/permissions-config.sh` para eliminar duplicação e inconsistências.
 
 ---
 
@@ -1058,6 +1058,95 @@ step parse-health (propaga outputs)
 > **Nota:** Redis 6.x para ERPNext é OBRIGATÓRIO por compatibilidade com Frappe Framework.
 
 **Workflow File:** `.github/workflows/deploy-stack-modular.yml` (v3.1.0)
+
+---
+
+### ADR-012: SSOT para Gestão de Permissões (09/01/2026)
+
+**Status:** ✅ Aceito
+
+**Contexto:**
+O deploy em produção falhava consistentemente na validação de permissões porque dois scripts (`prepare-production-server.sh` e `fix-production-permissions.sh`) gerenciavam as mesmas permissões com valores DIFERENTES:
+- langfuse-db: 755 vs 700
+- caddy: 700 vs 755
+- backups/postgresql: 750 vs 755
+
+Isso violava as Regras 2 (Não duplicar) e 6 (Enterprise-grade) do CLAUDE.md.
+
+**Decisão:**
+Implementar SSOT (Single Source of Truth) para permissões:
+
+1. **Arquivo Central**: `infra/scripts/permissions-config.sh` define TODOS os UIDs/GIDs/permissões
+2. **Scripts Derivados**: Ambos os scripts fazem `source` do SSOT ao invés de valores hardcoded
+3. **Delegação**: `prepare-production-server.sh` delega TODA lógica de permissões para `fix-production-permissions.sh`
+
+**Arquitetura:**
+```
+permissions-config.sh (SSOT)
+         ↓
+    ┌────────────────────────────┬──────────────────────────────────┐
+    ↓                            ↓                                  ↓
+prepare-production-server.sh  fix-production-permissions.sh  (scripts futuros)
+```
+
+**Benefícios:**
+- ✅ Zero duplicação de valores de permissões
+- ✅ Consistência garantida entre scripts
+- ✅ Manutenção simplificada (alterar em um lugar atualiza tudo)
+- ✅ Validação recursiva com detecção de bits especiais (setgid/setuid/sticky)
+- ✅ chmod 0xxx (com prefixo 0) para garantir remoção de bits especiais
+
+**Permissões Críticas:**
+| Serviço | UID | Permissão | Justificativa |
+|---------|-----|-----------|---------------|
+| PostgreSQL | 70 | 700 | Alpine UID, security hardening obrigatório |
+| Langfuse DB | 70 | 700 | PostgreSQL strict mode |
+| Caddy | 1000 | 755 | Web server, serve certificados públicos |
+| Backups | 70 | 755 | pgBackRest Alpine, root deve poder ler |
+
+**Documentação:** `docs/PERMISSIONS.md`
+
+**REF:** CLAUDE.md Regra 2 (Não duplicar), Regra 6 (Enterprise-grade), Regra 7 (Causa raiz)
+
+---
+
+### ADR-013: Jaeger Healthcheck - Alpine vs Distroless (07/01/2026)
+
+**Status:** ✅ Aceito - NENHUMA AÇÃO NECESSÁRIA
+
+**Contexto:**
+Investigação detalhada da imagem Docker `jaegertracing/jaeger:2.13.0` para determinar se era necessário migrar para variante `-debug`.
+
+**Descobertas:**
+1. ✅ **Imagem v2 é Alpine Linux 3.22** (não distroless/scratch)
+2. ✅ **wget está disponível** (busybox wget)
+3. ✅ **Healthcheck funciona perfeitamente** (testado e validado)
+4. ❌ **Tag `-debug` NÃO EXISTE** para versão 2.13.0
+
+**Análise Técnica:**
+```bash
+$ docker run --rm --entrypoint /bin/sh jaegertracing/jaeger:2.13.0 -c "cat /etc/os-release"
+NAME="Alpine Linux"
+VERSION_ID=3.22.2
+```
+
+**Por que v2 é diferente de v1:**
+- **Jaeger v1** (EOL 31/12/2025): tinha variantes all-in-one, agent, collector separados com opções distroless
+- **Jaeger v2** (atual): unificou tudo em uma **única imagem baseada em Alpine**
+
+**Healthcheck Atual (CORRETO):**
+```yaml
+healthcheck:
+  test: ["CMD", "wget", "--spider", "-q", "http://localhost:16686/"]
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 60s
+```
+
+**Decisão:** Manter configuração atual. Nenhuma mudança necessária.
+
+**REF:** `infra/docker/stacks/docker-compose.observability.yml`
 
 ---
 

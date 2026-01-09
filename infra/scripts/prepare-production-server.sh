@@ -115,253 +115,80 @@ echo "   ✅ Docker com GPU funcionando"
 echo ""
 
 # =============================================================================
-# CRIAÇÃO DE ESTRUTURA DE DIRETÓRIOS
+# CRIAÇÃO DE ESTRUTURA DE DIRETÓRIOS E PERMISSÕES
+# =============================================================================
+# CORREÇÃO ENTERPRISE 09/01/2026:
+#
+# CAUSA RAIZ IDENTIFICADA:
+#   - Dois scripts (prepare-production-server.sh e fix-production-permissions.sh)
+#     gerenciavam as mesmas permissões com valores DIFERENTES
+#   - prepare-production-server.sh: langfuse-db=755, caddy=700, backups/postgresql=750
+#   - fix-production-permissions.sh: langfuse-db=700, caddy=755, backups/postgresql=755
+#   - RESULTADO: Validação sempre falhava por inconsistência
+#
+# SOLUÇÃO ENTERPRISE:
+#   - Delegar TODA criação/configuração para fix-production-permissions.sh --create
+#   - SSOT (Single Source of Truth) em permissions-config.sh
+#   - Zero duplicação, zero inconsistência
+#
+# REF: CLAUDE.md Regra 2 (Não duplicar), Regra 6 (Enterprise-grade)
+# REF: docs/PERMISSIONS.md para documentação completa
 # =============================================================================
 
 echo "📁 CRIANDO ESTRUTURA DE DIRETÓRIOS"
 echo "============================================="
 
 # -----------------------------------------------------------------------------
-# Diretórios raiz
+# Diretórios raiz (criados aqui pois são pré-requisito para o script SSOT)
 # -----------------------------------------------------------------------------
 echo "📝 Criando diretórios raiz..."
 mkdir -p /opt/alice/{data,logs,uploads,backups,secrets,versions,app}
 echo "   ✅ Diretórios raiz criados"
-
-# =============================================================================
-# 4.1 PostgreSQL Data Directory - CRITICAL PERMISSIONS (ENTERPRISE FIX)
-# =============================================================================
-# CORREÇÃO 08/01/2026: ROOT CAUSE #1 - PostgreSQL permissions
-# PROBLEMA: Diretório criado com root:root ownership, container PostgreSQL
-#           (UID 70 Alpine) não conseguia escrever, causando "Permission denied"
-# CORREÇÃO 08/01/2026: Migração para Alpine = UID 70 (não mais 999)
-# SOLUÇÃO: Função idempotente que cria/valida/corrige ownership ANTES de
-#          Docker Compose iniciar containers
-# REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Root cause fix)
-# REF: Dockerfile.postgres linha 106: FROM postgres:16-alpine (UID 70)
-# =============================================================================
 echo ""
-echo "🐘 CONFIGURANDO DIRETÓRIO POSTGRESQL (CRÍTICO)..."
+
+# -----------------------------------------------------------------------------
+# Delegar para script SSOT centralizado
+# -----------------------------------------------------------------------------
+# REF: CLAUDE.md Regra 2 (Não duplicar) - TODO código de permissões foi
+#      removido deste script e centralizado em fix-production-permissions.sh
+# -----------------------------------------------------------------------------
+
+echo "🔧 DELEGANDO CRIAÇÃO DE DIRETÓRIOS E PERMISSÕES PARA SCRIPT CENTRALIZADO"
 echo "============================================="
+echo ""
 
-POSTGRES_DIR="/opt/alice/data/postgres"
-POSTGRES_UID=70  # Alpine PostgreSQL UID (não 999 Debian!)
-POSTGRES_GID=70
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FIX_PERMISSIONS_SCRIPT="${SCRIPT_DIR}/fix-production-permissions.sh"
 
-# Função para validar e corrigir ownership (idempotente)
-fix_postgres_ownership() {
-  local dir="$1"
-  
-  # Criar diretório se não existir
-  if [ ! -d "$dir" ]; then
-    echo "   📝 Criando $dir..."
-    sudo mkdir -p "$dir"
-    sudo chown ${POSTGRES_UID}:${POSTGRES_GID} "$dir"
-    sudo chmod 700 "$dir"
-    echo "   ✅ Diretório criado com ownership ${POSTGRES_UID}:${POSTGRES_GID} e permissions 700"
-    return 0
-  fi
-  
-  # Diretório existe - verificar se está vazio
-  if [ -z "$(sudo ls -A "$dir" 2>/dev/null)" ]; then
-    echo "   📝 Diretório vazio - configurando ownership..."
-    sudo chown ${POSTGRES_UID}:${POSTGRES_GID} "$dir"
-    sudo chmod 700 "$dir"
-    echo "   ✅ Ownership configurado: ${POSTGRES_UID}:${POSTGRES_GID}, mode: 700"
-    return 0
-  fi
-  
-  # Diretório NÃO está vazio - validar ownership
-  ACTUAL_OWNER=$(sudo stat -c "%u:%g" "$dir")
-  
-  if [ "$ACTUAL_OWNER" != "${POSTGRES_UID}:${POSTGRES_GID}" ]; then
-    echo "   ⚠️  Ownership incorreto detectado: $ACTUAL_OWNER (esperado: ${POSTGRES_UID}:${POSTGRES_GID})"
-    echo "   🔧 Corrigindo ownership recursivamente..."
-    
-    if ! sudo chown -R ${POSTGRES_UID}:${POSTGRES_GID} "$dir"; then
-      echo "   ❌ ERRO: Falha ao corrigir ownership!"
-      return 1
-    fi
-    
-    echo "   ✅ Ownership corrigido para ${POSTGRES_UID}:${POSTGRES_GID}"
-  else
-    echo "   ✅ Ownership correto: ${POSTGRES_UID}:${POSTGRES_GID}"
-  fi
-  
-  # Validar permissões
-  ACTUAL_MODE=$(sudo stat -c "%a" "$dir")
-  if [ "$ACTUAL_MODE" != "700" ]; then
-    echo "   🔧 Corrigindo permissions: $ACTUAL_MODE → 700"
-    sudo chmod 700 "$dir"
-  fi
-  
-  return 0
-}
-
-# Executar correção
-if ! fix_postgres_ownership "$POSTGRES_DIR"; then
-  echo "❌ ERRO CRÍTICO: Falha ao configurar diretório PostgreSQL"
-  exit 1
+# Verificar se o script SSOT existe
+if [[ ! -f "$FIX_PERMISSIONS_SCRIPT" ]]; then
+    echo "❌ ERRO CRÍTICO: fix-production-permissions.sh não encontrado!"
+    echo "   Caminho esperado: $FIX_PERMISSIONS_SCRIPT"
+    echo ""
+    echo "   Este script é o SSOT (Single Source of Truth) para permissões."
+    echo "   REF: CLAUDE.md Regra 2 (Não duplicar)"
+    exit 1
 fi
 
-echo "   ✅ Diretório PostgreSQL configurado corretamente"
+# Garantir permissão de execução
+chmod +x "$FIX_PERMISSIONS_SCRIPT"
+
+# Executar criação de diretórios e permissões via script centralizado
+echo "📝 Executando fix-production-permissions.sh --create..."
 echo ""
 
-# -----------------------------------------------------------------------------
-# Diretórios de dados (volumes) - INFRA Stack
-# -----------------------------------------------------------------------------
-echo "📝 Criando diretórios INFRA stack..."
-# NOTA: /opt/alice/data/postgres criado e configurado acima com ownership 70:70 (Alpine)
-mkdir -p /opt/alice/data/redis-alice
-mkdir -p /opt/alice/data/qdrant
-mkdir -p /opt/alice/data/minio
-mkdir -p /opt/alice/data/caddy
-mkdir -p /opt/alice/data/caddy-config
-mkdir -p /opt/alice/data/searxng-config
-mkdir -p /opt/alice/data/pgbackrest-spool
-echo "   ✅ Diretórios INFRA stack criados"
+if ! sudo "$FIX_PERMISSIONS_SCRIPT" --create; then
+    echo ""
+    echo "❌ ERRO CRÍTICO: Falha ao criar diretórios e permissões!"
+    echo ""
+    echo "Detalhes da falha foram impressos acima pelo script de validação."
+    echo ""
+    echo "💡 SOLUÇÃO: Verifique os logs acima e tente novamente."
+    exit 1
+fi
 
-# -----------------------------------------------------------------------------
-# Diretórios de dados (volumes) - OBSERVABILITY Stack
-# -----------------------------------------------------------------------------
-echo "📝 Criando diretórios OBSERVABILITY stack..."
-mkdir -p /opt/alice/data/vector
-mkdir -p /opt/alice/data/langfuse-db
-mkdir -p /opt/alice/data/clickhouse
-mkdir -p /opt/alice/data/prometheus
-mkdir -p /opt/alice/data/grafana
-mkdir -p /opt/alice/data/loki
-mkdir -p /opt/alice/data/jaeger
-echo "   ✅ Diretórios OBSERVABILITY stack criados"
-
-# -----------------------------------------------------------------------------
-# Diretórios de dados (volumes) - ERPNEXT Stack
-# -----------------------------------------------------------------------------
-echo "📝 Criando diretórios ERPNEXT stack..."
-mkdir -p /opt/alice/data/erpnext-sites
-mkdir -p /opt/alice/data/erpnext-mariadb
-mkdir -p /opt/alice/data/erpnext-redis-cache
-mkdir -p /opt/alice/data/erpnext-redis-queue
-echo "   ✅ Diretórios ERPNEXT stack criados"
-
-# -----------------------------------------------------------------------------
-# Diretórios de logs
-# -----------------------------------------------------------------------------
-echo "📝 Criando diretórios de logs..."
-mkdir -p /opt/alice/logs/caddy
-mkdir -p /opt/alice/logs/erpnext
-mkdir -p /opt/alice/logs/clickhouse
-mkdir -p /opt/alice/logs/jaeger
-echo "   ✅ Diretórios de logs criados"
-
-# -----------------------------------------------------------------------------
-# Diretórios de uploads e backups
-# -----------------------------------------------------------------------------
-echo "📝 Criando diretórios de uploads e backups..."
-mkdir -p /opt/alice/uploads/training
-mkdir -p /opt/alice/backups/postgresql
-# NOTA: postgresql/logs será criado pelo container pgBackRest conforme necessário
-mkdir -p /opt/alice/backups/manifests
-echo "   ✅ Diretórios de uploads e backups criados"
-
-# -----------------------------------------------------------------------------
-# Diretórios de secrets e versões
-# -----------------------------------------------------------------------------
-echo "📝 Criando diretórios de secrets e versões..."
-mkdir -p /opt/alice/secrets
-mkdir -p /opt/alice/versions
-echo "   ✅ Diretórios de secrets e versões criados"
 echo ""
-
-# =============================================================================
-# CONFIGURAÇÃO DE PERMISSÕES POR SERVIÇO
-# =============================================================================
-
-echo "🔐 CONFIGURANDO PERMISSÕES POR SERVIÇO"
-echo "============================================="
-
-# PostgreSQL (UID 70 Alpine)
-# NOTA: PostgreSQL já foi configurado acima com fix_postgres_ownership()
-echo "📝 PostgreSQL (UID 70 Alpine)..."
-echo "   ✅ PostgreSQL já configurado anteriormente"
-
-# Grafana (UID 472)
-echo "📝 Grafana (UID 472)..."
-sudo chown -R 472:472 /opt/alice/data/grafana
-sudo chmod 755 /opt/alice/data/grafana
-echo "   ✅ Grafana configurado"
-
-# Prometheus (UID 65534 - nobody)
-echo "📝 Prometheus (UID 65534)..."
-sudo chown -R 65534:65534 /opt/alice/data/prometheus
-sudo chmod 755 /opt/alice/data/prometheus
-echo "   ✅ Prometheus configurado"
-
-# Loki (UID 10001)
-echo "📝 Loki (UID 10001)..."
-sudo chown -R 10001:10001 /opt/alice/data/loki
-sudo chmod 755 /opt/alice/data/loki
-echo "   ✅ Loki configurado"
-
-# Jaeger (UID 10001)
-echo "📝 Jaeger (UID 10001)..."
-sudo chown -R 10001:10001 /opt/alice/data/jaeger
-sudo chmod 755 /opt/alice/data/jaeger
-echo "   ✅ Jaeger configurado"
-
-# ClickHouse (UID 101)
-echo "📝 ClickHouse (UID 101)..."
-sudo chown -R 101:101 /opt/alice/data/clickhouse /opt/alice/logs/clickhouse
-sudo chmod 755 /opt/alice/data/clickhouse /opt/alice/logs/clickhouse
-echo "   ✅ ClickHouse configurado"
-
-# Langfuse DB PostgreSQL (UID 70)
-echo "📝 Langfuse DB (UID 70)..."
-sudo chown -R 70:70 /opt/alice/data/langfuse-db
-sudo chmod 755 /opt/alice/data/langfuse-db
-echo "   ✅ Langfuse DB configurado"
-
-# Redis (UID 999)
-echo "📝 Redis (UID 999)..."
-sudo chown -R 999:999 /opt/alice/data/redis-alice
-sudo chmod 755 /opt/alice/data/redis-alice
-echo "   ✅ Redis configurado"
-
-# Caddy (UID 1000)
-echo "📝 Caddy (UID 1000)..."
-sudo chown -R 1000:1000 /opt/alice/data/caddy /opt/alice/data/caddy-config /opt/alice/logs/caddy
-sudo chmod 700 /opt/alice/data/caddy
-sudo chmod 755 /opt/alice/data/caddy-config /opt/alice/logs/caddy
-echo "   ✅ Caddy configurado"
-
-# SearXNG (UID 977)
-echo "📝 SearXNG (UID 977)..."
-sudo chown -R 977:977 /opt/alice/data/searxng-config
-sudo chmod 755 /opt/alice/data/searxng-config
-echo "   ✅ SearXNG configurado"
-
-# Qdrant, MinIO, Vector (root - permissões gerais)
-echo "📝 Qdrant, MinIO, Vector..."
-sudo chmod 755 /opt/alice/data/qdrant /opt/alice/data/minio /opt/alice/data/vector
-echo "   ✅ Qdrant, MinIO, Vector configurados"
-
-# ERPNext (UID 1000 para Frappe)
-echo "📝 ERPNext (UID 1000)..."
-sudo chown -R 1000:1000 /opt/alice/data/erpnext-sites /opt/alice/logs/erpnext
-sudo chmod 755 /opt/alice/data/erpnext-sites /opt/alice/logs/erpnext
-echo "   ✅ ERPNext configurado"
-
-# Backups PostgreSQL (UID 70 - postgres Alpine user)
-echo "📝 Backups PostgreSQL (UID 70 Alpine)..."
-sudo chown -R 70:70 /opt/alice/backups/postgresql
-sudo chmod 750 /opt/alice/backups
-sudo chmod 750 /opt/alice/backups/postgresql
-echo "   ✅ Backups PostgreSQL configurado"
-
-# Uploads (para RAG multimodal)
-echo "📝 Uploads..."
-sudo chmod 755 /opt/alice/uploads
-echo "   ✅ Uploads configurado"
+echo "✅ Estrutura de diretórios e permissões configuradas via SSOT"
 echo ""
 
 # =============================================================================
@@ -394,54 +221,72 @@ echo ""
 # =============================================================================
 # VALIDAÇÃO FINAL
 # =============================================================================
+# CORREÇÃO ENTERPRISE 09/01/2026:
+#   - Usar fix-production-permissions.sh --validate (consistência total)
+#   - Validação recursiva de TODOS os diretórios (não apenas PostgreSQL)
+#   - Zero código duplicado
+# REF: CLAUDE.md Regra 2 (Não duplicar)
+# =============================================================================
 
 echo "✅ VALIDAÇÃO FINAL"
 echo "============================================="
 
-# Validar permissões PostgreSQL (crítico)
-echo "🧪 Validando permissões PostgreSQL..."
+# -----------------------------------------------------------------------------
+# Validar TODAS as permissões via script centralizado (SSOT)
+# -----------------------------------------------------------------------------
+echo "🧪 Validando TODOS os diretórios recursivamente via script centralizado..."
+echo ""
+
+if ! sudo "$FIX_PERMISSIONS_SCRIPT" --validate; then
+    echo ""
+    echo "❌ ERRO: Validação recursiva de permissões falhou!"
+    echo ""
+    echo "Detalhes da falha foram impressos acima pelo script de validação."
+    echo ""
+    echo "💡 SOLUÇÃO RÁPIDA (se for primeiro deploy):"
+    echo "   Execute o script de correção novamente:"
+    echo "   sudo $FIX_PERMISSIONS_SCRIPT --create"
+    echo ""
+    exit 1
+fi
+
+echo ""
+echo "   ✅ Todas as permissões validadas OK (recursivamente)"
+
+# -----------------------------------------------------------------------------
+# Teste de escrita via Docker (validação adicional crítica para PostgreSQL)
+# -----------------------------------------------------------------------------
+echo ""
+echo "🧪 Teste de escrita Docker para PostgreSQL..."
+
 POSTGRES_DIR="/opt/alice/data/postgres"
 
-# Verificar owner/group (UID 70 para Alpine PostgreSQL)
-ACTUAL_OWNER=$(stat -c '%u:%g' "$POSTGRES_DIR")
-if [ "$ACTUAL_OWNER" != "70:70" ]; then
-  echo "❌ ERRO: Owner incorreto em $POSTGRES_DIR"
-  echo "   Esperado: 70:70 (PostgreSQL Alpine)"
-  echo "   Atual: $ACTUAL_OWNER"
-  exit 1
-fi
-
-# Verificar permissões
-ACTUAL_PERMS=$(stat -c '%a' "$POSTGRES_DIR")
-if [ "$ACTUAL_PERMS" != "700" ]; then
-  echo "❌ ERRO: Permissões incorretas em $POSTGRES_DIR"
-  echo "   Esperado: 700"
-  echo "   Atual: $ACTUAL_PERMS"
-  exit 1
-fi
-
-# Teste de escrita via Docker (funciona em servidor limpo sem UID 70 no host)
-# NOTA: UID 70 é o postgres no Alpine (não 999 do Debian)
+# NOTA: Este teste é mantido mesmo com validação centralizada porque
+#       verifica a integração Docker+Volume+Permissões, não apenas permissões do host
 if ! docker run --rm --user 70:70 -v "$POSTGRES_DIR:/test:rw" alpine:3.21 touch /test/.write-test 2>/dev/null; then
-  echo "❌ ERRO: Usuário 70 (postgres Alpine) NÃO consegue escrever no volume Docker"
-  ls -ld "$POSTGRES_DIR"
-  exit 1
+    echo "❌ ERRO: Usuário 70 (postgres Alpine) NÃO consegue escrever no volume Docker"
+    ls -ld "$POSTGRES_DIR"
+    exit 1
 fi
 
 # Limpar arquivo de teste (via Docker para consistência)
 docker run --rm --user 70:70 -v "$POSTGRES_DIR:/test:rw" alpine:3.21 rm -f /test/.write-test 2>/dev/null || true
-echo "   ✅ Permissões PostgreSQL OK"
+echo "   ✅ Teste de escrita Docker PostgreSQL OK"
 
-# Validar networks
+# -----------------------------------------------------------------------------
+# Validar networks Docker
+# -----------------------------------------------------------------------------
+echo ""
 echo "🧪 Validando networks Docker..."
+
 if ! docker network inspect alice-network > /dev/null 2>&1; then
-  echo "❌ ERRO: alice-network não existe!"
-  exit 1
+    echo "❌ ERRO: alice-network não existe!"
+    exit 1
 fi
 
 if ! docker network inspect erpnext-network > /dev/null 2>&1; then
-  echo "❌ ERRO: erpnext-network não existe!"
-  exit 1
+    echo "❌ ERRO: erpnext-network não existe!"
+    exit 1
 fi
 
 echo "   ✅ Networks Docker OK"

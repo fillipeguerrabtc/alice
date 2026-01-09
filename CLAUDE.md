@@ -159,8 +159,16 @@ Embeddings otimizados por caso de uso para máxima qualidade:
 O workflow modular **prepara automaticamente** a infraestrutura base no job `prepare`:
 - ✅ **Networks Docker externas**: `alice-network` (subnet 172.28.0.0/16) + `erpnext-network`
 - ✅ **Estrutura de diretórios**: `/opt/alice/{data,logs,uploads,backups,secrets,versions}`
-- ✅ **Permissões específicas por serviço**: postgres (999:999), grafana (472:472), prometheus (65534:65534), etc. (conforme DEPLOYMENT.md Seção 8.2)
+- ✅ **Permissões via SSOT**: Configurações centralizadas em `permissions-config.sh` - postgres (70:70 Alpine), grafana (472:472), prometheus (65534:65534), etc.
 - ✅ **Docker secrets**: `langfuse_db_password` (montado como arquivo em containers)
+
+**📋 SSOT de Permissões (09/01/2026):**
+- **Arquivo Central**: `infra/scripts/permissions-config.sh` - Single Source of Truth para UIDs/GIDs/permissões
+- **Scripts que usam SSOT**:
+  - `fix-production-permissions.sh` - Cria/valida/corrige permissões (faz source do SSOT)
+  - `prepare-production-server.sh` - Delega TODA lógica de permissões para fix-production-permissions.sh
+- **Documentação**: `docs/PERMISSIONS.md` - Guia completo do sistema SSOT
+- **REF**: CLAUDE.md Regra 2 (Não duplicar), Regra 6 (Enterprise-grade)
 
 **CRÍTICO:** Redes e volumes são **compartilhados** entre stacks via `external: true` no `docker-compose.base.yml`. Isso garante que:
 - Rollback de um stack NÃO remove redes/volumes compartilhados
@@ -491,10 +499,14 @@ alice/
 
 /opt/alice -> /mnt/alice-data       # Symlink para acesso padrão
 
-Permissões Enterprise (13/12/2025):
-- Diretórios: 750 (rwxr-x---) - owner/group rwx, outros sem acesso
-- Arquivos: 640 (rw-r-----) - owner rw, group r, outros sem acesso
-- Secrets: 600 (rw-------) - apenas owner
+Permissões Enterprise (Atualizado 09/01/2026):
+- **SSOT**: `infra/scripts/permissions-config.sh` - fonte única de verdade
+- PostgreSQL: 70:70 (Alpine UID), permissão 700
+- Langfuse DB: 70:70, permissão 700 (PostgreSQL strict mode)
+- Caddy: 1000:1000, permissão 755 (web server, certificados)
+- Backups: 70:70, permissão 755 (pgBackRest Alpine)
+- Secrets: 0:0, permissão 700 (apenas root)
+- Ver `docs/PERMISSIONS.md` para tabela completa de UIDs/permissões
 ```
 
 ## Documentação Principal
@@ -504,6 +516,7 @@ Permissões Enterprise (13/12/2025):
 | `docs/STATUS-REAL-ATUAL.md` | Status completo da plataforma |
 | `docs/SISTEMA-APRENDIZADO.md` | Sistema de auto-aprendizado |
 | `docs/DEPLOYMENT.md` | Guia de deploy para produção |
+| `docs/PERMISSIONS.md` | **SSOT de permissões (UIDs/GIDs/permissões)** |
 | `docs/SECRETS.md` | Guia de secrets e webhooks |
 
 ## Contas Administrativas (Acesso Inicial)
