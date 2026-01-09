@@ -257,13 +257,8 @@ services:
       - alice-network
     healthcheck:
       # Jaeger v2 é distroless (não tem wget/curl)
-      # Usar /dev/tcp via bash não funciona em distroless
-      # Omitir healthcheck = herda da imagem (que tem healthcheck interno)
-      test: ["NONE"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
+      # CORREÇÃO PR#94: disable: true é a forma correta de desabilitar
+      disable: true
     deploy:
       resources:
         limits:
@@ -299,8 +294,8 @@ services:
       loki:
         condition: service_started
     healthcheck:
-      # Vector Alpine tem curl
-      test: ["CMD-SHELL", "curl -sf http://localhost:8686/health || exit 1"]
+      # Vector Alpine minimalista - usar wget (mais comum em Alpine)
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:8686/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 5
@@ -334,12 +329,8 @@ services:
       - alice-network
     healthcheck:
       # OTel Collector é scratch/distroless (não tem wget/curl)
-      # Desabilitar healthcheck - o container roda se o binário estiver OK
-      test: ["NONE"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
+      # CORREÇÃO PR#94: disable: true é a forma correta de desabilitar
+      disable: true
     deploy:
       resources:
         limits:
@@ -375,12 +366,8 @@ services:
       - /:/host:ro
     healthcheck:
       # Node Exporter é scratch (não tem wget/curl/shell)
-      # Desabilitar healthcheck - o container roda se o binário estiver OK
-      test: ["NONE"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
+      # CORREÇÃO PR#94: disable: true é a forma correta de desabilitar
+      disable: true
     deploy:
       resources:
         limits:
@@ -415,12 +402,8 @@ services:
       - alice-network
     healthcheck:
       # cAdvisor é minimalista (não tem wget/curl)
-      # Desabilitar healthcheck - o container roda se o binário estiver OK
-      test: ["NONE"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
+      # CORREÇÃO PR#94: disable: true é a forma correta de desabilitar
+      disable: true
     deploy:
       resources:
         limits:

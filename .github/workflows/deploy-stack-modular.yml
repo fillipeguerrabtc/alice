@@ -75,6 +75,11 @@ on:
         type: string
         required: false
         default: ''
+      cleanup_server:
+        description: 'Limpar servidor COMPLETAMENTE antes do deploy (primeiro deploy)'
+        type: boolean
+        required: false
+        default: false
       dry_run:
         description: 'Apenas validar, não executar deploy'
         type: boolean
@@ -737,6 +742,63 @@ jobs:
             
             # ATENÇÃO: Este step roda ANTES do SCP, então o script ainda NÃO está no servidor.
             # Solução: Baixar script direto do GitHub (public repo) e executar.
+            
+            # =================================================================
+            # CORREÇÃO PR#94 (09/01/2026): Cleanup completo para primeiro deploy
+            # =================================================================
+            CLEANUP_SERVER="${{ inputs.cleanup_server }}"
+            if [ "$CLEANUP_SERVER" = "true" ]; then
+              echo "🧹 LIMPEZA COMPLETA DO SERVIDOR SOLICITADA..."
+              echo ""
+              
+              # Parar todos os containers
+              if [ "$(docker ps -q | wc -l)" -gt 0 ]; then
+                echo "🛑 Parando todos os containers..."
+                docker stop $(docker ps -q) 2>/dev/null || true
+              fi
+              
+              # Remover todos os containers
+              if [ "$(docker ps -aq | wc -l)" -gt 0 ]; then
+                echo "🗑️  Removendo todos os containers..."
+                docker rm -f $(docker ps -aq) 2>/dev/null || true
+              fi
+              
+              # Remover todos os volumes
+              if [ "$(docker volume ls -q | wc -l)" -gt 0 ]; then
+                echo "📦 Removendo todos os volumes Docker..."
+                docker volume rm $(docker volume ls -q) 2>/dev/null || true
+              fi
+              
+              # Remover redes customizadas
+              echo "🌐 Removendo redes customizadas..."
+              docker network rm alice-network 2>/dev/null || true
+              docker network rm erpnext-network 2>/dev/null || true
+              
+              # Limpeza Docker system
+              echo "🧹 Limpeza geral do Docker..."
+              docker system prune -af --volumes 2>/dev/null || true
+              
+              # Limpar dados
+              echo "💾 Limpando dados em /opt/alice/data..."
+              for dir in postgres redis qdrant minio caddy grafana prometheus loki clickhouse langfuse-db mariadb jaeger; do
+                rm -rf /opt/alice/data/$dir/* 2>/dev/null || true
+              done
+              
+              # Limpar logs
+              echo "📝 Limpando logs..."
+              rm -rf /opt/alice/logs/* 2>/dev/null || true
+              
+              # Limpar versões
+              echo "📋 Removendo arquivos de versão..."
+              rm -f /opt/alice/versions/*.current 2>/dev/null || true
+              rm -f /opt/alice/versions/*.previous 2>/dev/null || true
+              
+              echo ""
+              echo "✅ Limpeza completa finalizada!"
+              echo "   Containers: $(docker ps -aq | wc -l)"
+              echo "   Volumes: $(docker volume ls -q | wc -l)"
+              echo ""
+            fi
             
             echo "🚀 Preparando servidor de produção (antes do SCP)..."
             
@@ -2486,7 +2548,7 @@ jobs:
             echo "🏥 Checking INFRA stack health..."
             
             CONTAINERS="alice-postgres alice-redis alice-qdrant alice-tor alice-searxng alice-caddy alice-minio alice-pgbouncer"
-            MAX_RETRIES=30
+            MAX_RETRIES=15
             SLEEP_TIME=10
             TIMEOUT=$((MAX_RETRIES * SLEEP_TIME))
             
@@ -3112,14 +3174,16 @@ jobs:
             # STAGE 2: Remove Orphans
             echo ""
             echo "🧹 Stage 2: Cleaning orphaned containers..."
+            # CORREÇÃO PR#94 (09/01/2026): Nomes corretos dos containers
+            # (sem sufixo -service, conforme docker-compose.alice.yml)
             ALICE_CONTAINERS=(
               "alice-frontend"
-              "alice-auth-service"
-              "alice-chat-service"
-              "alice-rag-service"
-              "alice-training-service"
-              "alice-integrations-service"
-              "alice-observability-service"
+              "alice-auth"
+              "alice-chat"
+              "alice-rag"
+              "alice-training"
+              "alice-integrations"
+              "alice-observability"
               "alice-gpu-manager"
             )
             
@@ -3152,12 +3216,12 @@ jobs:
             echo ""
             echo "🧪 Stage 4: Validating clean state..."
             REMAINING=$(docker ps -a --filter "name=alice-frontend" \
-                                     --filter "name=alice-auth-service" \
-                                     --filter "name=alice-chat-service" \
-                                     --filter "name=alice-rag-service" \
-                                     --filter "name=alice-training-service" \
-                                     --filter "name=alice-integrations-service" \
-                                     --filter "name=alice-observability-service" \
+                                     --filter "name=alice-auth" \
+                                     --filter "name=alice-chat" \
+                                     --filter "name=alice-rag" \
+                                     --filter "name=alice-training" \
+                                     --filter "name=alice-integrations" \
+                                     --filter "name=alice-observability" \
                                      --filter "name=alice-gpu-manager" \
                                      -q | wc -l)
             if [ $REMAINING -eq 0 ]; then
@@ -3288,7 +3352,7 @@ jobs:
             # Containers SEM healthcheck/distroless (devem estar "running")
             RUNNING_CONTAINERS="jaeger alice-otel-collector alice-cadvisor alice-node-exporter"
             
-            MAX_RETRIES=20
+            MAX_RETRIES=15
             SLEEP_TIME=10
             
             # Verificar containers com healthcheck
@@ -3562,7 +3626,7 @@ jobs:
             # CRITICAL FIX (06/01/2026): Adicionar todos os 10 containers com healthcheck
             # Faltavam: websocket (Socket.IO), scheduler (cron), workers (job queues)
             CONTAINERS="erpnext-mariadb erpnext-redis-cache erpnext-redis-queue erpnext-backend erpnext-frontend erpnext-websocket erpnext-scheduler erpnext-worker-default erpnext-worker-short erpnext-worker-long"
-            MAX_RETRIES=25
+            MAX_RETRIES=15
             SLEEP_TIME=10
             
             for container in $CONTAINERS; do
