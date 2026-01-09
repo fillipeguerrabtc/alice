@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 09 de Janeiro de 2026  
-**Versão:** 9.1 - Enterprise PostgreSQL Permissions + Resilient Architecture
+**Versão:** 9.2 - Smart Deploy + Enterprise Bug Fixes
 
 > **🚀 ATUALIZAÇÃO ENTERPRISE v3.0.0 (06/01/2026) - Pipeline CI/CD:**  
 > Pipeline CI/CD enterprise completo com deploy modular em 5 stacks independentes.
@@ -107,6 +107,42 @@ gh workflow run deploy-stack-modular.yml -f stack=observability -f version=v1.0.
 
 # Rollback manual de um stack específico
 gh workflow run deploy-stack-modular.yml -f stack=erpnext -f version=v1.0.0 -f rollback=true -f rollback_version=v0.9.0
+
+# SMART DEPLOY - Deploy inteligente que pula stacks healthy
+gh workflow run deploy-stack-modular.yml -f stack=all -f version=v1.0.0 -f smart_deploy=true
+```
+
+### Smart Deploy (v3.1 - 09/01/2026)
+
+O **Smart Deploy** é uma funcionalidade enterprise que detecta automaticamente o estado dos stacks no servidor de produção e pula os que já estão healthy:
+
+| Cenário | Comportamento |
+|---------|---------------|
+| `smart_deploy=false` | Deploy tradicional (todos os stacks selecionados) |
+| `smart_deploy=true` + `stack=all` | Verifica servidor, pula stacks healthy |
+| `smart_deploy=true` + `stack=X` | Força deploy do stack X mesmo se healthy |
+
+**Benefícios:**
+- ✅ **Economia de tempo**: Não re-deploya stacks funcionais
+- ✅ **Preservação de dados**: Stacks healthy mantidos intactos
+- ✅ **Deploy cirúrgico**: Apenas stacks problemáticos são atualizados
+- ✅ **Produção parcial real**: INFRA healthy → Deploy apenas ALICE/OBSERVABILITY/ERPNEXT
+
+**Funcionamento interno:**
+1. Step `server-health` conecta via SSH ao servidor de produção
+2. Verifica estado de cada container (healthy, unhealthy, missing)
+3. Retorna status por stack: `healthy`, `unhealthy`, ou `missing`
+4. Step `stacks` decide quais stacks deployar baseado no status
+
+**Exemplo prático:**
+```bash
+# Servidor tem INFRA e BACKUP healthy, resto missing
+# Smart Deploy vai:
+# - PULAR INFRA (healthy)
+# - PULAR BACKUP (healthy)
+# - DEPLOYAR ALICE (missing)
+# - DEPLOYAR OBSERVABILITY (missing)
+# - DEPLOYAR ERPNEXT (missing)
 ```
 
 ### Ordem de Deploy (v3 - Paralelo)

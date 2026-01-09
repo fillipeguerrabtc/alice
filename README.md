@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 09 de Janeiro de 2026  
-**Versão:** 6.1 - Enterprise PostgreSQL Permissions + Resilient Architecture
+**Versão:** 6.2 - Smart Deploy + Enterprise Bug Fixes
 
 <div align="center">
 
@@ -74,6 +74,34 @@
 > **Workflows Ativos:**
 > - `.github/workflows/release.yml` ⭐ (Release & Tag - dispara builds e deploy)
 > - `.github/workflows/deploy-stack-modular.yml` (Deploy - Production Modular)
+
+> **🧠 SMART DEPLOY v6.2 (09/01/2026) - Deploy Modular Inteligente:**  
+> Implementado deploy inteligente que detecta stacks healthy e pula desnecessariamente.
+> 
+> **Funcionalidades:**
+> - ✅ Detecta automaticamente estado de cada stack no servidor de produção
+> - ✅ Pula stacks já healthy (economiza tempo, preserva dados)
+> - ✅ Deploy cirúrgico apenas dos stacks que precisam
+> - ✅ Força deploy de stack específico se selecionado manualmente
+> 
+> **Uso:**
+> ```bash
+> # Deploy inteligente - pula stacks healthy
+> gh workflow run deploy-stack-modular.yml -f stack=all -f version=v3.8.9 -f smart_deploy=true
+> 
+> # Força deploy de stack específico mesmo se healthy
+> gh workflow run deploy-stack-modular.yml -f stack=alice -f version=v3.8.9 -f smart_deploy=true
+> ```
+> 
+> **Bug Fixes PR#96:**
+> - ✅ pgBackRest: Removido `PGBACKREST_PG1_HOST` que forçava SSH (erro: "unable to execute 'ssh'")
+> - ✅ Vector: Corrigido healthcheck (Alpine não tem bash, usa nc)
+> - ✅ Outputs: Corrigido referência de steps (server-health → parse-health)
+> - ✅ Rollbacks: Corrigido validação Docker filter (não suporta regex ^$)
+> 
+> **Arquitetura Redis Enterprise:**
+> - INFRA: `alice-redis` (7.4.7-alpine) - Cache Alice
+> - ERPNEXT: `erpnext-redis-cache` + `erpnext-redis-queue` (6.2.21-alpine) - Cache/Filas ERPNext
 
 > **🛡️ CORREÇÃO CRÍTICA v6.1 (09/01/2026) - PostgreSQL Permissions Enterprise:**  
 > Implementada correção de 3 fases para resolver "container alice-postgres is unhealthy" em servidor limpo.

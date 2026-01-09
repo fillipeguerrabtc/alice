@@ -1,11 +1,18 @@
 # Alice Enterprise Platform - Arquitetura de Software
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 06 de Janeiro de 2026  
-> **Versão:** 3.0.0 - Pipeline Enterprise Modular  
+> **Data:** 09 de Janeiro de 2026  
+> **Versão:** 3.1.0 - Smart Deploy + Enterprise Bug Fixes  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 > 
+> **🧠 ATUALIZAÇÃO v3.1.0 (09/01/2026) - Smart Deploy:**  
+> Deploy inteligente que detecta stacks healthy e pula desnecessariamente:
+> - **Smart Deploy**: `smart_deploy=true` verifica servidor, pula stacks healthy
+> - **Bug Fixes PR#96**: pgBackRest SSH, Vector healthcheck, outputs, rollback validation
+> - **Arquitetura Redis**: INFRA (alice-redis 7.x) + ERPNEXT (redis-cache/queue 6.x)
+> - Ver seções ADR-007 e ADR-009 abaixo
+>
 > **🚀 ATUALIZAÇÃO v3.0.0 (06/01/2026) - Pipeline Enterprise:**  
 > Pipeline CI/CD enterprise completo com deploy modular:
 > - **Release Consolidado**: `release.yml` (build 17 imagens, retag inteligente, dispara deploy)
@@ -988,6 +995,69 @@ generate-env-prod.sh (gera .env.prod com versões)
 - Critérios: CVE CRITICAL/HIGH (imediato), Major (quando necessário), Minor/Patch (quinzenal)
 
 **Workflow File:** `.github/workflows/deploy-stack-modular.yml` (step: `validate-public-images`)
+
+### ADR-011: Smart Deploy - Deploy Inteligente com Detecção de Stacks Healthy (09/01/2026)
+
+| Aspecto | Decisão |
+|---------|---------|
+| **Status** | Aceito |
+| **Data** | 09 de Janeiro de 2026 |
+| **Contexto** | Deploy modular executava TODOS os stacks selecionados independentemente do estado atual no servidor. Se INFRA e BACKUP estivessem healthy mas ALICE falhasse, próximo deploy re-deployava os 3 desnecessariamente. Isso: (1) desperdiçava tempo (~5-10min por stack healthy); (2) arriscava desestabilizar stacks funcionais; (3) não aproveitava vantagem real do design modular. |
+| **Decisão** | Implementar `smart_deploy` que detecta estado de cada stack no servidor via SSH e pula stacks healthy. Fluxo: (1) `smart_deploy=false` comportamento tradicional; (2) `smart_deploy=true + stack=all` verifica servidor, pula healthy; (3) `smart_deploy=true + stack=X` força deploy do X mesmo se healthy. |
+| **Alternativas** | (1) Manter deploy tradicional - rejeitado por desperdício; (2) Cache local de estado - rejeitado por inconsistência; (3) Detectar apenas via Docker API - rejeitado por não capturar health real |
+| **Consequências** | + Economia de tempo (pula stacks healthy); + Preservação de dados (não re-deploya funcionais); + Deploy cirúrgico (apenas problemáticos); + Produção parcial real; - Complexidade do workflow (detecção via SSH); - Depende de SSH funcional para detecção |
+
+**Funcionamento Smart Deploy:**
+
+```
+deploy-stack-modular.yml (v3.1.0)
+        ↓
+[smart_deploy=true?]
+        ↓ SIM
+step server-health (SSH)
+        ↓
+Detecta containers por stack
+        ↓
+Verifica health (healthy/unhealthy/missing)
+        ↓
+step capture-health (SCP download status)
+        ↓
+step parse-health (propaga outputs)
+        ↓
+[Stack healthy?] → PULA deploy
+        ↓ NÃO
+[Stack unhealthy/missing?] → EXECUTA deploy
+```
+
+**Cenários de Uso:**
+
+| Cenário | Comando | Comportamento |
+|---------|---------|---------------|
+| Deploy tradicional | `stack=all smart_deploy=false` | Deploya todos os 5 stacks |
+| Deploy inteligente | `stack=all smart_deploy=true` | Pula stacks healthy |
+| Forçar stack | `stack=alice smart_deploy=true` | Deploya alice mesmo se healthy |
+| Após falha parcial | `stack=all smart_deploy=true` | Deploya apenas os que falharam |
+
+**Bug Fixes PR#96 (09/01/2026):**
+
+| Bug | Causa Raiz | Solução |
+|-----|-----------|---------|
+| pgBackRest SSH | `PGBACKREST_PG1_HOST` forçava SSH | Usar variáveis libpq (PGHOST, PGPORT) |
+| Vector healthcheck | Alpine não tem bash | Usar `nc -z` (netcat) |
+| Smart Deploy outputs | `server-health` não produz outputs | Usar `parse-health` |
+| Rollback validation | Docker filter não suporta regex | Usar grep com regex |
+
+**Arquitetura Redis Enterprise:**
+
+| Stack | Container | Versão | Propósito |
+|-------|-----------|--------|-----------|
+| INFRA | `alice-redis` | 7.4.7-alpine | Cache Alice, Rate limiting |
+| ERPNEXT | `erpnext-redis-cache` | 6.2.21-alpine | Cache ERPNext (Frappe) |
+| ERPNEXT | `erpnext-redis-queue` | 6.2.21-alpine | Filas ERPNext (Frappe) |
+
+> **Nota:** Redis 6.x para ERPNext é OBRIGATÓRIO por compatibilidade com Frappe Framework.
+
+**Workflow File:** `.github/workflows/deploy-stack-modular.yml` (v3.1.0)
 
 ---
 
