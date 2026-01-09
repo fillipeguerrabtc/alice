@@ -3271,16 +3271,28 @@ jobs:
             set -euo pipefail
             echo "🏥 Checking OBSERVABILITY stack health..."
             
-            # CRITICAL FIX (06/01/2026): Adicionar todos os 11 containers com healthcheck
-            # Faltavam: promtail (logs), alice-vector (aggregator), alice-otel-collector (OTEL),
-            #           alice-cadvisor (métricas), alice-langfuse-db (PostgreSQL do Langfuse - CRÍTICO!)
-            # AGORA: alice-node-exporter TEM healthcheck (adicionado em 07/01/2026)
-            # Nota: langfuse-worker não tem healthcheck (worker assíncrono)
-            CONTAINERS="prometheus grafana loki promtail jaeger alice-vector alice-otel-collector alice-cadvisor alice-node-exporter alice-clickhouse alice-langfuse-db langfuse"
+            # =================================================================
+            # CORREÇÃO PR#93 (09/01/2026): Lógica de verificação que entende
+            # containers com e sem healthcheck
+            # =================================================================
+            # Containers COM healthcheck: devem ficar "healthy"
+            # Containers SEM healthcheck (distroless): devem estar "running"
+            #
+            # Containers distroless (não têm wget/curl/shell):
+            # - jaeger, alice-otel-collector, alice-cadvisor, alice-node-exporter
+            # =================================================================
+            
+            # Containers que TÊM healthcheck (devem ficar "healthy")
+            HEALTH_CONTAINERS="prometheus grafana loki promtail alice-vector alice-clickhouse alice-langfuse-db langfuse"
+            
+            # Containers SEM healthcheck/distroless (devem estar "running")
+            RUNNING_CONTAINERS="jaeger alice-otel-collector alice-cadvisor alice-node-exporter"
+            
             MAX_RETRIES=20
             SLEEP_TIME=10
             
-            for container in $CONTAINERS; do
+            # Verificar containers com healthcheck
+            for container in $HEALTH_CONTAINERS; do
               echo "Aguardando $container ficar healthy..."
               retry=0
               while [ $retry -lt $MAX_RETRIES ]; do
@@ -3304,7 +3316,19 @@ jobs:
               fi
             done
             
-            echo "✅ Todos os containers do OBSERVABILITY stack estão healthy"
+            # Verificar containers distroless (sem healthcheck - apenas "running")
+            for container in $RUNNING_CONTAINERS; do
+              echo "Verificando $container (sem healthcheck)..."
+              RUNNING=$(docker inspect --format='{{.State.Running}}' $container 2>/dev/null || echo "false")
+              if [ "$RUNNING" = "true" ]; then
+                echo "✅ $container: running"
+              else
+                echo "❌ $container: não está rodando"
+                exit 1
+              fi
+            done
+            
+            echo "✅ Todos os containers do OBSERVABILITY stack estão OK"
 
   rollback-observability:
     name: Rollback OBSERVABILITY

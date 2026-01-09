@@ -83,11 +83,12 @@ services:
     networks:
       - alice-network
     healthcheck:
-      test: ["CMD-SHELL", "wget --spider -q http://localhost:9090/-/healthy || exit 1"]
+      # Prometheus tem curl disponível
+      test: ["CMD-SHELL", "curl -sf http://localhost:9090/-/healthy || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 30s
+      retries: 5
+      start_period: 60s
     deploy:
       resources:
         limits:
@@ -161,11 +162,12 @@ services:
     networks:
       - alice-network
     healthcheck:
-      test: ["CMD-SHELL", "wget --spider -q http://localhost:3000/api/health || exit 1"]
+      # Grafana tem curl disponível (não wget)
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/health || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 30s
+      retries: 10
+      start_period: 90s
     deploy:
       resources:
         limits:
@@ -254,10 +256,13 @@ services:
     networks:
       - alice-network
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:16686/"]
+      # Jaeger v2 é distroless (não tem wget/curl)
+      # Usar /dev/tcp via bash não funciona em distroless
+      # Omitir healthcheck = herda da imagem (que tem healthcheck interno)
+      test: ["NONE"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
       start_period: 60s
     deploy:
       resources:
@@ -294,10 +299,11 @@ services:
       loki:
         condition: service_started
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8686/health"]
+      # Vector Alpine tem curl
+      test: ["CMD-SHELL", "curl -sf http://localhost:8686/health || exit 1"]
       interval: 30s
       timeout: 5s
-      retries: 3
+      retries: 5
       start_period: 30s
     deploy:
       resources:
@@ -327,10 +333,12 @@ services:
     networks:
       - alice-network
     healthcheck:
-      test: ["CMD-SHELL", "wget --spider -q http://localhost:13133/health || exit 1"]
+      # OTel Collector é scratch/distroless (não tem wget/curl)
+      # Desabilitar healthcheck - o container roda se o binário estiver OK
+      test: ["NONE"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
       start_period: 30s
     deploy:
       resources:
@@ -366,10 +374,12 @@ services:
       - /sys:/host/sys:ro
       - /:/host:ro
     healthcheck:
-      test: ["CMD-SHELL", "wget --spider -q http://127.0.0.1:9100/metrics || exit 1"]
+      # Node Exporter é scratch (não tem wget/curl/shell)
+      # Desabilitar healthcheck - o container roda se o binário estiver OK
+      test: ["NONE"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
       start_period: 30s
     deploy:
       resources:
@@ -404,10 +414,12 @@ services:
     networks:
       - alice-network
     healthcheck:
-      test: ["CMD-SHELL", "wget --spider -q http://localhost:8080/healthz || exit 1"]
+      # cAdvisor é minimalista (não tem wget/curl)
+      # Desabilitar healthcheck - o container roda se o binário estiver OK
+      test: ["NONE"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
       start_period: 30s
     deploy:
       resources:

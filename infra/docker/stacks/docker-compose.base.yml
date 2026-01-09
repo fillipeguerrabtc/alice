@@ -60,13 +60,12 @@ volumes:
   # =========================================================================
   # INFRA STACK VOLUMES
   # =========================================================================
+  # CORREÇÃO PR#93 (09/01/2026): Volume criado pelo workflow prepare-infrastructure
+  # O workflow cria o volume com driver_opts corretos antes do Docker Compose
+  # Declarar como external elimina warning "already exists but was not created by Docker Compose"
   postgres_data:
     name: alice-postgres-data
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: /opt/alice/data/postgres
+    external: true
 
   pgbackrest_spool:
     name: alice-pgbackrest-spool
