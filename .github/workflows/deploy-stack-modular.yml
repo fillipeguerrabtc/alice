@@ -2822,12 +2822,16 @@ jobs:
             
             cd /opt/alice/app/infra/docker/stacks
             
+            # Marcar início do deploy para calcular tempo total
+            DEPLOY_START=$(date +%s)
+            
             echo "══════════════════════════════════════════════════════════════════"
             echo "🚀 DEPLOYING INFRA STACK"
             echo "══════════════════════════════════════════════════════════════════"
             echo ""
             echo "📦 Containers: postgres, pgbouncer, redis, qdrant, caddy, minio, searxng, tor"
             echo "📅 Versão: ${{ needs.validate.outputs.version }}"
+            echo "🕐 Início: $(date '+%Y-%m-%d %H:%M:%S')"
             echo ""
             
             # Salvar versão anterior (rollback safety)
@@ -2983,8 +2987,13 @@ jobs:
             # Salvar versão atual
             echo "${{ needs.validate.outputs.version }}" > /opt/alice/versions/infra.current
             
+            # Calcular tempo de deploy
+            DEPLOY_END=$(date +%s)
+            DEPLOY_DURATION=$((DEPLOY_END - DEPLOY_START))
+            
             echo "══════════════════════════════════════════════════════════════════"
             echo "✅ INFRA STACK DEPLOYED"
+            echo "   ⏱️  Tempo total: ${DEPLOY_DURATION}s"
             echo "══════════════════════════════════════════════════════════════════"
 
       - name: Clean init containers (post-deploy)
@@ -3543,12 +3552,16 @@ jobs:
             
             cd /opt/alice/app/infra/docker/stacks
             
+            # Marcar início do deploy para calcular tempo total
+            DEPLOY_START=$(date +%s)
+            
             echo "══════════════════════════════════════════════════════════════════"
             echo "🚀 DEPLOYING ALICE STACK"
             echo "══════════════════════════════════════════════════════════════════"
             echo ""
             echo "📦 Containers: frontend, auth, chat, rag, training, integrations, observability, gpu-manager"
             echo "📅 Versão: ${{ needs.validate.outputs.version }}"
+            echo "🕐 Início: $(date '+%Y-%m-%d %H:%M:%S')"
             echo ""
             
             # Salvar versão anterior
@@ -3605,11 +3618,53 @@ jobs:
             docker ps -a --filter "name=alice-" --format "table {{.Names}}\t{{.Status}}" | grep -E "alice-(frontend|auth|chat|rag|training|integrations|observability|gpu-manager)" || echo "   (nenhum container encontrado)"
             echo ""
             
+            # =================================================================
+            # MELHORIA PR#101: Verificação inicial de saúde (quick check)
+            # =================================================================
+            # Mostra estado de saúde IMEDIATAMENTE após deploy
+            # Permite identificar problemas ANTES do health check job
+            # =================================================================
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "🔍 VERIFICAÇÃO INICIAL DE SAÚDE (quick check):"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            ALICE_CONTAINERS="alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager"
+            ALL_RUNNING=true
+            for c in $ALICE_CONTAINERS; do
+              if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
+                STATUS=$(docker inspect --format='{{.State.Status}}' $c 2>/dev/null || echo "not_found")
+                HEALTH=$(docker inspect --format='{{.State.Health.Status}}' $c 2>/dev/null || echo "none")
+                if [ "$STATUS" = "running" ]; then
+                  echo "   ✅ $c: $STATUS (health: $HEALTH)"
+                else
+                  echo "   ❌ $c: $STATUS (health: $HEALTH)"
+                  ALL_RUNNING=false
+                fi
+              else
+                echo "   ❌ $c: NOT FOUND"
+                ALL_RUNNING=false
+              fi
+            done
+            echo ""
+            
+            if [ "$ALL_RUNNING" = "false" ]; then
+              echo "⚠️  ALERTA: Alguns containers não estão running!"
+              echo "   Health check job fará verificação completa..."
+            else
+              echo "✅ Todos os containers estão running"
+              echo "   Aguardando health check job para verificação de saúde..."
+            fi
+            echo ""
+            
             # Salvar versão atual
             echo "${{ needs.validate.outputs.version }}" > /opt/alice/versions/alice.current
             
+            # Calcular tempo de deploy
+            DEPLOY_END=$(date +%s)
+            DEPLOY_DURATION=$((DEPLOY_END - DEPLOY_START))
+            
             echo "══════════════════════════════════════════════════════════════════"
             echo "✅ ALICE STACK DEPLOYED"
+            echo "   ⏱️  Tempo total: ${DEPLOY_DURATION}s"
             echo "══════════════════════════════════════════════════════════════════"
 
   health-alice:
@@ -3900,12 +3955,16 @@ jobs:
             
             cd /opt/alice/app/infra/docker/stacks
             
+            # Marcar início do deploy para calcular tempo total
+            DEPLOY_START=$(date +%s)
+            
             echo "══════════════════════════════════════════════════════════════════"
             echo "🚀 DEPLOYING OBSERVABILITY STACK"
             echo "══════════════════════════════════════════════════════════════════"
             echo ""
             echo "📦 Containers: prometheus, grafana, loki, promtail, jaeger, langfuse, clickhouse, vector, etc"
             echo "📅 Versão: ${{ needs.validate.outputs.version }}"
+            echo "🕐 Início: $(date '+%Y-%m-%d %H:%M:%S')"
             echo ""
             
             # Salvar versão anterior
@@ -3959,11 +4018,49 @@ jobs:
             docker ps -a --format "table {{.Names}}\t{{.Status}}" | grep -E "prometheus|grafana|loki|promtail|jaeger|langfuse|clickhouse|vector|otel|cadvisor|node-exporter" || echo "   (nenhum container encontrado)"
             echo ""
             
+            # =================================================================
+            # MELHORIA PR#101: Verificação inicial de saúde (quick check)
+            # =================================================================
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "🔍 VERIFICAÇÃO INICIAL DE SAÚDE (quick check):"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            OBS_CONTAINERS="prometheus grafana loki promtail jaeger langfuse langfuse-worker alice-langfuse-db alice-clickhouse alice-vector alice-otel-collector alice-cadvisor alice-node-exporter"
+            ALL_RUNNING=true
+            for c in $OBS_CONTAINERS; do
+              if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
+                STATUS=$(docker inspect --format='{{.State.Status}}' $c 2>/dev/null || echo "not_found")
+                HEALTH=$(docker inspect --format='{{.State.Health.Status}}' $c 2>/dev/null || echo "none")
+                if [ "$STATUS" = "running" ]; then
+                  echo "   ✅ $c: $STATUS (health: $HEALTH)"
+                else
+                  echo "   ❌ $c: $STATUS (health: $HEALTH)"
+                  ALL_RUNNING=false
+                fi
+              else
+                echo "   ⚠️  $c: NOT FOUND (pode ser opcional)"
+              fi
+            done
+            echo ""
+            
+            if [ "$ALL_RUNNING" = "false" ]; then
+              echo "⚠️  ALERTA: Alguns containers não estão running!"
+              echo "   Health check job fará verificação completa..."
+            else
+              echo "✅ Containers principais estão running"
+              echo "   Aguardando health check job para verificação de saúde..."
+            fi
+            echo ""
+            
             # Salvar versão atual
             echo "${{ needs.validate.outputs.version }}" > /opt/alice/versions/observability.current
             
+            # Calcular tempo de deploy
+            DEPLOY_END=$(date +%s)
+            DEPLOY_DURATION=$((DEPLOY_END - DEPLOY_START))
+            
             echo "══════════════════════════════════════════════════════════════════"
             echo "✅ OBSERVABILITY STACK DEPLOYED"
+            echo "   ⏱️  Tempo total: ${DEPLOY_DURATION}s"
             echo "══════════════════════════════════════════════════════════════════"
 
   health-observability:
@@ -4308,12 +4405,16 @@ jobs:
             
             cd /opt/alice/app/infra/docker/stacks
             
+            # Marcar início do deploy para calcular tempo total
+            DEPLOY_START=$(date +%s)
+            
             echo "══════════════════════════════════════════════════════════════════"
             echo "🚀 DEPLOYING ERPNEXT STACK"
             echo "══════════════════════════════════════════════════════════════════"
             echo ""
             echo "📦 Containers: mariadb, redis-cache, redis-queue, backend, frontend, websocket, scheduler, workers"
             echo "📅 Versão: ${{ needs.validate.outputs.version }}"
+            echo "🕐 Início: $(date '+%Y-%m-%d %H:%M:%S')"
             echo ""
             
             # Salvar versão anterior
@@ -4367,11 +4468,50 @@ jobs:
             docker ps -a --filter "name=erpnext-" --format "table {{.Names}}\t{{.Status}}" || echo "   (nenhum container encontrado)"
             echo ""
             
+            # =================================================================
+            # MELHORIA PR#101: Verificação inicial de saúde (quick check)
+            # =================================================================
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "🔍 VERIFICAÇÃO INICIAL DE SAÚDE (quick check):"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            ERP_CONTAINERS="erpnext-mariadb erpnext-redis-cache erpnext-redis-queue erpnext-backend erpnext-frontend erpnext-websocket erpnext-scheduler erpnext-worker-default erpnext-worker-short erpnext-worker-long"
+            ALL_RUNNING=true
+            for c in $ERP_CONTAINERS; do
+              if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
+                STATUS=$(docker inspect --format='{{.State.Status}}' $c 2>/dev/null || echo "not_found")
+                HEALTH=$(docker inspect --format='{{.State.Health.Status}}' $c 2>/dev/null || echo "none")
+                if [ "$STATUS" = "running" ]; then
+                  echo "   ✅ $c: $STATUS (health: $HEALTH)"
+                else
+                  echo "   ❌ $c: $STATUS (health: $HEALTH)"
+                  ALL_RUNNING=false
+                fi
+              else
+                echo "   ❌ $c: NOT FOUND"
+                ALL_RUNNING=false
+              fi
+            done
+            echo ""
+            
+            if [ "$ALL_RUNNING" = "false" ]; then
+              echo "⚠️  ALERTA: Alguns containers não estão running!"
+              echo "   Health check job fará verificação completa..."
+            else
+              echo "✅ Todos os containers estão running"
+              echo "   Aguardando health check job para verificação de saúde..."
+            fi
+            echo ""
+            
             # Salvar versão atual
             echo "${{ needs.validate.outputs.version }}" > /opt/alice/versions/erpnext.current
             
+            # Calcular tempo de deploy
+            DEPLOY_END=$(date +%s)
+            DEPLOY_DURATION=$((DEPLOY_END - DEPLOY_START))
+            
             echo "══════════════════════════════════════════════════════════════════"
             echo "✅ ERPNEXT STACK DEPLOYED"
+            echo "   ⏱️  Tempo total: ${DEPLOY_DURATION}s"
             echo "══════════════════════════════════════════════════════════════════"
 
   health-erpnext:
@@ -4667,12 +4807,16 @@ jobs:
             
             cd /opt/alice/app/infra/docker/stacks
             
+            # Marcar início do deploy para calcular tempo total
+            DEPLOY_START=$(date +%s)
+            
             echo "══════════════════════════════════════════════════════════════════"
             echo "🚀 DEPLOYING BACKUP STACK"
             echo "══════════════════════════════════════════════════════════════════"
             echo ""
             echo "📦 Containers: pgbackrest"
             echo "📅 Versão: ${{ needs.validate.outputs.version }}"
+            echo "🕐 Início: $(date '+%Y-%m-%d %H:%M:%S')"
             echo ""
             
             # Salvar versão anterior
@@ -4720,11 +4864,44 @@ jobs:
             docker ps -a --filter "name=pgbackrest" --format "table {{.Names}}\t{{.Status}}" || echo "   (nenhum container encontrado)"
             echo ""
             
+            # =================================================================
+            # MELHORIA PR#101: Verificação inicial de saúde (quick check)
+            # =================================================================
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "🔍 VERIFICAÇÃO INICIAL DE SAÚDE (quick check):"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            CONTAINER="alice-pgbackrest"
+            if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER}$"; then
+              STATUS=$(docker inspect --format='{{.State.Status}}' $CONTAINER 2>/dev/null || echo "not_found")
+              HEALTH=$(docker inspect --format='{{.State.Health.Status}}' $CONTAINER 2>/dev/null || echo "none")
+              if [ "$STATUS" = "running" ]; then
+                echo "   ✅ $CONTAINER: $STATUS (health: $HEALTH)"
+                echo ""
+                echo "✅ Container está running"
+                echo "   Aguardando health check job para verificação de saúde..."
+              else
+                echo "   ❌ $CONTAINER: $STATUS (health: $HEALTH)"
+                echo ""
+                echo "⚠️  ALERTA: Container não está running!"
+                echo "   Health check job fará verificação completa..."
+              fi
+            else
+              echo "   ❌ $CONTAINER: NOT FOUND"
+              echo ""
+              echo "⚠️  ALERTA: Container não encontrado!"
+            fi
+            echo ""
+            
             # Salvar versão atual
             echo "${{ needs.validate.outputs.version }}" > /opt/alice/versions/backup.current
             
+            # Calcular tempo de deploy
+            DEPLOY_END=$(date +%s)
+            DEPLOY_DURATION=$((DEPLOY_END - DEPLOY_START))
+            
             echo "══════════════════════════════════════════════════════════════════"
             echo "✅ BACKUP STACK DEPLOYED"
+            echo "   ⏱️  Tempo total: ${DEPLOY_DURATION}s"
             echo "══════════════════════════════════════════════════════════════════"
 
   health-backup:
