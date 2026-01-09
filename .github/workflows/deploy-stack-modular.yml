@@ -139,14 +139,22 @@ jobs:
       deploy_erpnext: ${{ steps.stacks.outputs.deploy_erpnext }}
       deploy_backup: ${{ steps.stacks.outputs.deploy_backup }}
       # SMART DEPLOY: Status de cada stack no servidor (para logs/debugging)
-      # CORREÇÃO PR#96 (09/01/2026): Usar parse-health (não server-health)
-      # server-health é appleboy/ssh-action que NÃO produz GitHub Actions outputs
-      # Os outputs são gerados pelo step capture-health e repassados por parse-health
-      infra_status: ${{ steps.parse-health.outputs.infra_status }}
-      alice_status: ${{ steps.parse-health.outputs.alice_status }}
-      observability_status: ${{ steps.parse-health.outputs.observability_status }}
-      erpnext_status: ${{ steps.parse-health.outputs.erpnext_status }}
-      backup_status: ${{ steps.parse-health.outputs.backup_status }}
+      # =======================================================================
+      # CORREÇÃO PR#97 (09/01/2026): Usar AMBOS steps (parse-health + server-health-default)
+      # =======================================================================
+      # PROBLEMA: Quando smart_deploy=false, parse-health NÃO roda (tem if: smart_deploy==true)
+      # O step server-health-default roda, mas job outputs só referenciavam parse-health
+      # RESULTADO: Outputs ficavam vazios ao invés de "unknown"
+      #
+      # SOLUÇÃO: Usar operador || para pegar output de QUALQUER step que rodar:
+      # - smart_deploy=true → parse-health roda → usa parse-health.outputs
+      # - smart_deploy=false → server-health-default roda → usa server-health-default.outputs
+      # =======================================================================
+      infra_status: ${{ steps.parse-health.outputs.infra_status || steps.server-health-default.outputs.infra_status }}
+      alice_status: ${{ steps.parse-health.outputs.alice_status || steps.server-health-default.outputs.alice_status }}
+      observability_status: ${{ steps.parse-health.outputs.observability_status || steps.server-health-default.outputs.observability_status }}
+      erpnext_status: ${{ steps.parse-health.outputs.erpnext_status || steps.server-health-default.outputs.erpnext_status }}
+      backup_status: ${{ steps.parse-health.outputs.backup_status || steps.server-health-default.outputs.backup_status }}
     
     steps:
       - name: Determine trigger context
@@ -1101,9 +1109,12 @@ jobs:
             # Solução: Baixar script direto do GitHub (public repo) e executar.
             
             # =================================================================
-            # CORREÇÃO PR#94 (09/01/2026): Cleanup completo para primeiro deploy
+            # CORREÇÃO PR#97 (09/01/2026): Cleanup completo para primeiro deploy
             # =================================================================
-            CLEANUP_SERVER="${{ inputs.cleanup_server }}"
+            # CORREÇÃO: workflow_dispatch usa github.event.inputs, NÃO inputs
+            # inputs só existe em reusable workflows (workflow_call)
+            # =================================================================
+            CLEANUP_SERVER="${{ github.event.inputs.cleanup_server }}"
             if [ "$CLEANUP_SERVER" = "true" ]; then
               echo "🧹 LIMPEZA COMPLETA DO SERVIDOR SOLICITADA..."
               echo ""
@@ -2905,7 +2916,14 @@ jobs:
             echo "🏥 Checking INFRA stack health..."
             
             CONTAINERS="alice-postgres alice-redis alice-qdrant alice-tor alice-searxng alice-caddy alice-minio alice-pgbouncer"
-            MAX_RETRIES=15
+            # =================================================================
+            # CORREÇÃO PR#97 (09/01/2026): Restaurar MAX_RETRIES=30 (5 min total)
+            # =================================================================
+            # PROBLEMA: MAX_RETRIES=15 dava apenas 2.5min de timeout
+            # PostgreSQL no primeiro boot pode levar 90-180s (initdb + pgvector)
+            # Conforme CLAUDE.md v5.9: "start_period aumentado para 300s (5 min grace)"
+            # =================================================================
+            MAX_RETRIES=30
             SLEEP_TIME=10
             TIMEOUT=$((MAX_RETRIES * SLEEP_TIME))
             
@@ -3949,7 +3967,13 @@ jobs:
             # CRITICAL FIX (06/01/2026): Adicionar todos os 10 containers com healthcheck
             # Faltavam: websocket (Socket.IO), scheduler (cron), workers (job queues)
             CONTAINERS="erpnext-mariadb erpnext-redis-cache erpnext-redis-queue erpnext-backend erpnext-frontend erpnext-websocket erpnext-scheduler erpnext-worker-default erpnext-worker-short erpnext-worker-long"
-            MAX_RETRIES=15
+            # =================================================================
+            # CORREÇÃO PR#97 (09/01/2026): Restaurar MAX_RETRIES=25 (4+ min total)
+            # =================================================================
+            # PROBLEMA: MAX_RETRIES=15 dava apenas 2.5min de timeout
+            # ERPNext cria site, instala apps, migra banco - pode levar 3-4min
+            # =================================================================
+            MAX_RETRIES=25
             SLEEP_TIME=10
             
             for container in $CONTAINERS; do
