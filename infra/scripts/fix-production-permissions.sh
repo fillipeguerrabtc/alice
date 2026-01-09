@@ -515,13 +515,15 @@ create_mode() {
         
         # Atualizar permissões se necessário
         # ==========================================================================
-        # CORREÇÃO BUG CRÍTICO (09/01/2026): Usar chmod com "0" prefixo
+        # CORREÇÃO BUG CRÍTICO (09/01/2026): Remoção agressiva de bits especiais
         # ==========================================================================
-        # PROBLEMA: chmod 755 NÃO remove bits especiais (setgid/setuid/sticky)
-        #           Se diretório tinha 2755 (setgid), chmod 755 mantém 2755!
-        # SOLUÇÃO: Usar chmod 0755 (zero prefixo) para explicitamente zerar
-        #          os bits especiais (setuid=4, setgid=2, sticky=1)
-        # REF: chmod(1) man page, CLAUDE.md Regra 7 (Causa raiz)
+        # PROBLEMA: chmod 0755 em alguns sistemas/filesystems não remove setgid bit
+        #           mesmo com prefixo 0. Isso causa validação falhar após create.
+        # SOLUÇÃO: 
+        #   1. Remover bits especiais EXPLICITAMENTE com chmod a-st (remove sticky, setgid, setuid)
+        #   2. Depois aplicar permissões desejadas com chmod 0xxx
+        #   3. Validar IMEDIATAMENTE após chmod para fail-fast
+        # REF: chmod(1) man page, CLAUDE.md Regra 7 (Causa raiz), Regra 9 (Validação)
         # ==========================================================================
         # Normalizar permissões: extrair últimos 3 dígitos (ignorar bits especiais)
         local current_perms_normalized="${current_perms: -3}"
@@ -529,15 +531,56 @@ create_mode() {
         [[ "${#current_perms}" -gt 3 ]] && has_special_bits=true
         
         if [[ "$current_perms_normalized" != "$perms" ]] || [[ "$has_special_bits" == "true" ]]; then
-            # Usar "0" prefixo para garantir remoção de bits especiais
-            if chmod "0${perms}" "$path" 2>/dev/null; then
-                log_success "  ✅ Permissões atualizadas de ${current_perms} para 0${perms}: $path"
-                needs_update=true
-            else
+            # =================================================================
+            # PASSO 1: Remover bits especiais EXPLICITAMENTE
+            # =================================================================
+            # chmod a-st remove: setuid (s user), setgid (s group), sticky (t)
+            # Isso garante que mesmo em filesystems com comportamento especial,
+            # os bits serão removidos antes de aplicar as permissões finais.
+            # =================================================================
+            if [[ "$has_special_bits" == "true" ]]; then
+                chmod a-st "$path" 2>/dev/null || true
+            fi
+            
+            # =================================================================
+            # PASSO 2: Aplicar permissões desejadas
+            # =================================================================
+            if ! chmod "0${perms}" "$path" 2>/dev/null; then
                 log_error "  ❌ Falha ao atualizar permissões: $path"
                 ((failed++))
                 continue
             fi
+            
+            # =================================================================
+            # PASSO 3: Validar IMEDIATAMENTE após chmod (fail-fast)
+            # =================================================================
+            # CORREÇÃO BUG (09/01/2026): Em alguns sistemas, chmod reporta sucesso
+            # mas permissões não são alteradas (ACLs, mount options, etc.)
+            # Validação imediata detecta isso antes de continuar.
+            # =================================================================
+            local new_perms
+            new_perms=$(stat -c '%a' "$path" 2>/dev/null || stat -f '%Lp' "$path" 2>/dev/null)
+            local new_perms_normalized="${new_perms: -3}"
+            local still_has_special=false
+            [[ "${#new_perms}" -gt 3 ]] && still_has_special=true
+            
+            if [[ "$new_perms_normalized" != "$perms" ]] || [[ "$still_has_special" == "true" ]]; then
+                log_error "  ❌ FALHA CRÍTICA: chmod não funcionou corretamente em $path"
+                log_error "     Permissões antes: ${current_perms}"
+                log_error "     Permissões após:  ${new_perms}"
+                log_error "     Esperado:         0${perms}"
+                log_error ""
+                log_error "     DIAGNÓSTICO: Possíveis causas:"
+                log_error "     - ACLs no filesystem (getfacl $path)"
+                log_error "     - Mount options especiais (mount | grep $(df $path | tail -1 | awk '{print \$1}'))"
+                log_error "     - SELinux/AppArmor (getenforce, aa-status)"
+                log_error "     - chattr immutable (lsattr $path)"
+                ((failed++))
+                continue
+            fi
+            
+            log_success "  ✅ Permissões atualizadas de ${current_perms} para 0${perms}: $path"
+            needs_update=true
         fi
         
         if [[ "$needs_update" == "true" ]]; then
