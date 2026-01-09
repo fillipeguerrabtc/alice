@@ -382,6 +382,15 @@ if [ -z "${MINIO_ROOT_PASSWORD}" ]; then
   echo "   Para gerar: openssl rand -hex 32" >&2
   exit 1
 fi
+
+# CORREÇÃO 09/01/2026: Validar que senha MinIO não contém caracteres especiais de URL
+# Senhas com +, /, =, @, :, ?, #, % quebram URLs MinIO (ex: MC_HOST_local=http://user:senha@host:port)
+# REF: https://min.io/docs/minio/linux/reference/minio-mc/minio-client-settings.html
+# Use: openssl rand -hex 32 (hexadecimal é 100% URL-safe)
+if echo "${MINIO_ROOT_PASSWORD}" | grep -qE '[+/=@:?#%]'; then
+  echo "::error::MINIO_ROOT_PASSWORD contém caracteres especiais de URL (+/=@:?#%). URLs MinIO (MC_HOST_local) serão malformadas. Regenere com: openssl rand -hex 32" >&2
+  exit 1
+fi
 echo "✅ MINIO_ROOT_PASSWORD validado (obrigatório para Langfuse v3)"
 
 REDIS_CACHE_PASSWORD="${REDIS_CACHE_PASSWORD_SECRET:-}"
