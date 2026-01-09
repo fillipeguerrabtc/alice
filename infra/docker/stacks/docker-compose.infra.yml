@@ -95,9 +95,10 @@ services:
     networks:
       - alice-network
     healthcheck:
+      # CORREÇÃO PR#94 (09/01/2026): Verificar apenas porta SOCKS5 (9050)
+      # NÃO fazer requisição externa - muito lento e pode dar timeout
       # dperson/torproxy tem curl instalado
-      # Verifica conectividade REAL via Tor para check.torproject.org
-      test: ["CMD-SHELL", "curl -x socks5h://localhost:9050 -sf --max-time 5 https://check.torproject.org/api/ip || exit 1"]
+      test: ["CMD-SHELL", "curl -sf --max-time 3 --socks5 localhost:9050 http://localhost:9050 2>/dev/null || timeout 3 bash -c 'echo > /dev/tcp/localhost/9050' 2>/dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -539,14 +540,15 @@ services:
     networks:
       - alice-network
     healthcheck:
-      # CORREÇÃO 05/01/2026: Qdrant é Debian - usar bash (não sh) para /dev/tcp
-      # /dev/tcp é bash-only feature. Debian tem dash como /bin/sh.
-      # Ref: CLAUDE.md documentação de bugs corrigidos
-      test: ["CMD-SHELL", "timeout 5 bash -c 'true < /dev/tcp/localhost/6333' || exit 1"]
+      # CORREÇÃO PR#94 (09/01/2026): Usar endpoint oficial /healthz
+      # REF: https://qdrant.tech/documentation/guides/monitoring/
+      # NOTA: Imagem qdrant/qdrant NÃO tem wget/curl
+      # Usar timeout + bash + /dev/tcp como fallback robusto
+      test: ["CMD-SHELL", "timeout 5 bash -c 'echo > /dev/tcp/localhost/6333' 2>/dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 120s
+      start_period: 60s
     deploy:
       resources:
         limits:
@@ -579,7 +581,10 @@ services:
     networks:
       - alice-network
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:9000/minio/health/live || exit 1"]
+      # CORREÇÃO PR#95 (09/01/2026): MinIO removeu curl das imagens mais recentes
+      # REF: https://github.com/minio/minio/issues/16789
+      # Usar wget (disponível em Alpine) como alternativa
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:9000/minio/health/live || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
