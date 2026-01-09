@@ -200,9 +200,15 @@ services:
   # ===========================================================================
   # PGBACKREST INIT - Cria stanza APÓS PostgreSQL iniciar
   # ===========================================================================
-  # NOTA (08/01/2026): pg1-host OBRIGATÓRIO para conexão TCP entre containers
-  # Sem pg1-host, pgBackRest tenta socket Unix que não existe em container separado
-  # Ref: https://pgbackrest.org/configuration.html#section-stanza/option-pg-host
+  # CORREÇÃO 09/01/2026: REMOVIDO pg1-host que fazia pgBackRest tentar SSH
+  # O erro "unable to execute 'ssh': No such file or directory" ocorre porque
+  # pgBackRest com pg1-host assume conexão SSH remota, mas SSH não está instalado.
+  # 
+  # SOLUÇÃO: Usar --no-online para criar stanza SEM verificar cluster
+  # A verificação é desnecessária pois depends_on já garante postgres healthy.
+  # O volume postgres_data está montado localmente para acesso ao pg_control.
+  #
+  # Ref: https://pgbackrest.org/command.html#command-stanza-create
   # ===========================================================================
   pgbackrest-init:
     image: ${IMAGE_PREFIX}-pgbackrest:${IMAGE_TAG:-latest}
@@ -215,30 +221,25 @@ services:
     read_only: true
     tmpfs:
       - /tmp:mode=1777,size=64M
+      - /var/log/pgbackrest:mode=1777,size=16M
     depends_on:
       postgres:
         condition: service_healthy
     labels:
       - "autoclean=true"  # SEÇÃO 3.1: Mark for auto-removal
     environment:
-      # Conexão TCP com PostgreSQL (OBRIGATÓRIO para containers separados)
-      # Ref: https://pgbackrest.org/configuration.html#section-stanza/option-pg-host
-      PGBACKREST_PG1_HOST: postgres
-      PGBACKREST_PG1_PORT: 5432
-      PGBACKREST_PG1_DATABASE: ${POSTGRES_DB:-alice_prod}
-      PGBACKREST_PG1_USER: ${POSTGRES_USER:-alice}
-      # Autenticação PostgreSQL via libpq (usado para verificar cluster)
-      PGPASSWORD: ${POSTGRES_PASSWORD}
+      # Configuração LOCAL (sem pg1-host = sem SSH)
+      # pg1-path aponta para o volume montado localmente
+      PGBACKREST_PG1_PATH: /var/lib/postgresql/data
       # Configuração do repositório
       PGBACKREST_REPO1_PATH: /var/lib/pgbackrest
       PGBACKREST_REPO1_CIPHER_TYPE: aes-256-cbc
       PGBACKREST_REPO1_CIPHER_PASS: ${BACKUP_CIPHER_PASS}
       PGBACKREST_LOG_LEVEL_CONSOLE: info
-      PGBACKREST_LOG_LEVEL_FILE: detail
+      PGBACKREST_LOG_LEVEL_FILE: "off"
       PGBACKREST_STANZA: alice_prod
     volumes:
       - /opt/alice/backups/postgresql:/var/lib/pgbackrest:rw
-      - /opt/alice/backups/postgresql/logs:/var/log/pgbackrest:rw
       - postgres_data:/var/lib/postgresql/data:ro
     networks:
       - alice-network
@@ -250,8 +251,10 @@ services:
           echo "✅ Stanza 'alice_prod' já existe e está OK"
           exit 0
         fi
-        echo "📦 Criando stanza 'alice_prod'..."
-        pgbackrest stanza-create --stanza=alice_prod --log-level-console=info
+        echo "📦 Criando stanza 'alice_prod' (modo offline - postgres já está healthy)..."
+        # --no-online: Cria stanza sem verificar cluster via SSH/TCP
+        # Seguro porque depends_on já garante postgres:service_healthy
+        pgbackrest stanza-create --stanza=alice_prod --no-online --log-level-console=info
         echo "✅ Stanza 'alice_prod' criada com sucesso!"
         pgbackrest info --stanza=alice_prod
 
