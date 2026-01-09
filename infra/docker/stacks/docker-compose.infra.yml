@@ -32,7 +32,7 @@
 #   ✓ alice-redis: redis-cli ping
 #   ✓ alice-qdrant: HTTP /health
 #   ✓ caddy: HTTP /health (porta 80)
-#   ✓ minio: HTTP /minio/health/live
+#   ✓ minio: mc ready local (MinIO Client 2025)
 #   ✓ minio-init: service_completed_successfully
 #   ✓ pgbackrest-init: service_completed_successfully
 #
@@ -581,12 +581,19 @@ services:
     networks:
       - alice-network
     healthcheck:
-      # CORREÇÃO PR#95 (09/01/2026): MinIO removeu curl das imagens mais recentes
-      # REF: https://github.com/minio/minio/issues/16789
-      # Usar wget (disponível em Alpine) como alternativa
-      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:9000/minio/health/live || exit 1"]
+      # =======================================================================
+      # CORREÇÃO PR#99 (09/01/2026): MinIO 2025 usa imagem distroless
+      # =======================================================================
+      # PROBLEMA: MinIO removeu curl E wget das imagens (distroless security)
+      # CAUSA: Imagens distroless não têm shell nem utilitários HTTP
+      # SOLUÇÃO: Usar "mc ready local" - MinIO Client incluído na imagem oficial
+      # REF: https://github.com/minio/minio/issues/18389
+      # REF: MinIO docs 2025 - healthcheck-probe
+      # REF: CLAUDE.md Regra 11 (Seguir docs oficiais 2025)
+      # =======================================================================
+      test: ["CMD", "mc", "ready", "local"]
       interval: 30s
-      timeout: 10s
+      timeout: 20s
       retries: 5
       start_period: 60s
     deploy:
