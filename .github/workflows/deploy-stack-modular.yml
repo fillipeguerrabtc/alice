@@ -3518,7 +3518,16 @@ jobs:
             echo "🏥 Checking ALICE stack health..."
             
             CONTAINERS="alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager"
-            MAX_RETRIES=15
+            # =================================================================
+            # CORREÇÃO PR#100 (09/01/2026): Alinhar workflow timeout com Docker healthcheck
+            # =================================================================
+            # PROBLEMA: Docker healthcheck tem start_period: 90s + (10 retries × 30s) = 390s
+            #           Workflow tinha MAX_RETRIES=15 × 10s = 150s (muito curto!)
+            #           Containers ficavam "starting" durante start_period e workflow expirava
+            # SOLUÇÃO: MAX_RETRIES=40 × 10s = 400s (> 390s do Docker healthcheck)
+            # REF: CLAUDE.md Regra 11 (Melhores práticas 2025), Regra 16 (Healthchecks)
+            # =================================================================
+            MAX_RETRIES=40
             SLEEP_TIME=10
             
             for container in $CONTAINERS; do
@@ -3790,7 +3799,16 @@ jobs:
             # - langfuse-worker: não tem healthcheck definido
             RUNNING_CONTAINERS="jaeger alice-otel-collector alice-cadvisor alice-node-exporter langfuse-worker"
             
-            MAX_RETRIES=15
+            # =================================================================
+            # CORREÇÃO PR#100 (09/01/2026): Alinhar workflow timeout com Docker healthcheck
+            # =================================================================
+            # PROBLEMA: Docker healthcheck (Grafana) tem start_period: 90s + (10 retries × 30s) = 390s
+            #           Workflow tinha MAX_RETRIES=15 × 10s = 150s (muito curto!)
+            #           Grafana ficava "starting" durante start_period e workflow expirava
+            # SOLUÇÃO: MAX_RETRIES=40 × 10s = 400s (> 390s do Docker healthcheck)
+            # REF: CLAUDE.md Regra 11 (Melhores práticas 2025), Regra 16 (Healthchecks)
+            # =================================================================
+            MAX_RETRIES=40
             SLEEP_TIME=10
             
             # Verificar containers com healthcheck
@@ -4066,12 +4084,16 @@ jobs:
             # Faltavam: websocket (Socket.IO), scheduler (cron), workers (job queues)
             CONTAINERS="erpnext-mariadb erpnext-redis-cache erpnext-redis-queue erpnext-backend erpnext-frontend erpnext-websocket erpnext-scheduler erpnext-worker-default erpnext-worker-short erpnext-worker-long"
             # =================================================================
-            # CORREÇÃO PR#97 (09/01/2026): Restaurar MAX_RETRIES=25 (4+ min total)
+            # CORREÇÃO PR#100 (09/01/2026): Alinhar workflow timeout com Docker healthcheck
             # =================================================================
-            # PROBLEMA: MAX_RETRIES=15 dava apenas 2.5min de timeout
-            # ERPNext cria site, instala apps, migra banco - pode levar 3-4min
+            # PROBLEMA: Docker healthcheck (erpnext-backend) tem:
+            #           start_period: 120s + (15 retries × 30s) = 570s
+            #           Workflow tinha MAX_RETRIES=25 × 10s = 250s (muito curto!)
+            #           erpnext-backend ficava "starting" e workflow expirava
+            # SOLUÇÃO: MAX_RETRIES=60 × 10s = 600s (> 570s do Docker healthcheck)
+            # REF: CLAUDE.md Regra 11 (Melhores práticas 2025), Regra 16 (Healthchecks)
             # =================================================================
-            MAX_RETRIES=25
+            MAX_RETRIES=60
             SLEEP_TIME=10
             
             for container in $CONTAINERS; do
