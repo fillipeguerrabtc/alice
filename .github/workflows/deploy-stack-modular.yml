@@ -1174,27 +1174,45 @@ jobs:
             TMPDIR=$(mktemp -d)
             cd "$TMPDIR"
             
-            # Baixar script do GitHub (tag específica)
+            # Baixar scripts do GitHub (tag específica)
+            # SSOT v6.3: prepare-production-server.sh depende de fix-production-permissions.sh e permissions-config.sh
             TAG="${{ needs.validate.outputs.version }}"
-            SCRIPT_URL="https://raw.githubusercontent.com/fillipeguerrabtc/alice/${TAG}/infra/scripts/prepare-production-server.sh"
+            BASE_URL="https://raw.githubusercontent.com/fillipeguerrabtc/alice/${TAG}/infra/scripts"
             
-            echo "📥 Baixando script de preparação do GitHub..."
-            echo "   URL: $SCRIPT_URL"
+            echo "📥 Baixando scripts de preparação do GitHub (SSOT v6.3)..."
+            echo "   Tag: $TAG"
             
-            if ! curl -fsSL "$SCRIPT_URL" -o prepare-production-server.sh; then
-              echo "::error::❌ ERRO: Falha ao baixar script de preparação do GitHub"
-              echo "::error::Verifique se a tag $TAG existe e o script está no caminho correto."
-              exit 1
-            fi
+            # Lista de scripts necessários (ordem importa - dependências primeiro)
+            SCRIPTS=(
+              "permissions-config.sh"
+              "fix-production-permissions.sh"
+              "prepare-production-server.sh"
+            )
             
-            # Validar que script não está vazio
-            if [ ! -s prepare-production-server.sh ]; then
-              echo "::error::❌ ERRO: Script baixado está vazio!"
-              exit 1
-            fi
+            for script in "${SCRIPTS[@]}"; do
+              echo "   📄 Baixando: $script"
+              if ! curl -fsSL "${BASE_URL}/${script}" -o "$script"; then
+                echo "::error::❌ ERRO: Falha ao baixar $script do GitHub"
+                echo "::error::Verifique se a tag $TAG existe e o script está no caminho correto."
+                exit 1
+              fi
+              
+              # Validar que script não está vazio
+              if [ ! -s "$script" ]; then
+                echo "::error::❌ ERRO: Script $script baixado está vazio!"
+                exit 1
+              fi
+              
+              chmod +x "$script"
+              echo "   ✅ $script baixado ($(wc -c < "$script") bytes)"
+            done
+            
+            echo ""
+            echo "📋 Scripts baixados para SSOT:"
+            ls -la *.sh
+            echo ""
             
             # Executar script com sudo (requer permissões para criar diretórios e alterar ownership)
-            chmod +x prepare-production-server.sh
             sudo ./prepare-production-server.sh
             
             # Limpar temporário
