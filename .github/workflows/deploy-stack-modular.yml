@@ -3983,7 +3983,15 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          command_timeout: 10m
+          # =================================================================
+          # CORREÇÃO PR#100 (09/01/2026): Alinhar command_timeout com MAX_RETRIES
+          # =================================================================
+          # PROBLEMA: MAX_RETRIES=60 × 10s = 600s (10 min) mas command_timeout=10m
+          #           Isso criava race condition de zero-margin
+          # SOLUÇÃO: command_timeout=12m (720s) > 600s com margem de 2 min
+          # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 16 (Timeouts)
+          # =================================================================
+          command_timeout: 12m
           script: |
             set -euo pipefail
             echo "🏥 Checking OBSERVABILITY stack health..."
