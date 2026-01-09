@@ -211,7 +211,7 @@ echo ""
 # Diretórios de dados (volumes) - INFRA Stack
 # -----------------------------------------------------------------------------
 echo "📝 Criando diretórios INFRA stack..."
-# NOTA: /opt/alice/data/postgres criado e configurado acima com ownership 999:999
+# NOTA: /opt/alice/data/postgres criado e configurado acima com ownership 70:70 (Alpine)
 mkdir -p /opt/alice/data/redis-alice
 mkdir -p /opt/alice/data/qdrant
 mkdir -p /opt/alice/data/minio
@@ -280,9 +280,9 @@ echo ""
 echo "🔐 CONFIGURANDO PERMISSÕES POR SERVIÇO"
 echo "============================================="
 
-# PostgreSQL (UID 999)
+# PostgreSQL (UID 70 Alpine)
 # NOTA: PostgreSQL já foi configurado acima com fix_postgres_ownership()
-echo "📝 PostgreSQL (UID 999)..."
+echo "📝 PostgreSQL (UID 70 Alpine)..."
 echo "   ✅ PostgreSQL já configurado anteriormente"
 
 # Grafana (UID 472)
@@ -402,11 +402,11 @@ echo "============================================="
 echo "🧪 Validando permissões PostgreSQL..."
 POSTGRES_DIR="/opt/alice/data/postgres"
 
-# Verificar owner/group
+# Verificar owner/group (UID 70 para Alpine PostgreSQL)
 ACTUAL_OWNER=$(stat -c '%u:%g' "$POSTGRES_DIR")
-if [ "$ACTUAL_OWNER" != "999:999" ]; then
+if [ "$ACTUAL_OWNER" != "70:70" ]; then
   echo "❌ ERRO: Owner incorreto em $POSTGRES_DIR"
-  echo "   Esperado: 999:999"
+  echo "   Esperado: 70:70 (PostgreSQL Alpine)"
   echo "   Atual: $ACTUAL_OWNER"
   exit 1
 fi

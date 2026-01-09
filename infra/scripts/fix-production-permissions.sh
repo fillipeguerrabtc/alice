@@ -57,10 +57,13 @@ MODE=""
 # PROPÓSITO: Permitir estruturas parent/child multi-UID documentadas
 # 
 # CASO DE USO: pgBackRest (Alpine, UID 70) cria subdiretório logs/ dentro
-#              do diretório PostgreSQL (Debian, UID 999). Isso é LEGÍTIMO
-#              e está documentado no docker-compose.infra.yml linhas 241-242.
+#              do diretório de backups PostgreSQL (também UID 70 após migração).
+#              Ref: docker-compose.infra.yml linhas 241-242.
 #
 # FORMATO: ["path"]="uid:gid"
+#
+# NOTA (08/01/2026): Após migração para Alpine (UID 70), PostgreSQL e pgBackRest
+#                    usam o mesmo UID, reduzindo necessidade de exceções.
 #
 # BENEFÍCIOS:
 #   - Validação continua robusta para casos não documentados
@@ -70,12 +73,12 @@ MODE=""
 # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 11 (Best practices 2025)
 # =============================================================================
 declare -A VALIDATION_EXCEPTIONS=(
-    # pgBackRest cria subdiretório logs/ com UID 70 (Alpine) dentro de postgresql/ (UID 999 Debian)
+    # pgBackRest cria subdiretório logs/ com UID 70 (Alpine) dentro de postgresql/ (também UID 70)
     # Ref: docker-compose.infra.yml linhas 241-242 + pgBackRest docs
     ["/opt/alice/backups/postgresql/logs"]="70:70"
     
     # Adicionar futuras exceções aqui conforme necessário
-    # Exemplo: ["/opt/alice/data/postgres/pg_wal"]="999:999"
+    # Exemplo: ["/opt/alice/data/postgres/pg_wal"]="70:70"
 )
 
 # =============================================================================
@@ -174,8 +177,8 @@ declare -a DIRECTORIES=(
     
     # BACKUPS
     # NOTA: postgresql/logs será criado pelo container pgBackRest conforme necessário
-    # Não definimos ownership específico para evitar conflito na validação recursiva
-    "${BACKUPS_DIR}/postgresql:999:999:755"
+    # CORREÇÃO 08/01/2026: pgBackRest roda como UID 70 (Alpine), não 999 (Debian)
+    "${BACKUPS_DIR}/postgresql:70:70:755"
     
     # UPLOADS (alice microservices)
     "${UPLOADS_DIR}:1000:1000:755"
@@ -254,8 +257,8 @@ EOF
 #   1 - Path NÃO é exceção (validar normalmente)
 #
 # EXEMPLO:
-#   /opt/alice/backups/postgresql/        (999:999) ✅ Parent correto
-#   └── logs/                             (70:70)   ✅ Exceção legítima
+#   /opt/alice/backups/postgresql/        (70:70) ✅ Parent correto (Alpine)
+#   └── logs/                             (70:70) ✅ Mesmo UID após migração Alpine
 #
 # REF: CLAUDE.md Regra 6 (Enterprise-grade), VALIDATION_EXCEPTIONS map
 # =============================================================================
@@ -305,7 +308,7 @@ is_validation_exception() {
 #
 # CORREÇÃO BUG #2 (PR#83 - 08/01/2026):
 #   PROBLEMA: create_mode() usava chown -R que sobrescrevia ownership legítimo
-#             de subdiretórios exceção (ex: logs/ 70:70 dentro de postgresql/ 999:999)
+#             de subdiretórios exceção (ex: logs/ 70:70 dentro de postgresql/ 70:70)
 #   SOLUÇÃO: Excluir paths de exceção do find que detecta arquivos incorretos
 #
 # CORREÇÃO BUG #2 (PR#85 - 08/01/2026):
@@ -510,12 +513,12 @@ create_mode() {
         #   - Se arquivos filhos tivessem UID errado, NUNCA eram corrigidos
         #
         # CENÁRIO DE FALHA:
-        #   /opt/alice/data/postgres/        (999:999)  ✅ Pai correto
+        #   /opt/alice/data/postgres/        (70:70)    ✅ Pai correto (Alpine)
         #   ├── base/                        (root:root) ❌ Filho errado
         #   └── PG_VERSION                   (root:root) ❌ Arquivo errado
         #   
-        #   Execução 1: stat vê 999:999 no pai → não roda chown -R → filhos errados
-        #   Execução 2: stat vê 999:999 no pai → não roda chown -R → filhos errados (LOOP!)
+        #   Execução 1: stat vê 70:70 no pai → não roda chown -R → filhos errados
+        #   Execução 2: stat vê 70:70 no pai → não roda chown -R → filhos errados (LOOP!)
         #
         # SOLUÇÃO:
         #   - Usar find para verificar RECURSIVAMENTE antes de decidir
@@ -536,7 +539,7 @@ create_mode() {
         # PROBLEMA ORIGINAL:
         #   - find detectava arquivos de exceção como "errados"
         #   - chown -R sobrescrevia ownership legítimo de exceções
-        #   - Ex: logs/ (70:70) dentro de postgresql/ era alterado para 999:999
+        #   - Ex: logs/ (70:70) dentro de postgresql/ era alterado para outro UID
         #
         # SOLUÇÃO:
         #   - Usar find_wrong_files_excluding_exceptions() que exclui paths de exceção
