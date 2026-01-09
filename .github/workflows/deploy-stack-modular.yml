@@ -2306,28 +2306,89 @@ jobs:
             docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.infra.yml pull
             
             # =================================================================
-            # CORREÇÃO PR#86 (08/01/2026): Usar --wait com timeout explícito
+            # CORREÇÃO PR#92 (09/01/2026): Verificação customizada para init containers
             # =================================================================
-            # PROBLEMA: `up -d` retornava imediatamente, mas containers dependentes
-            #           (pgbouncer, pgbackrest-init) falhavam se PostgreSQL demorava
-            #           para ficar healthy, causando "dependency failed to start"
+            # PROBLEMA: `--wait` considera containers "exited (0)" como FALHA
+            #           Init containers (pgbackrest-init, minio-init) DEVEM terminar
+            #           com exit 0, mas --wait interpreta isso como falha.
             #
-            # SOLUÇÃO: --wait faz Docker Compose esperar TODOS containers ficarem
-            #          healthy antes de retornar. --wait-timeout=600s (10 min) é
-            #          suficiente para PostgreSQL primeiro boot (start_period 300s +
-            #          30 retries × 10s = 600s máximo)
-            #
-            # NOTA: Se QUALQUER container ficar unhealthy, o comando falha imediatamente
-            #       (comportamento desejado - fail-fast)
+            # SOLUÇÃO: Usar `up -d` sem --wait e fazer verificação customizada:
+            #   - Containers normais: devem ficar "healthy"
+            #   - Init containers: devem terminar com exit code 0
             #
             # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 9 (Validação contínua)
             # REF: https://docs.docker.com/reference/cli/docker/compose/up/#options
             # =================================================================
-            echo "⏳ Aguardando containers ficarem healthy (timeout: 600s)..."
+            
+            # Lista de init containers (terminam após executar)
+            INIT_CONTAINERS="alice-minio-init alice-pgbackrest-init"
+            
+            # Lista de containers que devem ficar healthy
+            HEALTH_CONTAINERS="alice-postgres alice-redis alice-qdrant alice-caddy alice-minio alice-tor alice-searxng alice-pgbouncer"
+            
+            echo "⏳ Iniciando containers..."
             docker compose -p alice-infra --env-file ../.env.prod \
                            -f docker-compose.base.yml \
                            -f docker-compose.infra.yml \
-                           up -d --remove-orphans --wait --wait-timeout 600
+                           up -d --remove-orphans
+            
+            echo "⏳ Aguardando containers (timeout: 600s)..."
+            TIMEOUT=600
+            ELAPSED=0
+            
+            while [ $ELAPSED -lt $TIMEOUT ]; do
+              ALL_OK=true
+              
+              # Verificar containers que devem ficar healthy
+              for container in $HEALTH_CONTAINERS; do
+                if docker ps --format '{{.Names}}' | grep -q "^${container}$"; then
+                  HEALTH=$(docker inspect --format='{{.State.Health.Status}}' $container 2>/dev/null || echo "none")
+                  if [ "$HEALTH" != "healthy" ]; then
+                    ALL_OK=false
+                  fi
+                else
+                  # Container ainda não existe ou não está rodando
+                  ALL_OK=false
+                fi
+              done
+              
+              # Verificar init containers (devem terminar com exit 0)
+              for init in $INIT_CONTAINERS; do
+                if docker ps -a --format '{{.Names}}' | grep -q "^${init}$"; then
+                  STATUS=$(docker inspect --format='{{.State.Status}}' $init 2>/dev/null || echo "unknown")
+                  if [ "$STATUS" = "running" ]; then
+                    # Ainda executando - aguardar
+                    ALL_OK=false
+                  elif [ "$STATUS" = "exited" ]; then
+                    EXIT_CODE=$(docker inspect --format='{{.State.ExitCode}}' $init 2>/dev/null || echo "255")
+                    if [ "$EXIT_CODE" != "0" ]; then
+                      echo "❌ Init container $init falhou com exit code $EXIT_CODE"
+                      docker logs $init --tail 50 || true
+                      exit 1
+                    fi
+                    # exit 0 = OK, continuar
+                  fi
+                fi
+              done
+              
+              if [ "$ALL_OK" = "true" ]; then
+                echo "✅ Todos containers prontos!"
+                break
+              fi
+              
+              sleep 5
+              ELAPSED=$((ELAPSED + 5))
+              
+              if [ $((ELAPSED % 30)) -eq 0 ]; then
+                echo "   ⏳ Aguardando... (${ELAPSED}s/${TIMEOUT}s)"
+              fi
+            done
+            
+            if [ $ELAPSED -ge $TIMEOUT ]; then
+              echo "❌ Timeout esperando containers ficarem healthy"
+              docker ps -a --format 'table {{.Names}}\t{{.Status}}'
+              exit 1
+            fi
             
             # Salvar versão atual
             echo "${{ needs.validate.outputs.version }}" > /opt/alice/versions/infra.current
