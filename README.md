@@ -1,8 +1,8 @@
 # Alice - Plataforma Enterprise de IA Autônoma
 
 **Autor:** Fillipe Guerra  
-**Data:** 06 de Janeiro de 2026  
-**Versão:** 6.0 - Pipeline Enterprise Modular v3.0.0
+**Data:** 09 de Janeiro de 2026  
+**Versão:** 6.1 - Enterprise PostgreSQL Permissions + Resilient Architecture
 
 <div align="center">
 
@@ -74,6 +74,26 @@
 > **Workflows Ativos:**
 > - `.github/workflows/release.yml` ⭐ (Release & Tag - dispara builds e deploy)
 > - `.github/workflows/deploy-stack-modular.yml` (Deploy - Production Modular)
+
+> **🛡️ CORREÇÃO CRÍTICA v6.1 (09/01/2026) - PostgreSQL Permissions Enterprise:**  
+> Implementada correção de 3 fases para resolver "container alice-postgres is unhealthy" em servidor limpo.
+> 
+> **FASE 1: Correção Crítica (Bloqueador)**
+> - ✅ Preparação inline do diretório PostgreSQL ANTES do `docker compose up`
+> - ✅ Teste de escrita REAL via Docker (`docker run --user 999:999 -v ... touch`)
+> - ✅ Validação de ownership (999:999) e permissions (700)
+> - ✅ Eliminação de race condition entre `prepare` e `deploy-infra`
+> 
+> **FASE 2: Defesa em Profundidade**
+> - ✅ `entrypoint-wrapper.sh` no container PostgreSQL para fail-fast
+> - ✅ Validação de PGDATA, existência de diretório, gravabilidade
+> - ✅ Mensagens de erro claras com diagnóstico automático e comandos de correção
+> 
+> **FASE 3: Arquitetura Resiliente**
+> - ✅ Job `prepare-infrastructure` dedicado no workflow
+> - ✅ Validação completa do servidor (IP, GPU, Docker, disco)
+> - ✅ Criação atômica de diretórios com permissões corretas
+> - ✅ Healthcheck PostgreSQL com estágio 0 (`pgrep -x postgres`)
 
 > **Atualização 28/12/2025:** Pipeline 100% self-hosted com **Runner Enterprise Hardening** (Hetzner CPX32 - 4 vCPU AMD EPYC, 8GB RAM). Otimizações aplicadas: Kernel tuning (net.core.rmem_max=16MB, vm.swappiness=10), Docker daemon (BuildKit, max-downloads=10, GC=20GB), limits (nofile=1048576), systemd (NODE_OPTIONS=6GB, Nice=-5), cron cleanup diário. GPU dedicada Hetzner GEX44 (RTX 4000 Ada 20GB) 24/7 - containers Docker rodam continuamente, sem cold start.
 
@@ -150,7 +170,7 @@ A plataforma Alice é composta por **50 containers** organizados em **5 stacks i
 |---|---------|-----------|-----------|
 | 1 | Caddy Gateway | `alice-caddy` | Reverse proxy com SSL automático + HTTP/3 (substitui Traefik) |
 | 2 | pgBackRest Init | `alice-pgbackrest-init` | Inicializador de stanza para backup (init container) |
-| 3 | PostgreSQL | `alice-postgres` | Banco principal com pgvector e RLS |
+| 3 | PostgreSQL | `alice-postgres` | Banco principal com pgvector, RLS e entrypoint-wrapper para validação de permissões |
 | 4 | Alice Redis | `alice-redis` | Cache distribuído (Redis 8.4 - node-redis 5.x) |
 | 5 | Qdrant | `alice-qdrant` | Banco vetorial para texto (4096 dim, HNSW index) |
 | 6 | SearXNG | `alice-searxng` | Metabusca interna (Web Search) |
@@ -644,7 +664,7 @@ Todos os 50 containers têm security hardening completo aplicado. Containers que
 **Desenvolvido para empresas que exigem IA autônoma, privada e customizável**
 
 *Autor: Fillipe Guerra*
-*Versão 6.0 - 06 de Janeiro de 2026*
+*Versão 6.1 - 09 de Janeiro de 2026*
 *Tecnologias: Node.js 22 LTS, Express 5.2, Vite 7.3, Tailwind CSS 4.1, React 19.2, pnpm 10.26.1, TypeScript 5.9.3*
 *Total de Containers: 50 (10 infra + 8 Alice + 5 GPU + 13 observability + 15 ERPNext + 1 backup)*
 *Arquitetura Multi-Stack (06/01/2026): 5 stacks independentes com deploy/rollback modular v3*

@@ -297,38 +297,62 @@ services:
     networks:
       - alice-network
     healthcheck:
-      # CORREÇÃO 08/01/2026: Healthcheck em 3 estágios progressivos
-      # SEÇÃO 1.3: Progressive Timeout for PostgreSQL
-      # Estágio 1: PostgreSQL aceita conexões?
-      # Estágio 2: Database existe e aceita queries?
-      # Estágio 3: Extensão vector instalada? (soft check - não falha em primeiro boot)
-      # Ref: CLAUDE.md Regra 6 (Enterprise-grade), Regra 11 (Best practices PostgreSQL 2025)
+      # =================================================================
+      # CORREÇÃO PR#89 (09/01/2026): Healthcheck em 4 estágios progressivos
+      # =================================================================
+      # MELHORIA: Adicionado estágio 0 para verificar se processo está rodando
+      # PROBLEMA: Se PostgreSQL crasha por Permission denied, pg_isready nunca retorna
+      #           porque o servidor nunca inicia (processo não existe)
+      # SOLUÇÃO: Verificar pgrep ANTES de pg_isready para fail-fast em crash loops
+      #
+      # ESTÁGIOS:
+      #   0. Processo PostgreSQL rodando? (fail-fast para crash loops)
+      #   1. Aceita conexões? (pg_isready)
+      #   2. Database responde? (SELECT 1)
+      #   3. Extension vector? (SOFT - não falha em primeiro boot)
+      #
+      # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 9 (Validação contínua)
+      # REF: CLAUDE.md Regra 11 (Best practices PostgreSQL 2025)
+      # =================================================================
       test:
         - CMD-SHELL
         - |
           # =================================================================
-          # CORREÇÃO 08/01/2026: Healthcheck com logging detalhado
+          # ESTÁGIO 0: Processo PostgreSQL está rodando?
           # =================================================================
-          # PROBLEMA: Healthcheck falhava silenciosamente sem indicar causa
-          # SOLUÇÃO: Log detalhado de cada estágio para troubleshooting
-          # REF: CLAUDE.md Regra 9 (Validação contínua)
+          # CRÍTICO para detectar crash loops (Permission denied, SIGILL, etc.)
+          # Se processo não existe, pg_isready nunca vai funcionar
           # =================================================================
-          
-          # Estágio 1: PostgreSQL está aceitando conexões?
-          if ! pg_isready -U ${POSTGRES_USER:-alice} -d ${POSTGRES_DB:-alice_prod}; then
-            echo "HEALTHCHECK FAIL: PostgreSQL não está aceitando conexões" >&2
+          if ! pgrep -x postgres > /dev/null 2>&1; then
+            echo "HEALTHCHECK FAIL [ESTÁGIO 0]: Processo PostgreSQL não encontrado" >&2
+            echo "   CAUSA PROVÁVEL: Crash durante inicialização (Permission denied, SIGILL, etc.)" >&2
+            echo "   AÇÃO: Verificar logs com 'docker logs alice-postgres'" >&2
             exit 1
           fi
           
-          # Estágio 2: Database existe e aceita queries?
-          if ! psql -U ${POSTGRES_USER:-alice} -d ${POSTGRES_DB:-alice_prod} -tAc "SELECT 1;" | grep -q 1; then
-            echo "HEALTHCHECK FAIL: Database não aceita queries" >&2
+          # =================================================================
+          # ESTÁGIO 1: PostgreSQL está aceitando conexões?
+          # =================================================================
+          if ! pg_isready -U ${POSTGRES_USER:-alice} -d ${POSTGRES_DB:-alice_prod} -t 5; then
+            echo "HEALTHCHECK FAIL [ESTÁGIO 1]: PostgreSQL não está aceitando conexões" >&2
             exit 1
           fi
           
-          # Estágio 3: Extensão vector está instalada? (SOFT CHECK - não falha em primeiro boot)
-          if ! psql -U ${POSTGRES_USER:-alice} -d ${POSTGRES_DB:-alice_prod} -tAc "SELECT 1 FROM pg_extension WHERE extname = 'vector';" | grep -q 1; then
-            echo "HEALTHCHECK WARN: vector extension not found - may be initializing" >&2
+          # =================================================================
+          # ESTÁGIO 2: Database existe e aceita queries?
+          # =================================================================
+          if ! psql -U ${POSTGRES_USER:-alice} -d ${POSTGRES_DB:-alice_prod} -tAc "SELECT 1;" 2>/dev/null | grep -q 1; then
+            echo "HEALTHCHECK FAIL [ESTÁGIO 2]: Database não aceita queries" >&2
+            exit 1
+          fi
+          
+          # =================================================================
+          # ESTÁGIO 3: Extensão vector está instalada? (SOFT CHECK)
+          # =================================================================
+          # NÃO falha em primeiro boot - extensão é criada pelo init script
+          # =================================================================
+          if ! psql -U ${POSTGRES_USER:-alice} -d ${POSTGRES_DB:-alice_prod} -tAc "SELECT 1 FROM pg_extension WHERE extname = 'vector';" 2>/dev/null | grep -q 1; then
+            echo "HEALTHCHECK WARN [ESTÁGIO 3]: vector extension não encontrada (pode estar inicializando)" >&2
           fi
           
           exit 0

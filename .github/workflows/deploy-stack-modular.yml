@@ -1223,15 +1223,429 @@ jobs:
             echo "✅ Preparação concluída com sucesso"
 
   # ===========================================================================
+  # FASE 3: Job prepare-infrastructure Dedicado (09/01/2026)
+  # ===========================================================================
+  # PROPÓSITO: Preparação ATÔMICA do servidor imediatamente antes do deploy
+  # BENEFÍCIOS:
+  #   - Executa DEPOIS do SCP → código está no servidor
+  #   - Executa ANTES do docker compose up → elimina race condition
+  #   - Validação em cada estágio → fail-fast
+  #   - Idempotente → pode re-executar sem problemas
+  #   - Separação de responsabilidades → preparação ≠ deploy
+  #
+  # REFERÊNCIAS:
+  #   - CLAUDE.md Regra 6 (Enterprise-grade, sem workarounds)
+  #   - CLAUDE.md Regra 7 (Mudanças cirúrgicas)
+  #   - CLAUDE.md Regra 16 (Idempotência)
+  #   - Relatório Enterprise de Análise de Falha (09/01/2026)
+  #
+  # Author: Fillipe Guerra
+  # Data: 09 de Janeiro de 2026
+  # ===========================================================================
+  
+  prepare-infrastructure:
+    name: Prepare Infrastructure (Atomic)
+    runs-on: [self-hosted, linux, deploy]
+    needs: [validate, prepare]
+    if: needs.validate.outputs.dry_run != 'true' && needs.prepare.result == 'success'
+    timeout-minutes: 15
+    
+    steps:
+      - name: Validar servidor de produção (OBRIGATÓRIO)
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          command_timeout: 2m
+          script: |
+            set -euo pipefail
+            
+            echo ""
+            echo "============================================="
+            echo "🔍 VALIDAÇÃO SERVIDOR DE PRODUÇÃO (ATÔMICA)"
+            echo "============================================="
+            echo ""
+            
+            # =================================================================
+            # ESTÁGIO 1: Verificar IP correto
+            # =================================================================
+            echo "📍 ESTÁGIO 1: Verificando IP do servidor..."
+            CURRENT_IPS=$(hostname -I)
+            
+            if ! echo "$CURRENT_IPS" | grep -qw "178.63.41.108"; then
+              echo "❌ ERRO CRÍTICO: Servidor incorreto!"
+              echo ""
+              echo "   IPs encontrados: $CURRENT_IPS"
+              echo "   IP esperado: 178.63.41.108 (Production Server GEX44)"
+              echo ""
+              echo "🔧 CORREÇÃO NECESSÁRIA:"
+              echo "   Verifique secret HETZNER_VM_HOST no GitHub"
+              echo "   Deve ser: 178.63.41.108"
+              exit 1
+            fi
+            echo "   ✅ IP correto: 178.63.41.108"
+            
+            # =================================================================
+            # ESTÁGIO 2: Verificar GPU disponível
+            # =================================================================
+            echo ""
+            echo "🎮 ESTÁGIO 2: Verificando GPU..."
+            if ! command -v nvidia-smi &>/dev/null; then
+              echo "❌ ERRO CRÍTICO: nvidia-smi não encontrado!"
+              echo ""
+              echo "   Production Server DEVE ter GPU (RTX 4000 Ada 20GB)"
+              echo "   Se não tem GPU, provavelmente está no Deploy Server (CPX32)"
+              exit 1
+            fi
+            
+            GPU_INFO=$(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader)
+            echo "   ✅ GPU disponível: $GPU_INFO"
+            
+            # =================================================================
+            # ESTÁGIO 3: Verificar Docker funcionando
+            # =================================================================
+            echo ""
+            echo "🐳 ESTÁGIO 3: Verificando Docker..."
+            if ! docker info &>/dev/null; then
+              echo "❌ ERRO CRÍTICO: Docker não responde!"
+              exit 1
+            fi
+            echo "   ✅ Docker OK"
+            
+            # Verificar runtime NVIDIA
+            if ! docker run --rm --gpus all nvidia/cuda:12.0.0-base-ubuntu22.04 nvidia-smi &>/dev/null; then
+              echo "❌ ERRO CRÍTICO: Docker não consegue acessar GPU!"
+              echo ""
+              echo "   Verifique NVIDIA Container Toolkit"
+              exit 1
+            fi
+            echo "   ✅ Docker com GPU OK"
+            
+            # =================================================================
+            # ESTÁGIO 4: Verificar espaço em disco
+            # =================================================================
+            echo ""
+            echo "💾 ESTÁGIO 4: Verificando espaço em disco..."
+            AVAILABLE_GB=$(df -BG /opt/alice 2>/dev/null | tail -1 | awk '{print $4}' | sed 's/G//')
+            
+            # Validar que é número
+            if ! [[ "$AVAILABLE_GB" =~ ^[0-9]+$ ]]; then
+              echo "⚠️  Não foi possível determinar espaço em disco"
+            elif [ "$AVAILABLE_GB" -lt 20 ]; then
+              echo "❌ ERRO: Espaço em disco insuficiente!"
+              echo ""
+              echo "   Disponível: ${AVAILABLE_GB}GB"
+              echo "   Mínimo recomendado: 20GB"
+              df -h /opt/alice
+              exit 1
+            else
+              echo "   ✅ Espaço em disco OK: ${AVAILABLE_GB}GB disponível"
+            fi
+            
+            echo ""
+            echo "✅ Validação do servidor de produção OK"
+
+      - name: Criar estrutura de diretórios (ATÔMICA)
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          command_timeout: 5m
+          script: |
+            set -euo pipefail
+            
+            echo ""
+            echo "============================================="
+            echo "📁 CRIANDO ESTRUTURA DE DIRETÓRIOS (ATÔMICA)"
+            echo "============================================="
+            echo ""
+            
+            # Usar script enterprise de permissões (já copiado pelo SCP)
+            SCRIPT_PATH="/opt/alice/app/infra/scripts/fix-production-permissions.sh"
+            
+            if [ ! -f "$SCRIPT_PATH" ]; then
+              echo "❌ ERRO: Script fix-production-permissions.sh não encontrado!"
+              echo "   Path: $SCRIPT_PATH"
+              echo "   Verifique se SCP copiou o código corretamente."
+              exit 1
+            fi
+            
+            chmod +x "$SCRIPT_PATH"
+            
+            # Modo create cria todos os diretórios com permissões corretas
+            echo "📝 Criando diretórios com permissões enterprise..."
+            if ! sudo "$SCRIPT_PATH" --create; then
+              echo "❌ ERRO: Falha ao criar estrutura de diretórios"
+              exit 1
+            fi
+            
+            echo ""
+            echo "✅ Estrutura de diretórios criada com sucesso"
+
+      - name: Configurar permissões PostgreSQL (CRÍTICO)
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          command_timeout: 5m
+          script: |
+            set -euo pipefail
+            
+            echo ""
+            echo "============================================="
+            echo "🐘 CONFIGURANDO PERMISSÕES POSTGRESQL (CRÍTICO)"
+            echo "============================================="
+            echo ""
+            
+            POSTGRES_DIR="/opt/alice/data/postgres"
+            
+            # =================================================================
+            # ESTÁGIO 1: Criar diretório se não existir
+            # =================================================================
+            if [ ! -d "$POSTGRES_DIR" ]; then
+              echo "📝 Criando $POSTGRES_DIR..."
+              sudo mkdir -p "$POSTGRES_DIR"
+            fi
+            echo "✅ Diretório existe: $POSTGRES_DIR"
+            
+            # =================================================================
+            # ESTÁGIO 2: Configurar ownership 999:999 (PostgreSQL UID)
+            # =================================================================
+            echo ""
+            echo "🔧 Configurando ownership 999:999..."
+            sudo chown -R 999:999 "$POSTGRES_DIR"
+            sudo chmod 700 "$POSTGRES_DIR"
+            
+            # =================================================================
+            # ESTÁGIO 3: Validar ownership
+            # =================================================================
+            ACTUAL_OWNER=$(sudo stat -c '%u:%g' "$POSTGRES_DIR")
+            ACTUAL_PERMS=$(sudo stat -c '%a' "$POSTGRES_DIR")
+            
+            if [ "$ACTUAL_OWNER" != "999:999" ]; then
+              echo "❌ ERRO: Ownership incorreto!"
+              echo "   Esperado: 999:999"
+              echo "   Atual: $ACTUAL_OWNER"
+              exit 1
+            fi
+            echo "✅ Ownership: 999:999"
+            
+            if [ "$ACTUAL_PERMS" != "700" ]; then
+              echo "❌ ERRO: Permissões incorretas!"
+              echo "   Esperado: 700"
+              echo "   Atual: $ACTUAL_PERMS"
+              exit 1
+            fi
+            echo "✅ Permissões: 700"
+            
+            # =================================================================
+            # ESTÁGIO 4: Teste de escrita REAL via Docker (CRÍTICO)
+            # =================================================================
+            echo ""
+            echo "🧪 Testando escrita REAL com UID 999 via Docker..."
+            
+            if ! docker run --rm --user 999:999 -v "$POSTGRES_DIR:/test:rw" alpine:3.21 touch /test/.write-test 2>/dev/null; then
+              echo "❌ ERRO CRÍTICO: UID 999 NÃO consegue escrever no volume!"
+              echo ""
+              echo "📊 DIAGNÓSTICO:"
+              echo "   Ownership: $ACTUAL_OWNER"
+              echo "   Permissões: $ACTUAL_PERMS"
+              sudo ls -la "$POSTGRES_DIR" | head -10 || true
+              echo ""
+              echo "💡 POSSÍVEIS CAUSAS:"
+              echo "   - SELinux/AppArmor bloqueando acesso"
+              echo "   - Filesystem montado como read-only"
+              echo "   - Problemas de quota de disco"
+              exit 1
+            fi
+            
+            # Limpar arquivo de teste
+            docker run --rm --user 999:999 -v "$POSTGRES_DIR:/test:rw" alpine:3.21 rm -f /test/.write-test 2>/dev/null || true
+            
+            echo "✅ Teste de escrita OK - UID 999 pode escrever no volume"
+            
+            echo ""
+            echo "✅ Permissões PostgreSQL configuradas corretamente"
+
+      - name: Criar networks Docker
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          command_timeout: 2m
+          script: |
+            set -euo pipefail
+            
+            echo ""
+            echo "============================================="
+            echo "🌐 CRIANDO NETWORKS DOCKER"
+            echo "============================================="
+            echo ""
+            
+            # alice-network (principal - todos os stacks Alice)
+            if ! docker network inspect alice-network >/dev/null 2>&1; then
+              echo "📝 Criando alice-network..."
+              docker network create --driver bridge --subnet 172.28.0.0/16 alice-network
+              echo "   ✅ alice-network criada"
+            else
+              echo "   ✅ alice-network já existe"
+            fi
+            
+            # erpnext-network (isolado - apenas stack ERPNext)
+            if ! docker network inspect erpnext-network >/dev/null 2>&1; then
+              echo "📝 Criando erpnext-network..."
+              docker network create --driver bridge erpnext-network
+              echo "   ✅ erpnext-network criada"
+            else
+              echo "   ✅ erpnext-network já existe"
+            fi
+            
+            echo ""
+            echo "✅ Networks Docker criadas/verificadas"
+
+      - name: Validar estado final (fail-fast)
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          command_timeout: 3m
+          script: |
+            set -euo pipefail
+            
+            echo ""
+            echo "============================================="
+            echo "✅ VALIDAÇÃO FINAL - ESTADO DA INFRAESTRUTURA"
+            echo "============================================="
+            echo ""
+            
+            ERRORS=0
+            
+            # =================================================================
+            # Validar PostgreSQL
+            # =================================================================
+            echo "🐘 PostgreSQL:"
+            POSTGRES_OWNER=$(sudo stat -c '%u:%g' /opt/alice/data/postgres 2>/dev/null || echo "N/A")
+            POSTGRES_PERMS=$(sudo stat -c '%a' /opt/alice/data/postgres 2>/dev/null || echo "N/A")
+            
+            if [ "$POSTGRES_OWNER" != "999:999" ] || [ "$POSTGRES_PERMS" != "700" ]; then
+              echo "   ❌ PostgreSQL: ownership=$POSTGRES_OWNER, perms=$POSTGRES_PERMS"
+              echo "      Esperado: 999:999, 700"
+              ERRORS=$((ERRORS + 1))
+            else
+              echo "   ✅ PostgreSQL: 999:999, 700"
+            fi
+            
+            # =================================================================
+            # Validar Grafana
+            # =================================================================
+            echo "📊 Grafana:"
+            GRAFANA_OWNER=$(sudo stat -c '%u:%g' /opt/alice/data/grafana 2>/dev/null || echo "N/A")
+            
+            if [ "$GRAFANA_OWNER" != "472:472" ]; then
+              echo "   ❌ Grafana: ownership=$GRAFANA_OWNER"
+              echo "      Esperado: 472:472"
+              ERRORS=$((ERRORS + 1))
+            else
+              echo "   ✅ Grafana: 472:472"
+            fi
+            
+            # =================================================================
+            # Validar Prometheus
+            # =================================================================
+            echo "📈 Prometheus:"
+            PROMETHEUS_OWNER=$(sudo stat -c '%u:%g' /opt/alice/data/prometheus 2>/dev/null || echo "N/A")
+            
+            if [ "$PROMETHEUS_OWNER" != "65534:65534" ]; then
+              echo "   ❌ Prometheus: ownership=$PROMETHEUS_OWNER"
+              echo "      Esperado: 65534:65534"
+              ERRORS=$((ERRORS + 1))
+            else
+              echo "   ✅ Prometheus: 65534:65534"
+            fi
+            
+            # =================================================================
+            # Validar Loki
+            # =================================================================
+            echo "📝 Loki:"
+            LOKI_OWNER=$(sudo stat -c '%u:%g' /opt/alice/data/loki 2>/dev/null || echo "N/A")
+            
+            if [ "$LOKI_OWNER" != "10001:10001" ]; then
+              echo "   ❌ Loki: ownership=$LOKI_OWNER"
+              echo "      Esperado: 10001:10001"
+              ERRORS=$((ERRORS + 1))
+            else
+              echo "   ✅ Loki: 10001:10001"
+            fi
+            
+            # =================================================================
+            # Validar Networks
+            # =================================================================
+            echo "🌐 Networks:"
+            if ! docker network inspect alice-network >/dev/null 2>&1; then
+              echo "   ❌ alice-network não existe"
+              ERRORS=$((ERRORS + 1))
+            else
+              echo "   ✅ alice-network OK"
+            fi
+            
+            if ! docker network inspect erpnext-network >/dev/null 2>&1; then
+              echo "   ❌ erpnext-network não existe"
+              ERRORS=$((ERRORS + 1))
+            else
+              echo "   ✅ erpnext-network OK"
+            fi
+            
+            # =================================================================
+            # Resultado final
+            # =================================================================
+            echo ""
+            if [ $ERRORS -gt 0 ]; then
+              echo "❌ VALIDAÇÃO FALHOU: $ERRORS erro(s) encontrado(s)"
+              echo ""
+              echo "🔧 Execute o script de correção:"
+              echo "   sudo /opt/alice/app/infra/scripts/fix-production-permissions.sh --fix"
+              exit 1
+            fi
+            
+            echo "============================================="
+            echo "🎉 INFRAESTRUTURA PRONTA PARA DEPLOY"
+            echo "============================================="
+            echo ""
+            echo "   ✅ PostgreSQL: 999:999, 700"
+            echo "   ✅ Grafana: 472:472"
+            echo "   ✅ Prometheus: 65534:65534"
+            echo "   ✅ Loki: 10001:10001"
+            echo "   ✅ alice-network: OK"
+            echo "   ✅ erpnext-network: OK"
+            echo ""
+
+  # ===========================================================================
   # INFRA STACK - Deploy + Health + Rollback
   # ===========================================================================
   
   deploy-infra:
     name: Deploy Stack INFRA
     runs-on: [self-hosted, linux, deploy]
-    needs: [validate, prepare]
+    # =================================================================
+    # CORREÇÃO PR#89 (09/01/2026): Adicionar dependência do prepare-infrastructure
+    # =================================================================
+    # BENEFÍCIO: Deploy só inicia APÓS infraestrutura estar 100% validada
+    # ELIMINA: Race condition entre preparação e deploy
+    # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Mudanças cirúrgicas)
+    # =================================================================
+    needs: [validate, prepare, prepare-infrastructure]
     # CRITICAL: NÃO rodar em rollback manual (deploy seria sobrescrito pelo rollback)
-    if: needs.validate.outputs.deploy_infra == 'true' && needs.prepare.result == 'success' && needs.validate.outputs.is_rollback == 'false'
+    if: needs.validate.outputs.deploy_infra == 'true' && needs.prepare.result == 'success' && needs.prepare-infrastructure.result == 'success' && needs.validate.outputs.is_rollback == 'false'
     # =================================================================
     # CORREÇÃO PR#86 (08/01/2026): Timeout aumentado para primeiro boot
     # =================================================================
@@ -1367,91 +1781,22 @@ jobs:
               echo "✅ Diretório PostgreSQL não existe ainda (primeiro deploy)"
             fi
 
-      - name: Validar estado do volume PostgreSQL (primeiro deploy)
-        uses: appleboy/ssh-action@v1.2.2
-        with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
-          command_timeout: 5m
-          script: |
-            set -euo pipefail
-            # =================================================================
-            # CORREÇÃO 08/01/2026: Validação pré-start do volume PostgreSQL
-            # =================================================================
-            # PROBLEMA: Volume pode ter ownership incorreto ou arquivos corrompidos
-            # SOLUÇÃO: Validar e corrigir ANTES de PostgreSQL iniciar
-            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 9 (Validação contínua)
-            # =================================================================
-            echo "🔍 Verificando estado do volume PostgreSQL..."
-            
-            POSTGRES_DIR="/opt/alice/data/postgres"
-            
-            # Se diretório não existe, criar com permissions corretas
-            # CORREÇÃO 08/01/2026: Usar sudo para verificar diretório PostgreSQL (modo 700, UID 999)
-            if ! sudo test -d "$POSTGRES_DIR"; then
-              echo "📁 Criando $POSTGRES_DIR (primeiro deploy)"
-              sudo mkdir -p "$POSTGRES_DIR"
-              sudo chown 999:999 "$POSTGRES_DIR"
-              sudo chmod 700 "$POSTGRES_DIR"
-              echo "✅ Diretório criado com ownership 999:999 e permissions 700"
-              exit 0
-            fi
-            
-            # Diretório existe - verificar se está vazio OU tem ownership correto
-            # CORREÇÃO 08/01/2026: ls -A requer sudo para listar conteúdo de diretório 700
-            if [ -z "$(sudo ls -A "$POSTGRES_DIR")" ]; then
-              echo "✅ Diretório vazio (primeiro deploy limpo)"
-              
-              # Garantir ownership correto mesmo vazio
-              # CORREÇÃO 08/01/2026: stat requer sudo para ler metadata de diretório 700
-              ACTUAL_OWNER=$(sudo stat -c '%u:%g' "$POSTGRES_DIR")
-              if [ "$ACTUAL_OWNER" != "999:999" ]; then
-                echo "🔧 Corrigindo ownership de diretório vazio: $ACTUAL_OWNER → 999:999"
-                sudo chown 999:999 "$POSTGRES_DIR"
-              fi
-              
-              exit 0
-            fi
-            
-            # Diretório NÃO está vazio - validar ownership RECURSIVO
-            echo "⚠️  Diretório contém arquivos de deploy anterior"
-            echo "🔍 Validando ownership recursivo..."
-            
-            # Verificar se HÁ ALGUM arquivo com ownership errado
-            WRONG_FILES=$(sudo find "$POSTGRES_DIR" \( ! -user 999 -o ! -group 999 \) -print -quit 2>/dev/null)
-            
-            if [ -n "$WRONG_FILES" ]; then
-              echo "❌ ERRO CRÍTICO: Arquivos com ownership incorreto detectados!"
-              echo "   Primeiro arquivo incorreto: $WRONG_FILES"
-              echo ""
-              echo "   Listando primeiros 5 arquivos incorretos:"
-              sudo find "$POSTGRES_DIR" \( ! -user 999 -o ! -group 999 \) -ls 2>/dev/null | head -n 5
-              echo ""
-              echo "🔧 CORREÇÃO: Aplicando chown -R 999:999 recursivamente..."
-              
-              # Corrigir ownership recursivamente (pode demorar em volumes grandes)
-              if ! sudo chown -R 999:999 "$POSTGRES_DIR"; then
-                echo "❌ Falha ao corrigir ownership!"
-                exit 1
-              fi
-              
-              echo "✅ Ownership corrigido recursivamente"
-            else
-              echo "✅ Todos os arquivos têm ownership correto (999:999)"
-            fi
-            
-            # Validar permissions do diretório pai
-            # CORREÇÃO 08/01/2026: stat requer sudo para ler metadata de diretório 700
-            ACTUAL_PERMS=$(sudo stat -c '%a' "$POSTGRES_DIR")
-            if [ "$ACTUAL_PERMS" != "700" ]; then
-              echo "🔧 Corrigindo permissions: $ACTUAL_PERMS → 700"
-              sudo chmod 700 "$POSTGRES_DIR"
-            fi
-            
-            echo ""
-            echo "✅ Volume PostgreSQL validado e pronto para uso"
+      # =================================================================
+      # NOTA PR#87 (09/01/2026): Step "Validar estado do volume PostgreSQL" REMOVIDO
+      # =================================================================
+      # PROBLEMA: Race condition entre SSH actions separados
+      #   - Step de validação rodava em SSH action separado
+      #   - Entre validação e deploy, diretório podia ser recriado com root:root
+      #   - Teste via stat() não garantia escrita real pelo UID 999
+      #
+      # SOLUÇÃO: Validação movida para DENTRO do script de deploy (step abaixo)
+      #   - Executa no MESMO SSH action que docker compose up
+      #   - Inclui teste de escrita REAL via Docker com UID 999
+      #   - Elimina race condition completamente
+      #
+      # REF: Relatório Enterprise de Análise de Falha (09/01/2026)
+      # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Mudanças cirúrgicas)
+      # =================================================================
 
       - name: Deploy stack infra via SSH
         id: deploy
@@ -1542,6 +1887,85 @@ jobs:
             
             # Instalar trap (executa cleanup_on_failure se script falhar)
             trap cleanup_on_failure EXIT
+            
+            # =================================================================
+            # CORREÇÃO PR#87 (09/01/2026): Preparação PostgreSQL INLINE (sem race condition)
+            # =================================================================
+            # PROBLEMA IDENTIFICADO NO RELATÓRIO ENTERPRISE:
+            #   - Step anterior de validação de volume roda via SSH action SEPARADO
+            #   - Race condition: entre o step de validação e docker compose up,
+            #     o Docker pode recriar o diretório com root:root
+            #   - Teste via stat() não garante que UID 999 REALMENTE consegue escrever
+            #
+            # SOLUÇÃO ENTERPRISE (FASE 1 do relatório):
+            #   - Mover preparação para DENTRO do script de deploy (mesmo SSH action)
+            #   - Executar IMEDIATAMENTE antes do docker compose up
+            #   - Adicionar TESTE DE ESCRITA REAL via Docker (não apenas stat)
+            #   - Elimina race condition completamente
+            #
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Mudanças cirúrgicas)
+            # REF: Relatório Enterprise de Análise de Falha de Deploy (09/01/2026)
+            # =================================================================
+            echo ""
+            echo "🐘 PREPARANDO DIRETÓRIO POSTGRESQL (CRÍTICO - PRÉ-DEPLOY)"
+            echo "============================================="
+            
+            POSTGRES_DIR="/opt/alice/data/postgres"
+            
+            # Criar diretório se não existir
+            if [ ! -d "$POSTGRES_DIR" ]; then
+              echo "   📝 Criando $POSTGRES_DIR..."
+              sudo mkdir -p "$POSTGRES_DIR"
+            fi
+            
+            # Configurar ownership 999:999 SEMPRE (idempotente)
+            echo "   🔧 Configurando ownership 999:999 e permissions 700..."
+            sudo chown -R 999:999 "$POSTGRES_DIR"
+            sudo chmod 700 "$POSTGRES_DIR"
+            
+            # Validação via stat (verificação rápida)
+            ACTUAL_OWNER=$(sudo stat -c '%u:%g' "$POSTGRES_DIR")
+            ACTUAL_PERMS=$(sudo stat -c '%a' "$POSTGRES_DIR")
+            
+            if [ "$ACTUAL_OWNER" != "999:999" ] || [ "$ACTUAL_PERMS" != "700" ]; then
+              echo "❌ ERRO CRÍTICO: Ownership/permissions incorretos após chown/chmod"
+              echo "   Esperado: 999:999, 700"
+              echo "   Atual: $ACTUAL_OWNER, $ACTUAL_PERMS"
+              exit 1
+            fi
+            echo "   ✅ Ownership: 999:999, Permissions: 700"
+            
+            # =================================================================
+            # TESTE DE ESCRITA REAL VIA DOCKER (CRÍTICO)
+            # =================================================================
+            # PROBLEMA: stat() apenas verifica ownership, não garante que UID 999
+            #           REALMENTE consegue escrever (pode haver ACLs, SELinux, etc.)
+            # SOLUÇÃO: Executar teste de escrita real via container Docker com UID 999
+            # =================================================================
+            echo "   🧪 Testando escrita REAL com UID 999 via Docker..."
+            
+            if ! docker run --rm --user 999:999 -v "$POSTGRES_DIR:/test:rw" alpine:3.19 touch /test/.write-test 2>/dev/null; then
+              echo "❌ ERRO CRÍTICO: UID 999 NÃO consegue escrever no volume!"
+              echo ""
+              echo "   DIAGNÓSTICO:"
+              echo "   Ownership: $ACTUAL_OWNER"
+              echo "   Permissions: $ACTUAL_PERMS"
+              sudo ls -la "$POSTGRES_DIR" 2>&1 | head -10 || true
+              echo ""
+              echo "   POSSÍVEIS CAUSAS:"
+              echo "   - SELinux/AppArmor bloqueando acesso"
+              echo "   - Filesystem montado como read-only"
+              echo "   - Problemas de quota de disco"
+              exit 1
+            fi
+            
+            # Limpar arquivo de teste
+            docker run --rm --user 999:999 -v "$POSTGRES_DIR:/test:rw" alpine:3.19 rm -f /test/.write-test 2>/dev/null || true
+            
+            echo "   ✅ Teste de escrita OK - UID 999 pode escrever no volume"
+            echo ""
+            echo "✅ Diretório PostgreSQL pronto para deploy"
+            echo ""
             
             cd /opt/alice/app/infra/docker/stacks
             

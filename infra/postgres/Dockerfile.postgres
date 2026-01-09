@@ -194,8 +194,32 @@ EOSCRIPT
 RUN chmod +x /docker-entrypoint-initdb.d/00-create-pgvector.sh && \
     chown postgres:postgres /docker-entrypoint-initdb.d/00-create-pgvector.sh
 
+# =============================================================================
+# FASE 2: Entrypoint Wrapper com Validação de Permissões (09/01/2026)
+# =============================================================================
+# PROPÓSITO: Fail-fast se diretório PGDATA não tem permissões corretas
+# BENEFÍCIO: Erro claro e acionável ao invés de "Permission denied" genérico
+#
+# REFERÊNCIAS:
+#   - CLAUDE.md Regra 6 (Enterprise-grade, sem workarounds)
+#   - CLAUDE.md Regra 9 (Validação contínua)
+#   - CLAUDE.md Regra 16 (Fail-fast)
+#
+# Author: Fillipe Guerra
+# Data: 09 de Janeiro de 2026
+# =============================================================================
+
+# Copiar entrypoint wrapper com validação de permissões
+COPY entrypoint-wrapper.sh /usr/local/bin/entrypoint-wrapper.sh
+RUN chmod +x /usr/local/bin/entrypoint-wrapper.sh
+
 # Voltar ao usuário postgres (padrão da imagem base)
 USER postgres
+
+# Substituir entrypoint padrão pelo wrapper com validação
+# O wrapper executa validações e depois chama docker-entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/entrypoint-wrapper.sh"]
+CMD ["postgres"]
 
 # Healthcheck herdado da imagem base (pg_isready)
 # O docker-compose.prod.yml sobrescreve com healthcheck mais avançado

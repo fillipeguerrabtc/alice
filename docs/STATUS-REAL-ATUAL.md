@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 06 de Janeiro de 2026  
+> **Data:** 09 de Janeiro de 2026  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 6.0 - Pipeline Enterprise Modular v3.0.0
+> **Versão:** 6.1 - Enterprise PostgreSQL Permissions + Resilient Architecture
 
 > **🚀 ATUALIZAÇÃO v3.0.0 (06/01/2026) - Pipeline Enterprise:**  
 > Pipeline CI/CD enterprise completo com deploy modular em 5 stacks independentes.
@@ -78,6 +78,8 @@
 > **Bug Fix Init Container Wait Loop Race Condition 04/01/2026 (v4.72):** CORREÇÃO CRÍTICA no loop de espera de init containers no deploy-production.yml. O loop só verificava estados "running" e "exited", ignorando "created", "dead", "restarting", "paused" e "unknown". Se um container estivesse em "created" (ainda não iniciou), a variável ALL_INIT_COMPLETED permanecia em 1 e o loop terminava prematuramente, causando a mesma race condition que o código pretendia corrigir. **SOLUÇÃO:** Tratamento completo de TODOS os estados Docker com ações específicas para cada um. Documentação DEPLOYMENT.md atualizada com tabela de estados. Ref: CLAUDE.md v4.72, Regra 6 (Zero workarounds), Regra 16 (Healthchecks robustos).
 
 > **Deploy Enterprise Hardening Completo 04/01/2026 (v4.61):** Implementadas TODAS as 18 correções (4 anteriores + 14 novas) para hardening enterprise completo. **CORREÇÃO 5 (Validação PRÉ-DEPLOY):** Validação de 12 secrets críticas ANTES do docker compose up - fail-fast imediato economiza 5-10min por deploy falhado. **CORREÇÃO 6 (Inodes):** Validação de inodes disponíveis (mín 10000) - previne "No space left on device" mesmo com GB livres. **CORREÇÃO 7-8 (Logs Proativos):** Captura automática de logs em /tmp/init_logs_*.txt IMEDIATAMENTE após docker compose up, ANTES de containers serem removidos. **CORREÇÃO 9-10 (WHY Unhealthy):** Mensagens mostram última linha do healthcheck + emoji por tipo (📦 init, 🐳 normal). **CORREÇÃO 11-12 (Causa Raiz):** Análise automática de dependências, variáveis críticas e exit codes (1/2/126/127/137/143). **CORREÇÃO 13-15 (Timeouts Configuráveis):** MONITOR_INTERVAL (5s), MAX_WAIT_TIME (600s), HEALTHCHECK_RETRIES (30) via env vars. **CORREÇÃO 16-18 (Progress Tracking):** Barra visual com percentual, tempo decorrido, métricas periódicas (docker stats a cada 3 tentativas). 13 fases rastreadas com timestamps relativos. **BENEFÍCIOS:** Fail-fast em secrets (-5-10min), logs preservados (elimina "logs vazios"), análise automática (-50% MTTR), timeouts ajustáveis, progress tracking completo. Ref: CLAUDE.md v4.61, DEPLOYMENT.md troubleshooting completo.
+
+> **🛡️ CORREÇÃO CRÍTICA PostgreSQL Permissions 09/01/2026 (v6.1):** Implementada correção completa de 3 FASES para resolver "container alice-postgres is unhealthy" em servidor limpo. **FASE 1 (Bloqueador):** Preparação inline do diretório PostgreSQL ANTES do `docker compose up` no job `deploy-infra`, com teste de escrita REAL via Docker (`docker run --user 999:999 -v ... touch`). Elimina race condition entre `prepare` e `deploy-infra`. **FASE 2 (Defesa em Profundidade):** `entrypoint-wrapper.sh` no container PostgreSQL (`infra/postgres/entrypoint-wrapper.sh`) para fail-fast com validação de PGDATA, existência de diretório, gravabilidade e teste de escrita real. Mensagens de erro claras com diagnóstico automático e comandos de correção. Integrado via `Dockerfile.postgres`. **FASE 3 (Arquitetura Resiliente):** Job `prepare-infrastructure` dedicado no workflow `deploy-stack-modular.yml` que executa ANTES de `deploy-infra`, com validação completa do servidor (IP correto, GPU disponível, Docker/NVIDIA funcionando, disco mínimo 20GB), criação atômica de diretórios via `fix-production-permissions.sh`, e validação final fail-fast. **HEALTHCHECK MELHORADO:** Estágio 0 adicionado ao healthcheck PostgreSQL em `docker-compose.infra.yml` que verifica se processo `postgres` está rodando (`pgrep -x postgres`) ANTES de tentar `pg_isready` - detecta crash imediato por Permission denied. Ref: CLAUDE.md Regras 6 (Enterprise-grade), 9 (Validação contínua), 16 (Fail-fast).
 
 > **Healthchecks 100% Saúde REAL 02/01/2026:** TODOS os 46 healthchecks corrigidos para verificar saúde REAL (não apenas portas abertas). REMOVIDO /proc/net/tcp de Tor e Qdrant. Metodologia: Node.js services usam `node -e "require('http').get(...)"`; Python services usam `python3 -c "urllib.request.urlopen(...)"`; ERPNext workers usam `python3 -c "redis.ping()"`; Databases usam CLIs nativos (pg_isready, mysqladmin, redis-cli); Alpine images usam wget/curl. pgBackRest entrypoint.sh implementa FAIL-FAST obrigatório (Regra 6 CLAUDE.md).
 
@@ -1465,17 +1467,38 @@ body = {
 - **Bonus:** Recria diretórios com permissões corretas após limpeza
 
 ### Permissões Enterprise por Serviço
-| Serviço | UID | Permissão |
-|---------|-----|-----------|
-| Grafana | 472 | 755 |
-| Prometheus | 65534 | 755 |
-| Loki | 10001 | 755 |
-| PostgreSQL | 999 | 700 |
-| Langfuse DB | 70 | 755 |
-| Redis | 999 | 755 |
-| Caddy Data | 1000 | 700 |
-| SearXNG | 977 | 755 |
-| ERPNext | 999/1000 | 755 |
+| Serviço | UID | Permissão | Notas |
+|---------|-----|-----------|-------|
+| Grafana | 472 | 755 | - |
+| Prometheus | 65534 | 755 | - |
+| Loki | 10001 | 755 | - |
+| PostgreSQL | 999 | 700 | **FASE 2:** entrypoint-wrapper.sh valida permissões |
+| Langfuse DB | 70 | 755 | - |
+| Redis | 999 | 755 | - |
+| Caddy Data | 1000 | 700 | - |
+| SearXNG | 977 | 755 | - |
+| ERPNext | 999/1000 | 755 | - |
+
+### Validação de Permissões PostgreSQL Enterprise (09/01/2026)
+
+O container PostgreSQL agora inclui validação de permissões em múltiplas camadas:
+
+**FASE 1: Preparação Inline no Workflow**
+- Diretório criado ANTES do `docker compose up`
+- Teste de escrita REAL via Docker (`docker run --user 999:999 -v ... touch`)
+- Validação de ownership (999:999) e mode (700)
+
+**FASE 2: Entrypoint Wrapper (`infra/postgres/entrypoint-wrapper.sh`)**
+- Valida PGDATA configurado
+- Valida diretório existe
+- Valida diretório é gravável
+- Executa teste de escrita real
+- Fornece diagnóstico automático e comandos de correção
+
+**FASE 3: Healthcheck com Estágio 0 (`pgrep -x postgres`)**
+- Detecta crash imediato por Permission denied
+- Executa ANTES de pg_isready
+- Fail-fast para debugging mais rápido
 
 ### Primeiro Deploy Hetzner Preparado
 - Servidor 100% configurado com todas dependências
@@ -1487,4 +1510,5 @@ body = {
 
 *Documento gerado automaticamente pela auditoria completa da plataforma*  
 *Autor: Fillipe Guerra*  
-*Data: 21 de Dezembro de 2025*
+*Data: 09 de Janeiro de 2026*  
+*Versão: 6.1 - Enterprise PostgreSQL Permissions + Resilient Architecture*

@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 06 de Janeiro de 2026  
-**Versão:** 9.0 - Pipeline Enterprise Modular v3.0.0
+**Data:** 09 de Janeiro de 2026  
+**Versão:** 9.1 - Enterprise PostgreSQL Permissions + Resilient Architecture
 
 > **🚀 ATUALIZAÇÃO ENTERPRISE v3.0.0 (06/01/2026) - Pipeline CI/CD:**  
 > Pipeline CI/CD enterprise completo com deploy modular em 5 stacks independentes.
@@ -35,6 +35,31 @@
 > **Documentação Completa:** Ver `CLAUDE.md` seção "Release Enterprise Consolidado"
 
 > **ATUALIZAÇÃO MAJOR 05/01/2026:** Arquitetura refatorada para **5 stacks independentes** com deploy/rollback modular. Cada stack pode ser deployado, rolledback e monitorado separadamente. ERPNext pode falhar sem afetar Alice. Produção parcial agora é possível.
+
+> **🛡️ CORREÇÃO CRÍTICA 09/01/2026 - PostgreSQL Permissions Enterprise:**  
+> Implementada correção completa de **3 FASES** para resolver "container alice-postgres is unhealthy" em servidor limpo:
+> 
+> **FASE 1: Preparação Inline (deploy-stack-modular.yml)**
+> - Diretório PostgreSQL criado ANTES do `docker compose up`
+> - Teste de escrita REAL via Docker (`docker run --user 999:999 -v ... touch`)
+> - Validação de ownership (999:999) e mode (700)
+> - Elimina race condition entre jobs `prepare` e `deploy-infra`
+> 
+> **FASE 2: Entrypoint Wrapper (infra/postgres/entrypoint-wrapper.sh)**
+> - Script fail-fast no container PostgreSQL
+> - Valida PGDATA configurado, existência e gravabilidade do diretório
+> - Executa teste de escrita real antes do startup
+> - Mensagens de erro claras com diagnóstico automático e comandos de correção
+> 
+> **FASE 3: Arquitetura Resiliente (job prepare-infrastructure)**
+> - Job dedicado que executa ANTES de `deploy-infra`
+> - Validação completa do servidor (IP, GPU, Docker, disco mínimo 20GB)
+> - Criação atômica de diretórios via `fix-production-permissions.sh`
+> 
+> **Healthcheck Melhorado (docker-compose.infra.yml)**
+> - Estágio 0: `pgrep -x postgres` detecta crash imediato por Permission denied
+> - Executa ANTES de pg_isready para fail-fast mais rápido
+> - start_period aumentado para 300s, retries para 30
 
 > **Migração 100% Self-Hosted (27/12/2025):** Pipeline completo migrado para runner próprio (Hetzner CPX32 - 4 vCPU, 8GB RAM) seguindo melhores práticas enterprise 2025. Todos os workflows (CI, Release, Deploy) executam no self-hosted runner para controle total, custos previsíveis e compliance.
 
@@ -2078,6 +2103,8 @@ Os init containers executam em ordem de dependência:
    - **Dependência:** PostgreSQL deve estar healthy
    - **Logs:** `/tmp/init_logs_alice-pgbackrest-init.txt`
 
+> **NOTA PostgreSQL (09/01/2026):** O container PostgreSQL agora inclui `entrypoint-wrapper.sh` (FASE 2) que valida permissões do diretório PGDATA antes de iniciar o daemon. Se permissões estiverem incorretas, o container falha com mensagens de diagnóstico claras e comandos de correção. Ver `infra/postgres/entrypoint-wrapper.sh`.
+
 #### 2. **alice-minio-init** (10s-30s)
    - **Função:** Cria buckets MinIO para Langfuse v3 object storage
    - **Exit 0 significa:** Langfuse pode armazenar traces/eventos
@@ -2733,10 +2760,30 @@ Log (Jaeger): Error Creating Dir: "/badger/key" err: mkdir /badger/key: permissi
 - Jaeger requer UID 10001:10001 com permissões 755
 - Outros serviços têm UIDs específicos (ver tabela de permissões acima)
 
-**Solução Automática (Implementada em v5.0 - 07/01/2026):**
+**Solução Automática (Implementada em v5.0 - 07/01/2026, Atualizada v9.1 - 09/01/2026):**
+
+1. **FASE 1 - Preparação Inline (deploy-stack-modular.yml):**
+```bash
+# Preparação do diretório PostgreSQL ANTES do docker compose up
+mkdir -p /opt/alice/data/postgres
+chown -R 999:999 /opt/alice/data/postgres
+chmod 700 /opt/alice/data/postgres
+
+# Teste de escrita REAL via Docker (como UID 999)
+docker run --rm --user 999:999 -v /opt/alice/data/postgres:/test alpine:3.21 touch /test/.write-test
+```
+
+2. **FASE 2 - Entrypoint Wrapper (infra/postgres/entrypoint-wrapper.sh):**
+```bash
+# O container PostgreSQL agora inclui validação de permissões NO STARTUP
+# Se falhar, mostra diagnóstico claro com comandos de correção
+# Ver arquivo: infra/postgres/entrypoint-wrapper.sh
+```
+
+3. **FASE 3 - Job prepare-infrastructure (deploy-stack-modular.yml):**
 ```bash
 # Script enterprise gerencia TODOS os 22 diretórios automaticamente
-# Executado pelo workflow deploy-stack-modular.yml no job 'prepare'
+# Executado pelo workflow deploy-stack-modular.yml no job 'prepare-infrastructure'
 sudo /opt/alice/app/infra/scripts/fix-production-permissions.sh --create
 
 # Validação fail-fast (CI/CD)
@@ -2971,4 +3018,6 @@ docker network inspect alice-network
 ---
 
 *Seção de Troubleshooting 5 Failure Modes adicionada em: 07 de Janeiro de 2026*
+*Correção Enterprise PostgreSQL Permissions (3 Fases) adicionada em: 09 de Janeiro de 2026*
 *Autor: Fillipe Guerra*
+*Versão: 9.1 - Enterprise PostgreSQL Permissions + Resilient Architecture*
