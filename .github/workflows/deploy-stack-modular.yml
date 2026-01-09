@@ -1404,74 +1404,164 @@ jobs:
             echo ""
             
             POSTGRES_DIR="/opt/alice/data/postgres"
+            POSTGRES_VOLUME="alice-postgres-data"
+            
+            # =================================================================
+            # ESTÁGIO 0: REMOVER VOLUME NOMEADO EXISTENTE (CAUSA RAIZ!)
+            # =================================================================
+            # PROBLEMA IDENTIFICADO (09/01/2026):
+            #   - Teste de escrita usa bind mount DIRETO (-v $DIR:/test:rw) → FUNCIONA
+            #   - Docker Compose usa VOLUME NOMEADO (postgres_data) → FALHA
+            #   - Volume nomeado pode ter metadados CACHEADOS de deploy anterior
+            #   - Docker REUTILIZA volume existente mesmo que diretório host esteja OK
+            #
+            # SOLUÇÃO: Remover volume ANTES de configurar permissões
+            #   - Força Docker a recriar volume limpo no próximo deploy
+            #   - Volume será criado a partir do diretório com permissões corretas
+            #
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Mudanças cirúrgicas)
+            # =================================================================
+            echo "🗑️  ESTÁGIO 0: Verificando volume nomeado existente..."
+            
+            if docker volume inspect "$POSTGRES_VOLUME" >/dev/null 2>&1; then
+              echo "   ⚠️  Volume $POSTGRES_VOLUME existe (pode ter estado inconsistente)"
+              
+              # Verificar se há container usando o volume
+              USING_CONTAINERS=$(docker ps -a --filter "volume=$POSTGRES_VOLUME" --format '{{.Names}}' 2>/dev/null || true)
+              
+              if [ -n "$USING_CONTAINERS" ]; then
+                echo "   🛑 Removendo containers que usam o volume..."
+                for container in $USING_CONTAINERS; do
+                  echo "      Removendo: $container"
+                  docker rm -f "$container" 2>/dev/null || true
+                done
+              fi
+              
+              echo "   🗑️  Removendo volume $POSTGRES_VOLUME..."
+              docker volume rm "$POSTGRES_VOLUME" 2>/dev/null || true
+              echo "   ✅ Volume removido (será recriado limpo no deploy)"
+            else
+              echo "   ✅ Volume não existe (será criado limpo no deploy)"
+            fi
+            echo ""
             
             # =================================================================
             # ESTÁGIO 1: Criar diretório se não existir
             # =================================================================
+            echo "📁 ESTÁGIO 1: Verificando diretório..."
             if [ ! -d "$POSTGRES_DIR" ]; then
-              echo "📝 Criando $POSTGRES_DIR..."
+              echo "   📝 Criando $POSTGRES_DIR..."
               sudo mkdir -p "$POSTGRES_DIR"
             fi
-            echo "✅ Diretório existe: $POSTGRES_DIR"
+            echo "   ✅ Diretório existe: $POSTGRES_DIR"
             
             # =================================================================
             # ESTÁGIO 2: Configurar ownership 999:999 (PostgreSQL UID)
             # =================================================================
             echo ""
-            echo "🔧 Configurando ownership 999:999..."
+            echo "🔧 ESTÁGIO 2: Configurando ownership 999:999..."
             sudo chown -R 999:999 "$POSTGRES_DIR"
             sudo chmod 700 "$POSTGRES_DIR"
+            echo "   ✅ Ownership e permissões configurados"
             
             # =================================================================
             # ESTÁGIO 3: Validar ownership
             # =================================================================
+            echo ""
+            echo "🔍 ESTÁGIO 3: Validando ownership..."
             ACTUAL_OWNER=$(sudo stat -c '%u:%g' "$POSTGRES_DIR")
             ACTUAL_PERMS=$(sudo stat -c '%a' "$POSTGRES_DIR")
             
             if [ "$ACTUAL_OWNER" != "999:999" ]; then
-              echo "❌ ERRO: Ownership incorreto!"
-              echo "   Esperado: 999:999"
-              echo "   Atual: $ACTUAL_OWNER"
+              echo "   ❌ ERRO: Ownership incorreto!"
+              echo "      Esperado: 999:999"
+              echo "      Atual: $ACTUAL_OWNER"
               exit 1
             fi
-            echo "✅ Ownership: 999:999"
+            echo "   ✅ Ownership: 999:999"
             
             if [ "$ACTUAL_PERMS" != "700" ]; then
-              echo "❌ ERRO: Permissões incorretas!"
-              echo "   Esperado: 700"
-              echo "   Atual: $ACTUAL_PERMS"
+              echo "   ❌ ERRO: Permissões incorretas!"
+              echo "      Esperado: 700"
+              echo "      Atual: $ACTUAL_PERMS"
               exit 1
             fi
-            echo "✅ Permissões: 700"
+            echo "   ✅ Permissões: 700"
             
             # =================================================================
-            # ESTÁGIO 4: Teste de escrita REAL via Docker (CRÍTICO)
+            # ESTÁGIO 4: Teste de escrita via bind mount DIRETO
             # =================================================================
             echo ""
-            echo "🧪 Testando escrita REAL com UID 999 via Docker..."
+            echo "🧪 ESTÁGIO 4: Testando escrita via bind mount direto..."
             
-            if ! docker run --rm --user 999:999 -v "$POSTGRES_DIR:/test:rw" alpine:3.21 touch /test/.write-test 2>/dev/null; then
-              echo "❌ ERRO CRÍTICO: UID 999 NÃO consegue escrever no volume!"
+            if ! docker run --rm --user 999:999 -v "$POSTGRES_DIR:/test:rw" alpine:3.21 touch /test/.write-test-direct 2>/dev/null; then
+              echo "   ❌ ERRO CRÍTICO: UID 999 NÃO consegue escrever (bind direto)!"
               echo ""
-              echo "📊 DIAGNÓSTICO:"
-              echo "   Ownership: $ACTUAL_OWNER"
-              echo "   Permissões: $ACTUAL_PERMS"
+              echo "   📊 DIAGNÓSTICO:"
+              echo "      Ownership: $ACTUAL_OWNER"
+              echo "      Permissões: $ACTUAL_PERMS"
               sudo ls -la "$POSTGRES_DIR" | head -10 || true
-              echo ""
-              echo "💡 POSSÍVEIS CAUSAS:"
-              echo "   - SELinux/AppArmor bloqueando acesso"
-              echo "   - Filesystem montado como read-only"
-              echo "   - Problemas de quota de disco"
               exit 1
             fi
             
             # Limpar arquivo de teste
-            docker run --rm --user 999:999 -v "$POSTGRES_DIR:/test:rw" alpine:3.21 rm -f /test/.write-test 2>/dev/null || true
+            docker run --rm --user 999:999 -v "$POSTGRES_DIR:/test:rw" alpine:3.21 rm -f /test/.write-test-direct 2>/dev/null || true
+            echo "   ✅ Bind mount direto OK"
             
-            echo "✅ Teste de escrita OK - UID 999 pode escrever no volume"
+            # =================================================================
+            # ESTÁGIO 5: CRIAR E TESTAR via VOLUME NOMEADO (EXATAMENTE como PostgreSQL)
+            # =================================================================
+            # CRÍTICO: Este é o teste que REALMENTE importa!
+            # O PostgreSQL usa volume nomeado, não bind mount direto.
+            # Precisamos testar EXATAMENTE como Docker Compose vai usar.
+            # =================================================================
+            echo ""
+            echo "🧪 ESTÁGIO 5: Testando escrita via VOLUME NOMEADO (como PostgreSQL)..."
+            
+            # Criar volume nomeado com as mesmas configurações do docker-compose.base.yml
+            echo "   📝 Criando volume $POSTGRES_VOLUME com bind para $POSTGRES_DIR..."
+            docker volume create \
+              --driver local \
+              --opt type=none \
+              --opt o=bind \
+              --opt device="$POSTGRES_DIR" \
+              "$POSTGRES_VOLUME" 2>/dev/null || true
+            
+            # Testar escrita usando o volume nomeado (EXATAMENTE como PostgreSQL fará)
+            echo "   🧪 Testando escrita no volume nomeado..."
+            if ! docker run --rm --user 999:999 -v "$POSTGRES_VOLUME:/var/lib/postgresql/data:rw" alpine:3.21 sh -c "touch /var/lib/postgresql/data/.write-test-volume && ls -la /var/lib/postgresql/data/.write-test-volume" 2>&1; then
+              echo ""
+              echo "   ❌ ERRO CRÍTICO: UID 999 NÃO consegue escrever via VOLUME NOMEADO!"
+              echo ""
+              echo "   📊 DIAGNÓSTICO DO VOLUME:"
+              docker volume inspect "$POSTGRES_VOLUME" 2>&1 || true
+              echo ""
+              echo "   📊 DIAGNÓSTICO DO DIRETÓRIO:"
+              sudo ls -la "$POSTGRES_DIR" | head -10 || true
+              echo ""
+              echo "   💡 POSSÍVEIS CAUSAS:"
+              echo "      - Volume criado com opções incorretas"
+              echo "      - SELinux/AppArmor bloqueando acesso"
+              echo "      - Problema no driver de volume Docker"
+              exit 1
+            fi
+            
+            # Limpar arquivo de teste
+            docker run --rm --user 999:999 -v "$POSTGRES_VOLUME:/var/lib/postgresql/data:rw" alpine:3.21 rm -f /var/lib/postgresql/data/.write-test-volume 2>/dev/null || true
+            echo "   ✅ Volume nomeado OK - UID 999 pode escrever!"
             
             echo ""
-            echo "✅ Permissões PostgreSQL configuradas corretamente"
+            echo "============================================="
+            echo "✅ PERMISSÕES POSTGRESQL CONFIGURADAS CORRETAMENTE"
+            echo "============================================="
+            echo ""
+            echo "   ✅ Volume antigo removido (estado limpo)"
+            echo "   ✅ Diretório: $POSTGRES_DIR"
+            echo "   ✅ Ownership: 999:999"
+            echo "   ✅ Permissões: 700"
+            echo "   ✅ Bind mount direto: OK"
+            echo "   ✅ Volume nomeado: OK"
+            echo ""
 
       - name: Criar networks Docker
         uses: appleboy/ssh-action@v1.2.2
@@ -1669,14 +1759,27 @@ jobs:
             set -euo pipefail
             # =================================================================
             # CORREÇÃO 08/01/2026: Limpar containers parciais antes do deploy
+            # CORREÇÃO 09/01/2026: Também remover volumes se container postgres falhou
             # =================================================================
             # PROBLEMA: Containers parciais de deploy anterior podem causar conflitos
-            # SOLUÇÃO: Parar e remover containers do stack INFRA antes de novo deploy
+            #           e volumes podem ficar em estado inconsistente
+            # SOLUÇÃO: Parar e remover containers do stack INFRA + remover volume
+            #          postgres se container estava com problema
             # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 16 (Idempotência)
             # =================================================================
             echo "🧹 Limpando containers parciais do stack INFRA (se existirem)..."
             
             cd /opt/alice/app/infra/docker/stacks
+            
+            # Verificar se postgres estava unhealthy antes de parar
+            POSTGRES_WAS_UNHEALTHY=false
+            if docker ps -a --format '{{.Names}}' | grep -q "^alice-postgres$"; then
+              POSTGRES_STATUS=$(docker inspect --format='{{.State.Health.Status}}' alice-postgres 2>/dev/null || echo "unknown")
+              if [ "$POSTGRES_STATUS" = "unhealthy" ] || [ "$POSTGRES_STATUS" = "unknown" ]; then
+                echo "   ⚠️  PostgreSQL estava unhealthy/unknown - volume será recriado"
+                POSTGRES_WAS_UNHEALTHY=true
+              fi
+            fi
             
             # Parar containers do stack INFRA (se existirem)
             if docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.infra.yml ps -q 2>/dev/null | grep -q .; then
@@ -1711,6 +1814,19 @@ jobs:
               echo "✅ Removidos $REMOVED_COUNT container(s) órfão(s)"
             else
               echo "✅ Nenhum container órfão encontrado (servidor limpo)"
+            fi
+            
+            # =================================================================
+            # CORREÇÃO 09/01/2026: Remover volume PostgreSQL se estava com problema
+            # =================================================================
+            # Se PostgreSQL estava unhealthy, o volume pode estar em estado
+            # inconsistente. Remover para forçar recriação limpa.
+            # =================================================================
+            if [ "$POSTGRES_WAS_UNHEALTHY" = true ]; then
+              echo ""
+              echo "🗑️  Removendo volume PostgreSQL (estava inconsistente)..."
+              docker volume rm alice-postgres-data 2>/dev/null || true
+              echo "   ✅ Volume removido (será recriado pelo prepare-infrastructure)"
             fi
 
       - name: Limpar lock files e sockets do PostgreSQL (redundant safety check)
@@ -1889,82 +2005,60 @@ jobs:
             trap cleanup_on_failure EXIT
             
             # =================================================================
-            # CORREÇÃO PR#87 (09/01/2026): Preparação PostgreSQL INLINE (sem race condition)
+            # VERIFICAÇÃO PRÉ-DEPLOY: Volume PostgreSQL (preparado pelo prepare-infrastructure)
             # =================================================================
-            # PROBLEMA IDENTIFICADO NO RELATÓRIO ENTERPRISE:
-            #   - Step anterior de validação de volume roda via SSH action SEPARADO
-            #   - Race condition: entre o step de validação e docker compose up,
-            #     o Docker pode recriar o diretório com root:root
-            #   - Teste via stat() não garante que UID 999 REALMENTE consegue escrever
+            # NOTA (09/01/2026): A preparação COMPLETA do PostgreSQL agora é feita no
+            # job prepare-infrastructure (ESTÁGIOS 0-5), que inclui:
+            #   - Remoção de volume nomeado existente (elimina estado inconsistente)
+            #   - Criação de diretório com ownership 999:999 e mode 700
+            #   - Criação de volume nomeado com bind para o diretório
+            #   - Teste de escrita via volume nomeado (EXATAMENTE como PostgreSQL fará)
             #
-            # SOLUÇÃO ENTERPRISE (FASE 1 do relatório):
-            #   - Mover preparação para DENTRO do script de deploy (mesmo SSH action)
-            #   - Executar IMEDIATAMENTE antes do docker compose up
-            #   - Adicionar TESTE DE ESCRITA REAL via Docker (não apenas stat)
-            #   - Elimina race condition completamente
+            # Este step é apenas uma VERIFICAÇÃO de segurança (belt and suspenders)
+            # para garantir que prepare-infrastructure foi executado corretamente.
             #
-            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Mudanças cirúrgicas)
-            # REF: Relatório Enterprise de Análise de Falha de Deploy (09/01/2026)
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 9 (Validação contínua)
             # =================================================================
             echo ""
-            echo "🐘 PREPARANDO DIRETÓRIO POSTGRESQL (CRÍTICO - PRÉ-DEPLOY)"
+            echo "🐘 VERIFICAÇÃO PRÉ-DEPLOY: PostgreSQL"
             echo "============================================="
             
             POSTGRES_DIR="/opt/alice/data/postgres"
+            POSTGRES_VOLUME="alice-postgres-data"
             
-            # Criar diretório se não existir
-            if [ ! -d "$POSTGRES_DIR" ]; then
-              echo "   📝 Criando $POSTGRES_DIR..."
-              sudo mkdir -p "$POSTGRES_DIR"
-            fi
-            
-            # Configurar ownership 999:999 SEMPRE (idempotente)
-            echo "   🔧 Configurando ownership 999:999 e permissions 700..."
-            sudo chown -R 999:999 "$POSTGRES_DIR"
-            sudo chmod 700 "$POSTGRES_DIR"
-            
-            # Validação via stat (verificação rápida)
-            ACTUAL_OWNER=$(sudo stat -c '%u:%g' "$POSTGRES_DIR")
-            ACTUAL_PERMS=$(sudo stat -c '%a' "$POSTGRES_DIR")
-            
-            if [ "$ACTUAL_OWNER" != "999:999" ] || [ "$ACTUAL_PERMS" != "700" ]; then
-              echo "❌ ERRO CRÍTICO: Ownership/permissions incorretos após chown/chmod"
-              echo "   Esperado: 999:999, 700"
-              echo "   Atual: $ACTUAL_OWNER, $ACTUAL_PERMS"
+            # Verificar que volume existe (criado pelo prepare-infrastructure)
+            if ! docker volume inspect "$POSTGRES_VOLUME" >/dev/null 2>&1; then
+              echo "❌ ERRO CRÍTICO: Volume $POSTGRES_VOLUME não existe!"
+              echo ""
+              echo "   Este volume deveria ter sido criado pelo job prepare-infrastructure."
+              echo "   Verifique se o job anterior foi executado corretamente."
               exit 1
             fi
-            echo "   ✅ Ownership: 999:999, Permissions: 700"
+            echo "   ✅ Volume $POSTGRES_VOLUME existe"
             
-            # =================================================================
-            # TESTE DE ESCRITA REAL VIA DOCKER (CRÍTICO)
-            # =================================================================
-            # PROBLEMA: stat() apenas verifica ownership, não garante que UID 999
-            #           REALMENTE consegue escrever (pode haver ACLs, SELinux, etc.)
-            # SOLUÇÃO: Executar teste de escrita real via container Docker com UID 999
-            # =================================================================
-            echo "   🧪 Testando escrita REAL com UID 999 via Docker..."
-            
-            if ! docker run --rm --user 999:999 -v "$POSTGRES_DIR:/test:rw" alpine:3.19 touch /test/.write-test 2>/dev/null; then
-              echo "❌ ERRO CRÍTICO: UID 999 NÃO consegue escrever no volume!"
-              echo ""
-              echo "   DIAGNÓSTICO:"
-              echo "   Ownership: $ACTUAL_OWNER"
-              echo "   Permissions: $ACTUAL_PERMS"
-              sudo ls -la "$POSTGRES_DIR" 2>&1 | head -10 || true
-              echo ""
-              echo "   POSSÍVEIS CAUSAS:"
-              echo "   - SELinux/AppArmor bloqueando acesso"
-              echo "   - Filesystem montado como read-only"
-              echo "   - Problemas de quota de disco"
+            # Verificar ownership do diretório
+            ACTUAL_OWNER=$(sudo stat -c '%u:%g' "$POSTGRES_DIR" 2>/dev/null || echo "N/A")
+            if [ "$ACTUAL_OWNER" != "999:999" ]; then
+              echo "❌ ERRO CRÍTICO: Ownership incorreto em $POSTGRES_DIR"
+              echo "   Esperado: 999:999"
+              echo "   Atual: $ACTUAL_OWNER"
               exit 1
             fi
+            echo "   ✅ Ownership: 999:999"
             
-            # Limpar arquivo de teste
-            docker run --rm --user 999:999 -v "$POSTGRES_DIR:/test:rw" alpine:3.19 rm -f /test/.write-test 2>/dev/null || true
+            # Teste rápido de escrita via volume nomeado
+            echo "   🧪 Teste rápido de escrita no volume..."
+            if ! docker run --rm --user 999:999 -v "$POSTGRES_VOLUME:/data:rw" alpine:3.21 touch /data/.pre-deploy-check 2>/dev/null; then
+              echo "❌ ERRO CRÍTICO: Falha no teste de escrita do volume!"
+              echo ""
+              docker volume inspect "$POSTGRES_VOLUME" 2>&1 || true
+              exit 1
+            fi
+            docker run --rm --user 999:999 -v "$POSTGRES_VOLUME:/data:rw" alpine:3.21 rm -f /data/.pre-deploy-check 2>/dev/null || true
+            echo "   ✅ Teste de escrita OK"
             
-            echo "   ✅ Teste de escrita OK - UID 999 pode escrever no volume"
             echo ""
-            echo "✅ Diretório PostgreSQL pronto para deploy"
+            echo "✅ PostgreSQL pronto para deploy"
             echo ""
             
             cd /opt/alice/app/infra/docker/stacks
