@@ -1273,10 +1273,20 @@ jobs:
             echo "📝 Executando prepare-production-server.sh..."
             echo ""
             
-            # Executar com sudo (script precisa de privilégios root)
+            # =================================================================
+            # CORREÇÃO (09/01/2026): Capturar exit code explicitamente
+            # =================================================================
+            # PROBLEMA: Com set -euo pipefail, se o comando falhar o script
+            #           sai imediatamente ANTES de EXIT_CODE=$? executar.
+            #           Isso tornava o bloco else código morto (unreachable).
+            # SOLUÇÃO: Desativar set -e temporariamente para capturar o exit
+            #          code e prover mensagens de log claras para diagnóstico.
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 9 (Validação)
+            # =================================================================
+            set +e  # Desativar exit on error temporariamente
             sudo bash prepare-production-server.sh
-            
             EXIT_CODE=$?
+            set -e  # Reativar exit on error
             
             if [[ $EXIT_CODE -eq 0 ]]; then
               echo ""
