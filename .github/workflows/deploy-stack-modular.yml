@@ -4732,7 +4732,8 @@ jobs:
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, deploy-backup]
     if: needs.deploy-backup.result == 'success'
-    timeout-minutes: 5
+    # CORREÇÃO PR#100: Alinhar com Docker healthcheck (start_period: 120s + 3 retries × 60s = 300s)
+    timeout-minutes: 7
     
     steps:
       - name: Check health with retry logic
@@ -4743,13 +4744,22 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          command_timeout: 5m
+          # CORREÇÃO PR#100: Alinhar command_timeout com MAX_RETRIES (350s + margem)
+          command_timeout: 7m
           script: |
             set -euo pipefail
             echo "🏥 Checking BACKUP stack health..."
             
             CONTAINER="alice-pgbackrest"
-            MAX_RETRIES=15
+            # =================================================================
+            # CORREÇÃO PR#100 (09/01/2026): Alinhar workflow timeout com Docker healthcheck
+            # =================================================================
+            # PROBLEMA: Docker healthcheck tem start_period: 120s + (3 retries × 60s) = 300s
+            #           Workflow tinha MAX_RETRIES=15 × 10s = 150s (muito curto!)
+            # SOLUÇÃO: MAX_RETRIES=35 × 10s = 350s (> 300s do Docker healthcheck)
+            # REF: CLAUDE.md Regra 11 (Melhores práticas 2025), Regra 16 (Healthchecks)
+            # =================================================================
+            MAX_RETRIES=35
             SLEEP_TIME=10
             
             echo ""
