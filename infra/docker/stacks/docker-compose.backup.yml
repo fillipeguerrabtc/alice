@@ -61,13 +61,24 @@ services:
     tmpfs:
       - /tmp:mode=1777,size=64M
     environment:
-      # Conexão TCP com PostgreSQL (OBRIGATÓRIO para containers separados)
-      # Ref: https://pgbackrest.org/configuration.html#section-stanza/option-pg-host
-      PGBACKREST_PG1_HOST: postgres
-      PGBACKREST_PG1_PORT: 5432
-      PGBACKREST_PG1_DATABASE: ${POSTGRES_DB:-alice_prod}
-      PGBACKREST_PG1_USER: ${POSTGRES_USER:-alice}
-      # Autenticação PostgreSQL via libpq (usado para verificar cluster)
+      # =======================================================================
+      # CORREÇÃO PR#96 (09/01/2026): REMOVIDO PGBACKREST_PG1_HOST
+      # =======================================================================
+      # PROBLEMA ANTERIOR: PGBACKREST_PG1_HOST=postgres forçava SSH
+      # Erro: "unable to execute 'ssh': [2] No such file or directory"
+      #
+      # SOLUÇÃO ENTERPRISE:
+      # 1. NÃO usar PG1_HOST (evita SSH)
+      # 2. Usar variáveis libpq (PGHOST, PGPORT, etc.) para conexão SQL
+      # 3. pg1-path no pgbackrest.conf aponta para volume montado
+      #
+      # Ref: https://pgbackrest.org/configuration.html
+      # =======================================================================
+      # Conexão SQL via libpq (pgBackRest usa para pg_start_backup/pg_stop_backup)
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: ${POSTGRES_DB:-alice_prod}
+      PGUSER: ${POSTGRES_USER:-alice}
       PGPASSWORD: ${POSTGRES_PASSWORD}
       # Configuração do stanza
       PGBACKREST_STANZA: alice_prod

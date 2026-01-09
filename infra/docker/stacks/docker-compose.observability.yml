@@ -304,10 +304,19 @@ services:
       loki:
         condition: service_started
     healthcheck:
-      # CORREÇÃO PR#95 (09/01/2026): timberio/vector Alpine NÃO tem wget/curl
-      # Usar /dev/tcp (disponível no bash) para verificar se API está escutando
+      # =======================================================================
+      # CORREÇÃO PR#96 (09/01/2026): timberio/vector Alpine NÃO tem bash NEM wget/curl
+      # =======================================================================
+      # PROBLEMA ANTERIOR: Healthcheck usava 'bash' mas Alpine só tem 'ash/sh'
+      # /dev/tcp é bash-only, não funciona em sh/ash
+      #
+      # SOLUÇÃO: Usar nc (netcat) que está disponível no Alpine via busybox
+      # Alternativa: timeout + /proc/net/tcp parsing (mais complexo)
+      #
       # REF: https://vector.dev/docs/reference/api/
-      test: ["CMD-SHELL", "timeout 5 bash -c 'echo > /dev/tcp/localhost/8686' 2>/dev/null || exit 1"]
+      # REF: https://www.busybox.net/downloads/BusyBox.html (nc incluído)
+      # =======================================================================
+      test: ["CMD-SHELL", "nc -z localhost 8686 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5

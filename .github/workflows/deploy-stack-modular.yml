@@ -139,11 +139,14 @@ jobs:
       deploy_erpnext: ${{ steps.stacks.outputs.deploy_erpnext }}
       deploy_backup: ${{ steps.stacks.outputs.deploy_backup }}
       # SMART DEPLOY: Status de cada stack no servidor (para logs/debugging)
-      infra_status: ${{ steps.server-health.outputs.infra_status }}
-      alice_status: ${{ steps.server-health.outputs.alice_status }}
-      observability_status: ${{ steps.server-health.outputs.observability_status }}
-      erpnext_status: ${{ steps.server-health.outputs.erpnext_status }}
-      backup_status: ${{ steps.server-health.outputs.backup_status }}
+      # CORREÇÃO PR#96 (09/01/2026): Usar parse-health (não server-health)
+      # server-health é appleboy/ssh-action que NÃO produz GitHub Actions outputs
+      # Os outputs são gerados pelo step capture-health e repassados por parse-health
+      infra_status: ${{ steps.parse-health.outputs.infra_status }}
+      alice_status: ${{ steps.parse-health.outputs.alice_status }}
+      observability_status: ${{ steps.parse-health.outputs.observability_status }}
+      erpnext_status: ${{ steps.parse-health.outputs.erpnext_status }}
+      backup_status: ${{ steps.parse-health.outputs.backup_status }}
     
     steps:
       - name: Determine trigger context
@@ -3153,19 +3156,17 @@ jobs:
             echo "   ✅ Removed $REMOVED_COUNT containers"
             
             # STAGE 3: Validate clean state
+            # CORREÇÃO PR#96 (09/01/2026): Usar grep com regex para match exato
+            # Docker filter faz substring match - não é preciso
             echo ""
             echo "🧪 Stage 3: Validating clean state..."
-            REMAINING=$(docker ps -a --filter "name=alice-postgres" \
-                                     --filter "name=alice-pgbouncer" \
-                                     --filter "name=alice-redis" \
-                                     --filter "name=alice-qdrant" \
-                                     --filter "name=alice-tor" \
-                                     --filter "name=alice-searxng" \
-                                     --filter "name=alice-caddy" \
-                                     --filter "name=alice-minio" \
-                                     --filter "name=alice-minio-init" \
-                                     --filter "name=alice-pgbackrest-init" \
-                                     -q | wc -l)
+            REMAINING=0
+            for container in "${INFRA_CONTAINERS[@]}"; do
+              if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
+                REMAINING=$((REMAINING + 1))
+                echo "   ⚠️  Container ainda existe: $container"
+              fi
+            done
             
             if [ "$REMAINING" -eq 0 ]; then
               echo "   ✅ All INFRA containers cleaned"
@@ -3522,23 +3523,25 @@ jobs:
             echo "   ✅ Removed $REMOVED_COUNT containers"
             
             # STAGE 3: Validate clean state
+            # CORREÇÃO PR#96 (09/01/2026): Usar grep com regex para match exato
+            # Docker filter faz substring match - não é preciso
             echo ""
             echo "🧪 Stage 3: Validating clean state..."
-            REMAINING=$(docker ps -a --filter "name=alice-frontend" \
-                                     --filter "name=alice-auth" \
-                                     --filter "name=alice-chat" \
-                                     --filter "name=alice-rag" \
-                                     --filter "name=alice-training" \
-                                     --filter "name=alice-integrations" \
-                                     --filter "name=alice-observability" \
-                                     --filter "name=alice-gpu-manager" \
-                                     -q | wc -l)
+            REMAINING=0
+            for container in "${ALICE_CONTAINERS[@]}"; do
+              if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
+                REMAINING=$((REMAINING + 1))
+                echo "   ⚠️  Container ainda existe: $container"
+              fi
+            done
             if [ "$REMAINING" -eq 0 ]; then
               echo "   ✅ All ALICE containers cleaned"
             else
               echo "   ⚠️  WARNING: $REMAINING ALICE containers still present"
               echo "   🔄 Forcing removal..."
-              docker ps -a --filter "name=alice-" -q | xargs -r docker rm -f 2>/dev/null || true
+              for container in "${ALICE_CONTAINERS[@]}"; do
+                docker rm -f "$container" 2>/dev/null || true
+              done
             fi
             
             # STAGE 4: Deploy (apenas se não for cleanup mode)
@@ -3810,22 +3813,18 @@ jobs:
             echo "   ✅ Removed $REMOVED_COUNT containers"
             
             # STAGE 3: Validate clean state
+            # CORREÇÃO PR#96 (09/01/2026): Docker filter NÃO suporta regex (^$)
+            # O filtro "name=..." faz substring match, não exact match
+            # Para validação precisa, contamos containers do array diretamente
             echo ""
             echo "🧪 Stage 3: Validating clean state..."
-            REMAINING=$(docker ps -a --filter "name=^prometheus$" \
-                                     --filter "name=^grafana$" \
-                                     --filter "name=^loki$" \
-                                     --filter "name=^promtail$" \
-                                     --filter "name=^jaeger$" \
-                                     --filter "name=^langfuse$" \
-                                     --filter "name=^langfuse-worker$" \
-                                     --filter "name=alice-langfuse-db" \
-                                     --filter "name=alice-clickhouse" \
-                                     --filter "name=alice-vector" \
-                                     --filter "name=alice-otel-collector" \
-                                     --filter "name=alice-node-exporter" \
-                                     --filter "name=alice-cadvisor" \
-                                     -q | wc -l)
+            REMAINING=0
+            for container in "${OBSERVABILITY_CONTAINERS[@]}"; do
+              if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
+                REMAINING=$((REMAINING + 1))
+                echo "   ⚠️  Container ainda existe: $container"
+              fi
+            done
             if [ "$REMAINING" -eq 0 ]; then
               echo "   ✅ All OBSERVABILITY containers cleaned"
             else
@@ -4076,15 +4075,25 @@ jobs:
             echo "   ✅ Removed $REMOVED_COUNT containers"
             
             # STAGE 3: Validate clean state
+            # CORREÇÃO PR#96 (09/01/2026): Usar grep com regex para match exato
+            # Docker filter faz substring match - não é preciso
             echo ""
             echo "🧪 Stage 3: Validating clean state..."
-            REMAINING=$(docker ps -a --filter "name=erpnext-" -q | wc -l)
+            REMAINING=0
+            for container in "${ERPNEXT_CONTAINERS[@]}"; do
+              if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
+                REMAINING=$((REMAINING + 1))
+                echo "   ⚠️  Container ainda existe: $container"
+              fi
+            done
             if [ "$REMAINING" -eq 0 ]; then
               echo "   ✅ All ERPNEXT containers cleaned"
             else
               echo "   ⚠️  WARNING: $REMAINING ERPNEXT containers still present"
               echo "   🔄 Forcing removal..."
-              docker ps -a --filter "name=erpnext-" -q | xargs -r docker rm -f 2>/dev/null || true
+              for container in "${ERPNEXT_CONTAINERS[@]}"; do
+                docker rm -f "$container" 2>/dev/null || true
+              done
             fi
             
             # STAGE 4: Deploy (apenas se não for cleanup mode)
