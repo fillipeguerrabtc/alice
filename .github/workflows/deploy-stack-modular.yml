@@ -1168,7 +1168,7 @@ jobs:
             # Estágio 4: Teste de escrita como UID 70 (Alpine) via Docker
             # (funciona em servidor limpo sem UID 70 (Alpine) no host)
             if ! docker run --rm --user 70:70 -v "$POSTGRES_DIR:/test:rw" alpine:3.19 touch /test/.write-test 2>/dev/null; then
-              echo "❌ ERRO: Usuário 999 (postgres) NÃO consegue escrever no volume Docker"
+              echo "❌ ERRO: Usuário 70 (postgres Alpine) NÃO consegue escrever no volume Docker"
               sudo ls -ld "$POSTGRES_DIR"
               exit 1
             fi
@@ -1194,9 +1194,10 @@ jobs:
               # Diretório NÃO está vazio - validar recursivamente
               echo "   ⚠️  Diretório contém arquivos de deploy anterior - validando recursivamente..."
               
-              # Contar arquivos com UID errado (não-999)
-              WRONG_PERMS=$(sudo find "$POSTGRES_DIR" -type f ! -user 999 2>/dev/null | wc -l)
-              WRONG_DIRS=$(sudo find "$POSTGRES_DIR" -type d ! -user 999 2>/dev/null | wc -l)
+              # Contar arquivos com UID errado (não-70 Alpine)
+              # CORREÇÃO 08/01/2026: PostgreSQL Alpine usa UID 70, não 999
+              WRONG_PERMS=$(sudo find "$POSTGRES_DIR" -type f ! -user 70 2>/dev/null | wc -l)
+              WRONG_DIRS=$(sudo find "$POSTGRES_DIR" -type d ! -user 70 2>/dev/null | wc -l)
               
               if [ $WRONG_PERMS -gt 0 ] || [ $WRONG_DIRS -gt 0 ]; then
                 echo ""
@@ -1205,7 +1206,7 @@ jobs:
                 echo "   Diretórios com UID errado: $WRONG_DIRS"
                 echo ""
                 echo "   Primeiros 10 arquivos/dirs com problemas:"
-                sudo find "$POSTGRES_DIR" ! -user 999 -ls 2>/dev/null | head -10
+                sudo find "$POSTGRES_DIR" ! -user 70 -ls 2>/dev/null | head -10
                 echo ""
                 echo "💡 SOLUÇÃO: Rodar comando de correção:"
                 echo "   sudo chown -R 70:70 $POSTGRES_DIR"
