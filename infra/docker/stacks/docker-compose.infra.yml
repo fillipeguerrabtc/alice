@@ -590,13 +590,22 @@ services:
       - alice-network
     healthcheck:
       # =======================================================================
-      # CORREÇÃO PR#99 (09/01/2026): MinIO 2025 usa imagem distroless
+      # CORREÇÃO PR#99 (09/01/2026): MinIO 2025 Healthcheck Enterprise
       # =======================================================================
-      # PROBLEMA: MinIO removeu curl E wget das imagens (distroless security)
-      # CAUSA: Imagens distroless não têm shell nem utilitários HTTP
-      # SOLUÇÃO: Usar "mc ready local" - MinIO Client incluído na imagem oficial
-      # REF: https://github.com/minio/minio/issues/18389
-      # REF: MinIO docs 2025 - healthcheck-probe
+      # HISTÓRICO DE PROBLEMAS:
+      #   - curl: REMOVIDO da imagem oficial (github.com/minio/minio/issues/18389)
+      #   - wget: REMOVIDO da imagem oficial (distroless security)
+      #
+      # SOLUÇÃO ATUAL: Usar "mc ready local" com MC_HOST_local env var
+      #   - mc (MinIO Client) está INCLUÍDO na imagem quay.io/minio/minio
+      #   - MC_HOST_local configura o alias "local" automaticamente
+      #   - REF: min.io/docs/minio/linux/reference/minio-mc/minio-client-settings.html
+      #
+      # FALLBACK (se mc não existir na imagem futura):
+      #   test: ["CMD-SHELL", "printf 'GET /minio/health/live HTTP/1.1\\r\\nHost: localhost\\r\\n\\r\\n' > /dev/tcp/localhost/9000 || exit 1"]
+      #   NOTA: Requer bash com /dev/tcp habilitado
+      #
+      # REF: github.com/minio/minio/issues/18389
       # REF: CLAUDE.md Regra 11 (Seguir docs oficiais 2025)
       # =======================================================================
       test: ["CMD", "mc", "ready", "local"]
