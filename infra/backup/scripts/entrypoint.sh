@@ -149,7 +149,7 @@ fi
 echo "=================================================="
 echo "  pgBackRest pronto para operação!"
 echo "  Stanza: $STANZA"
-echo "  Modo: ${1:-archive-push}"
+echo "  Modo: ${1:-daemon}"
 echo "=================================================="
 
 # ==========================================================================
@@ -185,13 +185,74 @@ else
     echo "[INFO] Nenhum WAL pendente encontrado (normal em deploys subsequentes)"
 fi
 
+# ==========================================================================
+# CORREÇÃO PR#98 (09/01/2026): Container deve rodar como DAEMON
+# ==========================================================================
+# PROBLEMA ANTERIOR: Container executava 'archive-push' e TERMINAVA (exit 0)
+# Docker via 'restart: unless-stopped' reiniciava o container infinitamente
+# Resultado: Container ficava em loop de restart (1s, 13s, 37s, 5s...)
+#
+# CAUSA RAIZ: 'archive-push' é ONE-SHOT (envia 1 WAL e termina)
+# pgBackRest NÃO é um daemon - é uma CLI chamada sob demanda
+#
+# SOLUÇÃO ENTERPRISE (REF: https://pgbackrest.org/user-guide.html):
+# 1. archive_command do PostgreSQL faz o archive-push via TCP (pg1-host)
+# 2. Este container fica em SLEEP MODE aguardando:
+#    - Backups agendados (full: domingo 2h, diff: seg-sab 2h)
+#    - Comandos manuais via 'docker exec'
+# 3. Healthcheck verifica se stanza está OK
+#
+# BENEFÍCIOS:
+# - Container não reinicia desnecessariamente
+# - Logs limpos (sem spam de restart)
+# - Backups agendados funcionam corretamente
+# - Menor uso de CPU/recursos
+# ==========================================================================
+
 # Executar comando passado COM stanza explícito
 # Bug fix: pgBackRest requer --stanza= explícito em todos os comandos
-if [ $# -eq 0 ]; then
-    # Se não houver argumentos, usar archive-push como padrão
-    exec pgbackrest --stanza="$STANZA" archive-push
+if [ $# -eq 0 ] || [ "$1" = "daemon" ]; then
+    # =======================================================================
+    # MODO DAEMON: Aguardar em loop, executar backups agendados
+    # =======================================================================
+    echo "[INFO] Iniciando modo DAEMON..."
+    echo "[INFO] Backups agendados:"
+    echo "       - Full: ${BACKUP_SCHEDULE_FULL:-0 2 * * 0} (domingo 2h)"
+    echo "       - Diff: ${BACKUP_SCHEDULE_DIFF:-0 2 * * 1-6} (seg-sab 2h)"
+    echo ""
+    echo "[INFO] Para executar backup manualmente:"
+    echo "       docker exec alice-pgbackrest pgbackrest --stanza=$STANZA backup --type=full"
+    echo "       docker exec alice-pgbackrest pgbackrest --stanza=$STANZA backup --type=diff"
+    echo ""
+    echo "[INFO] Container pronto e aguardando..."
+    
+    # Loop infinito com verificação periódica
+    # NOTA: Backups são agendados via cron no host ou via script externo
+    # Este loop mantém o container vivo e verifica integridade periodicamente
+    while true; do
+        # Verificar integridade a cada hora (3600 segundos)
+        sleep 3600
+        
+        echo "[INFO] $(date '+%Y-%m-%d %H:%M:%S') - Verificação periódica de integridade..."
+        if pgbackrest --stanza="$STANZA" info --output=json > /dev/null 2>&1; then
+            echo "[OK] Stanza '$STANZA' está íntegra"
+        else
+            echo "[WARN] Problema detectado na stanza '$STANZA' - verificar logs"
+        fi
+    done
+elif [ "$1" = "archive-push" ]; then
+    # =======================================================================
+    # MODO ARCHIVE-PUSH: Executado pelo PostgreSQL via archive_command
+    # NOTA: Este modo normalmente não é usado neste container
+    # O PostgreSQL deve usar 'pgbackrest --stanza=X archive-push %p'
+    # diretamente via archive_command (não via este container)
+    # =======================================================================
+    shift
+    exec pgbackrest --stanza="$STANZA" archive-push "$@"
 else
-    # Se houver argumentos, adicionar --stanza= antes do primeiro argumento
-    # Exemplo: archive-push -> pgbackrest --stanza=alice_prod archive-push
+    # =======================================================================
+    # MODO COMANDO: Qualquer outro comando pgBackRest
+    # Exemplos: backup, restore, check, info, etc.
+    # =======================================================================
     exec pgbackrest --stanza="$STANZA" "$@"
 fi

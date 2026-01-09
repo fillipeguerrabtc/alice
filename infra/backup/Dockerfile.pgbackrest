@@ -144,7 +144,18 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 # Os diretórios /var/lib/pgbackrest e /var/log/pgbackrest serão montados explicitamente
 # no docker-compose para garantir persistência no volume Hetzner
 
-# Comando padrão: servidor de arquivamento contínuo
-# Stanza será definido via variável de ambiente no entrypoint.sh
+# =============================================================================
+# CORREÇÃO PR#98 (09/01/2026): Modo DAEMON como padrão
+# =============================================================================
+# PROBLEMA ANTERIOR: CMD era 'archive-push' (one-shot que termina imediatamente)
+# Container reiniciava em loop infinito (1s, 13s, 37s, 5s...)
+#
+# SOLUÇÃO ENTERPRISE:
+# - CMD é 'daemon' - container fica em sleep mode aguardando
+# - archive_command do PostgreSQL faz archive-push diretamente via pg1-host
+# - Backups são executados via cron ou 'docker exec'
+#
+# REF: https://pgbackrest.org/user-guide.html#quickstart/perform-a-backup
+# =============================================================================
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["archive-push"]
+CMD ["daemon"]
