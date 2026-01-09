@@ -773,28 +773,55 @@ jobs:
             
             echo "✅ Servidor preparado com sucesso (ANTES do SCP)"
 
-      - name: Sincronizar código e configs para servidor
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
-          source: "infra/docker/stacks,infra/docker/Caddyfile,infra/docker/postgres-init,infra/docker/vector.toml,infra/observability,infra/versions.env,infra/scripts,drizzle.config.ts,shared,packages,migrations,package.json,pnpm-lock.yaml,pnpm-workspace.yaml"
-          target: "/opt/alice/app"
-          strip_components: 0
-          overwrite: true
+      # =======================================================================
+      # CORREÇÃO 09/01/2026: appleboy/scp-action@v0.1.7 tem bug conhecido
+      # Erro: "pull access denied for 166495, repository does not exist"
+      # SOLUÇÃO: Usar rsync via SSH manual (mais confiável)
+      # REF: https://github.com/appleboy/scp-action/issues
+      # =======================================================================
+      - name: Configurar SSH para rsync
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.HETZNER_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ env.HETZNER_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+          
+      - name: Sincronizar código e configs para servidor (rsync)
+        run: |
+          # Criar diretório de destino se não existir
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }} "mkdir -p /opt/alice/app"
+          
+          # Sincronizar arquivos usando rsync
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+            --include='infra/***' \
+            --include='drizzle.config.ts' \
+            --include='shared/***' \
+            --include='packages/***' \
+            --include='migrations/***' \
+            --include='package.json' \
+            --include='pnpm-lock.yaml' \
+            --include='pnpm-workspace.yaml' \
+            --exclude='*' \
+            ./ ${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }}:/opt/alice/app/
+          
+          echo "✅ Código e configs sincronizados via rsync"
 
       - name: Copiar .env.prod para servidor
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
-          source: ".env.prod"
-          target: "/opt/alice/app/infra/docker"
-          overwrite: true
+        run: |
+          # Criar diretório de destino
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }} "mkdir -p /opt/alice/app/infra/docker"
+          
+          # Copiar .env.prod
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            .env.prod ${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }}:/opt/alice/app/infra/docker/.env.prod
+          
+          echo "✅ .env.prod copiado para servidor"
+          
+      - name: Limpar chave SSH temporária
+        if: always()
+        run: |
+          rm -f ~/.ssh/deploy_key 2>/dev/null || true
 
       - name: Restringir permissões .env.prod no servidor
         uses: appleboy/ssh-action@v1.2.2
