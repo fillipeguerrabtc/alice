@@ -3479,22 +3479,74 @@ jobs:
             
             cd /opt/alice/app/infra/docker/stacks
             
-            echo "🚀 Deploying ALICE stack (frontend, auth, chat, rag, training, integrations, gpu-manager)..."
+            echo "══════════════════════════════════════════════════════════════════"
+            echo "🚀 DEPLOYING ALICE STACK"
+            echo "══════════════════════════════════════════════════════════════════"
+            echo ""
+            echo "📦 Containers: frontend, auth, chat, rag, training, integrations, observability, gpu-manager"
+            echo "📅 Versão: ${{ needs.validate.outputs.version }}"
+            echo ""
             
             # Salvar versão anterior
             if [ -f /opt/alice/versions/alice.current ]; then
               cp /opt/alice/versions/alice.current /opt/alice/versions/alice.previous
+              echo "📋 Versão anterior: $(cat /opt/alice/versions/alice.previous)"
+            else
+              echo "📋 Primeiro deploy (sem versão anterior)"
             fi
+            echo ""
             
-            # Pull e deploy
-            # CRITICAL: Incluir base.yml para criar volumes/networks externos
-            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull
-            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml up -d --remove-orphans
+            # Pull das imagens
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📥 PULL: Baixando imagens..."
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            if ! docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull 2>&1; then
+              echo ""
+              echo "❌ ERRO: Falha no pull das imagens!"
+              echo ""
+              echo "📋 Verificando conectividade com registry:"
+              docker login ghcr.io --username ${{ github.actor }} --password ${{ secrets.GITHUB_TOKEN }} 2>&1 || echo "   Login falhou"
+              exit 1
+            fi
+            echo "✅ Pull concluído"
+            echo ""
+            
+            # Deploy
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "🚀 UP: Iniciando containers..."
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            if ! docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml up -d --remove-orphans 2>&1; then
+              echo ""
+              echo "❌ ERRO: Falha no docker compose up!"
+              echo ""
+              echo "📋 Status dos containers:"
+              docker ps -a --filter "name=alice-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" || true
+              echo ""
+              echo "📋 Logs dos containers com erro (últimas 30 linhas cada):"
+              for c in alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager; do
+                if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
+                  echo ""
+                  echo "── $c ──"
+                  docker logs $c --tail 30 2>&1 || echo "   (sem logs)"
+                fi
+              done
+              exit 1
+            fi
+            echo ""
+            
+            # Verificar status inicial
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📋 STATUS: Containers após deploy"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            docker ps -a --filter "name=alice-" --format "table {{.Names}}\t{{.Status}}" | grep -E "alice-(frontend|auth|chat|rag|training|integrations|observability|gpu-manager)" || echo "   (nenhum container encontrado)"
+            echo ""
             
             # Salvar versão atual
             echo "${{ needs.validate.outputs.version }}" > /opt/alice/versions/alice.current
             
-            echo "✅ ALICE stack deployed"
+            echo "══════════════════════════════════════════════════════════════════"
+            echo "✅ ALICE STACK DEPLOYED"
+            echo "══════════════════════════════════════════════════════════════════"
 
   health-alice:
     name: Health Check ALICE
@@ -3784,29 +3836,79 @@ jobs:
             
             cd /opt/alice/app/infra/docker/stacks
             
-            echo "🚀 Deploying OBSERVABILITY stack (prometheus, grafana, loki, jaeger, langfuse, clickhouse)..."
+            echo "══════════════════════════════════════════════════════════════════"
+            echo "🚀 DEPLOYING OBSERVABILITY STACK"
+            echo "══════════════════════════════════════════════════════════════════"
+            echo ""
+            echo "📦 Containers: prometheus, grafana, loki, promtail, jaeger, langfuse, clickhouse, vector, etc"
+            echo "📅 Versão: ${{ needs.validate.outputs.version }}"
+            echo ""
             
             # Salvar versão anterior
             if [ -f /opt/alice/versions/observability.current ]; then
               cp /opt/alice/versions/observability.current /opt/alice/versions/observability.previous
+              echo "📋 Versão anterior: $(cat /opt/alice/versions/observability.previous)"
+            else
+              echo "📋 Primeiro deploy (sem versão anterior)"
             fi
+            echo ""
             
-            # Pull e deploy
-            # CRITICAL: Incluir base.yml para criar volumes/networks externos
-            docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.observability.yml pull
-            docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.observability.yml up -d --remove-orphans
+            # Pull das imagens
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📥 PULL: Baixando imagens..."
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            if ! docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.observability.yml pull 2>&1; then
+              echo ""
+              echo "❌ ERRO: Falha no pull das imagens!"
+              exit 1
+            fi
+            echo "✅ Pull concluído"
+            echo ""
+            
+            # Deploy
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "🚀 UP: Iniciando containers..."
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            if ! docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.observability.yml up -d --remove-orphans 2>&1; then
+              echo ""
+              echo "❌ ERRO: Falha no docker compose up!"
+              echo ""
+              echo "📋 Status dos containers:"
+              docker ps -a --filter "name=prometheus" --filter "name=grafana" --filter "name=loki" --filter "name=langfuse" --filter "name=clickhouse" --format "table {{.Names}}\t{{.Status}}" || true
+              echo ""
+              echo "📋 Logs dos containers com erro (últimas 30 linhas cada):"
+              for c in prometheus grafana loki promtail jaeger langfuse alice-langfuse-db alice-clickhouse alice-vector; do
+                if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
+                  echo ""
+                  echo "── $c ──"
+                  docker logs $c --tail 30 2>&1 || echo "   (sem logs)"
+                fi
+              done
+              exit 1
+            fi
+            echo ""
+            
+            # Verificar status inicial
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📋 STATUS: Containers após deploy"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            docker ps -a --format "table {{.Names}}\t{{.Status}}" | grep -E "prometheus|grafana|loki|promtail|jaeger|langfuse|clickhouse|vector|otel|cadvisor|node-exporter" || echo "   (nenhum container encontrado)"
+            echo ""
             
             # Salvar versão atual
             echo "${{ needs.validate.outputs.version }}" > /opt/alice/versions/observability.current
             
-            echo "✅ OBSERVABILITY stack deployed"
+            echo "══════════════════════════════════════════════════════════════════"
+            echo "✅ OBSERVABILITY STACK DEPLOYED"
+            echo "══════════════════════════════════════════════════════════════════"
 
   health-observability:
     name: Health Check OBSERVABILITY
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, deploy-observability]
     if: needs.deploy-observability.result == 'success'
-    timeout-minutes: 10
+    # CORREÇÃO PR#100: Langfuse tem healthcheck de 570s, então precisa de 12min
+    timeout-minutes: 12
     
     steps:
       - name: Check health with retry logic
@@ -3844,13 +3946,20 @@ jobs:
             # =================================================================
             # CORREÇÃO PR#100 (09/01/2026): Alinhar workflow timeout com Docker healthcheck
             # =================================================================
-            # PROBLEMA: Docker healthcheck (Grafana) tem start_period: 90s + (10 retries × 30s) = 390s
-            #           Workflow tinha MAX_RETRIES=15 × 10s = 150s (muito curto!)
-            #           Grafana ficava "starting" durante start_period e workflow expirava
-            # SOLUÇÃO: MAX_RETRIES=40 × 10s = 400s (> 390s do Docker healthcheck)
+            # ANÁLISE DE TIMEOUTS DOS CONTAINERS:
+            # - Prometheus: start_period: 60s + (5 retries × 30s) = 210s
+            # - Grafana: start_period: 90s + (10 retries × 30s) = 390s
+            # - Loki: start_period: 60s + (5 retries × 30s) = 210s
+            # - Promtail: start_period: 30s + (5 retries × 30s) = 180s
+            # - alice-vector: start_period: 60s + (5 retries × 30s) = 210s
+            # - alice-clickhouse: start_period: 120s + (8 retries × 30s) = 360s
+            # - alice-langfuse-db: start_period: 120s + (15 retries × 10s) = 270s
+            # - langfuse: start_period: 120s + (15 retries × 30s) = 570s ← MAIOR!
+            #
+            # SOLUÇÃO: MAX_RETRIES=60 × 10s = 600s (> 570s do Langfuse)
             # REF: CLAUDE.md Regra 11 (Melhores práticas 2025), Regra 16 (Healthchecks)
             # =================================================================
-            MAX_RETRIES=40
+            MAX_RETRIES=60
             SLEEP_TIME=10
             
             # Verificar containers com healthcheck
@@ -4127,22 +4236,71 @@ jobs:
             
             cd /opt/alice/app/infra/docker/stacks
             
-            echo "🚀 Deploying ERPNEXT stack (mariadb, redis-cache, redis-queue, backend, frontend, workers)..."
+            echo "══════════════════════════════════════════════════════════════════"
+            echo "🚀 DEPLOYING ERPNEXT STACK"
+            echo "══════════════════════════════════════════════════════════════════"
+            echo ""
+            echo "📦 Containers: mariadb, redis-cache, redis-queue, backend, frontend, websocket, scheduler, workers"
+            echo "📅 Versão: ${{ needs.validate.outputs.version }}"
+            echo ""
             
             # Salvar versão anterior
             if [ -f /opt/alice/versions/erpnext.current ]; then
               cp /opt/alice/versions/erpnext.current /opt/alice/versions/erpnext.previous
+              echo "📋 Versão anterior: $(cat /opt/alice/versions/erpnext.previous)"
+            else
+              echo "📋 Primeiro deploy (sem versão anterior)"
             fi
+            echo ""
             
-            # Pull e deploy
-            # CRITICAL: Incluir base.yml para criar volumes/networks externos
-            docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml pull
-            docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml up -d --remove-orphans
+            # Pull das imagens
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📥 PULL: Baixando imagens..."
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            if ! docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml pull 2>&1; then
+              echo ""
+              echo "❌ ERRO: Falha no pull das imagens!"
+              exit 1
+            fi
+            echo "✅ Pull concluído"
+            echo ""
+            
+            # Deploy
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "🚀 UP: Iniciando containers..."
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            if ! docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml up -d --remove-orphans 2>&1; then
+              echo ""
+              echo "❌ ERRO: Falha no docker compose up!"
+              echo ""
+              echo "📋 Status dos containers:"
+              docker ps -a --filter "name=erpnext-" --format "table {{.Names}}\t{{.Status}}" || true
+              echo ""
+              echo "📋 Logs dos containers com erro (últimas 30 linhas cada):"
+              for c in erpnext-mariadb erpnext-redis-cache erpnext-redis-queue erpnext-backend erpnext-frontend; do
+                if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
+                  echo ""
+                  echo "── $c ──"
+                  docker logs $c --tail 30 2>&1 || echo "   (sem logs)"
+                fi
+              done
+              exit 1
+            fi
+            echo ""
+            
+            # Verificar status inicial
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📋 STATUS: Containers após deploy"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            docker ps -a --filter "name=erpnext-" --format "table {{.Names}}\t{{.Status}}" || echo "   (nenhum container encontrado)"
+            echo ""
             
             # Salvar versão atual
             echo "${{ needs.validate.outputs.version }}" > /opt/alice/versions/erpnext.current
             
-            echo "✅ ERPNEXT stack deployed"
+            echo "══════════════════════════════════════════════════════════════════"
+            echo "✅ ERPNEXT STACK DEPLOYED"
+            echo "══════════════════════════════════════════════════════════════════"
 
   health-erpnext:
     name: Health Check ERPNEXT
@@ -4437,22 +4595,65 @@ jobs:
             
             cd /opt/alice/app/infra/docker/stacks
             
-            echo "🚀 Deploying BACKUP stack (pgbackrest)..."
+            echo "══════════════════════════════════════════════════════════════════"
+            echo "🚀 DEPLOYING BACKUP STACK"
+            echo "══════════════════════════════════════════════════════════════════"
+            echo ""
+            echo "📦 Containers: pgbackrest"
+            echo "📅 Versão: ${{ needs.validate.outputs.version }}"
+            echo ""
             
             # Salvar versão anterior
             if [ -f /opt/alice/versions/backup.current ]; then
               cp /opt/alice/versions/backup.current /opt/alice/versions/backup.previous
+              echo "📋 Versão anterior: $(cat /opt/alice/versions/backup.previous)"
+            else
+              echo "📋 Primeiro deploy (sem versão anterior)"
             fi
+            echo ""
             
-            # Pull e deploy
-            # CRITICAL: Incluir base.yml para criar volumes/networks externos
-            docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.backup.yml pull
-            docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.backup.yml up -d --remove-orphans
+            # Pull das imagens
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📥 PULL: Baixando imagens..."
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            if ! docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.backup.yml pull 2>&1; then
+              echo ""
+              echo "❌ ERRO: Falha no pull das imagens!"
+              exit 1
+            fi
+            echo "✅ Pull concluído"
+            echo ""
+            
+            # Deploy
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "🚀 UP: Iniciando containers..."
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            if ! docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.backup.yml up -d --remove-orphans 2>&1; then
+              echo ""
+              echo "❌ ERRO: Falha no docker compose up!"
+              echo ""
+              echo "📋 Status dos containers:"
+              docker ps -a --filter "name=pgbackrest" --format "table {{.Names}}\t{{.Status}}" || true
+              echo ""
+              echo "📋 Logs do container (últimas 30 linhas):"
+              docker logs alice-pgbackrest --tail 30 2>&1 || echo "   (sem logs)"
+              exit 1
+            fi
+            echo ""
+            
+            # Verificar status inicial
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📋 STATUS: Containers após deploy"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            docker ps -a --filter "name=pgbackrest" --format "table {{.Names}}\t{{.Status}}" || echo "   (nenhum container encontrado)"
+            echo ""
             
             # Salvar versão atual
             echo "${{ needs.validate.outputs.version }}" > /opt/alice/versions/backup.current
             
-            echo "✅ BACKUP stack deployed"
+            echo "══════════════════════════════════════════════════════════════════"
+            echo "✅ BACKUP STACK DEPLOYED"
+            echo "══════════════════════════════════════════════════════════════════"
 
   health-backup:
     name: Health Check BACKUP
@@ -4479,16 +4680,39 @@ jobs:
             MAX_RETRIES=15
             SLEEP_TIME=10
             
-            echo "Aguardando $CONTAINER ficar healthy..."
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "🔍 Verificando: $CONTAINER"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             retry=0
+            last_health_log=""
+            
             while [ $retry -lt $MAX_RETRIES ]; do
               STATUS=$(docker inspect --format='{{.State.Health.Status}}' $CONTAINER 2>/dev/null || echo "not_found")
+              
               if [ "$STATUS" = "healthy" ]; then
                 echo "✅ $CONTAINER: healthy"
                 break
               elif [ "$STATUS" = "not_found" ]; then
-                echo "❌ $CONTAINER: não encontrado"
+                echo "❌ ERRO: Container $CONTAINER não encontrado!"
+                echo ""
+                echo "📋 Containers existentes:"
+                docker ps -a --format "table {{.Names}}\t{{.Status}}" | grep -E "pgbackrest" || echo "   (nenhum encontrado)"
                 exit 1
+              elif [ "$STATUS" = "unhealthy" ]; then
+                HEALTH_LOG=$(docker inspect --format='{{range .State.Health.Log}}{{.Output}}{{end}}' $CONTAINER 2>/dev/null | tail -c 500)
+                HEALTH_EXIT=$(docker inspect --format='{{range .State.Health.Log}}{{.ExitCode}}{{end}}' $CONTAINER 2>/dev/null | tail -c 20)
+                
+                echo "❌ $CONTAINER: UNHEALTHY (tentativa $((retry+1))/$MAX_RETRIES)"
+                
+                if [ "$HEALTH_LOG" != "$last_health_log" ] || [ $((retry % 5)) -eq 0 ]; then
+                  echo "   📋 Healthcheck Exit Code: $HEALTH_EXIT"
+                  echo "   📋 Healthcheck Output: $HEALTH_LOG"
+                  last_health_log="$HEALTH_LOG"
+                fi
+                
+                sleep $SLEEP_TIME
+                retry=$((retry+1))
               else
                 echo "⏳ $CONTAINER: $STATUS (tentativa $((retry+1))/$MAX_RETRIES)"
                 sleep $SLEEP_TIME
@@ -4497,10 +4721,26 @@ jobs:
             done
             
             if [ $retry -eq $MAX_RETRIES ]; then
-              echo "❌ $CONTAINER: timeout após $((MAX_RETRIES * SLEEP_TIME))s"
+              echo ""
+              echo "══════════════════════════════════════════════════════════════════"
+              echo "❌ FALHA: $CONTAINER não ficou healthy após $((MAX_RETRIES * SLEEP_TIME))s"
+              echo "══════════════════════════════════════════════════════════════════"
+              echo ""
+              echo "📋 STATUS FINAL DO CONTAINER:"
+              docker inspect $CONTAINER --format='Status: {{.State.Status}}, Health: {{.State.Health.Status}}, ExitCode: {{.State.ExitCode}}' 2>/dev/null || echo "   (não disponível)"
+              echo ""
+              echo "📋 ÚLTIMO OUTPUT DO HEALTHCHECK:"
+              docker inspect --format='{{range .State.Health.Log}}Exit={{.ExitCode}} Output={{.Output}}---{{end}}' $CONTAINER 2>/dev/null | tail -c 1000 || echo "   (não disponível)"
+              echo ""
+              echo "📋 LOGS DO CONTAINER (últimas 50 linhas):"
+              echo "────────────────────────────────────────────────────────────────"
+              docker logs $CONTAINER --tail 50 2>&1 || echo "   (logs não disponíveis)"
+              echo "────────────────────────────────────────────────────────────────"
+              echo ""
               exit 1
             fi
             
+            echo ""
             echo "✅ BACKUP stack está healthy"
 
   rollback-backup:
