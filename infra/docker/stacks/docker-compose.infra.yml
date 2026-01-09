@@ -575,6 +575,14 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      # =========================================================================
+      # MC_HOST_local: Configura alias "local" para MinIO Client (mc)
+      # =========================================================================
+      # NECESSÁRIO para healthcheck "mc ready local" funcionar
+      # Formato: http://USER:PASSWORD@HOST:PORT
+      # REF: https://min.io/docs/minio/linux/reference/minio-mc/minio-client-settings.html
+      # =========================================================================
+      MC_HOST_local: http://${MINIO_ROOT_USER:-minioadmin}:${MINIO_ROOT_PASSWORD}@localhost:9000
     command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data
