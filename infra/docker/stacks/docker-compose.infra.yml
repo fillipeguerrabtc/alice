@@ -214,9 +214,7 @@ services:
     image: ${IMAGE_PREFIX}-pgbackrest:${IMAGE_TAG:-latest}
     platform: linux/amd64
     container_name: alice-pgbackrest-init
-    # CORREÇÃO CRÍTICA 09/01/2026: Rodar como UID 70 (mesmo que PostgreSQL Alpine)
-    # para ter permissão de leitura no pg_control e outros arquivos PGDATA
-    user: "70:70"
+    # NOTA: UID 70 definido no Dockerfile.pgbackrest (mesmo que PostgreSQL Alpine)
     entrypoint: ["/bin/sh", "-c"]
     restart: "no"  # SEÇÃO 3.1: Never restart after completion
     security_opt:
