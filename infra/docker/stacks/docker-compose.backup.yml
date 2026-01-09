@@ -53,6 +53,9 @@ services:
     image: ${IMAGE_PREFIX}-pgbackrest:${IMAGE_TAG:-latest}
     platform: linux/amd64
     container_name: alice-pgbackrest
+    # CORREÇÃO CRÍTICA 09/01/2026: Rodar como UID 70 (mesmo que PostgreSQL Alpine)
+    # para ter permissão de leitura no pg_control e outros arquivos PGDATA
+    user: "70:70"
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true

@@ -110,16 +110,21 @@ COPY scripts/ /usr/local/bin/
 RUN chmod +x /usr/local/bin/*.sh
 
 # Usuário não-root para segurança (best practices 2025)
-# CORREÇÃO CRÍTICA 30/12/2025: pgBackRest precisa usar UID 999 (mesmo que PostgreSQL)
+# CORREÇÃO CRÍTICA 09/01/2026: pgBackRest precisa usar UID 70 (mesmo que PostgreSQL ALPINE)
 # para ter permissão de leitura nos arquivos de dados do PostgreSQL.
-# Erro anterior: "unable to open file '/var/lib/postgresql/data/global/pg_control' for read: [13] Permission denied"
-# Causa: pgBackRest usava UID 1000, PostgreSQL usa UID 999, sem permissão de leitura.
 #
-# CORREÇÃO CRÍTICA 31/12/2025: Grupo 'postgres' já existe via postgresql-client package
-# Alpine Linux cria automaticamente postgres:999 ao instalar postgresql-client (linhas 78-92)
-# Solução: Verificar existência do grupo antes de criar (idempotência enterprise - padrão POSIX)
-RUN getent group postgres >/dev/null 2>&1 || addgroup -g 999 postgres; \
-    getent passwd pgbackrest >/dev/null 2>&1 || adduser -D -u 999 -G postgres pgbackrest; \
+# HISTÓRICO DE ERROS:
+# - 30/12/2025: Erro "Permission denied" porque usávamos UID 999 (Debian PostgreSQL)
+# - 31/12/2025: PostgreSQL migrou de Debian para Alpine (CVE-2023-45853)
+# - 09/01/2026: Alpine PostgreSQL usa UID 70, não 999! Corrigido aqui.
+#
+# Erro: "unable to open file '/var/lib/postgresql/data/global/pg_control' for read: [13] Permission denied"
+# Causa: pgBackRest usava UID 999, PostgreSQL Alpine usa UID 70, sem permissão de leitura.
+#
+# NOTA: O grupo 'postgres' com GID 70 é criado pelo postgresql-client no Alpine.
+# Se não existir, criamos explicitamente.
+RUN getent group postgres >/dev/null 2>&1 || addgroup -g 70 postgres; \
+    getent passwd pgbackrest >/dev/null 2>&1 || adduser -D -u 70 -G postgres pgbackrest; \
     chown -R pgbackrest:postgres /var/lib/pgbackrest; \
     chown -R pgbackrest:postgres /var/log/pgbackrest; \
     chown -R pgbackrest:postgres /var/spool/pgbackrest; \
