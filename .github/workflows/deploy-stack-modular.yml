@@ -1423,7 +1423,12 @@ jobs:
             # =================================================================
             echo "🗑️  ESTÁGIO 0: Verificando volume nomeado existente..."
             
+            # Track se precisamos remover volume (para resumo final)
+            VOLUME_EXISTED=false
+            VOLUME_REMOVED=false
+            
             if docker volume inspect "$POSTGRES_VOLUME" >/dev/null 2>&1; then
+              VOLUME_EXISTED=true
               echo "   ⚠️  Volume $POSTGRES_VOLUME existe (pode ter estado inconsistente)"
               
               # Verificar se há container usando o volume
@@ -1435,13 +1440,49 @@ jobs:
                   echo "      Removendo: $container"
                   docker rm -f "$container" 2>/dev/null || true
                 done
+                
+                # Aguardar containers serem removidos
+                sleep 2
               fi
               
               echo "   🗑️  Removendo volume $POSTGRES_VOLUME..."
               docker volume rm "$POSTGRES_VOLUME" 2>/dev/null || true
-              echo "   ✅ Volume removido (será recriado limpo no deploy)"
+              
+              # =================================================================
+              # CORREÇÃO CRÍTICA: Verificar se volume foi REALMENTE removido
+              # =================================================================
+              # PROBLEMA IDENTIFICADO (08/01/2026):
+              #   - || true suprime erros de remoção
+              #   - Código reportava "Volume removido" mesmo se remoção falhou
+              #   - Volume corrompido permanecia enquanto código reportava sucesso
+              # SOLUÇÃO: Verificar estado APÓS remoção e fail-fast se ainda existe
+              # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 9 (Validação contínua)
+              # =================================================================
+              if docker volume inspect "$POSTGRES_VOLUME" >/dev/null 2>&1; then
+                echo ""
+                echo "   ❌ ERRO CRÍTICO: Falha ao remover volume $POSTGRES_VOLUME!"
+                echo ""
+                echo "   📊 DIAGNÓSTICO:"
+                echo "      Volume ainda existe após tentativa de remoção."
+                echo ""
+                echo "   🔍 Containers que podem estar usando o volume:"
+                docker ps -a --filter "volume=$POSTGRES_VOLUME" --format '{{.Names}} ({{.Status}})' 2>&1 || echo "      (nenhum encontrado)"
+                echo ""
+                echo "   📋 Detalhes do volume:"
+                docker volume inspect "$POSTGRES_VOLUME" 2>&1 || true
+                echo ""
+                echo "   💡 AÇÕES NECESSÁRIAS:"
+                echo "      1. Verifique se há containers usando o volume: docker ps -a --filter volume=$POSTGRES_VOLUME"
+                echo "      2. Remova containers manualmente: docker rm -f <container>"
+                echo "      3. Remova o volume: docker volume rm $POSTGRES_VOLUME"
+                echo "      4. Re-execute o deploy"
+                exit 1
+              fi
+              
+              VOLUME_REMOVED=true
+              echo "   ✅ Volume removido com sucesso (verificado)"
             else
-              echo "   ✅ Volume não existe (será criado limpo no deploy)"
+              echo "   ✅ Volume não existe (será criado limpo)"
             fi
             echo ""
             
@@ -1520,12 +1561,65 @@ jobs:
             
             # Criar volume nomeado com as mesmas configurações do docker-compose.base.yml
             echo "   📝 Criando volume $POSTGRES_VOLUME com bind para $POSTGRES_DIR..."
-            docker volume create \
+            
+            # =================================================================
+            # CORREÇÃO CRÍTICA: Verificar criação do volume com fail-fast
+            # =================================================================
+            # PROBLEMA IDENTIFICADO (08/01/2026):
+            #   - || true suprimia erros de criação
+            #   - Se volume antigo não foi removido, create falhava silenciosamente
+            #   - Teste validava volume ANTIGO corrompido, não o novo
+            # SOLUÇÃO: Verificar criação E que volume tem configuração correta
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 9 (Validação contínua)
+            # =================================================================
+            if ! docker volume create \
               --driver local \
               --opt type=none \
               --opt o=bind \
               --opt device="$POSTGRES_DIR" \
-              "$POSTGRES_VOLUME" 2>/dev/null || true
+              "$POSTGRES_VOLUME" 2>&1; then
+              echo ""
+              echo "   ❌ ERRO CRÍTICO: Falha ao criar volume $POSTGRES_VOLUME!"
+              echo ""
+              echo "   📊 DIAGNÓSTICO:"
+              
+              # Verificar se volume já existe (remoção anterior falhou)
+              if docker volume inspect "$POSTGRES_VOLUME" >/dev/null 2>&1; then
+                echo "      Volume já existe (remoção anterior falhou silenciosamente)"
+                echo ""
+                echo "   📋 Detalhes do volume existente:"
+                docker volume inspect "$POSTGRES_VOLUME" 2>&1 || true
+              else
+                echo "      Erro desconhecido na criação do volume"
+              fi
+              echo ""
+              echo "   💡 AÇÕES NECESSÁRIAS:"
+              echo "      1. Remova o volume manualmente: docker volume rm $POSTGRES_VOLUME"
+              echo "      2. Re-execute o deploy"
+              exit 1
+            fi
+            
+            # Verificar que volume foi criado e tem configuração correta
+            if ! docker volume inspect "$POSTGRES_VOLUME" >/dev/null 2>&1; then
+              echo ""
+              echo "   ❌ ERRO CRÍTICO: Volume $POSTGRES_VOLUME não existe após criação!"
+              exit 1
+            fi
+            
+            # Verificar que volume aponta para diretório correto
+            VOLUME_DEVICE=$(docker volume inspect "$POSTGRES_VOLUME" --format '{{.Options.device}}' 2>/dev/null || echo "")
+            if [ "$VOLUME_DEVICE" != "$POSTGRES_DIR" ]; then
+              echo ""
+              echo "   ❌ ERRO CRÍTICO: Volume aponta para diretório incorreto!"
+              echo "      Esperado: $POSTGRES_DIR"
+              echo "      Atual: $VOLUME_DEVICE"
+              echo ""
+              echo "   💡 Volume pode ser de deploy anterior com configuração diferente."
+              echo "      Remova manualmente: docker volume rm $POSTGRES_VOLUME"
+              exit 1
+            fi
+            
+            echo "   ✅ Volume criado e verificado"
             
             # Testar escrita usando o volume nomeado (EXATAMENTE como PostgreSQL fará)
             echo "   🧪 Testando escrita no volume nomeado..."
@@ -1555,12 +1649,29 @@ jobs:
             echo "✅ PERMISSÕES POSTGRESQL CONFIGURADAS CORRETAMENTE"
             echo "============================================="
             echo ""
-            echo "   ✅ Volume antigo removido (estado limpo)"
+            # =================================================================
+            # CORREÇÃO: Resumo dinâmico baseado no que REALMENTE aconteceu
+            # =================================================================
+            # PROBLEMA IDENTIFICADO (08/01/2026):
+            #   - Resumo sempre dizia "Volume antigo removido" mesmo se não existia
+            #   - Mensagens falsas dificultam troubleshooting
+            # SOLUÇÃO: Usar variáveis trackadas para mostrar estado real
+            # REF: CLAUDE.md Regra 5 (Honestidade), Regra 6 (Enterprise-grade)
+            # =================================================================
+            if [ "$VOLUME_EXISTED" = true ]; then
+              if [ "$VOLUME_REMOVED" = true ]; then
+                echo "   ✅ Volume antigo removido (estado limpo garantido)"
+              else
+                echo "   ⚠️  Volume antigo existia (não deveria chegar aqui - fail-fast)"
+              fi
+            else
+              echo "   ✅ Primeiro deploy (volume criado do zero)"
+            fi
             echo "   ✅ Diretório: $POSTGRES_DIR"
             echo "   ✅ Ownership: 999:999"
             echo "   ✅ Permissões: 700"
             echo "   ✅ Bind mount direto: OK"
-            echo "   ✅ Volume nomeado: OK"
+            echo "   ✅ Volume nomeado: OK (verificado)"
             echo ""
 
       - name: Criar networks Docker
@@ -1817,16 +1928,95 @@ jobs:
             fi
             
             # =================================================================
-            # CORREÇÃO 09/01/2026: Remover volume PostgreSQL se estava com problema
+            # CORREÇÃO 09/01/2026: Remover E RECRIAR volume PostgreSQL se estava com problema
             # =================================================================
-            # Se PostgreSQL estava unhealthy, o volume pode estar em estado
-            # inconsistente. Remover para forçar recriação limpa.
+            # PROBLEMA IDENTIFICADO (08/01/2026):
+            #   - Código original apenas REMOVIA o volume
+            #   - Comentário dizia "será recriado pelo prepare-infrastructure"
+            #   - MAS prepare-infrastructure JÁ EXECUTOU (é dependência de deploy-infra)
+            #   - Volume nunca era recriado → verificação pré-deploy falhava
+            #   - Mensagem de erro enganosa culpava prepare-infrastructure
+            #
+            # SOLUÇÃO ENTERPRISE:
+            #   - Se remover volume, RECRIAR IMEDIATAMENTE aqui mesmo
+            #   - Usar MESMA lógica do prepare-infrastructure (ESTÁGIOS 1-5)
+            #   - Testar escrita no volume recriado antes de prosseguir
+            #
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 5 (Honestidade)
             # =================================================================
+            POSTGRES_DIR="/opt/alice/data/postgres"
+            POSTGRES_VOLUME="alice-postgres-data"
+            
             if [ "$POSTGRES_WAS_UNHEALTHY" = true ]; then
               echo ""
-              echo "🗑️  Removendo volume PostgreSQL (estava inconsistente)..."
-              docker volume rm alice-postgres-data 2>/dev/null || true
-              echo "   ✅ Volume removido (será recriado pelo prepare-infrastructure)"
+              echo "🔄 RECRIANDO VOLUME POSTGRESQL (estava inconsistente)..."
+              echo "============================================="
+              
+              # ESTÁGIO A: Remover volume existente
+              echo "   🗑️  Removendo volume inconsistente..."
+              docker volume rm "$POSTGRES_VOLUME" 2>/dev/null || true
+              
+              # Verificar que foi removido
+              if docker volume inspect "$POSTGRES_VOLUME" >/dev/null 2>&1; then
+                echo ""
+                echo "   ❌ ERRO CRÍTICO: Falha ao remover volume inconsistente!"
+                echo ""
+                echo "   📊 DIAGNÓSTICO:"
+                echo "      Containers usando o volume:"
+                docker ps -a --filter "volume=$POSTGRES_VOLUME" --format '{{.Names}} ({{.Status}})' 2>&1 || echo "      (nenhum)"
+                echo ""
+                echo "   💡 AÇÕES NECESSÁRIAS:"
+                echo "      1. Pare todos os containers: docker stop \$(docker ps -aq)"
+                echo "      2. Remova o volume: docker volume rm $POSTGRES_VOLUME"
+                echo "      3. Re-execute o deploy"
+                exit 1
+              fi
+              echo "   ✅ Volume removido"
+              
+              # ESTÁGIO B: Garantir diretório existe com permissões corretas
+              echo "   📁 Verificando diretório $POSTGRES_DIR..."
+              if [ ! -d "$POSTGRES_DIR" ]; then
+                echo "      Criando diretório..."
+                sudo mkdir -p "$POSTGRES_DIR"
+              fi
+              sudo chown -R 999:999 "$POSTGRES_DIR"
+              sudo chmod 700 "$POSTGRES_DIR"
+              echo "   ✅ Diretório OK (999:999, 700)"
+              
+              # ESTÁGIO C: Criar volume nomeado
+              echo "   📦 Criando volume $POSTGRES_VOLUME..."
+              if ! docker volume create \
+                --driver local \
+                --opt type=none \
+                --opt o=bind \
+                --opt device="$POSTGRES_DIR" \
+                "$POSTGRES_VOLUME" 2>&1; then
+                echo ""
+                echo "   ❌ ERRO CRÍTICO: Falha ao criar volume!"
+                exit 1
+              fi
+              
+              # Verificar que foi criado corretamente
+              if ! docker volume inspect "$POSTGRES_VOLUME" >/dev/null 2>&1; then
+                echo ""
+                echo "   ❌ ERRO CRÍTICO: Volume não existe após criação!"
+                exit 1
+              fi
+              echo "   ✅ Volume criado"
+              
+              # ESTÁGIO D: Testar escrita no volume
+              echo "   🧪 Testando escrita no volume recriado..."
+              if ! docker run --rm --user 999:999 -v "$POSTGRES_VOLUME:/var/lib/postgresql/data:rw" alpine:3.21 sh -c "touch /var/lib/postgresql/data/.write-test && rm -f /var/lib/postgresql/data/.write-test" 2>&1; then
+                echo ""
+                echo "   ❌ ERRO CRÍTICO: Falha no teste de escrita!"
+                docker volume inspect "$POSTGRES_VOLUME" 2>&1 || true
+                exit 1
+              fi
+              echo "   ✅ Teste de escrita OK"
+              
+              echo ""
+              echo "✅ Volume PostgreSQL recriado com sucesso!"
+              echo "============================================="
             fi
 
       - name: Limpar lock files e sockets do PostgreSQL (redundant safety check)
@@ -2005,17 +2195,18 @@ jobs:
             trap cleanup_on_failure EXIT
             
             # =================================================================
-            # VERIFICAÇÃO PRÉ-DEPLOY: Volume PostgreSQL (preparado pelo prepare-infrastructure)
+            # VERIFICAÇÃO PRÉ-DEPLOY: Volume PostgreSQL
             # =================================================================
-            # NOTA (09/01/2026): A preparação COMPLETA do PostgreSQL agora é feita no
-            # job prepare-infrastructure (ESTÁGIOS 0-5), que inclui:
-            #   - Remoção de volume nomeado existente (elimina estado inconsistente)
-            #   - Criação de diretório com ownership 999:999 e mode 700
-            #   - Criação de volume nomeado com bind para o diretório
-            #   - Teste de escrita via volume nomeado (EXATAMENTE como PostgreSQL fará)
+            # NOTA (09/01/2026): O volume PostgreSQL pode ter sido criado por:
+            #   1. Job prepare-infrastructure (ESTÁGIOS 0-5) - caso normal
+            #   2. Step de cleanup acima (se PostgreSQL estava unhealthy)
             #
-            # Este step é apenas uma VERIFICAÇÃO de segurança (belt and suspenders)
-            # para garantir que prepare-infrastructure foi executado corretamente.
+            # CORREÇÃO 08/01/2026: 
+            #   - Mensagem de erro atualizada para refletir ambas as fontes
+            #   - Evita confusão quando cleanup remove/recria o volume
+            #
+            # Este step é uma VERIFICAÇÃO de segurança (belt and suspenders)
+            # para garantir que o volume está pronto antes do docker compose up.
             #
             # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 9 (Validação contínua)
             # =================================================================
@@ -2026,12 +2217,24 @@ jobs:
             POSTGRES_DIR="/opt/alice/data/postgres"
             POSTGRES_VOLUME="alice-postgres-data"
             
-            # Verificar que volume existe (criado pelo prepare-infrastructure)
+            # Verificar que volume existe (criado pelo prepare-infrastructure ou recriado pelo cleanup)
             if ! docker volume inspect "$POSTGRES_VOLUME" >/dev/null 2>&1; then
               echo "❌ ERRO CRÍTICO: Volume $POSTGRES_VOLUME não existe!"
               echo ""
-              echo "   Este volume deveria ter sido criado pelo job prepare-infrastructure."
-              echo "   Verifique se o job anterior foi executado corretamente."
+              echo "   📊 DIAGNÓSTICO:"
+              echo "      O volume deveria ter sido criado pelo job prepare-infrastructure,"
+              echo "      ou recriado pelo step de cleanup se PostgreSQL estava unhealthy."
+              echo ""
+              echo "   🔍 POSSÍVEIS CAUSAS:"
+              echo "      1. Job prepare-infrastructure falhou ou foi pulado"
+              echo "      2. Step de cleanup removeu o volume mas falhou ao recriar"
+              echo "      3. Outro processo removeu o volume entre os steps"
+              echo ""
+              echo "   💡 AÇÕES NECESSÁRIAS:"
+              echo "      1. Verifique os logs dos jobs anteriores no GitHub Actions"
+              echo "      2. Execute manualmente no servidor:"
+              echo "         docker volume create --driver local --opt type=none --opt o=bind --opt device=$POSTGRES_DIR $POSTGRES_VOLUME"
+              echo "      3. Re-execute o deploy"
               exit 1
             fi
             echo "   ✅ Volume $POSTGRES_VOLUME existe"
