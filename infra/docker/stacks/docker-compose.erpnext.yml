@@ -440,7 +440,20 @@ services:
       erpnext-redis-queue:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/method/ping', timeout=10)"]
+      # =======================================================================
+      # CORREÇÃO PR#101 (09/01/2026): Usar endpoint correto do Frappe v15+
+      # =======================================================================
+      # PROBLEMA: /api/method/ping retornava 404 NOT FOUND
+      #           Container funcionava (/ retornava 200) mas healthcheck falhava
+      #
+      # CAUSA RAIZ: No Frappe v15+, endpoints /api/method/* foram movidos para
+      #             /api/v2/method/* como parte da API v2
+      #
+      # SOLUÇÃO: Usar /api/v2/method/ping (endpoint oficial Frappe v15)
+      # REF: https://docs.frappe.io/framework/v15/user/en/guides/integration/rest_api
+      # REF: CLAUDE.md Regra 7 (Diagnóstico de causa raiz), Regra 11 (Docs oficiais)
+      # =======================================================================
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v2/method/ping', timeout=10)"]
       interval: 30s
       timeout: 15s
       retries: 15

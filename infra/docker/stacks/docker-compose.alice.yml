@@ -84,10 +84,20 @@ services:
       # Ref: NGINX Alpine 2025 best practices
       - /var/lib/nginx:mode=1777,size=16M
     healthcheck:
-      # CORREÇÃO 05/01/2026: nginx:alpine usa ash/busybox - NÃO tem /dev/tcp
-      # /dev/tcp é bash-only. Alpine TEM wget disponível.
-      # Ref: CLAUDE.md documentação de bugs corrigidos
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:80/ || exit 1"]
+      # =======================================================================
+      # CORREÇÃO PR#101 (09/01/2026): Usar porta correta do NGINX
+      # =======================================================================
+      # PROBLEMA: Healthcheck verificava porta 80, mas nginx.conf usa "listen 8080"
+      #           Resultado: "wget: can't connect to remote host: Connection refused"
+      #           Mesmo com container funcionando perfeitamente (servindo usuários)
+      #
+      # SOLUÇÃO: Usar porta 8080 + endpoint /health dedicado
+      # - nginx.conf linha 6: listen 8080
+      # - nginx.conf linha 73-77: location /health { return 200 "healthy\n" }
+      #
+      # REF: CLAUDE.md Regra 7 (Diagnóstico de causa raiz)
+      # =======================================================================
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 10

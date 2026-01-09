@@ -1,19 +1,18 @@
 # =============================================================================
-# Alice Enterprise Platform - Grafana Datasources Consolidado
+# Alice Enterprise Platform - Grafana Datasources
 # =============================================================================
 # Configuração automática de TODOS os datasources para Grafana.
 # Conecta Prometheus (métricas), Loki (logs) e Jaeger (traces).
 #
-# NOTA IMPORTANTE (07/01/2026):
-#   Este arquivo CONSOLIDA os datasources que existem separadamente.
-#   Grafana suporta múltiplos arquivos de provisioning, mas o workflow
-#   de deploy espera este arquivo consolidado em:
-#   infra/observability/grafana/provisioning/datasources/datasources.yml
+# CORREÇÃO PR#101 (09/01/2026):
+#   Arquivos individuais (prometheus.yml, loki.yml, jaeger.yml) REMOVIDOS
+#   porque Grafana carrega TODOS os .yml na pasta de provisioning,
+#   causando erro: "Only one datasource per organization can be marked as default"
 #
-# Os arquivos individuais (prometheus.yml, loki.yml, jaeger.yml) continuam
-# existindo para referência e podem ser usados alternativamente.
+#   Este é o ÚNICO arquivo de datasources - não criar arquivos adicionais!
 #
 # Documentação PT-BR (Regra 10 CLAUDE.md)
+# Author: Fillipe Guerra
 # =============================================================================
 
 apiVersion: 1
