@@ -1,6 +1,6 @@
 # =============================================================================
-# WORKFLOW VERSION: 3.0.0-modular (06/01/2026)
-# ÚLTIMA MODIFICAÇÃO: Refatoração completa para arquitetura modular enterprise
+# WORKFLOW VERSION: 3.1.0-modular (09/01/2026)
+# ÚLTIMA MODIFICAÇÃO: Smart Deploy - deploy inteligente que pula stacks healthy
 # =============================================================================
 # GitHub Actions Workflow - Deploy Modular por Stack (Enterprise 2025)
 # =============================================================================
@@ -12,6 +12,14 @@
 # - Rollback cirúrgico (só reverte stack com falha)
 # - Logs isolados por stack (troubleshooting facilitado)
 # - Produção parcial real (ERPNext falha → Alice continua)
+#
+# SMART DEPLOY (09/01/2026):
+# - smart_deploy=false: Comportamento tradicional (deploya todos selecionados)
+# - smart_deploy=true + stack=all: Verifica servidor, PULA stacks healthy
+# - smart_deploy=true + stack=X: Força deploy de X mesmo se healthy
+# - Economia de tempo: Não redeploya stacks funcionais
+# - Reparo cirúrgico: Deploya apenas stacks problemáticos
+# - REF: Kubernetes GitOps selective deployment best practices 2025
 #
 # STACKS DISPONÍVEIS:
 #   - infra: PostgreSQL, Redis, Qdrant, SearXNG, Tor, Caddy, MinIO
@@ -31,6 +39,7 @@
 #   - Rollback só executa se health check FALHAR
 #   - Rollback de um stack NÃO afeta outros
 #   - Histórico de versões por stack em /opt/alice/versions/
+#   - CLEANUP mode para primeiro deploy (sem versão anterior)
 #
 # PARALELIZAÇÃO:
 #   - infra: sempre primeiro (sequencial)
@@ -38,7 +47,7 @@
 #   - 3x mais rápido que arquitetura monolítica
 #
 # Author: Fillipe Guerra
-# Data: 06/01/2026
+# Data: 09/01/2026
 # Ref: GitHub Actions Best Practices 2025, Regras 6+12+15+16 CLAUDE.md
 # =============================================================================
 
@@ -85,6 +94,11 @@ on:
         type: boolean
         required: false
         default: false
+      smart_deploy:
+        description: 'Deploy inteligente - pula stacks já healthy no servidor'
+        type: boolean
+        required: false
+        default: false
 
 concurrency:
   group: deploy-modular-${{ github.event.inputs.version }}-${{ github.event.inputs.stack }}
@@ -118,11 +132,18 @@ jobs:
       is_rollback: ${{ steps.context.outputs.rollback }}
       rollback_version: ${{ steps.context.outputs.rollback_version }}
       dry_run: ${{ steps.context.outputs.dry_run }}
+      smart_deploy: ${{ steps.context.outputs.smart_deploy }}
       deploy_infra: ${{ steps.stacks.outputs.deploy_infra }}
       deploy_alice: ${{ steps.stacks.outputs.deploy_alice }}
       deploy_observability: ${{ steps.stacks.outputs.deploy_observability }}
       deploy_erpnext: ${{ steps.stacks.outputs.deploy_erpnext }}
       deploy_backup: ${{ steps.stacks.outputs.deploy_backup }}
+      # SMART DEPLOY: Status de cada stack no servidor (para logs/debugging)
+      infra_status: ${{ steps.server-health.outputs.infra_status }}
+      alice_status: ${{ steps.server-health.outputs.alice_status }}
+      observability_status: ${{ steps.server-health.outputs.observability_status }}
+      erpnext_status: ${{ steps.server-health.outputs.erpnext_status }}
+      backup_status: ${{ steps.server-health.outputs.backup_status }}
     
     steps:
       - name: Determine trigger context
@@ -137,6 +158,7 @@ jobs:
           ROLLBACK="${{ github.event.inputs.rollback }}"
           ROLLBACK_VERSION="${{ github.event.inputs.rollback_version }}"
           DRY_RUN="${{ github.event.inputs.dry_run }}"
+          SMART_DEPLOY="${{ github.event.inputs.smart_deploy }}"
           echo "🖱️ Trigger: workflow_dispatch"
           
           echo "stack=$STACK" >> "$GITHUB_OUTPUT"
@@ -144,58 +166,390 @@ jobs:
           echo "rollback=$ROLLBACK" >> "$GITHUB_OUTPUT"
           echo "rollback_version=$ROLLBACK_VERSION" >> "$GITHUB_OUTPUT"
           echo "dry_run=$DRY_RUN" >> "$GITHUB_OUTPUT"
+          echo "smart_deploy=$SMART_DEPLOY" >> "$GITHUB_OUTPUT"
           
           echo "📦 Stack: $STACK"
           echo "🏷️ Versão: $VERSION"
           echo "🔄 Rollback: $ROLLBACK"
+          echo "🧠 Smart Deploy: $SMART_DEPLOY"
+
+      # =========================================================================
+      # SMART DEPLOY: Verificar estado dos stacks no servidor de produção
+      # =========================================================================
+      # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 11 (Best practices 2025)
+      # 
+      # CONCEITO: Deploy modular inteligente - pula stacks que já estão healthy
+      # - Economiza tempo de deploy
+      # - Mantém stacks funcionais intactos
+      # - Permite reparo cirúrgico de stacks problemáticos
+      #
+      # COMPORTAMENTO:
+      # - smart_deploy=false: Deploy tradicional (todos os stacks selecionados)
+      # - smart_deploy=true + stack=all: Verifica servidor, pula stacks healthy
+      # - smart_deploy=true + stack=X: Força deploy do stack X mesmo se healthy
+      # =========================================================================
+      - name: Check server stacks health (Smart Deploy)
+        id: server-health
+        if: github.event.inputs.smart_deploy == 'true'
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.HETZNER_VM_HOST }}
+          username: ${{ secrets.HETZNER_VM_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          command_timeout: 60s
+          script: |
+            set -euo pipefail
+            
+            echo "🧠 SMART DEPLOY - Verificando estado dos stacks no servidor"
+            echo "============================================================="
+            
+            # =================================================================
+            # Função para verificar saúde de um stack
+            # Retorna: healthy | unhealthy | missing
+            # =================================================================
+            check_stack_health() {
+              local STACK_NAME=$1
+              shift
+              local CONTAINERS=("$@")
+              
+              local TOTAL=${#CONTAINERS[@]}
+              local HEALTHY=0
+              local UNHEALTHY=0
+              local MISSING=0
+              
+              for container in "${CONTAINERS[@]}"; do
+                if ! docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
+                  MISSING=$((MISSING + 1))
+                else
+                  # Verificar se é init container (restart: "no") ou container normal
+                  local RESTART_POLICY=$(docker inspect --format '{{.HostConfig.RestartPolicy.Name}}' "$container" 2>/dev/null || echo "unknown")
+                  local STATUS=$(docker inspect --format '{{.State.Status}}' "$container" 2>/dev/null || echo "missing")
+                  local EXIT_CODE=$(docker inspect --format '{{.State.ExitCode}}' "$container" 2>/dev/null || echo "-1")
+                  
+                  if [ "$RESTART_POLICY" = "no" ]; then
+                    # Init container: healthy se status=exited E exit_code=0
+                    if [ "$STATUS" = "exited" ] && [ "$EXIT_CODE" = "0" ]; then
+                      HEALTHY=$((HEALTHY + 1))
+                    else
+                      UNHEALTHY=$((UNHEALTHY + 1))
+                    fi
+                  else
+                    # Container normal: verificar health status
+                    local HEALTH=$(docker inspect --format '{{.State.Health.Status}}' "$container" 2>/dev/null || echo "none")
+                    if [ "$HEALTH" = "healthy" ]; then
+                      HEALTHY=$((HEALTHY + 1))
+                    elif [ "$STATUS" = "running" ] && [ "$HEALTH" = "none" ]; then
+                      # Container sem healthcheck mas rodando = considerar healthy
+                      HEALTHY=$((HEALTHY + 1))
+                    else
+                      UNHEALTHY=$((UNHEALTHY + 1))
+                    fi
+                  fi
+                fi
+              done
+              
+              # Determinar status geral do stack
+              if [ "$MISSING" -eq "$TOTAL" ]; then
+                echo "missing"
+              elif [ "$HEALTHY" -eq "$TOTAL" ]; then
+                echo "healthy"
+              else
+                echo "unhealthy"
+              fi
+            }
+            
+            # =================================================================
+            # Definir containers de cada stack
+            # =================================================================
+            INFRA_CONTAINERS=(
+              "alice-postgres"
+              "alice-redis"
+              "alice-qdrant"
+              "alice-caddy"
+              "alice-minio"
+              "alice-pgbouncer"
+              "alice-tor"
+              "alice-searxng"
+              "alice-minio-init"
+              "alice-pgbackrest-init"
+            )
+            
+            ALICE_CONTAINERS=(
+              "alice-frontend"
+              "alice-auth"
+              "alice-chat"
+              "alice-rag"
+              "alice-training"
+              "alice-integrations"
+              "alice-observability"
+              "alice-gpu-manager"
+            )
+            
+            OBSERVABILITY_CONTAINERS=(
+              "prometheus"
+              "grafana"
+              "loki"
+              "promtail"
+              "jaeger"
+              "otel-collector"
+              "node-exporter"
+              "cadvisor"
+              "alice-vector"
+              "langfuse"
+              "langfuse-worker"
+              "alice-clickhouse"
+              "langfuse-db"
+            )
+            
+            ERPNEXT_CONTAINERS=(
+              "erpnext-mariadb"
+              "erpnext-redis-cache"
+              "erpnext-redis-queue"
+              "erpnext-backend"
+              "erpnext-frontend"
+              "erpnext-websocket"
+              "erpnext-scheduler"
+              "erpnext-worker-default-0"
+              "erpnext-worker-default-1"
+              "erpnext-worker-default-2"
+              "erpnext-worker-short-0"
+              "erpnext-worker-short-1"
+              "erpnext-worker-short-2"
+              "erpnext-worker-long-0"
+              "erpnext-worker-long-1"
+              "erpnext-worker-long-2"
+            )
+            
+            BACKUP_CONTAINERS=(
+              "alice-pgbackrest"
+            )
+            
+            # =================================================================
+            # Verificar cada stack
+            # =================================================================
+            echo ""
+            echo "📊 Verificando stacks..."
+            echo ""
+            
+            INFRA_STATUS=$(check_stack_health "INFRA" "${INFRA_CONTAINERS[@]}")
+            ALICE_STATUS=$(check_stack_health "ALICE" "${ALICE_CONTAINERS[@]}")
+            OBSERVABILITY_STATUS=$(check_stack_health "OBSERVABILITY" "${OBSERVABILITY_CONTAINERS[@]}")
+            ERPNEXT_STATUS=$(check_stack_health "ERPNEXT" "${ERPNEXT_CONTAINERS[@]}")
+            BACKUP_STATUS=$(check_stack_health "BACKUP" "${BACKUP_CONTAINERS[@]}")
+            
+            # =================================================================
+            # Exibir resultados
+            # =================================================================
+            echo "┌─────────────────────────────────────────────────────────┐"
+            echo "│             SMART DEPLOY - STATUS DOS STACKS            │"
+            echo "├─────────────────────────────────────────────────────────┤"
+            
+            print_status() {
+              local NAME=$1
+              local STATUS=$2
+              case $STATUS in
+                healthy)   echo "│  ✅ $NAME: HEALTHY (será PULADO)                    │" ;;
+                unhealthy) echo "│  ❌ $NAME: UNHEALTHY (será DEPLOYADO)               │" ;;
+                missing)   echo "│  ⚠️  $NAME: MISSING (será DEPLOYADO)                │" ;;
+              esac
+            }
+            
+            print_status "INFRA        " "$INFRA_STATUS"
+            print_status "ALICE        " "$ALICE_STATUS"
+            print_status "OBSERVABILITY" "$OBSERVABILITY_STATUS"
+            print_status "ERPNEXT      " "$ERPNEXT_STATUS"
+            print_status "BACKUP       " "$BACKUP_STATUS"
+            
+            echo "└─────────────────────────────────────────────────────────┘"
+            echo ""
+            
+            # =================================================================
+            # Exportar resultados via arquivos (para captura no GitHub Actions)
+            # =================================================================
+            mkdir -p /tmp/smart-deploy
+            echo "$INFRA_STATUS" > /tmp/smart-deploy/infra_status
+            echo "$ALICE_STATUS" > /tmp/smart-deploy/alice_status
+            echo "$OBSERVABILITY_STATUS" > /tmp/smart-deploy/observability_status
+            echo "$ERPNEXT_STATUS" > /tmp/smart-deploy/erpnext_status
+            echo "$BACKUP_STATUS" > /tmp/smart-deploy/backup_status
+            
+            echo "✅ Smart Deploy check concluído"
+
+      - name: Capture server health results via SCP
+        id: capture-health
+        if: github.event.inputs.smart_deploy == 'true'
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          SSH_HOST: ${{ secrets.HETZNER_VM_HOST }}
+          SSH_USER: ${{ secrets.HETZNER_VM_USER }}
+        run: |
+          # Configurar SSH
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          
+          # Baixar resultados do servidor
+          mkdir -p /tmp/smart-deploy-results
+          scp -o StrictHostKeyChecking=no -o ConnectTimeout=30 \
+            "$SSH_USER@$SSH_HOST:/tmp/smart-deploy/*" \
+            /tmp/smart-deploy-results/ 2>/dev/null || echo "Falha ao baixar resultados"
+          
+          # Ler status de cada stack
+          INFRA_STATUS=$(cat /tmp/smart-deploy-results/infra_status 2>/dev/null || echo "unknown")
+          ALICE_STATUS=$(cat /tmp/smart-deploy-results/alice_status 2>/dev/null || echo "unknown")
+          OBSERVABILITY_STATUS=$(cat /tmp/smart-deploy-results/observability_status 2>/dev/null || echo "unknown")
+          ERPNEXT_STATUS=$(cat /tmp/smart-deploy-results/erpnext_status 2>/dev/null || echo "unknown")
+          BACKUP_STATUS=$(cat /tmp/smart-deploy-results/backup_status 2>/dev/null || echo "unknown")
+          
+          # Exportar outputs
+          echo "infra_status=$INFRA_STATUS" >> "$GITHUB_OUTPUT"
+          echo "alice_status=$ALICE_STATUS" >> "$GITHUB_OUTPUT"
+          echo "observability_status=$OBSERVABILITY_STATUS" >> "$GITHUB_OUTPUT"
+          echo "erpnext_status=$ERPNEXT_STATUS" >> "$GITHUB_OUTPUT"
+          echo "backup_status=$BACKUP_STATUS" >> "$GITHUB_OUTPUT"
+          
+          # Limpar SSH key
+          rm -f ~/.ssh/id_rsa
+          
+          echo "📊 Status capturado: INFRA=$INFRA_STATUS, ALICE=$ALICE_STATUS, OBS=$OBSERVABILITY_STATUS, ERP=$ERPNEXT_STATUS, BACKUP=$BACKUP_STATUS"
+
+      - name: Parse server health for outputs
+        id: parse-health
+        if: github.event.inputs.smart_deploy == 'true'
+        shell: bash
+        run: |
+          # Repassar outputs do step anterior para este step (para o step stacks usar)
+          echo "infra_status=${{ steps.capture-health.outputs.infra_status }}" >> "$GITHUB_OUTPUT"
+          echo "alice_status=${{ steps.capture-health.outputs.alice_status }}" >> "$GITHUB_OUTPUT"
+          echo "observability_status=${{ steps.capture-health.outputs.observability_status }}" >> "$GITHUB_OUTPUT"
+          echo "erpnext_status=${{ steps.capture-health.outputs.erpnext_status }}" >> "$GITHUB_OUTPUT"
+          echo "backup_status=${{ steps.capture-health.outputs.backup_status }}" >> "$GITHUB_OUTPUT"
+
+      - name: Set server health outputs (default if not smart_deploy)
+        id: server-health-default
+        if: github.event.inputs.smart_deploy != 'true'
+        shell: bash
+        run: |
+          # Se smart_deploy=false, todos os status são "unknown" (não verificado)
+          echo "infra_status=unknown" >> "$GITHUB_OUTPUT"
+          echo "alice_status=unknown" >> "$GITHUB_OUTPUT"
+          echo "observability_status=unknown" >> "$GITHUB_OUTPUT"
+          echo "erpnext_status=unknown" >> "$GITHUB_OUTPUT"
+          echo "backup_status=unknown" >> "$GITHUB_OUTPUT"
+          echo "📊 Smart Deploy desabilitado - status não verificado"
 
       - name: Determine which stacks to deploy
         id: stacks
         shell: bash
         run: |
           STACK="${{ steps.context.outputs.stack }}"
+          SMART_DEPLOY="${{ steps.context.outputs.smart_deploy }}"
           
-          # Flags para controlar quais stacks serão deployados
-          # Isso permite paralelização inteligente via needs: condicional
-          if [ "$STACK" = "all" ]; then
-            echo "deploy_infra=true" >> "$GITHUB_OUTPUT"
-            echo "deploy_alice=true" >> "$GITHUB_OUTPUT"
-            echo "deploy_observability=true" >> "$GITHUB_OUTPUT"
-            echo "deploy_erpnext=true" >> "$GITHUB_OUTPUT"
-            echo "deploy_backup=true" >> "$GITHUB_OUTPUT"
-          elif [ "$STACK" = "infra" ]; then
-            echo "deploy_infra=true" >> "$GITHUB_OUTPUT"
-            echo "deploy_alice=false" >> "$GITHUB_OUTPUT"
-            echo "deploy_observability=false" >> "$GITHUB_OUTPUT"
-            echo "deploy_erpnext=false" >> "$GITHUB_OUTPUT"
-            echo "deploy_backup=false" >> "$GITHUB_OUTPUT"
-          elif [ "$STACK" = "alice" ]; then
-            echo "deploy_infra=false" >> "$GITHUB_OUTPUT"
-            echo "deploy_alice=true" >> "$GITHUB_OUTPUT"
-            echo "deploy_observability=false" >> "$GITHUB_OUTPUT"
-            echo "deploy_erpnext=false" >> "$GITHUB_OUTPUT"
-            echo "deploy_backup=false" >> "$GITHUB_OUTPUT"
-          elif [ "$STACK" = "observability" ]; then
-            echo "deploy_infra=false" >> "$GITHUB_OUTPUT"
-            echo "deploy_alice=false" >> "$GITHUB_OUTPUT"
-            echo "deploy_observability=true" >> "$GITHUB_OUTPUT"
-            echo "deploy_erpnext=false" >> "$GITHUB_OUTPUT"
-            echo "deploy_backup=false" >> "$GITHUB_OUTPUT"
-          elif [ "$STACK" = "erpnext" ]; then
-            echo "deploy_infra=false" >> "$GITHUB_OUTPUT"
-            echo "deploy_alice=false" >> "$GITHUB_OUTPUT"
-            echo "deploy_observability=false" >> "$GITHUB_OUTPUT"
-            echo "deploy_erpnext=true" >> "$GITHUB_OUTPUT"
-            echo "deploy_backup=false" >> "$GITHUB_OUTPUT"
-          elif [ "$STACK" = "backup" ]; then
-            echo "deploy_infra=false" >> "$GITHUB_OUTPUT"
-            echo "deploy_alice=false" >> "$GITHUB_OUTPUT"
-            echo "deploy_observability=false" >> "$GITHUB_OUTPUT"
-            echo "deploy_erpnext=false" >> "$GITHUB_OUTPUT"
-            echo "deploy_backup=true" >> "$GITHUB_OUTPUT"
+          # Capturar status do servidor (de um dos steps anteriores)
+          if [ "$SMART_DEPLOY" = "true" ]; then
+            INFRA_STATUS="${{ steps.parse-health.outputs.infra_status }}"
+            ALICE_STATUS="${{ steps.parse-health.outputs.alice_status }}"
+            OBSERVABILITY_STATUS="${{ steps.parse-health.outputs.observability_status }}"
+            ERPNEXT_STATUS="${{ steps.parse-health.outputs.erpnext_status }}"
+            BACKUP_STATUS="${{ steps.parse-health.outputs.backup_status }}"
+          else
+            INFRA_STATUS="unknown"
+            ALICE_STATUS="unknown"
+            OBSERVABILITY_STATUS="unknown"
+            ERPNEXT_STATUS="unknown"
+            BACKUP_STATUS="unknown"
           fi
           
-          echo "✅ Stacks selecionados para deploy"
+          # Defaults
+          [ -z "$INFRA_STATUS" ] && INFRA_STATUS="unknown"
+          [ -z "$ALICE_STATUS" ] && ALICE_STATUS="unknown"
+          [ -z "$OBSERVABILITY_STATUS" ] && OBSERVABILITY_STATUS="unknown"
+          [ -z "$ERPNEXT_STATUS" ] && ERPNEXT_STATUS="unknown"
+          [ -z "$BACKUP_STATUS" ] && BACKUP_STATUS="unknown"
+          
+          # =================================================================
+          # LÓGICA DE SMART DEPLOY
+          # =================================================================
+          # - Se smart_deploy=false: comportamento tradicional
+          # - Se smart_deploy=true E stack=all: pula stacks healthy
+          # - Se smart_deploy=true E stack=X: força deploy de X mesmo se healthy
+          # =================================================================
+          
+          echo "🧠 Smart Deploy: $SMART_DEPLOY"
+          echo "📦 Stack selecionado: $STACK"
+          echo ""
+          
+          # Função para determinar se deve deployar
+          should_deploy() {
+            local SELECTED_STACK=$1
+            local TARGET_STACK=$2
+            local STATUS=$3
+            
+            # Se o stack específico foi selecionado, SEMPRE deploya
+            if [ "$SELECTED_STACK" = "$TARGET_STACK" ]; then
+              echo "true"
+              return
+            fi
+            
+            # Se stack=all
+            if [ "$SELECTED_STACK" = "all" ]; then
+              # Se smart_deploy=true E status=healthy, PULA
+              if [ "$SMART_DEPLOY" = "true" ] && [ "$STATUS" = "healthy" ]; then
+                echo "false"
+                return
+              fi
+              # Caso contrário, DEPLOYA
+              echo "true"
+              return
+            fi
+            
+            # Stack não selecionado
+            echo "false"
+          }
+          
+          # Determinar cada stack
+          DEPLOY_INFRA=$(should_deploy "$STACK" "infra" "$INFRA_STATUS")
+          DEPLOY_ALICE=$(should_deploy "$STACK" "alice" "$ALICE_STATUS")
+          DEPLOY_OBSERVABILITY=$(should_deploy "$STACK" "observability" "$OBSERVABILITY_STATUS")
+          DEPLOY_ERPNEXT=$(should_deploy "$STACK" "erpnext" "$ERPNEXT_STATUS")
+          DEPLOY_BACKUP=$(should_deploy "$STACK" "backup" "$BACKUP_STATUS")
+          
+          # Exportar outputs
+          echo "deploy_infra=$DEPLOY_INFRA" >> "$GITHUB_OUTPUT"
+          echo "deploy_alice=$DEPLOY_ALICE" >> "$GITHUB_OUTPUT"
+          echo "deploy_observability=$DEPLOY_OBSERVABILITY" >> "$GITHUB_OUTPUT"
+          echo "deploy_erpnext=$DEPLOY_ERPNEXT" >> "$GITHUB_OUTPUT"
+          echo "deploy_backup=$DEPLOY_BACKUP" >> "$GITHUB_OUTPUT"
+          
+          # Resumo visual
+          echo ""
+          echo "┌─────────────────────────────────────────────────────────┐"
+          echo "│           DECISÃO DE DEPLOY (Smart Deploy)              │"
+          echo "├─────────────────────────────────────────────────────────┤"
+          
+          print_decision() {
+            local NAME=$1
+            local DEPLOY=$2
+            local STATUS=$3
+            if [ "$DEPLOY" = "true" ]; then
+              echo "│  🚀 $NAME: SERÁ DEPLOYADO (status: $STATUS)     │"
+            else
+              echo "│  ⏭️  $NAME: PULADO (status: $STATUS)            │"
+            fi
+          }
+          
+          print_decision "INFRA        " "$DEPLOY_INFRA" "$INFRA_STATUS"
+          print_decision "ALICE        " "$DEPLOY_ALICE" "$ALICE_STATUS"
+          print_decision "OBSERVABILITY" "$DEPLOY_OBSERVABILITY" "$OBSERVABILITY_STATUS"
+          print_decision "ERPNEXT      " "$DEPLOY_ERPNEXT" "$ERPNEXT_STATUS"
+          print_decision "BACKUP       " "$DEPLOY_BACKUP" "$BACKUP_STATUS"
+          
+          echo "└─────────────────────────────────────────────────────────┘"
+          echo ""
+          echo "✅ Stacks determinados para deploy"
 
       - name: Checkout código
         uses: actions/checkout@v4
