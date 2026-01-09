@@ -2822,16 +2822,34 @@ jobs:
             
             cd /opt/alice/app/infra/docker/stacks
             
-            echo "🚀 Deploying INFRA stack (postgres, redis, qdrant, caddy, minio, searxng, tor)..."
+            echo "══════════════════════════════════════════════════════════════════"
+            echo "🚀 DEPLOYING INFRA STACK"
+            echo "══════════════════════════════════════════════════════════════════"
+            echo ""
+            echo "📦 Containers: postgres, pgbouncer, redis, qdrant, caddy, minio, searxng, tor"
+            echo "📅 Versão: ${{ needs.validate.outputs.version }}"
+            echo ""
             
             # Salvar versão anterior (rollback safety)
             if [ -f /opt/alice/versions/infra.current ]; then
               cp /opt/alice/versions/infra.current /opt/alice/versions/infra.previous
+              echo "📋 Versão anterior: $(cat /opt/alice/versions/infra.previous)"
+            else
+              echo "📋 Primeiro deploy (sem versão anterior)"
             fi
+            echo ""
             
-            # Pull e deploy
-            # CRITICAL: Incluir base.yml para criar volumes/networks externos
-            docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.infra.yml pull
+            # Pull das imagens
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📥 PULL: Baixando imagens..."
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            if ! docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.infra.yml pull 2>&1; then
+              echo ""
+              echo "❌ ERRO: Falha no pull das imagens!"
+              exit 1
+            fi
+            echo "✅ Pull concluído"
+            echo ""
             
             # =================================================================
             # CORREÇÃO PR#92 (09/01/2026): Verificação customizada para init containers
@@ -2854,11 +2872,33 @@ jobs:
             # Lista de containers que devem ficar healthy
             HEALTH_CONTAINERS="alice-postgres alice-redis alice-qdrant alice-caddy alice-minio alice-tor alice-searxng alice-pgbouncer"
             
-            echo "⏳ Iniciando containers..."
-            docker compose -p alice-infra --env-file ../.env.prod \
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "🚀 UP: Iniciando containers..."
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            if ! docker compose -p alice-infra --env-file ../.env.prod \
                            -f docker-compose.base.yml \
                            -f docker-compose.infra.yml \
-                           up -d --remove-orphans
+                           up -d --remove-orphans 2>&1; then
+              echo ""
+              echo "❌ ERRO: Falha no docker compose up!"
+              echo ""
+              echo "📋 Status dos containers:"
+              docker ps -a --filter "name=alice-" --format "table {{.Names}}\t{{.Status}}" || true
+              echo ""
+              echo "📋 Logs dos containers com erro (últimas 30 linhas cada):"
+              for c in alice-postgres alice-redis alice-qdrant alice-caddy alice-minio alice-tor alice-searxng alice-pgbouncer; do
+                if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
+                  STATUS=$(docker inspect --format='{{.State.Status}}' $c 2>/dev/null || echo "unknown")
+                  if [ "$STATUS" != "running" ]; then
+                    echo ""
+                    echo "── $c (status: $STATUS) ──"
+                    docker logs $c --tail 30 2>&1 || echo "   (sem logs)"
+                  fi
+                fi
+              done
+              exit 1
+            fi
+            echo ""
             
             echo "⏳ Aguardando containers (timeout: 600s)..."
             TIMEOUT=600
@@ -2913,15 +2953,39 @@ jobs:
             done
             
             if [ $ELAPSED -ge $TIMEOUT ]; then
-              echo "❌ Timeout esperando containers ficarem healthy"
-              docker ps -a --format 'table {{.Names}}\t{{.Status}}'
+              echo ""
+              echo "══════════════════════════════════════════════════════════════════"
+              echo "❌ TIMEOUT: Containers não ficaram healthy após ${TIMEOUT}s"
+              echo "══════════════════════════════════════════════════════════════════"
+              echo ""
+              echo "📋 STATUS DOS CONTAINERS:"
+              docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E "alice-" || true
+              echo ""
+              echo "📋 LOGS DOS CONTAINERS COM PROBLEMA:"
+              for c in $HEALTH_CONTAINERS; do
+                HEALTH=$(docker inspect --format='{{.State.Health.Status}}' $c 2>/dev/null || echo "none")
+                if [ "$HEALTH" != "healthy" ]; then
+                  echo ""
+                  echo "── $c (health: $HEALTH) ──"
+                  docker logs $c --tail 30 2>&1 || echo "   (sem logs)"
+                fi
+              done
               exit 1
             fi
+            
+            # Verificar status inicial
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📋 STATUS: Containers após deploy"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            docker ps -a --filter "name=alice-" --format "table {{.Names}}\t{{.Status}}" | grep -E "alice-(postgres|redis|qdrant|caddy|minio|tor|searxng|pgbouncer)" || echo "   (nenhum container encontrado)"
+            echo ""
             
             # Salvar versão atual
             echo "${{ needs.validate.outputs.version }}" > /opt/alice/versions/infra.current
             
-            echo "✅ INFRA stack deployed e todos containers healthy"
+            echo "══════════════════════════════════════════════════════════════════"
+            echo "✅ INFRA STACK DEPLOYED"
+            echo "══════════════════════════════════════════════════════════════════"
 
       - name: Clean init containers (post-deploy)
         uses: appleboy/ssh-action@v1.2.2
