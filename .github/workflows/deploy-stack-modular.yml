@@ -1001,9 +1001,9 @@ jobs:
               if [ ! -d "$dir" ]; then
                 echo "   📝 Criando diretório: $dir"
                 sudo mkdir -p "$dir"
-                sudo chown 999:999 "$dir"
+                sudo chown 70:70 "$dir"
                 sudo chmod 700 "$dir"
-                echo "   ✅ Diretório criado com ownership 999:999 e permissions 700"
+                echo "   ✅ Diretório criado com ownership 70:70 e permissions 700"
                 return 0
               fi
               
@@ -1017,23 +1017,23 @@ jobs:
               ACTUAL_OWNER=$(sudo stat -c "%u:%g" "$dir")
               
               # Se vazio ou ownership incorreto, corrigir
-              if [ "$is_empty" = true ] || [ "$ACTUAL_OWNER" != "999:999" ]; then
+              if [ "$is_empty" = true ] || [ "$ACTUAL_OWNER" != "70:70" ]; then
                 if [ "$is_empty" = true ]; then
                   echo "   📝 Diretório vazio - configurando ownership..."
-                  sudo chown 999:999 "$dir"
+                  sudo chown 70:70 "$dir"
                 else
-                  echo "   ⚠️  Ownership incorreto: $ACTUAL_OWNER → 999:999"
-                  echo "   🔧 CORREÇÃO: Aplicando chown -R 999:999 recursivamente..."
+                  echo "   ⚠️  Ownership incorreto: $ACTUAL_OWNER → 70:70"
+                  echo "   🔧 CORREÇÃO: Aplicando chown -R 70:70 recursivamente..."
                   
                   # Corrigir ownership recursivamente (pode demorar em volumes grandes)
-                  if ! sudo chown -R 999:999 "$dir"; then
+                  if ! sudo chown -R 70:70 "$dir"; then
                     echo "   ❌ Falha ao corrigir ownership!"
                     return 1
                   fi
                   echo "   ✅ Ownership corrigido recursivamente"
                 fi
               else
-                echo "   ✅ Ownership correto: 999:999"
+                echo "   ✅ Ownership correto: 70:70"
               fi
               
               # Validar e corrigir permissões
@@ -1135,24 +1135,24 @@ jobs:
             POSTGRES_DIR="/opt/alice/data/postgres"
             
             # Estágio 1: Verificar que diretório existe
-            # CORREÇÃO 08/01/2026: Usar sudo para acessar diretório PostgreSQL (modo 700, UID 999)
+            # CORREÇÃO 08/01/2026: Usar sudo para acessar diretório PostgreSQL (modo 700, UID 70 (Alpine))
             if ! sudo test -d "$POSTGRES_DIR"; then
               echo "❌ ERRO: Diretório $POSTGRES_DIR não existe!"
               exit 1
             fi
             echo "   ✅ Estágio 1: Diretório existe"
             
-            # Estágio 2: Verificar owner/group (999:999)
+            # Estágio 2: Verificar owner/group (70:70)
             # CORREÇÃO 08/01/2026: stat requer sudo para ler metadata de diretório 700
             ACTUAL_OWNER=$(sudo stat -c '%u:%g' "$POSTGRES_DIR")
-            if [ "$ACTUAL_OWNER" != "999:999" ]; then
+            if [ "$ACTUAL_OWNER" != "70:70" ]; then
               echo "❌ ERRO: Owner incorreto em $POSTGRES_DIR"
-              echo "   Esperado: 999:999"
+              echo "   Esperado: 70:70"
               echo "   Atual: $ACTUAL_OWNER"
               sudo ls -ld "$POSTGRES_DIR"
               exit 1
             fi
-            echo "   ✅ Estágio 2: Owner/group correto (999:999)"
+            echo "   ✅ Estágio 2: Owner/group correto (70:70)"
             
             # Estágio 3: Verificar permissões numéricas (700)
             # CORREÇÃO 08/01/2026: stat requer sudo para ler metadata de diretório 700
@@ -1165,16 +1165,16 @@ jobs:
             fi
             echo "   ✅ Estágio 3: Permissões corretas (700)"
             
-            # Estágio 4: Teste de escrita como UID 999 via Docker
-            # (funciona em servidor limpo sem UID 999 no host)
-            if ! docker run --rm --user 999:999 -v "$POSTGRES_DIR:/test:rw" alpine:3.19 touch /test/.write-test 2>/dev/null; then
+            # Estágio 4: Teste de escrita como UID 70 (Alpine) via Docker
+            # (funciona em servidor limpo sem UID 70 (Alpine) no host)
+            if ! docker run --rm --user 70:70 -v "$POSTGRES_DIR:/test:rw" alpine:3.19 touch /test/.write-test 2>/dev/null; then
               echo "❌ ERRO: Usuário 999 (postgres) NÃO consegue escrever no volume Docker"
               sudo ls -ld "$POSTGRES_DIR"
               exit 1
             fi
             
             # Limpar arquivo de teste (via Docker para consistência)
-            docker run --rm --user 999:999 -v "$POSTGRES_DIR:/test:rw" alpine:3.19 rm -f /test/.write-test 2>/dev/null || true
+            docker run --rm --user 70:70 -v "$POSTGRES_DIR:/test:rw" alpine:3.19 rm -f /test/.write-test 2>/dev/null || true
             echo "   ✅ Estágio 4: Teste de escrita OK"
             
             # =================================================================
@@ -1208,14 +1208,14 @@ jobs:
                 sudo find "$POSTGRES_DIR" ! -user 999 -ls 2>/dev/null | head -10
                 echo ""
                 echo "💡 SOLUÇÃO: Rodar comando de correção:"
-                echo "   sudo chown -R 999:999 $POSTGRES_DIR"
+                echo "   sudo chown -R 70:70 $POSTGRES_DIR"
                 echo ""
                 echo "   Ou usar o script enterprise:"
                 echo "   sudo /opt/alice/app/infra/scripts/fix-production-permissions.sh --fix"
                 exit 1
               fi
               
-              echo "   ✅ Estágio 5: Todas permissões recursivas OK (999:999)"
+              echo "   ✅ Estágio 5: Todas permissões recursivas OK (70:70)"
             fi
             
             echo ""
@@ -1497,11 +1497,11 @@ jobs:
             echo "   ✅ Diretório existe: $POSTGRES_DIR"
             
             # =================================================================
-            # ESTÁGIO 2: Configurar ownership 999:999 (PostgreSQL UID)
+            # ESTÁGIO 2: Configurar ownership 70:70 (PostgreSQL UID)
             # =================================================================
             echo ""
-            echo "🔧 ESTÁGIO 2: Configurando ownership 999:999..."
-            sudo chown -R 999:999 "$POSTGRES_DIR"
+            echo "🔧 ESTÁGIO 2: Configurando ownership 70:70..."
+            sudo chown -R 70:70 "$POSTGRES_DIR"
             sudo chmod 700 "$POSTGRES_DIR"
             echo "   ✅ Ownership e permissões configurados"
             
@@ -1513,13 +1513,13 @@ jobs:
             ACTUAL_OWNER=$(sudo stat -c '%u:%g' "$POSTGRES_DIR")
             ACTUAL_PERMS=$(sudo stat -c '%a' "$POSTGRES_DIR")
             
-            if [ "$ACTUAL_OWNER" != "999:999" ]; then
+            if [ "$ACTUAL_OWNER" != "70:70" ]; then
               echo "   ❌ ERRO: Ownership incorreto!"
-              echo "      Esperado: 999:999"
+              echo "      Esperado: 70:70"
               echo "      Atual: $ACTUAL_OWNER"
               exit 1
             fi
-            echo "   ✅ Ownership: 999:999"
+            echo "   ✅ Ownership: 70:70"
             
             if [ "$ACTUAL_PERMS" != "700" ]; then
               echo "   ❌ ERRO: Permissões incorretas!"
@@ -1535,8 +1535,8 @@ jobs:
             echo ""
             echo "🧪 ESTÁGIO 4: Testando escrita via bind mount direto..."
             
-            if ! docker run --rm --user 999:999 -v "$POSTGRES_DIR:/test:rw" alpine:3.21 touch /test/.write-test-direct 2>/dev/null; then
-              echo "   ❌ ERRO CRÍTICO: UID 999 NÃO consegue escrever (bind direto)!"
+            if ! docker run --rm --user 70:70 -v "$POSTGRES_DIR:/test:rw" alpine:3.21 touch /test/.write-test-direct 2>/dev/null; then
+              echo "   ❌ ERRO CRÍTICO: UID 70 (Alpine) NÃO consegue escrever (bind direto)!"
               echo ""
               echo "   📊 DIAGNÓSTICO:"
               echo "      Ownership: $ACTUAL_OWNER"
@@ -1546,7 +1546,7 @@ jobs:
             fi
             
             # Limpar arquivo de teste
-            docker run --rm --user 999:999 -v "$POSTGRES_DIR:/test:rw" alpine:3.21 rm -f /test/.write-test-direct 2>/dev/null || true
+            docker run --rm --user 70:70 -v "$POSTGRES_DIR:/test:rw" alpine:3.21 rm -f /test/.write-test-direct 2>/dev/null || true
             echo "   ✅ Bind mount direto OK"
             
             # =================================================================
@@ -1623,9 +1623,9 @@ jobs:
             
             # Testar escrita usando o volume nomeado (EXATAMENTE como PostgreSQL fará)
             echo "   🧪 Testando escrita no volume nomeado..."
-            if ! docker run --rm --user 999:999 -v "$POSTGRES_VOLUME:/var/lib/postgresql/data:rw" alpine:3.21 sh -c "touch /var/lib/postgresql/data/.write-test-volume && ls -la /var/lib/postgresql/data/.write-test-volume" 2>&1; then
+            if ! docker run --rm --user 70:70 -v "$POSTGRES_VOLUME:/var/lib/postgresql/data:rw" alpine:3.21 sh -c "touch /var/lib/postgresql/data/.write-test-volume && ls -la /var/lib/postgresql/data/.write-test-volume" 2>&1; then
               echo ""
-              echo "   ❌ ERRO CRÍTICO: UID 999 NÃO consegue escrever via VOLUME NOMEADO!"
+              echo "   ❌ ERRO CRÍTICO: UID 70 (Alpine) NÃO consegue escrever via VOLUME NOMEADO!"
               echo ""
               echo "   📊 DIAGNÓSTICO DO VOLUME:"
               docker volume inspect "$POSTGRES_VOLUME" 2>&1 || true
@@ -1641,8 +1641,8 @@ jobs:
             fi
             
             # Limpar arquivo de teste
-            docker run --rm --user 999:999 -v "$POSTGRES_VOLUME:/var/lib/postgresql/data:rw" alpine:3.21 rm -f /var/lib/postgresql/data/.write-test-volume 2>/dev/null || true
-            echo "   ✅ Volume nomeado OK - UID 999 pode escrever!"
+            docker run --rm --user 70:70 -v "$POSTGRES_VOLUME:/var/lib/postgresql/data:rw" alpine:3.21 rm -f /var/lib/postgresql/data/.write-test-volume 2>/dev/null || true
+            echo "   ✅ Volume nomeado OK - UID 70 (Alpine) pode escrever!"
             
             echo ""
             echo "============================================="
@@ -1668,7 +1668,7 @@ jobs:
               echo "   ✅ Primeiro deploy (volume criado do zero)"
             fi
             echo "   ✅ Diretório: $POSTGRES_DIR"
-            echo "   ✅ Ownership: 999:999"
+            echo "   ✅ Ownership: 70:70"
             echo "   ✅ Permissões: 700"
             echo "   ✅ Bind mount direto: OK"
             echo "   ✅ Volume nomeado: OK (verificado)"
@@ -1738,12 +1738,12 @@ jobs:
             POSTGRES_OWNER=$(sudo stat -c '%u:%g' /opt/alice/data/postgres 2>/dev/null || echo "N/A")
             POSTGRES_PERMS=$(sudo stat -c '%a' /opt/alice/data/postgres 2>/dev/null || echo "N/A")
             
-            if [ "$POSTGRES_OWNER" != "999:999" ] || [ "$POSTGRES_PERMS" != "700" ]; then
+            if [ "$POSTGRES_OWNER" != "70:70" ] || [ "$POSTGRES_PERMS" != "700" ]; then
               echo "   ❌ PostgreSQL: ownership=$POSTGRES_OWNER, perms=$POSTGRES_PERMS"
-              echo "      Esperado: 999:999, 700"
+              echo "      Esperado: 70:70, 700"
               ERRORS=$((ERRORS + 1))
             else
-              echo "   ✅ PostgreSQL: 999:999, 700"
+              echo "   ✅ PostgreSQL: 70:70, 700"
             fi
             
             # =================================================================
@@ -1822,7 +1822,7 @@ jobs:
             echo "🎉 INFRAESTRUTURA PRONTA PARA DEPLOY"
             echo "============================================="
             echo ""
-            echo "   ✅ PostgreSQL: 999:999, 700"
+            echo "   ✅ PostgreSQL: 70:70, 700"
             echo "   ✅ Grafana: 472:472"
             echo "   ✅ Prometheus: 65534:65534"
             echo "   ✅ Loki: 10001:10001"
@@ -1979,9 +1979,9 @@ jobs:
                 echo "      Criando diretório..."
                 sudo mkdir -p "$POSTGRES_DIR"
               fi
-              sudo chown -R 999:999 "$POSTGRES_DIR"
+              sudo chown -R 70:70 "$POSTGRES_DIR"
               sudo chmod 700 "$POSTGRES_DIR"
-              echo "   ✅ Diretório OK (999:999, 700)"
+              echo "   ✅ Diretório OK (70:70, 700)"
               
               # ESTÁGIO C: Criar volume nomeado
               echo "   📦 Criando volume $POSTGRES_VOLUME..."
@@ -2006,7 +2006,7 @@ jobs:
               
               # ESTÁGIO D: Testar escrita no volume
               echo "   🧪 Testando escrita no volume recriado..."
-              if ! docker run --rm --user 999:999 -v "$POSTGRES_VOLUME:/var/lib/postgresql/data:rw" alpine:3.21 sh -c "touch /var/lib/postgresql/data/.write-test && rm -f /var/lib/postgresql/data/.write-test" 2>&1; then
+              if ! docker run --rm --user 70:70 -v "$POSTGRES_VOLUME:/var/lib/postgresql/data:rw" alpine:3.21 sh -c "touch /var/lib/postgresql/data/.write-test && rm -f /var/lib/postgresql/data/.write-test" 2>&1; then
                 echo ""
                 echo "   ❌ ERRO CRÍTICO: Falha no teste de escrita!"
                 docker volume inspect "$POSTGRES_VOLUME" 2>&1 || true
@@ -2056,7 +2056,7 @@ jobs:
               SOCKET_COUNT=0
               
               # Verificar PID lock file
-              # CORREÇÃO 08/01/2026: Usar sudo para acessar diretório PostgreSQL (modo 700, UID 999)
+              # CORREÇÃO 08/01/2026: Usar sudo para acessar diretório PostgreSQL (modo 700, UID 70 (Alpine))
               # Sem sudo, [ -f ] falha silenciosamente se não tiver permissão no diretório
               # Ref: CLAUDE.md Regra 7 (Mudanças cirúrgicas), consistência com socket check linha 1232
               if sudo test -f "$POSTGRES_DIR/postmaster.pid"; then
@@ -2093,11 +2093,11 @@ jobs:
       # PROBLEMA: Race condition entre SSH actions separados
       #   - Step de validação rodava em SSH action separado
       #   - Entre validação e deploy, diretório podia ser recriado com root:root
-      #   - Teste via stat() não garantia escrita real pelo UID 999
+      #   - Teste via stat() não garantia escrita real pelo UID 70 (Alpine)
       #
       # SOLUÇÃO: Validação movida para DENTRO do script de deploy (step abaixo)
       #   - Executa no MESMO SSH action que docker compose up
-      #   - Inclui teste de escrita REAL via Docker com UID 999
+      #   - Inclui teste de escrita REAL via Docker com UID 70 (Alpine)
       #   - Elimina race condition completamente
       #
       # REF: Relatório Enterprise de Análise de Falha (09/01/2026)
@@ -2241,23 +2241,23 @@ jobs:
             
             # Verificar ownership do diretório
             ACTUAL_OWNER=$(sudo stat -c '%u:%g' "$POSTGRES_DIR" 2>/dev/null || echo "N/A")
-            if [ "$ACTUAL_OWNER" != "999:999" ]; then
+            if [ "$ACTUAL_OWNER" != "70:70" ]; then
               echo "❌ ERRO CRÍTICO: Ownership incorreto em $POSTGRES_DIR"
-              echo "   Esperado: 999:999"
+              echo "   Esperado: 70:70"
               echo "   Atual: $ACTUAL_OWNER"
               exit 1
             fi
-            echo "   ✅ Ownership: 999:999"
+            echo "   ✅ Ownership: 70:70"
             
             # Teste rápido de escrita via volume nomeado
             echo "   🧪 Teste rápido de escrita no volume..."
-            if ! docker run --rm --user 999:999 -v "$POSTGRES_VOLUME:/data:rw" alpine:3.21 touch /data/.pre-deploy-check 2>/dev/null; then
+            if ! docker run --rm --user 70:70 -v "$POSTGRES_VOLUME:/data:rw" alpine:3.21 touch /data/.pre-deploy-check 2>/dev/null; then
               echo "❌ ERRO CRÍTICO: Falha no teste de escrita do volume!"
               echo ""
               docker volume inspect "$POSTGRES_VOLUME" 2>&1 || true
               exit 1
             fi
-            docker run --rm --user 999:999 -v "$POSTGRES_VOLUME:/data:rw" alpine:3.21 rm -f /data/.pre-deploy-check 2>/dev/null || true
+            docker run --rm --user 70:70 -v "$POSTGRES_VOLUME:/data:rw" alpine:3.21 rm -f /data/.pre-deploy-check 2>/dev/null || true
             echo "   ✅ Teste de escrita OK"
             
             echo ""
@@ -2436,10 +2436,10 @@ jobs:
                     
                     # Verificar se PostgreSQL consegue escrever no volume
                     echo ""
-                    echo "✍️  Teste de escrita (como UID 999):"
-                    if docker run --rm --user 999:999 -v /opt/alice/data/postgres:/test alpine:3.19 touch /test/.write-test 2>&1; then
+                    echo "✍️  Teste de escrita (como UID 70 (Alpine)):"
+                    if docker run --rm --user 70:70 -v /opt/alice/data/postgres:/test alpine:3.19 touch /test/.write-test 2>&1; then
                       echo "✅ Escrita OK"
-                      docker run --rm --user 999:999 -v /opt/alice/data/postgres:/test alpine:3.19 rm /test/.write-test 2>&1 || true
+                      docker run --rm --user 70:70 -v /opt/alice/data/postgres:/test alpine:3.19 rm /test/.write-test 2>&1 || true
                     else
                       echo "❌ Escrita FALHOU - problema de permissions!"
                     fi
@@ -2543,7 +2543,7 @@ jobs:
             df -h /opt/alice/data/postgres
             
             # Verificar permissões do diretório
-            # CORREÇÃO 08/01/2026: Usar sudo para acessar diretório PostgreSQL (modo 700, UID 999)
+            # CORREÇÃO 08/01/2026: Usar sudo para acessar diretório PostgreSQL (modo 700, UID 70 (Alpine))
             echo ""
             echo "🔐 Permissões PostgreSQL:"
             sudo ls -ld /opt/alice/data/postgres

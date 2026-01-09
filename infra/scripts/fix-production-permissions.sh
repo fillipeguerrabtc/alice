@@ -88,7 +88,7 @@ declare -A VALIDATION_EXCEPTIONS=(
 # =============================================================================
 # | Serviço           | UID    | GID    | User Name       | Notas                |
 # |-------------------|--------|--------|-----------------|----------------------|
-# | PostgreSQL        | 999    | 999    | postgres        | Debian base          |
+# | PostgreSQL        | 70     | 70     | postgres        | Alpine base (31/12)  |
 # | pgBackRest        | 70     | 70     | postgres        | Alpine base          |
 # | Redis             | 999    | 999    | redis           | Alpine base          |
 # | Caddy             | 1000   | 1000   | caddy           | Custom UID           |
@@ -108,50 +108,34 @@ declare -A VALIDATION_EXCEPTIONS=(
 # =============================================================================
 
 # =============================================================================
-# FUNÇÃO: detect_postgres_uid
+# CONSTANTE: POSTGRES_UID / POSTGRES_GID
 # =============================================================================
-# PROPÓSITO: Detectar UID do PostgreSQL automaticamente baseado na imagem
+# CORREÇÃO CRÍTICA 08/01/2026:
 #
-# PROBLEMA RESOLVIDO:
-#   - PostgreSQL Debian base usa UID 999
-#   - PostgreSQL Alpine base usa UID 70
-#   - Hardcoded UID 999 falhava com Alpine
+# CAUSA RAIZ IDENTIFICADA:
+#   - Em 31/12/2025, PostgreSQL migrou de Debian para Alpine (CVE-2023-45853)
+#   - Alpine PostgreSQL usa UID 70, Debian usa UID 999
+#   - A função detect_postgres_uid() falhava porque:
+#     1. docker inspect retorna "postgres" (string), não "70" (número)
+#     2. No servidor limpo, imagem não existe → fallback retornava 999
+#   - Todos os scripts configuravam UID 999, mas container usa UID 70
+#   - RESULTADO: "Permission denied" em 100% dos deploys
 #
 # SOLUÇÃO ENTERPRISE:
-#   1. Tentar extrair UID via docker inspect (se imagem já foi pulled)
-#   2. Fallback: Detectar base image (Debian vs Alpine)
-#   3. Retornar UID correto automaticamente
+#   - UID fixo em 70 (decisão arquitetural: Alpine é permanente por CVE)
+#   - Detectar base image (Debian vs Alpine) NÃO é confiável no primeiro deploy
+#   - Se mudar de volta para Debian, atualizar esta constante
 #
 # BENEFÍCIOS:
-#   - Funciona com Debian E Alpine
-#   - Detecta UID correto automaticamente
-#   - Zero hardcoded values (CLAUDE.md Regra 6)
+#   - Funciona em servidor limpo (primeiro deploy)
+#   - Zero dependência de docker inspect
+#   - Comportamento previsível e documentado
 #
-# REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 11 (Best practices 2025)
+# REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Causa raiz)
+# REF: Dockerfile.postgres linha 106: FROM postgres:16-alpine
 # =============================================================================
-detect_postgres_uid() {
-    local image="${IMAGE_PREFIX:-ghcr.io/fillipeguerrabtc/alice}-postgres:${IMAGE_TAG:-latest}"
-    
-    # Tentar extrair UID via docker inspect (se imagem já foi pulled)
-    local uid
-    uid=$(docker inspect --format='{{.Config.User}}' "$image" 2>/dev/null | cut -d: -f1)
-    
-    if [[ -n "$uid" ]] && [[ "$uid" =~ ^[0-9]+$ ]]; then
-        echo "$uid"
-        return 0
-    fi
-    
-    # Fallback: Detectar base image (Debian vs Alpine)
-    if docker image inspect "$image" 2>/dev/null | grep -q "alpine"; then
-        echo "70"  # Alpine PostgreSQL
-    else
-        echo "999" # Debian PostgreSQL (padrão)
-    fi
-}
-
-# Detectar UID PostgreSQL automaticamente
-POSTGRES_UID=$(detect_postgres_uid)
-POSTGRES_GID=$POSTGRES_UID
+readonly POSTGRES_UID=70
+readonly POSTGRES_GID=70
 
 declare -a DIRECTORIES=(
     # INFRA STACK

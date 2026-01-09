@@ -133,16 +133,20 @@ echo "   ✅ Diretórios raiz criados"
 # =============================================================================
 # CORREÇÃO 08/01/2026: ROOT CAUSE #1 - PostgreSQL permissions
 # PROBLEMA: Diretório criado com root:root ownership, container PostgreSQL
-#           (UID 999) não conseguia escrever, causando "Permission denied"
+#           (UID 70 Alpine) não conseguia escrever, causando "Permission denied"
+# CORREÇÃO 08/01/2026: Migração para Alpine = UID 70 (não mais 999)
 # SOLUÇÃO: Função idempotente que cria/valida/corrige ownership ANTES de
 #          Docker Compose iniciar containers
 # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Root cause fix)
+# REF: Dockerfile.postgres linha 106: FROM postgres:16-alpine (UID 70)
 # =============================================================================
 echo ""
 echo "🐘 CONFIGURANDO DIRETÓRIO POSTGRESQL (CRÍTICO)..."
 echo "============================================="
 
 POSTGRES_DIR="/opt/alice/data/postgres"
+POSTGRES_UID=70  # Alpine PostgreSQL UID (não 999 Debian!)
+POSTGRES_GID=70
 
 # Função para validar e corrigir ownership (idempotente)
 fix_postgres_ownership() {
@@ -152,36 +156,36 @@ fix_postgres_ownership() {
   if [ ! -d "$dir" ]; then
     echo "   📝 Criando $dir..."
     sudo mkdir -p "$dir"
-    sudo chown 999:999 "$dir"
+    sudo chown ${POSTGRES_UID}:${POSTGRES_GID} "$dir"
     sudo chmod 700 "$dir"
-    echo "   ✅ Diretório criado com ownership 999:999 e permissions 700"
+    echo "   ✅ Diretório criado com ownership ${POSTGRES_UID}:${POSTGRES_GID} e permissions 700"
     return 0
   fi
   
   # Diretório existe - verificar se está vazio
   if [ -z "$(sudo ls -A "$dir" 2>/dev/null)" ]; then
     echo "   📝 Diretório vazio - configurando ownership..."
-    sudo chown 999:999 "$dir"
+    sudo chown ${POSTGRES_UID}:${POSTGRES_GID} "$dir"
     sudo chmod 700 "$dir"
-    echo "   ✅ Ownership configurado: 999:999, mode: 700"
+    echo "   ✅ Ownership configurado: ${POSTGRES_UID}:${POSTGRES_GID}, mode: 700"
     return 0
   fi
   
   # Diretório NÃO está vazio - validar ownership
   ACTUAL_OWNER=$(sudo stat -c "%u:%g" "$dir")
   
-  if [ "$ACTUAL_OWNER" != "999:999" ]; then
-    echo "   ⚠️  Ownership incorreto detectado: $ACTUAL_OWNER (esperado: 999:999)"
+  if [ "$ACTUAL_OWNER" != "${POSTGRES_UID}:${POSTGRES_GID}" ]; then
+    echo "   ⚠️  Ownership incorreto detectado: $ACTUAL_OWNER (esperado: ${POSTGRES_UID}:${POSTGRES_GID})"
     echo "   🔧 Corrigindo ownership recursivamente..."
     
-    if ! sudo chown -R 999:999 "$dir"; then
+    if ! sudo chown -R ${POSTGRES_UID}:${POSTGRES_GID} "$dir"; then
       echo "   ❌ ERRO: Falha ao corrigir ownership!"
       return 1
     fi
     
-    echo "   ✅ Ownership corrigido para 999:999"
+    echo "   ✅ Ownership corrigido para ${POSTGRES_UID}:${POSTGRES_GID}"
   else
-    echo "   ✅ Ownership correto: 999:999"
+    echo "   ✅ Ownership correto: ${POSTGRES_UID}:${POSTGRES_GID}"
   fi
   
   # Validar permissões
@@ -347,9 +351,9 @@ sudo chown -R 1000:1000 /opt/alice/data/erpnext-sites /opt/alice/logs/erpnext
 sudo chmod 755 /opt/alice/data/erpnext-sites /opt/alice/logs/erpnext
 echo "   ✅ ERPNext configurado"
 
-# Backups PostgreSQL (UID 999 - postgres user)
-echo "📝 Backups PostgreSQL (UID 999)..."
-sudo chown -R 999:999 /opt/alice/backups/postgresql
+# Backups PostgreSQL (UID 70 - postgres Alpine user)
+echo "📝 Backups PostgreSQL (UID 70 Alpine)..."
+sudo chown -R 70:70 /opt/alice/backups/postgresql
 sudo chmod 750 /opt/alice/backups
 sudo chmod 750 /opt/alice/backups/postgresql
 echo "   ✅ Backups PostgreSQL configurado"
@@ -416,15 +420,16 @@ if [ "$ACTUAL_PERMS" != "700" ]; then
   exit 1
 fi
 
-# Teste de escrita via Docker (funciona em servidor limpo sem UID 999 no host)
-if ! docker run --rm --user 999:999 -v "$POSTGRES_DIR:/test:rw" alpine:3.19 touch /test/.write-test 2>/dev/null; then
-  echo "❌ ERRO: Usuário 999 (postgres) NÃO consegue escrever no volume Docker"
+# Teste de escrita via Docker (funciona em servidor limpo sem UID 70 no host)
+# NOTA: UID 70 é o postgres no Alpine (não 999 do Debian)
+if ! docker run --rm --user 70:70 -v "$POSTGRES_DIR:/test:rw" alpine:3.21 touch /test/.write-test 2>/dev/null; then
+  echo "❌ ERRO: Usuário 70 (postgres Alpine) NÃO consegue escrever no volume Docker"
   ls -ld "$POSTGRES_DIR"
   exit 1
 fi
 
 # Limpar arquivo de teste (via Docker para consistência)
-docker run --rm --user 999:999 -v "$POSTGRES_DIR:/test:rw" alpine:3.19 rm -f /test/.write-test 2>/dev/null || true
+docker run --rm --user 70:70 -v "$POSTGRES_DIR:/test:rw" alpine:3.21 rm -f /test/.write-test 2>/dev/null || true
 echo "   ✅ Permissões PostgreSQL OK"
 
 # Validar networks
