@@ -1150,6 +1150,54 @@ healthcheck:
 
 ---
 
+### ADR-014: Tarball Deploy para Scripts SSOT (09/01/2026)
+
+**Status:** ✅ Aceito
+
+**Contexto:**
+O deploy em produção falhava porque os scripts SSOT (`permissions-config.sh`, `fix-production-permissions.sh`) não eram transferidos para o servidor antes da execução de `prepare-production-server.sh`.
+
+**Problema:**
+- `prepare-production-server.sh` era baixado do GitHub via curl usando tag da release
+- Mas a tag não existe durante o deploy (é criada após)
+- Resultado: curl falhava e scripts dependentes não eram encontrados
+
+**Alternativas Consideradas:**
+
+| Alternativa | Prós | Contras |
+|-------------|------|---------|
+| **Curl do GitHub** | Simples | Tag não existe durante deploy |
+| **Rsync incremental** | Eficiente para mudanças pequenas | Complexo, não garante atomicidade |
+| **SCP direto** | Simples | 3 transferências separadas, pode falhar parcialmente |
+| **Tarball + SCP** | Atômico, comprimido | Requer extração |
+
+**Decisão:** Tarball + SCP (transferência atômica)
+
+**Implementação:**
+```yaml
+# Step 1: No GitHub Runner (local)
+- Validar que scripts existem
+- tar czf /tmp/alice-scripts.tar.gz scripts/
+- scp tarball para servidor:/tmp/
+
+# Step 2: No Servidor Produção
+- tar xzf alice-scripts.tar.gz
+- chmod +x scripts/*.sh
+- Validar todos os scripts presentes
+- sudo bash prepare-production-server.sh
+```
+
+**Benefícios:**
+- ✅ **Atômico**: Tudo ou nada (sem estado parcial)
+- ✅ **Independente de tag**: Usa arquivos do checkout local
+- ✅ **Comprimido**: Gzip reduz tempo de transferência
+- ✅ **Validação dupla**: Antes de empacotar E antes de executar
+- ✅ **Enterprise-grade**: Padrão industrial para distribuição
+
+**REF:** CLAUDE.md Regra 6 (Enterprise-grade), Regra 9 (Validação contínua)
+
+---
+
 ## 10. Aderência às 18 Regras
 
 ### Mapeamento Completo

@@ -233,6 +233,46 @@ sudo /opt/alice/app/infra/scripts/prepare-production-server.sh
 **⚠️ NOTA:** O workflow executa este script automaticamente no job `prepare`.
 Execução manual é opcional para validar antes do deploy.
 
+### Transferência de Scripts via Tarball (09/01/2026)
+
+O workflow utiliza transferência atômica via tarball para garantir que todos os scripts SSOT estejam presentes no servidor antes da execução.
+
+**Problema Resolvido:**
+- Scripts SSOT (`permissions-config.sh`, `fix-production-permissions.sh`) não eram transferidos
+- Tentativa de baixar via curl falhava (tag não existe durante deploy)
+- `prepare-production-server.sh` falhava: "fix-production-permissions.sh não encontrado"
+
+**Fluxo de Transferência:**
+
+```
+┌─────────────────────────────────────┐     ┌─────────────────────────────────────┐
+│  GitHub Runner (Local)              │     │  Servidor Produção (Hetzner)        │
+│  ┌────────────────────────────────┐ │     │  ┌─────────────────────────────────┐│
+│  │ 1. Validar scripts existem    │ │     │  │                                 ││
+│  │ 2. tar czf alice-scripts.tar.gz│ │     │  │                                 ││
+│  │ 3. SCP → /tmp/                │─┼─SCP─┼─▶│ 4. tar xzf → /tmp/scripts/     ││
+│  └────────────────────────────────┘ │     │  │ 5. chmod +x scripts/*.sh       ││
+│                                     │     │  │ 6. Validar scripts presentes   ││
+│                                     │     │  │ 7. sudo bash prepare-prod...   ││
+│                                     │     │  └─────────────────────────────────┘│
+└─────────────────────────────────────┘     └─────────────────────────────────────┘
+```
+
+**Scripts Transferidos:**
+| Script | Descrição |
+|--------|-----------|
+| `permissions-config.sh` | SSOT - Define UIDs/GIDs/permissões |
+| `fix-production-permissions.sh` | Cria/valida/corrige permissões |
+| `prepare-production-server.sh` | Orquestra preparação do servidor |
+
+**Benefícios:**
+- ✅ **Atômico**: Transferência tudo-ou-nada (sem estado parcial)
+- ✅ **Independente**: Usa arquivos do checkout local, não depende de tag GitHub
+- ✅ **Comprimido**: Gzip reduz tempo de transferência
+- ✅ **Validação Dupla**: Valida antes de empacotar E antes de executar
+
+**REF:** CLAUDE.md Regra 6 (Enterprise-grade), Regra 9 (Validação contínua)
+
 ### Checklist do Primeiro Deploy
 
 - [ ] **1. Secrets Configurados no GitHub**

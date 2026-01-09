@@ -170,6 +170,13 @@ O workflow modular **prepara automaticamente** a infraestrutura base no job `pre
 - **Documentação**: `docs/PERMISSIONS.md` - Guia completo do sistema SSOT
 - **REF**: CLAUDE.md Regra 2 (Não duplicar), Regra 6 (Enterprise-grade)
 
+**📦 Tarball Deploy de Scripts (09/01/2026):**
+- **Problema**: Scripts SSOT não estavam no servidor durante execução de `prepare-production-server.sh`
+- **Solução**: Workflow empacota scripts em tarball, transfere via SCP, extrai em `/tmp/scripts/`
+- **Fluxo**: Validar → tar czf → SCP → tar xzf → chmod +x → executar
+- **Benefícios**: Atômico, não depende de tag GitHub, validação dupla
+- **REF**: CLAUDE.md Regra 6 (Enterprise-grade), Regra 9 (Validação contínua)
+
 **CRÍTICO:** Redes e volumes são **compartilhados** entre stacks via `external: true` no `docker-compose.base.yml`. Isso garante que:
 - Rollback de um stack NÃO remove redes/volumes compartilhados
 - Serviços de diferentes stacks podem comunicar via rede compartilhada

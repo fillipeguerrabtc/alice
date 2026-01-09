@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 09 de Janeiro de 2026  
-**Versão:** 6.3 - SSOT Permissions + Smart Deploy + Enterprise Bug Fixes
+**Versão:** 6.4 - SSOT Permissions + Tarball Deploy + Enterprise Bug Fixes
 
 <div align="center">
 
@@ -128,6 +128,39 @@
 > ```
 > 
 > **Referências:** `docs/PERMISSIONS.md`, `docs/DEPLOYMENT.md` (Seção 8.2)
+
+> **📦 TARBALL DEPLOY v6.4 (09/01/2026) - Transferência Atômica de Scripts:**  
+> Implementada transferência de scripts SSOT via tarball para garantir consistência.
+> 
+> **Problema Resolvido:**
+> - ❌ Scripts SSOT não eram transferidos para o servidor antes da execução
+> - ❌ Tentativa de baixar via curl falhava (tag não existe durante deploy)
+> - ❌ `prepare-production-server.sh` falhava: "fix-production-permissions.sh não encontrado"
+> 
+> **Solução Enterprise:**
+> - ✅ **Tarball Atômico**: Empacota todos os scripts em `alice-scripts.tar.gz`
+> - ✅ **Transferência SCP**: Envia tarball para `/tmp/` no servidor
+> - ✅ **Extração Segura**: Extrai em `/tmp/scripts/` com chmod +x
+> - ✅ **Validação Dupla**: Valida antes de empacotar E antes de executar
+> 
+> **Fluxo:**
+> ```
+> GitHub Runner (Local)           Servidor Produção (Hetzner)
+> ┌─────────────────────┐         ┌─────────────────────────┐
+> │ 1. Validar scripts  │         │                         │
+> │ 2. tar czf tarball  │ ──SCP──▶│ 3. tar xzf → /tmp/scripts/
+> │                     │         │ 4. Validar scripts      │
+> │                     │         │ 5. Executar com sudo    │
+> └─────────────────────┘         └─────────────────────────┘
+> ```
+> 
+> **Benefícios:**
+> - ✅ Não depende de tag existir no GitHub
+> - ✅ Transferência atômica (tudo ou nada)
+> - ✅ Preserva paths relativos dos scripts
+> - ✅ Comprimido (gzip reduz tempo)
+> 
+> **REF:** CLAUDE.md Regra 2 (Não duplicar), Regra 6 (Enterprise-grade), Regra 9 (Validação contínua)
 
 > **🛡️ CORREÇÃO CRÍTICA v6.1 (09/01/2026) - PostgreSQL Permissions Enterprise:**  
 > Implementada correção de 3 fases para resolver "container alice-postgres is unhealthy" em servidor limpo.
