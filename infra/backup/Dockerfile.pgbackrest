@@ -121,16 +121,15 @@ RUN chmod +x /usr/local/bin/*.sh
 # Erro: "unable to open file '/var/lib/postgresql/data/global/pg_control' for read: [13] Permission denied"
 # Causa: pgBackRest usava UID 999, PostgreSQL Alpine usa UID 70, sem permissão de leitura.
 #
-# NOTA: O grupo 'postgres' com GID 70 é criado pelo postgresql-client no Alpine.
-# Se não existir, criamos explicitamente.
-RUN getent group postgres >/dev/null 2>&1 || addgroup -g 70 postgres; \
-    getent passwd pgbackrest >/dev/null 2>&1 || adduser -D -u 70 -G postgres pgbackrest; \
-    chown -R pgbackrest:postgres /var/lib/pgbackrest; \
-    chown -R pgbackrest:postgres /var/log/pgbackrest; \
-    chown -R pgbackrest:postgres /var/spool/pgbackrest; \
-    chown -R pgbackrest:postgres /etc/pgbackrest
+# NOTA: O pacote postgresql-client no Alpine JÁ CRIA o usuário 'postgres' com UID 70.
+# Não podemos criar outro usuário com mesmo UID ("uid '70' in use").
+# SOLUÇÃO: Usar o usuário 'postgres' diretamente (já tem UID 70).
+RUN chown -R postgres:postgres /var/lib/pgbackrest; \
+    chown -R postgres:postgres /var/log/pgbackrest; \
+    chown -R postgres:postgres /var/spool/pgbackrest; \
+    chown -R postgres:postgres /etc/pgbackrest
 
-USER pgbackrest
+USER postgres
 
 # Healthcheck
 # NOTA: Docker não faz substituição de variáveis de ambiente em runtime no HEALTHCHECK
