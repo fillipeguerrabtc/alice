@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Script: fix-production-permissions.sh
-# Versão: 1.0.0
-# Data: 07 de Janeiro de 2026
+# Versão: 1.1.0
+# Data: 09 de Janeiro de 2026
 # Autor: Fillipe Guerra
 # =============================================================================
 # PROPÓSITO: Criar estrutura de diretórios de dados com permissões corretas

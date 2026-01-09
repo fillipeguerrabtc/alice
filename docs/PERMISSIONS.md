@@ -5,8 +5,12 @@
 Este documento descreve o sistema de gestão de permissões da plataforma Alice Enterprise, implementado como Single Source of Truth (SSOT) para garantir consistência entre todos os scripts e componentes.
 
 **Data de Implementação:** 09 de Janeiro de 2026  
-**Versão:** 1.0.0  
+**Versão:** 1.1.0  
 **Autor:** Fillipe Guerra
+
+> **ATUALIZAÇÃO v1.1.0 (09/01/2026):** Adicionada Regra 5 para remoção agressiva de bits especiais
+> com `chmod a-st` e validação imediata após chmod. Corrige problema onde `chmod 0755` não
+> removia setgid bit em alguns filesystems.
 
 ## Single Source of Truth (SSOT)
 
@@ -153,6 +157,45 @@ chmod 755 /path/to/dir  # Se dir tinha 2755 (setgid), mantém 2755!
 chmod 0755 /path/to/dir  # Garante exatamente 755, remove setgid/setuid/sticky
 ```
 
+### Regra 5: Remoção Agressiva de Bits Especiais (09/01/2026)
+
+**Problema Identificado:** Em alguns sistemas/filesystems, `chmod 0755` **não remove** o setgid bit mesmo com prefixo 0.
+
+**Solução Enterprise (3 passos):**
+
+```bash
+# PASSO 1: Remover bits especiais EXPLICITAMENTE
+chmod a-st /path/to/dir  # Remove setuid(s), setgid(s), sticky(t)
+
+# PASSO 2: Aplicar permissões desejadas
+chmod 0755 /path/to/dir
+
+# PASSO 3: Validar IMEDIATAMENTE (fail-fast)
+new_perms=$(stat -c '%a' /path/to/dir)
+if [[ "${#new_perms}" -gt 3 ]]; then
+    echo "ERRO: chmod não funcionou - investigar ACLs, mount options, SELinux"
+    exit 1
+fi
+```
+
+**Diagnóstico se chmod falhar:**
+```bash
+# Verificar ACLs
+getfacl /path/to/dir
+
+# Verificar mount options
+mount | grep $(df /path/to/dir | tail -1 | awk '{print $1}')
+
+# Verificar SELinux/AppArmor
+getenforce 2>/dev/null || echo "SELinux não instalado"
+aa-status 2>/dev/null || echo "AppArmor não instalado"
+
+# Verificar chattr
+lsattr /path/to/dir
+```
+
+**REF:** CLAUDE.md Regra 7 (Causa raiz), Regra 9 (Validação contínua)
+
 ## Scripts de Gestão
 
 ### fix-production-permissions.sh
@@ -191,12 +234,36 @@ sudo ./prepare-production-server.sh
           NOTA: Bits especiais detectados (setuid/setgid/sticky) - devem ser removidos
 ```
 
-**Causa:** Diretório tem bits especiais (setgid neste caso) que precisam ser removidos.
+**Causa:** Diretório tem bits especiais (setgid neste caso) que não foram removidos pelo `chmod 0755`.
 
-**Solução:**
+**Solução (v1.1.0+):**
 ```bash
+# O script agora usa remoção agressiva (chmod a-st + chmod 0xxx + validação)
 sudo /opt/alice/app/infra/scripts/fix-production-permissions.sh --create
 ```
+
+**Se ainda falhar após v1.1.0:**
+```bash
+# 1. Remover manualmente os bits especiais
+sudo chmod a-st /opt/alice/data/clickhouse
+
+# 2. Aplicar permissões
+sudo chmod 0755 /opt/alice/data/clickhouse
+
+# 3. Verificar
+stat -c '%a' /opt/alice/data/clickhouse
+# Esperado: 755 (3 dígitos)
+
+# 4. Se ainda mostrar 4 dígitos, investigar:
+getfacl /opt/alice/data/clickhouse
+mount | grep /opt
+getenforce
+```
+
+**Histórico (09/01/2026):**
+- **Problema:** `chmod 0755` não removia setgid bit no servidor Hetzner
+- **Causa:** Alguns filesystems/mount options ignoram prefixo 0 do chmod
+- **Solução:** Usar `chmod a-st` ANTES do `chmod 0xxx` para garantir remoção
 
 ### Erro: "permissions-config.sh: No such file"
 

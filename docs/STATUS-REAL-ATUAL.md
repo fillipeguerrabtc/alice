@@ -1503,7 +1503,7 @@ prepare-production-server.sh  fix-production-permissions.sh  (scripts futuros)
 **BENEFÍCIOS:**
 - ✅ Zero duplicação de valores de permissões
 - ✅ Consistência garantida entre scripts
-- ✅ chmod 0xxx (com prefixo 0) remove bits especiais (setgid/setuid/sticky)
+- ✅ Remoção agressiva de bits especiais: `chmod a-st` + `chmod 0xxx` + validação imediata (v1.1.0)
 - ✅ Validação recursiva de ownership
 
 **FASE 1: Preparação via SSOT**
