@@ -1254,6 +1254,44 @@ Logs de deploy são automaticamente baixados do servidor Hetzner e publicados co
 
 > **CORREÇÃO CRÍTICA 04/01/2026 (JSON como Tarball):** Quando não existem logs no Hetzner, o servidor escrevia um JSON de status (`{"status": "no_logs_found", ...}`) diretamente em `/tmp/deploy-logs-bundle.tar.gz`. Este arquivo era baixado via SCP, e a lógica downstream: (1) verificava se arquivo existe (SIM), (2) tentava `tar -xzf` que falhava silenciosamente por ser JSON, (3) deletava o arquivo. O branch `else` que criaria `download-status.json` nunca executava porque arquivo existia. RESULTADO: Diretório vazio sem indicação do que aconteceu. SOLUÇÃO: Validar se arquivo é tarball ANTES de extrair usando `tar -tzf` (list mode, não extrai). Se não é tarball mas começa com `{` (JSON), renomeia para `bundle-status.json` preservando a informação de status. Se formato desconhecido, cria status com diagnóstico via `file -b`.
 
+#### Logging Enterprise "Nível Diamante" (09/01/2026)
+
+Os jobs de deploy agora incluem logging enterprise detalhado para troubleshooting imediato:
+
+**Melhorias implementadas em TODOS os 5 deploys:**
+
+| Melhoria | Descrição | Benefício |
+|----------|-----------|-----------|
+| **Timestamp de Início** | `🕐 Início: YYYY-MM-DD HH:MM:SS` | Correlação com logs externos |
+| **Quick Health Check** | Verifica status de TODOS os containers IMEDIATAMENTE após `docker compose up` | Detecção precoce de falhas |
+| **Tempo Total** | `⏱️ Tempo total: Xs` no final do deploy | Métricas de performance |
+
+**Formato do Quick Health Check:**
+```bash
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔍 VERIFICAÇÃO INICIAL DE SAÚDE (quick check):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ✅ alice-frontend: running (health: starting)
+   ✅ alice-auth: running (health: healthy)
+   ❌ alice-chat: exited (health: none)      ← PROBLEMA DETECTADO!
+   ...
+```
+
+**Benefícios Enterprise:**
+- ✅ **Visibilidade Imediata**: Problemas detectados ANTES do health check job
+- ✅ **Correlação Temporal**: Timestamp permite correlacionar com Grafana/Loki
+- ✅ **Métricas de Deploy**: Tempo total ajuda a identificar regressões de performance
+- ✅ **Troubleshooting Rápido**: Saber se container está "running" vs "healthy" vs "exited"
+
+**Containers verificados por stack:**
+- **ALICE**: 8 containers (frontend, auth, chat, rag, training, integrations, observability, gpu-manager)
+- **OBSERVABILITY**: 13 containers (prometheus, grafana, loki, promtail, jaeger, langfuse, etc)
+- **ERPNEXT**: 10 containers (mariadb, redis-cache, redis-queue, backend, frontend, etc)
+- **BACKUP**: 1 container (pgbackrest)
+- **INFRA**: Usa verificação completa existente (init containers, healthchecks)
+
+> **REF**: CLAUDE.md Regra 6 (Enterprise-grade), Regra 9 (Validação contínua), Regra 16 (Health checks)
+
 #### Auditoria de Deploys no PostgreSQL (04/01/2026)
 
 Cada deploy bem-sucedido é registrado na tabela `deployments` do PostgreSQL para auditoria enterprise completa:
