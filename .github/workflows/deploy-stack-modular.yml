@@ -1085,6 +1085,82 @@ jobs:
               echo "✅ Nenhum diretório incorreto encontrado (servidor limpo)"
             fi
 
+      # =======================================================================
+      # CORREÇÃO ENTERPRISE (09/01/2026): Transferir scripts via TARBALL
+      # =======================================================================
+      # PROBLEMA: Scripts SSOT (permissions-config.sh, fix-production-permissions.sh)
+      #           não estavam sendo transferidos para o servidor antes da execução.
+      #           Baixar do GitHub via curl falhava porque tag ainda não existia.
+      # SOLUÇÃO: Empacotar todos os scripts em tarball, transferir via SCP, extrair.
+      # REF: CLAUDE.md Regra 2 (Não duplicar), Regra 6 (Enterprise-grade)
+      # =======================================================================
+      - name: Empacotar e transferir scripts SSOT para servidor
+        run: |
+          set -euo pipefail
+          
+          echo "📦 Empacotando scripts de infraestrutura (SSOT v6.3)..."
+          echo ""
+          
+          # Validar que scripts existem ANTES de empacotar
+          REQUIRED_SCRIPTS=(
+            "infra/scripts/prepare-production-server.sh"
+            "infra/scripts/fix-production-permissions.sh"
+            "infra/scripts/permissions-config.sh"
+          )
+          
+          for script in "${REQUIRED_SCRIPTS[@]}"; do
+            if [[ ! -f "$script" ]]; then
+              echo "::error::❌ Script crítico ausente: $script"
+              exit 1
+            fi
+            echo "   ✅ Validado: $script ($(wc -c < "$script") bytes)"
+          done
+          
+          echo ""
+          echo "✅ Todos os scripts SSOT validados"
+          echo ""
+          
+          # Criar tarball com todos os scripts
+          cd infra
+          tar czf /tmp/alice-scripts.tar.gz scripts/
+          cd ..
+          
+          TARBALL_SIZE=$(du -h /tmp/alice-scripts.tar.gz | cut -f1)
+          echo "✅ Tarball criado: alice-scripts.tar.gz (${TARBALL_SIZE})"
+          echo ""
+          
+          # Configurar SSH
+          mkdir -p ~/.ssh
+          echo "${{ secrets.HETZNER_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ env.HETZNER_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+          
+          # Transferir tarball atomicamente
+          echo "📤 Transferindo tarball para servidor de produção..."
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            /tmp/alice-scripts.tar.gz \
+            "${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }}:/tmp/"
+          
+          echo "✅ Tarball transferido com sucesso"
+          echo ""
+          
+          # Extrair no servidor
+          echo "📦 Extraindo scripts no servidor..."
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            "${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }}" \
+            "cd /tmp && \
+             rm -rf /tmp/scripts 2>/dev/null || true && \
+             tar xzf alice-scripts.tar.gz && \
+             chmod +x scripts/*.sh && \
+             echo 'Scripts extraídos:' && \
+             ls -lh scripts/*.sh"
+          
+          echo ""
+          echo "✅ Scripts SSOT sincronizados para /tmp/scripts/"
+          
+          # Cleanup local
+          rm -f ~/.ssh/deploy_key /tmp/alice-scripts.tar.gz
+
       - name: Preparar servidor de produção (ANTES do SCP)
         uses: appleboy/ssh-action@v1.2.2
         with:
@@ -1096,23 +1172,14 @@ jobs:
           script: |
             set -euo pipefail
             # =================================================================
-            # CORREÇÃO #8: Preparar servidor ANTES do SCP (Enterprise-grade)
+            # CORREÇÃO ENTERPRISE (09/01/2026): Usar scripts do tarball
             # =================================================================
-            # PROBLEMA: Script rodava APÓS SCP → se SCP falhasse, servidor nunca era preparado
-            # SOLUÇÃO: Mover preparação para ANTES do SCP → servidor pronto antes de copiar
-            # BENEFÍCIO: Primeiro deploy funciona automaticamente (zero intervenção manual)
+            # Scripts foram transferidos para /tmp/scripts/ via tarball atômico
             # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 16 (Idempotência)
-            # DATA: 08/01/2026
             # =================================================================
             
-            # ATENÇÃO: Este step roda ANTES do SCP, então o script ainda NÃO está no servidor.
-            # Solução: Baixar script direto do GitHub (public repo) e executar.
-            
             # =================================================================
-            # CORREÇÃO PR#97 (09/01/2026): Cleanup completo para primeiro deploy
-            # =================================================================
-            # CORREÇÃO: workflow_dispatch usa github.event.inputs, NÃO inputs
-            # inputs só existe em reusable workflows (workflow_call)
+            # CLEANUP (opcional): Limpeza completa do servidor
             # =================================================================
             CLEANUP_SERVER="${{ github.event.inputs.cleanup_server }}"
             if [ "$CLEANUP_SERVER" = "true" ]; then
@@ -1168,58 +1235,61 @@ jobs:
               echo ""
             fi
             
-            echo "🚀 Preparando servidor de produção (antes do SCP)..."
+            echo "🚀 Preparando servidor de produção..."
+            echo "============================================="
+            echo ""
             
-            # Criar diretório temporário
-            TMPDIR=$(mktemp -d)
-            cd "$TMPDIR"
+            # Verificar que tarball foi extraído corretamente
+            if [[ ! -d "/tmp/scripts" ]]; then
+              echo "❌ ERRO: Diretório /tmp/scripts não encontrado!"
+              echo "   O step anterior de transferência pode ter falhado."
+              exit 1
+            fi
             
-            # Baixar scripts do GitHub (tag específica)
-            # SSOT v6.3: prepare-production-server.sh depende de fix-production-permissions.sh e permissions-config.sh
-            TAG="${{ needs.validate.outputs.version }}"
-            BASE_URL="https://raw.githubusercontent.com/fillipeguerrabtc/alice/${TAG}/infra/scripts"
+            # Validar que TODOS os scripts necessários existem
+            echo "🔍 Validando presença de scripts SSOT..."
             
-            echo "📥 Baixando scripts de preparação do GitHub (SSOT v6.3)..."
-            echo "   Tag: $TAG"
-            
-            # Lista de scripts necessários (ordem importa - dependências primeiro)
-            SCRIPTS=(
-              "permissions-config.sh"
-              "fix-production-permissions.sh"
-              "prepare-production-server.sh"
+            REQUIRED_SCRIPTS=(
+              "/tmp/scripts/prepare-production-server.sh"
+              "/tmp/scripts/fix-production-permissions.sh"
+              "/tmp/scripts/permissions-config.sh"
             )
             
-            for script in "${SCRIPTS[@]}"; do
-              echo "   📄 Baixando: $script"
-              if ! curl -fsSL "${BASE_URL}/${script}" -o "$script"; then
-                echo "::error::❌ ERRO: Falha ao baixar $script do GitHub"
-                echo "::error::Verifique se a tag $TAG existe e o script está no caminho correto."
+            for script in "${REQUIRED_SCRIPTS[@]}"; do
+              if [[ ! -f "$script" ]]; then
+                echo "❌ ERRO: Script SSOT ausente: $script"
                 exit 1
               fi
-              
-              # Validar que script não está vazio
-              if [ ! -s "$script" ]; then
-                echo "::error::❌ ERRO: Script $script baixado está vazio!"
-                exit 1
-              fi
-              
-              chmod +x "$script"
-              echo "   ✅ $script baixado ($(wc -c < "$script") bytes)"
+              echo "   ✅ Encontrado: $(basename $script)"
             done
             
             echo ""
-            echo "📋 Scripts baixados para SSOT:"
-            ls -la *.sh
+            echo "✅ Todos os scripts SSOT presentes"
             echo ""
             
-            # Executar script com sudo (requer permissões para criar diretórios e alterar ownership)
-            sudo ./prepare-production-server.sh
+            # Executar script principal do diretório correto
+            cd /tmp/scripts
             
-            # Limpar temporário
-            cd /
-            rm -rf "$TMPDIR"
+            echo "📝 Executando prepare-production-server.sh..."
+            echo ""
             
-            echo "✅ Servidor preparado com sucesso (ANTES do SCP)"
+            # Executar com sudo (script precisa de privilégios root)
+            sudo bash prepare-production-server.sh
+            
+            EXIT_CODE=$?
+            
+            if [[ $EXIT_CODE -eq 0 ]]; then
+              echo ""
+              echo "============================================="
+              echo "✅ Servidor preparado com sucesso (ANTES do SCP)"
+              echo "============================================="
+            else
+              echo ""
+              echo "============================================="
+              echo "❌ Preparação do servidor FALHOU (exit: $EXIT_CODE)"
+              echo "============================================="
+              exit $EXIT_CODE
+            fi
 
       # =======================================================================
       # CORREÇÃO 09/01/2026: appleboy/scp-action@v0.1.7 tem bug conhecido
