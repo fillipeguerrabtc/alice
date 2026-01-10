@@ -490,7 +490,6 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
-      retries: 3
     logging:
       driver: "json-file"
       options:
