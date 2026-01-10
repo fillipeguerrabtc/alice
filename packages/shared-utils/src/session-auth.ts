@@ -106,13 +106,16 @@ function decodeSessionId(signedCookie: string): string | null {
   const signature = value.slice(dotIndex + 1);
   
   // Verificar assinatura HMAC-SHA256
+  // CORREÇÃO PR#107 (10/01/2026): Assinatura deve ser base64 NORMAL, não base64url!
+  // cookie-signature (usado por express-session) usa base64 normal com padding removido
+  // REF: https://www.npmjs.com/package/cookie-signature
+  // ERRADO: .replace(/\+/g, '-').replace(/\//g, '_') - isso é base64url
+  // CORRETO: apenas remover padding '='
   const expectedSignature = crypto
     .createHmac('sha256', SESSION_SECRET)
     .update(sessionId)
     .digest('base64')
-    .replace(/[=]+$/, '')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_');
+    .replace(/=+$/, '');
   
   // Comparação timing-safe para prevenir timing attacks
   try {
