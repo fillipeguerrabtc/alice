@@ -6,7 +6,10 @@ import cors from 'cors';
 import compression from 'compression';
 // rateLimit via createRateLimiter de @alice/shared-utils
 // CircuitBreaker via createCircuitBreaker de @alice/shared-utils
-import crypto from 'crypto';
+// CORREÇÃO PR#107 (10/01/2026): Usar prefixo 'node:' para módulos Node.js built-in
+// REF: https://nodejs.org/api/esm.html#node-imports
+// REF: Best Practices Node.js ESM 2025 - evita conflitos com pacotes npm de mesmo nome
+import crypto from 'node:crypto';
 import nodemailer from 'nodemailer';
 import { createLogger } from '@alice/logger';
 import { 
@@ -28,10 +31,14 @@ import {
   ShutdownPriority,
   setupSwaggerUI,
   INTEGRATIONS_SERVICE_TAGS,
+  // CORREÇÃO PR#107 (10/01/2026): Middleware de sessão HTTP para autenticação
+  createSessionAuthMiddleware,
+  initializeSessionAuthCache,
+  initializeRedisCache,
 } from '@alice/shared-utils';
 import { integrationsServicePaths, integrationsServiceSchemas } from './openapi-specs.js';
 import { loadConfig, integrationsServiceConfigSchema } from '@alice/config';
-import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage } from '@alice/database';
+import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, getPool } from '@alice/database';
 import { eq, desc, sql, and } from '@alice/database';
 import { z } from 'zod';
 import { wiseService } from './wiseService.js';
@@ -373,6 +380,29 @@ app.use('/api/integrations/wise/webhook', express.raw({ type: 'application/json'
 app.use('/api/integrations/twilio/webhook', express.urlencoded({ extended: false }));
 // SEGURANÇA: express.json() APÓS os parsers específicos (OWASP API4)
 app.use(express.json({ limit: '10mb' }));
+
+// =============================================================================
+// MIDDLEWARE: Autenticação via Cookie de Sessão PostgreSQL
+// =============================================================================
+// CORREÇÃO PR#107 (10/01/2026): Requisições HTTP precisam de validação de sessão
+// PROBLEMA: alice-integrations não tinha middleware para processar cookie de sessão
+//           do alice-auth, causando 401 em todas as requisições autenticadas.
+// SOLUÇÃO: Middleware compartilhado de @alice/shared-utils
+// REF: CLAUDE.md Regra 7 (Diagnóstico de causa raiz)
+// =============================================================================
+app.use(createSessionAuthMiddleware({
+  pool: getPool(),
+  publicPaths: [
+    '/api/integrations/health', 
+    '/live', 
+    '/ready', 
+    '/metrics',
+    // Webhooks usam validação própria de assinatura (não precisam de sessão)
+    '/api/integrations/stripe/webhook',
+    '/api/integrations/wise/webhook',
+    '/api/integrations/twilio/webhook',
+  ],
+}));
 
 app.get('/api/integrations/health', (_req: Request, res: Response) => {
   const wiseConfigured = isWiseConfigured();
@@ -4078,54 +4108,84 @@ app.use(createErrorHandler({
 
 const PORT = config.PORT || 3005;
 
-try {
-  const db = getDatabase();
-  initWiseSyncService(db);
-  logger.info('WiseSyncService inicializado com sucesso');
-} catch (error) {
-  logger.warn({ error }, 'WiseSyncService não inicializado (database não disponível)');
+// =============================================================================
+// INICIALIZAÇÃO: Redis Cache + Session Auth Cache
+// =============================================================================
+// CORREÇÃO PR#107 (10/01/2026): Inicializar caches antes de processar requisições
+// Redis cache é usado para performance de sessões HTTP (evita queries repetitivas)
+// =============================================================================
+async function initializeCaches(): Promise<void> {
+  try {
+    // initializeRedisCache() usa REDIS_URL do ambiente automaticamente
+    const redisConnected = await initializeRedisCache();
+    if (redisConnected) {
+      logger.info('Redis cache inicializado para session-auth');
+    } else {
+      logger.warn('REDIS_URL não configurado - usando cache in-memory para sessões');
+    }
+    await initializeSessionAuthCache();
+    logger.info('Session auth cache inicializado');
+  } catch (error) {
+    logger.warn({ error: (error as Error).message }, 'Cache usando fallback in-memory');
+    // Inicializar cache in-memory mesmo sem Redis
+    await initializeSessionAuthCache();
+  }
 }
 
-const server = app.listen(PORT, '0.0.0.0', () => {
-  logger.info({ port: PORT }, 'Integrations service started');
-});
+// Inicializar caches e depois iniciar servidor
+initializeCaches().then(() => {
+  try {
+    const db = getDatabase();
+    initWiseSyncService(db);
+    logger.info('WiseSyncService inicializado com sucesso');
+  } catch (error) {
+    logger.warn({ error }, 'WiseSyncService não inicializado (database não disponível)');
+  }
 
-// SEGURANÇA: Timeouts para prevenir conexões pendentes (Node.js 20 LTS Best Practices)
-server.timeout = 30000; // 30s timeout para requisições
-server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
-server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
+  const server = app.listen(PORT, '0.0.0.0', () => {
+    logger.info({ port: PORT }, 'Integrations service started');
+  });
 
-// ============================================================================
-// GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 CLAUDE.md)
-// ShutdownManager centralizado elimina duplicação de listeners (Regra 6)
-// Ordem: HTTP server → Database pool (coordenado pelo ShutdownManager)
-// ============================================================================
+  // SEGURANÇA: Timeouts para prevenir conexões pendentes (Node.js 20 LTS Best Practices)
+  server.timeout = 30000; // 30s timeout para requisições
+  server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
+  server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
 
-registerShutdownCallback(
-  'integrations-http-server',
-  async () => {
-    logger.info('Encerrando HTTP server...');
-    await new Promise<void>((resolve, reject) => {
-      server.close((err) => {
-        if (err) {
-          logger.error({ error: err }, 'Erro ao fechar HTTP server');
-          reject(err);
-        } else {
-          logger.info('HTTP server encerrado com sucesso');
-          resolve();
-        }
+  // ============================================================================
+  // GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 CLAUDE.md)
+  // ShutdownManager centralizado elimina duplicação de listeners (Regra 6)
+  // Ordem: HTTP server → Database pool (coordenado pelo ShutdownManager)
+  // ============================================================================
+
+  registerShutdownCallback(
+    'integrations-http-server',
+    async () => {
+      logger.info('Encerrando HTTP server...');
+      await new Promise<void>((resolve, reject) => {
+        server.close((err) => {
+          if (err) {
+            logger.error({ error: err }, 'Erro ao fechar HTTP server');
+            reject(err);
+          } else {
+            logger.info('HTTP server encerrado com sucesso');
+            resolve();
+          }
+        });
       });
-    });
-  },
-  { priority: ShutdownPriority.HTTP_SERVER }
-);
+    },
+    { priority: ShutdownPriority.HTTP_SERVER }
+  );
 
-registerShutdownCallback(
-  'integrations-database-pool',
-  async () => {
-    logger.info('Encerrando pool de conexões database...');
-    await closeDatabasePool();
-    logger.info('Pool de conexões encerrado com sucesso');
-  },
-  { priority: ShutdownPriority.DATABASE }
-);
+  registerShutdownCallback(
+    'integrations-database-pool',
+    async () => {
+      logger.info('Encerrando pool de conexões database...');
+      await closeDatabasePool();
+      logger.info('Pool de conexões encerrado com sucesso');
+    },
+    { priority: ShutdownPriority.DATABASE }
+  );
+}).catch((error: unknown) => {
+  logger.error({ error }, 'Erro fatal ao inicializar serviço');
+  process.exit(1);
+});

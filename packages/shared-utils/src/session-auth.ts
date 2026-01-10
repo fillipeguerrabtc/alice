@@ -22,7 +22,10 @@
  */
 
 import type { Request, Response, NextFunction } from 'express';
-import crypto from 'crypto';
+// CORREÇÃO PR#107 (10/01/2026): Usar prefixo 'node:' para módulos Node.js built-in
+// REF: https://nodejs.org/api/esm.html#node-imports
+// REF: Best Practices Node.js ESM 2025 - evita conflitos com pacotes npm de mesmo nome
+import crypto from 'node:crypto';
 import { createLogger } from './logger.js';
 import { createCacheAdapter, type CacheAdapter } from './redis-cache-adapter.js';
 import type { Role } from './rbac/types.js';

@@ -14,6 +14,11 @@ import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import cors from 'cors';
 import compression from 'compression';
+// CORREÇÃO PR#107 (10/01/2026): Usar prefixo 'node:' para módulos Node.js built-in
+// REF: https://nodejs.org/api/esm.html#node-imports
+// REF: Best Practices Node.js ESM 2025 - evita conflitos com pacotes npm de mesmo nome
+// PROBLEMA: 'require("crypto")' dentro de função causava "Dynamic require not supported" em ESM bundle
+import crypto from 'node:crypto';
 import { 
   createCircuitBreaker, 
   CIRCUIT_BREAKER_PRESETS, 
@@ -300,7 +305,8 @@ function decodeSessionId(signedCookie: string): string | null {
   const signature = value.slice(dotIndex + 1);
   
   // Verificar assinatura HMAC-SHA256
-  const crypto = require('crypto');
+  // CORREÇÃO PR#107 (10/01/2026): Usar import no topo ao invés de require()
+  // require('crypto') causava "Dynamic require not supported" em ESM bundle
   const expectedSignature = crypto
     .createHmac('sha256', SESSION_SECRET)
     .update(sessionId)
