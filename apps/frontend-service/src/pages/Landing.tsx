@@ -102,7 +102,7 @@ export default function Landing() {
           <div className="flex items-center gap-3">
             <LanguageSwitch />
             <ThemeToggle />
-            <a href="/api/login">
+            <a href="/login">
               <Button data-testid="button-login">
                 {t('auth.login')}
                 <ArrowRight className="ml-2 h-4 w-4" />
@@ -140,7 +140,7 @@ export default function Landing() {
                 {t('landing.description')}
               </p>
 
-              <a href="/api/login">
+              <a href="/login">
                 <Button size="lg" data-testid="button-hero-entrar">
                   {t('landing.cta')}
                   <ArrowRight className="ml-2 h-4 w-4" />
@@ -292,7 +292,7 @@ export default function Landing() {
               {t('landing.readyToStartDescription')}
             </p>
 
-            <a href="/api/login">
+            <a href="/login">
               <Button size="lg" data-testid="button-cta-entrar">
                 {t('landing.viewDemo')}
                 <ArrowRight className="ml-2 h-4 w-4" />

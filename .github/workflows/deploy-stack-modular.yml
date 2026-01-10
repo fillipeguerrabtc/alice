@@ -2894,29 +2894,23 @@ jobs:
             echo "🧹 PRE-CLEANUP: Verificando containers problemáticos..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             
-            PROBLEM_CONTAINERS=$(docker ps -a --filter "name=alice-" --filter "status=exited" --filter "status=dead" -q 2>/dev/null || true)
-            UNHEALTHY_CONTAINERS=$(docker ps --filter "name=alice-" --filter "health=unhealthy" -q 2>/dev/null || true)
+            # CORREÇÃO: Usar lista explícita de serviços do INFRA stack
+            # NÃO usar filtro genérico "alice-" que capturaria containers de outros stacks
+            INFRA_SERVICES="alice-postgres alice-redis alice-qdrant alice-caddy alice-minio alice-tor alice-searxng alice-pgbouncer alice-minio-init alice-pgbackrest-init"
+            PROBLEM_FOUND=false
             
-            if [ -n "$PROBLEM_CONTAINERS" ] || [ -n "$UNHEALTHY_CONTAINERS" ]; then
-              echo "⚠️  Encontrados containers problemáticos:"
-              docker ps -a --filter "name=alice-" --filter "status=exited" --format "   - {{.Names}} (exited)" 2>/dev/null || true
-              docker ps -a --filter "name=alice-" --filter "status=dead" --format "   - {{.Names}} (dead)" 2>/dev/null || true
-              docker ps --filter "name=alice-" --filter "health=unhealthy" --format "   - {{.Names}} (unhealthy)" 2>/dev/null || true
-              echo ""
-              echo "🗑️  Removendo containers problemáticos..."
+            for svc in $INFRA_SERVICES; do
+              STATUS=$(docker inspect --format='{{.State.Status}}' $svc 2>/dev/null || echo "not_found")
+              HEALTH=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' $svc 2>/dev/null || echo "none")
               
-              # Remover exited/dead
-              if [ -n "$PROBLEM_CONTAINERS" ]; then
-                echo "$PROBLEM_CONTAINERS" | xargs -r docker rm -f 2>/dev/null || true
+              if [ "$STATUS" = "exited" ] || [ "$STATUS" = "dead" ] || [ "$HEALTH" = "unhealthy" ]; then
+                echo "⚠️  $svc: status=$STATUS health=$HEALTH → removendo"
+                docker rm -f $svc 2>/dev/null || true
+                PROBLEM_FOUND=true
               fi
-              
-              # Remover unhealthy (serão recriados)
-              if [ -n "$UNHEALTHY_CONTAINERS" ]; then
-                echo "$UNHEALTHY_CONTAINERS" | xargs -r docker rm -f 2>/dev/null || true
-              fi
-              
-              echo "✅ Containers problemáticos removidos"
-            else
+            done
+            
+            if [ "$PROBLEM_FOUND" = "false" ]; then
               echo "✅ Nenhum container problemático encontrado"
             fi
             echo ""
@@ -3640,7 +3634,8 @@ jobs:
             echo "🧹 PRE-CLEANUP: Verificando containers problemáticos..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             
-            ALICE_SERVICES="alice-auth alice-chat alice-rag alice-training alice-integrations alice-gpu-manager alice-frontend alice-observability"
+            # Inclui serviços Alice + containers GPU
+            ALICE_SERVICES="alice-auth alice-chat alice-rag alice-training alice-integrations alice-gpu-manager alice-frontend alice-observability gpu-mixtral gpu-embeddings gpu-flux gpu-asr gpu-trainer"
             PROBLEM_FOUND=false
             
             for svc in $ALICE_SERVICES; do

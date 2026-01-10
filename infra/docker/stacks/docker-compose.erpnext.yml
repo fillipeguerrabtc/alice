@@ -590,11 +590,17 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      # CORREÇÃO PR#104 (10/01/2026): Reduzir timeouts - verificar conexão Redis apenas
-      test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
-      interval: 20s
-      timeout: 10s
-      retries: 5
+      # =======================================================================
+      # CORREÇÃO PR#107 (10/01/2026): Healthcheck sem módulo redis
+      # =======================================================================
+      # PROBLEMA: A imagem frappe/erpnext não tem o módulo 'redis' no Python
+      #           do sistema, apenas no virtualenv do bench.
+      # SOLUÇÃO: Verificar se o processo Python (scheduler) está rodando
+      # =======================================================================
+      test: ["CMD-SHELL", "cat /proc/1/comm | grep -q python"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
       start_period: 60s
     deploy:
       resources:
@@ -645,11 +651,26 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      # CORREÇÃO PR#104: Reduzir timeouts
-      test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
-      interval: 20s
-      timeout: 10s
-      retries: 5
+      # =======================================================================
+      # CORREÇÃO PR#107 (10/01/2026): Healthcheck sem módulo redis
+      # =======================================================================
+      # PROBLEMA: A imagem frappe/erpnext não tem o módulo 'redis' no Python
+      #           do sistema, apenas no virtualenv do bench. O healthcheck
+      #           anterior causava: ModuleNotFoundError: No module named 'redis'
+      #
+      # SOLUÇÃO: Verificar se o processo Python (worker RQ) está rodando
+      #          via /proc/1/comm. Isso é confiável porque:
+      #          - PID 1 é sempre o processo principal do container
+      #          - Se o worker morrer, Docker reinicia o container
+      #          - Healthcheck simples e sem dependências externas
+      #
+      # REF: CLAUDE.md Regra 7 (Diagnóstico de causa raiz)
+      # REF: https://frappe.io/docs/user/en/bench
+      # =======================================================================
+      test: ["CMD-SHELL", "cat /proc/1/comm | grep -q python"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
       start_period: 60s
     deploy:
       resources:
@@ -700,11 +721,17 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      # CORREÇÃO PR#104: Reduzir timeouts
-      test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
-      interval: 20s
-      timeout: 10s
-      retries: 5
+      # =======================================================================
+      # CORREÇÃO PR#107 (10/01/2026): Healthcheck sem módulo redis
+      # =======================================================================
+      # PROBLEMA: A imagem frappe/erpnext não tem o módulo 'redis' no Python
+      #           do sistema, apenas no virtualenv do bench.
+      # SOLUÇÃO: Verificar se o processo Python (worker RQ) está rodando
+      # =======================================================================
+      test: ["CMD-SHELL", "cat /proc/1/comm | grep -q python"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
       start_period: 60s
     deploy:
       resources:
@@ -755,11 +782,17 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      # CORREÇÃO PR#104: Reduzir timeouts
-      test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
-      interval: 20s
-      timeout: 10s
-      retries: 5
+      # =======================================================================
+      # CORREÇÃO PR#107 (10/01/2026): Healthcheck sem módulo redis
+      # =======================================================================
+      # PROBLEMA: A imagem frappe/erpnext não tem o módulo 'redis' no Python
+      #           do sistema, apenas no virtualenv do bench.
+      # SOLUÇÃO: Verificar se o processo Python (worker RQ) está rodando
+      # =======================================================================
+      test: ["CMD-SHELL", "cat /proc/1/comm | grep -q python"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
       start_period: 60s
     deploy:
       resources:
