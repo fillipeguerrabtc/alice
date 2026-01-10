@@ -5323,3 +5323,129 @@ jobs:
           echo "*Deploy executado em $(date -u '+%Y-%m-%d %H:%M:%S UTC')*" >> $GITHUB_STEP_SUMMARY
           
           echo "✅ Relatório de deploy gerado com sucesso"
+
+      # =========================================================================
+      # CLEANUP: Limpeza Automática de Imagens Docker
+      # =========================================================================
+      # MELHORES PRÁTICAS 2025:
+      # - Executa APÓS deploy (não interfere no processo)
+      # - Remove apenas imagens não utilizadas há 7+ dias (168h)
+      # - Remove dangling images (não tagueadas)
+      # - NÃO remove imagens em uso por containers running
+      # - Mostra espaço liberado no relatório
+      #
+      # REF: https://docs.docker.com/engine/manage-resources/pruning/
+      # REF: CLAUDE.md Regra 11 (Melhores práticas 2025)
+      # =========================================================================
+      - name: Cleanup Docker images (post-deploy)
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          command_timeout: 5m
+          script: |
+            set -euo pipefail
+            
+            echo "🧹 =============================================="
+            echo "   DOCKER CLEANUP - Melhores Práticas 2025"
+            echo "=============================================="
+            echo ""
+            
+            # =================================================================
+            # ESTÁGIO 1: Mostrar uso de disco ANTES da limpeza
+            # =================================================================
+            echo "📊 Uso de disco Docker ANTES da limpeza:"
+            docker system df
+            echo ""
+            
+            # Capturar espaço usado antes
+            SPACE_BEFORE=$(docker system df --format '{{.Size}}' | head -1)
+            
+            # =================================================================
+            # ESTÁGIO 2: Remover dangling images (não tagueadas)
+            # =================================================================
+            # Dangling images são camadas intermediárias sem tag
+            # Seguro remover - nunca estão em uso
+            # =================================================================
+            echo "🗑️  Removendo dangling images (não tagueadas)..."
+            DANGLING_COUNT=$(docker images -f "dangling=true" -q | wc -l)
+            if [ "$DANGLING_COUNT" -gt 0 ]; then
+              docker image prune -f 2>&1 || true
+              echo "   ✅ Removidas $DANGLING_COUNT dangling image(s)"
+            else
+              echo "   ✅ Nenhuma dangling image encontrada"
+            fi
+            echo ""
+            
+            # =================================================================
+            # ESTÁGIO 3: Remover imagens não utilizadas há 7+ dias
+            # =================================================================
+            # CRITÉRIO: until=168h (7 dias)
+            # - Preserva imagens recentes (podem ser usadas em rollback)
+            # - Remove apenas imagens antigas não utilizadas
+            # - NÃO remove imagens em uso por containers running
+            # =================================================================
+            echo "🗑️  Removendo imagens não utilizadas há 7+ dias..."
+            OLD_IMAGES=$(docker images --filter "until=168h" --filter "dangling=false" -q 2>/dev/null | wc -l)
+            if [ "$OLD_IMAGES" -gt 0 ]; then
+              # --filter "until=168h" = imagens criadas há mais de 7 dias
+              # -a = todas (não apenas dangling)
+              # -f = force (sem confirmação)
+              docker image prune -a -f --filter "until=168h" 2>&1 || true
+              echo "   ✅ Limpeza de imagens antigas concluída"
+            else
+              echo "   ✅ Nenhuma imagem antiga para remover"
+            fi
+            echo ""
+            
+            # =================================================================
+            # ESTÁGIO 4: Remover containers parados (exited/dead)
+            # =================================================================
+            echo "🗑️  Removendo containers parados..."
+            STOPPED_COUNT=$(docker ps -a -f "status=exited" -f "status=dead" -q | wc -l)
+            if [ "$STOPPED_COUNT" -gt 0 ]; then
+              docker container prune -f 2>&1 || true
+              echo "   ✅ Removidos $STOPPED_COUNT container(s) parado(s)"
+            else
+              echo "   ✅ Nenhum container parado encontrado"
+            fi
+            echo ""
+            
+            # =================================================================
+            # ESTÁGIO 5: Remover volumes não utilizados (CUIDADO!)
+            # =================================================================
+            # NÃO removemos volumes automaticamente - podem conter dados!
+            # Apenas listamos para awareness
+            # =================================================================
+            echo "📦 Volumes não utilizados (NÃO removidos automaticamente):"
+            UNUSED_VOLUMES=$(docker volume ls -f "dangling=true" -q | wc -l)
+            if [ "$UNUSED_VOLUMES" -gt 0 ]; then
+              echo "   ⚠️  $UNUSED_VOLUMES volume(s) não utilizados encontrados"
+              echo "   💡 Para remover manualmente: docker volume prune -f"
+            else
+              echo "   ✅ Nenhum volume não utilizado"
+            fi
+            echo ""
+            
+            # =================================================================
+            # ESTÁGIO 6: Mostrar uso de disco APÓS limpeza
+            # =================================================================
+            echo "📊 Uso de disco Docker APÓS limpeza:"
+            docker system df
+            echo ""
+            
+            # =================================================================
+            # ESTÁGIO 7: Relatório de imagens restantes
+            # =================================================================
+            echo "📋 Imagens Docker restantes (em uso):"
+            docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedSince}}" | head -20
+            echo ""
+            
+            TOTAL_IMAGES=$(docker images -q | wc -l)
+            echo "   Total: $TOTAL_IMAGES imagem(ns)"
+            echo ""
+            
+            echo "✅ =============================================="
+            echo "   CLEANUP CONCLUÍDO COM SUCESSO"
+            echo "=============================================="
