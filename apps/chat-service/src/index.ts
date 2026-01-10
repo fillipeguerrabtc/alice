@@ -9,7 +9,7 @@
  */
 
 import express from 'express';
-import type { Request, Response } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import cors from 'cors';
@@ -1635,6 +1635,67 @@ app.use(createRateLimiter({
 
 // SEGURANÇA: Limites de payload para prevenir DoS (OWASP API4)
 app.use(express.json({ limit: '10mb' }));
+
+// =============================================================================
+// MIDDLEWARE: Autenticação via Cookie de Sessão PostgreSQL
+// =============================================================================
+// CORREÇÃO PR#107 (10/01/2026): Requisições HTTP precisam de validação de sessão
+// PROBLEMA: alice-chat não tinha middleware para processar cookie de sessão
+//           do alice-auth, causando 401 em todas as requisições autenticadas.
+// SOLUÇÃO: Middleware que usa as mesmas funções de validação do WebSocket
+//          (decodeSessionId + validateSessionFromDatabase) para popular req.user
+// REF: CLAUDE.md Regra 7 (Diagnóstico de causa raiz)
+// =============================================================================
+app.use(async (req: Request, res: Response, next: NextFunction) => {
+  // Skip para rotas públicas (health, liveness, readiness, metrics)
+  const publicPaths = ['/api/chat/health', '/live', '/ready', '/metrics'];
+  if (publicPaths.some(path => req.path.startsWith(path))) {
+    return next();
+  }
+
+  // Extrair cookie de sessão
+  const cookieHeader = req.headers.cookie;
+  if (!cookieHeader) {
+    return next(); // Deixar requireAuth() retornar 401 se necessário
+  }
+
+  const cookies = parseCookies(cookieHeader);
+  const sessionCookie = cookies[SESSION_COOKIE_NAME];
+  
+  if (!sessionCookie) {
+    return next();
+  }
+
+  // Decodificar e validar assinatura
+  const sessionId = decodeSessionId(sessionCookie);
+  if (!sessionId) {
+    logger.debug('HTTP: Cookie de sessão com assinatura inválida');
+    return next();
+  }
+
+  // Validar sessão no PostgreSQL (com cache Redis)
+  const session = await validateSessionFromDatabase(sessionId);
+  if (!session) {
+    return next();
+  }
+
+  // Popular req.user para uso pelo requireAuth() e outros middlewares
+  req.user = {
+    userId: session.userId,
+    tenantId: session.tenantId ?? undefined, // null → undefined para compatibilidade com tipos RBAC
+    role: session.role as Role,
+  };
+  req.tenantId = session.tenantId ?? undefined;
+
+  logger.debug({
+    userId: session.userId,
+    tenantId: session.tenantId,
+    role: session.role,
+    path: req.path,
+  }, 'HTTP: Sessão validada via cookie PostgreSQL');
+
+  next();
+});
 
 app.get('/api/chat/health', (_req: Request, res: Response) => {
   const llmCircuitState = gpuManagerBreaker.opened ? 'open' : (gpuManagerBreaker.halfOpen ? 'half-open' : 'closed');

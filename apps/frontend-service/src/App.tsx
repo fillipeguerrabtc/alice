@@ -1,4 +1,4 @@
-import { Switch, Route } from 'wouter';
+import { Switch, Route, Redirect } from 'wouter';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { lazy, Suspense } from 'react';
 import { queryClient } from '@/lib/queryClient';
@@ -72,6 +72,11 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
 function Router() {
   return (
     <Switch>
+      {/* Redireciona /login para / quando autenticado (pós-OIDC callback) */}
+      {/* CORREÇÃO PR#107: Usar Redirect do wouter ao invés de window.location.href */}
+      {/* - Evita side effect durante render (React rules) */}
+      {/* - Navegação client-side sem reload (melhor UX) */}
+      <Route path="/login">{() => <Redirect to="/" />}</Route>
       <Route path="/" component={Dashboard} />
       <Route path="/chat" component={Chat} />
       <Route path="/chat/:conversationId" component={Chat} />

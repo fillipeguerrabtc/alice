@@ -92,6 +92,8 @@ import {
   TEXT_COLLECTION_NAME,
   TEXT_EMBEDDING_DIM,
   type QdrantSearchResult,
+  createSessionAuthMiddleware,
+  initializeSessionAuthCache,
 } from '@alice/shared-utils';
 
 interface MulterRequest extends Request {
@@ -1051,6 +1053,17 @@ app.use(createRateLimiter({
 
 // SEGURANÇA: Limites de payload para prevenir DoS (OWASP API4)
 app.use(express.json({ limit: '10mb' }));
+
+// =============================================================================
+// MIDDLEWARE: Autenticação via Cookie de Sessão PostgreSQL
+// =============================================================================
+// CORREÇÃO PR#107 (10/01/2026): Requisições HTTP precisam de validação de sessão
+// REF: CLAUDE.md Regra 7 (Diagnóstico de causa raiz)
+// =============================================================================
+app.use(createSessionAuthMiddleware({
+  pool: getPool(),
+  publicPaths: ['/api/rag/health', '/live', '/ready', '/metrics'],
+}));
 
 const CHUNK_SIZE = 1000;
 const CHUNK_OVERLAP = 200;
@@ -3518,6 +3531,8 @@ registerShutdownCallback(
     // Evita múltiplos pontos de exit e lógica duplicada
     if (redisConnected) {
       logger.info('Redis cache inicializado para embedding-websocket');
+      // CORREÇÃO PR#107 (10/01/2026): Inicializar cache de sessões HTTP
+      await initializeSessionAuthCache();
     } else {
       // BUG FIX 23/12/2025: Redis é crítico para embedding-websocket Pub/Sub
       // Se Redis não estiver disponível, embedding-websocket não pode funcionar corretamente
