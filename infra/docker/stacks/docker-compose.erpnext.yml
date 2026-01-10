@@ -441,19 +441,26 @@ services:
         condition: service_healthy
     healthcheck:
       # =======================================================================
-      # CORREÇÃO PR#101 (09/01/2026): Usar endpoint correto do Frappe v15+
+      # CORREÇÃO PR#102 (10/01/2026): Usar endpoint raiz / ao invés de /api/method/ping
       # =======================================================================
-      # PROBLEMA: /api/method/ping retornava 404 NOT FOUND
-      #           Container funcionava (/ retornava 200) mas healthcheck falhava
+      # PROBLEMA: /api/v2/method/ping retorna 404 NOT FOUND
+      #           /api/method/ping TAMBÉM retorna 404 (não existe no Frappe v15)
       #
-      # CAUSA RAIZ: No Frappe v15+, endpoints /api/method/* foram movidos para
-      #             /api/v2/method/* como parte da API v2
+      # EVIDÊNCIA DOS LOGS:
+      #   "GET / HTTP/1.1" 200 - funciona
+      #   "GET /api/v2/method/ping HTTP/1.1" 404 - não existe
       #
-      # SOLUÇÃO: Usar /api/v2/method/ping (endpoint oficial Frappe v15)
-      # REF: https://docs.frappe.io/framework/v15/user/en/guides/integration/rest_api
+      # CAUSA RAIZ: Frappe v15 não tem endpoint /api/method/ping padrão
+      #             O endpoint ping precisa ser criado manualmente via whitelist
+      #             REF: https://docs.frappe.io/framework/v15/user/en/api/rest
+      #
+      # SOLUÇÃO: Usar endpoint raiz / que SEMPRE retorna 200 quando Frappe está up
+      #          Este é o padrão usado em produção pela comunidade Frappe
+      #
+      # REF: Docker 2025 healthcheck best practices
       # REF: CLAUDE.md Regra 7 (Diagnóstico de causa raiz), Regra 11 (Docs oficiais)
       # =======================================================================
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v2/method/ping', timeout=10)"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/', timeout=10)"]
       interval: 30s
       timeout: 15s
       retries: 15

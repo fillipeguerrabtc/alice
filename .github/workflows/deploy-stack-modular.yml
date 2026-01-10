@@ -4105,12 +4105,14 @@ jobs:
             # =================================================================
             
             # Containers que TÊM healthcheck (devem ficar "healthy")
-            HEALTH_CONTAINERS="prometheus grafana loki promtail alice-vector alice-clickhouse alice-langfuse-db langfuse"
-            
+            # NOTA PR#102: loki removido - imagem distroless sem shell (healthcheck: disable)
+            HEALTH_CONTAINERS="prometheus grafana promtail alice-vector alice-clickhouse alice-langfuse-db langfuse"
+
             # Containers SEM healthcheck (devem estar "running")
+            # - loki: distroless desde v3.2.0 (healthcheck desabilitado)
             # - jaeger, alice-otel-collector, alice-cadvisor, alice-node-exporter: distroless
             # - langfuse-worker: não tem healthcheck definido
-            RUNNING_CONTAINERS="jaeger alice-otel-collector alice-cadvisor alice-node-exporter langfuse-worker"
+            RUNNING_CONTAINERS="loki jaeger alice-otel-collector alice-cadvisor alice-node-exporter langfuse-worker"
             
             # =================================================================
             # CORREÇÃO PR#100 (09/01/2026): Alinhar workflow timeout com Docker healthcheck

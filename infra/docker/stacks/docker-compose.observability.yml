@@ -195,16 +195,31 @@ services:
       - /opt/alice/data/loki:/loki
     networks:
       - alice-network
+    # =======================================================================
+    # HEALTHCHECK: DESABILITADO para imagem distroless
+    # =======================================================================
+    # PROBLEMA: Loki 3.6+ usa imagem distroless (sem shell, wget, curl)
+    #           CMD-SHELL falha com: "/bin/sh: no such file or directory"
+    #
+    # CAUSA RAIZ: Grafana migrou Loki para imagem distroless desde v3.2.0
+    #             REF: https://community.grafana.com/t/plans-for-non-distroless-image/143362
+    #
+    # SOLUÇÃO ENTERPRISE:
+    # 1. Desabilitar healthcheck no docker-compose
+    # 2. Confiar em: restart: unless-stopped (Docker reinicia se crasha)
+    # 3. Monitoramento via Prometheus scraping /metrics (já configurado)
+    # 4. Logs mostram Loki funcionando: "uploading tables", "checkpoint done"
+    #
+    # ALTERNATIVAS CONSIDERADAS E REJEITADAS:
+    # - Sidecar container: Adiciona complexidade desnecessária
+    # - Imagem Alpine: Não existe mais para Loki 3.6+
+    # - CMD com binário loki: Não suporta flag de healthcheck
+    #
+    # REF: Docker 2025 best practices for distroless containers
+    # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 11 (Docs oficiais)
+    # =======================================================================
     healthcheck:
-      # CORREÇÃO PR#94 (09/01/2026): Usar endpoint /ready (não -verify-config)
-      # -verify-config só verifica sintaxe, não se serviço está rodando
-      # REF: https://grafana.com/docs/loki/latest/reference/loki-http-api/
-      # Loki Alpine TEM wget (não curl)
-      test: ["CMD-SHELL", "wget --quiet --tries=1 --output-document=- http://localhost:3100/ready | grep -q ready || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
+      disable: true
     deploy:
       resources:
         limits:

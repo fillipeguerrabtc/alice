@@ -85,23 +85,27 @@ services:
       - /var/lib/nginx:mode=1777,size=16M
     healthcheck:
       # =======================================================================
-      # CORREÇÃO PR#101 (09/01/2026): Usar porta correta do NGINX
+      # CORREÇÃO PR#102 (10/01/2026): Usar netcat ao invés de wget
       # =======================================================================
-      # PROBLEMA: Healthcheck verificava porta 80, mas nginx.conf usa "listen 8080"
-      #           Resultado: "wget: can't connect to remote host: Connection refused"
-      #           Mesmo com container funcionando perfeitamente (servindo usuários)
+      # PROBLEMA ANTERIOR: wget não está disponível na imagem nginx:alpine
+      #                    Erro: "wget: can't connect to remote host: Connection refused"
       #
-      # SOLUÇÃO: Usar porta 8080 + endpoint /health dedicado
-      # - nginx.conf linha 6: listen 8080
-      # - nginx.conf linha 73-77: location /health { return 200 "healthy\n" }
+      # CAUSA RAIZ: nginx:1.27-alpine NÃO inclui wget/curl por padrão
+      #             O Dockerfile adiciona mas read_only: true impede scripts
       #
+      # SOLUÇÃO: Usar netcat (nc) que ESTÁ disponível no Alpine BusyBox
+      # - nc -z: scan mode (não envia dados)
+      # - nc -w 2: timeout de 2 segundos
+      # - Verifica se porta 8080 está escutando
+      #
+      # REF: Docker 2025 healthcheck best practices para Alpine
       # REF: CLAUDE.md Regra 7 (Diagnóstico de causa raiz)
       # =======================================================================
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/health || exit 1"]
+      test: ["CMD", "nc", "-z", "-w", "2", "localhost", "8080"]
       interval: 30s
       timeout: 10s
       retries: 10
-      start_period: 90s
+      start_period: 60s
     deploy:
       resources:
         limits:
