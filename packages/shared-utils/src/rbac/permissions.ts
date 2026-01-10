@@ -56,6 +56,11 @@ export const PERMISSION_MAP: Record<string, Role[]> = {
   'chat:messages:delete': ['super_admin', 'admin'],
   'chat:messages:manage': ['super_admin', 'admin'],
   
+  // Stats e métricas do chat (dashboard)
+  'chat:stats:read': ['super_admin', 'admin', 'manager'],
+  'chat:stats:write': ['super_admin', 'admin'],
+  'chat:stats:manage': ['super_admin', 'admin'],
+  
   'chat:agents:read': ['super_admin', 'admin', 'manager', 'operator', 'viewer'],
   'chat:agents:write': ['super_admin', 'admin', 'manager'],
   'chat:agents:delete': ['super_admin', 'admin'],

@@ -3598,7 +3598,7 @@ jobs:
             echo "🚀 DEPLOYING ALICE STACK"
             echo "══════════════════════════════════════════════════════════════════"
             echo ""
-            echo "📦 Containers: frontend, auth, chat, rag, training, integrations, observability, gpu-manager"
+            echo "📦 Containers: frontend, auth, chat, rag, training, integrations, observability, gpu-manager, gpu-mixtral (LLM)"
             echo "📅 Versão: ${{ needs.validate.outputs.version }}"
             echo "🕐 Início: $(date '+%Y-%m-%d %H:%M:%S')"
             echo ""
@@ -3614,9 +3614,9 @@ jobs:
             
             # Pull das imagens
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "📥 PULL: Baixando imagens..."
+            echo "📥 PULL: Baixando imagens (incluindo GPU LLM)..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            if ! docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull 2>&1; then
+            if ! docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-llm pull 2>&1; then
               echo ""
               echo "❌ ERRO: Falha no pull das imagens!"
               echo ""
@@ -3655,10 +3655,13 @@ jobs:
             echo ""
 
             # Deploy
+            # CORREÇÃO 10/01/2026: Incluir --profile gpu-llm para iniciar container gpu-mixtral (LLM)
+            # Sem este profile, o chat não funciona pois não há modelo LLM disponível
+            # O gpu-manager apenas gerencia a fila, o gpu-mixtral é quem roda o Mixtral 8x7B
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "🚀 UP: Iniciando containers..."
+            echo "🚀 UP: Iniciando containers (incluindo GPU LLM)..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            if ! docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml up -d --pull always --remove-orphans 2>&1; then
+            if ! docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-llm up -d --pull always --remove-orphans 2>&1; then
               echo ""
               echo "❌ ERRO: Falha no docker compose up!"
               echo ""
@@ -3666,7 +3669,7 @@ jobs:
               docker ps -a --filter "name=alice-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" || true
               echo ""
               echo "📋 Logs dos containers com erro (últimas 30 linhas cada):"
-              for c in alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager; do
+              for c in alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager gpu-mixtral; do
                 if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
                   echo ""
                   echo "── $c ──"
@@ -3681,7 +3684,7 @@ jobs:
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "📋 STATUS: Containers após deploy"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            docker ps -a --filter "name=alice-" --format "table {{.Names}}\t{{.Status}}" | grep -E "alice-(frontend|auth|chat|rag|training|integrations|observability|gpu-manager)" || echo "   (nenhum container encontrado)"
+            docker ps -a --filter "name=alice-" --filter "name=gpu-" --format "table {{.Names}}\t{{.Status}}" | grep -E "(alice-(frontend|auth|chat|rag|training|integrations|observability|gpu-manager)|gpu-mixtral)" || echo "   (nenhum container encontrado)"
             echo ""
             
             # =================================================================
@@ -3954,8 +3957,8 @@ jobs:
               echo "🐳 Deploying rollback version: $TARGET_VERSION"
               echo "========================================"
               
-              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull
-              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml up -d --pull always --remove-orphans
+              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-llm pull
+              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-llm up -d --pull always --remove-orphans
               
               echo "$TARGET_VERSION" > /opt/alice/versions/alice.current
               
