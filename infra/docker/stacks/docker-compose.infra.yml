@@ -373,13 +373,18 @@ services:
       #     ficava UNHEALTHY durante primeiro boot (initdb + extensions demoram)
       #   - start_period de 120s era INSUFICIENTE para primeiro boot em servidor limpo
       #
-      # CORREÇÃO PR#104 (10/01/2026): Reduzir timeouts para máx 15 tentativas
-      # Total: 60s start + (15 × 20s) = 360s (6 min)
+      # ANÁLISE DE TIMING (primeiro boot em servidor limpo):
+      #   1. initdb: ~30-60s (criar cluster PostgreSQL)
+      #   2. 01-create-extensions.sh: ~60-120s (criar pgvector + testes SIMD)
+      #   3. TOTAL: ~90-180s MÍNIMO antes de aceitar conexões
+      #
+      # CORREÇÃO PR#104 (10/01/2026): start_period=180s respeita requisito mínimo
+      # Total: 180s start + (10 × 20s) = 380s (6.3 min)
       # =================================================================
       interval: 20s
       timeout: 10s
-      retries: 15
-      start_period: 60s
+      retries: 10
+      start_period: 180s
     deploy:
       resources:
         limits:
