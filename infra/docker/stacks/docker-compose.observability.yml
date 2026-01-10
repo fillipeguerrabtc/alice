@@ -245,16 +245,25 @@ services:
       - /var/log:/var/log
     networks:
       - alice-network
+    # =======================================================================
+    # HEALTHCHECK: DESABILITADO para imagem sem wget/curl
+    # =======================================================================
+    # PROBLEMA: Promtail imagem NÃO tem wget, curl ou ferramentas HTTP
+    #           REF: https://github.com/grafana/loki/issues/11590
+    #
+    # NOTA: Promtail está em LTS até 28/02/2026, EOL em 02/03/2026
+    #       REF: https://grafana.com/docs/loki/latest/send-data/promtail/installation/
+    #
+    # SOLUÇÃO ENTERPRISE:
+    # 1. Desabilitar healthcheck no docker-compose
+    # 2. Confiar em: restart: unless-stopped (Docker reinicia se crasha)
+    # 3. Monitoramento via Prometheus scraping /metrics
+    #
+    # REF: Docker 2025 best practices for minimal images
+    # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 11 (Docs oficiais)
+    # =======================================================================
     healthcheck:
-      # CORREÇÃO PR#94 (09/01/2026): Usar endpoint /ready (não -check-syntax)
-      # -check-syntax só verifica sintaxe, não se serviço está rodando
-      # REF: https://grafana.com/docs/loki/latest/send-data/promtail/
-      # Promtail Alpine TEM wget (não curl)
-      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:9080/ready || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
+      disable: true
     deploy:
       resources:
         limits:
@@ -331,11 +340,13 @@ services:
       # REF: https://vector.dev/docs/reference/api/
       # REF: https://www.busybox.net/downloads/BusyBox.html (nc incluído)
       # =======================================================================
+      # CORREÇÃO PR#103 (10/01/2026): Aumentar start_period
+      # Vector demora ~60-90s para iniciar completamente em produção
       test: ["CMD-SHELL", "nc -z localhost 8686 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 30s
+      start_period: 90s
     deploy:
       resources:
         limits:

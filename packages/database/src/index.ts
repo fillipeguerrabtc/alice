@@ -223,12 +223,23 @@ export function getDatabase(): NodePgDatabase<typeof schema> {
       max: 10,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 10000,
-      // Enterprise-Grade: statement_timeout padrão de 30s para prevenir queries runaway
-      // Pode ser overriden por query específica via SET LOCAL
-      statement_timeout: 30000,
-      // Enterprise-Grade: idle_in_transaction_session_timeout para prevenir transações órfãs
-      // Fecha conexões que ficam idle em transação por mais de 60s (PostgreSQL 2025 best practice)
-      idle_in_transaction_session_timeout: 60000,
+      // =======================================================================
+      // CORREÇÃO PR#103 (10/01/2026): Removidos statement_timeout e 
+      // idle_in_transaction_session_timeout como startup parameters
+      // =======================================================================
+      // PROBLEMA: PgBouncer em transaction pooling mode NÃO suporta parâmetros
+      //           de sessão no startup. Erro: "unsupported startup parameter"
+      //           Isso impedia TODOS os serviços Alice de conectar ao PostgreSQL.
+      //
+      // CAUSA RAIZ: node-postgres passa esses parâmetros via protocol startup,
+      //             mas PgBouncer multiplixa conexões e rejeita session params.
+      //
+      // SOLUÇÃO: Remover da config do Pool. Se necessário para queries específicas,
+      //          usar SET LOCAL statement_timeout = '30s' dentro da transação.
+      //
+      // REF: https://www.pgbouncer.org/faq.html#how-to-use-prepared-statements-with-transaction-pooling
+      // REF: CLAUDE.md Regra 7 (Diagnóstico de causa raiz)
+      // =======================================================================
     });
     
     // CORREÇÃO 31/12/2025: Listener para erros de conexão (enterprise-grade)

@@ -570,11 +570,13 @@ services:
     networks:
       - erpnext-network
     healthcheck:
+      # CORREÇÃO PR#103 (10/01/2026): Aumentar start_period
+      # Scheduler demora ~120s para inicializar com bench em produção
       test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 120s
     deploy:
       resources:
         limits:
