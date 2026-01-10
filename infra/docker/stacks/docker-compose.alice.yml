@@ -542,14 +542,14 @@ services:
           memory: 20G
           cpus: '4.0'
     healthcheck:
-      # CORREÇÃO PR#104: Mixtral 8x7B via vLLM precisa de tempo para carregar modelo
-      # Download weights (se não cached) + GPU memory allocation + model init = ~3-5 min
-      # start_period: 300s respeita requisito de carregamento do modelo
+      # CORREÇÃO PR#104: Reduzir timeouts - modelo geralmente em cache
+      # Primeiro boot: 3-5 min (download weights) - raro
+      # Boot normal: ~30-60s (modelo em cache) - comum
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
       interval: 20s
       timeout: 10s
-      start_period: 300s
-      retries: 5
+      start_period: 90s
+      retries: 10
     logging:
       driver: "json-file"
       options:

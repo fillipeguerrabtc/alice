@@ -367,24 +367,14 @@ services:
       # =================================================================
       # CORREÇÃO CRÍTICA PR#86 (08/01/2026): Healthcheck otimizado para primeiro boot
       # =================================================================
-      # PROBLEMA IDENTIFICADO:
-      #   - Deploy falhava com "dependency failed to start: container alice-postgres is unhealthy"
-      #   - Containers dependentes (pgbouncer, pgbackrest-init) falhavam porque PostgreSQL
-      #     ficava UNHEALTHY durante primeiro boot (initdb + extensions demoram)
-      #   - start_period de 120s era INSUFICIENTE para primeiro boot em servidor limpo
-      #
-      # ANÁLISE DE TIMING (primeiro boot em servidor limpo):
-      #   1. initdb: ~30-60s (criar cluster PostgreSQL)
-      #   2. 01-create-extensions.sh: ~60-120s (criar pgvector + testes SIMD)
-      #   3. TOTAL: ~90-180s MÍNIMO antes de aceitar conexões
-      #
-      # CORREÇÃO PR#104 (10/01/2026): start_period=180s respeita requisito mínimo
-      # Total: 180s start + (10 × 20s) = 380s (6.3 min)
+      # CORREÇÃO PR#104: Reduzir timeouts - servidor já tem dados
+      # Primeiro boot: 90-180s (initdb + pgvector) - raro
+      # Boot normal: ~5-10s (dados já existem) - comum
       # =================================================================
       interval: 20s
       timeout: 10s
       retries: 10
-      start_period: 180s
+      start_period: 60s
     deploy:
       resources:
         limits:

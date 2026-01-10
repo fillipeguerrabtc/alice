@@ -580,14 +580,14 @@ services:
     networks:
       - alice-network
     healthcheck:
-      # CORREÇÃO PR#104: Langfuse precisa de tempo para migrations + startup
-      # Documentado no workflow: start_period: 120s + (15 retries × 30s) = 570s
-      # Ajustado para: 120s start + (15 × 30s) = 570s total
+      # CORREÇÃO PR#104: Reduzir timeouts - migrations já aplicadas
+      # Primeiro boot: ~2 min (migrations) - raro
+      # Boot normal: ~30s (migrations já aplicadas) - comum
       test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:3000/api/public/health',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
-      interval: 30s
+      interval: 20s
       timeout: 10s
-      retries: 15
-      start_period: 120s
+      retries: 10
+      start_period: 60s
     # NOTA CROSS-STACK DEPENDENCY (07/01/2026):
     # Langfuse depende de MinIO (S3 storage) que está no stack INFRA.
     # O workflow deploy-stack-modular.yml garante que deploy-observability
