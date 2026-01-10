@@ -406,6 +406,21 @@ services:
       DB_USER: ${POSTGRES_USER:-alice}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
       DB_NAME: ${POSTGRES_DB:-alice_prod}
+      # =======================================================================
+      # CORREÇÃO PR#106 (10/01/2026): AUTH_TYPE SCRAM-SHA-256
+      # =======================================================================
+      # PROBLEMA: PostgreSQL 14+ usa SCRAM-SHA-256 por padrão
+      #           PgBouncer sem AUTH_TYPE tentava MD5, causando:
+      #           "cannot do SCRAM authentication: wrong password type"
+      #           Isso impedia TODOS os serviços Alice de conectar!
+      #
+      # SOLUÇÃO: Configurar AUTH_TYPE=scram-sha-256
+      #          PgBouncer passa credenciais ao PostgreSQL para validação
+      #
+      # REF: https://www.pgbouncer.org/config.html#auth_type
+      # REF: CLAUDE.md Regra 7 (Diagnóstico de causa raiz)
+      # =======================================================================
+      AUTH_TYPE: scram-sha-256
       # PgBouncer Configuration
       # LISTEN_PORT: Porta oficial do PgBouncer conforme pgbouncer.org (não usar 5432 que é do PostgreSQL)
       LISTEN_PORT: 6432

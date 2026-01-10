@@ -85,21 +85,23 @@ services:
       - /var/lib/nginx:mode=1777,size=16M
     healthcheck:
       # =======================================================================
-      # CORREÇÃO PR#104 (10/01/2026): Usar wget do BusyBox corretamente
+      # CORREÇÃO PR#106 (10/01/2026): Usar 127.0.0.1 ao invés de localhost
       # =======================================================================
-      # PROBLEMA: BusyBox nc NÃO suporta flag -z (scan mode)
+      # PROBLEMA: BusyBox wget resolve "localhost" para IPv6 [::1]
+      #           Mas NGINX escuta apenas em 0.0.0.0 (IPv4)
+      #           Resultado: "Connection refused" no healthcheck
       #
-      # SOLUÇÃO: Usar wget -q -O /dev/null (BusyBox compatible)
-      # - nginx:alpine tem wget via BusyBox
-      # - O endpoint /health está configurado no nginx.conf
-      # - -q: quiet mode
-      # - -O /dev/null: descartar output
-      # - -T 5: timeout de 5 segundos
+      # EVIDÊNCIA DO SERVIDOR:
+      #   $ docker exec alice-frontend wget -O - http://localhost:8080/health
+      #   Connecting to localhost:8080 ([::1]:8080)  ← IPv6!
+      #   wget: can't connect to remote host: Connection refused
+      #
+      # SOLUÇÃO: Usar 127.0.0.1 explicitamente para forçar IPv4
       #
       # REF: nginx.conf location /health retorna "healthy\n"
       # REF: CLAUDE.md Regra 7 (Diagnóstico de causa raiz)
       # =======================================================================
-      test: ["CMD-SHELL", "wget -q -O /dev/null -T 5 http://localhost:8080/health || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null -T 5 http://127.0.0.1:8080/health || exit 1"]
       interval: 20s
       timeout: 10s
       retries: 5

@@ -331,24 +331,23 @@ services:
         condition: service_started
     healthcheck:
       # =======================================================================
-      # CORREÇÃO PR#104 (10/01/2026): BusyBox nc NÃO suporta flag -z
+      # CORREÇÃO PR#106 (10/01/2026): Usar 127.0.0.1 ao invés de localhost
       # =======================================================================
-      # PROBLEMA: BusyBox nc não tem -z (scan mode), apenas netcat-openbsd tem
-      #           nc -z localhost 8686 → FALHA silenciosa
-      #           REF: https://unix.stackexchange.com/questions/126907
+      # PROBLEMA: BusyBox wget resolve "localhost" para IPv6 [::1]
+      #           Mas Vector escuta apenas em 0.0.0.0 (IPv4)
+      #           Resultado: "Connection refused" no healthcheck
       #
-      # SOLUÇÃO: Usar wget com endpoint /health (Vector API)
-      # - Vector API está habilitada (api.enabled=true no vector.toml)
-      # - Endpoint /health retorna 200 OK quando Vector está saudável
-      # - wget -qO- --spider usa HEAD request (leve)
+      # EVIDÊNCIA DO SERVIDOR:
+      #   $ docker exec alice-vector wget -O - http://localhost:8686/health
+      #   Connecting to localhost:8686 ([::1]:8686)  ← IPv6!
+      #   wget: can't connect to remote host: Connection refused
       #
-      # NOTA: timberio/vector:alpine inclui wget via busybox
+      # SOLUÇÃO: Usar 127.0.0.1 explicitamente para forçar IPv4
       #
       # REF: https://vector.dev/docs/reference/api/ (endpoint /health)
       # REF: CLAUDE.md Regra 7 (Diagnóstico de causa raiz)
       # =======================================================================
-      # CORREÇÃO PR#104: wget do BusyBox compatible
-      test: ["CMD-SHELL", "wget -q -O /dev/null -T 5 http://localhost:8686/health || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null -T 5 http://127.0.0.1:8686/health || exit 1"]
       interval: 20s
       timeout: 10s
       retries: 5
