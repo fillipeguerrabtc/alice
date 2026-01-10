@@ -3908,17 +3908,34 @@ jobs:
 
   # ===========================================================================
   # OBSERVABILITY STACK - Deploy + Health + Rollback
-  # Roda em PARALELO com alice e erpnext após infra
+  # ===========================================================================
+  # CORREÇÃO PR#106 (10/01/2026): Ordem Sequencial de Deploy
+  # ===========================================================================
+  # ORDEM: INFRA → Drizzle → ALICE → OBSERVABILITY → ERPNEXT → BACKUP
+  # 
+  # - Espera ciclo completo de ALICE (deploy → health → rollback) terminar
+  # - Usa always() para rodar mesmo se ALICE falhou
+  # - ÚNICA dependência real: health-infra == success
+  # - Stacks são AUTÔNOMOS entre si, só dependem de INFRA
+  #
+  # REF: CLAUDE.md Regra 6 (Enterprise-grade)
   # ===========================================================================
   
   deploy-observability:
     name: Deploy Stack OBSERVABILITY
     runs-on: [self-hosted, linux, deploy]
-    needs: [validate, prepare, deploy-infra, health-infra, drizzle-push]
-    # CRITICAL FIX (06/01/2026): Verificar health-infra para evitar deploy contra infra quebrada
-    # - deploy-infra NÃO PODE ter falhado (needs.deploy-infra.result != 'failure')
-    # CRITICAL: NÃO rodar em rollback manual (deploy seria sobrescrito pelo rollback)
-    if: needs.validate.outputs.deploy_observability == 'true' && needs.prepare.result == 'success' && needs.deploy-infra.result != 'failure' && (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped') && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped') && needs.validate.outputs.is_rollback == 'false'
+    needs: [validate, prepare, deploy-infra, health-infra, drizzle-push, deploy-alice, health-alice, rollback-alice]
+    # ORDEM SEQUENCIAL: Espera ALICE terminar (deploy/health/rollback)
+    # DEPENDÊNCIA REAL: Apenas health-infra precisa ser success
+    # always() permite rodar mesmo se ALICE falhou
+    if: |
+      always() &&
+      needs.validate.outputs.deploy_observability == 'true' &&
+      needs.prepare.result == 'success' &&
+      needs.deploy-infra.result != 'failure' &&
+      (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped') &&
+      (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped') &&
+      needs.validate.outputs.is_rollback == 'false'
     timeout-minutes: 10
     
     steps:
@@ -4363,17 +4380,34 @@ jobs:
 
   # ===========================================================================
   # ERPNEXT STACK - Deploy + Health + Rollback
-  # Roda em PARALELO com alice e observability após infra
+  # ===========================================================================
+  # CORREÇÃO PR#106 (10/01/2026): Ordem Sequencial de Deploy
+  # ===========================================================================
+  # ORDEM: INFRA → Drizzle → ALICE → OBSERVABILITY → ERPNEXT → BACKUP
+  # 
+  # - Espera ciclo completo de OBSERVABILITY (deploy → health → rollback) terminar
+  # - Usa always() para rodar mesmo se OBSERVABILITY falhou
+  # - ÚNICA dependência real: health-infra == success
+  # - Stacks são AUTÔNOMOS entre si, só dependem de INFRA
+  #
+  # REF: CLAUDE.md Regra 6 (Enterprise-grade)
   # ===========================================================================
   
   deploy-erpnext:
     name: Deploy Stack ERPNEXT
     runs-on: [self-hosted, linux, deploy]
-    needs: [validate, prepare, deploy-infra, health-infra, drizzle-push]
-    # CRITICAL FIX (06/01/2026): Verificar health-infra para evitar deploy contra infra quebrada
-    # - deploy-infra NÃO PODE ter falhado (needs.deploy-infra.result != 'failure')
-    # CRITICAL: NÃO rodar em rollback manual (deploy seria sobrescrito pelo rollback)
-    if: needs.validate.outputs.deploy_erpnext == 'true' && needs.prepare.result == 'success' && needs.deploy-infra.result != 'failure' && (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped') && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped') && needs.validate.outputs.is_rollback == 'false'
+    needs: [validate, prepare, deploy-infra, health-infra, drizzle-push, deploy-observability, health-observability, rollback-observability]
+    # ORDEM SEQUENCIAL: Espera OBSERVABILITY terminar (deploy/health/rollback)
+    # DEPENDÊNCIA REAL: Apenas health-infra precisa ser success
+    # always() permite rodar mesmo se OBSERVABILITY falhou
+    if: |
+      always() &&
+      needs.validate.outputs.deploy_erpnext == 'true' &&
+      needs.prepare.result == 'success' &&
+      needs.deploy-infra.result != 'failure' &&
+      (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped') &&
+      (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped') &&
+      needs.validate.outputs.is_rollback == 'false'
     timeout-minutes: 10
     
     steps:
@@ -4765,17 +4799,34 @@ jobs:
 
   # ===========================================================================
   # BACKUP STACK - Deploy + Health + Rollback
-  # Roda em PARALELO após infra
+  # ===========================================================================
+  # CORREÇÃO PR#106 (10/01/2026): Ordem Sequencial de Deploy
+  # ===========================================================================
+  # ORDEM: INFRA → Drizzle → ALICE → OBSERVABILITY → ERPNEXT → BACKUP
+  # 
+  # - Espera ciclo completo de ERPNEXT (deploy → health → rollback) terminar
+  # - Usa always() para rodar mesmo se ERPNEXT falhou
+  # - ÚNICA dependência real: health-infra == success
+  # - Stacks são AUTÔNOMOS entre si, só dependem de INFRA
+  #
+  # REF: CLAUDE.md Regra 6 (Enterprise-grade)
   # ===========================================================================
   
   deploy-backup:
     name: Deploy Stack BACKUP
     runs-on: [self-hosted, linux, deploy]
-    needs: [validate, prepare, deploy-infra, health-infra, drizzle-push]
-    # CRITICAL FIX (06/01/2026): Verificar health-infra para evitar deploy contra infra quebrada
-    # - deploy-infra NÃO PODE ter falhado (needs.deploy-infra.result != 'failure')
-    # CRITICAL: NÃO rodar em rollback manual (deploy seria sobrescrito pelo rollback)
-    if: needs.validate.outputs.deploy_backup == 'true' && needs.prepare.result == 'success' && needs.deploy-infra.result != 'failure' && (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped') && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped') && needs.validate.outputs.is_rollback == 'false'
+    needs: [validate, prepare, deploy-infra, health-infra, drizzle-push, deploy-erpnext, health-erpnext, rollback-erpnext]
+    # ORDEM SEQUENCIAL: Espera ERPNEXT terminar (deploy/health/rollback)
+    # DEPENDÊNCIA REAL: Apenas health-infra precisa ser success
+    # always() permite rodar mesmo se ERPNEXT falhou
+    if: |
+      always() &&
+      needs.validate.outputs.deploy_backup == 'true' &&
+      needs.prepare.result == 'success' &&
+      needs.deploy-infra.result != 'failure' &&
+      (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped') &&
+      (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped') &&
+      needs.validate.outputs.is_rollback == 'false'
     timeout-minutes: 10
     
     steps:
