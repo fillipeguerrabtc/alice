@@ -1,16 +1,82 @@
 # Arquitetura GPU Manager Service
 
 **Autor:** Fillipe Guerra  
-**Data:** 05 de Janeiro de 2026  
-**Versão:** 2.0.0 - Arquitetura Multi-Stack Modular
+**Data:** 09 de Janeiro de 2026  
+**Versão:** 3.0.0 - Orquestração Dinâmica de Containers GPU
 
-> **ATUALIZAÇÃO 05/01/2026:** GPU Manager Service agora faz parte do **stack ALICE**. Deploy/rollback independente via workflow **Deploy - Production (Stacks)** (`deploy-stack.yml`): `gh workflow run deploy-stack.yml -f stack=alice -f version=vX.Y.Z`.
+> **ATUALIZAÇÃO 09/01/2026:** GPU Manager Service agora inclui **Orquestração Dinâmica de Containers GPU**. Todos os 5 serviços GPU estão disponíveis on-demand (Mixtral, Embeddings, FLUX, ASR, Trainer) com troca automática baseada em demanda.
 
 ---
 
 ## Visão Geral
 
-O **GPU Manager Service** é um serviço centralizado que gerencia todas as requisições para serviços GPU na Alice Enterprise Platform. Ele implementa fila priorizada, monitoramento de VRAM, circuit breakers e métricas enterprise para garantir uso eficiente e confiável da GPU RTX 4000 SFF Ada 20GB.
+O **GPU Manager Service** é um serviço centralizado que gerencia todas as requisições para serviços GPU na Alice Enterprise Platform. Ele implementa:
+
+- **Orquestração Dinâmica**: Gerencia ciclo de vida dos containers GPU via Docker API
+- **Fila Priorizada**: Chat > Trading > Embeddings > FLUX/ASR
+- **Monitoramento de VRAM**: Tempo real via nvidia-smi
+- **Circuit Breakers**: Proteção centralizada por serviço
+- **Métricas Enterprise**: Prometheus (latência, fila, VRAM, erros)
+
+---
+
+## Orquestração Dinâmica de GPU (v3.0.0)
+
+### Problema: GPU Única com 20GB VRAM
+
+A GPU RTX 4000 Ada tem apenas 20GB de VRAM, mas os serviços GPU requerem:
+
+| Serviço | VRAM Necessária | Função |
+|---------|-----------------|--------|
+| **gpu-mixtral** | ~18GB | LLM para Chat |
+| **gpu-embeddings** | ~16GB | Embeddings para RAG |
+| **gpu-flux** | ~12GB | Geração de imagens |
+| **gpu-asr** | ~3GB | Transcrição de áudio |
+| **gpu-trainer** | ~18GB | Fine-tuning LoRA |
+
+**Não é possível rodar todos simultaneamente!**
+
+### Solução: Troca Dinâmica On-Demand
+
+O GPU Manager agora gerencia os containers GPU dinamicamente:
+
+1. **Deploy**: Todos os containers GPU são **criados mas não iniciados**
+2. **Serviço Padrão**: Mixtral inicia automaticamente (chat é prioridade)
+3. **On-Demand**: Quando outro serviço é necessário:
+   - Para o serviço atual
+   - Libera VRAM
+   - Inicia o novo serviço
+   - Aguarda healthcheck
+   - Processa requisição
+4. **Idle Timeout**: Após 5min sem uso, retorna ao serviço padrão (Mixtral)
+
+### Latência de Troca
+
+| Transição | Tempo Estimado |
+|-----------|----------------|
+| Mixtral → Embeddings | ~60s |
+| Mixtral → FLUX | ~60s |
+| Mixtral → ASR | ~30s |
+| Qualquer → Mixtral | ~90s (modelo grande) |
+
+### Configuração
+
+| Variável | Descrição | Padrão |
+|----------|-----------|--------|
+| `GPU_ORCHESTRATOR_ENABLED` | Habilita orquestração dinâmica | `true` |
+| `GPU_SERVICE_IDLE_TIMEOUT_MS` | Tempo idle antes de voltar ao padrão | `300000` (5min) |
+| `GPU_DEFAULT_SERVICE` | Serviço padrão a manter rodando | `mixtral` |
+| `GPU_CONTAINER_STARTUP_TIMEOUT_MS` | Timeout para iniciar container | `120000` (2min) |
+
+### Docker Socket
+
+O GPU Manager precisa de acesso ao Docker Socket para gerenciar containers:
+
+```yaml
+gpu-manager:
+  volumes:
+    - /var/run/docker.sock:/var/run/docker.sock:ro
+```
 
 ---
 
@@ -49,34 +115,43 @@ O **GPU Manager Service** é um serviço centralizado que gerencia todas as requ
 ┌─────────────────────────────────────────────────────────────┐
 │              GPU Manager Service (Porta 3010)                │
 │  ┌──────────────────────────────────────────────────────┐   │
+│  │  Docker GPU Orchestrator (v3.0.0)                    │   │
+│  │  - Gerencia ciclo de vida dos containers GPU         │   │
+│  │  - Troca automática on-demand                        │   │
+│  │  - docker start/stop via Docker API                  │   │
+│  └──────────────────────────────────────────────────────┘   │
+│  ┌──────────────────────────────────────────────────────┐   │
 │  │  Fila Redis Priorizada                               │   │
 │  │  - Chat: Priority 10 (CRITICAL)                      │   │
 │  │  - Trading: Priority 8 (HIGH)                        │   │
 │  │  - Embeddings: Priority 5 (MEDIUM)                   │   │
-│  │  - FLUX/ASR: Priority 2 (LOW)                        │   │
+│  │  - FLUX/ASR/Training: Priority 2 (LOW)               │   │
 │  └──────────────────────────────────────────────────────┘   │
 │  ┌──────────────────────────────────────────────────────┐   │
-│  │  Worker de Fila                                       │   │
-│  │  - Processa fila a cada 100ms                        │   │
+│  │  Worker de Fila + Streaming                          │   │
+│  │  - Garante container GPU ativo antes de processar    │   │
 │  │  - Verifica VRAM antes de processar                  │   │
-│  │  - Marca serviços como ativos/inativos               │   │
-│  └──────────────────────────────────────────────────────┘   │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │  Monitoramento VRAM (nvidia-smi)                     │   │
-│  │  - Total: 20GB (RTX 4000 SFF Ada)                    │   │
-│  │  - Usado: tempo real                                 │   │
-│  │  - Serviços ativos: tracking                         │   │
+│  │  - Lock global Redis (GPU única)                     │   │
 │  └──────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
                             │
+                    Docker Socket API
+                            │
                             ▼
 ┌─────────────────────────────────────────────────────────────┐
-│              Serviços GPU (localhost)                        │
+│     Containers GPU (APENAS 1 ATIVO POR VEZ - 20GB VRAM)     │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
 │  │ Mixtral  │  │Embeddings│  │  FLUX    │  │   ASR    │   │
-│  │ :8000    │  │  :8001   │  │  :8002   │  │  :8003   │   │
+│  │ :8000    │  │  :8000   │  │  :8000   │  │  :8000   │   │
 │  │ ~18GB    │  │  ~16GB   │  │  ~12GB   │  │  ~3GB    │   │
+│  │ DEFAULT  │  │ on-demand│  │ on-demand│  │ on-demand│   │
 │  └──────────┘  └──────────┘  └──────────┘  └──────────┘   │
+│                                                             │
+│  ┌──────────┐                                               │
+│  │ Trainer  │  (fine-tuning LoRA - on-demand)              │
+│  │ :8000    │                                               │
+│  │ ~18GB    │                                               │
+│  └──────────┘                                               │
 └─────────────────────────────────────────────────────────────┘
 ```
 

@@ -13,6 +13,12 @@
  * - Graceful shutdown
  * - Health checks enterprise
  * 
+ * ARQUITETURA ENTERPRISE (09/01/2026) - Orquestração Dinâmica:
+ * - GPU Manager gerencia ciclo de vida dos containers GPU via Docker API
+ * - Apenas 1 serviço GPU pesado por vez (VRAM 20GB compartilhada)
+ * - Troca automática on-demand: Chat→Mixtral, RAG→Embeddings, Imagens→FLUX
+ * - Todos os serviços GPU disponíveis: Mixtral, Embeddings, FLUX, ASR, Training
+ * 
  * Autor: Fillipe Guerra
  * Data: 25 de Dezembro de 2025
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
@@ -50,6 +56,16 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
+
+// ARQUITETURA ENTERPRISE (09/01/2026): Orquestração dinâmica de containers GPU
+import {
+  initializeOrchestrator,
+  shutdownOrchestrator,
+  ensureGpuServiceRunning,
+  getGpuServicesStatus,
+  isOrchestratorEnabled,
+  mapServiceTypeToContainer,
+} from './docker-orchestrator.js';
 
 const execAsync = promisify(exec);
 const logger = createLogger('gpu-manager');
@@ -519,6 +535,11 @@ async function markServiceInactive(serviceType: GpuServiceType): Promise<void> {
 
 /**
  * Processa requisição GPU com retry e circuit breaker
+ * 
+ * ARQUITETURA ENTERPRISE (09/01/2026): Orquestração dinâmica
+ * - Garante que o container GPU necessário está rodando antes de processar
+ * - Se outro serviço está ativo, faz troca automática
+ * - Latência de troca: ~30-60s (startup do container)
  */
 async function processGpuRequest(request: GpuRequest): Promise<GpuResponse> {
   const startTime = Date.now();
@@ -527,6 +548,19 @@ async function processGpuRequest(request: GpuRequest): Promise<GpuResponse> {
   const protectedFetch = protectedFetchByServiceType[serviceType];
   
   try {
+    // ARQUITETURA ENTERPRISE (09/01/2026): Garantir container GPU rodando
+    if (isOrchestratorEnabled()) {
+      const containerType = mapServiceTypeToContainer(serviceType);
+      if (containerType) {
+        logger.info({ serviceType, containerType, requestId: request.id }, 'Garantindo serviço GPU ativo');
+        const serviceReady = await ensureGpuServiceRunning(containerType);
+        if (!serviceReady) {
+          throw new Error(`Falha ao iniciar serviço GPU: ${containerType}`);
+        }
+        logger.info({ serviceType, containerType, requestId: request.id }, 'Serviço GPU pronto');
+      }
+    }
+
     const timeoutMs = request.timeout || GPU_SERVICE_TIMEOUT;
     const response = await protectedFetch(`${url}${request.endpoint}`, {
       method: request.method,
@@ -832,6 +866,7 @@ app.get('/api/gpu/queue/:requestId', requireInternalAuth, asyncHandler(async (re
 // Streaming LLM (bypass fila - proxy direto com verificação de circuit breaker e VRAM)
 // BUG FIX 25/12/2025: Streaming requer proxy direto (não pode usar fila com polling)
 // BUG FIX 25/12/2025: Usar requireInternalAuth ao invés de requireAuth (aceita X-Internal-Api-Secret)
+// ARQUITETURA ENTERPRISE (09/01/2026): Orquestração dinâmica de containers GPU
 app.post('/api/gpu/stream', requireInternalAuth, asyncHandler(async (req: Request, res: Response) => {
   const schema = z.object({
     serviceType: z.nativeEnum(GpuServiceType),
@@ -848,6 +883,19 @@ app.post('/api/gpu/stream', requireInternalAuth, asyncHandler(async (req: Reques
   // Apenas MIXTRAL suporta streaming no momento
   if (serviceType !== GpuServiceType.MIXTRAL) {
     return res.status(400).json({ error: 'Streaming suportado apenas para MIXTRAL' });
+  }
+
+  // ARQUITETURA ENTERPRISE (09/01/2026): Garantir container GPU rodando antes de streaming
+  if (isOrchestratorEnabled()) {
+    const containerType = mapServiceTypeToContainer(serviceType);
+    if (containerType) {
+      logger.info({ serviceType, containerType }, 'Garantindo serviço GPU ativo para streaming');
+      const serviceReady = await ensureGpuServiceRunning(containerType);
+      if (!serviceReady) {
+        return res.status(503).json({ error: `Falha ao iniciar serviço GPU: ${containerType}` });
+      }
+      logger.info({ serviceType, containerType }, 'Serviço GPU pronto para streaming');
+    }
   }
   
   const url = GPU_SERVICE_URLS[serviceType];
@@ -978,6 +1026,37 @@ app.get('/api/gpu/queue/status', requireInternalAuth, asyncHandler(async (req: R
   });
 }));
 
+// ===========================================================================
+// ARQUITETURA ENTERPRISE (09/01/2026): Status dos serviços GPU (Orchestrator)
+// ===========================================================================
+// Endpoint para monitorar estado dos containers GPU gerenciados pelo orchestrator
+// Útil para dashboards, healthchecks externos e debugging
+app.get('/api/gpu/services', requireInternalAuth, asyncHandler(async (req: Request, res: Response) => {
+  if (!isOrchestratorEnabled()) {
+    return res.json({
+      orchestratorEnabled: false,
+      message: 'GPU Orchestrator desabilitado - containers gerenciados manualmente',
+    });
+  }
+
+  const servicesStatus = await getGpuServicesStatus();
+  
+  res.json({
+    orchestratorEnabled: true,
+    activeService: servicesStatus.activeService,
+    services: servicesStatus.services,
+    state: {
+      lastUsed: servicesStatus.state.lastUsed,
+      isStarting: servicesStatus.state.isStarting,
+      isStopping: servicesStatus.state.isStopping,
+    },
+    config: {
+      idleTimeoutMs: parseInt(process.env.GPU_SERVICE_IDLE_TIMEOUT_MS || '300000', 10),
+      defaultService: process.env.GPU_DEFAULT_SERVICE || 'mixtral',
+    },
+  });
+}));
+
 // Métricas Prometheus
 const prometheus = createAlicePrometheus({ serviceName: 'gpu-manager' });
 // CORREÇÃO 26/12/2025: Usar contentType correto do registry (application/openmetrics-text)
@@ -1014,6 +1093,16 @@ async function start(): Promise<void> {
       throw new Error('Redis não disponível após inicialização');
     }
     logger.info('Redis inicializado com sucesso');
+
+    // ARQUITETURA ENTERPRISE (09/01/2026): Inicializar GPU Orchestrator
+    // Gerencia ciclo de vida dos containers GPU dinamicamente
+    if (isOrchestratorEnabled()) {
+      logger.info('Inicializando GPU Orchestrator...');
+      await initializeOrchestrator();
+      logger.info('GPU Orchestrator inicializado - troca dinâmica de serviços GPU habilitada');
+    } else {
+      logger.warn('GPU Orchestrator desabilitado - containers GPU devem ser gerenciados manualmente');
+    }
     
     // Iniciar worker de fila
     await startQueueWorker();
@@ -1028,6 +1117,10 @@ async function start(): Promise<void> {
       logger.info('Encerrando GPU Manager Service...');
       stopQueueWorker();
       server.close();
+      // ARQUITETURA ENTERPRISE (09/01/2026): Encerrar GPU Orchestrator
+      if (isOrchestratorEnabled()) {
+        await shutdownOrchestrator();
+      }
       // CORREÇÃO 28/12/2025: Fechar conexão Redis no shutdown
       await closeRedisCacheClient();
       logger.info('Conexão Redis encerrada');

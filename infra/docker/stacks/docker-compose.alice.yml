@@ -455,6 +455,13 @@ services:
   # ===========================================================================
   # GPU MANAGER SERVICE - Gerenciamento Centralizado de GPU
   # ===========================================================================
+  # ARQUITETURA ENTERPRISE (09/01/2026) - Orquestração Dinâmica de GPU:
+  # - GPU Manager gerencia ciclo de vida dos containers GPU via Docker API
+  # - Apenas 1 serviço GPU pesado por vez (VRAM 20GB compartilhada)
+  # - Troca automática on-demand: Chat→Mixtral, RAG→Embeddings, Imagens→FLUX
+  # - Latência de troca: ~30-60s (startup do container GPU)
+  # - Cache de serviço: mantém último serviço por 5min antes de trocar
+  # ===========================================================================
   gpu-manager:
     image: ${IMAGE_PREFIX}-gpu-manager:${IMAGE_TAG:-latest}
     platform: linux/amd64
@@ -475,6 +482,16 @@ services:
       - ASR_GPU_URL=${ASR_GPU_URL:-http://gpu-asr:8000}
       - NODE_ENV=production
       - GPU_SERVICE_TIMEOUT=${GPU_SERVICE_TIMEOUT:-60000}
+      # Orquestração dinâmica de containers GPU
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - GPU_ORCHESTRATOR_ENABLED=${GPU_ORCHESTRATOR_ENABLED:-true}
+      - GPU_SERVICE_IDLE_TIMEOUT_MS=${GPU_SERVICE_IDLE_TIMEOUT_MS:-300000}
+      - GPU_DEFAULT_SERVICE=${GPU_DEFAULT_SERVICE:-mixtral}
+      - IMAGE_PREFIX=${IMAGE_PREFIX}
+      - IMAGE_TAG=${IMAGE_TAG:-latest}
+    volumes:
+      # Docker Socket para orquestração de containers GPU
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     ports:
       - "127.0.0.1:3010:3010"
     networks:

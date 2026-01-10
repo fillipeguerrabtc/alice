@@ -3613,17 +3613,34 @@ jobs:
             echo ""
             
             # Pull das imagens
+            # ARQUITETURA ENTERPRISE (09/01/2026): Pull TODAS as imagens GPU
+            # GPU Manager gerencia containers dinamicamente - todos devem estar disponíveis
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "📥 PULL: Baixando imagens (incluindo GPU LLM)..."
+            echo "📥 PULL: Baixando imagens (incluindo TODOS os serviços GPU)..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            if ! docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-llm pull 2>&1; then
-              echo ""
-              echo "❌ ERRO: Falha no pull das imagens!"
-              echo ""
-              echo "📋 Verificando conectividade com registry:"
-              docker login ghcr.io --username ${{ github.actor }} --password ${{ secrets.GITHUB_TOKEN }} 2>&1 || echo "   Login falhou"
-              exit 1
+            
+            # Pull serviços principais (sem profile)
+            if ! docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull 2>&1; then
+              echo "⚠️  Aviso: Pull parcial, continuando..."
             fi
+            
+            # Pull TODOS os serviços GPU (cada profile separadamente para melhor diagnóstico)
+            echo ""
+            echo "📥 Pull GPU Mixtral (LLM)..."
+            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-llm pull 2>&1 || echo "   ⚠️ gpu-mixtral: pull falhou"
+            
+            echo "📥 Pull GPU Embeddings..."
+            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-embeddings pull 2>&1 || echo "   ⚠️ gpu-embeddings: pull falhou"
+            
+            echo "📥 Pull GPU FLUX (imagens)..."
+            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-flux pull 2>&1 || echo "   ⚠️ gpu-flux: pull falhou"
+            
+            echo "📥 Pull GPU ASR (áudio)..."
+            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-asr pull 2>&1 || echo "   ⚠️ gpu-asr: pull falhou"
+            
+            echo "📥 Pull GPU Trainer (fine-tuning)..."
+            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-training pull 2>&1 || echo "   ⚠️ gpu-trainer: pull falhou"
+            
             echo "✅ Pull concluído"
             echo ""
 
@@ -3654,14 +3671,45 @@ jobs:
             fi
             echo ""
 
-            # Deploy
-            # CORREÇÃO 10/01/2026: Incluir --profile gpu-llm para iniciar container gpu-mixtral (LLM)
-            # Sem este profile, o chat não funciona pois não há modelo LLM disponível
-            # O gpu-manager apenas gerencia a fila, o gpu-mixtral é quem roda o Mixtral 8x7B
+            # =================================================================
+            # ARQUITETURA ENTERPRISE (09/01/2026): Orquestração Dinâmica de GPU
+            # =================================================================
+            # GPU Manager gerencia containers GPU dinamicamente via Docker API:
+            # - Apenas 1 serviço GPU pesado por vez (VRAM 20GB compartilhada)
+            # - Troca automática on-demand (Chat→Mixtral, RAG→Embeddings, etc)
+            # - Containers GPU são CRIADOS mas não iniciados no deploy
+            # - GPU Manager inicia o serviço padrão (Mixtral) automaticamente
+            # =================================================================
+            
+            # Criar containers GPU (sem iniciar)
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "🚀 UP: Iniciando containers (incluindo GPU LLM)..."
+            echo "🐳 CREATE: Criando containers GPU (gerenciados pelo GPU Manager)..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            if ! docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-llm up -d --pull always --remove-orphans 2>&1; then
+            
+            # Criar cada container GPU separadamente (não inicia, apenas cria)
+            echo "   📦 Criando gpu-mixtral..."
+            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-llm create --no-start 2>&1 || echo "   ⚠️ gpu-mixtral: create falhou"
+            
+            echo "   📦 Criando gpu-embeddings..."
+            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-embeddings create --no-start 2>&1 || echo "   ⚠️ gpu-embeddings: create falhou"
+            
+            echo "   📦 Criando gpu-flux..."
+            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-flux create --no-start 2>&1 || echo "   ⚠️ gpu-flux: create falhou"
+            
+            echo "   📦 Criando gpu-asr..."
+            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-asr create --no-start 2>&1 || echo "   ⚠️ gpu-asr: create falhou"
+            
+            echo "   📦 Criando gpu-trainer..."
+            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-training create --no-start 2>&1 || echo "   ⚠️ gpu-trainer: create falhou"
+            
+            echo "✅ Containers GPU criados (aguardando GPU Manager)"
+            echo ""
+
+            # Deploy serviços principais (GPU Manager inicia Mixtral automaticamente)
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "🚀 UP: Iniciando serviços Alice (GPU Manager gerencia containers GPU)..."
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            if ! docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml up -d --pull always --remove-orphans 2>&1; then
               echo ""
               echo "❌ ERRO: Falha no docker compose up!"
               echo ""
@@ -3669,7 +3717,7 @@ jobs:
               docker ps -a --filter "name=alice-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" || true
               echo ""
               echo "📋 Logs dos containers com erro (últimas 30 linhas cada):"
-              for c in alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager gpu-mixtral; do
+              for c in alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager; do
                 if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
                   echo ""
                   echo "── $c ──"
@@ -3684,7 +3732,15 @@ jobs:
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "📋 STATUS: Containers após deploy"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            docker ps -a --filter "name=alice-" --filter "name=gpu-" --format "table {{.Names}}\t{{.Status}}" | grep -E "(alice-(frontend|auth|chat|rag|training|integrations|observability|gpu-manager)|gpu-mixtral)" || echo "   (nenhum container encontrado)"
+            echo ""
+            echo "📦 Serviços Alice:"
+            docker ps -a --filter "name=alice-" --format "table {{.Names}}\t{{.Status}}" | grep -E "alice-(frontend|auth|chat|rag|training|integrations|observability|gpu-manager)" || echo "   (nenhum container encontrado)"
+            echo ""
+            echo "🎮 Containers GPU (gerenciados pelo GPU Manager):"
+            docker ps -a --filter "name=gpu-" --format "table {{.Names}}\t{{.Status}}" || echo "   (nenhum container GPU encontrado)"
+            echo ""
+            echo "📝 NOTA: Containers GPU são iniciados on-demand pelo GPU Manager"
+            echo "         Mixtral será iniciado automaticamente como serviço padrão"
             echo ""
             
             # =================================================================
@@ -3957,14 +4013,31 @@ jobs:
               echo "🐳 Deploying rollback version: $TARGET_VERSION"
               echo "========================================"
               
-              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-llm pull
-              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-llm up -d --pull always --remove-orphans
+              # Pull todas as imagens (incluindo GPU)
+              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull
+              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-llm pull || true
+              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-embeddings pull || true
+              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-flux pull || true
+              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-asr pull || true
+              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-training pull || true
+              
+              # Criar containers GPU (sem iniciar - GPU Manager gerencia)
+              echo "📦 Criando containers GPU..."
+              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-llm create --no-start || true
+              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-embeddings create --no-start || true
+              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-flux create --no-start || true
+              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-asr create --no-start || true
+              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-training create --no-start || true
+              
+              # Up serviços principais (GPU Manager inicia Mixtral automaticamente)
+              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml up -d --pull always --remove-orphans
               
               echo "$TARGET_VERSION" > /opt/alice/versions/alice.current
               
               echo ""
               echo "✅ ROLLBACK CONCLUÍDO"
               echo "   Versão atual: $TARGET_VERSION"
+              echo "   📝 GPU Manager iniciará Mixtral automaticamente"
             else
               echo ""
               echo "✅ CLEANUP CONCLUÍDO"

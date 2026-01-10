@@ -21,6 +21,7 @@
     "@alice/shared-utils": "workspace:*",
     "compression": "1.7.5",
     "cors": "2.8.5",
+    "dockerode": "^4.0.4",
     "express": "5.2.1",
     "helmet": "8.1.0",
     "opossum": "^9.0.0",
@@ -33,6 +34,7 @@
     "zod": "3.25.42"
   },
   "devDependencies": {
+    "@types/dockerode": "^3.3.35",
     "@types/express": "5.0.2",
     "@types/cors": "2.8.19",
     "@types/compression": "1.7.5",
