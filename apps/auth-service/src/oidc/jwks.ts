@@ -41,8 +41,12 @@ export async function generateRSAKeyPair(): Promise<{
     .substring(0, 16);
 
   // Gerar par de chaves RSA (2048 bits - padrão seguro)
+  // NOTA: extractable: true é OBRIGATÓRIO no Node.js 22+ para exportJWK funcionar
+  // Sem isso, a Web Crypto API gera chaves não-exportáveis por padrão
+  // REF: https://github.com/panva/jose/issues/623
   const { publicKey, privateKey } = await generateKeyPair('RS256', {
     modulusLength: 2048,
+    extractable: true,
   });
 
   // Exportar como JWK

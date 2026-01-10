@@ -52,11 +52,12 @@
       },
       "targets": [
         {
-          "expr": "100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+          "expr": "sum(rate(container_cpu_usage_seconds_total{name!=\"\",name!~\"POD.*\"}[5m])) / sum(machine_cpu_cores) * 100",
+          "legendFormat": "CPU %",
           "refId": "A"
         }
       ],
-      "title": "CPU Usage",
+      "title": "CPU Usage (Containers)",
       "type": "stat"
     },
     {
@@ -86,11 +87,12 @@
       },
       "targets": [
         {
-          "expr": "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100",
+          "expr": "sum(container_memory_usage_bytes{name!=\"\",name!~\"POD.*\"}) / sum(machine_memory_bytes) * 100",
+          "legendFormat": "Memory %",
           "refId": "A"
         }
       ],
-      "title": "Memory Usage",
+      "title": "Memory Usage (Containers)",
       "type": "stat"
     },
     {
