@@ -2875,13 +2875,59 @@ jobs:
             # Lista de containers que devem ficar healthy
             HEALTH_CONTAINERS="alice-postgres alice-redis alice-qdrant alice-caddy alice-minio alice-tor alice-searxng alice-pgbouncer"
             
+            # =================================================================
+            # PRE-CLEANUP: Remover containers problemáticos do deploy anterior
+            # =================================================================
+            # PROBLEMA: Se deploy anterior falhou, containers podem estar:
+            #   - unhealthy: serviço não respondendo
+            #   - exited: processo terminou com erro
+            #   - dead: falha crítica
+            #
+            # SOLUÇÃO: Remover containers problemáticos ANTES do up
+            #   - Docker Compose vai recriá-los automaticamente
+            #   - Containers healthy são preservados (zero downtime)
+            #   - Volumes são SEMPRE preservados
+            #
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade)
+            # =================================================================
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "🧹 PRE-CLEANUP: Verificando containers problemáticos..."
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            
+            PROBLEM_CONTAINERS=$(docker ps -a --filter "name=alice-" --filter "status=exited" --filter "status=dead" -q 2>/dev/null || true)
+            UNHEALTHY_CONTAINERS=$(docker ps --filter "name=alice-" --filter "health=unhealthy" -q 2>/dev/null || true)
+            
+            if [ -n "$PROBLEM_CONTAINERS" ] || [ -n "$UNHEALTHY_CONTAINERS" ]; then
+              echo "⚠️  Encontrados containers problemáticos:"
+              docker ps -a --filter "name=alice-" --filter "status=exited" --format "   - {{.Names}} (exited)" 2>/dev/null || true
+              docker ps -a --filter "name=alice-" --filter "status=dead" --format "   - {{.Names}} (dead)" 2>/dev/null || true
+              docker ps --filter "name=alice-" --filter "health=unhealthy" --format "   - {{.Names}} (unhealthy)" 2>/dev/null || true
+              echo ""
+              echo "🗑️  Removendo containers problemáticos..."
+              
+              # Remover exited/dead
+              if [ -n "$PROBLEM_CONTAINERS" ]; then
+                echo "$PROBLEM_CONTAINERS" | xargs -r docker rm -f 2>/dev/null || true
+              fi
+              
+              # Remover unhealthy (serão recriados)
+              if [ -n "$UNHEALTHY_CONTAINERS" ]; then
+                echo "$UNHEALTHY_CONTAINERS" | xargs -r docker rm -f 2>/dev/null || true
+              fi
+              
+              echo "✅ Containers problemáticos removidos"
+            else
+              echo "✅ Nenhum container problemático encontrado"
+            fi
+            echo ""
+            
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "🚀 UP: Iniciando containers..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             if ! docker compose -p alice-infra --env-file ../.env.prod \
                            -f docker-compose.base.yml \
                            -f docker-compose.infra.yml \
-                           up -d --remove-orphans 2>&1; then
+                           up -d --pull always --remove-orphans 2>&1; then
               echo ""
               echo "❌ ERRO: Falha no docker compose up!"
               echo ""
@@ -3380,7 +3426,7 @@ jobs:
               echo "========================================"
               
               IMAGE_TAG=$TARGET_VERSION docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.infra.yml pull
-              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.infra.yml up -d --remove-orphans
+              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.infra.yml up -d --pull always --remove-orphans
               
               echo "$TARGET_VERSION" > /opt/alice/versions/infra.current
               
@@ -3586,12 +3632,38 @@ jobs:
             fi
             echo "✅ Pull concluído"
             echo ""
+
+            # =================================================================
+            # PRE-CLEANUP: Remover containers problemáticos do deploy anterior
+            # =================================================================
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "🧹 PRE-CLEANUP: Verificando containers problemáticos..."
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             
+            ALICE_SERVICES="alice-auth alice-chat alice-rag alice-training alice-integrations alice-gpu-manager alice-frontend alice-observability"
+            PROBLEM_FOUND=false
+            
+            for svc in $ALICE_SERVICES; do
+              STATUS=$(docker inspect --format='{{.State.Status}}' $svc 2>/dev/null || echo "not_found")
+              HEALTH=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' $svc 2>/dev/null || echo "none")
+              
+              if [ "$STATUS" = "exited" ] || [ "$STATUS" = "dead" ] || [ "$HEALTH" = "unhealthy" ]; then
+                echo "⚠️  $svc: status=$STATUS health=$HEALTH → removendo"
+                docker rm -f $svc 2>/dev/null || true
+                PROBLEM_FOUND=true
+              fi
+            done
+            
+            if [ "$PROBLEM_FOUND" = "false" ]; then
+              echo "✅ Nenhum container problemático encontrado"
+            fi
+            echo ""
+
             # Deploy
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "🚀 UP: Iniciando containers..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            if ! docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml up -d --remove-orphans 2>&1; then
+            if ! docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml up -d --pull always --remove-orphans 2>&1; then
               echo ""
               echo "❌ ERRO: Falha no docker compose up!"
               echo ""
@@ -3888,7 +3960,7 @@ jobs:
               echo "========================================"
               
               IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull
-              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml up -d --remove-orphans
+              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml up -d --pull always --remove-orphans
               
               echo "$TARGET_VERSION" > /opt/alice/versions/alice.current
               
@@ -4003,11 +4075,37 @@ jobs:
             echo "✅ Pull concluído"
             echo ""
             
+            # =================================================================
+            # PRE-CLEANUP: Remover containers problemáticos do deploy anterior
+            # =================================================================
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "🧹 PRE-CLEANUP: Verificando containers problemáticos..."
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            
+            OBS_SERVICES="prometheus grafana loki promtail jaeger alice-otel-collector alice-vector alice-clickhouse alice-cadvisor alice-node-exporter langfuse langfuse-worker alice-langfuse-db"
+            PROBLEM_FOUND=false
+            
+            for svc in $OBS_SERVICES; do
+              STATUS=$(docker inspect --format='{{.State.Status}}' $svc 2>/dev/null || echo "not_found")
+              HEALTH=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' $svc 2>/dev/null || echo "none")
+              
+              if [ "$STATUS" = "exited" ] || [ "$STATUS" = "dead" ] || [ "$HEALTH" = "unhealthy" ]; then
+                echo "⚠️  $svc: status=$STATUS health=$HEALTH → removendo"
+                docker rm -f $svc 2>/dev/null || true
+                PROBLEM_FOUND=true
+              fi
+            done
+            
+            if [ "$PROBLEM_FOUND" = "false" ]; then
+              echo "✅ Nenhum container problemático encontrado"
+            fi
+            echo ""
+
             # Deploy
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "🚀 UP: Iniciando containers..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            if ! docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.observability.yml up -d --remove-orphans 2>&1; then
+            if ! docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.observability.yml up -d --pull always --remove-orphans 2>&1; then
               echo ""
               echo "❌ ERRO: Falha no docker compose up!"
               echo ""
@@ -4361,7 +4459,7 @@ jobs:
               echo "   NOTE: OBSERVABILITY uses public images only (no IMAGE_TAG)"
               
               docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.observability.yml pull
-              docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.observability.yml up -d --remove-orphans
+              docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.observability.yml up -d --pull always --remove-orphans
               
               echo "$TARGET_VERSION" > /opt/alice/versions/observability.current
               
@@ -4474,12 +4572,38 @@ jobs:
             fi
             echo "✅ Pull concluído"
             echo ""
+
+            # =================================================================
+            # PRE-CLEANUP: Remover containers problemáticos do deploy anterior
+            # =================================================================
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "🧹 PRE-CLEANUP: Verificando containers problemáticos..."
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             
+            ERPNEXT_SERVICES="erpnext-backend erpnext-frontend erpnext-websocket erpnext-scheduler erpnext-worker-default erpnext-worker-short erpnext-worker-long erpnext-mariadb erpnext-redis-queue erpnext-redis-cache"
+            PROBLEM_FOUND=false
+            
+            for svc in $ERPNEXT_SERVICES; do
+              STATUS=$(docker inspect --format='{{.State.Status}}' $svc 2>/dev/null || echo "not_found")
+              HEALTH=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' $svc 2>/dev/null || echo "none")
+              
+              if [ "$STATUS" = "exited" ] || [ "$STATUS" = "dead" ] || [ "$HEALTH" = "unhealthy" ]; then
+                echo "⚠️  $svc: status=$STATUS health=$HEALTH → removendo"
+                docker rm -f $svc 2>/dev/null || true
+                PROBLEM_FOUND=true
+              fi
+            done
+            
+            if [ "$PROBLEM_FOUND" = "false" ]; then
+              echo "✅ Nenhum container problemático encontrado"
+            fi
+            echo ""
+
             # Deploy
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "🚀 UP: Iniciando containers..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            if ! docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml up -d --remove-orphans 2>&1; then
+            if ! docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml up -d --pull always --remove-orphans 2>&1; then
               echo ""
               echo "❌ ERRO: Falha no docker compose up!"
               echo ""
@@ -4780,7 +4904,7 @@ jobs:
               echo "   NOTE: ERPNEXT uses public Frappe images only (no IMAGE_TAG)"
               
               docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml pull
-              docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml up -d --remove-orphans
+              docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml up -d --pull always --remove-orphans
               
               echo "$TARGET_VERSION" > /opt/alice/versions/erpnext.current
               
@@ -4893,12 +5017,38 @@ jobs:
             fi
             echo "✅ Pull concluído"
             echo ""
+
+            # =================================================================
+            # PRE-CLEANUP: Remover containers problemáticos do deploy anterior
+            # =================================================================
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "🧹 PRE-CLEANUP: Verificando containers problemáticos..."
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             
+            BACKUP_SERVICES="alice-pgbackrest"
+            PROBLEM_FOUND=false
+            
+            for svc in $BACKUP_SERVICES; do
+              STATUS=$(docker inspect --format='{{.State.Status}}' $svc 2>/dev/null || echo "not_found")
+              HEALTH=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' $svc 2>/dev/null || echo "none")
+              
+              if [ "$STATUS" = "exited" ] || [ "$STATUS" = "dead" ] || [ "$HEALTH" = "unhealthy" ]; then
+                echo "⚠️  $svc: status=$STATUS health=$HEALTH → removendo"
+                docker rm -f $svc 2>/dev/null || true
+                PROBLEM_FOUND=true
+              fi
+            done
+            
+            if [ "$PROBLEM_FOUND" = "false" ]; then
+              echo "✅ Nenhum container problemático encontrado"
+            fi
+            echo ""
+
             # Deploy
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "🚀 UP: Iniciando containers..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            if ! docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.backup.yml up -d --remove-orphans 2>&1; then
+            if ! docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.backup.yml up -d --pull always --remove-orphans 2>&1; then
               echo ""
               echo "❌ ERRO: Falha no docker compose up!"
               echo ""
@@ -5167,7 +5317,7 @@ jobs:
               echo "========================================"
               
               IMAGE_TAG=$TARGET_VERSION docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.backup.yml pull
-              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.backup.yml up -d --remove-orphans
+              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.backup.yml up -d --pull always --remove-orphans
               
               echo "$TARGET_VERSION" > /opt/alice/versions/backup.current
               
@@ -5439,10 +5589,13 @@ jobs:
             # ESTÁGIO 7: Relatório de imagens restantes
             # =================================================================
             echo "📋 Imagens Docker restantes (em uso):"
-            docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedSince}}" | head -20
+            # NOTA: Usar variável intermediária para evitar SIGPIPE (exit 141)
+            # quando head fecha o pipe antes de docker terminar de escrever
+            IMAGES_LIST=$(docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedSince}}" 2>/dev/null || true)
+            echo "$IMAGES_LIST" | head -20 || true
             echo ""
             
-            TOTAL_IMAGES=$(docker images -q | wc -l)
+            TOTAL_IMAGES=$(docker images -q 2>/dev/null | wc -l || echo "0")
             echo "   Total: $TOTAL_IMAGES imagem(ns)"
             echo ""
             
