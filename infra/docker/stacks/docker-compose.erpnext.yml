@@ -441,20 +441,20 @@ services:
         condition: service_healthy
     healthcheck:
       # =======================================================================
-      # CORREÇÃO PR#104 (10/01/2026): Usar verificação TCP (HTTP sempre dá 404)
+      # CORREÇÃO PR#105 (10/01/2026): Verificar resposta HTTP (não apenas TCP)
       # =======================================================================
-      # PROBLEMA: Endpoint / retorna 404 NOT FOUND
-      #           Frappe precisa do site configurado para HTTP funcionar
-      #           Mas precisamos verificar se Gunicorn está respondendo
+      # PROBLEMA: TCP socket apenas verifica porta aberta, não readiness
+      #           Gunicorn pode estar escutando mas ainda inicializando
       #
-      # SOLUÇÃO: Verificar se porta 8000 está escutando via Python socket
-      # - Não depende de HTTP - apenas conexão TCP
-      # - Se Gunicorn está escutando, serviço está saudável
-      # - Mais confiável que endpoints HTTP em Frappe
+      # SOLUÇÃO: Verificar se Gunicorn RESPONDE HTTP (qualquer status code)
+      # - Se retorna 200, 404, 500 → Gunicorn está pronto (accept any HTTP)
+      # - Se connection refused/timeout → Não está pronto (fail healthcheck)
+      # - HTTPError (404) significa que servidor está respondendo!
       #
       # REF: CLAUDE.md Regra 7 (Diagnóstico de causa raiz)
+      # REF: https://docs.frappe.io/framework/v15/user/en/deployment
       # =======================================================================
-      test: ["CMD", "python3", "-c", "import socket; s=socket.socket(); s.settimeout(5); s.connect(('localhost',8000)); s.close()"]
+      test: ["CMD", "python3", "-c", "import urllib.request as u,urllib.error as e;exec('try: u.urlopen(\"http://localhost:8000/\",timeout=5)\\nexcept e.HTTPError: pass')"]
       interval: 20s
       timeout: 10s
       retries: 5
@@ -491,8 +491,19 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      # CORREÇÃO PR#104: Verificação TCP simples (HTTP pode dar 502 se backend não ready)
-      test: ["CMD", "python3", "-c", "import socket; s=socket.socket(); s.settimeout(5); s.connect(('localhost',8080)); s.close()"]
+      # =======================================================================
+      # CORREÇÃO PR#105 (10/01/2026): Verificar resposta HTTP (não apenas TCP)
+      # =======================================================================
+      # PROBLEMA: TCP socket apenas verifica porta aberta, não readiness
+      #           NGINX pode estar escutando mas backend pode não estar pronto
+      #
+      # SOLUÇÃO: Verificar se NGINX RESPONDE HTTP (qualquer status code)
+      # - Se retorna 200, 502, 504 → NGINX está pronto (routing configured)
+      # - Se connection refused/timeout → Não está pronto
+      #
+      # REF: CLAUDE.md Regra 7 (Diagnóstico de causa raiz)
+      # =======================================================================
+      test: ["CMD", "python3", "-c", "import urllib.request as u,urllib.error as e;exec('try: u.urlopen(\"http://localhost:8080/\",timeout=5)\\nexcept e.HTTPError: pass')"]
       interval: 20s
       timeout: 10s
       retries: 5
@@ -526,8 +537,21 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      # CORREÇÃO PR#104: Verificação TCP simples
-      test: ["CMD", "python3", "-c", "import socket; s=socket.socket(); s.settimeout(5); s.connect(('localhost',9000)); s.close()"]
+      # =======================================================================
+      # CORREÇÃO PR#105 (10/01/2026): Verificar resposta HTTP Socket.IO
+      # =======================================================================
+      # PROBLEMA: TCP socket apenas verifica porta aberta, não readiness
+      #           Socket.IO pode estar escutando mas ainda inicializando
+      #
+      # SOLUÇÃO: Verificar endpoint Socket.IO polling (sempre responde HTTP)
+      # - /socket.io/?EIO=4&transport=polling retorna resposta válida
+      # - Se retorna qualquer HTTP → Socket.IO está pronto
+      # - Se connection refused/timeout → Não está pronto
+      #
+      # REF: https://socket.io/docs/v4/engine-io-protocol/
+      # REF: CLAUDE.md Regra 7 (Diagnóstico de causa raiz)
+      # =======================================================================
+      test: ["CMD", "python3", "-c", "import urllib.request as u,urllib.error as e;exec('try: u.urlopen(\"http://localhost:9000/socket.io/?EIO=4&transport=polling\",timeout=5)\\nexcept e.HTTPError: pass')"]
       interval: 20s
       timeout: 10s
       retries: 5
