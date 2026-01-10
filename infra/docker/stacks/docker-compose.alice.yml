@@ -85,27 +85,25 @@ services:
       - /var/lib/nginx:mode=1777,size=16M
     healthcheck:
       # =======================================================================
-      # CORREÇÃO PR#102 (10/01/2026): Usar netcat ao invés de wget
+      # CORREÇÃO PR#104 (10/01/2026): Usar wget do BusyBox corretamente
       # =======================================================================
-      # PROBLEMA ANTERIOR: wget não está disponível na imagem nginx:alpine
-      #                    Erro: "wget: can't connect to remote host: Connection refused"
+      # PROBLEMA: BusyBox nc NÃO suporta flag -z (scan mode)
       #
-      # CAUSA RAIZ: nginx:1.27-alpine NÃO inclui wget/curl por padrão
-      #             O Dockerfile adiciona mas read_only: true impede scripts
+      # SOLUÇÃO: Usar wget -q -O /dev/null (BusyBox compatible)
+      # - nginx:alpine tem wget via BusyBox
+      # - O endpoint /health está configurado no nginx.conf
+      # - -q: quiet mode
+      # - -O /dev/null: descartar output
+      # - -T 5: timeout de 5 segundos
       #
-      # SOLUÇÃO: Usar netcat (nc) que ESTÁ disponível no Alpine BusyBox
-      # - nc -z: scan mode (não envia dados)
-      # - nc -w 2: timeout de 2 segundos
-      # - Verifica se porta 8080 está escutando
-      #
-      # REF: Docker 2025 healthcheck best practices para Alpine
+      # REF: nginx.conf location /health retorna "healthy\n"
       # REF: CLAUDE.md Regra 7 (Diagnóstico de causa raiz)
       # =======================================================================
-      test: ["CMD", "nc", "-z", "-w", "2", "localhost", "8080"]
-      interval: 30s
+      test: ["CMD-SHELL", "wget -q -O /dev/null -T 5 http://localhost:8080/health || exit 1"]
+      interval: 20s
       timeout: 10s
-      retries: 10
-      start_period: 60s
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -154,12 +152,12 @@ services:
       - alice-network
     healthcheck:
       # CORREÇÃO PR#103 (10/01/2026): Aumentar start_period
-      # Auth service demora ~90s para inicializar OIDC provider em produção
+      # CORREÇÃO PR#104: Reduzir timeouts
       test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:3001/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
-      interval: 30s
+      interval: 20s
       timeout: 10s
       retries: 5
-      start_period: 90s
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -204,11 +202,12 @@ services:
     networks:
       - alice-network
     healthcheck:
+      # CORREÇÃO PR#104: Reduzir interval para 20s
       test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:3002/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
-      interval: 30s
+      interval: 20s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -257,11 +256,12 @@ services:
     networks:
       - alice-network
     healthcheck:
+      # CORREÇÃO PR#104: Reduzir timeouts
       test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:3003/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
-      interval: 30s
+      interval: 20s
       timeout: 10s
       retries: 5
-      start_period: 90s
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -306,12 +306,12 @@ services:
       - alice-network
     healthcheck:
       # CORREÇÃO PR#103 (10/01/2026): Aumentar start_period
-      # Training service demora ~90s para inicializar conexões em produção
+      # CORREÇÃO PR#104: Reduzir timeouts
       test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:3004/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
-      interval: 30s
+      interval: 20s
       timeout: 10s
       retries: 5
-      start_period: 90s
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -378,11 +378,12 @@ services:
       - alice-network
       - erpnext-network
     healthcheck:
+      # CORREÇÃO PR#104: Reduzir interval para 20s
       test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:3005/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
-      interval: 30s
+      interval: 20s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -434,11 +435,12 @@ services:
       # CORREÇÃO 07/01/2026: Usar endpoint /health SEM autenticação para Docker healthcheck
       # /live requer header x-internal-api-secret que não pode ser passado via healthcheck
       # Ref: apps/observability-service/src/index.ts linha 49 e 372
+      # CORREÇÃO PR#104: Reduzir interval para 20s
       test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:3007/health',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
-      interval: 30s
+      interval: 20s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -482,9 +484,11 @@ services:
           memory: 512M
           cpus: '0.5'
     healthcheck:
+      # CORREÇÃO PR#104: Reduzir interval para 20s
       test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:3010/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
-      interval: 30s
+      interval: 20s
       timeout: 10s
+      retries: 5
       start_period: 30s
       retries: 3
     logging:
@@ -539,10 +543,11 @@ services:
           memory: 20G
           cpus: '4.0'
     healthcheck:
+      # CORREÇÃO PR#104: Reduzir timeouts
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
-      interval: 30s
+      interval: 20s
       timeout: 10s
-      start_period: 300s
+      start_period: 60s
       retries: 5
     logging:
       driver: "json-file"
@@ -586,11 +591,12 @@ services:
           memory: 18G
           cpus: '2.0'
     healthcheck:
+      # CORREÇÃO PR#104: Reduzir timeouts
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
-      interval: 30s
+      interval: 20s
       timeout: 10s
-      start_period: 180s
-      retries: 3
+      start_period: 60s
+      retries: 5
     logging:
       driver: "json-file"
       options:
@@ -630,11 +636,12 @@ services:
           memory: 18G
           cpus: '2.0'
     healthcheck:
+      # CORREÇÃO PR#104: Reduzir timeouts
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
-      interval: 30s
+      interval: 20s
       timeout: 10s
-      start_period: 120s
-      retries: 3
+      start_period: 60s
+      retries: 5
     logging:
       driver: "json-file"
       options:
@@ -674,11 +681,12 @@ services:
           memory: 12G
           cpus: '2.0'
     healthcheck:
+      # CORREÇÃO PR#104: Reduzir timeouts
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
-      interval: 30s
+      interval: 20s
       timeout: 10s
-      start_period: 120s
-      retries: 3
+      start_period: 60s
+      retries: 5
     logging:
       driver: "json-file"
       options:
@@ -720,11 +728,12 @@ services:
           memory: 18G
           cpus: '4.0'
     healthcheck:
+      # CORREÇÃO PR#104: Reduzir timeouts
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
-      interval: 30s
+      interval: 20s
       timeout: 10s
-      start_period: 120s
-      retries: 3
+      start_period: 60s
+      retries: 5
     logging:
       driver: "json-file"
       options:

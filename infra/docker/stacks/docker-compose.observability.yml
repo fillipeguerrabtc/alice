@@ -86,11 +86,12 @@ services:
       # CORREÇÃO PR#95 (09/01/2026): Prometheus é baseado em BusyBox (não tem curl)
       # REF: https://prometheus.io/docs/prometheus/latest/management_api/
       # Usar wget que está disponível em BusyBox
+      # CORREÇÃO PR#104: Reduzir interval para 20s
       test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:9090/-/healthy || exit 1"]
-      interval: 30s
+      interval: 20s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -165,11 +166,12 @@ services:
       - alice-network
     healthcheck:
       # Grafana tem curl disponível (não wget)
+      # CORREÇÃO PR#104: Reduzir timeouts
       test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/health || exit 1"]
-      interval: 30s
+      interval: 20s
       timeout: 10s
-      retries: 10
-      start_period: 90s
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -329,24 +331,28 @@ services:
         condition: service_started
     healthcheck:
       # =======================================================================
-      # CORREÇÃO PR#96 (09/01/2026): timberio/vector Alpine NÃO tem bash NEM wget/curl
+      # CORREÇÃO PR#104 (10/01/2026): BusyBox nc NÃO suporta flag -z
       # =======================================================================
-      # PROBLEMA ANTERIOR: Healthcheck usava 'bash' mas Alpine só tem 'ash/sh'
-      # /dev/tcp é bash-only, não funciona em sh/ash
+      # PROBLEMA: BusyBox nc não tem -z (scan mode), apenas netcat-openbsd tem
+      #           nc -z localhost 8686 → FALHA silenciosa
+      #           REF: https://unix.stackexchange.com/questions/126907
       #
-      # SOLUÇÃO: Usar nc (netcat) que está disponível no Alpine via busybox
-      # Alternativa: timeout + /proc/net/tcp parsing (mais complexo)
+      # SOLUÇÃO: Usar wget com endpoint /health (Vector API)
+      # - Vector API está habilitada (api.enabled=true no vector.toml)
+      # - Endpoint /health retorna 200 OK quando Vector está saudável
+      # - wget -qO- --spider usa HEAD request (leve)
       #
-      # REF: https://vector.dev/docs/reference/api/
-      # REF: https://www.busybox.net/downloads/BusyBox.html (nc incluído)
+      # NOTA: timberio/vector:alpine inclui wget via busybox
+      #
+      # REF: https://vector.dev/docs/reference/api/ (endpoint /health)
+      # REF: CLAUDE.md Regra 7 (Diagnóstico de causa raiz)
       # =======================================================================
-      # CORREÇÃO PR#103 (10/01/2026): Aumentar start_period
-      # Vector demora ~60-90s para iniciar completamente em produção
-      test: ["CMD-SHELL", "nc -z localhost 8686 || exit 1"]
-      interval: 30s
+      # CORREÇÃO PR#104: wget do BusyBox compatible
+      test: ["CMD-SHELL", "wget -q -O /dev/null -T 5 http://localhost:8686/health || exit 1"]
+      interval: 20s
       timeout: 10s
       retries: 5
-      start_period: 90s
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -482,11 +488,12 @@ services:
     networks:
       - alice-network
     healthcheck:
+      # CORREÇÃO PR#104: Reduzir timeouts
       test: ["CMD-SHELL", "clickhouse-client --host localhost --user ${CLICKHOUSE_USER:-langfuse} --password ${CLICKHOUSE_PASSWORD} --query 'SELECT 1' 2>/dev/null || exit 1"]
-      interval: 30s
+      interval: 20s
       timeout: 10s
-      retries: 8
-      start_period: 120s
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -516,11 +523,12 @@ services:
     networks:
       - alice-network
     healthcheck:
+      # CORREÇÃO PR#104: Reduzir timeouts
       test: ["CMD-SHELL", "pg_isready -U ${LANGFUSE_DB_USER:-langfuse} -d ${LANGFUSE_DB_NAME:-langfuse}"]
-      interval: 10s
+      interval: 15s
       timeout: 5s
-      retries: 15
-      start_period: 120s
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -572,11 +580,12 @@ services:
     networks:
       - alice-network
     healthcheck:
+      # CORREÇÃO PR#104: Reduzir timeouts
       test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:3000/api/public/health',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
-      interval: 30s
-      timeout: 15s
-      retries: 15
-      start_period: 120s
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     # NOTA CROSS-STACK DEPENDENCY (07/01/2026):
     # Langfuse depende de MinIO (S3 storage) que está no stack INFRA.
     # O workflow deploy-stack-modular.yml garante que deploy-observability

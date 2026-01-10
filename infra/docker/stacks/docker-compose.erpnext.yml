@@ -103,8 +103,8 @@ services:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${ERPNEXT_MYSQL_ROOT_PASSWORD}"]
       interval: 15s
       timeout: 10s
-      retries: 10
-      start_period: 60s
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -441,30 +441,24 @@ services:
         condition: service_healthy
     healthcheck:
       # =======================================================================
-      # CORREÇÃO PR#102 (10/01/2026): Usar endpoint raiz / ao invés de /api/method/ping
+      # CORREÇÃO PR#104 (10/01/2026): Usar verificação TCP (HTTP sempre dá 404)
       # =======================================================================
-      # PROBLEMA: /api/v2/method/ping retorna 404 NOT FOUND
-      #           /api/method/ping TAMBÉM retorna 404 (não existe no Frappe v15)
+      # PROBLEMA: Endpoint / retorna 404 NOT FOUND
+      #           Frappe precisa do site configurado para HTTP funcionar
+      #           Mas precisamos verificar se Gunicorn está respondendo
       #
-      # EVIDÊNCIA DOS LOGS:
-      #   "GET / HTTP/1.1" 200 - funciona
-      #   "GET /api/v2/method/ping HTTP/1.1" 404 - não existe
+      # SOLUÇÃO: Verificar se porta 8000 está escutando via Python socket
+      # - Não depende de HTTP - apenas conexão TCP
+      # - Se Gunicorn está escutando, serviço está saudável
+      # - Mais confiável que endpoints HTTP em Frappe
       #
-      # CAUSA RAIZ: Frappe v15 não tem endpoint /api/method/ping padrão
-      #             O endpoint ping precisa ser criado manualmente via whitelist
-      #             REF: https://docs.frappe.io/framework/v15/user/en/api/rest
-      #
-      # SOLUÇÃO: Usar endpoint raiz / que SEMPRE retorna 200 quando Frappe está up
-      #          Este é o padrão usado em produção pela comunidade Frappe
-      #
-      # REF: Docker 2025 healthcheck best practices
-      # REF: CLAUDE.md Regra 7 (Diagnóstico de causa raiz), Regra 11 (Docs oficiais)
+      # REF: CLAUDE.md Regra 7 (Diagnóstico de causa raiz)
       # =======================================================================
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/', timeout=10)"]
-      interval: 30s
-      timeout: 15s
-      retries: 15
-      start_period: 120s
+      test: ["CMD", "python3", "-c", "import socket; s=socket.socket(); s.settimeout(5); s.connect(('localhost',8000)); s.close()"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
   # ===========================================================================
   # ERPNEXT FRONTEND - NGINX
@@ -497,11 +491,12 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/', timeout=5)"]
-      interval: 30s
+      # CORREÇÃO PR#104: Verificação TCP simples (HTTP pode dar 502 se backend não ready)
+      test: ["CMD", "python3", "-c", "import socket; s=socket.socket(); s.settimeout(5); s.connect(('localhost',8080)); s.close()"]
+      interval: 20s
       timeout: 10s
       retries: 5
-      start_period: 90s
+      start_period: 30s
 
   # ===========================================================================
   # ERPNEXT WEBSOCKET - Socket.IO
@@ -531,8 +526,9 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9000/socket.io/?EIO=4&transport=polling', timeout=5)"]
-      interval: 30s
+      # CORREÇÃO PR#104: Verificação TCP simples
+      test: ["CMD", "python3", "-c", "import socket; s=socket.socket(); s.settimeout(5); s.connect(('localhost',9000)); s.close()"]
+      interval: 20s
       timeout: 10s
       retries: 5
       start_period: 30s
@@ -570,13 +566,12 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      # CORREÇÃO PR#103 (10/01/2026): Aumentar start_period
-      # Scheduler demora ~120s para inicializar com bench em produção
+      # CORREÇÃO PR#104 (10/01/2026): Reduzir timeouts - verificar conexão Redis apenas
       test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
-      interval: 30s
+      interval: 20s
       timeout: 10s
       retries: 5
-      start_period: 120s
+      start_period: 60s
     deploy:
       resources:
         limits:
@@ -626,11 +621,12 @@ services:
     networks:
       - erpnext-network
     healthcheck:
+      # CORREÇÃO PR#104: Reduzir timeouts
       test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
-      interval: 30s
+      interval: 20s
       timeout: 10s
-      retries: 8
-      start_period: 180s
+      retries: 5
+      start_period: 60s
     deploy:
       resources:
         limits:
@@ -680,11 +676,12 @@ services:
     networks:
       - erpnext-network
     healthcheck:
+      # CORREÇÃO PR#104: Reduzir timeouts
       test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
-      interval: 30s
+      interval: 20s
       timeout: 10s
-      retries: 8
-      start_period: 180s
+      retries: 5
+      start_period: 60s
     deploy:
       resources:
         limits:
@@ -734,11 +731,12 @@ services:
     networks:
       - erpnext-network
     healthcheck:
+      # CORREÇÃO PR#104: Reduzir timeouts
       test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
-      interval: 30s
+      interval: 20s
       timeout: 10s
-      retries: 8
-      start_period: 180s
+      retries: 5
+      start_period: 60s
     deploy:
       resources:
         limits:

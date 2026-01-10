@@ -98,11 +98,12 @@ services:
       # CORREÇÃO PR#94 (09/01/2026): Verificar apenas porta SOCKS5 (9050)
       # NÃO fazer requisição externa - muito lento e pode dar timeout
       # dperson/torproxy tem curl instalado
+      # CORREÇÃO PR#104: Reduzir timeouts
       test: ["CMD-SHELL", "curl -sf --max-time 3 --socks5 localhost:9050 http://localhost:9050 2>/dev/null || timeout 3 bash -c 'echo > /dev/tcp/localhost/9050' 2>/dev/null || exit 1"]
-      interval: 30s
+      interval: 20s
       timeout: 10s
       retries: 5
-      start_period: 90s
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -137,11 +138,12 @@ services:
     networks:
       - alice-network
     healthcheck:
+      # CORREÇÃO PR#104: Reduzir interval para 20s
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/', timeout=5)"]
-      interval: 30s
+      interval: 20s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -185,10 +187,11 @@ services:
           else
             exit 1
           fi
-      interval: 30s
+      # CORREÇÃO PR#104: Reduzir timeouts
+      interval: 20s
       timeout: 10s
-      retries: 20
-      start_period: 60s
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -370,27 +373,13 @@ services:
       #     ficava UNHEALTHY durante primeiro boot (initdb + extensions demoram)
       #   - start_period de 120s era INSUFICIENTE para primeiro boot em servidor limpo
       #
-      # ANÁLISE DE TIMING (primeiro boot em servidor limpo):
-      #   1. initdb: ~30-60s (criar cluster PostgreSQL)
-      #   2. 01-create-extensions.sh: ~60-120s (criar pgvector + testes SIMD)
-      #   3. TOTAL: ~90-180s MÍNIMO antes de aceitar conexões
-      #
-      # SOLUÇÃO ENTERPRISE:
-      #   - start_period: 300s (5 min) - grace period ANTES de iniciar healthchecks
-      #   - timeout: 15s (suficiente para pg_isready + SELECT 1, não 90s excessivo)
-      #   - retries: 30 (mais tentativas com timeout menor)
-      #   - interval: 10s (verificar a cada 10s)
-      #
-      # JANELA TOTAL: 300s + (30 × 10s) = 600s (10 minutos)
-      # Isso dá margem suficiente para primeiro boot SEM causar UNHEALTHY prematuro
-      #
-      # REF: CLAUDE.md Regra 6 (Enterprise-grade), PostgreSQL Docker Best Practices 2025
-      # REF: https://docs.docker.com/reference/compose-file/services/#healthcheck
+      # CORREÇÃO PR#104 (10/01/2026): Reduzir timeouts para máx 15 tentativas
+      # Total: 60s start + (15 × 20s) = 360s (6 min)
       # =================================================================
-      interval: 10s
-      timeout: 15s        # Suficiente para pg_isready + SELECT 1 (não precisa 90s)
-      retries: 30         # Mais tentativas (300s grace + 30×10s = 600s total)
-      start_period: 300s  # CRÍTICO: 5 min grace period para initdb + extensions
+      interval: 20s
+      timeout: 10s
+      retries: 15
+      start_period: 60s
     deploy:
       resources:
         limits:
@@ -544,11 +533,12 @@ services:
       # REF: https://qdrant.tech/documentation/guides/monitoring/
       # NOTA: Imagem qdrant/qdrant NÃO tem wget/curl
       # Usar timeout + bash + /dev/tcp como fallback robusto
+      # CORREÇÃO PR#104: Reduzir interval para 20s
       test: ["CMD-SHELL", "timeout 5 bash -c 'echo > /dev/tcp/localhost/6333' 2>/dev/null || exit 1"]
-      interval: 30s
+      interval: 20s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -607,12 +597,13 @@ services:
       #
       # REF: github.com/minio/minio/issues/18389
       # REF: CLAUDE.md Regra 11 (Seguir docs oficiais 2025)
+      # CORREÇÃO PR#104: Reduzir interval para 20s
       # =======================================================================
       test: ["CMD", "mc", "ready", "local"]
-      interval: 30s
-      timeout: 20s
+      interval: 20s
+      timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 30s
     deploy:
       resources:
         limits:

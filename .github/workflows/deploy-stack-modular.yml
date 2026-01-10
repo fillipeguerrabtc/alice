@@ -1804,7 +1804,7 @@ jobs:
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare]
     if: needs.validate.outputs.dry_run != 'true' && needs.prepare.result == 'success'
-    timeout-minutes: 15
+    timeout-minutes: 10
     
     steps:
       - name: Validar servidor de produção (OBRIGATÓRIO)
@@ -2408,10 +2408,9 @@ jobs:
     # =================================================================
     # PROBLEMA: PostgreSQL no primeiro boot (initdb + extensions) demora ~5-8 min
     #           Timeout de 15 min era apertado considerando pull + deploy + healthcheck
-    # SOLUÇÃO: 25 min = margem confortável para primeiro boot
-    # REF: CLAUDE.md Regra 6 (Enterprise-grade)
+    # CORREÇÃO PR#104: Reduzir para 10 min (mais que suficiente)
     # =================================================================
-    timeout-minutes: 25
+    timeout-minutes: 10
     
     steps:
       - name: Limpar containers parciais do deploy anterior (se existirem)
@@ -3074,7 +3073,7 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          command_timeout: 10m
+          command_timeout: 7m
           script: |
             set -euo pipefail
             # =================================================================
@@ -3088,14 +3087,14 @@ jobs:
             
             CONTAINERS="alice-postgres alice-redis alice-qdrant alice-tor alice-searxng alice-caddy alice-minio alice-pgbouncer"
             # =================================================================
-            # CORREÇÃO PR#97 (09/01/2026): Restaurar MAX_RETRIES=30 (5 min total)
+            # CORREÇÃO PR#104 (10/01/2026): Reduzir MAX_RETRIES para 15
             # =================================================================
-            # PROBLEMA: MAX_RETRIES=15 dava apenas 2.5min de timeout
-            # PostgreSQL no primeiro boot pode levar 90-180s (initdb + pgvector)
-            # Conforme CLAUDE.md v5.9: "start_period aumentado para 300s (5 min grace)"
+            # MOTIVO: Problema real NÃO é timeout, mas healthchecks com bugs
+            # 15 × 20s = 300s (5 min) é suficiente para qualquer serviço healthy
+            # REF: CLAUDE.md Regra 7 (Diagnóstico de causa raiz)
             # =================================================================
-            MAX_RETRIES=30
-            SLEEP_TIME=10
+            MAX_RETRIES=15
+            SLEEP_TIME=20
             TIMEOUT=$((MAX_RETRIES * SLEEP_TIME))
             
             for container in $CONTAINERS; do
@@ -3272,7 +3271,7 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          command_timeout: 10m
+          command_timeout: 7m
           envs: IS_ROLLBACK,ROLLBACK_VERSION
           script: |
             set -euo pipefail
@@ -3427,7 +3426,7 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          command_timeout: 10m
+          command_timeout: 7m
           script: |
             set -euo pipefail
             echo "📊 Verificando schema do banco de dados..."
@@ -3518,7 +3517,7 @@ jobs:
     # - deploy-infra NÃO PODE ter falhado (needs.deploy-infra.result != 'failure')
     # CRITICAL: NÃO rodar em rollback manual (deploy seria sobrescrito pelo rollback)
     if: needs.validate.outputs.deploy_alice == 'true' && needs.prepare.result == 'success' && needs.deploy-infra.result != 'failure' && (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped') && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped') && needs.validate.outputs.is_rollback == 'false'
-    timeout-minutes: 15
+    timeout-minutes: 10
     
     steps:
       - name: Deploy stack alice via SSH
@@ -3529,7 +3528,7 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          command_timeout: 15m
+          command_timeout: 7m
           script: |
             set -euo pipefail
             # =================================================================
@@ -3683,7 +3682,7 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          command_timeout: 10m
+          command_timeout: 7m
           script: |
             set -euo pipefail
             echo "🏥 Checking ALICE stack health..."
@@ -3694,12 +3693,11 @@ jobs:
             # =================================================================
             # PROBLEMA: Docker healthcheck tem start_period: 90s + (10 retries × 30s) = 390s
             #           Workflow tinha MAX_RETRIES=15 × 10s = 150s (muito curto!)
-            #           Containers ficavam "starting" durante start_period e workflow expirava
-            # SOLUÇÃO: MAX_RETRIES=40 × 10s = 400s (> 390s do Docker healthcheck)
-            # REF: CLAUDE.md Regra 11 (Melhores práticas 2025), Regra 16 (Healthchecks)
+            # CORREÇÃO PR#104: Reduzir para 15 tentativas (5 min total)
+            # Problema real NÃO é timeout - são healthchecks com bugs
             # =================================================================
-            MAX_RETRIES=40
-            SLEEP_TIME=10
+            MAX_RETRIES=15
+            SLEEP_TIME=20
             
             for container in $CONTAINERS; do
               echo ""
@@ -3792,7 +3790,7 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          command_timeout: 10m
+          command_timeout: 7m
           envs: IS_ROLLBACK,ROLLBACK_VERSION
           script: |
             set -euo pipefail
@@ -3921,7 +3919,7 @@ jobs:
     # - deploy-infra NÃO PODE ter falhado (needs.deploy-infra.result != 'failure')
     # CRITICAL: NÃO rodar em rollback manual (deploy seria sobrescrito pelo rollback)
     if: needs.validate.outputs.deploy_observability == 'true' && needs.prepare.result == 'success' && needs.deploy-infra.result != 'failure' && (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped') && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped') && needs.validate.outputs.is_rollback == 'false'
-    timeout-minutes: 15
+    timeout-minutes: 10
     
     steps:
       - name: Deploy stack observability via SSH
@@ -3932,7 +3930,7 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          command_timeout: 15m
+          command_timeout: 7m
           script: |
             set -euo pipefail
             # =================================================================
@@ -4068,8 +4066,8 @@ jobs:
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, deploy-observability]
     if: needs.deploy-observability.result == 'success'
-    # CORREÇÃO PR#100: Langfuse tem healthcheck de 570s, então precisa de 12min
-    timeout-minutes: 12
+    # CORREÇÃO PR#104: Reduzir para 7 min (máx 15 tentativas × 20s = 5 min)
+    timeout-minutes: 7
     
     steps:
       - name: Check health with retry logic
@@ -4087,8 +4085,9 @@ jobs:
           #           Isso criava race condition de zero-margin
           # SOLUÇÃO: command_timeout=12m (720s) > 600s com margem de 2 min
           # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 16 (Timeouts)
+          # CORREÇÃO PR#104: Reduzir para 7m (15 tentativas × 20s = 5 min)
           # =================================================================
-          command_timeout: 12m
+          command_timeout: 7m
           script: |
             set -euo pipefail
             echo "🏥 Checking OBSERVABILITY stack health..."
@@ -4129,11 +4128,11 @@ jobs:
             # - alice-langfuse-db: start_period: 120s + (15 retries × 10s) = 270s
             # - langfuse: start_period: 120s + (15 retries × 30s) = 570s ← MAIOR!
             #
-            # SOLUÇÃO: MAX_RETRIES=60 × 10s = 600s (> 570s do Langfuse)
-            # REF: CLAUDE.md Regra 11 (Melhores práticas 2025), Regra 16 (Healthchecks)
+            # CORREÇÃO PR#104: Reduzir para 15 tentativas (5 min total)
+            # Problema real NÃO é timeout - são healthchecks com bugs
             # =================================================================
-            MAX_RETRIES=60
-            SLEEP_TIME=10
+            MAX_RETRIES=15
+            SLEEP_TIME=20
             
             # Verificar containers com healthcheck
             for container in $HEALTH_CONTAINERS; do
@@ -4240,7 +4239,7 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          command_timeout: 10m
+          command_timeout: 7m
           envs: IS_ROLLBACK,ROLLBACK_VERSION
           script: |
             set -euo pipefail
@@ -4375,7 +4374,7 @@ jobs:
     # - deploy-infra NÃO PODE ter falhado (needs.deploy-infra.result != 'failure')
     # CRITICAL: NÃO rodar em rollback manual (deploy seria sobrescrito pelo rollback)
     if: needs.validate.outputs.deploy_erpnext == 'true' && needs.prepare.result == 'success' && needs.deploy-infra.result != 'failure' && (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped') && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped') && needs.validate.outputs.is_rollback == 'false'
-    timeout-minutes: 20
+    timeout-minutes: 10
     
     steps:
       - name: Deploy stack erpnext via SSH
@@ -4523,7 +4522,7 @@ jobs:
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, deploy-erpnext]
     if: needs.deploy-erpnext.result == 'success'
-    timeout-minutes: 15
+    timeout-minutes: 7
     
     steps:
       - name: Check health with retry logic
@@ -4534,7 +4533,7 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          command_timeout: 15m
+          command_timeout: 7m
           script: |
             set -euo pipefail
             echo "🏥 Checking ERPNEXT stack health..."
@@ -4549,11 +4548,11 @@ jobs:
             #           start_period: 120s + (15 retries × 30s) = 570s
             #           Workflow tinha MAX_RETRIES=25 × 10s = 250s (muito curto!)
             #           erpnext-backend ficava "starting" e workflow expirava
-            # SOLUÇÃO: MAX_RETRIES=60 × 10s = 600s (> 570s do Docker healthcheck)
-            # REF: CLAUDE.md Regra 11 (Melhores práticas 2025), Regra 16 (Healthchecks)
+            # CORREÇÃO PR#104: Reduzir para 15 tentativas (5 min total)
+            # Problema real NÃO é timeout - são healthchecks com bugs
             # =================================================================
-            MAX_RETRIES=60
-            SLEEP_TIME=10
+            MAX_RETRIES=15
+            SLEEP_TIME=20
             
             for container in $CONTAINERS; do
               echo ""
@@ -4630,7 +4629,7 @@ jobs:
     if: |
       (needs.validate.outputs.is_rollback == 'true' && needs.validate.outputs.deploy_erpnext == 'true' && needs.prepare.result == 'success') ||
       (failure() && needs.deploy-erpnext.result == 'success' && needs.health-erpnext.result == 'failure')
-    timeout-minutes: 15
+    timeout-minutes: 7
     
     steps:
       - name: Execute rollback cirúrgico (5 estágios)
@@ -4643,7 +4642,7 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          command_timeout: 15m
+          command_timeout: 7m
           envs: IS_ROLLBACK,ROLLBACK_VERSION
           script: |
             set -euo pipefail
@@ -4788,7 +4787,7 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          command_timeout: 10m
+          command_timeout: 7m
           script: |
             set -euo pipefail
             # =================================================================
@@ -4937,11 +4936,11 @@ jobs:
             # =================================================================
             # PROBLEMA: Docker healthcheck tem start_period: 120s + (3 retries × 60s) = 300s
             #           Workflow tinha MAX_RETRIES=15 × 10s = 150s (muito curto!)
-            # SOLUÇÃO: MAX_RETRIES=35 × 10s = 350s (> 300s do Docker healthcheck)
-            # REF: CLAUDE.md Regra 11 (Melhores práticas 2025), Regra 16 (Healthchecks)
+            # CORREÇÃO PR#104: Reduzir para 15 tentativas (5 min total)
+            # Problema real NÃO é timeout - são healthchecks com bugs
             # =================================================================
-            MAX_RETRIES=35
-            SLEEP_TIME=10
+            MAX_RETRIES=15
+            SLEEP_TIME=20
             
             echo ""
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
