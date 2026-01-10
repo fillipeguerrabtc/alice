@@ -34,7 +34,7 @@ import {
 } from '@alice/shared-utils';
 import { chatServicePaths, chatServiceSchemas } from './openapi-specs.js';
 import { createLogger } from '@alice/logger';
-import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage } from '@alice/database';
+import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, getPool } from '@alice/database';
 import { 
   createCorrelationMiddleware, 
   createSecurityMiddleware,
@@ -350,7 +350,9 @@ async function validateSessionFromDatabase(sessionId: string): Promise<CachedSes
   
   try {
     // Query direta na tabela sessions (connect-pg-simple)
-    const pool = require('@alice/database').getPool();
+    // CORREÇÃO PR#107 (10/01/2026): Usar getPool() importado, não require() dinâmico
+    // require('@alice/database') causava falha silenciosa em ESM bundle
+    const pool = getPool();
     const result = await pool.query(
       'SELECT sess FROM sessions WHERE sid = $1 AND expire > NOW()',
       [sessionId]
