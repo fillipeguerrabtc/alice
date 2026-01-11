@@ -150,7 +150,10 @@ async def load_models():
         from sentence_transformers import SentenceTransformer
         
         # ARQUITETURA v4.0.0: Suporte a quantização INT8
-        model_kwargs = {"trust_remote_code": True}
+        # BUG FIX 11/01/2026: trust_remote_code DEVE ser parâmetro direto do SentenceTransformer
+        # Passar em model_kwargs não habilita o carregamento de modelos com código customizado
+        # (como Qwen3-Embedding-8B), causando crash na inicialização
+        model_kwargs = {}
         
         if QUANTIZATION == "int8":
             logger.info("🔧 Aplicando quantização INT8 (bitsandbytes)")
@@ -169,7 +172,8 @@ async def load_models():
         text_model = SentenceTransformer(
             TEXT_MODEL_NAME,
             device=DEVICE,
-            model_kwargs=model_kwargs
+            trust_remote_code=True,  # CRÍTICO: Parâmetro direto, não em model_kwargs
+            model_kwargs=model_kwargs if model_kwargs else None
         )
         
         # Verificar dimensão
