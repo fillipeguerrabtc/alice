@@ -46,7 +46,7 @@ import {
   GpuRequestPriority,
 } from '@alice/shared-utils';
 import { trainingServicePaths, trainingServiceSchemas } from './openapi-specs.js';
-import { eq, and, desc, sql, isNull, not } from '@alice/database';
+import { eq, and, or, desc, sql, isNull, not } from '@alice/database';
 import { z } from 'zod';
 import { 
   requirePermission, 
@@ -1450,10 +1450,14 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
   
   try {
     // Verificar se já existe treinamento em andamento (status 'training' ou 'preparing')
+    // FIX Bug 1: Incluir 'preparing' na verificação (fase de preparação de dados)
     const runningJobs = await db.query.fineTuningJobs.findMany({
       where: and(
         eq(schema.fineTuningJobs.tenantId, tenantId),
-        eq(schema.fineTuningJobs.status, 'training')
+        or(
+          eq(schema.fineTuningJobs.status, 'training'),
+          eq(schema.fineTuningJobs.status, 'preparing')
+        )
       ),
     });
 
@@ -1535,8 +1539,12 @@ app.get('/api/training/run/status', requirePermission('training:training_data:re
 
   try {
     // Buscar jobs com status 'training' ou 'preparing' (em execução)
+    // FIX Bug 1: Incluir 'preparing' na verificação (fase de preparação de dados)
     const conditions = [
-      eq(schema.fineTuningJobs.status, 'training')
+      or(
+        eq(schema.fineTuningJobs.status, 'training'),
+        eq(schema.fineTuningJobs.status, 'preparing')
+      )
     ];
     if (tenantId) conditions.push(eq(schema.fineTuningJobs.tenantId, tenantId));
 
@@ -1739,6 +1747,9 @@ function calculateNextScheduleDate(scheduleType: string, cronPattern?: string): 
     if (targetDayOfMonth === undefined) {
       // Nenhum dia disponível este mês, ir para próximo mês
       targetDayOfMonth = days[0];
+      // FIX Bug 2: Definir dia como 1 ANTES de incrementar mês para evitar overflow
+      // Exemplo: 31/Jan + 1 mês = 3/Mar se não fizermos isso (Fev não tem 31 dias)
+      next.setDate(1);
       next.setMonth(next.getMonth() + 1);
     }
     
