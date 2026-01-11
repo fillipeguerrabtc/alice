@@ -38,6 +38,13 @@ export const PERMISSION_MAP: Record<string, Role[]> = {
   'auth:audit_logs:delete': ['super_admin'],
   'auth:audit_logs:manage': ['super_admin'],
   
+  // Alias para compatibilidade com endpoints que usam formato diferente
+  // SEGURANÇA: Permissões DEVEM ser idênticas às originais (auth:audit_logs:*)
+  'audit:logs:read': ['super_admin', 'admin'],
+  'audit:logs:write': ['super_admin'],
+  'audit:logs:delete': ['super_admin'],
+  'audit:logs:manage': ['super_admin'],
+  
   'auth:metrics:read': ['super_admin', 'admin', 'manager'],
   'auth:metrics:write': ['super_admin'],
   'auth:metrics:delete': ['super_admin'],
