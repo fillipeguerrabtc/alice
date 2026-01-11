@@ -4,12 +4,16 @@
 # SSOT para dependências Python do container embeddings-gpu
 # Dependabot monitora este arquivo para atualizações de segurança
 #
-# Container: embeddings-gpu (Qwen3-Embedding-8B + OpenCLIP)
+# Container: embeddings-gpu (Qwen3-Embedding-8B INT8 + OpenCLIP)
 # Base: pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel
 # GPU: RTX 4000 Ada 20GB
 #
+# ARQUITETURA v4.0.0 (11/01/2026):
+# - Suporte a INT8 quantization via bitsandbytes
+# - Reduz VRAM de ~16GB para ~8GB
+#
 # Autor: Fillipe Guerra
-# Data: 07 de Janeiro de 2026
+# Data: 11 de Janeiro de 2026
 # =============================================================================
 
 # ML/AI Core
@@ -18,6 +22,8 @@ sentence-transformers==5.2.0
 open_clip_torch==3.2.0
 accelerate==1.12.0
 safetensors==0.7.0
+# ARQUITETURA v4.0.0: INT8 quantization
+bitsandbytes==0.45.3
 
 # API Framework
 fastapi==0.127.0

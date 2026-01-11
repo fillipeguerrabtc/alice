@@ -1,13 +1,14 @@
 # =============================================================================
 # ALICE PLATFORM - ALICE STACK (Microserviços + GPU)
 # =============================================================================
-# Versão: 5.0 (Arquitetura Modular Multi-Stack)
-# Data: 05 de Janeiro de 2026
+# Versão: 6.0 (Arquitetura GPU v4.0.0 - Simplificada)
+# Data: 11 de Janeiro de 2026
 # Autor: Fillipe Guerra
 #
 # PROPÓSITO: Serviços core da plataforma Alice + GPU Manager + GPU containers
 #
-# CONTAINERS (8 + 5 GPU via profiles):
+# CONTAINERS (8 microserviços + 3 GPU sempre ativos + 1 GPU sob demanda):
+#   MICROSERVIÇOS:
 #   - alice-frontend - React SPA
 #   - alice-auth - OAuth/SAML/OIDC Provider
 #   - alice-chat - WebSocket + LLM
@@ -17,12 +18,13 @@
 #   - alice-observability - Health checks
 #   - gpu-manager - Gerenciamento centralizado de GPU
 #
-# GPU CONTAINERS (via profiles - apenas 1 ativo por vez):
-#   - gpu-mixtral (profile: gpu-llm)
-#   - gpu-embeddings (profile: gpu-embeddings)
-#   - gpu-flux (profile: gpu-flux)
-#   - gpu-asr (profile: gpu-asr)
-#   - gpu-trainer (profile: gpu-training)
+#   GPU (SEMPRE ATIVOS - 15GB de 20GB VRAM):
+#   - gpu-qwen-vl - Qwen2.5-VL 7B AWQ (4GB) - LLM + Vision
+#   - gpu-embeddings - Qwen3-Embedding-8B INT8 (8GB) - RAG
+#   - gpu-asr - Canary-1B (3GB) - Transcrição de áudio
+#
+#   GPU (SOB DEMANDA via profile):
+#   - gpu-trainer (profile: gpu-training) - QLoRA (12GB)
 #
 # DEPENDÊNCIAS:
 #   - INFRA Stack DEVE estar healthy antes deste stack
@@ -455,12 +457,13 @@ services:
   # ===========================================================================
   # GPU MANAGER SERVICE - Gerenciamento Centralizado de GPU
   # ===========================================================================
-  # ARQUITETURA ENTERPRISE (09/01/2026) - Orquestração Dinâmica de GPU:
-  # - GPU Manager gerencia ciclo de vida dos containers GPU via Docker API
-  # - Apenas 1 serviço GPU pesado por vez (VRAM 20GB compartilhada)
-  # - Troca automática on-demand: Chat→Mixtral, RAG→Embeddings, Imagens→FLUX
-  # - Latência de troca: ~30-60s (startup do container GPU)
-  # - Cache de serviço: mantém último serviço por 5min antes de trocar
+  # ARQUITETURA v4.0.0 (11/01/2026) - Arquitetura Simplificada:
+  # - Todos os serviços GPU rodam simultaneamente (15GB de 20GB VRAM)
+  # - Qwen2.5-VL 7B AWQ (4GB) - LLM + Vision
+  # - Qwen3-Embedding-8B INT8 (8GB) - RAG
+  # - Canary-1B (3GB) - ASR
+  # - Zero latência de troca (todos sempre ativos)
+  # - Treinamento sob demanda (profile gpu-training)
   # ===========================================================================
   gpu-manager:
     image: ${IMAGE_PREFIX}-gpu-manager:${IMAGE_TAG:-latest}
@@ -475,23 +478,13 @@ services:
       - PORT=3010
       - REDIS_URL=${REDIS_URL:?REDIS_URL é obrigatório}
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET:?INTERNAL_API_SECRET é obrigatório}
-      - MIXTRAL_GPU_URL=${MIXTRAL_GPU_URL:-http://gpu-mixtral:8000}
+      # ARQUITETURA v4.0.0: URLs dos serviços GPU (todos sempre ativos)
+      - QWEN_VL_GPU_URL=${QWEN_VL_GPU_URL:-http://gpu-qwen-vl:8000}
       - EMBEDDINGS_GPU_URL=${EMBEDDINGS_GPU_URL:-http://gpu-embeddings:8000}
-      - TRAINING_GPU_URL=${TRAINING_GPU_URL:-http://gpu-trainer:8000}
-      - FLUX_GPU_URL=${FLUX_GPU_URL:-http://gpu-flux:8000}
       - ASR_GPU_URL=${ASR_GPU_URL:-http://gpu-asr:8000}
+      - TRAINING_GPU_URL=${TRAINING_GPU_URL:-http://gpu-trainer:8000}
       - NODE_ENV=production
       - GPU_SERVICE_TIMEOUT=${GPU_SERVICE_TIMEOUT:-60000}
-      # Orquestração dinâmica de containers GPU
-      - DOCKER_HOST=unix:///var/run/docker.sock
-      - GPU_ORCHESTRATOR_ENABLED=${GPU_ORCHESTRATOR_ENABLED:-true}
-      - GPU_SERVICE_IDLE_TIMEOUT_MS=${GPU_SERVICE_IDLE_TIMEOUT_MS:-300000}
-      - GPU_DEFAULT_SERVICE=${GPU_DEFAULT_SERVICE:-mixtral}
-      - IMAGE_PREFIX=${IMAGE_PREFIX}
-      - IMAGE_TAG=${IMAGE_TAG:-latest}
-    volumes:
-      # Docker Socket para orquestração de containers GPU
-      - /var/run/docker.sock:/var/run/docker.sock:ro
     ports:
       - "127.0.0.1:3010:3010"
     networks:
@@ -503,7 +496,6 @@ services:
           memory: 512M
           cpus: '0.5'
     healthcheck:
-      # CORREÇÃO PR#104: Reduzir interval para 20s
       test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:3010/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 20s
       timeout: 10s
@@ -516,33 +508,37 @@ services:
         max-file: "3"
 
   # ===========================================================================
-  # GPU SERVICES - Via Profiles (apenas 1 ativo por vez - GPU única 20GB)
+  # GPU SERVICES - ARQUITETURA v4.0.0 (11/01/2026)
   # ===========================================================================
-  # USO:
-  #   docker compose --profile gpu-llm up -d           # Iniciar Mixtral
-  #   docker compose --profile gpu-embeddings up -d   # Iniciar Embeddings
-  #   docker compose --profile gpu-llm down           # Parar Mixtral antes de trocar
+  # Todos os serviços GPU rodam SIMULTANEAMENTE (15GB de 20GB VRAM):
+  # - gpu-qwen-vl: Qwen2.5-VL 7B AWQ (4GB) - LLM + Vision
+  # - gpu-embeddings: Qwen3-Embedding-8B INT8 (8GB) - RAG
+  # - gpu-asr: Canary-1B (3GB) - Transcrição de áudio
+  # - gpu-trainer: QLoRA (12GB) - Sob demanda via profile
+  #
+  # Benefícios:
+  # - Zero latência de troca (todos sempre ativos)
+  # - 5GB livres para operações extras
+  # - Treinamento sob demanda pausa serviços temporariamente
   # ===========================================================================
 
-  # Mixtral 8x7B vLLM - LLM Principal
-  gpu-mixtral:
-    image: ${IMAGE_PREFIX}-mixtral-vllm:${IMAGE_TAG:-latest}
+  # Qwen2.5-VL 7B AWQ - LLM + Vision (substitui Mixtral)
+  # ARQUITETURA v4.0.0: Modelo multimodal especializado em finanças/matemática
+  gpu-qwen-vl:
+    image: ${IMAGE_PREFIX}-qwen-vl:${IMAGE_TAG:-latest}
     platform: linux/amd64
-    container_name: gpu-mixtral
+    container_name: gpu-qwen-vl
     restart: unless-stopped
     runtime: nvidia
-    profiles:
-      - gpu-llm
     security_opt:
       - no-new-privileges:true
     environment:
       - NVIDIA_VISIBLE_DEVICES=0
       - CUDA_VISIBLE_DEVICES=0
-      - MODEL_NAME=${MIXTRAL_MODEL_NAME:-TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ}
-      - QUANTIZATION=${MIXTRAL_QUANTIZATION:-awq}
-      - MAX_MODEL_LEN=${MIXTRAL_MAX_MODEL_LEN:-32768}
-      - GPU_MEMORY_UTILIZATION=${MIXTRAL_GPU_MEMORY_UTILIZATION:-0.85}
-      - TENSOR_PARALLEL_SIZE=${MIXTRAL_TENSOR_PARALLEL_SIZE:-1}
+      - MODEL_NAME=${QWEN_VL_MODEL_NAME:-Qwen/Qwen2.5-VL-7B-Instruct-AWQ}
+      - QUANTIZATION=awq
+      - MAX_MODEL_LEN=${QWEN_VL_MAX_MODEL_LEN:-32768}
+      - GPU_MEMORY_UTILIZATION=0.95
       - HOST=0.0.0.0
       - PORT=8000
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
@@ -558,12 +554,9 @@ services:
               count: 1
               capabilities: [gpu]
         limits:
-          memory: 20G
+          memory: 8G
           cpus: '4.0'
     healthcheck:
-      # CORREÇÃO PR#104: Reduzir timeouts - modelo geralmente em cache
-      # Primeiro boot: 3-5 min (download weights) - raro
-      # Boot normal: ~30-60s (modelo em cache) - comum
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
       interval: 20s
       timeout: 10s
@@ -575,15 +568,14 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # Embeddings GPU - Qwen3 + OpenCLIP
+  # Embeddings GPU - Qwen3-Embedding-8B INT8
+  # ARQUITETURA v4.0.0: Quantizado para INT8 (8GB vs 16GB FP16)
   gpu-embeddings:
     image: ${IMAGE_PREFIX}-embeddings-gpu:${IMAGE_TAG:-latest}
     platform: linux/amd64
     container_name: gpu-embeddings
     restart: unless-stopped
     runtime: nvidia
-    profiles:
-      - gpu-embeddings
     security_opt:
       - no-new-privileges:true
     environment:
@@ -593,6 +585,8 @@ services:
       - TEXT_EMBEDDING_DIM=${TEXT_EMBEDDING_DIM:-4096}
       - IMAGE_MODEL_NAME=${IMAGE_MODEL_NAME:-laion/CLIP-ViT-H-14-laion2B-s32B-b79K}
       - IMAGE_EMBEDDING_DIM=${IMAGE_EMBEDDING_DIM:-1024}
+      # ARQUITETURA v4.0.0: Quantização INT8 para reduzir VRAM de 16GB para 8GB
+      - QUANTIZATION=int8
       - DEVICE=cuda
       - PORT=8000
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
@@ -608,10 +602,9 @@ services:
               count: 1
               capabilities: [gpu]
         limits:
-          memory: 18G
+          memory: 12G
           cpus: '2.0'
     healthcheck:
-      # CORREÇÃO PR#104: Reduzir timeouts
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
       interval: 20s
       timeout: 10s
@@ -623,22 +616,21 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # FLUX.1 Schnell - Geração de Imagens
-  gpu-flux:
-    image: ${IMAGE_PREFIX}-flux-schnell:${IMAGE_TAG:-latest}
+  # ASR Canary-1B - Transcrição de Áudio
+  # ARQUITETURA v4.0.0: Sempre ativo (sem profile)
+  gpu-asr:
+    image: ${IMAGE_PREFIX}-asr-canary:${IMAGE_TAG:-latest}
     platform: linux/amd64
-    container_name: gpu-flux
+    container_name: gpu-asr
     restart: unless-stopped
     runtime: nvidia
-    profiles:
-      - gpu-flux
     security_opt:
       - no-new-privileges:true
     environment:
       - NVIDIA_VISIBLE_DEVICES=0
       - CUDA_VISIBLE_DEVICES=0
-      - MODEL_NAME=${FLUX_MODEL_NAME:-black-forest-labs/FLUX.1-schnell}
-      - NUM_INFERENCE_STEPS=${FLUX_NUM_INFERENCE_STEPS:-4}
+      - MODEL_NAME=${ASR_MODEL_NAME:-nvidia/canary-1b-v2}
+      - DEVICE=cuda
       - PORT=8000
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
     ports:
@@ -653,10 +645,9 @@ services:
               count: 1
               capabilities: [gpu]
         limits:
-          memory: 18G
+          memory: 6G
           cpus: '2.0'
     healthcheck:
-      # CORREÇÃO PR#104: Reduzir timeouts
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
       interval: 20s
       timeout: 10s
@@ -668,54 +659,11 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # ASR Canary-1B - Transcrição de Áudio
-  gpu-asr:
-    image: ${IMAGE_PREFIX}-asr-canary:${IMAGE_TAG:-latest}
-    platform: linux/amd64
-    container_name: gpu-asr
-    restart: unless-stopped
-    runtime: nvidia
-    profiles:
-      - gpu-asr
-    security_opt:
-      - no-new-privileges:true
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=0
-      - CUDA_VISIBLE_DEVICES=0
-      - MODEL_NAME=${ASR_MODEL_NAME:-nvidia/canary-1b-v2}
-      - DEVICE=cuda
-      - PORT=8000
-      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
-    ports:
-      - "127.0.0.1:8003:8000"
-    networks:
-      - alice-network
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-        limits:
-          memory: 12G
-          cpus: '2.0'
-    healthcheck:
-      # CORREÇÃO PR#104: Reduzir timeouts
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
-      interval: 20s
-      timeout: 10s
-      start_period: 60s
-      retries: 5
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  # LoRA Trainer - Fine-tuning
+  # QLoRA Trainer - Fine-tuning (Sob Demanda)
+  # ARQUITETURA v4.0.0: Usa profile pois requer pausa dos outros serviços
+  # Execução: docker compose --profile gpu-training up -d gpu-trainer
   gpu-trainer:
-    image: ${IMAGE_PREFIX}-lora-trainer:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX}-qwen-trainer:${IMAGE_TAG:-latest}
     platform: linux/amd64
     container_name: gpu-trainer
     restart: unless-stopped
@@ -731,10 +679,13 @@ services:
       - PORT=8000
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
       - STORAGE_DIR=/opt/alice/uploads/training
+      # ARQUITETURA v4.0.0: QLoRA para Qwen2.5-VL
+      - BASE_MODEL=${QWEN_VL_MODEL_NAME:-Qwen/Qwen2.5-VL-7B-Instruct-AWQ}
+      - TRAINING_METHOD=qlora
     volumes:
       - /opt/alice/uploads:/opt/alice/uploads:rw
     ports:
-      - "127.0.0.1:8004:8000"
+      - "127.0.0.1:8003:8000"
     networks:
       - alice-network
     deploy:
@@ -745,10 +696,9 @@ services:
               count: 1
               capabilities: [gpu]
         limits:
-          memory: 18G
+          memory: 16G
           cpus: '4.0'
     healthcheck:
-      # CORREÇÃO PR#104: Reduzir timeouts
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
       interval: 20s
       timeout: 10s

@@ -1,12 +1,24 @@
 /**
  * Training - Gestão de Fine-tuning
  * 
+ * ARQUITETURA v4.0.0 (11/01/2026):
  * Página para gerenciar dados de treinamento e jobs de fine-tuning
- * via GPU Manager Service (Hetzner GEX44) para o modelo Mixtral 8x7B.
+ * via GPU Manager Service (Hetzner GEX44) para o modelo Qwen2.5-VL 7B.
+ * 
+ * Funcionalidades:
+ * - Gestão de dados de treinamento
+ * - Jobs de fine-tuning (QLoRA)
+ * - Schedule semanal (domingo 3:00 AM)
+ * - Treinamento on-demand
+ * - Bulk import de dados
+ * - Upload multimodal (imagens, áudio)
  * 
  * Regra 6 - SEM MOCKS: Apenas dados reais da API
  * Regra 10 - Documentação PT-BR
  * Regra 13 - Internacionalização i18next
+ * 
+ * Autor: Fillipe Guerra
+ * Data: 11 de Janeiro de 2026
  */
 
 import { useState, useCallback } from 'react';

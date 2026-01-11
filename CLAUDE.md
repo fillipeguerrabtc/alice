@@ -1,7 +1,7 @@
 # Alice - Plataforma Enterprise de IA Autônoma
 
 ## Overview
-Alice is an autonomous AI enterprise platform powered by the **Mixtral 8x7B (MoE ~12B active parameters)** model served via vLLM AWQ on Hetzner GPU server GEX44 (RTX 4000 Ada 20GB). Its core purpose is to provide a fully autonomous AI solution with absolute privacy, predictable costs, and unlimited customization via LoRA fine-tuning. The platform now includes **Trading BTC Futures** on KuCoin Perpetuals with scalping capabilities (1m, 3m, 5m candles). Key capabilities include real-time chat with streaming, deduplication, multi-tenancy, RBAC, a RAG backend with enterprise embeddings (Qwen3-Embedding-8B 4096 dim → Qdrant, OpenCLIP 1024 dim → pgvector), image generation (FLUX.1 Schnell), aggressive self-learning, and a robust observability stack. The business vision is to deliver an enterprise-grade AI solution with unparalleled control, performance, data security, and cost predictability.
+Alice is an autonomous AI enterprise platform powered by the **Qwen2.5-VL 7B** multimodal model (text + vision) served via vLLM AWQ on Hetzner GPU server GEX44 (RTX 4000 Ada 20GB). Its core purpose is to provide a fully autonomous AI solution with absolute privacy, predictable costs, and unlimited customization via QLoRA fine-tuning. The platform is **specialized in Finance, Trading, and Financial Management** with built-in vision capabilities for chart analysis. Key capabilities include real-time chat with streaming, deduplication, multi-tenancy, RBAC, a RAG backend with enterprise embeddings (Qwen3-Embedding-8B INT8 4096 dim → Qdrant, OpenCLIP 1024 dim → pgvector), **Trading BTC Futures** on KuCoin Perpetuals with scalping capabilities (1m, 3m, 5m candles), aggressive self-learning with scheduled training (weekly), and a robust observability stack. The business vision is to deliver an enterprise-grade AI solution with unparalleled control, performance, data security, and cost predictability for financial verticals.
 
 ## User Preferences
 ### 18 Regras Fundamentais
@@ -103,14 +103,14 @@ Alice employs a **modular multi-stack architecture** with 51 containerized servi
 
 ## External Dependencies
 
-### GPU Services (Hetzner GPU Server) - Atualizado 25/12/2025
-- **LLM Inference**: Mixtral 8x7B (MoE ~12B ativos, quantizado 4/5-bit via vLLM) - chat, trading, geração de texto
-- **Image Generation**: FLUX.1 Schnell - geração de imagens
-- **Fine-tuning**: Treinamento LoRA via GPU Trainer (prioridade 3) com dataset JSONL persistido e retomada automática
-- **Embeddings Texto**: Qwen3-Embedding-8B (4096 dim) → Qdrant - máxima qualidade
+### GPU Services (Hetzner GPU Server) - Atualizado 11/01/2026 - Arquitetura v4.0.0
+- **LLM + Vision**: Qwen2.5-VL 7B AWQ (~4GB) - chat, trading, análise de gráficos, vision nativo
+- **Embeddings Texto**: Qwen3-Embedding-8B INT8 (4096 dim, ~8GB) → Qdrant - quantização INT8
 - **Embeddings Imagem**: OpenCLIP ViT-H/14 (1024 dim) → pgvector - dimensão nativa
-- **ASR**: Canary-1B (NeMo) - transcrição de áudio
+- **ASR**: Canary-1B (NeMo, ~3GB) - transcrição de áudio
+- **Fine-tuning**: Treinamento QLoRA via GPU Trainer (~12GB, sob demanda) - schedule semanal + on-demand
 - **GPU Manager Service**: Gerenciamento centralizado com fila priorizada (Redis), monitoramento VRAM (nvidia-smi), circuit breakers, retry logic e métricas Prometheus
+- **Arquitetura v4.0.0**: Todos os serviços rodam simultaneamente (15GB de 20GB VRAM), zero latência de troca
 
 ### Processamento Multimodal - ARQUITETURA ENTERPRISE (25/12/2025)
 Embeddings otimizados por caso de uso para máxima qualidade:

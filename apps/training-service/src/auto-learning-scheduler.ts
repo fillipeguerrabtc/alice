@@ -1,13 +1,20 @@
 /**
  * Auto-Learning Scheduler - Alice Enterprise Platform
  * 
- * Schedule agressivo de aprendizado para uso verticalizado:
+ * ARQUITETURA v4.0.0 (11/01/2026):
+ * Schedule enterprise de aprendizado para uso verticalizado:
  * - RAG update: Tempo real
  * - Auto-indexação: Diário
- * - Fine-tuning incremental (LoRA): A cada 4 dias
+ * - Fine-tuning incremental (QLoRA Qwen2.5-VL): Semanal (domingo 3:00 AM)
  * - Fine-tuning completo: Quinzenal
  * 
+ * Modelo base: Qwen2.5-VL 7B (especializado em finanças/matemática)
+ * Método: QLoRA (baixo consumo de VRAM)
+ * 
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
+ * 
+ * Autor: Fillipe Guerra
+ * Data: 11 de Janeiro de 2026
  * 
  * @module training-service/auto-learning-scheduler
  */
@@ -29,7 +36,11 @@ export function initAutoLearningScheduler(dbClient: Database): void {
 }
 
 // ============================================================================
-// CONFIGURAÇÃO DO SCHEDULE (Uso Verticalizado)
+// CONFIGURAÇÃO DO SCHEDULE - ARQUITETURA v4.0.0 (11/01/2026)
+// ============================================================================
+// Modelo: Qwen2.5-VL 7B AWQ
+// Método: QLoRA (baixo consumo de VRAM)
+// GPU: RTX 4000 Ada 20GB (Hetzner GEX44)
 // ============================================================================
 
 export const SCHEDULE_CONFIG = {
@@ -46,10 +57,12 @@ export const SCHEDULE_CONFIG = {
   },
   incrementalFineTuning: {
     name: 'incremental_fine_tuning',
-    description: 'Fine-tuning incremental LoRA a cada 4 dias',
-    intervalMs: 4 * 24 * 60 * 60 * 1000,
-    cronPattern: '0 2 */4 * *',
+    description: 'Fine-tuning incremental QLoRA semanal (domingo 3:00 AM)',
+    intervalMs: 7 * 24 * 60 * 60 * 1000, // 7 dias
+    cronPattern: '0 3 * * 0', // Domingo às 3:00 AM
     minDataRequired: 50,
+    baseModel: 'Qwen/Qwen2.5-VL-7B-Instruct-AWQ',
+    method: 'qlora',
   },
   completeFineTuning: {
     name: 'complete_fine_tuning',
@@ -57,6 +70,8 @@ export const SCHEDULE_CONFIG = {
     intervalMs: 14 * 24 * 60 * 60 * 1000,
     cronPattern: '0 1 1,15 * *',
     minDataRequired: 200,
+    baseModel: 'Qwen/Qwen2.5-VL-7B-Instruct-AWQ',
+    method: 'qlora',
   },
 } as const;
 
@@ -215,11 +230,12 @@ export async function startProgressiveLoRA(
     });
   }
 
+  // ARQUITETURA v4.0.0: QLoRA para Qwen2.5-VL 7B
   const [modelVersion] = await db.insert(schema.modelVersions).values({
     tenantId,
-    name: `alice-lora-v${newVersion}`,
+    name: `alice-qlora-v${newVersion}`,
     version: newVersion,
-    baseModel: 'Mixtral-8x7B',
+    baseModel: 'Qwen2.5-VL-7B-AWQ',
     status: 'training',
     trainingDataCount: approvedData.length,
     imageDataCount: approvedImages.length,

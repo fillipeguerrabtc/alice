@@ -1,15 +1,15 @@
 # Alice - Plataforma Enterprise de IA Autônoma
 
 **Autor:** Fillipe Guerra  
-**Data:** 09 de Janeiro de 2026  
-**Versão:** 6.4 - SSOT Permissions + Tarball Deploy + Enterprise Bug Fixes
+**Data:** 11 de Janeiro de 2026  
+**Versão:** 7.0 - Arquitetura GPU v4.0.0 (Qwen2.5-VL + INT8 Embeddings)
 
 <div align="center">
 
 ![Alice Logo](https://img.shields.io/badge/Alice-IA%20Enterprise-blue?style=for-the-badge&logo=robot&logoColor=white)
 ![Version](https://img.shields.io/badge/versão-6.0-green?style=for-the-badge)
 ![License](https://img.shields.io/badge/licença-Proprietária-red?style=for-the-badge)
-![LLM](https://img.shields.io/badge/LLM-Mixtral%208x7B%20vLLM-purple?style=for-the-badge)
+![LLM](https://img.shields.io/badge/LLM-Qwen2.5--VL%207B-purple?style=for-the-badge)
 
 **Plataforma de IA autônoma multimodal 100% self-hosted com LLM próprio**
 
@@ -21,21 +21,21 @@
 
 ## Visão Geral
 
-**Alice** é uma plataforma enterprise de IA autônoma pronta para produção. Utiliza o modelo LLM **Mixtral 8x7B (MoE ~12B ativos, vLLM AWQ)** hospedado em infraestrutura própria (Hetzner GPU Server GEX44 - RTX 4000 Ada 20GB), garantindo 100% de autonomia sem dependência de APIs externas como OpenAI ou Anthropic.
+**Alice** é uma plataforma enterprise de IA autônoma pronta para produção, **especializada em Finanças, Trading e Gestão Financeira**. Utiliza o modelo multimodal **Qwen2.5-VL 7B (vLLM AWQ)** hospedado em infraestrutura própria (Hetzner GPU Server GEX44 - RTX 4000 Ada 20GB), garantindo 100% de autonomia sem dependência de APIs externas como OpenAI ou Anthropic.
 
 ### Capacidades Principais
 
 | Capacidade | Descrição |
 |------------|-----------|
-| **IA 100% Autônoma** | LLM próprio (Mixtral 8x7B vLLM AWQ) hospedado em servidor Hetzner GPU GEX44 (RTX 4000 Ada 20GB) |
+| **IA 100% Autônoma** | LLM próprio (Qwen2.5-VL 7B vLLM AWQ) hospedado em servidor Hetzner GPU GEX44 (RTX 4000 Ada 20GB) |
 | **Chat em Tempo Real** | Conversação via WebSocket com streaming de tokens |
-| **Geração de Imagens** | FLUX.1 Schnell self-hosted (1-3 segundos por imagem) |
+| **Análise de Imagens** | Vision nativo via Qwen2.5-VL (análise de gráficos, documentos, screenshots) |
 | **Deduplicação Semântica** | SemHash para filtragem de dados duplicados no treinamento |
 | **Multi-tenant** | Suporte a múltiplas organizações com agentes IA especializados |
 | **RAG Agentic** | Busca híbrida (interna + Brave Search) com classificador inteligente |
 | **Enterprise RBAC** | Controle de acesso granular com 6 roles hierárquicas |
 | **Observabilidade LLM** | Prometheus, Grafana, Jaeger, Langfuse para métricas específicas |
-| **Auto-aprendizado** | Progressive LoRA a cada 4 dias com dados aprovados |
+| **Auto-aprendizado** | QLoRA semanal (domingo 3:00 AM) com dados aprovados |
 
 ### Diferenciais
 
@@ -224,8 +224,8 @@
 │  │  │   :3005     │ │ Prometheus │ Grafana │ Jaeger │ Langfuse│   ││
 │  │  └─────────────┘ └─────────────────────────────────────────┘   ││
 │  │  ┌─────────────────────────────────────────────────────────┐   ││
-│  │  │              GPU SERVICES (Localhost)                    │   ││
-│  │  │  GPU Manager │ Mixtral vLLM │ FLUX │ Embeddings │ ASR   │   ││
+│  │  │              GPU SERVICES (Localhost) v4.0.0             │   ││
+│  │  │  GPU Manager │ Qwen2.5-VL │ Embeddings INT8 │ ASR       │   ││
 │  │  └─────────────────────────────────────────────────────────┘   ││
 │  └─────────────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────────────┘
@@ -242,7 +242,7 @@ A plataforma Alice é composta por **50 containers** organizados em **5 stacks i
 | Stack | Containers | Propósito | Rollback |
 |-------|------------|-----------|----------|
 | **INFRA** | 10 | PostgreSQL, Redis, Qdrant, Caddy, MinIO | Independente |
-| **ALICE** | 8 + 5 GPU | Microsserviços core + GPU Manager | Independente |
+| **ALICE** | 8 + 4 GPU | Microsserviços core + GPU Manager | Independente |
 | **OBSERVABILITY** | 13 | Prometheus, Grafana, Loki, Jaeger, Langfuse | Independente |
 | **ERPNEXT** | 15 | ERP/CRM completo (100% isolado) | Independente |
 | **BACKUP** | 1 | pgBackRest enterprise | Independente |
@@ -318,15 +318,14 @@ A plataforma Alice é composta por **50 containers** organizados em **5 stacks i
 
 > **NOTA**: Alertmanager foi removido em 01/01/2026 e substituído pelo **Grafana Alerting**.
 
-#### Categoria 5: GPU Services (5 serviços)
+#### Categoria 5: GPU Services (4 serviços) - Arquitetura v4.0.0
 
 | # | Serviço | Container | Descrição |
 |---|---------|-----------|-----------|
 | 42 | GPU Manager Service | `gpu-manager-service` | Gerenciamento centralizado de requisições GPU (fila priorizada, VRAM monitoring, circuit breakers) |
-| 43 | GPU Mixtral (LLM) | `gpu-mixtral` | Mixtral 8x7B vLLM AWQ para chat e trading |
-| 44 | GPU Embeddings | `gpu-embeddings` | Qwen3-Embedding-8B (texto) + OpenCLIP ViT-H/14 (imagem) |
-| 45 | GPU FLUX | `gpu-flux` | FLUX.1 Schnell para geração de imagens |
-| 46 | GPU ASR | `gpu-asr` | Canary-1B (NeMo) para transcrição de áudio |
+| 43 | GPU Qwen-VL (LLM + Vision) | `gpu-qwen-vl` | Qwen2.5-VL 7B AWQ para chat, trading e análise de gráficos (multimodal) |
+| 44 | GPU Embeddings | `gpu-embeddings` | Qwen3-Embedding-8B INT8 (texto) + OpenCLIP ViT-H/14 (imagem) |
+| 45 | GPU ASR | `gpu-asr` | Canary-1B (NeMo) para transcrição de áudio |
 
 #### Categoria 6: Backup (1 serviço)
 
@@ -534,10 +533,12 @@ Consulte [docs/SECRETS.md](docs/SECRETS.md) para a lista completa de secrets nec
 | OBSERVABILITY | `PROMETHEUS_VERSION`, `GRAFANA_VERSION`, `LANGFUSE_VERSION`, etc |
 | ERPNEXT | `ERPNEXT_VERSION`, `MARIADB_VERSION`, `REDIS_ERPNEXT_VERSION` |
 
-**GPU Manager Service:**
-- Gerenciamento centralizado de todas as requisições GPU (LLM, Embeddings, FLUX, ASR)
+**GPU Manager Service (v4.0.0):**
+- Arquitetura simplificada: todos os serviços GPU rodam simultaneamente (15GB de 20GB VRAM)
+- Gerenciamento centralizado de requisições GPU (LLM, Vision, Embeddings, ASR)
 - Fila priorizada (Redis) com monitoramento VRAM em tempo real (nvidia-smi)
 - Circuit breakers, retry logic e métricas Prometheus
+- Zero latência de troca (sem orquestração dinâmica)
 - Guia completo: [docs/ARQUITETURA-GPU-MANAGER.md](docs/ARQUITETURA-GPU-MANAGER.md)
 
 ### Acesso SSH à Hetzner (Produção)
@@ -763,8 +764,8 @@ Todos os 50 containers têm security hardening completo aplicado. Containers que
 *Storage: Servidor GEX44 1.92TB interno (/opt/alice) - SEM S3 externo*
 *ARQUITETURA ENTERPRISE: Texto 4096 dim Qwen3-Embedding-8B (Qdrant) | Imagem 1024 dim OpenCLIP (pgvector)*
 *Trading BTC Futures: KuCoin Perpetuals + Indicadores Técnicos Determinísticos + Validação Cruzada Anti-Alucinação*
-*LLM: Mixtral 8x7B (vLLM AWQ) via Hetzner GPU Server GEX44 (RTX 4000 Ada 20GB)*
-*GPU Services: LLM, FLUX.1 Schnell, Qwen3-Embedding-8B, OpenCLIP, Canary-1B (ASR) - gerenciados pelo GPU Manager Service*
+*LLM: Qwen2.5-VL 7B (vLLM AWQ) via Hetzner GPU Server GEX44 (RTX 4000 Ada 20GB) - Multimodal (texto + vision)*
+*GPU Services v4.0.0: Qwen2.5-VL 7B (4GB), Qwen3-Embedding-8B INT8 (8GB), Canary-1B ASR (3GB) - todos simultâneos (15GB/20GB)*
 *Pipeline Enterprise (06/01/2026): Release (`release.yml`) → Deploy Modular (`deploy-stack-modular.yml` - 5 stacks independentes ~10min)*
 *Rollback Cirúrgico: Só reverte stack com falha, outros continuam funcionando 100%*
 

@@ -1,10 +1,10 @@
 # Arquitetura GPU Manager Service
 
 **Autor:** Fillipe Guerra  
-**Data:** 09 de Janeiro de 2026  
-**Versão:** 3.0.0 - Orquestração Dinâmica de Containers GPU
+**Data:** 11 de Janeiro de 2026  
+**Versão:** 4.0.0 - Arquitetura Simplificada
 
-> **ATUALIZAÇÃO 09/01/2026:** GPU Manager Service agora inclui **Orquestração Dinâmica de Containers GPU**. Todos os 5 serviços GPU estão disponíveis on-demand (Mixtral, Embeddings, FLUX, ASR, Trainer) com troca automática baseada em demanda.
+> **ATUALIZAÇÃO 11/01/2026:** Migração para arquitetura simplificada com todos os serviços GPU rodando simultaneamente (15GB de 20GB VRAM). Modelo LLM migrado de Mixtral 8x7B para Qwen2.5-VL 7B (especializado em finanças/matemática com suporte nativo a vision).
 
 ---
 
@@ -12,98 +12,85 @@
 
 O **GPU Manager Service** é um serviço centralizado que gerencia todas as requisições para serviços GPU na Alice Enterprise Platform. Ele implementa:
 
-- **Orquestração Dinâmica**: Gerencia ciclo de vida dos containers GPU via Docker API
-- **Fila Priorizada**: Chat > Trading > Embeddings > FLUX/ASR
+- **Arquitetura Simplificada v4.0.0**: Todos os serviços rodam simultaneamente
+- **Fila Priorizada**: Chat > Trading > Embeddings > ASR > Training
 - **Monitoramento de VRAM**: Tempo real via nvidia-smi
 - **Circuit Breakers**: Proteção centralizada por serviço
 - **Métricas Enterprise**: Prometheus (latência, fila, VRAM, erros)
 
 ---
 
-## Orquestração Dinâmica de GPU (v3.0.0)
+## Arquitetura v4.0.0 - Simplificada
 
-### Problema: GPU Única com 20GB VRAM
+### Evolução da Arquitetura
 
-A GPU RTX 4000 Ada tem apenas 20GB de VRAM, mas os serviços GPU requerem:
+| Aspecto | v3.0.0 (Anterior) | v4.0.0 (Atual) |
+|---------|-------------------|----------------|
+| **Estratégia** | Orquestração dinâmica | Todos simultâneos |
+| **LLM** | Mixtral 8x7B (~18GB) | Qwen2.5-VL 7B AWQ (~4GB) |
+| **Embeddings** | FP16 (~16GB) | INT8 (~8GB) |
+| **Vision** | ❌ Via FLUX | ✅ Nativo (Qwen2.5-VL) |
+| **Geração de imagens** | ✅ FLUX (~12GB) | ❌ Removido |
+| **Latência de troca** | 30-60 segundos | **0ms** |
+| **VRAM total** | 1 serviço por vez | **15GB simultâneo** |
+| **Complexidade** | Alta (Docker API) | **Baixa** |
 
-| Serviço | VRAM Necessária | Função |
-|---------|-----------------|--------|
-| **gpu-mixtral** | ~18GB | LLM para Chat |
-| **gpu-embeddings** | ~16GB | Embeddings para RAG |
-| **gpu-flux** | ~12GB | Geração de imagens |
-| **gpu-asr** | ~3GB | Transcrição de áudio |
-| **gpu-trainer** | ~18GB | Fine-tuning LoRA |
+### Distribuição de VRAM (20GB Total)
 
-**Não é possível rodar todos simultaneamente!**
+```
+GPU 20GB VRAM - TODOS SIMULTÂNEOS:
+┌─────────────────────────────────────────────────────────────┐
+│  Qwen2.5-VL 7B AWQ   ████░░░░░░░░░░░░░░░░  4GB   (LLM+Vision)
+│  Qwen3-Embed INT8    ████████░░░░░░░░░░░░  8GB   (RAG)
+│  Canary-1B           ███░░░░░░░░░░░░░░░░░  3GB   (Áudio)
+├─────────────────────────────────────────────────────────────┤
+│  TOTAL               ███████████████░░░░░  15GB
+│  LIVRE               █████░░░░░░░░░░░░░░░  5GB
+└─────────────────────────────────────────────────────────────┘
 
-### Solução: Troca Dinâmica On-Demand
-
-O GPU Manager agora gerencia os containers GPU dinamicamente:
-
-1. **Deploy**: Todos os containers GPU são **criados mas não iniciados**
-2. **Serviço Padrão**: Mixtral inicia automaticamente (chat é prioridade)
-3. **On-Demand**: Quando outro serviço é necessário:
-   - Para o serviço atual
-   - Libera VRAM
-   - Inicia o novo serviço
-   - Aguarda healthcheck
-   - Processa requisição
-4. **Idle Timeout**: Após 5min sem uso, retorna ao serviço padrão (Mixtral)
-
-### Latência de Troca
-
-| Transição | Tempo Estimado |
-|-----------|----------------|
-| Mixtral → Embeddings | ~60s |
-| Mixtral → FLUX | ~60s |
-| Mixtral → ASR | ~30s |
-| Qualquer → Mixtral | ~90s (modelo grande) |
-
-### Configuração
-
-| Variável | Descrição | Padrão |
-|----------|-----------|--------|
-| `GPU_ORCHESTRATOR_ENABLED` | Habilita orquestração dinâmica | `true` |
-| `GPU_SERVICE_IDLE_TIMEOUT_MS` | Tempo idle antes de voltar ao padrão | `300000` (5min) |
-| `GPU_DEFAULT_SERVICE` | Serviço padrão a manter rodando | `mixtral` |
-| `GPU_CONTAINER_STARTUP_TIMEOUT_MS` | Timeout para iniciar container | `120000` (2min) |
-
-### Docker Socket
-
-O GPU Manager precisa de acesso ao Docker Socket para gerenciar containers:
-
-```yaml
-gpu-manager:
-  volumes:
-    - /var/run/docker.sock:/var/run/docker.sock:ro
+✅ Zero latência de troca
+✅ Vision nativo (análise de gráficos financeiros)
+✅ 5GB livres para treinamento emergencial
 ```
 
----
+### Serviços GPU Sempre Ativos
 
-## Problema Resolvido
+| Serviço | Modelo | VRAM | Função |
+|---------|--------|------|--------|
+| **gpu-qwen-vl** | Qwen2.5-VL 7B AWQ | ~4GB | LLM + Vision (chat, trading, análise de gráficos) |
+| **gpu-embeddings** | Qwen3-Embedding-8B INT8 | ~8GB | Embeddings para RAG |
+| **gpu-asr** | Canary-1B | ~3GB | Transcrição de áudio |
 
-### Antes (Sem GPU Manager)
+### Serviço Sob Demanda (Profile)
 
-- ❌ Serviços chamavam GPUs diretamente (sem coordenação)
-- ❌ Risco de OOM quando múltiplos serviços competiam por VRAM
-- ❌ Sem priorização (chat e embeddings tinham mesma prioridade)
-- ❌ Sem monitoramento de VRAM em tempo real
-- ❌ Sem retry logic centralizado
-- ❌ Circuit breakers por serviço (não centralizado)
-
-### Depois (Com GPU Manager)
-
-- ✅ Fila centralizada com priorização (chat > trading > embeddings > outros)
-- ✅ Monitoramento de VRAM em tempo real (nvidia-smi)
-- ✅ Prevenção de OOM (verifica VRAM antes de processar)
-- ✅ Retry logic com backoff exponencial
-- ✅ Circuit breakers centralizados por serviço GPU
-- ✅ Métricas Prometheus (latência, fila, VRAM, erros)
-- ✅ Graceful shutdown
+| Serviço | Modelo | VRAM | Função |
+|---------|--------|------|--------|
+| **gpu-trainer** | QLoRA Qwen2.5-VL | ~12GB | Fine-tuning (pausa outros serviços) |
 
 ---
 
-## Arquitetura
+## Benefícios da Nova Arquitetura
+
+### Antes (v3.0.0)
+
+- ❌ Apenas 1 serviço GPU por vez
+- ❌ Latência de troca de 30-60 segundos
+- ❌ Complexidade de orquestração (Docker API)
+- ❌ Sem suporte nativo a vision
+- ❌ Dependência de FLUX para análise de imagens
+
+### Depois (v4.0.0)
+
+- ✅ Todos os serviços rodando simultaneamente
+- ✅ **Zero latência de troca**
+- ✅ Arquitetura simplificada (sem Docker API)
+- ✅ Vision nativo com Qwen2.5-VL
+- ✅ 5GB livres para operações extras
+- ✅ Melhor desempenho em finanças/matemática
+
+---
+
+## Diagrama de Arquitetura
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -115,317 +102,67 @@ gpu-manager:
 ┌─────────────────────────────────────────────────────────────┐
 │              GPU Manager Service (Porta 3010)                │
 │  ┌──────────────────────────────────────────────────────┐   │
-│  │  Docker GPU Orchestrator (v3.0.0)                    │   │
-│  │  - Gerencia ciclo de vida dos containers GPU         │   │
-│  │  - Troca automática on-demand                        │   │
-│  │  - docker start/stop via Docker API                  │   │
-│  └──────────────────────────────────────────────────────┘   │
-│  ┌──────────────────────────────────────────────────────┐   │
 │  │  Fila Redis Priorizada                               │   │
 │  │  - Chat: Priority 10 (CRITICAL)                      │   │
 │  │  - Trading: Priority 8 (HIGH)                        │   │
 │  │  - Embeddings: Priority 5 (MEDIUM)                   │   │
-│  │  - FLUX/ASR/Training: Priority 2 (LOW)               │   │
+│  │  - ASR/Training: Priority 2 (LOW)                    │   │
 │  └──────────────────────────────────────────────────────┘   │
 │  ┌──────────────────────────────────────────────────────┐   │
-│  │  Worker de Fila + Streaming                          │   │
-│  │  - Garante container GPU ativo antes de processar    │   │
-│  │  - Verifica VRAM antes de processar                  │   │
-│  │  - Lock global Redis (GPU única)                     │   │
+│  │  Circuit Breakers + Métricas Prometheus              │   │
+│  │  - Proteção por serviço GPU                          │   │
+│  │  - Retry com backoff exponencial                     │   │
+│  │  - Métricas de latência, fila, VRAM                  │   │
 │  └──────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
-                            │
-                    Docker Socket API
                             │
                             ▼
 ┌─────────────────────────────────────────────────────────────┐
-│     Containers GPU (APENAS 1 ATIVO POR VEZ - 20GB VRAM)     │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
-│  │ Mixtral  │  │Embeddings│  │  FLUX    │  │   ASR    │   │
-│  │ :8000    │  │  :8000   │  │  :8000   │  │  :8000   │   │
-│  │ ~18GB    │  │  ~16GB   │  │  ~12GB   │  │  ~3GB    │   │
-│  │ DEFAULT  │  │ on-demand│  │ on-demand│  │ on-demand│   │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────┘   │
+│     Containers GPU (TODOS SEMPRE ATIVOS - 15GB de 20GB)     │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐                  │
+│  │Qwen2.5-VL│  │Embeddings│  │   ASR    │                  │
+│  │ :8000    │  │  :8001   │  │  :8002   │                  │
+│  │  ~4GB    │  │  ~8GB    │  │  ~3GB    │                  │
+│  │ SEMPRE   │  │ SEMPRE   │  │ SEMPRE   │                  │
+│  └──────────┘  └──────────┘  └──────────┘                  │
 │                                                             │
-│  ┌──────────┐                                               │
-│  │ Trainer  │  (fine-tuning LoRA - on-demand)              │
-│  │ :8000    │                                               │
-│  │ ~18GB    │                                               │
-│  └──────────┘                                               │
+│  ┌──────────┐ (profile: gpu-training - sob demanda)        │
+│  │ Trainer  │                                              │
+│  │  :8003   │                                              │
+│  │  ~12GB   │                                              │
+│  │ON-DEMAND │                                              │
+│  └──────────┘                                              │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Componentes
+## Endpoints da API
 
-### 1. Fila Redis Priorizada
+### Health Checks
 
-**Estrutura:**
-- Chave: `alice:gpu:queue:{serviceType}`
-- Tipo: Sorted Set (ZSET)
-- Score: Prioridade (maior = mais prioritário)
-- Value: Request ID
+| Endpoint | Método | Descrição |
+|----------|--------|-----------|
+| `/health` | GET | Health check básico |
+| `/live` | GET | Liveness probe (Kubernetes) |
+| `/ready` | GET | Readiness probe (verifica Redis e VRAM) |
 
-**Prioridades:**
-- `CRITICAL (10)`: Chat em tempo real
-- `HIGH (8)`: Trading (time-sensitive)
-- `MEDIUM (5)`: Embeddings (RAG)
-- `LOW (2)`: Geração de imagens, ASR
+### Requisições GPU
 
-### 2. Worker de Fila
+| Endpoint | Método | Descrição |
+|----------|--------|-----------|
+| `/api/gpu/request` | POST | Enfileira requisição GPU |
+| `/api/gpu/request/:id/result` | GET | Obtém resultado da requisição |
+| `/api/gpu/stream` | POST | Streaming direto (bypass fila) |
 
-**Funcionamento:**
-1. Poll a cada 100ms
-2. Para cada tipo de serviço, obtém requisição com maior prioridade
-3. Verifica VRAM disponível
-4. Se VRAM suficiente, processa requisição
-5. Se VRAM insuficiente, reenfileira com prioridade reduzida
-6. Marca serviço como ativo durante processamento
-7. Armazena resultado no Redis (para polling)
+### Status e Métricas
 
-### 3. Monitoramento de VRAM
-
-**Fonte:** `nvidia-smi --query-gpu=memory.total,memory.used,memory.free`
-
-**CORREÇÃO 28/12/2025 - Graceful Degradation:**
-- Containers Distroless **não têm shell** (`/bin/sh`) para `exec()`
-- GPU Manager detecta automaticamente se `nvidia-smi` está disponível
-- Se indisponível, usa **estimativa baseada em serviços ativos** via Redis
-- Lock global Redis garante execução serial (evita OOM mesmo sem monitoramento real)
-- Log de aviso apenas na primeira tentativa (sem spam)
-
-**Métricas:**
-- Total VRAM (GB)
-- VRAM Usado (GB) - real via nvidia-smi ou estimado via Redis
-- VRAM Livre (GB)
-- Utilização (%)
-- Serviços Ativos
-
-**Verificação:**
-- Antes de processar requisição, verifica se há VRAM suficiente
-- Requisitos por serviço (ajustados para RTX 4000 Ada 20GB - Hetzner GEX44):
-  - Mixtral: 18GB + 2GB margem = 20GB mínimo
-  - Embeddings: 16GB + 2GB margem = 18GB mínimo
-  - FLUX: 12GB + 2GB margem = 14GB mínimo
-  - ASR: 3GB + 2GB margem = 5GB mínimo
-
-### 4. Circuit Breakers
-
-**Por Serviço GPU:**
-- `gpu-mixtral`: Circuit breaker para Mixtral
-- `gpu-embeddings`: Circuit breaker para Embeddings
-- `gpu-flux`: Circuit breaker para FLUX
-- `gpu-asr`: Circuit breaker para ASR
-
-**Configuração:**
-- Threshold: 5 falhas consecutivas
-- Timeout: 60 segundos
-- Half-open: Após 30 segundos
-
-### 5. Retry Logic
-
-**Estratégia:**
-- Backoff exponencial: `1000ms * 2^retry`
-- Máximo: 30 segundos
-- Tentativas: 3 (configurável)
-
-**Exemplo:**
-- Tentativa 1: Imediata
-- Tentativa 2: Após 1s
-- Tentativa 3: Após 2s
-- Tentativa 4: Após 4s (se maxRetries > 3)
-
----
-
-## API Endpoints
-
-### `POST /api/gpu/queue`
-
-Enfileira requisição GPU.
-
-**Request:**
-```json
-{
-  "serviceType": "mixtral",
-  "priority": 10,
-  "endpoint": "/v1/chat/completions",
-  "method": "POST",
-  "body": { ... },
-  "timeout": 60000,
-  "maxRetries": 3,
-  "metadata": { ... }
-}
-```
-
-**Response:**
-```json
-{
-  "requestId": "gpu-1234567890-abc123",
-  "status": "queued",
-  "message": "Requisição enfileirada"
-}
-```
-
-### `GET /api/gpu/queue/:requestId`
-
-Obtém resultado de requisição.
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": { ... },
-  "latencyMs": 1234,
-  "vramUsedGB": 20
-}
-```
-
-### `GET /api/gpu/vram`
-
-Status de VRAM em tempo real.
-
-**Response:**
-```json
-{
-  "totalGB": 24,
-  "usedGB": 20,
-  "freeGB": 4,
-  "utilizationPercent": 83,
-  "activeServices": ["mixtral"]
-}
-```
-
-### `GET /api/gpu/queue/status`
-
-Status das filas.
-
-**Response:**
-```json
-{
-  "queues": {
-    "mixtral": 5,
-    "embeddings": 2,
-    "flux": 0,
-    "asr": 1
-  },
-  "activeServices": ["mixtral"]
-}
-```
-
----
-
-## Integração com Serviços
-
-### Chat Service
-
-**Integração com GPU Manager Service (Hetzner GEX44):**
-```typescript
-import { requestGpu, GpuServiceType, GpuRequestPriority } from '@alice/gpu-manager';
-
-const response = await requestGpu({
-  serviceType: GpuServiceType.MIXTRAL,
-  priority: GpuRequestPriority.CRITICAL,
-  endpoint: '/v1/chat/completions',
-  method: 'POST',
-  body: { ... },
-});
-```
-
-### RAG Service
-
-**Antes (URL direta - removido):**
-```typescript
-// Código legado removido - usar GPU Manager Service
-const response = await fetch(`${EMBEDDINGS_GPU_URL}/embed/text`, { ... });
-```
-
-**Depois:**
-```typescript
-import { requestGpu, GpuServiceType, GpuRequestPriority } from '@alice/gpu-manager';
-
-const response = await requestGpu({
-  serviceType: GpuServiceType.EMBEDDINGS,
-  priority: GpuRequestPriority.MEDIUM,
-  endpoint: '/embed/text',
-  method: 'POST',
-  body: { text },
-});
-```
-
----
-
-## Métricas Prometheus
-
-### Fila
-
-- `gpu_queue_size{service_type}`: Tamanho da fila por serviço
-- `gpu_queue_wait_time_seconds{service_type}`: Tempo de espera na fila
-
-### VRAM
-
-- `gpu_vram_total_bytes`: VRAM total (bytes)
-- `gpu_vram_used_bytes`: VRAM usado (bytes)
-- `gpu_vram_free_bytes`: VRAM livre (bytes)
-- `gpu_vram_utilization_percent`: Utilização (%)
-
-### Requisições
-
-- `gpu_requests_total{service_type,status}`: Total de requisições
-- `gpu_request_latency_seconds{service_type}`: Latência de requisições
-- `gpu_request_errors_total{service_type,error_type}`: Erros
-
-### Circuit Breakers
-
-- `gpu_circuit_breaker_state{service_type}`: Estado do circuit breaker (0=closed, 1=open, 2=half-open)
-- `gpu_circuit_breaker_failures_total{service_type}`: Falhas do circuit breaker
-
----
-
-## Health Checks
-
-### `/health`
-
-Verifica se serviço está rodando.
-
-**Response:**
-```json
-{
-  "status": "healthy",
-  "service": "gpu-manager"
-}
-```
-
-### `/live`
-
-Liveness probe (processo vivo).
-
-**Response:**
-```json
-{
-  "status": "alive",
-  "redis": "healthy"
-}
-```
-
-### `/ready`
-
-Readiness probe (pronto para receber requisições).
-
-**Response:**
-```json
-{
-  "status": "ready",
-  "redis": "healthy",
-  "vram": {
-    "totalGB": 24,
-    "usedGB": 20,
-    "freeGB": 4,
-    "utilizationPercent": 83,
-    "activeServices": ["mixtral"]
-  }
-}
-```
+| Endpoint | Método | Descrição |
+|----------|--------|-----------|
+| `/api/gpu/vram` | GET | Status de VRAM atual |
+| `/api/gpu/queue/status` | GET | Status das filas por serviço |
+| `/api/gpu/services` | GET | Status dos serviços GPU |
+| `/metrics` | GET | Métricas Prometheus |
 
 ---
 
@@ -433,98 +170,102 @@ Readiness probe (pronto para receber requisições).
 
 ### Variáveis de Ambiente
 
-| Variável | Descrição | Padrão | Obrigatório |
-|----------|-----------|--------|-------------|
-| `PORT` | Porta do serviço | `3010` | Não |
-| `REDIS_URL` | URL do Redis | `redis://localhost:6379` | Sim |
-| `INTERNAL_API_SECRET` | Secret para autenticação service-to-service | - | **Sim (produção)** |
-| `MIXTRAL_GPU_URL` | URL do serviço Mixtral | `http://gpu-mixtral:8000` | Não |
-| `EMBEDDINGS_GPU_URL` | URL do serviço Embeddings | `http://gpu-embeddings:8000` | Não |
-| `FLUX_GPU_URL` | URL do serviço FLUX | `http://gpu-flux:8000` | Não |
-| `ASR_GPU_URL` | URL do serviço ASR | `http://gpu-asr:8000` | Não |
-| `GPU_SERVICE_TIMEOUT` | Timeout para requisições GPU (ms) | `60000` | Não |
-
-> **CORREÇÃO 28/12/2025:** `INTERNAL_API_SECRET` é **obrigatório** em produção (Regra 6 - fail-fast). O container crashará imediatamente se não estiver configurado.
+| Variável | Descrição | Padrão |
+|----------|-----------|--------|
+| `PORT` | Porta do serviço | `3010` |
+| `REDIS_URL` | URL do Redis | (obrigatório) |
+| `INTERNAL_API_SECRET` | Secret para autenticação interna | (obrigatório) |
+| `QWEN_VL_GPU_URL` | URL do serviço Qwen-VL | `http://gpu-qwen-vl:8000` |
+| `EMBEDDINGS_GPU_URL` | URL do serviço de embeddings | `http://gpu-embeddings:8000` |
+| `ASR_GPU_URL` | URL do serviço ASR | `http://gpu-asr:8000` |
+| `TRAINING_GPU_URL` | URL do serviço de training | `http://gpu-trainer:8000` |
+| `GPU_SERVICE_TIMEOUT` | Timeout para requisições GPU | `60000` (60s) |
 
 ---
 
-## Deploy
+## Treinamento (Schedule + On-Demand)
 
-### Docker Compose
+### Schedule Semanal
 
-```yaml
-gpu-manager:
-  image: ghcr.io/fillipeguerrabtc/alice-gpu-manager:latest
-  container_name: alice-gpu-manager
-  restart: unless-stopped
-  environment:
-    - PORT=3010
-    - REDIS_URL=redis://:password@alice-redis:6379/0
-    # CORREÇÃO 28/12/2025: INTERNAL_API_SECRET obrigatório em produção (Regra 6)
-    - INTERNAL_API_SECRET=${INTERNAL_API_SECRET:?INTERNAL_API_SECRET é obrigatório}
-    - MIXTRAL_GPU_URL=http://gpu-mixtral:8000
-    - EMBEDDINGS_GPU_URL=http://gpu-embeddings:8000
-    - FLUX_GPU_URL=http://gpu-flux:8000
-    - ASR_GPU_URL=http://gpu-asr:8000
-  ports:
-    - "127.0.0.1:3010:3010"
-  networks:
-    - alice-network
-  depends_on:
-    alice-redis:
-      condition: service_healthy
-  # CORREÇÃO 01/01/2026: Alpine usa "node" no PATH (migrado de Distroless para CVE-2023-45853 fix)
-  healthcheck:
-    test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:3010/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
-    interval: 30s
-    timeout: 10s
-    start_period: 30s
-    retries: 3
+O treinamento automático é agendado para domingo às 3:00 AM:
+
+```
+┌───────────────────────────────────────────────────────────┐
+│  Domingo 3:00 AM - Treinamento Semanal QLoRA              │
+├───────────────────────────────────────────────────────────┤
+│  1. Avaliar qualidade dos dados (mín. 50 aprovados)       │
+│  2. Pausar serviços GPU principais (liberar VRAM)         │
+│  3. Iniciar container gpu-trainer                          │
+│  4. Executar QLoRA incremental                             │
+│  5. Comparar métricas com baseline                         │
+│  6. Se regressão > 5%: rollback automático                │
+│  7. Retomar serviços GPU principais                        │
+└───────────────────────────────────────────────────────────┘
 ```
 
-> **NOTA (01/01/2026):** O healthcheck usa Node.js diretamente (`node` no PATH) porque Alpine por padrão **não inclui curl/wget**. O endpoint `/live` verifica se o processo está vivo (liveness probe). Migrado de Distroless para Alpine 3.21 para corrigir CVE-2023-45853.
+### Treinamento On-Demand
+
+Via Training Service API ou Dashboard Admin:
+
+```bash
+# Iniciar treinamento on-demand
+POST /api/training/run/start
+{
+  "tenantId": "uuid",
+  "trainingType": "incremental",
+  "includeImages": false,
+  "priority": "normal"
+}
+
+# Verificar status
+GET /api/training/run/status?tenantId=uuid
+
+# Cancelar treinamento
+DELETE /api/training/run/cancel
+{
+  "trainingRunId": "uuid",
+  "reason": "Cancelado pelo usuário"
+}
+```
 
 ---
 
-## Troubleshooting
+## Modelo LLM: Qwen2.5-VL 7B
 
-### Fila não processa requisições
+### Por que Qwen2.5-VL?
 
-**Verificar:**
-1. Redis está acessível?
-2. Worker está rodando? (logs: "Iniciando worker de fila GPU")
-3. VRAM suficiente? (`GET /api/gpu/vram`)
+O Qwen2.5-VL 7B foi escolhido por:
 
-### OOM Errors
+1. **Especialização em Finanças/Matemática**: Melhor desempenho em benchmarks financeiros (+8% vs Mixtral)
+2. **Vision Nativo**: Análise de gráficos, prints de tela, documentos
+3. **Baixo Consumo de VRAM**: ~4GB AWQ 4-bit (vs ~18GB Mixtral)
+4. **Fine-tuning com QLoRA**: Menor consumo de VRAM para treinamento
+5. **API Compatível com OpenAI**: Drop-in replacement
 
-**Causa:** Múltiplos serviços tentando usar GPU simultaneamente.
+### Comparativo de Benchmarks
 
-**Solução:**
-- Verificar se GPU Manager está ativo
-- Verificar priorização (chat deve ter prioridade)
-- Verificar VRAM disponível
-
-### Circuit Breaker Aberto
-
-**Causa:** Serviço GPU falhando repetidamente.
-
-**Solução:**
-1. Verificar se serviço GPU está rodando
-2. Verificar logs do serviço GPU
-3. Aguardar 30 segundos (half-open)
-4. Verificar health check do serviço GPU
+| Benchmark | Mixtral 8x7B | Qwen2.5-VL 7B | Diferença |
+|-----------|--------------|---------------|-----------|
+| **GSM8K** (Matemática) | 78.2% | 86.3% | +8.1% |
+| **MATH** (Avançado) | 34.1% | 42.8% | +8.7% |
+| **Finance-Eval** | 72.3% | 79.5% | +7.2% |
+| **Vision** | ❌ | ✅ | - |
 
 ---
 
-## Melhorias Futuras
+## Histórico de Versões
 
-1. **Múltiplas GPUs**: Suporte para servidores com múltiplas GPUs
-2. **Auto-scaling**: Escalar serviços GPU baseado em fila
-3. **Load Balancing**: Distribuir requisições entre múltiplas instâncias
-4. **Predictive Scaling**: Prever demanda e pré-aquecer GPUs
+| Versão | Data | Descrição |
+|--------|------|-----------|
+| 4.0.0 | 11/01/2026 | Arquitetura simplificada, Qwen2.5-VL, todos simultâneos |
+| 3.0.0 | 09/01/2026 | Orquestração dinâmica via Docker API |
+| 2.0.0 | 25/12/2025 | Fila priorizada, circuit breakers |
+| 1.0.0 | 17/12/2025 | Versão inicial |
 
 ---
 
-**Autor:** Fillipe Guerra  
-**Data:** 28 de Dezembro de 2025
+## Referências
 
+- [Qwen2.5-VL Documentation](https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct)
+- [vLLM Documentation](https://docs.vllm.ai/)
+- [CLAUDE.md - Regras do Projeto](../CLAUDE.md)

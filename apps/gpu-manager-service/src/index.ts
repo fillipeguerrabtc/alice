@@ -4,7 +4,15 @@
  * Serviço centralizado de gerenciamento de requisições GPU com fila priorizada,
  * monitoramento de VRAM, circuit breakers e métricas enterprise.
  * 
- * ARQUITETURA ENTERPRISE (25/12/2025):
+ * ARQUITETURA ENTERPRISE v4.0.0 (11/01/2026) - Arquitetura Simplificada:
+ * - Todos os serviços GPU rodam simultaneamente (15GB de 20GB)
+ * - Qwen2.5-VL 7B AWQ (4GB) - LLM + Vision (substitui Mixtral)
+ * - Qwen3-Embedding-8B INT8 (8GB) - RAG
+ * - Canary-1B (3GB) - ASR
+ * - Zero latência de troca (todos sempre ativos)
+ * - Treinamento sob demanda (pausa serviços temporariamente)
+ * 
+ * Funcionalidades mantidas:
  * - Fila Redis com priorização (chat > trading > embeddings > outros)
  * - Monitoramento de VRAM em tempo real (nvidia-smi)
  * - Circuit breakers por serviço GPU
@@ -13,14 +21,8 @@
  * - Graceful shutdown
  * - Health checks enterprise
  * 
- * ARQUITETURA ENTERPRISE (09/01/2026) - Orquestração Dinâmica:
- * - GPU Manager gerencia ciclo de vida dos containers GPU via Docker API
- * - Apenas 1 serviço GPU pesado por vez (VRAM 20GB compartilhada)
- * - Troca automática on-demand: Chat→Mixtral, RAG→Embeddings, Imagens→FLUX
- * - Todos os serviços GPU disponíveis: Mixtral, Embeddings, FLUX, ASR, Training
- * 
  * Autor: Fillipe Guerra
- * Data: 25 de Dezembro de 2025
+ * Data: 11 de Janeiro de 2026
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
@@ -56,16 +58,6 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
-
-// ARQUITETURA ENTERPRISE (09/01/2026): Orquestração dinâmica de containers GPU
-import {
-  initializeOrchestrator,
-  shutdownOrchestrator,
-  ensureGpuServiceRunning,
-  getGpuServicesStatus,
-  isOrchestratorEnabled,
-  mapServiceTypeToContainer,
-} from './docker-orchestrator.js';
 
 const execAsync = promisify(exec);
 const logger = createLogger('gpu-manager');
@@ -138,31 +130,29 @@ export enum GpuRequestPriority {
 
 /** Tipos de serviços GPU */
 export enum GpuServiceType {
-  MIXTRAL = 'mixtral',           // LLM (Mixtral 8x7B)
-  EMBEDDINGS = 'embeddings',     // Qwen3 + OpenCLIP
-  FLUX = 'flux',                 // Geração de imagens
-  ASR = 'asr',                   // Transcrição de áudio
-  TRAINING = 'training',         // Fine-tuning LoRA (GPU dedicada 20GB - prioridade baixa)
+  QWEN_VL = 'qwen_vl',           // LLM + Vision (Qwen2.5-VL 7B AWQ) - substitui Mixtral
+  EMBEDDINGS = 'embeddings',     // Qwen3-Embedding-8B INT8
+  ASR = 'asr',                   // Transcrição de áudio (Canary-1B)
+  TRAINING = 'training',         // Fine-tuning QLoRA (sob demanda)
 }
 
 /** URLs dos serviços GPU (container names na rede Docker) */
-// BUG FIX 25/12/2025: Defaults devem usar container names, não localhost (não funciona em Docker network)
+// ARQUITETURA v4.0.0 (11/01/2026): Todos os serviços rodam simultaneamente
 const GPU_SERVICE_URLS = {
-  [GpuServiceType.MIXTRAL]: process.env.MIXTRAL_GPU_URL || 'http://gpu-mixtral:8000',
+  [GpuServiceType.QWEN_VL]: process.env.QWEN_VL_GPU_URL || 'http://gpu-qwen-vl:8000',
   [GpuServiceType.EMBEDDINGS]: process.env.EMBEDDINGS_GPU_URL || 'http://gpu-embeddings:8000',
-  [GpuServiceType.FLUX]: process.env.FLUX_GPU_URL || 'http://gpu-flux:8000',
   [GpuServiceType.ASR]: process.env.ASR_GPU_URL || 'http://gpu-asr:8000',
   [GpuServiceType.TRAINING]: process.env.TRAINING_GPU_URL || 'http://gpu-trainer:8000',
 };
 
 /** VRAM necessária por serviço (GB) */
-// BUG FIX 25/12/2025: Ajustado para RTX 4000 Ada (20GB) - Hetzner GEX44
+// ARQUITETURA v4.0.0 (11/01/2026): Todos cabem simultaneamente nos 20GB
+// Total sempre ativo: 4 + 8 + 3 = 15GB (sobram 5GB)
 const VRAM_REQUIREMENTS: Record<GpuServiceType, number> = {
-  [GpuServiceType.MIXTRAL]: 18,      // ~16-18GB (reduzido de 20GB para caber em 20GB com margem)
-  [GpuServiceType.EMBEDDINGS]: 16,   // ~14-16GB (reduzido de 18GB)
-  [GpuServiceType.FLUX]: 12,         // ~10-12GB (reduzido de 14GB)
-  [GpuServiceType.ASR]: 3,           // ~2-4GB (mantido)
-  [GpuServiceType.TRAINING]: 18,     // LoRA/QLoRA Mixtral: alto consumo - executar apenas quando houver VRAM
+  [GpuServiceType.QWEN_VL]: 4,       // Qwen2.5-VL 7B AWQ 4-bit (~4GB)
+  [GpuServiceType.EMBEDDINGS]: 8,    // Qwen3-Embedding-8B INT8 (~8GB)
+  [GpuServiceType.ASR]: 3,           // Canary-1B FP16 (~3GB)
+  [GpuServiceType.TRAINING]: 12,     // QLoRA Qwen2.5-VL (~12GB) - sob demanda, pausa outros
 };
 
 /** VRAM total disponível (20GB para RTX 4000 Ada - Hetzner GEX44) */
@@ -232,20 +222,16 @@ interface VramStatus {
 
 /**
  * Circuit breakers DEVEM proteger as CHAMADAS REAIS aos serviços GPU (não apenas /health).
- * Bug 1: remover breaker.fire() e usar fetch() direto elimina fail-fast/backpressure.
+ * ARQUITETURA v4.0.0: Atualizado para novos serviços (Qwen-VL, sem FLUX)
  */
 const gpuServiceClients = {
-  [GpuServiceType.MIXTRAL]: createProtectedFetch({
-    name: 'gpu-mixtral',
-    ...CIRCUIT_BREAKER_PRESETS.mixtralLLM,
+  [GpuServiceType.QWEN_VL]: createProtectedFetch({
+    name: 'gpu-qwen-vl',
+    ...CIRCUIT_BREAKER_PRESETS.mixtralLLM, // Reutiliza preset de LLM
   }),
   [GpuServiceType.EMBEDDINGS]: createProtectedFetch({
     name: 'gpu-embeddings',
     ...CIRCUIT_BREAKER_PRESETS.embeddingsGPU,
-  }),
-  [GpuServiceType.FLUX]: createProtectedFetch({
-    name: 'gpu-flux',
-    ...CIRCUIT_BREAKER_PRESETS.fluxImageGen,
   }),
   [GpuServiceType.ASR]: createProtectedFetch({
     name: 'gpu-asr',
@@ -253,14 +239,13 @@ const gpuServiceClients = {
   }),
   [GpuServiceType.TRAINING]: createProtectedFetch({
     name: 'gpu-trainer',
-    ...CIRCUIT_BREAKER_PRESETS.gpuManager, // timeout alto, mas slices devem ser curtas (preemptível)
+    ...CIRCUIT_BREAKER_PRESETS.gpuManager, // timeout alto para treinamento
   }),
 } as const;
 
 const protectedFetchByServiceType = {
-  [GpuServiceType.MIXTRAL]: gpuServiceClients[GpuServiceType.MIXTRAL].fetch,
+  [GpuServiceType.QWEN_VL]: gpuServiceClients[GpuServiceType.QWEN_VL].fetch,
   [GpuServiceType.EMBEDDINGS]: gpuServiceClients[GpuServiceType.EMBEDDINGS].fetch,
-  [GpuServiceType.FLUX]: gpuServiceClients[GpuServiceType.FLUX].fetch,
   [GpuServiceType.ASR]: gpuServiceClients[GpuServiceType.ASR].fetch,
   [GpuServiceType.TRAINING]: gpuServiceClients[GpuServiceType.TRAINING].fetch,
 } as const;
@@ -536,10 +521,10 @@ async function markServiceInactive(serviceType: GpuServiceType): Promise<void> {
 /**
  * Processa requisição GPU com retry e circuit breaker
  * 
- * ARQUITETURA ENTERPRISE (09/01/2026): Orquestração dinâmica
- * - Garante que o container GPU necessário está rodando antes de processar
- * - Se outro serviço está ativo, faz troca automática
- * - Latência de troca: ~30-60s (startup do container)
+ * ARQUITETURA v4.0.0 (11/01/2026): Arquitetura Simplificada
+ * - Todos os serviços GPU rodam simultaneamente (15GB de 20GB)
+ * - Zero latência de troca (não há mais orquestração dinâmica)
+ * - Treinamento sob demanda pausa serviços temporariamente
  */
 async function processGpuRequest(request: GpuRequest): Promise<GpuResponse> {
   const startTime = Date.now();
@@ -548,19 +533,7 @@ async function processGpuRequest(request: GpuRequest): Promise<GpuResponse> {
   const protectedFetch = protectedFetchByServiceType[serviceType];
   
   try {
-    // ARQUITETURA ENTERPRISE (09/01/2026): Garantir container GPU rodando
-    if (isOrchestratorEnabled()) {
-      const containerType = mapServiceTypeToContainer(serviceType);
-      if (containerType) {
-        logger.info({ serviceType, containerType, requestId: request.id }, 'Garantindo serviço GPU ativo');
-        const serviceReady = await ensureGpuServiceRunning(containerType);
-        if (!serviceReady) {
-          throw new Error(`Falha ao iniciar serviço GPU: ${containerType}`);
-        }
-        logger.info({ serviceType, containerType, requestId: request.id }, 'Serviço GPU pronto');
-      }
-    }
-
+    // ARQUITETURA v4.0.0: Serviços sempre ativos, sem orquestração dinâmica
     const timeoutMs = request.timeout || GPU_SERVICE_TIMEOUT;
     const response = await protectedFetch(`${url}${request.endpoint}`, {
       method: request.method,
@@ -639,16 +612,17 @@ async function startQueueWorker(): Promise<void> {
   isWorkerRunning = true;
   logger.info('Iniciando worker de fila GPU');
   
-  // ARQUITETURA ENTERPRISE (26/12/2025):
-  // GPU única (VRAM compartilhada) => execução SERIAL com lock global + prioridade global:
-  // 1) MIXTRAL (chat/WhatsApp inferência)
-  // 2) EMBEDDINGS
-  // 3) Demais (ASR/FLUX)
+  // ARQUITETURA v4.0.0 (11/01/2026):
+  // Todos os serviços rodam simultaneamente, mas mantemos priorização na fila
+  // para garantir que requisições críticas (chat) são processadas primeiro
+  // 1) QWEN_VL (chat/trading - maior prioridade)
+  // 2) EMBEDDINGS (RAG)
+  // 3) ASR (transcrição)
+  // 4) TRAINING (sob demanda - menor prioridade)
   const servicePriorityOrder: GpuServiceType[] = [
-    GpuServiceType.MIXTRAL,
+    GpuServiceType.QWEN_VL,
     GpuServiceType.EMBEDDINGS,
     GpuServiceType.ASR,
-    GpuServiceType.FLUX,
     GpuServiceType.TRAINING,
   ];
 
@@ -864,9 +838,7 @@ app.get('/api/gpu/queue/:requestId', requireInternalAuth, asyncHandler(async (re
 }));
 
 // Streaming LLM (bypass fila - proxy direto com verificação de circuit breaker e VRAM)
-// BUG FIX 25/12/2025: Streaming requer proxy direto (não pode usar fila com polling)
-// BUG FIX 25/12/2025: Usar requireInternalAuth ao invés de requireAuth (aceita X-Internal-Api-Secret)
-// ARQUITETURA ENTERPRISE (09/01/2026): Orquestração dinâmica de containers GPU
+// ARQUITETURA v4.0.0 (11/01/2026): Sem orquestração dinâmica, serviço sempre ativo
 app.post('/api/gpu/stream', requireInternalAuth, asyncHandler(async (req: Request, res: Response) => {
   const schema = z.object({
     serviceType: z.nativeEnum(GpuServiceType),
@@ -880,24 +852,12 @@ app.post('/api/gpu/stream', requireInternalAuth, asyncHandler(async (req: Reques
   const body = schema.parse(req.body);
   const serviceType = body.serviceType;
   
-  // Apenas MIXTRAL suporta streaming no momento
-  if (serviceType !== GpuServiceType.MIXTRAL) {
-    return res.status(400).json({ error: 'Streaming suportado apenas para MIXTRAL' });
+  // Apenas QWEN_VL suporta streaming (substitui MIXTRAL)
+  if (serviceType !== GpuServiceType.QWEN_VL) {
+    return res.status(400).json({ error: 'Streaming suportado apenas para QWEN_VL' });
   }
 
-  // ARQUITETURA ENTERPRISE (09/01/2026): Garantir container GPU rodando antes de streaming
-  if (isOrchestratorEnabled()) {
-    const containerType = mapServiceTypeToContainer(serviceType);
-    if (containerType) {
-      logger.info({ serviceType, containerType }, 'Garantindo serviço GPU ativo para streaming');
-      const serviceReady = await ensureGpuServiceRunning(containerType);
-      if (!serviceReady) {
-        return res.status(503).json({ error: `Falha ao iniciar serviço GPU: ${containerType}` });
-      }
-      logger.info({ serviceType, containerType }, 'Serviço GPU pronto para streaming');
-    }
-  }
-  
+  // ARQUITETURA v4.0.0: Serviço sempre ativo, sem orquestração dinâmica
   const url = GPU_SERVICE_URLS[serviceType];
   const protectedFetch = protectedFetchByServiceType[serviceType];
   
@@ -1027,33 +987,32 @@ app.get('/api/gpu/queue/status', requireInternalAuth, asyncHandler(async (req: R
 }));
 
 // ===========================================================================
-// ARQUITETURA ENTERPRISE (09/01/2026): Status dos serviços GPU (Orchestrator)
+// ARQUITETURA v4.0.0 (11/01/2026): Status dos serviços GPU
 // ===========================================================================
-// Endpoint para monitorar estado dos containers GPU gerenciados pelo orchestrator
-// Útil para dashboards, healthchecks externos e debugging
+// Endpoint para monitorar estado dos serviços GPU
+// Todos rodam simultaneamente na nova arquitetura
 app.get('/api/gpu/services', requireInternalAuth, asyncHandler(async (req: Request, res: Response) => {
-  if (!isOrchestratorEnabled()) {
-    return res.json({
-      orchestratorEnabled: false,
-      message: 'GPU Orchestrator desabilitado - containers gerenciados manualmente',
-    });
+  const vramStatus = await getVramStatus();
+  
+  // Na arquitetura v4.0.0, todos os serviços rodam simultaneamente
+  const services: Record<string, { vramGB: number; url: string; status: string }> = {};
+  for (const [type, url] of Object.entries(GPU_SERVICE_URLS)) {
+    services[type] = {
+      vramGB: VRAM_REQUIREMENTS[type as GpuServiceType],
+      url,
+      status: 'always_active', // Todos sempre ativos na v4.0.0
+    };
   }
-
-  const servicesStatus = await getGpuServicesStatus();
   
   res.json({
-    orchestratorEnabled: true,
-    activeService: servicesStatus.activeService,
-    services: servicesStatus.services,
-    state: {
-      lastUsed: servicesStatus.state.lastUsed,
-      isStarting: servicesStatus.state.isStarting,
-      isStopping: servicesStatus.state.isStopping,
-    },
-    config: {
-      idleTimeoutMs: parseInt(process.env.GPU_SERVICE_IDLE_TIMEOUT_MS || '300000', 10),
-      defaultService: process.env.GPU_DEFAULT_SERVICE || 'mixtral',
-    },
+    architecture: 'v4.0.0-simplified',
+    description: 'Todos os serviços GPU rodam simultaneamente (15GB de 20GB)',
+    services,
+    vram: vramStatus,
+    totalVramUsedGB: Object.values(VRAM_REQUIREMENTS)
+      .filter((_, idx) => idx < 3) // Exclui TRAINING do cálculo (sob demanda)
+      .reduce((a, b) => a + b, 0),
+    vramFreeGB: TOTAL_VRAM_GB - 15, // 5GB livres
   });
 }));
 
@@ -1094,15 +1053,9 @@ async function start(): Promise<void> {
     }
     logger.info('Redis inicializado com sucesso');
 
-    // ARQUITETURA ENTERPRISE (09/01/2026): Inicializar GPU Orchestrator
-    // Gerencia ciclo de vida dos containers GPU dinamicamente
-    if (isOrchestratorEnabled()) {
-      logger.info('Inicializando GPU Orchestrator...');
-      await initializeOrchestrator();
-      logger.info('GPU Orchestrator inicializado - troca dinâmica de serviços GPU habilitada');
-    } else {
-      logger.warn('GPU Orchestrator desabilitado - containers GPU devem ser gerenciados manualmente');
-    }
+    // ARQUITETURA v4.0.0 (11/01/2026): Todos os serviços GPU rodam simultaneamente
+    // Não há mais orquestração dinâmica - containers são gerenciados pelo Docker Compose
+    logger.info('Arquitetura GPU v4.0.0 - Todos os serviços rodam simultaneamente (15GB de 20GB)');
     
     // Iniciar worker de fila
     await startQueueWorker();
@@ -1117,10 +1070,6 @@ async function start(): Promise<void> {
       logger.info('Encerrando GPU Manager Service...');
       stopQueueWorker();
       server.close();
-      // ARQUITETURA ENTERPRISE (09/01/2026): Encerrar GPU Orchestrator
-      if (isOrchestratorEnabled()) {
-        await shutdownOrchestrator();
-      }
       // CORREÇÃO 28/12/2025: Fechar conexão Redis no shutdown
       await closeRedisCacheClient();
       logger.info('Conexão Redis encerrada');

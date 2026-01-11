@@ -8,8 +8,13 @@ Serviço de embeddings enterprise:
 Qwen3-Embedding-8B: 8B parâmetros, Apache 2.0, máxima qualidade
 OpenCLIP ViT-H/14: 1024 dim nativos, MIT license
 
+ARQUITETURA v4.0.0 (11/01/2026):
+- Suporte a quantização INT8 para reduzir VRAM de ~16GB para ~8GB
+- Permite rodar simultaneamente com outros serviços GPU
+- Configurável via variável QUANTIZATION=int8
+
 Autor: Fillipe Guerra
-Data: 17 de Dezembro de 2025
+Data: 11 de Janeiro de 2026
 """
 
 import os
@@ -63,22 +68,24 @@ TEXT_EMBEDDING_DIM = int(os.environ.get("TEXT_EMBEDDING_DIM", "4096"))
 IMAGE_MODEL_NAME = os.environ.get("IMAGE_MODEL_NAME", "laion/CLIP-ViT-H-14-laion2B-s32B-b79K")
 IMAGE_EMBEDDING_DIM = int(os.environ.get("IMAGE_EMBEDDING_DIM", "1024"))
 DEVICE = os.environ.get("DEVICE", "cuda" if torch.cuda.is_available() else "cpu")
-# KEEP_WARM_MINUTES removido - GPU dedicada 24/7 (Hetzner GEX44)
+# ARQUITETURA v4.0.0: Suporte a quantização INT8 para reduzir VRAM
+QUANTIZATION = os.environ.get("QUANTIZATION", "fp16")  # fp16, int8, ou auto
 
 # =============================================================================
 # FASTAPI APP
 # =============================================================================
 
 app = FastAPI(
-    title="Alice Embeddings GPU (Enterprise)",
+    title="Alice Embeddings GPU (Enterprise v4.0.0)",
     description=f"""
 Serviço de embeddings enterprise:
 - **Texto (Trading/RAG)**: {TEXT_MODEL_NAME} → {TEXT_EMBEDDING_DIM} dim (Qdrant)
 - **Imagem**: {IMAGE_MODEL_NAME} → {IMAGE_EMBEDDING_DIM} dim (pgvector)
+- **Quantização**: {QUANTIZATION} (INT8 reduz VRAM de 16GB para 8GB)
 
 Qwen3-Embedding-8B: 8B params, máxima qualidade para trading/RAG.
     """,
-    version="2.0.0"
+    version="4.0.0"
 )
 
 # Modelos (carregados no startup)
@@ -128,9 +135,10 @@ async def load_models():
     global text_model, text_tokenizer, image_model, image_preprocess
     
     logger.info("=" * 60)
-    logger.info("Alice Embeddings GPU - Arquitetura Enterprise")
+    logger.info("Alice Embeddings GPU - Arquitetura v4.0.0")
     logger.info("=" * 60)
     logger.info(f"Dispositivo: {DEVICE}")
+    logger.info(f"Quantização: {QUANTIZATION}")
     logger.info(f"Texto: {TEXT_MODEL_NAME} ({TEXT_EMBEDDING_DIM} dim)")
     logger.info(f"Imagem: {IMAGE_MODEL_NAME} ({IMAGE_EMBEDDING_DIM} dim)")
     logger.info("=" * 60)
@@ -141,10 +149,27 @@ async def load_models():
         
         from sentence_transformers import SentenceTransformer
         
+        # ARQUITETURA v4.0.0: Suporte a quantização INT8
+        model_kwargs = {"trust_remote_code": True}
+        
+        if QUANTIZATION == "int8":
+            logger.info("🔧 Aplicando quantização INT8 (bitsandbytes)")
+            try:
+                from transformers import BitsAndBytesConfig
+                quantization_config = BitsAndBytesConfig(
+                    load_in_8bit=True,
+                    llm_int8_threshold=6.0,
+                    llm_int8_has_fp16_weight=True
+                )
+                model_kwargs["quantization_config"] = quantization_config
+                logger.info("✅ INT8 quantization configurada")
+            except ImportError:
+                logger.warning("⚠️ bitsandbytes não disponível, usando FP16")
+        
         text_model = SentenceTransformer(
             TEXT_MODEL_NAME,
             device=DEVICE,
-            trust_remote_code=True
+            model_kwargs=model_kwargs
         )
         
         # Verificar dimensão
@@ -209,7 +234,8 @@ async def health_check():
     
     return {
         "status": "healthy",
-        "architecture": "unified",
+        "architecture": "v4.0.0-simplified",
+        "quantization": QUANTIZATION,
         "text_model": TEXT_MODEL_NAME,
         "text_dimensions": TEXT_EMBEDDING_DIM,
         "text_storage": "qdrant",

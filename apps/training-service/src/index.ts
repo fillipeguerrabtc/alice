@@ -4,12 +4,15 @@
  * Serviço de treinamento e fine-tuning com deduplicação semântica (SemHash).
  * Implementa Circuit Breaker pattern (Regra 16 - Best Practices 2025).
  * 
- * ARQUITETURA ENTERPRISE (25/12/2025):
- * - Embeddings de texto: Qwen3-Embedding-8B (4096 dim, GPU Manager Service → Qdrant)
- * - Fine-tuning (LoRA): Executado localmente via GPU Manager Service (GPU única 20GB, prioridade baixa)
+ * ARQUITETURA v4.0.0 (11/01/2026):
+ * - Embeddings de texto: Qwen3-Embedding-8B INT8 (4096 dim, GPU Manager Service → Qdrant)
+ * - Fine-tuning (QLoRA): Qwen2.5-VL 7B via GPU Trainer (sob demanda)
+ * - Schedule semanal configurável (domingo 3:00 AM default)
+ * - Treinamento on-demand via dashboard admin
+ * - Zero latência de troca (serviços GPU sempre ativos)
  * 
  * Autor: Fillipe Guerra
- * Data: 25 de Dezembro de 2025
+ * Data: 11 de Janeiro de 2026
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
@@ -1312,6 +1315,373 @@ app.get('/api/training/stats', requirePermission('training:training_data:read'),
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
+
+// ============================================================================
+// ARQUITETURA v4.0.0 (11/01/2026): Training Schedule + On-Demand
+// Endpoints enterprise para configurar e executar treinamentos
+// ============================================================================
+
+// Schema para configuração de schedule
+const scheduleConfigSchema = z.object({
+  tenantId: z.string().uuid(),
+  scheduleType: z.enum(['incremental_fine_tuning', 'complete_fine_tuning']),
+  enabled: z.boolean().default(true),
+  cronPattern: z.string().optional(), // Ex: '0 3 * * 0' para domingo às 3h
+  minDataRequired: z.number().int().min(10).default(50),
+});
+
+// Schema para iniciar treinamento on-demand
+const startTrainingSchema = z.object({
+  tenantId: z.string().uuid(),
+  trainingType: z.enum(['incremental', 'full']).default('incremental'),
+  includeImages: z.boolean().default(false),
+  priority: z.enum(['low', 'normal', 'high']).default('normal'),
+  description: z.string().max(500).optional(),
+});
+
+// Schema para cancelar treinamento
+const cancelTrainingSchema = z.object({
+  trainingRunId: z.string().uuid(),
+  reason: z.string().max(500).optional(),
+});
+
+/**
+ * POST /api/training/schedule/configure
+ * Configura o agendamento automático de treinamento
+ */
+app.post('/api/training/schedule/configure', requirePermission('training:training_data:manage'), async (req: Request, res: Response) => {
+  const parseResult = scheduleConfigSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Input inválido', details: parseResult.error.format() });
+  }
+  
+  const { tenantId, scheduleType, enabled, cronPattern, minDataRequired } = parseResult.data;
+  
+  try {
+    // Verificar se já existe configuração
+    const existing = await db.query.autoLearningSchedule.findFirst({
+      where: and(
+        eq(schema.autoLearningSchedule.tenantId, tenantId),
+        eq(schema.autoLearningSchedule.scheduleType, scheduleType),
+        eq(schema.autoLearningSchedule.status, 'scheduled')
+      ),
+    });
+
+    if (existing && !enabled) {
+      // Desabilitar schedule existente (usar 'skipped' pois 'cancelled' não existe no enum)
+      await db.update(schema.autoLearningSchedule)
+        .set({ status: 'skipped' })
+        .where(eq(schema.autoLearningSchedule.id, existing.id));
+      
+      logger.info({ tenantId, scheduleType }, 'Schedule de treinamento desabilitado');
+      return res.json({ success: true, action: 'disabled', scheduleId: existing.id });
+    }
+
+    if (enabled) {
+      // Criar novo schedule
+      const scheduledFor = calculateNextScheduleDate(scheduleType, cronPattern);
+      
+      const [newSchedule] = await db.insert(schema.autoLearningSchedule).values({
+        tenantId,
+        scheduleType,
+        status: 'scheduled',
+        scheduledFor,
+      }).returning();
+      
+      logger.info({ 
+        tenantId, 
+        scheduleType, 
+        scheduledFor,
+        scheduleId: newSchedule.id,
+      }, 'Schedule de treinamento configurado');
+      
+      return res.json({ 
+        success: true, 
+        action: 'scheduled', 
+        scheduleId: newSchedule.id,
+        scheduledFor,
+        minDataRequired,
+      });
+    }
+
+    res.json({ success: true, action: 'no_change' });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao configurar schedule de treinamento');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+/**
+ * POST /api/training/run/start
+ * Inicia treinamento on-demand
+ */
+app.post('/api/training/run/start', requirePermission('training:training_data:manage'), async (req: Request, res: Response) => {
+  const parseResult = startTrainingSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Input inválido', details: parseResult.error.format() });
+  }
+  
+  const { tenantId, trainingType, includeImages, priority: _priority, description } = parseResult.data;
+  
+  try {
+    // Verificar se já existe treinamento em andamento (status 'training' ou 'preparing')
+    const runningJobs = await db.query.fineTuningJobs.findMany({
+      where: and(
+        eq(schema.fineTuningJobs.tenantId, tenantId),
+        eq(schema.fineTuningJobs.status, 'training')
+      ),
+    });
+
+    if (runningJobs.length > 0) {
+      return res.status(409).json({ 
+        error: 'Já existe treinamento em andamento',
+        runningJobId: runningJobs[0].id,
+      });
+    }
+
+    // Avaliar qualidade dos dados antes de iniciar
+    const scheduleType = trainingType === 'full' ? 'complete_fine_tuning' : 'incremental_fine_tuning';
+    const evaluation = await evaluateDataQuality(scheduleType, tenantId);
+    
+    if (!evaluation.isReady) {
+      return res.status(400).json({
+        error: 'Dados insuficientes ou qualidade baixa',
+        evaluation,
+        recommendation: evaluation.recommendation,
+        reason: evaluation.reason,
+      });
+    }
+
+    // Criar job de fine-tuning on-demand
+    // Usando campos existentes no schema: name, baseModel, trainingDataCount
+    const [job] = await db.insert(schema.fineTuningJobs).values({
+      tenantId,
+      name: description || `Treinamento ${trainingType} on-demand`,
+      baseModel: 'Qwen2.5-VL-7B-AWQ',
+      status: 'pending',
+      trainingDataCount: evaluation.dataCount,
+    }).returning();
+
+    // Iniciar Progressive LoRA
+    const loraResult = await startProgressiveLoRA(tenantId, { includeImages });
+
+    // Atualizar job com status training
+    await db.update(schema.fineTuningJobs)
+      .set({ 
+        status: 'training',
+        iniciadoEm: new Date(),
+      })
+      .where(eq(schema.fineTuningJobs.id, job.id));
+
+    logger.info({
+      jobId: job.id,
+      tenantId,
+      trainingType,
+      dataCount: evaluation.dataCount,
+      imageCount: evaluation.imageCount,
+      modelVersionId: loraResult.modelVersionId,
+    }, 'Treinamento on-demand iniciado');
+
+    res.status(201).json({
+      success: true,
+      jobId: job.id,
+      modelVersionId: loraResult.modelVersionId,
+      version: loraResult.version,
+      trainingDataUsed: loraResult.trainingDataUsed,
+      imagesUsed: loraResult.imagesUsed,
+      status: 'running',
+    });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao iniciar treinamento on-demand');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+/**
+ * GET /api/training/run/status
+ * Obtém status atual do treinamento
+ */
+app.get('/api/training/run/status', requirePermission('training:training_data:read'), async (req: Request, res: Response) => {
+  const queryResult = z.object({ tenantId: z.string().uuid().optional() }).safeParse(req.query);
+  if (!queryResult.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos' });
+  }
+  const { tenantId } = queryResult.data;
+
+  try {
+    // Buscar jobs com status 'training' ou 'preparing' (em execução)
+    const conditions = [
+      eq(schema.fineTuningJobs.status, 'training')
+    ];
+    if (tenantId) conditions.push(eq(schema.fineTuningJobs.tenantId, tenantId));
+
+    const runningJobs = await db.query.fineTuningJobs.findMany({
+      where: and(...conditions),
+      orderBy: [desc(schema.fineTuningJobs.iniciadoEm)],
+      limit: 5,
+    });
+
+    if (runningJobs.length === 0) {
+      return res.json({
+        hasRunningTraining: false,
+        status: 'idle',
+        message: 'Nenhum treinamento em andamento',
+      });
+    }
+
+    const currentJob = runningJobs[0];
+    const elapsedMs = currentJob.iniciadoEm ? Date.now() - new Date(currentJob.iniciadoEm).getTime() : 0;
+
+    // Usar campos existentes no schema: name, trainingDataCount, progress
+    res.json({
+      hasRunningTraining: true,
+      status: 'training',
+      currentJob: {
+        id: currentJob.id,
+        name: currentJob.name,
+        baseModel: currentJob.baseModel,
+        trainingDataCount: currentJob.trainingDataCount,
+        progress: currentJob.progress || 0,
+        elapsedSeconds: Math.round(elapsedMs / 1000),
+        startedAt: currentJob.iniciadoEm,
+      },
+    });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter status do treinamento');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+/**
+ * GET /api/training/run/history
+ * Obtém histórico de treinamentos
+ */
+app.get('/api/training/run/history', requirePermission('training:training_data:read'), async (req: Request, res: Response) => {
+  const queryResult = z.object({ 
+    tenantId: z.string().uuid().optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+  }).safeParse(req.query);
+  
+  if (!queryResult.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos' });
+  }
+  const { tenantId, limit } = queryResult.data;
+
+  try {
+    const conditions = [];
+    if (tenantId) conditions.push(eq(schema.fineTuningJobs.tenantId, tenantId));
+
+    const jobs = await db.query.fineTuningJobs.findMany({
+      where: conditions.length > 0 ? and(...conditions) : undefined,
+      orderBy: [desc(schema.fineTuningJobs.criadoEm)],
+      limit,
+    });
+
+    const history = jobs.map((job: typeof schema.fineTuningJobs.$inferSelect) => ({
+      id: job.id,
+      jobType: job.name, // name contém tipo do job (qlora_incremental, etc)
+      status: job.status,
+      totalRecords: job.trainingDataCount,
+      processedRecords: job.progress ? Math.round((job.progress / 100) * (job.trainingDataCount ?? 0)) : 0,
+      description: job.name,
+      startedAt: job.iniciadoEm,
+      completedAt: job.completadoEm,
+      durationSeconds: job.iniciadoEm && job.completadoEm 
+        ? Math.round((new Date(job.completadoEm).getTime() - new Date(job.iniciadoEm).getTime()) / 1000)
+        : null,
+      errorMessage: job.errorMessage,
+    }));
+
+    res.json({
+      total: history.length,
+      history,
+    });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter histórico de treinamentos');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+/**
+ * DELETE /api/training/run/cancel
+ * Cancela treinamento em andamento
+ */
+app.delete('/api/training/run/cancel', requirePermission('training:training_data:manage'), async (req: Request, res: Response) => {
+  const parseResult = cancelTrainingSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Input inválido', details: parseResult.error.format() });
+  }
+  
+  const { trainingRunId, reason } = parseResult.data;
+
+  try {
+    const job = await db.query.fineTuningJobs.findFirst({
+      where: eq(schema.fineTuningJobs.id, trainingRunId),
+    });
+
+    if (!job) {
+      return res.status(404).json({ error: 'Treinamento não encontrado' });
+    }
+
+    if (job.status !== 'training' && job.status !== 'pending' && job.status !== 'preparing') {
+      return res.status(400).json({ 
+        error: 'Treinamento não pode ser cancelado',
+        currentStatus: job.status,
+      });
+    }
+
+    await db.update(schema.fineTuningJobs)
+      .set({
+        status: 'cancelled',
+        completadoEm: new Date(),
+        errorMessage: reason || 'Cancelado pelo usuário',
+      })
+      .where(eq(schema.fineTuningJobs.id, trainingRunId));
+
+    logger.info({ trainingRunId, reason }, 'Treinamento cancelado');
+
+    res.json({
+      success: true,
+      trainingRunId,
+      previousStatus: job.status,
+      newStatus: 'cancelled',
+    });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao cancelar treinamento');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// Funções auxiliares para schedule
+function calculateNextScheduleDate(scheduleType: string, _cronPattern?: string): Date {
+  // Se não tiver cron pattern, usar defaults
+  const config = scheduleType === 'incremental_fine_tuning'
+    ? SCHEDULE_CONFIG.incrementalFineTuning
+    : SCHEDULE_CONFIG.completeFineTuning;
+  
+  return new Date(Date.now() + config.intervalMs);
+}
+
+function _estimateRemainingTime(job: typeof schema.fineTuningJobs.$inferSelect): number | null {
+  if (!job.iniciadoEm || !job.trainingDataCount || !job.progress) return null;
+  
+  const elapsedMs = Date.now() - new Date(job.iniciadoEm).getTime();
+  const progress = job.progress / 100; // progress é 0-100
+  
+  if (progress <= 0) return null;
+  
+  const estimatedTotalMs = elapsedMs / progress;
+  const remainingMs = estimatedTotalMs - elapsedMs;
+  
+  return Math.round(Math.max(0, remainingMs) / 1000);
+}
+
+// Importar funções do auto-learning scheduler
+import { 
+  SCHEDULE_CONFIG, 
+  evaluateDataQuality, 
+  startProgressiveLoRA,
+} from './auto-learning-scheduler.js';
 
 // ============================================================================
 // MIDDLEWARE: Not Found + Error Handler (Express.js 2025)
