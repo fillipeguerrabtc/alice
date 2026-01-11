@@ -1768,6 +1768,26 @@ function calculateNextScheduleDate(scheduleType: string, cronPattern?: string): 
       next.setMonth(next.getMonth() + 1);
     }
     
+    // FIX Bug 3 (11/01/2026): Verificar se o dia existe no mês alvo
+    // Exemplo: Cron '0 1 31 * *' após Janeiro → Fevereiro não tem dia 31
+    // JavaScript Date overflow: setDate(31) em Fevereiro → 3 de Março (ERRADO)
+    // Solução: Avançar meses até encontrar um que tenha o dia desejado
+    const getDaysInMonth = (date: Date): number => {
+      // Criar data no primeiro dia do próximo mês e subtrair 1 dia
+      return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+    };
+    
+    // Avançar meses se o dia não existir no mês atual (máximo 12 iterações para segurança)
+    for (let i = 0; i < 12; i++) {
+      const daysInMonth = getDaysInMonth(next);
+      if (targetDayOfMonth <= daysInMonth) {
+        break; // Mês atual tem o dia desejado
+      }
+      // Mês não tem o dia (ex: Fevereiro não tem 31), ir para próximo mês
+      next.setDate(1);
+      next.setMonth(next.getMonth() + 1);
+    }
+    
     next.setDate(targetDayOfMonth);
   }
   // Se já passou o horário de hoje, ir para amanhã

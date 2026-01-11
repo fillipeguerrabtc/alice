@@ -994,13 +994,15 @@ app.get('/api/gpu/queue/status', requireInternalAuth, asyncHandler(async (req: R
 app.get('/api/gpu/services', requireInternalAuth, asyncHandler(async (req: Request, res: Response) => {
   const vramStatus = await getVramStatus();
   
-  // Na arquitetura v4.0.0, todos os serviços rodam simultaneamente
+  // Na arquitetura v4.0.0, todos os serviços rodam simultaneamente EXCETO TRAINING
+  // TRAINING é sob demanda (on_demand) - só inicia quando há job de fine-tuning
   const services: Record<string, { vramGB: number; url: string; status: string }> = {};
   for (const [type, url] of Object.entries(GPU_SERVICE_URLS)) {
     services[type] = {
       vramGB: VRAM_REQUIREMENTS[type as GpuServiceType],
       url,
-      status: 'always_active', // Todos sempre ativos na v4.0.0
+      // FIX Bug 4 (11/01/2026): TRAINING é sob demanda, não always_active
+      status: type === GpuServiceType.TRAINING ? 'on_demand' : 'always_active',
     };
   }
   
