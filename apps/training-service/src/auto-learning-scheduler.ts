@@ -138,13 +138,17 @@ interface QualityEvaluation {
 
 export async function evaluateDataQuality(
   scheduleType: string,
-  tenantId?: string
+  tenantId?: string,
+  customMinDataRequired?: number // FIX: Permitir threshold customizado configurado pelo usuário
 ): Promise<QualityEvaluation> {
   const data = await collectTrainingData(tenantId);
   
-  const minData = scheduleType === 'incremental_fine_tuning' 
+  // FIX: Usar minDataRequired customizado se fornecido, senão usar default do SCHEDULE_CONFIG
+  const defaultMinData = scheduleType === 'incremental_fine_tuning' 
     ? SCHEDULE_CONFIG.incrementalFineTuning.minDataRequired
     : SCHEDULE_CONFIG.completeFineTuning.minDataRequired;
+  
+  const minData = customMinDataRequired ?? defaultMinData;
 
   if (data.approvedDataCount < minData) {
     return {
@@ -419,7 +423,9 @@ export async function processScheduledJobs(): Promise<number> {
         .set({ status: 'running', startedAt: now })
         .where(eq(schema.autoLearningSchedule.id, job.id));
 
-      const evaluation = await evaluateDataQuality(job.scheduleType, job.tenantId || undefined);
+      // FIX: Ler minDataRequired do metadata (se configurado pelo usuário)
+      const customMinDataRequired = (job.metadata as { minDataRequired?: number } | null)?.minDataRequired;
+      const evaluation = await evaluateDataQuality(job.scheduleType, job.tenantId || undefined, customMinDataRequired);
 
       if (evaluation.recommendation === 'proceed' && job.tenantId) {
         const result = await startProgressiveLoRA(job.tenantId, {

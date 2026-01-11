@@ -1378,13 +1378,24 @@ app.post('/api/training/schedule/configure', requirePermission('training:trainin
     }
 
     if (enabled) {
+      // FIX: Preparar metadata com configurações customizadas (persistir minDataRequired)
+      const scheduleMetadata = {
+        minDataRequired,
+        cronPattern: cronPattern || null,
+        configuredAt: new Date().toISOString(),
+      };
+      
       // FIX Bug 2: Se já existe um schedule ativo, atualizar ao invés de criar duplicado
       if (existing) {
-        // Atualizar schedule existente com nova data
+        // Atualizar schedule existente com nova data e metadata
         const scheduledFor = calculateNextScheduleDate(scheduleType, cronPattern);
         
         await db.update(schema.autoLearningSchedule)
-          .set({ scheduledFor, status: 'scheduled' })
+          .set({ 
+            scheduledFor, 
+            status: 'scheduled',
+            metadata: scheduleMetadata, // FIX: Persistir minDataRequired
+          })
           .where(eq(schema.autoLearningSchedule.id, existing.id));
         
         logger.info({ 
@@ -1392,6 +1403,7 @@ app.post('/api/training/schedule/configure', requirePermission('training:trainin
           scheduleType, 
           scheduledFor,
           scheduleId: existing.id,
+          minDataRequired,
         }, 'Schedule de treinamento atualizado');
         
         return res.json({ 
@@ -1411,6 +1423,7 @@ app.post('/api/training/schedule/configure', requirePermission('training:trainin
         scheduleType,
         status: 'scheduled',
         scheduledFor,
+        metadata: scheduleMetadata, // FIX: Persistir minDataRequired
       }).returning();
       
       logger.info({ 
@@ -1418,6 +1431,7 @@ app.post('/api/training/schedule/configure', requirePermission('training:trainin
         scheduleType, 
         scheduledFor,
         scheduleId: newSchedule.id,
+        minDataRequired,
       }, 'Schedule de treinamento configurado');
       
       return res.json({ 
