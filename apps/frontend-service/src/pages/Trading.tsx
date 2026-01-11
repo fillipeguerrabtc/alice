@@ -2,15 +2,19 @@
  * Trading - Página de Trading BTC Futures KuCoin
  * 
  * Dashboard enterprise-grade para trading automatizado de BTC perpetuals
- * na KuCoin Futures. Integrado com Alice IA (Mixtral 8x7B) para sinais
+ * na KuCoin Futures. Integrado com Alice IA (Qwen2.5-VL 7B) para sinais
  * autônomos e execução automática de ordens.
+ * 
+ * ARQUITETURA v4.0.0: Qwen2.5-VL 7B - modelo multimodal especializado em finanças
+ * com capacidade nativa de análise de gráficos e imagens.
  * 
  * Funcionalidades:
  * - Visualização em tempo real de dados de mercado
  * - Gestão de ordens (criar, cancelar, sincronizar)
  * - Monitoramento de posições abertas
  * - Configuração de gestão de risco
- * - Sinais de trading do Mixtral LLM
+ * - Sinais de trading do Qwen2.5-VL 7B LLM (multimodal)
+ * - Análise visual de gráficos via Qwen2.5-VL Vision
  * - Histórico completo de operações com auditoria
  * - Execução autônoma via Alice (Chat/WhatsApp)
  * 

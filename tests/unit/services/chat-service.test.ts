@@ -20,10 +20,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // TESTES DE CONFIGURAÇÃO LLM
 // ============================================================================
 
+// ARQUITETURA v4.0.0: Qwen2.5-VL 7B substitui Mixtral 8x7B
 describe('Chat Service - Configuração LLM', () => {
   const LLM_CONFIG = {
     provider: 'gpu-manager-service',
-    model: 'Mixtral-8x7B',
+    model: 'Qwen2.5-VL-7B', // ARQUITETURA v4.0.0
     maxTokens: 4096,
     temperature: 0.7,
     topP: 0.9,
@@ -33,8 +34,8 @@ describe('Chat Service - Configuração LLM', () => {
     expect(LLM_CONFIG.provider).toBe('gpu-manager-service');
   });
 
-  it('deve usar modelo Mixtral 8x7B', () => {
-    expect(LLM_CONFIG.model).toBe('Mixtral-8x7B');
+  it('deve usar modelo Qwen2.5-VL 7B (ARQUITETURA v4.0.0)', () => {
+    expect(LLM_CONFIG.model).toBe('Qwen2.5-VL-7B');
   });
 
   it('deve ter maxTokens de 4096', () => {
@@ -325,33 +326,39 @@ describe('Chat Service - RAG Integration', () => {
 });
 
 // ============================================================================
-// TESTES DE IMAGE GENERATION
+// TESTES DE IMAGE ANALYSIS (ARQUITETURA v4.0.0)
 // ============================================================================
+// NOTA: Alice ANALISA imagens via Qwen2.5-VL Vision mas NÃO gera imagens
+// A geração de imagens (FLUX.1 Schnell) foi removida na v4.0.0
 
-describe('Chat Service - Image Generation', () => {
-  const IMAGE_CONFIG = {
-    model: 'flux.1-schnell',
-    maxWidth: 1024,
-    maxHeight: 1024,
-    defaultSteps: 4, // FLUX.1 Schnell usa poucos steps
+describe('Chat Service - Image Analysis (Vision)', () => {
+  const VISION_CONFIG = {
+    model: 'Qwen2.5-VL-7B', // Modelo multimodal com capacidade de visão
+    maxImageSize: 10 * 1024 * 1024, // 10MB
+    supportedFormats: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
     timeout: 60000, // 60 segundos
+    capabilities: ['chart_analysis', 'document_ocr', 'screenshot_interpretation'],
   };
 
-  it('deve usar modelo FLUX.1 Schnell', () => {
-    expect(IMAGE_CONFIG.model).toBe('flux.1-schnell');
+  it('deve usar modelo Qwen2.5-VL com capacidade de visão', () => {
+    expect(VISION_CONFIG.model).toBe('Qwen2.5-VL-7B');
   });
 
-  it('deve limitar dimensões a 1024x1024', () => {
-    expect(IMAGE_CONFIG.maxWidth).toBe(1024);
-    expect(IMAGE_CONFIG.maxHeight).toBe(1024);
+  it('deve limitar tamanho de imagem a 10MB', () => {
+    expect(VISION_CONFIG.maxImageSize).toBe(10 * 1024 * 1024);
   });
 
-  it('deve usar 4 steps (FLUX.1 Schnell)', () => {
-    expect(IMAGE_CONFIG.defaultSteps).toBe(4);
+  it('deve suportar formatos comuns de imagem', () => {
+    expect(VISION_CONFIG.supportedFormats).toContain('image/jpeg');
+    expect(VISION_CONFIG.supportedFormats).toContain('image/png');
+  });
+
+  it('deve ter capacidade de análise de gráficos (trading)', () => {
+    expect(VISION_CONFIG.capabilities).toContain('chart_analysis');
   });
 
   it('deve ter timeout de 60 segundos', () => {
-    expect(IMAGE_CONFIG.timeout).toBe(60000);
+    expect(VISION_CONFIG.timeout).toBe(60000);
   });
 });
 
@@ -412,12 +419,13 @@ describe('Chat Service - Health Check', () => {
   }
 
   it('deve retornar estrutura de health correta', () => {
+    // ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral
     const health: ChatHealthResponse = {
       status: 'ok',
       service: 'chat-service',
       timestamp: new Date().toISOString(),
       llmProvider: 'gpu-manager-service',
-      model: 'Mixtral-8x7B',
+      model: 'Qwen2.5-VL-7B',
       circuitBreakers: {
         llm: { state: 'closed', stats: {} },
         rag: { state: 'closed', stats: {} },
@@ -426,7 +434,7 @@ describe('Chat Service - Health Check', () => {
 
     expect(health.status).toBe('ok');
     expect(health.llmProvider).toBe('gpu-manager-service');
-    expect(health.model).toBe('Mixtral-8x7B');
+    expect(health.model).toBe('Qwen2.5-VL-7B');
   });
 });
 

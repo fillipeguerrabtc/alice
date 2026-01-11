@@ -607,7 +607,8 @@ describe('Config - Timeouts Padrão', () => {
       expect(DEFAULT_TIMEOUTS.http).toBe(30000);
     });
 
-    it('deve ter timeout LLM de 60 segundos (inferência Mixtral 8x7B)', () => {
+    // ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral
+    it('deve ter timeout LLM de 60 segundos (inferência Qwen2.5-VL 7B)', () => {
       expect(DEFAULT_TIMEOUTS.llm).toBe(60000);
     });
 
@@ -705,8 +706,9 @@ describe('Config - GPU Manager Service Configuration', () => {
       expect(GPU_MANAGER_CONFIG.url).toBe('http://alice-gpu-manager:3010');
     });
 
-    it('deve ter modelo de chat configurado como Mixtral 8x7B AWQ', () => {
-      expect(GPU_MANAGER_CONFIG.models.chat).toBe('TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ');
+    // ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral
+    it('deve ter modelo de chat configurado como Qwen2.5-VL 7B AWQ', () => {
+      expect(GPU_MANAGER_CONFIG.models.chat).toBe('Qwen/Qwen2.5-VL-7B-Instruct-AWQ');
     });
 
     it('deve ter maxTokens padrão de 4096', () => {

@@ -330,9 +330,10 @@ describe('Training Service - Health Check', () => {
 describe('Training Service - Validação Zod', () => {
   const { z } = require('zod');
 
+  // ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral
   const createJobSchema = z.object({
     name: z.string().min(1).max(100),
-    baseModel: z.string().default('Mixtral-8x7B'),
+    baseModel: z.string().default('Qwen2.5-VL-7B-AWQ'),
     maxExamples: z.number().positive().max(10000).optional(),
     epochs: z.number().min(1).max(10).optional(),
     learningRate: z.number().positive().max(0.01).optional(),
@@ -346,8 +347,8 @@ describe('Training Service - Validação Zod', () => {
 
   it('deve validar criação de job', () => {
     const job = {
-      name: 'Treinamento Q4 2025',
-      baseModel: 'Mixtral-8x7B',
+      name: 'Treinamento Q1 2026',
+      baseModel: 'Qwen2.5-VL-7B-AWQ', // ARQUITETURA v4.0.0
       epochs: 3,
     };
 
@@ -358,7 +359,7 @@ describe('Training Service - Validação Zod', () => {
   it('deve rejeitar nome vazio', () => {
     const job = {
       name: '',
-      baseModel: 'Mixtral-8x7B',
+      baseModel: 'Qwen2.5-VL-7B-AWQ',
     };
 
     const result = createJobSchema.safeParse(job);

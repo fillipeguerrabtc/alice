@@ -18,27 +18,30 @@ A Alice Enterprise Platform possui um sistema de aprendizado contínuo e agressi
 
 ### Mudança Crítica
 
-A partir de 25/12/2025, a Alice utiliza **arquitetura 100% GPU local via Hetzner GPU GEX44** para processamento de IA:
+A partir de 11/01/2026, a Alice utiliza **ARQUITETURA v4.0.0 GPU local via Hetzner GPU GEX44** para processamento de IA - **TODOS os serviços rodam SIMULTANEAMENTE** (15GB de 20GB VRAM):
 
-| Componente | Modelo | Dimensões | Infraestrutura |
-|------------|--------|-----------|----------------|
-| **Embeddings de Texto** | Qwen3-Embedding-8B | **4096 dim** → Qdrant | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
-| **Embeddings de Imagem** | OpenCLIP ViT-H/14 | 1024 dim → pgvector | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
-| **Transcrição de Áudio** | Canary-1B (NeMo) | - | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
-| **LLM Inference** | **Mixtral 8x7B (vLLM AWQ)** | - | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
-| **Geração de Imagens** | FLUX.1 Schnell | - | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
-| **Fine-tuning** | LoRA Progressive (gpu-trainer) | - | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
+| Componente | Modelo | Dimensões/VRAM | Infraestrutura |
+|------------|--------|----------------|----------------|
+| **LLM Multimodal** | **Qwen2.5-VL 7B AWQ 4-bit** | ~4GB | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
+| **Embeddings de Texto** | Qwen3-Embedding-8B INT8 | **4096 dim** (~8GB) → Qdrant | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
+| **Embeddings de Imagem** | OpenCLIP ViT-H/14 | 1024 dim → pgvector | Compartilhado com embeddings de texto |
+| **Transcrição de Áudio** | Canary-1B (NeMo) | ~3GB | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
+| **Análise de Imagens** | **Qwen2.5-VL Vision** | Nativo (mesmo modelo LLM) | Zero overhead adicional |
+| **Fine-tuning** | QLoRA (gpu-trainer) | ~5GB (on-demand via profile) | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
 | **Trading BTC** | KuCoin Futures API | - | Hetzner (integrations-service) |
 
-### GPU Dedicada 24/7 (Hetzner GEX44)
+> **NOTA v4.0.0:** FLUX.1 Schnell REMOVIDO - Alice ANALISA imagens via Qwen2.5-VL Vision mas NÃO gera imagens.
 
-Com servidor GPU dedicado, os modelos estão sempre carregados em memória:
+### GPU Dedicada 24/7 (Hetzner GEX44) - ARQUITETURA v4.0.0
+
+Com servidor GPU dedicado, **TODOS os serviços rodam SIMULTANEAMENTE** (15GB/20GB VRAM):
 
 | Cenário | Latência | Motivo |
 |---------|----------|--------|
-| **Qualquer requisição** | ~0.5-1 segundo | Modelos sempre carregados na VRAM (containers Docker 24/7) |
+| **Chat, Vision, RAG, ASR** | ~0.5-1 segundo | **ZERO troca de containers** - todos sempre carregados na VRAM |
+| **Fine-tuning QLoRA** | Ativação via profile | Apenas training usa troca (semanal ou on-demand) |
 
-> **Arquitetura Enterprise (26/12/2025):** Todos os serviços GPU rodam localmente no servidor Hetzner GPU GEX44 com containers Docker 24/7. Não há cold start - GPU está sempre disponível. GPU Manager Service gerencia requisições com fila priorizada, monitoramento VRAM e circuit breakers. A estratégia "Warm on Demand" foi removida pois não se aplica a servidor dedicado. Ver [docs/ARQUITETURA-GPU-MANAGER.md](ARQUITETURA-GPU-MANAGER.md) para guia completo.
+> **ARQUITETURA v4.0.0 (11/01/2026):** Todos os serviços GPU rodam localmente no servidor Hetzner GPU GEX44 com containers Docker 24/7 **SIMULTANEAMENTE**. Não há cold start nem troca de containers para operações normais. GPU Manager Service gerencia requisições com fila priorizada, monitoramento VRAM e circuit breakers. Fine-tuning QLoRA é ativado on-demand via Docker Compose profile. Ver [docs/ARQUITETURA-GPU-MANAGER.md](ARQUITETURA-GPU-MANAGER.md) para guia completo.
 
 **Componentes:**
 - **Redis Queue:** Processamento assíncrono de embeddings
@@ -55,8 +58,10 @@ Com servidor GPU dedicado, os modelos estão sempre carregados em memória:
 | Tipo | Processamento | Critério de Aprovação |
 |------|---------------|----------------------|
 | **Conversas Texto** | Automático | Rating >= 4 estrelas pelo usuário |
-| **Imagens Geradas** | Semi-automático | Aprovação manual no dashboard |
+| **Análise de Imagens** | Automático | Qwen2.5-VL Vision analisa, dados vão para RAG multimodal |
 | **Imagens Upload** | Automático | OpenCLIP ViT-H/14 embeddings (1024 dim) para RAG multimodal |
+
+> **NOTA v4.0.0:** Geração de imagens REMOVIDA - Alice ANALISA imagens via Qwen2.5-VL Vision.
 
 **Como funciona:**
 - Cada mensagem no chat é avaliada pelo usuário (1-5 estrelas)
@@ -302,15 +307,15 @@ O processamento de áudio utiliza **GPU obrigatória** via GPU Manager Service:
 
 ---
 
-## Versionamento de Modelos
+## Versionamento de Modelos (ARQUITETURA v4.0.0)
 
-Cada ciclo de fine-tuning cria uma nova versão:
+Cada ciclo de fine-tuning QLoRA cria uma nova versão:
 
 | Campo | Descrição |
 |-------|-----------|
 | `version` | Número incremental (1, 2, 3...) |
-| `baseModel` | Mixtral 8x7B (vLLM AWQ) |
-| `loraPath` | Caminho dos pesos LoRA |
+| `baseModel` | Qwen2.5-VL 7B AWQ (v4.0.0) |
+| `loraPath` | Caminho dos pesos QLoRA |
 | `trainingDataCount` | Quantidade de dados usados |
 | `imageDataCount` | Quantidade de imagens usadas |
 | `improvementPercent` | Melhoria vs baseline |
@@ -370,35 +375,39 @@ Acessíveis em `/dashboard/analytics`:
 
 ---
 
-## ✅ IMPLEMENTADO CORRETAMENTE
+## ✅ IMPLEMENTADO CORRETAMENTE (ARQUITETURA v4.0.0)
 
-### 1. Arquitetura Enterprise 100% GPU
-- ✅ Embeddings de texto (Qwen3-Embedding-8B, **4096 dim**) via GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) → Qdrant
-- ✅ Embeddings de imagem (OpenCLIP ViT-H/14, 1024 dim) via GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) → pgvector
-- ✅ Transcrição de áudio (Canary-1B NeMo) via GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB)
-- ✅ LLM Trading (Mixtral 8x7B vLLM AWQ) via GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB)
+### 1. Arquitetura Enterprise v4.0.0 - TODOS GPU SIMULTÂNEOS (15GB/20GB VRAM)
+- ✅ **LLM Multimodal (Qwen2.5-VL 7B AWQ, ~4GB)** - Chat, Trading, Vision (análise de gráficos)
+- ✅ Embeddings de texto (Qwen3-Embedding-8B INT8, **4096 dim**, ~8GB) via GPU Manager Service → Qdrant
+- ✅ Embeddings de imagem (OpenCLIP ViT-H/14, 1024 dim) via GPU Manager Service → pgvector
+- ✅ Transcrição de áudio (Canary-1B NeMo, ~3GB) via GPU Manager Service
+- ✅ **Análise de imagens nativa** (Qwen2.5-VL Vision - mesmo modelo LLM, zero overhead)
 - ✅ Qdrant para texto (4096 dim com HNSW) + pgvector para imagem (1024 dim)
 - ✅ Validação de dimensão em `validateEmbeddingDimension`
 - ✅ Sem fallback CPU (Regra 6)
+- ❌ Geração de imagens REMOVIDA (FLUX.1 Schnell) - não necessária para domínio financeiro
 
-### 2. GPU Dedicada 24/7 (Hetzner GEX44)
-- ✅ Containers Docker rodando 24/7 - sem cold start
+### 2. GPU Dedicada 24/7 - ZERO Latência de Troca (11/01/2026)
+- ✅ **TODOS containers GPU rodando SIMULTANEAMENTE** - sem troca de containers
+- ✅ Total VRAM: 15GB de 20GB disponíveis (margem de 5GB)
 - ✅ Redis Queue para processamento assíncrono (`embedding-queue.ts`)
 - ✅ Worker dedicado (`embedding-worker.ts`)
 - ✅ WebSocket para notificações (`embedding-websocket.ts`)
 - ✅ Endpoints REST: `/api/rag/embeddings/queue/*`
-- ⚠️ Estratégia "Warm on Demand" removida (26/12/2025) - não se aplica a GPU dedicada
+- ✅ Fine-tuning QLoRA via Docker Compose profile (on-demand)
 
 ### 3. Coleta de Dados para Treinamento
 - ✅ **Chat Web:** `chat-service/index.ts` linha 3905 - POST `/api/training/data`
 - ✅ **WhatsApp:** `integrations-service/index.ts` linha 2369 - POST `/api/training/data`
 - ✅ Rating inferido automaticamente (sem escalação = 5, com escalação = 1)
 
-### 4. Schedule de Treinamento
-- ✅ Fine-tuning LoRA a cada 4 dias (minDataRequired: 50)
+### 4. Schedule de Treinamento (ARQUITETURA v4.0.0)
+- ✅ Fine-tuning **QLoRA semanal** (Domingos 3h, minDataRequired: 50)
 - ✅ Fine-tuning Completo quinzenal (minDataRequired: 200)
 - ✅ Threshold de qualidade >= 50% rating >= 4
 - ✅ Rollback automático se degradação > 5%
+- ✅ Training on-demand via dashboard admin (`/training`)
 
 ### 5. Documentação
 - ✅ `CLAUDE.md` atualizado para arquitetura 100% GPU
@@ -454,21 +463,22 @@ Acessíveis em `/dashboard/analytics`:
 - `apps/integrations-service/src/index.ts` - Nova função e chamada no webhook
 - `infra/docker/docker-compose.prod.yml` - RAG_SERVICE_URL e depends_on alice-rag
 
-### GAP 4: Imagens Docker GPU ✅ RESOLVIDO (27/12/2025)
-**Status:** Build automático via CI/CD
+### GAP 4: Imagens Docker GPU ✅ RESOLVIDO (11/01/2026) - ARQUITETURA v4.0.0
+**Status:** Build automático via CI/CD - TODOS SIMULTÂNEOS
 
 **Ações realizadas:**
-1. Workflow `release.yml` garante automaticamente 5 imagens GPU (mixtral-vllm, embeddings-gpu, flux-schnell, asr-canary, lora-trainer). Quando não há mudanças no contexto do serviço, o pipeline faz **retag no GHCR** (mesmo digest do release anterior) ao invés de rebuild completo.
+1. Workflow `release.yml` garante automaticamente **4 imagens GPU** (qwen-vl, embeddings-gpu, asr-canary, qwen-trainer). Quando não há mudanças no contexto do serviço, o pipeline faz **retag no GHCR** (mesmo digest do release anterior) ao invés de rebuild completo.
 2. Timeout aumentado de 30min para 90min (imagens GPU são muito pesadas)
-3. **ATUALIZAÇÃO 28/12/2025**: Arquitetura 100% Docker Hub (Best Practice 2025) + Dependências Atualizadas:
-   - `vllm/vllm-openai:v0.12.0` (mixtral-vllm - Docker Hub, 100% PÚBLICO)
-   - `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` + nemo_toolkit pip (asr-canary - Docker Hub, 100% PÚBLICO)
-   - `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` (embeddings, flux, lora-trainer - Docker Hub, 100% PÚBLICO)
+3. **ATUALIZAÇÃO 11/01/2026 - ARQUITETURA v4.0.0**:
+   - `vllm/vllm-openai:v0.12.0` (qwen-vl - Qwen2.5-VL 7B AWQ, ~4GB VRAM)
+   - `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` + bitsandbytes (embeddings-gpu INT8, ~8GB VRAM)
+   - `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` + nemo_toolkit pip (asr-canary, ~3GB VRAM)
+   - `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` + peft (qwen-trainer QLoRA, on-demand)
+   - ❌ **FLUX.1 Schnell REMOVIDO** - Alice não gera imagens, apenas analisa via Qwen2.5-VL Vision
    - **NOTA**: NGC_API_KEY REMOVIDO - Personal API Key não funciona para containers públicos (403 Forbidden). Todos usam Docker Hub.
-   - Dependências Python atualizadas: transformers 4.57.3, sentence-transformers 5.2.0, accelerate 1.12.0, diffusers 0.35.1, open_clip_torch 3.2.0, peft 0.18.0, bitsandbytes 0.49.0, datasets 4.0.0, huggingface_hub 0.36.0, fastapi 0.127.0, uvicorn 0.40.0, pillow 12.0.0, numpy 2.4.0, nemo_toolkit 2.2.0
 4. BuildKit cache mount adicionado para cache persistente de pip
 5. GPU Manager Service gerencia automaticamente todos os serviços GPU (sem secrets externos necessários)
-6. Docker Compose PROFILES para controle granular (gpu-llm, gpu-embeddings, gpu-flux, gpu-asr, gpu-training) - apenas UM profile GPU ativo por vez
+6. **ARQUITETURA v4.0.0:** TODOS containers GPU rodam SIMULTANEAMENTE (15GB/20GB VRAM) - SEM troca de containers. Trainer usa Docker Compose profile `training` (on-demand).
 
 ### GAP 5: Arquivo clip-service-url.ts Obsoleto ✅ RESOLVIDO
 **Status:** Removido em 15/12/2025
@@ -501,13 +511,15 @@ Acessíveis em `/dashboard/analytics`:
 
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*
-*Versão 4.1 - 02 de Janeiro de 2026*
-*LLM: Mixtral 8x7B (vLLM AWQ) via GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB)*
-*ARQUITETURA ENTERPRISE: Texto (Qwen3-Embedding-8B Apache 2.0, 4096 dim → Qdrant) + Imagem (OpenCLIP ViT-H/14 MIT, 1024 dim → pgvector)*
+*Versão 5.0 - 11 de Janeiro de 2026 - ARQUITETURA v4.0.0*
+*LLM: Qwen2.5-VL 7B AWQ (vLLM) via GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) - multimodal texto+vision*
+*ARQUITETURA ENTERPRISE v4.0.0: LLM Qwen2.5-VL (~4GB) + Embeddings Qwen3-Embedding-8B INT8 (~8GB) + ASR Canary-1B (~3GB) = 15GB/20GB VRAM - TODOS SIMULTÂNEOS*
+*Texto (Qwen3-Embedding-8B Apache 2.0, 4096 dim → Qdrant) + Imagem (OpenCLIP ViT-H/14 MIT, 1024 dim → pgvector)*
 *ASR: Canary-1B via NeMo Toolkit (Apache 2.0)*
-*Análise de Licenças (17/12/2025): Qwen3 é ÚNICO modelo top-tier com licença comercial (Apache 2.0). Fin-E5, Linq-Embed-Mistral e NV-Embed-v2 são CC BY-NC (Non-Commercial).*
+*Vision: Qwen2.5-VL análise de imagens NATIVA - ZERO overhead adicional (mesmo modelo LLM)*
+*Geração de Imagens: REMOVIDA (FLUX.1 Schnell) - não necessária para domínio financeiro*
 *Fisher-Yates Shuffle (17/12/2025): Corrigido bug de distribuição enviesada em train/validation split*
 *Bug Fix Embeddings (17/12/2025): TODOS embeddings de texto (documentos/áudio) agora vão para Qdrant (4096 dim)*
 *Bug Fix SQL IN Clause (19/12/2025): learning-worker.ts corrigido - sql template literal com join() parametrizava string inteira. Usa inArray() do Drizzle (3 ocorrências)*
-*Trading: KuCoin Futures BTC Perpetuals + Scalping (1m/3m/5m) + LoRA Fine-tuning*
-*GPU Dedicada 24/7 (26/12/2025): Hetzner GEX44 - containers Docker rodando continuamente, sem cold start. Estratégia "Warm on Demand" removida.*
+*Trading: KuCoin Futures BTC Perpetuals + Scalping (1m/3m/5m) + QLoRA Fine-tuning semanal*
+*GPU v4.0.0 (11/01/2026): Hetzner GEX44 - TODOS containers GPU rodando SIMULTANEAMENTE (15GB/20GB). Fine-tuning QLoRA on-demand via profile.*

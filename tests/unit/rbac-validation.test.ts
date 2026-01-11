@@ -334,8 +334,9 @@ describe('RBAC - Matriz de Permissões (PERMISSION_MAP)', () => {
     });
   });
 
-  describe('Módulo IMAGES', () => {
-    it('images:generate:* deve existir para FLUX.1 Schnell', () => {
+  // ARQUITETURA v4.0.0: Alice ANALISA imagens via Qwen2.5-VL Vision, NÃO gera (FLUX removido)
+  describe('Módulo IMAGES (Análise via Qwen2.5-VL)', () => {
+    it('images:generate:* deve existir para upload/aprovação de imagens', () => {
       expect(PERMISSION_MAP['images:generate:read']).toBeDefined();
       expect(PERMISSION_MAP['images:generate:write']).toBeDefined();
     });

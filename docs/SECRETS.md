@@ -1,19 +1,19 @@
 # Guia Completo de Secrets - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 05 de Janeiro de 2026  
-**Versão:** 5.0 - Arquitetura Multi-Stack Modular
+**Data:** 11 de Janeiro de 2026  
+**Versão:** 6.0 - Arquitetura GPU v4.0.0
 
 ## Visão Geral
 
 Este documento contém a lista completa de todos os secrets necessários para a plataforma Alice Enterprise, incluindo instruções de configuração para webhooks e OAuth.
 
-**Total de Secrets:** ~50 configurados no repositório GitHub (verificado em 05/01/2026)
+**Total de Secrets:** ~50 configurados no repositório GitHub (verificado em 11/01/2026)
 **Arquitetura:** Deploy Server (CPX32 - 4 vCPU, 8GB RAM) + Production Server (GEX44 GPU)
 **Arquitetura Multi-Stack:** 5 stacks independentes (INFRA, ALICE, OBSERVABILITY, ERPNEXT, BACKUP)
-**Total de Containers:** 50 em produção (10 infra + 8 Alice + 5 GPU + 13 observability + 15 ERPNext + 1 backup)
+**Total de Containers:** 50 em produção (10 infra + 8 Alice + 4 GPU + 13 observability + 15 ERPNext + 1 backup)
 **Redis Alice:** Container dedicado para cache distribuído (segregação enterprise do ERPNext)
-**LLM:** Mixtral 8x7B (MoE ~12B ativos, vLLM) via GPU Manager Service (Hetzner GPU)
+**LLM:** Qwen2.5-VL 7B AWQ (multimodal: texto + vision) via GPU Manager Service (Hetzner GPU) - ARQUITETURA v4.0.0
 **Trading:** KuCoin Futures BTC Perpetuals (XBTUSDTM)
 **URL de Produção:** `https://yesyoudeserve.duckdns.org`
 **URL ERPNext:** `https://erp.yesyoudeserve.duckdns.org`
@@ -171,11 +171,12 @@ Secrets pré-definidos para SSO funcionar automaticamente no primeiro deploy:
 
 | Container | Imagem | Origem | Autenticação |
 |-----------|--------|--------|--------------|
-| **mixtral-vllm** | `vllm/vllm-openai:v0.12.0` | Docker Hub | ❌ Não precisa |
+| **qwen-vl** | `vllm/vllm-openai:v0.12.0` | Docker Hub | ❌ Não precisa |
 | **asr-canary** | `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` + NeMo pip | Docker Hub | ❌ Não precisa |
 | **embeddings-gpu** | `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` | Docker Hub | ❌ Não precisa |
-| **flux-schnell** | `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` | Docker Hub | ❌ Não precisa |
-| **lora-trainer** | `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` | Docker Hub | ❌ Não precisa |
+| **qwen-trainer** | `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` | Docker Hub | ❌ Não precisa |
+
+> **NOTA v4.0.0:** FLUX.1 Schnell REMOVIDO - Alice ANALISA imagens via Qwen2.5-VL Vision mas NÃO gera.
 
 **NOTA:** NGC_API_KEY foi **REMOVIDO** - Personal API Key do NGC não funciona para containers públicos (retorna 403 Forbidden). Todos os containers agora usam Docker Hub que é 100% público e gratuito.
 
@@ -186,7 +187,7 @@ Secrets pré-definidos para SSO funcionar automaticamente no primeiro deploy:
 - Retry logic com backoff exponencial
 - Métricas Prometheus (latência, fila, VRAM, erros)
 
-> **IMPORTANTE:** Não são necessários secrets para URLs dos serviços GPU (Mixtral, Embeddings, FLUX, ASR) - todos rodam localmente no servidor Hetzner GEX44 e são gerenciados pelo GPU Manager Service. URLs são internas (localhost) e não precisam de secrets.
+> **IMPORTANTE (v4.0.0):** Não são necessários secrets para URLs dos serviços GPU (Qwen2.5-VL, Embeddings, ASR) - todos rodam localmente no servidor Hetzner GEX44 e são gerenciados pelo GPU Manager Service. URLs são internas (localhost) e não precisam de secrets. Arquitetura simplificada: TODOS os serviços GPU rodam SIMULTANEAMENTE (15GB de 20GB VRAM).
 
 ### FASE 4: Pagamentos Stripe (receber EUR/SEPA)
 
@@ -250,7 +251,7 @@ Secrets pré-definidos para SSO funcionar automaticamente no primeiro deploy:
 - `/api/integrations/trading/market/:symbol` - Dados de mercado
 - `/api/integrations/trading/account` - Saldo da conta
 - `/api/integrations/trading/orders` - Gerenciamento de ordens
-- `/api/integrations/trading/signals` - Sinais do Mixtral LLM
+- `/api/integrations/trading/signals` - Sinais do Qwen2.5-VL LLM
 
 ### FASE 5c: Qdrant - Banco Vetorial para Texto (4096 dimensões)
 
@@ -456,10 +457,10 @@ docker logs alice-minio-init --tail 50
 | `SALAD_ORGANIZATION_ID` | ❌ **REMOVER** | GitHub → Settings → Secrets → Delete |
 | `SALAD_PROJECT_ID` | ❌ **REMOVER** | GitHub → Settings → Secrets → Delete |
 | `SALAD_API_URL` | ❌ **REMOVER** | GitHub → Settings → Secrets → Delete |
-| `SALAD_MIXTRAL_URL` | ❌ **REMOVER** | GitHub → Settings → Secrets → Delete |
-| `SALAD_FLUX_URL` | ❌ **REMOVER** | GitHub → Settings → Secrets → Delete |
 | `SALAD_WHISPER_URL` | ❌ **REMOVER** | GitHub → Settings → Secrets → Delete |
 | `SALAD_ASR_URL` | ❌ **REMOVER** | GitHub → Settings → Secrets → Delete |
+
+> **NOTA v4.0.0:** SALAD_MIXTRAL_URL e SALAD_FLUX_URL foram REMOVIDOS - agora usamos GPU local com Qwen2.5-VL (sem geração de imagens).
 | `SALAD_EMBEDDINGS_URL` | ❌ **REMOVER** | GitHub → Settings → Secrets → Delete |
 | `SALAD_MEDIA_PROJECT` | ❌ **REMOVER** | GitHub → Settings → Secrets → Delete |
 | `SALAD_GPU_CLASS` | ❌ **REMOVER** | GitHub → Settings → Secrets → Delete |
@@ -507,7 +508,7 @@ docker logs alice-minio-init --tail 50
 
 | Secret | Status | Obrigatório? |
 |--------|--------|--------------|
-| `HUGGINGFACE_TOKEN` | ✅ | ✅ **SIM** (obrigatório para downloads de modelos - Mixtral, Qwen3, OpenCLIP, FLUX, Canary) |
+| `HUGGINGFACE_TOKEN` | ✅ | ✅ **SIM** (obrigatório para downloads de modelos - Qwen2.5-VL, Qwen3-Embedding, OpenCLIP, Canary) |
 
 > **NOTA (26/12/2025):** GPU dedicada Hetzner GEX44 (24/7) - containers Docker rodam continuamente. URLs dos serviços GPU são internas via rede Docker e não precisam de secrets.
 

@@ -3598,7 +3598,7 @@ jobs:
             echo "🚀 DEPLOYING ALICE STACK"
             echo "══════════════════════════════════════════════════════════════════"
             echo ""
-            echo "📦 Containers: frontend, auth, chat, rag, training, integrations, observability, gpu-manager, gpu-mixtral (LLM)"
+            echo "📦 Containers: frontend, auth, chat, rag, training, integrations, observability, gpu-manager + GPU Services v4.0.0"
             echo "📅 Versão: ${{ needs.validate.outputs.version }}"
             echo "🕐 Início: $(date '+%Y-%m-%d %H:%M:%S')"
             echo ""
@@ -3625,21 +3625,24 @@ jobs:
             fi
             
             # Pull TODOS os serviços GPU (cada profile separadamente para melhor diagnóstico)
+            # ARQUITETURA v4.0.0: Serviços GPU sempre ativos (15GB/20GB VRAM)
+            # - gpu-qwen-vl: LLM + Vision (Qwen2.5-VL 7B AWQ)
+            # - gpu-embeddings: Qwen3-Embedding-8B INT8 + OpenCLIP
+            # - gpu-asr: Canary-1B (transcrição)
+            # - gpu-trainer: QLoRA fine-tuning (sob demanda)
+            # NOTA: FLUX.1 Schnell REMOVIDO (Alice analisa mas NÃO gera imagens)
             echo ""
-            echo "📥 Pull GPU Mixtral (LLM)..."
-            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-llm pull 2>&1 || echo "   ⚠️ gpu-mixtral: pull falhou"
+            echo "📥 Pull GPU Qwen-VL (LLM + Vision)..."
+            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull gpu-qwen-vl 2>&1 || echo "   ⚠️ gpu-qwen-vl: pull falhou"
             
             echo "📥 Pull GPU Embeddings..."
-            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-embeddings pull 2>&1 || echo "   ⚠️ gpu-embeddings: pull falhou"
-            
-            echo "📥 Pull GPU FLUX (imagens)..."
-            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-flux pull 2>&1 || echo "   ⚠️ gpu-flux: pull falhou"
+            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull gpu-embeddings 2>&1 || echo "   ⚠️ gpu-embeddings: pull falhou"
             
             echo "📥 Pull GPU ASR (áudio)..."
-            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-asr pull 2>&1 || echo "   ⚠️ gpu-asr: pull falhou"
+            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull gpu-asr 2>&1 || echo "   ⚠️ gpu-asr: pull falhou"
             
-            echo "📥 Pull GPU Trainer (fine-tuning)..."
-            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-training pull 2>&1 || echo "   ⚠️ gpu-trainer: pull falhou"
+            echo "📥 Pull GPU Trainer (fine-tuning sob demanda)..."
+            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile training pull gpu-trainer 2>&1 || echo "   ⚠️ gpu-trainer: pull falhou"
             
             echo "✅ Pull concluído"
             echo ""
@@ -3651,8 +3654,8 @@ jobs:
             echo "🧹 PRE-CLEANUP: Verificando containers problemáticos..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             
-            # Inclui serviços Alice + containers GPU
-            ALICE_SERVICES="alice-auth alice-chat alice-rag alice-training alice-integrations alice-gpu-manager alice-frontend alice-observability gpu-mixtral gpu-embeddings gpu-flux gpu-asr gpu-trainer"
+            # ARQUITETURA v4.0.0: Serviços Alice + containers GPU
+            ALICE_SERVICES="alice-auth alice-chat alice-rag alice-training alice-integrations alice-gpu-manager alice-frontend alice-observability gpu-qwen-vl gpu-embeddings gpu-asr gpu-trainer"
             PROBLEM_FOUND=false
             
             for svc in $ALICE_SERVICES; do
@@ -3672,40 +3675,28 @@ jobs:
             echo ""
 
             # =================================================================
-            # ARQUITETURA ENTERPRISE (09/01/2026): Orquestração Dinâmica de GPU
+            # ARQUITETURA v4.0.0 (11/01/2026): Serviços GPU Simultâneos
             # =================================================================
-            # GPU Manager gerencia containers GPU dinamicamente via Docker API:
-            # - Apenas 1 serviço GPU pesado por vez (VRAM 20GB compartilhada)
-            # - Troca automática on-demand (Chat→Mixtral, RAG→Embeddings, etc)
-            # - Containers GPU são CRIADOS mas não iniciados no deploy
-            # - GPU Manager inicia o serviço padrão (Mixtral) automaticamente
+            # Todos os serviços GPU rodam simultaneamente (15GB de 20GB VRAM):
+            # - gpu-qwen-vl: LLM + Vision (~4GB) - chat, trading, análise de gráficos
+            # - gpu-embeddings: Qwen3-Embedding-8B INT8 (~8GB) + OpenCLIP
+            # - gpu-asr: Canary-1B (~3GB) - transcrição de áudio
+            # - gpu-trainer: QLoRA fine-tuning (~12GB) - SOB DEMANDA via profile
+            # NOTA: FLUX.1 Schnell REMOVIDO - Alice analisa mas NÃO gera imagens
             # =================================================================
             
-            # Criar containers GPU (sem iniciar)
+            # ARQUITETURA v4.0.0: Containers GPU rodam SIMULTANEAMENTE (não mais on-demand)
+            # Trainer é o único com profile (sob demanda para treinamento)
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "🐳 CREATE: Criando containers GPU (gerenciados pelo GPU Manager)..."
+            echo "🐳 ARQUITETURA v4.0.0: Serviços GPU simultâneos (15GB/20GB VRAM)"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            
-            # Criar cada container GPU separadamente (não inicia, apenas cria)
-            echo "   📦 Criando gpu-mixtral..."
-            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-llm create --no-start 2>&1 || echo "   ⚠️ gpu-mixtral: create falhou"
-            
-            echo "   📦 Criando gpu-embeddings..."
-            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-embeddings create --no-start 2>&1 || echo "   ⚠️ gpu-embeddings: create falhou"
-            
-            echo "   📦 Criando gpu-flux..."
-            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-flux create --no-start 2>&1 || echo "   ⚠️ gpu-flux: create falhou"
-            
-            echo "   📦 Criando gpu-asr..."
-            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-asr create --no-start 2>&1 || echo "   ⚠️ gpu-asr: create falhou"
-            
-            echo "   📦 Criando gpu-trainer..."
-            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-training create --no-start 2>&1 || echo "   ⚠️ gpu-trainer: create falhou"
-            
-            echo "✅ Containers GPU criados (aguardando GPU Manager)"
+            echo "   📦 gpu-qwen-vl: LLM + Vision (~4GB)"
+            echo "   📦 gpu-embeddings: Qwen3-Embedding-8B INT8 (~8GB)"
+            echo "   📦 gpu-asr: Canary-1B (~3GB)"
+            echo "   📦 gpu-trainer: QLoRA (sob demanda via profile training)"
             echo ""
 
-            # Deploy serviços principais (GPU Manager inicia Mixtral automaticamente)
+            # Deploy serviços principais (todos os GPU services ativos simultaneamente)
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "🚀 UP: Iniciando serviços Alice (GPU Manager gerencia containers GPU)..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -3739,8 +3730,8 @@ jobs:
             echo "🎮 Containers GPU (gerenciados pelo GPU Manager):"
             docker ps -a --filter "name=gpu-" --format "table {{.Names}}\t{{.Status}}" || echo "   (nenhum container GPU encontrado)"
             echo ""
-            echo "📝 NOTA: Containers GPU são iniciados on-demand pelo GPU Manager"
-            echo "         Mixtral será iniciado automaticamente como serviço padrão"
+            echo "📝 ARQUITETURA v4.0.0: Todos os serviços GPU rodam simultaneamente"
+            echo "         Qwen-VL + Embeddings + ASR ativos 24/7 (15GB de 20GB VRAM)"
             echo ""
             
             # =================================================================
@@ -4013,23 +4004,10 @@ jobs:
               echo "🐳 Deploying rollback version: $TARGET_VERSION"
               echo "========================================"
               
-              # Pull todas as imagens (incluindo GPU)
+              # ARQUITETURA v4.0.0: Pull todas as imagens (GPU services rodam simultaneamente)
               IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull
-              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-llm pull || true
-              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-embeddings pull || true
-              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-flux pull || true
-              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-asr pull || true
-              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-training pull || true
               
-              # Criar containers GPU (sem iniciar - GPU Manager gerencia)
-              echo "📦 Criando containers GPU..."
-              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-llm create --no-start || true
-              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-embeddings create --no-start || true
-              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-flux create --no-start || true
-              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-asr create --no-start || true
-              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile gpu-training create --no-start || true
-              
-              # Up serviços principais (GPU Manager inicia Mixtral automaticamente)
+              # Up serviços principais (todos os GPU services ativos simultaneamente)
               IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml up -d --pull always --remove-orphans
               
               echo "$TARGET_VERSION" > /opt/alice/versions/alice.current
@@ -4037,7 +4015,7 @@ jobs:
               echo ""
               echo "✅ ROLLBACK CONCLUÍDO"
               echo "   Versão atual: $TARGET_VERSION"
-              echo "   📝 GPU Manager iniciará Mixtral automaticamente"
+              echo "   📝 ARQUITETURA v4.0.0: Serviços GPU ativos simultaneamente"
             else
               echo ""
               echo "✅ CLEANUP CONCLUÍDO"

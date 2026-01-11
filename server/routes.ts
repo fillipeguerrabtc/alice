@@ -264,10 +264,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral (multimodal, finanças)
   app.get("/api/llm/status", isAuthenticated, async (_req: Request, res: Response) => {
     res.json({
       available: llmClient.isAvailable(),
-      model: "Mixtral-8x7B",
+      model: "Qwen2.5-VL-7B",
       provider: "GPU Manager Service (Hetzner GEX44)",
     });
   });

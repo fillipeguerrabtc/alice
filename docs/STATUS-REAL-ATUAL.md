@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 10 de Janeiro de 2026  
+> **Data:** 11 de Janeiro de 2026  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 6.5 - Healthcheck Fixes PR#102 (netcat, distroless, Frappe endpoint)
+> **Versão:** 7.0 - ARQUITETURA GPU v4.0.0 (Qwen2.5-VL, TODOS serviços simultâneos)
 
 > **🚀 ATUALIZAÇÃO v3.0.0 (06/01/2026) - Pipeline Enterprise:**  
 > Pipeline CI/CD enterprise completo com deploy modular em 5 stacks independentes.
@@ -26,17 +26,18 @@
 | Aspecto | Valor |
 |---------|-------|
 | **Arquitetura** | **Multi-Stack Modular** (5 stacks independentes) |
-| **Total de Containers** | 50 (10 infra + 8 Alice + 5 GPU + 13 observability + 15 ERPNext + 1 backup) |
+| **Total de Containers** | 50 (10 infra + 8 Alice + 4 GPU + 13 observability + 15 ERPNext + 1 backup + 1 trainer on-demand) |
 | **Servidor** | Hetzner GEX44 (Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD RAID 1, RTX 4000 Ada 20GB) |
 | **Volume Adicional** | Não necessário - servidor GEX44 possui 1.92TB interno (substitui volume externo) |
 | **SO** | Ubuntu 24.04.3 LTS |
 | **Docker** | 29.1.3 + Compose v5.0.0 |
 | **Domínio** | yesyoudeserve.duckdns.org |
 | **IP** | 178.63.41.108 |
-| **LLM** | Mixtral 8x7B (MoE ~12B ativos, vLLM AWQ) via Hetzner GPU GEX44 (RTX 4000 Ada 20GB) + Trading BTC |
+| **LLM** | **Qwen2.5-VL 7B AWQ** (multimodal: texto + vision) via Hetzner GPU GEX44 - ARQUITETURA v4.0.0 |
 | **CI/CD** | 100% automatizado (Push → CI → Release → Deploy) |
 | **Imagens Docker** | Google Distroless (Node.js), Alpine (nginx, Python) |
 | **Storage** | Volume local Hetzner (SEM S3 externo) |
+| **GPU v4.0.0** | **TODOS GPU SIMULTÂNEOS** (15GB/20GB): Qwen2.5-VL (~4GB), Embeddings INT8 (~8GB), ASR (~3GB) |
 
 ### Security Hardening (19/12/2025)
 
@@ -95,7 +96,7 @@
 
 > **Bug Fix Log Capture 21/12/2025:** Captura de logs agora respeita `DEPLOY_SERVICES`: `alice-only` captura containers Alice (12), `erpnext-only` captura containers ERPNext (15 incluindo workers -2), `all` captura ambos (27 total). Bug anterior só capturava Alice mesmo quando ERPNext falhava. Corrigidos nomes `postgres`→`alice-postgres`, `traefik`→`alice-caddy` (migração 02/01/2026). Adicionados workers faltantes: `erpnext-worker-*-2`.
 
-> **GPU Manager Service 25/12/2025:** Todos os serviços GPU (LLM, Embeddings, FLUX, ASR) agora rodam localmente no servidor Hetzner GPU GEX44, gerenciados pelo GPU Manager Service com fila priorizada, monitoramento VRAM e circuit breakers. Elimina latência de rede e simplifica arquitetura. Guia completo: [docs/ARQUITETURA-GPU-MANAGER.md](ARQUITETURA-GPU-MANAGER.md).
+> **ARQUITETURA GPU v4.0.0 (11/01/2026):** Todos os serviços GPU rodam **SIMULTANEAMENTE** no servidor Hetzner GPU GEX44 (15GB de 20GB VRAM). **Qwen2.5-VL 7B** substitui Mixtral, oferecendo suporte nativo a vision para análise de gráficos de trading. **FLUX.1 REMOVIDO** - Alice ANALISA imagens via Qwen2.5-VL mas NÃO gera. Zero latência de troca. Guia completo: [docs/ARQUITETURA-GPU-MANAGER.md](ARQUITETURA-GPU-MANAGER.md).
 
 > **Bug Fix ERPNext install-app --verbose 25/12/2025:** O comando `bench install-app` no container `erpnext-create-site` (ETAPA 2) usava a flag `--verbose` que não é suportada. Erro: "No such option: --verbose" causava falha na instalação do ERPNext durante o deploy. Corrigido: Removida flag `--verbose` do comando `bench install-app` na linha 1641 do docker-compose.prod.yml. O `bench new-site` (ETAPA 1) aceita `--verbose` e funcionou corretamente, mas `bench install-app` não aceita essa flag. Comando corrigido: `timeout 1200 bench --site "${SITE_NAME}" install-app erpnext 2>&1 | tee -a /tmp/bench-new-site.log`.
 
@@ -141,7 +142,7 @@
 | 5 | Training | `apps/training-service` | alice-training | 3004 | Node.js, fine-tuning, SemHash |
 | 6 | Integrations | `apps/integrations-service` | alice-integrations | 3005 | Node.js, Stripe, Wise, Twilio |
 | 7 | Observability | `apps/observability-service` | alice-observability | 3007 | Node.js, backup orchestrator |
-| 43-48 | GPU Services | `gpu-manager-service`, `gpu-mixtral`, `gpu-embeddings`, `gpu-flux`, `gpu-asr`, **gpu-trainer** | - | - | GPU Manager Service + 5 serviços GPU locais (Hetzner GEX44) - Texto: Qwen3-Embedding-8B (4096 dim → Qdrant), Imagem: OpenCLIP (1024 dim → pgvector), ASR: Canary-1B, LLM: Mixtral 8x7B, **Fine-tuning LoRA (prioridade 3)** |
+| 43-47 | GPU Services | `gpu-manager-service`, `gpu-qwen-vl`, `gpu-embeddings`, `gpu-asr`, **gpu-trainer** | - | - | GPU Manager Service + 4 serviços GPU locais - ARQUITETURA v4.0.0: **TODOS SIMULTÂNEOS** (15GB/20GB VRAM): LLM Qwen2.5-VL 7B (~4GB), Embeddings INT8 (~8GB), ASR Canary-1B (~3GB), **Fine-tuning QLoRA (on-demand via profile)** |
 | 9 | API Gateway | `apps/api-gateway` | **N/A (dev only)** | 3000 | Node.js (Caddy em prod) |
 
 > **NOTA:** O `api-gateway` Node.js é APENAS para desenvolvimento local. Em produção, Caddy 2.8.4 atua como API Gateway (migração de Traefik em 02/01/2026).
@@ -178,10 +179,10 @@
 | Funcionalidade | Status | Arquivo |
 |----------------|--------|---------|
 | WebSocket tempo real | ✅ | `index.ts` |
-| LLM Hetzner GPU (Mixtral 8x7B vLLM AWQ) | ✅ | `index.ts` (via GPU Manager Service) |
+| LLM Hetzner GPU (Qwen2.5-VL 7B vLLM AWQ) | ✅ | `index.ts` (via GPU Manager Service) - ARQUITETURA v4.0.0 |
+| Vision Analysis (análise de imagens) | ✅ | Nativo via Qwen2.5-VL - zero overhead |
 | RAG Client (busca contexto) | ✅ | `rag-client.ts` |
-| Image Generation (FLUX.1 Schnell) | ✅ | `image-generation-client.ts` |
-| FLUX.1 Deployment Management | ✅ | `flux-deployment.ts` |
+| ❌ Image Generation (REMOVIDO) | ❌ | FLUX.1 removido da v4.0.0 - Alice apenas ANALISA imagens |
 | Takeover/Handover Humano | ✅ | `conversation-orchestrator.ts` |
 | Escalação automática | ✅ | `conversation-orchestrator.ts` |
 | SLA Monitoring | ✅ | `conversation-orchestrator.ts` |
@@ -198,9 +199,7 @@
 > - **trading-command-parser.ts**: Typo crítico `hasTradicngContext` → `hasTradingContext` (ReferenceError em runtime)
 > - **trading-command-parser.ts**: Interface `ParsedTradingCommand` não tinha `side` nem `positionType` → Adicionados para stop orders
 > - **index.ts**: `command.side` sempre undefined para stop orders → Agora infere lado correto da posição atual (LONG→sell, SHORT→buy)
-> - **flux-deployment.ts**: Logger não padronizado - agora usa `createLogger()` (Regra 2 - Não Duplicar)
-> - **flux-deployment.ts**: 5 chamadas `fetch()` sem timeout - agora têm `AbortSignal.timeout(30s)` (Best Practices 2025)
->   - `getFluxDeploymentStatus()`, `stopFluxDeployment()`, `restartFluxDeployment()`, `scaleFluxDeployment()`, `listFluxDeployments()`
+> - **ARQUITETURA v4.0.0 (11/01/2026)**: `flux-deployment.ts` e `image-generation-client.ts` REMOVIDOS - Alice não gera mais imagens
 > - **Total**: 8 bugs corrigidos, 9 arquivos auditados (~5500 linhas)
 
 ### 3. rag-service (Porta 3003)
@@ -246,21 +245,20 @@
 
 > **Nota (GPU Enterprise - 17/12/2025):** Todos os embeddings e transcrição agora são 100% via GPU Manager Service (Hetzner GEX44) GPUs (Container Groups).
 >
-> **Endpoints GPU GPU Manager Service (Hetzner GEX44):**
-> - `gpu-mixtral (localhost)` - LLM Mixtral 8x7B vLLM (`/v1/chat/completions`)
-> - `gpu-flux (localhost)` - FLUX.1 Schnell (`/generate`)
-> - `gpu-asr (localhost)` - Whisper large-v3 (`/transcribe`)
-> - `gpu-embeddings (localhost)` - Qwen3 + OpenCLIP (`/embed/text`, `/embed/image`)
+> **Endpoints GPU GPU Manager Service (Hetzner GEX44) - ARQUITETURA v4.0.0:**
+> - `gpu-qwen-vl (localhost)` - LLM Qwen2.5-VL 7B vLLM (`/v1/chat/completions`) - multimodal texto+vision
+> - `gpu-asr (localhost)` - Canary-1B NeMo (`/transcribe`)
+> - `gpu-embeddings (localhost)` - Qwen3-Embedding-8B INT8 + OpenCLIP (`/embed/text`, `/embed/image`)
+> - ❌ `gpu-flux` REMOVIDO - Alice ANALISA imagens via Qwen2.5-VL mas NÃO gera
 >
 > **Semântica HTTP (enterprise-grade):** quando `WHISPER_REQUIRED=false` e Whisper não está carregado, o endpoint `POST /inference/transcribe` responde **501 (Not Implemented)** com a mensagem “Transcrição desabilitada…”, evitando retornar **503** (que sinaliza indisponibilidade temporária).
 >
 > **Arquitetura Enterprise (22/12/2025):** Container Groups GPU Manager Service (Hetzner GEX44) **pré-criados manualmente** no Dashboard. URLs configuradas como secrets no GitHub. RTX 4000 Ada (20GB VRAM).
 
 > **Nota (Readiness por capability):** Endpoints GPU validam disponibilidade via health checks dedicados:
-> - `gpu-embeddings (localhost)/health` (embeddings)
-> - `gpu-asr (localhost)/health` (transcrição)
-> - `gpu-mixtral (localhost)/health` (LLM)
-> - `gpu-flux (localhost)/health` (imagens)
+> - `gpu-embeddings (localhost)/health` (embeddings INT8)
+> - `gpu-asr (localhost)/health` (transcrição Canary-1B)
+> - `gpu-qwen-vl (localhost)/health` (LLM + Vision - Qwen2.5-VL)
 
 > **Nota (Robustez enterprise):**
 > - `document-processor`: valida **explicitamente** a dimensão de cada embedding de chunk (4096 dim) antes de inserir no Qdrant.
@@ -386,10 +384,11 @@
 | **Embeddings de Texto (Trading/RAG)** | ✅ | Qwen3-Embedding-8B (4096 dim) → Qdrant - GPU Manager Service (Hetzner GEX44) |
 | **Embeddings de Imagem** | ✅ | OpenCLIP ViT-H/14 (1024 dim) → pgvector - GPU Manager Service (Hetzner GEX44) |
 | **ASR (Transcrição)** | ✅ | Canary-1B (NeMo) - GPU Manager Service (Hetzner GEX44) |
-| **LLM (Chat/Trading)** | ✅ | Mixtral 8x7B vLLM AWQ - GPU Manager Service (Hetzner GEX44) |
-| **Geração de Imagens** | ✅ | FLUX.1 Schnell - GPU Manager Service (Hetzner GEX44) |
+| **LLM (Chat/Trading)** | ✅ | **Qwen2.5-VL 7B AWQ** - GPU Manager Service (Hetzner GEX44) - ARQUITETURA v4.0.0 |
+| **Vision (Análise de Imagens)** | ✅ | **Nativo Qwen2.5-VL** - zero overhead adicional |
+| ❌ **Geração de Imagens** | ❌ | **REMOVIDO** - FLUX.1 não necessário para domínio financeiro |
 | Suporte Multilíngue (100+ idiomas) | ✅ | Qwen3-Embedding-8B |
-| GPU Dedicada 24/7 | ✅ | Hetzner GEX44 - sem cold start |
+| GPU Dedicada 24/7 | ✅ | Hetzner GEX44 - TODOS GPU SIMULTÂNEOS (15GB/20GB) |
 | Rate Limiting | ✅ | `serve.py` |
 | Circuit Breaker (Python) | ✅ | `pybreaker` |
 | Prometheus Metrics | ✅ | `/metrics` |
@@ -398,8 +397,8 @@
 > - **Embeddings de Texto (Trading/RAG):** Qwen3-Embedding-8B (4096 dim) - **Qdrant** (máxima qualidade)
 > - **Embeddings de imagem:** OpenCLIP ViT-H/14 (1024 dim) - pgvector
 > - **ASR:** Canary-1B (NeMo) - GPU Manager Service (Hetzner GEX44)
-> - **GPU Dedicada 24/7:** Hetzner GEX44 com containers Docker rodando continuamente (sem cold start)
-> - **LLM Trading:** Mixtral 8x7B (MoE ~12B ativos) via vLLM - Trading BTC Futures KuCoin
+> - **GPU Dedicada 24/7:** Hetzner GEX44 - ARQUITETURA v4.0.0 - TODOS containers GPU SIMULTÂNEOS (15GB/20GB VRAM)
+> - **LLM Trading + Vision:** Qwen2.5-VL 7B AWQ - multimodal (texto + análise de gráficos) - Trading BTC Futures KuCoin
 >
 > **Justificativa Qwen3-Embedding-8B (Análise de Licenças 17/12/2025):**
 > - ✅ **Qwen3-Embedding-8B** (Apache 2.0) - ÚNICO modelo top-tier com licença comercial
@@ -438,7 +437,7 @@
 | Integrations | `Integrations.tsx` | Stripe, Wise, Twilio |
 | WisePayments | `WisePayments.tsx` | Transferências Wise |
 | **Trading** | `Trading.tsx` | **Trading BTC Futures KuCoin - 8 tabs: Overview + Chart + OrderBook + Orders + Positions + Signals + History + Control (17/12/2025)** |
-| ImageGallery | `ImageGalleryPage.tsx` | Galeria FLUX.1 |
+| ImageGallery | `ImageGalleryPage.tsx` | Galeria histórica (FLUX.1 REMOVIDO da v4.0.0) |
 | TakeoverPanel | `TakeoverPanel.tsx` | Takeover/Handover |
 | **BackupAdmin** | `BackupAdmin.tsx` | **Gestão backups enterprise** |
 | Observability | `Observability.tsx` | Status stack |
@@ -587,14 +586,14 @@ Retenção Arquivo:   30 dias
 
 | Tabela | Propósito |
 |--------|-----------|
-| `generated_images` | Imagens FLUX.1 |
+| `generated_images` | Histórico (FLUX.1 removido da v4.0.0) |
 | `media_uploads` | Uploads multimodais |
 
-### Schema Trading (8 tabelas) - FASE Trading Mixtral 8x7B
+### Schema Trading (8 tabelas) - ARQUITETURA v4.0.0 Qwen2.5-VL
 
 | Tabela | Propósito | RLS |
 |--------|-----------|-----|
-| `trading_signals` | Sinais gerados pelo LLM Mixtral | ✅ |
+| `trading_signals` | Sinais gerados pelo LLM Qwen2.5-VL | ✅ |
 | `trading_orders` | OMS - Order Management System | ✅ |
 | `trading_positions` | EMS - Execution Management System | ✅ |
 | `trading_risk_config` | Configuração de risco por tenant | ✅ |
@@ -603,10 +602,11 @@ Retenção Arquivo:   30 dias
 | `trading_dataset` | Dataset para fine-tuning LoRA | ✅ |
 | `trading_lora_jobs` | Jobs de treinamento LoRA para trading | ✅ |
 
-> **Arquitetura Trading:**
+> **Arquitetura Trading - ARQUITETURA v4.0.0:**
 > - **Exchange:** KuCoin Futures (XBTUSDTM - BTC/USDT Perpetual)
-> - **LLM:** Mixtral 8x7B (MoE ~12B ativos) via vLLM AWQ no Hetzner GPU GEX44 (RTX 4000 Ada 20GB)
-> - **Embeddings:** Qwen3-Embedding-8B (4096 dim) para análise de mercado
+> - **LLM:** Qwen2.5-VL 7B AWQ via vLLM no Hetzner GPU GEX44 (RTX 4000 Ada 20GB) - multimodal texto+vision
+> - **Vision:** Análise de gráficos de trading via Qwen2.5-VL (nativo, zero overhead)
+> - **Embeddings:** Qwen3-Embedding-8B INT8 (4096 dim) para análise de mercado
 > - **Circuit Breaker:** Preset `kucoinFutures` (timeout 5s, threshold 30%)
 > - **Risk Management:** Limites diários, max posições, alavancagem configurável
 > - **Cliente:** `kucoinClient.ts` - HMAC-SHA256, circuit breaker, rate limiting
@@ -614,7 +614,7 @@ Retenção Arquivo:   30 dias
 > - **RLS:** 7/8 tabelas com Row Level Security (migration 0007)
 > - **RBAC:** 4 permissões `integrations:trading:{read,write,delete,manage}`
 
-### API REST Trading (25 endpoints) - FASE Trading Mixtral 8x7B
+### API REST Trading (25 endpoints) - ARQUITETURA v4.0.0 Qwen2.5-VL
 
 | Endpoint | Método | Propósito | Permissão RBAC |
 |----------|--------|-----------|----------------|
@@ -625,7 +625,7 @@ Retenção Arquivo:   30 dias
 | `/api/integrations/trading/risk-config` | GET | Configuração de risco | `trading:read` |
 | `/api/integrations/trading/risk-config` | PUT | Atualizar configuração | `trading:manage` |
 | `/api/integrations/trading/signals` | GET | Listar sinais ativos | `trading:read` |
-| `/api/integrations/trading/signals` | POST | Criar sinal (Mixtral) | `trading:write` |
+| `/api/integrations/trading/signals` | POST | Criar sinal (Qwen2.5-VL) | `trading:write` |
 | `/api/integrations/trading/signals/:id` | DELETE | Desativar sinal | `trading:write` |
 | `/api/integrations/trading/orders` | GET | Listar ordens | `trading:read` |
 | `/api/integrations/trading/orders` | POST | Criar ordem | `trading:write` |
@@ -660,7 +660,7 @@ Retenção Arquivo:   30 dias
 | **OrderBook** | Visualização de profundidade de mercado, bids/asks, spread |
 | **Orders** | Tabela completa, criar/cancelar/sincronizar ordens, filtro por status |
 | **Positions** | Posições abertas com PnL, preço de liquidação, margem utilizada |
-| **Signals** | Sinais do Mixtral LLM com confidence + **Painel de Aprovação** (aprovar/rejeitar sinais) |
+| **Signals** | Sinais do Qwen2.5-VL LLM com confidence + **Painel de Aprovação** (aprovar/rejeitar sinais) |
 | **Analysis** | **NOVO 21/12** - Análise Técnica: RSI, MACD, EMAs, Bollinger, ATR, Stochastic, ADX, Pivot Points |
 | **History** | Histórico completo de operações com auditoria |
 | **Control** | Handover/takeover entre Alice (IA) e operador manual, histórico de controle |
@@ -709,8 +709,8 @@ Retenção Arquivo:   30 dias
 > - **Texto (Trading/RAG):** Qwen3-Embedding-8B (4096 dim) → Qdrant (Apache 2.0 - única opção comercial top-tier)
 > - **Imagem:** OpenCLIP ViT-H/14 (1024 dim) → pgvector (MIT)
 > - **ASR:** Canary-1B (NeMo, Apache 2.0)
-> - **LLM:** Mixtral 8x7B (vLLM AWQ)
-> - **Flux:** FLUX.1 Schnell (Geração de Imagens)
+> - **LLM + Vision:** Qwen2.5-VL 7B AWQ (vLLM) - ARQUITETURA v4.0.0
+> - ❌ **FLUX REMOVIDO** - Alice ANALISA imagens via Qwen2.5-VL mas NÃO gera
 
 ### ERPNext Stack (12)
 
@@ -1096,11 +1096,12 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 | Capacidade | Tecnologia | Status |
 |------------|------------|--------|
-| Chat Conversacional + Trading | Mixtral 8x7B (MoE ~12B, vLLM) | ✅ |
-| Geração de Imagens | FLUX.1 Schnell (Hetzner GPU GEX44) | ✅ |
+| Chat Conversacional + Trading | Qwen2.5-VL 7B AWQ (vLLM) - ARQUITETURA v4.0.0 | ✅ |
+| Vision (Análise de Gráficos) | Qwen2.5-VL (nativo, zero overhead) | ✅ |
+| ❌ Geração de Imagens | **REMOVIDO** - não necessário para domínio financeiro | ❌ |
 | Embeddings Imagem | OpenCLIP ViT-H/14 (1024 dim → pgvector) | ✅ |
-| Embeddings Texto (Trading/RAG) | Qwen3-Embedding-8B (4096 dim → Qdrant) | ✅ |
-| Trading BTC Futures | KuCoin Futures API + LoRA Mixtral | ✅ API REST (22 endpoints) |
+| Embeddings Texto (Trading/RAG) | Qwen3-Embedding-8B INT8 (4096 dim → Qdrant) | ✅ |
+| Trading BTC Futures | KuCoin Futures API + QLoRA Qwen2.5-VL | ✅ API REST (22 endpoints) |
 
 ### Processamento Multimodal (INPUT) - ARQUITETURA ENTERPRISE (17/12/2025)
 
@@ -1116,12 +1117,12 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | Áudio | `audio-processor.ts` | Canary-1B + Qwen3-Embedding-8B | Transcrição + 4096 dim (Qdrant) |
 | Documento | `document-processor.ts` | pdf-parse, mammoth, xlsx + Qwen3 | 4096 dim (Qdrant) |
 
-**Serviços de Inferência (GPU Manager Service - Hetzner GEX44):**
-- **LLM:** Mixtral 8x7B (vLLM, quantizado 4/5-bit) - Chat e Trading
-- **Embeddings Texto:** Qwen3-Embedding-8B (4096 dim → Qdrant)
+**Serviços de Inferência (GPU Manager Service - Hetzner GEX44) - ARQUITETURA v4.0.0:**
+- **LLM + Vision:** Qwen2.5-VL 7B AWQ (vLLM, ~4GB VRAM) - Chat, Trading e análise de gráficos
+- **Embeddings Texto:** Qwen3-Embedding-8B INT8 (~8GB VRAM, 4096 dim → Qdrant)
 - **Embeddings Imagem:** OpenCLIP ViT-H/14 (1024 dim → pgvector)
-- **ASR:** Canary-1B (NeMo, transcrição)
-- **Image Gen:** FLUX.1 Schnell
+- **ASR:** Canary-1B (~3GB VRAM, NeMo, transcrição)
+- **TOTAL:** 15GB de 20GB VRAM - TODOS SIMULTÂNEOS (zero latência de troca)
 
 ### Auto-Learning
 
@@ -1188,8 +1189,8 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | **Integrações** | ✅ | Stripe, Wise, ERPNext, Twilio, Gmail SMTP |
 | **Identity Provisioning** | ✅ | Grafana + ERPNext |
 | **Multimodal INPUT** | ✅ | Image, Audio, Document |
-| **Geração** | ✅ | LLM + Image (FLUX.1) |
-| **Auto-learning** | ✅ | Scheduler + LoRA + Versioning |
+| **Geração** | ✅ | LLM (Qwen2.5-VL) - FLUX.1 REMOVIDO |
+| **Auto-learning** | ✅ | Scheduler + QLoRA + Versioning (semanal) |
 | **Takeover/Handover** | ✅ | Completo com escalação |
 | **Backup Enterprise** | ✅ | PostgreSQL, MariaDB, Redis, Volume Local, PITR |
 | **Observability** | ✅ | Prometheus, Grafana, Jaeger, Langfuse |

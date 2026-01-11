@@ -549,8 +549,11 @@ Storage interno do servidor GEX44 (1.92TB utilizável) montado diretamente em `/
 |---------|-------|
 | Servidor GPU GEX44 | €184.00/mês (fixo) |
 | GPU Manager Service | Incluído (gerencia requisições localmente) |
-| Mixtral 8x7B (vLLM) | Local (sem custo adicional) |
-| FLUX.1 Schnell | Sob demanda |
+| Qwen2.5-VL 7B (vLLM) | Local (sem custo adicional) - ARQUITETURA v4.0.0 |
+| Embeddings INT8 | Local (sem custo adicional) |
+| ASR Canary-1B | Local (sem custo adicional) |
+
+> **NOTA v4.0.0:** FLUX.1 Schnell REMOVIDO. Todos serviços GPU rodam SIMULTANEAMENTE (15GB/20GB VRAM).
 
 ### DuckDNS (Gratuito)
 
@@ -1044,8 +1047,8 @@ O workflow de release (`release.yml`) suporta versionamento automático baseado 
 │  │ Deploy Production   │ ← 100% AUTO (sem aprovação)            │
 │  │ • SSH para Hetzner  │   50 containers                        │
 │  │ • Docker Compose up │                                        │
-│  │ • Validate GPU URLs │   4 Container Groups (pré-criados)     │
-│  │ • Health checks     │   RTX 4000 Ada 20GB (Mixtral, FLUX, ASR, Emb.)  │
+│  │ • Validate GPU URLs │   4 GPU Services (SIMULTÂNEOS)         │
+│  │ • Health checks     │   RTX 4000 Ada 20GB (Qwen2.5-VL, Emb, ASR) - v4.0.0  │
 │  │ • Rollback auto     │                                        │
 │  └─────────────────────┘                                        │
 │                                                                  │
@@ -1062,18 +1065,19 @@ O workflow de release (`release.yml`) suporta versionamento automático baseado 
 | **Validate GPU** | Deploy Hetzner passa | Valida URLs GPU (Container Groups pré-criados) |
 | **Health Check** | Validate GPU passa | Validação e rollback automático |
 
-### GPU é OBRIGATÓRIO - Enterprise-Grade (25/12/2025)
+### GPU é OBRIGATÓRIO - Enterprise-Grade - ARQUITETURA v4.0.0 (11/01/2026)
 
-**⚠️ ARQUITETURA ENTERPRISE:** Os serviços GPU são **OBRIGATÓRIOS**, não opcionais. GPUs são o coração da plataforma de IA - sem eles, a plataforma não funciona. Todos os serviços GPU rodam localmente no servidor Hetzner GPU GEX44, gerenciados pelo GPU Manager Service.
+**⚠️ ARQUITETURA ENTERPRISE v4.0.0:** Os serviços GPU são **OBRIGATÓRIOS**, não opcionais. GPUs são o coração da plataforma de IA - sem eles, a plataforma não funciona. Todos os serviços GPU rodam localmente no servidor Hetzner GPU GEX44, gerenciados pelo GPU Manager Service. **TODOS os serviços rodam SIMULTANEAMENTE** (15GB/20GB VRAM).
 
-| Serviço GPU | Função | Impacto se Falhar |
-|-------------|--------|-------------------|
-| **GPU Manager Service** | Gerenciamento centralizado (fila, VRAM, circuit breakers) | Todas as requisições GPU falham |
-| **Mixtral 8x7B** | LLM (chat, trading) | Chat não funciona |
-| **Embeddings GPU** | Qwen3 + OpenCLIP (RAG) | RAG não funciona |
-| **FLUX.1 Schnell** | Geração de imagens | Imagens não funcionam |
-| **ASR Canary-1B** | Transcrição de áudio | Áudio não funciona |
-| **GPU Trainer** | Fine-tuning LoRA (prioridade 3) | Fine-tuning não funciona (chat/embeddings continuam) |
+| Serviço GPU | Função | VRAM | Impacto se Falhar |
+|-------------|--------|------|-------------------|
+| **GPU Manager Service** | Gerenciamento centralizado (fila, VRAM, circuit breakers) | N/A | Todas as requisições GPU falham |
+| **Qwen2.5-VL 7B** | LLM multimodal (chat, trading, vision) | ~4GB | Chat não funciona |
+| **Embeddings GPU** | Qwen3-Embedding-8B INT8 + OpenCLIP (RAG) | ~8GB | RAG não funciona |
+| **ASR Canary-1B** | Transcrição de áudio | ~3GB | Áudio não funciona |
+| **GPU Trainer** | Fine-tuning QLoRA (on-demand via profile) | ~5GB | Fine-tuning não funciona (chat/embeddings continuam) |
+
+> **NOTA v4.0.0:** FLUX.1 Schnell REMOVIDO - Alice ANALISA imagens via Qwen2.5-VL Vision mas NÃO gera. Zero latência de troca entre serviços.
 
 **Health Check Completo:**
 - Verifica **6 serviços Hetzner**: Frontend, Auth, Chat, RAG, ERPNext, Grafana
@@ -2201,20 +2205,20 @@ O workflow `deploy-stack-modular.yml` executa automaticamente este script no job
 ---
 
 *Autor: Fillipe Guerra*
-*Documento atualizado em: 02 de Janeiro de 2026*
-*Versão: 7.13 - Critical Pipeline Fixes*
-*Data: 02 de Janeiro de 2026*
+*Documento atualizado em: 11 de Janeiro de 2026*
+*Versão: 8.0 - Arquitetura GPU v4.0.0*
+*Data: 11 de Janeiro de 2026*
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Alpine 3.21*
-*Total de Containers: 50 (7 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)*
+*Total de Containers: 50 (7 infra + 7 Alice + 15 ERPNext + 14 observability + 4 GPU + 1 backup + 1 trainer on-demand)*
 *Security Hardening: 100% completo - 50/50 containers com no-new-privileges, 50/50 com resource limits, 25/50 com read_only*
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.1.3, Docker Compose v5.0.0*
 *Storage: Volume Hetzner alice-data 100GB montado em /opt/alice*
-*ARQUITETURA ENTERPRISE: Texto Qwen3-Embedding-8B (4096 dim → Qdrant) | Imagem OpenCLIP (1024 dim → pgvector) | LLM Mixtral 8x7B (vLLM)*
+*ARQUITETURA ENTERPRISE v4.0.0: Texto Qwen3-Embedding-8B INT8 (4096 dim → Qdrant) | Imagem OpenCLIP (1024 dim → pgvector) | LLM Qwen2.5-VL 7B AWQ (vLLM) - multimodal texto+vision*
 *Pipeline Enterprise (26/12/2025): Deploy Server (CPX32 - IP 46.224.46.93, 4 vCPU, 8GB RAM) separado + Production Server (GEX44 GPU - IP 178.63.41.108). Todos os 50 containers rodam no servidor único, incluindo GPU services gerenciados pelo GPU Manager Service.*
 
 *Migração Traefik→Caddy (02/01/2026): Traefik, traefik-init e dockerproxy substituídos por Caddy. Vantagens: SSL automático com retry inteligente, HTTP/3 nativo (QUIC), footprint 40MB vs 100MB. Total: 7 infra (era 8).*
 *Otimização CI (27/12/2025): Composite action `.github/actions/setup-node-pnpm` elimina duplicação de setup (14x → 1x). Economia de ~6-10min por run. Fix cache persistence: usa actions/cache/restore + actions/cache/save separados (best practice 2025).*
-*GPU: RTX 4000 SFF Ada (20GB VRAM) - Mixtral 8x7B vLLM, FLUX.1 Schnell, ASR Canary-1B, Embeddings Qwen3+OpenCLIP*
+*GPU v4.0.0 (11/01/2026): RTX 4000 SFF Ada (20GB VRAM) - TODOS SIMULTÂNEOS (15GB/20GB): Qwen2.5-VL 7B (~4GB), Embeddings INT8 (~8GB), ASR Canary-1B (~3GB). Trainer QLoRA on-demand via profile.*
 *Redis Alice: 7.4.7-alpine - Cache distribuído (node-redis 5.x suporta Redis 7.x)*
 *Redis ERPNext: 6.2.21-alpine - ERPNext v15 requer Redis 6.x (docs.frappe.io)*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*

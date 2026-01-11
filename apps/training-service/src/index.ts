@@ -552,10 +552,11 @@ app.get('/api/training/jobs', requirePermission('training:fine_tuning_jobs:read'
   }
 });
 
+// ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral (multimodal, finanças)
 const createJobSchema = z.object({
   tenantId: z.string().uuid().optional(),
   name: z.string().min(1),
-  baseModel: z.string().default('Mixtral-8x7B'),
+  baseModel: z.string().default('Qwen2.5-VL-7B'),
   hyperparameters: z.object({
     epochs: z.number().default(3),
     learningRate: z.number().default(0.0001),

@@ -34,7 +34,8 @@ const authConfigSchema = z.object({
 
 const llmConfigSchema = z.object({
   // GPU Manager Service (Hetzner GEX44) - GPU dedicada 24/7
-  LLM_MODEL: z.string().default('Mixtral-8x7B'),
+  // ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral (multimodal, finanças)
+  LLM_MODEL: z.string().default('Qwen2.5-VL-7B'),
   LLM_MAX_TOKENS: z.coerce.number().default(4096),
   LLM_TEMPERATURE: z.coerce.number().default(0.7),
 });

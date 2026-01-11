@@ -198,7 +198,8 @@ services:
       TRAINING_SERVICE_URL: http://alice-training:3004
       GPU_MANAGER_URL: ${GPU_MANAGER_URL:-http://alice-gpu-manager:3010}
       REDIS_URL: redis://:${REDIS_PASSWORD}@alice-redis:6379
-      MIXTRAL_GPU_URL: ${MIXTRAL_GPU_URL:-http://gpu-mixtral:8000}
+      # ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral (multimodal, finanças)
+      QWEN_VL_GPU_URL: ${QWEN_VL_GPU_URL:-http://gpu-qwen-vl:8000}
     # NOTA: postgres e alice-redis estão no stack infra - verificados pelo workflow
     depends_on:
       gpu-manager:
@@ -522,7 +523,7 @@ services:
   # - Treinamento sob demanda pausa serviços temporariamente
   # ===========================================================================
 
-  # Qwen2.5-VL 7B AWQ - LLM + Vision (substitui Mixtral)
+  # Qwen2.5-VL 7B AWQ - LLM + Vision
   # ARQUITETURA v4.0.0: Modelo multimodal especializado em finanças/matemática
   gpu-qwen-vl:
     image: ${IMAGE_PREFIX}-qwen-vl:${IMAGE_TAG:-latest}

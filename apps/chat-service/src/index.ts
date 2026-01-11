@@ -810,7 +810,7 @@ interface LLMConfig {
   temperature?: number;
   /** Limite máximo de tokens na resposta. Default: 4096 */
   maxTokens?: number;
-  /** Modelo a ser usado. Default: Mixtral-8x7B-Instruct-v0.1-AWQ */
+  /** Modelo a ser usado. Default: Qwen2.5-VL-7B-AWQ */
   model?: string;
 }
 
@@ -821,10 +821,11 @@ interface LLMRequest {
 }
 
 // Valores padrão centralizados (Regra 2 - Não Duplicar)
+// ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral (multimodal, finanças)
 const DEFAULT_LLM_CONFIG: Required<LLMConfig> = {
   temperature: 0.7,
   maxTokens: 4096,
-  model: 'TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ',
+  model: 'Qwen/Qwen2.5-VL-7B-Instruct-AWQ',
 };
 
 /**
@@ -846,15 +847,17 @@ function getAgentLLMConfig(agent?: AgentConfig | null): LLMConfig {
 
 /**
  * Mapeia nome amigável do modelo para o nome usado pelo vLLM/AWQ
+ * ARQUITETURA v4.0.0: Qwen2.5-VL é o modelo padrão (multimodal, finanças)
  * 
- * @param modelName - Nome do modelo no banco (ex: "Mixtral-8x7B")
+ * @param modelName - Nome do modelo no banco (ex: "Qwen2.5-VL-7B")
  * @returns Nome do modelo AWQ para vLLM
  */
 function mapModelNameToAWQ(modelName: string): string {
   const modelMap: Record<string, string> = {
-    'Mixtral-8x7B': 'TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ',
-    'Mixtral-8x7B-Instruct': 'TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ',
-    // Adicionar outros modelos conforme necessário
+    // ARQUITETURA v4.0.0: Qwen2.5-VL é o modelo padrão
+    'Qwen2.5-VL-7B': 'Qwen/Qwen2.5-VL-7B-Instruct-AWQ',
+    'Qwen2.5-VL': 'Qwen/Qwen2.5-VL-7B-Instruct-AWQ',
+    'Qwen2.5-VL-7B-AWQ': 'Qwen/Qwen2.5-VL-7B-Instruct-AWQ',
   };
   
   return modelMap[modelName] || DEFAULT_LLM_CONFIG.model;
@@ -1710,12 +1713,13 @@ app.get('/api/chat/health', (_req: Request, res: Response) => {
   // Status degradado se qualquer circuit breaker crítico estiver aberto
   const overallStatus = (llmCircuitState === 'open' || integrationsStats.state === 'open') ? 'degraded' : 'ok';
   
+  // ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral (multimodal, finanças)
   res.json({ 
     status: overallStatus, 
     service: 'chat-service',
     timestamp: new Date().toISOString(),
     llmProvider: 'gpu-manager-service',
-    model: 'TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ',
+    model: 'Qwen/Qwen2.5-VL-7B-Instruct-AWQ',
     circuitBreakers: {
       llm: {
         state: llmCircuitState,

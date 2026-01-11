@@ -808,7 +808,8 @@ export const agents = pgTable(
     personalidade: text("personalidade"),
     instrucoes: text("instrucoes"),
     capacidades: text("capacidades").array(),
-    modeloBase: varchar("modelo_base", { length: 100 }).default("Mixtral-8x7B"),
+    // ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral (multimodal, especializado em finanças)
+    modeloBase: varchar("modelo_base", { length: 100 }).default("Qwen2.5-VL-7B"),
     temperaturaModelo: real("temperatura_modelo").default(0.7),
     maxTokens: integer("max_tokens").default(4096),
     status: agentStatusEnum("status").default("active"),
@@ -1123,13 +1124,14 @@ export const integrations = pgTable(
 );
 
 // ============================================================================
-// CONFIGURAÇÕES DO MODELO LLM (Mixtral 8x7B - GPU Manager Service Hetzner GEX44)
+// CONFIGURAÇÕES DO MODELO LLM (Qwen2.5-VL 7B - GPU Manager Service Hetzner GEX44)
+// ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral (multimodal, finanças)
 // ============================================================================
 
 export const llmConfig = pgTable("llm_config", {
   id: uuid("id").primaryKey().defaultRandom(),
   tenantId: uuid("tenant_id").references(() => tenants.id),
-  modelo: varchar("modelo", { length: 100 }).notNull().default("Mixtral-8x7B"),
+  modelo: varchar("modelo", { length: 100 }).notNull().default("Qwen2.5-VL-7B"),
   endpoint: text("endpoint").notNull(),
   apiKey: text("api_key"),
   maxTokens: integer("max_tokens").default(4096),
@@ -1390,7 +1392,7 @@ export const stripeErpnextMapping = pgTable(
 );
 
 // ============================================================================
-// TRADING - KuCoin Futures BTC Perpetuals (FASE Trading Mixtral 8x7B)
+// TRADING - KuCoin Futures BTC Perpetuals (Qwen2.5-VL 7B - ARQUITETURA v4.0.0)
 // Sistema de trading automatizado com OMS/EMS e auditoria completa
 // Exchange: KuCoin Futures (https://www.kucoin.com/futures/trade)
 // Par: XBTUSDTM (BTC/USDT Perpetual)
@@ -1470,7 +1472,8 @@ export const TradingPositionMetadataSchema = z.object({
 });
 export type TradingPositionMetadata = z.infer<typeof TradingPositionMetadataSchema>;
 
-// SINAIS DE TRADING (Gerados pelo Mixtral 8x7B com RAG)
+// SINAIS DE TRADING (Gerados pelo Qwen2.5-VL 7B com RAG)
+// ARQUITETURA v4.0.0: Multimodal - analisa texto E gráficos de trading
 // Cada sinal é uma recomendação do LLM baseada em análise de mercado
 export const tradingSignals = pgTable(
   "trading_signals",
@@ -1966,7 +1969,8 @@ export type TradingLlmValidation = typeof tradingLlmValidations.$inferSelect;
 export type InsertTradingLlmValidation = typeof tradingLlmValidations.$inferInsert;
 
 // ============================================================================
-// TRADING LORA DATASET (FASE Trading Mixtral 8x7B - Fine-tuning)
+// TRADING LORA DATASET (Qwen2.5-VL 7B - Fine-tuning)
+// ARQUITETURA v4.0.0: QLoRA fine-tuning para trading BTC multimodal
 // Infraestrutura para coleta de dados e treinamento LoRA para trading BTC
 // ============================================================================
 
@@ -2152,7 +2156,8 @@ export const tradingLoraJobs = pgTable(
     description: text("description"),
     
     // Modelo base e configuração
-    baseModel: varchar("base_model", { length: 255 }).notNull().default("TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ"),
+    // ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral (multimodal, finanças)
+    baseModel: varchar("base_model", { length: 255 }).notNull().default("Qwen/Qwen2.5-VL-7B-Instruct-AWQ"),
     // NOTA: Valores default devem corresponder ao TradingLoraHyperparamsSchema
     hyperparameters: jsonb("hyperparameters").$type<TradingLoraHyperparams>().default({
       loraRank: 16,
@@ -2359,7 +2364,8 @@ export const modelVersions = pgTable(
     tenantId: uuid("tenant_id").references(() => tenants.id),
     name: varchar("name", { length: 255 }).notNull(),
     version: integer("version").notNull().default(1),
-    baseModel: varchar("base_model", { length: 100 }).notNull().default("Mixtral-8x7B"),
+    // ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral (multimodal, finanças)
+    baseModel: varchar("base_model", { length: 100 }).notNull().default("Qwen2.5-VL-7B"),
     loraPath: text("lora_path"),
     status: modelVersionStatusEnum("status").default("training"),
     fineTuningJobId: uuid("fine_tuning_job_id").references(() => fineTuningJobs.id),
@@ -2420,7 +2426,9 @@ export const autoLearningSchedule = pgTable(
 );
 
 // ============================================================================
-// GENERATED IMAGES (FASE 6.5+ - FLUX.1 Schnell Self-Hosted)
+// ANALYZED IMAGES (ARQUITETURA v4.0.0 - Qwen2.5-VL Vision)
+// NOTA: Tabela mantida para armazenar imagens ANALISADAS pelo Qwen2.5-VL
+// FLUX.1 Schnell REMOVIDO - Alice NÃO gera imagens, apenas ANALISA
 // ============================================================================
 
 export const generatedImageStatusEnum = pgEnum("generated_image_status", [
@@ -3063,7 +3071,7 @@ export type InsertWebhookEvent = typeof webhookEvents.$inferInsert;
 export type StripeErpnextMapping = typeof stripeErpnextMapping.$inferSelect;
 export type InsertStripeErpnextMapping = typeof stripeErpnextMapping.$inferInsert;
 
-// Trading Types (FASE Trading Mixtral 8x7B - KuCoin Futures BTC)
+// Trading Types (Qwen2.5-VL 7B - KuCoin Futures BTC) - ARQUITETURA v4.0.0
 export type TradingSignal = typeof tradingSignals.$inferSelect;
 export type InsertTradingSignal = typeof tradingSignals.$inferInsert;
 
@@ -3079,7 +3087,7 @@ export type InsertTradingRiskConfig = typeof tradingRiskConfig.$inferInsert;
 export type TradingAuditLog = typeof tradingAuditLog.$inferSelect;
 export type InsertTradingAuditLog = typeof tradingAuditLog.$inferInsert;
 
-// Trading LoRA Dataset Types (FASE Trading Mixtral 8x7B)
+// Trading LoRA Dataset Types (Qwen2.5-VL 7B) - ARQUITETURA v4.0.0
 export type TradingMarketData = typeof tradingMarketData.$inferSelect;
 export type InsertTradingMarketData = typeof tradingMarketData.$inferInsert;
 
@@ -3154,7 +3162,7 @@ export const insertStripeErpnextMappingSchema: z.ZodType<unknown> = createInsert
   atualizadoEm: true,
 });
 
-// Trading Insert Schemas (FASE Trading Mixtral 8x7B - KuCoin Futures BTC)
+// Trading Insert Schemas (Qwen2.5-VL 7B - KuCoin Futures BTC) - ARQUITETURA v4.0.0
 export const insertTradingSignalSchema: z.ZodType<unknown> = createInsertSchema(tradingSignals).omit({
   id: true,
   criadoEm: true,
@@ -3193,7 +3201,7 @@ export const insertTradingAuditLogSchema: z.ZodType<unknown> = createInsertSchem
   criadoEm: true,
 });
 
-// Trading LoRA Dataset Insert Schemas (FASE Trading Mixtral 8x7B)
+// Trading LoRA Dataset Insert Schemas (Qwen2.5-VL 7B) - ARQUITETURA v4.0.0
 export const insertTradingMarketDataSchema: z.ZodType<unknown> = createInsertSchema(tradingMarketData).omit({
   id: true,
   criadoEm: true,

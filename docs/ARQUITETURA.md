@@ -47,8 +47,8 @@
 **Alice** é uma plataforma enterprise de IA autônoma 100% self-hosted, projetada para organizações que exigem:
 
 - **Privacidade Total**: Dados nunca saem da infraestrutura própria
-- **Autonomia**: LLM próprio (Mixtral 8x7B) sem dependência de APIs externas
-- **Customização**: Fine-tuning específico via LoRA para cada domínio
+- **Autonomia**: LLM próprio (Qwen2.5-VL 7B AWQ) sem dependência de APIs externas - ARQUITETURA v4.0.0
+- **Customização**: Fine-tuning específico via QLoRA para cada domínio (especializado em finanças/matemática)
 - **Custo Previsível**: Sem cobrança por token de terceiros
 - **Compliance**: LGPD, GDPR, SOC 2 ready
 
@@ -163,7 +163,7 @@ C4Context
 
 | Sistema | Propósito | Protocolo | Autenticação |
 |---------|-----------|-----------|--------------|
-| **Hetzner GPU GEX44** | GPU Manager Service local - LLM/Embeddings/FLUX/ASR | HTTP (localhost) | N/A (interno) |
+| **Hetzner GPU GEX44** | GPU Manager Service local - LLM/Embeddings/ASR (ARQUITETURA v4.0.0) | HTTP (localhost) | N/A (interno) |
 | **KuCoin Futures** | Trading BTC | REST + WebSocket | HMAC-SHA256 |
 | **Stripe** | Pagamentos | Webhooks | Signature verification |
 | **Twilio** | WhatsApp/SMS | REST | API Key + Token |
@@ -272,9 +272,9 @@ C4Component
 
     Container_Boundary(chat, "Chat Service") {
         Component(wsHandler, "WebSocket Handler", "Socket.io", "Gerencia conexões em tempo real")
-        Component(llmClient, "LLM Client", "HTTP Client", "Comunicação com Mixtral 8x7B")
+        Component(llmClient, "LLM Client", "HTTP Client", "Comunicação com Qwen2.5-VL 7B (texto + vision)")
         Component(ragClient, "RAG Client", "HTTP Client", "Busca contexto semântico")
-        Component(imageGen, "Image Generator", "HTTP Client", "FLUX.1 Schnell")
+        Component(visionAnalyzer, "Vision Analyzer", "HTTP Client", "Análise de imagens (nativo Qwen2.5-VL)")
         Component(responseCache, "Response Cache", "Redis", "Greetings Gate")
         Component(tradingParser, "Trading Parser", "NLP", "Comandos de trading")
         Component(tradingOrch, "Trading Orchestrator", "State Machine", "Handover/Takeover")
@@ -350,7 +350,7 @@ C4Component
 
 ## 6. Visão de Runtime
 
-### 6.1 Fluxo de Chat com LLM
+### 6.1 Fluxo de Chat com LLM (ARQUITETURA v4.0.0)
 
 ```mermaid
 sequenceDiagram
@@ -359,7 +359,7 @@ sequenceDiagram
     participant WS as WebSocket Handler
     participant RC as Response Cache
     participant RAG as RAG Service
-    participant LLM as LLM (Mixtral)
+    participant LLM as LLM (Qwen2.5-VL)
     participant DB as PostgreSQL
     
     U->>WS: Mensagem via WebSocket
@@ -462,12 +462,11 @@ C4Deployment
                 Container(backup, "pgBackRest", "Backup")
             }
         }
-        Deployment_Node(gpuServices, "GPU Services", "Local GPU Services") {
+        Deployment_Node(gpuServices, "GPU Services (ARQUITETURA v4.0.0 - 15GB/20GB VRAM)", "Local GPU Services - SIMULTÂNEOS") {
             Container(gpuManager, "GPU Manager Service", "Fila priorizada, VRAM monitoring")
-            Container(mixtral, "Mixtral 8x7B", "vLLM AWQ")
-            Container(flux, "FLUX.1 Schnell", "Image Gen")
-            Container(qwen, "Qwen3-Embedding", "4096 dim")
-            Container(canary, "Canary-1B", "ASR")
+            Container(qwenvl, "Qwen2.5-VL 7B AWQ", "LLM + Vision (~4GB)")
+            Container(qwen, "Qwen3-Embedding-8B INT8", "4096 dim (~8GB)")
+            Container(canary, "Canary-1B", "ASR (~3GB)")
         }
     }
     
@@ -664,8 +663,7 @@ const PRESETS = {
   kucoinFutures: { threshold: 3, timeout: 10000, resetTimeout: 60000 },
   embeddingsGPU: { threshold: 3, timeout: 60000, resetTimeout: 120000 },
   asrCanary: { threshold: 3, timeout: 120000, resetTimeout: 180000 },
-  mixtralLLM: { threshold: 3, timeout: 60000, resetTimeout: 120000 },
-  imageGeneration: { threshold: 5, timeout: 30000, resetTimeout: 60000 },
+  qwenVL: { threshold: 3, timeout: 60000, resetTimeout: 120000 }, // v4.0.0: Qwen2.5-VL substitui Mixtral
 };
 ```
 
@@ -743,15 +741,15 @@ logger.info({
 
 ## 9. Decisões Arquiteturais (ADRs)
 
-### ADR-001: Escolha do LLM (Mixtral 8x7B)
+### ADR-001: Escolha do LLM (Qwen2.5-VL 7B) - ATUALIZADO v4.0.0
 
 | Aspecto | Decisão |
 |---------|---------|
-| **Status** | Aceito |
-| **Contexto** | Necessidade de LLM enterprise 100% self-hosted |
-| **Decisão** | Mixtral 8x7B (MoE ~12B ativos) via vLLM AWQ |
-| **Alternativas** | Llama 3.3 70B (muito grande), GPT-4 (não self-hosted) |
-| **Consequências** | + Custo fixo, + Privacidade, - Qualidade vs GPT-4 |
+| **Status** | Aceito (Atualizado 11/01/2026) |
+| **Contexto** | Necessidade de LLM enterprise 100% self-hosted com suporte a vision (análise de gráficos de trading) |
+| **Decisão** | Qwen2.5-VL 7B AWQ 4-bit (~4GB VRAM) via vLLM - multimodal (texto + vision) |
+| **Alternativas** | Mixtral 8x7B (sem vision, ~18GB), Llama 3.3 70B (muito grande), GPT-4 (não self-hosted) |
+| **Consequências** | + Custo fixo, + Privacidade, + Vision nativo, + Baixo VRAM, + Especializado em finanças/matemática |
 
 ### ADR-002: Arquitetura de Embeddings
 
@@ -1315,11 +1313,12 @@ A plataforma possui uma **suite de testes unitários completa** usando **Vitest*
 *Autor: Fillipe Guerra*  
 *Data: 28 de Dezembro de 2025*
 *Versão: 1.11.0 - Server GPU Optimizations Enterprise*
-*Total de Containers: 51 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)*  
-*Stack: Express 5.2, Vite 7.3, Tailwind CSS 4.1, HTTP/2*  
-*LLM: Mixtral 8x7B (vLLM AWQ) via GPU Manager Service (Hetzner GEX44)*  
-*Embeddings: Qwen3-Embedding-8B (4096 dim) + OpenCLIP (1024 dim)*  
-*Performance: HTTP Compression, HNSW m=24, SHA Pinning 95%+*  
+*Total de Containers: 50 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 4 GPU + 1 backup + 1 trainer on-demand)*
+*Stack: Express 5.2, Vite 7.3, Tailwind CSS 4.1, HTTP/2*
+*LLM: Qwen2.5-VL 7B AWQ (vLLM) via GPU Manager Service (Hetzner GEX44) - ARQUITETURA v4.0.0*
+*Embeddings: Qwen3-Embedding-8B INT8 (4096 dim) + OpenCLIP (1024 dim)*
+*Performance: HTTP Compression, HNSW m=24, SHA Pinning 95%+*
+*GPU: Todos serviços simultâneos (15GB/20GB VRAM), QLoRA fine-tuning semanal, Zero latência de troca*
 *Framework: arc42 + C4 Model + ADRs*  
 *Compliance: 18 Regras CLAUDE.md ✅ | 12-Factor App ✅*
 *Otimização CI (27/12/2025): Composite action reutilizável elimina duplicação de setup (14x → 1x), economia de ~6-10min por run*
