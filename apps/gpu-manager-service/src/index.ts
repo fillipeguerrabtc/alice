@@ -1009,9 +1009,10 @@ app.get('/api/gpu/services', requireInternalAuth, asyncHandler(async (req: Reque
     description: 'Todos os serviços GPU rodam simultaneamente (15GB de 20GB)',
     services,
     vram: vramStatus,
-    totalVramUsedGB: Object.values(VRAM_REQUIREMENTS)
-      .filter((_, idx) => idx < 3) // Exclui TRAINING do cálculo (sob demanda)
-      .reduce((a, b) => a + b, 0),
+    // ARQUITETURA v4.0.0: Somar VRAM de serviços sempre ativos (exclui TRAINING explicitamente)
+    totalVramUsedGB: Object.entries(VRAM_REQUIREMENTS)
+      .filter(([key]) => key !== GpuServiceType.TRAINING)
+      .reduce((sum, [, vram]) => sum + vram, 0),
     vramFreeGB: TOTAL_VRAM_GB - 15, // 5GB livres
   });
 }));

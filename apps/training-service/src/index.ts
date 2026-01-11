@@ -1378,7 +1378,32 @@ app.post('/api/training/schedule/configure', requirePermission('training:trainin
     }
 
     if (enabled) {
-      // Criar novo schedule
+      // FIX Bug 2: Se já existe um schedule ativo, atualizar ao invés de criar duplicado
+      if (existing) {
+        // Atualizar schedule existente com nova data
+        const scheduledFor = calculateNextScheduleDate(scheduleType, cronPattern);
+        
+        await db.update(schema.autoLearningSchedule)
+          .set({ scheduledFor, status: 'scheduled' })
+          .where(eq(schema.autoLearningSchedule.id, existing.id));
+        
+        logger.info({ 
+          tenantId, 
+          scheduleType, 
+          scheduledFor,
+          scheduleId: existing.id,
+        }, 'Schedule de treinamento atualizado');
+        
+        return res.json({ 
+          success: true, 
+          action: 'updated', 
+          scheduleId: existing.id,
+          scheduledFor,
+          minDataRequired,
+        });
+      }
+      
+      // Criar novo schedule (não existe nenhum ativo)
       const scheduledFor = calculateNextScheduleDate(scheduleType, cronPattern);
       
       const [newSchedule] = await db.insert(schema.autoLearningSchedule).values({
@@ -1653,13 +1678,79 @@ app.delete('/api/training/run/cancel', requirePermission('training:training_data
 });
 
 // Funções auxiliares para schedule
-function calculateNextScheduleDate(scheduleType: string, _cronPattern?: string): Date {
-  // Se não tiver cron pattern, usar defaults
+
+/**
+ * Calcula a próxima data de execução baseado no cron pattern ou intervalo padrão.
+ * 
+ * Suporta padrões cron básicos:
+ * - '0 3 * * 0' → Domingo às 3:00 AM
+ * - '0 1 1,15 * *' → Dias 1 e 15 de cada mês às 1:00 AM
+ * 
+ * FIX Bug 3: Agora honra o cronPattern passado pelo usuário
+ */
+function calculateNextScheduleDate(scheduleType: string, cronPattern?: string): Date {
   const config = scheduleType === 'incremental_fine_tuning'
     ? SCHEDULE_CONFIG.incrementalFineTuning
     : SCHEDULE_CONFIG.completeFineTuning;
   
-  return new Date(Date.now() + config.intervalMs);
+  // Se não tiver cron pattern customizado, usar intervalo padrão
+  if (!cronPattern) {
+    return new Date(Date.now() + config.intervalMs);
+  }
+  
+  // Parse básico do cron pattern: 'minuto hora diaDoMes mes diaDaSemana'
+  // Exemplo: '0 3 * * 0' = minuto 0, hora 3, qualquer dia do mês, qualquer mês, domingo
+  const parts = cronPattern.trim().split(/\s+/);
+  if (parts.length !== 5) {
+    logger.warn({ cronPattern }, 'Cron pattern inválido, usando intervalo padrão');
+    return new Date(Date.now() + config.intervalMs);
+  }
+  
+  const [minute, hour, dayOfMonth, _month, dayOfWeek] = parts;
+  const now = new Date();
+  const next = new Date(now);
+  
+  // Configurar hora e minuto
+  const targetHour = hour === '*' ? now.getHours() : parseInt(hour, 10);
+  const targetMinute = minute === '*' ? 0 : parseInt(minute, 10);
+  
+  next.setHours(targetHour, targetMinute, 0, 0);
+  
+  // Se for dia da semana específico (ex: '0' = domingo)
+  if (dayOfWeek !== '*') {
+    const targetDay = parseInt(dayOfWeek, 10); // 0 = domingo, 6 = sábado
+    let daysUntil = targetDay - now.getDay();
+    
+    // Se o dia já passou esta semana, ir para próxima semana
+    if (daysUntil < 0 || (daysUntil === 0 && now >= next)) {
+      daysUntil += 7;
+    }
+    
+    next.setDate(now.getDate() + daysUntil);
+  }
+  // Se for dia do mês específico (ex: '1,15' = dias 1 e 15)
+  else if (dayOfMonth !== '*') {
+    const days = dayOfMonth.split(',').map(d => parseInt(d.trim(), 10)).sort((a, b) => a - b);
+    const currentDay = now.getDate();
+    
+    // Encontrar próximo dia válido
+    let targetDayOfMonth = days.find(d => d > currentDay || (d === currentDay && now < next));
+    
+    if (targetDayOfMonth === undefined) {
+      // Nenhum dia disponível este mês, ir para próximo mês
+      targetDayOfMonth = days[0];
+      next.setMonth(next.getMonth() + 1);
+    }
+    
+    next.setDate(targetDayOfMonth);
+  }
+  // Se já passou o horário de hoje, ir para amanhã
+  else if (now >= next) {
+    next.setDate(next.getDate() + 1);
+  }
+  
+  logger.debug({ cronPattern, nextSchedule: next.toISOString() }, 'Próximo schedule calculado');
+  return next;
 }
 
 function _estimateRemainingTime(job: typeof schema.fineTuningJobs.$inferSelect): number | null {
