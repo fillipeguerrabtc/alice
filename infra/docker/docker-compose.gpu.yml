@@ -1,47 +1,53 @@
 # =============================================================================
 # ALICE PLATFORM - DOCKER COMPOSE GPU SERVICES
 # =============================================================================
-# Versão: 1.0.0
+# Versão: 4.0.0
 # Ambiente: Produção (Hetzner Cloud GPU Server)
 # Servidor: Hetzner GEX44 (RTX 4000 Ada 20GB) - GPU dedicada 24/7
 # Rede: Rede interna Hetzner (10.0.0.0/16)
 #
-# SERVIÇOS GPU (4 containers):
-# - gpu-mixtral: Mixtral 8x7B vLLM (LLM inference)
-# - gpu-embeddings: Qwen3-Embedding-8B + OpenCLIP (embeddings texto/imagem)
-# - gpu-flux: FLUX.1 Schnell (geração de imagens)
-# - gpu-asr: Canary-1B (transcrição de áudio)
+# ARQUITETURA v4.0.0 (11/01/2026):
+# SERVIÇOS GPU (3 containers sempre ativos + 1 sob demanda):
+# - gpu-qwen-vl: Qwen2.5-VL 7B AWQ (LLM multimodal: texto + vision) ~4GB
+# - gpu-embeddings: Qwen3-Embedding-8B INT8 + OpenCLIP (embeddings) ~8GB
+# - gpu-asr: Canary-1B (transcrição de áudio) ~3GB
+# - gpu-trainer: QLoRA fine-tuning (sob demanda) ~12GB
 #
-# ARQUITETURA:
-# - Todos os serviços compartilham a mesma GPU (time-sharing)
-# - Portas: 8000 (mixtral), 8001 (embeddings), 8002 (flux), 8003 (asr)
-# - Health checks configurados para cada serviço
-# - Resource limits para evitar OOM
+# TOTAL VRAM (serviços sempre ativos): ~15GB de 20GB disponíveis
+# 
+# MUDANÇAS v4.0.0:
+# - Mixtral 8x7B → Qwen2.5-VL 7B (multimodal, especializado em finanças)
+# - FLUX.1 Schnell REMOVIDO (Alice analisa mas NÃO gera imagens)
+# - Embeddings agora usa INT8 quantization (16GB → 8GB VRAM)
+# - Todos os serviços rodam simultaneamente (zero latência de troca)
+#
+# Portas: 8000 (qwen-vl), 8001 (embeddings), 8003 (asr), 8004 (trainer)
 #
 # Autor: Fillipe Guerra
-# Data: 25 de Dezembro de 2025
+# Data: 11 de Janeiro de 2026
 # =============================================================================
 
 version: '3.8'
 
 services:
   # =============================================================================
-  # Mixtral 8x7B vLLM - LLM Principal
+  # Qwen2.5-VL 7B AWQ - LLM Multimodal (Texto + Vision)
+  # ARQUITETURA v4.0.0: Substitui Mixtral 8x7B
   # =============================================================================
-  gpu-mixtral:
-    image: ghcr.io/${DOCKERHUB_USERNAME:-fillipeguerrabtc}/alice-mixtral-vllm:${IMAGE_TAG:-latest}
+  gpu-qwen-vl:
+    image: ghcr.io/${DOCKERHUB_USERNAME:-fillipeguerrabtc}/alice-qwen-vl:${IMAGE_TAG:-latest}
     platform: linux/amd64
-    container_name: gpu-mixtral
+    container_name: gpu-qwen-vl
     restart: unless-stopped
     runtime: nvidia
     environment:
       - NVIDIA_VISIBLE_DEVICES=0
       - CUDA_VISIBLE_DEVICES=0
-      - MODEL_NAME=${MIXTRAL_MODEL_NAME:-TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ}
-      - QUANTIZATION=${MIXTRAL_QUANTIZATION:-awq}
-      - MAX_MODEL_LEN=${MIXTRAL_MAX_MODEL_LEN:-32768}
-      - GPU_MEMORY_UTILIZATION=${MIXTRAL_GPU_MEMORY_UTILIZATION:-0.90}
-      - TENSOR_PARALLEL_SIZE=${MIXTRAL_TENSOR_PARALLEL_SIZE:-1}
+      - MODEL_NAME=${QWEN_VL_MODEL_NAME:-Qwen/Qwen2.5-VL-7B-Instruct-AWQ}
+      - QUANTIZATION=${QWEN_VL_QUANTIZATION:-awq}
+      - MAX_MODEL_LEN=${QWEN_VL_MAX_MODEL_LEN:-32768}
+      - GPU_MEMORY_UTILIZATION=${QWEN_VL_GPU_MEMORY_UTILIZATION:-0.95}
+      - TENSOR_PARALLEL_SIZE=${QWEN_VL_TENSOR_PARALLEL_SIZE:-1}
       - HOST=0.0.0.0
       - PORT=8000
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
@@ -57,13 +63,13 @@ services:
               count: 1
               capabilities: [gpu]
         limits:
-          memory: 20G
+          memory: 8G
           cpus: '4.0'
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
-      start_period: 180s
+      start_period: 120s
       retries: 3
     logging:
       driver: "json-file"
@@ -72,7 +78,8 @@ services:
         max-file: "3"
 
   # =============================================================================
-  # Embeddings GPU - Qwen3 + OpenCLIP
+  # Embeddings GPU - Qwen3-Embedding-8B INT8 + OpenCLIP
+  # ARQUITETURA v4.0.0: INT8 quantization (16GB → 8GB VRAM)
   # =============================================================================
   gpu-embeddings:
     image: ghcr.io/${DOCKERHUB_USERNAME:-fillipeguerrabtc}/alice-embeddings-gpu:${IMAGE_TAG:-latest}
@@ -87,9 +94,9 @@ services:
       - TEXT_EMBEDDING_DIM=${TEXT_EMBEDDING_DIM:-4096}
       - IMAGE_MODEL_NAME=${IMAGE_MODEL_NAME:-laion/CLIP-ViT-H-14-laion2B-s32B-b79K}
       - IMAGE_EMBEDDING_DIM=${IMAGE_EMBEDDING_DIM:-1024}
+      - QUANTIZATION=int8
       - DEVICE=cuda
       - PORT=8000
-      - KEEP_WARM_MINUTES=${EMBEDDINGS_KEEP_WARM_MINUTES:-30}
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
     ports:
       - "8001:8000"
@@ -103,55 +110,13 @@ services:
               count: 1
               capabilities: [gpu]
         limits:
-          memory: 16G
+          memory: 12G
           cpus: '2.0'
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       start_period: 180s
-      retries: 3
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  # =============================================================================
-  # FLUX.1 Schnell - Geração de Imagens
-  # =============================================================================
-  gpu-flux:
-    image: ghcr.io/${DOCKERHUB_USERNAME:-fillipeguerrabtc}/alice-flux-schnell:${IMAGE_TAG:-latest}
-    platform: linux/amd64
-    container_name: gpu-flux
-    restart: unless-stopped
-    runtime: nvidia
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=0
-      - CUDA_VISIBLE_DEVICES=0
-      - MODEL_NAME=${FLUX_MODEL_NAME:-black-forest-labs/FLUX.1-schnell}
-      - NUM_INFERENCE_STEPS=${FLUX_NUM_INFERENCE_STEPS:-4}
-      - PORT=8000
-      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
-    ports:
-      - "8002:8000"
-    networks:
-      - gpu-network
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-        limits:
-          memory: 18G
-          cpus: '2.0'
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      start_period: 120s
       retries: 3
     logging:
       driver: "json-file"
@@ -187,7 +152,7 @@ services:
               count: 1
               capabilities: [gpu]
         limits:
-          memory: 12G
+          memory: 6G
           cpus: '2.0'
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -200,6 +165,64 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  # =============================================================================
+  # GPU Trainer - QLoRA Fine-tuning (Sob Demanda)
+  # ARQUITETURA v4.0.0: Profile 'training' - só inicia quando necessário
+  # =============================================================================
+  gpu-trainer:
+    image: ghcr.io/${DOCKERHUB_USERNAME:-fillipeguerrabtc}/alice-qwen-trainer:${IMAGE_TAG:-latest}
+    platform: linux/amd64
+    container_name: gpu-trainer
+    restart: "no"
+    runtime: nvidia
+    profiles:
+      - training
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=0
+      - CUDA_VISIBLE_DEVICES=0
+      - BASE_MODEL=${TRAINER_BASE_MODEL:-Qwen/Qwen2.5-VL-7B-Instruct-AWQ}
+      - TRAINING_METHOD=${TRAINER_METHOD:-qlora}
+      - DEVICE=cuda
+      - PORT=8000
+      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
+    ports:
+      - "8004:8000"
+    networks:
+      - gpu-network
+    volumes:
+      - training-data:/data
+      - lora-adapters:/adapters
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+        limits:
+          memory: 16G
+          cpus: '4.0'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# =============================================================================
+# VOLUMES
+# =============================================================================
+volumes:
+  training-data:
+    driver: local
+  lora-adapters:
+    driver: local
 
 # =============================================================================
 # NETWORKS

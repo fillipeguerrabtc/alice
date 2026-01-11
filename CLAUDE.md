@@ -84,12 +84,13 @@ Alice employs a **modular multi-stack architecture** with 51 containerized servi
     - **Training Service**: Fine-tuning and self-learning scheduler.
     - **Integrations Service**: Handles external APIs (Stripe, Wise, Twilio, Gmail SMTP).
     - **Observability Service**: Prometheus, Grafana, Jaeger for metrics, dashboards, and tracing.
-    - **Multimodal Inference (100% GPU)**: Processamento multimodal via GPU Manager Service (servidor único Hetzner):
-        - Embeddings de texto: Qwen3-Embedding-8B (4096 dim) → Qdrant - GPU OBRIGATÓRIO
+    - **Multimodal Inference (100% GPU)** - ARQUITETURA v4.0.0: Processamento via GPU Manager Service (Hetzner GEX44):
+        - LLM + Vision: Qwen2.5-VL 7B AWQ (~4GB) - Chat, trading, análise de gráficos - GPU OBRIGATÓRIO
+        - Embeddings de texto: Qwen3-Embedding-8B INT8 (4096 dim, ~8GB) → Qdrant - GPU OBRIGATÓRIO
         - Embeddings de imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector - GPU OBRIGATÓRIO
-        - ASR: Canary-1B (NeMo) - GPU OBRIGATÓRIO
-        - LLM Trading: Mixtral 8x7B (vLLM) - GPU OBRIGATÓRIO
+        - ASR: Canary-1B (NeMo, ~3GB) - GPU OBRIGATÓRIO
         - GPU Manager: Gerenciamento centralizado com fila priorizada, monitoramento VRAM, circuit breakers
+        - Todos os serviços rodam simultaneamente (15GB de 20GB VRAM) - zero latência de troca
 - **ERPNext Stack (15 serviços)**: Includes MariaDB, Redis Cache/Queue, Frappe Bench services (configurator, create-site, backend), NGINX frontend, WebSocket, Scheduler, and 9 Workers (3x default, 3x short, 3x long) for comprehensive ERP functionalities.
 - **Observability Stack (13 serviços)**: Langfuse Web (LLM observability), **Langfuse Worker (processamento assíncrono v3)**, Langfuse DB (PostgreSQL), **ClickHouse (OLAP Langfuse v3)**, Prometheus (métricas), Grafana (dashboards + **Grafana Alerting** para notificações), Loki (logs), Promtail (coleta de logs), Jaeger (tracing), Vector (agregação de logs), OTel Collector (instrumentação), Node Exporter (métricas do host), cAdvisor (métricas de containers).
 - **Backup (1 serviço)**: pgBackRest for PostgreSQL enterprise backups (WAL archiving, incremental, encryption AES-256).
@@ -731,7 +732,7 @@ git commit -a -m "test: adiciona testes unitários"
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
 *Trading: Schema completo (9 tabelas) + API REST (25 endpoints) + LoRA Dataset + Scalping (1m/3m/5m candles) + RBAC Permissões + Stop Orders (st-orders)*
 *RBAC Trading (17/12/2025): Adicionadas permissões integrations:trading:{read,write,delete,manage} no PERMISSION_MAP*
-*Circuit Breakers: 4 novos presets (kucoinFutures, embeddingsGPU, asrCanary, mixtralLLM)*
+*Circuit Breakers: 4 novos presets (kucoinFutures, embeddingsGPU, asrCanary, qwenVL)*
 *KuCoin Futures: Cliente enterprise com HMAC-SHA256, OMS/EMS, auditoria completa, gestão de risco*
 *KuCoin WebSocket (17/12/2025): Cliente WebSocket com token management, canais públicos/privados, auto-reconnect*
 *Redis Pub/Sub Trading (17/12/2025): tradingBroadcast.ts para distribuição de dados entre serviços*
@@ -753,9 +754,9 @@ git commit -a -m "test: adiciona testes unitários"
 *Security Hardening: 100% no-new-privileges, 100% resource limits, 24/43 com read_only (aplicável apenas onde não há escrita), healthchecks 38/38*
 *ARQUITETURA ENTERPRISE (17/12/2025): Texto 4096 dim Qwen3-Embedding-8B Apache 2.0 (Qdrant) | Imagem vector(1024) OpenCLIP MIT (pgvector)*
 *Bug Fix Embeddings (17/12/2025): Embeddings de texto (documentos/áudio) agora vão para Qdrant (4096 dim), não PostgreSQL*
-*LLM Trading: Mixtral 8x7B (MoE ~12B ativos, vLLM) para Trading BTC Futures KuCoin*
+*LLM Trading: Qwen2.5-VL 7B (vLLM AWQ, multimodal) para Trading BTC Futures KuCoin - ARQUITETURA v4.0.0*
 *GPU Dedicada 24/7 (26/12/2025): Hetzner GEX44 - containers Docker rodam continuamente, sem cold start (estratégia Warm on Demand removida)*
-*GPU Services (Hetzner): Mixtral 8x7B (vLLM AWQ), FLUX.1 Schnell, Qwen3-Embedding-8B (embeddings 4096), OpenCLIP ViT-H/14 (1024), Canary-1B (ASR) - gerenciados pelo GPU Manager Service*
+*GPU Services v4.0.0 (Hetzner): Qwen2.5-VL 7B AWQ (LLM + Vision), Qwen3-Embedding-8B INT8 (embeddings 4096), OpenCLIP ViT-H/14 (1024), Canary-1B (ASR) - todos rodam simultaneamente, gerenciados pelo GPU Manager Service*
 *Pipeline CI/CD Unificada (17/12/2025): 3 workflows (CI → Release → Deploy) - 100% automático no servidor Hetzner GPU*
 *Code Review Enterprise (17/12/2025): 100% validado - zero TODO/FIXME/HACK, zero console.log, zero any, zero mocks/stubs*
 *Bug Fix maxOrderValue (17/12/2025): Campo adicionado ao schema tradingRiskConfig + migration 0006*
@@ -916,7 +917,7 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix Container Names (21/12/2025): Corrigidos nomes postgres→alice-postgres, traefik→alice-traefik na lista de captura de logs. grep usa match exato (^${container}$) - nomes devem bater exatamente com docker-compose.prod.yml*
 *Bug Fix ERPNext Workers -2 (21/12/2025): Adicionados erpnext-worker-default-2, erpnext-worker-short-2, erpnext-worker-long-2 na lista ERPNEXT_CONTAINERS. Eram 12 containers, agora 15 (todos os workers incluídos)*
 *Bug Fix ERPNext Configurator $$ Escape (21/12/2025): Escapar $ com $$ no command do erpnext-configurator para evitar substituição pelo Docker Compose. Bug: Docker Compose interpreta $CACHE_URL e $QUEUE_URL como env vars, mas são variáveis bash internas. Aviso: "The CACHE_URL variable is not set. Defaulting to a blank string."*
-*GPU Services Integrados (25/12/2025): Todos os serviços GPU (gpu-mixtral, gpu-embeddings, gpu-flux, gpu-asr) rodam localmente no servidor Hetzner GPU e são gerenciados pelo GPU Manager Service*
+*GPU Services v4.0.0 (11/01/2026): Todos os serviços GPU (gpu-qwen-vl, gpu-embeddings, gpu-asr) rodam simultaneamente no servidor Hetzner GPU (15GB de 20GB VRAM) - gpu-trainer sob demanda para QLoRA fine-tuning*
 *Bug Fix Paths Workflow (21/12/2025): Corrigidos TODOS os paths no deploy-production.yml. Repositório é clonado em /opt/alice/app, então todos os paths devem usar /opt/alice/app/infra/docker (não /opt/alice/infra/docker). Adicionado cd /opt/alice/app após o clone. Corrigidos paths de validação, .env.prod, cleanup, rollback e URLs GPU.*
 *Bug Fix REDIS_URL Faltando (21/12/2025): REDIS_URL estava FALTANDO em 5 dos 6 serviços Alice no docker-compose.prod.yml! Erro: "REDIS_URL não configurado em produção. Rate limiting distribuído é obrigatório (Regra 6)". Corrigido adicionando REDIS_URL para: alice-auth, alice-rag, alice-training, alice-integrations, alice-observability. Apenas alice-chat já tinha. Também adicionada dependência alice-redis em todos os serviços.*
 *Bug Fix ERPNext Configurator PRE-DEPLOY (21/12/2025): erpnext-configurator falhava porque volume montado sobrescreve arquivos originais do container. Solução: apps.txt e common_site_config.json agora são criados no PRÉ-DEPLOY (workflow) em /opt/alice/data/erpnext-sites/ com UID 1000 (frappe). Erros corrigidos: "OSError: b'./apps.txt' Not Found", "JSONDecodeError", "PermissionError".*
@@ -939,7 +940,7 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix Redis URL-Safe Passwords (22/12/2025): Senhas Redis geradas com base64 contêm +, /, = que quebram URLs Redis. Erro: "ValueError: Port could not be cast to integer value". Adicionada validação fail-fast em generate-env-prod.sh para rejeitar senhas com caracteres especiais de URL. Documentação atualizada: OBRIGATÓRIO usar `openssl rand -hex 32` para REDIS_PASSWORD, REDIS_CACHE_PASSWORD, REDIS_QUEUE_PASSWORD.*
 *Bug Fix auth-service koa Dynamic Require (22/12/2025): oidc-provider depende de koa que usa require() dinâmico. Erro: "Dynamic require of node:util is not supported". Adicionado koa e oidc-provider como dependências diretas do auth-service para serem externalizadas pelo esbuild.*
 *Bug Fix training-service GPU Manager Integration (25/12/2025): training-service agora usa GPU Manager Service para embeddings - integração enterprise com fila priorizada e monitoramento VRAM*
-*GPU Manager Service Architecture (25/12/2025): Serviço centralizado gerencia todas as requisições GPU (LLM, Embeddings, FLUX, ASR) com fila priorizada (Redis), monitoramento VRAM (nvidia-smi), circuit breakers, retry logic e métricas Prometheus. Todos os serviços GPU rodam localmente no servidor Hetzner GPU único.*
+*GPU Manager Service v4.0.0 (11/01/2026): Serviço centralizado gerencia requisições GPU (LLM+Vision, Embeddings, ASR) com fila priorizada (Redis), monitoramento VRAM (nvidia-smi), circuit breakers, retry logic e métricas Prometheus. Arquitetura simplificada: todos serviços rodam simultaneamente (15GB de 20GB VRAM), zero latência de troca.*
 *GPU Dedicada 24/7 (26/12/2025): Servidor Hetzner GEX44 com containers Docker rodando continuamente. Não há cold start - GPU sempre disponível. Warm on Demand removido (não se aplica a GPU dedicada). GPU Manager Service gerencia todas as requisições GPU de forma enterprise-grade.*
 *Bug Fix ERPNext Workers Site Dependency (22/12/2025): ERPNext workers/scheduler iniciavam em PARALELO com erpnext-create-site, mas precisam do SITE existir para funcionar (leem config do site). Corrigido: adicionada dependência `erpnext-create-site: service_completed_successfully` em todos os 7 workers/scheduler. Healthchecks usam `pgrep` para verificar processo local.*
 *Bug Fix Docker Compose WAIT_TIMEOUT (22/12/2025): Timeout de 120s era insuficiente - ClickHouse tem start_period: 120s + 8 retries × 30s. Aumentado para 300s (5 min) para dar margem adequada para todos os serviços ficarem healthy.*

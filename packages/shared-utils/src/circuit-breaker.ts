@@ -50,7 +50,7 @@ export interface CircuitBreakerConfig {
  * ```
  */
 export const CIRCUIT_BREAKER_PRESETS = {
-  /** Serviço LLM GPU Manager Service - timeout alto para inferência Mixtral 8x7B */
+  /** Serviço LLM GPU Manager Service - timeout alto para inferência Qwen2.5-VL 7B (ARQUITETURA v4.0.0) */
   gpuLLM: {
     timeout: 60000,
     errorThresholdPercentage: 50,
@@ -63,13 +63,6 @@ export const CIRCUIT_BREAKER_PRESETS = {
     errorThresholdPercentage: 50,
     resetTimeout: 30000,
     volumeThreshold: 5,
-  },
-  /** FLUX.1 Schnell - geração de imagens (1-3s típico, timeout 30s) */
-  fluxImageGen: {
-    timeout: 30000,
-    errorThresholdPercentage: 50,
-    resetTimeout: 30000,
-    volumeThreshold: 3,
   },
   /** GPU Manager Service - operações de gerenciamento GPU (timeout alto) */
   gpuManager: {
@@ -162,9 +155,9 @@ export const CIRCUIT_BREAKER_PRESETS = {
     resetTimeout: 30000,
     volumeThreshold: 5,
   },
-  /** Mixtral 8x7B vLLM - LLM Trading (MoE ~12B ativos, otimizado para velocidade) */
-  mixtralLLM: {
-    timeout: 45000, // Timeout otimizado para Mixtral 8x7B AWQ
+  /** Qwen2.5-VL 7B vLLM - LLM Multimodal Trading (ARQUITETURA v4.0.0) */
+  qwenVL: {
+    timeout: 45000, // Timeout otimizado para Qwen2.5-VL 7B AWQ
     errorThresholdPercentage: 50,
     resetTimeout: 30000,
     volumeThreshold: 5,

@@ -174,7 +174,8 @@ export const PERMISSION_MAP: Record<string, Role[]> = {
   'integrations:trading:manage': ['super_admin', 'admin'],
 
   // ============================================================================
-  // IMAGE GENERATION MODULE - FLUX.1 Schnell (FASE 6.5+)
+  // IMAGE ANALYSIS MODULE - Qwen2.5-VL Vision (ARQUITETURA v4.0.0)
+  // NOTA: Alice ANALISA imagens mas NÃO gera. Permissões para upload/aprovação de imagens.
   // ============================================================================
   'images:generate:read': ['super_admin', 'admin', 'manager', 'operator', 'viewer'],
   'images:generate:write': ['super_admin', 'admin', 'manager', 'operator'],

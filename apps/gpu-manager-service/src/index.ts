@@ -227,7 +227,7 @@ interface VramStatus {
 const gpuServiceClients = {
   [GpuServiceType.QWEN_VL]: createProtectedFetch({
     name: 'gpu-qwen-vl',
-    ...CIRCUIT_BREAKER_PRESETS.mixtralLLM, // Reutiliza preset de LLM
+    ...CIRCUIT_BREAKER_PRESETS.qwenVL, // ARQUITETURA v4.0.0: Preset para Qwen2.5-VL
   }),
   [GpuServiceType.EMBEDDINGS]: createProtectedFetch({
     name: 'gpu-embeddings',

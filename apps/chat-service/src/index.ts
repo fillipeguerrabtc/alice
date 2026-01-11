@@ -80,14 +80,8 @@ import {
   checkSLABreaches,
   ESCALATION_CONFIG,
 } from './conversation-orchestrator.js';
-import {
-  initImageGeneration,
-  generateImage,
-  rateImage,
-  approveForTraining,
-  getImageGenerationStats,
-  getImageGenBreakerStats,
-} from './image-generation-client.js';
+// ARQUITETURA v4.0.0: Geração de imagens removida (Alice analisa mas NÃO gera)
+// image-generation-client.js foi removido - Qwen2.5-VL analisa imagens via chat normal
 import { initTradingOrchestrator } from './trading-orchestrator.js';
 // CORREÇÃO 19/12/2025: Remover imports não utilizados (no-unused-vars)
 // isGreeting, getCacheMetrics, isCacheOperational estão disponíveis no módulo
@@ -146,7 +140,7 @@ initFeatureFlags(featureFlagStorage);
 logger.info('Sistema de feature flags inicializado');
 
 initOrchestrator(db);
-initImageGeneration(db);
+// ARQUITETURA v4.0.0: initImageGeneration removido - Qwen2.5-VL analisa imagens via chat
 initTradingOrchestrator(db);
 
 const app = express();
@@ -887,8 +881,9 @@ async function callLlamaAPIInternal(request: LLMRequest): Promise<globalThis.Res
   {
     // Não-streaming: usar GPU Manager Service (fila priorizada, monitoramento VRAM)
     try {
+      // ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral (multimodal)
       const gpuResponse = await requestGpu({
-        serviceType: GpuServiceType.MIXTRAL,
+        serviceType: GpuServiceType.QWEN_VL,
         endpoint: '/v1/chat/completions',
         method: 'POST',
         priority: GpuRequestPriority.CRITICAL,
@@ -1024,8 +1019,9 @@ async function proxyStreamFromGpuManager(
   // BUG FIX 26/12/2025: Usar requestGpuStream centralizado de @alice/shared-utils
   // Remove duplicação de GPU_MANAGER_URL e validação de INTERNAL_API_SECRET
   // requestGpuStream já faz fail-fast da secret e usa a URL correta
+  // ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral (multimodal)
   const gpuResponse = await requestGpuStream({
-    serviceType: GpuServiceType.MIXTRAL,
+    serviceType: GpuServiceType.QWEN_VL,
     priority: GpuRequestPriority.CRITICAL, // Chat em tempo real = prioridade máxima
     endpoint: '/v1/chat/completions',
     method: 'POST',
@@ -3037,6 +3033,9 @@ wss.on('connection', (ws, req) => {
 
         ws.send(JSON.stringify({ type: 'message', data: userMsg }));
 
+        // ARQUITETURA v4.0.0: Geração de imagens REMOVIDA
+        // Alice agora ANALISA imagens via Qwen2.5-VL mas NÃO gera
+        // Se o usuário pedir para gerar imagem, informamos que a funcionalidade foi removida
         const imageDetection = detectImageGenerationRequest(messageContent);
         
         if (imageDetection.isImageRequest && imageDetection.prompt) {
@@ -3045,76 +3044,33 @@ wss.on('connection', (ws, req) => {
             prompt: imageDetection.prompt,
             confidence: imageDetection.confidence,
             reason: imageDetection.reason,
-          }, 'Pedido de geração de imagem detectado');
+          }, 'Pedido de geração de imagem detectado - funcionalidade removida na v4.0.0');
 
-          ws.send(JSON.stringify({ 
-            type: 'image_generating',
-            prompt: imageDetection.prompt,
-          }));
+          // Informar ao usuário que geração de imagens foi removida
+          const removalMessage = 'Desculpe, a geração de imagens não está mais disponível na Alice v4.0.0. ' +
+            'Agora eu consigo **analisar e interpretar imagens** que você enviar (gráficos, documentos, screenshots), ' +
+            'mas não posso criar novas imagens. Se você tiver uma imagem para analisar, basta enviá-la no chat!';
 
-          try {
-            const imageResult = await generateImage(
-              { prompt: imageDetection.prompt },
-              {
-                tenantId: safeTenantId, // Usar tenantId derivado da conversa
-                conversationId,
-                messageId: userMsg.id,
-                createdBy: userId,
-              }
-            );
-
-            ws.send(JSON.stringify({
-              type: 'image_generated',
-              imageId: imageResult.imageId,
-              imageBase64: imageResult.imageBase64,
-              generationTimeMs: imageResult.generationTimeMs,
-            }));
-
-            const inserted = await db.insert(schema.messages).values({
-              conversationId,
-              agentId: conversation?.agentId,
-              conteudo: `Imagem gerada com sucesso para: "${imageDetection.prompt}"`,
-              tipo: 'image',
-              isFromUser: false,
-              latenciaMs: imageResult.generationTimeMs,
-              metadata: { 
-                imageId: imageResult.imageId,
-                prompt: imageDetection.prompt,
-              },
-            }).returning();
-            
-            // BUG FIX 25/12/2025: Verificação defensiva - .returning() deve retornar pelo menos um elemento
-            // Previne crash se array estiver vazio (edge case durante erros de banco/transações)
-            if (!inserted || inserted.length === 0 || !inserted[0]) {
-              logger.error({ conversationId, imageId: imageResult.imageId }, 'Falha ao salvar mensagem de imagem - .returning() retornou array vazio ou undefined');
-              throw new Error('Falha ao salvar mensagem de imagem - resultado do banco de dados inválido');
-            }
-            
-            const imageMsg = inserted[0];
-
-            ws.send(JSON.stringify({ 
-              type: 'complete', 
-              data: imageMsg,
-              metrics: {
-                imageGenerationMs: imageResult.generationTimeMs,
-                imageId: imageResult.imageId,
-              },
-            }));
-
-            logger.info({
-              conversationId,
-              imageId: imageResult.imageId,
-              generationTimeMs: imageResult.generationTimeMs,
-            }, 'Imagem gerada e enviada via WebSocket');
-            
-            return;
-          } catch (imageError) {
-            logger.error({ imageError, prompt: imageDetection.prompt }, 'Erro ao gerar imagem');
-            ws.send(JSON.stringify({
-              type: 'image_error',
-              error: 'Não foi possível gerar a imagem. Tente novamente.',
-            }));
+          const inserted = await db.insert(schema.messages).values({
+            conversationId,
+            agentId: conversation?.agentId,
+            conteudo: removalMessage,
+            tipo: 'text',
+            isFromUser: false,
+            metadata: { 
+              featureRemoved: 'image_generation',
+              originalPrompt: imageDetection.prompt,
+              architecture: 'v4.0.0',
+            },
+          }).returning();
+          
+          if (inserted && inserted.length > 0 && inserted[0]) {
+            const infoMsg = inserted[0];
+            ws.send(JSON.stringify({ type: 'message', data: infoMsg }));
+            ws.send(JSON.stringify({ type: 'complete', data: infoMsg }));
           }
+          
+          return;
         }
 
         // ========================================================================
@@ -5043,10 +4999,11 @@ app.post('/api/chat/notify-agent', asyncHandler(async (req: Request, res: Respon
 }));
 
 // ============================================================================
-// IMAGE GENERATION ROUTES (FASE 6.5+)
+// IMAGE ROUTES - ARQUITETURA v4.0.0 (Geração removida, análise mantida)
 // ============================================================================
 
-const imageGenerationSchema = z.object({
+// NOTA: Schema mantido para documentação - geração de imagens removida na v4.0.0
+const _imageGenerationSchema = z.object({
   prompt: z.string().min(1).max(2000),
   negativePrompt: z.string().max(1000).optional(),
   width: z.number().min(256).max(2048).default(1024),
@@ -5056,34 +5013,16 @@ const imageGenerationSchema = z.object({
   guidanceScale: z.number().min(1).max(20).default(3.5),
 });
 
-app.post('/api/chat/images/generate', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:write'), async (req: Request, res: Response) => {
-  // SEGURANÇA: Usar req.user e req.tenantId populados pelo middleware
-  const userId = req.user?.userId;
-  const tenantId = req.tenantId;
-  
-  if (!userId || !tenantId) {
-    return res.status(401).json({ error: 'Autenticação necessária' });
-  }
-  
-  try {
-    const body = imageGenerationSchema.parse(req.body);
-    
-    const result = await generateImage(body, {
-      tenantId,
-      createdBy: userId,
-      conversationId: req.body.conversationId,
-      messageId: req.body.messageId,
-    });
-    
-    res.json({
-      imageId: result.imageId,
-      generationTimeMs: result.generationTimeMs,
-      imageBase64: result.imageBase64,
-    });
-  } catch (error) {
-    logger.error({ error }, 'Erro ao gerar imagem');
-    res.status(500).json({ error: 'Erro ao gerar imagem' });
-  }
+// ARQUITETURA v4.0.0: Geração de imagens REMOVIDA
+// Alice agora ANALISA imagens via Qwen2.5-VL (vision) mas NÃO gera
+// Endpoint mantido para retrocompatibilidade - retorna erro 410 (Gone)
+app.post('/api/chat/images/generate', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:write'), async (_req: Request, res: Response) => {
+  logger.warn('Tentativa de usar endpoint de geração de imagens removido na v4.0.0');
+  return res.status(410).json({ 
+    error: 'Funcionalidade removida',
+    message: 'ARQUITETURA v4.0.0: Geração de imagens foi removida. Alice agora ANALISA imagens via Qwen2.5-VL (vision) mas NÃO gera. Para análise de imagens, envie a imagem no chat.',
+    code: 'FEATURE_REMOVED',
+  });
 });
 
 app.post('/api/chat/images/:id/rate', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:write'), async (req: Request, res: Response) => {
@@ -5117,7 +5056,12 @@ app.post('/api/chat/images/:id/rate', requireAuth(), requireSameTenant(getTenant
       return res.status(404).json({ error: 'Imagem não encontrada' });
     }
     
-    await rateImage(id, score);
+    // ARQUITETURA v4.0.0: Usar db diretamente (image-generation-client removido)
+    await db.update(schema.generatedImages)
+      .set({ feedbackScore: score })
+      .where(eq(schema.generatedImages.id, id));
+    
+    logger.info({ imageId: id, score }, 'Feedback de imagem registrado');
     res.json({ message: 'Feedback registrado com sucesso' });
   } catch (error) {
     logger.error({ error, imageId: id }, 'Erro ao registrar feedback');
@@ -5156,7 +5100,12 @@ app.post('/api/chat/images/:id/approve', requireAuth(), requireSameTenant(getTen
       return res.status(404).json({ error: 'Imagem não encontrada' });
     }
     
-    await approveForTraining(id, approved);
+    // ARQUITETURA v4.0.0: Usar db diretamente (image-generation-client removido)
+    await db.update(schema.generatedImages)
+      .set({ approvedForTraining: approved })
+      .where(eq(schema.generatedImages.id, id));
+    
+    logger.info({ imageId: id, approved }, 'Status de aprovação para treinamento atualizado');
     res.json({ message: `Imagem ${approved ? 'aprovada' : 'reprovada'} para treinamento` });
   } catch (error) {
     logger.error({ error, imageId: id }, 'Erro ao aprovar imagem');
@@ -5164,11 +5113,30 @@ app.post('/api/chat/images/:id/approve', requireAuth(), requireSameTenant(getTen
   }
 });
 
+// ARQUITETURA v4.0.0: Stats simplificado (image-generation-client removido)
 app.get('/api/chat/images/stats', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:read'), async (_req: Request, res: Response) => {
   try {
-    const stats = await getImageGenerationStats();
-    const breakerStats = getImageGenBreakerStats();
-    res.json({ ...stats, circuitBreaker: breakerStats });
+    type GeneratedImage = typeof schema.generatedImages.$inferSelect;
+    const images = await db.query.generatedImages.findMany() as GeneratedImage[];
+    
+    const completed = images.filter((img: GeneratedImage) => img.status === 'completed');
+    const avgGenerationTime = completed.length > 0
+      ? completed.reduce((sum: number, img: GeneratedImage) => sum + (img.generationTimeMs || 0), 0) / completed.length
+      : 0;
+    
+    const stats = {
+      total: images.length,
+      completed: completed.length,
+      pending: images.filter((img: GeneratedImage) => img.status === 'pending' || img.status === 'generating').length,
+      failed: images.filter((img: GeneratedImage) => img.status === 'failed').length,
+      approvedForTraining: images.filter((img: GeneratedImage) => img.approvedForTraining).length,
+      usedInFineTuning: images.filter((img: GeneratedImage) => img.usedInFineTuning).length,
+      averageGenerationTimeMs: Math.round(avgGenerationTime),
+      // ARQUITETURA v4.0.0: Circuit breaker removido (geração de imagens não disponível)
+      note: 'Geração de imagens removida na v4.0.0 - Alice agora ANALISA imagens via Qwen2.5-VL',
+    };
+    
+    res.json(stats);
   } catch (error) {
     logger.error({ error }, 'Erro ao buscar estatísticas de imagens');
     res.status(500).json({ error: 'Erro interno do servidor' });

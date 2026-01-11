@@ -140,8 +140,9 @@ export class LLMClient {
   async chatCompletion(options: ChatCompletionOptions): Promise<ChatCompletionResponse> {
     const model = normalizeModelName(options.model);
 
+    // ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral (multimodal)
     const result = await requestGpu({
-      serviceType: GpuServiceType.MIXTRAL,
+      serviceType: GpuServiceType.QWEN_VL,
       endpoint: "/v1/chat/completions",
       method: "POST",
       priority: GpuRequestPriority.CRITICAL,
@@ -179,8 +180,9 @@ export class LLMClient {
   async *chatCompletionStream(options: ChatCompletionOptions): AsyncGenerator<string> {
     const model = normalizeModelName(options.model);
 
+    // ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral (multimodal)
     const response = await requestGpuStream({
-      serviceType: GpuServiceType.MIXTRAL,
+      serviceType: GpuServiceType.QWEN_VL,
       endpoint: "/v1/chat/completions",
       method: "POST",
       priority: GpuRequestPriority.CRITICAL,

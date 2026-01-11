@@ -370,19 +370,18 @@ export const RAG_CHUNK_CONFIG = {
 
 /**
  * Configuração GPU Manager Service (Hetzner GEX44)
- * ARQUITETURA ENTERPRISE (25/12/2025): Todos os serviços GPU rodam localmente
- * Modelo: Mixtral 8x7B AWQ (quantizado para RTX 4000 Ada 20GB VRAM)
+ * ARQUITETURA v4.0.0 (11/01/2026): Todos os serviços GPU rodam simultaneamente
+ * Modelo: Qwen2.5-VL 7B AWQ (multimodal: texto + vision)
  */
 export const GPU_MANAGER_CONFIG = {
   // GPU Manager Service URL (container name em produção: alice-gpu-manager:3010)
-  // BUG FIX 25/12/2025: URL padrão corrigida para corresponder ao container_name do docker-compose.prod.yml
   url: process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager:3010',
   models: {
-    chat: 'TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ',
+    chat: 'Qwen/Qwen2.5-VL-7B-Instruct-AWQ', // ARQUITETURA v4.0.0: LLM + Vision
     embeddings: 'Qwen/Qwen3-Embedding-8B',
     image: 'laion/CLIP-ViT-H-14-laion2B-s32B-b79K',
     asr: 'nvidia/Canary-1B',
-    flux: 'black-forest-labs/FLUX.1-schnell',
+    // NOTA: FLUX removido na v4.0.0 - Alice analisa mas NÃO gera imagens
   },
   defaults: {
     maxTokens: 4096,
