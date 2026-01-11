@@ -1004,16 +1004,20 @@ app.get('/api/gpu/services', requireInternalAuth, asyncHandler(async (req: Reque
     };
   }
   
+  // ARQUITETURA v4.0.0: Calcular VRAM dinamicamente (exclui TRAINING - sob demanda)
+  // BUG FIX 11/01/2026: vramFreeGB agora usa o mesmo cálculo de totalVramUsedGB
+  // Antes: vramFreeGB era hardcoded (TOTAL_VRAM_GB - 15), causando inconsistência
+  const totalVramUsedGB = Object.entries(VRAM_REQUIREMENTS)
+    .filter(([key]) => key !== GpuServiceType.TRAINING)
+    .reduce((sum, [, vram]) => sum + vram, 0);
+  
   res.json({
     architecture: 'v4.0.0-simplified',
-    description: 'Todos os serviços GPU rodam simultaneamente (15GB de 20GB)',
+    description: `Todos os serviços GPU rodam simultaneamente (${totalVramUsedGB}GB de ${TOTAL_VRAM_GB}GB)`,
     services,
     vram: vramStatus,
-    // ARQUITETURA v4.0.0: Somar VRAM de serviços sempre ativos (exclui TRAINING explicitamente)
-    totalVramUsedGB: Object.entries(VRAM_REQUIREMENTS)
-      .filter(([key]) => key !== GpuServiceType.TRAINING)
-      .reduce((sum, [, vram]) => sum + vram, 0),
-    vramFreeGB: TOTAL_VRAM_GB - 15, // 5GB livres
+    totalVramUsedGB,
+    vramFreeGB: TOTAL_VRAM_GB - totalVramUsedGB,
   });
 }));
 
