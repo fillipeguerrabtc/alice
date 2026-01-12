@@ -12,6 +12,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { useAuth } from '@/hooks/use-auth';
 import { Loader2 } from 'lucide-react';
+import { getReturnUrl } from '@/pages/Login';
 
 // PERFORMANCE: Lazy loading de páginas (React 18+ Best Practices 2025)
 // Reduz bundle inicial e carrega páginas sob demanda
@@ -68,14 +69,35 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * Componente de redirecionamento pós-login para usuários autenticados.
+ * 
+ * Quando um usuário autenticado está em /login (após login bem-sucedido),
+ * este componente o redireciona para:
+ * 1. A URL em `returnTo` query param (se válida)
+ * 2. Dashboard (/) como fallback
+ * 
+ * CORREÇÃO: Este é o ponto correto de navegação pós-login porque:
+ * - isAuthenticated já é true (query de auth foi refetched)
+ * - Não há race condition entre mutação e navegação
+ * - returnTo é validado por getReturnUrl() contra open redirect attacks
+ * 
+ * Regra 6 CLAUDE.md: Implementação enterprise sem workarounds
+ * Regra 16 CLAUDE.md: Segurança - validação de URLs
+ */
+function LoginRedirect() {
+  const returnUrl = getReturnUrl();
+  return <Redirect to={returnUrl} />;
+}
+
 function Router() {
   return (
     <Switch>
-      {/* Redireciona /login para / quando autenticado (pós-OIDC callback) */}
-      {/* CORREÇÃO PR#107: Usar Redirect do wouter ao invés de window.location.href */}
-      {/* - Evita side effect durante render (React rules) */}
-      {/* - Navegação client-side sem reload (melhor UX) */}
-      <Route path="/login">{() => <Redirect to="/" />}</Route>
+      {/* Redireciona /login para returnTo ou / quando autenticado (pós-login) */}
+      {/* CORREÇÃO: Usa LoginRedirect para respeitar returnTo query param */}
+      {/* - Navegação ocorre APÓS isAuthenticated=true (sem race condition) */}
+      {/* - returnTo é validado contra open redirect attacks */}
+      <Route path="/login" component={LoginRedirect} />
       <Route path="/" component={Dashboard} />
       <Route path="/chat" component={Chat} />
       <Route path="/chat/:conversationId" component={Chat} />
@@ -101,19 +123,28 @@ function Router() {
  * Preserva a URL pretendida no query param `returnTo` para redirecionamento pós-login.
  * 
  * Fluxo:
- * 1. Usuário não autenticado acessa /trading → redirecionado para /login?returnTo=/trading
- * 2. Após login bem-sucedido → redirecionado para /trading
+ * 1. Usuário não autenticado acessa /trading?tab=history → redirecionado para /login?returnTo=/trading?tab=history
+ * 2. Após login bem-sucedido → redirecionado para /trading?tab=history
+ * 
+ * CORREÇÃO: Usa window.location ao invés de useLocation() do wouter porque:
+ * - wouter's useLocation() retorna apenas pathname (ex: /trading)
+ * - window.location inclui query string (ex: /trading?tab=history)
+ * - Preserva deep links com filtros, paginação, tabs, etc.
  * 
  * Regra 6 CLAUDE.md: Sem workarounds - implementação enterprise com persistência real
  */
 function RedirectToLogin() {
-  const [location] = useLocation();
+  // IMPORTANTE: Usar window.location para obter URL completa com query string
+  // useLocation() do wouter retorna apenas pathname, perdendo ?tab=history, ?page=2, etc.
+  const pathname = window.location.pathname;
+  const search = window.location.search;
+  const fullPath = pathname + search;
   
   // Não incluir returnTo se já estiver na página de login (evita loop)
   // Também não incluir returnTo=/ pois Dashboard é o destino padrão
-  const shouldIncludeReturnTo = location !== '/login' && location !== '/';
+  const shouldIncludeReturnTo = pathname !== '/login' && fullPath !== '/';
   const loginUrl = shouldIncludeReturnTo 
-    ? `/login?returnTo=${encodeURIComponent(location)}`
+    ? `/login?returnTo=${encodeURIComponent(fullPath)}`
     : '/login';
   
   return <Redirect to={loginUrl} />;

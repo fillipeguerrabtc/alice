@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useLocation } from 'wouter';
 import { Loader2, Mail, Chrome, Github } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,8 +17,12 @@ import { ThemeToggle } from '@/components/theme-toggle';
  * 
  * Regra 6 CLAUDE.md: Sem workarounds - validação enterprise de URLs
  * Regra 16 CLAUDE.md: Segurança - previne open redirect attacks
+ * 
+ * NOTA: Esta função é exportada para uso no App.tsx Router
+ * O redirecionamento pós-login é feito pelo Router quando isAuthenticated=true,
+ * garantindo que o estado de auth esteja sincronizado antes da navegação.
  */
-function getReturnUrl(): string {
+export function getReturnUrl(): string {
   const params = new URLSearchParams(window.location.search);
   const returnTo = params.get('returnTo');
   
@@ -51,7 +54,6 @@ interface AuthProvider {
 export default function Login() {
   const { t } = useTranslation();
   const { login, isLoginPending } = useAuth();
-  const [, navigate] = useLocation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [providers, setProviders] = useState<AuthProvider[]>([]);
@@ -69,13 +71,29 @@ export default function Login() {
       });
   }, []);
 
+  /**
+   * Handler de submit do formulário de login.
+   * 
+   * IMPORTANTE: Não navegamos aqui após login bem-sucedido!
+   * O redirecionamento é feito automaticamente pelo Router em App.tsx
+   * quando isAuthenticated se torna true após o refetch da query de auth.
+   * 
+   * Isso evita race condition onde navigate() é chamado antes do
+   * estado de auth ser atualizado, causando redirect loop.
+   * 
+   * Fluxo correto:
+   * 1. login() completa com sucesso
+   * 2. onSuccess invalida query de auth → refetch automático
+   * 3. isAuthenticated se torna true
+   * 4. AppContent re-renderiza e mostra Router (usuário autenticado)
+   * 5. Router rota /login redireciona para returnTo ou /
+   */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       await login({ email, password });
-      // Redirecionar para URL pretendida ou Dashboard após login bem-sucedido
-      const returnUrl = getReturnUrl();
-      navigate(returnUrl);
+      // Navegação é tratada pelo Router quando isAuthenticated=true
+      // Ver App.tsx: Router rota /login com LoginRedirect
     } catch (error) {
       toast({
         title: t('auth.loginError'),
