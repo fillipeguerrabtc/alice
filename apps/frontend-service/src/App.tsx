@@ -12,7 +12,39 @@ import { Toaster } from '@/components/ui/toaster';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { useAuth } from '@/hooks/use-auth';
 import { Loader2 } from 'lucide-react';
-import { getReturnUrl } from '@/pages/Login';
+
+/**
+ * Obtém a URL de retorno após login bem-sucedido.
+ * Verifica o query param `returnTo` e valida se é uma URL segura (interna).
+ * 
+ * IMPORTANTE: Esta função está inline em App.tsx para evitar import circular
+ * com o módulo lazy-loaded Login.tsx
+ * 
+ * Regra 6 CLAUDE.md: Sem workarounds - validação enterprise de URLs
+ * Regra 16 CLAUDE.md: Segurança - previne open redirect attacks
+ */
+function getReturnUrl(): string {
+  const params = new URLSearchParams(window.location.search);
+  const returnTo = params.get('returnTo');
+  
+  // Se não há returnTo, retornar para Dashboard
+  if (!returnTo) {
+    return '/';
+  }
+  
+  // Validação de segurança: só aceitar URLs internas (começam com /)
+  // Previne open redirect attacks (ex: returnTo=https://evil.com)
+  if (!returnTo.startsWith('/') || returnTo.startsWith('//')) {
+    return '/';
+  }
+  
+  // Não redirecionar para a própria página de login (evita loop)
+  if (returnTo.startsWith('/login')) {
+    return '/';
+  }
+  
+  return returnTo;
+}
 
 // PERFORMANCE: Lazy loading de páginas (React 18+ Best Practices 2025)
 // Reduz bundle inicial e carrega páginas sob demanda

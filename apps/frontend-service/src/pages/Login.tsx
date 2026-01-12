@@ -18,11 +18,10 @@ import { ThemeToggle } from '@/components/theme-toggle';
  * Regra 6 CLAUDE.md: Sem workarounds - validação enterprise de URLs
  * Regra 16 CLAUDE.md: Segurança - previne open redirect attacks
  * 
- * NOTA: Esta função é exportada para uso no App.tsx Router
- * O redirecionamento pós-login é feito pelo Router quando isAuthenticated=true,
- * garantindo que o estado de auth esteja sincronizado antes da navegação.
+ * NOTA: Esta função é usada apenas para OAuth redirect neste componente.
+ * Uma cópia idêntica existe em App.tsx para o LoginRedirect (evita import circular).
  */
-export function getReturnUrl(): string {
+function getReturnUrl(): string {
   const params = new URLSearchParams(window.location.search);
   const returnTo = params.get('returnTo');
   

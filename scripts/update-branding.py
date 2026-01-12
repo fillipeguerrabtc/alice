@@ -29,8 +29,9 @@ BRANDING_DIR = PROJECT_ROOT / "assets" / "branding"
 FRONTEND_PUBLIC = PROJECT_ROOT / "apps" / "frontend-service" / "public"
 
 # Configuracoes de tamanho
-FAVICON_SIZE = (64, 64)  # Favicon 64x64 para boa qualidade em telas retina
-LOGO_SIZE = (512, 512)   # Logo principal 512x512
+# Aumentados para melhor qualidade em telas de alta resolucao
+FAVICON_SIZE = (128, 128)  # Favicon 128x128 para excelente qualidade em retina
+LOGO_SIZE = (1024, 1024)   # Logo principal 1024x1024 para alta resolucao
 
 def process_image(source_path: Path) -> None:
     """Processa a imagem de origem e gera todos os assets."""
@@ -52,30 +53,21 @@ def process_image(source_path: Path) -> None:
         print(f"   Tamanho original: {img.size[0]}x{img.size[1]}")
         print(f"   Modo: {img.mode}")
         
-        # 1. Gerar favicon (64x64)
+        # 1. Gerar favicon (128x128)
+        # Usa resize() ao inves de thumbnail() para garantir tamanho exato
+        # (thumbnail nao aumenta imagens menores que o alvo)
         favicon_path = BRANDING_DIR / "favicon.png"
         favicon = img.copy()
-        favicon.thumbnail(FAVICON_SIZE, Image.Resampling.LANCZOS)
-        
-        # Criar canvas quadrado para manter proporcao
-        favicon_canvas = Image.new('RGBA', FAVICON_SIZE, (255, 255, 255, 0))
-        offset = ((FAVICON_SIZE[0] - favicon.size[0]) // 2, 
-                  (FAVICON_SIZE[1] - favicon.size[1]) // 2)
-        favicon_canvas.paste(favicon, offset, favicon if favicon.mode == 'RGBA' else None)
-        favicon_canvas.save(favicon_path, 'PNG', optimize=True)
+        favicon = favicon.resize(FAVICON_SIZE, Image.Resampling.LANCZOS)
+        favicon.save(favicon_path, 'PNG', optimize=True)
         print(f"   [OK] favicon.png gerado ({FAVICON_SIZE[0]}x{FAVICON_SIZE[1]})")
         
-        # 2. Gerar logo-round (512x512)
+        # 2. Gerar logo-round (1024x1024)
+        # Usa resize() ao inves de thumbnail() para garantir tamanho exato
         logo_path = BRANDING_DIR / "logo-round.png"
         logo = img.copy()
-        logo.thumbnail(LOGO_SIZE, Image.Resampling.LANCZOS)
-        
-        # Criar canvas quadrado para manter proporcao
-        logo_canvas = Image.new('RGBA', LOGO_SIZE, (255, 255, 255, 0))
-        offset = ((LOGO_SIZE[0] - logo.size[0]) // 2, 
-                  (LOGO_SIZE[1] - logo.size[1]) // 2)
-        logo_canvas.paste(logo, offset, logo if logo.mode == 'RGBA' else None)
-        logo_canvas.save(logo_path, 'PNG', optimize=True)
+        logo = logo.resize(LOGO_SIZE, Image.Resampling.LANCZOS)
+        logo.save(logo_path, 'PNG', optimize=True)
         print(f"   [OK] logo-round.png gerado ({LOGO_SIZE[0]}x{LOGO_SIZE[1]})")
 
 
