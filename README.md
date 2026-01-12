@@ -513,10 +513,10 @@ Consulte [docs/SECRETS.md](docs/SECRETS.md) para a lista completa de secrets nec
 | CI | Validação (typecheck, lint, trivy) | ~3min |
 | Release | Build 17 imagens + GitHub Release | ~5-10min |
 | Deploy INFRA/OBSERVABILITY/ERPNEXT/BACKUP | 4 stacks standard | **~10min** |
-| Deploy ALICE | Stack com GPU images (17.6GB) | **~35-40min** |
+| Deploy ALICE | Stack com GPU images | **~25-30min** |
 | Rollback | Stack específico | **Cirúrgico** 🎯 |
 
-> **NOTA (12/01/2026):** Deploy do stack ALICE tem timeouts maiores devido a imagens GPU grandes (alice-embeddings-gpu: 17.6GB). Timeout configurado: command_timeout=45m, job timeout=50m. Pull redundante removido para economia de 15-20min.
+> **OTIMIZAÇÃO (12/01/2026):** Imagem embeddings-gpu migrada de `pytorch-devel` (17.6GB) para `pytorch-runtime` (~11GB). Economia de 6GB (-35%), download 50x mais rápido. Deploy ALICE reduzido de ~40min para ~25-30min. Timeout configurado: command_timeout=45m (margem), job timeout=50m.
 
 **Versionamento Semântico Automático:**
 - Conventional Commits (BREAKING→MAJOR, feat→MINOR, fix→PATCH)

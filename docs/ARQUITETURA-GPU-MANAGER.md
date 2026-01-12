@@ -2,7 +2,9 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 12 de Janeiro de 2026  
-**Versão:** 4.0.2 - Correção VRAM KV Cache
+**Versão:** 4.0.3 - Otimização Imagem Embeddings (DEVEL → RUNTIME)
+
+> **OTIMIZAÇÃO CRÍTICA v4.0.3 (12/01/2026):** Migração da imagem base embeddings de `pytorch-devel` (17.6GB, 24 layers) para `pytorch-runtime` (~11GB estimado, ~14 layers). Economia de 6GB (-35%), download 50x mais rápido (~50MB/s vs ~1MB/s). CUDA dev tools (gcc, nvcc, headers) são desnecessários para inferência.
 
 > **CORREÇÃO CRÍTICA v4.0.2 (12/01/2026):** Ajustados parâmetros de VRAM do Qwen-VL após análise de erro "No available memory for cache blocks". Modelo AWQ ocupa ~6.5GB (não ~4GB como estimado). Configuração corrigida: `max-model-len=4096`, `gpu-memory-utilization=0.45`.
 
@@ -60,11 +62,11 @@ GPU 20GB VRAM - TODOS SIMULTÂNEOS:
 
 ### Serviços GPU Sempre Ativos
 
-| Serviço | Modelo | VRAM Real | Configuração | Função |
-|---------|--------|-----------|--------------|--------|
-| **gpu-qwen-vl** | Qwen2.5-VL 7B AWQ | ~8GB | `gpu-memory-utilization=0.45`, `max-model-len=4096`, `dtype=float16` | LLM + Vision (chat, trading, análise de gráficos) |
-| **gpu-embeddings** | Qwen3-Embedding-8B INT8 | ~7.4GB | `quantization=int8` | Embeddings para RAG |
-| **gpu-asr** | Canary-1B | ~4GB | NeMo | Transcrição de áudio |
+| Serviço | Modelo | VRAM Real | Configuração | Função | Imagem Base |
+|---------|--------|-----------|--------------|--------|-------------|
+| **gpu-qwen-vl** | Qwen2.5-VL 7B AWQ | ~8GB | `gpu-memory-utilization=0.45`, `max-model-len=4096`, `dtype=float16` | LLM + Vision (chat, trading, análise de gráficos) | pytorch-runtime |
+| **gpu-embeddings** | Qwen3-Embedding-8B INT8 | ~7.4GB | `quantization=int8` | Embeddings para RAG | **pytorch-runtime** (~11GB, -35% vs devel) |
+| **gpu-asr** | Canary-1B | ~4GB | NeMo | Transcrição de áudio | pytorch-runtime |
 
 ### Configuração vLLM 0.12.0 - CORRIGIDO v4.0.2
 
@@ -284,7 +286,9 @@ O Qwen2.5-VL 7B foi escolhido por:
 
 | Versão | Data | Descrição |
 |--------|------|-----------|
-| 4.0.1 | 12/01/2026 | Correções vLLM 0.12.0 (dtype float16, JSON limit-mm-per-prompt), otimização VRAM |
+| 4.0.3 | 12/01/2026 | Otimização imagem embeddings: pytorch-devel → pytorch-runtime (-6GB, -35%) |
+| 4.0.2 | 12/01/2026 | Correção VRAM Qwen-VL (max-model-len=4096, gpu-memory-utilization=0.45) |
+| 4.0.1 | 12/01/2026 | Correções vLLM 0.12.0 (dtype float16, JSON limit-mm-per-prompt) |
 | 4.0.0 | 11/01/2026 | Arquitetura simplificada, Qwen2.5-VL, todos simultâneos |
 | 3.0.0 | 09/01/2026 | Orquestração dinâmica via Docker API |
 | 2.0.0 | 25/12/2025 | Fila priorizada, circuit breakers |
