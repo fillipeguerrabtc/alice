@@ -3292,12 +3292,13 @@ jobs:
     name: Rollback INFRA
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare, deploy-infra, health-infra]
-    # CRITICAL: 2 modos de rollback
+    # CRITICAL: 3 modos de rollback
     # 1) MANUAL: Usuário solicitou (is_rollback=true) → usar rollback_version
-    # 2) AUTOMÁTICO: Deploy sucesso mas health falhou → usar .previous
+    # 2) AUTOMÁTICO: Deploy falhou (timeout, erro) → cleanup/rollback
+    # 3) AUTOMÁTICO: Deploy sucesso mas health falhou → usar .previous
     if: |
       (needs.validate.outputs.is_rollback == 'true' && needs.validate.outputs.deploy_infra == 'true' && needs.prepare.result == 'success') ||
-      (failure() && needs.deploy-infra.result == 'success' && needs.health-infra.result == 'failure')
+      (failure() && (needs.deploy-infra.result == 'failure' || (needs.deploy-infra.result == 'success' && needs.health-infra.result == 'failure')))
     timeout-minutes: 10
     
     steps:
@@ -4385,12 +4386,13 @@ jobs:
     name: Rollback OBSERVABILITY
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare, deploy-observability, health-observability]
-    # CRITICAL: 2 modos de rollback
+    # CRITICAL: 3 modos de rollback
     # 1) MANUAL: Usuário solicitou (is_rollback=true) → usar rollback_version
-    # 2) AUTOMÁTICO: Deploy sucesso mas health falhou → usar .previous
+    # 2) AUTOMÁTICO: Deploy falhou (timeout, erro) → cleanup/rollback
+    # 3) AUTOMÁTICO: Deploy sucesso mas health falhou → usar .previous
     if: |
       (needs.validate.outputs.is_rollback == 'true' && needs.validate.outputs.deploy_observability == 'true' && needs.prepare.result == 'success') ||
-      (failure() && needs.deploy-observability.result == 'success' && needs.health-observability.result == 'failure')
+      (failure() && (needs.deploy-observability.result == 'failure' || (needs.deploy-observability.result == 'success' && needs.health-observability.result == 'failure')))
     timeout-minutes: 10
     
     steps:
@@ -4831,12 +4833,13 @@ jobs:
     name: Rollback ERPNEXT
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare, deploy-erpnext, health-erpnext]
-    # CRITICAL: 2 modos de rollback
+    # CRITICAL: 3 modos de rollback
     # 1) MANUAL: Usuário solicitou (is_rollback=true) → usar rollback_version
-    # 2) AUTOMÁTICO: Deploy sucesso mas health falhou → usar .previous
+    # 2) AUTOMÁTICO: Deploy falhou (timeout, erro) → cleanup/rollback
+    # 3) AUTOMÁTICO: Deploy sucesso mas health falhou → usar .previous
     if: |
       (needs.validate.outputs.is_rollback == 'true' && needs.validate.outputs.deploy_erpnext == 'true' && needs.prepare.result == 'success') ||
-      (failure() && needs.deploy-erpnext.result == 'success' && needs.health-erpnext.result == 'failure')
+      (failure() && (needs.deploy-erpnext.result == 'failure' || (needs.deploy-erpnext.result == 'success' && needs.health-erpnext.result == 'failure')))
     timeout-minutes: 7
     
     steps:
@@ -5260,12 +5263,13 @@ jobs:
     name: Rollback BACKUP
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare, deploy-backup, health-backup]
-    # CRITICAL: 2 modos de rollback
+    # CRITICAL: 3 modos de rollback
     # 1) MANUAL: Usuário solicitou (is_rollback=true) → usar rollback_version
-    # 2) AUTOMÁTICO: Deploy sucesso mas health falhou → usar .previous
+    # 2) AUTOMÁTICO: Deploy falhou (timeout, erro) → cleanup/rollback
+    # 3) AUTOMÁTICO: Deploy sucesso mas health falhou → usar .previous
     if: |
       (needs.validate.outputs.is_rollback == 'true' && needs.validate.outputs.deploy_backup == 'true' && needs.prepare.result == 'success') ||
-      (failure() && needs.deploy-backup.result == 'success' && needs.health-backup.result == 'failure')
+      (failure() && (needs.deploy-backup.result == 'failure' || (needs.deploy-backup.result == 'success' && needs.health-backup.result == 'failure')))
     timeout-minutes: 5
     
     steps:
