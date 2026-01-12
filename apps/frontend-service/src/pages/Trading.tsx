@@ -870,7 +870,7 @@ export default function Trading() {
       variants={containerVariants}
       initial="hidden"
       animate="visible"
-      className="p-6 space-y-6"
+      className="p-3 md:p-6 space-y-4 md:space-y-6"
     >
       {/* Header */}
       <motion.div variants={itemVariants}>
@@ -1073,47 +1073,50 @@ export default function Trading() {
         </div>
       </motion.div>
 
-      {/* Main Tabs */}
+      {/* Main Tabs - Mobile-First: Scroll horizontal em mobile */}
       <motion.div variants={itemVariants}>
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-8">
-            <TabsTrigger value="overview" data-testid="tab-overview">
-              <BarChart3 className="h-4 w-4 mr-2" />
-              {t('trading.tabs.overview')}
-            </TabsTrigger>
-            <TabsTrigger value="chart" data-testid="tab-chart">
-              <CandlestickChart className="h-4 w-4 mr-2" />
-              {t('trading.tabs.chart')}
-            </TabsTrigger>
-            <TabsTrigger value="orderbook" data-testid="tab-orderbook">
-              <Layers className="h-4 w-4 mr-2" />
-              {t('trading.tabs.orderbook')}
-            </TabsTrigger>
-            <TabsTrigger value="orders" data-testid="tab-orders">
-              <Activity className="h-4 w-4 mr-2" />
-              {t('trading.tabs.orders')}
-            </TabsTrigger>
-            <TabsTrigger value="positions" data-testid="tab-positions">
-              <Target className="h-4 w-4 mr-2" />
-              {t('trading.tabs.positions')}
-            </TabsTrigger>
-            <TabsTrigger value="signals" data-testid="tab-signals">
-              <Brain className="h-4 w-4 mr-2" />
-              {t('trading.tabs.signals')}
-            </TabsTrigger>
-            <TabsTrigger value="analysis" data-testid="tab-analysis">
-              <BarChart3 className="h-4 w-4 mr-2" />
-              Análise Técnica
-            </TabsTrigger>
-            <TabsTrigger value="history" data-testid="tab-history">
-              <History className="h-4 w-4 mr-2" />
-              {t('trading.tabs.history')}
-            </TabsTrigger>
-            <TabsTrigger value="control" data-testid="tab-control">
-              <Hand className="h-4 w-4 mr-2" />
-              {t('trading.tabs.control')}
-            </TabsTrigger>
-          </TabsList>
+          {/* MOBILE-FIRST 12/01/2026: Tabs com scroll horizontal para caber em mobile */}
+          <div className="overflow-x-auto pb-2 -mx-2 px-2 md:overflow-visible md:mx-0 md:px-0">
+            <TabsList className="inline-flex w-max md:grid md:w-full md:grid-cols-9 min-w-full md:min-w-0">
+              <TabsTrigger value="overview" data-testid="tab-overview" className="whitespace-nowrap">
+                <BarChart3 className="h-4 w-4 md:mr-2" />
+                <span className="hidden md:inline">{t('trading.tabs.overview')}</span>
+              </TabsTrigger>
+              <TabsTrigger value="chart" data-testid="tab-chart" className="whitespace-nowrap">
+                <CandlestickChart className="h-4 w-4 md:mr-2" />
+                <span className="hidden md:inline">{t('trading.tabs.chart')}</span>
+              </TabsTrigger>
+              <TabsTrigger value="orderbook" data-testid="tab-orderbook" className="whitespace-nowrap">
+                <Layers className="h-4 w-4 md:mr-2" />
+                <span className="hidden md:inline">{t('trading.tabs.orderbook')}</span>
+              </TabsTrigger>
+              <TabsTrigger value="orders" data-testid="tab-orders" className="whitespace-nowrap">
+                <Activity className="h-4 w-4 md:mr-2" />
+                <span className="hidden md:inline">{t('trading.tabs.orders')}</span>
+              </TabsTrigger>
+              <TabsTrigger value="positions" data-testid="tab-positions" className="whitespace-nowrap">
+                <Target className="h-4 w-4 md:mr-2" />
+                <span className="hidden md:inline">{t('trading.tabs.positions')}</span>
+              </TabsTrigger>
+              <TabsTrigger value="signals" data-testid="tab-signals" className="whitespace-nowrap">
+                <Brain className="h-4 w-4 md:mr-2" />
+                <span className="hidden md:inline">{t('trading.tabs.signals')}</span>
+              </TabsTrigger>
+              <TabsTrigger value="analysis" data-testid="tab-analysis" className="whitespace-nowrap">
+                <BarChart3 className="h-4 w-4 md:mr-2" />
+                <span className="hidden md:inline">Análise</span>
+              </TabsTrigger>
+              <TabsTrigger value="history" data-testid="tab-history" className="whitespace-nowrap">
+                <History className="h-4 w-4 md:mr-2" />
+                <span className="hidden md:inline">{t('trading.tabs.history')}</span>
+              </TabsTrigger>
+              <TabsTrigger value="control" data-testid="tab-control" className="whitespace-nowrap">
+                <Hand className="h-4 w-4 md:mr-2" />
+                <span className="hidden md:inline">{t('trading.tabs.control')}</span>
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
           {/* Overview Tab */}
           <TabsContent value="overview" className="space-y-4 mt-6">
