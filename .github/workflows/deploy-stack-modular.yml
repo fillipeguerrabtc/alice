@@ -3526,7 +3526,7 @@ jobs:
                 node:22-alpine sh -c "
                   npm install -g pnpm
                   pnpm install --no-frozen-lockfile
-                  cd packages/database && pnpm drizzle-kit push
+                  pnpm drizzle-kit push
                 "; then
                 echo "❌ ERRO CRÍTICO: Drizzle push falhou!"
                 echo "   O schema do banco não foi criado."
