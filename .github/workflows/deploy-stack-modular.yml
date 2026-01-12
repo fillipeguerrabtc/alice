@@ -3558,7 +3558,7 @@ jobs:
     # - deploy-infra NÃO PODE ter falhado (needs.deploy-infra.result != 'failure')
     # CRITICAL: NÃO rodar em rollback manual (deploy seria sobrescrito pelo rollback)
     if: needs.validate.outputs.deploy_alice == 'true' && needs.prepare.result == 'success' && needs.deploy-infra.result != 'failure' && (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped') && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped') && needs.validate.outputs.is_rollback == 'false'
-    timeout-minutes: 30
+    timeout-minutes: 50
     
     steps:
       - name: Deploy stack alice via SSH
@@ -3569,7 +3569,15 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          command_timeout: 25m
+          # =================================================================
+          # CORREÇÃO CRÍTICA (12/01/2026): Timeout aumentado para GPU images
+          # =================================================================
+          # PROBLEMA: alice-embeddings-gpu tem 17.6GB, timeout de 25m insuficiente
+          # SOLUÇÃO: 45m = margem para pull/extract (~20-25 min) + deploy + healthchecks
+          # CAUSA RAIZ: Imagens GPU grandes precisam mais tempo para extract (não apenas pull)
+          # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Mudanças cirúrgicas)
+          # =================================================================
+          command_timeout: 45m
           script: |
             set -euo pipefail
             # =================================================================
@@ -3581,10 +3589,17 @@ jobs:
                 echo ""
                 echo "🚨 Deploy failed - executing automatic cleanup..."
                 cd /opt/alice/app/infra/docker/stacks
+                # =================================================================
+                # CORREÇÃO (12/01/2026): Timeout aumentado para GPU containers
+                # =================================================================
+                # PROBLEMA: GPU containers (17.6GB) precisam mais tempo para graceful shutdown
+                # SOLUÇÃO: 120s = margem adequada para stop + cleanup de containers GPU
+                # REF: Docker Compose best practices 2025, CLAUDE.md Regra 6
+                # =================================================================
                 docker compose -p alice-alice --env-file ../.env.prod \
                                -f docker-compose.base.yml \
                                -f docker-compose.alice.yml \
-                               down --remove-orphans --timeout 30 2>&1 || true
+                               down --remove-orphans --timeout 120 2>&1 || true
                 echo "✅ Cleanup completed"
               fi
             }
@@ -3701,7 +3716,15 @@ jobs:
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "🚀 UP: Iniciando serviços Alice (GPU Manager gerencia containers GPU)..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            if ! docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml up -d --pull always --remove-orphans 2>&1; then
+            # =================================================================
+            # CORREÇÃO (12/01/2026): Removido --pull always (pull redundante)
+            # =================================================================
+            # PROBLEMA: Pull já é feito manualmente (linhas 3624-3646), --pull always força novo pull
+            # SOLUÇÃO: Remover --pull always para evitar pull redundante de imagens de 17.6GB
+            # BENEFÍCIO: Economia de 15-20 minutos no deploy (pull já foi feito acima)
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Mudanças cirúrgicas)
+            # =================================================================
+            if ! docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml up -d --remove-orphans 2>&1; then
               echo ""
               echo "❌ ERRO: Falha no docker compose up!"
               echo ""
@@ -3948,10 +3971,17 @@ jobs:
             
             # STAGE 1: Stop and Remove via Docker Compose
             echo "🛑 Stage 1: Stopping ALICE stack containers..."
+            # =================================================================
+            # CORREÇÃO (12/01/2026): Timeout aumentado para GPU containers
+            # =================================================================
+            # PROBLEMA: GPU containers (17.6GB) precisam mais tempo para graceful shutdown
+            # SOLUÇÃO: 120s = margem adequada para stop + cleanup de containers GPU
+            # REF: Docker Compose best practices 2025, CLAUDE.md Regra 6
+            # =================================================================
             docker compose -p alice-alice --env-file ../.env.prod \
                            -f docker-compose.base.yml \
                            -f docker-compose.alice.yml \
-                           down --remove-orphans --timeout 30 2>&1 || true
+                           down --remove-orphans --timeout 120 2>&1 || true
             
             # STAGE 2: Force Remove All Containers
             echo ""
