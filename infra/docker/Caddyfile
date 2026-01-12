@@ -153,6 +153,16 @@ yesyoudeserve.duckdns.org {
 	}
 	
 	# =========================================================================
+	# Audit API (logs de auditoria - parte do auth-service)
+	# CORREÇÃO 12/01/2026: Rota faltante causava 403 no Dashboard
+	# =========================================================================
+	handle /api/audit/* {
+		reverse_proxy alice-auth:3001 {
+			import proxy_headers
+		}
+	}
+	
+	# =========================================================================
 	# WebSocket (streaming LLM)
 	# =========================================================================
 	handle /ws/* {
