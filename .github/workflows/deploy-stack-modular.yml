@@ -3558,7 +3558,7 @@ jobs:
     # - deploy-infra NÃO PODE ter falhado (needs.deploy-infra.result != 'failure')
     # CRITICAL: NÃO rodar em rollback manual (deploy seria sobrescrito pelo rollback)
     if: needs.validate.outputs.deploy_alice == 'true' && needs.prepare.result == 'success' && needs.deploy-infra.result != 'failure' && (needs.health-infra.result == 'success' || needs.health-infra.result == 'skipped') && (needs.drizzle-push.result == 'success' || needs.drizzle-push.result == 'skipped') && needs.validate.outputs.is_rollback == 'false'
-    timeout-minutes: 10
+    timeout-minutes: 30
     
     steps:
       - name: Deploy stack alice via SSH
@@ -3569,7 +3569,7 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          command_timeout: 7m
+          command_timeout: 25m
           script: |
             set -euo pipefail
             # =================================================================
