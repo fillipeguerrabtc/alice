@@ -254,6 +254,8 @@ services:
       STORAGE_BASE_URL: /api/media/files
       RAG_PUBLIC_BASE_URL: ${RAG_PUBLIC_BASE_URL:?RAG_PUBLIC_BASE_URL é obrigatório}
       REDIS_URL: redis://:${REDIS_PASSWORD}@alice-redis:6379
+      # CORREÇÃO 12/01/2026: SESSION_SECRET para validação de cookies (session-auth middleware)
+      SESSION_SECRET: ${SESSION_SECRET}
     # NOTA: postgres, alice-qdrant, alice-searxng, alice-redis estão no stack infra
     depends_on:
       gpu-manager:
@@ -372,6 +374,10 @@ services:
       KUCOIN_PRO_BASE_URL: ${KUCOIN_PRO_BASE_URL:-https://api-futures.kucoin.com}
       KUCOIN_SANDBOX_MODE: ${KUCOIN_SANDBOX_MODE:-false}
       REDIS_URL: redis://:${REDIS_PASSWORD}@alice-redis:6379
+      # CORREÇÃO 12/01/2026: SESSION_SECRET obrigatório para validação de cookies
+      # Sem isso, session-auth middleware não consegue validar assinatura HMAC
+      # Resultado: Trading/KuCoin retornava 401 "usuário não autenticado"
+      SESSION_SECRET: ${SESSION_SECRET}
     # NOTA: postgres, alice-qdrant, alice-redis estão no stack infra
     # alice-chat e alice-rag são do mesmo stack
     depends_on:
