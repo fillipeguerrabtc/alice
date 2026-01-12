@@ -55,7 +55,7 @@ export interface Message {
 
 export interface Conversation {
   id: string;
-  titulo: string;
+  titulo: string | null;
   criadoEm: string;
   atualizadoEm: string;
 }

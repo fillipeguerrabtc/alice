@@ -5,7 +5,7 @@
 # Dockerfile para LLM multimodal inference com vLLM em GPU RTX 4000 SFF Ada (20GB)
 # Modelo: Qwen2.5-VL 7B Instruct AWQ (quantizado 4-bit)
 # 
-# ARQUITETURA v4.0.0 (11/01/2026):
+# ARQUITETURA v4.0.1 (12/01/2026):
 # - Base: vllm/vllm-openai:v0.12.0 (imagem oficial vLLM - PÚBLICA)
 # - vLLM: 0.12.0 com suporte a Qwen2.5-VL multimodal
 # - CUDA: 12.x com FlashAttention 2 e PagedAttention
@@ -13,13 +13,16 @@
 # - Suporte a vision (análise de imagens)
 # - 100% público, sem autenticação necessária
 # 
-# VRAM: ~4GB (AWQ 4-bit quantization)
+# CORREÇÃO VRAM v4.0.1:
+# - Modelo AWQ ocupa ~6.5GB (pesos), não ~4GB como estimado inicialmente
+# - max-model-len=4096 reduz KV cache para caber na VRAM
+# - gpu_memory_utilization=0.45 (9GB) garante espaço para modelo + KV cache
 # 
 # Ref: https://docs.vllm.ai/models/supported_models.html
 # Ref: https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct-AWQ
 # 
 # Autor: Fillipe Guerra
-# Data: 11 de Janeiro de 2026
+# Data: 12 de Janeiro de 2026
 # =============================================================================
 
 # ENTERPRISE v4.0.0: Container oficial vLLM do Docker Hub (Best Practice 2026)
@@ -53,13 +56,13 @@ RUN chmod +x /app/entrypoint.sh
 
 # Variáveis de configuração do modelo
 # Qwen2.5-VL 7B Instruct AWQ - modelo multimodal quantizado
-# ARQUITETURA v4.0.0 (12/01/2026):
-# - MAX_MODEL_LEN=8192: suficiente para chat/trading, economiza VRAM
-# - GPU_MEMORY_UTILIZATION=0.40: permite rodar junto com embeddings+asr
+# ARQUITETURA v4.0.1 (12/01/2026):
+# - MAX_MODEL_LEN=4096: reduzido para caber KV cache na VRAM
+# - GPU_MEMORY_UTILIZATION=0.45: 9GB permite modelo (6.5GB) + KV cache (1.5GB)
 ENV MODEL_NAME="Qwen/Qwen2.5-VL-7B-Instruct-AWQ"
 ENV QUANTIZATION="awq"
-ENV MAX_MODEL_LEN="8192"
-ENV GPU_MEMORY_UTILIZATION="0.40"
+ENV MAX_MODEL_LEN="4096"
+ENV GPU_MEMORY_UTILIZATION="0.45"
 ENV TENSOR_PARALLEL_SIZE="1"
 ENV PORT="8000"
 ENV HOST="0.0.0.0"

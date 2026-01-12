@@ -2,11 +2,13 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 12 de Janeiro de 2026  
-**Versão:** 4.0.1 - Correções vLLM 0.12.0
+**Versão:** 4.0.2 - Correção VRAM KV Cache
 
-> **ATUALIZAÇÃO 12/01/2026:** Correções para vLLM v0.12.0 e otimização de VRAM. Ajustes em `--limit-mm-per-prompt` (formato JSON), `--dtype float16` (obrigatório para AWQ), e redução de VRAM do Qwen-VL para permitir execução simultânea com embeddings e ASR.
+> **CORREÇÃO CRÍTICA v4.0.2 (12/01/2026):** Ajustados parâmetros de VRAM do Qwen-VL após análise de erro "No available memory for cache blocks". Modelo AWQ ocupa ~6.5GB (não ~4GB como estimado). Configuração corrigida: `max-model-len=4096`, `gpu-memory-utilization=0.45`.
 
-> **ATUALIZAÇÃO 11/01/2026:** Migração para arquitetura simplificada com todos os serviços GPU rodando simultaneamente (15GB de 20GB VRAM). Modelo LLM migrado de Mixtral 8x7B para Qwen2.5-VL 7B (especializado em finanças/matemática com suporte nativo a vision).
+> **ATUALIZAÇÃO v4.0.1 (12/01/2026):** Correções para vLLM v0.12.0: `--limit-mm-per-prompt` (formato JSON), `--dtype float16` (obrigatório para AWQ).
+
+> **ATUALIZAÇÃO v4.0.0 (11/01/2026):** Migração para arquitetura simplificada com todos os serviços GPU rodando simultaneamente. Modelo LLM migrado de Mixtral 8x7B para Qwen2.5-VL 7B.
 
 ---
 
@@ -37,50 +39,54 @@ O **GPU Manager Service** é um serviço centralizado que gerencia todas as requ
 | **VRAM total** | 1 serviço por vez | **15GB simultâneo** |
 | **Complexidade** | Alta (Docker API) | **Baixa** |
 
-### Distribuição de VRAM (20GB Total)
+### Distribuição de VRAM (20GB Total) - CORRIGIDO v4.0.2
 
 ```
 GPU 20GB VRAM - TODOS SIMULTÂNEOS:
 ┌─────────────────────────────────────────────────────────────┐
-│  Qwen2.5-VL 7B AWQ   ████░░░░░░░░░░░░░░░░  4GB   (LLM+Vision)
-│  Qwen3-Embed INT8    ████████░░░░░░░░░░░░  8GB   (RAG)
-│  Canary-1B           ███░░░░░░░░░░░░░░░░░  3GB   (Áudio)
+│  Qwen2.5-VL 7B AWQ   ████████░░░░░░░░░░░░  8GB   (LLM+Vision)
+│  Qwen3-Embed INT8    ███████░░░░░░░░░░░░░  7.4GB (RAG)
+│  Canary-1B           ████░░░░░░░░░░░░░░░░  4GB   (Áudio)
 ├─────────────────────────────────────────────────────────────┤
-│  TOTAL               ███████████████░░░░░  15GB
-│  LIVRE               █████░░░░░░░░░░░░░░░  5GB
+│  TOTAL               ███████████████████░  ~19.4GB
+│  LIVRE               █░░░░░░░░░░░░░░░░░░░  ~0.6GB
 └─────────────────────────────────────────────────────────────┘
 
+⚠️ VRAM real medida via nvidia-smi (v4.0.2)
 ✅ Zero latência de troca
 ✅ Vision nativo (análise de gráficos financeiros)
-✅ 5GB livres para treinamento emergencial
+⚠️ Treinamento requer parar serviços (sem margem)
 ```
 
 ### Serviços GPU Sempre Ativos
 
-| Serviço | Modelo | VRAM | Configuração | Função |
-|---------|--------|------|--------------|--------|
-| **gpu-qwen-vl** | Qwen2.5-VL 7B AWQ | ~4-5GB | `gpu-memory-utilization=0.40`, `max-model-len=8192`, `dtype=float16` | LLM + Vision (chat, trading, análise de gráficos) |
-| **gpu-embeddings** | Qwen3-Embedding-8B INT8 | ~8GB | `quantization=int8` | Embeddings para RAG |
-| **gpu-asr** | Canary-1B | ~3GB | NeMo | Transcrição de áudio |
+| Serviço | Modelo | VRAM Real | Configuração | Função |
+|---------|--------|-----------|--------------|--------|
+| **gpu-qwen-vl** | Qwen2.5-VL 7B AWQ | ~8GB | `gpu-memory-utilization=0.45`, `max-model-len=4096`, `dtype=float16` | LLM + Vision (chat, trading, análise de gráficos) |
+| **gpu-embeddings** | Qwen3-Embedding-8B INT8 | ~7.4GB | `quantization=int8` | Embeddings para RAG |
+| **gpu-asr** | Canary-1B | ~4GB | NeMo | Transcrição de áudio |
 
-### Configuração vLLM 0.12.0
+### Configuração vLLM 0.12.0 - CORRIGIDO v4.0.2
 
-O Qwen2.5-VL usa vLLM v0.12.0 com as seguintes configurações obrigatórias:
+O Qwen2.5-VL usa vLLM v0.12.0 com as seguintes configurações **corrigidas**:
 
 ```bash
 python3 -m vllm.entrypoints.openai.api_server \
     --model "Qwen/Qwen2.5-VL-7B-Instruct-AWQ" \
     --quantization awq \
     --dtype float16 \                     # OBRIGATÓRIO para AWQ (bfloat16 não suportado)
-    --max-model-len 8192 \                # Reduzido de 32K para economizar VRAM
-    --gpu-memory-utilization 0.40 \       # 40% de 20GB = 8GB máximo
+    --max-model-len 4096 \                # CORRIGIDO: 8192 causava erro de KV cache
+    --gpu-memory-utilization 0.45 \       # CORRIGIDO: 0.40 insuficiente para modelo + KV cache
     --limit-mm-per-prompt '{"image": 5}'  # Formato JSON (vLLM 0.12.0+)
 ```
 
-**Correções vLLM 0.12.0:**
-- `--limit-mm-per-prompt`: mudou de `key=value` para formato JSON `'{"key": value}'`
+**Correções v4.0.2 (VRAM):**
+- `max-model-len=4096`: reduzido de 8192 para caber KV cache na VRAM (erro: "No available memory for cache blocks")
+- `gpu-memory-utilization=0.45`: aumentado de 0.40 para garantir espaço para modelo (6.5GB) + KV cache (1.5GB)
+
+**Correções v4.0.1 (vLLM):**
+- `--limit-mm-per-prompt`: formato JSON obrigatório `'{"key": value}'`
 - `--dtype float16`: obrigatório para AWQ (bfloat16 causa `ValidationError`)
-- `max-model-len=8192`: suficiente para chat/trading, economiza VRAM
 
 ### Serviço Sob Demanda (Profile)
 
