@@ -35,6 +35,9 @@ echo ""
 
 # Iniciar vLLM server com suporte a multimodal
 echo "Iniciando vLLM server com suporte a vision..."
+# CORREÇÃO vLLM v0.12.0: --limit-mm-per-prompt agora requer JSON
+# Antes: --limit-mm-per-prompt "image=5"
+# Agora: --limit-mm-per-prompt '{"image": 5}'
 exec python3 -m vllm.entrypoints.openai.api_server \
     --model "${MODEL_NAME}" \
     --quantization "${QUANTIZATION}" \
@@ -44,4 +47,4 @@ exec python3 -m vllm.entrypoints.openai.api_server \
     --host "${HOST}" \
     --port "${PORT}" \
     --trust-remote-code \
-    --limit-mm-per-prompt "image=5"
+    --limit-mm-per-prompt '{"image": 5}'
