@@ -74,6 +74,7 @@ function useIsMobile() {
 import {
   Message,
   MediaAttachment,
+  Conversation,
   ConversationsResponse,
   FILE_LIMITS,
   ACCEPTED_TYPES,
@@ -111,12 +112,7 @@ const sidebarVariants = {
  * @see https://react.dev/learn/your-first-component#defining-a-component
  */
 interface ConversationsListProps {
-  conversations: Array<{
-    id: string;
-    titulo: string | null;
-    ultimaMensagem: string | null;
-    atualizadoEm: string;
-  }>;
+  conversations: Conversation[];
   conversationId?: string;
   isLoading: boolean;
   onNewChat: () => void;
