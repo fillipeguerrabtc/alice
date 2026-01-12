@@ -99,6 +99,82 @@ const sidebarVariants = {
   exit: { x: -300, opacity: 0 },
 } as const;
 
+/**
+ * Componente da lista de conversas - EXTRAÍDO para evitar anti-pattern
+ * 
+ * CORREÇÃO 12/01/2026: Componente definido FORA do Chat para evitar
+ * re-criação a cada re-render. Isso previne:
+ * - Reset de animações Framer Motion
+ * - Perda de scroll position
+ * - Perda de estado interno
+ * 
+ * @see https://react.dev/learn/your-first-component#defining-a-component
+ */
+interface ConversationsListProps {
+  conversations: Array<{
+    id: string;
+    titulo: string | null;
+    ultimaMensagem: string | null;
+    atualizadoEm: string;
+  }>;
+  conversationId?: string;
+  isLoading: boolean;
+  onNewChat: () => void;
+  onSelectConversation: (id: string) => void;
+}
+
+function ConversationsList({
+  conversations,
+  conversationId,
+  isLoading,
+  onNewChat,
+  onSelectConversation,
+}: ConversationsListProps) {
+  return (
+    <>
+      <div className="p-3 border-b">
+        <Button 
+          onClick={onNewChat}
+          className="w-full justify-start gap-2"
+          data-testid="button-new-chat"
+        >
+          <Plus className="h-4 w-4" />
+          Nova Conversa
+        </Button>
+      </div>
+      
+      <ScrollArea className="flex-1 p-2">
+        <motion.div
+          variants={containerVariants}
+          initial="hidden"
+          animate="visible"
+          className="space-y-1"
+        >
+          {isLoading ? (
+            Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-16 w-full" />
+            ))
+          ) : conversations.length > 0 ? (
+            conversations.map((conv) => (
+              <ConversationItem
+                key={conv.id}
+                conversation={conv}
+                isActive={conv.id === conversationId}
+                onClick={() => onSelectConversation(conv.id)}
+              />
+            ))
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <p className="text-sm">Nenhuma conversa</p>
+            </div>
+          )}
+        </motion.div>
+      </ScrollArea>
+    </>
+  );
+}
+
 export default function Chat() {
   const { t } = useTranslation();
   const { conversationId } = useParams<{ conversationId?: string }>();
@@ -442,63 +518,20 @@ export default function Chat() {
     }
   };
 
-  const handleNewChat = () => {
-    setMessages([]);
-    navigate('/chat');
-  };
-
   const conversations = conversationsData?.conversations || [];
 
-  // Componente da lista de conversas (reutilizado em desktop e mobile)
-  const ConversationsList = () => (
-    <>
-      <div className="p-3 border-b">
-        <Button 
-          onClick={() => {
-            handleNewChat();
-            if (isMobile) setMobileDrawerOpen(false);
-          }}
-          className="w-full justify-start gap-2"
-          data-testid="button-new-chat"
-        >
-          <Plus className="h-4 w-4" />
-          Nova Conversa
-        </Button>
-      </div>
-      
-      <ScrollArea className="flex-1 p-2">
-        <motion.div
-          variants={containerVariants}
-          initial="hidden"
-          animate="visible"
-          className="space-y-1"
-        >
-          {conversationsLoading ? (
-            Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-16 w-full" />
-            ))
-          ) : conversations.length > 0 ? (
-            conversations.map((conv) => (
-              <ConversationItem
-                key={conv.id}
-                conversation={conv}
-                isActive={conv.id === conversationId}
-                onClick={() => {
-                  navigate(`/chat/${conv.id}`);
-                  if (isMobile) setMobileDrawerOpen(false);
-                }}
-              />
-            ))
-          ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-50" />
-              <p className="text-sm">Nenhuma conversa</p>
-            </div>
-          )}
-        </motion.div>
-      </ScrollArea>
-    </>
-  );
+  // Handler para nova conversa com fechamento de drawer mobile
+  const handleNewChatWithClose = useCallback(() => {
+    setMessages([]);
+    navigate('/chat');
+    if (isMobile) setMobileDrawerOpen(false);
+  }, [navigate, isMobile]);
+
+  // Handler para selecionar conversa (fecha drawer mobile se aberto)
+  const handleSelectConversation = useCallback((id: string) => {
+    navigate(`/chat/${id}`);
+    if (isMobile) setMobileDrawerOpen(false);
+  }, [navigate, isMobile]);
 
   return (
     <div className="flex h-full">
@@ -510,7 +543,13 @@ export default function Chat() {
               <SheetTitle>Conversas</SheetTitle>
             </VisuallyHidden.Root>
             <div className="flex flex-col h-full bg-muted/30">
-              <ConversationsList />
+              <ConversationsList
+                conversations={conversations}
+                conversationId={conversationId}
+                isLoading={conversationsLoading}
+                onNewChat={handleNewChatWithClose}
+                onSelectConversation={handleSelectConversation}
+              />
             </div>
           </SheetContent>
         </Sheet>
@@ -527,7 +566,13 @@ export default function Chat() {
               exit="exit"
               className="w-64 border-r bg-muted/30 flex flex-col"
             >
-              <ConversationsList />
+              <ConversationsList
+                conversations={conversations}
+                conversationId={conversationId}
+                isLoading={conversationsLoading}
+                onNewChat={handleNewChatWithClose}
+                onSelectConversation={handleSelectConversation}
+              />
             </motion.div>
           )}
         </AnimatePresence>
