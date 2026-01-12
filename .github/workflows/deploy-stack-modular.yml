@@ -3888,12 +3888,13 @@ jobs:
     name: Rollback ALICE
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare, deploy-alice, health-alice]
-    # CRITICAL: 2 modos de rollback
+    # CRITICAL: 3 modos de rollback
     # 1) MANUAL: Usuário solicitou (is_rollback=true) → usar rollback_version
-    # 2) AUTOMÁTICO: Deploy sucesso mas health falhou → usar .previous
+    # 2) AUTOMÁTICO: Deploy falhou (timeout, erro) → cleanup/rollback
+    # 3) AUTOMÁTICO: Deploy sucesso mas health falhou → usar .previous
     if: |
       (needs.validate.outputs.is_rollback == 'true' && needs.validate.outputs.deploy_alice == 'true' && needs.prepare.result == 'success') ||
-      (failure() && needs.deploy-alice.result == 'success' && needs.health-alice.result == 'failure')
+      (failure() && (needs.deploy-alice.result == 'failure' || (needs.deploy-alice.result == 'success' && needs.health-alice.result == 'failure')))
     timeout-minutes: 10
     
     steps:
