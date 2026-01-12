@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useLocation } from 'wouter';
 import { Loader2, Mail, Chrome, Github } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,6 +12,36 @@ import { toast } from '@/hooks/use-toast';
 import { LanguageSwitch } from '@/components/language-switch';
 import { ThemeToggle } from '@/components/theme-toggle';
 
+/**
+ * Obtém a URL de retorno após login bem-sucedido.
+ * Verifica o query param `returnTo` e valida se é uma URL segura (interna).
+ * 
+ * Regra 6 CLAUDE.md: Sem workarounds - validação enterprise de URLs
+ * Regra 16 CLAUDE.md: Segurança - previne open redirect attacks
+ */
+function getReturnUrl(): string {
+  const params = new URLSearchParams(window.location.search);
+  const returnTo = params.get('returnTo');
+  
+  // Se não há returnTo, retornar para Dashboard
+  if (!returnTo) {
+    return '/';
+  }
+  
+  // Validação de segurança: só aceitar URLs internas (começam com /)
+  // Previne open redirect attacks (ex: returnTo=https://evil.com)
+  if (!returnTo.startsWith('/') || returnTo.startsWith('//')) {
+    return '/';
+  }
+  
+  // Não redirecionar para a própria página de login (evita loop)
+  if (returnTo.startsWith('/login')) {
+    return '/';
+  }
+  
+  return returnTo;
+}
+
 interface AuthProvider {
   id: string;
   name: string;
@@ -20,6 +51,7 @@ interface AuthProvider {
 export default function Login() {
   const { t } = useTranslation();
   const { login, isLoginPending } = useAuth();
+  const [, navigate] = useLocation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [providers, setProviders] = useState<AuthProvider[]>([]);
@@ -41,6 +73,9 @@ export default function Login() {
     e.preventDefault();
     try {
       await login({ email, password });
+      // Redirecionar para URL pretendida ou Dashboard após login bem-sucedido
+      const returnUrl = getReturnUrl();
+      navigate(returnUrl);
     } catch (error) {
       toast({
         title: t('auth.loginError'),
@@ -51,7 +86,13 @@ export default function Login() {
   };
 
   const handleOAuthLogin = (provider: string) => {
-    window.location.href = `/api/auth/${provider}`;
+    // Para OAuth, passar returnTo como state para o backend processar
+    // O backend deve redirecionar de volta para a URL pretendida após autenticação OAuth
+    const returnUrl = getReturnUrl();
+    const oauthUrl = returnUrl !== '/' 
+      ? `/api/auth/${provider}?returnTo=${encodeURIComponent(returnUrl)}`
+      : `/api/auth/${provider}`;
+    window.location.href = oauthUrl;
   };
 
   const getProviderIcon = (id: string) => {

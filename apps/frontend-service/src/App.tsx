@@ -1,4 +1,4 @@
-import { Switch, Route, Redirect } from 'wouter';
+import { Switch, Route, Redirect, useLocation } from 'wouter';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { lazy, Suspense } from 'react';
 import { queryClient } from '@/lib/queryClient';
@@ -22,7 +22,6 @@ const Training = lazy(() => import('@/pages/Training'));
 const Integrations = lazy(() => import('@/pages/Integrations'));
 const Settings = lazy(() => import('@/pages/Settings'));
 const Login = lazy(() => import('@/pages/Login'));
-const Landing = lazy(() => import('@/pages/Landing'));
 const Agents = lazy(() => import('@/pages/Agents'));
 const Namespaces = lazy(() => import('@/pages/Namespaces'));
 const WisePayments = lazy(() => import('@/pages/WisePayments'));
@@ -97,8 +96,32 @@ function Router() {
   );
 }
 
+/**
+ * Componente que redireciona usuários não autenticados para a página de login.
+ * Preserva a URL pretendida no query param `returnTo` para redirecionamento pós-login.
+ * 
+ * Fluxo:
+ * 1. Usuário não autenticado acessa /trading → redirecionado para /login?returnTo=/trading
+ * 2. Após login bem-sucedido → redirecionado para /trading
+ * 
+ * Regra 6 CLAUDE.md: Sem workarounds - implementação enterprise com persistência real
+ */
+function RedirectToLogin() {
+  const [location] = useLocation();
+  
+  // Não incluir returnTo se já estiver na página de login (evita loop)
+  // Também não incluir returnTo=/ pois Dashboard é o destino padrão
+  const shouldIncludeReturnTo = location !== '/login' && location !== '/';
+  const loginUrl = shouldIncludeReturnTo 
+    ? `/login?returnTo=${encodeURIComponent(location)}`
+    : '/login';
+  
+  return <Redirect to={loginUrl} />;
+}
+
 function AppContent() {
   const { isAuthenticated, isLoading } = useAuth();
+  const [location] = useLocation();
 
   if (isLoading) {
     return (
@@ -106,7 +129,7 @@ function AppContent() {
         <div className="flex flex-col items-center gap-4">
           <img
             src="/logo-round.png"
-            alt="Yes You Deserve"
+            alt="Alice"
             className="h-12 w-12 rounded-xl animate-pulse"
             data-testid="img-loading-logo"
           />
@@ -117,14 +140,19 @@ function AppContent() {
   }
 
   if (!isAuthenticated) {
-    return (
-      <Suspense fallback={<PageLoader />}>
-        <Switch>
-          <Route path="/login" component={Login} />
-          <Route component={Landing} />
-        </Switch>
-      </Suspense>
-    );
+    // Usuário não autenticado: mostrar Login ou redirecionar para Login
+    // Se já está em /login, mostrar a página de Login
+    // Se está em outra página, redirecionar para Login com returnTo
+    if (location.startsWith('/login')) {
+      return (
+        <Suspense fallback={<PageLoader />}>
+          <Login />
+        </Suspense>
+      );
+    }
+    
+    // Redirecionar para Login preservando a URL pretendida
+    return <RedirectToLogin />;
   }
 
   return (
