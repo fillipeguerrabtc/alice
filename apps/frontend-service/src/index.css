@@ -105,3 +105,64 @@ body {
 .dark .toggle-elevated {
   background-color: hsl(var(--primary) / 0.2);
 }
+
+/* =============================================================================
+ * MOBILE-FIRST: Safe Area Support para dispositivos com notch
+ * =============================================================================
+ * Suporta iPhone X+, Android com notch, e dispositivos com navegação gestual
+ * 
+ * @author Fillipe Guerra
+ * @date 12 de Janeiro de 2026
+ * ============================================================================= */
+
+/* Safe area para header (notch superior) */
+.safe-area-inset-top {
+  padding-top: env(safe-area-inset-top, 0);
+}
+
+/* Safe area para input/footer (barra de navegação inferior) */
+.safe-area-inset-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+/* Safe area para sidebars/drawers (bordas laterais) */
+.safe-area-inset-left {
+  padding-left: env(safe-area-inset-left, 0);
+}
+
+.safe-area-inset-right {
+  padding-right: env(safe-area-inset-right, 0);
+}
+
+/* Touch manipulation - melhora responsividade de botões em mobile */
+.touch-manipulation {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Previne zoom em inputs no iOS ao focar */
+@media screen and (max-width: 767px) {
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+}
+
+/* Suaviza scroll em dispositivos móveis */
+@media (pointer: coarse) {
+  * {
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Esconde scrollbar em mobile mantendo funcionalidade */
+@media screen and (max-width: 767px) {
+  .hide-scrollbar-mobile::-webkit-scrollbar {
+    display: none;
+  }
+  
+  .hide-scrollbar-mobile {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}

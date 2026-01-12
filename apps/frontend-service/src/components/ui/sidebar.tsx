@@ -1,19 +1,46 @@
+/**
+ * Componente Sidebar - Enterprise UI com suporte Mobile
+ * 
+ * Implementa sidebar responsiva seguindo padrões enterprise:
+ * - Desktop (lg+): Sidebar fixa com collapse para ícones
+ * - Mobile/Tablet (< lg): Sheet deslizante com overlay
+ * 
+ * CORREÇÃO 12/01/2026: Implementado suporte mobile enterprise
+ * - Mobile usa Sheet (drawer) ao invés de sidebar fixa
+ * - Overlay fecha ao clicar fora
+ * - Links fecham automaticamente o menu
+ * 
+ * @author Fillipe Guerra
+ * @version 2.0.0
+ * @date 12 de Janeiro de 2026
+ */
 import * as React from 'react';
 import { Slot } from '@radix-ui/react-slot';
 import { PanelLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import {
+  Sheet,
+  SheetContent,
+  SheetTitle,
+} from '@/components/ui/sheet';
+import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
 
 const SIDEBAR_COOKIE_NAME = 'sidebar:state';
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
 const SIDEBAR_WIDTH = '16rem';
 const SIDEBAR_WIDTH_ICON = '3rem';
+// Breakpoint lg do Tailwind CSS
+const MOBILE_BREAKPOINT = 1024;
 
 type SidebarContext = {
   state: 'expanded' | 'collapsed';
   open: boolean;
   setOpen: (open: boolean) => void;
   toggleSidebar: () => void;
+  isMobile: boolean;
+  openMobile: boolean;
+  setOpenMobile: (open: boolean) => void;
 };
 
 const SidebarContext = React.createContext<SidebarContext | null>(null);
@@ -24,6 +51,35 @@ function useSidebar() {
     throw new Error('useSidebar must be used within a SidebarProvider.');
   }
   return context;
+}
+
+/**
+ * Hook para detectar se está em viewport mobile
+ * Usa matchMedia para performance (sem re-render em resize)
+ */
+function useIsMobile() {
+  const [isMobile, setIsMobile] = React.useState<boolean>(
+    typeof window !== 'undefined' ? window.innerWidth < MOBILE_BREAKPOINT : false
+  );
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const mediaQuery = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
+    
+    const handleChange = (e: MediaQueryListEvent) => {
+      setIsMobile(e.matches);
+    };
+
+    // Definir valor inicial
+    setIsMobile(mediaQuery.matches);
+
+    // Listener para mudanças
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
+
+  return isMobile;
 }
 
 const SidebarProvider = React.forwardRef<
@@ -46,7 +102,11 @@ const SidebarProvider = React.forwardRef<
     },
     ref
   ) => {
+    const isMobile = useIsMobile();
     const [_open, _setOpen] = React.useState(defaultOpen);
+    // Estado separado para mobile (Sheet)
+    const [openMobile, setOpenMobile] = React.useState(false);
+    
     const open = openProp ?? _open;
     const setOpen = React.useCallback(
       (value: boolean | ((value: boolean) => boolean)) => {
@@ -62,8 +122,12 @@ const SidebarProvider = React.forwardRef<
     );
 
     const toggleSidebar = React.useCallback(() => {
-      return setOpen((open) => !open);
-    }, [setOpen]);
+      if (isMobile) {
+        setOpenMobile((prev) => !prev);
+      } else {
+        setOpen((open) => !open);
+      }
+    }, [isMobile, setOpen]);
 
     const state = open ? 'expanded' : 'collapsed';
 
@@ -73,8 +137,11 @@ const SidebarProvider = React.forwardRef<
         open,
         setOpen,
         toggleSidebar,
+        isMobile,
+        openMobile,
+        setOpenMobile,
       }),
-      [state, open, setOpen, toggleSidebar]
+      [state, open, setOpen, toggleSidebar, isMobile, openMobile]
     );
 
     return (
@@ -118,12 +185,35 @@ const Sidebar = React.forwardRef<
     },
     ref
   ) => {
-    const { state } = useSidebar();
+    const { state, isMobile, openMobile, setOpenMobile } = useSidebar();
 
+    // MOBILE: Usar Sheet (drawer) para navegação offcanvas
+    if (isMobile) {
+      return (
+        <Sheet open={openMobile} onOpenChange={setOpenMobile}>
+          <SheetContent
+            side="left"
+            className="w-[280px] p-0 [&>button]:hidden"
+            data-sidebar="sidebar"
+            data-mobile="true"
+          >
+            {/* Título acessível (hidden visualmente) - requerido por Radix Dialog */}
+            <VisuallyHidden.Root>
+              <SheetTitle>Menu de navegação</SheetTitle>
+            </VisuallyHidden.Root>
+            <div className="flex h-full w-full flex-col bg-sidebar text-sidebar-foreground">
+              {children}
+            </div>
+          </SheetContent>
+        </Sheet>
+      );
+    }
+
+    // DESKTOP: Sidebar fixa com collapse
     return (
       <div
         ref={ref}
-        className="group peer"
+        className="group peer hidden lg:block"
         data-state={state}
         data-collapsible={state === 'collapsed' ? collapsible : ''}
         data-variant={variant}
@@ -302,8 +392,21 @@ const SidebarMenuButton = React.forwardRef<
     asChild?: boolean;
     isActive?: boolean;
   }
->(({ asChild = false, isActive = false, className, ...props }, ref) => {
+>(({ asChild = false, isActive = false, className, onClick, ...props }, ref) => {
   const Comp = asChild ? Slot : 'button';
+  const { isMobile, setOpenMobile } = useSidebar();
+
+  // CORREÇÃO: Fechar sidebar mobile quando um item do menu é clicado
+  const handleClick = React.useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      onClick?.(event);
+      // Fechar menu mobile após navegação
+      if (isMobile) {
+        setOpenMobile(false);
+      }
+    },
+    [onClick, isMobile, setOpenMobile]
+  );
 
   return (
     <Comp
@@ -311,6 +414,7 @@ const SidebarMenuButton = React.forwardRef<
       data-sidebar="menu-button"
       data-active={isActive}
       className={cn(sidebarMenuButtonVariants, className)}
+      onClick={handleClick}
       {...props}
     />
   );

@@ -53,10 +53,13 @@ RUN chmod +x /app/entrypoint.sh
 
 # Variáveis de configuração do modelo
 # Qwen2.5-VL 7B Instruct AWQ - modelo multimodal quantizado
+# ARQUITETURA v4.0.0 (12/01/2026):
+# - MAX_MODEL_LEN=8192: suficiente para chat/trading, economiza VRAM
+# - GPU_MEMORY_UTILIZATION=0.40: permite rodar junto com embeddings+asr
 ENV MODEL_NAME="Qwen/Qwen2.5-VL-7B-Instruct-AWQ"
 ENV QUANTIZATION="awq"
-ENV MAX_MODEL_LEN="32768"
-ENV GPU_MEMORY_UTILIZATION="0.95"
+ENV MAX_MODEL_LEN="8192"
+ENV GPU_MEMORY_UTILIZATION="0.40"
 ENV TENSOR_PARALLEL_SIZE="1"
 ENV PORT="8000"
 ENV HOST="0.0.0.0"

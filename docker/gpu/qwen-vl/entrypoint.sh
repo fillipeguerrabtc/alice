@@ -4,13 +4,18 @@
 # =============================================================================
 # Inicialização do servidor vLLM para modelo multimodal Qwen2.5-VL
 #
-# ARQUITETURA v4.0.0 (11/01/2026):
+# ARQUITETURA v4.0.0 (12/01/2026):
 # - Modelo multimodal (texto + visão)
 # - Quantização AWQ 4-bit (~4GB VRAM)
 # - API compatível com OpenAI
+# - vLLM v0.12.0 com correções de sintaxe
+#
+# CORREÇÕES vLLM v0.12.0:
+# - --limit-mm-per-prompt: formato JSON obrigatório (antes: key=value)
+# - --dtype float16: obrigatório para AWQ (bfloat16 não suportado)
 #
 # Autor: Fillipe Guerra
-# Data: 11 de Janeiro de 2026
+# Data: 12 de Janeiro de 2026
 # =============================================================================
 
 set -e
@@ -21,6 +26,7 @@ echo "Quantization: ${QUANTIZATION}"
 echo "Max Model Length: ${MAX_MODEL_LEN}"
 echo "GPU Memory Utilization: ${GPU_MEMORY_UTILIZATION}"
 echo "Architecture: v4.0.0-simplified (multimodal)"
+echo "vLLM Version: 0.12.0"
 echo ""
 
 # Verificar GPU
@@ -35,12 +41,13 @@ echo ""
 
 # Iniciar vLLM server com suporte a multimodal
 echo "Iniciando vLLM server com suporte a vision..."
-# CORREÇÃO vLLM v0.12.0: --limit-mm-per-prompt agora requer JSON
-# Antes: --limit-mm-per-prompt "image=5"
-# Agora: --limit-mm-per-prompt '{"image": 5}'
+# CORREÇÕES vLLM v0.12.0:
+# 1. --limit-mm-per-prompt: JSON obrigatório (antes: "image=5", agora: '{"image": 5}')
+# 2. --dtype float16: obrigatório para AWQ (bfloat16 causa ValidationError)
 exec python3 -m vllm.entrypoints.openai.api_server \
     --model "${MODEL_NAME}" \
     --quantization "${QUANTIZATION}" \
+    --dtype float16 \
     --max-model-len "${MAX_MODEL_LEN}" \
     --gpu-memory-utilization "${GPU_MEMORY_UTILIZATION}" \
     --tensor-parallel-size "${TENSOR_PARALLEL_SIZE}" \

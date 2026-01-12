@@ -1,8 +1,10 @@
 # Arquitetura GPU Manager Service
 
 **Autor:** Fillipe Guerra  
-**Data:** 11 de Janeiro de 2026  
-**Versão:** 4.0.0 - Arquitetura Simplificada
+**Data:** 12 de Janeiro de 2026  
+**Versão:** 4.0.1 - Correções vLLM 0.12.0
+
+> **ATUALIZAÇÃO 12/01/2026:** Correções para vLLM v0.12.0 e otimização de VRAM. Ajustes em `--limit-mm-per-prompt` (formato JSON), `--dtype float16` (obrigatório para AWQ), e redução de VRAM do Qwen-VL para permitir execução simultânea com embeddings e ASR.
 
 > **ATUALIZAÇÃO 11/01/2026:** Migração para arquitetura simplificada com todos os serviços GPU rodando simultaneamente (15GB de 20GB VRAM). Modelo LLM migrado de Mixtral 8x7B para Qwen2.5-VL 7B (especializado em finanças/matemática com suporte nativo a vision).
 
@@ -55,11 +57,30 @@ GPU 20GB VRAM - TODOS SIMULTÂNEOS:
 
 ### Serviços GPU Sempre Ativos
 
-| Serviço | Modelo | VRAM | Função |
-|---------|--------|------|--------|
-| **gpu-qwen-vl** | Qwen2.5-VL 7B AWQ | ~4GB | LLM + Vision (chat, trading, análise de gráficos) |
-| **gpu-embeddings** | Qwen3-Embedding-8B INT8 | ~8GB | Embeddings para RAG |
-| **gpu-asr** | Canary-1B | ~3GB | Transcrição de áudio |
+| Serviço | Modelo | VRAM | Configuração | Função |
+|---------|--------|------|--------------|--------|
+| **gpu-qwen-vl** | Qwen2.5-VL 7B AWQ | ~4-5GB | `gpu-memory-utilization=0.40`, `max-model-len=8192`, `dtype=float16` | LLM + Vision (chat, trading, análise de gráficos) |
+| **gpu-embeddings** | Qwen3-Embedding-8B INT8 | ~8GB | `quantization=int8` | Embeddings para RAG |
+| **gpu-asr** | Canary-1B | ~3GB | NeMo | Transcrição de áudio |
+
+### Configuração vLLM 0.12.0
+
+O Qwen2.5-VL usa vLLM v0.12.0 com as seguintes configurações obrigatórias:
+
+```bash
+python3 -m vllm.entrypoints.openai.api_server \
+    --model "Qwen/Qwen2.5-VL-7B-Instruct-AWQ" \
+    --quantization awq \
+    --dtype float16 \                     # OBRIGATÓRIO para AWQ (bfloat16 não suportado)
+    --max-model-len 8192 \                # Reduzido de 32K para economizar VRAM
+    --gpu-memory-utilization 0.40 \       # 40% de 20GB = 8GB máximo
+    --limit-mm-per-prompt '{"image": 5}'  # Formato JSON (vLLM 0.12.0+)
+```
+
+**Correções vLLM 0.12.0:**
+- `--limit-mm-per-prompt`: mudou de `key=value` para formato JSON `'{"key": value}'`
+- `--dtype float16`: obrigatório para AWQ (bfloat16 causa `ValidationError`)
+- `max-model-len=8192`: suficiente para chat/trading, economiza VRAM
 
 ### Serviço Sob Demanda (Profile)
 
@@ -257,6 +278,7 @@ O Qwen2.5-VL 7B foi escolhido por:
 
 | Versão | Data | Descrição |
 |--------|------|-----------|
+| 4.0.1 | 12/01/2026 | Correções vLLM 0.12.0 (dtype float16, JSON limit-mm-per-prompt), otimização VRAM |
 | 4.0.0 | 11/01/2026 | Arquitetura simplificada, Qwen2.5-VL, todos simultâneos |
 | 3.0.0 | 09/01/2026 | Orquestração dinâmica via Docker API |
 | 2.0.0 | 25/12/2025 | Fila priorizada, circuit breakers |
