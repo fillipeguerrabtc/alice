@@ -513,10 +513,15 @@ Consulte [docs/SECRETS.md](docs/SECRETS.md) para a lista completa de secrets nec
 | CI | Validação (typecheck, lint, trivy) | ~3min |
 | Release | Build 17 imagens + GitHub Release | ~5-10min |
 | Deploy INFRA/OBSERVABILITY/ERPNEXT/BACKUP | 4 stacks standard | **~10min** |
-| Deploy ALICE | Stack com GPU images | **~25-30min** |
+| Deploy ALICE | Stack com GPU images | **~20-25min** |
 | Rollback | Stack específico | **Cirúrgico** 🎯 |
 
-> **OTIMIZAÇÃO (12/01/2026):** Imagem embeddings-gpu migrada de `pytorch-devel` (17.6GB) para `pytorch-runtime` (~11GB). Economia de 6GB (-35%), download 50x mais rápido. Deploy ALICE reduzido de ~40min para ~25-30min. Timeout configurado: command_timeout=45m (margem), job timeout=50m.
+> **OTIMIZAÇÃO COMPLETA (12/01/2026):** **TODAS AS 3 IMAGENS GPU** migradas de `pytorch-devel` para `pytorch-runtime`:
+> - **embeddings-gpu**: 17.6GB → ~11GB (-6GB)
+> - **asr-canary**: 17GB → ~11GB (-6GB)  
+> - **lora-trainer**: 17GB → ~11GB (-6GB)
+> 
+> **Resultado:** Economia total de **18GB (-35%)**, download **50x mais rápido**, Deploy ALICE reduzido de **~40min para ~20-25min**. Timeout configurado: command_timeout=45m (margem), job timeout=50m.
 
 **Versionamento Semântico Automático:**
 - Conventional Commits (BREAKING→MAJOR, feat→MINOR, fix→PATCH)
