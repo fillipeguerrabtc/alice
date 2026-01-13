@@ -127,27 +127,12 @@ groups:
           description: "Score médio de relevância abaixo de 0.5 - revisar embeddings."
 
       # ========================================================================
-      # IMAGE GENERATION (FLUX.1)
+      # IMAGENS (REMOVIDO - FLUX.1 obsoleto na v4.0.0)
       # ========================================================================
-      - alert: ImageGenHighLatency
-        expr: histogram_quantile(0.95, rate(image_generation_duration_seconds_bucket[5m])) > 10
-        for: 5m
-        labels:
-          severity: warning
-          service: chat-service
-        annotations:
-          summary: "Alta latência na geração de imagens"
-          description: "P95 de geração FLUX.1 está acima de 10s."
-
-      - alert: ImageGenHighErrorRate
-        expr: rate(image_generation_total{status="error"}[5m]) / rate(image_generation_total[5m]) > 0.1
-        for: 5m
-        labels:
-          severity: warning
-          service: chat-service
-        annotations:
-          summary: "Alta taxa de erros na geração de imagens"
-          description: "Taxa de erros FLUX.1 acima de 10%."
+      # NOTA 13/01/2026: Alertas de geração de imagens REMOVIDOS
+      # Alice NÃO gera imagens (FLUX.1 Schnell removido na v4.0.0)
+      # Alice APENAS ANALISA imagens via Qwen2.5-VL Vision
+      # Métricas image_generation_* não existem mais
 
   - name: infrastructure_alerts
     interval: 30s
