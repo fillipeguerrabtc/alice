@@ -81,6 +81,47 @@ scrape_configs:
     metrics_path: /metrics
     scrape_interval: 30s
 
+  - job_name: 'alice-gpu-manager-service'
+    static_configs:
+      - targets: ['host.docker.internal:3010']
+    metrics_path: /metrics
+    scrape_interval: 15s
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: '(alice_circuit_breaker_.*|alice_llm_.*|alice_rag_.*|alice_http_.*)'
+        action: keep
+
+  # ============================================================================
+  # GPU SERVICES (FastAPI - Arquitetura v4.0.0)
+  # NOTA 13/01/2026: Métricas PyTorch/vLLM expostas via /metrics endpoint
+  # ============================================================================
+  - job_name: 'gpu-qwen-vl'
+    static_configs:
+      - targets: ['host.docker.internal:8000']
+        labels:
+          service: 'qwen-vl'
+          gpu_service: 'llm'
+    metrics_path: /metrics
+    scrape_interval: 30s
+
+  - job_name: 'gpu-embeddings'
+    static_configs:
+      - targets: ['host.docker.internal:8001']
+        labels:
+          service: 'embeddings'
+          gpu_service: 'rag'
+    metrics_path: /metrics
+    scrape_interval: 30s
+
+  - job_name: 'gpu-asr'
+    static_configs:
+      - targets: ['host.docker.internal:8002']
+        labels:
+          service: 'asr'
+          gpu_service: 'transcription'
+    metrics_path: /metrics
+    scrape_interval: 60s
+
   # ============================================================================
   # CADDY API GATEWAY (MIGRAÇÃO 02/01/2026)
   # ============================================================================
