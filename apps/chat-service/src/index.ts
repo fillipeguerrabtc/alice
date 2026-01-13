@@ -2297,7 +2297,10 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         }
       );
     } catch (streamError) {
-      logger.error({ error: streamError }, 'Erro no streaming do GPU Manager Service');
+      logger.error({ 
+        error: streamError instanceof Error ? streamError.message : String(streamError),
+        stack: streamError instanceof Error ? streamError.stack : undefined 
+      }, 'Erro no streaming do GPU Manager Service');
       // BUG FIX 25/12/2025: onDone já foi chamado no catch interno de proxyStreamFromGpuManager
       // Mas pode ter fechado a resposta com [DONE] ao invés de erro
       // Tentar enviar mensagem de erro apenas se resposta ainda estiver aberta

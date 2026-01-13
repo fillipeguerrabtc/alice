@@ -344,6 +344,30 @@ async function ensureGlobalAdmin(): Promise<void> {
   }
 
   const db = getDatabase();
+  
+  // BUG FIX 13/01/2026: Garantir que tenant default existe antes de criar usuário
+  // Migration 0013 cria tenant "Alice Platform", mas precisamos do ID aqui
+  let defaultTenant = await db.query.tenants.findFirst({
+    where: eq(schema.tenants.slug, 'alice-platform'),
+  });
+  
+  // Se tenant default não existe, criar agora (fallback para caso migration não rode)
+  if (!defaultTenant) {
+    logger.info('Tenant default não encontrado, criando "Alice Platform"...');
+    const [created] = await db.insert(schema.tenants).values({
+      nome: 'Alice Platform',
+      slug: 'alice-platform',
+      dominio: 'yesyoudeserve.duckdns.org',
+      plano: 'enterprise',
+      limiteUsuarios: 999999,
+      limiteConversas: 999999,
+      limiteArmazenamento: 999999,
+      ativo: true,
+    }).returning();
+    defaultTenant = created;
+    logger.info({ tenantId: defaultTenant.id }, 'Tenant default "Alice Platform" criado');
+  }
+  
   const existing = await db.query.users.findFirst({
     where: eq(schema.users.email, adminEmail),
   });
@@ -359,6 +383,7 @@ async function ensureGlobalAdmin(): Promise<void> {
     role: 'super_admin' as const,
     idioma: 'pt-BR',
     timezone: 'UTC',
+    tenantId: defaultTenant.id, // BUG FIX 13/01/2026: SEMPRE associar a um tenant
   };
 
   if (!existing) {
@@ -902,6 +927,16 @@ if (googleClientId && googleClientSecret) {
 
         if (!user) {
           // Criar novo usuário com circuit breaker
+          // BUG FIX 13/01/2026: Obter tenant default para associar novo usuário
+          const defaultTenant = await db.query.tenants.findFirst({
+            where: eq(schema.tenants.slug, 'alice-platform'),
+          });
+          
+          if (!defaultTenant) {
+            logger.error('Tenant default não encontrado - impossível criar usuário OAuth');
+            return done(new Error('Configuração do sistema incompleta'));
+          }
+          
           const [newUser] = await dbUserUpsertBreaker.fire(async () => {
             return db.insert(schema.users).values({
               email,
@@ -914,6 +949,7 @@ if (googleClientId && googleClientSecret) {
               role: 'viewer',
               idioma: 'pt-BR',
               timezone: 'Europe/Lisbon',
+              tenantId: defaultTenant.id, // BUG FIX 13/01/2026: SEMPRE associar a um tenant
             }).returning();
           });
           user = newUser;
@@ -1005,6 +1041,16 @@ if (githubClientId && githubClientSecret) {
         let user = await dbOAuthLookupBreaker.fire({ githubId, email });
 
         if (!user) {
+          // BUG FIX 13/01/2026: Obter tenant default para associar novo usuário
+          const defaultTenant = await db.query.tenants.findFirst({
+            where: eq(schema.tenants.slug, 'alice-platform'),
+          });
+          
+          if (!defaultTenant) {
+            logger.error('Tenant default não encontrado - impossível criar usuário OAuth');
+            return done(new Error('Configuração do sistema incompleta'));
+          }
+          
           // Criar novo usuário com circuit breaker
           const displayName = profile.displayName || profile.username || '';
           const [newUser] = await dbUserUpsertBreaker.fire(async () => {
@@ -1019,6 +1065,7 @@ if (githubClientId && githubClientSecret) {
               role: 'viewer',
               idioma: 'pt-BR',
               timezone: 'Europe/Lisbon',
+              tenantId: defaultTenant.id, // BUG FIX 13/01/2026: SEMPRE associar a um tenant
             }).returning();
           });
           user = newUser;

@@ -2946,8 +2946,28 @@ kucoinClient.initKucoinMetrics(metrics);
 app.get('/api/integrations/trading/status', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
     const authContext = extractAuthContext(req);
+    
+    // BUG FIX 13/01/2026: Retornar isConfigured mesmo sem tenantId para mostrar status correto na UI
+    // Trading pode estar configurado (secrets existem) mas usuário não tem tenant associado
+    // UI precisa saber se KuCoin está configurado para mostrar mensagem correta
+    const isConfigured = kucoinClient.isKucoinConfigured();
+    const isSandbox = kucoinClient.getKucoinSandboxStatus();
+    const circuitBreakerStatus = kucoinClient.getKucoinCircuitBreakerStatus();
+    
+    // Se não tem tenantId, retornar apenas status de configuração (sem dados do tenant)
     if (!authContext?.tenantId || !authContext?.userId) {
-      res.status(401).json({ error: 'Autenticação necessária' });
+      res.json({
+        success: true,
+        data: {
+          isConfigured,
+          isSandbox,
+          circuitBreaker: circuitBreakerStatus,
+          riskConfig: null,
+          activeSignals: 0,
+          pendingOrders: 0,
+          requiresTenant: true, // Flag para UI saber que precisa de tenant
+        },
+      });
       return;
     }
 

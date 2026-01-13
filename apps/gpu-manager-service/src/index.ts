@@ -948,7 +948,10 @@ app.post('/api/gpu/stream', requireInternalAuth, asyncHandler(async (req: Reques
       await releaseGpuLockIfOwned(streamingRequestId);
     }
   } catch (error) {
-    logger.error({ error }, 'Erro na requisição streaming');
+    logger.error({ 
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined 
+    }, 'Erro na requisição streaming');
     if (!res.headersSent) {
       res.status(500).json({ 
         error: error instanceof Error ? error.message : 'Erro desconhecido' 
