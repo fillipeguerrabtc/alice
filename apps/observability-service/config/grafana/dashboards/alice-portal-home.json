@@ -17,7 +17,7 @@
       "title": "LLM Metrics",
       "tooltip": "Métricas detalhadas do LLM",
       "type": "link",
-      "url": "/d/llm-metrics/llm-metrics"
+      "url": "/d/alice-llm-metrics/llm-metrics"
     },
     {
       "asDropdown": false,
@@ -328,7 +328,7 @@
       "gridPos": { "h": 3, "w": 24, "x": 0, "y": 24 },
       "id": 50,
       "options": {
-        "content": "### Links Rápidos\n\n| Ferramenta | Descrição |\n|------------|-----------|\n| [Traces (Jaeger)](/explore?orgId=1&left=%7B%22datasource%22:%22Jaeger%22%7D) | Distributed tracing para debug de latência |\n| [LLM Metrics](/d/llm-metrics/llm-metrics) | Métricas detalhadas do Qwen2.5-VL 7B AWQ (Multimodal) |\n| [Alertas Ativos](/alerting/list) | Alertas em firing e histórico |\n| [Langfuse](http://langfuse:3000) | Analytics específico para LLM |",
+        "content": "### Links Rápidos\n\n| Ferramenta | Descrição |\n|------------|-----------|\n| [Traces (Jaeger)](/explore?orgId=1&left=%7B%22datasource%22:%22Jaeger%22%7D) | Distributed tracing para debug de latência |\n| [LLM Metrics](/d/alice-llm-metrics/llm-metrics) | Métricas detalhadas do Qwen2.5-VL 7B AWQ (Multimodal) |\n| [Alertas Ativos](/alerting/list) | Alertas em firing e histórico |\n| [Langfuse](http://langfuse:3000) | Analytics específico para LLM |",
         "mode": "markdown"
       },
       "title": "",

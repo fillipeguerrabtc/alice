@@ -1,7 +1,23 @@
 # Guia de Observabilidade - Alice Enterprise Platform
-**Versão:** 1.0.0  
+**Versão:** 2.0.0  
 **Data:** 13 de Janeiro de 2026  
 **Autor:** Fillipe Guerra
+
+---
+
+## 📋 AUDIT FINDINGS (13/01/2026)
+
+### Problemas Críticos Identificados e Corrigidos
+
+| # | Problema | Impacto | Correção | Status |
+|---|----------|---------|----------|--------|
+| 1 | Prometheus NÃO coletava GPU Manager (3010) + GPU Services (8000-8002) | ZERO visibilidade de VRAM, filas, circuit breakers GPU | Adicionados 4 targets Prometheus | ✅ CORRIGIDO |
+| 2 | Dashboards com referências obsoletas "Mixtral 8x7B" | Dashboards enganosos (LLM atual: Qwen2.5-VL 7B AWQ) | Substituído em llm-metrics.json e portal-home.json | ✅ CORRIGIDO |
+| 3 | ZERO dashboard Trading (KuCoin BTC Futures) | Impossível monitorar P&L, ordens, posições | Criado alice-trading.json (8 painéis) | ✅ CORRIGIDO |
+| 4 | Dashboard LLM incompleto | Impossível medir Response Cache (Greetings Gate) | Adicionados 8 painéis (cache, WebSocket, streaming) | ✅ CORRIGIDO |
+| 5 | ZERO dashboard ERPNext | Impossível debugar workers, jobs, MariaDB | Criado alice-erpnext.json (13 painéis) | ✅ CORRIGIDO |
+| 6 | ZERO dashboard Infrastructure | Impossível monitorar CPU, RAM, Disk, containers | Criado alice-infrastructure.json (12 painéis) | ✅ CORRIGIDO |
+| 7 | Painéis "No data" (RBAC 0%, logs vazios) | Métricas não aparecendo | ⏳ Investigar após deploy (labels/Promtail) | 🔍 TODO |
 
 ---
 

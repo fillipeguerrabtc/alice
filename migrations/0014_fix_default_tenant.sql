@@ -1,5 +1,5 @@
 -- ============================================================================
--- Migration 0013: Fix Default Tenant e Associar Usuários
+-- Migration 0014: Fix Default Tenant e Associar Usuários
 -- ============================================================================
 -- BUG FIX 13/01/2026: Criar tenant default e associar usuários órfãos
 --
@@ -58,7 +58,7 @@ BEGIN
     -- Associar TODOS os usuários sem tenant_id ao tenant default
     UPDATE users 
     SET tenant_id = default_tenant_id,
-        atualizado_em = NOW()
+        updated_at = NOW()
     WHERE tenant_id IS NULL;
     
     RAISE NOTICE 'Usuários órfãos associados ao tenant default: %', 

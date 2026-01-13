@@ -88,7 +88,7 @@ scrape_configs:
     scrape_interval: 15s
     metric_relabel_configs:
       - source_labels: [__name__]
-        regex: '(alice_circuit_breaker_.*|alice_llm_.*|alice_rag_.*|alice_http_.*)'
+        regex: '(alice_circuit_breaker_.*|alice_llm_.*|alice_rag_.*|alice_http_.*|alice_gpu_.*|alice_gpu_manager_.*)'
         action: keep
 
   # ============================================================================
