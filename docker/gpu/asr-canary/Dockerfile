@@ -46,19 +46,25 @@ FROM pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime
 
 LABEL maintainer="Fillipe Guerra"
 LABEL description="ASR Canary-1B speech-to-text server (Docker Hub)"
-LABEL version="3.3.0"
+LABEL version="3.3.1"
 LABEL base="pytorch-runtime"
 LABEL optimization="devel-to-runtime-migration"
+LABEL build_tools="temporary-for-compilation"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV PIP_ROOT_USER_ACTION=ignore
 
-# Instalar dependências do sistema
+# Instalar dependências do sistema + build tools temporários
+# CRITICAL FIX (12/01/2026): NeMo compila extensões C++ (texterrors, Cython)
+# Precisamos de build-essential temporariamente, mas removemos após instalação
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libsndfile1 \
     ffmpeg \
     curl \
+    build-essential \
+    g++ \
+    gcc \
     && rm -rf /var/lib/apt/lists/*
 
 # SECURITY HARDENING: Criar usuário não-root (Best Practice 2025)
@@ -68,6 +74,7 @@ WORKDIR /app
 
 # Instalar NeMo Toolkit e dependências
 # ENTERPRISE 28/12/2025: Versões mais recentes de todas as dependências
+# CRITICAL FIX (12/01/2026): NeMo compila extensões C++ durante pip install
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
     pip install \
@@ -78,6 +85,12 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pydub==0.25.1 \
     prometheus-client==0.23.1 \
     pybreaker==1.2.0
+
+# OPTIMIZATION: Remover build tools após compilação (mantém imagem pequena)
+# Economia: ~400MB (build-essential + gcc + g++)
+RUN apt-get purge -y --auto-remove build-essential g++ gcc \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copiar código da aplicação
 COPY app/ /app/
