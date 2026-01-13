@@ -39,6 +39,7 @@
 # - Sem necessidade de NGC login - imagem pública
 # - PyTorch 2.7.1 com CUDA 12.8 e cuDNN 9
 # ATUALIZADO 12/01/2026: Migrado de 'devel' para 'runtime' (economia de 6GB)
+# FORCE REBUILD 13/01/2026: Ensure optimized runtime image is built (not just retagged)
 FROM pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime
 
 LABEL maintainer="Fillipe Guerra"
