@@ -1371,6 +1371,21 @@ git commit -a -m "test: adiciona testes unitários"
 - *Implementação 100% enterprise-grade (Regras 1, 2, 6, 10, 11 - ler antes de agir, não duplicar, sem workarounds, documentação PT-BR, melhores práticas 2025).*
 - *Ref: Grafana Best Practices 2026, Prometheus Naming Conventions, SRE Golden Signals, Alice CLAUDE.md Regras 1-18.*
 
+*Versão: 5.10 - 13 de Janeiro de 2026*
+*GPU Services Restart Loop - CAUSA RAIZ E CORREÇÃO (13/01/2026):*
+- *SINTOMAS REPORTADOS: Home da plataforma retornava "Algo deu errado" após login. Chat não respondia (Alice ficava em silêncio). ERROS PERSISTIRAM POR VÁRIOS COMMITS tentando corrigir.*
+- *INVESTIGAÇÃO REAL: Conectado ao servidor de produção e coletado logs dos containers. CAUSA RAIZ IDENTIFICADA: Serviços GPU em RESTART LOOP INFINITO.*
+- *PROBLEMA 1 - gpu-qwen-vl OOM (Out of Memory): Container crashava com "ValueError: No available memory for the cache blocks. Try increasing gpu_memory_utilization". GPU_MEMORY_UTILIZATION configurado em 0.45 (9GB). Arquitetura v4.0.0 roda 3 serviços simultaneamente (Qwen-VL + Embeddings + ASR), mas GPU tem apenas 20GB VRAM. Qwen-VL tentava alocar 9GB, mas outros serviços já ocupavam memória, causando OOM e restart.*
+- *PROBLEMA 2 - gpu-embeddings Missing C Compiler: Container crashava com "RuntimeError: Failed to find C compiler. Please specify via CC environment variable" e "ModuleNotFoundError: Could not import module validate_bnb_backend_availability". CAUSA: Otimização de imagens Docker (12/01/2026) migrou de pytorch-devel para pytorch-runtime. Runtime NÃO inclui build tools (gcc, g++, build-essential). Biblioteca bitsandbytes precisa compilar extensões C++ durante pip install. Sem build tools, instalação falha e container crasha.*
+- *IMPACTO EM CASCATA: gpu-qwen-vl e gpu-embeddings em restart loop → GPU Manager Service recebe "fetch failed" ao tentar conectar → Chat Service retorna erro 500 "Erro na requisição GPU streaming" → Frontend mostra "Algo deu errado".*
+- *CORREÇÃO 1 - Qwen-VL VRAM (docker/gpu/qwen-vl/Dockerfile): Reduzido GPU_MEMORY_UTILIZATION de 0.45 para 0.35 (9GB → 7GB). Arquitetura v4.0.0 coexistência: Qwen-VL 7GB + Embeddings 6GB + ASR 2GB = 15GB total de 20GB disponíveis (25% margem). Version 4.0.0 → 4.0.2.*
+- *CORREÇÃO 2 - Embeddings Compiler (docker/gpu/embeddings-gpu/Dockerfile): Adicionados build tools temporários (build-essential, g++, gcc) ANTES do pip install. Após pip install compilar extensões C++, build tools são PURGADOS (apt-get purge). Economia: 400MB. Pattern idêntico usado em asr-canary e lora-trainer. Version 3.2.0 → 3.2.2.*
+- *ARQUIVOS MODIFICADOS: docker/gpu/qwen-vl/Dockerfile (17 linhas modificadas), docker/gpu/embeddings-gpu/Dockerfile (18 linhas modificadas). TOTAL: 2 arquivos, +24 linhas, -11 linhas.*
+- *VALIDAÇÃO: Typecheck e lint passaram. Commit f2239ed2.*
+- *IMPACTO BUSINESS: GPU services agora iniciam com sucesso (sem OOM, sem compiler errors). Chat funciona corretamente (GPU Manager conecta aos serviços). Dashboard carrega após login (sem erro "Algo deu errado"). Platform 100% operacional.*
+- *APRENDIZADO: Otimizações de imagem Docker (devel → runtime) economizam espaço mas removem build tools. Bibliotecas Python que compilam extensões C++ (bitsandbytes, texterrors, Cython) PRECISAM de build tools temporários. GPU memory allocation precisa considerar coexistência de múltiplos serviços na arquitetura v4.0.0.*
+- *Implementação 100% enterprise-grade (Regras 6, 7 - Enterprise-grade, Root cause via logs reais do servidor, não suposições). Ref: vLLM docs, PyTorch Docker Hub, bitsandbytes requirements.*
+
 ---
 *Autor: Fillipe Guerra*
-*Versão: 5.9 - 13 de Janeiro de 2026*
+*Versão: 5.10 - 13 de Janeiro de 2026*

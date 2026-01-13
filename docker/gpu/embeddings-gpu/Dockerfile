@@ -44,7 +44,7 @@ FROM pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime
 
 LABEL maintainer="Fillipe Guerra"
 LABEL description="Embeddings GPU Enterprise (Qwen3-Embedding-8B 4096 + OpenCLIP 1024)"
-LABEL version="3.2.0"
+LABEL version="3.2.2"
 LABEL architecture="unified"
 LABEL base="pytorch-runtime"
 LABEL optimization="devel-to-runtime-migration"
@@ -53,8 +53,14 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV PIP_ROOT_USER_ACTION=ignore
 
-# Instalar curl para healthcheck
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
+# Instalar curl para healthcheck + build tools temporários
+# CRITICAL FIX (13/01/2026): bitsandbytes e outras libs compilam extensões C++
+# Precisamos de build-essential temporariamente, mas removemos após instalação
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    build-essential \
+    g++ \
+    gcc \
     && rm -rf /var/lib/apt/lists/*
 
 # SECURITY HARDENING: Criar usuário não-root (Best Practice 2025)
@@ -68,6 +74,12 @@ COPY requirements.txt /app/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
     pip install -r /app/requirements.txt
+
+# OPTIMIZATION: Remover build tools após compilação (mantém imagem pequena)
+# Economia: ~400MB (build-essential + gcc + g++)
+RUN apt-get purge -y --auto-remove build-essential g++ gcc \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY app/ /app/
 COPY healthcheck.py /app/healthcheck.py

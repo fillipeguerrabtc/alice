@@ -139,7 +139,7 @@ export default function Login() {
             <img
               src="/logo-round.png"
               alt="Yes You Deserve"
-              className="h-12 w-12 rounded-xl"
+              className="h-20 w-20 rounded-xl"
               data-testid="img-login-logo"
             />
           </div>
