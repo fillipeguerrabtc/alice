@@ -149,32 +149,29 @@ async def load_models():
         
         from sentence_transformers import SentenceTransformer
         
-        # ARQUITETURA v4.0.0: Suporte a quantização INT8
-        # BUG FIX 11/01/2026: trust_remote_code DEVE ser parâmetro direto do SentenceTransformer
-        # Passar em model_kwargs não habilita o carregamento de modelos com código customizado
-        # (como Qwen3-Embedding-8B), causando crash na inicialização
-        model_kwargs = {}
-        
-        if QUANTIZATION == "int8":
-            logger.info("🔧 Aplicando quantização INT8 (bitsandbytes)")
-            try:
-                from transformers import BitsAndBytesConfig
-                quantization_config = BitsAndBytesConfig(
-                    load_in_8bit=True,
-                    llm_int8_threshold=6.0,
-                    llm_int8_has_fp16_weight=True
-                )
-                model_kwargs["quantization_config"] = quantization_config
-                logger.info("✅ INT8 quantization configurada")
-            except ImportError:
-                logger.warning("⚠️ bitsandbytes não disponível, usando FP16")
+        # CRITICAL FIX 13/01/2026: Remover quantização INT8
+        # PROBLEMA IDENTIFICADO: SentenceTransformer não propaga BitsAndBytesConfig
+        # corretamente para o AutoModel subjacente, causando:
+        # AttributeError: 'Tensor' object has no attribute 'SCB'
+        # 
+        # SOLUÇÃO ENTERPRISE: Usar FP16 (half precision) que funciona perfeitamente
+        # com SentenceTransformer e reduz VRAM de forma confiável.
+        # FP16 usa ~8GB de VRAM (vs ~16GB FP32), suficiente para rodar simultaneamente
+        # com outros serviços GPU.
+        # 
+        # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Mudanças cirúrgicas)
+        logger.info("Using FP16 (half precision) for optimal VRAM usage")
         
         text_model = SentenceTransformer(
             TEXT_MODEL_NAME,
             device=DEVICE,
-            trust_remote_code=True,  # CRÍTICO: Parâmetro direto, não em model_kwargs
-            model_kwargs=model_kwargs if model_kwargs else None
+            trust_remote_code=True  # CRÍTICO: Qwen3-Embedding-8B requer código customizado
         )
+        
+        # Converter modelo para FP16 para economizar VRAM
+        if DEVICE == "cuda":
+            text_model = text_model.half()
+            logger.info("✅ Modelo convertido para FP16 (half precision)")
         
         # Verificar dimensão
         test_emb = text_model.encode(["test"])

@@ -75,10 +75,12 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
     pip install -r /app/requirements.txt
 
-# CRITICAL FIX (13/01/2026): NÃO remover build tools!
-# bitsandbytes/triton precisa de gcc/g++ em RUNTIME para JIT compilation
-# O triton compila kernels sob demanda, não pode remover build tools
-# Trade-off: +400MB mas serviço funciona (enterprise: funcionalidade > tamanho)
+# CRITICAL FIX (13/01/2026): Remover build tools após instalação
+# BUG FIX: INT8 quantization causava crash (AttributeError: 'Tensor' object has no attribute 'SCB')
+# SOLUÇÃO: Usar FP16 (half precision) que não requer bitsandbytes
+# Agora podemos remover build tools para reduzir tamanho da imagem
+RUN apt-get purge -y --auto-remove build-essential g++ gcc && \
+    rm -rf /var/lib/apt/lists/*
 
 COPY app/ /app/
 COPY healthcheck.py /app/healthcheck.py

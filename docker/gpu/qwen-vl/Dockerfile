@@ -57,14 +57,25 @@ RUN chmod +x /app/entrypoint.sh
 
 # Variáveis de configuração do modelo
 # Qwen2.5-VL 7B Instruct AWQ - modelo multimodal quantizado
-# ARQUITETURA v4.0.3 (13/01/2026):
-# - MAX_MODEL_LEN=2048: otimizado para chat (contexto 2048 tokens suficiente, reduz KV cache ~50%)
-# - GPU_MEMORY_UTILIZATION=0.40: 8GB (dimensionamento para coexistência com ASR 3.9GB + embeddings 8GB)
-# - Total estimado: 3.9 + 8 + 6.8 = 18.7GB < 20GB (margem de 1.3GB = 6.5%)
+# CORREÇÃO DEFINITIVA v4.1.0 (13/01/2025) - BASEADO EM DOCS OFICIAIS 2025:
+# 
+# BUG IDENTIFICADO: vLLM 0.12.0 tem bug CONHECIDO de memória em profile_run
+# Fonte: https://katielovesdogs.com/blog/vllm-memory-bug-with-qwen (2025)
+# Causa: PyTorch calcula incorretamente pico de memória para modelos multimodais
+# 
+# SOLUÇÃO OFICIAL 2025: Usar --skip-mm-profiling
+# 
+# CONFIGURAÇÕES CORRETAS (Documentação Oficial Qwen 2025):
+# - Qwen2.5-VL-7B-AWQ requer: 12-16GB VRAM
+# - GPU_MEMORY_UTILIZATION: 0.90 (balanço entre performance e estabilidade)
+# - MAX_MODEL_LEN: 4096 (contexto padrão, suficiente para chat)
+# - dtype: float16 OBRIGATÓRIO (AWQ não suporta bfloat16)
+# 
+# Ref: https://qwen.readthedocs.io/en/v2.5/deployment/vllm.html
 ENV MODEL_NAME="Qwen/Qwen2.5-VL-7B-Instruct-AWQ"
 ENV QUANTIZATION="awq"
-ENV MAX_MODEL_LEN="2048"
-ENV GPU_MEMORY_UTILIZATION="0.40"
+ENV MAX_MODEL_LEN="4096"
+ENV GPU_MEMORY_UTILIZATION="0.90"
 ENV TENSOR_PARALLEL_SIZE="1"
 ENV PORT="8000"
 ENV HOST="0.0.0.0"

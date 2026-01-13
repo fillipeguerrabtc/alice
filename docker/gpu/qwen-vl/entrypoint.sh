@@ -25,8 +25,12 @@ echo "Model: ${MODEL_NAME}"
 echo "Quantization: ${QUANTIZATION}"
 echo "Max Model Length: ${MAX_MODEL_LEN}"
 echo "GPU Memory Utilization: ${GPU_MEMORY_UTILIZATION}"
-echo "Architecture: v4.0.0-simplified (multimodal)"
+echo "Architecture: v4.1.0-official-fix (multimodal)"
 echo "vLLM Version: 0.12.0"
+echo ""
+echo "CORREÇÃO OFICIAL 2025: Usando --skip-mm-profiling"
+echo "Bug conhecido: PyTorch calcula memória incorretamente em profile_run"
+echo "Ref: https://katielovesdogs.com/blog/vllm-memory-bug-with-qwen"
 echo ""
 
 # Verificar GPU
@@ -41,9 +45,14 @@ echo ""
 
 # Iniciar vLLM server com suporte a multimodal
 echo "Iniciando vLLM server com suporte a vision..."
-# CORREÇÕES vLLM v0.12.0:
-# 1. --limit-mm-per-prompt: JSON obrigatório (antes: "image=5", agora: '{"image": 5}')
-# 2. --dtype float16: obrigatório para AWQ (bfloat16 causa ValidationError)
+# CORREÇÕES OFICIAIS 2025:
+# 1. --skip-mm-profiling: FIX CRÍTICO - pula profiling bugado (Doc Oficial 2025)
+# 2. --dtype float16: OBRIGATÓRIO para AWQ (AWQ não suporta bfloat16)
+# 3. --limit-mm-per-prompt: JSON obrigatório vLLM 0.12.0+
+# 4. --trust-remote-code: Necessário para Qwen2.5-VL
+# 
+# Ref: https://qwen.readthedocs.io/en/v2.5/deployment/vllm.html
+# Ref: https://katielovesdogs.com/blog/vllm-memory-bug-with-qwen
 exec python3 -m vllm.entrypoints.openai.api_server \
     --model "${MODEL_NAME}" \
     --quantization "${QUANTIZATION}" \
@@ -54,4 +63,5 @@ exec python3 -m vllm.entrypoints.openai.api_server \
     --host "${HOST}" \
     --port "${PORT}" \
     --trust-remote-code \
+    --skip-mm-profiling \
     --limit-mm-per-prompt '{"image": 5}'

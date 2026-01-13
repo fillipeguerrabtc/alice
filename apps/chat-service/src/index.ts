@@ -1023,20 +1023,50 @@ async function proxyStreamFromGpuManager(
   // Remove duplicação de GPU_MANAGER_URL e validação de INTERNAL_API_SECRET
   // requestGpuStream já faz fail-fast da secret e usa a URL correta
   // ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral (multimodal)
-  const gpuResponse = await requestGpuStream({
-    serviceType: GpuServiceType.QWEN_VL,
-    priority: GpuRequestPriority.CRITICAL, // Chat em tempo real = prioridade máxima
-    endpoint: '/v1/chat/completions',
-    method: 'POST',
-    body: {
-      model,
-      messages: llmMessages,
-      max_tokens: maxTokens,
-      temperature,
-      stream: true,
-    },
-    timeout: 60000,
-  });
+  // CRITICAL FIX 13/01/2026: Tratamento graceful de falha de GPU
+  let gpuResponse;
+  try {
+    gpuResponse = await requestGpuStream({
+      serviceType: GpuServiceType.QWEN_VL,
+      priority: GpuRequestPriority.CRITICAL, // Chat em tempo real = prioridade máxima
+      endpoint: '/v1/chat/completions',
+      method: 'POST',
+      body: {
+        model,
+        messages: llmMessages,
+        max_tokens: maxTokens,
+        temperature,
+        stream: true,
+      },
+      timeout: 60000,
+    });
+  } catch (gpuError) {
+    logger.error({ 
+      error: gpuError instanceof Error ? gpuError.message : String(gpuError),
+      stack: gpuError instanceof Error ? gpuError.stack : undefined,
+    }, 'GPU Manager Service indisponível');
+    
+    // CORREÇÃO 13/01/2026: Retornar mensagem amigável ao invés de crashar
+    // GPU pode estar reiniciando após correção de bugs (ex: vLLM profile_run crash)
+    const errorMessage = 'Desculpe, o serviço de IA está temporariamente indisponível. ' +
+      'Nossos servidores de GPU estão sendo reiniciados após manutenção. ' +
+      'Por favor, tente novamente em alguns minutos.';
+    
+    // Enviar mensagem de erro via chunk callback
+    onChunk(errorMessage);
+    
+    // Chamar onDone com a mensagem de erro completa
+    if (onDone) {
+      try {
+        await onDone(errorMessage);
+      } catch (onDoneError) {
+        logger.error({ error: onDoneError }, 'Erro ao executar callback onDone durante tratamento de erro de GPU');
+      }
+    }
+    
+    // Retornar mensagem de erro ao invés de lançar exceção
+    return errorMessage;
+  }
   
   // BUG FIX 25/12/2025: Fazer proxy do stream diretamente do GPU Manager Service
   // requestGpuStream já validou response.ok e response.body
