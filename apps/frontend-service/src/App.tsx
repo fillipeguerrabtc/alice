@@ -193,7 +193,7 @@ function AppContent() {
           <img
             src="/logo-round.png"
             alt="Alice"
-            className="h-12 w-12 rounded-xl animate-pulse"
+            className="h-16 w-16 rounded-xl animate-pulse"
             data-testid="img-loading-logo"
           />
           <p className="text-muted-foreground text-sm">Carregando...</p>

@@ -13,10 +13,11 @@
 # - Suporte a vision (análise de imagens)
 # - 100% público, sem autenticação necessária
 # 
-# CORREÇÃO VRAM v4.0.1:
-# - Modelo AWQ ocupa ~6.5GB (pesos), não ~4GB como estimado inicialmente
-# - max-model-len=4096 reduz KV cache para caber na VRAM
-# - gpu_memory_utilization=0.45 (9GB) garante espaço para modelo + KV cache
+# CORREÇÃO VRAM v4.0.2 (13/01/2026):
+# - Modelo AWQ ocupa ~6.5GB (pesos)
+# - max-model-len=4096 reduz KV cache
+# - gpu_memory_utilization=0.35 (7GB) - REDUZIDO para coexistir com embeddings+ASR
+# - Arquitetura v4.0.0: 3 serviços simultâneos (Qwen-VL 7GB + Embeddings 6GB + ASR 2GB = 15GB/20GB)
 # 
 # Ref: https://docs.vllm.ai/models/supported_models.html
 # Ref: https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct-AWQ
@@ -33,7 +34,7 @@ FROM vllm/vllm-openai:v0.12.0
 
 LABEL maintainer="Fillipe Guerra"
 LABEL description="Qwen2.5-VL 7B multimodal vLLM inference server"
-LABEL version="4.0.0"
+LABEL version="4.0.2"
 LABEL architecture="v4.0.0-simplified"
 
 ENV PIP_ROOT_USER_ACTION=ignore
@@ -56,13 +57,13 @@ RUN chmod +x /app/entrypoint.sh
 
 # Variáveis de configuração do modelo
 # Qwen2.5-VL 7B Instruct AWQ - modelo multimodal quantizado
-# ARQUITETURA v4.0.1 (12/01/2026):
+# ARQUITETURA v4.0.2 (13/01/2026):
 # - MAX_MODEL_LEN=4096: reduzido para caber KV cache na VRAM
-# - GPU_MEMORY_UTILIZATION=0.45: 9GB permite modelo (6.5GB) + KV cache (1.5GB)
+# - GPU_MEMORY_UTILIZATION=0.35: 7GB (REDUZIDO para coexistir com outros serviços)
 ENV MODEL_NAME="Qwen/Qwen2.5-VL-7B-Instruct-AWQ"
 ENV QUANTIZATION="awq"
 ENV MAX_MODEL_LEN="4096"
-ENV GPU_MEMORY_UTILIZATION="0.45"
+ENV GPU_MEMORY_UTILIZATION="0.35"
 ENV TENSOR_PARALLEL_SIZE="1"
 ENV PORT="8000"
 ENV HOST="0.0.0.0"
