@@ -148,6 +148,12 @@ export async function createOIDCConfiguration(): Promise<Configuration> {
     ? process.env.OIDC_COOKIE_KEYS.split(',')
     : ['alice-oidc-secret-key-1', 'alice-oidc-secret-key-2'];
 
+  // FAIL-FAST em produção (Regra 6): sem defaults inseguros para chaves de cookie
+  if (process.env.NODE_ENV === 'production' && !process.env.OIDC_COOKIE_KEYS) {
+    logger.error('CRITICAL: OIDC_COOKIE_KEYS é OBRIGATÓRIO em produção (valores múltiplos separados por vírgula).');
+    process.exit(1);
+  }
+
   const configuration: Configuration = {
     // =========================================================================
     // ADAPTER: PostgreSQL (Regra 6 - sem in-memory)

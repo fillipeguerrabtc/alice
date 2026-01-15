@@ -26,6 +26,7 @@ import type { Request, Response, NextFunction } from 'express';
 // REF: https://nodejs.org/api/esm.html#node-imports
 // REF: Best Practices Node.js ESM 2025 - evita conflitos com pacotes npm de mesmo nome
 import crypto from 'node:crypto';
+import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 import { createLogger } from './logger.js';
 import { createCacheAdapter, type CacheAdapter } from './redis-cache-adapter.js';
 import type { Role } from './rbac/types.js';
@@ -33,9 +34,85 @@ import type { Role } from './rbac/types.js';
 const logger = createLogger('session-auth');
 
 // Configuração via variáveis de ambiente
-const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-secret-min-32-characters-long!';
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const SESSION_SECRET = process.env.SESSION_SECRET;
 const SESSION_COOKIE_NAME = process.env.SESSION_COOKIE_NAME || 'alice.sid';
 const SESSION_CACHE_TTL = 5 * 60 * 1000; // 5 minutos
+
+// FAIL-FAST em produção (Regra 6 - SEM defaults inseguros)
+if (IS_PRODUCTION && (!SESSION_SECRET || SESSION_SECRET.length < 32)) {
+  logger.error('CRITICAL: SESSION_SECRET é OBRIGATÓRIO em produção e deve ter >= 32 caracteres.');
+  process.exit(1);
+}
+
+// OIDC JWT (híbrido): validação local via JWKS (sem introspection/in-memory)
+const OIDC_ISSUER = process.env.OIDC_ISSUER;
+const OIDC_API_AUDIENCE = process.env.OIDC_API_AUDIENCE;
+let remoteJwks: ReturnType<typeof createRemoteJWKSet> | null = null;
+
+function getRemoteJwks(): ReturnType<typeof createRemoteJWKSet> | null {
+  if (!OIDC_ISSUER) return null;
+  if (!remoteJwks) {
+    // Endpoint definido pelo auth-service: GET /.well-known/jwks.json
+    remoteJwks = createRemoteJWKSet(new URL(`${OIDC_ISSUER.replace(/\/$/, '')}/.well-known/jwks.json`));
+  }
+  return remoteJwks;
+}
+
+async function tryAuthenticateViaBearer(req: Request): Promise<void> {
+  if (req.user) return;
+
+  const authz = req.headers.authorization;
+  if (!authz?.startsWith('Bearer ')) return;
+
+  const jwks = getRemoteJwks();
+  if (!jwks) {
+    logger.info({ path: req.path }, 'Bearer token recebido mas OIDC_ISSUER não configurado');
+    return;
+  }
+
+  // Segurança: audience obrigatório em produção para evitar tokens “de outros clients” serem aceitos.
+  if (IS_PRODUCTION && !OIDC_API_AUDIENCE) {
+    logger.error({ path: req.path }, 'OIDC_API_AUDIENCE é obrigatório em produção para validar Bearer tokens');
+    return;
+  }
+
+  try {
+    const token = authz.slice('Bearer '.length).trim();
+    const verifyOptions = {
+      issuer: OIDC_ISSUER,
+      ...(OIDC_API_AUDIENCE ? { audience: OIDC_API_AUDIENCE } : {}),
+    } as const;
+
+    const { payload } = await jwtVerify(token, jwks, verifyOptions);
+
+    const sub = payload.sub;
+    const role = (payload as JWTPayload & { role?: unknown }).role;
+    const tenantId = (payload as JWTPayload & { tenant_id?: unknown }).tenant_id;
+
+    if (typeof sub !== 'string' || !sub) {
+      logger.info({ path: req.path }, 'Bearer token inválido: sub ausente');
+      return;
+    }
+    if (typeof role !== 'string' || !role) {
+      logger.info({ path: req.path, sub }, 'Bearer token inválido: role ausente');
+      return;
+    }
+    if (typeof tenantId !== 'string' || !tenantId) {
+      logger.info({ path: req.path, sub }, 'Bearer token inválido: tenant_id ausente');
+      return;
+    }
+
+    req.user = {
+      userId: sub,
+      tenantId,
+      role: role as Role,
+    };
+    req.tenantId = tenantId;
+  } catch (error) {
+    logger.info({ error: (error as Error).message, path: req.path }, 'Falha ao validar Bearer token (OIDC)');
+  }
+}
 
 /**
  * Dados da sessão cacheada
@@ -55,11 +132,25 @@ let sessionCacheAdapter: CacheAdapter<CachedSession> | null = null;
  */
 export async function initializeSessionAuthCache(): Promise<void> {
   try {
-    sessionCacheAdapter = createCacheAdapter<CachedSession>('session-auth', SESSION_CACHE_TTL);
+    const adapter = createCacheAdapter<CachedSession>('session-auth', SESSION_CACHE_TTL);
+    if (!adapter.isDistributed()) {
+      // Regra do projeto: evitar in-memory. Em dev/test, apenas desabilitamos cache.
+      if (IS_PRODUCTION) {
+        logger.error('CRITICAL: Cache distribuído (Redis) é obrigatório em produção para session-auth.');
+        process.exit(1);
+      }
+      sessionCacheAdapter = null;
+      logger.info('Cache de sessões HTTP desabilitado (Redis indisponível em dev/test)');
+      return;
+    }
+    sessionCacheAdapter = adapter;
     logger.info({ distributed: sessionCacheAdapter.isDistributed() }, 'Cache de sessões HTTP inicializado');
   } catch (error) {
-    logger.warn({ error: (error as Error).message }, 'Cache de sessões usando fallback in-memory');
-    sessionCacheAdapter = createCacheAdapter<CachedSession>('session-auth', SESSION_CACHE_TTL);
+    logger.error({ error: (error as Error).message }, 'Falha ao inicializar cache de sessões HTTP');
+    if (IS_PRODUCTION) {
+      process.exit(1);
+    }
+    sessionCacheAdapter = null;
   }
 }
 
@@ -112,7 +203,7 @@ function decodeSessionId(signedCookie: string): string | null {
   // ERRADO: .replace(/\+/g, '-').replace(/\//g, '_') - isso é base64url
   // CORRETO: apenas remover padding '='
   const expectedSignature = crypto
-    .createHmac('sha256', SESSION_SECRET)
+    .createHmac('sha256', SESSION_SECRET || '')
     .update(sessionId)
     .digest('base64')
     .replace(/=+$/, '');
@@ -245,6 +336,7 @@ export function createSessionAuthMiddleware(options: SessionAuthMiddlewareOption
     // Extrair cookie de sessão
     const cookieHeader = req.headers.cookie;
     if (!cookieHeader) {
+      await tryAuthenticateViaBearer(req);
       return next(); // Deixar requireAuth() retornar 401 se necessário
     }
 
@@ -252,6 +344,7 @@ export function createSessionAuthMiddleware(options: SessionAuthMiddlewareOption
     const sessionCookie = cookies[SESSION_COOKIE_NAME];
     
     if (!sessionCookie) {
+      await tryAuthenticateViaBearer(req);
       return next();
     }
 
