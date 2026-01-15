@@ -16,6 +16,7 @@
 import { describe, it, expect } from 'vitest';
 import crypto from 'crypto';
 import { CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
+import { integrationsServicePaths } from '../../../apps/integrations-service/src/openapi-specs';
 
 // ============================================================================
 // TESTES DE STRIPE
@@ -49,6 +50,16 @@ describe('Integrations Service - Stripe', () => {
   it('deve ter timeout de 8 segundos para chamadas externas', () => {
     const EXTERNAL_API_TIMEOUT_MS = 8000;
     expect(EXTERNAL_API_TIMEOUT_MS).toBe(8000);
+  });
+});
+
+// ============================================================================
+// WS6: Contratos (OpenAPI) - Trading/KuCoin
+// ============================================================================
+
+describe('Integrations Service - OpenAPI (contratos críticos)', () => {
+  it('deve expor o endpoint GET /api/integrations/trading/ws/status', () => {
+    expect(Object.keys(integrationsServicePaths)).toContain('/api/integrations/trading/ws/status');
   });
 });
 

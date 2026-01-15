@@ -174,7 +174,7 @@ export const PERMISSION_MAP: Record<string, Role[]> = {
   'integrations:trading:manage': ['super_admin', 'admin'],
 
   // ============================================================================
-  // IMAGE ANALYSIS MODULE - Qwen2.5-VL Vision (ARQUITETURA v4.0.0)
+  // IMAGE ANALYSIS MODULE - Qwen2.5-VL Vision (Gate 2 - VLM dedicado)
   // NOTA: Alice ANALISA imagens mas NÃO gera. Permissões para upload/aprovação de imagens.
   // ============================================================================
   'images:generate:read': ['super_admin', 'admin', 'manager', 'operator', 'viewer'],

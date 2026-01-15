@@ -180,7 +180,7 @@ export const chatServicePaths = {
       responses: { 200: { description: 'Controle devolvido' } },
     },
   },
-  // NOTA (ARQUITETURA v4.0.0): Endpoint mantido APENAS para retrocompatibilidade.
+  // NOTA (Gate 2): Endpoint mantido APENAS para retrocompatibilidade.
   // A geração de imagens foi removida; o endpoint retorna 410 (Gone) de forma determinística.
   '/api/chat/images/generate': {
     post: {
@@ -245,6 +245,54 @@ export const chatServicePaths = {
                   activeConversations: { type: 'integer' },
                   escalatedCount: { type: 'integer' },
                   avgResponseTime: { type: 'number' },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+  '/api/agents/model-options': {
+    get: {
+      summary: 'Modelos disponíveis para Agents (SSOT)',
+      description:
+        'Single Source of Truth para a UI: lista de modelos LLM suportados (Gate 2), defaults e limites (ex.: maxTokens).',
+      tags: ['Agents'],
+      responses: {
+        200: {
+          description: 'Opções de modelos para Agents',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  models: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        value: { type: 'string' },
+                        label: { type: 'string' },
+                        description: { type: 'string' },
+                      },
+                    },
+                  },
+                  defaults: {
+                    type: 'object',
+                    properties: {
+                      modeloBase: { type: 'string' },
+                      temperaturaModelo: { type: 'number' },
+                      maxTokens: { type: 'integer' },
+                    },
+                  },
+                  constraints: {
+                    type: 'object',
+                    properties: {
+                      maxTokensMin: { type: 'integer' },
+                      maxTokensMax: { type: 'integer' },
+                    },
+                  },
                 },
               },
             },

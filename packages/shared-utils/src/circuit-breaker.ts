@@ -50,7 +50,7 @@ export interface CircuitBreakerConfig {
  * ```
  */
 export const CIRCUIT_BREAKER_PRESETS = {
-  /** Serviço LLM GPU Manager Service - timeout alto para inferência Qwen2.5-VL 7B (ARQUITETURA v4.0.0) */
+  /** Serviço LLM GPU Manager Service - timeout alto para inferência (Gate 2) */
   gpuLLM: {
     timeout: 60000,
     errorThresholdPercentage: 50,
@@ -155,7 +155,7 @@ export const CIRCUIT_BREAKER_PRESETS = {
     resetTimeout: 30000,
     volumeThreshold: 5,
   },
-  /** Qwen2.5-VL 7B vLLM - LLM Multimodal Trading (ARQUITETURA v4.0.0) */
+  /** Gate 2: Qwen2.5-VL vLLM - VLM (visão) para análise de imagens/gráficos */
   qwenVL: {
     timeout: 45000, // Timeout otimizado para Qwen2.5-VL 7B AWQ
     errorThresholdPercentage: 50,

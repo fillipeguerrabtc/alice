@@ -703,7 +703,7 @@ const mediaUpload = multer({
 
 // ============================================================================
 // CIRCUIT BREAKER - Text Embeddings GPU (ARQUITETURA ENTERPRISE - 17/12/2025)
-// Usa serviço GPU embeddings via GPU Manager Service (Qwen3-Embedding-8B, 4096 dim → Qdrant)
+// Usa serviço GPU embeddings via GPU Manager Service (Qwen3-Embedding-0.6B, 1024 dim → Qdrant)
 // Usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
 // ============================================================================
 
@@ -719,7 +719,7 @@ interface TextEmbeddingResponse {
 }
 
 async function generateEmbeddingInternal(text: string): Promise<number[]> {
-  // ARQUITETURA ENTERPRISE (25/12/2025): Qwen3-Embedding-8B via GPU Manager Service (4096 dim)
+  // ARQUITETURA ENTERPRISE (Gate 2): Qwen3-Embedding-0.6B via GPU Manager Service (1024 dim)
   // GPU é OBRIGATÓRIO - embeddings armazenados em Qdrant
   
   try {
@@ -747,7 +747,7 @@ async function generateEmbeddingInternal(text: string): Promise<number[]> {
       throw new Error('Serviço GPU de embeddings retornou resultado vazio');
     }
     
-    // Validar dimensão (deve ser 4096 para Qwen3-Embedding-8B) - Enterprise-Grade
+    // Validar dimensão (SSOT) - Enterprise-Grade
     // Lança erro se dimensão estiver incorreta (não apenas warning)
     validateEmbeddingDimension(resultEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
 
@@ -788,9 +788,9 @@ async function generateEmbedding(text: string): Promise<number[]> {
 }
 
 // ============================================================================
-// BUSCA QDRANT - Embeddings de texto (4096 dim - Qwen3-Embedding-8B)
+// BUSCA QDRANT - Embeddings de texto (1024 dim - Qwen3-Embedding-0.6B)
 // ARQUITETURA ENTERPRISE (17/12/2025):
-// - Texto: Qdrant (4096 dim) - usa esta função
+// - Texto: Qdrant (1024 dim) - usa esta função
 // - Imagem: pgvector (1024 dim) - usa queries SQL diretas
 // ============================================================================
 
@@ -875,14 +875,14 @@ async function invalidateRagCachesForTenant(tenantId: string): Promise<void> {
 }
 
 /**
- * Busca documentos similares via Qdrant (4096 dim)
+ * Busca documentos similares via Qdrant (1024 dim)
  * 
- * ARQUITETURA ENTERPRISE (17/12/2025):
- * - Embeddings de texto com Qwen3-Embedding-8B (4096 dim)
- * - Armazenamento e busca via Qdrant (suporta HNSW com 4096+ dim)
+ * ARQUITETURA ENTERPRISE (Gate 2):
+ * - Embeddings de texto com Qwen3-Embedding-0.6B (1024 dim)
+ * - Armazenamento e busca vetorial via Qdrant (HNSW)
  * - Multi-tenancy via filtro de payload (tenantId)
  * 
- * @param queryEmbedding - Embedding da query (4096 dim)
+ * @param queryEmbedding - Embedding da query (1024 dim)
  * @param tenantId - ID do tenant para isolamento
  * @param options - Opções de busca (limit, threshold, namespaceId)
  * @returns Array de documentos similares com score
@@ -1175,7 +1175,7 @@ app.get('/api/rag/health', async (_req: Request, res: Response) => {
     service: 'rag-service',
     timestamp: new Date().toISOString(),
     architecture: {
-      text: 'Qwen3-Embedding-8B (4096 dim) → Qdrant',
+      text: 'Qwen3-Embedding-0.6B (1024 dim) → Qdrant',
       image: 'OpenCLIP ViT-H/14 (1024 dim) → pgvector',
     },
     embeddingsProvider: 'gpu-manager-service',
@@ -1327,8 +1327,7 @@ app.post('/api/rag/documents', requireAuth(), requirePermission('rag:documents:w
 
     // MULTI-TENANCY: Documento associado ao tenant via namespaceId
     // namespaceId deve pertencer ao tenant do usuário (validado pelo frontend/API)
-    // CORREÇÃO 17/12/2025: Embedding de documento (4096 dim) vai para QDRANT, não PostgreSQL
-    // Schema documents.embedding é vector(1024) - incompatível com Qwen3-Embedding-8B (4096 dim)
+    // Gate 2: Embeddings de TEXTO são SSOT no Qdrant (PostgreSQL mantém apenas conteúdo/metadados).
     const [document] = await db.insert(schema.documents).values({
       namespaceId: body.namespaceId,
       titulo: body.titulo,
@@ -1337,7 +1336,7 @@ app.post('/api/rag/documents', requireAuth(), requirePermission('rag:documents:w
       fonte: body.fonte,
       urlOrigem: body.urlOrigem,
       hashConteudo,
-      // embedding OMITIDO - texto 4096 dim vai para Qdrant, não pgvector vector(1024)
+      // embedding OMITIDO - texto vai para Qdrant (SSOT)
       processado: false,
     }).returning();
     
@@ -1363,9 +1362,9 @@ app.post('/api/rag/documents', requireAuth(), requirePermission('rag:documents:w
 
     const chunks = chunkText(body.conteudo);
     
-    // CORREÇÃO 17/12/2025: Inserir chunks tanto no PostgreSQL quanto no Qdrant
+    // Gate 2: Inserir chunks no PostgreSQL (conteúdo) e no Qdrant (vetores)
     // PostgreSQL: Persistência relacional e backup
-    // Qdrant: Busca semântica vetorial (4096 dim - Qwen3-Embedding-8B)
+    // Qdrant: Busca semântica vetorial (1024 dim - Qwen3-Embedding-0.6B)
     const qdrantPoints = [];
     
     for (let i = 0; i < chunks.length; i++) {
@@ -1375,16 +1374,15 @@ app.post('/api/rag/documents', requireAuth(), requirePermission('rag:documents:w
       validateEmbeddingDimension(embedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
       
       // Inserir no PostgreSQL (persistência relacional - SEM embedding)
-      // CORREÇÃO 17/12/2025: Embeddings de texto (4096 dim) vão APENAS para Qdrant
-      // PostgreSQL documentChunks.embedding é DEPRECATED (halfvec(3584) incompatível)
+      // Gate 2: Embeddings de texto vão APENAS para Qdrant (PostgreSQL armazena somente conteúdo/metadata)
       const [chunk] = await db.insert(schema.documentChunks).values({
         documentId: document.id,
         conteudo: chunks[i],
         posicao: i,
-        // embedding OMITIDO - texto usa Qdrant (4096 dim), não pgvector
+        // embedding OMITIDO - texto usa Qdrant (SSOT)
       }).returning();
       
-      // Preparar ponto para Qdrant (busca vetorial - 4096 dim)
+      // Preparar ponto para Qdrant (busca vetorial - 1024 dim)
       qdrantPoints.push({
         id: chunk.id,
         vector: embedding,
@@ -1452,15 +1450,14 @@ app.post('/api/rag/documents/upload', requireAuth(), requirePermission('rag:docu
 
     // MULTI-TENANCY: Documento associado ao tenant via namespaceId
     // namespaceId deve pertencer ao tenant do usuário (validado pelo middleware)
-    // CORREÇÃO 17/12/2025: Embedding de documento (4096 dim) vai para QDRANT, não PostgreSQL
-    // Schema documents.embedding é vector(1024) - incompatível com Qwen3-Embedding-8B (4096 dim)
+    // Gate 2: Embeddings de TEXTO são SSOT no Qdrant (PostgreSQL mantém apenas conteúdo/metadados).
     const [document] = await db.insert(schema.documents).values({
       namespaceId,
       titulo,
       conteudo: content,
       tipo: req.file.mimetype,
       hashConteudo,
-      // embedding OMITIDO - texto 4096 dim vai para Qdrant, não pgvector vector(1024)
+      // embedding OMITIDO - texto vai para Qdrant (SSOT)
       processado: false,
     }).returning();
     
@@ -1486,9 +1483,9 @@ app.post('/api/rag/documents/upload', requireAuth(), requirePermission('rag:docu
 
     const chunks = chunkText(content);
     
-    // CORREÇÃO 17/12/2025: Inserir chunks tanto no PostgreSQL quanto no Qdrant
+    // Gate 2: Inserir chunks no PostgreSQL (conteúdo) e no Qdrant (vetores)
     // PostgreSQL: Persistência relacional e backup
-    // Qdrant: Busca semântica vetorial (4096 dim - Qwen3-Embedding-8B)
+    // Qdrant: Busca semântica vetorial (1024 dim - Qwen3-Embedding-0.6B)
     const qdrantPoints = [];
     
     for (let i = 0; i < chunks.length; i++) {
@@ -1498,16 +1495,15 @@ app.post('/api/rag/documents/upload', requireAuth(), requirePermission('rag:docu
       validateEmbeddingDimension(embedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
       
       // Inserir no PostgreSQL (persistência relacional - SEM embedding)
-      // CORREÇÃO 17/12/2025: Embeddings de texto (4096 dim) vão APENAS para Qdrant
-      // PostgreSQL documentChunks.embedding é DEPRECATED (halfvec(3584) incompatível)
+      // Gate 2: Embeddings de texto vão APENAS para Qdrant (PostgreSQL armazena somente conteúdo/metadata)
       const [chunk] = await db.insert(schema.documentChunks).values({
         documentId: document.id,
         conteudo: chunks[i],
         posicao: i,
-        // embedding OMITIDO - texto usa Qdrant (4096 dim), não pgvector
+        // embedding OMITIDO - texto usa Qdrant (SSOT)
       }).returning();
       
-      // Preparar ponto para Qdrant (busca vetorial - 4096 dim)
+      // Preparar ponto para Qdrant (busca vetorial - 1024 dim)
       qdrantPoints.push({
         id: chunk.id,
         vector: embedding,
@@ -1592,8 +1588,8 @@ app.post('/api/rag/search', requireAuth(), requirePermission('rag:documents:read
     // ============================================================================
     // BUSCA VETORIAL VIA QDRANT (Enterprise-Grade - 17/12/2025)
     // ============================================================================
-    // ARQUITETURA: Embeddings de texto com Qwen3-Embedding-8B (4096 dim) → Qdrant
-    // PERFORMANCE: Índice HNSW otimizado para 4096 dimensões
+    // Gate 2: Embeddings de texto com Qwen3-Embedding-0.6B (1024 dim) → Qdrant
+    // PERFORMANCE: Índice HNSW otimizado (dim=1024)
     // MULTI-TENANCY: Filtro via payload (tenantId) no Qdrant
     // ============================================================================
 
@@ -1606,7 +1602,7 @@ app.post('/api/rag/search', requireAuth(), requirePermission('rag:documents:read
       });
     }
 
-    // Gerar embedding da query (4096 dim via Qwen3-Embedding-8B)
+    // Gerar embedding da query (1024 dim via Qwen3-Embedding-0.6B)
     const queryEmbedding = await generateEmbedding(body.query);
     
     // Buscar documentos similares via Qdrant
@@ -1679,8 +1675,8 @@ app.post('/api/rag/context', requireAuth(), requirePermission('rag:documents:rea
     // ============================================================================
     // BUSCA VETORIAL VIA QDRANT (Enterprise-Grade - 17/12/2025)
     // ============================================================================
-    // ARQUITETURA: Embeddings de texto com Qwen3-Embedding-8B (4096 dim) → Qdrant
-    // PERFORMANCE: Índice HNSW otimizado para 4096 dimensões
+    // Gate 2: Embeddings de texto com Qwen3-Embedding-0.6B (1024 dim) → Qdrant
+    // PERFORMANCE: Índice HNSW otimizado (dim=1024)
     // SEGURANÇA: tenantId validado pelo middleware (sem fallback para 'default')
     // ============================================================================
 
@@ -1693,7 +1689,7 @@ app.post('/api/rag/context', requireAuth(), requirePermission('rag:documents:rea
       });
     }
 
-    // Gerar embedding da query (4096 dim via Qwen3-Embedding-8B)
+    // Gerar embedding da query (1024 dim via Qwen3-Embedding-0.6B)
     const queryEmbedding = await generateEmbedding(body.query);
     
     // Buscar documentos similares via Qdrant (tenantId validado pelo middleware)
@@ -1912,8 +1908,8 @@ app.post('/api/rag/agentic', requireAuth(), requireSameTenant(getTenantIdFromReq
       // ============================================================================
       // BUSCA VETORIAL VIA QDRANT (Enterprise-Grade - 17/12/2025)
       // ============================================================================
-      // ARQUITETURA: Embeddings de texto com Qwen3-Embedding-8B (4096 dim) → Qdrant
-      // PERFORMANCE: Índice HNSW otimizado para 4096 dimensões
+      // Gate 2: Embeddings de texto com Qwen3-Embedding-0.6B (1024 dim) → Qdrant
+      // PERFORMANCE: Índice HNSW otimizado (dim=1024)
       // MULTI-TENANCY: Filtro via payload (tenantId) no Qdrant
       // ============================================================================
       
@@ -2314,7 +2310,7 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
             hasThumbnail: !!thumbnailPath,
           }, 'Imagem processada com sucesso');
         } else if (mediaType === 'audio') {
-          // Processar áudio com Whisper transcrição
+          // Processar áudio com ASR Canary-1B (GPU)
           const audioProcessor = getAudioProcessor();
           const result = await audioProcessor.processAudio(
             req.file!.buffer,
@@ -2326,9 +2322,7 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
             validateEmbeddingDimension(result.embedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
           }
           
-          // CORREÇÃO 17/12/2025: Embeddings de texto (4096 dim) vão para QDRANT, não PostgreSQL
-          // Schema mediaUploads.textEmbedding é halfvec(3584) - DEPRECATED para texto
-          // Armazenar no Qdrant com metadata para busca semântica
+          // Gate 2: Embeddings de texto são SSOT no Qdrant (PostgreSQL mantém apenas transcrição/metadados)
           if (result.embedding.length > 0 && isQdrantConfigured()) {
             await upsertPoints(TEXT_COLLECTION_NAME, [{
               id: `media-audio-${mediaUploadRecord.id}`,
@@ -2354,7 +2348,7 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
               transcription: result.transcription,
               transcriptionLanguage: result.transcriptionLanguage,
               transcriptionConfidence: result.transcriptionConfidence,
-              // textEmbedding OMITIDO - texto 4096 dim vai para Qdrant, não PostgreSQL halfvec(3584)
+              // textEmbedding OMITIDO - texto vai para Qdrant (SSOT)
               extractedMetadata: {
                 ...mediaUploadRecord.extractedMetadata as object,
                 ...result.metadata,
@@ -2395,7 +2389,7 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
           );
 
           // IMPORTANTE: no document-processor, `combinedEmbedding` é a MÉDIA dos embeddings de TEXTO
-          // (Qwen3-Embedding-8B GPU, 4096 dim → Qdrant). Portanto, a validação correta aqui é `TEXT` (não CLIP).
+          // (Qwen3-Embedding-0.6B GPU, 1024 dim → Qdrant). Portanto, a validação correta aqui é `TEXT` (não CLIP).
           // (Enterprise-Grade - Regra 6)
           // 
           // Regra 6: Validar que combinedEmbedding não está vazio antes de persistir.
@@ -2476,12 +2470,12 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
       },
       audio: {
         message: 'Upload recebido. Transcrição GPU iniciada.',
-        features: ['Canary-1B ASR GPU', 'Qwen3-Embedding-8B (4096 dim GPU → Qdrant)', 'metadata extraction'],
+        features: ['Canary-1B ASR GPU', 'Qwen3-Embedding-0.6B (1024 dim GPU → Qdrant)', 'metadata extraction'],
       },
       // REMOVIDO 23/12/2025: video desabilitado (muito pesado para GPU)
       document: {
         message: 'Upload recebido. Processamento pendente.',
-        features: ['Text extraction (pendente)', 'Qwen3-Embedding-8B (4096 dim GPU → Qdrant) (pendente)'],
+        features: ['Text extraction (pendente)', 'Qwen3-Embedding-0.6B (1024 dim GPU → Qdrant) (pendente)'],
       },
     };
 
@@ -2653,7 +2647,7 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
 
     // Processar assíncrono (ALINHADO com endpoint FormData - CORREÇÃO 17/12/2025)
     // ARQUITETURA ENTERPRISE:
-    // - Texto: Qwen3-Embedding-8B (4096 dim) → Qdrant
+    // - Texto: Qwen3-Embedding-0.6B (1024 dim) → Qdrant
     // - Imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector
     const processMediaAsync = async () => {
       try {
@@ -2712,9 +2706,7 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
             validateEmbeddingDimension(result.embedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
           }
           
-          // CORREÇÃO 17/12/2025: Embeddings de texto (4096 dim) vão para QDRANT, não PostgreSQL
-          // Schema mediaUploads.textEmbedding é halfvec(3584) - DEPRECATED para texto
-          // Armazenar no Qdrant com metadata para busca semântica
+          // Gate 2: Embeddings de texto são SSOT no Qdrant (PostgreSQL mantém apenas transcrição/metadados)
           if (result.embedding.length > 0 && isQdrantConfigured()) {
             await upsertPoints(TEXT_COLLECTION_NAME, [{
               id: `media-audio-${mediaUploadRecord.id}`,
@@ -2740,7 +2732,7 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
               transcription: result.transcription,
               transcriptionLanguage: result.transcriptionLanguage,
               transcriptionConfidence: result.transcriptionConfidence,
-              // textEmbedding OMITIDO - texto 4096 dim vai para Qdrant, não PostgreSQL halfvec(3584)
+              // textEmbedding OMITIDO - texto vai para Qdrant (SSOT)
               extractedMetadata: {
                 ...mediaUploadRecord.extractedMetadata as object,
                 ...result.metadata,
@@ -3839,7 +3831,7 @@ registerShutdownCallback(
         qdrantConfigured: isQdrantConfigured(),
         qdrantUrl: process.env.QDRANT_URL || 'not_configured',
         architecture: {
-          text: 'Qwen3-Embedding-8B (4096 dim) → Qdrant',
+          text: 'Qwen3-Embedding-0.6B (1024 dim) → Qdrant',
           image: 'OpenCLIP (1024 dim) → pgvector',
         },
         circuitBreaker: 'enabled',
@@ -3870,9 +3862,9 @@ registerShutdownCallback(
 });
 
 // ============================================================================
-// INICIALIZAÇÃO QDRANT - Banco vetorial para texto (4096 dim)
+// INICIALIZAÇÃO QDRANT - Banco vetorial para texto (1024 dim)
 // ARQUITETURA ENTERPRISE (17/12/2025):
-// - Texto: Qdrant (Qwen3-Embedding-8B, 4096 dim)
+// - Texto: Qdrant (Qwen3-Embedding-0.6B, 1024 dim)
 // - Imagem: pgvector (OpenCLIP, 1024 dim)
 // ============================================================================
 // BUG FIX 23/12/2025: Inicialização movida para dentro do IIFE async (linha ~3527)

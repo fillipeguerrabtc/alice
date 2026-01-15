@@ -584,7 +584,7 @@ async function backupRedis(): Promise<ComponentBackupStatus> {
 
 /**
  * Backup Qdrant via API de Snapshots
- * Qdrant armazena embeddings de texto (4096 dim) críticos para RAG
+ * Qdrant armazena embeddings de texto (1024 dim) críticos para RAG
  * Usa API REST: POST /collections/{collection_name}/snapshots
  * Retorna: snapshot name, collections backed up
  * 

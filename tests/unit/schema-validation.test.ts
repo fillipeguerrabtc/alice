@@ -497,12 +497,12 @@ describe('Schema - Insert Schemas (Zod Validation)', () => {
       expect(insertLlmConfigSchema).toBeDefined();
     });
 
-    // ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral
     it('deve aceitar configuração de LLM', () => {
       const validConfig = {
-        modelo: 'Qwen2.5-VL-7B',
+        // Gate 2: modelo LLM (texto) padrão
+        modelo: 'Mistral-7B-Instruct-AWQ',
         endpoint: 'http://alice-gpu-manager:3010/v1/chat',
-        maxTokens: 4096,
+        maxTokens: 2048,
         temperatura: 0.7,
       };
       const result = insertLlmConfigSchema.safeParse(validConfig);

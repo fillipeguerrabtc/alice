@@ -15,8 +15,8 @@
  * - agents e conversations possuem tenantId para isolamento
  * - Validação cross-tenant via validateTenantConsistency() de @alice/shared-utils
  * 
- * ARQUITETURA DE EMBEDDINGS (17/12/2025):
- * - Texto (Trading/RAG): Qdrant (4096 dim) - Qwen3-Embedding-8B
+ * ARQUITETURA DE EMBEDDINGS (Gate 2 - 15/01/2026):
+ * - Texto (Trading/RAG): Qdrant (1024 dim) - Qwen3-Embedding-0.6B
  * - Imagem: pgvector vector(1024) - OpenCLIP ViT-H/14
  * 
  * NOTA: Campos de embedding de texto neste schema estão DEPRECATED.
@@ -24,7 +24,7 @@
  * Campos mantidos para compatibilidade com dados existentes.
  * 
  * Autor: Fillipe Guerra
- * Data: 17 de Dezembro de 2025
+ * Data: 15 de Janeiro de 2026
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
@@ -49,8 +49,8 @@ import {
 // PGVECTOR TYPES (Enterprise-Grade) - Arquitetura Unificada (17/12/2025)
 // ============================================================================
 // 
-// TEXTO (Trading/RAG): Qdrant (4096 dim) - Qwen3-Embedding-8B
-//   - Armazenado em Qdrant (suporta HNSW com 4096+ dim)
+// TEXTO (Trading/RAG): Qdrant (1024 dim) - Qwen3-Embedding-0.6B
+//   - Armazenado em Qdrant (HNSW)
 //   - Campos abaixo DEPRECATED - mantidos para compatibilidade
 //
 // IMAGEM: pgvector vector(1024) - OpenCLIP ViT-H/14
@@ -60,7 +60,7 @@ import {
 // Referência: https://github.com/pgvector/pgvector
 // ============================================================================
 
-// TEXTO: DEPRECATED - Novos embeddings de texto vão para Qdrant (4096 dim)
+// TEXTO: DEPRECATED - Novos embeddings de texto vão para Qdrant (1024 dim)
 // Mantido para compatibilidade com dados existentes
 // Usar Qdrant para novos embeddings de texto
 const textVector = customType<{ data: number[]; driverData: number[] }>({
@@ -81,7 +81,7 @@ const imageVector = customType<{ data: number[]; driverData: number[] }>({
 });
 
 // Alias para compatibilidade
-// NOTA: Novos embeddings de texto devem ir para Qdrant (4096 dim)
+// NOTA: Novos embeddings de texto devem ir para Qdrant (1024 dim)
 const vector = textVector;
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -904,7 +904,7 @@ export const messages = pgTable(
 // ============================================================================
 // DOCUMENTOS (Base de Conhecimento para RAG/Trading)
 // ARQUITETURA ENTERPRISE (17/12/2025):
-// - embedding: DEPRECATED - Novos embeddings de texto vão para Qdrant (4096 dim)
+// - embedding: DEPRECATED - Novos embeddings de texto vão para Qdrant (1024 dim)
 // - Campo mantido para compatibilidade com dados existentes
 // ============================================================================
 
@@ -937,7 +937,7 @@ export const documents = pgTable(
 // ============================================================================
 // CHUNKS DE DOCUMENTOS (Para RAG/Trading)
 // ARQUITETURA ENTERPRISE (17/12/2025):
-// - embedding: DEPRECATED - Novos embeddings de texto vão para Qdrant (4096 dim)
+// - embedding: DEPRECATED - Novos embeddings de texto vão para Qdrant (1024 dim)
 // ============================================================================
 
 export const documentChunks = pgTable(
@@ -1129,17 +1129,18 @@ export const integrations = pgTable(
 );
 
 // ============================================================================
-// CONFIGURAÇÕES DO MODELO LLM (Qwen2.5-VL 7B - GPU Manager Service Hetzner GEX44)
-// ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral (multimodal, finanças)
+// CONFIGURAÇÕES DO MODELO LLM (Gate 2 - LLM texto separado do VLM visão)
+// - LLM (texto): Mistral 7B Instruct (AWQ) via GPU Manager Service
+// - VLM (visão): Qwen2.5-VL 7B (AWQ) via GPU Manager Service (configuração separada)
 // ============================================================================
 
 export const llmConfig = pgTable("llm_config", {
   id: uuid("id").primaryKey().defaultRandom(),
   tenantId: uuid("tenant_id").references(() => tenants.id),
-  modelo: varchar("modelo", { length: 100 }).notNull().default("Qwen2.5-VL-7B"),
+  modelo: varchar("modelo", { length: 100 }).notNull().default("Mistral-7B-Instruct-AWQ"),
   endpoint: text("endpoint").notNull(),
   apiKey: text("api_key"),
-  maxTokens: integer("max_tokens").default(4096),
+  maxTokens: integer("max_tokens").default(2048),
   temperatura: real("temperatura").default(0.7),
   topP: real("top_p").default(0.9),
   configuracaoAvancada: jsonb("configuracao_avancada").$type<LlmConfigAvancada>().default({}),
@@ -1209,7 +1210,7 @@ export const usageMetrics = pgTable(
 // ============================================================================
 // DADOS DE TREINAMENTO (Auto-evolução/Fine-tuning)
 // ARQUITETURA ENTERPRISE (17/12/2025):
-// - embedding: DEPRECATED - Novos embeddings de texto vão para Qdrant (4096 dim)
+// - embedding: DEPRECATED - Novos embeddings de texto vão para Qdrant (1024 dim)
 // ============================================================================
 
 export const trainingDataStatusEnum = pgEnum("training_data_status", [
@@ -1397,8 +1398,8 @@ export const stripeErpnextMapping = pgTable(
 );
 
 // ============================================================================
-// TRADING - KuCoin Futures BTC Perpetuals (Qwen2.5-VL 7B - ARQUITETURA v4.0.0)
-// Sistema de trading automatizado com OMS/EMS e auditoria completa
+// TRADING - KuCoin Futures BTC Perpetuals (Gate 2)
+// Sistema de trading automatizado com OMS/EMS e auditoria completa.
 // Exchange: KuCoin Futures (https://www.kucoin.com/futures/trade)
 // Par: XBTUSDTM (BTC/USDT Perpetual)
 // ============================================================================
@@ -1477,8 +1478,9 @@ export const TradingPositionMetadataSchema = z.object({
 });
 export type TradingPositionMetadata = z.infer<typeof TradingPositionMetadataSchema>;
 
-// SINAIS DE TRADING (Gerados pelo Qwen2.5-VL 7B com RAG)
-// ARQUITETURA v4.0.0: Multimodal - analisa texto E gráficos de trading
+// SINAIS DE TRADING (Gate 2)
+// - Sinais de texto: gerados pelo LLM (Mistral 7B) com RAG
+// - Análise de imagens/gráficos (quando aplicável): via VLM (Qwen2.5-VL) em fluxo separado
 // Cada sinal é uma recomendação do LLM baseada em análise de mercado
 export const tradingSignals = pgTable(
   "trading_signals",
@@ -1974,8 +1976,8 @@ export type TradingLlmValidation = typeof tradingLlmValidations.$inferSelect;
 export type InsertTradingLlmValidation = typeof tradingLlmValidations.$inferInsert;
 
 // ============================================================================
-// TRADING LORA DATASET (Qwen2.5-VL 7B - Fine-tuning)
-// ARQUITETURA v4.0.0: QLoRA fine-tuning para trading BTC multimodal
+// TRADING LORA DATASET (Gate 2 - Fine-tuning do LLM de texto)
+// QLoRA fine-tuning para trading BTC (foco em Finanças/Trading/Matemática)
 // Infraestrutura para coleta de dados e treinamento LoRA para trading BTC
 // ============================================================================
 
@@ -2083,7 +2085,7 @@ export const tradingMarketData = pgTable(
 );
 
 // DATASET DE TREINAMENTO (Pares prompt/response para LoRA)
-// Estrutura de conversação para fine-tuning do Mixtral
+// Estrutura de conversação para fine-tuning do Mistral
 export const tradingDataset = pgTable(
   "trading_dataset",
   {
@@ -2160,9 +2162,8 @@ export const tradingLoraJobs = pgTable(
     name: varchar("name", { length: 255 }).notNull(),
     description: text("description"),
     
-    // Modelo base e configuração
-    // ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral (multimodal, finanças)
-    baseModel: varchar("base_model", { length: 255 }).notNull().default("Qwen/Qwen2.5-VL-7B-Instruct-AWQ"),
+    // Modelo base e configuração (Gate 2 - LLM texto)
+    baseModel: varchar("base_model", { length: 255 }).notNull().default("mistralai/Mistral-7B-Instruct-v0.2"),
     // NOTA: Valores default devem corresponder ao TradingLoraHyperparamsSchema
     hyperparameters: jsonb("hyperparameters").$type<TradingLoraHyperparams>().default({
       loraRank: 16,
@@ -2369,8 +2370,8 @@ export const modelVersions = pgTable(
     tenantId: uuid("tenant_id").references(() => tenants.id),
     name: varchar("name", { length: 255 }).notNull(),
     version: integer("version").notNull().default(1),
-    // ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral (multimodal, finanças)
-    baseModel: varchar("base_model", { length: 100 }).notNull().default("Qwen2.5-VL-7B"),
+    // Gate 2: modelo base do LLM (texto) para versionamento/LoRA
+    baseModel: varchar("base_model", { length: 100 }).notNull().default("Mistral-7B-Instruct-AWQ"),
     loraPath: text("lora_path"),
     status: modelVersionStatusEnum("status").default("training"),
     fineTuningJobId: uuid("fine_tuning_job_id").references(() => fineTuningJobs.id),
@@ -2431,8 +2432,8 @@ export const autoLearningSchedule = pgTable(
 );
 
 // ============================================================================
-// ANALYZED IMAGES (ARQUITETURA v4.0.0 - Qwen2.5-VL Vision)
-// NOTA: Tabela mantida para armazenar imagens ANALISADAS pelo Qwen2.5-VL
+// ANALYZED IMAGES (Gate 2 - VLM dedicado: Qwen2.5-VL Vision)
+// NOTA: Tabela mantida para armazenar imagens analisadas pelo VLM (Qwen2.5-VL)
 // FLUX.1 Schnell REMOVIDO - Alice NÃO gera imagens, apenas ANALISA
 // ============================================================================
 
@@ -2544,7 +2545,7 @@ export const mediaUploads = pgTable(
     // Embeddings para RAG multimodal - ARQUITETURA ENTERPRISE (17/12/2025)
     // Imagem: OpenCLIP ViT-H/14 (1024 dim) - GPU Manager Service (Hetzner GEX44) → pgvector
     clipEmbedding: imageVector("clip_embedding"),
-    // Texto: DEPRECATED - Novos embeddings vão para Qdrant (Qwen3-Embedding-8B, 4096 dim)
+    // Texto: DEPRECATED - Novos embeddings vão para Qdrant (Qwen3-Embedding-0.6B, 1024 dim)
     textEmbedding: textVector("text_embedding"),
     
     // Transcrição (para áudio/vídeo)
@@ -3076,7 +3077,7 @@ export type InsertWebhookEvent = typeof webhookEvents.$inferInsert;
 export type StripeErpnextMapping = typeof stripeErpnextMapping.$inferSelect;
 export type InsertStripeErpnextMapping = typeof stripeErpnextMapping.$inferInsert;
 
-// Trading Types (Qwen2.5-VL 7B - KuCoin Futures BTC) - ARQUITETURA v4.0.0
+// Trading Types (Gate 2 - KuCoin Futures BTC)
 export type TradingSignal = typeof tradingSignals.$inferSelect;
 export type InsertTradingSignal = typeof tradingSignals.$inferInsert;
 
@@ -3092,7 +3093,7 @@ export type InsertTradingRiskConfig = typeof tradingRiskConfig.$inferInsert;
 export type TradingAuditLog = typeof tradingAuditLog.$inferSelect;
 export type InsertTradingAuditLog = typeof tradingAuditLog.$inferInsert;
 
-// Trading LoRA Dataset Types (Qwen2.5-VL 7B) - ARQUITETURA v4.0.0
+// Trading LoRA Dataset Types (Gate 2 - LLM texto)
 export type TradingMarketData = typeof tradingMarketData.$inferSelect;
 export type InsertTradingMarketData = typeof tradingMarketData.$inferInsert;
 
@@ -3167,7 +3168,7 @@ export const insertStripeErpnextMappingSchema: z.ZodType<unknown> = createInsert
   atualizadoEm: true,
 });
 
-// Trading Insert Schemas (Qwen2.5-VL 7B - KuCoin Futures BTC) - ARQUITETURA v4.0.0
+// Trading Insert Schemas (Gate 2 - KuCoin Futures BTC)
 export const insertTradingSignalSchema: z.ZodType<unknown> = createInsertSchema(tradingSignals).omit({
   id: true,
   criadoEm: true,
@@ -3206,7 +3207,7 @@ export const insertTradingAuditLogSchema: z.ZodType<unknown> = createInsertSchem
   criadoEm: true,
 });
 
-// Trading LoRA Dataset Insert Schemas (Qwen2.5-VL 7B) - ARQUITETURA v4.0.0
+// Trading LoRA Dataset Insert Schemas (Gate 2 - LLM texto)
 export const insertTradingMarketDataSchema: z.ZodType<unknown> = createInsertSchema(tradingMarketData).omit({
   id: true,
   criadoEm: true,

@@ -82,6 +82,30 @@ export const integrationsServicePaths = {
       }
     }
   },
+  // ============================================================================
+  // TRADING: KuCoin Futures (WS5)
+  // ============================================================================
+  '/api/integrations/trading/status': {
+    get: {
+      summary: 'Status do trading (KuCoin Futures)',
+      tags: ['Trading'],
+      responses: {
+        200: { description: 'Status do trading' },
+        401: { description: 'Não autenticado' },
+        503: { description: 'KuCoin indisponível (breaker/credenciais)' },
+      },
+    },
+  },
+  '/api/integrations/trading/ws/status': {
+    get: {
+      summary: 'Status do WebSocket KuCoin (public/private)',
+      tags: ['Trading'],
+      responses: {
+        200: { description: 'Estado do WebSocket (readiness operacional)' },
+        401: { description: 'Não autenticado' },
+      },
+    },
+  },
   '/api/integrations/stats': { get: { summary: 'Estatísticas', tags: ['Health'], responses: { 200: { description: 'Stats', content: { 'application/json': { schema: { type: 'object', properties: { stripe: { type: 'object', properties: { status: { type: 'string' }, lastSync: { type: 'string' } } }, wise: { type: 'object' }, erpnext: { type: 'object' } } } } } } } } },
   '/metrics': { get: { summary: 'Métricas', tags: ['Health'], security: [], responses: { 200: { description: 'OK' } } } },
 };

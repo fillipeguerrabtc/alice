@@ -264,11 +264,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral (multimodal, finanças)
+  // Gate 2: LLM (texto) separado do VLM (visão) via GPU Manager Service
   app.get("/api/llm/status", isAuthenticated, async (_req: Request, res: Response) => {
     res.json({
       available: llmClient.isAvailable(),
-      model: "Qwen2.5-VL-7B",
+      model: llmClient.getConfiguredModelName(),
       provider: "GPU Manager Service (Hetzner GEX44)",
     });
   });

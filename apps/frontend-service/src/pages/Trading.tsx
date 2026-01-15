@@ -109,7 +109,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 // CORREÇÃO 19/12/2025: Remover queryClient não utilizado (no-unused-vars)
-import { apiRequest } from '@/lib/queryClient';
+import { apiRequest, ApiError } from '@/lib/queryClient';
 import { 
   CandleChart, 
   OrderBookViz, 
@@ -135,6 +135,14 @@ interface TradingStatus {
   activeSignals: number;
   pendingOrders: number;
   requiresTenant?: boolean;
+}
+
+interface KucoinWsStatus {
+  configured: boolean;
+  allowedSymbols?: string[];
+  defaultSymbol?: string;
+  public: { state: 'disconnected' | 'connecting' | 'connected' | 'reconnecting' };
+  private: { enabled: boolean; state: 'disconnected' | 'connecting' | 'connected' | 'reconnecting' };
 }
 
 interface RiskConfig {
@@ -466,12 +474,28 @@ export default function Trading() {
   // QUERIES
   // ============================================================================
 
-  const { data: statusData, isLoading: isLoadingStatus, refetch: refetchStatus } = useQuery<{ success: boolean; data: TradingStatus }>({
+  const {
+    data: statusData,
+    isLoading: isLoadingStatus,
+    error: statusError,
+    refetch: refetchStatus,
+  } = useQuery<{ success: boolean; data: TradingStatus }>({
     queryKey: ['/api/integrations/trading/status'],
     refetchInterval: 30000, // Atualizar a cada 30 segundos
   });
 
-  const { data: marketData, isLoading: isLoadingMarket, refetch: refetchMarket } = useQuery<{ success: boolean; data: MarketData }>({
+  const { data: wsStatusData } = useQuery<{ success: boolean; data: KucoinWsStatus }>({
+    queryKey: ['/api/integrations/trading/ws/status'],
+    refetchInterval: 30000,
+    enabled: !!statusData?.data?.isConfigured,
+  });
+
+  const {
+    data: marketData,
+    isLoading: isLoadingMarket,
+    error: marketError,
+    refetch: refetchMarket,
+  } = useQuery<{ success: boolean; data: MarketData }>({
     queryKey: ['/api/integrations/trading/market', selectedSymbol],
     queryFn: async () => {
       const res = await apiRequest('GET', `/api/integrations/trading/market/${selectedSymbol}`);
@@ -481,37 +505,66 @@ export default function Trading() {
     enabled: statusData?.data?.isConfigured,
   });
 
-  const { data: accountData, isLoading: isLoadingAccount, refetch: refetchAccount } = useQuery<{ success: boolean; data: AccountOverview }>({
+  const {
+    data: accountData,
+    isLoading: isLoadingAccount,
+    error: accountError,
+    refetch: refetchAccount,
+  } = useQuery<{ success: boolean; data: AccountOverview }>({
     queryKey: ['/api/integrations/trading/account'],
     refetchInterval: 10000,
     enabled: statusData?.data?.isConfigured,
   });
 
-  const { data: positionsData, isLoading: isLoadingPositions, refetch: refetchPositions } = useQuery<{ success: boolean; data: Position[] }>({
+  const {
+    data: positionsData,
+    isLoading: isLoadingPositions,
+    error: positionsError,
+    refetch: refetchPositions,
+  } = useQuery<{ success: boolean; data: Position[] }>({
     queryKey: ['/api/integrations/trading/positions'],
     refetchInterval: 10000,
     enabled: statusData?.data?.isConfigured,
   });
 
-  const { data: signalsData, isLoading: isLoadingSignals, refetch: refetchSignals } = useQuery<{ success: boolean; data: TradingSignal[] }>({
+  const {
+    data: signalsData,
+    isLoading: isLoadingSignals,
+    error: signalsError,
+    refetch: refetchSignals,
+  } = useQuery<{ success: boolean; data: TradingSignal[] }>({
     queryKey: ['/api/integrations/trading/signals'],
     refetchInterval: 15000,
     enabled: statusData?.data?.isConfigured && !statusData?.data?.requiresTenant,
   });
 
-  const { data: ordersData, isLoading: isLoadingOrders, refetch: refetchOrders } = useQuery<{ success: boolean; data: TradingOrder[] }>({
+  const {
+    data: ordersData,
+    isLoading: isLoadingOrders,
+    error: ordersError,
+    refetch: refetchOrders,
+  } = useQuery<{ success: boolean; data: TradingOrder[] }>({
     queryKey: ['/api/integrations/trading/orders'],
     refetchInterval: 10000,
     enabled: statusData?.data?.isConfigured && !statusData?.data?.requiresTenant,
   });
 
-  const { data: riskConfigData, refetch: refetchRiskConfig } = useQuery<{ success: boolean; data: RiskConfig | null }>({
+  const {
+    data: riskConfigData,
+    error: riskConfigError,
+    refetch: refetchRiskConfig,
+  } = useQuery<{ success: boolean; data: RiskConfig | null }>({
     queryKey: ['/api/integrations/trading/risk-config'],
     enabled: statusData?.data?.isConfigured && !statusData?.data?.requiresTenant,
   });
 
   // Query para Klines (gráfico de candlesticks)
-  const { data: klinesData, isLoading: isLoadingKlines, refetch: refetchKlines } = useQuery<{ success: boolean; data: KlineData[] }>({
+  const {
+    data: klinesData,
+    isLoading: isLoadingKlines,
+    error: klinesError,
+    refetch: refetchKlines,
+  } = useQuery<{ success: boolean; data: KlineData[] }>({
     queryKey: ['/api/integrations/trading/klines', selectedSymbol, selectedInterval],
     queryFn: async () => {
       const res = await apiRequest('GET', `/api/integrations/trading/klines/${selectedSymbol}?granularity=${selectedInterval}`);
@@ -522,7 +575,11 @@ export default function Trading() {
   });
 
   // Query para Order Book
-  const { data: orderBookResponse, isLoading: isLoadingOrderBook } = useQuery<{ success: boolean; data: OrderBookData }>({
+  const {
+    data: orderBookResponse,
+    isLoading: isLoadingOrderBook,
+    error: orderBookError,
+  } = useQuery<{ success: boolean; data: OrderBookData }>({
     queryKey: ['/api/integrations/trading/orderbook', selectedSymbol],
     queryFn: async () => {
       const res = await apiRequest('GET', `/api/integrations/trading/orderbook/${selectedSymbol}`);
@@ -533,7 +590,12 @@ export default function Trading() {
   });
 
   // Query para histórico de controle (handover/takeover)
-  const { data: controlHistoryData, isLoading: isLoadingControlHistory, refetch: refetchControlHistory } = useQuery<{ success: boolean; data: ControlHistoryEntry[] }>({
+  const {
+    data: controlHistoryData,
+    isLoading: isLoadingControlHistory,
+    error: controlHistoryError,
+    refetch: refetchControlHistory,
+  } = useQuery<{ success: boolean; data: ControlHistoryEntry[] }>({
     queryKey: ['/api/integrations/trading/control-history'],
     queryFn: async () => {
       const res = await apiRequest('GET', '/api/integrations/trading/control-history');
@@ -885,6 +947,20 @@ export default function Trading() {
   const klines = klinesData?.data || [];
   const orderBookData = orderBookResponse?.data || null;
   const controlHistory = controlHistoryData?.data || [];
+  const wsStatus = wsStatusData?.data?.data;
+  const apiErrors = [
+    statusError,
+    marketError,
+    accountError,
+    positionsError,
+    signalsError,
+    ordersError,
+    riskConfigError,
+    klinesError,
+    orderBookError,
+    controlHistoryError,
+  ].filter((e): e is ApiError => e instanceof ApiError);
+  const criticalApiError = apiErrors[0] ?? null;
 
   const currentPrice = market?.contract?.lastTradePrice || 0;
   const priceChange = market?.contract?.priceChg || 0;
@@ -901,6 +977,29 @@ export default function Trading() {
       animate="visible"
       className="p-3 md:p-6 space-y-4 md:space-y-6"
     >
+      {criticalApiError ? (
+        <motion.div variants={itemVariants}>
+          <Alert variant="destructive" className="mb-2">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Falha ao carregar dados de Trading</AlertTitle>
+            <AlertDescription className="space-y-1">
+              <p>{criticalApiError.message}</p>
+              {criticalApiError.status === 429 ? (
+                <p className="text-sm">
+                  Rate limit excedido
+                  {criticalApiError.retryAfterSeconds ? ` — tente novamente em ~${criticalApiError.retryAfterSeconds}s.` : '.'}
+                </p>
+              ) : null}
+              {criticalApiError.status === 503 ? (
+                <p className="text-sm">
+                  Serviço upstream indisponível (circuit breaker/credenciais). Verifique status, secrets e o painel de Observability.
+                </p>
+              ) : null}
+            </AlertDescription>
+          </Alert>
+        </motion.div>
+      ) : null}
+
       {/* Header */}
       <motion.div variants={itemVariants}>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -1008,9 +1107,20 @@ export default function Trading() {
                 <p className="text-sm text-muted-foreground">
                   {selectedSymbol} - {t('trading.market.lastPrice')}
                 </p>
-                <Badge variant="outline" className="text-xs">
-                  {t('trading.market.live')}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  {wsStatus?.configured ? (
+                    <Badge
+                      variant="outline"
+                      className="text-xs"
+                      title={`KuCoin WS public=${wsStatus.public.state} private=${wsStatus.private.enabled ? wsStatus.private.state : 'disabled'}`}
+                    >
+                      WS: {wsStatus.public.state}
+                    </Badge>
+                  ) : null}
+                  <Badge variant="outline" className="text-xs">
+                    {t('trading.market.live')}
+                  </Badge>
+                </div>
               </div>
               {isLoadingMarket ? (
                 <Skeleton className="h-10 w-64" />

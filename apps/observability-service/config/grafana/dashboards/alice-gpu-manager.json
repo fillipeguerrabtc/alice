@@ -12,7 +12,7 @@
       }
     ]
   },
-  "description": "Dashboard GPU Manager Enterprise - Hetzner GEX44 (RTX 4000 Ada 20GB) | VRAM Usage | Filas Redis | Circuit Breakers | Arquitetura v4.0.0",
+  "description": "Dashboard GPU Manager Enterprise - Hetzner GEX44 (RTX 4000 Ada 20GB) | VRAM Usage | Filas Redis | Circuit Breakers | Gate 2",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 2,
@@ -35,7 +35,7 @@
       "gridPos": { "h": 2, "w": 24, "x": 0, "y": 0 },
       "id": 100,
       "options": {
-        "content": "# Alice GPU Manager Dashboard - Enterprise\n**Hetzner GEX44** (RTX 4000 Ada 20GB VRAM) | **Arquitetura v4.0.0** (Simultânea) | Qwen2.5-VL 7B AWQ + Qwen3-Embedding-8B INT8 + Canary-1B ASR | VRAM Monitoring | Queue Management | Circuit Breakers",
+        "content": "# Alice GPU Manager Dashboard - Enterprise\n**Hetzner GEX44** (RTX 4000 Ada 20GB VRAM) | **Gate 2** (serviços simultâneos) | LLM (texto) Mistral 7B AWQ + VLM (visão) Qwen2.5-VL 7B AWQ + Qwen3-Embedding-0.6B INT8 + Canary-1B ASR | VRAM Monitoring | Queue Management | Circuit Breakers",
         "mode": "markdown"
       },
       "transparent": true,
@@ -45,7 +45,7 @@
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 2 },
       "id": 101,
-      "title": "🎮 GPU VRAM Usage (Arquitetura v4.0.0)",
+      "title": "🎮 GPU VRAM Usage (Gate 2)",
       "type": "row"
     },
     {

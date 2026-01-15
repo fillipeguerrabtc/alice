@@ -618,7 +618,7 @@ services:
           cpus: '0.1'
 
   # ===========================================================================
-  # QDRANT - Banco Vetorial para Texto (4096 dim)
+  # QDRANT - Banco Vetorial para Texto (1024 dim)
   # ===========================================================================
   # NOTA (03/01/2026): NÃO usar read_only: true aqui!
   # Qdrant precisa escrever arquivo .qdrant-initialized no WORKDIR /qdrant.

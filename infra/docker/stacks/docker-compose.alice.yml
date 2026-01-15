@@ -1,8 +1,8 @@
 # =============================================================================
 # ALICE PLATFORM - ALICE STACK (Microserviços + GPU)
 # =============================================================================
-# Versão: 6.0 (Arquitetura GPU v4.0.0 - Simplificada)
-# Data: 11 de Janeiro de 2026
+# Versão: 6.0 (GPU Gate 2 - LLM separado + VLM dedicado)
+# Data: 15 de Janeiro de 2026
 # Autor: Fillipe Guerra
 #
 # PROPÓSITO: Serviços core da plataforma Alice + GPU Manager + GPU containers

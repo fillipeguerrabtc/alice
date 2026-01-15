@@ -163,7 +163,7 @@ C4Context
 
 | Sistema | Propósito | Protocolo | Autenticação |
 |---------|-----------|-----------|--------------|
-| **Hetzner GPU GEX44** | GPU Manager Service local - LLM/Embeddings/ASR (ARQUITETURA v4.0.0) | HTTP (localhost) | N/A (interno) |
+| **Hetzner GPU GEX44** | GPU Manager Service local - LLM/VLM/Embeddings/ASR (Gate 2) | HTTP (localhost) | N/A (interno) |
 | **KuCoin Futures** | Trading BTC | REST + WebSocket | HMAC-SHA256 |
 | **Stripe** | Pagamentos | Webhooks | Signature verification |
 | **Twilio** | WhatsApp/SMS | REST | API Key + Token |
@@ -350,7 +350,7 @@ C4Component
 
 ## 6. Visão de Runtime
 
-### 6.1 Fluxo de Chat com LLM (ARQUITETURA v4.0.0)
+### 6.1 Fluxo de Chat com LLM (Gate 2)
 
 ```mermaid
 sequenceDiagram
@@ -664,7 +664,7 @@ const PRESETS = {
   kucoinFutures: { threshold: 3, timeout: 10000, resetTimeout: 60000 },
   embeddingsGPU: { threshold: 3, timeout: 60000, resetTimeout: 120000 },
   asrCanary: { threshold: 3, timeout: 120000, resetTimeout: 180000 },
-  qwenVL: { threshold: 3, timeout: 60000, resetTimeout: 120000 }, // v4.0.0: Qwen2.5-VL substitui Mixtral
+  qwenVL: { threshold: 3, timeout: 60000, resetTimeout: 120000 }, // Gate 2: preset usado para VLM (visão) via vLLM
 };
 ```
 

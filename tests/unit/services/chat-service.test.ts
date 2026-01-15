@@ -16,6 +16,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
+import { chatServicePaths } from '../../../apps/chat-service/src/openapi-specs';
 
 // ============================================================================
 // TESTES DE CONFIGURAÇÃO LLM
@@ -49,6 +50,16 @@ describe('Chat Service - Configuração LLM', () => {
 
   it('deve ter topP de 0.9', () => {
     expect(LLM_CONFIG.topP).toBe(0.9);
+  });
+});
+
+// ============================================================================
+// WS6: Contratos novos/ajustados (OpenAPI) - sem mocks/stubs
+// ============================================================================
+
+describe('Chat Service - OpenAPI (contratos críticos)', () => {
+  it('deve expor o endpoint SSOT GET /api/agents/model-options', () => {
+    expect(Object.keys(chatServicePaths)).toContain('/api/agents/model-options');
   });
 });
 

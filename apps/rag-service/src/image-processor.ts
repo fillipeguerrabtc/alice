@@ -112,7 +112,7 @@ async function callImageEmbeddingsGpuApi(params: ImageEmbeddingsApiParams): Prom
  * IMPORTANTE: Usa /embed/text-for-image que gera embeddings no MESMO espaço vetorial
  * das imagens (OpenCLIP 1024 dim), permitindo busca semântica correta text-to-image.
  * 
- * NÃO confundir com /embed/text que usa Qwen3-Embedding-8B (4096 dim - espaço vetorial diferente!)
+ * NÃO confundir com /embed/text que usa Qwen3-Embedding-0.6B (1024 dim - espaço vetorial diferente!)
  */
 async function callTextForImageGpuApi(params: TextForImageApiParams): Promise<{ embedding: number[]; model: string }> {
   // ARQUITETURA ENTERPRISE (25/12/2025): Usar GPU Manager Service
@@ -369,7 +369,7 @@ class ImageProcessorService {
    * - Permite busca semântica correta text-to-image
    * - Protegido por circuit breaker (Regra 16)
    * 
-   * NÃO confundir com embeddings de documentos que usam Qwen3-Embedding-8B (4096 dim → Qdrant)!
+   * NÃO confundir com embeddings de documentos que usam Qwen3-Embedding-0.6B (1024 dim → Qdrant)!
    */
   async generateTextEmbedding(text: string): Promise<{ embedding: number[]; model: string }> {
     if (!this.isConfigured) {

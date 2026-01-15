@@ -41,7 +41,7 @@ export enum GpuRequestPriority {
   LOW = 2,        // Geração de imagens, ASR, Treinamento (LoRA)
 }
 
-/** Tipos de serviços GPU - ARQUITETURA v4.0.0 */
+/** Tipos de serviços GPU - Gate 2 (LLM separado + VLM dedicado) */
 export enum GpuServiceType {
   LLM = 'llm',                   // LLM (texto) - ex: Mistral 7B Instruct (vLLM)
   VLM = 'vlm',                   // VLM (visão) - ex: Qwen2.5-VL (vLLM)

@@ -35,6 +35,8 @@ import {
   createSessionAuthMiddleware,
   initializeSessionAuthCache,
   initializeRedisCache,
+  Gauge as PromGauge,
+  Counter as PromCounter,
 } from '@alice/shared-utils';
 import { integrationsServicePaths, integrationsServiceSchemas } from './openapi-specs.js';
 import { loadConfig, integrationsServiceConfigSchema } from '@alice/config';
@@ -46,6 +48,13 @@ import { isWiseConfigured, getSandboxStatus, getProfileIdSafe, getWiseCircuitBre
 import { initWiseSyncService } from './wiseSyncService.js';
 import * as kucoinClient from './kucoinClient.js';
 import * as kucoinService from './kucoinService.js';
+import {
+  closeWebSocketClients as closeKucoinWebSocketClients,
+  getPrivateWebSocketClient,
+  getPublicWebSocketClient,
+  initializeWebSocketClients as initializeKucoinWebSocketClients,
+  isWebSocketConfigured as isKucoinWebSocketConfigured,
+} from './kucoinWebSocket.js';
 import { sendKucoinErrorResponse } from './kucoin-error-mapper.js';
 import * as technicalIndicators from './technical-indicators.js';
 
@@ -61,6 +70,93 @@ const { metrics, metricsRouter, httpMetricsMiddleware } = createAlicePrometheus(
   serviceName: 'integrations-service',
   collectDefaultMetrics: true,
 });
+
+// ============================================================================
+// WS5: Métricas operacionais - KuCoin WebSocket
+// ============================================================================
+// Requisitos:
+// - Não usar WS como fonte de verdade de dados de negócio (market data continua via REST)
+// - Expor estado para observabilidade (degraded quando WS está down/reconnecting)
+// - Sem alta cardinalidade (somente label channel=public|private)
+type KucoinWsState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
+
+const kucoinWsStateGauge = new PromGauge({
+  name: 'alice_kucoin_ws_state',
+  help: 'Estado do KuCoin WebSocket (0=disconnected, 0.25=connecting, 0.5=reconnecting, 1=connected)',
+  labelNames: ['channel'] as const,
+  registers: [metrics.registry],
+});
+
+const kucoinWsConnectedGauge = new PromGauge({
+  name: 'alice_kucoin_ws_connected',
+  help: 'KuCoin WebSocket conectado (1=connected, 0=not connected)',
+  labelNames: ['channel'] as const,
+  registers: [metrics.registry],
+});
+
+const kucoinWsReconnectsTotal = new PromCounter({
+  name: 'alice_kucoin_ws_reconnects_total',
+  help: 'Total de reconexões do KuCoin WebSocket',
+  labelNames: ['channel'] as const,
+  registers: [metrics.registry],
+});
+
+const kucoinWsErrorsTotal = new PromCounter({
+  name: 'alice_kucoin_ws_errors_total',
+  help: 'Total de erros emitidos pelo KuCoin WebSocket',
+  labelNames: ['channel'] as const,
+  registers: [metrics.registry],
+});
+
+function mapKucoinWsStateToNumber(state: KucoinWsState): number {
+  switch (state) {
+    case 'disconnected':
+      return 0;
+    case 'connecting':
+      return 0.25;
+    case 'reconnecting':
+      return 0.5;
+    case 'connected':
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+let kucoinWsMetricsWired = false;
+
+function wireKucoinWebSocketMetrics(opts: {
+  publicWs: { getState(): KucoinWsState; on(event: 'stateChange', cb: (s: KucoinWsState) => void): void; on(event: 'error', cb: (e: Error) => void): void };
+  privateWs?: { getState(): KucoinWsState; on(event: 'stateChange', cb: (s: KucoinWsState) => void): void; on(event: 'error', cb: (e: Error) => void): void } | null;
+  privateEnabled: boolean;
+}): void {
+  if (kucoinWsMetricsWired) return;
+  kucoinWsMetricsWired = true;
+
+  const apply = (channel: 'public' | 'private', state: KucoinWsState) => {
+    kucoinWsStateGauge.set({ channel }, mapKucoinWsStateToNumber(state));
+    kucoinWsConnectedGauge.set({ channel }, state === 'connected' ? 1 : 0);
+    if (state === 'reconnecting') {
+      kucoinWsReconnectsTotal.inc({ channel }, 1);
+    }
+  };
+
+  // Public WS (sempre)
+  apply('public', opts.publicWs.getState());
+  opts.publicWs.on('stateChange', (s) => apply('public', s));
+  opts.publicWs.on('error', () => kucoinWsErrorsTotal.inc({ channel: 'public' }, 1));
+
+  // Private WS (quando credenciais existem)
+  if (opts.privateEnabled && opts.privateWs) {
+    apply('private', opts.privateWs.getState());
+    opts.privateWs.on('stateChange', (s) => apply('private', s));
+    opts.privateWs.on('error', () => kucoinWsErrorsTotal.inc({ channel: 'private' }, 1));
+  } else {
+    // Explicitar estado quando desabilitado (evita "No data")
+    kucoinWsStateGauge.set({ channel: 'private' }, 0);
+    kucoinWsConnectedGauge.set({ channel: 'private' }, 0);
+  }
+}
 
 // Inicializar métricas RBAC (Regra 16 - Observability Enterprise)
 initRbacPrometheusMetrics(metrics.rbac);
@@ -2253,8 +2349,8 @@ async function processMessageWithLLM(
  * 
  * ARQUITETURA ENTERPRISE (17/12/2025):
  * - Imagens: OpenCLIP ViT-H/14 embeddings (1024 dim → pgvector)
- * - Áudios: Canary-1B transcrição + Qwen3-Embedding-8B embeddings (4096 dim → Qdrant)
- * - Vídeos: Frames OpenCLIP + transcrição Qwen3-Embedding-8B
+ * - Áudios: Canary-1B transcrição + Qwen3-Embedding-0.6B embeddings (1024 dim → Qdrant)
+ * - Vídeos: NÃO suportado (uploads `video/*` são rejeitados explicitamente)
  * 
  * @param mediaUrl - URL do Twilio para baixar a mídia
  * @param mediaContentType - MIME type da mídia
@@ -2943,6 +3039,55 @@ app.get('/api/integrations/twilio/status', (_req: Request, res: Response) => {
 // Inicializar métricas do circuit breaker KuCoin
 kucoinClient.initKucoinMetrics(metrics);
 
+// ============================================================================
+// WS5: KuCoin WebSocket (REST + WS) - readiness operacional
+// ============================================================================
+// Objetivo:
+// - Garantir conectividade WS (public + private quando credenciais existirem)
+// - Expor estado da conexão para a UI/observabilidade
+// - Sem depender de in-memory para dados de negócio (market data continua via REST)
+//
+// NOTA: conexão WS pode falhar por motivos transitórios (rede/upstream).
+// A estratégia é:
+// - Inicializar em background (não bloquear startup do serviço)
+// - Reconnect automático é responsabilidade do cliente (kucoinWebSocket.ts)
+// - Expor status para o dashboard/UI e logs estruturados
+// ============================================================================
+if (kucoinClient.isKucoinConfigured()) {
+  initializeKucoinWebSocketClients()
+    .then(() => {
+      // Subscrições mínimas (reduz custo/cardi nalidade): default symbol
+      const symbol = kucoinClient.getDefaultSymbol();
+      const publicWs = getPublicWebSocketClient();
+      publicWs.subscribeTicker(symbol);
+      publicWs.subscribeOrderBook(symbol, 50);
+
+      if (isKucoinWebSocketConfigured()) {
+        // Canais privados úteis para auditoria/operacional (ordens/posição/wallet)
+        const privateWs = getPrivateWebSocketClient();
+        privateWs.subscribeOrders();
+        privateWs.subscribePosition(symbol);
+        privateWs.subscribeBalance();
+      }
+
+      // WS5: wiring de métricas operacionais (state/connected/reconnect/errors)
+      wireKucoinWebSocketMetrics({
+        publicWs,
+        privateWs: isKucoinWebSocketConfigured() ? getPrivateWebSocketClient() : null,
+        privateEnabled: isKucoinWebSocketConfigured(),
+      });
+
+      logger.info({ symbol, privateEnabled: isKucoinWebSocketConfigured() }, 'KuCoin WebSocket inicializado (public + private)');
+    })
+    .catch((error: unknown) => {
+      // Não derrubar o serviço inteiro por instabilidade transitória do upstream.
+      logger.error(
+        { error: error instanceof Error ? error.message : String(error) },
+        'Falha ao inicializar KuCoin WebSocket (trading seguirá via REST; WS pode ficar degraded)'
+      );
+    });
+}
+
 function getAllowedKucoinSymbolsMessage(): string {
   return kucoinClient.getAllowedSymbols().join(', ');
 }
@@ -3009,6 +3154,37 @@ app.get('/api/integrations/trading/status', requirePermission('integrations:trad
     logger.error({ error: errorMessage }, 'Erro ao obter status do trading');
     res.status(500).json({ error: errorMessage });
   }
+});
+
+// GET /api/integrations/trading/ws/status - Status do WebSocket KuCoin (public/private)
+app.get('/api/integrations/trading/ws/status', requirePermission('integrations:trading:read'), (_req: Request, res: Response) => {
+  const configured = kucoinClient.isKucoinConfigured();
+  if (!configured) {
+    res.json({
+      success: true,
+      data: {
+        configured: false,
+        public: { state: 'disconnected' },
+        private: { enabled: false, state: 'disconnected' },
+      },
+    });
+    return;
+  }
+
+  const publicWs = getPublicWebSocketClient();
+  const privateEnabled = isKucoinWebSocketConfigured();
+  const privateWs = privateEnabled ? getPrivateWebSocketClient() : null;
+
+  res.json({
+    success: true,
+    data: {
+      configured: true,
+      allowedSymbols: kucoinClient.getAllowedSymbols(),
+      defaultSymbol: kucoinClient.getDefaultSymbol(),
+      public: { state: publicWs.getState() },
+      private: { enabled: privateEnabled, state: privateWs?.getState() ?? 'disconnected' },
+    },
+  });
 });
 
 // GET /api/integrations/trading/market/:symbol - Dados de mercado
@@ -4428,6 +4604,15 @@ initializeCaches().then(() => {
       logger.info('Pool de conexões encerrado com sucesso');
     },
     { priority: ShutdownPriority.DATABASE }
+  );
+
+  registerShutdownCallback(
+    'integrations-kucoin-websocket',
+    async () => {
+      // WS5: garante shutdown limpo dos clientes WS (evita sockets pendurados)
+      closeKucoinWebSocketClients();
+    },
+    { priority: ShutdownPriority.EXTERNAL_CONNECTIONS }
   );
 }).catch((error: unknown) => {
   logger.error({ error }, 'Erro fatal ao inicializar serviço');

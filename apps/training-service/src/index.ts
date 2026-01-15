@@ -1333,7 +1333,7 @@ app.get('/api/training/stats', requirePermission('training:training_data:read'),
 });
 
 // ============================================================================
-// ARQUITETURA v4.0.0 (11/01/2026): Training Schedule + On-Demand
+// Gate 2 (15/01/2026): Training Schedule + On-Demand
 // Endpoints enterprise para configurar e executar treinamentos
 // ============================================================================
 

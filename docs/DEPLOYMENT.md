@@ -347,7 +347,7 @@ A plataforma Alice é composta por **50 containers** organizados em 7 categorias
 | 3 | **PostgreSQL** | `alice-postgres` | Banco de dados principal com extensão pgvector para busca semântica, RLS para multi-tenancy. | PostgreSQL 16 + pgvector |
 | 4 | **PgBouncer** | `alice-pgbouncer` | Connection pooling para PostgreSQL. Reduz conexões idle de ~50 para ~10, economia de ~400MB RAM. Pool mode transaction. | PgBouncer 1.23.1 (Bitnami) |
 | 5 | **Alice Redis** | `alice-redis` | Cache distribuído dedicado para serviços Alice (sessões, RBAC). Segregação enterprise do ERPNext. node-redis 5.x suporta Redis 7.x. | Redis 7.4.7 Alpine |
-| 6 | **Qdrant** | `alice-qdrant` | Banco vetorial para embeddings de texto (4096 dim Qwen3-Embedding-8B). HNSW index otimizado. | Qdrant v1.16.2 |
+| 6 | **Qdrant** | `alice-qdrant` | Banco vetorial para embeddings de texto (1024 dim Qwen3-Embedding-0.6B). HNSW index otimizado. | Qdrant v1.16.2 |
 | 7 | **Tor Proxy** | `alice-tor` | Proxy SOCKS5 Tor para engines .onion no SearXNG (ahmia, torch). Enterprise 23/12/2025. | dperson/torproxy |
 | 8 | **SearXNG** | `alice-searxng` | Metabusca interna para Web Search (auto-hospedado, protegido por secret) | searxng/searxng |
 
@@ -362,12 +362,12 @@ A plataforma Alice é composta por **50 containers** organizados em 7 categorias
 | 7 | **Frontend** | `alice-frontend` | `apps/frontend-service` | Interface web responsiva com chat em tempo real, dashboard de métricas, painel de takeover/handover. | React 18, Vite 7.3, shadcn/ui, i18n PT-BR |
 | 8 | **Auth Service** | `alice-auth` | `apps/auth-service` | Autenticação enterprise com OAuth 2.0, SAML 2.0, OIDC Provider, RBAC 6 níveis, sessões PostgreSQL. | Node.js, node-oidc-provider v9.5.2 |
 | 9 | **Chat Service** | `alice-chat` | `apps/chat-service` | Chat em tempo real com streaming de tokens LLM via WebSocket, rate limiting, conversation orchestrator. | Node.js, WebSocket, GPU Manager Service |
-| 10 | **RAG Service** | `alice-rag` | `apps/rag-service` | Retrieval-Augmented Generation com embeddings GPU local. Texto: Qwen3-Embedding-8B (4096 dim → Qdrant). Imagem: OpenCLIP (1024 dim → pgvector). | Node.js, Qdrant, pgvector |
+| 10 | **RAG Service** | `alice-rag` | `apps/rag-service` | Retrieval-Augmented Generation com embeddings GPU local. Texto: Qwen3-Embedding-0.6B (1024 dim → Qdrant). Imagem: OpenCLIP (1024 dim → pgvector). | Node.js, Qdrant, pgvector |
 | 11 | **Training Service** | `alice-training` | `apps/training-service` | Fine-tuning e self-learning automático. Scheduler de aprendizado, integração GPU Manager Service. | Node.js, GPU Manager Service |
 | 12 | **Integrations Service** | `alice-integrations` | `apps/integrations-service` | Integrações com serviços externos: Stripe (pagamentos EUR/SEPA), Wise (transferências), Twilio (WhatsApp), Gmail SMTP (emails), KuCoin Futures (Trading). | Node.js, Stripe SDK, Wise API |
 | 13 | **Observability Service** | `alice-observability` | `apps/observability-service` | Stack de observabilidade: métricas Prometheus, dashboards Grafana, tracing Jaeger, backup orchestrator. | Node.js, Prometheus, Grafana, Jaeger |
 
-> **NOTA (25/12/2025):** Todos os serviços GPU rodam localmente no servidor Hetzner GPU GEX44 e são gerenciados pelo GPU Manager Service. Processamento multimodal usa serviços GPU locais com Qwen3-Embedding-8B (texto, 4096 dim) e OpenCLIP ViT-H/14 (imagem, 1024 dim).
+> **NOTA (Gate 2):** Todos os serviços GPU rodam localmente no servidor Hetzner GPU GEX44 e são gerenciados pelo GPU Manager Service. Processamento multimodal usa serviços GPU locais com Qwen3-Embedding-0.6B (texto, 1024 dim) e OpenCLIP ViT-H/14 (imagem, 1024 dim).
 
 > **NOTA 02/01/2026:** O Caddy (`alice-caddy`) atua como API Gateway em produção com roteamento via Caddyfile, SSL automático e HTTP/3. O `apps/api-gateway` Node.js existe apenas para desenvolvimento local.
 
@@ -551,11 +551,12 @@ Storage interno do servidor GEX44 (1.92TB utilizável) montado diretamente em `/
 |---------|-------|
 | Servidor GPU GEX44 | €184.00/mês (fixo) |
 | GPU Manager Service | Incluído (gerencia requisições localmente) |
-| Qwen2.5-VL 7B (vLLM) | Local (sem custo adicional) - ARQUITETURA v4.0.0 |
-| Embeddings INT8 | Local (sem custo adicional) |
-| ASR Canary-1B | Local (sem custo adicional) |
+| LLM (vLLM) | Local (sem custo adicional) - Gate 2 (LLM texto separado) |
+| VLM (vLLM) | Local (sem custo adicional) - Gate 2 (VLM visão dedicado) |
+| Embeddings (GPU) | Local (sem custo adicional) |
+| ASR (GPU) | Local (sem custo adicional) |
 
-> **NOTA v4.0.0:** FLUX.1 Schnell REMOVIDO. Todos serviços GPU rodam SIMULTANEAMENTE (15GB/20GB VRAM).
+> **NOTA Gate 2:** FLUX.1 Schnell REMOVIDO. Serviços GPU rodam SIMULTANEAMENTE (budgets em 20GB VRAM); **treinamento** roda via profile (on-demand).
 
 ### DuckDNS (Gratuito)
 
@@ -1049,8 +1050,8 @@ O workflow de release (`release.yml`) suporta versionamento automático baseado 
 │  │ Deploy Production   │ ← 100% AUTO (sem aprovação)            │
 │  │ • SSH para Hetzner  │   50 containers                        │
 │  │ • Docker Compose up │                                        │
-│  │ • Validate GPU URLs │   4 GPU Services (SIMULTÂNEOS)         │
-│  │ • Health checks     │   RTX 4000 Ada 20GB (Qwen2.5-VL, Emb, ASR) - v4.0.0  │
+│  │ • Validate GPU URLs │   5 GPU Services (Gate 2)              │
+│  │ • Health checks     │   RTX 4000 Ada 20GB (LLM + VLM + Emb + ASR) │
 │  │ • Rollback auto     │                                        │
 │  └─────────────────────┘                                        │
 │                                                                  │
@@ -1067,19 +1068,20 @@ O workflow de release (`release.yml`) suporta versionamento automático baseado 
 | **Validate GPU** | Deploy Hetzner passa | Valida URLs GPU (Container Groups pré-criados) |
 | **Health Check** | Validate GPU passa | Validação e rollback automático |
 
-### GPU é OBRIGATÓRIO - Enterprise-Grade - ARQUITETURA v4.0.0 (11/01/2026)
+### GPU é OBRIGATÓRIO - Enterprise-Grade - Gate 2 (LLM separado + VLM dedicado)
 
-**⚠️ ARQUITETURA ENTERPRISE v4.0.0:** Os serviços GPU são **OBRIGATÓRIOS**, não opcionais. GPUs são o coração da plataforma de IA - sem eles, a plataforma não funciona. Todos os serviços GPU rodam localmente no servidor Hetzner GPU GEX44, gerenciados pelo GPU Manager Service. **TODOS os serviços rodam SIMULTANEAMENTE** (15GB/20GB VRAM).
+**⚠️ Gate 2:** Os serviços GPU são **OBRIGATÓRIOS**, não opcionais. GPUs são o coração da plataforma de IA — sem eles, a plataforma não funciona. Todos os serviços GPU rodam localmente no servidor Hetzner GPU GEX44, gerenciados pelo GPU Manager Service. **Todos os serviços de inferência rodam simultaneamente** (budgets em 20GB VRAM). Treinamento roda via profile (on-demand/agendado) e não deve concorrer com inferência.
 
 | Serviço GPU | Função | VRAM | Impacto se Falhar |
 |-------------|--------|------|-------------------|
 | **GPU Manager Service** | Gerenciamento centralizado (fila, VRAM, circuit breakers) | N/A | Todas as requisições GPU falham |
-| **Qwen2.5-VL 7B** | LLM multimodal (chat, trading, vision) | ~4GB | Chat não funciona |
-| **Embeddings GPU** | Qwen3-Embedding-8B INT8 + OpenCLIP (RAG) | ~8GB | RAG não funciona |
-| **ASR Canary-1B** | Transcrição de áudio | ~3GB | Áudio não funciona |
-| **GPU Trainer** | Fine-tuning QLoRA (on-demand via profile) | ~5GB | Fine-tuning não funciona (chat/embeddings continuam) |
+| **GPU LLM (texto)** | Chat/Trading (texto) | ~6GB (budget) | Chat/Trading degradam (texto) |
+| **GPU VLM (visão)** | Análise de imagens/gráficos | ~8GB (budget) | Análise de imagem degrada |
+| **Embeddings (GPU)** | Embeddings texto/imagem (RAG) | ~3GB (budget) | RAG degrada |
+| **ASR (GPU)** | Transcrição de áudio | ~3GB (budget) | Áudio degrada |
+| **GPU Trainer** | Fine-tuning QLoRA (profile) | variável (dedicado) | Fine-tuning indisponível (inferência segue) |
 
-> **NOTA v4.0.0:** FLUX.1 Schnell REMOVIDO - Alice ANALISA imagens via Qwen2.5-VL Vision mas NÃO gera. Zero latência de troca entre serviços.
+> **NOTA Gate 2:** FLUX.1 Schnell REMOVIDO — Alice **analisa** imagens (VLM) mas **não gera** imagens. O tipo de serviço é capability-based (LLM/VLM/Embeddings/ASR), evitando retrabalho em dashboards/alertas ao trocar modelos.
 
 **Health Check Completo:**
 - Verifica **6 serviços Hetzner**: Frontend, Auth, Chat, RAG, ERPNext, Grafana
@@ -1384,7 +1386,7 @@ O workflow de deploy executa automaticamente todas as migrations na ordem corret
 4. **0003_update_embedding_dimensions_1024.sql**: Atualiza dimensões de embeddings de imagem para 1024 (OpenCLIP ViT-H/14 → pgvector) - **CRÍTICA**
 
 **⚠️ IMPORTANTE - Arquitetura de Embeddings (17/12/2025):**
-- **Texto**: Qwen3-Embedding-8B (4096 dim) → **Qdrant** (não usa migration SQL)
+- **Texto**: Qwen3-Embedding-0.6B (1024 dim) → **Qdrant** (não usa migration SQL)
 - **Imagem**: OpenCLIP ViT-H/14 (1024 dim) → **pgvector** (migration 0003)
 
 **🔧 Melhorias Enterprise (23/12/2025):**
@@ -2207,20 +2209,20 @@ O workflow `deploy-stack-modular.yml` executa automaticamente este script no job
 ---
 
 *Autor: Fillipe Guerra*
-*Documento atualizado em: 11 de Janeiro de 2026*
-*Versão: 8.0 - Arquitetura GPU v4.0.0*
-*Data: 11 de Janeiro de 2026*
+*Documento atualizado em: 15 de Janeiro de 2026*
+*Versão: 9.3 - Gate 2 (LLM separado + VLM dedicado)*
+*Data: 15 de Janeiro de 2026*
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Alpine 3.21*
 *Total de Containers: 50 (7 infra + 7 Alice + 15 ERPNext + 14 observability + 4 GPU + 1 backup + 1 trainer on-demand)*
 *Security Hardening: 100% completo - 50/50 containers com no-new-privileges, 50/50 com resource limits, 25/50 com read_only*
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.1.3, Docker Compose v5.0.0*
 *Storage: Volume Hetzner alice-data 100GB montado em /opt/alice*
-*ARQUITETURA ENTERPRISE v4.0.0: Texto Qwen3-Embedding-8B INT8 (4096 dim → Qdrant) | Imagem OpenCLIP (1024 dim → pgvector) | LLM Qwen2.5-VL 7B AWQ (vLLM) - multimodal texto+vision*
+*ARQUITETURA ENTERPRISE Gate 2: Texto Qwen3-Embedding-0.6B INT8 (1024 dim → Qdrant) | Imagem OpenCLIP (1024 dim → pgvector) | LLM (texto) Mistral 7B Instruct AWQ + VLM (visão) Qwen2.5-VL 7B AWQ (vLLM)*
 *Pipeline Enterprise (26/12/2025): Deploy Server (CPX32 - IP 46.224.46.93, 4 vCPU, 8GB RAM) separado + Production Server (GEX44 GPU - IP 178.63.41.108). Todos os 50 containers rodam no servidor único, incluindo GPU services gerenciados pelo GPU Manager Service.*
 
 *Migração Traefik→Caddy (02/01/2026): Traefik, traefik-init e dockerproxy substituídos por Caddy. Vantagens: SSL automático com retry inteligente, HTTP/3 nativo (QUIC), footprint 40MB vs 100MB. Total: 7 infra (era 8).*
 *Otimização CI (27/12/2025): Composite action `.github/actions/setup-node-pnpm` elimina duplicação de setup (14x → 1x). Economia de ~6-10min por run. Fix cache persistence: usa actions/cache/restore + actions/cache/save separados (best practice 2025).*
-*GPU v4.0.0 (11/01/2026): RTX 4000 SFF Ada (20GB VRAM) - TODOS SIMULTÂNEOS (15GB/20GB): Qwen2.5-VL 7B (~4GB), Embeddings INT8 (~8GB), ASR Canary-1B (~3GB). Trainer QLoRA on-demand via profile.*
+*GPU Gate 2 (15/01/2026): RTX 4000 SFF Ada (20GB VRAM) - simultâneo (budgets): LLM (texto) + VLM (visão) + Embeddings + ASR. Trainer QLoRA on-demand via profile.*
 *Redis Alice: 7.4.7-alpine - Cache distribuído (node-redis 5.x suporta Redis 7.x)*
 *Redis ERPNext: 6.2.21-alpine - ERPNext v15 requer Redis 6.x (docs.frappe.io)*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*

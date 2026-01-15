@@ -621,10 +621,10 @@ async function markServiceInactive(serviceType: GpuServiceType): Promise<void> {
 /**
  * Processa requisição GPU com retry e circuit breaker
  * 
- * ARQUITETURA v4.0.0 (11/01/2026): Arquitetura Simplificada
- * - Todos os serviços GPU rodam simultaneamente (15GB de 20GB)
- * - Zero latência de troca (não há mais orquestração dinâmica)
- * - Treinamento sob demanda pausa serviços temporariamente
+ * Gate 2 (15/01/2026): LLM separado + VLM dedicado
+ * - Serviços GPU rodam simultaneamente com budget em 20GB (métricas = fonte de verdade)
+ * - Zero latência de troca (não há orquestração dinâmica de start/stop)
+ * - Treinamento é sob demanda via profile, com política operacional fora do caminho crítico
  */
 async function processGpuRequest(request: GpuRequest): Promise<GpuResponse> {
   const startTime = Date.now();
@@ -633,7 +633,7 @@ async function processGpuRequest(request: GpuRequest): Promise<GpuResponse> {
   const protectedFetch = protectedFetchByServiceType[serviceType];
   
   try {
-    // ARQUITETURA v4.0.0: Serviços sempre ativos, sem orquestração dinâmica
+    // Gate 2: Serviços sempre ativos, sem orquestração dinâmica
     const timeoutMs = request.timeout || GPU_SERVICE_TIMEOUT;
     const response = await protectedFetch(`${url}${request.endpoint}`, {
       method: request.method,
@@ -951,7 +951,7 @@ app.get('/api/gpu/queue/:requestId', requireInternalAuth, asyncHandler(async (re
 }));
 
 // Streaming LLM (bypass fila - proxy direto com verificação de circuit breaker e VRAM)
-// ARQUITETURA v4.0.0 (11/01/2026): Sem orquestração dinâmica, serviço sempre ativo
+// Gate 2 (15/01/2026): Sem orquestração dinâmica, serviço sempre ativo
 app.post('/api/gpu/stream', requireInternalAuth, asyncHandler(async (req: Request, res: Response) => {
   const schema = z.object({
     serviceType: z.nativeEnum(GpuServiceType),
@@ -970,7 +970,7 @@ app.post('/api/gpu/stream', requireInternalAuth, asyncHandler(async (req: Reques
     return res.status(400).json({ error: 'Streaming suportado apenas para LLM' });
   }
 
-  // ARQUITETURA v4.0.0: Serviço sempre ativo, sem orquestração dinâmica
+  // Gate 2: Serviço sempre ativo, sem orquestração dinâmica
   const url = GPU_SERVICE_URLS[serviceType];
   const protectedFetch = protectedFetchByServiceType[serviceType];
   
@@ -1103,14 +1103,14 @@ app.get('/api/gpu/queue/status', requireInternalAuth, asyncHandler(async (req: R
 }));
 
 // ===========================================================================
-// ARQUITETURA v4.0.0 (11/01/2026): Status dos serviços GPU
+// Gate 2 (15/01/2026): Status dos serviços GPU
 // ===========================================================================
 // Endpoint para monitorar estado dos serviços GPU
 // Todos rodam simultaneamente na nova arquitetura
 app.get('/api/gpu/services', requireInternalAuth, asyncHandler(async (req: Request, res: Response) => {
   const vramStatus = await getVramStatus();
   
-  // Na arquitetura v4.0.0, todos os serviços rodam simultaneamente EXCETO TRAINING
+  // Gate 2: todos os serviços rodam simultaneamente EXCETO TRAINING
   // TRAINING é sob demanda (on_demand) - só inicia quando há job de fine-tuning
   const services: Record<string, { vramGB: number; url: string; status: string }> = {};
   for (const [type, url] of Object.entries(GPU_SERVICE_URLS)) {
@@ -1122,7 +1122,7 @@ app.get('/api/gpu/services', requireInternalAuth, asyncHandler(async (req: Reque
     };
   }
   
-  // ARQUITETURA v4.0.0: Calcular VRAM dinamicamente (exclui TRAINING - sob demanda)
+  // Gate 2: Calcular VRAM dinamicamente (exclui TRAINING - sob demanda)
   // BUG FIX 11/01/2026: vramFreeGB agora usa o mesmo cálculo de totalVramUsedGB
   // Antes: vramFreeGB era hardcoded (TOTAL_VRAM_GB - 15), causando inconsistência
   const totalVramUsedGB = Object.entries(VRAM_REQUIREMENTS)
@@ -1130,8 +1130,8 @@ app.get('/api/gpu/services', requireInternalAuth, asyncHandler(async (req: Reque
     .reduce((sum, [, vram]) => sum + vram, 0);
   
   res.json({
-    architecture: 'v4.0.0-simplified',
-    description: `Todos os serviços GPU rodam simultaneamente (${totalVramUsedGB}GB de ${TOTAL_VRAM_GB}GB)`,
+    architecture: 'gate2',
+    description: `Serviços GPU simultâneos (budget declarado: ${totalVramUsedGB}GB de ${TOTAL_VRAM_GB}GB; uso real via nvidia-smi quando disponível)`,
     services,
     vram: vramStatus,
     totalVramUsedGB,

@@ -1,8 +1,8 @@
 # =============================================================================
 # ALICE PLATFORM - OBSERVABILITY STACK
 # =============================================================================
-# Versão: 5.0 (Arquitetura Modular Multi-Stack)
-# Data: 05 de Janeiro de 2026
+# Versão: 5.1 (WS4 break-glass + ajustes Gate 2)
+# Data: 15 de Janeiro de 2026
 # Autor: Fillipe Guerra
 #
 # PROPÓSITO: Stack de observabilidade, métricas, logs e tracing.
@@ -150,6 +150,10 @@ services:
       GF_AUTH_GENERIC_OAUTH_USE_PKCE: "true"
       GF_AUTH_GENERIC_OAUTH_AUTO_LOGIN: "false"
       GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "contains(role, 'super_admin') && 'Admin' || contains(role, 'admin') && 'Editor' || 'Viewer'"
+      # WS4 (Break-glass): manter login local habilitado caso OIDC indisponível
+      # (docs/SECRETS.md: GF_AUTH_DISABLE_LOGIN_FORM deve permanecer unset ou false)
+      GF_AUTH_DISABLE_LOGIN_FORM: "false"
+      GF_AUTH_BASIC_ENABLED: "true"
       # SMTP - Grafana Alerting
       GF_SMTP_ENABLED: "true"
       GF_SMTP_HOST: smtp.gmail.com:587

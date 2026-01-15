@@ -1271,9 +1271,9 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 ---
 
-*Documento atualizado em: 27/12/2025*
+*Documento atualizado em: 15/01/2026*
 *Autor: Fillipe Guerra*
-*Versão: 4.20 - Runner Enterprise Hardening*
+*Versão: 7.3 - Gate 2 (parcial): LLM separado (Mistral) + SSOT capability-based*
 *Pipeline Unificada (25/12/2025): GPU services integrados em docker-compose.prod.yml - todos os serviços GPU rodam localmente no servidor Hetzner GEX44*
 *Otimização CI Performance (27/12/2025): Composite action `.github/actions/setup-node-pnpm` elimina duplicação de setup (14x → 1x). Versões Node.js/pnpm calculadas UMA VEZ no job detect-changes e passadas via outputs. Jobs sem dependência de Node.js (compliance-checks, trigger-release) não fazem setup. Economia estimada: ~6-10min por run de CI.*
 *Fix Cache Persistence (27/12/2025): Composite action corrigida para usar `actions/cache/restore` + `actions/cache/save` separados. actions/cache não executa post-step de save corretamente em composite actions - best practice GitHub Actions 2025.*

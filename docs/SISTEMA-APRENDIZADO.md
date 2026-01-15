@@ -18,30 +18,30 @@ A Alice Enterprise Platform possui um sistema de aprendizado contínuo e agressi
 
 ### Mudança Crítica
 
-A partir de 11/01/2026, a Alice utiliza **ARQUITETURA v4.0.0 GPU local via Hetzner GPU GEX44** para processamento de IA - **TODOS os serviços rodam SIMULTANEAMENTE** (15GB de 20GB VRAM):
+A partir de 15/01/2026, a Alice utiliza **Gate 2 (LLM separado + VLM dedicado)** via Hetzner GPU GEX44 para processamento de IA — **serviços de inferência rodam simultaneamente** (budgets em 20GB VRAM):
 
 | Componente | Modelo | Dimensões/VRAM | Infraestrutura |
 |------------|--------|----------------|----------------|
-| **LLM Multimodal** | **Qwen2.5-VL 7B AWQ 4-bit** | ~4GB | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
-| **Embeddings de Texto** | Qwen3-Embedding-8B INT8 | **4096 dim** (~8GB) → Qdrant | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
+| **LLM (texto)** | **Mistral 7B Instruct (AWQ)** | ~6GB (budget) | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
+| **VLM (visão)** | **Qwen2.5-VL 7B (AWQ)** | ~8GB (budget) | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
+| **Embeddings de Texto** | Qwen3-Embedding-0.6B INT8 | **1024 dim** (~3GB budget) → Qdrant | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
 | **Embeddings de Imagem** | OpenCLIP ViT-H/14 | 1024 dim → pgvector | Compartilhado com embeddings de texto |
-| **Transcrição de Áudio** | Canary-1B (NeMo) | ~3GB | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
-| **Análise de Imagens** | **Qwen2.5-VL Vision** | Nativo (mesmo modelo LLM) | Zero overhead adicional |
-| **Fine-tuning** | QLoRA (gpu-trainer) | ~5GB (on-demand via profile) | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
+| **Transcrição de Áudio** | Canary-1B (NeMo) | ~3GB (budget) | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
+| **Fine-tuning** | QLoRA (gpu-trainer) | dedicado (profile/on-demand) | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
 | **Trading BTC** | KuCoin Futures API | - | Hetzner (integrations-service) |
 
-> **NOTA v4.0.0:** FLUX.1 Schnell REMOVIDO - Alice ANALISA imagens via Qwen2.5-VL Vision mas NÃO gera imagens.
+> **NOTA Gate 2:** FLUX.1 Schnell REMOVIDO — Alice **analisa** imagens via VLM (Qwen2.5‑VL) mas **não gera** imagens.
 
-### GPU Dedicada 24/7 (Hetzner GEX44) - ARQUITETURA v4.0.0
+### GPU Dedicada 24/7 (Hetzner GEX44) - Gate 2
 
-Com servidor GPU dedicado, **TODOS os serviços rodam SIMULTANEAMENTE** (15GB/20GB VRAM):
+Com servidor GPU dedicado, os serviços de inferência rodam simultaneamente (budgets em 20GB VRAM):
 
 | Cenário | Latência | Motivo |
 |---------|----------|--------|
 | **Chat, Vision, RAG, ASR** | ~0.5-1 segundo | **ZERO troca de containers** - todos sempre carregados na VRAM |
 | **Fine-tuning QLoRA** | Ativação via profile | Apenas training usa troca (semanal ou on-demand) |
 
-> **ARQUITETURA v4.0.0 (11/01/2026):** Todos os serviços GPU rodam localmente no servidor Hetzner GPU GEX44 com containers Docker 24/7 **SIMULTANEAMENTE**. Não há cold start nem troca de containers para operações normais. GPU Manager Service gerencia requisições com fila priorizada, monitoramento VRAM e circuit breakers. Fine-tuning QLoRA é ativado on-demand via Docker Compose profile. Ver [docs/ARQUITETURA-GPU-MANAGER.md](ARQUITETURA-GPU-MANAGER.md) para guia completo.
+> **Gate 2:** Serviços GPU de inferência rodam localmente no servidor Hetzner GPU GEX44 com containers Docker 24/7. GPU Manager Service gerencia requisições com fila priorizada, monitoramento VRAM e circuit breakers. Fine-tuning QLoRA é ativado on-demand via Docker Compose profile. Ver [docs/ARQUITETURA-GPU-MANAGER.md](ARQUITETURA-GPU-MANAGER.md) para guia completo.
 
 **Componentes:**
 - **Redis Queue:** Processamento assíncrono de embeddings
@@ -61,7 +61,7 @@ Com servidor GPU dedicado, **TODOS os serviços rodam SIMULTANEAMENTE** (15GB/20
 | **Análise de Imagens** | Automático | Qwen2.5-VL Vision analisa, dados vão para RAG multimodal |
 | **Imagens Upload** | Automático | OpenCLIP ViT-H/14 embeddings (1024 dim) para RAG multimodal |
 
-> **NOTA v4.0.0:** Geração de imagens REMOVIDA - Alice ANALISA imagens via Qwen2.5-VL Vision.
+> **NOTA Gate 2:** Geração de imagens REMOVIDA — Alice analisa imagens via VLM (Qwen2.5‑VL).
 
 **Como funciona:**
 - Cada mensagem no chat é avaliada pelo usuário (1-5 estrelas)
@@ -88,7 +88,7 @@ const trainingResponse = await fetch(`${TRAINING_SERVICE_URL}/api/training/data`
 |------|---------------|----------------------|
 | **Texto** | Automático | Rating inferido (5 = sem escalação, 1 = escalou) |
 | **Imagens** | Automático | OpenCLIP ViT-H/14 embeddings (1024 dim → pgvector) |
-| **Áudios** | Automático | Canary-1B transcrição + Qwen3-Embedding-8B embeddings (4096 dim → Qdrant) |
+| **Áudios** | Automático | Canary-1B transcrição + Qwen3-Embedding-0.6B embeddings (1024 dim → Qdrant) |
 
 **Integração Implementada (integrations-service/index.ts linha 2369):**
 ```typescript
@@ -117,7 +117,7 @@ const trainingResponse = await fetch(`${TRAINING_SERVICE_URL}/api/training/data`
 **Como funciona:**
 - Documentos são uploadeados via `/api/rag/documents`
 - Texto é dividido em chunks (1000 chars, 200 overlap)
-- Embeddings são gerados via GPU Manager Service (Qwen3-Embedding-8B, 4096 dim - Hetzner GEX44)
+- Embeddings são gerados via GPU Manager Service (Qwen3-Embedding-0.6B, 1024 dim - Hetzner GEX44)
 - Chunks ficam disponíveis IMEDIATAMENTE para busca semântica no Qdrant
 
 ### 4. Dashboard Admin (Manual) ✅
@@ -164,9 +164,9 @@ const trainingResponse = await fetch(`${TRAINING_SERVICE_URL}/api/training/data`
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
 │      PROCESSAMENTO MULTIMODAL (GPU Manager Service)       │
-│  • Texto: Qwen3-Embedding-8B (4096 dim) → Qdrant            │
+│  • Texto: Qwen3-Embedding-0.6B (1024 dim) → Qdrant          │
 │  • Imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector          │
-│  • Áudio: Canary-1B + Qwen3 (4096 dim) → Qdrant             │
+│  • Áudio: Canary-1B + Qwen3 (1024 dim) → Qdrant             │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -242,9 +242,9 @@ O processamento de áudio utiliza **GPU obrigatória** via GPU Manager Service:
 
 | Aspecto | GPU Manager Service (Hetzner GEX44) |
 |---------|-----------------|
-| **Modelo Transcrição** | Canary-Qwen-2.5B (NeMo) |
+| **Modelo Transcrição** | Canary-1B (NeMo) |
 | **Velocidade** | 7-9x realtime |
-| **Modelo Embeddings** | Qwen3-Embedding-8B (4096 dim) |
+| **Modelo Embeddings** | Qwen3-Embedding-0.6B (1024 dim) |
 | **Fallback CPU** | **NÃO EXISTE** (Regra 6) |
 
 ### Fluxo de Transcrição
@@ -266,7 +266,7 @@ O processamento de áudio utiliza **GPU obrigatória** via GPU Manager Service:
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
 │              GERAÇÃO DE EMBEDDING (GPU)                    │
-│  • Qwen3-Embedding-8B (4096 dim) → Qdrant                  │
+│  • Qwen3-Embedding-0.6B (1024 dim) → Qdrant                │
 │  • GPU Manager Service gerencia embeddings localmente     │
 └─────────────────────────────────────────────────────────────┘
                               ↓
@@ -293,27 +293,27 @@ O processamento de áudio utiliza **GPU obrigatória** via GPU Manager Service:
 |------|--------|-----------|-----|
 | **Imagem → Embedding** | OpenCLIP ViT-H/14 | 1024 dim (nativo) | Busca por imagem |
 | **Texto → Embedding (para buscar imagem)** | OpenCLIP Text Encoder | 1024 dim (pgvector) | Busca texto→imagem |
-| **Texto genérico** | Qwen3-Embedding-8B | 4096 dim (Qdrant) | Documentos, chat, trading |
+| **Texto genérico** | Qwen3-Embedding-0.6B | 1024 dim (Qdrant) | Documentos, chat, trading |
 
 ### Endpoints GPU
 
 | Endpoint | Modelo | Uso |
 |----------|--------|-----|
-| `/embed/text` | Qwen3-Embedding-8B | Texto de documentos, transcrições (4096 dim → Qdrant) |
+| `/embed/text` | Qwen3-Embedding-0.6B | Texto de documentos, transcrições (1024 dim → Qdrant) |
 | `/embed/image` | OpenCLIP ViT-H/14 | Embeddings de imagens (1024 dim → pgvector) |
 | `/embed/text-for-image` | OpenCLIP Text Encoder | Busca texto→imagem (1024 dim) |
 | `/embed/batch` | Ambos | Processamento em lote |
 
 ---
 
-## Versionamento de Modelos (ARQUITETURA v4.0.0)
+## Versionamento de Modelos (Gate 2)
 
 Cada ciclo de fine-tuning QLoRA cria uma nova versão:
 
 | Campo | Descrição |
 |-------|-----------|
 | `version` | Número incremental (1, 2, 3...) |
-| `baseModel` | Qwen2.5-VL 7B AWQ (v4.0.0) |
+| `baseModel` | Mistral 7B Instruct (AWQ) - LLM texto (Gate 2) |
 | `loraPath` | Caminho dos pesos QLoRA |
 | `trainingDataCount` | Quantidade de dados usados |
 | `imageDataCount` | Quantidade de imagens usadas |
@@ -374,22 +374,22 @@ Acessíveis em `/dashboard/analytics`:
 
 ---
 
-## ✅ IMPLEMENTADO CORRETAMENTE (ARQUITETURA v4.0.0)
+## ✅ IMPLEMENTADO CORRETAMENTE (Gate 2)
 
-### 1. Arquitetura Enterprise v4.0.0 - TODOS GPU SIMULTÂNEOS (15GB/20GB VRAM)
-- ✅ **LLM Multimodal (Qwen2.5-VL 7B AWQ, ~4GB)** - Chat, Trading, Vision (análise de gráficos)
-- ✅ Embeddings de texto (Qwen3-Embedding-8B INT8, **4096 dim**, ~8GB) via GPU Manager Service → Qdrant
+### 1. Arquitetura Enterprise Gate 2 - GPU simultâneo (20GB VRAM budget)
+- ✅ **LLM (texto) dedicado**: Mistral 7B Instruct (AWQ) - Chat/Trading (via GPU Manager)
+- ✅ **VLM (visão) dedicado**: Qwen2.5-VL 7B (AWQ) - análise de imagens/gráficos (via GPU Manager)
+- ✅ Embeddings de texto (Qwen3-Embedding-0.6B INT8, **1024 dim**, ~3GB) via GPU Manager Service → Qdrant
 - ✅ Embeddings de imagem (OpenCLIP ViT-H/14, 1024 dim) via GPU Manager Service → pgvector
 - ✅ Transcrição de áudio (Canary-1B NeMo, ~3GB) via GPU Manager Service
-- ✅ **Análise de imagens nativa** (Qwen2.5-VL Vision - mesmo modelo LLM, zero overhead)
-- ✅ Qdrant para texto (4096 dim com HNSW) + pgvector para imagem (1024 dim)
+- ✅ Qdrant para texto (1024 dim com HNSW) + pgvector para imagem (1024 dim)
 - ✅ Validação de dimensão em `validateEmbeddingDimension`
 - ✅ Sem fallback CPU (Regra 6)
 - ❌ Geração de imagens REMOVIDA (FLUX.1 Schnell) - não necessária para domínio financeiro
 
-### 2. GPU Dedicada 24/7 - ZERO Latência de Troca (11/01/2026)
+### 2. GPU Dedicada 24/7 - ZERO Latência de Troca (Gate 2)
 - ✅ **TODOS containers GPU rodando SIMULTANEAMENTE** - sem troca de containers
-- ✅ Total VRAM: 15GB de 20GB disponíveis (margem de 5GB)
+- ✅ Fonte de verdade de VRAM: métricas + `nvidia-smi` (budgets conservadores para evitar OOM)
 - ✅ Redis Queue para processamento assíncrono (`embedding-queue.ts`)
 - ✅ Worker dedicado (`embedding-worker.ts`)
 - ✅ WebSocket para notificações (`embedding-websocket.ts`)
@@ -401,7 +401,7 @@ Acessíveis em `/dashboard/analytics`:
 - ✅ **WhatsApp:** `integrations-service/index.ts` linha 2369 - POST `/api/training/data`
 - ✅ Rating inferido automaticamente (sem escalação = 5, com escalação = 1)
 
-### 4. Schedule de Treinamento (ARQUITETURA v4.0.0)
+### 4. Schedule de Treinamento (Gate 2)
 - ✅ Fine-tuning **QLoRA semanal** (Domingos 3h, minDataRequired: 50)
 - ✅ Fine-tuning Completo quinzenal (minDataRequired: 200)
 - ✅ Threshold de qualidade >= 50% rating >= 4
@@ -427,7 +427,7 @@ Acessíveis em `/dashboard/analytics`:
 - Drag & drop para imagens (JPEG, PNG, WebP, GIF até 10MB)
 - Drag & drop para áudios (MP3, WAV, OGG, WEBM até 25MB)
 - Fila de upload visual com status em tempo real
-- Processamento via GPU (Qwen3-Embedding-8B + OpenCLIP + Canary-1B ASR)
+- Processamento via GPU (Qwen3-Embedding-0.6B + OpenCLIP + Canary-1B ASR)
 - Internacionalização PT-BR e EN
 
 **Arquivos modificados:**
@@ -453,7 +453,7 @@ Acessíveis em `/dashboard/analytics`:
 - Nova função `processWhatsAppMediaForRAG()` em `integrations-service`
 - Mídia do WhatsApp é baixada do Twilio e enviada para `/api/media/upload/json`
 - Imagens: OpenCLIP embeddings (1024 dim)
-- Áudios: Canary-1B transcrição + Qwen3-Embedding-8B embeddings (4096 dim → Qdrant)
+- Áudios: Canary-1B transcrição + Qwen3-Embedding-0.6B embeddings (1024 dim → Qdrant)
 - Vídeo: **não suportado** (removido). Uploads `video/*` são rejeitados explicitamente.
 - Processamento fire-and-forget (não bloqueia resposta ao usuário)
 - `RAG_SERVICE_URL` adicionado ao docker-compose para integrations-service
@@ -462,14 +462,15 @@ Acessíveis em `/dashboard/analytics`:
 - `apps/integrations-service/src/index.ts` - Nova função e chamada no webhook
 - `infra/docker/docker-compose.prod.yml` - RAG_SERVICE_URL e depends_on alice-rag
 
-### GAP 4: Imagens Docker GPU ✅ RESOLVIDO (11/01/2026) - ARQUITETURA v4.0.0
+### GAP 4: Imagens Docker GPU ✅ RESOLVIDO (Gate 2)
 **Status:** Build automático via CI/CD - TODOS SIMULTÂNEOS
 
 **Ações realizadas:**
-1. Workflow `release.yml` garante automaticamente **4 imagens GPU** (qwen-vl, embeddings-gpu, asr-canary, qwen-trainer). Quando não há mudanças no contexto do serviço, o pipeline faz **retag no GHCR** (mesmo digest do release anterior) ao invés de rebuild completo.
+1. Workflow `release.yml` garante automaticamente **5 imagens GPU** (qwen-vl, llm-mistral, embeddings-gpu, asr-canary, qwen-trainer). Quando não há mudanças no contexto do serviço, o pipeline faz **retag no GHCR** (mesmo digest do release anterior) ao invés de rebuild completo.
 2. Timeout aumentado de 30min para 90min (imagens GPU são muito pesadas)
-3. **ATUALIZAÇÃO 11/01/2026 - ARQUITETURA v4.0.0**:
+3. **ATUALIZAÇÃO Gate 2**:
    - `vllm/vllm-openai:v0.12.0` (qwen-vl - Qwen2.5-VL 7B AWQ, ~4GB VRAM)
+   - `vllm/vllm-openai:v0.12.0` (llm-mistral - Mistral 7B Instruct AWQ - LLM texto)
    - `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` + bitsandbytes (embeddings-gpu INT8, ~8GB VRAM)
    - `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` + nemo_toolkit pip (asr-canary, ~3GB VRAM)
    - `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` + peft (qwen-trainer QLoRA, on-demand)
@@ -477,7 +478,7 @@ Acessíveis em `/dashboard/analytics`:
    - **NOTA**: NGC_API_KEY REMOVIDO - Personal API Key não funciona para containers públicos (403 Forbidden). Todos usam Docker Hub.
 4. BuildKit cache mount adicionado para cache persistente de pip
 5. GPU Manager Service gerencia automaticamente todos os serviços GPU (sem secrets externos necessários)
-6. **ARQUITETURA v4.0.0:** TODOS containers GPU rodam SIMULTANEAMENTE (15GB/20GB VRAM) - SEM troca de containers. Trainer usa Docker Compose profile `training` (on-demand).
+6. **Gate 2:** Containers GPU rodam simultaneamente (budgets em 20GB VRAM) - sem troca de containers. Trainer usa Docker Compose profile `training` (on-demand).
 
 ### GAP 5: Arquivo clip-service-url.ts Obsoleto ✅ RESOLVIDO
 **Status:** Removido em 15/12/2025
@@ -510,15 +511,14 @@ Acessíveis em `/dashboard/analytics`:
 
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*
-*Versão 5.0 - 11 de Janeiro de 2026 - ARQUITETURA v4.0.0*
-*LLM: Qwen2.5-VL 7B AWQ (vLLM) via GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) - multimodal texto+vision*
-*ARQUITETURA ENTERPRISE v4.0.0: LLM Qwen2.5-VL (~4GB) + Embeddings Qwen3-Embedding-8B INT8 (~8GB) + ASR Canary-1B (~3GB) = 15GB/20GB VRAM - TODOS SIMULTÂNEOS*
-*Texto (Qwen3-Embedding-8B Apache 2.0, 4096 dim → Qdrant) + Imagem (OpenCLIP ViT-H/14 MIT, 1024 dim → pgvector)*
+*Versão 5.1 - 15 de Janeiro de 2026 - Gate 2*
+*LLM (texto): Mistral 7B Instruct AWQ (vLLM) + VLM (visão): Qwen2.5-VL 7B AWQ (vLLM) via GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB)*
+*Embeddings texto: Qwen3-Embedding-0.6B INT8 (1024 dim → Qdrant) + Imagem: OpenCLIP ViT-H/14 (1024 dim → pgvector)*
 *ASR: Canary-1B via NeMo Toolkit (Apache 2.0)*
-*Vision: Qwen2.5-VL análise de imagens NATIVA - ZERO overhead adicional (mesmo modelo LLM)*
+*Vision: Qwen2.5-VL (VLM dedicado) para análise de imagens/gráficos via GPU Manager Service (Gate 2: LLM texto separado do VLM visão)*
 *Geração de Imagens: REMOVIDA (FLUX.1 Schnell) - não necessária para domínio financeiro*
 *Fisher-Yates Shuffle (17/12/2025): Corrigido bug de distribuição enviesada em train/validation split*
-*Bug Fix Embeddings (17/12/2025): TODOS embeddings de texto (documentos/áudio) agora vão para Qdrant (4096 dim)*
+*Bug Fix Embeddings (17/12/2025): Embeddings de texto (documentos/áudio) agora vão para Qdrant (histórico: 4096 dim; Gate 2: 1024 dim)*
 *Bug Fix SQL IN Clause (19/12/2025): learning-worker.ts corrigido - sql template literal com join() parametrizava string inteira. Usa inArray() do Drizzle (3 ocorrências)*
 *Trading: KuCoin Futures BTC Perpetuals + Scalping (1m/3m/5m) + QLoRA Fine-tuning semanal*
-*GPU v4.0.0 (11/01/2026): Hetzner GEX44 - TODOS containers GPU rodando SIMULTANEAMENTE (15GB/20GB). Fine-tuning QLoRA on-demand via profile.*
+*GPU Gate 2 (15/01/2026): Hetzner GEX44 - serviços GPU simultâneos (budgets em 20GB VRAM). Fine-tuning QLoRA on-demand via profile.*

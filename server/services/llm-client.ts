@@ -10,7 +10,7 @@ import {
 /**
  * Cliente LLM (DEV) - Alice Enterprise Platform
  *
- * REGRA 6: Proibido mock/stub. Este cliente faz requisições REAIS ao Mixtral
+ * REGRA 6: Proibido mock/stub. Este cliente faz requisições REAIS ao LLM (texto)
  * via GPU Manager Service (fila + VRAM monitoring + circuit breakers).
  *
  * Autor: Fillipe Guerra
@@ -134,6 +134,10 @@ async function* parseSseStream(body: ReadableStream<Uint8Array>): AsyncGenerator
 }
 
 export class LLMClient {
+  getConfiguredModelName(): string {
+    return llmEnv.LLM_MODEL_NAME;
+  }
+
   isAvailable(): boolean {
     // Se chegamos aqui, env mínimo está OK e @alice/shared-utils valida INTERNAL_API_SECRET no startup.
     return true;

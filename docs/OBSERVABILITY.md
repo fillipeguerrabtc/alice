@@ -432,7 +432,7 @@ docker logs loki
 ### Alice Platform
 
 - `CLAUDE.md` - 18 Regras Fundamentais
-- `docs/ARQUITETURA.md` - Arquitetura v4.0.0
+- `docs/ARQUITETURA.md` - Arquitetura Gate 2 (LLM separado + VLM dedicado)
 - `docs/ARQUITETURA-GPU-MANAGER.md` - GPU Manager Service
 - `docs/OBSERVABILITY-AUDIT-2026-01-13.md` - Auditoria completa
 

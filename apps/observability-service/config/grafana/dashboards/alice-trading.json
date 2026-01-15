@@ -12,7 +12,7 @@
       }
     ]
   },
-  "description": "Dashboard Trading Enterprise - KuCoin BTC Futures | P&L | Ordens | Posições | Circuit Breaker | Sinais Técnicos | Arquitetura v4.0.0",
+  "description": "Dashboard Trading Enterprise - KuCoin BTC Futures | P&L | Ordens | Posições | Circuit Breaker | Sinais Técnicos | Gate 2",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 2,
@@ -35,7 +35,7 @@
       "gridPos": { "h": 2, "w": 24, "x": 0, "y": 0 },
       "id": 100,
       "options": {
-        "content": "# Alice Trading Dashboard - Enterprise\n**KuCoin BTC Perpetual Futures** | P&L Realizado/Não Realizado | Ordens Ativas | Circuit Breaker | Sinais Técnicos (RSI, Bollinger, EMA) | SRE Best Practices 2025",
+        "content": "# Alice Trading Dashboard - Enterprise\n**KuCoin BTC Perpetual Futures** | P&L Realizado/Não Realizado | Ordens Ativas | Circuit Breaker | Sinais Técnicos (RSI, Bollinger, EMA) | SRE Best Practices 2025 | Gate 2",
         "mode": "markdown"
       },
       "transparent": true,
@@ -461,18 +461,9 @@
                 "value": [
                   {
                     "options": {
-                      "CLOSED": {
-                        "color": "green",
-                        "index": 0
-                      },
-                      "OPEN": {
-                        "color": "red",
-                        "index": 1
-                      },
-                      "HALF_OPEN": {
-                        "color": "yellow",
-                        "index": 2
-                      }
+                      "0": { "text": "CLOSED", "color": "green", "index": 0 },
+                      "0.5": { "text": "HALF_OPEN", "color": "yellow", "index": 1 },
+                      "1": { "text": "OPEN", "color": "red", "index": 2 }
                     },
                     "type": "value"
                   }
@@ -522,6 +513,138 @@
               "Value": "Estado"
             }
           }
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 25 },
+      "id": 104,
+      "title": "🌐 KuCoin WebSocket (Operacional)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            {
+              "options": {
+                "0": { "text": "DISCONNECTED", "color": "red", "index": 0 },
+                "0.25": { "text": "CONNECTING", "color": "yellow", "index": 1 },
+                "0.5": { "text": "RECONNECTING", "color": "yellow", "index": 2 },
+                "1": { "text": "CONNECTED", "color": "green", "index": 3 }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 0.25 }, { "color": "green", "value": 1 }] }
+        }
+      },
+      "gridPos": { "h": 4, "w": 12, "x": 0, "y": 26 },
+      "id": 105,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showPercentChange": false,
+        "textMode": "value_and_name"
+      },
+      "title": "KuCoin WS State (Public)",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "alice_kucoin_ws_state{channel=\"public\"}",
+          "legendFormat": "public",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            {
+              "options": {
+                "0": { "text": "DISCONNECTED", "color": "red", "index": 0 },
+                "0.25": { "text": "CONNECTING", "color": "yellow", "index": 1 },
+                "0.5": { "text": "RECONNECTING", "color": "yellow", "index": 2 },
+                "1": { "text": "CONNECTED", "color": "green", "index": 3 }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 0.25 }, { "color": "green", "value": 1 }] }
+        }
+      },
+      "gridPos": { "h": 4, "w": 12, "x": 12, "y": 26 },
+      "id": 106,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showPercentChange": false,
+        "textMode": "value_and_name"
+      },
+      "title": "KuCoin WS State (Private)",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "alice_kucoin_ws_state{channel=\"private\"}",
+          "legendFormat": "private",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": true,
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 30 },
+      "id": 107,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      },
+      "title": "KuCoin WS - Reconexões/Erros (rate)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (channel) (rate(alice_kucoin_ws_reconnects_total[5m]))",
+          "legendFormat": "reconnects/s ({{channel}})",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (channel) (rate(alice_kucoin_ws_errors_total[5m]))",
+          "legendFormat": "errors/s ({{channel}})",
+          "refId": "B"
         }
       ]
     }

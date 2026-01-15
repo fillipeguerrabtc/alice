@@ -300,7 +300,7 @@ Estas variáveis são **configuração** (não secrets) e podem ser definidas vi
 - `/api/integrations/trading/orders` - Gerenciamento de ordens
 - `/api/integrations/trading/signals` - Sinais do Qwen2.5-VL LLM
 
-### FASE 5c: Qdrant - Banco Vetorial para Texto (4096 dimensões)
+### FASE 5c: Qdrant - Banco Vetorial para Texto (Gate 2: 1024 dimensões)
 
 | Secret | Onde Obter |
 |--------|------------|
@@ -312,13 +312,13 @@ Estas variáveis são **configuração** (não secrets) e podem ser definidas vi
 3. O container `alice-qdrant` usa esta key para autenticação
 
 **Arquitetura de Embeddings:**
-- **Qdrant (4096 dim):** Qwen3-Embedding-8B para texto (Trading + RAG)
+- **Qdrant (1024 dim):** Qwen3-Embedding-0.6B para texto (Trading + RAG)
 - **PostgreSQL pgvector (1024 dim):** OpenCLIP ViT-H/14 para imagens
 
-**Por que Qdrant para Trading:**
-- pgvector HNSW suporta máx 4000 dim (halfvec) / 2000 dim (vector)
-- Qdrant suporta HNSW com 4096+ dimensões (pgvector limita em 4000 para halfvec)
-- Qwen3-Embedding-8B (4096 dim, 8B params) oferece qualidade superior para texto
+**Por que Qdrant para Trading/RAG:**
+- Banco vetorial dedicado (HNSW, filtros/metadata, escalabilidade e isolamento operacional)
+- Mantém pgvector focado em embeddings de imagem (OpenCLIP) e queries relacionais
+- Gate 2 padroniza embeddings de texto em **1024 dim** (Qwen3-Embedding-0.6B), mantendo SSOT entre código e docs
 
 **Portas:**
 - `6333`: REST API (usada pelo integrations-service)
@@ -652,7 +652,7 @@ docker logs alice-minio-init --tail 50
 |--------|--------|
 | `BACKUP_CIPHER_PASS` | ✅ |
 
-### Qdrant (Banco Vetorial Texto 4096 dim)
+### Qdrant (Banco Vetorial Texto 1024 dim - Gate 2)
 
 | Secret | Status |
 |--------|--------|
@@ -748,7 +748,7 @@ openssl rand -base64 24
 *Redis Alice: Container dedicado para cache distribuído (segregação enterprise)*  
 *GPU Manager Service (25/12/2025): Todos os serviços GPU migrados para Hetzner GPU GEX44 - GPU Manager Service gerencia requisições localmente*  
 *Arquitetura Deploy (27/12/2025): Deploy Server (CPX32 - 4 vCPU, 8GB RAM) com Runner Enterprise Hardening + Production Server (GEX44 GPU) - isolamento completo CI/CD e produção*  
-*ARQUITETURA ENTERPRISE (25/12/2025): Qwen3-Embedding-8B Apache 2.0 (4096 dim → Qdrant) | OpenCLIP MIT (1024 dim → pgvector)*  
+*ARQUITETURA ENTERPRISE (Gate 2): Qwen3-Embedding-0.6B (1024 dim → Qdrant) | OpenCLIP (1024 dim → pgvector)*
 *GPU Dedicada 24/7 (26/12/2025): Servidor Hetzner GEX44 - todos os secrets do Salad Cloud removidos permanentemente*  
 *Secrets PRODUCTION_SERVER_* removidos (28/12/2025): Scripts deploy-remote.sh e deploy-local.sh foram removidos. Workflow usa HETZNER_VM_* diretamente via appleboy/ssh-action.*  
 *LANGFUSE v3: LANGFUSE_SALT e LANGFUSE_ENCRYPTION_KEY obrigatórios + langfuse-worker container*

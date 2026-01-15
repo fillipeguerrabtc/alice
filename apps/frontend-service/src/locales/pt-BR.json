@@ -1031,7 +1031,7 @@
         },
         "audio": {
           "title": "Áudios",
-          "desc": "Canary-1B transcreve o áudio, Qwen3-Embedding-8B gera embeddings do texto"
+          "desc": "Canary-1B transcreve o áudio, Qwen3-Embedding-0.6B gera embeddings do texto (1024 dim)"
         },
         "gpu": {
           "title": "Processamento GPU (Hetzner GEX44)",

@@ -12,7 +12,7 @@
       }
     ]
   },
-  "description": "Métricas LLM Enterprise - Qwen2.5-VL 7B AWQ via GPU Manager Service (Hetzner GEX44) | Latência, Tokens, Erros, Circuit Breakers | Arquitetura v4.0.0",
+  "description": "Métricas LLM Enterprise (modelo-agnóstico) via GPU Manager Service (Hetzner GEX44) | Latência, Tokens, Erros, Circuit Breakers | Gate 2",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 2,

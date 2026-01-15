@@ -4,7 +4,7 @@
 # SSOT para dependências Python do container embeddings-gpu
 # Dependabot monitora este arquivo para atualizações de segurança
 #
-# Container: embeddings-gpu (Qwen3-Embedding-8B INT8 + OpenCLIP)
+# Container: embeddings-gpu (Qwen3-Embedding-0.6B INT8 + OpenCLIP)
 # Base: pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel
 # GPU: RTX 4000 Ada 20GB
 #

@@ -97,7 +97,7 @@ class AudioProcessorService {
     // Extrair metadata básica
     const metadata = await this.extractMetadata(audioBuffer, mimeType);
 
-    // Transcrição via GPU (Whisper large-v3)
+    // Transcrição via GPU (ASR Canary-1B)
     let transcription = '';
     let transcriptionLanguage: string | undefined;
     let transcriptionConfidence: number | undefined;
@@ -106,7 +106,7 @@ class AudioProcessorService {
 
     if (this.whisperConfigured) {
       try {
-        logger.info({ audioSize: audioBuffer.length }, 'Transcrevendo via GPU (Whisper large-v3)...');
+        logger.info({ audioSize: audioBuffer.length }, 'Transcrevendo via GPU (ASR Canary-1B)...');
         const result = await this.transcribeGpu(audioBuffer, mimeType, language);
         transcription = result.text;
         transcriptionLanguage = result.language;
@@ -122,7 +122,7 @@ class AudioProcessorService {
       transcription = '[Transcrição não disponível - GPU não configurado]';
     }
 
-    // Gerar embedding via GPU (Qwen3-Embedding-8B → Qdrant)
+    // Gerar embedding via GPU (Qwen3-Embedding-0.6B → Qdrant)
     let embedding: number[] = [];
     let embeddingModel = 'none';
 
@@ -281,7 +281,7 @@ class AudioProcessorService {
 
       return {
         embedding: result.embedding,
-        model: result.model || 'Qwen/Qwen3-Embedding-8B',
+        model: result.model || 'Qwen/Qwen3-Embedding-0.6B',
       };
     } catch (error) {
       if (error instanceof Error) {

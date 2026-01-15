@@ -9,7 +9,7 @@
  */
 
 import express from 'express';
-import type { Request, Response, NextFunction } from 'express';
+import type { Request, Response } from 'express';
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import cors from 'cors';
@@ -62,7 +62,7 @@ import {
   validateAgentTenantConsistency,
 } from '@alice/shared-utils';
 import type { Role } from '@alice/shared-utils';
-import { eq, desc, inArray, and } from '@alice/database';
+import { eq, desc, inArray, and, sql } from '@alice/database';
 import { z } from 'zod';
 import { 
   buscarContextoRAG, 
@@ -83,8 +83,8 @@ import {
   checkSLABreaches,
   ESCALATION_CONFIG,
 } from './conversation-orchestrator.js';
-// ARQUITETURA v4.0.0: Geração de imagens removida (Alice analisa mas NÃO gera)
-// image-generation-client.js foi removido - Qwen2.5-VL analisa imagens via chat normal
+// Gate 2: Geração de imagens removida (Alice analisa mas NÃO gera)
+// Análise de imagens ocorre via VLM dedicado (GpuServiceType.VLM)
 import { initTradingOrchestrator } from './trading-orchestrator.js';
 // CORREÇÃO 19/12/2025: Remover imports não utilizados (no-unused-vars)
 // isGreeting, getCacheMetrics, isCacheOperational estão disponíveis no módulo
@@ -839,6 +839,37 @@ const DEFAULT_LLM_CONFIG: Required<LLMConfig> = {
   model: 'TheBloke/Mistral-7B-Instruct-v0.2-AWQ',
 };
 
+// ============================================================================
+// Gate 2: SSOT de modelos suportados para Agents (LLM texto)
+// ============================================================================
+const ALLOWED_AGENT_LLM_MODEL_NAMES = [
+  'Mistral-7B-Instruct',
+  'Mistral-7B-Instruct-AWQ',
+] as const;
+
+const LEGACY_AGENT_LLM_MODEL_NAMES = [
+  'Qwen2.5-VL-7B',
+  'Qwen2.5-VL-7B-AWQ',
+  'Qwen2.5-VL-7B-Instruct-AWQ',
+  'Mixtral-8x7B',
+] as const;
+
+async function countAgentsWithUnsupportedLlmModel(): Promise<number> {
+  const [row] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(schema.agents)
+    .where(
+      and(
+        sql`${schema.agents.modeloBase} is not null`,
+        sql`${schema.agents.modeloBase} not in (${sql.join(
+          ALLOWED_AGENT_LLM_MODEL_NAMES.map((v) => sql`${v}`),
+          sql`, `
+        )})`
+      )
+    );
+  return Number(row?.count ?? 0);
+}
+
 class ClientInputError extends Error {
   public readonly statusCode: number;
   public readonly code: string;
@@ -888,11 +919,15 @@ function mapModelNameToGpuModel(modelName: string): string {
 
   // Gate 2: o tráfego de chat (texto) é roteado para GpuServiceType.LLM (Mistral).
   // Não é permitido aceitar modelos legados (ex.: Qwen2.5-VL/Mixtral) e fazer "swap" silencioso.
+  const isLegacy = (LEGACY_AGENT_LLM_MODEL_NAMES as readonly string[]).includes(normalized);
   logger.warn({ modelName: normalized }, 'modeloBase inválido para LLM (Gate 2)');
   throw new ClientInputError(
-    `modeloBase '${normalized}' não é suportado para LLM (texto) no Gate 2. ` +
-      `Atualize o agente para 'Mistral-7B-Instruct-AWQ'.`,
-    { code: 'INVALID_AGENT_LLM_MODEL' },
+    isLegacy
+      ? `modeloBase '${normalized}' é legado e não é suportado para LLM (texto) no Gate 2. ` +
+          `Aplique a migração '0016_gate2_migrate_legacy_agent_models.sql' e/ou atualize o agente para 'Mistral-7B-Instruct-AWQ'.`
+      : `modeloBase '${normalized}' não é suportado para LLM (texto) no Gate 2. ` +
+          `Atualize o agente para 'Mistral-7B-Instruct-AWQ'.`,
+    { code: isLegacy ? 'LEGACY_AGENT_LLM_MODEL' : 'INVALID_AGENT_LLM_MODEL' },
   );
 }
 
@@ -1811,7 +1846,7 @@ app.use(createSessionAuthMiddleware({
   publicPaths: ['/api/chat/health', '/live', '/ready', '/metrics'],
 }));
 
-app.get('/api/chat/health', (_req: Request, res: Response) => {
+app.get('/api/chat/health', async (_req: Request, res: Response) => {
   const llmCircuitState = gpuManagerBreaker.opened ? 'open' : (gpuManagerBreaker.halfOpen ? 'half-open' : 'closed');
   const ragStats = getRAGBreakerStats();
   const integrationsStats = getIntegrationsBreakerStats();
@@ -1819,6 +1854,15 @@ app.get('/api/chat/health', (_req: Request, res: Response) => {
   // Status degradado se qualquer circuit breaker crítico estiver aberto
   const overallStatus = (llmCircuitState === 'open' || integrationsStats.state === 'open') ? 'degraded' : 'ok';
   
+  let invalidAgentsCount: number | null = null;
+  try {
+    // Best-effort: não pode quebrar health endpoint
+    invalidAgentsCount = await countAgentsWithUnsupportedLlmModel();
+  } catch (error) {
+    logger.warn({ error }, 'Falha ao checar agentes com modeloBase inválido (health)');
+    invalidAgentsCount = null;
+  }
+
   // Gate 2: LLM (texto) separado de VLM (visão) e model-agnóstico por capability
   res.json({ 
     status: overallStatus, 
@@ -1826,6 +1870,10 @@ app.get('/api/chat/health', (_req: Request, res: Response) => {
     timestamp: new Date().toISOString(),
     llmProvider: 'gpu-manager-service',
     model: DEFAULT_LLM_CONFIG.model,
+    agents: {
+      allowedModels: ALLOWED_AGENT_LLM_MODEL_NAMES,
+      invalidModelCount: invalidAgentsCount,
+    },
     circuitBreakers: {
       llm: {
         state: llmCircuitState,
@@ -1861,6 +1909,7 @@ app.get('/ready', async (_req: Request, res: Response) => {
   try {
     const dbHealthy = await isPoolHealthy();
     const llmReady = !gpuManagerBreaker.opened;
+    const invalidAgentsCount = dbHealthy ? await countAgentsWithUnsupportedLlmModel() : 0;
     
     // Chat precisa de PostgreSQL obrigatoriamente, LLM pode estar em degraded mode
     const allReady = dbHealthy;
@@ -1873,7 +1922,14 @@ app.get('/ready', async (_req: Request, res: Response) => {
         dependencies: {
           postgresql: 'ready',
           llm: llmReady ? 'ready' : 'circuit_open',
+          agents: invalidAgentsCount > 0 ? 'legacy_models_present' : 'ready',
         },
+        warnings: invalidAgentsCount > 0 ? [{
+          code: 'LEGACY_AGENT_LLM_MODEL',
+          message:
+            `Detectados ${invalidAgentsCount} agentes com modeloBase não suportado para LLM (texto) no Gate 2. ` +
+            `Aplique a migração '0016_gate2_migrate_legacy_agent_models.sql'.`,
+        }] : [],
       });
     } else {
       res.status(503).json({
@@ -1884,6 +1940,7 @@ app.get('/ready', async (_req: Request, res: Response) => {
         dependencies: {
           postgresql: dbHealthy ? 'ready' : 'not_ready',
           llm: llmReady ? 'ready' : 'circuit_open',
+          agents: 'unknown',
         },
       });
     }
@@ -4581,6 +4638,50 @@ const createAgentSchema = z.object({
 
 const updateAgentSchema = createAgentSchema.partial();
 
+type AgentModelOption = {
+  value: string;
+  label: string;
+  description: string;
+};
+
+function buildAgentModelOptionsResponse(opts: {
+  allowedModels: readonly string[];
+  defaults: { modeloBase: string; temperaturaModelo: number; maxTokens: number };
+  maxTokensMin: number;
+}): {
+  models: AgentModelOption[];
+  defaults: { modeloBase: string; temperaturaModelo: number; maxTokens: number };
+  constraints: { maxTokensMin: number; maxTokensMax: number };
+} {
+  const models: AgentModelOption[] = opts.allowedModels.map((value) => {
+    switch (value) {
+      case 'Mistral-7B-Instruct-AWQ':
+        return {
+          value,
+          label: 'Mistral 7B Instruct (AWQ)',
+          description: 'Gate 2 LLM (texto) - vLLM (AWQ 4-bit)',
+        };
+      case 'Mistral-7B-Instruct':
+        return {
+          value,
+          label: 'Mistral 7B Instruct',
+          description: 'Alias legado (normalizado para AWQ no runtime)',
+        };
+      default:
+        return { value, label: value, description: '' };
+    }
+  });
+
+  return {
+    models,
+    defaults: opts.defaults,
+    constraints: {
+      maxTokensMin: opts.maxTokensMin,
+      maxTokensMax: opts.defaults.maxTokens,
+    },
+  };
+}
+
 /**
  * GET /api/agents/model-options
  *
@@ -4589,36 +4690,17 @@ const updateAgentSchema = createAgentSchema.partial();
  * - Defaults/limites coerentes com runtime (MAX_MODEL_LEN / budgets)
  */
 app.get('/api/agents/model-options', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:agents:read'), (_req: Request, res: Response) => {
-  const models = agentModelNameSchema.options.map((value) => {
-    if (value === 'Mistral-7B-Instruct-AWQ') {
-      return {
-        value,
-        label: 'Mistral 7B Instruct (AWQ)',
-        description: 'Gate 2 LLM (texto) - vLLM (AWQ 4-bit)',
-      };
-    }
-    if (value === 'Mistral-7B-Instruct') {
-      return {
-        value,
-        label: 'Mistral 7B Instruct',
-        description: 'Alias legado (normalizado para AWQ no runtime)',
-      };
-    }
-    return { value, label: value, description: '' };
-  });
-
-  res.json({
-    models,
-    defaults: {
-      modeloBase: 'Mistral-7B-Instruct-AWQ',
-      temperaturaModelo: DEFAULT_LLM_CONFIG.temperature,
-      maxTokens: DEFAULT_LLM_CONFIG.maxTokens,
-    },
-    constraints: {
+  res.json(
+    buildAgentModelOptionsResponse({
+      allowedModels: agentModelNameSchema.options,
+      defaults: {
+        modeloBase: 'Mistral-7B-Instruct-AWQ',
+        temperaturaModelo: DEFAULT_LLM_CONFIG.temperature,
+        maxTokens: DEFAULT_LLM_CONFIG.maxTokens,
+      },
       maxTokensMin: 100,
-      maxTokensMax: DEFAULT_LLM_CONFIG.maxTokens,
-    },
-  });
+    })
+  );
 });
 
 /**

@@ -878,7 +878,7 @@ export function instrumentCircuitBreaker(
  * ```typescript
  * const result = await measureDuration(
  *   metrics.llm.inferenceDuration,
- *   { model: 'Mixtral-8x7B', type: 'chat' },
+ *   { model: 'Mistral-7B-Instruct-AWQ', type: 'chat' },
  *   async () => llmClient.chat(messages)
  * );
  * ```

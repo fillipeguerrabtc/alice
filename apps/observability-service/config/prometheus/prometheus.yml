@@ -92,7 +92,7 @@ scrape_configs:
         action: keep
 
   # ============================================================================
-  # GPU SERVICES (FastAPI - Arquitetura v4.0.0)
+  # GPU SERVICES (FastAPI - Gate 2: LLM separado + VLM dedicado)
   # NOTA 13/01/2026: Métricas PyTorch/vLLM expostas via /metrics endpoint
   # ============================================================================
   - job_name: 'gpu-llm'

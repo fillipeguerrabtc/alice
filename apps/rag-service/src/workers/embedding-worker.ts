@@ -13,7 +13,7 @@
  * Com servidor GPU dedicado, containers Docker rodam 24/7 e não há cold start.
  * 
  * EMBEDDINGS:
- * - Qwen3-Embedding-8B: 4096 dim (texto/documentos → Qdrant) via GPU Manager Service
+ * - Qwen3-Embedding-0.6B: 1024 dim (texto/documentos → Qdrant) via GPU Manager Service
  * - OpenCLIP ViT-H/14: 1024 dim (imagens + text-to-image → pgvector) via GPU Manager Service
  * 
  * Autor: Fillipe Guerra
