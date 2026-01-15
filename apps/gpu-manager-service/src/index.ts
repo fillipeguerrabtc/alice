@@ -167,14 +167,26 @@ const GPU_SERVICE_URLS = {
   [GpuServiceType.TRAINING]: process.env.TRAINING_GPU_URL || 'http://gpu-trainer:8000',
 };
 
-/** VRAM necessária por serviço (GB) */
-// ARQUITETURA v4.0.0 (11/01/2026): Todos cabem simultaneamente nos 20GB
-// Total sempre ativo: 4 + 8 + 3 = 15GB (sobram 5GB)
+/** VRAM necessária por serviço (GB)
+ *
+ * IMPORTANTE (Regra 6 - sem valores “falsos”): este valor é usado para:
+ * - gate de admissão quando nvidia-smi não está disponível (fallback)
+ * - estimativa de VRAM reservada por capacidade em dashboards
+ *
+ * Fonte de verdade:
+ * - Em runtime real: nvidia-smi (quando disponível)
+ * - Para fallback/estimativa: valores conservadores alinhados ao SSOT do stack modular
+ *   (`infra/docker/stacks/docker-compose.alice.yml`) e ao budget de VRAM do vLLM.
+ *
+ * Observação: o LLM/VLM (QWEN_VL) AWQ ocupa ~6.5GB (pesos) + KV cache conforme
+ * max-model-len / gpu-memory-utilization. Para coexistência em 20GB, usamos 8GB
+ * como requisito conservador.
+ */
 const VRAM_REQUIREMENTS: Record<GpuServiceType, number> = {
-  [GpuServiceType.QWEN_VL]: 4,       // Qwen2.5-VL 7B AWQ 4-bit (~4GB)
-  [GpuServiceType.EMBEDDINGS]: 8,    // Qwen3-Embedding-8B INT8 (~8GB)
-  [GpuServiceType.ASR]: 3,           // Canary-1B FP16 (~3GB)
-  [GpuServiceType.TRAINING]: 12,     // QLoRA Qwen2.5-VL (~12GB) - sob demanda, pausa outros
+  [GpuServiceType.QWEN_VL]: 8,       // LLM/VLM AWQ + KV cache (budget conservador p/ 20GB)
+  [GpuServiceType.EMBEDDINGS]: 8,    // Embeddings INT8 (~8GB)
+  [GpuServiceType.ASR]: 3,           // ASR (~3GB)
+  [GpuServiceType.TRAINING]: 12,     // QLoRA (sob demanda, pausa outros)
 };
 
 /** VRAM total disponível (20GB para RTX 4000 Ada - Hetzner GEX44) */
