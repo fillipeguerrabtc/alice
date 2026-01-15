@@ -3,7 +3,7 @@
  * 
  * ARQUITETURA 100% GPU (25/12/2025):
  * - Transcrição: Canary-1B via GPU Manager Service
- * - Text embedding: Qwen3-Embedding-8B via GPU Manager Service (4096 dim)
+ * - Text embedding: Qwen3-Embedding-0.6B via GPU Manager Service (1024 dim)
  * - Extração de metadata (duração, formato, bitrate)
  * - Embeddings de texto armazenados em Qdrant
  * 
@@ -15,7 +15,7 @@
  */
 
 import { createLogger } from '@alice/logger';
-import { validateEmbeddingDimension } from '@alice/database';
+import { validateEmbeddingDimension, EMBEDDING_DIMENSIONS } from '@alice/database';
 import { requestGpu, GpuServiceType, GpuRequestPriority } from '@alice/shared-utils';
 
 const logger = createLogger('audio-processor');
@@ -23,10 +23,8 @@ const logger = createLogger('audio-processor');
 // GPU Manager Service - Gerenciamento centralizado de requisições GPU (25/12/2025)
 // URL é usada internamente pelo requestGpu, não precisa ser exposta aqui
 
-// Dimensão dos embeddings de texto - ARQUITETURA UNIFICADA (17/12/2025)
-// Qwen3-Embedding-8B: 4096 dim (8B params, máxima qualidade)
-// Armazenado em Qdrant (suporta HNSW com 4096+ dim)
-export const TEXT_EMBEDDING_DIM = 4096;
+// Dimensão dos embeddings de texto (SSOT: @alice/database)
+export const TEXT_EMBEDDING_DIM = EMBEDDING_DIMENSIONS.TEXT;
 
 // Timeouts
 const WHISPER_TIMEOUT_MS = 600000; // 10 min para GPU
@@ -62,7 +60,7 @@ export interface AudioProcessorOptions {
  * Audio Processor Service - ARQUITETURA ENTERPRISE (25/12/2025)
  * 
  * - Transcrição: Canary-1B GPU via GPU Manager Service
- * - Embeddings: Qwen3-Embedding-8B GPU via GPU Manager Service (4096 dim → Qdrant)
+ * - Embeddings: Qwen3-Embedding-0.6B GPU via GPU Manager Service (1024 dim → Qdrant)
  * 
  * GPU é OBRIGATÓRIO - sem fallback (Regra 6)
  */
@@ -76,12 +74,12 @@ class AudioProcessorService {
     // ARQUITETURA ENTERPRISE (26/12/2025): GPU é OBRIGATÓRIO para todos serviços
     this.configured = true;
     this.whisperConfigured = true;  // ASR via GPU Manager Service
-    this.embeddingsConfigured = true;  // Qwen3-Embedding-8B via GPU Manager Service
+    this.embeddingsConfigured = true;  // Text embeddings via GPU Manager Service
     
     logger.info({ 
       gpuManager: 'enabled',
       embeddingDim: TEXT_EMBEDDING_DIM,
-    }, 'Audio Processor - ARQUITETURA ENTERPRISE (Canary-1B + Qwen3-Embedding-8B → Qdrant via GPU Manager Service)');
+    }, 'Audio Processor - ARQUITETURA ENTERPRISE (ASR + Text Embeddings → Qdrant via GPU Manager Service)');
   }
 
   /**
@@ -434,7 +432,7 @@ class AudioProcessorService {
       configured: this.configured,
       embeddingDim: TEXT_EMBEDDING_DIM,
       transcriptionModel: 'Canary-1B (GPU Manager Service)',
-      embeddingModel: 'Qwen/Qwen3-Embedding-8B (GPU Manager Service, 4096 dim → Qdrant)',
+      embeddingModel: 'Qwen/Qwen3-Embedding-0.6B (GPU Manager Service, 1024 dim → Qdrant)',
       gpuManager: 'enabled',
     };
   }

@@ -681,8 +681,8 @@ describe('Config - RAG Chunk Configuration', () => {
       expect(RAG_CHUNK_CONFIG.chunkOverlap).toBe(200);
     });
 
-    it('deve ter dimensão de embeddings de 4096 (Qwen3-Embedding-8B GPU)', () => {
-      expect(RAG_CHUNK_CONFIG.embeddingDimensions).toBe(4096);
+    it('deve ter dimensão de embeddings de 1024 (Qwen3-Embedding-0.6B GPU)', () => {
+      expect(RAG_CHUNK_CONFIG.embeddingDimensions).toBe(1024);
     });
 
     it('deve ter threshold de similaridade de 0.7', () => {

@@ -141,7 +141,7 @@ export const CIRCUIT_BREAKER_PRESETS = {
     resetTimeout: 15000, // Recuperação rápida
     volumeThreshold: 3, // Abre circuit com poucos erros
   },
-  /** Embeddings GPU Dual-Dimension - Qwen3 (4096 dim) + OpenCLIP (1024 dim) */
+  /** Embeddings GPU Dual-Dimension - Qwen3 (1024 dim) + OpenCLIP (1024 dim) */
   embeddingsGPU: {
     timeout: 60000, // GPU pode precisar warm-up
     errorThresholdPercentage: 50,
@@ -162,7 +162,7 @@ export const CIRCUIT_BREAKER_PRESETS = {
     resetTimeout: 30000,
     volumeThreshold: 5,
   },
-  /** Qdrant - Banco vetorial para texto (4096 dim) */
+  /** Qdrant - Banco vetorial para texto (1024 dim) */
   qdrantTrading: {
     timeout: 10000, // Busca vetorial é rápida
     errorThresholdPercentage: 50,
@@ -211,7 +211,7 @@ export const CIRCUIT_BREAKER_PRESETS = {
     resetTimeout: 15000,
     volumeThreshold: 5,
   },
-  /** Qwen3-Embedding-8B Text Embeddings - ARQUITETURA ENTERPRISE (26/12/2025) - 4096 dim → Qdrant */
+  /** Qwen3-Embedding Text Embeddings - Gate 2 - 1024 dim → Qdrant */
   /** GPU dedicada Hetzner GEX44 - 24/7 */
   textEmbeddings: {
     timeout: 60000, // Timeout para embeddings de texto (textos longos levam mais tempo)

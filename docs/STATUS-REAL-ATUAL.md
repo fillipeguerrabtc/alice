@@ -68,7 +68,7 @@
 
 > Atualização 21/12/2025: Healthchecks dos 6 serviços Alice corrigidos de `/ready` para `/live`. Docker healthcheck verifica se PROCESSO está vivo, não dependências externas (GPU Manager Service). Endpoint `/ready` é para Kubernetes readiness (roteamento de tráfego). Corrige erro "container alice-rag is unhealthy" em primeiro deploy.
 
-> **CORREÇÃO CRÍTICA 21/12/2025:** Variáveis `QDRANT_URL` e `QDRANT_API_KEY` estavam **FALTANDO** no docker-compose.prod.yml para `alice-rag`. Sem estas variáveis, RAG service não conseguia conectar ao Qdrant (banco vetorial de texto 4096 dim), causando falha no healthcheck. Training e integrations tinham, mas rag não.
+> **CORREÇÃO CRÍTICA 21/12/2025:** Variáveis `QDRANT_URL` e `QDRANT_API_KEY` estavam **FALTANDO** no docker-compose.prod.yml para `alice-rag`. Sem estas variáveis, RAG service não conseguia conectar ao Qdrant (banco vetorial de texto), causando falha no healthcheck. Training e integrations tinham, mas rag não.
 
 > **Deploy Fail Fast 21/12/2025:** Reduzido `--wait-timeout` de 300s (5 min) para 120s (2 min). Adicionada captura imediata de logs quando deploy falha - workflow não fica mais "pendurado" esperando, falha imediatamente e mostra logs dos containers problemáticos.
 
@@ -220,8 +220,8 @@
 |----------------|--------|---------|
 | pgvector (busca semântica) | ✅ | `index.ts` |
 | Image Processing (OpenCLIP ViT-H/14, 1024 dim) | ✅ | `image-processor.ts` |
-| Audio Processing (Canary-1B ASR, Qwen3-Embedding-8B 4096 dim → Qdrant) | ✅ | `audio-processor.ts` |
-| Document Processing (Qwen3-Embedding-8B GPU, 4096 dim → Qdrant) | ✅ | `document-processor.ts` |
+| Audio Processing (Canary-1B ASR, Qwen3-Embedding-0.6B 1024 dim → Qdrant) | ✅ | `audio-processor.ts` |
+| Document Processing (Qwen3-Embedding-0.6B GPU, 1024 dim → Qdrant) | ✅ | `document-processor.ts` |
 | **Storage Local** | ✅ | `storage.ts` (/opt/alice/uploads) |
 | Magic Bytes Validation | ✅ | `index.ts` (segurança upload) |
 | Multer Upload | ✅ | `index.ts` |
@@ -244,8 +244,8 @@
 
 > **Nota (Readiness enterprise):** Cada processor valida prontidão real usando `isReadyAsync()` (contrato explícito `Promise<boolean>`). Para compatibilidade, `image-processor.isReady()` é **síncrono** (apenas "configurado"), e o readiness real fica em `isReadyAsync()`. Cada processor valida **apenas** as capabilities necessárias:
 > - `image-processor` → OpenCLIP ViT-H/14 GPU (1024 dim → pgvector)
-> - `audio-processor` → Canary-1B ASR GPU + Qwen3-Embedding-8B GPU (4096 dim → Qdrant)
-> - `document-processor` → Qwen3-Embedding-8B GPU (4096 dim → Qdrant)
+> - `audio-processor` → Canary-1B ASR GPU + Qwen3-Embedding-0.6B GPU (1024 dim → Qdrant)
+> - `document-processor` → Qwen3-Embedding-0.6B GPU (1024 dim → Qdrant)
 >
 > **Nota (23/12/2025 - Vídeo DESABILITADO):** Processamento de vídeo foi **removido** por ser muito pesado para GPU. Plataforma suporta apenas: **texto, áudio e imagem**.
 >
@@ -260,7 +260,7 @@
 > **Endpoints GPU GPU Manager Service (Hetzner GEX44) - ARQUITETURA v4.0.0:**
 > - `gpu-qwen-vl (localhost)` - LLM Qwen2.5-VL 7B vLLM (`/v1/chat/completions`) - multimodal texto+vision
 > - `gpu-asr (localhost)` - Canary-1B NeMo (`/transcribe`)
-> - `gpu-embeddings (localhost)` - Qwen3-Embedding-8B INT8 + OpenCLIP (`/embed/text`, `/embed/image`)
+> - `gpu-embeddings (localhost)` - Qwen3-Embedding-0.6B INT8 + OpenCLIP (`/embed/text`, `/embed/image`)
 > - ❌ `gpu-flux` REMOVIDO - Alice ANALISA imagens via Qwen2.5-VL mas NÃO gera
 >
 > **Semântica HTTP (enterprise-grade):** quando `WHISPER_REQUIRED=false` e Whisper não está carregado, o endpoint `POST /inference/transcribe` responde **501 (Not Implemented)** com a mensagem “Transcrição desabilitada…”, evitando retornar **503** (que sinaliza indisponibilidade temporária).
@@ -273,8 +273,8 @@
 > - `gpu-qwen-vl (localhost)/health` (LLM + Vision - Qwen2.5-VL)
 
 > **Nota (Robustez enterprise):**
-> - `document-processor`: valida **explicitamente** a dimensão de cada embedding de chunk (4096 dim) antes de inserir no Qdrant.
-> - Embeddings de texto (4096 dim) → **Qdrant** (busca semântica HNSW)
+> - `document-processor`: valida **explicitamente** a dimensão de cada embedding de chunk (1024 dim) antes de inserir no Qdrant.
+> - Embeddings de texto (1024 dim) → **Qdrant** (busca semântica HNSW)
 > - Embeddings de imagem (1024 dim) → **pgvector** (busca similar)
 >
 > **Bug Fix (17/12/2025):** Endpoint `/api/media/upload/json` corrigido para ficar consistente com endpoint FormData:
@@ -393,7 +393,7 @@
 
 | Funcionalidade | Status | Tecnologia |
 |----------------|--------|------------|
-| **Embeddings de Texto (Trading/RAG)** | ✅ | Qwen3-Embedding-8B (4096 dim) → Qdrant - GPU Manager Service (Hetzner GEX44) |
+| **Embeddings de Texto (Trading/RAG)** | ✅ | Qwen3-Embedding-0.6B (1024 dim) → Qdrant - GPU Manager Service (Hetzner GEX44) |
 | **Embeddings de Imagem** | ✅ | OpenCLIP ViT-H/14 (1024 dim) → pgvector - GPU Manager Service (Hetzner GEX44) |
 | **ASR (Transcrição)** | ✅ | Canary-1B (NeMo) - GPU Manager Service (Hetzner GEX44) |
 | **LLM (Chat/Trading)** | ✅ | **Qwen2.5-VL 7B AWQ** - GPU Manager Service (Hetzner GEX44) - ARQUITETURA v4.0.0 |
@@ -406,7 +406,7 @@
 | Prometheus Metrics | ✅ | `/metrics` |
 
 > **ARQUITETURA ENTERPRISE (17/12/2025):**
-> - **Embeddings de Texto (Trading/RAG):** Qwen3-Embedding-8B (4096 dim) - **Qdrant** (máxima qualidade)
+> - **Embeddings de Texto (Trading/RAG):** Qwen3-Embedding-0.6B (1024 dim) - **Qdrant**
 > - **Embeddings de imagem:** OpenCLIP ViT-H/14 (1024 dim) - pgvector
 > - **ASR:** Canary-1B (NeMo) - GPU Manager Service (Hetzner GEX44)
 > - **GPU Dedicada 24/7:** Hetzner GEX44 - ARQUITETURA v4.0.0 - TODOS containers GPU SIMULTÂNEOS (15GB/20GB VRAM)

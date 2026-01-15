@@ -3,7 +3,7 @@
 # Alice Enterprise Platform - Embeddings GPU (Arquitetura Unificada)
 # =============================================================================
 # Dockerfile para embeddings enterprise:
-# - Texto: Qwen3-Embedding-8B (4096 dim) - armazenado em Qdrant
+# - Texto: Qwen3-Embedding-0.6B (1024 dim) - armazenado em Qdrant
 # - Imagem: OpenCLIP ViT-H/14 (1024 dim) - armazenado em pgvector
 # 
 # GPU: RTX 4000 Ada (20GB VRAM) - Hetzner GEX44
@@ -43,7 +43,7 @@
 FROM pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime
 
 LABEL maintainer="Fillipe Guerra"
-LABEL description="Embeddings GPU Enterprise (Qwen3-Embedding-8B 4096 + OpenCLIP 1024)"
+LABEL description="Embeddings GPU Enterprise (Qwen3-Embedding-0.6B 1024 + OpenCLIP 1024)"
 LABEL version="3.2.2"
 LABEL architecture="unified"
 LABEL base="pytorch-runtime"
@@ -87,11 +87,11 @@ COPY healthcheck.py /app/healthcheck.py
 RUN chown -R embeddings:embeddings /app
 USER embeddings
 
-# Configuração Enterprise (17/12/2025)
-# Texto: Qwen3-Embedding-8B (8B params, 4096 dim) - melhor qualidade
+# Configuração Enterprise (Gate 2)
+# Texto: Qwen3-Embedding-0.6B (1024 dim) - equilíbrio qualidade/VRAM
 # Imagem: OpenCLIP ViT-H/14 (1024 dim) - dimensão nativa
-ENV TEXT_MODEL_NAME="Qwen/Qwen3-Embedding-8B"
-ENV TEXT_EMBEDDING_DIM="4096"
+ENV TEXT_MODEL_NAME="Qwen/Qwen3-Embedding-0.6B"
+ENV TEXT_EMBEDDING_DIM="1024"
 ENV IMAGE_MODEL_NAME="laion/CLIP-ViT-H-14-laion2B-s32B-b79K"
 ENV IMAGE_EMBEDDING_DIM="1024"
 ENV DEVICE="cuda"

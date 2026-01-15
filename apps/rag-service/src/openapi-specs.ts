@@ -219,7 +219,7 @@ export const ragServicePaths = {
       },
       responses: {
         200: {
-          description: 'Embedding (4096 dim - Qwen3-Embedding-8B GPU via GPU Manager Service → Qdrant)',
+          description: 'Embedding (1024 dim - Qwen3-Embedding-0.6B GPU via GPU Manager Service → Qdrant)',
           content: {
             'application/json': {
               schema: {

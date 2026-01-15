@@ -19,7 +19,7 @@ import { describe, it, expect, vi } from 'vitest';
 // CONSTANTES
 // ============================================================================
 
-const TEXT_EMBEDDING_DIM = 4096; // Qwen3-Embedding-8B (armazenado em Qdrant)
+const TEXT_EMBEDDING_DIM = 1024; // Qwen3-Embedding-0.6B (armazenado em Qdrant)
 
 // ============================================================================
 // TESTES DE TIPOS DE ÁUDIO SUPORTADOS
@@ -167,7 +167,7 @@ describe('Audio Processor - Estrutura de Transcrição', () => {
     const result: ProcessedAudio = {
       transcription: 'Texto transcrito do áudio',
       embedding: [],
-      embeddingModel: 'Qwen/Qwen3-Embedding-8B (GPU)',
+      embeddingModel: 'Qwen/Qwen3-Embedding-0.6B (GPU)',
       metadata: { fileSize: 1000 },
       processedAt: new Date().toISOString(),
       processingTimeMs: 5000,
@@ -180,7 +180,7 @@ describe('Audio Processor - Estrutura de Transcrição', () => {
       transcription: 'Olá, como você está?',
       transcriptionLanguage: 'pt',
       embedding: [],
-      embeddingModel: 'Qwen/Qwen3-Embedding-8B (GPU)',
+      embeddingModel: 'Qwen/Qwen3-Embedding-0.6B (GPU)',
       metadata: { fileSize: 1000 },
       processedAt: new Date().toISOString(),
       processingTimeMs: 5000,
@@ -193,7 +193,7 @@ describe('Audio Processor - Estrutura de Transcrição', () => {
       transcription: 'Hello world',
       transcriptionConfidence: 0.95,
       embedding: [],
-      embeddingModel: 'Qwen/Qwen3-Embedding-8B (GPU)',
+      embeddingModel: 'Qwen/Qwen3-Embedding-0.6B (GPU)',
       metadata: { fileSize: 1000 },
       processedAt: new Date().toISOString(),
       processingTimeMs: 5000,
@@ -202,21 +202,21 @@ describe('Audio Processor - Estrutura de Transcrição', () => {
     expect(result.transcriptionConfidence).toBeLessThanOrEqual(1);
   });
 
-  it('deve usar modelo de embedding Qwen3-Embedding-8B GPU', () => {
+  it('deve usar modelo de embedding Qwen3-Embedding-0.6B GPU', () => {
     const result: ProcessedAudio = {
       transcription: 'Test',
       embedding: new Array(TEXT_EMBEDDING_DIM).fill(0),
-      embeddingModel: 'Qwen/Qwen3-Embedding-8B (GPU)',
+      embeddingModel: 'Qwen/Qwen3-Embedding-0.6B (GPU)',
       metadata: { fileSize: 1000 },
       processedAt: new Date().toISOString(),
       processingTimeMs: 5000,
     };
-    expect(result.embeddingModel).toBe('Qwen/Qwen3-Embedding-8B (GPU)');
+    expect(result.embeddingModel).toBe('Qwen/Qwen3-Embedding-0.6B (GPU)');
   });
 
-  it('deve ter embedding com dimensão 4096 (Qwen3-Embedding-8B GPU)', () => {
+  it('deve ter embedding com dimensão 1024 (Qwen3-Embedding-0.6B GPU)', () => {
     const embedding = new Array(TEXT_EMBEDDING_DIM).fill(0);
-    expect(embedding.length).toBe(4096);
+    expect(embedding.length).toBe(1024);
   });
 });
 

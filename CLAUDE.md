@@ -1,7 +1,7 @@
 # Alice - Plataforma Enterprise de IA Autônoma
 
 ## Overview
-Alice is an autonomous AI enterprise platform powered by the **Qwen2.5-VL 7B** multimodal model (text + vision) served via vLLM AWQ on Hetzner GPU server GEX44 (RTX 4000 Ada 20GB). Its core purpose is to provide a fully autonomous AI solution with absolute privacy, predictable costs, and unlimited customization via QLoRA fine-tuning. The platform is **specialized in Finance, Trading, and Financial Management** with built-in vision capabilities for chart analysis. Key capabilities include real-time chat with streaming, deduplication, multi-tenancy, RBAC, a RAG backend with enterprise embeddings (Qwen3-Embedding-8B INT8 4096 dim → Qdrant, OpenCLIP 1024 dim → pgvector), **Trading BTC Futures** on KuCoin Perpetuals with scalping capabilities (1m, 3m, 5m candles), aggressive self-learning with scheduled training (weekly), and a robust observability stack. The business vision is to deliver an enterprise-grade AI solution with unparalleled control, performance, data security, and cost predictability for financial verticals.
+Alice is an autonomous AI enterprise platform served on Hetzner GPU server GEX44 (RTX 4000 Ada 20GB). Its core purpose is to provide a fully autonomous AI solution with absolute privacy, predictable costs, and unlimited customization via QLoRA fine-tuning. The platform is **specialized in Finance, Trading, and Financial Management** with built-in vision capabilities for chart analysis. Key capabilities include real-time chat with streaming, deduplication, multi-tenancy, RBAC, a RAG backend with enterprise embeddings (**Qwen3-Embedding-0.6B INT8 1024 dim → Qdrant**, OpenCLIP 1024 dim → pgvector), **Trading BTC Futures** on KuCoin Perpetuals with scalping capabilities (1m, 3m, 5m candles), aggressive self-learning with scheduled training (weekly), and a robust observability stack. The business vision is to deliver an enterprise-grade AI solution with unparalleled control, performance, data security, and cost predictability for financial verticals.
 
 ## User Preferences
 ### 18 Regras Fundamentais
@@ -75,7 +75,7 @@ Alice employs a **modular multi-stack architecture** with 51 containerized servi
 - `docker-compose.backup.yml` - Stack de backup
 
 **Core Architectural Components:**
-- **Infrastructure Core (10 serviços)**: **Caddy (reverse proxy com SSL automático + HTTP/3)**, pgBackRest Init (stanza initialization), PostgreSQL (with pgvector for image embeddings and RLS for multi-tenancy), Alice Redis (dedicated cache), **SearXNG (metabusca interna para Web Search)**, **Qdrant (banco vetorial para texto 4096 dim)**, **Tor Proxy (acesso a .onion para SearXNG engines ahmia/torch)**, **MinIO (S3 para Langfuse)**.
+- **Infrastructure Core (10 serviços)**: **Caddy (reverse proxy com SSL automático + HTTP/3)**, pgBackRest Init (stanza initialization), PostgreSQL (with pgvector for image embeddings and RLS for multi-tenancy), Alice Redis (dedicated cache), **SearXNG (metabusca interna para Web Search)**, **Qdrant (banco vetorial para texto 1024 dim)**, **Tor Proxy (acesso a .onion para SearXNG engines ahmia/torch)**, **MinIO (S3 para Langfuse)**.
 - **Alice Microservices (7 serviços)**:
     - **Frontend**: React 18, Vite 5, shadcn/ui, i18n PT-BR.
     - **Auth Service**: OAuth 2.0, SAML 2.0, OIDC Provider, 6-level RBAC, PostgreSQL sessions.
@@ -86,7 +86,7 @@ Alice employs a **modular multi-stack architecture** with 51 containerized servi
     - **Observability Service**: Prometheus, Grafana, Jaeger for metrics, dashboards, and tracing.
     - **Multimodal Inference (100% GPU)** - ARQUITETURA v4.0.0: Processamento via GPU Manager Service (Hetzner GEX44):
         - LLM + Vision: Qwen2.5-VL 7B AWQ (~4GB) - Chat, trading, análise de gráficos - GPU OBRIGATÓRIO
-        - Embeddings de texto: Qwen3-Embedding-8B INT8 (4096 dim, ~8GB) → Qdrant - GPU OBRIGATÓRIO
+        - Embeddings de texto: Qwen3-Embedding-0.6B INT8 (1024 dim, ~3GB) → Qdrant - GPU OBRIGATÓRIO
         - Embeddings de imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector - GPU OBRIGATÓRIO
         - ASR: Canary-1B (NeMo, ~3GB) - GPU OBRIGATÓRIO
         - GPU Manager: Gerenciamento centralizado com fila priorizada, monitoramento VRAM, circuit breakers
@@ -106,7 +106,7 @@ Alice employs a **modular multi-stack architecture** with 51 containerized servi
 
 ### GPU Services (Hetzner GPU Server) - Atualizado 11/01/2026 - Arquitetura v4.0.0
 - **LLM + Vision**: Qwen2.5-VL 7B AWQ (~4GB) - chat, trading, análise de gráficos, vision nativo
-- **Embeddings Texto**: Qwen3-Embedding-8B INT8 (4096 dim, ~8GB) → Qdrant - quantização INT8
+- **Embeddings Texto**: Qwen3-Embedding-0.6B INT8 (1024 dim, ~3GB) → Qdrant - quantização INT8
 - **Embeddings Imagem**: OpenCLIP ViT-H/14 (1024 dim) → pgvector - dimensão nativa
 - **ASR**: Canary-1B (NeMo, ~3GB) - transcrição de áudio
 - **Fine-tuning**: Treinamento QLoRA via GPU Trainer (~12GB, sob demanda) - schedule semanal + on-demand
@@ -118,14 +118,14 @@ Embeddings otimizados por caso de uso para máxima qualidade:
 
 | Modalidade | Modelo | Dimensões | Storage | Licença |
 |------------|--------|-----------|---------|---------|
-| **Texto (Trading/RAG)** | Qwen3-Embedding-8B | **4096** | **Qdrant** | Apache 2.0 |
+| **Texto (Trading/RAG)** | Qwen3-Embedding-0.6B | **1024** | **Qdrant** | Apache 2.0 |
 | **Imagem** | OpenCLIP ViT-H/14 | **1024** | PostgreSQL `vector` | MIT |
 | **Transcrição** | Canary-1B (NeMo) | - | - | Apache 2.0 |
 
 - **GPU é OBRIGATÓRIO** - sem fallback CPU (Regra 6)
-- **Qdrant para Texto**: Suporta HNSW com 4096+ dim (pgvector limita em 4000 para halfvec)
+- **Qdrant para Texto**: Suporta HNSW (dimensões altas não são limitação aqui)
 - **GPU Dedicada 24/7**: Servidor Hetzner GEX44 com containers Docker rodando continuamente - sem cold start
-- **Texto unificado**: Trading e RAG usam mesmo modelo (Qwen3-Embedding-8B)
+- **Texto unificado**: Trading e RAG usam mesmo modelo (Qwen3-Embedding-0.6B)
 - **Arquitetura Single Server**: Todos os 50 containers rodam no mesmo servidor Hetzner GPU, eliminando latência de rede entre serviços
 - **Payments**: Stripe, Wise.
 - **CRM/ERP**: ERPNext.

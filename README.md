@@ -261,7 +261,7 @@ A plataforma Alice é composta por **50 containers** organizados em **5 stacks i
 | 2 | pgBackRest Init | `alice-pgbackrest-init` | Inicializador de stanza para backup (init container) |
 | 3 | PostgreSQL | `alice-postgres` | Banco principal com pgvector, RLS e entrypoint-wrapper para validação de permissões |
 | 4 | Alice Redis | `alice-redis` | Cache distribuído (Redis 8.4 - node-redis 5.x) |
-| 5 | Qdrant | `alice-qdrant` | Banco vetorial para texto (4096 dim, HNSW index) |
+| 5 | Qdrant | `alice-qdrant` | Banco vetorial para texto (1024 dim, HNSW index) |
 | 6 | SearXNG | `alice-searxng` | Metabusca interna (Web Search) |
 | 7 | Tor Proxy | `alice-tor` | Proxy SOCKS5 para engines .onion |
 
@@ -277,7 +277,7 @@ A plataforma Alice é composta por **50 containers** organizados em **5 stacks i
 | 13 | Integrations | `alice-integrations` | 3005 | Stripe, Wise, Twilio, Gmail SMTP, KuCoin Futures |
 | 14 | Observability | `alice-observability` | 3007 | Prometheus, Grafana, Jaeger, Backup |
 
-> **NOTA (02/01/2026):** Caddy (`alice-caddy`) substitui Traefik como API Gateway. Vantagens: SSL automático com retry inteligente, HTTP/3 nativo, footprint 40MB (vs 100MB Traefik), configuração declarativa via Caddyfile. Embeddings 100% via GPU Manager Service local (Qwen3-Embedding-8B 4096 dim + OpenCLIP 1024 dim).
+> **NOTA (02/01/2026):** Caddy (`alice-caddy`) substitui Traefik como API Gateway. Vantagens: SSL automático com retry inteligente, HTTP/3 nativo, footprint 40MB (vs 100MB Traefik), configuração declarativa via Caddyfile. Embeddings 100% via GPU Manager Service local (Qwen3-Embedding-0.6B 1024 dim + OpenCLIP 1024 dim).
 
 #### Categoria 3: ERPNext Stack (15 serviços)
 
@@ -324,7 +324,7 @@ A plataforma Alice é composta por **50 containers** organizados em **5 stacks i
 |---|---------|-----------|-----------|
 | 42 | GPU Manager Service | `gpu-manager-service` | Gerenciamento centralizado de requisições GPU (fila priorizada, VRAM monitoring, circuit breakers) |
 | 43 | GPU Qwen-VL (LLM + Vision) | `gpu-qwen-vl` | Qwen2.5-VL 7B AWQ para chat, trading e análise de gráficos (multimodal) |
-| 44 | GPU Embeddings | `gpu-embeddings` | Qwen3-Embedding-8B INT8 (texto) + OpenCLIP ViT-H/14 (imagem) |
+| 44 | GPU Embeddings | `gpu-embeddings` | Qwen3-Embedding-0.6B INT8 (texto) + OpenCLIP ViT-H/14 (imagem) |
 | 45 | GPU ASR | `gpu-asr` | Canary-1B (NeMo) para transcrição de áudio |
 
 #### Categoria 6: Backup (1 serviço)
@@ -770,10 +770,10 @@ Todos os 50 containers têm security hardening completo aplicado. Containers que
 *Performance: HTTP Compression (gzip), HTTP/3 (Caddy), SHA Pinning 95%+*
 *PostgreSQL: HNSW indexes + 10 índices compostos + 12 tabelas Trading com RLS*
 *Storage: Servidor GEX44 1.92TB interno (/opt/alice) - SEM S3 externo*
-*ARQUITETURA ENTERPRISE: Texto 4096 dim Qwen3-Embedding-8B (Qdrant) | Imagem 1024 dim OpenCLIP (pgvector)*
+*ARQUITETURA ENTERPRISE: Texto 1024 dim Qwen3-Embedding-0.6B (Qdrant) | Imagem 1024 dim OpenCLIP (pgvector)*
 *Trading BTC Futures: KuCoin Perpetuals + Indicadores Técnicos Determinísticos + Validação Cruzada Anti-Alucinação*
 *LLM: Qwen2.5-VL 7B (vLLM AWQ) via Hetzner GPU Server GEX44 (RTX 4000 Ada 20GB) - Multimodal (texto + vision)*
-*GPU Services v4.0.0: Qwen2.5-VL 7B (4GB), Qwen3-Embedding-8B INT8 (8GB), Canary-1B ASR (3GB) - todos simultâneos (15GB/20GB)*
+*GPU Services (Gate 2): LLM separado (Mistral 7B AWQ), VLM (Qwen2.5-VL), Embeddings Qwen3-Embedding-0.6B INT8 (1024 dim), ASR Canary-1B - gerenciados pelo GPU Manager Service*
 *Pipeline Enterprise (06/01/2026): Release (`release.yml`) → Deploy Modular (`deploy-stack-modular.yml` - 5 stacks independentes ~10min)*
 *Rollback Cirúrgico: Só reverte stack com falha, outros continuam funcionando 100%*
 

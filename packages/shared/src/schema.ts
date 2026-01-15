@@ -169,6 +169,9 @@ export const MessageAnexoSchema = z.object({
   size: z.number().int().nonnegative(),
   url: z.string().url().optional(),
   thumbnailUrl: z.string().url().optional(),
+  // Gate 2: campos opcionais para auditoria do VLM (visão) quando aplicável
+  vlmDescription: z.string().max(20000).optional(),
+  vlmModel: z.string().max(200).optional(),
 });
 export const MessageAnexosSchema = z.array(MessageAnexoSchema);
 export type MessageAnexo = z.infer<typeof MessageAnexoSchema>;

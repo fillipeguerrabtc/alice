@@ -15,6 +15,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
+import { EMBEDDING_DIMENSIONS } from '@alice/database';
 
 // ============================================================================
 // TESTES DE TIPOS DE MÍDIA SUPORTADOS
@@ -68,12 +69,12 @@ describe('RAG Service - Tipos de Mídia Suportados', () => {
 // ============================================================================
 
 describe('RAG Service - Dimensões de Embedding', () => {
-  // ARQUITETURA UNIFICADA (17/12/2025)
-  const TEXT_EMBEDDING_DIM = 4096;   // Qwen3-Embedding-8B (armazenado em Qdrant)
-  const CLIP_EMBEDDING_DIM = 1024;   // OpenCLIP ViT-H/14 GPU (pgvector)
+  // SSOT: @alice/database
+  const TEXT_EMBEDDING_DIM = EMBEDDING_DIMENSIONS.TEXT;
+  const CLIP_EMBEDDING_DIM = EMBEDDING_DIMENSIONS.CLIP;
 
-  it('deve ter text embedding de 4096 dimensões (Qwen3-Embedding-8B)', () => {
-    expect(TEXT_EMBEDDING_DIM).toBe(4096);
+  it('deve ter text embedding de 1024 dimensões (Qwen3-Embedding-0.6B)', () => {
+    expect(TEXT_EMBEDDING_DIM).toBe(1024);
   });
 
   it('deve ter image embedding de 1024 dimensões (OpenCLIP ViT-H/14 GPU)', () => {
@@ -84,7 +85,7 @@ describe('RAG Service - Dimensões de Embedding', () => {
     const textEmb = new Array(TEXT_EMBEDDING_DIM).fill(0);
     const clipEmb = new Array(CLIP_EMBEDDING_DIM).fill(0);
     
-    expect(textEmb.length).toBe(4096);
+    expect(textEmb.length).toBe(1024);
     expect(clipEmb.length).toBe(1024);
   });
 });
@@ -274,7 +275,7 @@ describe('RAG Service - Health Check', () => {
       service: 'rag-service',
       timestamp: new Date().toISOString(),
       embeddingsProvider: 'gpu-manager-service',
-      model: 'Qwen/Qwen3-Embedding-8B',
+      model: 'Qwen/Qwen3-Embedding-0.6B',
       circuitBreaker: {
         state: 'closed',
         stats: { failures: 0, successes: 100, timeouts: 0 },
@@ -283,7 +284,7 @@ describe('RAG Service - Health Check', () => {
 
     expect(health.status).toBe('ok');
     expect(health.embeddingsProvider).toBe('gpu-manager-service');
-    expect(health.model).toBe('Qwen/Qwen3-Embedding-8B');
+    expect(health.model).toBe('Qwen/Qwen3-Embedding-0.6B');
   });
 });
 

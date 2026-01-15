@@ -5,7 +5,7 @@
  * Implementa Circuit Breaker pattern (Regra 16 - Best Practices 2025).
  * 
  * ARQUITETURA ENTERPRISE (25/12/2025):
- * - Texto: Qwen3-Embedding-8B (4096 dim) → Qdrant via GPU Manager Service
+ * - Texto: Qwen3-Embedding-0.6B (1024 dim) → Qdrant via GPU Manager Service
  * - Imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector via GPU Manager Service
  * 
  * Autor: Fillipe Guerra
@@ -79,7 +79,7 @@ import { createWebSearchClient, WebSearchResult } from './web-search.js';
 import { createLearningTask, dequeueNextLearningTask, updateLearningTaskStatus } from './learning-orchestrator.js';
 import { startLearningWorker } from './workers/learning-worker.js';
 import { startWebCrawlWorker } from './workers/web-crawl-worker.js';
-// Cliente Qdrant para busca de texto (4096 dim - Qwen3-Embedding-8B)
+// Cliente Qdrant para busca de texto (1024 dim - Qwen3-Embedding-0.6B)
 // CORREÇÃO 17/12/2025: Adicionado upsertPoints para inserir documentos no Qdrant
 // Bug: Busca usava Qdrant mas inserção era apenas PostgreSQL - resultados sempre vazios
 import {
@@ -2560,6 +2560,8 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
                 ...mediaUploadRecord.extractedMetadata as object,
                 ...result.metadata,
                 embeddingModel: result.embeddingModel,
+                vlmDescription: result.vlmDescription ?? null,
+                vlmModel: result.vlmModel ?? null,
                 hasThumbnail: !!thumbnailPath,
                 thumbnailPath,
                 thumbnailUrl,

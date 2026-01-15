@@ -73,7 +73,7 @@ GPU 20GB VRAM - TODOS SIMULTÂNEOS:
 |---------|--------|-----------|--------------|--------|-------------|-------------|
 | **gpu-llm** | Mistral 7B Instruct (AWQ) | ~6-8GB (budget) | `gpu-memory-utilization=0.35`, `max-model-len=2048`, `dtype=float16` | **LLM texto** (chat, trading) | vllm/vllm-openai | ~8GB |
 | **gpu-qwen-vl** | Qwen2.5-VL 7B AWQ | ~8GB | `gpu-memory-utilization=0.45`, `max-model-len=4096`, `dtype=float16` | **VLM visão** (análise de imagens) | vllm/vllm-openai | ~8GB |
-| **gpu-embeddings** | Qwen3-Embedding-8B INT8 | ~7.4GB | `quantization=int8` | Embeddings para RAG | **pytorch-runtime** | **~11GB (-35% ✅)** |
+| **gpu-embeddings** | Qwen3-Embedding-0.6B INT8 | ~2-3GB (budget) | `quantization=int8` | Embeddings para RAG | **pytorch-runtime** | **~11GB (-35% ✅)** |
 | **gpu-asr** | Canary-1B | ~4GB | NeMo | Transcrição de áudio | **pytorch-runtime** | **~11GB (-35% ✅)** |
 
 ### Configuração vLLM 0.12.0 - CORRIGIDO v4.0.2

@@ -2,10 +2,10 @@
  * Cliente Qdrant - Alice Enterprise Platform
  * 
  * Cliente enterprise-grade para banco vetorial Qdrant.
- * Usado para embeddings de texto com Qwen3-Embedding-8B (4096 dimensões).
+ * Usado para embeddings de texto com Qwen3-Embedding-0.6B (1024 dimensões).
  * 
  * Arquitetura (17/12/2025):
- * - Texto: Qdrant (4096 dim) - Qwen3-Embedding-8B
+ * - Texto: Qdrant (1024 dim) - Qwen3-Embedding-0.6B
  * - Imagem: pgvector (1024 dim) - OpenCLIP ViT-H/14
  * 
  * Funcionalidades:
@@ -32,8 +32,8 @@ const logger = createLogger('qdrant-client');
 const QDRANT_URL = process.env.QDRANT_URL || 'http://alice-qdrant:6333';
 const QDRANT_API_KEY = process.env.QDRANT_API_KEY;
 
-// Dimensão dos embeddings de texto (Qwen3-Embedding-8B - 4096 dim nativos)
-export const TEXT_EMBEDDING_DIM = 4096;
+// Dimensão dos embeddings de texto (Qwen3-Embedding-0.6B - 1024 dim nativos)
+export const TEXT_EMBEDDING_DIM = 1024;
 
 // Nome da coleção de texto (unificada para Trading + RAG)
 export const TEXT_COLLECTION_NAME = 'text_embeddings';
@@ -88,6 +88,13 @@ export interface QdrantCollectionInfo {
   points_count: number;
   indexed_vectors_count: number;
   segments_count: number;
+  config?: {
+    params?: {
+      vectors?: {
+        size: number;
+      };
+    };
+  };
 }
 
 // ============================================================================
@@ -232,7 +239,7 @@ export async function createCollection(config: QdrantCollectionConfig): Promise<
       ef_construct: 200,  // Qualidade da construção do índice
       full_scan_threshold: 10000, // Threshold para scan linear
     },
-    // Otimizações para 4096 dimensões (Qwen3-Embedding-8B)
+    // Otimizações para embeddings de texto (Qwen3-Embedding-0.6B, 1024 dim)
     optimizers_config: {
       memmap_threshold: 20000,        // Usar mmap para coleções grandes
       indexing_threshold: 20000,      // Threshold para indexação
@@ -418,7 +425,7 @@ export async function deletePointsByFilter(
 
 /**
  * Inicializa a coleção de texto se não existir
- * Cria com configuração otimizada para 4096 dimensões (Qwen3-Embedding-8B)
+ * Cria com configuração otimizada para 1024 dimensões (Qwen3-Embedding-0.6B)
  */
 export async function initTextCollection(): Promise<void> {
   if (!isQdrantConfigured()) {
@@ -435,8 +442,8 @@ export async function initTextCollection(): Promise<void> {
       distance: 'Cosine',
       onDiskPayload: true,
       hnswConfig: {
-        m: 16,              // Bom equilíbrio para 4096 dim
-        efConstruct: 200,   // Qualidade de construção
+        m: 16,
+        efConstruct: 200,
         fullScanThreshold: 10000,
       },
     });
@@ -446,6 +453,16 @@ export async function initTextCollection(): Promise<void> {
       'Coleção de texto criada no Qdrant'
     );
   } else {
+    // Fail-fast enterprise: se a coleção existir com dimensão incorreta, o sistema NÃO deve operar silenciosamente.
+    // A migração de dimensão exige reindex/re-embed dos vetores.
+    const info = await getCollectionInfo(TEXT_COLLECTION_NAME);
+    const existingSize = info.config?.params?.vectors?.size;
+    if (typeof existingSize === 'number' && existingSize !== TEXT_EMBEDDING_DIM) {
+      throw new Error(
+        `Coleção Qdrant '${TEXT_COLLECTION_NAME}' com dimensão inválida: ${existingSize}. ` +
+          `Esperado: ${TEXT_EMBEDDING_DIM}. Execute migração/reindex dos embeddings antes do deploy.`
+      );
+    }
     logger.info(
       { collection: TEXT_COLLECTION_NAME },
       'Coleção de texto já existe no Qdrant'

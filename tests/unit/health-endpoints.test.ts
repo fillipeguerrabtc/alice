@@ -106,7 +106,7 @@ const chatHealthSchema = baseHealthSchema.extend({
 // ARQUITETURA 100% GPU (15/12/2025)
 const ragHealthSchema = baseHealthSchema.extend({
   embeddingsProvider: z.literal('gpu-manager-service'),
-  model: z.literal('Qwen/Qwen3-Embedding-8B'),
+  model: z.literal('Qwen/Qwen3-Embedding-0.6B'),
   circuitBreaker: z.object({
     state: z.enum(['open', 'closed', 'half-open']),
     stats: circuitBreakerStatsSchema,
@@ -120,7 +120,7 @@ const ragHealthSchema = baseHealthSchema.extend({
 // GPU dedicada Hetzner GEX44 - 24/7, sem cold start
 const trainingHealthSchema = baseHealthSchema.extend({
   embeddingsProvider: z.literal('gpu-manager-service'),
-  model: z.literal('Qwen/Qwen3-Embedding-8B'),
+  model: z.literal('Qwen/Qwen3-Embedding-0.6B'),
   gpuManagerAvailable: z.boolean(),
   circuitBreakers: z.object({
     embeddings: z.object({
@@ -235,7 +235,7 @@ const mockRagHealthResponse = {
   timestamp: FIXED_TIMESTAMP,
   // ARQUITETURA ENTERPRISE (25/12/2025): Embeddings via GPU Manager Service
   embeddingsProvider: 'gpu-manager-service',
-  model: 'Qwen/Qwen3-Embedding-8B',
+  model: 'Qwen/Qwen3-Embedding-0.6B',
   circuitBreaker: {
     state: 'closed',
     stats: { failures: 0, successes: 200, timeouts: 0 },
@@ -249,7 +249,7 @@ const mockTrainingHealthResponse = {
   service: 'training-service',
   timestamp: FIXED_TIMESTAMP,
   embeddingsProvider: 'gpu-manager-service',
-  model: 'Qwen/Qwen3-Embedding-8B',
+  model: 'Qwen/Qwen3-Embedding-0.6B',
   gpuManagerAvailable: true,
   circuitBreakers: {
     embeddings: {
@@ -388,8 +388,8 @@ describe('Health Endpoints - Contratos de Schema', () => {
       expect(mockRagHealthResponse.embeddingsProvider).toBe('gpu-manager-service');
     });
 
-    it('deve usar modelo "Qwen/Qwen3-Embedding-8B" (GPU)', () => {
-      expect(mockRagHealthResponse.model).toBe('Qwen/Qwen3-Embedding-8B');
+    it('deve usar modelo "Qwen/Qwen3-Embedding-0.6B" (GPU)', () => {
+      expect(mockRagHealthResponse.model).toBe('Qwen/Qwen3-Embedding-0.6B');
     });
 
     it('deve ter circuit breaker para embeddings', () => {

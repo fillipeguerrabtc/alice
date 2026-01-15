@@ -14,7 +14,7 @@
  * Não há cold start - GPU dedicada elimina necessidade de warm on demand.
  * 
  * EMBEDDINGS:
- * - Qwen3-Embedding-8B: 4096 dim (texto/documentos → Qdrant)
+ * - Qwen3-Embedding-0.6B: 1024 dim (texto/documentos → Qdrant)
  * - OpenCLIP ViT-H/14: 1024 dim (imagens + text-to-image → pgvector)
  * 
  * Autor: Fillipe Guerra

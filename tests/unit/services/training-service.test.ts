@@ -95,7 +95,7 @@ describe('Training Service - Deduplicação Semântica', () => {
   // ARQUITETURA 100% GPU (26/12/2025) - GPU Manager Service
   const SEMHASH_CONFIG = {
     similarityThreshold: 0.92, // 92% similar = duplicado
-    embeddingDim: 4096, // Qwen3-Embedding-8B GPU (GPU Manager Service)
+    embeddingDim: 1024, // Qwen3-Embedding-0.6B GPU (GPU Manager Service)
     batchSize: 100,
   };
 
@@ -309,7 +309,7 @@ describe('Training Service - Health Check', () => {
       service: 'training-service',
       timestamp: new Date().toISOString(),
       embeddingsProvider: 'gpu-manager-service',
-      model: 'Qwen/Qwen3-Embedding-8B (4096 dim → Qdrant)',
+      model: 'Qwen/Qwen3-Embedding-0.6B (1024 dim → Qdrant)',
       fineTuningStatus: 'idle',
       gpuManagerAvailable: true,
       circuitBreakers: {

@@ -864,6 +864,63 @@ function mapModelNameToGpuModel(modelName: string): string {
   return modelMap[modelName] || DEFAULT_LLM_CONFIG.model;
 }
 
+type OpenAIChatCompletionResponse = {
+  id: string;
+  model: string;
+  choices: Array<{
+    message?: { role: 'assistant'; content: string };
+    finish_reason?: string | null;
+  }>;
+};
+
+const DEFAULT_VLM_IMAGE_PROMPT =
+  'Você é um assistente especializado em Trading, Finanças, Contabilidade e Matemática. ' +
+  'Analise a imagem enviada. Se for um gráfico (candles, indicadores), descreva padrões, tendência, suportes/resistências, ' +
+  'possíveis sinais e riscos. Se houver texto na imagem, transcreva o que for legível. ' +
+  'Se a imagem não for de trading, descreva objetivamente o conteúdo. Responda em PT-BR.';
+
+async function analyzeImageWithVlm(params: {
+  imageDataUri: string;
+  question: string;
+}): Promise<{ text: string; model: string }> {
+  const question = params.question.trim().length > 0 ? params.question.trim() : 'Descreva e analise esta imagem.';
+
+  const gpuResponse = await requestGpu({
+    serviceType: GpuServiceType.VLM,
+    endpoint: '/v1/chat/completions',
+    method: 'POST',
+    priority: GpuRequestPriority.CRITICAL,
+    timeout: 60000,
+    body: {
+      messages: [
+        { role: 'system', content: DEFAULT_VLM_IMAGE_PROMPT },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: question },
+            { type: 'image_url', image_url: { url: params.imageDataUri } },
+          ],
+        },
+      ],
+      temperature: 0.2,
+      max_tokens: 800,
+      stream: false,
+    },
+  });
+
+  if (!gpuResponse.success || !gpuResponse.data) {
+    throw new Error(gpuResponse.error || 'Falha ao analisar imagem via VLM');
+  }
+
+  const payload = gpuResponse.data as OpenAIChatCompletionResponse | undefined;
+  const content = payload?.choices?.[0]?.message?.content;
+  if (!payload?.id || !payload?.model || typeof content !== 'string' || content.trim().length === 0) {
+    throw new Error('Resposta inválida do VLM (OpenAI chat completion)');
+  }
+
+  return { text: content.trim(), model: payload.model };
+}
+
 async function callLlamaAPIInternal(request: LLMRequest): Promise<globalThis.Response> {
   // BUG FIX 25/12/2025: callLlamaAPIInternal NÃO suporta streaming
   // Streaming deve ser feito diretamente no endpoint/handler (ex: /api/chat/stream, WebSocket)
@@ -3554,11 +3611,33 @@ wss.on('connection', (ws, req) => {
 
         // Upload para RAG Service (processamento assíncrono)
         // Usar tenantId derivado da conversa (mais seguro)
+        // Gate 2: Para imagem, gerar uma descrição/análise via VLM e armazenar no RAG (metadados),
+        // evitando duplicação e permitindo auditoria/observabilidade do pipeline.
+        let vlmDescriptionForRag: string | undefined;
+        let vlmModelForRag: string | undefined;
+        if (validatedMediaType === 'image') {
+          try {
+            const imageDataUri = `data:${mediaMessage.media.mimeType};base64,${mediaMessage.media.file}`;
+            const analysis = await analyzeImageWithVlm({
+              imageDataUri,
+              question: mediaMessage.content || 'Descreva e analise esta imagem.',
+            });
+            vlmDescriptionForRag = analysis.text;
+            vlmModelForRag = analysis.model;
+          } catch (vlmErr) {
+            logger.error(
+              { error: vlmErr instanceof Error ? vlmErr.message : String(vlmErr) },
+              'Falha ao analisar imagem via VLM'
+            );
+          }
+        }
+
         const uploadResult = await uploadMediaToRAG(
           mediaMessage.media.file,
           mediaMessage.media.filename,
           mediaMessage.media.mimeType,
           mediaSafeTenantId,
+          vlmDescriptionForRag,
           userMsg.id,
           mediaMessage.conversationId,
         );
@@ -3582,6 +3661,8 @@ wss.on('connection', (ws, req) => {
               size: Buffer.from(mediaMessage.media.file, 'base64').length,
               url: uploadResult.fileUrl,
               thumbnailUrl: uploadResult.thumbnailUrl,
+              vlmDescription: vlmDescriptionForRag,
+              vlmModel: vlmModelForRag,
             }],
           })
           .where(eq(schema.messages.id, userMsg.id));
@@ -3606,12 +3687,14 @@ wss.on('connection', (ws, req) => {
         // BUG FIX 23/12/2025: Usar validatedMediaType consistentemente em todo o código
         // Após validação e type narrowing, usar apenas validatedMediaType para garantir type safety
         if (validatedMediaType === 'image') {
-          // CORREÇÃO 17/12/2025: Mixtral é text-only - usar contexto RAG via embeddings CLIP
-          // A imagem foi processada e embedding CLIP gerado - busca RAG usa esse embedding
-          systemPrompt += '\n\nO usuário enviou uma imagem que foi processada pelo sistema de visão computacional. ' +
-            'Use o contexto fornecido pelo RAG para responder sobre a imagem. ' +
-            'Se não houver contexto suficiente, informe que a análise visual direta não está disponível no momento.';
-          userContent = userContent || 'O que você pode me dizer sobre esta imagem com base no contexto disponível?';
+          // Gate 2: VLM fornece análise visual; LLM (texto) usa essa análise para responder com stream.
+          if (vlmDescriptionForRag && vlmDescriptionForRag.trim().length > 0) {
+            systemPrompt += `\n\n[ANÁLISE VISUAL (VLM)]\n${vlmDescriptionForRag}\n[/ANÁLISE VISUAL (VLM)]\n`;
+            userContent = userContent || 'Com base na análise visual acima, explique a imagem e possíveis implicações para trading.';
+          } else {
+            systemPrompt += '\n\nO usuário enviou uma imagem, mas a análise visual (VLM) está indisponível no momento.';
+            userContent = userContent || 'Recebi a imagem. No momento, não consegui analisar visualmente. Descreva o que deseja avaliar.';
+          }
         } else if (validatedMediaType === 'audio') {
           // Aguardar transcrição se disponível
           if (uploadResult.transcription) {
@@ -3626,7 +3709,11 @@ wss.on('connection', (ws, req) => {
 
         // Buscar contexto RAG
         const namespaceId = mediaMessage.namespaceId || conversation.namespaceId || undefined;
-        const ragResult = await buscarContextoRAG(userContent, namespaceId);
+        const ragQuery =
+          validatedMediaType === 'image' && vlmDescriptionForRag
+            ? `${vlmDescriptionForRag}\n\nPergunta do usuário:\n${userContent}`
+            : userContent;
+        const ragResult = await buscarContextoRAG(ragQuery, namespaceId);
         
         if (ragResult?.context) {
           systemPrompt += formatarContextoParaLLM(ragResult);

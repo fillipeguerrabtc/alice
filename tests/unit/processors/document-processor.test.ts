@@ -458,15 +458,15 @@ describe('Document Processor - Metadados', () => {
 // ============================================================================
 
 describe('Document Processor - Estrutura de Embeddings', () => {
-  const TEXT_EMBEDDING_DIM = 4096; // Qwen3-Embedding-8B (armazenado em Qdrant)
+  const TEXT_EMBEDDING_DIM = 1024; // Qwen3-Embedding-0.6B (armazenado em Qdrant)
 
-  it('deve ter dimensão de embedding de 4096 (Qwen3-Embedding-8B)', () => {
-    expect(TEXT_EMBEDDING_DIM).toBe(4096);
+  it('deve ter dimensão de embedding de 1024 (Qwen3-Embedding-0.6B)', () => {
+    expect(TEXT_EMBEDDING_DIM).toBe(1024);
   });
 
   it('deve criar array de embedding com dimensão correta', () => {
     const embedding = new Array(TEXT_EMBEDDING_DIM).fill(0);
-    expect(embedding.length).toBe(4096);
+    expect(embedding.length).toBe(1024);
   });
 
   it('deve calcular média de embeddings corretamente', () => {

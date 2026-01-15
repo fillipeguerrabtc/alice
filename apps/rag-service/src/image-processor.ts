@@ -20,6 +20,32 @@ import { validateEmbeddingDimension } from '@alice/database';
 
 const logger = createLogger('image-processor');
 
+export type OpenAIChatCompletionResponse = {
+  id: string;
+  model: string;
+  choices: Array<{
+    message?: { role: 'assistant'; content: string };
+    finish_reason?: string | null;
+  }>;
+};
+
+export function extractAssistantTextFromOpenAIChatCompletion(
+  payload: OpenAIChatCompletionResponse | undefined
+): string | null {
+  const content = payload?.choices?.[0]?.message?.content;
+  if (typeof content !== 'string') return null;
+  const trimmed = content.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+// Prompt de descrição de imagens (VLM) - especializado no vertical financeiro.
+// Regra 6: não é secret nem valor de infra; é parte da lógica de produto (prompt engineering).
+const DEFAULT_VLM_IMAGE_PROMPT =
+  'Você é um assistente especializado em Trading, Finanças, Contabilidade e Matemática. ' +
+  'Analise a imagem enviada. Se for um gráfico (candles, indicadores), descreva padrões, tendência, suportes/resistências, ' +
+  'possíveis sinais e riscos. Se houver texto na imagem, transcreva o que for legível. ' +
+  'Se a imagem não for de trading, descreva objetivamente o conteúdo. Responda em PT-BR.';
+
 // GPU Manager Service - Gerenciamento centralizado de requisições GPU (25/12/2025)
 // GPU é OBRIGATÓRIO - OpenCLIP ViT-H/14 (1024 dim) → pgvector
 const GPU_MANAGER_URL = process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager:3010';
@@ -43,6 +69,11 @@ interface ImageEmbeddingsApiParams {
 // Parâmetros para embedding de texto (busca text-to-image)
 interface TextForImageApiParams {
   text: string;
+}
+
+interface VlmDescribeImageParams {
+  imageDataUri: string;
+  question?: string;
 }
 
 /**
@@ -110,6 +141,52 @@ async function callTextForImageGpuApi(params: TextForImageApiParams): Promise<{ 
   };
 }
 
+/**
+ * Chama VLM via GPU Manager Service para extrair descrição/análise de imagem.
+ *
+ * Gate 2: VLM é capability-based (GpuServiceType.VLM). O modelo pode mudar sem alterar este contrato.
+ */
+async function callVlmDescribeImageGpuApi(params: VlmDescribeImageParams): Promise<{ text: string; model: string }> {
+  const question =
+    params.question && params.question.trim().length > 0 ? params.question.trim() : 'Descreva e analise esta imagem.';
+
+  const gpuResponse = await requestGpu({
+    serviceType: GpuServiceType.VLM,
+    endpoint: '/v1/chat/completions',
+    method: 'POST',
+    priority: GpuRequestPriority.MEDIUM,
+    timeout: 60000,
+    body: {
+      // Payload OpenAI-compatible com entrada multimodal.
+      messages: [
+        { role: 'system', content: DEFAULT_VLM_IMAGE_PROMPT },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: question },
+            { type: 'image_url', image_url: { url: params.imageDataUri } },
+          ],
+        },
+      ],
+      temperature: 0.2,
+      max_tokens: 800,
+      stream: false,
+    },
+  });
+
+  if (!gpuResponse.success || !gpuResponse.data) {
+    throw new Error(gpuResponse.error || 'Erro ao gerar descrição de imagem via VLM');
+  }
+
+  const payload = gpuResponse.data as OpenAIChatCompletionResponse | undefined;
+  const content = extractAssistantTextFromOpenAIChatCompletion(payload);
+  if (!payload?.id || !payload?.model || !content) {
+    throw new Error('Resposta inválida do VLM (OpenAI chat completion)');
+  }
+
+  return { text: content, model: payload.model };
+}
+
 
 // Circuit breaker para chamadas GPU de IMAGEM
 const gpuImageBreaker = createCircuitBreaker(callImageEmbeddingsGpuApi, {
@@ -123,12 +200,22 @@ const gpuTextForImageBreaker = createCircuitBreaker(callTextForImageGpuApi, {
   ...CIRCUIT_BREAKER_PRESETS.clipEmbeddings,
 });
 
+// Circuit breaker para descrição VLM (visão) - reutiliza preset do VLM atual (Qwen2.5-VL) enquanto vigente
+const gpuVlmDescribeBreaker = createCircuitBreaker(callVlmDescribeImageGpuApi, {
+  name: 'vlm-describe-image',
+  ...CIRCUIT_BREAKER_PRESETS.qwenVL,
+});
+
 async function callGpuImageApi(params: ImageEmbeddingsApiParams): Promise<{ embedding: number[]; model: string }> {
   return gpuImageBreaker.fire(params) as Promise<{ embedding: number[]; model: string }>;
 }
 
 async function callGpuTextForImageApi(params: TextForImageApiParams): Promise<{ embedding: number[]; model: string }> {
   return gpuTextForImageBreaker.fire(params) as Promise<{ embedding: number[]; model: string }>;
+}
+
+async function callGpuVlmDescribeApi(params: VlmDescribeImageParams): Promise<{ text: string; model: string }> {
+  return gpuVlmDescribeBreaker.fire(params) as Promise<{ text: string; model: string }>;
 }
 
 export interface ImageMetadata {
@@ -145,6 +232,8 @@ export interface ImageMetadata {
 export interface ProcessedImage {
   embedding: number[];
   embeddingModel: string;
+  vlmDescription?: string;
+  vlmModel?: string;
   thumbnailBuffer?: Buffer;
   thumbnailMimeType?: string;
   metadata: ImageMetadata;
@@ -156,6 +245,16 @@ export interface ImageProcessorOptions {
   generateThumbnail?: boolean;
   thumbnailSize?: number;
   extractExif?: boolean;
+  /**
+   * Se true, extrai descrição via VLM e inclui no resultado.
+   * Default: true (Gate 2: visão é requisito central do produto).
+   */
+  generateDescription?: boolean;
+  /**
+   * Pergunta opcional para guiar a análise do VLM.
+   * Ex.: "Identifique suportes e resistências no gráfico".
+   */
+  descriptionQuestion?: string;
 }
 
 class ImageProcessorService {
@@ -181,7 +280,13 @@ class ImageProcessorService {
     options: ImageProcessorOptions = {}
   ): Promise<ProcessedImage> {
     const startTime = Date.now();
-    const { generateThumbnail = true, thumbnailSize = 256, extractExif = true } = options;
+    const {
+      generateThumbnail = true,
+      thumbnailSize = 256,
+      extractExif = true,
+      generateDescription = true,
+      descriptionQuestion,
+    } = options;
 
     // Extrair metadata básica
     const metadata = await this.extractMetadata(imageBuffer, mimeType, extractExif);
@@ -204,6 +309,22 @@ class ImageProcessorService {
     } else {
       logger.error('GPU não configurado - embedding de imagem não gerado');
       embeddingModel = 'not_configured';
+    }
+
+    // Descrever imagem via VLM (Gate 2)
+    let vlmDescription: string | undefined;
+    let vlmModel: string | undefined;
+    if (generateDescription) {
+      try {
+        const base64Image = imageBuffer.toString('base64');
+        const imageDataUri = `data:${mimeType};base64,${base64Image}`;
+        const described = await callGpuVlmDescribeApi({ imageDataUri, question: descriptionQuestion });
+        vlmDescription = described.text;
+        vlmModel = described.model;
+      } catch (error) {
+        logger.error({ error }, 'Erro ao gerar descrição de imagem via VLM');
+        // Regra 6: não inventar descrição. O processamento da imagem continua (embeddings + thumbnail).
+      }
     }
 
     // Gerar thumbnail
@@ -229,6 +350,8 @@ class ImageProcessorService {
     return {
       embedding,
       embeddingModel,
+      vlmDescription,
+      vlmModel,
       thumbnailBuffer,
       thumbnailMimeType,
       metadata,

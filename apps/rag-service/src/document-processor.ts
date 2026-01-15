@@ -6,11 +6,11 @@
  * - DOCX: Extração de texto via mammoth
  * - XLSX: Extração de texto via exceljs (CVE-2024-22363, CVE-2024-3766 corrigidos)
  * - TXT/MD: Leitura direta
- * - Text embeddings via GPU (Qwen3-Embedding-8B, 4096 dim)
+ * - Text embeddings via GPU (Qwen3-Embedding-0.6B, 1024 dim)
  * - Circuit Breaker para resiliência (Regra 16 CLAUDE.md)
  * 
  * ARQUITETURA 100% GPU (25/12/2025):
- * - Embeddings via GPU Manager Service (Qwen3-Embedding-8B, 4096 dim)
+ * - Embeddings via GPU Manager Service (Qwen3-Embedding-0.6B, 1024 dim)
  * - Embeddings de texto armazenados em Qdrant
  * - GPU é OBRIGATÓRIO - sem fallback CPU (Regra 6)
  * 
@@ -30,10 +30,8 @@ const logger = createLogger('document-processor');
 // GPU Manager Service - Gerenciamento centralizado de requisições GPU (25/12/2025)
 const GPU_MANAGER_URL = process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager:3010';
 
-// Dimensão dos embeddings de texto - ARQUITETURA UNIFICADA (17/12/2025)
-// Qwen3-Embedding-8B: 4096 dim (8B params, máxima qualidade)
-// Armazenado em Qdrant (suporta HNSW com 4096+ dim)
-export const TEXT_EMBEDDING_DIM = 4096;
+// Dimensão dos embeddings de texto (SSOT: @alice/database)
+export const TEXT_EMBEDDING_DIM = EMBEDDING_DIMENSIONS.TEXT;
 
 // ============================================================================
 // VALIDAÇÃO DE VARIÁVEIS DE AMBIENTE - CORREÇÃO AUDITORIA 17/12/2025
@@ -234,7 +232,7 @@ interface EmbeddingParams {
 }
 
 async function generateEmbeddingInternal(params: EmbeddingParams): Promise<{ embedding: number[]; model: string }> {
-  // ARQUITETURA ENTERPRISE (25/12/2025) - Qwen3-Embedding-8B via GPU Manager Service (4096 dim → Qdrant)
+  // Gate 2 - Text embeddings via GPU Manager Service (1024 dim → Qdrant)
   // GPU é OBRIGATÓRIO - sem fallback CPU (Regra 6)
   
   try {
@@ -264,12 +262,12 @@ async function generateEmbeddingInternal(params: EmbeddingParams): Promise<{ emb
       throw new Error('Resposta de embedding GPU vazia');
     }
 
-    // Validar dimensão (deve ser 4096 para Qwen3-Embedding-8B) - Enterprise-Grade
+    // Validar dimensão (SSOT) antes de retornar
     validateEmbeddingDimension(result.embedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
 
     return {
       embedding: result.embedding,
-      model: result.model || 'Qwen/Qwen3-Embedding-8B',
+      model: result.model || 'Qwen/Qwen3-Embedding-0.6B',
     };
   } catch (error) {
     if (error instanceof Error) {
@@ -296,14 +294,14 @@ class DocumentProcessorService {
   private isConfigured: boolean;
 
   constructor() {
-    // ARQUITETURA ENTERPRISE (25/12/2025) - Qwen3-Embedding-8B via GPU Manager Service (Hetzner GEX44) → Qdrant
+    // Gate 2 - Text embeddings via GPU Manager Service → Qdrant
     this.isConfigured = typeof GPU_MANAGER_URL === 'string' && GPU_MANAGER_URL.length > 0;
     
     if (!this.isConfigured) {
       logger.warn('GPU Manager Service não configurado - embeddings de documento não funcionarão');
     } else {
       logger.info({ gpuManagerUrl: GPU_MANAGER_URL, embeddingDim: TEXT_EMBEDDING_DIM }, 
-        'Document Processor - ARQUITETURA ENTERPRISE (Qwen3-Embedding-8B, 4096 dim → Qdrant)');
+        'Document Processor - ARQUITETURA ENTERPRISE (Text embeddings → Qdrant via GPU Manager Service)');
     }
   }
 

@@ -2,10 +2,10 @@
 Alice Enterprise Platform - Embeddings GPU Service (Arquitetura Unificada)
 ==========================================================================
 Serviço de embeddings enterprise:
-- Texto (Trading/RAG): Qwen3-Embedding-8B → 4096 dimensões (Qdrant)
+- Texto (Trading/RAG): Qwen3-Embedding-0.6B → 1024 dimensões (Qdrant)
 - Imagem: OpenCLIP ViT-H/14 → 1024 dimensões (pgvector)
 
-Qwen3-Embedding-8B: 8B parâmetros, Apache 2.0, máxima qualidade
+Qwen3-Embedding-0.6B: 0.6B parâmetros, Apache 2.0, ótimo custo/benefício
 OpenCLIP ViT-H/14: 1024 dim nativos, MIT license
 
 ARQUITETURA v4.0.0 (11/01/2026):
@@ -63,8 +63,8 @@ LAST_REQUEST_TIME = Gauge(
 # CONFIGURAÇÃO
 # =============================================================================
 
-TEXT_MODEL_NAME = os.environ.get("TEXT_MODEL_NAME", "Qwen/Qwen3-Embedding-8B")
-TEXT_EMBEDDING_DIM = int(os.environ.get("TEXT_EMBEDDING_DIM", "4096"))
+TEXT_MODEL_NAME = os.environ.get("TEXT_MODEL_NAME", "Qwen/Qwen3-Embedding-0.6B")
+TEXT_EMBEDDING_DIM = int(os.environ.get("TEXT_EMBEDDING_DIM", "1024"))
 IMAGE_MODEL_NAME = os.environ.get("IMAGE_MODEL_NAME", "laion/CLIP-ViT-H-14-laion2B-s32B-b79K")
 IMAGE_EMBEDDING_DIM = int(os.environ.get("IMAGE_EMBEDDING_DIM", "1024"))
 DEVICE = os.environ.get("DEVICE", "cuda" if torch.cuda.is_available() else "cpu")
@@ -89,7 +89,7 @@ Serviço de embeddings enterprise:
 - **Imagem**: {IMAGE_MODEL_NAME} → {IMAGE_EMBEDDING_DIM} dim (pgvector)
 - **Quantização**: {QUANTIZATION} (INT8 reduz VRAM significativamente)
 
-Qwen3-Embedding-8B: 8B params, máxima qualidade para trading/RAG.
+Qwen3-Embedding-0.6B: 0.6B params, ótimo custo/benefício para trading/RAG.
     """,
     version="4.0.0"
 )
@@ -210,7 +210,7 @@ async def load_models():
         # IMPORTANTE: quando usamos device_map, não devemos forçar `device`,
         # pois isso conflita com o roteamento interno e pode causar mismatch de device.
         st_kwargs = {
-            "trust_remote_code": True,  # CRÍTICO: Qwen3-Embedding-8B requer código customizado
+            "trust_remote_code": True,  # Qwen3-Embedding usa código customizado
             "model_kwargs": model_kwargs,
         }
         if "device_map" not in model_kwargs:
@@ -306,9 +306,9 @@ async def ready_check():
 @app.post("/embed/text", response_model=TextEmbeddingResponse)
 async def embed_text(request: TextEmbeddingRequest):
     """
-    Gera embeddings de texto (4096 dimensões - Qwen3-Embedding-8B).
+    Gera embeddings de texto (1024 dimensões - Qwen3-Embedding-0.6B).
     
-    Armazenamento: Qdrant (suporta HNSW com 4096+ dim)
+    Armazenamento: Qdrant (HNSW)
     
     Usado para:
     - Trading BTC Futures
@@ -423,11 +423,11 @@ async def model_info():
     return {
         "architecture": "unified",
         "decision_date": "2025-12-17",
-        "benefit": "Qwen3-Embedding-8B: 8B params, máxima qualidade",
+        "benefit": "Qwen3-Embedding-0.6B: 0.6B params, ótimo custo/benefício",
         "models": {
             "text": {
                 "name": TEXT_MODEL_NAME,
-                "parameters": "8B",
+                "parameters": "0.6B",
                 "dimensions": TEXT_EMBEDDING_DIM,
                 "storage": "Qdrant",
                 "license": "Apache 2.0",
@@ -443,7 +443,7 @@ async def model_info():
             }
         },
         "storage_mapping": {
-            "qdrant_4096": [
+            "qdrant_1024": [
                 "text_embeddings collection",
                 "Trading signals",
                 "RAG documents",

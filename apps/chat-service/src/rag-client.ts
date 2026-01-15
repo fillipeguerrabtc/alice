@@ -212,6 +212,7 @@ export async function uploadMediaToRAG(
   filename: string,
   mimeType: string,
   tenantId: string,
+  description?: string,
   messageId?: string,
   conversationId?: string,
 ): Promise<MediaUploadResult | null> {
@@ -229,6 +230,7 @@ export async function uploadMediaToRAG(
         file, // base64
         filename,
         mimeType,
+        description,
         messageId,
         conversationId,
       }),
