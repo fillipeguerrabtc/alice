@@ -168,7 +168,21 @@ async def load_models():
                 quant = QUANTIZATION
         else:
             # CPU é permitido apenas para desenvolvimento/diagnóstico local.
+            # IMPORTANTE: int8/fp16 exigem CUDA. Em CPU, permitimos apenas fp32.
             quant = "fp32" if QUANTIZATION in {"auto", "fp32"} else QUANTIZATION
+
+        # FAIL-FAST: combinações inválidas devem falhar com mensagem clara
+        if quant == "int8" and DEVICE != "cuda":
+            raise RuntimeError(
+                "Configuração inválida: QUANTIZATION=int8 requer DEVICE=cuda (GPU CUDA). "
+                "Em CPU use QUANTIZATION=fp32 (ou auto) e DEVICE=cpu."
+            )
+
+        if quant == "fp16" and DEVICE != "cuda":
+            raise RuntimeError(
+                "Configuração inválida: QUANTIZATION=fp16 requer DEVICE=cuda (GPU CUDA). "
+                "Em CPU use QUANTIZATION=fp32 (ou auto) e DEVICE=cpu."
+            )
 
         if quant == "int8":
             # BitsAndBytesConfig (transformers) - requer bitsandbytes instalado e GPU CUDA.
