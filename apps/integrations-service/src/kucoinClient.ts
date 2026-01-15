@@ -15,13 +15,13 @@
  * Data: 17 de Dezembro de 2025
  */
 
-import crypto from 'crypto';
+import crypto from 'node:crypto';
 import { createLogger } from '@alice/logger';
 import {
-  createCircuitBreaker,
   CIRCUIT_BREAKER_PRESETS,
   instrumentCircuitBreaker,
   createAlicePrometheus,
+  createProtectedFetch,
 } from '@alice/shared-utils';
 
 const logger = createLogger('kucoin-client');
@@ -34,12 +34,11 @@ const logger = createLogger('kucoin-client');
 
 // URL base da API KuCoin Futures (sandbox ou produção)
 // NOTA: Secret no GitHub é KUCOIN_PRO_BASE_URL (não KUCOIN_FUTURES_BASE_URL)
-// CORREÇÃO AUDITORIA 17/12/2025: Fail-fast em produção se variável não configurada
+// NOTA: Não é secret. Se ausente, usamos a URL oficial de produção.
 const KUCOIN_FUTURES_BASE_URL = (() => {
   const url = process.env.KUCOIN_PRO_BASE_URL;
   if (!url && process.env.NODE_ENV === 'production') {
-    // Em produção, exigimos que a URL esteja configurada (Regra 6 - fail-fast)
-    logger.warn('KUCOIN_PRO_BASE_URL não configurada em produção, usando URL padrão');
+    logger.info('KUCOIN_PRO_BASE_URL não configurada em produção, usando URL oficial padrão');
   }
   return url || 'https://api-futures.kucoin.com';
 })();
@@ -54,6 +53,61 @@ const KUCOIN_API_PASSPHRASE = process.env.KUCOIN_PRO_API_PASSPHRASE;
 
 // Modo sandbox para testes (default: false em produção)
 const KUCOIN_SANDBOX_MODE = process.env.KUCOIN_SANDBOX_MODE === 'true';
+
+// ============================================================================
+// SÍMBOLOS (SSOT via env - sem mensagens hardcoded)
+// ============================================================================
+
+const DEFAULT_ALLOWED_SYMBOLS = ['XBTUSDTM', 'XBTUSDM'] as const;
+
+/**
+ * Lista símbolos permitidos para trading/market data.
+ *
+ * Fonte de verdade:
+ * - `KUCOIN_ALLOWED_SYMBOLS` (ex: "XBTUSDTM,XBTUSDM,ETHUSDTM")
+ * - fallback: `DEFAULT_ALLOWED_SYMBOLS`
+ */
+export function getAllowedSymbols(): string[] {
+  const envRaw = process.env.KUCOIN_ALLOWED_SYMBOLS;
+  if (!envRaw) return [...DEFAULT_ALLOWED_SYMBOLS];
+
+  const parsed = envRaw
+    .split(',')
+    .map((s) => s.trim().toUpperCase())
+    .filter((s) => s.length > 0);
+
+  // Evita estado inválido quando a env existe mas está vazia/ruim (ex: ",,,")
+  if (parsed.length === 0) return [...DEFAULT_ALLOWED_SYMBOLS];
+
+  // Deduplicar preservando ordem
+  return Array.from(new Set(parsed));
+}
+
+/**
+ * Símbolo default para endpoints que permitem omissão.
+ *
+ * Fonte:
+ * - `KUCOIN_DEFAULT_SYMBOL` (opcional)
+ * - fallback: primeiro item de `getAllowedSymbols()`
+ *
+ * Fail-fast: se `KUCOIN_DEFAULT_SYMBOL` estiver definido mas for inválido,
+ * lançamos erro em produção para evitar comportamento silencioso.
+ */
+export function getDefaultSymbol(): string {
+  const configured = process.env.KUCOIN_DEFAULT_SYMBOL?.trim().toUpperCase();
+  if (!configured) return getAllowedSymbols()[0]!;
+
+  if (!getAllowedSymbols().includes(configured)) {
+    const message = `KUCOIN_DEFAULT_SYMBOL inválido: "${configured}". Valores permitidos: ${getAllowedSymbols().join(', ')}`;
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(message);
+    }
+    logger.warn(message);
+    return getAllowedSymbols()[0]!;
+  }
+
+  return configured;
+}
 
 // ============================================================================
 // TIPOS (TypeScript strict - Regra 8)
@@ -267,14 +321,9 @@ export interface KucoinAccountOverview {
 // CIRCUIT BREAKER (Regra 16 - Resiliência)
 // ============================================================================
 
-// Função wrapper para circuit breaker - segue padrão wiseClient.ts
-// Bug fix: createCircuitBreaker requer função de ação + config com nome
-async function executeKucoinRequest(fetchFn: () => Promise<Response>): Promise<Response> {
-  return fetchFn();
-}
-
-// Circuit breaker seguindo padrão enterprise de wiseClient.ts
-const kucoinCircuitBreaker = createCircuitBreaker(executeKucoinRequest, {
+// Circuit breaker + AbortController (best practice 2025):
+// use createProtectedFetch() para garantir que requisições sejam abortadas ao atingir timeout do breaker.
+const { breaker: kucoinCircuitBreaker, fetch: kucoinFetch } = createProtectedFetch({
   name: 'kucoin-futures',
   ...CIRCUIT_BREAKER_PRESETS.kucoinFutures,
 });
@@ -310,7 +359,7 @@ function generateSignature(
   body: string = ''
 ): string {
   if (!KUCOIN_API_SECRET) {
-    throw new Error('KUCOIN_API_SECRET não configurada');
+    throw new Error('KUCOIN_PRO_API_SECRET não configurada');
   }
 
   const prehashString = timestamp + method.toUpperCase() + endpoint + body;
@@ -328,7 +377,7 @@ function generateSignature(
  */
 function generatePassphraseSignature(): string {
   if (!KUCOIN_API_SECRET || !KUCOIN_API_PASSPHRASE) {
-    throw new Error('KUCOIN_API_SECRET ou KUCOIN_API_PASSPHRASE não configurada');
+    throw new Error('KUCOIN_PRO_API_SECRET ou KUCOIN_PRO_API_PASSPHRASE não configurada');
   }
 
   return crypto
@@ -346,7 +395,7 @@ function generateAuthHeaders(
   body: string = ''
 ): Record<string, string> {
   if (!KUCOIN_API_KEY) {
-    throw new Error('KUCOIN_API_KEY não configurada');
+    throw new Error('KUCOIN_PRO_API_KEY não configurada');
   }
 
   const timestamp = Date.now().toString();
@@ -367,6 +416,72 @@ function generateAuthHeaders(
 // CLIENTE HTTP (com circuit breaker e retry)
 // ============================================================================
 
+type KucoinRequestErrorKind = 'http' | 'api' | 'network' | 'timeout' | 'parse';
+
+export class KucoinRequestError extends Error {
+  public readonly kind: KucoinRequestErrorKind;
+  public readonly method: string;
+  public readonly endpoint: string;
+  public readonly status?: number;
+  public readonly kucoinCode?: string;
+  public readonly retryAfterMs?: number;
+
+  constructor(params: {
+    message: string;
+    kind: KucoinRequestErrorKind;
+    method: string;
+    endpoint: string;
+    status?: number;
+    kucoinCode?: string;
+    retryAfterMs?: number;
+  }) {
+    super(params.message);
+    this.name = 'KucoinRequestError';
+    this.kind = params.kind;
+    this.method = params.method;
+    this.endpoint = params.endpoint;
+    this.status = params.status;
+    this.kucoinCode = params.kucoinCode;
+    this.retryAfterMs = params.retryAfterMs;
+  }
+}
+
+export function isKucoinRequestError(error: unknown): error is KucoinRequestError {
+  return error instanceof Error && error.name === 'KucoinRequestError';
+}
+
+export function isKucoinTransientError(error: unknown): boolean {
+  if (!isKucoinRequestError(error)) return false;
+  if (error.kind === 'timeout' || error.kind === 'network') return true;
+  if (error.kind === 'http' && error.status) {
+    return error.status === 429 || (error.status >= 500 && error.status <= 599);
+  }
+  return false;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function parseRetryAfterMs(value: string | null): number | undefined {
+  if (!value) return undefined;
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds) || seconds <= 0) return undefined;
+  return Math.min(30_000, Math.floor(seconds * 1000)); // safety cap
+}
+
+function isAbortError(err: unknown): boolean {
+  return err instanceof Error && err.name === 'AbortError';
+}
+
+function computeBackoffMs(attempt: number): number {
+  // Exponential backoff com jitter (max 2s). attempt começa em 1.
+  const base = 200;
+  const exp = Math.min(2000, base * Math.pow(2, attempt - 1));
+  const jitter = Math.floor(Math.random() * 100);
+  return exp + jitter;
+}
+
 /**
  * Executa requisição HTTP para API KuCoin com autenticação
  */
@@ -386,47 +501,118 @@ async function executeRequest<T>(
 
   logger.debug({ method, endpoint, isSandbox: KUCOIN_SANDBOX_MODE }, 'Executando requisição KuCoin');
 
-  const fetchFn = async (): Promise<Response> => {
-    // CORREÇÃO AUDITORIA 17/12/2025: Adicionar timeout explícito de 30 segundos
-    // Bug: Sem timeout, conexões podem ficar penduradas indefinidamente
-    // O circuit breaker tem timeout, mas não cobre conexões estabelecidas que param de responder
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
+  const maxAttempts = method === 'GET' || method === 'DELETE' ? 3 : 1;
 
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const response = await fetch(url, {
+      const response = await kucoinFetch(url, {
         method,
         headers,
         body: method !== 'GET' ? bodyString : undefined,
-        signal: controller.signal,
       });
 
       if (!response.ok) {
-      const errorBody = await response.text();
-      logger.error(
-        { status: response.status, statusText: response.statusText, body: errorBody },
-        'Erro na requisição KuCoin'
-      );
-      throw new Error(`KuCoin API error: ${response.status} - ${errorBody}`);
+        const retryAfterMs = parseRetryAfterMs(response.headers.get('retry-after'));
+        const errorBody = await response.text().catch(() => '');
+
+        const err = new KucoinRequestError({
+          kind: 'http',
+          method,
+          endpoint,
+          status: response.status,
+          retryAfterMs,
+          message: `KuCoin HTTP ${response.status} (${response.statusText})`,
+        });
+
+        const retryable = response.status === 429 || (response.status >= 500 && response.status <= 599);
+        if (attempt < maxAttempts && retryable) {
+          const waitMs = retryAfterMs ?? computeBackoffMs(attempt);
+          logger.warn(
+            { method, endpoint, attempt, maxAttempts, status: response.status, waitMs, body: errorBody },
+            'KuCoin request falhou (HTTP) — retry agendado'
+          );
+          await sleep(waitMs);
+          continue;
+        }
+
+        logger.error(
+          { method, endpoint, attempt, status: response.status, statusText: response.statusText, body: errorBody },
+          'Erro na requisição KuCoin (HTTP)'
+        );
+        throw err;
+      }
+
+      let data: KucoinApiResponse<T>;
+      try {
+        data = (await response.json()) as KucoinApiResponse<T>;
+      } catch (parseErr) {
+        logger.error({ method, endpoint, attempt, error: parseErr }, 'Falha ao parsear JSON da KuCoin');
+        throw new KucoinRequestError({
+          kind: 'parse',
+          method,
+          endpoint,
+          message: 'Falha ao parsear resposta JSON da KuCoin',
+        });
+      }
+
+      // Verificar código de sucesso da API (200000 = OK)
+      if (data.code !== '200000') {
+        logger.error({ method, endpoint, attempt, code: data.code, msg: data.msg }, 'Erro retornado pela API KuCoin');
+        throw new KucoinRequestError({
+          kind: 'api',
+          method,
+          endpoint,
+          kucoinCode: data.code,
+          message: `KuCoin API error: ${data.code} - ${data.msg ?? 'sem mensagem'}`,
+        });
+      }
+
+      return data;
+    } catch (error) {
+      // Erro já tipado → apenas decide retry (GET/DELETE) ou rethrow
+      if (attempt < maxAttempts) {
+        if (isAbortError(error)) {
+          logger.warn({ method, endpoint, attempt, maxAttempts }, 'KuCoin request abortada por timeout — retry agendado');
+          await sleep(computeBackoffMs(attempt));
+          continue;
+        }
+
+        if (!(error instanceof KucoinRequestError)) {
+          logger.warn({ method, endpoint, attempt, maxAttempts, error }, 'KuCoin request falhou (network) — retry agendado');
+          await sleep(computeBackoffMs(attempt));
+          continue;
+        }
+      }
+
+      if (isAbortError(error)) {
+        throw new KucoinRequestError({
+          kind: 'timeout',
+          method,
+          endpoint,
+          message: 'KuCoin request abortada por timeout',
+        });
+      }
+
+      if (!(error instanceof KucoinRequestError)) {
+        throw new KucoinRequestError({
+          kind: 'network',
+          method,
+          endpoint,
+          message: error instanceof Error ? error.message : 'Falha de rede ao chamar KuCoin',
+        });
+      }
+
+      throw error;
     }
-
-    return response;
-    } finally {
-      clearTimeout(timeoutId);
-    }
-  };
-
-  // Executar via circuit breaker (passa função como parâmetro - padrão wiseClient.ts)
-  const response = await kucoinCircuitBreaker.fire(fetchFn);
-  const data = await response.json() as KucoinApiResponse<T>;
-
-  // Verificar código de sucesso da API (200000 = OK)
-  if (data.code !== '200000') {
-    logger.error({ code: data.code, msg: data.msg }, 'Erro retornado pela API KuCoin');
-    throw new Error(`KuCoin API error: ${data.code} - ${data.msg}`);
   }
 
-  return data;
+  // Inalcançável, mas mantém TypeScript satisfeito.
+  throw new KucoinRequestError({
+    kind: 'network',
+    method,
+    endpoint,
+    message: 'Falha ao chamar KuCoin',
+  });
 }
 
 // ============================================================================
@@ -1029,7 +1215,8 @@ export async function getOpenStopOrders(symbol?: string): Promise<{
  * Gera um clientOid único para rastreamento de ordens
  */
 export function generateClientOid(): string {
-  return `alice-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+  // UUID v4 nativo do Node.js (mais robusto que timestamp + randomBytes)
+  return `alice-${crypto.randomUUID()}`;
 }
 
 /**
@@ -1039,12 +1226,7 @@ export function generateClientOid(): string {
  * Permite expansão futura sem modificar código
  */
 export function isValidSymbol(symbol: string): boolean {
-  // Símbolos padrão suportados (BTC perpetuals)
-  const defaultSymbols = ['XBTUSDTM', 'XBTUSDM'];
-  // Permite configuração adicional via variável de ambiente (ex: KUCOIN_ALLOWED_SYMBOLS=XBTUSDTM,XBTUSDM,ETHUSDTM)
-  const envSymbols = process.env.KUCOIN_ALLOWED_SYMBOLS?.split(',').map(s => s.trim().toUpperCase());
-  const validSymbols = envSymbols || defaultSymbols;
-  return validSymbols.includes(symbol.toUpperCase());
+  return getAllowedSymbols().includes(symbol.trim().toUpperCase());
 }
 
 /**

@@ -33,7 +33,7 @@ Este documento contém a lista completa de todos os secrets necessários para a 
 | **Alice RAG (GPU + Web Search)** | alice-rag | GPU_MANAGER_URL, SEARXNG_URL |
 | **GPU Manager Service** | gpu-manager-service | INTERNAL_API_SECRET, REDIS_URL |
 | **Alice Integrations** | alice-integrations | STRIPE_*, WISE_*, TWILIO_*, GMAIL_*, KUCOIN_* |
-| **Alice Trading** | alice-integrations | KUCOIN_API_KEY, KUCOIN_API_SECRET, KUCOIN_API_PASSPHRASE |
+| **Alice Trading** | alice-integrations | KUCOIN_PRO_API_KEY, KUCOIN_PRO_API_SECRET, KUCOIN_PRO_API_PASSPHRASE, KUCOIN_PRO_BASE_URL |
 | **Alice Observability** | alice-observability, langfuse, langfuse-db | GRAFANA_*, LANGFUSE_*, LANGFUSE_DB_USER, LANGFUSE_DB_PASSWORD, LANGFUSE_DB_NAME |
 | **Web Search (SearXNG)** | alice-searxng | SEARXNG_SECRET_KEY |
 | **ERPNext** | erpnext-* | ERPNEXT_*, REDIS_CACHE_PASSWORD, REDIS_QUEUE_PASSWORD |
@@ -243,6 +243,15 @@ Estas variáveis **não são secrets**, mas são **obrigatórias em produção**
 | `KUCOIN_PRO_API_PASSPHRASE` | Definido por você ao criar a API Key |
 | `KUCOIN_PRO_BASE_URL` | Opcional. Default: `https://api-futures.kucoin.com` |
 | `KUCOIN_SANDBOX_MODE` | `true` para sandbox, `false` para produção (default: `false`) |
+
+#### Variáveis KuCoin (Configuração) — Não são secrets
+
+Estas variáveis são **configuração** (não secrets) e podem ser definidas via GitHub Actions (variables) ou `.env` local:
+
+| Variável | Exemplo | Obrigatória? | Descrição |
+|----------|---------|--------------|-----------|
+| `KUCOIN_ALLOWED_SYMBOLS` | `XBTUSDTM,XBTUSDM` | ⏳ Opcional | Lista de símbolos permitidos. Evita hardcode e permite expansão controlada. |
+| `KUCOIN_DEFAULT_SYMBOL` | `XBTUSDTM` | ⏳ Opcional | Símbolo default. Em produção, se definido e não estiver em `KUCOIN_ALLOWED_SYMBOLS`, o serviço falha (fail-fast). |
 
 **Configuração:**
 1. KuCoin → Profile → API Management → Create API

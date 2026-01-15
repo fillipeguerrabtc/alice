@@ -31,9 +31,9 @@ import * as kucoinClient from './kucoinClient.js';
 
 const logger = createLogger('kucoin-service');
 
-// Símbolo padrão para trading BTC Futures
-// XBTUSDTM = BTC/USDT perpétuo (margem USDT)
-const DEFAULT_SYMBOL = 'XBTUSDTM';
+// Símbolo padrão para trading BTC Futures (configurável via env no kucoinClient)
+// Fonte de verdade: kucoinClient.getDefaultSymbol()
+const DEFAULT_SYMBOL = kucoinClient.getDefaultSymbol();
 
 // ============================================================================
 // TIPOS ESPECÍFICOS DO SERVIÇO
@@ -59,7 +59,7 @@ export interface CreateSignalParams {
 
 /** Parâmetros para criar uma ordem */
 export interface CreateOrderFromSignalParams {
-  signalId: string;
+  signalId?: string;
   symbol?: string;
   side: 'buy' | 'sell';
   orderType: 'limit' | 'market';
@@ -293,7 +293,7 @@ export async function validateTradingAllowed(
 }
 
 // ============================================================================
-// SINAIS DE TRADING (Gerados pelo Mixtral LLM)
+// SINAIS DE TRADING (Gerados pelo LLM - modelo agnóstico)
 // ============================================================================
 
 /**
@@ -306,17 +306,25 @@ export async function createSignal(
   const db = getDatabase();
   
   try {
+    const symbol = params.symbol ?? DEFAULT_SYMBOL;
+    if (!kucoinClient.isValidSymbol(symbol)) {
+      return {
+        success: false,
+        error: `Símbolo inválido: ${symbol}. Valores permitidos: ${kucoinClient.getAllowedSymbols().join(', ')}.`,
+      };
+    }
+
     // CORREÇÃO 18/12/2025: reasoning e sourceModel não existem como colunas
     // Esses campos vão no metadata (JSONB com TradingSignalMetadataSchema)
     const signalData: InsertTradingSignal = {
       tenantId: authContext.tenantId,
       signalType: params.signalType,
-      symbol: params.symbol ?? 'XBTUSDTM',
+      symbol,
       confidence: params.confidence,
       metadata: {
         ...params.metadata,
         reasoning: params.reasoning,
-        modelVersion: params.sourceModel ?? 'mixtral-8x7b',
+        ...(params.sourceModel ? { modelVersion: params.sourceModel } : {}),
       },
       isActive: true,
     };
@@ -442,11 +450,14 @@ export async function createOrderFromSignal(
       return { success: false, error: 'API KuCoin não configurada.' };
     }
 
-    const symbol = params.symbol ?? 'XBTUSDTM';
+    const symbol = params.symbol ?? DEFAULT_SYMBOL;
 
     // Validar símbolo
     if (!kucoinClient.isValidSymbol(symbol)) {
-      return { success: false, error: `Símbolo inválido: ${symbol}. Use XBTUSDTM ou XBTUSDM.` };
+      return {
+        success: false,
+        error: `Símbolo inválido: ${symbol}. Valores permitidos: ${kucoinClient.getAllowedSymbols().join(', ')}.`,
+      };
     }
 
     // Obter preço atual e informações do contrato para validação
@@ -512,19 +523,40 @@ export async function createOrderFromSignal(
     const clientOid = kucoinClient.generateClientOid();
 
     // Criar ordem na KuCoin
-    const kucoinOrder = await kucoinClient.createOrder({
-      clientOid,
-      symbol,
-      side: params.side,
-      type: params.orderType,
-      size: params.size,
-      price: params.price?.toString(),
-      leverage: params.leverage,
-    });
+    let kucoinOrderId: string;
+    try {
+      const kucoinOrder = await kucoinClient.createOrder({
+        clientOid,
+        symbol,
+        side: params.side,
+        type: params.orderType,
+        size: params.size,
+        price: params.price?.toString(),
+        leverage: params.leverage,
+      });
+      kucoinOrderId = kucoinOrder.orderId;
+    } catch (err) {
+      // Garantia enterprise: evitar estado incerto em caso de timeout/network no POST.
+      // Como usamos clientOid, tentamos confirmar se a ordem foi criada antes de falhar.
+      if (kucoinClient.isKucoinTransientError(err)) {
+        try {
+          const existingOrder = await kucoinClient.getOrderByClientOid(clientOid);
+          kucoinOrderId = existingOrder.id;
+          logger.warn(
+            { clientOid, kucoinOrderId, symbol, side: params.side },
+            'KuCoin createOrder falhou, mas ordem foi confirmada via clientOid (idempotência)'
+          );
+        } catch {
+          throw err;
+        }
+      } else {
+        throw err;
+      }
+    }
 
     // Salvar no banco
-    // Bug fix: UUID não aceita string vazia, usar null se signalId não for um UUID válido
-    const validSignalId = params.signalId && params.signalId.trim() !== '' ? params.signalId : null;
+    // UUID não aceita string vazia → usar null quando signalId não foi informado
+    const validSignalId = params.signalId?.trim() ? params.signalId : null;
     
     // CORREÇÃO 18/12/2025: Campos são real() (number), não string
     // Schema tradingOrders: price, size, stopPrice são real() - remover .toString()
@@ -532,7 +564,7 @@ export async function createOrderFromSignal(
     const orderData: InsertTradingOrder = {
       tenantId: authContext.tenantId,
       signalId: validSignalId,
-      kucoinOrderId: kucoinOrder.orderId,
+      kucoinOrderId: kucoinOrderId,
       clientOid,
       symbol,
       side: params.side,
@@ -556,7 +588,7 @@ export async function createOrderFromSignal(
       'CREATE_ORDER',
       'order',
       order.id,
-      { params, kucoinOrderId: kucoinOrder.orderId, clientOid },
+      { params, kucoinOrderId, clientOid },
       undefined,
       order as unknown as Record<string, unknown>
     );
@@ -564,7 +596,7 @@ export async function createOrderFromSignal(
     logger.info(
       { 
         orderId: order.id, 
-        kucoinOrderId: kucoinOrder.orderId, 
+        kucoinOrderId, 
         symbol, 
         side: params.side, 
         size: params.size 
@@ -597,10 +629,7 @@ export async function createManualOrder(
   authContext: TradingAuthContext,
   params: ManualOrderParams
 ): Promise<TradingOperationResult<TradingOrder>> {
-  // Bug fix: UUID não aceita string vazia - passar string vazia que será
-  // convertida para null em createOrderFromSignal
   return createOrderFromSignal(authContext, {
-    signalId: '', // Convertido para null em createOrderFromSignal (validação de UUID)
     ...params,
   });
 }
@@ -669,26 +698,48 @@ export async function createStopOrder(
     const clientOid = kucoinClient.generateClientOid();
 
     // Criar ordem stop na KuCoin
-    const kucoinResponse = await kucoinClient.createStopOrder({
-      clientOid,
-      symbol,
-      side: params.side,
-      type: params.orderType || 'market',
-      leverage: params.leverage || riskConfig.defaultLeverage || 1,
-      size: params.size,
-      price: params.price?.toString(),
-      triggerStopUpPrice: params.takeProfit?.toString(),
-      triggerStopDownPrice: params.stopLoss?.toString(),
-      stopPriceType: 'TP', // Trade Price - mais comum
-      reduceOnly: true, // Stop orders geralmente são para reduzir posição
-    });
+    let kucoinStopOrderId: string;
+    try {
+      const kucoinResponse = await kucoinClient.createStopOrder({
+        clientOid,
+        symbol,
+        side: params.side,
+        type: params.orderType || 'market',
+        leverage: params.leverage || riskConfig.defaultLeverage || 1,
+        size: params.size,
+        price: params.price?.toString(),
+        triggerStopUpPrice: params.takeProfit?.toString(),
+        triggerStopDownPrice: params.stopLoss?.toString(),
+        stopPriceType: 'TP', // Trade Price - mais comum
+        reduceOnly: true, // Stop orders geralmente são para reduzir posição
+      });
+      kucoinStopOrderId = kucoinResponse.orderId;
+    } catch (err) {
+      // Garantia enterprise: confirmar criação por clientOid em caso de erro transitório.
+      if (kucoinClient.isKucoinTransientError(err)) {
+        try {
+          const openStops = await kucoinClient.getOpenStopOrders(symbol);
+          const matched = openStops.items.find((o) => o.clientOid === clientOid);
+          if (!matched) throw err;
+          kucoinStopOrderId = matched.id;
+          logger.warn(
+            { clientOid, kucoinStopOrderId, symbol, side: params.side },
+            'KuCoin createStopOrder falhou, mas stop order foi confirmada via clientOid (idempotência)'
+          );
+        } catch {
+          throw err;
+        }
+      } else {
+        throw err;
+      }
+    }
 
     // Registrar no audit log
     await logTradingAction(
       authContext,
       'CREATE_STOP_ORDER',
       'stop_order',
-      kucoinResponse.orderId,
+      kucoinStopOrderId,
       {
         clientOid,
         symbol,
@@ -697,12 +748,12 @@ export async function createStopOrder(
         stopLoss: params.stopLoss,
         takeProfit: params.takeProfit,
         leverage: params.leverage,
-        kucoinOrderId: kucoinResponse.orderId,
+        kucoinOrderId: kucoinStopOrderId,
       }
     );
 
     logger.info({
-      orderId: kucoinResponse.orderId,
+      orderId: kucoinStopOrderId,
       clientOid,
       symbol,
       stopLoss: params.stopLoss,
@@ -712,7 +763,7 @@ export async function createStopOrder(
     return {
       success: true,
       data: {
-        orderId: kucoinResponse.orderId,
+        orderId: kucoinStopOrderId,
         clientOid,
       },
     };
@@ -975,7 +1026,7 @@ export async function syncOrdersStatus(
 /**
  * Obtém dados de mercado (preço atual, volume, etc.)
  */
-export async function getMarketData(symbol: string = 'XBTUSDTM'): Promise<{
+export async function getMarketData(symbol: string = DEFAULT_SYMBOL): Promise<{
   ticker: kucoinClient.KucoinTicker;
   contract: kucoinClient.KucoinContract;
 }> {

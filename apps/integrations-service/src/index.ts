@@ -2942,6 +2942,28 @@ app.get('/api/integrations/twilio/status', (_req: Request, res: Response) => {
 // Inicializar métricas do circuit breaker KuCoin
 kucoinClient.initKucoinMetrics(metrics);
 
+function getAllowedKucoinSymbolsMessage(): string {
+  return kucoinClient.getAllowedSymbols().join(', ');
+}
+
+function respondKucoinNotConfigured(res: Response): void {
+  res.status(503).json({ error: 'API KuCoin não configurada' });
+}
+
+function assertValidTradingSymbol(res: Response, symbol: string): boolean {
+  if (!kucoinClient.isValidSymbol(symbol)) {
+    res.status(400).json({
+      error: `Símbolo inválido: ${symbol}. Valores permitidos: ${getAllowedKucoinSymbolsMessage()}.`,
+    });
+    return false;
+  }
+  return true;
+}
+
+const KUCOIN_ALLOWED_GRANULARITIES_MINUTES = [
+  1, 3, 5, 15, 30, 60, 120, 240, 480, 720, 1440, 10080,
+] as const;
+
 // GET /api/integrations/trading/status - Status do serviço de trading
 app.get('/api/integrations/trading/status', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
@@ -2992,10 +3014,7 @@ app.get('/api/integrations/trading/market/:symbol', requirePermission('integrati
   try {
     const { symbol } = req.params;
     
-    if (!kucoinClient.isValidSymbol(symbol)) {
-      res.status(400).json({ error: `Símbolo inválido: ${symbol}. Use XBTUSDTM ou XBTUSDM.` });
-      return;
-    }
+    if (!assertValidTradingSymbol(res, symbol)) return;
 
     const marketData = await kucoinService.getMarketData(symbol);
     
@@ -3014,7 +3033,7 @@ app.get('/api/integrations/trading/market/:symbol', requirePermission('integrati
 app.get('/api/integrations/trading/account', requirePermission('integrations:trading:read'), async (_req: Request, res: Response) => {
   try {
     if (!kucoinClient.isKucoinConfigured()) {
-      res.status(503).json({ error: 'API KuCoin não configurada' });
+      respondKucoinNotConfigured(res);
       return;
     }
 
@@ -3034,6 +3053,11 @@ app.get('/api/integrations/trading/account', requirePermission('integrations:tra
 // GET /api/integrations/trading/positions - Posições abertas na KuCoin
 app.get('/api/integrations/trading/positions', requirePermission('integrations:trading:read'), async (_req: Request, res: Response) => {
   try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+
     const positions = await kucoinService.getKucoinPositions();
     
     res.json({
@@ -3149,7 +3173,16 @@ app.get('/api/integrations/trading/signals', requirePermission('integrations:tra
       return;
     }
 
-    const limit = parseInt(req.query.limit as string) || 10;
+    const querySchema = z.object({
+      limit: z.coerce.number().int().min(1).max(200).optional(),
+    });
+    const queryResult = querySchema.safeParse(req.query);
+    if (!queryResult.success) {
+      res.status(400).json({ error: 'Query inválida', details: queryResult.error.flatten() });
+      return;
+    }
+
+    const limit = queryResult.data.limit ?? 10;
     const signals = await kucoinService.getActiveSignals(
       { tenantId: authContext.tenantId, userId: authContext.userId },
       limit
@@ -3261,8 +3294,18 @@ app.get('/api/integrations/trading/orders', requirePermission('integrations:trad
       return;
     }
 
-    const status = req.query.status as string | undefined;
-    const limit = parseInt(req.query.limit as string) || 50;
+    const querySchema = z.object({
+      status: z.enum(['pending', 'open', 'filled', 'cancelled', 'rejected', 'expired']).optional(),
+      limit: z.coerce.number().int().min(1).max(200).optional(),
+    });
+    const queryResult = querySchema.safeParse(req.query);
+    if (!queryResult.success) {
+      res.status(400).json({ error: 'Query inválida', details: queryResult.error.flatten() });
+      return;
+    }
+
+    const status = queryResult.data.status;
+    const limit = queryResult.data.limit ?? 50;
 
     const orders = await kucoinService.getOrders(
       { tenantId: authContext.tenantId, userId: authContext.userId },
@@ -3289,8 +3332,12 @@ app.post('/api/integrations/trading/orders', requirePermission('integrations:tra
       return;
     }
 
-    const orderSchema = z.object({
-      signalId: z.string().uuid().optional(),
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+
+    const baseOrderSchema = z.object({
       symbol: z.string().optional(),
       side: z.enum(['buy', 'sell']),
       orderType: z.enum(['limit', 'market']),
@@ -3299,21 +3346,46 @@ app.post('/api/integrations/trading/orders', requirePermission('integrations:tra
       leverage: z.number().min(1).max(100).optional(),
       stopLoss: z.number().positive().optional(),
       takeProfit: z.number().positive().optional(),
+    }).strict();
+
+    const orderFromSignalSchema = baseOrderSchema
+      .extend({ signalId: z.string().uuid() })
+      .superRefine((data, ctx) => {
+        if (data.orderType === 'limit' && data.price === undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'Preço é obrigatório para ordens do tipo "limit".',
+            path: ['price'],
+          });
+        }
+      });
+
+    const manualOrderSchema = baseOrderSchema.superRefine((data, ctx) => {
+      if (data.orderType === 'limit' && data.price === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Preço é obrigatório para ordens do tipo "limit".',
+          path: ['price'],
+        });
+      }
     });
 
-    const validated = orderSchema.parse(req.body);
+    const parsed = z.union([orderFromSignalSchema, manualOrderSchema]).safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
+      return;
+    }
 
-    // Se tem signalId, criar ordem baseada no sinal
-    // Se não, criar ordem manual
-    const result = validated.signalId
-      ? await kucoinService.createOrderFromSignal(
-          { tenantId: authContext.tenantId, userId: authContext.userId },
-          validated as kucoinService.CreateOrderFromSignalParams
-        )
-      : await kucoinService.createManualOrder(
-          { tenantId: authContext.tenantId, userId: authContext.userId },
-          validated as kucoinService.ManualOrderParams
-        );
+    const result =
+      'signalId' in parsed.data
+        ? await kucoinService.createOrderFromSignal(
+            { tenantId: authContext.tenantId, userId: authContext.userId },
+            parsed.data
+          )
+        : await kucoinService.createManualOrder(
+            { tenantId: authContext.tenantId, userId: authContext.userId },
+            parsed.data
+          );
 
     if (!result.success) {
       res.status(400).json({ error: result.error });
@@ -3338,6 +3410,11 @@ app.delete('/api/integrations/trading/orders/:id', requirePermission('integratio
     const authContext = extractAuthContext(req);
     if (!authContext?.tenantId || !authContext?.userId) {
       res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
       return;
     }
 
@@ -3379,6 +3456,11 @@ app.post('/api/integrations/trading/orders/sync', requirePermission('integration
       return;
     }
 
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+
     const result = await kucoinService.syncOrdersStatus({
       tenantId: authContext.tenantId,
       userId: authContext.userId,
@@ -3410,6 +3492,11 @@ app.post('/api/integrations/trading/stop-orders', requirePermission('integration
       return;
     }
 
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+
     const stopOrderSchema = z.object({
       symbol: z.string().optional(),
       side: z.enum(['buy', 'sell']),
@@ -3419,16 +3506,27 @@ app.post('/api/integrations/trading/stop-orders', requirePermission('integration
       leverage: z.number().int().min(1).max(100).optional(),
       orderType: z.enum(['limit', 'market']).optional(),
       price: z.number().positive().optional(),
-    }).refine(
-      data => data.stopLoss || data.takeProfit,
-      { message: 'Pelo menos stopLoss ou takeProfit deve ser definido' }
-    );
+    })
+      .refine((data) => data.stopLoss || data.takeProfit, {
+        message: 'Pelo menos stopLoss ou takeProfit deve ser definido',
+      })
+      .superRefine((data, ctx) => {
+        if (data.orderType === 'limit' && data.price === undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'Preço é obrigatório quando orderType="limit".',
+            path: ['price'],
+          });
+        }
+      });
 
     const parsed = stopOrderSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
       return;
     }
+
+    if (parsed.data.symbol && !assertValidTradingSymbol(res, parsed.data.symbol)) return;
 
     const result = await kucoinService.createStopOrder(
       { tenantId: authContext.tenantId, userId: authContext.userId },
@@ -3461,6 +3559,8 @@ app.get('/api/integrations/trading/stop-orders', requirePermission('integrations
     }
 
     const symbol = req.query.symbol as string | undefined;
+    if (symbol && !assertValidTradingSymbol(res, symbol)) return;
+
     const result = await kucoinService.getOpenStopOrders(
       { tenantId: authContext.tenantId, userId: authContext.userId },
       symbol
@@ -3488,6 +3588,11 @@ app.delete('/api/integrations/trading/stop-orders/:id', requirePermission('integ
     const authContext = extractAuthContext(req);
     if (!authContext?.tenantId || !authContext?.userId) {
       res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
       return;
     }
 
@@ -3528,14 +3633,45 @@ app.delete('/api/integrations/trading/stop-orders/:id', requirePermission('integ
 app.get('/api/integrations/trading/klines/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
     const { symbol } = req.params;
-    const granularity = parseInt(req.query.granularity as string) || 5; // Default: 5 min
-    const from = req.query.from ? parseInt(req.query.from as string) : undefined;
-    const to = req.query.to ? parseInt(req.query.to as string) : undefined;
 
     if (!kucoinClient.isKucoinConfigured()) {
-      res.status(503).json({ error: 'KuCoin não configurado' });
+      respondKucoinNotConfigured(res);
       return;
     }
+
+    if (!assertValidTradingSymbol(res, symbol)) return;
+
+    const querySchema = z.object({
+      granularity: z.coerce.number().int().optional(),
+      from: z.coerce.number().int().optional(),
+      to: z.coerce.number().int().optional(),
+    }).superRefine((data, ctx) => {
+      const granularity = data.granularity ?? 5;
+      if (!KUCOIN_ALLOWED_GRANULARITIES_MINUTES.includes(granularity as (typeof KUCOIN_ALLOWED_GRANULARITIES_MINUTES)[number])) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `granularity inválido. Valores permitidos (minutos): ${KUCOIN_ALLOWED_GRANULARITIES_MINUTES.join(', ')}`,
+          path: ['granularity'],
+        });
+      }
+      if (data.from !== undefined && data.to !== undefined && data.from > data.to) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: '"from" deve ser <= "to".',
+          path: ['from'],
+        });
+      }
+    });
+
+    const queryResult = querySchema.safeParse(req.query);
+    if (!queryResult.success) {
+      res.status(400).json({ error: 'Query inválida', details: queryResult.error.flatten() });
+      return;
+    }
+
+    const granularity = queryResult.data.granularity ?? 5;
+    const from = queryResult.data.from;
+    const to = queryResult.data.to;
 
     const klines = await kucoinClient.getKlines(symbol, granularity, from, to);
 
@@ -3557,13 +3693,34 @@ app.get('/api/integrations/trading/klines/:symbol', requirePermission('integrati
 app.get('/api/integrations/trading/orderbook/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
     const { symbol } = req.params;
-    const depth = (parseInt(req.query.depth as string) || 20) as 20 | 100;
 
     if (!kucoinClient.isKucoinConfigured()) {
-      res.status(503).json({ error: 'KuCoin não configurado' });
+      respondKucoinNotConfigured(res);
       return;
     }
 
+    if (!assertValidTradingSymbol(res, symbol)) return;
+
+    const querySchema = z.object({
+      depth: z.coerce.number().int().optional(),
+    }).superRefine((data, ctx) => {
+      const depth = data.depth ?? 20;
+      if (depth !== 20 && depth !== 100) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'depth inválido. Valores permitidos: 20, 100.',
+          path: ['depth'],
+        });
+      }
+    });
+
+    const queryResult = querySchema.safeParse(req.query);
+    if (!queryResult.success) {
+      res.status(400).json({ error: 'Query inválida', details: queryResult.error.flatten() });
+      return;
+    }
+
+    const depth = (queryResult.data.depth ?? 20) as 20 | 100;
     const orderbook = await kucoinClient.getOrderBook(symbol, depth);
 
     res.json({
@@ -3585,9 +3742,11 @@ app.get('/api/integrations/trading/funding-rate/:symbol', requirePermission('int
     const { symbol } = req.params;
 
     if (!kucoinClient.isKucoinConfigured()) {
-      res.status(503).json({ error: 'KuCoin não configurado' });
+      respondKucoinNotConfigured(res);
       return;
     }
+
+    if (!assertValidTradingSymbol(res, symbol)) return;
 
     const fundingRate = await kucoinClient.getCurrentFundingRate(symbol);
 
@@ -3608,9 +3767,11 @@ app.get('/api/integrations/trading/mark-price/:symbol', requirePermission('integ
     const { symbol } = req.params;
 
     if (!kucoinClient.isKucoinConfigured()) {
-      res.status(503).json({ error: 'KuCoin não configurado' });
+      respondKucoinNotConfigured(res);
       return;
     }
+
+    if (!assertValidTradingSymbol(res, symbol)) return;
 
     const markPrice = await kucoinClient.getMarkPrice(symbol);
 
@@ -3631,9 +3792,11 @@ app.get('/api/integrations/trading/trades/:symbol', requirePermission('integrati
     const { symbol } = req.params;
 
     if (!kucoinClient.isKucoinConfigured()) {
-      res.status(503).json({ error: 'KuCoin não configurado' });
+      respondKucoinNotConfigured(res);
       return;
     }
+
+    if (!assertValidTradingSymbol(res, symbol)) return;
 
     const trades = await kucoinClient.getTradeHistory(symbol);
 
@@ -3652,14 +3815,27 @@ app.get('/api/integrations/trading/trades/:symbol', requirePermission('integrati
 // GET /api/integrations/trading/orders/history - Histórico de Ordens
 app.get('/api/integrations/trading/orders/history', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
-    const symbol = req.query.symbol as string | undefined;
-    const pageSize = parseInt(req.query.pageSize as string) || 50;
-    const currentPage = parseInt(req.query.currentPage as string) || 1;
-
     if (!kucoinClient.isKucoinConfigured()) {
-      res.status(503).json({ error: 'KuCoin não configurado' });
+      respondKucoinNotConfigured(res);
       return;
     }
+
+    const querySchema = z.object({
+      symbol: z.string().optional(),
+      pageSize: z.coerce.number().int().min(1).max(200).optional(),
+      currentPage: z.coerce.number().int().min(1).max(1000).optional(),
+    });
+    const queryResult = querySchema.safeParse(req.query);
+    if (!queryResult.success) {
+      res.status(400).json({ error: 'Query inválida', details: queryResult.error.flatten() });
+      return;
+    }
+
+    const symbol = queryResult.data.symbol;
+    if (symbol && !assertValidTradingSymbol(res, symbol)) return;
+
+    const pageSize = queryResult.data.pageSize ?? 50;
+    const currentPage = queryResult.data.currentPage ?? 1;
 
     const history = await kucoinClient.getOrderHistory(symbol, pageSize, currentPage);
 
@@ -3689,7 +3865,16 @@ app.get('/api/integrations/trading/control-history', requirePermission('integrat
       return;
     }
 
-    const limit = parseInt(req.query.limit as string) || 50;
+    const querySchema = z.object({
+      limit: z.coerce.number().int().min(1).max(200).optional(),
+    });
+    const queryResult = querySchema.safeParse(req.query);
+    if (!queryResult.success) {
+      res.status(400).json({ error: 'Query inválida', details: queryResult.error.flatten() });
+      return;
+    }
+
+    const limit = queryResult.data.limit ?? 50;
     const db = getDatabase();
 
     // Buscar histórico de controle ordenado por data descendente
@@ -3851,6 +4036,13 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
 
     const { symbol } = req.params;
     const interval = (req.query.interval as string) || '5m';
+
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+
+    if (!assertValidTradingSymbol(res, symbol)) return;
     
     // Mapear intervalo para granularity (minutos)
     const intervalToGranularity: Record<string, number> = {
@@ -3867,11 +4059,6 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
     
     // BUG FIX 21/12/2025: Type narrowing para TypeScript entender que interval é válido após validação
     const validatedInterval = interval as '1m' | '3m' | '5m' | '15m' | '30m' | '1h' | '2h' | '4h' | '8h' | '12h' | '1d' | '1w';
-
-    if (!kucoinClient.isKucoinConfigured()) {
-      res.status(503).json({ error: 'KuCoin não configurado' });
-      return;
-    }
 
     // Obter 250 candles para ter dados suficientes para todos os indicadores
     const now = Date.now();
