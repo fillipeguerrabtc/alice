@@ -11,9 +11,9 @@ Este documento contém a lista completa de todos os secrets necessários para a 
 **Total de Secrets:** ~50 configurados no repositório GitHub (verificado em 11/01/2026)
 **Arquitetura:** Deploy Server (CPX32 - 4 vCPU, 8GB RAM) + Production Server (GEX44 GPU)
 **Arquitetura Multi-Stack:** 5 stacks independentes (INFRA, ALICE, OBSERVABILITY, ERPNEXT, BACKUP)
-**Total de Containers:** 50 em produção (10 infra + 8 Alice + 4 GPU + 13 observability + 15 ERPNext + 1 backup)
+**Total de Containers:** 50 em produção (10 infra + 8 Alice + 5 GPU + 13 observability + 15 ERPNext + 1 backup)
 **Redis Alice:** Container dedicado para cache distribuído (segregação enterprise do ERPNext)
-**LLM:** Qwen2.5-VL 7B AWQ (multimodal: texto + vision) via GPU Manager Service (Hetzner GPU) - ARQUITETURA v4.0.0
+**LLM (Gate 2):** Mistral 7B Instruct AWQ (texto) + Qwen2.5-VL 7B AWQ (visão) via GPU Manager Service (Hetzner GPU)
 **Trading:** KuCoin Futures BTC Perpetuals (XBTUSDTM)
 **URL de Produção:** `https://yesyoudeserve.duckdns.org`
 **URL ERPNext:** `https://erp.yesyoudeserve.duckdns.org`
@@ -110,6 +110,32 @@ Estes são necessários para o deploy funcionar:
 >
 > **Nota:** Todos os 3 sistemas são **OBRIGATÓRIOS** e **INDEPENDENTES**. Não existe fallback entre sistemas.
 
+---
+
+## Break-glass (acesso de emergência) — WS4
+
+Este procedimento existe para evitar **downtime operacional** quando o SSO (OIDC) estiver indisponível (ex.: `alice-auth` down, problema de DNS/certificado), mantendo um caminho de acesso **local** e **auditável**.
+
+### Grafana (stack OBSERVABILITY)
+
+- **Conta local**: usar `GRAFANA_ADMIN_USER` + `GRAFANA_ADMIN_PASSWORD`.
+- **Pré-condição**: **não** desabilitar o login form local (ou seja, `GF_AUTH_DISABLE_LOGIN_FORM` deve permanecer **unset** ou **false**).
+- **Acesso**:
+  - Abrir a tela de login e usar o login local (não “Login com Alice Enterprise”) quando o OIDC estiver fora.
+- **Se o botão de login local não aparecer**:
+  - Ajustar a configuração do stack OBSERVABILITY via CI/CD (não editar manualmente em produção) para garantir que o login form local esteja habilitado.
+
+### ERPNext (stack ERPNEXT)
+
+- **Conta local obrigatória**: `Administrator` (fixo) com senha `ERPNEXT_ADMIN_PASSWORD`.
+- **Acesso**:
+  - Usar login local como `Administrator` quando SSO estiver indisponível.
+
+### Alice Auth (stack ALICE)
+
+- **Conta admin (plataforma)**: `ADMIN_USER` + `ADMIN_PWD` (obrigatórios em produção).
+- **Nota**: esta conta é o “break-glass” do **IdP** (Alice Auth). Para Grafana/ERPNext o break-glass é **local** (acima).
+
 ### FASE 1.5: SSO OAuth (Deploy 100% Automatizado - 31/12/2025)
 
 Secrets pré-definidos para SSO funcionar automaticamente no primeiro deploy:
@@ -178,16 +204,17 @@ Estas variáveis **não são secrets**, mas são **obrigatórias em produção**
 | `GPU_MANAGER_URL` | Opcional (default: `http://alice-gpu-manager:3010`) | URL do GPU Manager Service (usado internamente pelos serviços - não precisa de secret) | ⏳ **Opcional** |
 | `INTERNAL_API_SECRET` | Gerar com `openssl rand -hex 32` | Secret para comunicação segura entre serviços (já configurado na FASE 1) | ✅ **SIM** |
 
-**Containers GPU (28/12/2025) - TODOS 100% PÚBLICOS:**
+**Containers GPU (Gate 2 - 15/01/2026) - TODOS 100% PÚBLICOS:**
 
 | Container | Imagem | Origem | Autenticação |
 |-----------|--------|--------|--------------|
-| **qwen-vl** | `vllm/vllm-openai:v0.12.0` | Docker Hub | ❌ Não precisa |
+| **llm-mistral** | `vllm/vllm-openai:v0.12.0` | Docker Hub | ❌ Não precisa |
+| **qwen-vl (VLM)** | `vllm/vllm-openai:v0.12.0` | Docker Hub | ❌ Não precisa |
 | **asr-canary** | `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` + NeMo pip | Docker Hub | ❌ Não precisa |
 | **embeddings-gpu** | `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` | Docker Hub | ❌ Não precisa |
 | **qwen-trainer** | `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` | Docker Hub | ❌ Não precisa |
 
-> **NOTA v4.0.0:** FLUX.1 Schnell REMOVIDO - Alice ANALISA imagens via Qwen2.5-VL Vision mas NÃO gera.
+> **Gate 2:** LLM (texto) e VLM (visão) são serviços separados. Alice **analisa** imagens (VLM) mas **não gera** imagens.
 
 **NOTA:** NGC_API_KEY foi **REMOVIDO** - Personal API Key do NGC não funciona para containers públicos (retorna 403 Forbidden). Todos os containers agora usam Docker Hub que é 100% público e gratuito.
 
@@ -198,7 +225,7 @@ Estas variáveis **não são secrets**, mas são **obrigatórias em produção**
 - Retry logic com backoff exponencial
 - Métricas Prometheus (latência, fila, VRAM, erros)
 
-> **IMPORTANTE (v4.0.0):** Não são necessários secrets para URLs dos serviços GPU (Qwen2.5-VL, Embeddings, ASR) - todos rodam localmente no servidor Hetzner GEX44 e são gerenciados pelo GPU Manager Service. URLs são internas (localhost) e não precisam de secrets. Arquitetura simplificada: TODOS os serviços GPU rodam SIMULTANEAMENTE (15GB de 20GB VRAM).
+> **IMPORTANTE (Gate 2):** Não são necessários secrets para URLs dos serviços GPU (LLM/VLM/Embeddings/ASR) — todos rodam localmente no servidor Hetzner GEX44 e são gerenciados pelo GPU Manager Service. URLs são internas (Docker network) e não precisam de secrets. Arquitetura simplificada: serviços GPU rodam simultaneamente dentro do budget de 20GB VRAM (fonte de verdade = métricas + `nvidia-smi`).
 
 ### FASE 4: Pagamentos Stripe (receber EUR/SEPA)
 

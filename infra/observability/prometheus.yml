@@ -69,6 +69,42 @@ scrape_configs:
     scrape_timeout: 10s
 
   # ===========================================================================
+  # ERPNEXT EXPORTERS (WS2)
+  # ===========================================================================
+  - job_name: 'erpnext-mariadb-exporter'
+    static_configs:
+      - targets: ['erpnext-mariadb-exporter:9104']
+        labels:
+          instance: 'alice-prod'
+          environment: 'production'
+          stack: 'erpnext'
+          service: 'mariadb'
+    metrics_path: '/metrics'
+    scrape_timeout: 10s
+
+  - job_name: 'erpnext-redis-cache-exporter'
+    static_configs:
+      - targets: ['erpnext-redis-cache-exporter:9121']
+        labels:
+          instance: 'alice-prod'
+          environment: 'production'
+          stack: 'erpnext'
+          service: 'redis-cache'
+    metrics_path: '/metrics'
+    scrape_timeout: 10s
+
+  - job_name: 'erpnext-redis-queue-exporter'
+    static_configs:
+      - targets: ['erpnext-redis-queue-exporter:9121']
+        labels:
+          instance: 'alice-prod'
+          environment: 'production'
+          stack: 'erpnext'
+          service: 'redis-queue'
+    metrics_path: '/metrics'
+    scrape_timeout: 10s
+
+  # ===========================================================================
   # GPU Services (FastAPI/vLLM) - métricas por serviço
   # ===========================================================================
   - job_name: 'alice-gpu-services'
@@ -175,6 +211,20 @@ scrape_configs:
         labels:
           instance: 'alice-deploy'
           environment: 'deploy'
+    metrics_path: '/metrics'
+    scrape_timeout: 10s
+
+  # ===========================================================================
+  # BACKUP EXPORTER (pgBackRest) - WS2
+  # ===========================================================================
+  - job_name: 'pgbackrest-exporter'
+    static_configs:
+      - targets: ['alice-pgbackrest-exporter:9854']
+        labels:
+          instance: 'alice-prod'
+          environment: 'production'
+          stack: 'backup'
+          service: 'pgbackrest'
     metrics_path: '/metrics'
     scrape_timeout: 10s
 

@@ -24,7 +24,7 @@ import crypto from 'crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createLogger } from '@alice/logger';
-import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, validateEmbeddingDimension, EMBEDDING_DIMENSIONS } from '@alice/database';
+import { getDatabase, getPool, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, validateEmbeddingDimension, EMBEDDING_DIMENSIONS } from '@alice/database';
 import { 
   createCorrelationMiddleware, 
   createSecurityMiddleware,
@@ -41,6 +41,13 @@ import {
   ShutdownPriority,
   setupSwaggerUI,
   TRAINING_SERVICE_TAGS,
+  requirePermission,
+  extractAuthContext,
+  // Auth híbrida (WS4): Sessão (cookie) + Bearer JWT (OIDC) com validação local via JWKS
+  createSessionAuthMiddleware,
+  initializeRedisCache,
+  initializeSessionAuthCache,
+  closeRedisCacheClient,
   requestGpu,
   GpuServiceType,
   GpuRequestPriority,
@@ -49,10 +56,6 @@ import {
 import { trainingServicePaths, trainingServiceSchemas } from './openapi-specs.js';
 import { eq, and, or, desc, sql, isNull, not } from '@alice/database';
 import { z } from 'zod';
-import { 
-  requirePermission, 
-  extractAuthContext,
-} from '@alice/shared-utils';
 import { processTradingLoraJob } from './lora-job-manager.js';
 // Fine-tuning é executado localmente via GPU Manager Service (Regra 6 - sem stubs/migração)
 
@@ -269,6 +272,18 @@ app.use(createRateLimiter({
 
 // SEGURANÇA: Limites de payload para prevenir DoS (OWASP API4)
 app.use(express.json({ limit: '10mb' }));
+
+// =============================================================================
+// MIDDLEWARE: Auth híbrida (WS4) — Sessão (cookie) + Bearer JWT OIDC (JWKS)
+// =============================================================================
+// SSOT: @alice/shared-utils/createSessionAuthMiddleware
+// - Popular req.user / req.tenantId para RBAC (`requirePermission`)
+// - Aceitar Bearer JWT (OIDC) quando o cookie não está presente
+// =============================================================================
+app.use(createSessionAuthMiddleware({
+  pool: getPool(),
+  publicPaths: ['/api/training/health', '/live', '/ready', '/metrics'],
+}));
 
 const SIMILARITY_THRESHOLD = 0.85;
 // BUG FIX 26/12/2025: JOB_POLLING_INTERVAL_MS removido - fine-tuning em migração para Hetzner GPU
@@ -1849,6 +1864,13 @@ let server: ReturnType<typeof app.listen>;
       initialDelayMs: 2000,
       checkPgvector: true, // Verificar extensão pgvector (obrigatório para embeddings)
     });
+
+    // WS4: Redis cache + session-auth cache (evita queries repetitivas em PostgreSQL)
+    // - Em produção: Redis é obrigatório (fail-fast dentro de initializeSessionAuthCache)
+    // - Em dev/test: cache fica desabilitado (sem in-memory)
+    await initializeRedisCache();
+    await initializeSessionAuthCache();
+    logger.info('Auth cache (session-auth) inicializado');
     
     server = app.listen(PORT, '0.0.0.0', () => {
       logger.info({ 
@@ -1903,6 +1925,16 @@ let server: ReturnType<typeof app.listen>;
         });
       },
       { priority: ShutdownPriority.HTTP_SERVER }
+    );
+
+    registerShutdownCallback(
+      'training-redis-cache',
+      async () => {
+        logger.info('Encerrando cliente Redis cache...');
+        await closeRedisCacheClient();
+        logger.info('Cliente Redis cache encerrado com sucesso');
+      },
+      { priority: ShutdownPriority.CACHE }
     );
 
     registerShutdownCallback(

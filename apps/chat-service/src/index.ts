@@ -23,6 +23,9 @@ import {
   createCircuitBreaker, 
   CIRCUIT_BREAKER_PRESETS, 
   initializeRedisCache,
+  // Auth híbrida (WS4): Sessão (cookie) + Bearer JWT (OIDC) com validação local via JWKS
+  createSessionAuthMiddleware,
+  initializeSessionAuthCache,
   createCacheAdapter,
   closeRedisCacheClient,
   type CacheAdapter,
@@ -249,6 +252,11 @@ async function initializeSessionCache(): Promise<void> {
 async function initializeAllCaches(): Promise<void> {
   // Inicializar cache de sessões
   await initializeSessionCache();
+
+  // WS4: sessão HTTP (cookie) + Bearer JWT (OIDC) — cache distribuído para evitar queries repetitivas
+  // - Em produção: Redis distribuído é obrigatório (fail-fast dentro de initializeSessionAuthCache)
+  // - Em dev/test: cache fica desabilitado (sem in-memory)
+  await initializeSessionAuthCache();
   
   // Inicializar cache de permissões RBAC
   // Usa o mesmo cliente Redis já inicializado
@@ -1788,65 +1796,20 @@ app.use(createRateLimiter({
 app.use(express.json({ limit: '10mb' }));
 
 // =============================================================================
-// MIDDLEWARE: Autenticação via Cookie de Sessão PostgreSQL
+// MIDDLEWARE: Autenticação via Sessão (cookie) + Bearer JWT OIDC (WS4)
 // =============================================================================
 // CORREÇÃO PR#107 (10/01/2026): Requisições HTTP precisam de validação de sessão
 // PROBLEMA: alice-chat não tinha middleware para processar cookie de sessão
 //           do alice-auth, causando 401 em todas as requisições autenticadas.
-// SOLUÇÃO: Middleware que usa as mesmas funções de validação do WebSocket
-//          (decodeSessionId + validateSessionFromDatabase) para popular req.user
+// SOLUÇÃO (SSOT): usar middleware compartilhado de @alice/shared-utils para:
+// - Validar cookie de sessão (PostgreSQL sessions)
+// - Aceitar Bearer JWT (OIDC) com validação local via JWKS (iss/aud/claims)
 // REF: CLAUDE.md Regra 7 (Diagnóstico de causa raiz)
 // =============================================================================
-app.use(async (req: Request, res: Response, next: NextFunction) => {
-  // Skip para rotas públicas (health, liveness, readiness, metrics)
-  const publicPaths = ['/api/chat/health', '/live', '/ready', '/metrics'];
-  if (publicPaths.some(path => req.path.startsWith(path))) {
-    return next();
-  }
-
-  // Extrair cookie de sessão
-  const cookieHeader = req.headers.cookie;
-  if (!cookieHeader) {
-    return next(); // Deixar requireAuth() retornar 401 se necessário
-  }
-
-  const cookies = parseCookies(cookieHeader);
-  const sessionCookie = cookies[SESSION_COOKIE_NAME];
-  
-  if (!sessionCookie) {
-    return next();
-  }
-
-  // Decodificar e validar assinatura
-  const sessionId = decodeSessionId(sessionCookie);
-  if (!sessionId) {
-    logger.debug('HTTP: Cookie de sessão com assinatura inválida');
-    return next();
-  }
-
-  // Validar sessão no PostgreSQL (com cache Redis)
-  const session = await validateSessionFromDatabase(sessionId);
-  if (!session) {
-    return next();
-  }
-
-  // Popular req.user para uso pelo requireAuth() e outros middlewares
-  req.user = {
-    userId: session.userId,
-    tenantId: session.tenantId ?? undefined, // null → undefined para compatibilidade com tipos RBAC
-    role: session.role as Role,
-  };
-  req.tenantId = session.tenantId ?? undefined;
-
-  logger.debug({
-    userId: session.userId,
-    tenantId: session.tenantId,
-    role: session.role,
-    path: req.path,
-  }, 'HTTP: Sessão validada via cookie PostgreSQL');
-
-  next();
-});
+app.use(createSessionAuthMiddleware({
+  pool: getPool(),
+  publicPaths: ['/api/chat/health', '/live', '/ready', '/metrics'],
+}));
 
 app.get('/api/chat/health', (_req: Request, res: Response) => {
   const llmCircuitState = gpuManagerBreaker.opened ? 'open' : (gpuManagerBreaker.halfOpen ? 'half-open' : 'closed');

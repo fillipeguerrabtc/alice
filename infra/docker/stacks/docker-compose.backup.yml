@@ -115,3 +115,47 @@ services:
         reservations:
           memory: 256M
           cpus: '0.25'
+
+  # ===========================================================================
+  # PGBACKREST EXPORTER - Métricas de backup (Prometheus) - WS2
+  # ===========================================================================
+  # Exporta métricas via `pgbackrest info --output json` (fonte de verdade).
+  # Requer acesso ao pgbackrest.conf e ao repo local (/opt/alice/backups/postgresql).
+  #
+  # Ref: https://github.com/woblerr/pgbackrest_exporter
+  # ===========================================================================
+  pgbackrest-exporter:
+    image: ${PGBACKREST_EXPORTER_IMAGE:-woblerr/pgbackrest_exporter}:${PGBACKREST_EXPORTER_VERSION:-latest}
+    platform: linux/amd64
+    container_name: alice-pgbackrest-exporter
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=32M
+    environment:
+      # Exporter
+      EXPORTER_PORT: "9854"
+      EXPORTER_TELEMETRY_PATH: "/metrics"
+      COLLECT_INTERVAL: "60"
+      STANZA_INCLUDE: "alice_prod"
+    volumes:
+      # Config SSOT do pgBackRest (necessário para `pgbackrest info`)
+      - ../../backup/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
+      # Repo local (métricas de backup/repo)
+      - /opt/alice/backups/postgresql:/var/lib/pgbackrest:ro
+      - /opt/alice/backups/postgresql/logs:/var/log/pgbackrest:ro
+    networks:
+      - alice-network
+    depends_on:
+      pgbackrest:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.25'
+        reservations:
+          memory: 64M
+          cpus: '0.1'

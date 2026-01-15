@@ -1535,18 +1535,37 @@ export default function Training() {
   const [showOnDemandRun, setShowOnDemandRun] = useState(false);
 
   // Auto-learning (status + schedules) - Gate 2
+  const autoLearningQueryKey = [
+    'training',
+    'auto-learning',
+    'status',
+    tenantId ?? null,
+  ] as const;
+
   const { data: autoLearning, isLoading: autoLearningLoading } = useQuery<AutoLearningStatusResponse>({
-    queryKey: [
-      tenantId
+    queryKey: autoLearningQueryKey,
+    queryFn: async () => {
+      const url = tenantId
         ? `/api/training/auto-learning/status?tenantId=${encodeURIComponent(tenantId)}`
-        : '/api/training/auto-learning/status',
-    ],
+        : '/api/training/auto-learning/status';
+      const res = await apiRequest('GET', url);
+      return res.json();
+    },
     staleTime: 1000 * 30,
     refetchInterval: 1000 * 60,
   });
 
+  const runStatusQueryKey = ['training', 'run', 'status', tenantId ?? null] as const;
+
   const { data: runStatus, isLoading: runStatusLoading } = useQuery<TrainingRunStatusResponse>({
-    queryKey: [tenantId ? `/api/training/run/status?tenantId=${encodeURIComponent(tenantId)}` : '/api/training/run/status'],
+    queryKey: runStatusQueryKey,
+    queryFn: async () => {
+      const url = tenantId
+        ? `/api/training/run/status?tenantId=${encodeURIComponent(tenantId)}`
+        : '/api/training/run/status';
+      const res = await apiRequest('GET', url);
+      return res.json();
+    },
     staleTime: 1000 * 15,
     refetchInterval: 1000 * 15,
   });
@@ -1599,7 +1618,7 @@ export default function Training() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/training/auto-learning/status'] });
+      queryClient.invalidateQueries({ queryKey: autoLearningQueryKey });
       toast({ title: t('training.autoLearning.scheduleConfigured') });
     },
     onError: (error) => {
@@ -1644,7 +1663,7 @@ export default function Training() {
     },
     onSuccess: () => {
       setShowOnDemandRun(false);
-      queryClient.invalidateQueries({ queryKey: ['/api/training/run/status'] });
+      queryClient.invalidateQueries({ queryKey: runStatusQueryKey });
       queryClient.invalidateQueries({ queryKey: ['/api/training/jobs'] });
       toast({ title: t('training.autoLearning.onDemandStarted') });
     },

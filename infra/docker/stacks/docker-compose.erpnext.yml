@@ -37,12 +37,19 @@
 # =============================================================================
 
 # =============================================================================
-# NETWORKS (usa somente erpnext-network)
+# NETWORKS
 # =============================================================================
 networks:
   erpnext-network:
     external: true
     name: erpnext-network
+
+  # Observabilidade enterprise (WS2): exporters conectam em `erpnext-network`
+  # e expõem /metrics via `alice-network` para scrape do Prometheus.
+  # O stack ERPNext permanece isolado (apenas exporters fazem bridge).
+  alice-network:
+    external: true
+    name: alice-network
 
 # =============================================================================
 # VOLUMES
@@ -95,8 +102,13 @@ services:
       MYSQL_DATABASE: ${ERPNEXT_DB_NAME:-erpnext}
       MYSQL_USER: ${ERPNEXT_DB_USER:-erpnext}
       MYSQL_PASSWORD: ${ERPNEXT_DB_PASSWORD:?ERPNEXT_DB_PASSWORD obrigatorio}
+      # Observabilidade (WS2): credenciais do usuário dedicado do mysqld_exporter (least privilege)
+      ERPNEXT_MYSQL_EXPORTER_USER: ${ERPNEXT_MYSQL_EXPORTER_USER:-erpnext_exporter}
+      ERPNEXT_MYSQL_EXPORTER_PASSWORD: ${ERPNEXT_MYSQL_EXPORTER_PASSWORD:?ERPNEXT_MYSQL_EXPORTER_PASSWORD obrigatorio}
     volumes:
       - mariadb_data:/var/lib/mysql
+      # Init scripts (apenas no first-run do volume): cria usuário least-privilege para metrics exporter
+      - ../../erpnext/mariadb-init:/docker-entrypoint-initdb.d:ro
     networks:
       - erpnext-network
     healthcheck:
@@ -802,3 +814,87 @@ services:
         reservations:
           memory: 256M
           cpus: '0.25'
+
+  # ===========================================================================
+  # EXPORTERS (WS2) - ERPNext Observability
+  # ===========================================================================
+  # Objetivo: expor métricas mínimas (MariaDB + Redis cache/queue) para Prometheus,
+  # sem quebrar o isolamento do stack ERPNext (somente exporters entram em alice-network).
+  #
+  # NOTA ENTERPRISE: evitar expor portas no host; scrape ocorre via rede Docker.
+  # ===========================================================================
+
+  erpnext-mariadb-exporter:
+    image: ${MYSQLD_EXPORTER_IMAGE:-prom/mysqld-exporter}:${MYSQLD_EXPORTER_VERSION:-v0.18.0}
+    platform: linux/amd64
+    container_name: erpnext-mariadb-exporter
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      # Least privilege: usuário dedicado criado via init script do MariaDB (infra/erpnext/mariadb-init)
+      DATA_SOURCE_NAME: "${ERPNEXT_MYSQL_EXPORTER_USER:-erpnext_exporter}:${ERPNEXT_MYSQL_EXPORTER_PASSWORD}@(erpnext-mariadb:3306)/"
+    networks:
+      - erpnext-network
+      - alice-network
+    depends_on:
+      erpnext-mariadb:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.25'
+        reservations:
+          memory: 64M
+          cpus: '0.1'
+
+  erpnext-redis-cache-exporter:
+    image: oliver006/redis_exporter:v1.69.0
+    platform: linux/amd64
+    container_name: erpnext-redis-cache-exporter
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      REDIS_ADDR: redis://erpnext-redis-cache:6379
+      REDIS_PASSWORD: ${REDIS_CACHE_PASSWORD}
+    networks:
+      - erpnext-network
+      - alice-network
+    depends_on:
+      erpnext-redis-cache:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+          cpus: '0.2'
+        reservations:
+          memory: 32M
+          cpus: '0.1'
+
+  erpnext-redis-queue-exporter:
+    image: oliver006/redis_exporter:v1.69.0
+    platform: linux/amd64
+    container_name: erpnext-redis-queue-exporter
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      REDIS_ADDR: redis://erpnext-redis-queue:6379
+      REDIS_PASSWORD: ${REDIS_QUEUE_PASSWORD}
+    networks:
+      - erpnext-network
+      - alice-network
+    depends_on:
+      erpnext-redis-queue:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+          cpus: '0.2'
+        reservations:
+          memory: 32M
+          cpus: '0.1'
