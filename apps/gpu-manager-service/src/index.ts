@@ -189,7 +189,7 @@ const VRAM_REQUIREMENTS: Record<GpuServiceType, number> = {
   [GpuServiceType.LLM]: 7,           // LLM AWQ + KV cache (budget conservador)
   [GpuServiceType.VLM]: 8,           // VLM AWQ + KV cache + overhead multimodal
   [GpuServiceType.EMBEDDINGS]: 3,    // Qwen3-Embedding-0.6B INT8 (budget conservador)
-  [GpuServiceType.ASR]: 4,           // Whisper (budget conservador)
+  [GpuServiceType.ASR]: 3,           // ASR (budget conservador)
   [GpuServiceType.TRAINING]: 12,     // QLoRA (sob demanda, pausa outros)
 };
 
@@ -447,6 +447,14 @@ async function getVramFallback(): Promise<VramStatus> {
     estimatedUsedGB += VRAM_REQUIREMENTS[service];
   }
 
+  // Proteção: fallback não pode gerar VRAM negativa e travar a fila.
+  // Em ambientes sem nvidia-smi, o lock global Redis já garante execução serial.
+  const freeGB = Math.max(0, TOTAL_VRAM_GB - estimatedUsedGB);
+  const utilizationPercent = Math.max(
+    0,
+    Math.min(100, Math.round((estimatedUsedGB / TOTAL_VRAM_GB) * 100))
+  );
+
   // Métricas: VRAM reservada estimada por capacidade (bytes)
   // Zerar primeiro para evitar séries "stale" quando um serviço fica inativo.
   gpuVramReservedBytes.set({ gpu_id: GPU_ID, service: 'llm' }, 0);
@@ -463,8 +471,8 @@ async function getVramFallback(): Promise<VramStatus> {
   return {
     totalGB: TOTAL_VRAM_GB,
     usedGB: estimatedUsedGB,
-    freeGB: TOTAL_VRAM_GB - estimatedUsedGB,
-    utilizationPercent: Math.round((estimatedUsedGB / TOTAL_VRAM_GB) * 100),
+    freeGB,
+    utilizationPercent,
     activeServices,
   };
 }
@@ -473,6 +481,12 @@ async function getVramFallback(): Promise<VramStatus> {
  * Verifica se há VRAM suficiente para um serviço
  */
 function hasEnoughVram(serviceType: GpuServiceType, currentVram: VramStatus): boolean {
+  // Importante: o gate é para coexistência/concor­rência.
+  // Se o serviço já está marcado como ativo, não exigimos "VRAM extra" para aceitar requisições.
+  if (currentVram.activeServices.includes(serviceType)) {
+    return true;
+  }
+
   const required = VRAM_REQUIREMENTS[serviceType];
   const available = currentVram.freeGB;
   return available >= (required + VRAM_SAFETY_MARGIN_GB);
