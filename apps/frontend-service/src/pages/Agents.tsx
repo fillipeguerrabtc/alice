@@ -201,21 +201,31 @@ interface AgentFormData {
 /**
  * Schema Zod completo para validação do formulário
  */
-const agentFormSchema: z.ZodType<AgentFormData> = z.object({
-  nome: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres').max(255),
-  slug: z.string().min(2, 'Slug deve ter pelo menos 2 caracteres').max(100).regex(/^[a-z0-9-]+$/, 'Slug deve conter apenas letras minúsculas, números e hífens'),
-  status: z.enum(statusOptions),
-  descricao: z.string().max(2000).optional().nullable(),
-  avatar: z.string().url('URL inválida').optional().nullable().or(z.literal('')),
-  instrucoes: z.string().max(10000).optional().nullable(),
-  personalidade: z.string().max(5000).optional().nullable(),
-  // SSOT: opções/limites vêm do backend (GET /api/agents/model-options)
-  modeloBase: z.string().optional(),
-  temperaturaModelo: z.number().min(0).max(2).optional(),
-  maxTokens: z.number().int().min(100).optional(),
-  capacidades: z.array(z.string()),
-  namespaceId: z.string().uuid().optional().nullable(),
-});
+function buildAgentFormSchema(opts: {
+  maxTokensMin: number;
+  maxTokensMax: number;
+}): z.ZodType<AgentFormData> {
+  return z.object({
+    nome: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres').max(255),
+    slug: z
+      .string()
+      .min(2, 'Slug deve ter pelo menos 2 caracteres')
+      .max(100)
+      .regex(/^[a-z0-9-]+$/, 'Slug deve conter apenas letras minúsculas, números e hífens'),
+    status: z.enum(statusOptions),
+    descricao: z.string().max(2000).optional().nullable(),
+    avatar: z.string().url('URL inválida').optional().nullable().or(z.literal('')),
+    instrucoes: z.string().max(10000).optional().nullable(),
+    personalidade: z.string().max(5000).optional().nullable(),
+    // SSOT: opções/limites vêm do backend (GET /api/agents/model-options)
+    modeloBase: z.string().optional(),
+    temperaturaModelo: z.number().min(0).max(2).optional(),
+    // Gate 2: precisa refletir o limite do backend (min/max) para evitar 400 ao editar agentes legados
+    maxTokens: z.number().int().min(opts.maxTokensMin).max(opts.maxTokensMax).optional(),
+    capacidades: z.array(z.string()),
+    namespaceId: z.string().uuid().optional().nullable(),
+  });
+}
 
 // ============================================================================
 // COMPONENTES AUXILIARES
@@ -285,6 +295,15 @@ export default function Agents() {
   }));
 
   // Formulário com valores padrão enterprise
+  // SSOT: limites vêm do backend, mas mantemos fallback seguro coerente com Gate 2
+  // para evitar divergência em render inicial antes do model-options carregar.
+  const maxTokensMin = modelOptions?.constraints?.maxTokensMin ?? 100;
+  const maxTokensMax = modelOptions?.constraints?.maxTokensMax ?? 2048;
+  const agentFormSchema = useMemo(
+    () => buildAgentFormSchema({ maxTokensMin, maxTokensMax }),
+    [maxTokensMin, maxTokensMax],
+  );
+
   const form = useForm<AgentFormData>({
     resolver: asResolver<AgentFormData>(zodResolver(agentFormSchema)),
     defaultValues: {
@@ -441,6 +460,17 @@ export default function Agents() {
 
   const handleEdit = (agent: Agent) => {
     setEditingAgent(agent);
+    const requestedMaxTokens = agent.maxTokens ?? modelOptions?.defaults?.maxTokens;
+    const effectiveMaxTokens =
+      typeof requestedMaxTokens === 'number' && requestedMaxTokens > maxTokensMax
+        ? maxTokensMax
+        : requestedMaxTokens;
+    if (typeof requestedMaxTokens === 'number' && requestedMaxTokens > maxTokensMax) {
+      toast({
+        title: 'maxTokens ajustado automaticamente (Gate 2)',
+        description: `Valor legado (${requestedMaxTokens}) excede o limite atual (${maxTokensMax}). Ajustado para ${maxTokensMax} para permitir a atualização do agente.`,
+      });
+    }
     form.reset({
       nome: agent.nome,
       slug: agent.slug,
@@ -451,7 +481,7 @@ export default function Agents() {
       status: agent.status || "active",
       modeloBase: agent.modeloBase || modelOptions?.defaults?.modeloBase,
       temperaturaModelo: agent.temperaturaModelo ?? modelOptions?.defaults?.temperaturaModelo,
-      maxTokens: agent.maxTokens ?? modelOptions?.defaults?.maxTokens,
+      maxTokens: effectiveMaxTokens,
       capacidades: agent.capacidades || [],
       namespaceId: agent.namespaceId || null,
     });
