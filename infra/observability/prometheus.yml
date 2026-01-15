@@ -35,10 +35,15 @@ scrape_configs:
   - job_name: 'alice-gpu-services'
     static_configs:
       - targets:
+        - 'gpu-llm:8000'
+        labels:
+          service: 'llm'
+          gpu_service: 'llm'
+      - targets:
         - 'gpu-qwen-vl:8000'
         labels:
-          service: 'qwen-vl'
-          gpu_service: 'llm'
+          service: 'vlm'
+          gpu_service: 'vlm'
       - targets:
         - 'gpu-embeddings:8000'
         labels:
