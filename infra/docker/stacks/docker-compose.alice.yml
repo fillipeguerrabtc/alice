@@ -18,10 +18,11 @@
 #   - alice-observability - Health checks
 #   - gpu-manager - Gerenciamento centralizado de GPU
 #
-#   GPU (SEMPRE ATIVOS - 15GB de 20GB VRAM):
-#   - gpu-qwen-vl - Qwen2.5-VL 7B AWQ (4GB) - LLM + Vision
-#   - gpu-embeddings - Qwen3-Embedding-8B INT8 (8GB) - RAG
-#   - gpu-asr - Canary-1B (3GB) - Transcrição de áudio
+#   GPU (SEMPRE ATIVOS - Gate 2):
+#   - gpu-llm - Mistral 7B Instruct AWQ (LLM texto)
+#   - gpu-qwen-vl - Qwen2.5-VL 7B AWQ (VLM visão)
+#   - gpu-embeddings - Qwen3-Embedding-0.6B INT8 (1024 dim) + OpenCLIP (1024 dim)
+#   - gpu-asr - Canary-1B (ASR) - Transcrição de áudio
 #
 #   GPU (SOB DEMANDA via profile):
 #   - gpu-trainer (profile: gpu-training) - QLoRA (12GB)
@@ -512,10 +513,11 @@ services:
   # ===========================================================================
   # GPU SERVICES - ARQUITETURA v4.0.0 (11/01/2026)
   # ===========================================================================
-  # Todos os serviços GPU rodam SIMULTANEAMENTE (15GB de 20GB VRAM):
-  # - gpu-qwen-vl: Qwen2.5-VL 7B AWQ (4GB) - LLM + Vision
-  # - gpu-embeddings: Qwen3-Embedding-8B INT8 (8GB) - RAG
-  # - gpu-asr: Canary-1B (3GB) - Transcrição de áudio
+  # Todos os serviços GPU rodam SIMULTANEAMENTE (Gate 2):
+  # - gpu-llm: LLM (texto)
+  # - gpu-qwen-vl: VLM (visão)
+  # - gpu-embeddings: embeddings (texto+imagem)
+  # - gpu-asr: ASR (transcrição)
   # - gpu-trainer: QLoRA (12GB) - Sob demanda via profile
   #
   # Benefícios:
@@ -532,11 +534,8 @@ services:
   # - max-model-len=4096 reduz KV cache para caber em 8GB total
   # - gpu_memory_utilization=0.45 (9GB) garante espaço para KV cache
   # 
-  # VRAM real (nvidia-smi):
-  # - Qwen-VL: ~8GB (6.5GB modelo + 1.5GB KV cache com 4096 tokens)
-  # - Embeddings: ~7.4GB (Qwen3-Embedding-8B INT8)
-  # - ASR: ~4GB (Canary-1B)
-  # - Total: ~19.4GB de 20GB
+  # Nota (Gate 2): valores reais variam por `MAX_MODEL_LEN`/`GPU_MEMORY_UTILIZATION` e backend.
+  # Use Prometheus/Grafana (GPU Manager + GPU Services) como fonte de verdade em produção.
   gpu-qwen-vl:
     image: ${IMAGE_PREFIX}-qwen-vl:${IMAGE_TAG:-latest}
     platform: linux/amd64
