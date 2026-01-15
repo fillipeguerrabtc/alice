@@ -1,6 +1,6 @@
 # Guia de Observabilidade - Alice Enterprise Platform
 
-**Versão:** 2.1.0  
+**Versão:** 2.2.0  
 **Data:** 15 de Janeiro de 2026  
 **Autor:** Fillipe Guerra
 
@@ -139,7 +139,7 @@ A plataforma Alice implementa observabilidade **enterprise-grade** baseada em **
 - **Circuit Breaker KuCoin:** `alice_circuit_breaker_state{name="kucoin_futures"}`
 - **RSI:** `alice_trading_rsi{symbol="XBTUSDTM"}`
 - **Bollinger Bands:** `alice_trading_bollinger_{upper|middle|lower}`
-- **Latência API P95:** `histogram_quantile(0.95, rate(alice_integrations_call_duration_seconds_bucket{provider="kucoin"}[5m]))`
+- **Latência API P95:** `histogram_quantile(0.95, sum(rate(alice_integration_call_duration_seconds_bucket{integration="kucoin"}[5m])) by (le))`
 
 **Painéis:**
 
@@ -335,12 +335,13 @@ A plataforma Alice implementa observabilidade **enterprise-grade** baseada em **
 1. **PostgreSQL Down** - PostgreSQL DOWN > 1min
 2. **High DB Connections** - Connections > 80% pool por 5min
 
-#### Trading Alerts (TODO - Fase 2)
+#### Trading Alerts
 
 1. **KuCoin Circuit Breaker Open** - Circuit breaker OPEN > 5min
-2. **Trading High Loss** - P&L negativo > $100
+2. **KuCoin High Latency (P95)** - P95 > 1s por 5min
+3. **KuCoin High Error Rate** - taxa de erro > 10% por 5min
 
-#### GPU Alerts (TODO - Fase 2)
+#### GPU Alerts
 
 1. **GPU VRAM High** - VRAM > 90% por 5min (crítico - OOM kill)
 2. **GPU Queue Deep** - Fila > 10 por 2min

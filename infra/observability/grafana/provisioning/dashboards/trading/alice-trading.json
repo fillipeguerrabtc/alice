@@ -420,7 +420,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "histogram_quantile(0.95, rate(alice_integrations_call_duration_seconds_bucket{provider=\"kucoin\"}[5m]))",
+          "expr": "histogram_quantile(0.95, sum(rate(alice_integration_call_duration_seconds_bucket{integration=\"kucoin\"}[5m])) by (le))",
           "legendFormat": "P95 Latency",
           "refId": "A"
         }

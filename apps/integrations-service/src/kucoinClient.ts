@@ -27,6 +27,52 @@ import {
 const logger = createLogger('kucoin-client');
 
 // ============================================================================
+// MÉTRICAS (Prometheus) - KuCoin
+// ============================================================================
+// Inicializado via initKucoinMetrics() em apps/integrations-service/src/index.ts
+// Regra 16: Observability enterprise (sem "No data" em dashboards críticos).
+let kucoinMetrics: ReturnType<typeof createAlicePrometheus>['metrics'] | null = null;
+
+function normalizeKucoinOperation(method: string, endpoint: string): string {
+  // Evitar alta cardinalidade em métricas:
+  // - Remove query string
+  // - Normaliza segments variáveis (UUID/numérico) para ":id"
+  const [path] = endpoint.split('?', 1);
+  const normalizedPath = path
+    .split('/')
+    .map((seg) => {
+      if (!seg) return seg;
+      // UUID v4/v5 etc.
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(seg)) return ':id';
+      // Segment numérico
+      if (/^\d+$/.test(seg)) return ':id';
+      return seg;
+    })
+    .join('/');
+  return `${method} ${normalizedPath}`;
+}
+
+function recordKucoinCall(opts: { operation: string; status: 'success' | 'error'; durationSeconds: number }): void {
+  if (!kucoinMetrics) return;
+  kucoinMetrics.integrations.callDuration.observe(
+    { integration: 'kucoin', operation: opts.operation },
+    opts.durationSeconds
+  );
+  kucoinMetrics.integrations.callsTotal.inc(
+    { integration: 'kucoin', operation: opts.operation, status: opts.status },
+    1
+  );
+}
+
+function recordKucoinError(opts: { operation: string; errorType: string }): void {
+  if (!kucoinMetrics) return;
+  kucoinMetrics.integrations.errorsTotal.inc(
+    { integration: 'kucoin', operation: opts.operation, error_type: opts.errorType },
+    1
+  );
+}
+
+// ============================================================================
 // CONFIGURAÇÃO (via variáveis de ambiente - Regra 6: sem hardcoded)
 // CORREÇÃO 17/12/2025: Usar nomes corretos dos secrets GitHub (KUCOIN_PRO_*)
 // Elimina workaround de mapping no workflow deploy-production.yml
@@ -336,6 +382,7 @@ export function initKucoinMetrics(prometheusMetrics: ReturnType<typeof createAli
   if (!metricsInitialized) {
     // CORREÇÃO 18/12/2025: Ordem correta dos argumentos (metrics, name, opossum)
     instrumentCircuitBreaker(prometheusMetrics, 'kucoin_futures', kucoinCircuitBreaker);
+    kucoinMetrics = prometheusMetrics;
     metricsInitialized = true;
     logger.info('Métricas do circuit breaker KuCoin inicializadas');
   }
@@ -504,6 +551,7 @@ async function executeRequest<T>(
   const baseUrl = KUCOIN_SANDBOX_MODE ? KUCOIN_SANDBOX_URL : KUCOIN_FUTURES_BASE_URL;
   const url = `${baseUrl}${endpoint}`;
   const bodyString = body ? JSON.stringify(body) : '';
+  const operation = normalizeKucoinOperation(method, endpoint);
 
   const headers: Record<string, string> = requiresAuth
     ? generateAuthHeaders(method, endpoint, bodyString)
@@ -515,15 +563,19 @@ async function executeRequest<T>(
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
+      const start = process.hrtime.bigint();
       const response = await kucoinFetch(url, {
         method,
         headers,
         body: method !== 'GET' ? bodyString : undefined,
       });
+      const durationSeconds = Number(process.hrtime.bigint() - start) / 1e9;
 
       if (!response.ok) {
         const retryAfterMs = parseRetryAfterMs(response.headers.get('retry-after'));
         const errorBody = await response.text().catch(() => '');
+        recordKucoinCall({ operation, status: 'error', durationSeconds });
+        recordKucoinError({ operation, errorType: `http_${response.status}` });
 
         const err = new KucoinRequestError({
           kind: 'http',
@@ -556,6 +608,8 @@ async function executeRequest<T>(
       try {
         data = (await response.json()) as KucoinApiResponse<T>;
       } catch (parseErr) {
+        recordKucoinCall({ operation, status: 'error', durationSeconds });
+        recordKucoinError({ operation, errorType: 'parse' });
         logger.error({ method, endpoint, attempt, error: parseErr }, 'Falha ao parsear JSON da KuCoin');
         throw new KucoinRequestError({
           kind: 'parse',
@@ -567,6 +621,8 @@ async function executeRequest<T>(
 
       // Verificar código de sucesso da API (200000 = OK)
       if (data.code !== '200000') {
+        recordKucoinCall({ operation, status: 'error', durationSeconds });
+        recordKucoinError({ operation, errorType: 'api' });
         logger.error({ method, endpoint, attempt, code: data.code, msg: data.msg }, 'Erro retornado pela API KuCoin');
         throw new KucoinRequestError({
           kind: 'api',
@@ -577,10 +633,12 @@ async function executeRequest<T>(
         });
       }
 
+      recordKucoinCall({ operation, status: 'success', durationSeconds });
       return data;
     } catch (error) {
       // Circuit breaker aberto: não faz sentido retry imediato (resposta determinística).
       if (isCircuitBreakerOpenError(error)) {
+        recordKucoinError({ operation, errorType: 'breaker_open' });
         throw new KucoinRequestError({
           kind: 'breaker_open',
           method,
@@ -605,6 +663,7 @@ async function executeRequest<T>(
       }
 
       if (isAbortError(error)) {
+        recordKucoinError({ operation, errorType: 'timeout' });
         throw new KucoinRequestError({
           kind: 'timeout',
           method,
@@ -614,6 +673,7 @@ async function executeRequest<T>(
       }
 
       if (!(error instanceof KucoinRequestError)) {
+        recordKucoinError({ operation, errorType: 'network' });
         throw new KucoinRequestError({
           kind: 'network',
           method,

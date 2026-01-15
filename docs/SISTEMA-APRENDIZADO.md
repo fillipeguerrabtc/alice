@@ -1,8 +1,8 @@
 # Sistema de Aprendizado da Alice
 
 **Autor:** Fillipe Guerra  
-**Versão:** 5.0 - Arquitetura Multi-Stack Modular  
-**Data:** 05 de Janeiro de 2026
+**Versão:** 5.1 - Aprendizado multimodal (sem geração de imagens)  
+**Data:** 15 de Janeiro de 2026
 
 > **ATUALIZAÇÃO 05/01/2026:** Arquitetura refatorada para 5 stacks independentes com deploy/rollback modular. Sistema de aprendizado integrado ao stack ALICE, com GPU containers gerenciados pelo GPU Manager Service.
 
@@ -125,8 +125,7 @@ const trainingResponse = await fetch(`${TRAINING_SERVICE_URL}/api/training/data`
 **Funcionalidades:**
 - Visualizar todos os dados pendentes de aprovação
 - Aprovar/Reprovar dados de treinamento em lote
-- Visualizar galeria de imagens geradas
-- Aprovar imagens para treinamento
+- Visualizar mídias multimodais enviadas (imagens/áudios/documentos) e status de processamento
 - Marcar dados como "alta qualidade"
 - **Bulk Import:** Interface visual para importação em massa de dados de treinamento (JSON/JSONL)
 

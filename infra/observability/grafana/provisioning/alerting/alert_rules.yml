@@ -657,3 +657,214 @@ groups:
         labels:
           severity: critical
           service: postgres
+
+  # ===========================================================================
+  # GPU ALERTS - Alertas de GPU (modelo-agnóstico)
+  # ===========================================================================
+  - orgId: 1
+    name: GPU Alerts
+    folder: Alice Enterprise
+    interval: 30s
+    rules:
+      - uid: gpu-vram-high
+        title: GPU VRAM Alta (Crítico)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: (sum(alice_gpu_vram_used_bytes) / sum(alice_gpu_vram_total_bytes)) * 100
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [90]
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: "GPU VRAM alta (>90%)"
+          description: "Uso total de VRAM acima de 90% por 5 minutos. Risco elevado de OOM/restart loop em serviços GPU."
+        labels:
+          severity: critical
+          service: gpu
+
+      - uid: gpu-queue-deep
+        title: GPU Fila Profunda (Warning)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: max by (queue) (alice_gpu_manager_queue_depth)
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [10]
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 2m
+        annotations:
+          summary: "Fila do GPU Manager profunda (>10)"
+          description: "Alguma fila (llm/embeddings/asr/training) está acima de 10 itens por 2 minutos."
+        labels:
+          severity: warning
+          service: gpu-manager
+
+  # ===========================================================================
+  # TRADING ALERTS - KuCoin / Trading (produção pronta)
+  # ===========================================================================
+  - orgId: 1
+    name: Trading Alerts
+    folder: Alice Enterprise
+    interval: 30s
+    rules:
+      - uid: kucoin-breaker-open
+        title: KuCoin Circuit Breaker OPEN (Crítico)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 120
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: alice_circuit_breaker_state{name="kucoin_futures"} == 1
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 2m
+        annotations:
+          summary: "KuCoin indisponível (circuit breaker OPEN)"
+          description: "Circuit breaker de KuCoin Futures está OPEN por 2 minutos. Trading pode ficar indisponível."
+        labels:
+          severity: critical
+          service: integrations-service
+
+      - uid: kucoin-high-latency
+        title: KuCoin Alta Latência (Warning)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: histogram_quantile(0.95, sum(rate(alice_integration_call_duration_seconds_bucket{integration="kucoin"}[5m])) by (le))
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [1]
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: "KuCoin alta latência (P95)"
+          description: "Latência P95 das chamadas KuCoin acima de 1s por 5 minutos."
+        labels:
+          severity: warning
+          service: integrations-service
+
+      - uid: kucoin-high-error-rate
+        title: KuCoin Alta Taxa de Erros (Warning)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: sum(rate(alice_integration_calls_total{integration="kucoin",status="error"}[5m])) / (sum(rate(alice_integration_calls_total{integration="kucoin"}[5m])) + 0.001)
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.1]
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: "KuCoin alta taxa de erros"
+          description: "Taxa de erros das chamadas KuCoin acima de 10% por 5 minutos (inclui HTTP 429/5xx, timeout, breaker open)."
+        labels:
+          severity: warning
+          service: integrations-service

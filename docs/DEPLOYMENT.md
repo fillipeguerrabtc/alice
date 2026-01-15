@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 09 de Janeiro de 2026  
-**Versão:** 9.2 - Smart Deploy + Enterprise Bug Fixes
+**Data:** 15 de Janeiro de 2026  
+**Versão:** 9.3 - Alinhamento SSOT + Observability + Docs
 
 > **🚀 ATUALIZAÇÃO ENTERPRISE v3.0.0 (06/01/2026) - Pipeline CI/CD:**  
 > Pipeline CI/CD enterprise completo com deploy modular em 5 stacks independentes.
@@ -1560,7 +1560,7 @@ minio/mc:RELEASE.2024-10-29T15-34-59Z
 
 # Database & Vector Store
 clickhouse/clickhouse-server:25.12-alpine
-redis:8.4.0-alpine                # Alice (node-redis 5.x suporta Redis 8)
+redis:7.4.7-alpine                # Alice (SSOT infra/versions.env) - Redis 7.x LTS
 redis:6.2.21-alpine               # ERPNext (requer Redis 6.x - docs.frappe.io)
 qdrant/qdrant:v1.16.2
 mariadb:10.11

@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Arquitetura de Software
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 09 de Janeiro de 2026  
-> **Versão:** 3.1.0 - Smart Deploy + Enterprise Bug Fixes  
+> **Data:** 15 de Janeiro de 2026  
+> **Versão:** 3.2.0 - Docs alinhadas (Redis SSOT + observability + chat)  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 > 
@@ -194,7 +194,7 @@ C4Container
         Container(observability, "Observability", "Node.js", "Health, Backup")
         
         ContainerDb(postgres, "PostgreSQL", "PostgreSQL 16", "pgvector, RLS")
-        ContainerDb(redis, "Redis", "Redis 8.4 (Alice) / 6.2 (ERPNext)", "Cache, Pub/Sub")
+        ContainerDb(redis, "Redis", "Redis 7.4 (Alice) / 6.2 (ERPNext)", "Cache, Pub/Sub")
         ContainerDb(qdrant, "Qdrant", "Vector DB", "Embeddings texto 4096 dim")
     }
     
@@ -221,7 +221,7 @@ C4Container
 | 1 | `alice-caddy` | Caddy 2.8.4 | 80,443 | API Gateway, SSL automático, HTTP/3 |
 | 2 | `alice-pgbackrest-init` | pgBackRest | - | Inicialização stanza backup |
 | 3 | `alice-postgres` | PostgreSQL 16 | 5432 | Banco principal + pgvector |
-| 4 | `alice-redis` | Redis 8.4 | 6379 | Cache distribuído (node-redis 5.x) |
+| 4 | `alice-redis` | Redis 7.4.7 | 6379 | Cache distribuído (node-redis 5.x) |
 | 5 | `alice-qdrant` | Qdrant | 6333 | Embeddings texto (4096 dim) |
 | 6 | `alice-tor` | torproxy | 9050 | Proxy SOCKS5 Tor (.onion) |
 | 7 | `alice-searxng` | SearXNG | 8080 | Metabusca interna |
