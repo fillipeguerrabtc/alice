@@ -168,7 +168,7 @@ class AudioProcessorService {
   }
 
   /**
-   * Transcreve áudio via GPU (Whisper large-v3)
+   * Transcreve áudio via GPU (ASR Canary via GPU Manager Service)
    */
   private async transcribeGpu(
     audioBuffer: Buffer,
@@ -188,7 +188,7 @@ class AudioProcessorService {
       
       const gpuResponse = await requestGpu({
         serviceType: GpuServiceType.ASR,
-        endpoint: '/transcribe',
+        endpoint: '/transcribe/json',
         method: 'POST',
         priority: GpuRequestPriority.LOW,
         timeout: WHISPER_TIMEOUT_MS,
@@ -245,7 +245,7 @@ class AudioProcessorService {
   }
 
   /**
-   * Gera embedding de texto via GPU (Qwen3-Embedding-8B, 4096 dim → Qdrant)
+   * Gera embedding de texto via GPU (Qwen3-Embedding-0.6B, 1024 dim → Qdrant)
    * BUG FIX 25/12/2025: Método duplicado removido - mantida apenas a versão que usa TEXT_EMBEDDING_DIM
    */
   private async generateTextEmbedding(
@@ -276,7 +276,7 @@ class AudioProcessorService {
         throw new Error('Resposta de embedding GPU vazia');
       }
 
-      // Validar dimensão (deve ser 4096 para Qwen3-Embedding-8B) - Enterprise-Grade
+      // Validar dimensão (SSOT) - Enterprise-Grade
       validateEmbeddingDimension(result.embedding, TEXT_EMBEDDING_DIM, 'TEXT');
 
       return {

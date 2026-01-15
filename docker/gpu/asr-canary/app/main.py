@@ -10,6 +10,7 @@ import os
 import io
 import logging
 import tempfile
+import base64
 from typing import Optional
 
 import torch
@@ -64,6 +65,46 @@ class TranscriptionResponse(BaseModel):
     language: Optional[str] = None
     confidence: Optional[float] = None
     duration_seconds: Optional[float] = None
+
+
+class TranscriptionJsonRequest(BaseModel):
+    """Request JSON para transcrição (data URI base64)."""
+    audio: str
+    language: Optional[str] = None
+
+
+def _parse_base64_audio(audio: str) -> tuple[bytes, Optional[str]]:
+    """
+    Parseia áudio em base64.
+
+    Aceita:
+    - data URI: data:<mime>;base64,<payload>
+    - base64 puro
+
+    Retorna: (bytes, mime_type|None)
+    """
+    raw = audio.strip()
+    if raw.startswith("data:") and ";base64," in raw:
+        header, b64 = raw.split(";base64,", 1)
+        mime = header[5:].strip() or None
+        return base64.b64decode(b64, validate=True), mime
+    return base64.b64decode(raw, validate=True), None
+
+
+def _suffix_for_mime(mime: Optional[str]) -> str:
+    if not mime:
+        return ".wav"
+    mime = mime.lower().strip()
+    return {
+        "audio/wav": ".wav",
+        "audio/x-wav": ".wav",
+        "audio/mpeg": ".mp3",
+        "audio/mp4": ".m4a",
+        "audio/aac": ".aac",
+        "audio/ogg": ".ogg",
+        "audio/webm": ".webm",
+        "audio/flac": ".flac",
+    }.get(mime, ".wav")
 
 
 @app.on_event("startup")
@@ -202,6 +243,75 @@ async def transcribe_audio(
                 os.unlink(tmp_path)
             except OSError:
                 pass  # Ignorar erros de limpeza
+
+
+@app.post("/transcribe/json", response_model=TranscriptionResponse)
+async def transcribe_audio_json(body: TranscriptionJsonRequest):
+    """
+    Transcreve áudio para texto via JSON (data URI base64).
+
+    Compatível com o pipeline multimodal do RAG Service:
+    - Envia `audio` como `data:<mime>;base64,<payload>`
+    - `language` pode ser null/omitido para auto/default
+    """
+    if model is None:
+        raise HTTPException(status_code=503, detail="Modelo não carregado")
+
+    LAST_REQUEST_TIME.set(time_module.time())
+    start_time = time_module.time()
+
+    tmp_path = None
+    try:
+        try:
+            audio_bytes, mime = _parse_base64_audio(body.audio)
+        except Exception as decode_err:
+            raise HTTPException(status_code=400, detail=f"Audio base64 inválido: {decode_err}")
+
+        # Limite enterprise (25MB) alinhado ao RAG (/api/media/upload/json)
+        if len(audio_bytes) > 25 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="Arquivo de áudio muito grande (limite: 25MB)")
+
+        suffix = _suffix_for_mime(mime)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp_path = tmp.name
+            tmp.write(audio_bytes)
+
+        with torch.no_grad():
+            lang = body.language or "pt"
+            transcriptions = model.transcribe(
+                paths2audio_files=[tmp_path],
+                batch_size=1,
+                source_lang=lang,
+                target_lang=lang,
+            )
+
+        text = transcriptions[0] if transcriptions else ""
+        duration = time_module.time() - start_time
+
+        TRANSCRIPTION_COUNTER.labels(status="success").inc()
+        TRANSCRIPTION_DURATION.observe(duration)
+
+        logger.info("Transcrição JSON concluída em %.2fs", duration)
+
+        return TranscriptionResponse(
+            text=text.strip() if isinstance(text, str) else str(text).strip(),
+            language=body.language or "pt",
+            confidence=0.95,
+            duration_seconds=duration,
+        )
+    except HTTPException:
+        TRANSCRIPTION_COUNTER.labels(status="error").inc()
+        raise
+    except Exception as e:
+        TRANSCRIPTION_COUNTER.labels(status="error").inc()
+        logger.error("Erro na transcrição JSON: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
 
 @app.get("/metrics")
