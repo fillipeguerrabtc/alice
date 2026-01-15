@@ -18,3 +18,35 @@ scrape_configs:
           job: varlogs
           __path__: /var/log/*log
 
+  # ============================================================================
+  # DOCKER CONTAINERS LOGS (Alice/Infra/Observability/ERPNext)
+  # ============================================================================
+  # Objetivo: coletar logs reais dos containers (json-file driver) para Loki.
+  #
+  # Segurança:
+  # - NÃO usa Docker socket (evita privilégio excessivo).
+  # - Lê apenas arquivos de log via bind mount read-only.
+  #
+  # Referência (promtail pipeline stages):
+  # - https://grafana.com/docs/loki/latest/send-data/promtail/stages/docker/
+  # - https://grafana.com/docs/loki/latest/send-data/promtail/stages/json/
+  # ============================================================================
+  - job_name: docker-containers
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: docker-containers
+          __path__: /var/lib/docker/containers/*/*-json.log
+    pipeline_stages:
+      # Extrai "log"/"stream"/"time" do json-file do Docker e ajusta timestamp.
+      - docker: {}
+      # Parseia logs JSON do Pino (quando aplicável) e adiciona labels de baixa cardinalidade.
+      - json:
+          expressions:
+            level: level
+            service: service
+      - labels:
+          level:
+          service:
+

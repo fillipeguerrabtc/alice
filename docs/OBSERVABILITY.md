@@ -18,7 +18,7 @@
 | 4 | Dashboard LLM incompleto | Impossível medir Response Cache (Greetings Gate) | Adicionados 8 painéis (cache, WebSocket, streaming) | ✅ CORRIGIDO |
 | 5 | ZERO dashboard ERPNext | Impossível debugar workers, jobs, MariaDB | Criado alice-erpnext.json (13 painéis) | ✅ CORRIGIDO |
 | 6 | Infra sem visibilidade de DB/Cache | Impossível monitorar Postgres/PgBouncer/Redis/Qdrant | Adicionados exporters (Postgres/PgBouncer/Redis) + scrape Qdrant `/metrics` | ✅ CORRIGIDO |
-| 7 | Painéis "No data" (RBAC 0%, logs vazios) | Métricas não aparecendo | ⏳ Investigar após deploy (labels/Promtail) | 🔍 TODO |
+| 7 | Painéis "No data" (RBAC 0%, logs vazios) | Métricas/logs não aparecendo | Promtail atualizado para coletar logs reais dos containers (`/var/lib/docker/containers/*/*-json.log`) sem usar Docker socket (seguro) | ✅ CORRIGIDO |
 | 8 | Circuit breaker HALF_OPEN não aparecia | Grafana mapeava HALF_OPEN como `2`, mas métrica usa `0.5` | Mapeamento dashboards corrigido para `0.5` (HALF-OPEN) | ✅ CORRIGIDO |
 
 ---

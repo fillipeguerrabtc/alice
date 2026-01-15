@@ -1366,7 +1366,7 @@ git commit -a -m "test: adiciona testes unitários"
   - *apps/observability-service/config/grafana/dashboards/alice-trading.json: 600 linhas adicionadas (NOVO).*
   - *apps/observability-service/config/grafana/dashboards/alice-gpu-manager.json: 700 linhas adicionadas (NOVO).*
   - *apps/observability-service/config/grafana/dashboards/alice-erpnext.json: 550 linhas adicionadas (NOVO).*
-  - *docs/OBSERVABILITY-AUDIT-2026-01-13.md: 500 linhas adicionadas (NOVO).*
+  - *docs/OBSERVABILITY-AUDIT-2026-01-13.md: criado (auditoria + checklist de validação).*
   - *docs/OBSERVABILITY.md: 600 linhas adicionadas (NOVO).*
 - *MELHORES PRÁTICAS 2026: Dashboards seguem Grafana Best Practices (separação por persona SRE/Dev/Business, nomenclatura Prometheus, Golden Signals). Métricas seguem padrão alice_<subsystem>_<metric>_<unit>.*
 - *IMPACTO BUSINESS: Agora é possível monitorar GPU ($1,100/mês), Trading (BTC Futures), ERPNext (workers), LLM (cache, streaming). Dashboards precisos (sem referências obsoletas). Observabilidade enterprise-grade completa.*

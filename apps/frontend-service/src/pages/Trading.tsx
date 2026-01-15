@@ -947,7 +947,9 @@ export default function Trading() {
   const klines = klinesData?.data || [];
   const orderBookData = orderBookResponse?.data || null;
   const controlHistory = controlHistoryData?.data || [];
-  const wsStatus = wsStatusData?.data?.data;
+  // `wsStatusData` já é o payload `{ success, data: KucoinWsStatus }`.
+  // O accessor extra `.data` fazia `wsStatus` ficar sempre undefined e o badge nunca renderizar.
+  const wsStatus = wsStatusData?.data;
   const apiErrors = [
     statusError,
     marketError,

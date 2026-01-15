@@ -250,6 +250,9 @@ services:
     volumes:
       - ../../observability/promtail/config.yml:/etc/promtail/config.yml:ro
       - /var/log:/var/log
+      # Logs reais dos containers Docker (json-file) para Loki
+      # NÃO usa Docker socket (reduz superfície de ataque)
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
     networks:
       - alice-network
     # =======================================================================

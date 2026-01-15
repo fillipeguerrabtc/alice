@@ -8,6 +8,7 @@
 #
 # ARQUITETURA GPU (Gate 2 - 15/01/2026):
 # SERVIÇOS GPU (SSOT no stack modular; este arquivo é apenas compat local):
+# - gpu-llm: LLM (texto) - Mistral 7B Instruct AWQ (budget ~6GB)
 # - gpu-vlm: VLM (visão) - Qwen2.5-VL 7B AWQ (multimodal) (budget ~8GB)
 # - gpu-embeddings: Qwen3-Embedding-0.6B INT8 (1024 dim) + OpenCLIP (1024 dim) (budget ~2-3GB + ~2GB)
 # - gpu-asr: Canary-1B (transcrição de áudio) (budget ~3-4GB)
@@ -24,7 +25,8 @@
 # Este compose foi mantido apenas para compatibilidade local, mas seus parâmetros
 # DEVEM permanecer alinhados ao stack modular para evitar SSOT quebrado.
 #
-# Portas (alinhadas ao stack modular): 8000 (qwen-vl), 8001 (embeddings), 8002 (asr), 8003 (trainer)
+# Portas (alinhadas ao stack modular):
+# - 8000 (vlm), 8004 (llm), 8001 (embeddings), 8002 (asr), 8003 (trainer)
 #
 # Autor: Fillipe Guerra
 # Data: 15 de Janeiro de 2026
@@ -33,6 +35,53 @@
 version: '3.8'
 
 services:
+  # =============================================================================
+  # Mistral 7B Instruct (AWQ) - LLM (Texto) - Gate 2
+  # =============================================================================
+  gpu-llm:
+    image: ghcr.io/${DOCKERHUB_USERNAME:-fillipeguerrabtc}/alice-llm-mistral:${IMAGE_TAG:-latest}
+    platform: linux/amd64
+    container_name: gpu-llm
+    restart: unless-stopped
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=0
+      - CUDA_VISIBLE_DEVICES=0
+      - MODEL_NAME=${LLM_MODEL_NAME:-TheBloke/Mistral-7B-Instruct-v0.2-AWQ}
+      - QUANTIZATION=awq
+      - MAX_MODEL_LEN=${LLM_MAX_MODEL_LEN:-2048}
+      # Gate 2: budget conservador para coexistência (LLM + VLM + Embeddings + ASR em 20GB)
+      - GPU_MEMORY_UTILIZATION=${LLM_GPU_MEMORY_UTILIZATION:-0.28}
+      - TENSOR_PARALLEL_SIZE=1
+      - HOST=0.0.0.0
+      - PORT=8000
+      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
+    ports:
+      - "127.0.0.1:8004:8000"
+    networks:
+      - gpu-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+        limits:
+          memory: 8G
+          cpus: '4.0'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 120s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   # =============================================================================
   # Qwen2.5-VL 7B AWQ - VLM (Visão)
   # Gate 2: VLM dedicado (LLM texto separado)
@@ -48,9 +97,10 @@ services:
       - CUDA_VISIBLE_DEVICES=0
       - MODEL_NAME=${QWEN_VL_MODEL_NAME:-Qwen/Qwen2.5-VL-7B-Instruct-AWQ}
       - QUANTIZATION=${QWEN_VL_QUANTIZATION:-awq}
-      # Alinhado ao stack modular (evita KV cache estourando VRAM em 20GB)
-      - MAX_MODEL_LEN=${QWEN_VL_MAX_MODEL_LEN:-4096}
-      - GPU_MEMORY_UTILIZATION=${QWEN_VL_GPU_MEMORY_UTILIZATION:-0.45}
+      # Gate 2: alinhado ao stack modular (evita KV cache estourando VRAM em 20GB)
+      - MAX_MODEL_LEN=${QWEN_VL_MAX_MODEL_LEN:-2048}
+      # Gate 2: budget conservador para coexistência com LLM + Embeddings + ASR
+      - GPU_MEMORY_UTILIZATION=${QWEN_VL_GPU_MEMORY_UTILIZATION:-0.36}
       - TENSOR_PARALLEL_SIZE=${QWEN_VL_TENSOR_PARALLEL_SIZE:-1}
       - HOST=0.0.0.0
       - PORT=8000
