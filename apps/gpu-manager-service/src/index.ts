@@ -394,6 +394,7 @@ async function getVramStatus(): Promise<VramStatus> {
     // Métricas: VRAM reservada estimada por capacidade (bytes)
     // (não tenta inferir uso real por processo/container, mas mantém dashboards estáveis no WS3)
     gpuVramReservedBytes.set({ gpu_id: GPU_ID, service: 'llm' }, 0);
+    gpuVramReservedBytes.set({ gpu_id: GPU_ID, service: 'vlm' }, 0);
     gpuVramReservedBytes.set({ gpu_id: GPU_ID, service: 'embeddings' }, 0);
     gpuVramReservedBytes.set({ gpu_id: GPU_ID, service: 'asr' }, 0);
     gpuVramReservedBytes.set({ gpu_id: GPU_ID, service: 'training' }, 0);
@@ -449,6 +450,7 @@ async function getVramFallback(): Promise<VramStatus> {
   // Métricas: VRAM reservada estimada por capacidade (bytes)
   // Zerar primeiro para evitar séries "stale" quando um serviço fica inativo.
   gpuVramReservedBytes.set({ gpu_id: GPU_ID, service: 'llm' }, 0);
+  gpuVramReservedBytes.set({ gpu_id: GPU_ID, service: 'vlm' }, 0);
   gpuVramReservedBytes.set({ gpu_id: GPU_ID, service: 'embeddings' }, 0);
   gpuVramReservedBytes.set({ gpu_id: GPU_ID, service: 'asr' }, 0);
   gpuVramReservedBytes.set({ gpu_id: GPU_ID, service: 'training' }, 0);

@@ -7,7 +7,7 @@
 # - Imagem: OpenCLIP ViT-H/14 (1024 dim) - armazenado em pgvector
 # 
 # GPU: RTX 4000 Ada (20GB VRAM) - Hetzner GEX44
-# VRAM estimado: ~16GB para Qwen3 + ~2GB para OpenCLIP
+# VRAM estimado (Gate 2): ~2-3GB para Qwen3-Embedding-0.6B INT8 + ~2GB para OpenCLIP
 # 
 # ARQUITETURA DOCKER HUB (28/12/2025, atualizado 12/01/2026):
 # - Base: pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime (Docker Hub - 100% PÚBLICO)

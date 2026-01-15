@@ -635,8 +635,8 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # Embeddings GPU - Qwen3-Embedding-8B INT8
-  # ARQUITETURA v4.0.0: Quantizado para INT8 (8GB vs 16GB FP16)
+  # Embeddings GPU - Qwen3-Embedding-0.6B INT8
+  # Gate 2: Quantizado para INT8 (budget ~2-3GB VRAM, dependendo do backend)
   gpu-embeddings:
     image: ${IMAGE_PREFIX}-embeddings-gpu:${IMAGE_TAG:-latest}
     platform: linux/amd64
