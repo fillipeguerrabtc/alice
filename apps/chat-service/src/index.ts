@@ -166,7 +166,7 @@ app.use(metricsRouter);
 setupSwaggerUI(app, {
   serviceName: 'chat-service',
   version: '1.0.0',
-  description: 'Serviço de chat com WebSocket, LLM streaming e geração de imagens.',
+  description: 'Serviço de chat com WebSocket, LLM streaming e análise de imagens (Qwen2.5-VL Vision).',
   port: Number(PORT),
   tags: CHAT_SERVICE_TAGS,
   paths: chatServicePaths,

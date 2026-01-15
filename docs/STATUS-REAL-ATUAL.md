@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 15 de Janeiro de 2026  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 7.1 - KuCoin: Mapeamento enterprise de falhas (429/timeout/breaker-open)
+> **Versão:** 7.2 - Tests sem mocks + OpenAPI chat alinhado (410 Gone)
 
 > **🚀 ATUALIZAÇÃO v3.0.0 (06/01/2026) - Pipeline Enterprise:**  
 > Pipeline CI/CD enterprise completo com deploy modular em 5 stacks independentes.
@@ -21,6 +21,14 @@
 >
 > **📈 KuCoin Trading Resilience (15/01/2026):**
 > - Falhas KuCoin agora retornam status HTTP apropriado (ex.: **429** com `Retry-After`, **504** em timeout, **503** em circuit breaker aberto) ao invés de 500 genérico.
+>
+> **🧪 Test Suite Enterprise (15/01/2026):**
+> - Removidos `vi.mock` e “implementações espelho” em testes (Regra 6).
+> - Testes agora validam SSOT real de `CIRCUIT_BREAKER_PRESETS` e a extração de células Excel é testada via função exportada do `document-processor` (código real, sem mocks).
+>
+> **📚 Chat OpenAPI Consistency (15/01/2026):**
+> - OpenAPI agora documenta corretamente o endpoint legado `/api/chat/images/generate` como **410 Gone** (feature removida).
+> - Swagger do `chat-service` descreve **análise de imagens** (Qwen2.5-VL Vision), não geração.
 
 ---
 

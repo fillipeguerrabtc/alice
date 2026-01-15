@@ -6,15 +6,16 @@
  * - LLM integration (GPU Manager Service - Hetzner GEX44)
  * - RAG context
  * - Conversation orchestration (takeover/handover)
- * - Image generation
+ * - Análise de imagens (Qwen2.5-VL Vision)
  * 
  * Author: Fillipe Guerra
- * Data: 05/12/2025
+ * Data: 15/01/2026
  * 
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
+import { CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
 
 // ============================================================================
 // TESTES DE CONFIGURAÇÃO LLM
@@ -256,8 +257,6 @@ describe('Chat Service - Tipos de Mensagem WebSocket', () => {
     'presence',       // Status de presença
     'system',         // Mensagem do sistema
     'error',          // Erro
-    'image_request',  // Solicitação de geração de imagem
-    'image_result',   // Resultado da geração
   ];
 
   it('deve suportar mensagem de chat', () => {
@@ -268,13 +267,13 @@ describe('Chat Service - Tipos de Mensagem WebSocket', () => {
     expect(messageTypes).toContain('typing');
   });
 
-  it('deve suportar geração de imagem', () => {
-    expect(messageTypes).toContain('image_request');
-    expect(messageTypes).toContain('image_result');
+  it('NÃO deve expor tipos de mensagem de geração de imagem (feature removida)', () => {
+    expect(messageTypes).not.toContain('image_request');
+    expect(messageTypes).not.toContain('image_result');
   });
 
-  it('deve ter ao menos 8 tipos de mensagem', () => {
-    expect(messageTypes.length).toBeGreaterThanOrEqual(8);
+  it('deve ter ao menos 6 tipos de mensagem', () => {
+    expect(messageTypes.length).toBeGreaterThanOrEqual(6);
   });
 });
 
@@ -367,37 +366,12 @@ describe('Chat Service - Image Analysis (Vision)', () => {
 // ============================================================================
 
 describe('Chat Service - Circuit Breakers', () => {
-  const breakers = {
-    llm: {
-      name: 'llm-api',
-      failureThreshold: 5,
-      resetTimeout: 30000,
-    },
-    rag: {
-      name: 'rag-service',
-      failureThreshold: 3,
-      resetTimeout: 15000,
-    },
-    imageGen: {
-      name: 'image-generation',
-      failureThreshold: 3,
-      resetTimeout: 60000,
-    },
-  };
+  it('deve usar presets SSOT para LLM e RAG (Regra 2 - Não Duplicar)', () => {
+    expect(CIRCUIT_BREAKER_PRESETS.gpuLLM.timeout).toBe(60000);
+    expect(CIRCUIT_BREAKER_PRESETS.gpuLLM.resetTimeout).toBe(30000);
 
-  it('deve ter circuit breaker para LLM', () => {
-    expect(breakers.llm.name).toBe('llm-api');
-    expect(breakers.llm.failureThreshold).toBe(5);
-  });
-
-  it('deve ter circuit breaker para RAG', () => {
-    expect(breakers.rag.name).toBe('rag-service');
-    expect(breakers.rag.failureThreshold).toBe(3);
-  });
-
-  it('deve ter circuit breaker para Image Generation', () => {
-    expect(breakers.imageGen.name).toBe('image-generation');
-    expect(breakers.imageGen.resetTimeout).toBe(60000);
+    expect(CIRCUIT_BREAKER_PRESETS.ragService.timeout).toBe(10000);
+    expect(CIRCUIT_BREAKER_PRESETS.ragService.resetTimeout).toBe(15000);
   });
 });
 
@@ -454,13 +428,6 @@ describe('Chat Service - Validação Zod', () => {
     })).optional(),
   });
 
-  const imageRequestSchema = z.object({
-    prompt: z.string().min(1).max(1000),
-    width: z.number().min(256).max(1024).optional(),
-    height: z.number().min(256).max(1024).optional(),
-    style: z.enum(['realistic', 'artistic', 'cartoon']).optional(),
-  });
-
   it('deve validar mensagem de chat', () => {
     const message = {
       conversationId: '123e4567-e89b-12d3-a456-426614174000',
@@ -478,28 +445,6 @@ describe('Chat Service - Validação Zod', () => {
     };
 
     const result = chatMessageSchema.safeParse(message);
-    expect(result.success).toBe(false);
-  });
-
-  it('deve validar request de imagem', () => {
-    const request = {
-      prompt: 'Um gato usando óculos de sol',
-      width: 512,
-      height: 512,
-    };
-
-    const result = imageRequestSchema.safeParse(request);
-    expect(result.success).toBe(true);
-  });
-
-  it('deve rejeitar dimensões muito grandes', () => {
-    const request = {
-      prompt: 'Uma paisagem',
-      width: 2048,
-      height: 2048,
-    };
-
-    const result = imageRequestSchema.safeParse(request);
     expect(result.success).toBe(false);
   });
 });

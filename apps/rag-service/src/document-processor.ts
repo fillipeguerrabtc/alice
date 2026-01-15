@@ -129,6 +129,102 @@ export interface DocumentProcessorOptions {
   maxChunks?: number;
 }
 
+/**
+ * Extrai texto de uma célula ExcelJS, tratando todos os tipos possíveis:
+ * - Primitivos: string, number, boolean
+ * - Date: converte para ISO string
+ * - CellFormulaValue: extrai .result (resultado da fórmula)
+ * - CellHyperlinkValue: extrai .text (texto do link)
+ * - CellRichTextValue: concatena .richText[].text
+ * - CellErrorValue: extrai .error.message ou código
+ * - null/undefined: retorna string vazia
+ *
+ * Exportado para testes unitários (Regra 6: sem mocks e sem "espelho" no teste).
+ */
+export function extractExcelCellText(cell: unknown, depth: number = 0): string {
+  // Proteção contra recursão infinita (máximo 3 níveis: 0, 1, 2)
+  const MAX_DEPTH = 3;
+  if (depth >= MAX_DEPTH) return '';
+
+  // Null ou undefined
+  if (cell === null || cell === undefined) return '';
+
+  // Primitivos - conversão direta, sem recursão
+  if (typeof cell === 'string') return cell;
+  if (typeof cell === 'number' || typeof cell === 'boolean') return String(cell);
+
+  // Date - conversão direta, sem recursão
+  if (cell instanceof Date) return cell.toISOString();
+
+  // Objeto complexo do ExcelJS
+  if (typeof cell === 'object') {
+    const obj = cell as Record<string, unknown>;
+
+    // CellRichTextValue: { richText: [{ text: string, font?: ... }, ...] }
+    if ('richText' in obj && Array.isArray(obj.richText)) {
+      return (obj.richText as Array<{ text?: string }>)
+        .map((part) => part.text || '')
+        .join('');
+    }
+
+    // CellHyperlinkValue: { text: string, hyperlink: string }
+    // Verifica AMBOS text e hyperlink para garantir que é realmente um hyperlink
+    if ('text' in obj && 'hyperlink' in obj && typeof obj.text === 'string') {
+      return obj.text;
+    }
+
+    // CellFormulaValue: { formula: string, result?: unknown }
+    // Para RAG, só o resultado importa - fórmula bruta não tem valor semântico
+    if ('formula' in obj) {
+      // Usa o resultado da fórmula se disponível
+      if ('result' in obj && obj.result !== undefined) {
+        // Conversão direta para tipos primitivos (evita recursão desnecessária)
+        const result = obj.result;
+        if (typeof result === 'string') return result;
+        if (typeof result === 'number' || typeof result === 'boolean') return String(result);
+        if (result instanceof Date) return result.toISOString();
+        // Objeto complexo: recursão com depth incrementado
+        return extractExcelCellText(result, depth + 1);
+      }
+      // Sem resultado: retorna vazio (fórmula bruta não ajuda RAG)
+      return '';
+    }
+
+    // CellErrorValue: { error: { message?: string, ... } }
+    // Retorna apenas a mensagem de erro (ex: #DIV/0!, #REF!, #VALUE!)
+    // Sem prefixo redundante já que códigos Excel começam com #
+    // Validação completa: error deve ser objeto não-nulo (não primitivo)
+    if ('error' in obj && typeof obj.error === 'object' && obj.error !== null) {
+      const error = obj.error as Record<string, unknown>;
+      if ('message' in error) return String(error.message);
+      return '#ERROR';
+    }
+
+    // SharedStringValue ou outros: tenta .value
+    if ('value' in obj && obj.value !== undefined) {
+      // Conversão direta para tipos primitivos (evita recursão desnecessária)
+      const val = obj.value;
+      if (typeof val === 'string') return val;
+      if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+      if (val instanceof Date) return val.toISOString();
+      // Objeto complexo: recursão com depth incrementado
+      return extractExcelCellText(val, depth + 1);
+    }
+
+    // Objeto genérico com text (mas NÃO é hyperlink - já verificado acima)
+    // Ex: { text: 'Texto simples' } sem propriedade hyperlink
+    if ('text' in obj && typeof obj.text === 'string') {
+      return obj.text;
+    }
+  }
+
+  // Fallback: tenta converter para string (não deve chegar aqui)
+  const str = String(cell);
+  // Evita retornar "[object Object]"
+  if (str === '[object Object]') return '';
+  return str;
+}
+
 // ============================================================================
 // CIRCUIT BREAKER - Embedding API (Regra 16 - Melhores Práticas 2025)
 // ============================================================================
@@ -483,101 +579,7 @@ class DocumentProcessorService {
    * @param depth - Profundidade de recursão (proteção contra loops infinitos)
    */
   private extractCellText(cell: unknown, depth: number = 0): string {
-    // Proteção contra recursão infinita (máximo 3 níveis: 0, 1, 2)
-    const MAX_DEPTH = 3;
-    if (depth >= MAX_DEPTH) {
-      return '';
-    }
-
-    // Null ou undefined
-    if (cell === null || cell === undefined) {
-      return '';
-    }
-
-    // Primitivos - conversão direta, sem recursão
-    if (typeof cell === 'string') {
-      return cell;
-    }
-    if (typeof cell === 'number' || typeof cell === 'boolean') {
-      return String(cell);
-    }
-
-    // Date - conversão direta, sem recursão
-    if (cell instanceof Date) {
-      return cell.toISOString();
-    }
-
-    // Objeto complexo do ExcelJS
-    if (typeof cell === 'object') {
-      const obj = cell as Record<string, unknown>;
-
-      // CellRichTextValue: { richText: [{ text: string, font?: ... }, ...] }
-      if ('richText' in obj && Array.isArray(obj.richText)) {
-        return (obj.richText as Array<{ text?: string }>)
-          .map(part => part.text || '')
-          .join('');
-      }
-
-      // CellHyperlinkValue: { text: string, hyperlink: string }
-      // Verifica AMBOS text e hyperlink para garantir que é realmente um hyperlink
-      if ('text' in obj && 'hyperlink' in obj && typeof obj.text === 'string') {
-        return obj.text;
-      }
-
-      // CellFormulaValue: { formula: string, result?: unknown }
-      // Para RAG, só o resultado importa - fórmula bruta não tem valor semântico
-      if ('formula' in obj) {
-        // Usa o resultado da fórmula se disponível
-        if ('result' in obj && obj.result !== undefined) {
-          // Conversão direta para tipos primitivos (evita recursão desnecessária)
-          const result = obj.result;
-          if (typeof result === 'string') return result;
-          if (typeof result === 'number' || typeof result === 'boolean') return String(result);
-          if (result instanceof Date) return result.toISOString();
-          // Objeto complexo: recursão com depth incrementado
-          return this.extractCellText(result, depth + 1);
-        }
-        // Sem resultado: retorna vazio (fórmula bruta não ajuda RAG)
-        return '';
-      }
-
-      // CellErrorValue: { error: { message?: string, ... } }
-      // Retorna apenas a mensagem de erro (ex: #DIV/0!, #REF!, #VALUE!)
-      // Sem prefixo redundante já que códigos Excel começam com #
-      // Validação completa: error deve ser objeto não-nulo (não primitivo)
-      if ('error' in obj && typeof obj.error === 'object' && obj.error !== null) {
-        const error = obj.error as Record<string, unknown>;
-        if ('message' in error) {
-          return String(error.message);
-        }
-        return '#ERROR';
-      }
-
-      // SharedStringValue ou outros: tenta .value
-      if ('value' in obj && obj.value !== undefined) {
-        // Conversão direta para tipos primitivos (evita recursão desnecessária)
-        const val = obj.value;
-        if (typeof val === 'string') return val;
-        if (typeof val === 'number' || typeof val === 'boolean') return String(val);
-        if (val instanceof Date) return val.toISOString();
-        // Objeto complexo: recursão com depth incrementado
-        return this.extractCellText(val, depth + 1);
-      }
-
-      // Objeto genérico com text (mas NÃO é hyperlink - já verificado acima)
-      // Ex: { text: 'Texto simples' } sem propriedade hyperlink
-      if ('text' in obj && typeof obj.text === 'string') {
-        return obj.text;
-      }
-    }
-
-    // Fallback: tenta converter para string (não deve chegar aqui)
-    const str = String(cell);
-    // Evita retornar "[object Object]"
-    if (str === '[object Object]') {
-      return '';
-    }
-    return str;
+    return extractExcelCellText(cell, depth);
   }
 
   /**

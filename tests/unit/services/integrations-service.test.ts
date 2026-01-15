@@ -8,13 +8,14 @@
  * - Webhooks (assinatura e validação)
  * 
  * Author: Fillipe Guerra
- * Data: 04/12/2025
+ * Data: 15/01/2026
  * 
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import crypto from 'crypto';
+import { CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
 
 // ============================================================================
 // TESTES DE STRIPE
@@ -187,22 +188,12 @@ describe('Integrations Service - ERPNext', () => {
 // ============================================================================
 
 describe('Integrations Service - Circuit Breaker', () => {
-  const circuitBreakerConfig = {
-    failureThreshold: 5,
-    resetTimeout: 30000, // 30 segundos
-    halfOpenLimit: 3,
-  };
-
-  it('deve abrir circuito após 5 falhas', () => {
-    expect(circuitBreakerConfig.failureThreshold).toBe(5);
-  });
-
-  it('deve resetar após 30 segundos', () => {
-    expect(circuitBreakerConfig.resetTimeout).toBe(30000);
-  });
-
-  it('deve permitir 3 requests em half-open', () => {
-    expect(circuitBreakerConfig.halfOpenLimit).toBe(3);
+  it('deve ter preset KuCoin Futures (SSOT) para resiliência do trading', () => {
+    // SSOT: presets centralizados em @alice/shared-utils (Regra 2)
+    expect(CIRCUIT_BREAKER_PRESETS.kucoinFutures.timeout).toBe(5000);
+    expect(CIRCUIT_BREAKER_PRESETS.kucoinFutures.errorThresholdPercentage).toBe(30);
+    expect(CIRCUIT_BREAKER_PRESETS.kucoinFutures.resetTimeout).toBe(15000);
+    expect(CIRCUIT_BREAKER_PRESETS.kucoinFutures.volumeThreshold).toBe(3);
   });
 
   it('deve ter 3 estados possíveis', () => {

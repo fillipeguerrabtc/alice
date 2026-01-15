@@ -8,12 +8,13 @@
  * - Processamento de documentos
  * 
  * Author: Fillipe Guerra
- * Data: 05/12/2025
+ * Data: 15/01/2026
  * 
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
+import { CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
 
 // ============================================================================
 // TESTES DE TIPOS DE MÍDIA SUPORTADOS
@@ -385,25 +386,13 @@ describe('RAG Service - Deduplicação', () => {
 // ============================================================================
 
 describe('RAG Service - Circuit Breakers', () => {
-  // ARQUITETURA 100% GPU (25/12/2025) - GPU Manager Service (Hetzner GEX44)
-  const breakers = {
-    embeddings: {
-      name: 'embedding-gpu',
-      failureThreshold: 5,
-      resetTimeout: 30000,
-    },
-    imageEmbedding: {
-      name: 'openclip-gpu',
-      failureThreshold: 3,
-      resetTimeout: 30000,
-    },
-  };
+  it('deve usar presets SSOT para embeddings de texto e imagem', () => {
+    // Texto (Qwen3-Embedding) via GPU Manager
+    expect(CIRCUIT_BREAKER_PRESETS.textEmbeddings.timeout).toBe(60000);
+    expect(CIRCUIT_BREAKER_PRESETS.textEmbeddings.resetTimeout).toBe(30000);
 
-  it('deve ter circuit breaker para embeddings GPU', () => {
-    expect(breakers.embeddings.name).toBe('embedding-gpu');
-  });
-
-  it('deve ter circuit breaker para OpenCLIP GPU', () => {
-    expect(breakers.imageEmbedding.name).toBe('openclip-gpu');
+    // Imagem (OpenCLIP) via GPU Manager
+    expect(CIRCUIT_BREAKER_PRESETS.clipEmbeddings.timeout).toBe(60000);
+    expect(CIRCUIT_BREAKER_PRESETS.clipEmbeddings.resetTimeout).toBe(30000);
   });
 });

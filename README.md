@@ -1,13 +1,13 @@
 # Alice - Plataforma Enterprise de IA Autônoma
 
 **Autor:** Fillipe Guerra  
-**Data:** 11 de Janeiro de 2026  
-**Versão:** 7.0 - Arquitetura GPU v4.0.0 (Qwen2.5-VL + INT8 Embeddings)
+**Data:** 15 de Janeiro de 2026  
+**Versão:** 7.2 - Tests sem mocks + OpenAPI chat alinhado (410 Gone)
 
 <div align="center">
 
 ![Alice Logo](https://img.shields.io/badge/Alice-IA%20Enterprise-blue?style=for-the-badge&logo=robot&logoColor=white)
-![Version](https://img.shields.io/badge/versão-6.0-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/versão-7.2-green?style=for-the-badge)
 ![License](https://img.shields.io/badge/licença-Proprietária-red?style=for-the-badge)
 ![LLM](https://img.shields.io/badge/LLM-Qwen2.5--VL%207B-purple?style=for-the-badge)
 

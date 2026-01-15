@@ -13,157 +13,44 @@
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-
-// ============================================================================
-// MOCKS - Simular dependências externas
-// ============================================================================
-
-// Mock do logger para evitar output durante testes
-vi.mock('@alice/logger', () => ({
-  createLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
-// Mock do circuit breaker
-vi.mock('@alice/shared-utils', () => ({
-  createCircuitBreaker: vi.fn((fn) => ({
-    fire: fn,
-    getState: () => 'closed',
-    getStats: () => ({ failures: 0, successes: 0, timeouts: 0 }),
-  })),
-  CIRCUIT_BREAKER_PRESETS: {
-    textEmbeddings: { failureThreshold: 5, resetTimeout: 30000 },
-  },
-}));
+import { describe, it, expect } from 'vitest';
+import { extractExcelCellText } from '../../../apps/rag-service/src/document-processor.js';
 
 // ============================================================================
 // TESTES DE EXTRAÇÃO DE CÉLULAS EXCEL
 // ============================================================================
 
 describe('Document Processor - Extração de Células ExcelJS', () => {
-  /**
-   * Simula o método extractCellText do DocumentProcessorService
-   * Implementação espelho para testes unitários
-   * 
-   * @param cell - Valor da célula ExcelJS
-   * @param depth - Profundidade de recursão (proteção contra loops infinitos)
-   */
-  function extractCellText(cell: unknown, depth: number = 0): string {
-    // Proteção contra recursão infinita (máximo 3 níveis: 0, 1, 2)
-    const MAX_DEPTH = 3;
-    if (depth >= MAX_DEPTH) {
-      return '';
-    }
-
-    // Null ou undefined
-    if (cell === null || cell === undefined) {
-      return '';
-    }
-
-    // Primitivos - conversão direta
-    if (typeof cell === 'string') {
-      return cell;
-    }
-    if (typeof cell === 'number' || typeof cell === 'boolean') {
-      return String(cell);
-    }
-
-    // Date - conversão direta
-    if (cell instanceof Date) {
-      return cell.toISOString();
-    }
-
-    // Objeto complexo do ExcelJS
-    if (typeof cell === 'object') {
-      const obj = cell as Record<string, unknown>;
-
-      // CellRichTextValue: { richText: [{ text: string, font?: ... }, ...] }
-      if ('richText' in obj && Array.isArray(obj.richText)) {
-        return (obj.richText as Array<{ text?: string }>)
-          .map(part => part.text || '')
-          .join('');
-      }
-
-      // CellHyperlinkValue: { text: string, hyperlink: string }
-      if ('text' in obj && 'hyperlink' in obj && typeof obj.text === 'string') {
-        return obj.text;
-      }
-
-      // CellFormulaValue: { formula: string, result?: ... }
-      if ('formula' in obj) {
-        if ('result' in obj && obj.result !== undefined) {
-          const result = obj.result;
-          if (typeof result === 'string') return result;
-          if (typeof result === 'number' || typeof result === 'boolean') return String(result);
-          if (result instanceof Date) return result.toISOString();
-          return extractCellText(result, depth + 1);
-        }
-        return '';
-      }
-
-      // CellErrorValue: { error: { message?: string } }
-      if ('error' in obj && typeof obj.error === 'object' && obj.error !== null) {
-        const error = obj.error as Record<string, unknown>;
-        if ('message' in error) {
-          return String(error.message);
-        }
-        return '#ERROR';
-      }
-
-      // SharedStringValue ou outros: tenta .value
-      if ('value' in obj && obj.value !== undefined) {
-        const val = obj.value;
-        if (typeof val === 'string') return val;
-        if (typeof val === 'number' || typeof val === 'boolean') return String(val);
-        if (val instanceof Date) return val.toISOString();
-        return extractCellText(val, depth + 1);
-      }
-
-      // Objeto genérico com text - mas NÃO é hyperlink
-      if ('text' in obj && typeof obj.text === 'string') {
-        return obj.text;
-      }
-    }
-
-    // Fallback seguro - evita [object Object]
-    return '';
-  }
-
   describe('Valores Primitivos', () => {
     it('deve retornar string diretamente', () => {
-      expect(extractCellText('Hello World')).toBe('Hello World');
+      expect(extractExcelCellText('Hello World')).toBe('Hello World');
     });
 
     it('deve converter número para string', () => {
-      expect(extractCellText(42)).toBe('42');
-      expect(extractCellText(3.14159)).toBe('3.14159');
-      expect(extractCellText(-100)).toBe('-100');
-      expect(extractCellText(0)).toBe('0');
+      expect(extractExcelCellText(42)).toBe('42');
+      expect(extractExcelCellText(3.14159)).toBe('3.14159');
+      expect(extractExcelCellText(-100)).toBe('-100');
+      expect(extractExcelCellText(0)).toBe('0');
     });
 
     it('deve converter boolean para string', () => {
-      expect(extractCellText(true)).toBe('true');
-      expect(extractCellText(false)).toBe('false');
+      expect(extractExcelCellText(true)).toBe('true');
+      expect(extractExcelCellText(false)).toBe('false');
     });
 
     it('deve retornar string vazia para null', () => {
-      expect(extractCellText(null)).toBe('');
+      expect(extractExcelCellText(null)).toBe('');
     });
 
     it('deve retornar string vazia para undefined', () => {
-      expect(extractCellText(undefined)).toBe('');
+      expect(extractExcelCellText(undefined)).toBe('');
     });
   });
 
   describe('Valores Date', () => {
     it('deve converter Date para ISO string', () => {
       const date = new Date('2025-12-04T10:30:00.000Z');
-      expect(extractCellText(date)).toBe('2025-12-04T10:30:00.000Z');
+      expect(extractExcelCellText(date)).toBe('2025-12-04T10:30:00.000Z');
     });
   });
 
@@ -176,7 +63,7 @@ describe('Document Processor - Extração de Células ExcelJS', () => {
           { text: '!' },
         ],
       };
-      expect(extractCellText(richText)).toBe('Hello World!');
+      expect(extractExcelCellText(richText)).toBe('Hello World!');
     });
 
     it('deve tratar richText com partes vazias', () => {
@@ -187,12 +74,12 @@ describe('Document Processor - Extração de Células ExcelJS', () => {
           { text: ' Final' },
         ],
       };
-      expect(extractCellText(richText)).toBe('Texto Final');
+      expect(extractExcelCellText(richText)).toBe('Texto Final');
     });
 
     it('deve retornar string vazia para richText vazio', () => {
       const richText = { richText: [] };
-      expect(extractCellText(richText)).toBe('');
+      expect(extractExcelCellText(richText)).toBe('');
     });
   });
 
@@ -202,7 +89,7 @@ describe('Document Processor - Extração de Células ExcelJS', () => {
         text: 'Clique aqui',
         hyperlink: 'https://example.com',
       };
-      expect(extractCellText(hyperlink)).toBe('Clique aqui');
+      expect(extractExcelCellText(hyperlink)).toBe('Clique aqui');
     });
 
     it('deve tratar hyperlink com texto vazio', () => {
@@ -210,7 +97,7 @@ describe('Document Processor - Extração de Células ExcelJS', () => {
         text: '',
         hyperlink: 'https://example.com',
       };
-      expect(extractCellText(hyperlink)).toBe('');
+      expect(extractExcelCellText(hyperlink)).toBe('');
     });
   });
 
@@ -220,7 +107,7 @@ describe('Document Processor - Extração de Células ExcelJS', () => {
         formula: 'SUM(A1:A10)',
         result: 150,
       };
-      expect(extractCellText(formula)).toBe('150');
+      expect(extractExcelCellText(formula)).toBe('150');
     });
 
     it('deve extrair resultado string de fórmula', () => {
@@ -228,7 +115,7 @@ describe('Document Processor - Extração de Células ExcelJS', () => {
         formula: 'CONCATENATE(A1, B1)',
         result: 'HelloWorld',
       };
-      expect(extractCellText(formula)).toBe('HelloWorld');
+      expect(extractExcelCellText(formula)).toBe('HelloWorld');
     });
 
     it('deve extrair resultado Date de fórmula', () => {
@@ -236,14 +123,14 @@ describe('Document Processor - Extração de Células ExcelJS', () => {
         formula: 'TODAY()',
         result: new Date('2025-12-04T00:00:00.000Z'),
       };
-      expect(extractCellText(formula)).toBe('2025-12-04T00:00:00.000Z');
+      expect(extractExcelCellText(formula)).toBe('2025-12-04T00:00:00.000Z');
     });
 
     it('deve retornar string vazia para fórmula sem resultado', () => {
       const formula = {
         formula: 'SUM(A1:A10)',
       };
-      expect(extractCellText(formula)).toBe('');
+      expect(extractExcelCellText(formula)).toBe('');
     });
   });
 
@@ -252,33 +139,33 @@ describe('Document Processor - Extração de Células ExcelJS', () => {
       const error = {
         error: { message: '#DIV/0!' },
       };
-      expect(extractCellText(error)).toBe('#DIV/0!');
+      expect(extractExcelCellText(error)).toBe('#DIV/0!');
     });
 
     it('deve retornar marcador de erro padrão quando não há mensagem', () => {
       const error = {
         error: {},
       };
-      expect(extractCellText(error)).toBe('#ERROR');
+      expect(extractExcelCellText(error)).toBe('#ERROR');
     });
   });
 
   describe('Objeto com propriedade text (não hyperlink)', () => {
     it('deve extrair text de objeto genérico', () => {
       const obj = { text: 'Texto simples' };
-      expect(extractCellText(obj)).toBe('Texto simples');
+      expect(extractExcelCellText(obj)).toBe('Texto simples');
     });
   });
 
   describe('Fallback para objetos desconhecidos', () => {
     it('deve retornar string vazia para objeto sem propriedades conhecidas', () => {
       const unknown = { foo: 'bar', baz: 123 };
-      expect(extractCellText(unknown)).toBe('');
+      expect(extractExcelCellText(unknown)).toBe('');
     });
 
     it('NÃO deve retornar [object Object]', () => {
       const obj = { some: 'object' };
-      const result = extractCellText(obj);
+      const result = extractExcelCellText(obj);
       expect(result).not.toBe('[object Object]');
       expect(result).toBe('');
     });
@@ -299,7 +186,7 @@ describe('Document Processor - Extração de Células ExcelJS', () => {
         },
       };
       // Com MAX_DEPTH = 3, deve retornar vazio após 3 níveis
-      const result = extractCellText(deepNested);
+      const result = extractExcelCellText(deepNested);
       expect(result).toBe('');
     });
 
@@ -310,7 +197,7 @@ describe('Document Processor - Extração de Células ExcelJS', () => {
           value: 'valor válido',
         },
       };
-      const result = extractCellText(nested);
+      const result = extractExcelCellText(nested);
       expect(result).toBe('valor válido');
     });
 
@@ -321,7 +208,7 @@ describe('Document Processor - Extração de Células ExcelJS', () => {
           value: 42,
         },
       };
-      const result = extractCellText(formula);
+      const result = extractExcelCellText(formula);
       expect(result).toBe('42');
     });
   });
@@ -618,18 +505,11 @@ describe('Document Processor - Estrutura de Embeddings', () => {
 // ============================================================================
 
 describe('Document Processor - Processamento de Linhas Excel', () => {
-  function extractCellText(cell: unknown): string {
-    if (cell === null || cell === undefined) return '';
-    if (typeof cell === 'string') return cell;
-    if (typeof cell === 'number' || typeof cell === 'boolean') return String(cell);
-    return '';
-  }
-
   function processRow(values: unknown[]): { text: string; hasContent: boolean } {
     // Simula o processamento de uma linha Excel
     // values é 1-indexed no ExcelJS, então slice(1)
     const safedValues = (values || []) as unknown[];
-    const cellTexts = safedValues.slice(1).map(cell => extractCellText(cell));
+    const cellTexts = safedValues.slice(1).map((cell) => extractExcelCellText(cell));
     const hasContent = cellTexts.some(text => text.trim() !== '');
     return {
       text: cellTexts.join(','),

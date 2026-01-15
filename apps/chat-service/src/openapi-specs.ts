@@ -180,10 +180,12 @@ export const chatServicePaths = {
       responses: { 200: { description: 'Controle devolvido' } },
     },
   },
-  '/api/chat/image/generate': {
+  // NOTA (ARQUITETURA v4.0.0): Endpoint mantido APENAS para retrocompatibilidade.
+  // A geração de imagens foi removida; o endpoint retorna 410 (Gone) de forma determinística.
+  '/api/chat/images/generate': {
     post: {
-      summary: 'Gerar imagem com FLUX.1',
-      tags: ['Image Generation'],
+      summary: 'Endpoint descontinuado: geração de imagens removida (410 Gone)',
+      tags: ['Deprecated'],
       requestBody: {
         content: {
           'application/json': {
@@ -201,15 +203,16 @@ export const chatServicePaths = {
         },
       },
       responses: {
-        200: {
-          description: 'Imagem gerada',
+        410: {
+          description: 'Funcionalidade removida (Gone)',
           content: {
             'application/json': {
               schema: {
                 type: 'object',
                 properties: {
-                  imageUrl: { type: 'string', format: 'uri' },
-                  seed: { type: 'integer' },
+                  error: { type: 'string', example: 'Funcionalidade removida' },
+                  message: { type: 'string' },
+                  alternative: { type: 'string' },
                 },
               },
             },

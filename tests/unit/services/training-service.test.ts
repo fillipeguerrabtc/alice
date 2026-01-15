@@ -13,12 +13,13 @@
  * - Todos os serviços GPU rodam localmente no servidor dedicado
  * 
  * Author: Fillipe Guerra
- * Data: 26/12/2025
+ * Data: 15/01/2026
  * 
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
 import { describe, it, expect } from 'vitest';
+import { CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
 
 // ============================================================================
 // TESTES DE CONFIGURAÇÃO GPU MANAGER SERVICE
@@ -393,27 +394,11 @@ describe('Training Service - Validação Zod', () => {
 // ============================================================================
 
 describe('Training Service - Circuit Breakers', () => {
-  const breakers = {
-    embeddings: {
-      name: 'embedding-api',
-      failureThreshold: 5,
-      resetTimeout: 30000,
-    },
-    gpuManager: {
-      name: 'gpu-manager-service',
-      failureThreshold: 5,
-      resetTimeout: 30000,
-    },
-  };
-
-  it('deve ter circuit breaker para embeddings', () => {
-    expect(breakers.embeddings.name).toBe('embedding-api');
-    expect(breakers.embeddings.failureThreshold).toBe(5);
-  });
-
-  it('deve ter circuit breaker para GPU Manager Service', () => {
-    expect(breakers.gpuManager.name).toBe('gpu-manager-service');
-    expect(breakers.gpuManager.failureThreshold).toBe(5);
+  it('deve usar preset SSOT para embeddings de texto (Regra 2 - Não Duplicar)', () => {
+    // Training Service usa embeddings via GPU Manager (Qwen3-Embedding) → preset textEmbeddings
+    expect(CIRCUIT_BREAKER_PRESETS.textEmbeddings.timeout).toBe(60000);
+    expect(CIRCUIT_BREAKER_PRESETS.textEmbeddings.resetTimeout).toBe(30000);
+    expect(CIRCUIT_BREAKER_PRESETS.textEmbeddings.volumeThreshold).toBe(5);
   });
 });
 
