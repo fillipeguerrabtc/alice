@@ -75,10 +75,9 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
     pip install -r /app/requirements.txt
 
-# CRITICAL FIX (13/01/2026): Remover build tools após instalação
-# BUG FIX: INT8 quantization causava crash (AttributeError: 'Tensor' object has no attribute 'SCB')
-# SOLUÇÃO: Usar FP16 (half precision) que não requer bitsandbytes
-# Agora podemos remover build tools para reduzir tamanho da imagem
+# Remover build tools após instalação (mantém imagem menor).
+# NOTA: bitsandbytes/algumas dependências compilam extensões C++ no build.
+# Por isso build-essential é instalado temporariamente e removido depois.
 RUN apt-get purge -y --auto-remove build-essential g++ gcc && \
     rm -rf /var/lib/apt/lists/*
 

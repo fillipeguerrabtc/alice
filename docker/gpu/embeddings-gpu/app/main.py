@@ -68,8 +68,14 @@ TEXT_EMBEDDING_DIM = int(os.environ.get("TEXT_EMBEDDING_DIM", "4096"))
 IMAGE_MODEL_NAME = os.environ.get("IMAGE_MODEL_NAME", "laion/CLIP-ViT-H-14-laion2B-s32B-b79K")
 IMAGE_EMBEDDING_DIM = int(os.environ.get("IMAGE_EMBEDDING_DIM", "1024"))
 DEVICE = os.environ.get("DEVICE", "cuda" if torch.cuda.is_available() else "cpu")
-# ARQUITETURA v4.0.0: Suporte a quantização INT8 para reduzir VRAM
-QUANTIZATION = os.environ.get("QUANTIZATION", "fp16")  # fp16, int8, ou auto
+# ARQUITETURA v4.0.0: Suporte a quantização para reduzir VRAM
+# NOTA ENTERPRISE (WS3): QUANTIZATION=int8 no compose DEVE refletir o runtime.
+# É proibido "silenciosamente" cair para FP16 quando INT8 foi configurado.
+QUANTIZATION = os.environ.get("QUANTIZATION", "auto").strip().lower()  # auto, int8, fp16, fp32
+if QUANTIZATION not in {"auto", "int8", "fp16", "fp32"}:
+    raise RuntimeError(
+        f"QUANTIZATION inválido: {QUANTIZATION}. Valores aceitos: auto|int8|fp16|fp32"
+    )
 
 # =============================================================================
 # FASTAPI APP
@@ -81,7 +87,7 @@ app = FastAPI(
 Serviço de embeddings enterprise:
 - **Texto (Trading/RAG)**: {TEXT_MODEL_NAME} → {TEXT_EMBEDDING_DIM} dim (Qdrant)
 - **Imagem**: {IMAGE_MODEL_NAME} → {IMAGE_EMBEDDING_DIM} dim (pgvector)
-- **Quantização**: {QUANTIZATION} (INT8 reduz VRAM de 16GB para 8GB)
+- **Quantização**: {QUANTIZATION} (INT8 reduz VRAM significativamente)
 
 Qwen3-Embedding-8B: 8B params, máxima qualidade para trading/RAG.
     """,
@@ -143,43 +149,67 @@ async def load_models():
     logger.info(f"Imagem: {IMAGE_MODEL_NAME} ({IMAGE_EMBEDDING_DIM} dim)")
     logger.info("=" * 60)
     
-    # Carregar modelo de texto (Qwen3-Embedding ou GTE)
+    # Carregar modelo de texto (Qwen3-Embedding)
     try:
         logger.info(f"Carregando modelo de texto: {TEXT_MODEL_NAME}")
         
         from sentence_transformers import SentenceTransformer
-        
-        # CRITICAL FIX 13/01/2026: Remover quantização INT8
-        # PROBLEMA IDENTIFICADO: SentenceTransformer não propaga BitsAndBytesConfig
-        # corretamente para o AutoModel subjacente, causando:
-        # AttributeError: 'Tensor' object has no attribute 'SCB'
-        # 
-        # SOLUÇÃO ENTERPRISE: Usar FP16 (half precision) que funciona perfeitamente
-        # com SentenceTransformer e reduz VRAM de forma confiável.
-        # FP16 usa ~8GB de VRAM (vs ~16GB FP32), suficiente para rodar simultaneamente
-        # com outros serviços GPU.
-        # 
-        # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Mudanças cirúrgicas)
-        logger.info("Using FP16 (half precision) for optimal VRAM usage")
-        
+
+        # =========================================================================
+        # WS3 — Mismatch INT8 vs FP16: implementar quantização REAL (sem fallback)
+        # =========================================================================
+        model_kwargs = {}
+        if DEVICE == "cuda":
+            if QUANTIZATION == "auto":
+                # Preferir INT8 em GPU para reduzir VRAM. Se houver incompatibilidade,
+                # é melhor falhar no startup (fail-fast) do que rodar em modo errado.
+                quant = "int8"
+            else:
+                quant = QUANTIZATION
+        else:
+            # CPU é permitido apenas para desenvolvimento/diagnóstico local.
+            quant = "fp32" if QUANTIZATION in {"auto", "fp32"} else QUANTIZATION
+
+        if quant == "int8":
+            # BitsAndBytesConfig (transformers) - requer bitsandbytes instalado e GPU CUDA.
+            try:
+                from transformers import BitsAndBytesConfig
+            except Exception as import_error:
+                raise RuntimeError(
+                    "QUANTIZATION=int8 requer transformers com BitsAndBytesConfig disponível."
+                ) from import_error
+
+            model_kwargs["quantization_config"] = BitsAndBytesConfig(load_in_8bit=True)
+            # device_map auto é seguro para single-GPU e evita hardcode de índice
+            model_kwargs["device_map"] = "auto"
+            logger.info("Quantização ativa: INT8 (bitsandbytes)")
+        elif quant == "fp16":
+            model_kwargs["torch_dtype"] = torch.float16
+            logger.info("Quantização ativa: FP16 (half precision)")
+        elif quant == "fp32":
+            model_kwargs["torch_dtype"] = torch.float32
+            logger.info("Quantização ativa: FP32")
+        else:
+            raise RuntimeError(f"Modo de quantização não suportado após resolução: {quant}")
+
+        # SentenceTransformer v5+ suporta model_kwargs para repassar ao AutoModel.
+        # Isso garante consistência entre compose e runtime.
         text_model = SentenceTransformer(
             TEXT_MODEL_NAME,
             device=DEVICE,
-            trust_remote_code=True  # CRÍTICO: Qwen3-Embedding-8B requer código customizado
+            trust_remote_code=True,  # CRÍTICO: Qwen3-Embedding-8B requer código customizado
+            model_kwargs=model_kwargs,
         )
         
-        # Converter modelo para FP16 para economizar VRAM
-        if DEVICE == "cuda":
-            text_model = text_model.half()
-            logger.info("✅ Modelo convertido para FP16 (half precision)")
-        
-        # Verificar dimensão
+        # Verificar dimensão (fail-fast se divergente)
         test_emb = text_model.encode(["test"])
         actual_dim = len(test_emb[0])
         logger.info(f"✅ Modelo de texto carregado: {actual_dim} dimensões")
         
         if actual_dim != TEXT_EMBEDDING_DIM:
-            logger.warning(f"⚠️ Dimensão diferente do esperado: {actual_dim} vs {TEXT_EMBEDDING_DIM}")
+            raise RuntimeError(
+                f"Dimensão diferente do esperado: {actual_dim} vs {TEXT_EMBEDDING_DIM}"
+            )
         
     except Exception as e:
         logger.error(f"Erro ao carregar modelo de texto: {e}")

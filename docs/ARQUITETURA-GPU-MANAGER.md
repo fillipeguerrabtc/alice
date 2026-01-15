@@ -1,8 +1,8 @@
 # Arquitetura GPU Manager Service
 
 **Autor:** Fillipe Guerra  
-**Data:** 12 de Janeiro de 2026  
-**Versão:** 4.0.4 - Otimização COMPLETA de TODAS as Imagens GPU (DEVEL → RUNTIME)
+**Data:** 15 de Janeiro de 2026  
+**Versão:** 4.0.5 - WS3: SSOT GPU + INT8 embeddings alinhados (sem fallback)
 
 > **OTIMIZAÇÃO CRÍTICA v4.0.4 (12/01/2026):** Migração de **TODAS AS 3 IMAGENS** GPU de `pytorch-devel` para `pytorch-runtime`:
 > - **embeddings-gpu**: 17.6GB → ~11GB (-6GB, -35%)
@@ -292,6 +292,7 @@ O Qwen2.5-VL 7B foi escolhido por:
 
 | Versão | Data | Descrição |
 |--------|------|-----------|
+| 4.0.5 | 15/01/2026 | WS3: Corrigir SSOT GPU e garantir QUANTIZATION=int8 refletido no runtime (fail-fast, sem fallback) |
 | 4.0.4 | 12/01/2026 | Otimização COMPLETA: embeddings + asr + trainer pytorch-devel → runtime (-18GB total, -35%) |
 | 4.0.3 | 12/01/2026 | Otimização imagem embeddings: pytorch-devel → pytorch-runtime (-6GB, -35%) |
 | 4.0.2 | 12/01/2026 | Correção VRAM Qwen-VL (max-model-len=4096, gpu-memory-utilization=0.45) |

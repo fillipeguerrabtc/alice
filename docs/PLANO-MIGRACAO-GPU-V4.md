@@ -373,6 +373,7 @@ apps/gpu-manager-service/src/docker-orchestrator.ts
 |------|--------|-------|-----------|
 | 11/01/2026 | 1.0.0 | Fillipe Guerra | Criação do plano |
 | 11/01/2026 | 2.0.0 | Fillipe Guerra | Implementação completa de todas as fases |
+| 15/01/2026 | 2.1.0 | Fillipe Guerra | WS3: Correção SSOT GPU + mismatch INT8 vs FP16 (runtime alinhado, fail-fast) |
 
 ---
 
