@@ -4,13 +4,11 @@
  * Serviço centralizado de gerenciamento de requisições GPU com fila priorizada,
  * monitoramento de VRAM, circuit breakers e métricas enterprise.
  * 
- * ARQUITETURA ENTERPRISE v4.0.0 (11/01/2026) - Arquitetura Simplificada:
- * - Todos os serviços GPU rodam simultaneamente (15GB de 20GB)
- * - Qwen2.5-VL 7B AWQ (4GB) - LLM + Vision (substitui Mixtral)
- * - Qwen3-Embedding-8B INT8 (8GB) - RAG
- * - Canary-1B (3GB) - ASR
- * - Zero latência de troca (todos sempre ativos)
- * - Treinamento sob demanda (pausa serviços temporariamente)
+ * ARQUITETURA GPU (Gate 2):
+ * - LLM (texto) e VLM (visão) são serviços separados
+ * - Tipos de serviço são **capability-based** (modelo-agnóstico) para que
+ *   a troca de modelos não exija mudanças em observabilidade.
+ * - GPU Manager mantém fila priorizada, VRAM gates, circuit breakers e métricas.
  * 
  * Funcionalidades mantidas:
  * - Fila Redis com priorização (chat > trading > embeddings > outros)
@@ -22,7 +20,7 @@
  * - Health checks enterprise
  * 
  * Autor: Fillipe Guerra
- * Data: 11 de Janeiro de 2026
+ * Data: 15 de Janeiro de 2026
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
@@ -131,10 +129,11 @@ export enum GpuRequestPriority {
 
 /** Tipos de serviços GPU */
 export enum GpuServiceType {
-  QWEN_VL = 'qwen_vl',           // LLM + Vision (Qwen2.5-VL 7B AWQ) - substitui Mixtral
-  EMBEDDINGS = 'embeddings',     // Qwen3-Embedding-8B INT8
-  ASR = 'asr',                   // Transcrição de áudio (Canary-1B)
-  TRAINING = 'training',         // Fine-tuning QLoRA (sob demanda)
+  LLM = 'llm',                   // LLM (texto)
+  VLM = 'vlm',                   // VLM (visão)
+  EMBEDDINGS = 'embeddings',     // Embeddings (texto + imagem)
+  ASR = 'asr',                   // ASR (Speech-to-Text)
+  TRAINING = 'training',         // Fine-tuning (sob demanda)
 }
 
 /**
@@ -143,12 +142,14 @@ export enum GpuServiceType {
  * não o nome do modelo atual. A migração de modelos no WS3 não deve exigir
  * mudanças em dashboards/alertas.
  */
-type GpuCapability = 'llm' | 'embeddings' | 'asr' | 'training';
+type GpuCapability = 'llm' | 'vlm' | 'embeddings' | 'asr' | 'training';
 
 function capabilityForServiceType(serviceType: GpuServiceType): GpuCapability {
   switch (serviceType) {
-    case GpuServiceType.QWEN_VL:
+    case GpuServiceType.LLM:
       return 'llm';
+    case GpuServiceType.VLM:
+      return 'vlm';
     case GpuServiceType.EMBEDDINGS:
       return 'embeddings';
     case GpuServiceType.ASR:
@@ -159,9 +160,10 @@ function capabilityForServiceType(serviceType: GpuServiceType): GpuCapability {
 }
 
 /** URLs dos serviços GPU (container names na rede Docker) */
-// ARQUITETURA v4.0.0 (11/01/2026): Todos os serviços rodam simultaneamente
+// Gate 2: LLM e VLM separados (capabilities)
 const GPU_SERVICE_URLS = {
-  [GpuServiceType.QWEN_VL]: process.env.QWEN_VL_GPU_URL || 'http://gpu-qwen-vl:8000',
+  [GpuServiceType.LLM]: process.env.LLM_GPU_URL || 'http://gpu-llm:8000',
+  [GpuServiceType.VLM]: process.env.VLM_GPU_URL || 'http://gpu-vlm:8000',
   [GpuServiceType.EMBEDDINGS]: process.env.EMBEDDINGS_GPU_URL || 'http://gpu-embeddings:8000',
   [GpuServiceType.ASR]: process.env.ASR_GPU_URL || 'http://gpu-asr:8000',
   [GpuServiceType.TRAINING]: process.env.TRAINING_GPU_URL || 'http://gpu-trainer:8000',
@@ -178,14 +180,16 @@ const GPU_SERVICE_URLS = {
  * - Para fallback/estimativa: valores conservadores alinhados ao SSOT do stack modular
  *   (`infra/docker/stacks/docker-compose.alice.yml`) e ao budget de VRAM do vLLM.
  *
- * Observação: o LLM/VLM (QWEN_VL) AWQ ocupa ~6.5GB (pesos) + KV cache conforme
- * max-model-len / gpu-memory-utilization. Para coexistência em 20GB, usamos 8GB
- * como requisito conservador.
+ * Observação:
+ * - LLM (AWQ 4-bit): ~4-6GB (pesos) + KV cache conforme max-model-len / gpu-memory-utilization
+ * - VLM (AWQ 4-bit): ~6-8GB (pesos) + KV cache + multimodal overhead
+ * Para coexistência em 20GB, usamos requisitos conservadores.
  */
 const VRAM_REQUIREMENTS: Record<GpuServiceType, number> = {
-  [GpuServiceType.QWEN_VL]: 8,       // LLM/VLM AWQ + KV cache (budget conservador p/ 20GB)
-  [GpuServiceType.EMBEDDINGS]: 8,    // Embeddings INT8 (~8GB)
-  [GpuServiceType.ASR]: 3,           // ASR (~3GB)
+  [GpuServiceType.LLM]: 7,           // LLM AWQ + KV cache (budget conservador)
+  [GpuServiceType.VLM]: 8,           // VLM AWQ + KV cache + overhead multimodal
+  [GpuServiceType.EMBEDDINGS]: 3,    // Qwen3-Embedding-0.6B INT8 (budget conservador)
+  [GpuServiceType.ASR]: 4,           // Whisper (budget conservador)
   [GpuServiceType.TRAINING]: 12,     // QLoRA (sob demanda, pausa outros)
 };
 
@@ -256,12 +260,18 @@ interface VramStatus {
 
 /**
  * Circuit breakers DEVEM proteger as CHAMADAS REAIS aos serviços GPU (não apenas /health).
- * ARQUITETURA v4.0.0: Atualizado para novos serviços (Qwen-VL, sem FLUX)
+ * Gate 2: LLM (texto) e VLM (visão) separados
  */
 const gpuServiceClients = {
-  [GpuServiceType.QWEN_VL]: createProtectedFetch({
-    name: 'gpu-qwen-vl',
-    ...CIRCUIT_BREAKER_PRESETS.qwenVL, // ARQUITETURA v4.0.0: Preset para Qwen2.5-VL
+  [GpuServiceType.LLM]: createProtectedFetch({
+    name: 'gpu-llm',
+    ...CIRCUIT_BREAKER_PRESETS.gpuLLM,
+  }),
+  [GpuServiceType.VLM]: createProtectedFetch({
+    name: 'gpu-vlm',
+    // Enquanto o VLM for servido por Qwen2.5-VL, reutilizamos o preset existente.
+    // (O label do serviço é capability-based; o preset pode ser ajustado quando o VLM mudar.)
+    ...CIRCUIT_BREAKER_PRESETS.qwenVL,
   }),
   [GpuServiceType.EMBEDDINGS]: createProtectedFetch({
     name: 'gpu-embeddings',
@@ -278,7 +288,8 @@ const gpuServiceClients = {
 } as const;
 
 const protectedFetchByServiceType = {
-  [GpuServiceType.QWEN_VL]: gpuServiceClients[GpuServiceType.QWEN_VL].fetch,
+  [GpuServiceType.LLM]: gpuServiceClients[GpuServiceType.LLM].fetch,
+  [GpuServiceType.VLM]: gpuServiceClients[GpuServiceType.VLM].fetch,
   [GpuServiceType.EMBEDDINGS]: gpuServiceClients[GpuServiceType.EMBEDDINGS].fetch,
   [GpuServiceType.ASR]: gpuServiceClients[GpuServiceType.ASR].fetch,
   [GpuServiceType.TRAINING]: gpuServiceClients[GpuServiceType.TRAINING].fetch,
@@ -683,15 +694,17 @@ async function startQueueWorker(): Promise<void> {
   isWorkerRunning = true;
   logger.info('Iniciando worker de fila GPU');
   
-  // ARQUITETURA v4.0.0 (11/01/2026):
+  // Gate 2:
   // Todos os serviços rodam simultaneamente, mas mantemos priorização na fila
-  // para garantir que requisições críticas (chat) são processadas primeiro
-  // 1) QWEN_VL (chat/trading - maior prioridade)
-  // 2) EMBEDDINGS (RAG)
-  // 3) ASR (transcrição)
-  // 4) TRAINING (sob demanda - menor prioridade)
+  // para garantir que requisições críticas (chat/trading) sejam processadas primeiro.
+  // 1) LLM (chat/trading - maior prioridade)
+  // 2) VLM (tarefas de visão quando aplicável)
+  // 3) EMBEDDINGS (RAG)
+  // 4) ASR (transcrição)
+  // 5) TRAINING (sob demanda - menor prioridade)
   const servicePriorityOrder: GpuServiceType[] = [
-    GpuServiceType.QWEN_VL,
+    GpuServiceType.LLM,
+    GpuServiceType.VLM,
     GpuServiceType.EMBEDDINGS,
     GpuServiceType.ASR,
     GpuServiceType.TRAINING,
@@ -934,9 +947,9 @@ app.post('/api/gpu/stream', requireInternalAuth, asyncHandler(async (req: Reques
   const body = schema.parse(req.body);
   const serviceType = body.serviceType;
   
-  // Apenas QWEN_VL suporta streaming (substitui MIXTRAL)
-  if (serviceType !== GpuServiceType.QWEN_VL) {
-    return res.status(400).json({ error: 'Streaming suportado apenas para QWEN_VL' });
+  // Gate 2: streaming é suportado pelo LLM (texto)
+  if (serviceType !== GpuServiceType.LLM) {
+    return res.status(400).json({ error: 'Streaming suportado apenas para LLM' });
   }
 
   // ARQUITETURA v4.0.0: Serviço sempre ativo, sem orquestração dinâmica

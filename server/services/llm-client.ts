@@ -21,7 +21,9 @@ import {
 const logger = createLogger("llm-client");
 
 const llmEnvSchema = z.object({
-  MIXTRAL_MODEL_NAME: z.string().min(1),
+  // Gate 2: cliente DEV aponta para o serviço GPU "LLM" (texto), modelo-agnóstico.
+  // Regra 6: sem defaults falsos - o modelo deve ser configurado explicitamente no ambiente.
+  LLM_MODEL_NAME: z.string().min(1),
 });
 
 let llmEnv: z.infer<typeof llmEnvSchema>;
@@ -31,7 +33,7 @@ try {
   const zodError = err instanceof z.ZodError ? err : null;
   logger.error(
     { issues: zodError?.issues?.map((i) => ({ path: i.path, message: i.message })) },
-    "Config inválida do LLM Client: MIXTRAL_MODEL_NAME é obrigatório (fail-fast)"
+    "Config inválida do LLM Client: LLM_MODEL_NAME é obrigatório (fail-fast)"
   );
   process.exit(1);
 }
@@ -84,7 +86,7 @@ type OpenAIStreamChunk = {
 };
 
 function normalizeModelName(requested?: string): string {
-  return requested && requested.trim().length > 0 ? requested.trim() : llmEnv.MIXTRAL_MODEL_NAME;
+  return requested && requested.trim().length > 0 ? requested.trim() : llmEnv.LLM_MODEL_NAME;
 }
 
 async function* parseSseStream(body: ReadableStream<Uint8Array>): AsyncGenerator<string> {
@@ -140,9 +142,9 @@ export class LLMClient {
   async chatCompletion(options: ChatCompletionOptions): Promise<ChatCompletionResponse> {
     const model = normalizeModelName(options.model);
 
-    // ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral (multimodal)
+    // Gate 2: LLM (texto) via GPU Manager Service
     const result = await requestGpu({
-      serviceType: GpuServiceType.QWEN_VL,
+      serviceType: GpuServiceType.LLM,
       endpoint: "/v1/chat/completions",
       method: "POST",
       priority: GpuRequestPriority.CRITICAL,
@@ -160,7 +162,7 @@ export class LLMClient {
     const payload = result.data as OpenAIChatCompletionResponse | undefined;
     const content = payload?.choices?.[0]?.message?.content;
     if (!payload?.id || !payload?.model || typeof content !== "string") {
-      throw new Error("Resposta inválida do Mixtral (OpenAI chat completion)");
+      throw new Error("Resposta inválida do LLM (OpenAI chat completion)");
     }
 
     const usage = payload.usage ?? { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
@@ -180,9 +182,9 @@ export class LLMClient {
   async *chatCompletionStream(options: ChatCompletionOptions): AsyncGenerator<string> {
     const model = normalizeModelName(options.model);
 
-    // ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral (multimodal)
+    // Gate 2: LLM (texto) via GPU Manager Service (streaming)
     const response = await requestGpuStream({
-      serviceType: GpuServiceType.QWEN_VL,
+      serviceType: GpuServiceType.LLM,
       endpoint: "/v1/chat/completions",
       method: "POST",
       priority: GpuRequestPriority.CRITICAL,

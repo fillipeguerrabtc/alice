@@ -4,13 +4,13 @@
  * Cliente TypeScript para fazer requisições ao GPU Manager Service
  * com retry, timeout e tratamento de erros enterprise.
  * 
- * ARQUITETURA v4.0.0 (11/01/2026):
- * - Qwen2.5-VL 7B substitui Mixtral (multimodal: texto + vision)
- * - FLUX removido (Alice não gera imagens, apenas analisa)
- * - Todos os serviços rodam simultaneamente (15GB/20GB VRAM)
+ * ARQUITETURA GPU (Gate 2):
+ * - LLM (texto) e VLM (visão) são serviços separados
+ * - O tipo do serviço é **capability-based** (modelo-agnóstico) para evitar
+ *   mudanças em dashboards/alertas quando os modelos forem trocados.
  * 
  * Autor: Fillipe Guerra
- * Data: 11 de Janeiro de 2026
+ * Data: 15 de Janeiro de 2026
  */
 
 import { createLogger } from '@alice/logger';
@@ -43,10 +43,11 @@ export enum GpuRequestPriority {
 
 /** Tipos de serviços GPU - ARQUITETURA v4.0.0 */
 export enum GpuServiceType {
-  QWEN_VL = 'qwen_vl',           // LLM + Vision (Qwen2.5-VL 7B AWQ) - substitui Mixtral
-  EMBEDDINGS = 'embeddings',     // Qwen3-Embedding-8B INT8
-  ASR = 'asr',                   // Transcrição de áudio (Canary-1B)
-  TRAINING = 'training',         // Fine-tuning QLoRA (sob demanda)
+  LLM = 'llm',                   // LLM (texto) - ex: Mistral 7B Instruct (vLLM)
+  VLM = 'vlm',                   // VLM (visão) - ex: Qwen2.5-VL (vLLM)
+  EMBEDDINGS = 'embeddings',     // Text + image embeddings (GPU)
+  ASR = 'asr',                   // ASR (Speech-to-Text)
+  TRAINING = 'training',         // Fine-tuning (QLoRA) - sob demanda
 }
 
 export interface GpuRequestOptions {

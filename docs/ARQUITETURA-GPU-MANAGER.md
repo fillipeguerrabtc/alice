@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 15 de Janeiro de 2026  
-**Versão:** 4.0.5 - WS3: SSOT GPU + INT8 embeddings alinhados (sem fallback)
+**Versão:** 4.1.0 - Gate 2: LLM separado (Mistral) + tipos capability-based
 
 > **OTIMIZAÇÃO CRÍTICA v4.0.4 (12/01/2026):** Migração de **TODAS AS 3 IMAGENS** GPU de `pytorch-devel` para `pytorch-runtime`:
 > - **embeddings-gpu**: 17.6GB → ~11GB (-6GB, -35%)
@@ -24,7 +24,8 @@
 
 O **GPU Manager Service** é um serviço centralizado que gerencia todas as requisições para serviços GPU na Alice Enterprise Platform. Ele implementa:
 
-- **Arquitetura Simplificada v4.0.0**: Todos os serviços rodam simultaneamente
+- **Arquitetura Simplificada**: Serviços GPU rodam simultaneamente (com budgets de VRAM)
+- **Gate 2**: Separação explícita de **LLM (texto)** e **VLM (visão)** (tipos capability-based)
 - **Fila Priorizada**: Chat > Trading > Embeddings > ASR > Training
 - **Monitoramento de VRAM**: Tempo real via nvidia-smi
 - **Circuit Breakers**: Proteção centralizada por serviço
@@ -70,7 +71,8 @@ GPU 20GB VRAM - TODOS SIMULTÂNEOS:
 
 | Serviço | Modelo | VRAM Real | Configuração | Função | Imagem Base | Imagem Size |
 |---------|--------|-----------|--------------|--------|-------------|-------------|
-| **gpu-qwen-vl** | Qwen2.5-VL 7B AWQ | ~8GB | `gpu-memory-utilization=0.45`, `max-model-len=4096`, `dtype=float16` | LLM + Vision (chat, trading, análise de gráficos) | vllm/vllm-openai | ~8GB |
+| **gpu-llm** | Mistral 7B Instruct (AWQ) | ~6-8GB (budget) | `gpu-memory-utilization=0.35`, `max-model-len=2048`, `dtype=float16` | **LLM texto** (chat, trading) | vllm/vllm-openai | ~8GB |
+| **gpu-qwen-vl** | Qwen2.5-VL 7B AWQ | ~8GB | `gpu-memory-utilization=0.45`, `max-model-len=4096`, `dtype=float16` | **VLM visão** (análise de imagens) | vllm/vllm-openai | ~8GB |
 | **gpu-embeddings** | Qwen3-Embedding-8B INT8 | ~7.4GB | `quantization=int8` | Embeddings para RAG | **pytorch-runtime** | **~11GB (-35% ✅)** |
 | **gpu-asr** | Canary-1B | ~4GB | NeMo | Transcrição de áudio | **pytorch-runtime** | **~11GB (-35% ✅)** |
 

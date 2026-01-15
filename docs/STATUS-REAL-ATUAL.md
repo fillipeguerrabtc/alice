@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 15 de Janeiro de 2026  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 7.2 - Tests sem mocks + OpenAPI chat alinhado (410 Gone)
+> **Versão:** 7.3 - Gate 2 (parcial): LLM separado (Mistral) + SSOT capability-based
 
 > **🚀 ATUALIZAÇÃO v3.0.0 (06/01/2026) - Pipeline Enterprise:**  
 > Pipeline CI/CD enterprise completo com deploy modular em 5 stacks independentes.
@@ -44,11 +44,12 @@
 | **Docker** | 29.1.3 + Compose v5.0.0 |
 | **Domínio** | yesyoudeserve.duckdns.org |
 | **IP** | 178.63.41.108 |
-| **LLM** | **Qwen2.5-VL 7B AWQ** (multimodal: texto + vision) via Hetzner GPU GEX44 - ARQUITETURA v4.0.0 |
+| **LLM (texto)** | **Mistral 7B Instruct (AWQ)** via GPU Manager (Gate 2) |
+| **VLM (visão)** | **Qwen2.5-VL 7B AWQ** (multimodal: texto + vision) — ainda usado para visão até migração do VLM |
 | **CI/CD** | 100% automatizado (Push → CI → Release → Deploy) |
 | **Imagens Docker** | Google Distroless (Node.js), Alpine (nginx, Python) |
 | **Storage** | Volume local Hetzner (SEM S3 externo) |
-| **GPU v4.0.0** | **TODOS GPU SIMULTÂNEOS** (15GB/20GB): Qwen2.5-VL (~4GB), Embeddings INT8 (~8GB), ASR (~3GB) |
+| **GPU (Gate 2 - em andamento)** | **LLM separado** (gpu-llm) + VLM atual + embeddings + ASR, gerenciados pelo GPU Manager (capability-based) |
 
 ### Security Hardening (19/12/2025)
 

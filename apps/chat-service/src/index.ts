@@ -812,7 +812,7 @@ interface LLMConfig {
   temperature?: number;
   /** Limite máximo de tokens na resposta. Default: 4096 */
   maxTokens?: number;
-  /** Modelo a ser usado. Default: Qwen2.5-VL-7B-AWQ */
+  /** Modelo a ser usado. Default: Mistral-7B-Instruct-v0.2-AWQ */
   model?: string;
 }
 
@@ -823,11 +823,11 @@ interface LLMRequest {
 }
 
 // Valores padrão centralizados (Regra 2 - Não Duplicar)
-// ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral (multimodal, finanças)
+// Gate 2: LLM (texto) separado de VLM (visão)
 const DEFAULT_LLM_CONFIG: Required<LLMConfig> = {
   temperature: 0.7,
   maxTokens: 4096,
-  model: 'Qwen/Qwen2.5-VL-7B-Instruct-AWQ',
+  model: 'TheBloke/Mistral-7B-Instruct-v0.2-AWQ',
 };
 
 /**
@@ -843,23 +843,22 @@ function getAgentLLMConfig(agent?: AgentConfig | null): LLMConfig {
   return {
     temperature: agent.temperaturaModelo ?? undefined,
     maxTokens: agent.maxTokens ?? undefined,
-    model: agent.modeloBase ? mapModelNameToAWQ(agent.modeloBase) : undefined,
+    model: agent.modeloBase ? mapModelNameToGpuModel(agent.modeloBase) : undefined,
   };
 }
 
 /**
- * Mapeia nome amigável do modelo para o nome usado pelo vLLM/AWQ
- * ARQUITETURA v4.0.0: Qwen2.5-VL é o modelo padrão (multimodal, finanças)
+ * Mapeia nome amigável do modelo para o nome usado pelo runtime GPU (vLLM/OpenAI).
+ * Gate 2: LLM (texto) passa a ser Mistral 7B; VLM (visão) será configurado separadamente.
  * 
- * @param modelName - Nome do modelo no banco (ex: "Qwen2.5-VL-7B")
- * @returns Nome do modelo AWQ para vLLM
+ * @param modelName - Nome do modelo no banco (ex: "Mistral-7B-Instruct")
+ * @returns Nome do modelo para o runtime (ex: repo Hugging Face)
  */
-function mapModelNameToAWQ(modelName: string): string {
+function mapModelNameToGpuModel(modelName: string): string {
   const modelMap: Record<string, string> = {
-    // ARQUITETURA v4.0.0: Qwen2.5-VL é o modelo padrão
-    'Qwen2.5-VL-7B': 'Qwen/Qwen2.5-VL-7B-Instruct-AWQ',
-    'Qwen2.5-VL': 'Qwen/Qwen2.5-VL-7B-Instruct-AWQ',
-    'Qwen2.5-VL-7B-AWQ': 'Qwen/Qwen2.5-VL-7B-Instruct-AWQ',
+    // Gate 2 (texto): Mistral 7B Instruct (AWQ)
+    'Mistral-7B-Instruct': 'TheBloke/Mistral-7B-Instruct-v0.2-AWQ',
+    'Mistral-7B-Instruct-AWQ': 'TheBloke/Mistral-7B-Instruct-v0.2-AWQ',
   };
   
   return modelMap[modelName] || DEFAULT_LLM_CONFIG.model;
@@ -886,9 +885,9 @@ async function callLlamaAPIInternal(request: LLMRequest): Promise<globalThis.Res
   {
     // Não-streaming: usar GPU Manager Service (fila priorizada, monitoramento VRAM)
     try {
-      // ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral (multimodal)
+      // Gate 2: LLM (texto) via GPU Manager
       const gpuResponse = await requestGpu({
-        serviceType: GpuServiceType.QWEN_VL,
+        serviceType: GpuServiceType.LLM,
         endpoint: '/v1/chat/completions',
         method: 'POST',
         priority: GpuRequestPriority.CRITICAL,
@@ -1032,12 +1031,12 @@ async function proxyStreamFromGpuManager(
   // BUG FIX 26/12/2025: Usar requestGpuStream centralizado de @alice/shared-utils
   // Remove duplicação de GPU_MANAGER_URL e validação de INTERNAL_API_SECRET
   // requestGpuStream já faz fail-fast da secret e usa a URL correta
-  // ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral (multimodal)
+  // Gate 2: LLM (texto) via GPU Manager
   // CRITICAL FIX 13/01/2026: Tratamento graceful de falha de GPU
   let gpuResponse;
   try {
     gpuResponse = await requestGpuStream({
-      serviceType: GpuServiceType.QWEN_VL,
+      serviceType: GpuServiceType.LLM,
       priority: GpuRequestPriority.CRITICAL, // Chat em tempo real = prioridade máxima
       endpoint: '/v1/chat/completions',
       method: 'POST',

@@ -198,8 +198,6 @@ services:
       TRAINING_SERVICE_URL: http://alice-training:3004
       GPU_MANAGER_URL: ${GPU_MANAGER_URL:-http://alice-gpu-manager:3010}
       REDIS_URL: redis://:${REDIS_PASSWORD}@alice-redis:6379
-      # ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral (multimodal, finanças)
-      QWEN_VL_GPU_URL: ${QWEN_VL_GPU_URL:-http://gpu-qwen-vl:8000}
     # NOTA: postgres e alice-redis estão no stack infra - verificados pelo workflow
     depends_on:
       gpu-manager:
@@ -464,13 +462,9 @@ services:
   # ===========================================================================
   # GPU MANAGER SERVICE - Gerenciamento Centralizado de GPU
   # ===========================================================================
-  # ARQUITETURA v4.0.0 (11/01/2026) - Arquitetura Simplificada:
-  # - Todos os serviços GPU rodam simultaneamente (15GB de 20GB VRAM)
-  # - Qwen2.5-VL 7B AWQ (4GB) - LLM + Vision
-  # - Qwen3-Embedding-8B INT8 (8GB) - RAG
-  # - Canary-1B (3GB) - ASR
-  # - Zero latência de troca (todos sempre ativos)
-  # - Treinamento sob demanda (profile gpu-training)
+  # ARQUITETURA GPU (Gate 2):
+  # - Separar LLM (texto) e VLM (visão) em serviços distintos (capability-based)
+  # - GPU Manager permanece modelo-agnóstico (dashboards/alertas não mudam quando trocar modelo)
   # ===========================================================================
   gpu-manager:
     image: ${IMAGE_PREFIX}-gpu-manager:${IMAGE_TAG:-latest}
@@ -485,8 +479,9 @@ services:
       - PORT=3010
       - REDIS_URL=${REDIS_URL:?REDIS_URL é obrigatório}
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET:?INTERNAL_API_SECRET é obrigatório}
-      # ARQUITETURA v4.0.0: URLs dos serviços GPU (todos sempre ativos)
-      - QWEN_VL_GPU_URL=${QWEN_VL_GPU_URL:-http://gpu-qwen-vl:8000}
+      # Gate 2: URLs dos serviços GPU (capabilities)
+      - LLM_GPU_URL=${LLM_GPU_URL:-http://gpu-llm:8000}
+      - VLM_GPU_URL=${VLM_GPU_URL:-http://gpu-qwen-vl:8000}
       - EMBEDDINGS_GPU_URL=${EMBEDDINGS_GPU_URL:-http://gpu-embeddings:8000}
       - ASR_GPU_URL=${ASR_GPU_URL:-http://gpu-asr:8000}
       - TRAINING_GPU_URL=${TRAINING_GPU_URL:-http://gpu-trainer:8000}
@@ -568,6 +563,54 @@ services:
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
     ports:
       - "127.0.0.1:8000:8000"
+    networks:
+      - alice-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+        limits:
+          memory: 8G
+          cpus: '4.0'
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      interval: 20s
+      timeout: 10s
+      start_period: 90s
+      retries: 10
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ===========================================================================
+  # LLM (texto) - Mistral 7B Instruct (AWQ) - Gate 2
+  # ===========================================================================
+  gpu-llm:
+    image: ${IMAGE_PREFIX}-llm-mistral:${IMAGE_TAG:-latest}
+    platform: linux/amd64
+    container_name: gpu-llm
+    restart: unless-stopped
+    runtime: nvidia
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=0
+      - CUDA_VISIBLE_DEVICES=0
+      - MODEL_NAME=${LLM_MODEL_NAME:-TheBloke/Mistral-7B-Instruct-v0.2-AWQ}
+      - QUANTIZATION=awq
+      - MAX_MODEL_LEN=${LLM_MAX_MODEL_LEN:-2048}
+      - GPU_MEMORY_UTILIZATION=${LLM_GPU_MEMORY_UTILIZATION:-0.35}
+      - TENSOR_PARALLEL_SIZE=1
+      - HOST=0.0.0.0
+      - PORT=8000
+      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
+    ports:
+      - "127.0.0.1:8004:8000"
     networks:
       - alice-network
     deploy:
