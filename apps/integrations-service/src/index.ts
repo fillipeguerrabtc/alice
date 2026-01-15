@@ -4135,21 +4135,14 @@ const PORT = config.PORT || 3005;
 // Redis cache é usado para performance de sessões HTTP (evita queries repetitivas)
 // =============================================================================
 async function initializeCaches(): Promise<void> {
-  try {
-    // initializeRedisCache() usa REDIS_URL do ambiente automaticamente
-    const redisConnected = await initializeRedisCache();
-    if (redisConnected) {
-      logger.info('Redis cache inicializado para session-auth');
-    } else {
-      logger.warn('REDIS_URL não configurado - usando cache in-memory para sessões');
-    }
-    await initializeSessionAuthCache();
-    logger.info('Session auth cache inicializado');
-  } catch (error) {
-    logger.warn({ error: (error as Error).message }, 'Cache usando fallback in-memory');
-    // Inicializar cache in-memory mesmo sem Redis
-    await initializeSessionAuthCache();
-  }
+  // initializeRedisCache() usa REDIS_URL do ambiente automaticamente.
+  // - Em produção: fail-fast se Redis indisponível (Regra 6)
+  // - Em dev/test: Redis pode estar ausente; session-auth cache fica desabilitado (sem in-memory)
+  const redisConnected = await initializeRedisCache();
+  logger.info({ redisConnected }, 'Redis cache inicializado');
+
+  await initializeSessionAuthCache();
+  logger.info('Session auth cache inicializado');
 }
 
 // Inicializar caches e depois iniciar servidor

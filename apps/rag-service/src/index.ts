@@ -3558,13 +3558,16 @@ registerShutdownCallback(
       // Verificação unificada abaixo tratará tanto false quanto exceções de forma consistente
     }
     
+    // CORREÇÃO PR#107 (WS4): Inicializar cache de sessões HTTP (sessão + JWT OIDC)
+    // - Em produção: Redis distribuído é obrigatório (fail-fast dentro de initializeSessionAuthCache)
+    // - Em dev/test: cache fica desabilitado (sem in-memory)
+    await initializeSessionAuthCache();
+
     // BUG FIX 23/12/2025: Verificação unificada - redisConnected sempre definido (true ou false)
     // Trata tanto retorno false quanto exceções de forma consistente
     // Evita múltiplos pontos de exit e lógica duplicada
     if (redisConnected) {
       logger.info('Redis cache inicializado para embedding-websocket');
-      // CORREÇÃO PR#107 (10/01/2026): Inicializar cache de sessões HTTP
-      await initializeSessionAuthCache();
     } else {
       // BUG FIX 23/12/2025: Redis é crítico para embedding-websocket Pub/Sub
       // Se Redis não estiver disponível, embedding-websocket não pode funcionar corretamente

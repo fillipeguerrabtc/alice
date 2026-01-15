@@ -53,9 +53,10 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV PIP_ROOT_USER_ACTION=ignore
 
-# Instalar curl para healthcheck + build tools temporários
-# CRITICAL FIX (13/01/2026): bitsandbytes e outras libs compilam extensões C++
-# Precisamos de build-essential temporariamente, mas removemos após instalação
+# Instalar curl para healthcheck + build tools
+# CRÍTICO (CLAUDE.md v5.11 - 13/01/2026): manter compilador em runtime.
+# bitsandbytes/triton pode precisar de compilador C/C++ para JIT compilation de kernels CUDA
+# sob demanda (ex: INT8). Trade-off enterprise: +~400MB para garantir operação estável.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     build-essential \
@@ -75,11 +76,10 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
     pip install -r /app/requirements.txt
 
-# Remover build tools após instalação (mantém imagem menor).
-# NOTA: bitsandbytes/algumas dependências compilam extensões C++ no build.
-# Por isso build-essential é instalado temporariamente e removido depois.
-RUN apt-get purge -y --auto-remove build-essential g++ gcc && \
-    rm -rf /var/lib/apt/lists/*
+# CRÍTICO (CLAUDE.md v5.11 - 13/01/2026):
+# Manter compiladores em RUNTIME.
+# bitsandbytes/triton pode precisar de compilador C/C++ para JIT compilation de kernels CUDA
+# sob demanda (ex: INT8). Trade-off enterprise: +~400MB para garantir operação estável.
 
 COPY app/ /app/
 COPY healthcheck.py /app/healthcheck.py

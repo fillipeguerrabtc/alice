@@ -193,13 +193,16 @@ async def load_models():
             raise RuntimeError(f"Modo de quantização não suportado após resolução: {quant}")
 
         # SentenceTransformer v5+ suporta model_kwargs para repassar ao AutoModel.
-        # Isso garante consistência entre compose e runtime.
-        text_model = SentenceTransformer(
-            TEXT_MODEL_NAME,
-            device=DEVICE,
-            trust_remote_code=True,  # CRÍTICO: Qwen3-Embedding-8B requer código customizado
-            model_kwargs=model_kwargs,
-        )
+        # IMPORTANTE: quando usamos device_map, não devemos forçar `device`,
+        # pois isso conflita com o roteamento interno e pode causar mismatch de device.
+        st_kwargs = {
+            "trust_remote_code": True,  # CRÍTICO: Qwen3-Embedding-8B requer código customizado
+            "model_kwargs": model_kwargs,
+        }
+        if "device_map" not in model_kwargs:
+            st_kwargs["device"] = DEVICE
+
+        text_model = SentenceTransformer(TEXT_MODEL_NAME, **st_kwargs)
         
         # Verificar dimensão (fail-fast se divergente)
         test_emb = text_model.encode(["test"])

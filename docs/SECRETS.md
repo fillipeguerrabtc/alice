@@ -1,8 +1,8 @@
 # Guia Completo de Secrets - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 11 de Janeiro de 2026  
-**Versão:** 6.0 - Arquitetura GPU v4.0.0
+**Data:** 15 de Janeiro de 2026  
+**Versão:** 6.1 - Hardening Auth Híbrida (WS4)
 
 ## Visão Geral
 
@@ -92,7 +92,7 @@ Estes são necessários para o deploy funcionar:
 > **ENTERPRISE-GRADE (28/12/2025):** Arquitetura com Deploy Server separado (CPX32 - 4 vCPU AMD EPYC, 8GB RAM) como Runner e Production Server (GEX44 GPU) para containers. Runner com Enterprise Hardening (kernel tuning, Docker daemon, limits, systemd). Deploy usa `HETZNER_VM_HOST`, `HETZNER_VM_USER` e `HETZNER_SSH_PRIVATE_KEY` para SSH direto ao Production Server. Scripts `deploy-remote.sh` e `deploy-local.sh` foram REMOVIDOS (28/12/2025) - workflow usa script inline no SSH action (mais auditável).
 | `POSTGRES_PASSWORD` | Senha forte 32+ chars | `openssl rand -hex 32` |
 | `REDIS_PASSWORD` | Senha Redis Alice (obrigatório) | `openssl rand -hex 32` |
-| `SESSION_SECRET` | String aleatória 64+ chars | `openssl rand -hex 64` |
+| `SESSION_SECRET` | String aleatória 64+ chars (mínimo) | `openssl rand -hex 64` |
 | `INTERNAL_API_SECRET` | Secret para comunicação S2S | `openssl rand -hex 32` |
 | `GRAFANA_ADMIN_USER` | Username admin Grafana 12 (ex: admin ou email) | Definir username |
 | `GRAFANA_ADMIN_PASSWORD` | Senha admin Grafana 12 (mín. 8 chars recomendado) | Definir forte e exclusiva |
@@ -119,6 +119,15 @@ Secrets pré-definidos para SSO funcionar automaticamente no primeiro deploy:
 | `GRAFANA_OAUTH_CLIENT_SECRET` | Secret OAuth para grafana-sso | ✅ **CONFIGURADO** |
 | `ERPNEXT_OAUTH_CLIENT_SECRET` | Secret OAuth para erpnext-sso | ✅ **CONFIGURADO** |
 | `OIDC_COOKIE_KEYS` | Chaves para cookies OIDC | ✅ **CONFIGURADO** |
+
+#### Variáveis OIDC (Configuração) — Obrigatórias em Produção (WS4)
+
+Estas variáveis **não são secrets**, mas são **obrigatórias em produção** para autenticação híbrida (Sessão + JWT OIDC com validação local via JWKS):
+
+| Variável | Exemplo | Obrigatória? | Descrição |
+|----------|---------|--------------|-----------|
+| `OIDC_ISSUER` | `https://auth.alice.yesyoudeserve.duckdns.org` | ✅ Produção | Issuer do OIDC Provider (Alice Auth). Usado para discovery/JWKS e validação do `iss` em JWT. |
+| `OIDC_API_AUDIENCE` | `alice-api` | ✅ Produção | Audience esperado para tokens Bearer aceitos pelos microsserviços (validação local via JWKS). Evita aceitar tokens emitidos para outro client. |
 
 > **SSO 100% AUTOMATIZADO:**
 > - Os secrets acima são usados pelo seed-oidc.ts que roda automaticamente

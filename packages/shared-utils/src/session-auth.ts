@@ -40,8 +40,8 @@ const SESSION_COOKIE_NAME = process.env.SESSION_COOKIE_NAME || 'alice.sid';
 const SESSION_CACHE_TTL = 5 * 60 * 1000; // 5 minutos
 
 // FAIL-FAST em produção (Regra 6 - SEM defaults inseguros)
-if (IS_PRODUCTION && (!SESSION_SECRET || SESSION_SECRET.length < 32)) {
-  logger.error('CRITICAL: SESSION_SECRET é OBRIGATÓRIO em produção e deve ter >= 32 caracteres.');
+if (IS_PRODUCTION && (!SESSION_SECRET || SESSION_SECRET.length < 64)) {
+  logger.error('CRITICAL: SESSION_SECRET é OBRIGATÓRIO em produção e deve ter >= 64 caracteres.');
   process.exit(1);
 }
 
