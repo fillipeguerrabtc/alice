@@ -12,11 +12,12 @@
 > **Economia Total:** 18GB (-35%), 30 fewer layers (90→60), deploy **50x mais rápido** (~20-25min vs ~40min).
 > **Causa Raiz:** CUDA dev tools (gcc, nvcc, headers) são desnecessários para inferência/training.
 
-> **CORREÇÃO CRÍTICA v4.0.2 (12/01/2026):** Ajustados parâmetros de VRAM do Qwen-VL após análise de erro "No available memory for cache blocks". Modelo AWQ ocupa ~6.5GB (não ~4GB como estimado). Configuração corrigida: `max-model-len=4096`, `gpu-memory-utilization=0.45`.
+> **NOTA (Histórico v4.0.x):** Ajustes finos de VRAM em vLLM foram feitos após análise de erro "No available memory for cache blocks".
+> No **Gate 2**, a plataforma usa **LLM (texto)** e **VLM (visão)** separados, com **budgets conservadores** para coexistência em 20GB.
 
 > **ATUALIZAÇÃO v4.0.1 (12/01/2026):** Correções para vLLM v0.12.0: `--limit-mm-per-prompt` (formato JSON), `--dtype float16` (obrigatório para AWQ).
 
-> **ATUALIZAÇÃO v4.0.0 (11/01/2026):** Migração para arquitetura simplificada com todos os serviços GPU rodando simultaneamente. Modelo LLM migrado de Mixtral 8x7B para Qwen2.5-VL 7B.
+> **ATUALIZAÇÃO v4.0.0 (11/01/2026):** Arquitetura simplificada com serviços GPU simultâneos (histórico). O **SSOT atual** é o **Gate 2**.
 
 ---
 
@@ -33,49 +34,34 @@ O **GPU Manager Service** é um serviço centralizado que gerencia todas as requ
 
 ---
 
-## Histórico: Arquitetura v4.0.0 - Simplificada (concluída)
+## Arquitetura Gate 2 (atual)
 
-### Evolução da Arquitetura (histórico)
+### Distribuição de VRAM (20GB Total - budgets)
 
-| Aspecto | v3.0.0 (Anterior) | v4.0.0 (Histórico) |
-|---------|-------------------|----------------|
-| **Estratégia** | Orquestração dinâmica | Todos simultâneos |
-| **LLM** | Mixtral 8x7B (~18GB) | Qwen2.5-VL 7B AWQ (~4GB) |
-| **Embeddings** | FP16 (~16GB) | INT8 (~8GB) |
-| **Vision** | ❌ Via FLUX | ✅ Nativo (Qwen2.5-VL) |
-| **Geração de imagens** | ✅ FLUX (~12GB) | ❌ Removido |
-| **Latência de troca** | 30-60 segundos | **0ms** |
-| **VRAM total** | 1 serviço por vez | **15GB simultâneo** |
-| **Complexidade** | Alta (Docker API) | **Baixa** |
-
-### Distribuição de VRAM (v4.0.0 - histórico)
+Budgets conservadores para coexistência (fonte de verdade em runtime: `nvidia-smi` + métricas do GPU Manager):
 
 ```
-GPU 20GB VRAM - TODOS SIMULTÂNEOS (histórico):
+GPU 20GB VRAM - Serviços sempre ativos (Gate 2):
 ┌─────────────────────────────────────────────────────────────┐
-│  Qwen2.5-VL 7B AWQ   ████████░░░░░░░░░░░░  8GB   (LLM+Vision)
-│  (legado)            (ver Gate 2 abaixo para LLM/VLM separados)
+│  LLM (texto)        ~6GB  (gpu-llm)                          │
+│  VLM (visão)        ~8GB  (gpu-vlm)                          │
+│  Embeddings         ~3GB  (gpu-embeddings)                   │
+│  ASR                ~3GB  (gpu-asr)                          │
 ├─────────────────────────────────────────────────────────────┤
-│  TOTAL               ███████████████████░  ~19.4GB
-│  LIVRE               █░░░░░░░░░░░░░░░░░░░  ~0.6GB
+│  TOTAL (budget)     20GB                                     │
 └─────────────────────────────────────────────────────────────┘
-
-⚠️ VRAM real medida via nvidia-smi (v4.0.2)
-✅ Zero latência de troca
-✅ Vision nativo (análise de gráficos financeiros)
-⚠️ Treinamento requer parar serviços (sem margem)
 ```
 
-### Serviços GPU Sempre Ativos (Gate 2 - atual)
+### Serviços GPU Sempre Ativos
 
 | Serviço | Modelo | VRAM Real | Configuração | Função | Imagem Base | Imagem Size |
 |---------|--------|-----------|--------------|--------|-------------|-------------|
-| **gpu-llm** | Mistral 7B Instruct (AWQ) | ~6-8GB (budget) | `gpu-memory-utilization=0.35`, `max-model-len=2048`, `dtype=float16` | **LLM texto** (chat, trading) | vllm/vllm-openai | ~8GB |
-| **gpu-vlm** | Qwen2.5-VL 7B AWQ | ~8GB | `gpu-memory-utilization=0.45`, `max-model-len=4096`, `dtype=float16` | **VLM visão** (análise de imagens) | vllm/vllm-openai | ~8GB |
+| **gpu-llm** | Mistral 7B Instruct (AWQ) | ~5-6GB (budget) | `gpu-memory-utilization=0.28`, `max-model-len=2048`, `dtype=float16` | **LLM texto** (chat, trading) | vllm/vllm-openai | ~8GB |
+| **gpu-vlm** | Qwen2.5-VL 7B AWQ | ~7-8GB (budget) | `gpu-memory-utilization=0.36`, `max-model-len=2048`, `dtype=float16` | **VLM visão** (análise de imagens) | vllm/vllm-openai | ~8GB |
 | **gpu-embeddings** | Qwen3-Embedding-0.6B INT8 | ~2-3GB (budget) | `quantization=int8` | Embeddings para RAG | **pytorch-runtime** | **~11GB (-35% ✅)** |
-| **gpu-asr** | Canary-1B | ~4GB | NeMo | Transcrição de áudio | **pytorch-runtime** | **~11GB (-35% ✅)** |
+| **gpu-asr** | Canary-1B | ~3GB (budget) | NeMo | Transcrição de áudio | **pytorch-runtime** | **~11GB (-35% ✅)** |
 
-### Configuração vLLM 0.12.0 - CORRIGIDO v4.0.2
+### Configuração vLLM 0.12.0 (Gate 2)
 
 O Qwen2.5-VL usa vLLM v0.12.0 com as seguintes configurações **corrigidas**:
 
@@ -84,14 +70,12 @@ python3 -m vllm.entrypoints.openai.api_server \
     --model "Qwen/Qwen2.5-VL-7B-Instruct-AWQ" \
     --quantization awq \
     --dtype float16 \                     # OBRIGATÓRIO para AWQ (bfloat16 não suportado)
-    --max-model-len 4096 \                # CORRIGIDO: 8192 causava erro de KV cache
-    --gpu-memory-utilization 0.45 \       # CORRIGIDO: 0.40 insuficiente para modelo + KV cache
+    --max-model-len 2048 \                # Gate 2: reduz KV cache para coexistência
+    --gpu-memory-utilization 0.36 \       # Gate 2: budget conservador para coexistência em 20GB
     --limit-mm-per-prompt '{"image": 5}'  # Formato JSON (vLLM 0.12.0+)
 ```
 
-**Correções v4.0.2 (VRAM):**
-- `max-model-len=4096`: reduzido de 8192 para caber KV cache na VRAM (erro: "No available memory for cache blocks")
-- `gpu-memory-utilization=0.45`: aumentado de 0.40 para garantir espaço para modelo (6.5GB) + KV cache (1.5GB)
+**Nota (VRAM):** Budgets e `max-model-len` impactam KV cache. Em produção, valide o consumo real via `alice_gpu_*` e `nvidia-smi`.
 
 **Correções v4.0.1 (vLLM):**
 - `--limit-mm-per-prompt`: formato JSON obrigatório `'{"key": value}'`
@@ -101,7 +85,7 @@ python3 -m vllm.entrypoints.openai.api_server \
 
 | Serviço | Modelo | VRAM | Função | Imagem Base | Imagem Size |
 |---------|--------|------|--------|-------------|-------------|
-| **gpu-trainer** | QLoRA Qwen2.5-VL | ~12GB | Fine-tuning (pausa outros serviços) | **pytorch-runtime** | **~11GB (-35% ✅)** |
+| **gpu-trainer** | QLoRA (modelo base = LLM do stack) | ~12GB | Fine-tuning (pausa outros serviços) | **pytorch-runtime** | **~11GB (-35% ✅)** |
 
 ---
 
@@ -112,17 +96,16 @@ python3 -m vllm.entrypoints.openai.api_server \
 - ❌ Apenas 1 serviço GPU por vez
 - ❌ Latência de troca de 30-60 segundos
 - ❌ Complexidade de orquestração (Docker API)
-- ❌ Sem suporte nativo a vision
-- ❌ Dependência de FLUX para análise de imagens
+- ❌ Sem suporte nativo a vision (dependia de soluções externas)
+- ❌ Dependência de serviço separado para análise de imagens (legado)
 
-### Depois (v4.0.0)
+### Depois (Gate 2)
 
-- ✅ Todos os serviços rodando simultaneamente
+- ✅ Todos os serviços rodando simultaneamente (com budgets conservadores)
 - ✅ **Zero latência de troca**
 - ✅ Arquitetura simplificada (sem Docker API)
-- ✅ Vision nativo com Qwen2.5-VL
-- ✅ 5GB livres para operações extras
-- ✅ Melhor desempenho em finanças/matemática
+- ✅ Separação explícita: LLM (texto) + VLM (visão)
+- ✅ Observabilidade model-agnóstica (capability-based)
 
 ---
 
@@ -154,13 +137,13 @@ python3 -m vllm.entrypoints.openai.api_server \
                             │
                             ▼
 ┌─────────────────────────────────────────────────────────────┐
-│     Containers GPU (TODOS SEMPRE ATIVOS - 15GB de 20GB)     │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐                  │
-│  │Qwen2.5-VL│  │Embeddings│  │   ASR    │                  │
-│  │ :8000    │  │  :8001   │  │  :8002   │                  │
-│  │  ~4GB    │  │  ~8GB    │  │  ~3GB    │                  │
-│  │ SEMPRE   │  │ SEMPRE   │  │ SEMPRE   │                  │
-│  └──────────┘  └──────────┘  └──────────┘                  │
+│     Containers GPU (TODOS SEMPRE ATIVOS - Gate 2)           │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐    │
+│  │   VLM    │  │   LLM    │  │Embeddings│  │   ASR    │    │
+│  │ :8000    │  │  :8004   │  │  :8001   │  │  :8002   │    │
+│  │  ~8GB    │  │  ~6GB    │  │  ~3GB    │  │  ~3GB    │    │
+│  │ SEMPRE   │  │ SEMPRE   │  │ SEMPRE   │  │ SEMPRE   │    │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────┘    │
 │                                                             │
 │  ┌──────────┐ (profile: gpu-training - sob demanda)        │
 │  │ Trainer  │                                              │
@@ -266,26 +249,16 @@ DELETE /api/training/run/cancel
 
 ---
 
-## Modelo LLM: Qwen2.5-VL 7B
+## Modelos (Gate 2)
 
-### Por que Qwen2.5-VL?
+### LLM (texto): Mistral 7B Instruct (AWQ)
 
-O Qwen2.5-VL 7B foi escolhido por:
+- Usado para: chat e trading (texto).
+- Requisito: deve ser o mesmo **modelo base** do pipeline de treinamento (QLoRA) para evitar divergência.
 
-1. **Especialização em Finanças/Matemática**: Melhor desempenho em benchmarks financeiros (+8% vs Mixtral)
-2. **Vision Nativo**: Análise de gráficos, prints de tela, documentos
-3. **Baixo Consumo de VRAM**: ~4GB AWQ 4-bit (vs ~18GB Mixtral)
-4. **Fine-tuning com QLoRA**: Menor consumo de VRAM para treinamento
-5. **API Compatível com OpenAI**: Drop-in replacement
+### VLM (visão): Qwen2.5-VL 7B (AWQ)
 
-### Comparativo de Benchmarks
-
-| Benchmark | Mixtral 8x7B | Qwen2.5-VL 7B | Diferença |
-|-----------|--------------|---------------|-----------|
-| **GSM8K** (Matemática) | 78.2% | 86.3% | +8.1% |
-| **MATH** (Avançado) | 34.1% | 42.8% | +8.7% |
-| **Finance-Eval** | 72.3% | 79.5% | +7.2% |
-| **Vision** | ❌ | ✅ | - |
+- Usado para: análise multimodal de imagens (ex.: screenshots e gráficos).
 
 ---
 
@@ -296,7 +269,7 @@ O Qwen2.5-VL 7B foi escolhido por:
 | 4.0.5 | 15/01/2026 | WS3: Corrigir SSOT GPU e garantir QUANTIZATION=int8 refletido no runtime (fail-fast, sem fallback) |
 | 4.0.4 | 12/01/2026 | Otimização COMPLETA: embeddings + asr + trainer pytorch-devel → runtime (-18GB total, -35%) |
 | 4.0.3 | 12/01/2026 | Otimização imagem embeddings: pytorch-devel → pytorch-runtime (-6GB, -35%) |
-| 4.0.2 | 12/01/2026 | Correção VRAM Qwen-VL (max-model-len=4096, gpu-memory-utilization=0.45) |
+| 4.0.2 | 12/01/2026 | Correção VRAM Qwen-VL (ajustes de KV cache e budget) |
 | 4.0.1 | 12/01/2026 | Correções vLLM 0.12.0 (dtype float16, JSON limit-mm-per-prompt) |
 | 4.0.0 | 11/01/2026 | Arquitetura simplificada, Qwen2.5-VL, todos simultâneos |
 | 3.0.0 | 09/01/2026 | Orquestração dinâmica via Docker API |

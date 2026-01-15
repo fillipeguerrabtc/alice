@@ -133,8 +133,8 @@
       "noData": "Sem dados para exibir"
     },
     "system": {
-      "llm": "Qwen2.5-VL 7B",
-      "llmParams": "MoE ~12B parâmetros ativos",
+      "llm": "Mistral 7B (LLM) + Qwen2.5-VL (VLM)",
+      "llmParams": "Gate 2: LLM (texto) separado de VLM (visão)",
       "database": "PostgreSQL + pgvector",
       "databaseFeature": "Busca vetorial",
       "rbac": "RBAC Enterprise",
@@ -164,7 +164,7 @@
       "operational": "Operacional",
       "synced": "Sincronizada",
       "connected": "Conectadas",
-      "llmModel": "Mixtral 8x7B",
+      "llmModel": "Mistral 7B (LLM)",
       "knowledgeBase": "Base de Conhecimento",
       "integrationsLabel": "Integrações"
     },
@@ -214,8 +214,8 @@
     }
   },
   "imageGen": {
-    "title": "Geração de Imagens",
-    "description": "Qwen2.5-VL Vision",
+    "title": "Análise de Imagens",
+    "description": "VLM (Qwen2.5-VL) - análise multimodal (sem geração de imagens)",
     "totalGenerated": "Total Geradas",
     "approvalRate": "Taxa Aprovação",
     "avgRating": "Rating Médio",
@@ -343,7 +343,7 @@
       "personality": "Traços de Personalidade",
       "personalityDesc": "Características de personalidade que influenciam o tom das respostas (ex: amigável, profissional, empático)",
       "baseModel": "Modelo Base",
-      "baseModelDesc": "Modelo LLM usado para geração de respostas (Qwen2.5-VL 7B é o modelo multimodal principal)",
+      "baseModelDesc": "Modelo LLM usado para geração de respostas (Gate 2: LLM texto = Mistral; VLM visão = Qwen2.5-VL)",
       "temperature": "Temperatura",
       "temperatureDesc": "Controla a aleatoriedade das respostas. Valores menores = mais determinístico, valores maiores = mais criativo.",
       "maxTokens": "Tokens Máximos",
@@ -828,7 +828,7 @@
   },
   "training": {
     "title": "Fine-tuning & Treinamento",
-    "subtitle": "Gerencie dados e jobs de fine-tuning para o Mixtral 8x7B",
+    "subtitle": "Gerencie dados e jobs de fine-tuning para o LLM (Mistral 7B)",
     "newJob": "Novo Job",
     "status": {
       "pending": "Pendente",
@@ -886,7 +886,7 @@
     },
     "createJob": {
       "title": "Novo Job de Fine-tuning",
-      "description": "Configure um novo job de fine-tuning para o modelo Qwen2.5-VL 7B.",
+      "description": "Configure um novo job de fine-tuning para o LLM (Mistral 7B).",
       "minDataWarning": "Você tem apenas {{count}} dados aprovados. Mínimo necessário: 10.",
       "nameLabel": "Nome do Job",
       "namePlaceholder": "ex: Fine-tune vendas Q4 2025",
@@ -1181,7 +1181,7 @@
     },
     "signals": {
       "recent": "Sinais Recentes",
-      "subtitle": "Sinais gerados pelo Qwen2.5-VL 7B para trading autônomo",
+      "subtitle": "Sinais gerados pelo LLM (Mistral 7B) para trading autônomo",
       "new": "Novo Sinal",
       "noSignals": "Nenhum sinal ativo",
       "confidence": "Confiança",

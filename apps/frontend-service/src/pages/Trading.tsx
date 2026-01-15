@@ -2,19 +2,20 @@
  * Trading - Página de Trading BTC Futures KuCoin
  * 
  * Dashboard enterprise-grade para trading automatizado de BTC perpetuals
- * na KuCoin Futures. Integrado com Alice IA (Qwen2.5-VL 7B) para sinais
+ * na KuCoin Futures. Integrado com Alice IA (Gate 2) para sinais
  * autônomos e execução automática de ordens.
  * 
- * ARQUITETURA v4.0.0: Qwen2.5-VL 7B - modelo multimodal especializado em finanças
- * com capacidade nativa de análise de gráficos e imagens.
+ * Gate 2 (LLM separado + VLM dedicado):
+ * - LLM (texto): Mistral 7B Instruct (AWQ) via GPU Manager (sinais/decisão)
+ * - VLM (visão): Qwen2.5-VL 7B (AWQ) via GPU Manager (análise de imagens/gráficos)
  * 
  * Funcionalidades:
  * - Visualização em tempo real de dados de mercado
  * - Gestão de ordens (criar, cancelar, sincronizar)
  * - Monitoramento de posições abertas
  * - Configuração de gestão de risco
- * - Sinais de trading do Qwen2.5-VL 7B LLM (multimodal)
- * - Análise visual de gráficos via Qwen2.5-VL Vision
+ * - Sinais de trading via LLM (texto)
+ * - Análise visual de gráficos via VLM (visão)
  * - Histórico completo de operações com auditoria
  * - Execução autônoma via Alice (Chat/WhatsApp)
  * 
@@ -23,7 +24,7 @@
  * Regra 13 - Internacionalização i18next
  * 
  * Autor: Fillipe Guerra
- * Data: 17 de Dezembro de 2025
+ * Data: 15 de Janeiro de 2026
  */
 
 import { useState, useEffect } from 'react';

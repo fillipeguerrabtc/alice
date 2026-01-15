@@ -1,14 +1,14 @@
 /**
  * Auto-Learning Scheduler - Alice Enterprise Platform
  * 
- * ARQUITETURA v4.0.0 (11/01/2026):
+ * Gate 2 (15/01/2026):
  * Schedule enterprise de aprendizado para uso verticalizado:
  * - RAG update: Tempo real
  * - Auto-indexação: Diário
- * - Fine-tuning incremental (QLoRA Qwen2.5-VL): Semanal (domingo 3:00 AM)
+ * - Fine-tuning incremental (QLoRA - LLM): Semanal (domingo 3:00 AM)
  * - Fine-tuning completo: Quinzenal
  * 
- * Modelo base: Qwen2.5-VL 7B (especializado em finanças/matemática)
+ * Modelo base: LLM (texto) do Gate 2 (deve ser o MESMO do runtime)
  * Método: QLoRA (baixo consumo de VRAM)
  * 
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
@@ -23,6 +23,7 @@ import { createLogger } from '@alice/logger';
 import { eq, and, lt, desc, isNull } from '@alice/database';
 import * as schema from '@alice/shared/schema';
 import type { Database } from '@alice/database';
+import { GPU_MANAGER_CONFIG } from '@alice/shared-utils';
 
 // CORREÇÃO AUDITORIA 17/12/2025: Usar createLogger padronizado da plataforma
 // Bug: pino direto com pino-pretty não segue padrão enterprise (Regra 2)
@@ -36,9 +37,9 @@ export function initAutoLearningScheduler(dbClient: Database): void {
 }
 
 // ============================================================================
-// CONFIGURAÇÃO DO SCHEDULE - ARQUITETURA v4.0.0 (11/01/2026)
+// CONFIGURAÇÃO DO SCHEDULE - Gate 2 (15/01/2026)
 // ============================================================================
-// Modelo: Qwen2.5-VL 7B AWQ
+// Modelo base: LLM (texto) - SSOT em GPU_MANAGER_CONFIG
 // Método: QLoRA (baixo consumo de VRAM)
 // GPU: RTX 4000 Ada 20GB (Hetzner GEX44)
 // ============================================================================
@@ -61,7 +62,7 @@ export const SCHEDULE_CONFIG = {
     intervalMs: 7 * 24 * 60 * 60 * 1000, // 7 dias
     cronPattern: '0 3 * * 0', // Domingo às 3:00 AM
     minDataRequired: 50,
-    baseModel: 'Qwen/Qwen2.5-VL-7B-Instruct-AWQ',
+    baseModel: GPU_MANAGER_CONFIG.models.llm,
     method: 'qlora',
   },
   completeFineTuning: {
@@ -70,7 +71,7 @@ export const SCHEDULE_CONFIG = {
     intervalMs: 14 * 24 * 60 * 60 * 1000,
     cronPattern: '0 1 1,15 * *',
     minDataRequired: 200,
-    baseModel: 'Qwen/Qwen2.5-VL-7B-Instruct-AWQ',
+    baseModel: GPU_MANAGER_CONFIG.models.llm,
     method: 'qlora',
   },
 } as const;
@@ -234,12 +235,12 @@ export async function startProgressiveLoRA(
     });
   }
 
-  // ARQUITETURA v4.0.0: QLoRA para Qwen2.5-VL 7B
+  // Gate 2: QLoRA para o MESMO modelo base do LLM
   const [modelVersion] = await db.insert(schema.modelVersions).values({
     tenantId,
     name: `alice-qlora-v${newVersion}`,
     version: newVersion,
-    baseModel: 'Qwen2.5-VL-7B-AWQ',
+    baseModel: GPU_MANAGER_CONFIG.models.llm,
     status: 'training',
     trainingDataCount: approvedData.length,
     imageDataCount: approvedImages.length,

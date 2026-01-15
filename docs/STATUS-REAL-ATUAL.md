@@ -108,7 +108,7 @@
 
 > **Bug Fix Log Capture 21/12/2025:** Captura de logs agora respeita `DEPLOY_SERVICES`: `alice-only` captura containers Alice (12), `erpnext-only` captura containers ERPNext (15 incluindo workers -2), `all` captura ambos (27 total). Bug anterior só capturava Alice mesmo quando ERPNext falhava. Corrigidos nomes `postgres`→`alice-postgres`, `traefik`→`alice-caddy` (migração 02/01/2026). Adicionados workers faltantes: `erpnext-worker-*-2`.
 
-> **ARQUITETURA GPU v4.0.0 (11/01/2026):** Todos os serviços GPU rodam **SIMULTANEAMENTE** no servidor Hetzner GPU GEX44 (15GB de 20GB VRAM). **Qwen2.5-VL 7B** substitui Mixtral, oferecendo suporte nativo a vision para análise de gráficos de trading. **FLUX.1 REMOVIDO** - Alice ANALISA imagens via Qwen2.5-VL mas NÃO gera. Zero latência de troca. Guia completo: [docs/ARQUITETURA-GPU-MANAGER.md](ARQUITETURA-GPU-MANAGER.md).
+> **ARQUITETURA GPU Gate 2 (15/01/2026):** Serviços GPU rodam **simultaneamente** no Hetzner GEX44 (RTX 4000 Ada 20GB) com **budgets conservadores**. **LLM (texto)** = Mistral 7B (AWQ) e **VLM (visão)** = Qwen2.5-VL (AWQ), ambos via GPU Manager (capability-based). **Geração de imagens removida** — Alice analisa imagens, não gera. Guia completo: [docs/ARQUITETURA-GPU-MANAGER.md](ARQUITETURA-GPU-MANAGER.md).
 
 > **Bug Fix ERPNext install-app --verbose 25/12/2025:** O comando `bench install-app` no container `erpnext-create-site` (ETAPA 2) usava a flag `--verbose` que não é suportada. Erro: "No such option: --verbose" causava falha na instalação do ERPNext durante o deploy. Corrigido: Removida flag `--verbose` do comando `bench install-app` na linha 1641 do docker-compose.prod.yml. O `bench new-site` (ETAPA 1) aceita `--verbose` e funcionou corretamente, mas `bench install-app` não aceita essa flag. Comando corrigido: `timeout 1200 bench --site "${SITE_NAME}" install-app erpnext 2>&1 | tee -a /tmp/bench-new-site.log`.
 
@@ -191,8 +191,8 @@
 | Funcionalidade | Status | Arquivo |
 |----------------|--------|---------|
 | WebSocket tempo real | ✅ | `index.ts` |
-| LLM Hetzner GPU (Qwen2.5-VL 7B vLLM AWQ) | ✅ | `index.ts` (via GPU Manager Service) - ARQUITETURA v4.0.0 |
-| Vision Analysis (análise de imagens) | ✅ | Nativo via Qwen2.5-VL - zero overhead |
+| LLM Hetzner GPU (Mistral 7B vLLM AWQ) | ✅ | `index.ts` (via GPU Manager Service) - Gate 2 |
+| Vision Analysis (análise de imagens) | ✅ | `index.ts` (via GPU Manager Service → gpu-vlm/Qwen2.5-VL) - Gate 2 |
 | RAG Client (busca contexto) | ✅ | `rag-client.ts` |
 | ❌ Image Generation (REMOVIDO) | ❌ | FLUX.1 removido da v4.0.0 - Alice apenas ANALISA imagens |
 | Takeover/Handover Humano | ✅ | `conversation-orchestrator.ts` |
@@ -280,7 +280,7 @@
 > - Embeddings de imagem (1024 dim) → **pgvector** (busca similar)
 >
 > **Bug Fix (17/12/2025):** Endpoint `/api/media/upload/json` corrigido para ficar consistente com endpoint FormData:
-> - **Áudio**: Embeddings de texto (4096 dim) agora vão para Qdrant (antes ia para PostgreSQL incompatível)
+> - **Áudio**: Embeddings de texto (1024 dim, Gate 2) agora vão para Qdrant (antes ia para PostgreSQL incompatível)
 > - **Vídeo**: **não suportado** (removido em 23/12/2025 por custo/complexidade). Uploads `video/*` são **rejeitados** explicitamente com erro claro.
 > - **Documento**: Processamento completo agora (extração de texto + embeddings) - antes ficava apenas `pending`
 > - **Validação de dimensão**: Adicionada para todos os tipos de mídia (Enterprise-Grade - Regra 6)
@@ -398,11 +398,11 @@
 | **Embeddings de Texto (Trading/RAG)** | ✅ | Qwen3-Embedding-0.6B (1024 dim) → Qdrant - GPU Manager Service (Hetzner GEX44) |
 | **Embeddings de Imagem** | ✅ | OpenCLIP ViT-H/14 (1024 dim) → pgvector - GPU Manager Service (Hetzner GEX44) |
 | **ASR (Transcrição)** | ✅ | Canary-1B (NeMo) - GPU Manager Service (Hetzner GEX44) |
-| **LLM (Chat/Trading)** | ✅ | **Qwen2.5-VL 7B AWQ** - GPU Manager Service (Hetzner GEX44) - ARQUITETURA v4.0.0 |
-| **Vision (Análise de Imagens)** | ✅ | **Nativo Qwen2.5-VL** - zero overhead adicional |
+| **LLM (Chat/Trading)** | ✅ | **Mistral 7B Instruct (AWQ)** - GPU Manager Service (Hetzner GEX44) - Gate 2 |
+| **Vision (Análise de Imagens)** | ✅ | **Qwen2.5-VL 7B (AWQ)** via `gpu-vlm` - GPU Manager Service - Gate 2 |
 | ❌ **Geração de Imagens** | ❌ | **REMOVIDO** - FLUX.1 não necessário para domínio financeiro |
-| Suporte Multilíngue (100+ idiomas) | ✅ | Qwen3-Embedding-8B |
-| GPU Dedicada 24/7 | ✅ | Hetzner GEX44 - TODOS GPU SIMULTÂNEOS (15GB/20GB) |
+| Suporte Multilíngue (100+ idiomas) | ✅ | Embeddings de texto via Qwen3-Embedding-0.6B (1024 dim) |
+| GPU Dedicada 24/7 | ✅ | Hetzner GEX44 - serviços GPU simultâneos (Gate 2) |
 | Rate Limiting | ✅ | `serve.py` |
 | Circuit Breaker (Python) | ✅ | `pybreaker` |
 | Prometheus Metrics | ✅ | `/metrics` |
@@ -411,14 +411,11 @@
 > - **Embeddings de Texto (Trading/RAG):** Qwen3-Embedding-0.6B (1024 dim) - **Qdrant**
 > - **Embeddings de imagem:** OpenCLIP ViT-H/14 (1024 dim) - pgvector
 > - **ASR:** Canary-1B (NeMo) - GPU Manager Service (Hetzner GEX44)
-> - **GPU Dedicada 24/7:** Hetzner GEX44 - ARQUITETURA v4.0.0 - TODOS containers GPU SIMULTÂNEOS (15GB/20GB VRAM)
-> - **LLM Trading + Vision:** Qwen2.5-VL 7B AWQ - multimodal (texto + análise de gráficos) - Trading BTC Futures KuCoin
+> - **GPU Dedicada 24/7:** Hetzner GEX44 - serviços GPU simultâneos (Gate 2)
+> - **LLM Trading:** Mistral 7B (texto) via GPU Manager
+> - **Vision:** Qwen2.5-VL (visão) via GPU Manager
 >
-> **Justificativa Qwen3-Embedding-8B (Análise de Licenças 17/12/2025):**
-> - ✅ **Qwen3-Embedding-8B** (Apache 2.0) - ÚNICO modelo top-tier com licença comercial
-> - ❌ Fin-E5 (#1 FinMTEB) - CC BY-NC-ND 4.0 (Non-Commercial) - PROIBIDO uso comercial
-> - ❌ Linq-Embed-Mistral (#1 FinQA) - CC BY-NC 4.0 (Non-Commercial) - PROIBIDO uso comercial
-> - ❌ NV-Embed-v2 (NVIDIA) - CC BY-NC 4.0 (Non-Commercial) - PROIBIDO uso comercial
+> **Nota (licenças):** O modelo de embeddings atual (`Qwen3-Embedding-0.6B`) usa licença **Apache 2.0** (compatível com uso comercial).
 > - **Performance Qwen3 em Trading:** 79.43% return, Sharpe 0.322 (NOF1 AI Arena)
 
 > **Consistência Health/Readiness (Best Practices 2025):** quando o Whisper falha ao carregar, `/health` reporta `status: "degraded"` (e `whisper_model: ""`), alinhando o sinal com o `/ready` (que retorna `503` quando não pronto). Isso evita sinais contraditórios para consumidores internos (ex: RAG áudio).

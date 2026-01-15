@@ -4,6 +4,8 @@
 **Data:** 15 de Janeiro de 2026  
 **Versão:** 9.3 - Alinhamento SSOT + Observability + Docs
 
+> **Consolidação de Documentação (15/01/2026):** O conteúdo antes separado em `docs/PRODUCTION_SETUP.md` foi consolidado neste guia (SSOT) para evitar fragmentação.
+
 > **🚀 ATUALIZAÇÃO ENTERPRISE v3.0.0 (06/01/2026) - Pipeline CI/CD:**  
 > Pipeline CI/CD enterprise completo com deploy modular em 5 stacks independentes.
 > 

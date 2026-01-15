@@ -18,7 +18,7 @@ import { createLogger } from '@alice/logger';
 import { getDatabase, schema, eq, and, desc, sql, inArray } from '@alice/database';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { requestGpu, GpuServiceType, GpuRequestPriority } from '@alice/shared-utils';
+import { requestGpu, GpuServiceType, GpuRequestPriority, GPU_MANAGER_CONFIG } from '@alice/shared-utils';
 import type {
   TradingLoraJob,
   InsertTradingLoraJob,
@@ -35,8 +35,8 @@ const TRAINING_STORAGE_DIR = process.env.TRAINING_STORAGE_DIR || '/opt/alice/upl
 // CONFIGURAÇÃO
 // ============================================================================
 
-// Modelo base padrão para LoRA
-const DEFAULT_BASE_MODEL = 'TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ';
+// Modelo base padrão para LoRA (Gate 2): deve bater com o LLM de runtime
+const DEFAULT_BASE_MODEL = GPU_MANAGER_CONFIG.models.llm;
 
 // Configuração padrão de hiperparâmetros
 const DEFAULT_HYPERPARAMS: TradingLoraHyperparams = {

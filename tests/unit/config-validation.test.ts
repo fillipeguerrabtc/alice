@@ -706,13 +706,13 @@ describe('Config - GPU Manager Service Configuration', () => {
       expect(GPU_MANAGER_CONFIG.url).toBe('http://alice-gpu-manager:3010');
     });
 
-    // ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral
-    it('deve ter modelo de chat configurado como Qwen2.5-VL 7B AWQ', () => {
-      expect(GPU_MANAGER_CONFIG.models.chat).toBe('Qwen/Qwen2.5-VL-7B-Instruct-AWQ');
+    it('deve ter modelos LLM/VLM configurados (Gate 2)', () => {
+      expect(GPU_MANAGER_CONFIG.models.llm).toBe('TheBloke/Mistral-7B-Instruct-v0.2-AWQ');
+      expect(GPU_MANAGER_CONFIG.models.vlm).toBe('Qwen/Qwen2.5-VL-7B-Instruct-AWQ');
     });
 
-    it('deve ter maxTokens padrão de 4096', () => {
-      expect(GPU_MANAGER_CONFIG.defaults.maxTokens).toBe(4096);
+    it('deve ter maxTokens padrão de 2048', () => {
+      expect(GPU_MANAGER_CONFIG.defaults.maxTokens).toBe(2048);
     });
 
     it('deve ter temperature padrão de 0.7', () => {

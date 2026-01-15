@@ -4,15 +4,15 @@
  * Serviço de treinamento e fine-tuning com deduplicação semântica (SemHash).
  * Implementa Circuit Breaker pattern (Regra 16 - Best Practices 2025).
  * 
- * ARQUITETURA v4.0.0 (11/01/2026):
- * - Embeddings de texto: Qwen3-Embedding-8B INT8 (4096 dim, GPU Manager Service → Qdrant)
- * - Fine-tuning (QLoRA): Qwen2.5-VL 7B via GPU Trainer (sob demanda)
+ * Gate 2 (15/01/2026):
+ * - Embeddings de texto: Qwen3-Embedding-0.6B INT8 (1024 dim, GPU Manager Service → Qdrant)
+ * - Fine-tuning (QLoRA): MESMO modelo base do LLM (texto) via gpu-trainer (sob demanda)
  * - Schedule semanal configurável (domingo 3:00 AM default)
  * - Treinamento on-demand via dashboard admin
  * - Zero latência de troca (serviços GPU sempre ativos)
  * 
  * Autor: Fillipe Guerra
- * Data: 11 de Janeiro de 2026
+ * Data: 15 de Janeiro de 2026
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
@@ -44,6 +44,7 @@ import {
   requestGpu,
   GpuServiceType,
   GpuRequestPriority,
+  GPU_MANAGER_CONFIG,
 } from '@alice/shared-utils';
 import { trainingServicePaths, trainingServiceSchemas } from './openapi-specs.js';
 import { eq, and, or, desc, sql, isNull, not } from '@alice/database';
@@ -162,7 +163,7 @@ app.set('trust proxy', 1);
 
 // ============================================================================
 // CIRCUIT BREAKER - Text Embeddings GPU (GPU Manager Service)
-// ARQUITETURA ENTERPRISE (25/12/2025): Qwen3-Embedding-8B (4096 dim) via GPU Manager Service → Qdrant
+// Gate 2: Qwen3-Embedding-0.6B INT8 (1024 dim, SSOT) via GPU Manager Service → Qdrant
 // Usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
 // ============================================================================
 
@@ -179,8 +180,7 @@ interface TextEmbeddingResponse {
 const EXTERNAL_API_TIMEOUT_MS = 25000;
 
 async function generateEmbeddingInternal(text: string): Promise<number[]> {
-  // ARQUITETURA ENTERPRISE (25/12/2025): Qwen3-Embedding-8B via GPU Manager Service
-  // Embeddings de texto com 4096 dimensões para máxima qualidade
+  // Gate 2: Embeddings de texto via GPU Manager Service (dimensão SSOT = EMBEDDING_DIMENSIONS.TEXT)
   
   try {
     // Enfileirar requisição no GPU Manager com prioridade MEDIUM (embeddings para fine-tuning)
@@ -206,7 +206,7 @@ async function generateEmbeddingInternal(text: string): Promise<number[]> {
       throw new Error('Serviço de embeddings GPU retornou resultado vazio');
     }
     
-    // Validar dimensão (deve ser 4096 para Qwen3-Embedding-8B GPU) - Enterprise-Grade
+    // Validar dimensão (SSOT) - Enterprise-grade
     // Lança erro se dimensão estiver incorreta (não apenas warning) - Regra 6
     validateEmbeddingDimension(resultEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
     
@@ -306,8 +306,8 @@ app.get('/api/training/health', async (_req: Request, res: Response) => {
     status: overallStatus, 
     service: 'training-service', 
     timestamp: new Date().toISOString(),
-    embeddingsProvider: 'gpu-manager-service', // ARQUITETURA ENTERPRISE (25/12/2025)
-    model: 'Qwen/Qwen3-Embedding-8B (4096 dim → Qdrant)',
+    embeddingsProvider: 'gpu-manager-service',
+    model: 'Qwen/Qwen3-Embedding-0.6B (1024 dim → Qdrant)',
     fineTuningStatus: 'enabled',
     circuitBreakers: {
       embeddings: {
@@ -552,11 +552,11 @@ app.get('/api/training/jobs', requirePermission('training:fine_tuning_jobs:read'
   }
 });
 
-// ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral (multimodal, finanças)
+// Gate 2: Treinamento deve usar o MESMO modelo base do LLM (texto)
 const createJobSchema = z.object({
   tenantId: z.string().uuid().optional(),
   name: z.string().min(1),
-  baseModel: z.string().default('Qwen2.5-VL-7B'),
+  baseModel: z.string().default(GPU_MANAGER_CONFIG.models.llm),
   hyperparameters: z.object({
     epochs: z.number().default(3),
     learningRate: z.number().default(0.0001),
@@ -1501,7 +1501,7 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
     const [job] = await db.insert(schema.fineTuningJobs).values({
       tenantId,
       name: description || `Treinamento ${trainingType} on-demand`,
-      baseModel: 'Qwen2.5-VL-7B-AWQ',
+      baseModel: GPU_MANAGER_CONFIG.models.llm,
       status: 'pending',
       trainingDataCount: evaluation.dataCount,
     }).returning();
@@ -1853,7 +1853,7 @@ let server: ReturnType<typeof app.listen>;
     server = app.listen(PORT, '0.0.0.0', () => {
       logger.info({ 
         port: PORT, 
-        embeddingsConfigured: true, // Embeddings via GPU Manager Service (Qwen3-Embedding-8B)
+        embeddingsConfigured: true, // Embeddings via GPU Manager Service (Gate 2)
         fineTuningConfigured: true, // Fine-tuning LoRA via gpu-trainer (prioridade baixa)
         circuitBreaker: 'enabled',
       }, 'Training service iniciado com Circuit Breaker');

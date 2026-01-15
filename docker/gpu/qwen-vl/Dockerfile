@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.4
 # =============================================================================
-# Alice Enterprise Platform - Qwen2.5-VL 7B (LLM + Vision)
+# Alice Enterprise Platform - Qwen2.5-VL 7B (VLM - visão)
 # =============================================================================
 # Dockerfile para LLM multimodal inference com vLLM em GPU RTX 4000 SFF Ada (20GB)
 # Modelo: Qwen2.5-VL 7B Instruct AWQ (quantizado 4-bit)
@@ -13,11 +13,10 @@
 # - Suporte a vision (análise de imagens)
 # - 100% público, sem autenticação necessária
 # 
-# CORREÇÃO VRAM v4.0.2 (13/01/2026):
+# Gate 2 (15/01/2026) - VRAM / Coexistência:
 # - Modelo AWQ ocupa ~6.5GB (pesos)
-# - max-model-len=4096 reduz KV cache
-# - gpu_memory_utilization=0.35 (7GB) - REDUZIDO para coexistir com embeddings+ASR
-# - Arquitetura v4.0.0: 3 serviços simultâneos (Qwen-VL 7GB + Embeddings 6GB + ASR 2GB = 15GB/20GB)
+# - max-model-len=2048 reduz KV cache para coexistir em 20GB com LLM + Embeddings + ASR
+# - gpu_memory_utilization=0.36 (~7.2GB) para evitar overcommit ao coexistir com outros serviços
 # 
 # Ref: https://docs.vllm.ai/models/supported_models.html
 # Ref: https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct-AWQ
@@ -33,9 +32,9 @@
 FROM vllm/vllm-openai:v0.12.0
 
 LABEL maintainer="Fillipe Guerra"
-LABEL description="Qwen2.5-VL 7B multimodal vLLM inference server"
-LABEL version="4.0.2"
-LABEL architecture="v4.0.0-simplified"
+LABEL description="Qwen2.5-VL 7B (VLM) vLLM inference server"
+LABEL version="4.1.0"
+LABEL architecture="gate-2-llm-vlm-split"
 
 ENV PIP_ROOT_USER_ACTION=ignore
 
@@ -57,24 +56,15 @@ RUN chmod +x /app/entrypoint.sh
 
 # Variáveis de configuração do modelo
 # Qwen2.5-VL 7B Instruct AWQ - modelo multimodal quantizado
-# CORREÇÃO DEFINITIVA v4.1.0 (13/01/2025) - BASEADO EM DOCS OFICIAIS 2025:
-# 
-# BUG IDENTIFICADO: vLLM 0.12.0 tem bug CONHECIDO de memória em profile_run
-# Fonte: https://katielovesdogs.com/blog/vllm-memory-bug-with-qwen (2025)
-# Causa: PyTorch calcula incorretamente pico de memória para modelos multimodais
-# 
-# SOLUÇÃO OFICIAL 2025: Usar --skip-mm-profiling
-# 
-# CONFIGURAÇÕES (SSOT - alinhadas ao stack modular):
-# - MAX_MODEL_LEN: 4096 (contexto padrão para chat/trading)
-# - GPU_MEMORY_UTILIZATION: 0.45 (coexistência com embeddings + ASR em 20GB)
+# CONFIGURAÇÕES (SSOT - alinhadas ao stack modular Gate 2):
+# - MAX_MODEL_LEN: 2048 (coexistência)
+# - GPU_MEMORY_UTILIZATION: 0.36 (budget conservador)
 # - dtype: float16 OBRIGATÓRIO (AWQ não suporta bfloat16)
-# 
-# Ref: https://qwen.readthedocs.io/en/v2.5/deployment/vllm.html
+# Ref: https://qwen.readthedocs.io/
 ENV MODEL_NAME="Qwen/Qwen2.5-VL-7B-Instruct-AWQ"
 ENV QUANTIZATION="awq"
-ENV MAX_MODEL_LEN="4096"
-ENV GPU_MEMORY_UTILIZATION="0.45"
+ENV MAX_MODEL_LEN="2048"
+ENV GPU_MEMORY_UTILIZATION="0.36"
 ENV TENSOR_PARALLEL_SIZE="1"
 ENV PORT="8000"
 ENV HOST="0.0.0.0"

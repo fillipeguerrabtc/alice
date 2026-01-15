@@ -195,7 +195,7 @@ C4Container
         
         ContainerDb(postgres, "PostgreSQL", "PostgreSQL 16", "pgvector, RLS")
         ContainerDb(redis, "Redis", "Redis 7.4 (Alice) / 6.2 (ERPNext)", "Cache, Pub/Sub")
-        ContainerDb(qdrant, "Qdrant", "Vector DB", "Embeddings texto 4096 dim")
+        ContainerDb(qdrant, "Qdrant", "Vector DB", "Embeddings texto 1024 dim")
     }
     
     System_Ext(gpuManager, "GPU Manager Service", "Gerenciamento GPU local")
@@ -222,7 +222,7 @@ C4Container
 | 2 | `alice-pgbackrest-init` | pgBackRest | - | Inicialização stanza backup |
 | 3 | `alice-postgres` | PostgreSQL 16 | 5432 | Banco principal + pgvector |
 | 4 | `alice-redis` | Redis 7.4.7 | 6379 | Cache distribuído (node-redis 5.x) |
-| 5 | `alice-qdrant` | Qdrant | 6333 | Embeddings texto (4096 dim) |
+| 5 | `alice-qdrant` | Qdrant | 6333 | Embeddings texto (1024 dim) |
 | 6 | `alice-tor` | torproxy | 9050 | Proxy SOCKS5 Tor (.onion) |
 | 7 | `alice-searxng` | SearXNG | 8080 | Metabusca interna |
 
@@ -272,9 +272,9 @@ C4Component
 
     Container_Boundary(chat, "Chat Service") {
         Component(wsHandler, "WebSocket Handler", "Socket.io", "Gerencia conexões em tempo real")
-        Component(llmClient, "LLM Client", "HTTP Client", "Comunicação com Qwen2.5-VL 7B (texto + vision)")
+        Component(llmClient, "LLM Client", "HTTP Client", "Comunicação com LLM (texto) via GPU Manager (Gate 2)")
         Component(ragClient, "RAG Client", "HTTP Client", "Busca contexto semântico")
-        Component(visionAnalyzer, "Vision Analyzer", "HTTP Client", "Análise de imagens (nativo Qwen2.5-VL)")
+        Component(visionAnalyzer, "Vision Analyzer", "HTTP Client", "Análise de imagens via VLM (Gate 2)")
         Component(responseCache, "Response Cache", "Redis", "Greetings Gate")
         Component(tradingParser, "Trading Parser", "NLP", "Comandos de trading")
         Component(tradingOrch, "Trading Orchestrator", "State Machine", "Handover/Takeover")
@@ -312,7 +312,7 @@ C4Component
     }
     
     ComponentDb(postgres, "PostgreSQL", "Documentos, Metadados")
-    ComponentDb(qdrant, "Qdrant", "Embeddings 4096 dim")
+    ComponentDb(qdrant, "Qdrant", "Embeddings 1024 dim")
     
     System_Ext(gpuManager, "GPU Manager Service", "GPU Processing (Hetzner GEX44)")
     
@@ -359,7 +359,7 @@ sequenceDiagram
     participant WS as WebSocket Handler
     participant RC as Response Cache
     participant RAG as RAG Service
-    participant LLM as LLM (Qwen2.5-VL)
+    participant LLM as LLM (texto - Mistral 7B)
     participant DB as PostgreSQL
     
     U->>WS: Mensagem via WebSocket
@@ -434,7 +434,7 @@ sequenceDiagram
         Worker->>Queue: Dequeue job
         Worker->>GPU: POST /embeddings (batch)
         Note over GPU: GPU dedicada 24/7
-        GPU-->>Worker: Embeddings 4096 dim
+        GPU-->>Worker: Embeddings 1024 dim
         Worker->>Qdrant: Upsert vectors
         Worker->>WS: Notify completion
     end
@@ -462,10 +462,11 @@ C4Deployment
                 Container(backup, "pgBackRest", "Backup")
             }
         }
-        Deployment_Node(gpuServices, "GPU Services (ARQUITETURA v4.0.0 - 15GB/20GB VRAM)", "Local GPU Services - SIMULTÂNEOS") {
+        Deployment_Node(gpuServices, "GPU Services (Gate 2 - budgets em 20GB VRAM)", "Local GPU Services - SIMULTÂNEOS") {
             Container(gpuManager, "GPU Manager Service", "Fila priorizada, VRAM monitoring")
-            Container(qwenvl, "Qwen2.5-VL 7B AWQ", "LLM + Vision (~4GB)")
-            Container(qwen, "Qwen3-Embedding-8B INT8", "4096 dim (~8GB)")
+            Container(llm, "Mistral 7B Instruct (AWQ)", "LLM texto (~6GB budget)")
+            Container(vlm, "Qwen2.5-VL 7B (AWQ)", "VLM visão (~8GB budget)")
+            Container(qwen, "Qwen3-Embedding-0.6B INT8", "1024 dim (~3GB budget)")
             Container(canary, "Canary-1B", "ASR (~3GB)")
         }
     }
@@ -741,15 +742,15 @@ logger.info({
 
 ## 9. Decisões Arquiteturais (ADRs)
 
-### ADR-001: Escolha do LLM (Qwen2.5-VL 7B) - ATUALIZADO v4.0.0
+### ADR-001: Gate 2 - Separação LLM (texto) e VLM (visão)
 
 | Aspecto | Decisão |
 |---------|---------|
-| **Status** | Aceito (Atualizado 11/01/2026) |
-| **Contexto** | Necessidade de LLM enterprise 100% self-hosted com suporte a vision (análise de gráficos de trading) |
-| **Decisão** | Qwen2.5-VL 7B AWQ 4-bit (~4GB VRAM) via vLLM - multimodal (texto + vision) |
-| **Alternativas** | Mixtral 8x7B (sem vision, ~18GB), Llama 3.3 70B (muito grande), GPT-4 (não self-hosted) |
-| **Consequências** | + Custo fixo, + Privacidade, + Vision nativo, + Baixo VRAM, + Especializado em finanças/matemática |
+| **Status** | Aceito (Atualizado 15/01/2026) |
+| **Contexto** | Necessidade de IA enterprise 100% self-hosted com suporte a texto + visão (análise de gráficos) sem estourar 20GB VRAM |
+| **Decisão** | Separar **LLM (texto)** e **VLM (visão)** em containers dedicados, orquestrados pelo GPU Manager (capability-based) |
+| **Alternativas** | Modelo único multimodal para tudo (simplifica, mas reduz controle de VRAM e governança por capability) |
+| **Consequências** | + Governança e budgets por capability, + previsibilidade de VRAM, + observability model-agnóstica, - mais serviços para operar |
 
 ### ADR-002: Arquitetura de Embeddings
 
@@ -757,9 +758,9 @@ logger.info({
 |---------|---------|
 | **Status** | Aceito |
 | **Contexto** | Embeddings de alta qualidade para RAG e Trading |
-| **Decisão** | Qwen3-Embedding-8B (4096 dim) → Qdrant, OpenCLIP (1024 dim) → pgvector |
-| **Alternativas** | BGE-M3 (1024 dim), NV-Embed-v2 (Non-Commercial) |
-| **Consequências** | + Qualidade máxima, + Licença Apache 2.0, - Maior storage |
+| **Decisão** | Qwen3-Embedding-0.6B (1024 dim) → Qdrant, OpenCLIP (1024 dim) → pgvector |
+| **Alternativas** | Outros modelos 1024 dim com restrições de licença/uso comercial (avaliar caso a caso) |
+| **Consequências** | + Dimensão consistente (1024) em toda a plataforma, + storage menor, + compatível com budgets de VRAM |
 
 ### ADR-003: Multi-Tenancy com RLS
 
@@ -1315,8 +1316,8 @@ A plataforma possui uma **suite de testes unitários completa** usando **Vitest*
 *Versão: 1.11.0 - Server GPU Optimizations Enterprise*
 *Total de Containers: 50 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 4 GPU + 1 backup + 1 trainer on-demand)*
 *Stack: Express 5.2, Vite 7.3, Tailwind CSS 4.1, HTTP/2*
-*LLM: Qwen2.5-VL 7B AWQ (vLLM) via GPU Manager Service (Hetzner GEX44) - ARQUITETURA v4.0.0*
-*Embeddings: Qwen3-Embedding-8B INT8 (4096 dim) + OpenCLIP (1024 dim)*
+*LLM: Mistral 7B Instruct (AWQ) via GPU Manager Service (Hetzner GEX44) - Gate 2*
+*Embeddings: Qwen3-Embedding-0.6B INT8 (1024 dim) + OpenCLIP (1024 dim)*
 *Performance: HTTP Compression, HNSW m=24, SHA Pinning 95%+*
 *GPU: Todos serviços simultâneos (15GB/20GB VRAM), QLoRA fine-tuning semanal, Zero latência de troca*
 *Framework: arc42 + C4 Model + ADRs*  

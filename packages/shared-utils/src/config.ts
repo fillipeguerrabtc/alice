@@ -370,21 +370,28 @@ export const RAG_CHUNK_CONFIG = {
 
 /**
  * Configuração GPU Manager Service (Hetzner GEX44)
- * ARQUITETURA v4.0.0 (11/01/2026): Todos os serviços GPU rodam simultaneamente
- * Modelo: Qwen2.5-VL 7B AWQ (multimodal: texto + vision)
+ * Gate 2 (LLM separado + VLM dedicado):
+ * - LLM (texto) e VLM (visão) são serviços separados (capability-based)
+ * - Observabilidade deve permanecer model-agnóstica (troca de modelo sem refazer dashboards)
  */
 export const GPU_MANAGER_CONFIG = {
   // GPU Manager Service URL (container name em produção: alice-gpu-manager:3010)
   url: process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager:3010',
   models: {
-    chat: 'Qwen/Qwen2.5-VL-7B-Instruct-AWQ', // ARQUITETURA v4.0.0: LLM + Vision
+    // LLM (texto) - SSOT do stack (`LLM_MODEL_NAME` em produção)
+    llm: process.env.LLM_MODEL_NAME || 'TheBloke/Mistral-7B-Instruct-v0.2-AWQ',
+    // VLM (visão) - SSOT do stack (`VLM_MODEL_NAME` ou `QWEN_VL_MODEL_NAME` em produção)
+    vlm:
+      process.env.VLM_MODEL_NAME ||
+      process.env.QWEN_VL_MODEL_NAME ||
+      'Qwen/Qwen2.5-VL-7B-Instruct-AWQ',
     embeddings: 'Qwen/Qwen3-Embedding-0.6B',
     image: 'laion/CLIP-ViT-H-14-laion2B-s32B-b79K',
     asr: 'nvidia/Canary-1B',
-    // NOTA: FLUX removido na v4.0.0 - Alice analisa mas NÃO gera imagens
   },
   defaults: {
-    maxTokens: 4096,
+    // Gate 2: coerente com os serviços vLLM (max-model-len=2048 por padrão no stack)
+    maxTokens: 2048,
     temperature: 0.7,
     topP: 0.9,
   },

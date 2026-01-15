@@ -557,28 +557,26 @@ if (!DATABASE_URL) {
 }
 
 // ==============================================================================
-// ARQUITETURA MULTIMODAL ENTERPRISE (17/12/2025)
+// ARQUITETURA MULTIMODAL ENTERPRISE - Gate 2 (LLM separado + VLM dedicado)
 // ==============================================================================
 // TODOS os processamentos multimodais via GPU Manager Service (Hetzner GEX44):
-// - Text embeddings: Qwen3-Embedding-8B (4096 dim) → Qdrant
+// - Text embeddings: Qwen3-Embedding-0.6B INT8 (1024 dim) → Qdrant
 // - Image embeddings: OpenCLIP ViT-H/14 (1024 dim) → pgvector
 // - Transcrição de áudio: Canary-1B (NeMo)
-// - LLM: Mixtral 8x7B (vLLM AWQ)
-// 
+// - LLM (texto): Mistral 7B Instruct (AWQ) (via GPU Manager)
+// - VLM (visão): Qwen2.5-VL 7B (AWQ) (via GPU Manager)
+//
 // GPU é OBRIGATÓRIO - sem fallback CPU (Regra 6)
 // ==============================================================================
 //
 // ARQUITETURA DE STORAGE:
-// - Texto (4096 dim): Qdrant (suporta HNSW com 4096+ dim)
+// - Texto (1024 dim): Qdrant (HNSW)
 // - Imagem (1024 dim): pgvector vector(1024)
-// - Dados legados texto: pgvector halfvec(3584) - DEPRECATED
 //
 // GPU MANAGER SERVICE (Hetzner GEX44) é usado para:
-// - chat-service: LLM inference (Mixtral 8x7B vLLM AWQ)
-// - training-service: fine-tuning de modelos (LoRA) - em migração
-// - image-generation: FLUX.1 Schnell
-// - embeddings-gpu: Qwen3-Embedding-8B (4096) + OpenCLIP (1024)
-// - asr-canary: Canary-1B (NeMo) para transcrição
+// - chat-service: inferência LLM (texto)
+// - rag-service: embeddings + processamento multimodal
+// - training-service: fine-tuning (gpu-trainer sob demanda via profile)
 
 function normalizeBaseUrl(raw?: string): string {
   const base = (raw && raw.trim()) || 'http://alice-searxng:8080/';

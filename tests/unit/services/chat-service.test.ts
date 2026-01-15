@@ -21,12 +21,12 @@ import { CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
 // TESTES DE CONFIGURAÇÃO LLM
 // ============================================================================
 
-// ARQUITETURA v4.0.0: Qwen2.5-VL 7B substitui Mixtral 8x7B
+// Gate 2: LLM (texto) separado de VLM (visão)
 describe('Chat Service - Configuração LLM', () => {
   const LLM_CONFIG = {
     provider: 'gpu-manager-service',
-    model: 'Qwen2.5-VL-7B', // ARQUITETURA v4.0.0
-    maxTokens: 4096,
+    model: 'TheBloke/Mistral-7B-Instruct-v0.2-AWQ', // Gate 2 (LLM texto)
+    maxTokens: 2048,
     temperature: 0.7,
     topP: 0.9,
   };
@@ -35,12 +35,12 @@ describe('Chat Service - Configuração LLM', () => {
     expect(LLM_CONFIG.provider).toBe('gpu-manager-service');
   });
 
-  it('deve usar modelo Qwen2.5-VL 7B (ARQUITETURA v4.0.0)', () => {
-    expect(LLM_CONFIG.model).toBe('Qwen2.5-VL-7B');
+  it('deve usar modelo Mistral 7B (Gate 2 - LLM texto)', () => {
+    expect(LLM_CONFIG.model).toBe('TheBloke/Mistral-7B-Instruct-v0.2-AWQ');
   });
 
-  it('deve ter maxTokens de 4096', () => {
-    expect(LLM_CONFIG.maxTokens).toBe(4096);
+  it('deve ter maxTokens de 2048', () => {
+    expect(LLM_CONFIG.maxTokens).toBe(2048);
   });
 
   it('deve ter temperature de 0.7 (balanceado)', () => {
@@ -393,13 +393,13 @@ describe('Chat Service - Health Check', () => {
   }
 
   it('deve retornar estrutura de health correta', () => {
-    // ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral
+    // Gate 2: LLM (texto) separado de VLM (visão)
     const health: ChatHealthResponse = {
       status: 'ok',
       service: 'chat-service',
       timestamp: new Date().toISOString(),
       llmProvider: 'gpu-manager-service',
-      model: 'Qwen2.5-VL-7B',
+      model: 'TheBloke/Mistral-7B-Instruct-v0.2-AWQ',
       circuitBreakers: {
         llm: { state: 'closed', stats: {} },
         rag: { state: 'closed', stats: {} },
@@ -408,7 +408,7 @@ describe('Chat Service - Health Check', () => {
 
     expect(health.status).toBe('ok');
     expect(health.llmProvider).toBe('gpu-manager-service');
-    expect(health.model).toBe('Qwen2.5-VL-7B');
+    expect(health.model).toBe('TheBloke/Mistral-7B-Instruct-v0.2-AWQ');
   });
 });
 

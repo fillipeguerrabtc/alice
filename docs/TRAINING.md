@@ -266,7 +266,7 @@ O sistema usa deduplicação semântica para evitar dados redundantes:
 
 | Parâmetro | Valor | Descrição |
 |-----------|-------|-----------|
-| **Base Model** | Qwen2.5-VL-7B-AWQ | Modelo base quantizado |
+| **Base Model** | Mistral 7B Instruct (AWQ) | Modelo base do LLM (texto) no Gate 2 |
 | **LoRA Rank** | 16 | Rank das matrizes LoRA |
 | **LoRA Alpha** | 32 | Fator de escala |
 | **Target Modules** | q_proj, k_proj, v_proj | Camadas alvo |
@@ -362,5 +362,6 @@ A página de treinamento no dashboard oferece:
 
 - [ARQUITETURA-GPU-MANAGER.md](./ARQUITETURA-GPU-MANAGER.md)
 - [CLAUDE.md - Regras do Projeto](../CLAUDE.md)
+- [Mistral 7B Instruct (AWQ) - Hugging Face](https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-AWQ)
 - [Qwen2.5-VL Documentation](https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct)
 - [PEFT/LoRA Documentation](https://huggingface.co/docs/peft)
