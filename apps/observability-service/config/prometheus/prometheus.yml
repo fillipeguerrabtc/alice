@@ -104,7 +104,7 @@ scrape_configs:
     metrics_path: /metrics
     scrape_interval: 30s
 
-  - job_name: 'gpu-qwen-vl'
+  - job_name: 'gpu-vlm'
     static_configs:
       - targets: ['host.docker.internal:8000']
         labels:

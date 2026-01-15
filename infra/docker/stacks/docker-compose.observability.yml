@@ -141,7 +141,8 @@ services:
       GF_AUTH_GENERIC_OAUTH_NAME: Alice Enterprise
       GF_AUTH_GENERIC_OAUTH_CLIENT_ID: grafana-sso
       GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET: ${GRAFANA_OAUTH_CLIENT_SECRET}
-      GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email
+      # Escopo "alice" é necessário para receber claims customizados (role, tenant_id, modules) via /oauth/userinfo
+      GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email alice
       GF_AUTH_GENERIC_OAUTH_AUTH_URL: ${OIDC_ISSUER:-https://yesyoudeserve.duckdns.org}/oauth/authorize
       GF_AUTH_GENERIC_OAUTH_TOKEN_URL: ${OIDC_ISSUER:-https://yesyoudeserve.duckdns.org}/oauth/token
       GF_AUTH_GENERIC_OAUTH_API_URL: ${OIDC_ISSUER:-https://yesyoudeserve.duckdns.org}/oauth/userinfo

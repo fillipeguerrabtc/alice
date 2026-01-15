@@ -385,6 +385,39 @@ services:
           cpus: '0.5'
 
   # ===========================================================================
+  # POSTGRES EXPORTER - Métricas PostgreSQL (Prometheus)
+  # ===========================================================================
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.17.1
+    platform: linux/amd64
+    container_name: alice-postgres-exporter
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      # Fonte: https://github.com/prometheus-community/postgres_exporter
+      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}?sslmode=disable
+    networks:
+      - alice-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:9187/metrics || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.25'
+        reservations:
+          memory: 64M
+          cpus: '0.1'
+
+  # ===========================================================================
   # PGBOUNCER - Connection Pooling para PostgreSQL
   # ===========================================================================
   # Conforme PostgreSQL High Connections Guide 2025
@@ -456,6 +489,39 @@ services:
           cpus: '0.1'
 
   # ===========================================================================
+  # PGBOUNCER EXPORTER - Métricas PgBouncer (Prometheus)
+  # ===========================================================================
+  pgbouncer-exporter:
+    image: prometheuscommunity/pgbouncer-exporter:v0.9.0
+    platform: linux/amd64
+    container_name: alice-pgbouncer-exporter
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      # Fonte: https://github.com/prometheus-community/pgbouncer_exporter
+      PGBOUNCER_EXPORTER_CONNECTION_STRING: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@pgbouncer:6432/pgbouncer?sslmode=disable
+    networks:
+      - alice-network
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:9127/metrics || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.25'
+        reservations:
+          memory: 64M
+          cpus: '0.1'
+
+  # ===========================================================================
   # ALICE REDIS - Cache Distribuído
   # ===========================================================================
   alice-redis:
@@ -515,6 +581,40 @@ services:
           cpus: '0.5'
         reservations:
           memory: 128M
+          cpus: '0.1'
+
+  # ===========================================================================
+  # REDIS EXPORTER - Métricas Redis (Prometheus)
+  # ===========================================================================
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.69.0
+    platform: linux/amd64
+    container_name: alice-redis-exporter
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      # Fonte: https://github.com/oliver006/redis_exporter
+      REDIS_ADDR: redis://alice-redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    networks:
+      - alice-network
+    depends_on:
+      alice-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:9121/metrics || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.25'
+        reservations:
+          memory: 64M
           cpus: '0.1'
 
   # ===========================================================================

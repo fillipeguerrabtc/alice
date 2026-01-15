@@ -47,7 +47,7 @@
 **Alice** é uma plataforma enterprise de IA autônoma 100% self-hosted, projetada para organizações que exigem:
 
 - **Privacidade Total**: Dados nunca saem da infraestrutura própria
-- **Autonomia**: LLM próprio (Qwen2.5-VL 7B AWQ) sem dependência de APIs externas - ARQUITETURA v4.0.0
+- **Autonomia**: LLM próprio (Mistral 7B Instruct AWQ) sem dependência de APIs externas - **Gate 2 (LLM separado + VLM dedicado)**
 - **Customização**: Fine-tuning específico via QLoRA para cada domínio (especializado em finanças/matemática)
 - **Custo Previsível**: Sem cobrança por token de terceiros
 - **Compliance**: LGPD, GDPR, SOC 2 ready

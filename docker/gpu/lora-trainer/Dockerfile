@@ -88,11 +88,9 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     numpy==2.4.0 \
     prometheus-client==0.23.1
 
-# OPTIMIZATION: Remover build tools após compilação (mantém imagem pequena)
-# Economia: ~400MB (build-essential + gcc + g++)
-RUN apt-get purge -y --auto-remove build-essential g++ gcc \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+# ENTERPRISE (Gate 2): manter build tools em runtime quando necessário.
+# Motivo: bibliotecas CUDA/ML podem precisar de compilação/JIT em runtime dependendo do backend.
+# Prioridade: confiabilidade operacional > economia de ~400MB.
 
 COPY app/ /app/
 COPY healthcheck.py /app/healthcheck.py

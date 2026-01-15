@@ -195,11 +195,15 @@ function csrfProtection(req: Request, res: Response, next: NextFunction): void {
 // Schema de configuração do auth-service
 // REGRA 14: ADMIN_USER e ADMIN_PWD são obrigatórios em produção (fail-fast no GitHub Actions)
 // Schema Zod deve refletir requisito de runtime - obrigatórios em produção, opcionais em desenvolvimento
+const DEV_SESSION_SECRET = 'dev-secret-min-32-characters-long!';
+
 const baseAuthConfigSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().default(3001),
   DATABASE_URL: z.string().optional(),
-  SESSION_SECRET: z.string().default('dev-secret-min-32-characters-long!'),
+  // Em desenvolvimento, mantemos compatibilidade com o default (usado também em outros serviços).
+  // Em produção, a validação abaixo exige >= 64 chars (Regra 6: sem defaults inseguros).
+  SESSION_SECRET: z.string().default(DEV_SESSION_SECRET),
   ADMIN_USER: z.string().email().optional(),
   ADMIN_PWD: z.string().min(8, 'ADMIN_PWD deve ter no mínimo 8 caracteres').optional(),
   // OAuth Google
@@ -215,7 +219,8 @@ const baseAuthConfigSchema = z.object({
 });
 
 // Schema com validação condicional: ADMIN_USER e ADMIN_PWD obrigatórios apenas em produção
-const authConfigSchema = baseAuthConfigSchema.refine(
+const authConfigSchema = baseAuthConfigSchema
+  .refine(
   (data) => {
     // Em produção, ADMIN_USER e ADMIN_PWD são obrigatórios (fail-fast no GitHub Actions)
     if (data.NODE_ENV === 'production') {
@@ -228,7 +233,18 @@ const authConfigSchema = baseAuthConfigSchema.refine(
     message: 'ADMIN_USER e ADMIN_PWD são obrigatórios em produção (fail-fast no GitHub Actions)',
     path: ['ADMIN_USER', 'ADMIN_PWD'],
   }
-);
+)
+  .refine(
+    (data) => {
+      if (data.NODE_ENV !== 'production') return true;
+      // Regra 6: sem secrets fracos em produção
+      return typeof data.SESSION_SECRET === 'string' && data.SESSION_SECRET.length >= 64 && data.SESSION_SECRET !== DEV_SESSION_SECRET;
+    },
+    {
+      message: 'SESSION_SECRET é obrigatório em produção e deve ter >= 64 caracteres (sem usar o default de desenvolvimento).',
+      path: ['SESSION_SECRET'],
+    }
+  );
 
 type AuthConfig = z.infer<typeof authConfigSchema>;
 
@@ -239,8 +255,8 @@ let config: AuthConfig;
 const nodeEnv = process.env.NODE_ENV || 'development';
 const sessionSecret = process.env.SESSION_SECRET;
 
-if (nodeEnv === 'production' && !sessionSecret) {
-  logger.error('CRITICAL: SESSION_SECRET é OBRIGATÓRIO em produção. Abortando inicialização.');
+if (nodeEnv === 'production' && (!sessionSecret || sessionSecret.length < 64 || sessionSecret === DEV_SESSION_SECRET)) {
+  logger.error('CRITICAL: SESSION_SECRET é OBRIGATÓRIO em produção, deve ter >= 64 caracteres e não pode ser o default de desenvolvimento. Abortando inicialização.');
   process.exit(1);
 }
 
@@ -498,7 +514,8 @@ async function ensureOAuthClients(): Promise<void> {
       nome: 'Grafana OSS',
       descricao: 'Dashboard de observabilidade - SSO via Alice IdP',
       redirectUris: [`${grafanaUrl}/login/generic_oauth`],
-      scopes: ['openid', 'profile', 'email', 'groups', 'roles'],
+      // Escopo "alice" habilita claims customizados (role, tenant_id, modules) para RBAC no Grafana.
+      scopes: ['openid', 'profile', 'email', 'alice'],
     },
     {
       clientId: 'erpnext-sso',
@@ -506,7 +523,8 @@ async function ensureOAuthClients(): Promise<void> {
       nome: 'ERPNext CRM/ERP',
       descricao: 'Sistema de gestão empresarial - SSO via Alice IdP',
       redirectUris: [`${erpnextUrl}/api/method/frappe.integrations.oauth2.login_via_oauth2`],
-      scopes: ['openid', 'profile', 'email', 'groups', 'roles'],
+      // Escopo "alice" habilita claims customizados usados no provisioning e mapeamento de roles.
+      scopes: ['openid', 'profile', 'email', 'alice'],
     },
   ];
 

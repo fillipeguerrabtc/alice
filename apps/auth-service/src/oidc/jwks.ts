@@ -19,11 +19,6 @@ import crypto from 'crypto';
 
 const logger = createLogger('oidc-jwks');
 
-// Cache em memória com TTL curto (fonte de verdade é PostgreSQL)
-let jwksCache: { keys: JWK[] } | null = null;
-let jwksCacheExpiry = 0;
-const CACHE_TTL_MS = 60000; // 60 segundos
-
 /**
  * Gerar novo par de chaves RSA para OIDC
  * RS256 (RSA Signature with SHA-256) - padrão recomendado para OIDC
@@ -138,18 +133,11 @@ async function loadJWKsFromDatabase(): Promise<JWK[]> {
  * Seguindo Regra 6: persistência obrigatória
  */
 export async function getJWKS(): Promise<{ keys: JWK[] }> {
-  // Verificar cache (TTL curto, fonte de verdade é o banco)
-  if (jwksCache && Date.now() < jwksCacheExpiry) {
-    return jwksCache;
-  }
-
   // 1. Tentar carregar do PostgreSQL (fonte de verdade)
   const dbKeys = await loadJWKsFromDatabase();
   if (dbKeys.length > 0) {
-    jwksCache = { keys: dbKeys };
-    jwksCacheExpiry = Date.now() + CACHE_TTL_MS;
     logger.debug('JWKS carregado do PostgreSQL');
-    return jwksCache;
+    return { keys: dbKeys };
   }
 
   // 2. Verificar variável de ambiente (fallback para produção inicial)
@@ -175,9 +163,7 @@ export async function getJWKS(): Promise<{ keys: JWK[] }> {
           });
         }
       }
-      
-      jwksCache = parsed;
-      jwksCacheExpiry = Date.now() + CACHE_TTL_MS;
+
       logger.info('JWKS carregado de variável de ambiente e persistido');
       return parsed;
     } catch (error) {
@@ -195,9 +181,6 @@ export async function getJWKS(): Promise<{ keys: JWK[] }> {
   const jwks = {
     keys: [privateKey],
   };
-
-  jwksCache = jwks;
-  jwksCacheExpiry = Date.now() + CACHE_TTL_MS;
 
   logger.info({ kid }, 'Nova chave JWKS gerada e persistida no PostgreSQL');
 
@@ -257,10 +240,6 @@ export async function rotateKeys(): Promise<string> {
         .where(eq(oidcJwks.id, oldKeys[i].id));
     }
   }
-  
-  // Invalidar cache
-  jwksCache = null;
-  jwksCacheExpiry = 0;
 
   logger.info({ newKid: kid, totalActive: Math.min(oldKeys.length + 1, 3) }, 'Chaves OIDC rotacionadas');
   

@@ -163,9 +163,9 @@ function capabilityForServiceType(serviceType: GpuServiceType): GpuCapability {
 // Gate 2: LLM e VLM separados (capabilities)
 const GPU_SERVICE_URLS = {
   [GpuServiceType.LLM]: process.env.LLM_GPU_URL || 'http://gpu-llm:8000',
-  // Enquanto o VLM for servido pelo container legado `gpu-qwen-vl`, mantemos o default alinhado
-  // ao SSOT do stack modular (`infra/docker/stacks/docker-compose.alice.yml`).
-  [GpuServiceType.VLM]: process.env.VLM_GPU_URL || 'http://gpu-qwen-vl:8000',
+  // Gate 2: VLM dedicado com nome capability-based (`gpu-vlm`) para remover legado.
+  // SSOT: `infra/docker/stacks/docker-compose.alice.yml`
+  [GpuServiceType.VLM]: process.env.VLM_GPU_URL || 'http://gpu-vlm:8000',
   [GpuServiceType.EMBEDDINGS]: process.env.EMBEDDINGS_GPU_URL || 'http://gpu-embeddings:8000',
   [GpuServiceType.ASR]: process.env.ASR_GPU_URL || 'http://gpu-asr:8000',
   [GpuServiceType.TRAINING]: process.env.TRAINING_GPU_URL || 'http://gpu-trainer:8000',

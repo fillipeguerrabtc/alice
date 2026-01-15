@@ -318,14 +318,15 @@ A plataforma Alice é composta por **50 containers** organizados em **5 stacks i
 
 > **NOTA**: Alertmanager foi removido em 01/01/2026 e substituído pelo **Grafana Alerting**.
 
-#### Categoria 5: GPU Services (4 serviços) - Arquitetura v4.0.0
+#### Categoria 5: GPU Services (5 serviços) - Gate 2 (LLM separado + VLM dedicado)
 
 | # | Serviço | Container | Descrição |
 |---|---------|-----------|-----------|
 | 42 | GPU Manager Service | `gpu-manager-service` | Gerenciamento centralizado de requisições GPU (fila priorizada, VRAM monitoring, circuit breakers) |
-| 43 | GPU Qwen-VL (LLM + Vision) | `gpu-qwen-vl` | Qwen2.5-VL 7B AWQ para chat, trading e análise de gráficos (multimodal) |
-| 44 | GPU Embeddings | `gpu-embeddings` | Qwen3-Embedding-0.6B INT8 (texto) + OpenCLIP ViT-H/14 (imagem) |
-| 45 | GPU ASR | `gpu-asr` | Canary-1B (NeMo) para transcrição de áudio |
+| 43 | GPU LLM (texto) | `gpu-llm` | Mistral 7B Instruct AWQ (vLLM OpenAI API) para chat e trading |
+| 44 | GPU VLM (visão) | `gpu-vlm` | Qwen2.5-VL 7B AWQ (vLLM OpenAI API) para análise de imagens |
+| 45 | GPU Embeddings | `gpu-embeddings` | Qwen3-Embedding-0.6B INT8 (texto) + OpenCLIP ViT-H/14 (imagem) |
+| 46 | GPU ASR | `gpu-asr` | Canary-1B (NeMo) para transcrição de áudio |
 
 #### Categoria 6: Backup (1 serviço)
 

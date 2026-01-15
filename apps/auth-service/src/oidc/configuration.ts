@@ -11,7 +11,14 @@
  * @version 1.0.0
  */
 
-import type { Configuration, ClientMetadata } from 'oidc-provider';
+import type {
+  Configuration,
+  ClientMetadata,
+  KoaContextWithOIDC,
+  AccessToken,
+  ClientCredentials,
+  UnknownObject,
+} from 'oidc-provider';
 import { createAdapter } from './adapter.js';
 import { getJWKS } from './jwks.js';
 import { getDatabase } from '@alice/database';
@@ -20,6 +27,7 @@ import { eq, and } from '@alice/database';
 import { createLogger } from '@alice/logger';
 
 const logger = createLogger('oidc-config');
+const OIDC_API_AUDIENCE = process.env.OIDC_API_AUDIENCE;
 
 // URL base do OIDC Provider
 // Produção: OIDC_ISSUER definido via variável de ambiente
@@ -217,6 +225,34 @@ export async function createOIDCConfiguration(): Promise<Configuration> {
     },
 
     // =========================================================================
+    // TOKEN CLAIMS (WS4): incluir claims customizados quando scope "alice"
+    // =========================================================================
+    // oidc-provider v9 expõe `extraTokenClaims` (não específico por tipo).
+    // Nós aplicamos apenas quando o token é AccessToken (ou equivalente) e o scope inclui "alice".
+    extraTokenClaims: async (ctx: KoaContextWithOIDC, token: AccessToken | ClientCredentials): Promise<UnknownObject | undefined> => {
+      try {
+        const scope = typeof ctx.oidc.params?.scope === 'string' ? ctx.oidc.params.scope : '';
+        const wantsAliceClaims = scope.split(/\s+/).includes('alice');
+        if (!wantsAliceClaims) return {};
+
+        // `accountId` existe em tokens associados a usuário (fluxo authorization_code).
+        const accountId = 'accountId' in token ? (token as AccessToken & { accountId?: string }).accountId : undefined;
+        if (!accountId) return {};
+
+        const account = await findAccountById(accountId);
+        if (!account) return {};
+
+        const aliceClaims = await account.claims('access_token', scope);
+        // Remover sub (já existe) e retornar apenas extras relevantes
+        const { sub: _sub, ...rest } = aliceClaims as Record<string, unknown>;
+        return { ...rest };
+      } catch (error) {
+        logger.error({ error }, 'Falha ao montar extraAccessTokenClaims');
+        return {};
+      }
+    },
+
+    // =========================================================================
     // FEATURES: Funcionalidades habilitadas
     // =========================================================================
     features: {
@@ -240,6 +276,40 @@ export async function createOIDCConfiguration(): Promise<Configuration> {
 
       // PKCE: Obrigatório para todos os clientes (Tarefa 41)
       // Best practice 2025: PKCE é obrigatório mesmo para clientes confidenciais
+
+      // =========================================================================
+      // JWT Access Tokens (WS4): Resource Indicators (RFC 8707)
+      // =========================================================================
+      // Objetivo: Emitir Access Tokens em formato JWT com `aud` (audience) definido,
+      // para validação local via JWKS nos microsserviços (sem introspection).
+      //
+      // NOTA: Em oidc-provider v9, JWT Access Tokens requerem audience.
+      // REF: docs oficiais do node-oidc-provider (panva) / RFC 8707.
+      resourceIndicators: {
+        enabled: true,
+        defaultResource: (_ctx, _client, oneOf) => {
+          // Se o client não enviar `resource=`, usamos audience padrão.
+          // IMPORTANTE: a assinatura exige retornar string/string[] (sem undefined).
+          if (OIDC_API_AUDIENCE) return OIDC_API_AUDIENCE;
+          if (Array.isArray(oneOf) && oneOf.length > 0) return oneOf[0];
+          // Fallback determinístico (dev/test). Em produção, recomenda-se setar OIDC_API_AUDIENCE.
+          return 'alice-api';
+        },
+        getResourceServerInfo: (_ctx, resourceIndicator) => {
+          // Audience para o Resource Server (microsserviços Alice)
+          const audience = OIDC_API_AUDIENCE || resourceIndicator;
+
+          return {
+            audience,
+            // Escopos permitidos para este resource (inclui scope customizado "alice")
+            scope: 'openid profile email alice offline_access',
+            accessTokenTTL: 3600,
+            accessTokenFormat: 'jwt',
+            jwt: { sign: { alg: 'RS256' } },
+          };
+        },
+        useGrantedResource: () => true,
+      },
     },
 
     // =========================================================================

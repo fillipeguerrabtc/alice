@@ -64,7 +64,9 @@ def setup_alice_social_login():
         'api_endpoint': f'{issuer}/oauth/userinfo',
         'api_endpoint_args': json.dumps({}),
         'auth_url_data': json.dumps({
-            'scope': 'openid email profile groups roles',
+            # Escopo "alice" é necessário para claims customizados (role, tenant_id, modules)
+            # via /oauth/userinfo. "offline_access" permite refresh token quando suportado.
+            'scope': 'openid email profile alice offline_access',
             'response_type': 'code'
         }),
         'icon': 'fa fa-key',

@@ -175,7 +175,7 @@
               "options": {
                 "0": { "color": "green", "index": 0, "text": "CLOSED ✓" },
                 "1": { "color": "red", "index": 1, "text": "OPEN ✗" },
-                "2": { "color": "yellow", "index": 2, "text": "HALF-OPEN" }
+                "0.5": { "color": "yellow", "index": 2, "text": "HALF-OPEN" }
               },
               "type": "value"
             }
@@ -184,7 +184,7 @@
             "mode": "absolute",
             "steps": [
               { "color": "green", "value": null },
-              { "color": "yellow", "value": 2 },
+              { "color": "yellow", "value": 0.5 },
               { "color": "red", "value": 1 }
             ]
           }

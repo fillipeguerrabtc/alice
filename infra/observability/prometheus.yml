@@ -30,6 +30,45 @@ scrape_configs:
     scrape_timeout: 10s
 
   # ===========================================================================
+  # INFRA EXPORTERS (PostgreSQL / PgBouncer / Redis)
+  # ===========================================================================
+  - job_name: 'postgres-exporter'
+    static_configs:
+      - targets: ['alice-postgres-exporter:9187']
+        labels:
+          instance: 'alice-prod'
+          environment: 'production'
+    metrics_path: '/metrics'
+    scrape_timeout: 10s
+
+  - job_name: 'pgbouncer-exporter'
+    static_configs:
+      - targets: ['alice-pgbouncer-exporter:9127']
+        labels:
+          instance: 'alice-prod'
+          environment: 'production'
+    metrics_path: '/metrics'
+    scrape_timeout: 10s
+
+  - job_name: 'redis-exporter'
+    static_configs:
+      - targets: ['alice-redis-exporter:9121']
+        labels:
+          instance: 'alice-prod'
+          environment: 'production'
+    metrics_path: '/metrics'
+    scrape_timeout: 10s
+
+  - job_name: 'qdrant'
+    static_configs:
+      - targets: ['alice-qdrant:6333']
+        labels:
+          instance: 'alice-prod'
+          environment: 'production'
+    metrics_path: '/metrics'
+    scrape_timeout: 10s
+
+  # ===========================================================================
   # GPU Services (FastAPI/vLLM) - métricas por serviço
   # ===========================================================================
   - job_name: 'alice-gpu-services'
@@ -40,7 +79,7 @@ scrape_configs:
           service: 'llm'
           gpu_service: 'llm'
       - targets:
-        - 'gpu-qwen-vl:8000'
+        - 'gpu-vlm:8000'
         labels:
           service: 'vlm'
           gpu_service: 'vlm'

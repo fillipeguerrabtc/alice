@@ -3642,14 +3642,14 @@ jobs:
             
             # Pull TODOS os serviços GPU (cada profile separadamente para melhor diagnóstico)
             # ARQUITETURA v4.0.0: Serviços GPU sempre ativos (15GB/20GB VRAM)
-            # - gpu-qwen-vl: LLM + Vision (Qwen2.5-VL 7B AWQ)
+            # - gpu-vlm: VLM (Qwen2.5-VL 7B AWQ)
             # - gpu-embeddings: Qwen3-Embedding-8B INT8 + OpenCLIP
             # - gpu-asr: Canary-1B (transcrição)
             # - gpu-trainer: QLoRA fine-tuning (sob demanda)
             # NOTA: FLUX.1 Schnell REMOVIDO (Alice analisa mas NÃO gera imagens)
             echo ""
-            echo "📥 Pull GPU Qwen-VL (LLM + Vision)..."
-            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull gpu-qwen-vl 2>&1 || echo "   ⚠️ gpu-qwen-vl: pull falhou"
+            echo "📥 Pull GPU VLM (Qwen2.5-VL)..."
+            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull gpu-vlm 2>&1 || echo "   ⚠️ gpu-vlm: pull falhou"
             
             echo "📥 Pull GPU Embeddings..."
             docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull gpu-embeddings 2>&1 || echo "   ⚠️ gpu-embeddings: pull falhou"
@@ -3671,7 +3671,7 @@ jobs:
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             
             # ARQUITETURA v4.0.0: Serviços Alice + containers GPU
-            ALICE_SERVICES="alice-auth alice-chat alice-rag alice-training alice-integrations alice-gpu-manager alice-frontend alice-observability gpu-qwen-vl gpu-embeddings gpu-asr gpu-trainer"
+            ALICE_SERVICES="alice-auth alice-chat alice-rag alice-training alice-integrations alice-gpu-manager alice-frontend alice-observability gpu-vlm gpu-embeddings gpu-asr gpu-trainer"
             PROBLEM_FOUND=false
             
             for svc in $ALICE_SERVICES; do
@@ -3694,7 +3694,7 @@ jobs:
             # ARQUITETURA v4.0.0 (11/01/2026): Serviços GPU Simultâneos
             # =================================================================
             # Todos os serviços GPU rodam simultaneamente (15GB de 20GB VRAM):
-            # - gpu-qwen-vl: LLM + Vision (~4GB) - chat, trading, análise de gráficos
+            # - gpu-vlm: VLM (~8GB budget) - análise de imagens (multimodal)
             # - gpu-embeddings: Qwen3-Embedding-8B INT8 (~8GB) + OpenCLIP
             # - gpu-asr: Canary-1B (~3GB) - transcrição de áudio
             # - gpu-trainer: QLoRA fine-tuning (~12GB) - SOB DEMANDA via profile
@@ -3706,7 +3706,7 @@ jobs:
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "🐳 ARQUITETURA v4.0.0: Serviços GPU simultâneos (15GB/20GB VRAM)"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "   📦 gpu-qwen-vl: LLM + Vision (~4GB)"
+            echo "   📦 gpu-vlm: VLM (Qwen2.5-VL) (~8GB budget)"
             echo "   📦 gpu-embeddings: Qwen3-Embedding-8B INT8 (~8GB)"
             echo "   📦 gpu-asr: Canary-1B (~3GB)"
             echo "   📦 gpu-trainer: QLoRA (sob demanda via profile training)"
@@ -4125,6 +4125,60 @@ jobs:
             
             # Marcar início do deploy para calcular tempo total
             DEPLOY_START=$(date +%s)
+
+            # =================================================================
+            # WS2 (Observability): Sincronizar dashboards Grafana por domínio
+            # =================================================================
+            # SSOT dos dashboards: repositório (apps/observability-service/config/grafana/dashboards)
+            # Provisionamento em produção: infra/observability/grafana/provisioning/dashboards/*
+            #
+            # Motivação:
+            # - Evita duplicação/deriva entre "dashboards no app" vs "dashboards provisionados"
+            # - Mantém deploy idempotente e garante que Grafana carregue dashboards atuais
+            #
+            # Nota: NÃO altera triggers de workflows (restrição CI/CD).
+            # =================================================================
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "🧩 SYNC: Dashboards Grafana (repo → provisioning)"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+            DASH_SRC="/opt/alice/app/apps/observability-service/config/grafana/dashboards"
+            DASH_DST="/opt/alice/app/infra/observability/grafana/provisioning/dashboards"
+
+            if [ ! -d "$DASH_SRC" ]; then
+              echo "❌ ERRO: Diretório de dashboards não encontrado: $DASH_SRC"
+              exit 1
+            fi
+
+            mkdir -p \
+              "$DASH_DST/json" \
+              "$DASH_DST/chat-llm" \
+              "$DASH_DST/trading" \
+              "$DASH_DST/rag-embeddings" \
+              "$DASH_DST/gpu" \
+              "$DASH_DST/services" \
+              "$DASH_DST/erpnext" \
+              "$DASH_DST/infra-hosts" \
+              "$DASH_DST/backup" \
+              "$DASH_DST/training"
+
+            # Home / Portais
+            cp -f "$DASH_SRC/00-home.json" "$DASH_DST/json/00-home.json"
+            cp -f "$DASH_SRC/alice-portal-home.json" "$DASH_DST/json/alice-portal-home.json"
+
+            # Por domínio (conforme infra/observability/grafana/provisioning/dashboards/alice-dashboards.yml)
+            cp -f "$DASH_SRC/llm-metrics.json" "$DASH_DST/chat-llm/llm-metrics.json"
+            cp -f "$DASH_SRC/alice-trading.json" "$DASH_DST/trading/alice-trading.json"
+            cp -f "$DASH_SRC/alice-rag.json" "$DASH_DST/rag-embeddings/alice-rag.json"
+            cp -f "$DASH_SRC/alice-gpu-manager.json" "$DASH_DST/gpu/alice-gpu-manager.json"
+            cp -f "$DASH_SRC/alice-services.json" "$DASH_DST/services/alice-services.json"
+            cp -f "$DASH_SRC/alice-erpnext.json" "$DASH_DST/erpnext/alice-erpnext.json"
+            cp -f "$DASH_SRC/alice-infrastructure.json" "$DASH_DST/infra-hosts/alice-infrastructure.json"
+            cp -f "$DASH_SRC/alice-backup.json" "$DASH_DST/backup/alice-backup.json"
+            cp -f "$DASH_SRC/alice-training.json" "$DASH_DST/training/alice-training.json"
+
+            echo "✅ Dashboards sincronizados com sucesso"
+            echo ""
             
             echo "══════════════════════════════════════════════════════════════════"
             echo "🚀 DEPLOYING OBSERVABILITY STACK"

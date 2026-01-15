@@ -37,6 +37,14 @@ TRAIN_SLICE_DURATION = Histogram("lora_trainer_slice_duration_seconds", "Duraç�
 GPU_MEMORY_USED = Gauge("lora_trainer_gpu_memory_bytes", "Memória GPU utilizada")
 LAST_REQUEST_TIME = Gauge("lora_trainer_last_request_timestamp", "Timestamp do último request (para monitoramento)")
 
+DEVICE = os.environ.get("DEVICE", "cuda").strip().lower()
+if DEVICE != "cuda":
+    # Regra 6 (sem fallback CPU): treinamento exige GPU CUDA real.
+    raise RuntimeError("LoRA Trainer requer DEVICE=cuda (GPU obrigatória).")
+if not torch.cuda.is_available():
+    # Fail-fast: não permitir container iniciar sem CUDA disponível.
+    raise RuntimeError("LoRA Trainer requer GPU CUDA disponível (torch.cuda.is_available()=false).")
+
 
 def _storage_dir() -> Path:
     base = os.environ.get("STORAGE_DIR", "/opt/alice/uploads/training")
@@ -187,9 +195,9 @@ def train_lora_slice(req: TrainSliceRequest) -> TrainSliceResponse:
             if eval_dataset is not None:
                 eval_dataset = eval_dataset.map(tokenize_fn, remove_columns=eval_dataset.column_names)
 
-            # Modelo base (4-bit QLoRA via bitsandbytes se disponível)
-            # Observação: para manter o serviço robusto, fallback para fp16 se quantização falhar.
-            model = None
+            # Modelo base (4-bit QLoRA)
+            # Regra 6: PROIBIDO fallback silencioso (ex.: "cair para fp16") pois mascara
+            # misconfiguração e pode estourar VRAM em produção.
             try:
                 model = AutoModelForCausalLM.from_pretrained(
                     req.baseModel,
@@ -198,13 +206,11 @@ def train_lora_slice(req: TrainSliceRequest) -> TrainSliceResponse:
                     trust_remote_code=True,
                     load_in_4bit=True,
                 )
-            except Exception:
-                model = AutoModelForCausalLM.from_pretrained(
-                    req.baseModel,
-                    torch_dtype=torch.float16,
-                    device_map="auto",
-                    trust_remote_code=True,
-                )
+            except Exception as e:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Falha ao carregar modelo em 4-bit (QLoRA). Verifique CUDA/bitsandbytes. Erro: {type(e).__name__}: {e}",
+                ) from e
 
             lora_cfg = LoraConfig(
                 r=req.hyperparameters.loraRank,

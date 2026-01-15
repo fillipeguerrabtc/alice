@@ -124,8 +124,10 @@ export interface AliceMetrics {
     embeddingDuration: Histogram;
     /** Score médio de relevância (0-1) por tenant */
     relevanceScore: Gauge;
-    /** Taxa de cache hit */
-    cacheHitRate: Gauge;
+    /** Total de cache hits (RAG) */
+    cacheHitsTotal: Counter;
+    /** Total de cache misses (RAG) */
+    cacheMissesTotal: Counter;
     /** Queries por segundo */
     queriesTotal: Counter;
   };
@@ -404,9 +406,17 @@ export function createAlicePrometheus(config: PrometheusConfig): {
     registers: [registry],
   });
   
-  const ragCacheHitRate = new Gauge({
-    name: `${prefix}rag_cache_hit_rate`,
-    help: 'Taxa de cache hit (0-1)',
+  const ragCacheHitsTotal = new Counter({
+    name: `${prefix}rag_cache_hits_total`,
+    help: 'Total de cache hits (RAG)',
+    labelNames: ['endpoint'] as const,
+    registers: [registry],
+  });
+  
+  const ragCacheMissesTotal = new Counter({
+    name: `${prefix}rag_cache_misses_total`,
+    help: 'Total de cache misses (RAG)',
+    labelNames: ['endpoint'] as const,
     registers: [registry],
   });
   
@@ -642,7 +652,8 @@ export function createAlicePrometheus(config: PrometheusConfig): {
       searchDuration: ragSearchDuration,
       embeddingDuration: ragEmbeddingDuration,
       relevanceScore: ragRelevanceScore,
-      cacheHitRate: ragCacheHitRate,
+      cacheHitsTotal: ragCacheHitsTotal,
+      cacheMissesTotal: ragCacheMissesTotal,
       queriesTotal: ragQueriesTotal,
     },
     training: {

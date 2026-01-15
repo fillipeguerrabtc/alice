@@ -84,13 +84,14 @@ Alice employs a **modular multi-stack architecture** with 51 containerized servi
     - **Training Service**: Fine-tuning and self-learning scheduler.
     - **Integrations Service**: Handles external APIs (Stripe, Wise, Twilio, Gmail SMTP).
     - **Observability Service**: Prometheus, Grafana, Jaeger for metrics, dashboards, and tracing.
-    - **Multimodal Inference (100% GPU)** - ARQUITETURA v4.0.0: Processamento via GPU Manager Service (Hetzner GEX44):
-        - LLM + Vision: Qwen2.5-VL 7B AWQ (~4GB) - Chat, trading, análise de gráficos - GPU OBRIGATÓRIO
+    - **Multimodal Inference (100% GPU)** - **Gate 2 (LLM separado + VLM dedicado)**: Processamento via GPU Manager Service (Hetzner GEX44):
+        - LLM (texto): Mistral 7B Instruct AWQ (vLLM) - chat e trading - GPU OBRIGATÓRIO
+        - VLM (visão): Qwen2.5-VL 7B AWQ (vLLM) - análise de imagens (ex.: gráficos) - GPU OBRIGATÓRIO
         - Embeddings de texto: Qwen3-Embedding-0.6B INT8 (1024 dim, ~3GB) → Qdrant - GPU OBRIGATÓRIO
         - Embeddings de imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector - GPU OBRIGATÓRIO
         - ASR: Canary-1B (NeMo, ~3GB) - GPU OBRIGATÓRIO
         - GPU Manager: Gerenciamento centralizado com fila priorizada, monitoramento VRAM, circuit breakers
-        - Todos os serviços rodam simultaneamente (15GB de 20GB VRAM) - zero latência de troca
+        - Todos os serviços rodam simultaneamente (20GB VRAM budget; métricas = fonte de verdade) - zero latência de troca
 - **ERPNext Stack (15 serviços)**: Includes MariaDB, Redis Cache/Queue, Frappe Bench services (configurator, create-site, backend), NGINX frontend, WebSocket, Scheduler, and 9 Workers (3x default, 3x short, 3x long) for comprehensive ERP functionalities.
 - **Observability Stack (13 serviços)**: Langfuse Web (LLM observability), **Langfuse Worker (processamento assíncrono v3)**, Langfuse DB (PostgreSQL), **ClickHouse (OLAP Langfuse v3)**, Prometheus (métricas), Grafana (dashboards + **Grafana Alerting** para notificações), Loki (logs), Promtail (coleta de logs), Jaeger (tracing), Vector (agregação de logs), OTel Collector (instrumentação), Node Exporter (métricas do host), cAdvisor (métricas de containers).
 - **Backup (1 serviço)**: pgBackRest for PostgreSQL enterprise backups (WAL archiving, incremental, encryption AES-256).
@@ -104,14 +105,15 @@ Alice employs a **modular multi-stack architecture** with 51 containerized servi
 
 ## External Dependencies
 
-### GPU Services (Hetzner GPU Server) - Atualizado 11/01/2026 - Arquitetura v4.0.0
-- **LLM + Vision**: Qwen2.5-VL 7B AWQ (~4GB) - chat, trading, análise de gráficos, vision nativo
+### GPU Services (Hetzner GPU Server) - Atualizado 15/01/2026 - Gate 2 (LLM separado + VLM dedicado)
+- **LLM (texto)**: Mistral 7B Instruct AWQ (vLLM) - chat e trading
+- **VLM (visão)**: Qwen2.5-VL 7B AWQ (vLLM) - análise de imagens
 - **Embeddings Texto**: Qwen3-Embedding-0.6B INT8 (1024 dim, ~3GB) → Qdrant - quantização INT8
 - **Embeddings Imagem**: OpenCLIP ViT-H/14 (1024 dim) → pgvector - dimensão nativa
 - **ASR**: Canary-1B (NeMo, ~3GB) - transcrição de áudio
 - **Fine-tuning**: Treinamento QLoRA via GPU Trainer (~12GB, sob demanda) - schedule semanal + on-demand
 - **GPU Manager Service**: Gerenciamento centralizado com fila priorizada (Redis), monitoramento VRAM (nvidia-smi), circuit breakers, retry logic e métricas Prometheus
-- **Arquitetura v4.0.0**: Todos os serviços rodam simultaneamente (15GB de 20GB VRAM), zero latência de troca
+- **Gate 2**: Todos os serviços rodam simultaneamente (20GB VRAM budget), zero latência de troca
 
 ### Processamento Multimodal - ARQUITETURA ENTERPRISE (25/12/2025)
 Embeddings otimizados por caso de uso para máxima qualidade:
@@ -929,7 +931,7 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix Container Names (21/12/2025): Corrigidos nomes postgres→alice-postgres, traefik→alice-traefik na lista de captura de logs. grep usa match exato (^${container}$) - nomes devem bater exatamente com docker-compose.prod.yml*
 *Bug Fix ERPNext Workers -2 (21/12/2025): Adicionados erpnext-worker-default-2, erpnext-worker-short-2, erpnext-worker-long-2 na lista ERPNEXT_CONTAINERS. Eram 12 containers, agora 15 (todos os workers incluídos)*
 *Bug Fix ERPNext Configurator $$ Escape (21/12/2025): Escapar $ com $$ no command do erpnext-configurator para evitar substituição pelo Docker Compose. Bug: Docker Compose interpreta $CACHE_URL e $QUEUE_URL como env vars, mas são variáveis bash internas. Aviso: "The CACHE_URL variable is not set. Defaulting to a blank string."*
-*GPU Services v4.0.0 (11/01/2026): Todos os serviços GPU (gpu-qwen-vl, gpu-embeddings, gpu-asr) rodam simultaneamente no servidor Hetzner GPU (15GB de 20GB VRAM) - gpu-trainer sob demanda para QLoRA fine-tuning*
+*GPU Services (Gate 2 - 15/01/2026): Todos os serviços GPU (gpu-llm, gpu-vlm, gpu-embeddings, gpu-asr) rodam simultaneamente no servidor Hetzner GPU (20GB VRAM budget) - gpu-trainer sob demanda para QLoRA fine-tuning*
 *Bug Fix Paths Workflow (21/12/2025): Corrigidos TODOS os paths no deploy-production.yml. Repositório é clonado em /opt/alice/app, então todos os paths devem usar /opt/alice/app/infra/docker (não /opt/alice/infra/docker). Adicionado cd /opt/alice/app após o clone. Corrigidos paths de validação, .env.prod, cleanup, rollback e URLs GPU.*
 *Bug Fix REDIS_URL Faltando (21/12/2025): REDIS_URL estava FALTANDO em 5 dos 6 serviços Alice no docker-compose.prod.yml! Erro: "REDIS_URL não configurado em produção. Rate limiting distribuído é obrigatório (Regra 6)". Corrigido adicionando REDIS_URL para: alice-auth, alice-rag, alice-training, alice-integrations, alice-observability. Apenas alice-chat já tinha. Também adicionada dependência alice-redis em todos os serviços.*
 *Bug Fix ERPNext Configurator PRE-DEPLOY (21/12/2025): erpnext-configurator falhava porque volume montado sobrescreve arquivos originais do container. Solução: apps.txt e common_site_config.json agora são criados no PRÉ-DEPLOY (workflow) em /opt/alice/data/erpnext-sites/ com UID 1000 (frappe). Erros corrigidos: "OSError: b'./apps.txt' Not Found", "JSONDecodeError", "PermissionError".*
@@ -1348,7 +1350,7 @@ git commit -a -m "test: adiciona testes unitários"
 - *PROBLEMA 4 - Dashboard LLM Incompleto: Faltavam métricas de Response Cache (Greetings Gate implementado 17/12/2025), WebSocket connections, economia de GPU. IMPACTO: Impossível medir eficácia do cache.*
 - *PROBLEMA 5 - ZERO Dashboard ERPNext: Nenhum painel para workers Frappe (3x default, 3x short, 3x long), job queue, MariaDB, Redis. IMPACTO: Impossível debugar "ERPNext lento".*
 - *PROBLEMA 6 - Painéis "No data": RBAC Cache Hit Rate mostrando 0%, logs vazios. HIPÓTESE: Labels inconsistentes ou Promtail não configurado.*
-- *CORREÇÃO 1 - Prometheus Targets (prometheus.yml): Adicionados 4 novos jobs: alice-gpu-manager-service (3010), gpu-qwen-vl (8000), gpu-embeddings (8001), gpu-asr (8002). Scrape interval 15-60s. Labels service e gpu_service para identificação.*
+- *CORREÇÃO 1 - Prometheus Targets (prometheus.yml): Jobs GPU alinhados por capability (Gate 2): alice-gpu-manager-service (3010), gpu-vlm (8000), gpu-llm (8004), gpu-embeddings (8001), gpu-asr (8002). Scrape interval 15-60s. Labels service e gpu_service para identificação.*
 - *CORREÇÃO 2 - Dashboard LLM (llm-metrics.json): Substituído "Mixtral 8x7B" por "Qwen2.5-VL 7B AWQ" em description, content e legendFormat. Adicionados 8 novos painéis: Response Cache Hit Rate, Cache Hits vs Misses vs Greetings, WebSocket Connections, Latência Cache Check, Economia GPU, Mensagens com Mídia.*
 - *CORREÇÃO 3 - Dashboard Trading (alice-trading.json - NOVO): Criado dashboard completo com 8 painéis: P&L Realizado/Não Realizado, Ordens Ativas, Circuit Breaker KuCoin, RSI, Bollinger Bands, Latência API P95, Circuit Breakers Status. UID: alice-trading.*
 - *CORREÇÃO 4 - Dashboard GPU Manager (alice-gpu-manager.json - NOVO): Criado dashboard completo com 8 painéis: VRAM Total Usage %, VRAM por Serviço (Stacked Area), Filas LLM/Embeddings/ASR, Tempo Médio na Fila P95, Circuit Breakers Status (Table), Latência End-to-End (P50/P95/P99). UID: alice-gpu-manager.*
@@ -1375,9 +1377,9 @@ git commit -a -m "test: adiciona testes unitários"
 *GPU Services Restart Loop - CAUSA RAIZ E CORREÇÃO (13/01/2026):*
 - *SINTOMAS REPORTADOS: Home da plataforma retornava "Algo deu errado" após login. Chat não respondia (Alice ficava em silêncio). ERROS PERSISTIRAM POR VÁRIOS COMMITS tentando corrigir.*
 - *INVESTIGAÇÃO REAL: Conectado ao servidor de produção e coletado logs dos containers. CAUSA RAIZ IDENTIFICADA: Serviços GPU em RESTART LOOP INFINITO.*
-- *PROBLEMA 1 - gpu-qwen-vl OOM (Out of Memory): Container crashava com "ValueError: No available memory for the cache blocks. Try increasing gpu_memory_utilization". GPU_MEMORY_UTILIZATION configurado em 0.45 (9GB). Arquitetura v4.0.0 roda 3 serviços simultaneamente (Qwen-VL + Embeddings + ASR), mas GPU tem apenas 20GB VRAM. Qwen-VL tentava alocar 9GB, mas outros serviços já ocupavam memória, causando OOM e restart.*
+- *PROBLEMA 1 - gpu-vlm OOM (Out of Memory): Container crashava com "ValueError: No available memory for the cache blocks. Try increasing gpu_memory_utilization". GPU_MEMORY_UTILIZATION configurado em 0.45 (9GB). Coexistência na RTX 4000 Ada (20GB) exige budgets conservadores por serviço; quando overcommita, ocorre OOM e restart.*
 - *PROBLEMA 2 - gpu-embeddings Missing C Compiler: Container crashava com "RuntimeError: Failed to find C compiler. Please specify via CC environment variable" e "ModuleNotFoundError: Could not import module validate_bnb_backend_availability". CAUSA: Otimização de imagens Docker (12/01/2026) migrou de pytorch-devel para pytorch-runtime. Runtime NÃO inclui build tools (gcc, g++, build-essential). Biblioteca bitsandbytes precisa compilar extensões C++ durante pip install. Sem build tools, instalação falha e container crasha.*
-- *IMPACTO EM CASCATA: gpu-qwen-vl e gpu-embeddings em restart loop → GPU Manager Service recebe "fetch failed" ao tentar conectar → Chat Service retorna erro 500 "Erro na requisição GPU streaming" → Frontend mostra "Algo deu errado".*
+- *IMPACTO EM CASCATA: gpu-vlm e gpu-embeddings em restart loop → GPU Manager Service recebe "fetch failed" ao tentar conectar → Chat Service retorna erro 500 "Erro na requisição GPU streaming" → Frontend mostra "Algo deu errado".*
 - *CORREÇÃO 1 - Qwen-VL VRAM (docker/gpu/qwen-vl/Dockerfile): Reduzido GPU_MEMORY_UTILIZATION de 0.45 para 0.35 (9GB → 7GB). Arquitetura v4.0.0 coexistência: Qwen-VL 7GB + Embeddings 6GB + ASR 2GB = 15GB total de 20GB disponíveis (25% margem). Version 4.0.0 → 4.0.2.*
 - *CORREÇÃO 2 - Embeddings Compiler (docker/gpu/embeddings-gpu/Dockerfile): Adicionados build tools temporários (build-essential, g++, gcc) ANTES do pip install. Após pip install compilar extensões C++, build tools são PURGADOS (apt-get purge). Economia: 400MB. Pattern idêntico usado em asr-canary e lora-trainer. Version 3.2.0 → 3.2.2.*
 - *ARQUIVOS MODIFICADOS: docker/gpu/qwen-vl/Dockerfile (17 linhas modificadas), docker/gpu/embeddings-gpu/Dockerfile (18 linhas modificadas). TOTAL: 2 arquivos, +24 linhas, -11 linhas.*
@@ -1392,13 +1394,13 @@ git commit -a -m "test: adiciona testes unitários"
 - *Dashboard retornando "Algo deu errado" após login → Serviços GPU crashando → GPU Manager retorna "fetch failed" → Chat não responde.*
 - *GPU compartilhada entre 3 serviços (qwen-vl, embeddings, asr): Arquitetura v4.0.0 com coexistência simultânea.*
 - *gpu-embeddings crashando: `RuntimeError: Failed to find C compiler` → Triton precisa compilador C em RUNTIME para JIT compilation de kernels CUDA.*
-- *gpu-qwen-vl não inicia: `ValueError: No available memory for the cache blocks` → MAX_MODEL_LEN=4096 muito alto para VRAM compartilhada (Modelo AWQ 6GB + KV cache 3GB = 9GB, mas gpu-asr já usa 3.9GB).*
+- *gpu-vlm não inicia: `ValueError: No available memory for the cache blocks` → MAX_MODEL_LEN=4096 e/ou gpu_memory_utilization alto demais para VRAM compartilhada (KV cache excede budget).*
 
 **DIAGNÓSTICO ENTERPRISE (Análise de Logs Reais do Servidor):**
 - *nvidia-smi: Total 20GB, Usado 3.9GB (gpu-asr), Livre 16.1GB*
-- *Cenário v3.16.1: gpu-asr (3.9GB) + gpu-embeddings (8GB se funcionasse) + gpu-qwen-vl tentando alocar (9GB) = 20.9GB > 20GB ❌*
+- *Cenário v3.16.1: gpu-asr (3.9GB) + gpu-embeddings (8GB se funcionasse) + gpu-vlm tentando alocar (9GB) = 20.9GB > 20GB ❌*
 - *gpu-embeddings: bitsandbytes/triton precisa de build-essential/gcc/g++ em RUNTIME (não só build-time) para compilar kernels sob demanda.*
-- *gpu-qwen-vl: MAX_MODEL_LEN=4096 tokens (~3000 palavras) é EXCESSIVO para chat (conversas normais: 500-1000 tokens). Reduzir KV cache é otimização enterprise, NÃO workaround.*
+- *gpu-vlm: MAX_MODEL_LEN=4096 tokens (~3000 palavras) é EXCESSIVO para a maioria dos prompts. Reduzir KV cache é otimização enterprise, NÃO workaround.*
 
 **CORREÇÕES APLICADAS (Opção B - Dimensionamento Enterprise):**
 
@@ -1408,7 +1410,7 @@ git commit -a -m "test: adiciona testes unitários"
    - *Trade-off enterprise: +400MB mas serviço funciona (funcionalidade > tamanho)*
    - *REF: Triton docs, bitsandbytes requirements*
 
-2. **gpu-qwen-vl (docker/gpu/qwen-vl/Dockerfile):**
+2. **gpu-vlm (docker/gpu/qwen-vl/Dockerfile):**
    - *MAX_MODEL_LEN: 4096 → 2048 tokens (reduz KV cache ~50%: 3GB → 1.5GB)*
    - *GPU_MEMORY_UTILIZATION: 0.45 → 0.40 (9GB → 8GB alocado pelo vLLM)*
    - *Modelo AWQ: ~6GB + KV cache: ~1.5GB = ~7.5GB total (vs 9GB anterior)*
@@ -1416,7 +1418,7 @@ git commit -a -m "test: adiciona testes unitários"
    - *ARQUITETURA v4.0.2 → v4.0.3*
 
 **RESULTADO ENTERPRISE:**
-- *Uso total GPU: gpu-asr (3.9GB) + gpu-embeddings (8GB) + gpu-qwen-vl (6.8GB) = 18.7GB < 20GB ✅*
+- *Uso total GPU: gpu-asr (3.9GB) + gpu-embeddings (8GB) + gpu-vlm (6.8GB) = 18.7GB < 20GB ✅*
 - *Margem de segurança: 1.3GB (6.5%) - adequado para ambiente enterprise*
 - *Todos os 3 serviços GPU coexistem simultaneamente sem OOM*
 - *Chat funciona corretamente (GPU Manager conecta aos serviços)*

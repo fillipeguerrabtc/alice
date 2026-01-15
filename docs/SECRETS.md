@@ -129,6 +129,8 @@ Estas variáveis **não são secrets**, mas são **obrigatórias em produção**
 | `OIDC_ISSUER` | `https://auth.alice.yesyoudeserve.duckdns.org` | ✅ Produção | Issuer do OIDC Provider (Alice Auth). Usado para discovery/JWKS e validação do `iss` em JWT. |
 | `OIDC_API_AUDIENCE` | `alice-api` | ✅ Produção | Audience esperado para tokens Bearer aceitos pelos microsserviços (validação local via JWKS). Evita aceitar tokens emitidos para outro client. |
 
+> **WS4 (Auth híbrida) - IMPORTANTE:** Para RBAC em SSO (Grafana/ERPNext) e para Bearer JWT nos microsserviços, o escopo **`alice`** deve ser solicitado pelos RPs. Sem ele, claims customizados (ex.: `role`, `tenant_id`, `modules`) podem não estar presentes no `/oauth/userinfo` e/ou no access token.
+
 > **SSO 100% AUTOMATIZADO:**
 > - Os secrets acima são usados pelo seed-oidc.ts que roda automaticamente
 > - Grafana e ERPNext já vêm configurados para usar Alice como IdP

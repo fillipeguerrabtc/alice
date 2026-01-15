@@ -154,7 +154,7 @@
 | 5 | Training | `apps/training-service` | alice-training | 3004 | Node.js, fine-tuning, SemHash |
 | 6 | Integrations | `apps/integrations-service` | alice-integrations | 3005 | Node.js, Stripe, Wise, Twilio |
 | 7 | Observability | `apps/observability-service` | alice-observability | 3007 | Node.js, backup orchestrator |
-| 43-47 | GPU Services | `gpu-manager-service`, `gpu-qwen-vl`, `gpu-embeddings`, `gpu-asr`, **gpu-trainer** | - | - | GPU Manager Service + 4 serviços GPU locais - ARQUITETURA v4.0.0: **TODOS SIMULTÂNEOS** (15GB/20GB VRAM): LLM Qwen2.5-VL 7B (~4GB), Embeddings INT8 (~8GB), ASR Canary-1B (~3GB), **Fine-tuning QLoRA (on-demand via profile)** |
+| 43-48 | GPU Services | `gpu-manager-service`, `gpu-llm`, `gpu-vlm`, `gpu-embeddings`, `gpu-asr`, **gpu-trainer** | - | - | GPU Manager Service + 5 serviços GPU locais - **Gate 2 (LLM separado + VLM dedicado)**: **TODOS SIMULTÂNEOS** (20GB VRAM budget): LLM Mistral 7B (~6GB budget), VLM Qwen2.5-VL 7B (~8GB budget), Embeddings INT8 (~3GB budget), ASR Canary-1B (~3GB budget), **Fine-tuning QLoRA (on-demand via profile)** |
 | 9 | API Gateway | `apps/api-gateway` | **N/A (dev only)** | 3000 | Node.js (Caddy em prod) |
 
 > **NOTA:** O `api-gateway` Node.js é APENAS para desenvolvimento local. Em produção, Caddy 2.8.4 atua como API Gateway (migração de Traefik em 02/01/2026).
@@ -257,8 +257,9 @@
 
 > **Nota (GPU Enterprise - 17/12/2025):** Todos os embeddings e transcrição agora são 100% via GPU Manager Service (Hetzner GEX44) GPUs (Container Groups).
 >
-> **Endpoints GPU GPU Manager Service (Hetzner GEX44) - ARQUITETURA v4.0.0:**
-> - `gpu-qwen-vl (localhost)` - LLM Qwen2.5-VL 7B vLLM (`/v1/chat/completions`) - multimodal texto+vision
+> **Endpoints GPU via GPU Manager Service (Hetzner GEX44) - Gate 2:**
+> - `gpu-llm (localhost)` - LLM Mistral 7B vLLM (`/v1/chat/completions`) - texto
+> - `gpu-vlm (localhost)` - VLM Qwen2.5-VL 7B vLLM (`/v1/chat/completions`) - visão (análise de imagens)
 > - `gpu-asr (localhost)` - Canary-1B NeMo (`/transcribe`)
 > - `gpu-embeddings (localhost)` - Qwen3-Embedding-0.6B INT8 + OpenCLIP (`/embed/text`, `/embed/image`)
 > - ❌ `gpu-flux` REMOVIDO - Alice ANALISA imagens via Qwen2.5-VL mas NÃO gera
@@ -270,7 +271,8 @@
 > **Nota (Readiness por capability):** Endpoints GPU validam disponibilidade via health checks dedicados:
 > - `gpu-embeddings (localhost)/health` (embeddings INT8)
 > - `gpu-asr (localhost)/health` (transcrição Canary-1B)
-> - `gpu-qwen-vl (localhost)/health` (LLM + Vision - Qwen2.5-VL)
+> - `gpu-vlm (localhost)/health` (VLM - Qwen2.5-VL)
+> - `gpu-llm (localhost)/health` (LLM - Mistral)
 
 > **Nota (Robustez enterprise):**
 > - `document-processor`: valida **explicitamente** a dimensão de cada embedding de chunk (1024 dim) antes de inserir no Qdrant.

@@ -1,6 +1,6 @@
 # Guia de Observabilidade - Alice Enterprise Platform
 
-**Versão:** 2.2.0  
+**Versão:** 2.3.0  
 **Data:** 15 de Janeiro de 2026  
 **Autor:** Fillipe Guerra
 
@@ -17,8 +17,9 @@
 | 3 | ZERO dashboard Trading (KuCoin BTC Futures) | Impossível monitorar P&L, ordens, posições | Criado alice-trading.json (8 painéis) | ✅ CORRIGIDO |
 | 4 | Dashboard LLM incompleto | Impossível medir Response Cache (Greetings Gate) | Adicionados 8 painéis (cache, WebSocket, streaming) | ✅ CORRIGIDO |
 | 5 | ZERO dashboard ERPNext | Impossível debugar workers, jobs, MariaDB | Criado alice-erpnext.json (13 painéis) | ✅ CORRIGIDO |
-| 6 | ZERO dashboard Infrastructure | Impossível monitorar CPU, RAM, Disk, containers | Criado alice-infrastructure.json (12 painéis) | ✅ CORRIGIDO |
+| 6 | Infra sem visibilidade de DB/Cache | Impossível monitorar Postgres/PgBouncer/Redis/Qdrant | Adicionados exporters (Postgres/PgBouncer/Redis) + scrape Qdrant `/metrics` | ✅ CORRIGIDO |
 | 7 | Painéis "No data" (RBAC 0%, logs vazios) | Métricas não aparecendo | ⏳ Investigar após deploy (labels/Promtail) | 🔍 TODO |
+| 8 | Circuit breaker HALF_OPEN não aparecia | Grafana mapeava HALF_OPEN como `2`, mas métrica usa `0.5` | Mapeamento dashboards corrigido para `0.5` (HALF-OPEN) | ✅ CORRIGIDO |
 
 ---
 
@@ -28,7 +29,7 @@ A plataforma Alice implementa observabilidade **enterprise-grade** baseada em **
 
 **Stack de Observabilidade:**
 
-- **Prometheus 3.8.1** - Métricas (16 targets, scrape 15-60s)
+- **Prometheus 3.8.1** - Métricas (**18 jobs**; scrape 15-60s)
 - **Grafana OSS 12.3.1** - Dashboards + Alerting
 - **Loki 3.6.3** - Logs centralizados
 - **Jaeger 2.13.0** - Distributed tracing
@@ -45,6 +46,12 @@ A plataforma Alice implementa observabilidade **enterprise-grade** baseada em **
 - **URL:** `https://observability.yesyoudeserve.duckdns.org`
 - **Auth:** SSO via Alice Auth Service (OAuth 2.0)
 - **Permissões:** RBAC (Admin, SRE, Dev, Business)
+
+### Provisionamento e SSOT (IMPORTANTE)
+
+- **SSOT dos dashboards**: `apps/observability-service/config/grafana/dashboards/*.json`
+- **Provisionamento (produção)**: `infra/observability/grafana/provisioning/dashboards/*` (conforme `alice-dashboards.yml`)
+- **Sincronização no deploy**: o workflow `deploy-stack-modular.yml` copia os dashboards do SSOT para o diretório de provisionamento **antes** de subir o stack OBSERVABILITY, evitando deriva entre “dashboards do app” vs “dashboards provisionados”.
 
 ### Portal Home (Single Pane of Glass)
 
@@ -228,7 +235,8 @@ A plataforma Alice implementa observabilidade **enterprise-grade** baseada em **
 | `alice-training-service` | host.docker.internal:3004 | 60s | Training jobs, loss, GPU utilization |
 | `alice-integrations-service` | host.docker.internal:3005 | 30s | KuCoin, Stripe, Wise, circuit breakers |
 | `alice-gpu-manager-service` | host.docker.internal:3010 | 15s | GPU Manager, VRAM, filas, circuit breakers |
-| `gpu-qwen-vl` | host.docker.internal:8000 | 30s | Serviço GPU LLM/VLM (FastAPI) |
+| `gpu-vlm` | host.docker.internal:8000 | 30s | Serviço GPU VLM (vLLM OpenAI API - visão) |
+| `gpu-llm` | host.docker.internal:8004 | 30s | Serviço GPU LLM (vLLM OpenAI API - texto) |
 | `gpu-embeddings` | host.docker.internal:8001 | 30s | Serviço GPU de embeddings (FastAPI) |
 | `gpu-asr` | host.docker.internal:8002 | 60s | Serviço GPU ASR (FastAPI) |
 | `caddy` | host.docker.internal:2019 | 15s | API Gateway, SSL, HTTP/3 |
@@ -268,13 +276,14 @@ A plataforma Alice implementa observabilidade **enterprise-grade** baseada em **
 
 ### RAG Metrics
 
-- `alice_rag_documents_indexed{job}` - Documentos indexados
-- `alice_rag_chunks_total{job}` - Total de chunks
-- `alice_rag_search_duration_seconds_bucket{job}` - Latência busca vetorial
-- `alice_rag_embedding_duration_seconds_bucket{job}` - Latência embeddings
+- `alice_rag_documents_indexed{tenant_id}` - Documentos indexados
+- `alice_rag_chunks_total{tenant_id}` - Total de chunks
+- `alice_rag_search_duration_seconds_bucket{tenant_id}` - Latência busca vetorial
+- `alice_rag_embedding_duration_seconds_bucket{model}` - Latência embeddings (modelo-agnóstico)
 - `alice_rag_relevance_score{tenant_id}` - Score médio de relevância (0-1) por tenant
-- `alice_rag_cache_hit_rate{job}` - Taxa de cache hit
-- `alice_rag_queries_total{job}` - Total de queries
+- `alice_rag_cache_hits_total{endpoint}` - Cache hits (search/context)
+- `alice_rag_cache_misses_total{endpoint}` - Cache misses (search/context)
+- `alice_rag_queries_total{tenant_id,result}` - Total de queries (success|error)
 
 ### Circuit Breaker Metrics
 

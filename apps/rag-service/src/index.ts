@@ -44,6 +44,8 @@ import {
   CIRCUIT_BREAKER_PRESETS,
   registerShutdownCallback,
   ShutdownPriority,
+  createCacheAdapter,
+  type CacheAdapter,
   setupSwaggerUI,
   RAG_SERVICE_TAGS,
   // CORREÇÃO 23/12/2025: Redis cache distribuído para embedding-websocket
@@ -810,6 +812,70 @@ interface QdrantDocumentResult {
   } | null;
 }
 
+// ============================================================================
+// RAG Cache Distribuído (Redis) - Enterprise (WS2/WS3)
+// ============================================================================
+// Objetivo:
+// - Reduzir custo/latência para queries repetidas (mesma query+parâmetros) dentro de uma janela curta
+// - Medir cache hit/miss com métricas Prometheus (modelo-agnóstico)
+//
+// Regra 6:
+// - Em produção: cache distribuído (Redis) é obrigatório quando habilitado.
+// - Em dev/test: cache é DESABILITADO se não houver Redis (sem in-memory).
+// ============================================================================
+
+const RAG_QUERY_CACHE_TTL_MS = 60_000; // 60s (trade-off: frescor vs performance)
+
+type RagSearchResponse = { results: QdrantDocumentResult[] };
+type RagContextResponse = {
+  context: string;
+  sources: Array<{
+    documentId: string;
+    titulo: string | null;
+    similarity: number;
+  }>;
+};
+
+let ragSearchCache: CacheAdapter<RagSearchResponse> | null = null;
+let ragContextCache: CacheAdapter<RagContextResponse> | null = null;
+
+function normalizeRagQuery(query: string): string {
+  return query.replace(/\s+/g, ' ').trim();
+}
+
+function buildRagCacheKey(params: {
+  endpoint: 'search' | 'context';
+  tenantId: string;
+  query: string;
+  namespaceId?: string;
+  limit: number;
+  threshold: number;
+}): string {
+  const normalized = normalizeRagQuery(params.query);
+  const ns = params.namespaceId || 'all';
+
+  // Hash para evitar chaves gigantes e garantir determinismo.
+  const digest = crypto
+    .createHash('sha256')
+    .update(`${params.endpoint}|${params.tenantId}|${ns}|${params.limit}|${params.threshold}|${normalized}`, 'utf8')
+    .digest('hex');
+
+  // Prefixo por tenant permite invalidação por prefixo (tenant-scoped).
+  return `${params.tenantId}:${params.endpoint}:${ns}:${digest}`;
+}
+
+async function invalidateRagCachesForTenant(tenantId: string): Promise<void> {
+  // Best-effort: invalidação não pode quebrar fluxo principal.
+  try {
+    await Promise.all([
+      ragSearchCache?.deleteByPrefix(`${tenantId}:`) ?? Promise.resolve(0),
+      ragContextCache?.deleteByPrefix(`${tenantId}:`) ?? Promise.resolve(0),
+    ]);
+  } catch (error) {
+    logger.warn({ error, tenantId }, 'Falha ao invalidar cache RAG (não crítico)');
+  }
+}
+
 /**
  * Busca documentos similares via Qdrant (4096 dim)
  * 
@@ -1473,6 +1539,11 @@ app.post('/api/rag/documents/upload', requireAuth(), requirePermission('rag:docu
       .set({ processado: true })
       .where(eq(schema.documents.id, document.id));
 
+    // Invalidação de cache RAG: documento novo altera resultados de busca/contexto
+    if (req.tenantId) {
+      await invalidateRagCachesForTenant(req.tenantId);
+    }
+
     logger.info({ documentId: document.id, filename: req.file?.originalname }, 'Arquivo enviado e processado');
     res.json({ document, chunksCreated: chunks.length });
   } catch (error) {
@@ -1499,6 +1570,26 @@ app.post('/api/rag/search', requireAuth(), requirePermission('rag:documents:read
   try {
     const body = searchSchema.parse(req.body);
     const startNs = process.hrtime.bigint();
+
+    // Cache distribuído (Redis) - evita recalcular embeddings/busca para queries repetidas
+    const searchCacheKey = buildRagCacheKey({
+      endpoint: 'search',
+      tenantId,
+      query: body.query,
+      namespaceId: body.namespaceId,
+      limit: body.limit,
+      threshold: body.threshold,
+    });
+
+    if (ragSearchCache) {
+      const cached = await ragSearchCache.get(searchCacheKey);
+      if (cached) {
+        metrics.rag.cacheHitsTotal.inc({ endpoint: 'search' });
+        metrics.rag.queriesTotal.inc({ tenant_id: tenantId, result: 'success' });
+        return res.json(cached);
+      }
+      metrics.rag.cacheMissesTotal.inc({ endpoint: 'search' });
+    }
 
     // ============================================================================
     // BUSCA VETORIAL VIA QDRANT (Enterprise-Grade - 17/12/2025)
@@ -1535,7 +1626,13 @@ app.post('/api/rag/search', requireAuth(), requirePermission('rag:documents:read
       metrics.rag.relevanceScore.set({ tenant_id: tenantId }, avg);
     }
     metrics.rag.queriesTotal.inc({ tenant_id: tenantId, result: 'success' });
-    res.json({ results });
+
+    const response: RagSearchResponse = { results };
+    if (ragSearchCache) {
+      await ragSearchCache.set(searchCacheKey, response, RAG_QUERY_CACHE_TTL_MS);
+    }
+
+    res.json(response);
   } catch (error) {
     logger.error({ error }, 'Falha na busca');
     const tenantId = req.tenantId;
@@ -1560,6 +1657,26 @@ app.post('/api/rag/context', requireAuth(), requirePermission('rag:documents:rea
   try {
     const body = searchSchema.parse(req.body);
     const startNs = process.hrtime.bigint();
+
+    // Cache distribuído (Redis) - evita recalcular embeddings/busca para queries repetidas
+    const contextCacheKey = buildRagCacheKey({
+      endpoint: 'context',
+      tenantId,
+      query: body.query,
+      namespaceId: body.namespaceId,
+      limit: body.limit,
+      threshold: body.threshold,
+    });
+
+    if (ragContextCache) {
+      const cached = await ragContextCache.get(contextCacheKey);
+      if (cached) {
+        metrics.rag.cacheHitsTotal.inc({ endpoint: 'context' });
+        metrics.rag.queriesTotal.inc({ tenant_id: tenantId, result: 'success' });
+        return res.json(cached);
+      }
+      metrics.rag.cacheMissesTotal.inc({ endpoint: 'context' });
+    }
 
     // ============================================================================
     // BUSCA VETORIAL VIA QDRANT (Enterprise-Grade - 17/12/2025)
@@ -1592,15 +1709,21 @@ app.post('/api/rag/context', requireAuth(), requirePermission('rag:documents:rea
     const context = results
       .map(r => `[Fonte: ${r.document?.titulo || 'Desconhecido'}]\n${r.conteudo}`)
       .join('\n\n---\n\n');
-
-    res.json({ 
+    
+    const response: RagContextResponse = {
       context,
       sources: results.map(r => ({
         documentId: r.documentId,
         titulo: r.document?.titulo || null,
         similarity: r.similarity,
       })),
-    });
+    };
+
+    if (ragContextCache) {
+      await ragContextCache.set(contextCacheKey, response, RAG_QUERY_CACHE_TTL_MS);
+    }
+
+    res.json(response);
 
     // Observabilidade RAG: latência e relevância média (modelo-agnóstico)
     metrics.rag.searchDuration.observe({ tenant_id: tenantId }, Number(process.hrtime.bigint() - startNs) / 1e9);
@@ -1652,6 +1775,11 @@ app.delete('/api/rag/documents/:id', requireAuth(), requirePermission('rag:docum
 
     await db.delete(schema.documents)
       .where(eq(schema.documents.id, id));
+
+    // Invalidação de cache RAG: exclusão altera resultados de busca/contexto
+    if (tenantId) {
+      await invalidateRagCachesForTenant(tenantId);
+    }
 
     logger.info({ documentId: id, tenantId }, 'Documento excluído');
     res.json({ success: true });
@@ -3581,6 +3709,30 @@ registerShutdownCallback(
       } else {
         logger.warn('Redis cache não disponível - WebSocket funcionará sem Pub/Sub (modo desenvolvimento)');
       }
+    }
+
+    // Inicializar cache RAG (apenas se Redis distribuído estiver disponível)
+    if (redisConnected) {
+      const searchAdapter = createCacheAdapter<RagSearchResponse>('rag-search', RAG_QUERY_CACHE_TTL_MS);
+      if (searchAdapter.isDistributed()) {
+        ragSearchCache = searchAdapter;
+      } else {
+        ragSearchCache = null;
+        logger.warn('Cache RAG (search) desabilitado: adapter não é distribuído');
+      }
+
+      const contextAdapter = createCacheAdapter<RagContextResponse>('rag-context', RAG_QUERY_CACHE_TTL_MS);
+      if (contextAdapter.isDistributed()) {
+        ragContextCache = contextAdapter;
+      } else {
+        ragContextCache = null;
+        logger.warn('Cache RAG (context) desabilitado: adapter não é distribuído');
+      }
+    } else {
+      // Sem in-memory: em dev/test, apenas não cacheamos.
+      ragSearchCache = null;
+      ragContextCache = null;
+      logger.info('Cache RAG desabilitado (Redis indisponível)');
     }
     
     // BUG FIX 23/12/2025: Criar servidor HTTP mas NÃO iniciar ainda

@@ -1,14 +1,14 @@
 # Sistema de Treinamento - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 11 de Janeiro de 2026  
-**Versão:** 4.0.0
+**Data:** 15 de Janeiro de 2026  
+**Versão:** 4.1.0 - Gate 2 (LLM separado + VLM dedicado)
 
 ---
 
 ## Visão Geral
 
-O sistema de treinamento da Alice permite fine-tuning incremental do modelo Qwen2.5-VL 7B usando QLoRA (Quantized Low-Rank Adaptation). O sistema suporta treinamento agendado (semanal) e on-demand via dashboard admin.
+O sistema de treinamento da Alice permite fine-tuning incremental do **LLM (texto)** usando **QLoRA (4-bit)**. No **Gate 2**, o LLM de produção é o **Mistral 7B Instruct (AWQ)** e o treinamento deve usar o **mesmo modelo base do LLM** para evitar divergência entre inference e fine-tuning. O sistema suporta treinamento agendado (semanal) e on-demand via dashboard admin.
 
 ---
 
@@ -39,7 +39,7 @@ O sistema de treinamento da Alice permite fine-tuning incremental do modelo Qwen
 │                    GPU Trainer Service                        │
 │  ┌────────────────────────────────────────────────────────┐  │
 │  │  QLoRA Fine-tuning                                      │  │
-│  │  - Base: Qwen2.5-VL 7B AWQ                              │  │
+│  │  - Base: Mistral 7B Instruct (LLM texto)                │  │
 │  │  - Método: QLoRA 4-bit                                   │  │
 │  │  - VRAM: ~12GB                                           │  │
 │  │  - Dataset: JSONL persistido                             │  │

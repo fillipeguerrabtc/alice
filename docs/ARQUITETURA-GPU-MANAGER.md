@@ -33,11 +33,11 @@ O **GPU Manager Service** é um serviço centralizado que gerencia todas as requ
 
 ---
 
-## Arquitetura v4.0.0 - Simplificada
+## Histórico: Arquitetura v4.0.0 - Simplificada (concluída)
 
-### Evolução da Arquitetura
+### Evolução da Arquitetura (histórico)
 
-| Aspecto | v3.0.0 (Anterior) | v4.0.0 (Atual) |
+| Aspecto | v3.0.0 (Anterior) | v4.0.0 (Histórico) |
 |---------|-------------------|----------------|
 | **Estratégia** | Orquestração dinâmica | Todos simultâneos |
 | **LLM** | Mixtral 8x7B (~18GB) | Qwen2.5-VL 7B AWQ (~4GB) |
@@ -48,14 +48,13 @@ O **GPU Manager Service** é um serviço centralizado que gerencia todas as requ
 | **VRAM total** | 1 serviço por vez | **15GB simultâneo** |
 | **Complexidade** | Alta (Docker API) | **Baixa** |
 
-### Distribuição de VRAM (20GB Total) - CORRIGIDO v4.0.2
+### Distribuição de VRAM (v4.0.0 - histórico)
 
 ```
-GPU 20GB VRAM - TODOS SIMULTÂNEOS:
+GPU 20GB VRAM - TODOS SIMULTÂNEOS (histórico):
 ┌─────────────────────────────────────────────────────────────┐
 │  Qwen2.5-VL 7B AWQ   ████████░░░░░░░░░░░░  8GB   (LLM+Vision)
-│  Qwen3-Embed INT8    ███████░░░░░░░░░░░░░  7.4GB (RAG)
-│  Canary-1B           ████░░░░░░░░░░░░░░░░  4GB   (Áudio)
+│  (legado)            (ver Gate 2 abaixo para LLM/VLM separados)
 ├─────────────────────────────────────────────────────────────┤
 │  TOTAL               ███████████████████░  ~19.4GB
 │  LIVRE               █░░░░░░░░░░░░░░░░░░░  ~0.6GB
@@ -67,12 +66,12 @@ GPU 20GB VRAM - TODOS SIMULTÂNEOS:
 ⚠️ Treinamento requer parar serviços (sem margem)
 ```
 
-### Serviços GPU Sempre Ativos
+### Serviços GPU Sempre Ativos (Gate 2 - atual)
 
 | Serviço | Modelo | VRAM Real | Configuração | Função | Imagem Base | Imagem Size |
 |---------|--------|-----------|--------------|--------|-------------|-------------|
 | **gpu-llm** | Mistral 7B Instruct (AWQ) | ~6-8GB (budget) | `gpu-memory-utilization=0.35`, `max-model-len=2048`, `dtype=float16` | **LLM texto** (chat, trading) | vllm/vllm-openai | ~8GB |
-| **gpu-qwen-vl** | Qwen2.5-VL 7B AWQ | ~8GB | `gpu-memory-utilization=0.45`, `max-model-len=4096`, `dtype=float16` | **VLM visão** (análise de imagens) | vllm/vllm-openai | ~8GB |
+| **gpu-vlm** | Qwen2.5-VL 7B AWQ | ~8GB | `gpu-memory-utilization=0.45`, `max-model-len=4096`, `dtype=float16` | **VLM visão** (análise de imagens) | vllm/vllm-openai | ~8GB |
 | **gpu-embeddings** | Qwen3-Embedding-0.6B INT8 | ~2-3GB (budget) | `quantization=int8` | Embeddings para RAG | **pytorch-runtime** | **~11GB (-35% ✅)** |
 | **gpu-asr** | Canary-1B | ~4GB | NeMo | Transcrição de áudio | **pytorch-runtime** | **~11GB (-35% ✅)** |
 
@@ -212,7 +211,7 @@ python3 -m vllm.entrypoints.openai.api_server \
 | `PORT` | Porta do serviço | `3010` |
 | `REDIS_URL` | URL do Redis | (obrigatório) |
 | `INTERNAL_API_SECRET` | Secret para autenticação interna | (obrigatório) |
-| `QWEN_VL_GPU_URL` | URL do serviço Qwen-VL | `http://gpu-qwen-vl:8000` |
+| `VLM_GPU_URL` | URL do serviço VLM | `http://gpu-vlm:8000` |
 | `EMBEDDINGS_GPU_URL` | URL do serviço de embeddings | `http://gpu-embeddings:8000` |
 | `ASR_GPU_URL` | URL do serviço ASR | `http://gpu-asr:8000` |
 | `TRAINING_GPU_URL` | URL do serviço de training | `http://gpu-trainer:8000` |

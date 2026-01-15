@@ -20,7 +20,7 @@
 #
 #   GPU (SEMPRE ATIVOS - Gate 2):
 #   - gpu-llm - Mistral 7B Instruct AWQ (LLM texto)
-#   - gpu-qwen-vl - Qwen2.5-VL 7B AWQ (VLM visão)
+#   - gpu-vlm - Qwen2.5-VL 7B AWQ (VLM visão)
 #   - gpu-embeddings - Qwen3-Embedding-0.6B INT8 (1024 dim) + OpenCLIP (1024 dim)
 #   - gpu-asr - Canary-1B (ASR) - Transcrição de áudio
 #
@@ -146,6 +146,8 @@ services:
       GITHUB_CLIENT_SECRET: ${OAUTH_GITHUB_CLIENT_SECRET}
       OAUTH_CALLBACK_URL: https://yesyoudeserve.duckdns.org/api/auth/callback
       OIDC_ISSUER: ${OIDC_ISSUER:-https://yesyoudeserve.duckdns.org}
+      # Audience esperado para Bearer JWT validado localmente pelos microsserviços (session-auth.ts)
+      OIDC_API_AUDIENCE: ${OIDC_API_AUDIENCE:-alice-api}
       OIDC_COOKIE_KEYS: ${OIDC_COOKIE_KEYS}
       GRAFANA_URL: ${GRAFANA_URL:-https://observability.yesyoudeserve.duckdns.org}
       ERPNEXT_URL: ${ERPNEXT_URL:-https://erp.yesyoudeserve.duckdns.org}
@@ -482,7 +484,7 @@ services:
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET:?INTERNAL_API_SECRET é obrigatório}
       # Gate 2: URLs dos serviços GPU (capabilities)
       - LLM_GPU_URL=${LLM_GPU_URL:-http://gpu-llm:8000}
-      - VLM_GPU_URL=${VLM_GPU_URL:-http://gpu-qwen-vl:8000}
+      - VLM_GPU_URL=${VLM_GPU_URL:-http://gpu-vlm:8000}
       - EMBEDDINGS_GPU_URL=${EMBEDDINGS_GPU_URL:-http://gpu-embeddings:8000}
       - ASR_GPU_URL=${ASR_GPU_URL:-http://gpu-asr:8000}
       - TRAINING_GPU_URL=${TRAINING_GPU_URL:-http://gpu-trainer:8000}
@@ -515,7 +517,7 @@ services:
   # ===========================================================================
   # Todos os serviços GPU rodam SIMULTANEAMENTE (Gate 2):
   # - gpu-llm: LLM (texto)
-  # - gpu-qwen-vl: VLM (visão)
+  # - gpu-vlm: VLM (visão)
   # - gpu-embeddings: embeddings (texto+imagem)
   # - gpu-asr: ASR (transcrição)
   # - gpu-trainer: QLoRA (12GB) - Sob demanda via profile
@@ -536,10 +538,10 @@ services:
   # 
   # Nota (Gate 2): valores reais variam por `MAX_MODEL_LEN`/`GPU_MEMORY_UTILIZATION` e backend.
   # Use Prometheus/Grafana (GPU Manager + GPU Services) como fonte de verdade em produção.
-  gpu-qwen-vl:
+  gpu-vlm:
     image: ${IMAGE_PREFIX}-qwen-vl:${IMAGE_TAG:-latest}
     platform: linux/amd64
-    container_name: gpu-qwen-vl
+    container_name: gpu-vlm
     restart: unless-stopped
     runtime: nvidia
     security_opt:
@@ -726,7 +728,7 @@ services:
         max-file: "3"
 
   # QLoRA Trainer - Fine-tuning (Sob Demanda)
-  # ARQUITETURA v4.0.0: Usa profile pois requer pausa dos outros serviços
+  # Gate 2: Usa profile pois requer pausa dos outros serviços (VRAM compartilhada)
   # Execução: docker compose --profile gpu-training up -d gpu-trainer
   gpu-trainer:
     image: ${IMAGE_PREFIX}-qwen-trainer:${IMAGE_TAG:-latest}
@@ -745,8 +747,9 @@ services:
       - PORT=8000
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
       - STORAGE_DIR=/opt/alice/uploads/training
-      # ARQUITETURA v4.0.0: QLoRA para Qwen2.5-VL
-      - BASE_MODEL=${QWEN_VL_MODEL_NAME:-Qwen/Qwen2.5-VL-7B-Instruct-AWQ}
+      # Gate 2 (SSOT): Treinamento deve usar o MESMO modelo base do LLM (texto),
+      # evitando divergência entre inference e fine-tuning.
+      - BASE_MODEL=${LLM_MODEL_NAME:-TheBloke/Mistral-7B-Instruct-v0.2-AWQ}
       - TRAINING_METHOD=qlora
     volumes:
       - /opt/alice/uploads:/opt/alice/uploads:rw

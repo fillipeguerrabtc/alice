@@ -11,7 +11,7 @@
 # ARQUITETURA MODULAR (05/01/2026):
 # - INFRA Stack: postgres, redis, qdrant, searxng, tor, caddy, minio
 # - ALICE Stack: frontend, auth, chat, rag, training, integrations, observability, gpu-manager
-# - GPU Stack: gpu-qwen-vl, gpu-embeddings, gpu-asr, gpu-trainer (ARQUITETURA v4.0.0)
+# - GPU Stack: gpu-vlm, gpu-llm, gpu-embeddings, gpu-asr, gpu-trainer (Gate 2)
 # - OBSERVABILITY Stack: prometheus, grafana, loki, jaeger, langfuse, etc.
 # - ERPNEXT Stack: mariadb, redis-cache/queue, backend, workers (100% isolado)
 # - BACKUP Stack: pgbackrest
