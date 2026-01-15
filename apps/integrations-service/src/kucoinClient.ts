@@ -467,7 +467,8 @@ function parseRetryAfterMs(value: string | null): number | undefined {
   if (!value) return undefined;
   const seconds = Number(value);
   if (!Number.isFinite(seconds) || seconds <= 0) return undefined;
-  return Math.min(30_000, Math.floor(seconds * 1000)); // safety cap
+  // Cap para evitar requests “penduradas” em endpoints síncronos.
+  return Math.min(5_000, Math.floor(seconds * 1000));
 }
 
 function isAbortError(err: unknown): boolean {

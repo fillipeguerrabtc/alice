@@ -39,6 +39,21 @@ const SESSION_SECRET = process.env.SESSION_SECRET;
 const SESSION_COOKIE_NAME = process.env.SESSION_COOKIE_NAME || 'alice.sid';
 const SESSION_CACHE_TTL = 5 * 60 * 1000; // 5 minutos
 
+// IMPORTANTE (DEV): o auth-service usa esse mesmo default quando SESSION_SECRET não está definido.
+// Precisamos manter compatibilidade em desenvolvimento entre microsserviços.
+const DEV_SESSION_SECRET = 'dev-secret-min-32-characters-long!';
+let warnedDevSessionSecret = false;
+
+function getSessionSecretForCookieValidation(): string {
+  if (SESSION_SECRET && SESSION_SECRET.length > 0) return SESSION_SECRET;
+  if (IS_PRODUCTION) return ''; // fail-fast já ocorre acima
+  if (!warnedDevSessionSecret) {
+    warnedDevSessionSecret = true;
+    logger.warn('SESSION_SECRET não configurado - usando secret de desenvolvimento (APENAS PARA DEV)');
+  }
+  return DEV_SESSION_SECRET;
+}
+
 // FAIL-FAST em produção (Regra 6 - SEM defaults inseguros)
 if (IS_PRODUCTION && (!SESSION_SECRET || SESSION_SECRET.length < 64)) {
   logger.error('CRITICAL: SESSION_SECRET é OBRIGATÓRIO em produção e deve ter >= 64 caracteres.');
@@ -203,7 +218,7 @@ function decodeSessionId(signedCookie: string): string | null {
   // ERRADO: .replace(/\+/g, '-').replace(/\//g, '_') - isso é base64url
   // CORRETO: apenas remover padding '='
   const expectedSignature = crypto
-    .createHmac('sha256', SESSION_SECRET || '')
+    .createHmac('sha256', getSessionSecretForCookieValidation())
     .update(sessionId)
     .digest('base64')
     .replace(/=+$/, '');
