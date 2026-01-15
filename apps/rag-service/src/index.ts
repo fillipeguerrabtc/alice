@@ -723,6 +723,7 @@ async function generateEmbeddingInternal(text: string): Promise<number[]> {
   // GPU é OBRIGATÓRIO - embeddings armazenados em Qdrant
   
   try {
+    const startNs = process.hrtime.bigint();
     // Enfileirar requisição no GPU Manager com prioridade MEDIUM (embeddings RAG)
     const gpuResponse = await requestGpu({
       serviceType: GpuServiceType.EMBEDDINGS,
@@ -749,6 +750,12 @@ async function generateEmbeddingInternal(text: string): Promise<number[]> {
     // Validar dimensão (deve ser 4096 para Qwen3-Embedding-8B) - Enterprise-Grade
     // Lança erro se dimensão estiver incorreta (não apenas warning)
     validateEmbeddingDimension(resultEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
+
+    // Observabilidade: latência de embeddings (modelo-agnóstico)
+    metrics.rag.embeddingDuration.observe(
+      { model: data.model || 'unknown' },
+      Number(process.hrtime.bigint() - startNs) / 1e9
+    );
     
     return resultEmbedding;
   } catch (error) {
@@ -1491,6 +1498,7 @@ app.post('/api/rag/search', requireAuth(), requirePermission('rag:documents:read
   
   try {
     const body = searchSchema.parse(req.body);
+    const startNs = process.hrtime.bigint();
 
     // ============================================================================
     // BUSCA VETORIAL VIA QDRANT (Enterprise-Grade - 17/12/2025)
@@ -1520,9 +1528,20 @@ app.post('/api/rag/search', requireAuth(), requirePermission('rag:documents:read
     });
 
     logger.info({ query: body.query, results: results.length, storage: 'qdrant' }, 'Busca concluída via Qdrant');
+    // Observabilidade RAG: latência e relevância média (modelo-agnóstico)
+    metrics.rag.searchDuration.observe({ tenant_id: tenantId }, Number(process.hrtime.bigint() - startNs) / 1e9);
+    if (results.length > 0) {
+      const avg = results.reduce((acc, r) => acc + r.similarity, 0) / results.length;
+      metrics.rag.relevanceScore.set({ tenant_id: tenantId }, avg);
+    }
+    metrics.rag.queriesTotal.inc({ tenant_id: tenantId, result: 'success' });
     res.json({ results });
   } catch (error) {
     logger.error({ error }, 'Falha na busca');
+    const tenantId = req.tenantId;
+    if (tenantId) {
+      metrics.rag.queriesTotal.inc({ tenant_id: tenantId, result: 'error' });
+    }
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
@@ -1540,6 +1559,7 @@ app.post('/api/rag/context', requireAuth(), requirePermission('rag:documents:rea
 
   try {
     const body = searchSchema.parse(req.body);
+    const startNs = process.hrtime.bigint();
 
     // ============================================================================
     // BUSCA VETORIAL VIA QDRANT (Enterprise-Grade - 17/12/2025)
@@ -1581,8 +1601,20 @@ app.post('/api/rag/context', requireAuth(), requirePermission('rag:documents:rea
         similarity: r.similarity,
       })),
     });
+
+    // Observabilidade RAG: latência e relevância média (modelo-agnóstico)
+    metrics.rag.searchDuration.observe({ tenant_id: tenantId }, Number(process.hrtime.bigint() - startNs) / 1e9);
+    if (results.length > 0) {
+      const avg = results.reduce((acc, r) => acc + r.similarity, 0) / results.length;
+      metrics.rag.relevanceScore.set({ tenant_id: tenantId }, avg);
+    }
+    metrics.rag.queriesTotal.inc({ tenant_id: tenantId, result: 'success' });
   } catch (error) {
     logger.error({ error }, 'Falha ao gerar contexto');
+    const tenantId = req.tenantId;
+    if (tenantId) {
+      metrics.rag.queriesTotal.inc({ tenant_id: tenantId, result: 'error' });
+    }
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });

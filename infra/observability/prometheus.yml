@@ -25,8 +25,32 @@ scrape_configs:
         - 'alice-rag:3003'
         - 'alice-training:3004'
         - 'alice-integrations:3005'
+        - 'alice-gpu-manager:3010'
     metrics_path: '/metrics'
     scrape_timeout: 10s
+
+  # ===========================================================================
+  # GPU Services (FastAPI/vLLM) - métricas por serviço
+  # ===========================================================================
+  - job_name: 'alice-gpu-services'
+    static_configs:
+      - targets:
+        - 'gpu-qwen-vl:8000'
+        labels:
+          service: 'qwen-vl'
+          gpu_service: 'llm'
+      - targets:
+        - 'gpu-embeddings:8000'
+        labels:
+          service: 'embeddings'
+          gpu_service: 'rag'
+      - targets:
+        - 'gpu-asr:8000'
+        labels:
+          service: 'asr'
+          gpu_service: 'transcription'
+    metrics_path: '/metrics'
+    scrape_timeout: 15s
 
   - job_name: 'caddy'
     static_configs:
@@ -70,6 +94,9 @@ scrape_configs:
   - job_name: 'cadvisor'
     static_configs:
       - targets: ['alice-cadvisor:8080']
+        labels:
+          instance: 'alice-prod'
+          environment: 'production'
     metrics_path: '/metrics'
 
   # REGRA 6: node-exporter usa network_mode: host, então está acessível via host.docker.internal
@@ -78,7 +105,34 @@ scrape_configs:
   - job_name: 'node-exporter'
     static_configs:
       - targets: ['host.docker.internal:9100']
+        labels:
+          instance: 'alice-prod'
+          environment: 'production'
     metrics_path: '/metrics'
+
+  # ===========================================================================
+  # Deploy Server (sem GPU) - observabilidade de host + containers
+  # ===========================================================================
+  # REQUERIMENTO DE SEGURANÇA (2025):
+  # - endpoints DEVEM ser expostos apenas para allowlist do servidor de produção
+  # - firewall/ufw/nftables é responsabilidade do deploy (não do Prometheus)
+  - job_name: 'node-exporter-deploy'
+    static_configs:
+      - targets: ['46.224.46.93:9100']
+        labels:
+          instance: 'alice-deploy'
+          environment: 'deploy'
+    metrics_path: '/metrics'
+    scrape_timeout: 10s
+
+  - job_name: 'cadvisor-deploy'
+    static_configs:
+      - targets: ['46.224.46.93:8080']
+        labels:
+          instance: 'alice-deploy'
+          environment: 'deploy'
+    metrics_path: '/metrics'
+    scrape_timeout: 10s
 
   - job_name: 'langfuse'
     static_configs:

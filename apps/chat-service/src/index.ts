@@ -561,6 +561,8 @@ interface ExtendedWebSocket extends WebSocket {
   clientKey?: string;
   // Trading subscriptions (17/12/2025)
   tradingSubscriptions?: Set<string>;
+  // Observability: evitar double-decrement de gauges
+  __activeSessionCounted?: boolean;
 }
 
 // Heartbeat para detectar conexões mortas
@@ -1018,6 +1020,14 @@ async function proxyStreamFromGpuManager(
   const temperature = config?.temperature ?? DEFAULT_LLM_CONFIG.temperature;
   const maxTokens = config?.maxTokens ?? DEFAULT_LLM_CONFIG.maxTokens;
   const model = config?.model || DEFAULT_LLM_CONFIG.model;
+
+  // ============================================================================
+  // MÉTRICAS LLM (enterprise, modelo-agnóstico)
+  // ============================================================================
+  const llmType = 'chat';
+  const startNs = process.hrtime.bigint();
+  let observedTtft = false;
+  let requestStatus: 'success' | 'error' | 'fallback' = 'error';
   
   // BUG FIX 26/12/2025: Usar requestGpuStream centralizado de @alice/shared-utils
   // Remove duplicação de GPU_MANAGER_URL e validação de INTERNAL_API_SECRET
@@ -1054,6 +1064,12 @@ async function proxyStreamFromGpuManager(
     
     // Enviar mensagem de erro via chunk callback
     onChunk(errorMessage);
+
+    // Métricas: fallback (serviço indisponível)
+    requestStatus = 'fallback';
+    metrics.llm.fallbacksTotal.inc({ reason: 'gpu_unavailable' });
+    metrics.llm.requestsTotal.inc({ model, type: llmType, status: requestStatus });
+    metrics.llm.inferenceDuration.observe({ model, type: llmType }, Number(process.hrtime.bigint() - startNs) / 1e9);
     
     // Chamar onDone com a mensagem de erro completa
     if (onDone) {
@@ -1103,6 +1119,12 @@ async function proxyStreamFromGpuManager(
             const parsed = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string } }> };
             const content = parsed.choices?.[0]?.delta?.content;
             if (content) {
+              // TTFT: observar apenas no primeiro token útil do stream
+              if (!observedTtft) {
+                const ttftSeconds = Number(process.hrtime.bigint() - startNs) / 1e9;
+                metrics.llm.ttftDuration.observe({ model, type: llmType }, ttftSeconds);
+                observedTtft = true;
+              }
               fullResponse += content;
               onChunk(content);
             }
@@ -1118,6 +1140,9 @@ async function proxyStreamFromGpuManager(
           onDoneCalled = true;
           await onDone(fullResponse);
         }
+        requestStatus = 'success';
+        metrics.llm.requestsTotal.inc({ model, type: llmType, status: requestStatus });
+        metrics.llm.inferenceDuration.observe({ model, type: llmType }, Number(process.hrtime.bigint() - startNs) / 1e9);
         return fullResponse;
       }
     }
@@ -1129,6 +1154,9 @@ async function proxyStreamFromGpuManager(
       onDoneCalled = true;
       await onDone(fullResponse);
     }
+    requestStatus = 'success';
+    metrics.llm.requestsTotal.inc({ model, type: llmType, status: requestStatus });
+    metrics.llm.inferenceDuration.observe({ model, type: llmType }, Number(process.hrtime.bigint() - startNs) / 1e9);
     return fullResponse;
   } catch (error) {
     logger.error({ error }, 'Erro ao fazer proxy de stream do GPU Manager Service');
@@ -1143,6 +1171,11 @@ async function proxyStreamFromGpuManager(
         logger.error({ error: onDoneError }, 'Erro ao executar callback onDone durante tratamento de erro');
       }
     }
+
+    // Métricas: erro no streaming
+    requestStatus = 'error';
+    metrics.llm.requestsTotal.inc({ model, type: llmType, status: requestStatus });
+    metrics.llm.inferenceDuration.observe({ model, type: llmType }, Number(process.hrtime.bigint() - startNs) / 1e9);
     throw error;
   } finally {
     // BUG FIX 25/12/2025: Garantir que reader seja liberado SEMPRE, mesmo em caso de erro ou early return
@@ -2652,6 +2685,14 @@ wss.on('connection', (ws, req) => {
     role: authResult.role,
   }, 'Cliente WebSocket conectado (autenticado via sessão)');
 
+  // ============================================================================
+  // MÉTRICAS LLM: Sessões ativas (modelo-agnóstico)
+  // ============================================================================
+  if (!extWs.__activeSessionCounted) {
+    metrics.llm.activeSessions.inc();
+    extWs.__activeSessionCounted = true;
+  }
+
   ws.on('message', async (data) => {
     try {
       const rateLimitCheck = checkWsRateLimit(clientKey);
@@ -3699,6 +3740,10 @@ wss.on('connection', (ws, req) => {
   });
 
   ws.on('close', () => {
+    if (extWs.__activeSessionCounted) {
+      metrics.llm.activeSessions.dec();
+      extWs.__activeSessionCounted = false;
+    }
     wsClients.delete(clientKey);
     cleanupWsRateLimit(clientKey);
     logger.info({ userId, tenantId, clientKey }, 'Cliente WebSocket desconectado');

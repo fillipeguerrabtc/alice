@@ -41,7 +41,7 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: histogram_quantile(0.95, rate(llm_request_duration_seconds_bucket[5m]))
+              expr: histogram_quantile(0.95, sum(rate(alice_llm_inference_duration_seconds_bucket[5m])) by (le))
               refId: A
           - refId: B
             relativeTimeRange:
@@ -83,7 +83,7 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: histogram_quantile(0.99, rate(llm_request_duration_seconds_bucket[5m]))
+              expr: histogram_quantile(0.99, sum(rate(alice_llm_inference_duration_seconds_bucket[5m])) by (le))
               refId: A
           - refId: B
             datasourceUid: __expr__
@@ -125,7 +125,7 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: histogram_quantile(0.95, rate(llm_ttft_seconds_bucket[5m]))
+              expr: histogram_quantile(0.95, sum(rate(alice_llm_ttft_seconds_bucket[5m])) by (le))
               refId: A
           - refId: B
             datasourceUid: __expr__
@@ -167,7 +167,7 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: rate(llm_requests_total{status="error"}[5m]) / rate(llm_requests_total[5m])
+              expr: sum(rate(alice_llm_requests_total{status="error"}[5m])) / (sum(rate(alice_llm_requests_total[5m])) + 0.001)
               refId: A
           - refId: B
             datasourceUid: __expr__
@@ -206,7 +206,7 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: rate(llm_requests_total{status="error"}[5m]) / rate(llm_requests_total[5m])
+              expr: sum(rate(alice_llm_requests_total{status="error"}[5m])) / (sum(rate(alice_llm_requests_total[5m])) + 0.001)
               refId: A
           - refId: B
             datasourceUid: __expr__
@@ -248,7 +248,7 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: circuit_breaker_state{state="open"} == 1
+              expr: alice_circuit_breaker_state == 1
               refId: A
           - refId: B
             datasourceUid: __expr__
@@ -289,7 +289,7 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: increase(llm_tokens_total[1h])
+              expr: increase(alice_llm_tokens_prompt_total[1h]) + increase(alice_llm_tokens_generated_total[1h])
               refId: A
           - refId: B
             datasourceUid: __expr__
@@ -328,7 +328,7 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: increase(llm_tokens_total[1h])
+              expr: increase(alice_llm_tokens_prompt_total[1h]) + increase(alice_llm_tokens_generated_total[1h])
               refId: A
           - refId: B
             datasourceUid: __expr__
@@ -370,7 +370,7 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: histogram_quantile(0.95, rate(rag_retrieval_duration_seconds_bucket[5m]))
+              expr: histogram_quantile(0.95, sum(rate(alice_rag_search_duration_seconds_bucket[5m])) by (le))
               refId: A
           - refId: B
             datasourceUid: __expr__
@@ -409,7 +409,7 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: avg(rag_relevance_score)
+              expr: avg(alice_rag_relevance_score)
               refId: A
           - refId: B
             datasourceUid: __expr__
@@ -443,7 +443,7 @@ groups:
       # -----------------------------------------------------------------------
       # NOTA 13/01/2026: Alertas de geração de imagens REMOVIDOS
       # Alice NÃO gera imagens (FLUX.1 Schnell removido na v4.0.0)
-      # Alice APENAS ANALISA imagens via Qwen2.5-VL Vision
+      # Alice pode ANALISAR imagens via serviço VLM (modelo pode variar no WS3)
       # Métricas image_generation_* não existem mais - alerts causavam spam
 
   # ===========================================================================

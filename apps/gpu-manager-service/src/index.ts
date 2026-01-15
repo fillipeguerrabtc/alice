@@ -31,6 +31,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { createServer } from 'http';
 import cors from 'cors';
 import compression from 'compression';
+import { Gauge, Histogram } from 'prom-client';
 import { 
   CIRCUIT_BREAKER_PRESETS,
   createProtectedFetch,
@@ -134,6 +135,27 @@ export enum GpuServiceType {
   EMBEDDINGS = 'embeddings',     // Qwen3-Embedding-8B INT8
   ASR = 'asr',                   // Transcrição de áudio (Canary-1B)
   TRAINING = 'training',         // Fine-tuning QLoRA (sob demanda)
+}
+
+/**
+ * Labels model-agnósticos (WS3-ready) para métricas/observabilidade.
+ * IMPORTANTE: Estes labels representam o "tipo/capacidade" do serviço GPU,
+ * não o nome do modelo atual. A migração de modelos no WS3 não deve exigir
+ * mudanças em dashboards/alertas.
+ */
+type GpuCapability = 'llm' | 'embeddings' | 'asr' | 'training';
+
+function capabilityForServiceType(serviceType: GpuServiceType): GpuCapability {
+  switch (serviceType) {
+    case GpuServiceType.QWEN_VL:
+      return 'llm';
+    case GpuServiceType.EMBEDDINGS:
+      return 'embeddings';
+    case GpuServiceType.ASR:
+      return 'asr';
+    case GpuServiceType.TRAINING:
+      return 'training';
+  }
 }
 
 /** URLs dos serviços GPU (container names na rede Docker) */
@@ -323,10 +345,15 @@ async function getVramStatus(): Promise<VramStatus> {
       logger.info('nvidia-smi disponível - monitoramento de VRAM ativo');
     }
 
-    const totalGB = Math.round(total / 1024);
-    const usedGB = Math.round(used / 1024);
-    const freeGB = Math.round(free / 1024);
+    // OBSERVABILIDADE: nvidia-smi retorna valores em MiB (nounits). Converter para GiB com precisão.
+    const totalGB = total / 1024;
+    const usedGB = used / 1024;
+    const freeGB = free / 1024;
     const utilizationPercent = Math.round((used / total) * 100);
+
+    // Métricas reais agregadas (bytes)
+    gpuVramTotalBytes.set({ gpu_id: GPU_ID }, total * 1024 * 1024);
+    gpuVramUsedBytes.set({ gpu_id: GPU_ID }, used * 1024 * 1024);
 
     // Obter serviços ativos do Redis
     const redis = getRedisClient();
@@ -339,6 +366,18 @@ async function getVramStatus(): Promise<VramStatus> {
           activeServices.push(serviceType);
         }
       }
+    }
+
+    // Métricas: VRAM reservada estimada por capacidade (bytes)
+    // (não tenta inferir uso real por processo/container, mas mantém dashboards estáveis no WS3)
+    gpuVramReservedBytes.set({ gpu_id: GPU_ID, service: 'llm' }, 0);
+    gpuVramReservedBytes.set({ gpu_id: GPU_ID, service: 'embeddings' }, 0);
+    gpuVramReservedBytes.set({ gpu_id: GPU_ID, service: 'asr' }, 0);
+    gpuVramReservedBytes.set({ gpu_id: GPU_ID, service: 'training' }, 0);
+    for (const serviceType of activeServices) {
+      const cap = capabilityForServiceType(serviceType);
+      const reservedBytes = VRAM_REQUIREMENTS[serviceType] * 1024 * 1024 * 1024;
+      gpuVramReservedBytes.set({ gpu_id: GPU_ID, service: cap }, reservedBytes);
     }
 
     return {
@@ -382,6 +421,18 @@ async function getVramFallback(): Promise<VramStatus> {
   let estimatedUsedGB = 0;
   for (const service of activeServices) {
     estimatedUsedGB += VRAM_REQUIREMENTS[service];
+  }
+
+  // Métricas: VRAM reservada estimada por capacidade (bytes)
+  // Zerar primeiro para evitar séries "stale" quando um serviço fica inativo.
+  gpuVramReservedBytes.set({ gpu_id: GPU_ID, service: 'llm' }, 0);
+  gpuVramReservedBytes.set({ gpu_id: GPU_ID, service: 'embeddings' }, 0);
+  gpuVramReservedBytes.set({ gpu_id: GPU_ID, service: 'asr' }, 0);
+  gpuVramReservedBytes.set({ gpu_id: GPU_ID, service: 'training' }, 0);
+  for (const serviceType of activeServices) {
+    const cap = capabilityForServiceType(serviceType);
+    const reservedBytes = VRAM_REQUIREMENTS[serviceType] * 1024 * 1024 * 1024;
+    gpuVramReservedBytes.set({ gpu_id: GPU_ID, service: cap }, reservedBytes);
   }
 
   return {
@@ -434,6 +485,14 @@ async function enqueueRequest(request: GpuRequest): Promise<void> {
     score: (request.priority * PRIORITY_SCORE_MULTIPLIER) - request.createdAt,
     value: request.id,
   });
+
+  // Observabilidade: depth real por fila/capacidade (modelo-agnóstico)
+  try {
+    const depth = await redis.zCard(queueKey);
+    gpuManagerQueueDepth.set({ queue: capabilityForServiceType(request.serviceType) }, depth);
+  } catch (metricError) {
+    logger.debug({ error: metricError }, 'Falha ao atualizar métrica de queue depth (enqueue)');
+  }
   
   logger.info({
     requestId: request.id,
@@ -640,6 +699,17 @@ async function startQueueWorker(): Promise<void> {
       for (const serviceType of servicePriorityOrder) {
         const request = await dequeueRequest(serviceType);
         if (!request) continue;
+
+        // Observabilidade: tempo de espera na fila (do enqueue até o dequeue)
+        const queue = capabilityForServiceType(serviceType);
+        const waitSeconds = (Date.now() - request.createdAt) / 1000;
+        gpuManagerQueueWaitDuration.observe({ queue }, waitSeconds);
+        try {
+          const depth = await redis.zCard(`${REDIS_QUEUE_PREFIX}:${serviceType}`);
+          gpuManagerQueueDepth.set({ queue }, depth);
+        } catch (metricError) {
+          logger.debug({ error: metricError }, 'Falha ao atualizar métrica de queue depth (dequeue)');
+        }
 
         // Tentar adquirir lock (TTL = timeout + margem)
         const timeoutMs = request.timeout || GPU_SERVICE_TIMEOUT;
@@ -1028,6 +1098,54 @@ app.get('/api/gpu/services', requireInternalAuth, asyncHandler(async (req: Reque
 
 // Métricas Prometheus
 const prometheus = createAlicePrometheus({ serviceName: 'gpu-manager' });
+
+// ============================================================================
+// PROMETHEUS: Métricas específicas do GPU Manager (modelo-agnóstico)
+// ============================================================================
+// Total de VRAM (bytes) - valor real quando nvidia-smi está disponível
+const gpuVramTotalBytes = new Gauge({
+  name: 'alice_gpu_vram_total_bytes',
+  help: 'VRAM total da GPU em bytes (fonte: nvidia-smi quando disponível)',
+  labelNames: ['gpu_id'] as const,
+  registers: [prometheus.registry],
+});
+
+// VRAM usada (bytes) - valor real agregado (nvidia-smi)
+const gpuVramUsedBytes = new Gauge({
+  name: 'alice_gpu_vram_used_bytes',
+  help: 'VRAM usada total da GPU em bytes (fonte: nvidia-smi quando disponível)',
+  labelNames: ['gpu_id'] as const,
+  registers: [prometheus.registry],
+});
+
+// VRAM "reservada" por capacidade (bytes) - derivada de requisitos declarados
+// (transparente: não tenta inferir uso real por processo/container)
+const gpuVramReservedBytes = new Gauge({
+  name: 'alice_gpu_vram_reserved_bytes',
+  help: 'VRAM reservada estimada por capacidade (bytes) baseada em serviços ativos e requisitos declarados',
+  labelNames: ['gpu_id', 'service'] as const,
+  registers: [prometheus.registry],
+});
+
+// Depth da fila por capacidade (zset Redis)
+const gpuManagerQueueDepth = new Gauge({
+  name: 'alice_gpu_manager_queue_depth',
+  help: 'Tamanho atual da fila Redis por capacidade (LLM/embeddings/ASR/training)',
+  labelNames: ['queue'] as const,
+  registers: [prometheus.registry],
+});
+
+// Tempo de espera na fila (segundos) por capacidade
+const gpuManagerQueueWaitDuration = new Histogram({
+  name: 'alice_gpu_manager_queue_wait_duration_seconds',
+  help: 'Tempo de espera na fila Redis (segundos) por capacidade',
+  labelNames: ['queue'] as const,
+  buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60, 120],
+  registers: [prometheus.registry],
+});
+
+// Helper: GPU única no GEX44 (RTX 4000 Ada). Mantemos configurável para suportar expansão futura.
+const GPU_ID = process.env.NVIDIA_GPU_ID ?? '0';
 // CORREÇÃO 26/12/2025: Usar contentType correto do registry (application/openmetrics-text)
 // Padrão consistente com packages/shared-utils/src/prometheus.ts linha 702
 app.get('/metrics', async (_req: Request, res: Response) => {

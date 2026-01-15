@@ -1,0 +1,51 @@
+#
+# =============================================================================
+# ALICE PLATFORM - DEPLOY SERVER OBSERVABILITY (Host + Containers)
+# =============================================================================
+# Objetivo: Expor métricas do host e containers do servidor de deploy
+# para scrape pelo Prometheus do servidor de produção.
+#
+# Componentes:
+# - node-exporter: métricas de host (CPU/RAM/Disk/Net)
+# - cAdvisor: métricas de containers (CPU/RAM/IO por container)
+#
+# SEGURANÇA (OBRIGATÓRIO):
+# - Expor as portas 9100 e 8080 APENAS para allowlist do IP do servidor de produção.
+# - Implementar via firewall/ufw/nftables no deploy server.
+#
+# Author: Fillipe Guerra
+# Data: 15 de Janeiro de 2026
+# =============================================================================
+version: '3.8'
+
+services:
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    container_name: deploy-node-exporter
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    network_mode: host
+    pid: host
+    command:
+      - '--path.rootfs=/host'
+      - '--web.listen-address=:9100'
+      - '--collector.systemd'
+    volumes:
+      - '/:/host:ro,rslave'
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.52.1
+    container_name: deploy-cadvisor
+    restart: unless-stopped
+    # cAdvisor precisa de acesso ao host/containers (padrão oficial).
+    privileged: true
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - '8080:8080'
+    volumes:
+      - '/:/rootfs:ro'
+      - '/var/run:/var/run:rw'
+      - '/sys:/sys:ro'
+      - '/var/lib/docker/:/var/lib/docker:ro'

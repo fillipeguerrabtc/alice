@@ -107,36 +107,36 @@ groups:
     rules:
       # Taxa alta de erros HTTP (>5%)
       - alert: HighErrorRate
-        expr: sum(rate(http_requests_total{status=~"5.."}[5m])) by (job) / sum(rate(http_requests_total[5m])) by (job) * 100 > 5
+        expr: sum(rate(alice_http_requests_total{status_code=~"5.."}[5m])) by (service) / sum(rate(alice_http_requests_total[5m])) by (service) * 100 > 5
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "Taxa alta de erros HTTP: {{ $labels.job }}"
-          description: "{{ $value | printf \"%.1f\" }}% das requisições do {{ $labels.job }} estão retornando erros 5xx."
+          summary: "Taxa alta de erros HTTP: {{ $labels.service }}"
+          description: "{{ $value | printf \"%.1f\" }}% das requisições do {{ $labels.service }} estão retornando erros 5xx."
 
       # Latência alta de resposta (P99 > 2s)
       - alert: HighLatency
-        expr: histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m])) > 2
+        expr: histogram_quantile(0.99, sum(rate(alice_http_request_duration_seconds_bucket[5m])) by (le)) > 2
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "Latência alta: {{ $labels.job }}"
-          description: "P99 latência do {{ $labels.job }} é {{ $value | printf \"%.2f\" }}s (> 2s)."
+          summary: "Latência alta (P99)"
+          description: "P99 de latência HTTP está acima de 2s por 5 minutos."
 
   - name: alice_circuit_breaker
     interval: 30s
     rules:
       # Circuit breaker aberto
       - alert: CircuitBreakerOpen
-        expr: circuit_breaker_state == 2
+        expr: alice_circuit_breaker_state == 1
         for: 1m
         labels:
           severity: critical
         annotations:
           summary: "Circuit Breaker aberto: {{ $labels.name }}"
-          description: "O circuit breaker {{ $labels.name }} está aberto. Serviço dependente pode estar falhando."
+          description: "O circuit breaker {{ $labels.name }} está aberto (estado=open). Serviço dependente pode estar falhando."
 
   - name: alice_observability
     interval: 60s

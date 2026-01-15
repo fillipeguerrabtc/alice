@@ -16,14 +16,136 @@
 apiVersion: 1
 
 providers:
-  - name: 'Alice Enterprise Dashboards'
+  # ============================================================================
+  # Alice Enterprise Platform - Dashboards por Domínio (Folders)
+  # ============================================================================
+  # Objetivo: Separar dashboards por tema (Trading, Chat/LLM, RAG, GPU, Infra...)
+  # para reduzir ruído, melhorar navegação e suportar personas (SRE/Dev/Business).
+  #
+  # Documentação (Grafana): https://grafana.com/docs/grafana/latest/dashboards/provisioning/
+  #
+  # Author: Fillipe Guerra
+  # Data: 15 de Janeiro de 2026
+  # ============================================================================
+
+  - name: 'Alice - Portal'
     orgId: 1
-    folder: 'Alice Platform'
-    folderUid: 'alice-platform'
+    folder: 'Alice/Portal'
+    folderUid: 'alice-portal'
     type: file
     disableDeletion: false
     updateIntervalSeconds: 30
     allowUiUpdates: true
     options:
-      # Path relativo ao volume montado em /etc/grafana/provisioning
+      # Mantemos o overview legado em dashboards/json para evitar duplicação.
       path: /etc/grafana/provisioning/dashboards/json
+
+  - name: 'Alice - Chat & LLM'
+    orgId: 1
+    folder: 'Alice/Chat & LLM'
+    folderUid: 'alice-chat-llm'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/chat-llm
+
+  - name: 'Alice - Trading'
+    orgId: 1
+    folder: 'Alice/Trading'
+    folderUid: 'alice-trading'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/trading
+
+  - name: 'Alice - RAG & Embeddings'
+    orgId: 1
+    folder: 'Alice/RAG & Embeddings'
+    folderUid: 'alice-rag-embeddings'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/rag-embeddings
+
+  - name: 'Alice - GPU'
+    orgId: 1
+    folder: 'Alice/GPU'
+    folderUid: 'alice-gpu'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/gpu
+
+  - name: 'Alice - Serviços'
+    orgId: 1
+    folder: 'Alice/Serviços'
+    folderUid: 'alice-servicos'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/services
+
+  - name: 'Alice - ERPNext'
+    orgId: 1
+    folder: 'Alice/ERPNext'
+    folderUid: 'alice-erpnext'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/erpnext
+
+  - name: 'Alice - Infra & Hosts'
+    orgId: 1
+    folder: 'Alice/Infra & Hosts'
+    folderUid: 'alice-infra-hosts'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/infra-hosts
+
+  - name: 'Alice - Backup'
+    orgId: 1
+    folder: 'Alice/Backup'
+    folderUid: 'alice-backup'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/backup
+
+  - name: 'Alice - Training'
+    orgId: 1
+    folder: 'Alice/Training'
+    folderUid: 'alice-training'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/training
+
+  - name: 'Alice - Deploy Server'
+    orgId: 1
+    folder: 'Alice/Deploy Server'
+    folderUid: 'alice-deploy'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/deploy-server

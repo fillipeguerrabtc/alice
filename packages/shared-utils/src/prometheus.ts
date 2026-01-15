@@ -98,6 +98,10 @@ export interface AliceMetrics {
   llm: {
     /** Duração da inferência LLM */
     inferenceDuration: Histogram;
+    /** Time to First Token (TTFT) em segundos */
+    ttftDuration: Histogram;
+    /** Total de requisições LLM (status: success|error|fallback) */
+    requestsTotal: Counter;
     /** Total de tokens gerados */
     tokensGenerated: Counter;
     /** Total de tokens de prompt */
@@ -118,6 +122,8 @@ export interface AliceMetrics {
     searchDuration: Histogram;
     /** Duração da geração de embeddings */
     embeddingDuration: Histogram;
+    /** Score médio de relevância (0-1) por tenant */
+    relevanceScore: Gauge;
     /** Taxa de cache hit */
     cacheHitRate: Gauge;
     /** Queries por segundo */
@@ -314,6 +320,21 @@ export function createAlicePrometheus(config: PrometheusConfig): {
     buckets: LLM_LATENCY_BUCKETS,
     registers: [registry],
   });
+
+  const llmTtftDuration = new Histogram({
+    name: `${prefix}llm_ttft_seconds`,
+    help: 'Time to First Token (TTFT) em segundos',
+    labelNames: ['model', 'type'] as const,
+    buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30],
+    registers: [registry],
+  });
+
+  const llmRequestsTotal = new Counter({
+    name: `${prefix}llm_requests_total`,
+    help: 'Total de requisições LLM (status: success|error|fallback)',
+    labelNames: ['model', 'type', 'status'] as const,
+    registers: [registry],
+  });
   
   const llmTokensGenerated = new Counter({
     name: `${prefix}llm_tokens_generated_total`,
@@ -373,6 +394,13 @@ export function createAlicePrometheus(config: PrometheusConfig): {
     help: 'Duração da geração de embeddings em segundos',
     labelNames: ['model'] as const,
     buckets: EMBEDDING_LATENCY_BUCKETS,
+    registers: [registry],
+  });
+
+  const ragRelevanceScore = new Gauge({
+    name: `${prefix}rag_relevance_score`,
+    help: 'Score médio de relevância (0-1) para buscas RAG por tenant',
+    labelNames: ['tenant_id'] as const,
     registers: [registry],
   });
   
@@ -601,6 +629,8 @@ export function createAlicePrometheus(config: PrometheusConfig): {
     },
     llm: {
       inferenceDuration: llmInferenceDuration,
+      ttftDuration: llmTtftDuration,
+      requestsTotal: llmRequestsTotal,
       tokensGenerated: llmTokensGenerated,
       tokensPrompt: llmTokensPrompt,
       activeSessions: llmActiveSessions,
@@ -611,6 +641,7 @@ export function createAlicePrometheus(config: PrometheusConfig): {
       chunksTotal: ragChunksTotal,
       searchDuration: ragSearchDuration,
       embeddingDuration: ragEmbeddingDuration,
+      relevanceScore: ragRelevanceScore,
       cacheHitRate: ragCacheHitRate,
       queriesTotal: ragQueriesTotal,
     },
