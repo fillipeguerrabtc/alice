@@ -46,6 +46,7 @@ import { isWiseConfigured, getSandboxStatus, getProfileIdSafe, getWiseCircuitBre
 import { initWiseSyncService } from './wiseSyncService.js';
 import * as kucoinClient from './kucoinClient.js';
 import * as kucoinService from './kucoinService.js';
+import { sendKucoinErrorResponse } from './kucoin-error-mapper.js';
 import * as technicalIndicators from './technical-indicators.js';
 
 const logger = createLogger('integrations-service');
@@ -3003,6 +3004,7 @@ app.get('/api/integrations/trading/status', requirePermission('integrations:trad
       data: status,
     });
   } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao obter status do trading');
     res.status(500).json({ error: errorMessage });
@@ -3014,6 +3016,11 @@ app.get('/api/integrations/trading/market/:symbol', requirePermission('integrati
   try {
     const { symbol } = req.params;
     
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+
     if (!assertValidTradingSymbol(res, symbol)) return;
 
     const marketData = await kucoinService.getMarketData(symbol);
@@ -3023,6 +3030,7 @@ app.get('/api/integrations/trading/market/:symbol', requirePermission('integrati
       data: marketData,
     });
   } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao obter dados de mercado');
     res.status(500).json({ error: errorMessage });
@@ -3044,6 +3052,7 @@ app.get('/api/integrations/trading/account', requirePermission('integrations:tra
       data: account,
     });
   } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao obter dados da conta');
     res.status(500).json({ error: errorMessage });
@@ -3065,6 +3074,7 @@ app.get('/api/integrations/trading/positions', requirePermission('integrations:t
       data: positions,
     });
   } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao obter posições');
     res.status(500).json({ error: errorMessage });
@@ -3090,6 +3100,7 @@ app.get('/api/integrations/trading/risk-config', requirePermission('integrations
       data: config,
     });
   } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao obter configuração de risco');
     res.status(500).json({ error: errorMessage });
@@ -3125,7 +3136,12 @@ app.put('/api/integrations/trading/risk-config', requirePermission('integrations
       minConfidenceToExecute: z.string().optional(),
     });
 
-    const validated = configSchema.parse(req.body);
+    const validatedResult = configSchema.safeParse(req.body);
+    if (!validatedResult.success) {
+      res.status(400).json({ error: 'Dados inválidos', details: validatedResult.error.flatten() });
+      return;
+    }
+    const validated = validatedResult.data;
 
     // CORREÇÃO 18/12/2025: Converter strings para numbers onde necessário
     // Schema Zod usa string para precisão decimal, mas DB usa number
@@ -3158,6 +3174,7 @@ app.put('/api/integrations/trading/risk-config', requirePermission('integrations
       data: result.data,
     });
   } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao atualizar configuração de risco');
     res.status(500).json({ error: errorMessage });
@@ -3193,6 +3210,7 @@ app.get('/api/integrations/trading/signals', requirePermission('integrations:tra
       data: signals,
     });
   } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao obter sinais');
     res.status(500).json({ error: errorMessage });
@@ -3218,7 +3236,12 @@ app.post('/api/integrations/trading/signals', requirePermission('integrations:tr
       metadata: z.record(z.unknown()).optional(),
     });
 
-    const validated = signalSchema.parse(req.body);
+    const validatedResult = signalSchema.safeParse(req.body);
+    if (!validatedResult.success) {
+      res.status(400).json({ error: 'Dados inválidos', details: validatedResult.error.flatten() });
+      return;
+    }
+    const validated = validatedResult.data;
 
     const result = await kucoinService.createSignal(
       { tenantId: authContext.tenantId, userId: authContext.userId },
@@ -3236,6 +3259,7 @@ app.post('/api/integrations/trading/signals', requirePermission('integrations:tr
       auditLogId: result.auditLogId,
     });
   } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao criar sinal');
     res.status(500).json({ error: errorMessage });
@@ -3279,6 +3303,7 @@ app.delete('/api/integrations/trading/signals/:id', requirePermission('integrati
       data: result.data,
     });
   } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao desativar sinal');
     res.status(500).json({ error: errorMessage });
@@ -3317,6 +3342,7 @@ app.get('/api/integrations/trading/orders', requirePermission('integrations:trad
       data: orders,
     });
   } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao obter ordens');
     res.status(500).json({ error: errorMessage });
@@ -3398,6 +3424,7 @@ app.post('/api/integrations/trading/orders', requirePermission('integrations:tra
       auditLogId: result.auditLogId,
     });
   } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao criar ordem');
     res.status(500).json({ error: errorMessage });
@@ -3441,6 +3468,7 @@ app.delete('/api/integrations/trading/orders/:id', requirePermission('integratio
       data: result.data,
     });
   } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao cancelar ordem');
     res.status(500).json({ error: errorMessage });
@@ -3471,6 +3499,7 @@ app.post('/api/integrations/trading/orders/sync', requirePermission('integration
       data: result,
     });
   } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao sincronizar ordens');
     res.status(500).json({ error: errorMessage });
@@ -3543,6 +3572,7 @@ app.post('/api/integrations/trading/stop-orders', requirePermission('integration
       data: result.data,
     });
   } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao criar ordem stop');
     res.status(500).json({ error: errorMessage });
@@ -3555,6 +3585,11 @@ app.get('/api/integrations/trading/stop-orders', requirePermission('integrations
     const authContext = extractAuthContext(req);
     if (!authContext?.tenantId || !authContext?.userId) {
       res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
       return;
     }
 
@@ -3576,6 +3611,7 @@ app.get('/api/integrations/trading/stop-orders', requirePermission('integrations
       data: result.data,
     });
   } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao listar ordens stop');
     res.status(500).json({ error: errorMessage });
@@ -3618,6 +3654,7 @@ app.delete('/api/integrations/trading/stop-orders/:id', requirePermission('integ
       data: result.data,
     });
   } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao cancelar ordem stop');
     res.status(500).json({ error: errorMessage });
@@ -3683,6 +3720,7 @@ app.get('/api/integrations/trading/klines/:symbol', requirePermission('integrati
       interval: kucoinClient.granularityToInterval(granularity),
     });
   } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao obter klines');
     res.status(500).json({ error: errorMessage });
@@ -3730,6 +3768,7 @@ app.get('/api/integrations/trading/orderbook/:symbol', requirePermission('integr
       depth,
     });
   } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao obter order book');
     res.status(500).json({ error: errorMessage });
@@ -3755,6 +3794,7 @@ app.get('/api/integrations/trading/funding-rate/:symbol', requirePermission('int
       data: fundingRate,
     });
   } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao obter funding rate');
     res.status(500).json({ error: errorMessage });
@@ -3780,6 +3820,7 @@ app.get('/api/integrations/trading/mark-price/:symbol', requirePermission('integ
       data: markPrice,
     });
   } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao obter mark price');
     res.status(500).json({ error: errorMessage });
@@ -3806,6 +3847,7 @@ app.get('/api/integrations/trading/trades/:symbol', requirePermission('integrati
       symbol,
     });
   } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao obter histórico de trades');
     res.status(500).json({ error: errorMessage });
@@ -3844,6 +3886,7 @@ app.get('/api/integrations/trading/orders/history', requirePermission('integrati
       data: history,
     });
   } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao obter histórico de ordens');
     res.status(500).json({ error: errorMessage });
@@ -4190,6 +4233,7 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
       llmPrompt: technicalIndicators.formatAnalysisForLLM(analysis),
     });
   } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao calcular análise técnica');
     res.status(500).json({ error: errorMessage });

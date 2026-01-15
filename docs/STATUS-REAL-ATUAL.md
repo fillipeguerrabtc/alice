@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 11 de Janeiro de 2026  
+> **Data:** 15 de Janeiro de 2026  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 7.0 - ARQUITETURA GPU v4.0.0 (Qwen2.5-VL, TODOS serviços simultâneos)
+> **Versão:** 7.1 - KuCoin: Mapeamento enterprise de falhas (429/timeout/breaker-open)
 
 > **🚀 ATUALIZAÇÃO v3.0.0 (06/01/2026) - Pipeline Enterprise:**  
 > Pipeline CI/CD enterprise completo com deploy modular em 5 stacks independentes.
@@ -18,6 +18,9 @@
 > - Deploy valida existência de imagens públicas ANTES do deploy (fail-fast)
 > - Atualizações manuais quinzenais via processo documentado em `CLAUDE.md`
 > - Ver ADR-010 em `ARQUITETURA.md` para detalhes completos
+>
+> **📈 KuCoin Trading Resilience (15/01/2026):**
+> - Falhas KuCoin agora retornam status HTTP apropriado (ex.: **429** com `Retry-After`, **504** em timeout, **503** em circuit breaker aberto) ao invés de 500 genérico.
 
 ---
 

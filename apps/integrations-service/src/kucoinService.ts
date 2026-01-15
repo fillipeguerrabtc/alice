@@ -606,6 +606,11 @@ export async function createOrderFromSignal(
 
     return { success: true, data: order, auditLogId };
   } catch (error) {
+    // Falhas KuCoin (429/timeout/breaker open) devem ser mapeadas na borda HTTP (integrations-service).
+    // Não retornar 400 genérico para falhas transitórias/upstream.
+    if (kucoinClient.isKucoinRequestError(error)) {
+      throw error;
+    }
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage, params }, 'Erro ao criar ordem');
     
@@ -768,6 +773,10 @@ export async function createStopOrder(
       },
     };
   } catch (error) {
+    // Falhas KuCoin (429/timeout/breaker open) devem ser mapeadas na borda HTTP (integrations-service).
+    if (kucoinClient.isKucoinRequestError(error)) {
+      throw error;
+    }
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage, params }, 'Erro ao criar ordem stop');
     return { success: false, error: errorMessage };
@@ -800,6 +809,9 @@ export async function cancelStopOrder(
 
     return { success: true, data: result };
   } catch (error) {
+    if (kucoinClient.isKucoinRequestError(error)) {
+      throw error;
+    }
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage, orderId }, 'Erro ao cancelar ordem stop');
     return { success: false, error: errorMessage };
@@ -822,6 +834,9 @@ export async function getOpenStopOrders(
 
     return { success: true, data: result.items };
   } catch (error) {
+    if (kucoinClient.isKucoinRequestError(error)) {
+      throw error;
+    }
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao listar ordens stop');
     return { success: false, error: errorMessage };
@@ -888,6 +903,9 @@ export async function cancelOrder(
 
     return { success: true, data: updated };
   } catch (error) {
+    if (kucoinClient.isKucoinRequestError(error)) {
+      throw error;
+    }
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage, orderId }, 'Erro ao cancelar ordem');
     return { success: false, error: errorMessage };

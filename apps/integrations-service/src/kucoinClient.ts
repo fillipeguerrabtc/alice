@@ -416,7 +416,7 @@ function generateAuthHeaders(
 // CLIENTE HTTP (com circuit breaker e retry)
 // ============================================================================
 
-type KucoinRequestErrorKind = 'http' | 'api' | 'network' | 'timeout' | 'parse';
+type KucoinRequestErrorKind = 'http' | 'api' | 'network' | 'timeout' | 'parse' | 'breaker_open';
 
 export class KucoinRequestError extends Error {
   public readonly kind: KucoinRequestErrorKind;
@@ -452,7 +452,7 @@ export function isKucoinRequestError(error: unknown): error is KucoinRequestErro
 
 export function isKucoinTransientError(error: unknown): boolean {
   if (!isKucoinRequestError(error)) return false;
-  if (error.kind === 'timeout' || error.kind === 'network') return true;
+  if (error.kind === 'timeout' || error.kind === 'network' || error.kind === 'breaker_open') return true;
   if (error.kind === 'http' && error.status) {
     return error.status === 429 || (error.status >= 500 && error.status <= 599);
   }
@@ -473,6 +473,15 @@ function parseRetryAfterMs(value: string | null): number | undefined {
 
 function isAbortError(err: unknown): boolean {
   return err instanceof Error && err.name === 'AbortError';
+}
+
+function isCircuitBreakerOpenError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  // opossum costuma expor code='EOPENBREAKER' e mensagem "Breaker is open"
+  const maybeCode = (err as unknown as { code?: unknown }).code;
+  if (maybeCode === 'EOPENBREAKER') return true;
+  if (typeof err.message === 'string' && /breaker is open/i.test(err.message)) return true;
+  return false;
 }
 
 function computeBackoffMs(attempt: number): number {
@@ -570,6 +579,16 @@ async function executeRequest<T>(
 
       return data;
     } catch (error) {
+      // Circuit breaker aberto: não faz sentido retry imediato (resposta determinística).
+      if (isCircuitBreakerOpenError(error)) {
+        throw new KucoinRequestError({
+          kind: 'breaker_open',
+          method,
+          endpoint,
+          message: 'Circuit breaker KuCoin aberto — requisição rejeitada',
+        });
+      }
+
       // Erro já tipado → apenas decide retry (GET/DELETE) ou rethrow
       if (attempt < maxAttempts) {
         if (isAbortError(error)) {
