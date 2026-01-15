@@ -3614,7 +3614,7 @@ jobs:
             echo "🚀 DEPLOYING ALICE STACK"
             echo "══════════════════════════════════════════════════════════════════"
             echo ""
-            echo "📦 Containers: frontend, auth, chat, rag, training, integrations, observability, gpu-manager + GPU Services v4.0.0"
+            echo "📦 Containers: frontend, auth, chat, rag, training, integrations, observability, gpu-manager + GPU Services (Gate 2)"
             echo "📅 Versão: ${{ needs.validate.outputs.version }}"
             echo "🕐 Início: $(date '+%Y-%m-%d %H:%M:%S')"
             echo ""
@@ -3640,16 +3640,20 @@ jobs:
               echo "⚠️  Aviso: Pull parcial, continuando..."
             fi
             
-            # Pull TODOS os serviços GPU (cada profile separadamente para melhor diagnóstico)
-            # ARQUITETURA v4.0.0: Serviços GPU sempre ativos (15GB/20GB VRAM)
-            # - gpu-vlm: VLM (Qwen2.5-VL 7B AWQ)
-            # - gpu-embeddings: Qwen3-Embedding-8B INT8 + OpenCLIP
+            # Pull TODOS os serviços GPU (cada serviço separadamente para melhor diagnóstico)
+            # Gate 2: Serviços GPU sempre ativos (budgets em 20GB VRAM)
+            # - gpu-llm: LLM (texto) (Mistral 7B AWQ)
+            # - gpu-vlm: VLM (visão) (Qwen2.5-VL 7B AWQ)
+            # - gpu-embeddings: Qwen3-Embedding-0.6B INT8 (1024 dim) + OpenCLIP
             # - gpu-asr: Canary-1B (transcrição)
-            # - gpu-trainer: QLoRA fine-tuning (sob demanda)
-            # NOTA: FLUX.1 Schnell REMOVIDO (Alice analisa mas NÃO gera imagens)
+            # - gpu-trainer: QLoRA fine-tuning (sob demanda via profile)
+            # NOTA: Geração de imagens removida (Alice analisa mas NÃO gera imagens)
             echo ""
             echo "📥 Pull GPU VLM (Qwen2.5-VL)..."
             docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull gpu-vlm 2>&1 || echo "   ⚠️ gpu-vlm: pull falhou"
+            
+            echo "📥 Pull GPU LLM (Mistral)..."
+            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull gpu-llm 2>&1 || echo "   ⚠️ gpu-llm: pull falhou"
             
             echo "📥 Pull GPU Embeddings..."
             docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull gpu-embeddings 2>&1 || echo "   ⚠️ gpu-embeddings: pull falhou"
@@ -3670,8 +3674,8 @@ jobs:
             echo "🧹 PRE-CLEANUP: Verificando containers problemáticos..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             
-            # ARQUITETURA v4.0.0: Serviços Alice + containers GPU
-            ALICE_SERVICES="alice-auth alice-chat alice-rag alice-training alice-integrations alice-gpu-manager alice-frontend alice-observability gpu-vlm gpu-embeddings gpu-asr gpu-trainer"
+            # Gate 2: Serviços Alice + containers GPU
+            ALICE_SERVICES="alice-auth alice-chat alice-rag alice-training alice-integrations alice-gpu-manager alice-frontend alice-observability gpu-llm gpu-vlm gpu-embeddings gpu-asr gpu-trainer"
             PROBLEM_FOUND=false
             
             for svc in $ALICE_SERVICES; do
@@ -3691,23 +3695,25 @@ jobs:
             echo ""
 
             # =================================================================
-            # ARQUITETURA v4.0.0 (11/01/2026): Serviços GPU Simultâneos
+            # Gate 2 (15/01/2026): Serviços GPU Simultâneos
             # =================================================================
-            # Todos os serviços GPU rodam simultaneamente (15GB de 20GB VRAM):
-            # - gpu-vlm: VLM (~8GB budget) - análise de imagens (multimodal)
-            # - gpu-embeddings: Qwen3-Embedding-8B INT8 (~8GB) + OpenCLIP
+            # Todos os serviços GPU rodam simultaneamente (budgets em 20GB VRAM):
+            # - gpu-llm: LLM (~6GB budget) - chat/trading (texto)
+            # - gpu-vlm: VLM (~8GB budget) - análise de imagens (visão)
+            # - gpu-embeddings: Qwen3-Embedding-0.6B INT8 (~3GB) + OpenCLIP
             # - gpu-asr: Canary-1B (~3GB) - transcrição de áudio
             # - gpu-trainer: QLoRA fine-tuning (~12GB) - SOB DEMANDA via profile
-            # NOTA: FLUX.1 Schnell REMOVIDO - Alice analisa mas NÃO gera imagens
+            # NOTA: Geração de imagens removida - Alice analisa mas NÃO gera imagens
             # =================================================================
             
-            # ARQUITETURA v4.0.0: Containers GPU rodam SIMULTANEAMENTE (não mais on-demand)
+            # Gate 2: Containers GPU rodam SIMULTANEAMENTE (não mais on-demand)
             # Trainer é o único com profile (sob demanda para treinamento)
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "🐳 ARQUITETURA v4.0.0: Serviços GPU simultâneos (15GB/20GB VRAM)"
+            echo "🐳 Gate 2: Serviços GPU simultâneos (budgets em 20GB VRAM)"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "   📦 gpu-llm: LLM (Mistral) (~6GB budget)"
             echo "   📦 gpu-vlm: VLM (Qwen2.5-VL) (~8GB budget)"
-            echo "   📦 gpu-embeddings: Qwen3-Embedding-8B INT8 (~8GB)"
+            echo "   📦 gpu-embeddings: Qwen3-Embedding-0.6B INT8 (~3GB)"
             echo "   📦 gpu-asr: Canary-1B (~3GB)"
             echo "   📦 gpu-trainer: QLoRA (sob demanda via profile training)"
             echo ""
@@ -3754,8 +3760,8 @@ jobs:
             echo "🎮 Containers GPU (gerenciados pelo GPU Manager):"
             docker ps -a --filter "name=gpu-" --format "table {{.Names}}\t{{.Status}}" || echo "   (nenhum container GPU encontrado)"
             echo ""
-            echo "📝 ARQUITETURA v4.0.0: Todos os serviços GPU rodam simultaneamente"
-            echo "         Qwen-VL + Embeddings + ASR ativos 24/7 (15GB de 20GB VRAM)"
+            echo "📝 Gate 2: Todos os serviços GPU rodam simultaneamente (LLM + VLM + Embeddings + ASR)"
+            echo "         Budgets conservadores para coexistência em 20GB VRAM (fonte de verdade: métricas + nvidia-smi)"
             echo ""
             
             # =================================================================

@@ -5,8 +5,8 @@
  * para cada agente de IA da plataforma Alice.
  * 
  * @author Fillipe Guerra
- * @version 4.65
- * @date 02/01/2026
+ * @version 4.66
+ * @date 15/01/2026
  */
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -115,11 +115,24 @@ interface Agent {
   atualizadoEm: string | null;
 }
 
-// Modelos disponíveis - Mixtral é o modelo principal via vLLM
-const AVAILABLE_MODELS = [
-  { value: 'Mixtral-8x7B', label: 'Mixtral 8x7B (Principal)', description: 'MoE ~12B parâmetros ativos' },
-  { value: 'Mixtral-8x7B-Instruct', label: 'Mixtral 8x7B Instruct', description: 'Versão fine-tuned para instruções' },
-] as const;
+interface AgentModelOption {
+  value: string;
+  label: string;
+  description: string;
+}
+
+interface AgentModelOptionsResponse {
+  models: AgentModelOption[];
+  defaults: {
+    modeloBase: string;
+    temperaturaModelo: number;
+    maxTokens: number;
+  };
+  constraints: {
+    maxTokensMin: number;
+    maxTokensMax: number;
+  };
+}
 
 // Presets de temperatura
 const TEMPERATURE_PRESETS = [
@@ -178,9 +191,9 @@ interface AgentFormData {
   avatar?: string | null;
   instrucoes?: string | null;
   personalidade?: string | null;
-  modeloBase: string;
-  temperaturaModelo: number;
-  maxTokens: number;
+  modeloBase?: string;
+  temperaturaModelo?: number;
+  maxTokens?: number;
   capacidades: string[];
   namespaceId?: string | null;
 }
@@ -196,9 +209,10 @@ const agentFormSchema: z.ZodType<AgentFormData> = z.object({
   avatar: z.string().url('URL inválida').optional().nullable().or(z.literal('')),
   instrucoes: z.string().max(10000).optional().nullable(),
   personalidade: z.string().max(5000).optional().nullable(),
-  modeloBase: z.string().min(1, 'Selecione um modelo'),
-  temperaturaModelo: z.number().min(0).max(2),
-  maxTokens: z.number().int().min(100).max(32000),
+  // SSOT: opções/limites vêm do backend (GET /api/agents/model-options)
+  modeloBase: z.string().optional(),
+  temperaturaModelo: z.number().min(0).max(2).optional(),
+  maxTokens: z.number().int().min(100).optional(),
   capacidades: z.array(z.string()),
   namespaceId: z.string().uuid().optional().nullable(),
 });
@@ -281,12 +295,18 @@ export default function Agents() {
       avatar: "",
       instrucoes: "",
       personalidade: "",
-      modeloBase: "Mixtral-8x7B",
-      temperaturaModelo: 0.7,
-      maxTokens: 4096,
+      modeloBase: undefined,
+      temperaturaModelo: undefined,
+      maxTokens: undefined,
       capacidades: [],
       namespaceId: null,
     },
+  });
+
+  // SSOT: opções e limites de modelos vêm do chat-service
+  const { data: modelOptions } = useQuery<AgentModelOptionsResponse>({
+    queryKey: ["/api/agents/model-options"],
+    enabled: !!user,
   });
 
   // Query para listar agentes
@@ -311,6 +331,9 @@ export default function Agents() {
         instrucoes: data.instrucoes || null,
         personalidade: data.personalidade || null,
       };
+      if (!payload.modeloBase || payload.modeloBase.trim().length === 0) delete (payload as { modeloBase?: string }).modeloBase;
+      if (!payload.temperaturaModelo && payload.temperaturaModelo !== 0) delete (payload as { temperaturaModelo?: number }).temperaturaModelo;
+      if (!payload.maxTokens) delete (payload as { maxTokens?: number }).maxTokens;
       const res = await apiRequest("POST", "/api/agents", payload);
       return res.json();
     },
@@ -337,6 +360,9 @@ export default function Agents() {
         instrucoes: data.instrucoes || null,
         personalidade: data.personalidade || null,
       };
+      if (!payload.modeloBase || payload.modeloBase.trim().length === 0) delete (payload as { modeloBase?: string }).modeloBase;
+      if (!payload.temperaturaModelo && payload.temperaturaModelo !== 0) delete (payload as { temperaturaModelo?: number }).temperaturaModelo;
+      if (!payload.maxTokens) delete (payload as { maxTokens?: number }).maxTokens;
       const res = await apiRequest("PATCH", `/api/agents/${id}`, payload);
       return res.json();
     },
@@ -397,9 +423,9 @@ export default function Agents() {
       avatar: "",
       instrucoes: "",
       personalidade: "",
-      modeloBase: "Mixtral-8x7B",
-      temperaturaModelo: 0.7,
-      maxTokens: 4096,
+      modeloBase: modelOptions?.defaults?.modeloBase,
+      temperaturaModelo: modelOptions?.defaults?.temperaturaModelo,
+      maxTokens: modelOptions?.defaults?.maxTokens,
       capacidades: [],
       namespaceId: null,
     });
@@ -423,9 +449,9 @@ export default function Agents() {
       instrucoes: agent.instrucoes || "",
       personalidade: agent.personalidade || "",
       status: agent.status || "active",
-      modeloBase: agent.modeloBase || "Mixtral-8x7B",
-      temperaturaModelo: agent.temperaturaModelo ?? 0.7,
-      maxTokens: agent.maxTokens ?? 4096,
+      modeloBase: agent.modeloBase || modelOptions?.defaults?.modeloBase,
+      temperaturaModelo: agent.temperaturaModelo ?? modelOptions?.defaults?.temperaturaModelo,
+      maxTokens: agent.maxTokens ?? modelOptions?.defaults?.maxTokens,
       capacidades: agent.capacidades || [],
       namespaceId: agent.namespaceId || null,
     });
@@ -595,7 +621,9 @@ export default function Agents() {
                     </div>
                     <div className="bg-muted/50 rounded-lg p-2 text-center">
                       <Hash className="h-4 w-4 mx-auto mb-1 text-muted-foreground" />
-                      <span className="text-xs font-medium">{agent.maxTokens?.toLocaleString() ?? '4096'}</span>
+                      <span className="text-xs font-medium">
+                        {agent.maxTokens?.toLocaleString() ?? modelOptions?.defaults?.maxTokens?.toLocaleString() ?? '—'}
+                      </span>
                     </div>
                     <div className="bg-muted/50 rounded-lg p-2 text-center">
                       <Zap className="h-4 w-4 mx-auto mb-1 text-muted-foreground" />
@@ -944,18 +972,20 @@ export default function Agents() {
                         render={({ field }: { field: ControllerRenderProps<AgentFormData, 'modeloBase'> }) => (
                           <FormItem>
                             <FormLabel>{t('agents.form.baseModel')}</FormLabel>
-                            <Select onValueChange={field.onChange} value={field.value}>
+                            <Select onValueChange={field.onChange} value={field.value ?? ''}>
                               <FormControl>
                                 <SelectTrigger data-testid="select-agente-modelo">
                                   <SelectValue placeholder={t('agents.placeholders.selectModel')} />
                                 </SelectTrigger>
                               </FormControl>
                               <SelectContent>
-                                {AVAILABLE_MODELS.map((model) => (
+                                {(modelOptions?.models || []).map((model) => (
                                   <SelectItem key={model.value} value={model.value}>
                                     <div className="flex flex-col">
                                       <span className="font-medium">{model.label}</span>
-                                      <span className="text-xs text-muted-foreground">{model.description}</span>
+                                      {model.description && (
+                                        <span className="text-xs text-muted-foreground">{model.description}</span>
+                                      )}
                                     </div>
                                   </SelectItem>
                                 ))}
@@ -974,7 +1004,8 @@ export default function Agents() {
                         name="temperaturaModelo"
                         render={({ field }: { field: ControllerRenderProps<AgentFormData, 'temperaturaModelo'> }) => {
                           // CORREÇÃO 02/01/2026: Garantir valor padrão para evitar undefined (TS18048/TS2345)
-                          const temperatureValue = field.value ?? 0.7;
+                          const temperatureValue =
+                            field.value ?? modelOptions?.defaults?.temperaturaModelo ?? 0.7;
                           return (
                           <FormItem>
                             <div className="flex items-center justify-between">
@@ -1047,26 +1078,45 @@ export default function Agents() {
                               <div className="flex gap-2">
                                 <Input
                                   type="number"
-                                  min={100}
-                                  max={32000}
+                                  min={modelOptions?.constraints?.maxTokensMin ?? 1}
+                                  max={modelOptions?.constraints?.maxTokensMax}
                                   {...field}
-                                  onChange={(e) => field.onChange(parseInt(e.target.value) || 4096)}
+                                  value={field.value ?? ''}
+                                  onChange={(e) => {
+                                    const raw = e.target.value;
+                                    const parsed = raw.trim().length === 0 ? undefined : Number.parseInt(raw, 10);
+                                    field.onChange(Number.isFinite(parsed) ? parsed : undefined);
+                                  }}
                                   className="font-mono"
                                   data-testid="input-agente-maxtokens"
                                 />
                                 <Select
-                                  value={String(field.value)}
-                                  onValueChange={(v) => field.onChange(parseInt(v))}
+                                  value={field.value ? String(field.value) : ''}
+                                  onValueChange={(v) => {
+                                    const parsed = Number.parseInt(v, 10);
+                                    field.onChange(Number.isFinite(parsed) ? parsed : undefined);
+                                  }}
                                 >
                                   <SelectTrigger className="w-32">
-                                    <SelectValue />
+                                    <SelectValue placeholder="-" />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    {[1024, 2048, 4096, 8192, 16384, 32000].map((val) => (
-                                      <SelectItem key={val} value={String(val)}>
-                                        {val.toLocaleString()}
-                                      </SelectItem>
-                                    ))}
+                                    {(() => {
+                                      const min = modelOptions?.constraints?.maxTokensMin ?? 1;
+                                      const max = modelOptions?.constraints?.maxTokensMax ?? 0;
+                                      if (!max) return [];
+                                      const candidates = [
+                                        Math.floor(max / 4),
+                                        Math.floor(max / 2),
+                                        max,
+                                      ].filter((v) => v >= min && v > 0);
+                                      const unique = Array.from(new Set(candidates)).sort((a, b) => a - b);
+                                      return unique.map((val) => (
+                                        <SelectItem key={val} value={String(val)}>
+                                          {val.toLocaleString()}
+                                        </SelectItem>
+                                      ));
+                                    })()}
                                   </SelectContent>
                                 </Select>
                               </div>

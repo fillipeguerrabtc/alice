@@ -600,11 +600,11 @@ Retenção Arquivo:   30 dias
 | `generated_images` | Histórico (FLUX.1 removido da v4.0.0) |
 | `media_uploads` | Uploads multimodais |
 
-### Schema Trading (8 tabelas) - ARQUITETURA v4.0.0 Qwen2.5-VL
+### Schema Trading (8 tabelas) - Gate 2 (LLM separado + VLM dedicado)
 
 | Tabela | Propósito | RLS |
 |--------|-----------|-----|
-| `trading_signals` | Sinais gerados pelo LLM Qwen2.5-VL | ✅ |
+| `trading_signals` | Sinais gerados pelo LLM (Mistral - Gate 2) | ✅ |
 | `trading_orders` | OMS - Order Management System | ✅ |
 | `trading_positions` | EMS - Execution Management System | ✅ |
 | `trading_risk_config` | Configuração de risco por tenant | ✅ |
@@ -613,11 +613,11 @@ Retenção Arquivo:   30 dias
 | `trading_dataset` | Dataset para fine-tuning LoRA | ✅ |
 | `trading_lora_jobs` | Jobs de treinamento LoRA para trading | ✅ |
 
-> **Arquitetura Trading - ARQUITETURA v4.0.0:**
+> **Arquitetura Trading - Gate 2:**
 > - **Exchange:** KuCoin Futures (XBTUSDTM - BTC/USDT Perpetual)
-> - **LLM:** Qwen2.5-VL 7B AWQ via vLLM no Hetzner GPU GEX44 (RTX 4000 Ada 20GB) - multimodal texto+vision
-> - **Vision:** Análise de gráficos de trading via Qwen2.5-VL (nativo, zero overhead)
-> - **Embeddings:** Qwen3-Embedding-8B INT8 (4096 dim) para análise de mercado
+> - **LLM (texto):** Mistral 7B Instruct (AWQ) via `gpu-llm` (vLLM)
+> - **VLM (visão):** Qwen2.5-VL 7B (AWQ) via `gpu-vlm` (vLLM) para análise de imagens/gráficos
+> - **Embeddings:** Qwen3-Embedding-0.6B INT8 (1024 dim) para análise de mercado
 > - **Circuit Breaker:** Preset `kucoinFutures` (timeout 5s, threshold 30%)
 > - **Risk Management:** Limites diários, max posições, alavancagem configurável
 > - **Cliente:** `kucoinClient.ts` - HMAC-SHA256, circuit breaker, rate limiting
@@ -625,7 +625,7 @@ Retenção Arquivo:   30 dias
 > - **RLS:** 7/8 tabelas com Row Level Security (migration 0007)
 > - **RBAC:** 4 permissões `integrations:trading:{read,write,delete,manage}`
 
-### API REST Trading (25 endpoints) - ARQUITETURA v4.0.0 Qwen2.5-VL
+### API REST Trading (25 endpoints) - Gate 2
 
 | Endpoint | Método | Propósito | Permissão RBAC |
 |----------|--------|-----------|----------------|
@@ -636,7 +636,7 @@ Retenção Arquivo:   30 dias
 | `/api/integrations/trading/risk-config` | GET | Configuração de risco | `trading:read` |
 | `/api/integrations/trading/risk-config` | PUT | Atualizar configuração | `trading:manage` |
 | `/api/integrations/trading/signals` | GET | Listar sinais ativos | `trading:read` |
-| `/api/integrations/trading/signals` | POST | Criar sinal (Qwen2.5-VL) | `trading:write` |
+| `/api/integrations/trading/signals` | POST | Criar sinal (LLM - Gate 2) | `trading:write` |
 | `/api/integrations/trading/signals/:id` | DELETE | Desativar sinal | `trading:write` |
 | `/api/integrations/trading/orders` | GET | Listar ordens | `trading:read` |
 | `/api/integrations/trading/orders` | POST | Criar ordem | `trading:write` |
@@ -671,7 +671,7 @@ Retenção Arquivo:   30 dias
 | **OrderBook** | Visualização de profundidade de mercado, bids/asks, spread |
 | **Orders** | Tabela completa, criar/cancelar/sincronizar ordens, filtro por status |
 | **Positions** | Posições abertas com PnL, preço de liquidação, margem utilizada |
-| **Signals** | Sinais do Qwen2.5-VL LLM com confidence + **Painel de Aprovação** (aprovar/rejeitar sinais) |
+| **Signals** | Sinais do LLM (Mistral - Gate 2) com confidence + **Painel de Aprovação** (aprovar/rejeitar sinais) |
 | **Analysis** | **NOVO 21/12** - Análise Técnica: RSI, MACD, EMAs, Bollinger, ATR, Stochastic, ADX, Pivot Points |
 | **History** | Histórico completo de operações com auditoria |
 | **Control** | Handover/takeover entre Alice (IA) e operador manual, histórico de controle |
@@ -699,7 +699,7 @@ Retenção Arquivo:   30 dias
 | 2 | `alice-caddy` | caddy:2.8.4-alpine | API Gateway + SSL automático + HTTP/3 |
 | 3 | `alice-postgres` | postgres:16-alpine | Banco principal + pgvector |
 | 4 | `alice-redis` | redis:7.4.7-alpine | Cache distribuído |
-| 5 | `alice-qdrant` | qdrant/qdrant:v1.16.2 | Banco vetorial texto (4096 dim) |
+| 5 | `alice-qdrant` | qdrant/qdrant:v1.16.2 | Banco vetorial texto (1024 dim) |
 | 6 | `alice-tor` | dperson/torproxy | Proxy SOCKS5 Tor para engines .onion |
 | 7 | `alice-searxng` | searxng/searxng | Metabusca interna (SearXNG) |
 
@@ -716,11 +716,12 @@ Retenção Arquivo:   30 dias
 | 14 | `alice-observability` | node:22-alpine3.21 | Health Checker/Backup Orchestrator |
 | 15 | `alice-gpu-manager` | node:22-alpine3.21 | Gestão de Requisições GPU |
 
-> **ARQUITETURA GPU ENTERPRISE (25/12/2025):** Todos os serviços GPU 100% locais no servidor Hetzner GPU GEX44, gerenciados pelo GPU Manager Service:
-> - **Texto (Trading/RAG):** Qwen3-Embedding-8B (4096 dim) → Qdrant (Apache 2.0 - única opção comercial top-tier)
+> **ARQUITETURA GPU (Gate 2):** Serviços GPU 100% locais no servidor Hetzner GPU GEX44, gerenciados pelo GPU Manager Service:
+> - **Texto (Trading/RAG):** Qwen3-Embedding-0.6B (1024 dim) → Qdrant
 > - **Imagem:** OpenCLIP ViT-H/14 (1024 dim) → pgvector (MIT)
 > - **ASR:** Canary-1B (NeMo, Apache 2.0)
-> - **LLM + Vision:** Qwen2.5-VL 7B AWQ (vLLM) - ARQUITETURA v4.0.0
+> - **LLM (texto):** Mistral 7B Instruct (AWQ) via `gpu-llm` (vLLM)
+> - **VLM (visão):** Qwen2.5-VL 7B (AWQ) via `gpu-vlm` (vLLM)
 > - ❌ **FLUX REMOVIDO** - Alice ANALISA imagens via Qwen2.5-VL mas NÃO gera
 
 ### ERPNext Stack (12)
@@ -1107,17 +1108,17 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 | Capacidade | Tecnologia | Status |
 |------------|------------|--------|
-| Chat Conversacional + Trading | Qwen2.5-VL 7B AWQ (vLLM) - ARQUITETURA v4.0.0 | ✅ |
-| Vision (Análise de Gráficos) | Qwen2.5-VL (nativo, zero overhead) | ✅ |
+| Chat Conversacional + Trading | **Mistral 7B Instruct (AWQ)** (LLM texto) via GPU Manager - **Gate 2** | ✅ |
+| Vision (Análise de Gráficos) | **Qwen2.5-VL 7B (AWQ)** (VLM visão) via `gpu-vlm` - **Gate 2** | ✅ |
 | ❌ Geração de Imagens | **REMOVIDO** - não necessário para domínio financeiro | ❌ |
 | Embeddings Imagem | OpenCLIP ViT-H/14 (1024 dim → pgvector) | ✅ |
-| Embeddings Texto (Trading/RAG) | Qwen3-Embedding-8B INT8 (4096 dim → Qdrant) | ✅ |
-| Trading BTC Futures | KuCoin Futures API + QLoRA Qwen2.5-VL | ✅ API REST (22 endpoints) |
+| Embeddings Texto (Trading/RAG) | **Qwen3-Embedding-0.6B INT8** (**1024 dim → Qdrant**) | ✅ |
+| Trading BTC Futures | KuCoin Futures API + **QLoRA (base = Mistral LLM)** | ✅ API REST (22 endpoints) |
 
 ### Processamento Multimodal (INPUT) - ARQUITETURA ENTERPRISE (17/12/2025)
 
 > **ARQUITETURA ENTERPRISE:**
-> - **Embeddings Texto (Trading/RAG):** Qwen3-Embedding-8B (4096 dim) → Qdrant
+> - **Embeddings Texto (Trading/RAG):** Qwen3-Embedding-0.6B (1024 dim) → Qdrant
 > - **Embeddings Imagem:** OpenCLIP ViT-H/14 (1024 dim) → pgvector
 > - **ASR:** Canary-1B (NeMo, GPU Manager Service - Hetzner GEX44)
 > - **GPU é OBRIGATÓRIO** - sem fallback CPU (Regra 6)
@@ -1125,15 +1126,16 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | Tipo | Processador | Tecnologia | Output |
 |------|-------------|------------|--------|
 | Imagem | `image-processor.ts` | OpenCLIP ViT-H/14 (GPU Manager Service) | 1024 dim (pgvector) |
-| Áudio | `audio-processor.ts` | Canary-1B + Qwen3-Embedding-8B | Transcrição + 4096 dim (Qdrant) |
-| Documento | `document-processor.ts` | pdf-parse, mammoth, xlsx + Qwen3 | 4096 dim (Qdrant) |
+| Áudio | `audio-processor.ts` | Canary-1B + Qwen3-Embedding-0.6B | Transcrição + 1024 dim (Qdrant) |
+| Documento | `document-processor.ts` | pdf-parse, mammoth, xlsx + Qwen3 | 1024 dim (Qdrant) |
 
-**Serviços de Inferência (GPU Manager Service - Hetzner GEX44) - ARQUITETURA v4.0.0:**
-- **LLM + Vision:** Qwen2.5-VL 7B AWQ (vLLM, ~4GB VRAM) - Chat, Trading e análise de gráficos
-- **Embeddings Texto:** Qwen3-Embedding-8B INT8 (~8GB VRAM, 4096 dim → Qdrant)
+**Serviços de Inferência (GPU Manager Service - Hetzner GEX44) - Gate 2:**
+- **LLM (texto):** Mistral 7B Instruct (AWQ) via `gpu-llm` (vLLM)
+- **VLM (visão):** Qwen2.5-VL 7B (AWQ) via `gpu-vlm` (vLLM)
+- **Embeddings Texto:** Qwen3-Embedding-0.6B INT8 (1024 dim → Qdrant)
 - **Embeddings Imagem:** OpenCLIP ViT-H/14 (1024 dim → pgvector)
 - **ASR:** Canary-1B (~3GB VRAM, NeMo, transcrição)
-- **TOTAL:** 15GB de 20GB VRAM - TODOS SIMULTÂNEOS (zero latência de troca)
+- **TOTAL:** Budgets em 20GB VRAM (LLM + VLM + Embeddings + ASR simultâneos; Trainer sob demanda via profile)
 
 ### Auto-Learning
 
@@ -1284,7 +1286,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 *Upload Multimodal: Nova tab em /training para imagens/áudios (vídeo removido em 23/12/2025) (15/12/2025)*
 *WhatsApp → RAG: Mídia indexada automaticamente para busca semântica (15/12/2025)*
 *RBAC Trading (17/12/2025): Adicionadas permissões integrations:trading:{read,write,delete,manage} no PERMISSION_MAP*
-*Bug Fix Embeddings (17/12/2025): TODOS embeddings de texto (documentos/áudio) agora vão para Qdrant (4096 dim)*
+*Bug Fix Embeddings (17/12/2025): TODOS embeddings de texto (documentos/áudio) agora vão para Qdrant (histórico: 4096 dim; Gate 2: 1024 dim)*
 *Bug Fix KuCoin (17/12/2025): Corrigido status sync 'open'→'active' conforme documentação API KuCoin Futures*
 *Bug Fix Risk Config API (17/12/2025): Removidos maxDailyOrders e allowedSymbols (campos inexistentes) do schema Zod*
 *Bug Fix orderValue (17/12/2025): Cálculo agora usa contract.multiplier (0.001 BTC para XBTUSDTM) - evita rejeição de ordens legítimas*

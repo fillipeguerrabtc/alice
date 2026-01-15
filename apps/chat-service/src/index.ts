@@ -831,6 +831,18 @@ const DEFAULT_LLM_CONFIG: Required<LLMConfig> = {
   model: 'TheBloke/Mistral-7B-Instruct-v0.2-AWQ',
 };
 
+class ClientInputError extends Error {
+  public readonly statusCode: number;
+  public readonly code: string;
+
+  constructor(message: string, opts: { statusCode?: number; code?: string } = {}) {
+    super(message);
+    this.name = 'ClientInputError';
+    this.statusCode = opts.statusCode ?? 400;
+    this.code = opts.code ?? 'CLIENT_INPUT_ERROR';
+  }
+}
+
 /**
  * Extrai configuração LLM de um agente
  * Usa valores padrão se agente não tiver configuração
@@ -861,21 +873,19 @@ function mapModelNameToGpuModel(modelName: string): string {
     // Gate 2 (texto): Mistral 7B Instruct (AWQ)
     'Mistral-7B-Instruct': 'TheBloke/Mistral-7B-Instruct-v0.2-AWQ',
     'Mistral-7B-Instruct-AWQ': 'TheBloke/Mistral-7B-Instruct-v0.2-AWQ',
-    // Compatibilidade (legado): Qwen2.5-VL era usado como LLM multimodal
-    // (hoje recomendado para VLM/análise de imagens; mas mantemos o mapping para não quebrar agentes existentes).
-    'Qwen2.5-VL-7B': 'Qwen/Qwen2.5-VL-7B-Instruct-AWQ',
-    'Qwen2.5-VL-7B-AWQ': 'Qwen/Qwen2.5-VL-7B-Instruct-AWQ',
-    'Qwen2.5-VL-7B-Instruct-AWQ': 'Qwen/Qwen2.5-VL-7B-Instruct-AWQ',
-    // Compatibilidade (legado): Mixtral removido do runtime; manter para não quebrar agentes antigos
-    'Mixtral-8x7B': 'TheBloke/Mistral-7B-Instruct-v0.2-AWQ',
   };
   
   const mapped = modelMap[normalized];
   if (mapped) return mapped;
 
-  // Não falhar em runtime (pode haver valores legados no banco), mas NÃO pode ser silencioso.
-  logger.warn({ modelName: normalized }, 'modeloBase desconhecido; usando modelo padrão (Gate 2)');
-  return DEFAULT_LLM_CONFIG.model;
+  // Gate 2: o tráfego de chat (texto) é roteado para GpuServiceType.LLM (Mistral).
+  // Não é permitido aceitar modelos legados (ex.: Qwen2.5-VL/Mixtral) e fazer "swap" silencioso.
+  logger.warn({ modelName: normalized }, 'modeloBase inválido para LLM (Gate 2)');
+  throw new ClientInputError(
+    `modeloBase '${normalized}' não é suportado para LLM (texto) no Gate 2. ` +
+      `Atualize o agente para 'Mistral-7B-Instruct-AWQ'.`,
+    { code: 'INVALID_AGENT_LLM_MODEL' },
+  );
 }
 
 type OpenAIChatCompletionResponse = {
@@ -2327,6 +2337,10 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       ragSources: ragResult?.sources || [],
     });
   } catch (error) {
+    if (error instanceof ClientInputError) {
+      logger.warn({ code: error.code, message: error.message }, 'Requisição inválida (configuração de agente/modelo)');
+      return res.status(error.statusCode).json({ error: error.message, code: error.code });
+    }
     logger.error({ error }, 'Falha ao enviar mensagem');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
@@ -3458,6 +3472,10 @@ wss.on('connection', (ws, req) => {
           );
         } catch (streamError) {
           logger.error({ error: streamError }, 'Erro no streaming WebSocket');
+          if (streamError instanceof ClientInputError) {
+            ws.send(JSON.stringify({ type: 'error', error: streamError.message, code: streamError.code }));
+            return;
+          }
           ws.send(JSON.stringify({ type: 'error', error: 'Falha ao processar mensagem' }));
           return;
         }
@@ -3829,12 +3847,20 @@ wss.on('connection', (ws, req) => {
           );
         } catch (streamError) {
           logger.error({ error: streamError }, 'Erro no streaming WebSocket');
+          if (streamError instanceof ClientInputError) {
+            ws.send(JSON.stringify({ type: 'error', error: streamError.message, code: streamError.code }));
+            return;
+          }
           ws.send(JSON.stringify({ type: 'error', error: 'Falha ao processar mensagem' }));
           return;
         }
       }
     } catch (error) {
       logger.error({ error }, 'Erro na mensagem WebSocket');
+      if (error instanceof ClientInputError) {
+        ws.send(JSON.stringify({ type: 'error', error: error.message, code: error.code }));
+        return;
+      }
       ws.send(JSON.stringify({ type: 'error', error: 'Falha ao processar mensagem' }));
     }
   });
@@ -4572,11 +4598,6 @@ const agentModelNameSchema = z.enum([
   // Gate 2 (LLM texto)
   'Mistral-7B-Instruct',
   'Mistral-7B-Instruct-AWQ',
-  // Legado / compatibilidade
-  'Qwen2.5-VL-7B',
-  'Qwen2.5-VL-7B-AWQ',
-  'Qwen2.5-VL-7B-Instruct-AWQ',
-  'Mixtral-8x7B',
 ] as const);
 
 const createAgentSchema = z.object({
@@ -4596,6 +4617,46 @@ const createAgentSchema = z.object({
 });
 
 const updateAgentSchema = createAgentSchema.partial();
+
+/**
+ * GET /api/agents/model-options
+ *
+ * SSOT para UI (evita hardcode no frontend):
+ * - Modelos LLM suportados para Agents (Gate 2)
+ * - Defaults/limites coerentes com runtime (MAX_MODEL_LEN / budgets)
+ */
+app.get('/api/agents/model-options', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:agents:read'), (_req: Request, res: Response) => {
+  const models = agentModelNameSchema.options.map((value) => {
+    if (value === 'Mistral-7B-Instruct-AWQ') {
+      return {
+        value,
+        label: 'Mistral 7B Instruct (AWQ)',
+        description: 'Gate 2 LLM (texto) - vLLM (AWQ 4-bit)',
+      };
+    }
+    if (value === 'Mistral-7B-Instruct') {
+      return {
+        value,
+        label: 'Mistral 7B Instruct',
+        description: 'Alias legado (normalizado para AWQ no runtime)',
+      };
+    }
+    return { value, label: value, description: '' };
+  });
+
+  res.json({
+    models,
+    defaults: {
+      modeloBase: 'Mistral-7B-Instruct-AWQ',
+      temperaturaModelo: DEFAULT_LLM_CONFIG.temperature,
+      maxTokens: DEFAULT_LLM_CONFIG.maxTokens,
+    },
+    constraints: {
+      maxTokensMin: 100,
+      maxTokensMax: DEFAULT_LLM_CONFIG.maxTokens,
+    },
+  });
+});
 
 /**
  * GET /api/agents
@@ -5112,6 +5173,10 @@ app.post('/api/chat/message', asyncHandler(async (req: Request, res: Response) =
       ragSources: ragResult?.sources || [],
     });
   } catch (error) {
+    if (error instanceof ClientInputError) {
+      logger.warn({ code: error.code, message: error.message, conversationId, channel }, 'Requisição inválida (canal externo)');
+      return res.status(error.statusCode).json({ error: error.message, code: error.code });
+    }
     logger.error({ error, conversationId, channel }, 'Erro ao processar mensagem de canal externo');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
