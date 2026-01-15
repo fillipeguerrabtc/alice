@@ -1622,7 +1622,15 @@ export default function Training() {
       toast({ title: t('training.autoLearning.scheduleConfigured') });
     },
     onError: (error) => {
-      frontendLogger.error({ error }, 'Erro ao configurar schedule de treinamento');
+      frontendLogger.error('Erro ao configurar schedule de treinamento', {
+        error: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+        tenantId,
+        scheduleType,
+        scheduleEnabled,
+        scheduleCronPattern,
+        scheduleMinDataRequired,
+      });
       toast({ title: t('training.autoLearning.scheduleError'), variant: 'destructive' });
     },
   });
@@ -1668,7 +1676,15 @@ export default function Training() {
       toast({ title: t('training.autoLearning.onDemandStarted') });
     },
     onError: (error) => {
-      frontendLogger.error({ error }, 'Erro ao iniciar treinamento on-demand');
+      frontendLogger.error('Erro ao iniciar treinamento on-demand', {
+        error: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+        tenantId,
+        trainingType: onDemandTrainingType,
+        includeImages: onDemandIncludeImages,
+        priority: onDemandPriority,
+        description: onDemandDescription,
+      });
       toast({ title: t('training.autoLearning.onDemandError'), variant: 'destructive' });
     },
   });

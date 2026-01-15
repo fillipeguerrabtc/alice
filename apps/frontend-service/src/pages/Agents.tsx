@@ -8,7 +8,7 @@
  * @version 4.66
  * @date 15/01/2026
  */
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -294,6 +294,13 @@ export default function Agents() {
     label: t(`agents.status.${opt.value}`)
   }));
 
+  // SSOT: opções e limites de modelos vêm do chat-service
+  // (precisa estar declarado ANTES do uso para evitar TDZ em build/CI)
+  const { data: modelOptions } = useQuery<AgentModelOptionsResponse>({
+    queryKey: ["/api/agents/model-options"],
+    enabled: !!user,
+  });
+
   // Formulário com valores padrão enterprise
   // SSOT: limites vêm do backend, mas mantemos fallback seguro coerente com Gate 2
   // para evitar divergência em render inicial antes do model-options carregar.
@@ -320,12 +327,6 @@ export default function Agents() {
       capacidades: [],
       namespaceId: null,
     },
-  });
-
-  // SSOT: opções e limites de modelos vêm do chat-service
-  const { data: modelOptions } = useQuery<AgentModelOptionsResponse>({
-    queryKey: ["/api/agents/model-options"],
-    enabled: !!user,
   });
 
   // Query para listar agentes
@@ -528,7 +529,8 @@ export default function Agents() {
   const activeAgents = agents?.filter((a) => a.status === 'active').length || 0;
   const totalAgents = agents?.length || 0;
 
-  const watchedTemperature = form.watch('temperaturaModelo');
+  // TypeScript strict: watch() pode retornar undefined antes de defaultValues hydratar.
+  const watchedTemperature = form.watch('temperaturaModelo') ?? modelOptions?.defaults?.temperaturaModelo ?? 0.7;
   const watchedCapacidades = form.watch('capacidades');
 
   return (
