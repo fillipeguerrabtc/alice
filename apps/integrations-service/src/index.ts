@@ -2935,8 +2935,8 @@ app.get('/api/integrations/twilio/status', (_req: Request, res: Response) => {
 });
 
 // ============================================================================
-// TRADING: KuCoin Futures BTC Perpetuals (FASE Trading Mixtral 8x7B)
-// Sistema enterprise-grade para trading automatizado
+// TRADING: KuCoin Futures BTC Perpetuals
+// Sistema enterprise-grade para trading automatizado (modelo LLM é agnóstico).
 // ============================================================================
 
 // Inicializar métricas do circuit breaker KuCoin
@@ -3166,7 +3166,7 @@ app.get('/api/integrations/trading/signals', requirePermission('integrations:tra
   }
 });
 
-// POST /api/integrations/trading/signals - Criar sinal de trading (do Mixtral LLM)
+// POST /api/integrations/trading/signals - Criar sinal de trading (do LLM)
 app.post('/api/integrations/trading/signals', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
   try {
     const authContext = extractAuthContext(req);

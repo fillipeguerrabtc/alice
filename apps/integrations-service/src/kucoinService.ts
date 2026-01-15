@@ -9,7 +9,7 @@
  * - Rastreamento de posições
  * - Auditoria completa de todas as operações
  * - Gestão de risco por tenant
- * - Sincronização com Mixtral LLM para sinais de trading
+ * - Sincronização com LLM para sinais de trading (modelo agnóstico)
  * 
  * Autor: Fillipe Guerra
  * Data: 17 de Dezembro de 2025

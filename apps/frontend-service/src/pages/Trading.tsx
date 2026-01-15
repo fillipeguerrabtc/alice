@@ -133,6 +133,7 @@ interface TradingStatus {
   riskConfig: RiskConfig | null;
   activeSignals: number;
   pendingOrders: number;
+  requiresTenant?: boolean;
 }
 
 interface RiskConfig {
@@ -217,7 +218,9 @@ interface Position {
 interface TradingSignal {
   id: string;
   tenantId: string;
-  signalType: 'long' | 'short' | 'close_long' | 'close_short' | 'hold';
+  // Alinhado ao backend (integrations-service) e ao enum do banco:
+  // entry_long, entry_short, exit, adjust_sl, adjust_tp, hold, neutral
+  signalType: 'entry_long' | 'entry_short' | 'exit' | 'adjust_sl' | 'adjust_tp' | 'hold' | 'neutral';
   symbol: string;
   confidence: string;
   reasoning: string | null;
@@ -260,11 +263,13 @@ const SYMBOLS = [
 ];
 
 const SIGNAL_TYPES = [
-  { value: 'long', label: 'Long (Compra)', icon: TrendingUp, color: 'text-green-500' },
-  { value: 'short', label: 'Short (Venda)', icon: TrendingDown, color: 'text-red-500' },
-  { value: 'close_long', label: 'Fechar Long', icon: XCircle, color: 'text-yellow-500' },
-  { value: 'close_short', label: 'Fechar Short', icon: XCircle, color: 'text-yellow-500' },
+  { value: 'entry_long', label: 'Entrada Long', icon: TrendingUp, color: 'text-green-500' },
+  { value: 'entry_short', label: 'Entrada Short', icon: TrendingDown, color: 'text-red-500' },
+  { value: 'exit', label: 'Saída/Fechar', icon: XCircle, color: 'text-yellow-500' },
+  { value: 'adjust_sl', label: 'Ajustar Stop Loss', icon: Shield, color: 'text-yellow-500' },
+  { value: 'adjust_tp', label: 'Ajustar Take Profit', icon: Target, color: 'text-yellow-500' },
   { value: 'hold', label: 'Manter', icon: Pause, color: 'text-gray-500' },
+  { value: 'neutral', label: 'Neutro', icon: Hand, color: 'text-muted-foreground' },
 ];
 
 const ORDER_STATUS_BADGES: Record<string, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; icon: typeof CheckCircle }> = {
@@ -451,7 +456,7 @@ export default function Trading() {
 
   // Form state para novo sinal
   const [signalForm, setSignalForm] = useState({
-    signalType: 'long' as 'long' | 'short' | 'close_long' | 'close_short' | 'hold',
+    signalType: 'entry_long' as TradingSignal['signalType'],
     confidence: '0.85',
     reasoning: '',
   });
@@ -490,15 +495,18 @@ export default function Trading() {
   const { data: signalsData, isLoading: isLoadingSignals, refetch: refetchSignals } = useQuery<{ success: boolean; data: TradingSignal[] }>({
     queryKey: ['/api/integrations/trading/signals'],
     refetchInterval: 15000,
+    enabled: statusData?.data?.isConfigured && !statusData?.data?.requiresTenant,
   });
 
   const { data: ordersData, isLoading: isLoadingOrders, refetch: refetchOrders } = useQuery<{ success: boolean; data: TradingOrder[] }>({
     queryKey: ['/api/integrations/trading/orders'],
     refetchInterval: 10000,
+    enabled: statusData?.data?.isConfigured && !statusData?.data?.requiresTenant,
   });
 
   const { data: riskConfigData, refetch: refetchRiskConfig } = useQuery<{ success: boolean; data: RiskConfig | null }>({
     queryKey: ['/api/integrations/trading/risk-config'],
+    enabled: statusData?.data?.isConfigured && !statusData?.data?.requiresTenant,
   });
 
   // Query para Klines (gráfico de candlesticks)
@@ -538,15 +546,15 @@ export default function Trading() {
     if (riskConfigData?.data) {
       const config = riskConfigData.data;
       setRiskForm({
-        maxPositionSize: config.maxPositionSize || '10',
-        maxDailyLoss: config.maxDailyLoss || '5',
-        maxOrderValue: config.maxOrderValue || '10000',
-        maxLeverage: config.maxLeverage || 20,
-        maxOpenPositions: config.maxOpenPositions || 3,
-        defaultLeverage: config.defaultLeverage || 10,
-        tradingEnabled: config.tradingEnabled || false,
-        autoExecuteSignals: config.autoExecuteSignals || false,
-        minConfidenceToExecute: config.minConfidenceToExecute || '0.8',
+        maxPositionSize: config.maxPositionSize ?? '10',
+        maxDailyLoss: config.maxDailyLoss ?? '5',
+        maxOrderValue: config.maxOrderValue ?? '10000',
+        maxLeverage: config.maxLeverage ?? 20,
+        maxOpenPositions: config.maxOpenPositions ?? 3,
+        defaultLeverage: config.defaultLeverage ?? 10,
+        tradingEnabled: config.tradingEnabled ?? false,
+        autoExecuteSignals: config.autoExecuteSignals ?? false,
+        minConfidenceToExecute: config.minConfidenceToExecute ?? '0.8',
       });
       // CORREÇÃO AUDITORIA 17/12/2025: Sincronizar controlMode com autoExecuteSignals do servidor
       // Bug: controlMode era inicializado como 'alice' e nunca atualizado, fazendo HandoverPanel
@@ -693,7 +701,7 @@ export default function Trading() {
       });
       setShowNewSignalDialog(false);
       setSignalForm({
-        signalType: 'long',
+        signalType: 'entry_long',
         confidence: '0.85',
         reasoning: '',
       });
@@ -836,6 +844,26 @@ export default function Trading() {
               <p>KUCOIN_PRO_API_SECRET</p>
               <p>KUCOIN_PRO_API_PASSPHRASE</p>
             </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // ============================================================================
+  // RENDER - Tenant obrigatório (multi-tenancy)
+  // ============================================================================
+  if (statusData?.data?.requiresTenant) {
+    return (
+      <div className="p-6">
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <AlertTriangle className="h-12 w-12 text-yellow-500 mb-4" />
+            <h3 className="text-lg font-medium mb-2">Tenant obrigatório</h3>
+            <p className="text-muted-foreground text-center max-w-md">
+              Seu usuário está autenticado, mas não possui um <strong>tenant</strong> associado. Para operar trading,
+              é obrigatório ter um tenant válido (multi-tenancy + RLS).
+            </p>
           </CardContent>
         </Card>
       </div>
