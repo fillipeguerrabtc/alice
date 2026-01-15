@@ -16,7 +16,7 @@
 # MUDANÇAS v4.0.0:
 # - Mixtral 8x7B → Qwen2.5-VL 7B (multimodal, especializado em finanças)
 # - FLUX.1 Schnell REMOVIDO (Alice analisa mas NÃO gera imagens)
-# - Embeddings agora usa INT8 quantization (16GB → 8GB VRAM)
+# - Embeddings usa quantização (INT8 quando aplicável) para reduzir pressão de VRAM
 # - Todos os serviços rodam simultaneamente (zero latência de troca)
 #
 # ⚠️ AVISO (SSOT): Este arquivo é LEGADO. A fonte de verdade é o stack modular:

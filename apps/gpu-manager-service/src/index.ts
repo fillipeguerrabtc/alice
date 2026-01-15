@@ -1224,9 +1224,15 @@ async function start(): Promise<void> {
     }
     logger.info('Redis inicializado com sucesso');
 
-    // ARQUITETURA v4.0.0 (11/01/2026): Todos os serviços GPU rodam simultaneamente
-    // Não há mais orquestração dinâmica - containers são gerenciados pelo Docker Compose
-    logger.info('Arquitetura GPU v4.0.0 - Todos os serviços rodam simultaneamente (15GB de 20GB)');
+    // Gate 2: LLM (texto) e VLM (visão) separados. Containers GPU são gerenciados pelo Docker Compose.
+    // Observação: VRAM real deve vir de nvidia-smi (quando disponível). Os "budgets" abaixo são apenas estimativa/fallback.
+    const alwaysOnBudgetGB = Object.entries(VRAM_REQUIREMENTS)
+      .filter(([key]) => key !== GpuServiceType.TRAINING)
+      .reduce((sum, [, vram]) => sum + vram, 0);
+    logger.info(
+      { totalVramGB: TOTAL_VRAM_GB, alwaysOnBudgetGB },
+      'Arquitetura GPU (Gate 2) - serviços always-on com budgets estimados'
+    );
     
     // Iniciar worker de fila
     await startQueueWorker();
