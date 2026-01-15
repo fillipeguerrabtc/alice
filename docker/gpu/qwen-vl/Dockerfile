@@ -65,17 +65,16 @@ RUN chmod +x /app/entrypoint.sh
 # 
 # SOLUÇÃO OFICIAL 2025: Usar --skip-mm-profiling
 # 
-# CONFIGURAÇÕES CORRETAS (Documentação Oficial Qwen 2025):
-# - Qwen2.5-VL-7B-AWQ requer: 12-16GB VRAM
-# - GPU_MEMORY_UTILIZATION: 0.90 (balanço entre performance e estabilidade)
-# - MAX_MODEL_LEN: 4096 (contexto padrão, suficiente para chat)
+# CONFIGURAÇÕES (SSOT - alinhadas ao stack modular):
+# - MAX_MODEL_LEN: 4096 (contexto padrão para chat/trading)
+# - GPU_MEMORY_UTILIZATION: 0.45 (coexistência com embeddings + ASR em 20GB)
 # - dtype: float16 OBRIGATÓRIO (AWQ não suporta bfloat16)
 # 
 # Ref: https://qwen.readthedocs.io/en/v2.5/deployment/vllm.html
 ENV MODEL_NAME="Qwen/Qwen2.5-VL-7B-Instruct-AWQ"
 ENV QUANTIZATION="awq"
 ENV MAX_MODEL_LEN="4096"
-ENV GPU_MEMORY_UTILIZATION="0.90"
+ENV GPU_MEMORY_UTILIZATION="0.45"
 ENV TENSOR_PARALLEL_SIZE="1"
 ENV PORT="8000"
 ENV HOST="0.0.0.0"
