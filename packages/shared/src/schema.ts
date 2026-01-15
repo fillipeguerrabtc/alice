@@ -811,10 +811,12 @@ export const agents = pgTable(
     personalidade: text("personalidade"),
     instrucoes: text("instrucoes"),
     capacidades: text("capacidades").array(),
-    // ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral (multimodal, especializado em finanças)
-    modeloBase: varchar("modelo_base", { length: 100 }).default("Qwen2.5-VL-7B"),
+    // Gate 2: modelo base do agente (LLM texto) deve refletir o runtime padrão (Mistral)
+    // (mantemos compatibilidade com modelos legados via mapping no chat-service).
+    modeloBase: varchar("modelo_base", { length: 100 }).default("Mistral-7B-Instruct-AWQ"),
     temperaturaModelo: real("temperatura_modelo").default(0.7),
-    maxTokens: integer("max_tokens").default(4096),
+    // Gate 2: coerente com max-model-len padrão do stack (2048)
+    maxTokens: integer("max_tokens").default(2048),
     status: agentStatusEnum("status").default("active"),
     metricas: jsonb("metricas").$type<AgentMetricas>().default({}),
     versao: integer("versao").default(1),

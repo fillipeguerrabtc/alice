@@ -1,9 +1,10 @@
 /**
  * Training - Gestão de Fine-tuning
  * 
- * ARQUITETURA v4.0.0 (11/01/2026):
- * Página para gerenciar dados de treinamento e jobs de fine-tuning
- * via GPU Manager Service (Hetzner GEX44) para o modelo Qwen2.5-VL 7B.
+ * Gate 2 (15/01/2026):
+ * Página para gerenciar dados de treinamento e jobs de fine-tuning (QLoRA)
+ * usando o MESMO modelo base do LLM (texto) em produção (Mistral 7B),
+ * com execução via Training Service + gpu-trainer (sob demanda).
  * 
  * Funcionalidades:
  * - Gestão de dados de treinamento
@@ -18,7 +19,7 @@
  * Regra 13 - Internacionalização i18next
  * 
  * Autor: Fillipe Guerra
- * Data: 11 de Janeiro de 2026
+ * Data: 15 de Janeiro de 2026
  */
 
 import { useState, useCallback } from 'react';
@@ -26,6 +27,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
 import { z } from 'zod';
+import { useAuth } from '@/hooks/use-auth';
 import {
   Brain,
   Play,
@@ -123,6 +125,51 @@ interface TrainingDataResponse {
 interface JobsResponse {
   jobs: FineTuningJob[];
 }
+
+type AutoLearningStatusResponse = {
+  activeModel: {
+    version: number;
+    name: string;
+    improvementPercent: number;
+    trainingDataUsed: number;
+    imagesUsed: number;
+  };
+  pendingData: {
+    trainingEntries: number;
+    images: number;
+  };
+  recentVersions: Array<{
+    version: number;
+    status: string;
+    createdAt: string;
+  }>;
+  upcomingSchedules: Array<{
+    id: string;
+    type: 'incremental_fine_tuning' | 'complete_fine_tuning';
+    scheduledFor: string;
+    status: string;
+  }>;
+};
+
+type TrainingRunStatusResponse =
+  | {
+      hasRunningTraining: false;
+      status: 'idle';
+      message: string;
+    }
+  | {
+      hasRunningTraining: true;
+      status: 'training';
+      currentJob: {
+        id: string;
+        name: string;
+        baseModel: string;
+        trainingDataCount: number | null;
+        progress: number;
+        elapsedSeconds: number;
+        startedAt: string | null;
+      };
+    };
 
 interface BulkImportEntry {
   messages: Array<{ role: string; content: string }>;
@@ -488,9 +535,9 @@ function CreateJobDialog({ open, onClose, approvedCount, t }: {
 
 // ============================================================================
 // COMPONENTE: MultimodalUploadTab - Upload de mídia multimodal para RAG
-// ARQUITETURA 100% GPU (15/12/2025):
-// - Imagens: OpenCLIP ViT-H/14 embeddings (1024 dim)
-// - Áudios: Whisper large-v3 transcrição + Qwen3-Embedding-8B embeddings (4096 dim)
+// ARQUITETURA 100% GPU (Gate 2):
+// - Imagens: OpenCLIP ViT-H/14 embeddings (1024 dim) + análise via VLM (quando aplicável)
+// - Áudios: Canary-1B (ASR) + Qwen3-Embedding-0.6B embeddings (1024 dim)
 // - Vídeo: NÃO suportado (desabilitado por custo/peso de GPU)
 // REGRA 8: TypeScript strict, zero any
 // REGRA 16: Validação client-side, error handling, UX feedback
@@ -1480,9 +1527,132 @@ function BulkImportTab({ t }: { t: (key: string, options?: Record<string, unknow
 export default function Training() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const tenantId = user?.tenantId;
   
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [showCreateJob, setShowCreateJob] = useState(false);
+  const [showOnDemandRun, setShowOnDemandRun] = useState(false);
+
+  // Auto-learning (status + schedules) - Gate 2
+  const { data: autoLearning, isLoading: autoLearningLoading } = useQuery<AutoLearningStatusResponse>({
+    queryKey: [
+      tenantId
+        ? `/api/training/auto-learning/status?tenantId=${encodeURIComponent(tenantId)}`
+        : '/api/training/auto-learning/status',
+    ],
+    staleTime: 1000 * 30,
+    refetchInterval: 1000 * 60,
+  });
+
+  const { data: runStatus, isLoading: runStatusLoading } = useQuery<TrainingRunStatusResponse>({
+    queryKey: [tenantId ? `/api/training/run/status?tenantId=${encodeURIComponent(tenantId)}` : '/api/training/run/status'],
+    staleTime: 1000 * 15,
+    refetchInterval: 1000 * 15,
+  });
+
+  const scheduleFormSchema = z.object({
+    scheduleType: z.enum(['incremental_fine_tuning', 'complete_fine_tuning']),
+    enabled: z.boolean(),
+    cronPattern: z
+      .string()
+      .trim()
+      .optional()
+      .refine(
+        (value) => {
+          if (!value) return true;
+          // 5-part cron: minuto hora diaDoMes mes diaDaSemana
+          return value.split(/\s+/).length === 5;
+        },
+        { message: 'cronPattern inválido (esperado: 5 campos)' },
+      ),
+    minDataRequired: z.number().int().min(10).max(100000),
+  });
+
+  const [scheduleType, setScheduleType] = useState<'incremental_fine_tuning' | 'complete_fine_tuning'>(
+    'incremental_fine_tuning',
+  );
+  const [scheduleEnabled, setScheduleEnabled] = useState<boolean>(true);
+  const [scheduleCronPattern, setScheduleCronPattern] = useState<string>('0 3 * * 0');
+  const [scheduleMinDataRequired, setScheduleMinDataRequired] = useState<number>(50);
+
+  const configureSchedule = useMutation({
+    mutationFn: async () => {
+      const parsed = scheduleFormSchema.parse({
+        scheduleType,
+        enabled: scheduleEnabled,
+        cronPattern: scheduleCronPattern.trim().length > 0 ? scheduleCronPattern.trim() : undefined,
+        minDataRequired: scheduleMinDataRequired,
+      });
+
+      if (!tenantId) {
+        throw new Error('tenantId ausente (usuário não associado a um tenant)');
+      }
+
+      const res = await apiRequest('POST', '/api/training/schedule/configure', {
+        tenantId,
+        scheduleType: parsed.scheduleType,
+        enabled: parsed.enabled,
+        cronPattern: parsed.cronPattern,
+        minDataRequired: parsed.minDataRequired,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/training/auto-learning/status'] });
+      toast({ title: t('training.autoLearning.scheduleConfigured') });
+    },
+    onError: (error) => {
+      frontendLogger.error({ error }, 'Erro ao configurar schedule de treinamento');
+      toast({ title: t('training.autoLearning.scheduleError'), variant: 'destructive' });
+    },
+  });
+
+  const onDemandSchema = z.object({
+    trainingType: z.enum(['incremental', 'full']),
+    includeImages: z.boolean(),
+    priority: z.enum(['low', 'normal', 'high']),
+    description: z.string().trim().max(500).optional(),
+  });
+
+  const [onDemandTrainingType, setOnDemandTrainingType] = useState<'incremental' | 'full'>('incremental');
+  const [onDemandIncludeImages, setOnDemandIncludeImages] = useState<boolean>(false);
+  const [onDemandPriority, setOnDemandPriority] = useState<'low' | 'normal' | 'high'>('normal');
+  const [onDemandDescription, setOnDemandDescription] = useState<string>('');
+
+  const startOnDemand = useMutation({
+    mutationFn: async () => {
+      const parsed = onDemandSchema.parse({
+        trainingType: onDemandTrainingType,
+        includeImages: onDemandIncludeImages,
+        priority: onDemandPriority,
+        description: onDemandDescription.trim().length > 0 ? onDemandDescription.trim() : undefined,
+      });
+
+      if (!tenantId) {
+        throw new Error('tenantId ausente (usuário não associado a um tenant)');
+      }
+
+      const res = await apiRequest('POST', '/api/training/run/start', {
+        tenantId,
+        trainingType: parsed.trainingType,
+        includeImages: parsed.includeImages,
+        priority: parsed.priority,
+        description: parsed.description,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      setShowOnDemandRun(false);
+      queryClient.invalidateQueries({ queryKey: ['/api/training/run/status'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/training/jobs'] });
+      toast({ title: t('training.autoLearning.onDemandStarted') });
+    },
+    onError: (error) => {
+      frontendLogger.error({ error }, 'Erro ao iniciar treinamento on-demand');
+      toast({ title: t('training.autoLearning.onDemandError'), variant: 'destructive' });
+    },
+  });
 
   const { data: trainingData, isLoading: dataLoading } = useQuery<TrainingDataResponse>({
     queryKey: ['/api/training/data'],
@@ -1548,11 +1718,30 @@ export default function Training() {
             </p>
           </div>
 
-          <Button onClick={() => setShowCreateJob(true)} data-testid="button-new-job">
-            <Brain className="h-4 w-4 mr-2" />
-            {t('training.newJob')}
-          </Button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              variant="outline"
+              onClick={() => setShowOnDemandRun(true)}
+              disabled={runStatusLoading || runStatus?.hasRunningTraining === true || !tenantId}
+              data-testid="button-on-demand-run"
+            >
+              <Play className="h-4 w-4 mr-2" />
+              {t('training.autoLearning.onDemand')}
+            </Button>
+            <Button onClick={() => setShowCreateJob(true)} data-testid="button-new-job">
+              <Brain className="h-4 w-4 mr-2" />
+              {t('training.newJob')}
+            </Button>
+          </div>
         </div>
+
+        {!tenantId && (
+          <Alert className="mb-4" variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>{t('training.autoLearning.tenantMissingTitle')}</AlertTitle>
+            <AlertDescription>{t('training.autoLearning.tenantMissingDesc')}</AlertDescription>
+          </Alert>
+        )}
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <Card>
@@ -1608,6 +1797,10 @@ export default function Training() {
             <TabsTrigger value="data" data-testid="tab-training-data">
               <Database className="h-4 w-4 mr-2" />
               {t('training.tabs.data', { count: stats.total })}
+            </TabsTrigger>
+            <TabsTrigger value="auto-learning" data-testid="tab-auto-learning">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              {t('training.tabs.autoLearning')}
             </TabsTrigger>
             <TabsTrigger value="jobs" data-testid="tab-jobs">
               <Brain className="h-4 w-4 mr-2" />
@@ -1685,6 +1878,147 @@ export default function Training() {
           </ScrollArea>
         </TabsContent>
 
+        <TabsContent value="auto-learning" className="flex-1 m-0">
+          <ScrollArea className="flex-1 p-4">
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle>{t('training.autoLearning.statusTitle')}</CardTitle>
+                  <CardDescription>{t('training.autoLearning.statusDesc')}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {autoLearningLoading ? (
+                    <Skeleton className="h-32" />
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-muted-foreground">{t('training.autoLearning.activeModel')}</span>
+                        <Badge variant="secondary">
+                          {autoLearning?.activeModel?.name} v{autoLearning?.activeModel?.version}
+                        </Badge>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="rounded-md border p-3">
+                          <div className="text-xs text-muted-foreground">{t('training.autoLearning.pendingEntries')}</div>
+                          <div className="text-xl font-semibold">{autoLearning?.pendingData?.trainingEntries ?? 0}</div>
+                        </div>
+                        <div className="rounded-md border p-3">
+                          <div className="text-xs text-muted-foreground">{t('training.autoLearning.pendingImages')}</div>
+                          <div className="text-xl font-semibold">{autoLearning?.pendingData?.images ?? 0}</div>
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <div className="text-xs text-muted-foreground">{t('training.autoLearning.runStatus')}</div>
+                        {runStatusLoading ? (
+                          <Skeleton className="h-6 mt-2" />
+                        ) : runStatus?.hasRunningTraining ? (
+                          <div className="mt-2 text-sm">
+                            <div className="font-medium">{runStatus.currentJob.name}</div>
+                            <div className="text-muted-foreground">
+                              {t('training.autoLearning.elapsed', { seconds: runStatus.currentJob.elapsedSeconds })}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="mt-2 text-sm text-muted-foreground">
+                            {runStatus?.message || t('training.autoLearning.idle')}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>{t('training.autoLearning.scheduleTitle')}</CardTitle>
+                  <CardDescription>{t('training.autoLearning.scheduleDesc')}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid gap-3">
+                    <div className="grid gap-2">
+                      <Label>{t('training.autoLearning.scheduleType')}</Label>
+                      <Select value={scheduleType} onValueChange={(v) => setScheduleType(v as typeof scheduleType)}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="incremental_fine_tuning">{t('training.autoLearning.incremental')}</SelectItem>
+                          <SelectItem value="complete_fine_tuning">{t('training.autoLearning.complete')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="flex items-center justify-between rounded-md border p-3">
+                      <div>
+                        <div className="text-sm font-medium">{t('training.autoLearning.enabled')}</div>
+                        <div className="text-xs text-muted-foreground">{t('training.autoLearning.enabledDesc')}</div>
+                      </div>
+                      <Switch checked={scheduleEnabled} onCheckedChange={setScheduleEnabled} />
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label>{t('training.autoLearning.cronPattern')}</Label>
+                      <Input
+                        value={scheduleCronPattern}
+                        onChange={(e) => setScheduleCronPattern(e.target.value)}
+                        placeholder="0 3 * * 0"
+                      />
+                      <p className="text-xs text-muted-foreground">{t('training.autoLearning.cronHelp')}</p>
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label>{t('training.autoLearning.minDataRequired')}</Label>
+                      <Input
+                        type="number"
+                        value={scheduleMinDataRequired}
+                        onChange={(e) => setScheduleMinDataRequired(Number(e.target.value))}
+                        min={10}
+                      />
+                    </div>
+
+                    <Button onClick={() => configureSchedule.mutate()} disabled={!tenantId || configureSchedule.isPending}>
+                      {configureSchedule.isPending ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          {t('training.autoLearning.saving')}
+                        </>
+                      ) : (
+                        <>
+                          <FileCheck className="h-4 w-4 mr-2" />
+                          {t('training.autoLearning.saveSchedule')}
+                        </>
+                      )}
+                    </Button>
+                  </div>
+
+                  <div className="rounded-md border p-3">
+                    <div className="text-sm font-medium mb-2">{t('training.autoLearning.upcoming')}</div>
+                    {autoLearningLoading ? (
+                      <Skeleton className="h-20" />
+                    ) : (autoLearning?.upcomingSchedules?.length || 0) === 0 ? (
+                      <div className="text-sm text-muted-foreground">{t('training.autoLearning.noUpcoming')}</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {autoLearning?.upcomingSchedules?.slice(0, 5).map((s) => (
+                          <div key={s.id} className="flex items-center justify-between text-sm">
+                            <span className="text-muted-foreground">
+                              {s.type === 'incremental_fine_tuning'
+                                ? t('training.autoLearning.incremental')
+                                : t('training.autoLearning.complete')}
+                            </span>
+                            <span>{new Date(s.scheduledFor).toLocaleString()}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </ScrollArea>
+        </TabsContent>
+
         <TabsContent value="jobs" className="flex-1 m-0">
           <ScrollArea className="flex-1 p-4">
             {jobsLoading ? (
@@ -1744,6 +2078,76 @@ export default function Training() {
         approvedCount={stats.approved}
         t={t}
       />
+
+      <Dialog open={showOnDemandRun} onOpenChange={setShowOnDemandRun}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t('training.autoLearning.onDemandTitle')}</DialogTitle>
+            <DialogDescription>{t('training.autoLearning.onDemandDesc')}</DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2">
+              <Label>{t('training.autoLearning.onDemandType')}</Label>
+              <Select value={onDemandTrainingType} onValueChange={(v) => setOnDemandTrainingType(v as typeof onDemandTrainingType)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="incremental">{t('training.autoLearning.incremental')}</SelectItem>
+                  <SelectItem value="full">{t('training.autoLearning.complete')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center justify-between rounded-md border p-3">
+              <div>
+                <div className="text-sm font-medium">{t('training.autoLearning.includeImages')}</div>
+                <div className="text-xs text-muted-foreground">{t('training.autoLearning.includeImagesDesc')}</div>
+              </div>
+              <Switch checked={onDemandIncludeImages} onCheckedChange={setOnDemandIncludeImages} />
+            </div>
+
+            <div className="grid gap-2">
+              <Label>{t('training.autoLearning.priority')}</Label>
+              <Select value={onDemandPriority} onValueChange={(v) => setOnDemandPriority(v as typeof onDemandPriority)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="low">{t('training.autoLearning.priorityLow')}</SelectItem>
+                  <SelectItem value="normal">{t('training.autoLearning.priorityNormal')}</SelectItem>
+                  <SelectItem value="high">{t('training.autoLearning.priorityHigh')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid gap-2">
+              <Label>{t('training.autoLearning.description')}</Label>
+              <Input value={onDemandDescription} onChange={(e) => setOnDemandDescription(e.target.value)} />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowOnDemandRun(false)}>
+              {t('training.createJob.cancel')}
+            </Button>
+            <Button onClick={() => startOnDemand.mutate()} disabled={!tenantId || startOnDemand.isPending}>
+              {startOnDemand.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  {t('training.autoLearning.starting')}
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4 mr-2" />
+                  {t('training.autoLearning.startOnDemand')}
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

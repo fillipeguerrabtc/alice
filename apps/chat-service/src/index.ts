@@ -826,7 +826,8 @@ interface LLMRequest {
 // Gate 2: LLM (texto) separado de VLM (visão)
 const DEFAULT_LLM_CONFIG: Required<LLMConfig> = {
   temperature: 0.7,
-  maxTokens: 4096,
+  // Gate 2: coerente com max-model-len padrão do stack (2048)
+  maxTokens: 2048,
   model: 'TheBloke/Mistral-7B-Instruct-v0.2-AWQ',
 };
 
@@ -855,13 +856,26 @@ function getAgentLLMConfig(agent?: AgentConfig | null): LLMConfig {
  * @returns Nome do modelo para o runtime (ex: repo Hugging Face)
  */
 function mapModelNameToGpuModel(modelName: string): string {
+  const normalized = modelName.trim();
   const modelMap: Record<string, string> = {
     // Gate 2 (texto): Mistral 7B Instruct (AWQ)
     'Mistral-7B-Instruct': 'TheBloke/Mistral-7B-Instruct-v0.2-AWQ',
     'Mistral-7B-Instruct-AWQ': 'TheBloke/Mistral-7B-Instruct-v0.2-AWQ',
+    // Compatibilidade (legado): Qwen2.5-VL era usado como LLM multimodal
+    // (hoje recomendado para VLM/análise de imagens; mas mantemos o mapping para não quebrar agentes existentes).
+    'Qwen2.5-VL-7B': 'Qwen/Qwen2.5-VL-7B-Instruct-AWQ',
+    'Qwen2.5-VL-7B-AWQ': 'Qwen/Qwen2.5-VL-7B-Instruct-AWQ',
+    'Qwen2.5-VL-7B-Instruct-AWQ': 'Qwen/Qwen2.5-VL-7B-Instruct-AWQ',
+    // Compatibilidade (legado): Mixtral removido do runtime; manter para não quebrar agentes antigos
+    'Mixtral-8x7B': 'TheBloke/Mistral-7B-Instruct-v0.2-AWQ',
   };
   
-  return modelMap[modelName] || DEFAULT_LLM_CONFIG.model;
+  const mapped = modelMap[normalized];
+  if (mapped) return mapped;
+
+  // Não falhar em runtime (pode haver valores legados no banco), mas NÃO pode ser silencioso.
+  logger.warn({ modelName: normalized }, 'modeloBase desconhecido; usando modelo padrão (Gate 2)');
+  return DEFAULT_LLM_CONFIG.model;
 }
 
 type OpenAIChatCompletionResponse = {
@@ -1832,13 +1846,13 @@ app.get('/api/chat/health', (_req: Request, res: Response) => {
   // Status degradado se qualquer circuit breaker crítico estiver aberto
   const overallStatus = (llmCircuitState === 'open' || integrationsStats.state === 'open') ? 'degraded' : 'ok';
   
-  // ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral (multimodal, finanças)
+  // Gate 2: LLM (texto) separado de VLM (visão) e model-agnóstico por capability
   res.json({ 
     status: overallStatus, 
     service: 'chat-service',
     timestamp: new Date().toISOString(),
     llmProvider: 'gpu-manager-service',
-    model: 'Qwen/Qwen2.5-VL-7B-Instruct-AWQ',
+    model: DEFAULT_LLM_CONFIG.model,
     circuitBreakers: {
       llm: {
         state: llmCircuitState,
@@ -4554,6 +4568,17 @@ app.get('/api/chat/escalation-config', requireAuth(), requireSameTenant(getTenan
 // ============================================================================
 
 // Schema de validação para criação/atualização de agentes
+const agentModelNameSchema = z.enum([
+  // Gate 2 (LLM texto)
+  'Mistral-7B-Instruct',
+  'Mistral-7B-Instruct-AWQ',
+  // Legado / compatibilidade
+  'Qwen2.5-VL-7B',
+  'Qwen2.5-VL-7B-AWQ',
+  'Qwen2.5-VL-7B-Instruct-AWQ',
+  'Mixtral-8x7B',
+] as const);
+
 const createAgentSchema = z.object({
   nome: z.string().min(2, 'Nome deve ter no mínimo 2 caracteres').max(255),
   slug: z.string().min(2).max(100).regex(/^[a-z0-9-]+$/, 'Slug deve conter apenas letras minúsculas, números e hífens'),
@@ -4562,9 +4587,10 @@ const createAgentSchema = z.object({
   instrucoes: z.string().max(10000).optional().nullable(),
   avatar: z.string().url().optional().nullable(),
   capacidades: z.array(z.string()).optional().nullable(),
-  modeloBase: z.string().max(100).optional().default('Mixtral-8x7B'),
+  modeloBase: agentModelNameSchema.optional().default('Mistral-7B-Instruct-AWQ'),
   temperaturaModelo: z.number().min(0).max(2).optional().default(0.7),
-  maxTokens: z.number().int().min(100).max(32000).optional().default(4096),
+  // Gate 2: max_tokens deve respeitar max-model-len do stack (2048)
+  maxTokens: z.number().int().min(100).max(2048).optional().default(2048),
   status: z.enum(['active', 'training', 'paused', 'deprecated']).optional().default('active'),
   namespaceId: z.string().uuid().optional().nullable(),
 });
