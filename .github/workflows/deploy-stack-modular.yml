@@ -99,6 +99,11 @@ on:
         type: boolean
         required: false
         default: false
+      pgbackrest_allow_stanza_reset:
+        description: 'Permitir reset de stanza pgBackRest (uso emergencial)'
+        type: boolean
+        required: false
+        default: false
 
 concurrency:
   group: deploy-modular-${{ github.event.inputs.version }}-${{ github.event.inputs.stack }}
@@ -761,6 +766,7 @@ jobs:
           export KUCOIN_PRO_API_PASSPHRASE="${SECRET_KUCOIN_PRO_API_PASSPHRASE}"
           export KUCOIN_PRO_BASE_URL="${SECRET_KUCOIN_PRO_BASE_URL}"
           export OPENAI_API_KEY="${SECRET_OPENAI_API_KEY}"
+          export PGBACKREST_ALLOW_STANZA_RESET="${{ github.event.inputs.pgbackrest_allow_stanza_reset || 'false' }}"
           
           # Variáveis da pipeline
           export IMAGE_PREFIX="${ENV_IMAGE_PREFIX}"

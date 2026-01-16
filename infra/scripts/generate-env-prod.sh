@@ -847,6 +847,7 @@ echo "📄 Gerando arquivo .env.prod..."
   BACKUP_CIPHER_PASS_ESCAPED=$(echo "${BACKUP_CIPHER_PASS:-}" | sed 's/\$/\$\$/g')
   printf 'BACKUP_CIPHER_PASS=%s\n' "${BACKUP_CIPHER_PASS_ESCAPED}"
   printf 'PGBACKREST_STANZA=alice_prod\n'
+  printf 'PGBACKREST_ALLOW_STANZA_RESET=%s\n' "${PGBACKREST_ALLOW_STANZA_RESET:-false}"
   printf '\n'
   printf '# SSL/TLS\n'
   printf 'ACME_EMAIL=%s\n' "${ACME_EMAIL:-}"
