@@ -447,9 +447,10 @@ jobs:
       # Build de serviços GPU (pesados - ~5-10GB cada)
       - name: Build GPU Services
         run: |
-          set -e
+          set -euo pipefail
           VERSION="${{ needs.create-release.outputs.version }}"
           PREVIOUS_TAG="${{ needs.create-release.outputs.previous_tag }}"
+          export BUILDKIT_PROGRESS=plain
           
           echo "Building GPU services for $VERSION"
           if [ -n "$PREVIOUS_TAG" ]; then
@@ -465,6 +466,13 @@ jobs:
             CHANGED_FILES=$(git diff --name-only "$PREVIOUS_TAG..$VERSION" || true)
           else
             CHANGED_FILES="__NO_PREVIOUS_TAG__"
+          fi
+          
+          echo "Changed files (GPU diff):"
+          if [ -n "$CHANGED_FILES" ]; then
+            echo "$CHANGED_FILES"
+          else
+            echo "<none>"
           fi
 
           should_build() {
@@ -525,6 +533,7 @@ jobs:
               fi
             fi
 
+            echo "GPU service decision: image=$IMAGE context=$CONTEXT needs_build=$NEEDS_BUILD"
             if [ "$NEEDS_BUILD" -eq 0 ]; then
               retag_image "$IMAGE" "$PREVIOUS_TAG" "$VERSION"
               echo "✅ $IMAGE (retag)"
