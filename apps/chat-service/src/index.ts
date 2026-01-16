@@ -5444,14 +5444,17 @@ app.post('/api/chat/images/generate', requireAuth(), requireSameTenant(getTenant
       created.messageId ?? undefined,
       created.conversationId ?? undefined,
     );
+    if (!uploadResult?.fileUrl) {
+      throw new Error('Falha ao persistir imagem no RAG Service');
+    }
 
     const generationTimeMs = Date.now() - startedAt;
 
     await db.update(schema.generatedImages)
       .set({
         status: 'completed',
-        imageUrl: uploadResult?.fileUrl ?? null,
-        thumbnailPath: uploadResult?.thumbnailUrl ?? null,
+        imageUrl: uploadResult.fileUrl,
+        thumbnailPath: uploadResult.thumbnailUrl ?? null,
         generationTimeMs,
         errorMessage: null,
         metadata: {
