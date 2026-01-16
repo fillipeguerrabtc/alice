@@ -83,8 +83,9 @@ import {
   checkSLABreaches,
   ESCALATION_CONFIG,
 } from './conversation-orchestrator.js';
-// Gate 2: Geração de imagens removida (Alice analisa mas NÃO gera)
-// Análise de imagens ocorre via VLM dedicado (GpuServiceType.VLM)
+// Arquitetura atual (16/01/2026+):
+// - GPU local: Texto + Embeddings + ASR
+// - Vision e geração de imagens: OpenAI API (somente OPENAI_API_KEY)
 import { initTradingOrchestrator } from './trading-orchestrator.js';
 // CORREÇÃO 19/12/2025: Remover imports não utilizados (no-unused-vars)
 // isGreeting, getCacheMetrics, isCacheOperational estão disponíveis no módulo
@@ -106,6 +107,13 @@ if (!corsOriginsEnv && process.env.NODE_ENV === 'production') {
 const CORS_ORIGINS = corsOriginsEnv
   ? corsOriginsEnv.split(',').map((origin) => origin.trim()).filter(Boolean)
   : [];
+
+// OpenAI API Key (Vision + geração de imagens)
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+if (!OPENAI_API_KEY && process.env.NODE_ENV === 'production') {
+  logger.error('OPENAI_API_KEY é obrigatório em produção (Vision + geração de imagens via OpenAI)');
+  process.exit(1);
+}
 
 // URL do Integrations Service para comunicação cross-service (Regra 15 - Microsserviços)
 // REGRA 6: Fail-fast em TODOS os ambientes - variável DEVE estar definida
@@ -818,9 +826,9 @@ interface LLMResponse {
 interface LLMConfig {
   /** Temperatura do modelo (0-2). Default: 0.7 */
   temperature?: number;
-  /** Limite máximo de tokens na resposta. Default: 4096 */
+  /** Limite máximo de tokens na resposta (saída). Default: 2048 */
   maxTokens?: number;
-  /** Modelo a ser usado. Default: Mistral-7B-Instruct-v0.2-AWQ */
+  /** Modelo a ser usado. Default: Qwen/Qwen2.5-7B-Instruct-AWQ */
   model?: string;
 }
 
@@ -831,23 +839,24 @@ interface LLMRequest {
 }
 
 // Valores padrão centralizados (Regra 2 - Não Duplicar)
-// Gate 2: LLM (texto) separado de VLM (visão)
+// Arquitetura atual (16/01/2026+): GPU local = Texto + Embeddings + ASR (Vision via OpenAI)
 const DEFAULT_LLM_CONFIG: Required<LLMConfig> = {
   temperature: 0.7,
-  // Gate 2: coerente com max-model-len padrão do stack (2048)
+  // Default de saída (max_tokens). Observação: `MAX_MODEL_LEN` do vLLM pode ser maior (ex.: 8192).
   maxTokens: 2048,
-  model: 'TheBloke/Mistral-7B-Instruct-v0.2-AWQ',
+  model: 'Qwen/Qwen2.5-7B-Instruct-AWQ',
 };
 
 // ============================================================================
 // Gate 2: SSOT de modelos suportados para Agents (LLM texto)
 // ============================================================================
 const ALLOWED_AGENT_LLM_MODEL_NAMES = [
-  'Mistral-7B-Instruct',
-  'Mistral-7B-Instruct-AWQ',
+  'Qwen2.5-7B-Instruct-AWQ',
 ] as const;
 
 const LEGACY_AGENT_LLM_MODEL_NAMES = [
+  'Mistral-7B-Instruct',
+  'Mistral-7B-Instruct-AWQ',
   'Qwen2.5-VL-7B',
   'Qwen2.5-VL-7B-AWQ',
   'Qwen2.5-VL-7B-Instruct-AWQ',
@@ -909,24 +918,22 @@ function getAgentLLMConfig(agent?: AgentConfig | null): LLMConfig {
 function mapModelNameToGpuModel(modelName: string): string {
   const normalized = modelName.trim();
   const modelMap: Record<string, string> = {
-    // Gate 2 (texto): Mistral 7B Instruct (AWQ)
-    'Mistral-7B-Instruct': 'TheBloke/Mistral-7B-Instruct-v0.2-AWQ',
-    'Mistral-7B-Instruct-AWQ': 'TheBloke/Mistral-7B-Instruct-v0.2-AWQ',
+    // Texto (produção): Qwen2.5 7B Instruct (AWQ)
+    'Qwen2.5-7B-Instruct-AWQ': 'Qwen/Qwen2.5-7B-Instruct-AWQ',
   };
   
   const mapped = modelMap[normalized];
   if (mapped) return mapped;
 
-  // Gate 2: o tráfego de chat (texto) é roteado para GpuServiceType.LLM (Mistral).
-  // Não é permitido aceitar modelos legados (ex.: Qwen2.5-VL/Mixtral) e fazer "swap" silencioso.
+  // Não é permitido aceitar modelos legados e fazer "swap" silencioso.
   const isLegacy = (LEGACY_AGENT_LLM_MODEL_NAMES as readonly string[]).includes(normalized);
   logger.warn({ modelName: normalized }, 'modeloBase inválido para LLM (Gate 2)');
   throw new ClientInputError(
     isLegacy
       ? `modeloBase '${normalized}' é legado e não é suportado para LLM (texto) no Gate 2. ` +
-          `Aplique a migração '0016_gate2_migrate_legacy_agent_models.sql' e/ou atualize o agente para 'Mistral-7B-Instruct-AWQ'.`
+          `Aplique a migração '0016_gate2_migrate_legacy_agent_models.sql' e/ou atualize o agente para 'Qwen2.5-7B-Instruct-AWQ'.`
       : `modeloBase '${normalized}' não é suportado para LLM (texto) no Gate 2. ` +
-          `Atualize o agente para 'Mistral-7B-Instruct-AWQ'.`,
+          `Atualize o agente para 'Qwen2.5-7B-Instruct-AWQ'.`,
     { code: isLegacy ? 'LEGACY_AGENT_LLM_MODEL' : 'INVALID_AGENT_LLM_MODEL' },
   );
 }
@@ -946,46 +953,79 @@ const DEFAULT_VLM_IMAGE_PROMPT =
   'possíveis sinais e riscos. Se houver texto na imagem, transcreva o que for legível. ' +
   'Se a imagem não for de trading, descreva objetivamente o conteúdo. Responda em PT-BR.';
 
-async function analyzeImageWithVlm(params: {
+type OpenAIResponsesApiResponse = {
+  id?: string;
+  model?: string;
+  output?: Array<{
+    content?: Array<{ type?: string; text?: string }>;
+  }>;
+};
+
+function extractOutputTextFromResponsesApi(resp: OpenAIResponsesApiResponse | undefined): string | null {
+  const output = resp?.output;
+  if (!output || !Array.isArray(output)) return null;
+  const parts: string[] = [];
+  for (const item of output) {
+    const content = item?.content;
+    if (!content || !Array.isArray(content)) continue;
+    for (const c of content) {
+      if (c?.type === 'output_text' && typeof c.text === 'string' && c.text.trim().length > 0) {
+        parts.push(c.text);
+      }
+    }
+  }
+  const joined = parts.join('\n').trim();
+  return joined.length > 0 ? joined : null;
+}
+
+async function analyzeImageWithOpenAI(params: {
   imageDataUri: string;
   question: string;
 }): Promise<{ text: string; model: string }> {
   const question = params.question.trim().length > 0 ? params.question.trim() : 'Descreva e analise esta imagem.';
 
-  const gpuResponse = await requestGpu({
-    serviceType: GpuServiceType.VLM,
-    endpoint: '/v1/chat/completions',
+  if (!OPENAI_API_KEY) {
+    throw new Error('OPENAI_API_KEY não configurada - Vision via OpenAI é obrigatória');
+  }
+
+  const response = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
-    priority: GpuRequestPriority.CRITICAL,
-    timeout: 60000,
-    body: {
-      messages: [
-        { role: 'system', content: DEFAULT_VLM_IMAGE_PROMPT },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: 'gpt-4.1',
+      max_output_tokens: 800,
+      input: [
+        {
+          role: 'developer',
+          content: [{ type: 'input_text', text: DEFAULT_VLM_IMAGE_PROMPT }],
+        },
         {
           role: 'user',
           content: [
-            { type: 'text', text: question },
-            { type: 'image_url', image_url: { url: params.imageDataUri } },
+            { type: 'input_text', text: question },
+            { type: 'input_image', image_url: params.imageDataUri, detail: 'auto' },
           ],
         },
       ],
-      temperature: 0.2,
-      max_tokens: 800,
-      stream: false,
-    },
+    }),
+    signal: AbortSignal.timeout(60000),
   });
 
-  if (!gpuResponse.success || !gpuResponse.data) {
-    throw new Error(gpuResponse.error || 'Falha ao analisar imagem via VLM');
+  if (!response.ok) {
+    const errText = await response.text().catch(() => '');
+    throw new Error(`OpenAI Vision error: ${response.status} - ${errText}`);
   }
 
-  const payload = gpuResponse.data as OpenAIChatCompletionResponse | undefined;
-  const content = payload?.choices?.[0]?.message?.content;
-  if (!payload?.id || !payload?.model || typeof content !== 'string' || content.trim().length === 0) {
-    throw new Error('Resposta inválida do VLM (OpenAI chat completion)');
+  const payload = (await response.json()) as OpenAIResponsesApiResponse;
+  const content = extractOutputTextFromResponsesApi(payload);
+  if (!payload?.id || !payload?.model || !content) {
+    throw new Error('Resposta inválida da OpenAI Responses API (Vision)');
   }
 
-  return { text: content.trim(), model: payload.model };
+  return { text: content, model: payload.model };
 }
 
 async function callLlamaAPIInternal(request: LLMRequest): Promise<globalThis.Response> {
@@ -3663,23 +3703,23 @@ wss.on('connection', (ws, req) => {
 
         // Upload para RAG Service (processamento assíncrono)
         // Usar tenantId derivado da conversa (mais seguro)
-        // Gate 2: Para imagem, gerar uma descrição/análise via VLM e armazenar no RAG (metadados),
+        // Para imagem, gerar uma descrição/análise via OpenAI Vision e armazenar no RAG (metadados),
         // evitando duplicação e permitindo auditoria/observabilidade do pipeline.
-        let vlmDescriptionForRag: string | undefined;
-        let vlmModelForRag: string | undefined;
+        let visionDescriptionForRag: string | undefined;
+        let visionModelForRag: string | undefined;
         if (validatedMediaType === 'image') {
           try {
             const imageDataUri = `data:${mediaMessage.media.mimeType};base64,${mediaMessage.media.file}`;
-            const analysis = await analyzeImageWithVlm({
+            const analysis = await analyzeImageWithOpenAI({
               imageDataUri,
               question: mediaMessage.content || 'Descreva e analise esta imagem.',
             });
-            vlmDescriptionForRag = analysis.text;
-            vlmModelForRag = analysis.model;
-          } catch (vlmErr) {
+            visionDescriptionForRag = analysis.text;
+            visionModelForRag = analysis.model;
+          } catch (visionErr) {
             logger.error(
-              { error: vlmErr instanceof Error ? vlmErr.message : String(vlmErr) },
-              'Falha ao analisar imagem via VLM'
+              { error: visionErr instanceof Error ? visionErr.message : String(visionErr) },
+              'Falha ao analisar imagem via OpenAI Vision'
             );
           }
         }
@@ -3689,7 +3729,7 @@ wss.on('connection', (ws, req) => {
           mediaMessage.media.filename,
           mediaMessage.media.mimeType,
           mediaSafeTenantId,
-          vlmDescriptionForRag,
+          visionDescriptionForRag,
           userMsg.id,
           mediaMessage.conversationId,
         );
@@ -3713,8 +3753,8 @@ wss.on('connection', (ws, req) => {
               size: Buffer.from(mediaMessage.media.file, 'base64').length,
               url: uploadResult.fileUrl,
               thumbnailUrl: uploadResult.thumbnailUrl,
-              vlmDescription: vlmDescriptionForRag,
-              vlmModel: vlmModelForRag,
+              vlmDescription: visionDescriptionForRag,
+              vlmModel: visionModelForRag,
             }],
           })
           .where(eq(schema.messages.id, userMsg.id));
@@ -5303,11 +5343,10 @@ app.post('/api/chat/notify-agent', asyncHandler(async (req: Request, res: Respon
 }));
 
 // ============================================================================
-// IMAGE ROUTES - ARQUITETURA v4.0.0 (Geração removida, análise mantida)
+// IMAGE ROUTES - OpenAI (Vision + geração) - Arquitetura 16/01/2026+
 // ============================================================================
 
-// NOTA: Schema mantido para documentação - geração de imagens removida na v4.0.0
-const _imageGenerationSchema = z.object({
+const imageGenerationSchema = z.object({
   prompt: z.string().min(1).max(2000),
   negativePrompt: z.string().max(1000).optional(),
   width: z.number().min(256).max(2048).default(1024),
@@ -5317,16 +5356,131 @@ const _imageGenerationSchema = z.object({
   guidanceScale: z.number().min(1).max(20).default(3.5),
 });
 
-// ARQUITETURA v4.0.0: Geração de imagens REMOVIDA
-// Alice agora ANALISA imagens via Qwen2.5-VL (vision) mas NÃO gera
-// Endpoint mantido para retrocompatibilidade - retorna erro 410 (Gone)
-app.post('/api/chat/images/generate', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:write'), async (_req: Request, res: Response) => {
-  logger.warn('Tentativa de usar endpoint de geração de imagens removido na v4.0.0');
-  return res.status(410).json({ 
-    error: 'Funcionalidade removida',
-    message: 'ARQUITETURA v4.0.0: Geração de imagens foi removida. Alice agora ANALISA imagens via Qwen2.5-VL (vision) mas NÃO gera. Para análise de imagens, envie a imagem no chat.',
-    code: 'FEATURE_REMOVED',
-  });
+app.post('/api/chat/images/generate', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:write'), async (req: Request, res: Response) => {
+  const tenantId = req.tenantId;
+  const userId = req.user?.userId;
+
+  if (!tenantId || !userId) {
+    return res.status(401).json({ error: 'Autenticação necessária' });
+  }
+
+  const parseResult = imageGenerationSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    logger.warn({ errors: parseResult.error.flatten() }, 'Input inválido em /api/chat/images/generate');
+    return res.status(400).json({ error: 'Input inválido' });
+  }
+
+  if (!OPENAI_API_KEY) {
+    return res.status(503).json({ error: 'OpenAI não configurado', code: 'OPENAI_NOT_CONFIGURED' });
+  }
+
+  const { prompt, negativePrompt, width, height, steps, seed, guidanceScale } = parseResult.data;
+  const startedAt = Date.now();
+
+  // Criar registro inicial (auditoria e UX: status generating)
+  const [created] = await db.insert(schema.generatedImages).values({
+    tenantId,
+    createdBy: userId,
+    prompt,
+    negativePrompt: negativePrompt ?? null,
+    model: 'gpt-image-1',
+    steps,
+    seed: seed ?? null,
+    width,
+    height,
+    guidanceScale: guidanceScale ?? null,
+    status: 'generating',
+    approvedForTraining: false,
+    usedInFineTuning: false,
+    metadata: {
+      provider: 'openai',
+      api: 'images',
+    },
+  }).returning();
+
+  if (!created) {
+    return res.status(500).json({ error: 'Falha ao criar registro de geração' });
+  }
+
+  try {
+    const size = `${width}x${height}`;
+    const composedPrompt = negativePrompt && negativePrompt.trim().length > 0
+      ? `${prompt}\n\nNegative prompt: ${negativePrompt}`
+      : prompt;
+
+    const openAiResponse = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-image-1',
+        prompt: composedPrompt,
+        size,
+        n: 1,
+        response_format: 'b64_json',
+      }),
+      signal: AbortSignal.timeout(120000),
+    });
+
+    if (!openAiResponse.ok) {
+      const errText = await openAiResponse.text().catch(() => '');
+      throw new Error(`OpenAI Images error: ${openAiResponse.status} - ${errText}`);
+    }
+
+    const payload = await openAiResponse.json() as { data?: Array<{ b64_json?: string }> };
+    const b64 = payload?.data?.[0]?.b64_json;
+    if (!b64 || typeof b64 !== 'string' || b64.length < 64) {
+      throw new Error('Resposta inválida da OpenAI Images API (b64_json ausente)');
+    }
+
+    // Persistir via RAG Service (storage + thumbnail + embeddings OpenCLIP)
+    const filename = `generated-${created.id}.png`;
+    const uploadResult = await uploadMediaToRAG(
+      b64,
+      filename,
+      'image/png',
+      tenantId,
+      prompt,
+      created.messageId ?? undefined,
+      created.conversationId ?? undefined,
+    );
+
+    const generationTimeMs = Date.now() - startedAt;
+
+    await db.update(schema.generatedImages)
+      .set({
+        status: 'completed',
+        imageUrl: uploadResult?.fileUrl ?? null,
+        thumbnailPath: uploadResult?.thumbnailUrl ?? null,
+        generationTimeMs,
+        errorMessage: null,
+        metadata: {
+          ...(created.metadata ?? {}),
+          openai: { model: 'gpt-image-1', size },
+        },
+      })
+      .where(eq(schema.generatedImages.id, created.id));
+
+    const updated = await db.query.generatedImages.findFirst({
+      where: eq(schema.generatedImages.id, created.id),
+    });
+
+    res.json({ image: updated });
+  } catch (error) {
+    const generationTimeMs = Date.now() - startedAt;
+    await db.update(schema.generatedImages)
+      .set({
+        status: 'failed',
+        generationTimeMs,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      })
+      .where(eq(schema.generatedImages.id, created.id));
+
+    logger.error({ error, imageId: created.id }, 'Erro ao gerar imagem via OpenAI');
+    res.status(502).json({ error: 'Falha ao gerar imagem', details: error instanceof Error ? error.message : 'Erro desconhecido' });
+  }
 });
 
 app.post('/api/chat/images/:id/rate', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:write'), async (req: Request, res: Response) => {

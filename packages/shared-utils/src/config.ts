@@ -370,8 +370,9 @@ export const RAG_CHUNK_CONFIG = {
 
 /**
  * Configuração GPU Manager Service (Hetzner GEX44)
- * Gate 2 (LLM separado + VLM dedicado):
- * - LLM (texto) e VLM (visão) são serviços separados (capability-based)
+ * Arquitetura atual (16/01/2026+):
+ * - GPU local: LLM (texto) + Embeddings + ASR
+ * - Vision e geração de imagens: OpenAI API (fora do GPU Manager)
  * - Observabilidade deve permanecer model-agnóstica (troca de modelo sem refazer dashboards)
  */
 export const GPU_MANAGER_CONFIG = {
@@ -379,18 +380,13 @@ export const GPU_MANAGER_CONFIG = {
   url: process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager:3010',
   models: {
     // LLM (texto) - SSOT do stack (`LLM_MODEL_NAME` em produção)
-    llm: process.env.LLM_MODEL_NAME || 'TheBloke/Mistral-7B-Instruct-v0.2-AWQ',
-    // VLM (visão) - SSOT do stack (`VLM_MODEL_NAME` ou `QWEN_VL_MODEL_NAME` em produção)
-    vlm:
-      process.env.VLM_MODEL_NAME ||
-      process.env.QWEN_VL_MODEL_NAME ||
-      'Qwen/Qwen2.5-VL-7B-Instruct-AWQ',
+    llm: process.env.LLM_MODEL_NAME || 'Qwen/Qwen2.5-7B-Instruct-AWQ',
     embeddings: 'Qwen/Qwen3-Embedding-0.6B',
     image: 'laion/CLIP-ViT-H-14-laion2B-s32B-b79K',
     asr: 'nvidia/Canary-1B',
   },
   defaults: {
-    // Gate 2: coerente com os serviços vLLM (max-model-len=2048 por padrão no stack)
+    // Default de saída (max_tokens). Observação: `MAX_MODEL_LEN` do vLLM pode ser maior (ex.: 8192).
     maxTokens: 2048,
     temperature: 0.7,
     topP: 0.9,

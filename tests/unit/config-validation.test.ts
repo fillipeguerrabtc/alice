@@ -706,9 +706,10 @@ describe('Config - GPU Manager Service Configuration', () => {
       expect(GPU_MANAGER_CONFIG.url).toBe('http://alice-gpu-manager:3010');
     });
 
-    it('deve ter modelos LLM/VLM configurados (Gate 2)', () => {
-      expect(GPU_MANAGER_CONFIG.models.llm).toBe('TheBloke/Mistral-7B-Instruct-v0.2-AWQ');
-      expect(GPU_MANAGER_CONFIG.models.vlm).toBe('Qwen/Qwen2.5-VL-7B-Instruct-AWQ');
+    it('deve ter modelo LLM configurado (Qwen2.5 7B AWQ)', () => {
+      expect(GPU_MANAGER_CONFIG.models.llm).toBe('Qwen/Qwen2.5-7B-Instruct-AWQ');
+      // Arquitetura atual: VLM local removido (Vision via OpenAI)
+      expect('vlm' in GPU_MANAGER_CONFIG.models).toBe(false);
     });
 
     it('deve ter maxTokens padrão de 2048', () => {
