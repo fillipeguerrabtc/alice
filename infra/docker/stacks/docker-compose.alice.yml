@@ -683,13 +683,21 @@ services:
         max-file: "3"
 
   # ASR Canary-1B - Transcrição de Áudio
-  # ARQUITETURA v4.0.0: Sempre ativo (sem profile)
+  # AJUSTE ENTERPRISE (16/01/2026):
+  # Em GPU 20GB (RTX 4000 Ada SFF), rodar LLM+VLM+Embeddings+ASR simultaneamente
+  # pode exceder o budget real de VRAM observado em produção, causando restart loop
+  # do VLM. Para preservar o core multimodal (VLM) e o core de chat (LLM), o ASR
+  # passa a ser iniciado sob demanda via profile.
+  #
+  # Fonte de verdade: nvidia-smi em produção + métricas (Grafana).
   gpu-asr:
     image: ${IMAGE_PREFIX}-asr-canary:${IMAGE_TAG:-latest}
     platform: linux/amd64
     container_name: gpu-asr
     restart: unless-stopped
     runtime: nvidia
+    profiles:
+      - gpu-asr
     security_opt:
       - no-new-privileges:true
     environment:

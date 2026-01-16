@@ -1667,6 +1667,54 @@ jobs:
             
             # Criar diretório para version tracking (usado pelo rollback system)
             mkdir -p /opt/alice/versions
+
+            # =========================================================
+            # 4. VALIDAÇÃO ESPECÍFICA DO CADDY (TLS storage / fail-fast)
+            # =========================================================
+            # Causa raiz observada em produção:
+            # - Caddy não consegue escrever em /data e /config (volumes bind)
+            # - Resultado: falha na emissão/armazenamento de certificados ACME
+            #   e erros TLS (ERR_SSL_PROTOCOL_ERROR no navegador).
+            #
+            # Esta validação garante que o usuário do Caddy (UID 1000) consegue
+            # escrever nos diretórios bind usados pelos volumes caddy_data/caddy_config.
+            echo ""
+            echo "🧪 Validando volumes do Caddy (UID 1000 write-test)..."
+            CADDY_DATA_DIR="/opt/alice/data/caddy"
+            CADDY_CONFIG_DIR="/opt/alice/data/caddy-config"
+
+            if ! sudo test -d "$CADDY_DATA_DIR" || ! sudo test -d "$CADDY_CONFIG_DIR"; then
+              echo "❌ ERRO: Diretórios do Caddy não existem (SSOT de permissões falhou)"
+              sudo ls -ld /opt/alice/data || true
+              exit 1
+            fi
+
+            # Teste de escrita via Docker (UID 1000) no bind mount real
+            if ! docker run --rm --user 1000:1000 -v "$CADDY_DATA_DIR:/test:rw" alpine:3.21 sh -c "touch /test/.rw-test && ls -la /test/.rw-test" 2>&1; then
+              echo "⚠️  UID 1000 (caddy) não conseguiu escrever em $CADDY_DATA_DIR via Docker"
+              echo "🔧 Reaplicando SSOT de permissões e tentando novamente..."
+              sudo /opt/alice/app/infra/scripts/fix-production-permissions.sh --create
+              if ! docker run --rm --user 1000:1000 -v "$CADDY_DATA_DIR:/test:rw" alpine:3.21 sh -c "touch /test/.rw-test && ls -la /test/.rw-test" 2>&1; then
+                echo "❌ ERRO: UID 1000 (caddy) ainda NÃO consegue escrever em $CADDY_DATA_DIR via Docker"
+                sudo ls -ld "$CADDY_DATA_DIR" || true
+                exit 1
+              fi
+            fi
+            docker run --rm --user 1000:1000 -v "$CADDY_DATA_DIR:/test:rw" alpine:3.21 rm -f /test/.rw-test 2>/dev/null || true
+
+            if ! docker run --rm --user 1000:1000 -v "$CADDY_CONFIG_DIR:/test:rw" alpine:3.21 sh -c "touch /test/.rw-test && ls -la /test/.rw-test" 2>&1; then
+              echo "⚠️  UID 1000 (caddy) não conseguiu escrever em $CADDY_CONFIG_DIR via Docker"
+              echo "🔧 Reaplicando SSOT de permissões e tentando novamente..."
+              sudo /opt/alice/app/infra/scripts/fix-production-permissions.sh --create
+              if ! docker run --rm --user 1000:1000 -v "$CADDY_CONFIG_DIR:/test:rw" alpine:3.21 sh -c "touch /test/.rw-test && ls -la /test/.rw-test" 2>&1; then
+                echo "❌ ERRO: UID 1000 (caddy) ainda NÃO consegue escrever em $CADDY_CONFIG_DIR via Docker"
+                sudo ls -ld "$CADDY_CONFIG_DIR" || true
+                exit 1
+              fi
+            fi
+            docker run --rm --user 1000:1000 -v "$CADDY_CONFIG_DIR:/test:rw" alpine:3.21 rm -f /test/.rw-test 2>/dev/null || true
+
+            echo "✅ Caddy volumes OK (UID 1000 pode escrever)"
             
             # =========================================================
             # 3. SECRETS (arquivos montados em containers)
@@ -3846,7 +3894,13 @@ jobs:
             
             # Gate 2: containers GPU são parte do stack ALICE e DEVEM estar healthy
             # para evitar "Deploy OK" enquanto inference está em crash/restart loop.
-            CONTAINERS="alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager gpu-llm gpu-vlm gpu-embeddings gpu-asr"
+            #
+            # NOTA (16/01/2026): gpu-asr pode ser iniciado via profile (on-demand).
+            # Logo, só exigimos gpu-asr se o container existir.
+            CONTAINERS="alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager gpu-llm gpu-vlm gpu-embeddings"
+            if docker inspect gpu-asr >/dev/null 2>&1; then
+              CONTAINERS="$CONTAINERS gpu-asr"
+            fi
             # =================================================================
             # CORREÇÃO PR#100 (09/01/2026): Alinhar workflow timeout com Docker healthcheck
             # =================================================================
