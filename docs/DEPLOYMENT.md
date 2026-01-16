@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 16 de Janeiro de 2026  
-**Versão:** 10.0 - Guia consolidado e formatado
+**Versão:** 10.1 - Rollback com cleanup completo e seguro
 
 ## Visão geral
 
@@ -52,6 +52,12 @@ gh workflow run deploy-stack-modular.yml -f stack=observability -f version=v1.0.
 # Rollback manual de um stack específico
 gh workflow run deploy-stack-modular.yml -f stack=erpnext -f version=v1.0.0 -f rollback=true -f rollback_version=v0.9.0
 ```
+
+### Rollback automático e cleanup (INFRA)
+
+- Em falha de primeiro deploy (sem versão anterior), o rollback entra em modo **cleanup**.
+- O cleanup remove **containers** e, quando **nenhum outro stack** estiver ativo, remove também **volumes, imagens e redes** do stack INFRA.
+- Se houver outros stacks ativos, a limpeza completa é **bloqueada** para evitar impacto nos serviços em produção.
 
 ## Primeiro deploy (servidor limpo)
 

@@ -2522,6 +2522,9 @@ jobs:
               "alice-minio"
               "alice-minio-init"
               "alice-pgbackrest-init"
+              "alice-postgres-exporter"
+              "alice-pgbouncer-exporter"
+              "alice-redis-exporter"
             )
             
             REMOVED_COUNT=0
@@ -2799,6 +2802,86 @@ jobs:
                                -f docker-compose.base.yml \
                                -f docker-compose.infra.yml \
                                down --remove-orphans --timeout 30 2>&1 || true
+
+                # =================================================================
+                # LIMPEZA COMPLETA (VOLUMES, REDES, IMAGENS) - SOMENTE SE SEGURO
+                # =================================================================
+                # Regra: Não remover recursos compartilhados se outros stacks estiverem ativos
+                # =================================================================
+                INFRA_CONTAINERS_REGEX="^(alice-postgres|alice-pgbouncer|alice-redis|alice-qdrant|alice-tor|alice-searxng|alice-caddy|alice-minio|alice-minio-init|alice-pgbackrest-init|alice-postgres-exporter|alice-pgbouncer-exporter|alice-redis-exporter)$"
+                OTHER_STACKS=$(docker ps -a --format '{{.Names}}' | grep '^alice-' | grep -v -E "$INFRA_CONTAINERS_REGEX" || true)
+                if [ -n "$OTHER_STACKS" ]; then
+                  echo "⚠️ Outros stacks detectados. Limpando apenas containers para evitar impacto."
+                  echo "$OTHER_STACKS"
+                else
+                  echo "🧹 Limpeza completa autorizada (sem outros stacks ativos)..."
+
+                  INFRA_VOLUMES=(
+                    "alice-postgres-data"
+                    "alice-pgbackrest-spool"
+                    "alice-caddy-data"
+                    "alice-caddy-config"
+                    "alice-caddy-logs"
+                    "alice-minio-data"
+                    "alice-qdrant-data"
+                    "alice-redis-data"
+                    "alice-searxng-config"
+                  )
+                  for volume in "${INFRA_VOLUMES[@]}"; do
+                    if docker volume inspect "$volume" >/dev/null 2>&1; then
+                      echo "   🗑️  Removendo volume: $volume"
+                      docker volume rm -f "$volume" 2>/dev/null || true
+                    fi
+                  done
+
+                  INFRA_IMAGE_REPOS=(
+                    "ghcr.io/fillipeguerrabtc/alice-postgres"
+                    "ghcr.io/fillipeguerrabtc/alice-pgbackrest"
+                    "ghcr.io/fillipeguerrabtc/alice-caddy"
+                  )
+                  for repo in "${INFRA_IMAGE_REPOS[@]}"; do
+                    IMAGES=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep "^${repo}:" || true)
+                    if [ -n "$IMAGES" ]; then
+                      while read -r image; do
+                        if [ -n "$image" ]; then
+                          echo "   🗑️  Removendo imagem: $image"
+                          docker image rm -f "$image" 2>/dev/null || true
+                        fi
+                      done <<< "$IMAGES"
+                    fi
+                  done
+
+                  INFRA_IMAGES=(
+                    "qdrant/qdrant:v1.16.2"
+                    "redis:7.4.7-alpine"
+                    "edoburu/pgbouncer:latest"
+                    "searxng/searxng:2025.12.30-a5c946a32"
+                    "dperson/torproxy:latest"
+                    "quay.io/minio/minio:latest"
+                    "quay.io/minio/mc:latest"
+                    "prometheuscommunity/postgres-exporter:v0.17.1"
+                    "prometheuscommunity/pgbouncer-exporter:v0.9.0"
+                    "oliver006/redis_exporter:v1.69.0-alpine"
+                  )
+                  for image in "${INFRA_IMAGES[@]}"; do
+                    if docker image inspect "$image" >/dev/null 2>&1; then
+                      echo "   🗑️  Removendo imagem: $image"
+                      docker image rm -f "$image" 2>/dev/null || true
+                    fi
+                  done
+
+                  for network in "alice-network" "erpnext-network"; do
+                    if docker network inspect "$network" >/dev/null 2>&1; then
+                      ATTACHED=$(docker network inspect -f '{{len .Containers}}' "$network" 2>/dev/null || echo "0")
+                      if [ "$ATTACHED" = "0" ]; then
+                        echo "   🗑️  Removendo rede: $network"
+                        docker network rm "$network" 2>/dev/null || true
+                      else
+                        echo "   ⚠️ Rede $network em uso ($ATTACHED containers) - preservada"
+                      fi
+                    fi
+                  done
+                fi
                 echo "✅ Cleanup completed"
               fi
             }
@@ -3462,6 +3545,85 @@ jobs:
               for container in "${INFRA_CONTAINERS[@]}"; do
                 docker rm -f "$container" 2>/dev/null || true
               done
+            fi
+
+            # STAGE 3.5: Cleanup completo (volumes, redes, imagens) apenas em modo CLEANUP
+            if [ "$ROLLBACK_MODE" = "cleanup" ]; then
+              echo ""
+              echo "🧹 Stage 3.5: Cleanup completo (volumes, redes, imagens)..."
+
+              INFRA_CONTAINERS_REGEX="^(alice-postgres|alice-pgbouncer|alice-redis|alice-qdrant|alice-tor|alice-searxng|alice-caddy|alice-minio|alice-minio-init|alice-pgbackrest-init|alice-postgres-exporter|alice-pgbouncer-exporter|alice-redis-exporter)$"
+              OTHER_STACKS=$(docker ps -a --format '{{.Names}}' | grep '^alice-' | grep -v -E "$INFRA_CONTAINERS_REGEX" || true)
+              if [ -n "$OTHER_STACKS" ]; then
+                echo "⚠️ Outros stacks detectados. Cleanup completo abortado por segurança."
+                echo "$OTHER_STACKS"
+              else
+                INFRA_VOLUMES=(
+                  "alice-postgres-data"
+                  "alice-pgbackrest-spool"
+                  "alice-caddy-data"
+                  "alice-caddy-config"
+                  "alice-caddy-logs"
+                  "alice-minio-data"
+                  "alice-qdrant-data"
+                  "alice-redis-data"
+                  "alice-searxng-config"
+                )
+                for volume in "${INFRA_VOLUMES[@]}"; do
+                  if docker volume inspect "$volume" >/dev/null 2>&1; then
+                    echo "   🗑️  Removendo volume: $volume"
+                    docker volume rm -f "$volume" 2>/dev/null || true
+                  fi
+                done
+
+                INFRA_IMAGE_REPOS=(
+                  "ghcr.io/fillipeguerrabtc/alice-postgres"
+                  "ghcr.io/fillipeguerrabtc/alice-pgbackrest"
+                  "ghcr.io/fillipeguerrabtc/alice-caddy"
+                )
+                for repo in "${INFRA_IMAGE_REPOS[@]}"; do
+                  IMAGES=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep "^${repo}:" || true)
+                  if [ -n "$IMAGES" ]; then
+                    while read -r image; do
+                      if [ -n "$image" ]; then
+                        echo "   🗑️  Removendo imagem: $image"
+                        docker image rm -f "$image" 2>/dev/null || true
+                      fi
+                    done <<< "$IMAGES"
+                  fi
+                done
+
+                INFRA_IMAGES=(
+                  "qdrant/qdrant:v1.16.2"
+                  "redis:7.4.7-alpine"
+                  "edoburu/pgbouncer:latest"
+                  "searxng/searxng:2025.12.30-a5c946a32"
+                  "dperson/torproxy:latest"
+                  "quay.io/minio/minio:latest"
+                  "quay.io/minio/mc:latest"
+                  "prometheuscommunity/postgres-exporter:v0.17.1"
+                  "prometheuscommunity/pgbouncer-exporter:v0.9.0"
+                  "oliver006/redis_exporter:v1.69.0-alpine"
+                )
+                for image in "${INFRA_IMAGES[@]}"; do
+                  if docker image inspect "$image" >/dev/null 2>&1; then
+                    echo "   🗑️  Removendo imagem: $image"
+                    docker image rm -f "$image" 2>/dev/null || true
+                  fi
+                done
+
+                for network in "alice-network" "erpnext-network"; do
+                  if docker network inspect "$network" >/dev/null 2>&1; then
+                    ATTACHED=$(docker network inspect -f '{{len .Containers}}' "$network" 2>/dev/null || echo "0")
+                    if [ "$ATTACHED" = "0" ]; then
+                      echo "   🗑️  Removendo rede: $network"
+                      docker network rm "$network" 2>/dev/null || true
+                    else
+                      echo "   ⚠️ Rede $network em uso ($ATTACHED containers) - preservada"
+                    fi
+                  fi
+                done
+              fi
             fi
             
             # STAGE 4: Deploy (apenas se não for cleanup mode)

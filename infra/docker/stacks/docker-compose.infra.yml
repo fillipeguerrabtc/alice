@@ -253,56 +253,56 @@ services:
     command:
       - |
         set -eu
-        STANZA="$PGBACKREST_STANZA"
-        ALLOW_RESET="$PGBACKREST_ALLOW_STANZA_RESET"
+        STANZA="$$PGBACKREST_STANZA"
+        ALLOW_RESET="$$PGBACKREST_ALLOW_STANZA_RESET"
         INFO_ERR="/tmp/pgbackrest_info.err"
         CREATE_ERR="/tmp/pgbackrest_create.err"
-        if [ -z "$STANZA" ]; then
+        if [ -z "$$STANZA" ]; then
           STANZA="alice_prod"
         fi
-        if [ -z "$ALLOW_RESET" ]; then
+        if [ -z "$$ALLOW_RESET" ]; then
           ALLOW_RESET="false"
         fi
-        echo "🔍 Verificando se stanza '$STANZA' já existe..."
-        if pgbackrest info --stanza="$STANZA" > /tmp/pgbackrest_info.txt 2> "$INFO_ERR"; then
+        echo "🔍 Verificando se stanza '$$STANZA' já existe..."
+        if pgbackrest info --stanza="$$STANZA" > /tmp/pgbackrest_info.txt 2> "$$INFO_ERR"; then
           if grep -q "status: ok" /tmp/pgbackrest_info.txt; then
-            echo "✅ Stanza '$STANZA' já existe e está OK"
+            echo "✅ Stanza '$$STANZA' já existe e está OK"
             exit 0
           fi
         fi
-        if grep -qE "ArchiveMismatchError|backup and archive info files exist" "$INFO_ERR"; then
-          echo "⚠️  Stanza '$STANZA' inconsistente com o PostgreSQL atual."
-          if [ "$ALLOW_RESET" = "true" ]; then
-            echo "🧹 Reset autorizado: removendo stanza '$STANZA' (metadados de backup serão recriados)."
-            pgbackrest stanza-delete --stanza="$STANZA" --force --log-level-console=info
+        if grep -qE "ArchiveMismatchError|backup and archive info files exist" "$$INFO_ERR"; then
+          echo "⚠️  Stanza '$$STANZA' inconsistente com o PostgreSQL atual."
+          if [ "$$ALLOW_RESET" = "true" ]; then
+            echo "🧹 Reset autorizado: removendo stanza '$$STANZA' (metadados de backup serão recriados)."
+            pgbackrest stanza-delete --stanza="$$STANZA" --force --log-level-console=info
           else
             echo "❌ Stanza inconsistente. Para resetar, defina PGBACKREST_ALLOW_STANZA_RESET=true."
-            cat "$INFO_ERR" >&2
+            cat "$$INFO_ERR" >&2
             exit 1
           fi
         fi
-        echo "📦 Criando stanza '$STANZA' (modo offline - postgres já está healthy)..."
+        echo "📦 Criando stanza '$$STANZA' (modo offline - postgres já está healthy)..."
         # --no-online: Cria stanza sem verificar cluster via SSH/TCP
         # Seguro porque depends_on já garante postgres:service_healthy
-        if ! pgbackrest stanza-create --stanza="$STANZA" --no-online --log-level-console=info 2> "$CREATE_ERR"; then
-          if grep -qE "ArchiveMismatchError|backup and archive info files exist" "$CREATE_ERR"; then
-            echo "⚠️  Stanza '$STANZA' inconsistente durante criação."
-            if [ "$ALLOW_RESET" = "true" ]; then
-              echo "🧹 Reset autorizado: removendo stanza '$STANZA' e recriando."
-              pgbackrest stanza-delete --stanza="$STANZA" --force --log-level-console=info
-              pgbackrest stanza-create --stanza="$STANZA" --no-online --log-level-console=info
+        if ! pgbackrest stanza-create --stanza="$$STANZA" --no-online --log-level-console=info 2> "$$CREATE_ERR"; then
+          if grep -qE "ArchiveMismatchError|backup and archive info files exist" "$$CREATE_ERR"; then
+            echo "⚠️  Stanza '$$STANZA' inconsistente durante criação."
+            if [ "$$ALLOW_RESET" = "true" ]; then
+              echo "🧹 Reset autorizado: removendo stanza '$$STANZA' e recriando."
+              pgbackrest stanza-delete --stanza="$$STANZA" --force --log-level-console=info
+              pgbackrest stanza-create --stanza="$$STANZA" --no-online --log-level-console=info
             else
               echo "❌ Stanza inconsistente. Para resetar, defina PGBACKREST_ALLOW_STANZA_RESET=true."
-              cat "$CREATE_ERR" >&2
+              cat "$$CREATE_ERR" >&2
               exit 1
             fi
           else
-            cat "$CREATE_ERR" >&2
+            cat "$$CREATE_ERR" >&2
             exit 1
           fi
         fi
-        echo "✅ Stanza '$STANZA' criada com sucesso!"
-        pgbackrest info --stanza="$STANZA"
+        echo "✅ Stanza '$$STANZA' criada com sucesso!"
+        pgbackrest info --stanza="$$STANZA"
 
   # ===========================================================================
   # POSTGRESQL - Banco Principal com pgvector
