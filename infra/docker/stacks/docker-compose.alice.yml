@@ -1,7 +1,7 @@
 # =============================================================================
 # ALICE PLATFORM - ALICE STACK (Microserviços + GPU)
 # =============================================================================
-# Versão: 6.0 (GPU Gate 2 - LLM separado + VLM dedicado)
+# Versão: 6.1 (GPU: Texto+Embeddings+ASR; Vision via OpenAI)
 # Data: 15 de Janeiro de 2026
 # Autor: Fillipe Guerra
 #
@@ -18,9 +18,8 @@
 #   - alice-observability - Health checks
 #   - gpu-manager - Gerenciamento centralizado de GPU
 #
-#   GPU (SEMPRE ATIVOS - Gate 2):
-#   - gpu-llm - Mistral 7B Instruct AWQ (LLM texto)
-#   - gpu-vlm - Qwen2.5-VL 7B AWQ (VLM visão)
+#   GPU (SEMPRE ATIVOS):
+#   - gpu-llm - Qwen2.5 7B Instruct AWQ (LLM texto, contexto 8k)
 #   - gpu-embeddings - Qwen3-Embedding-0.6B INT8 (1024 dim) + OpenCLIP (1024 dim)
 #   - gpu-asr - Canary-1B (ASR) - Transcrição de áudio
 #
@@ -482,9 +481,8 @@ services:
       - PORT=3010
       - REDIS_URL=${REDIS_URL:?REDIS_URL é obrigatório}
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET:?INTERNAL_API_SECRET é obrigatório}
-      # Gate 2: URLs dos serviços GPU (capabilities)
+      # URLs dos serviços GPU (capabilities)
       - LLM_GPU_URL=${LLM_GPU_URL:-http://gpu-llm:8000}
-      - VLM_GPU_URL=${VLM_GPU_URL:-http://gpu-vlm:8000}
       - EMBEDDINGS_GPU_URL=${EMBEDDINGS_GPU_URL:-http://gpu-embeddings:8000}
       - ASR_GPU_URL=${ASR_GPU_URL:-http://gpu-asr:8000}
       - TRAINING_GPU_URL=${TRAINING_GPU_URL:-http://gpu-trainer:8000}
@@ -515,81 +513,27 @@ services:
   # ===========================================================================
   # GPU SERVICES - ARQUITETURA v4.0.0 (11/01/2026)
   # ===========================================================================
-  # Todos os serviços GPU rodam SIMULTANEAMENTE (Gate 2):
+  # ARQUITETURA ATUAL (16/01/2026+):
+  # GPU local é usada SOMENTE para:
   # - gpu-llm: LLM (texto)
-  # - gpu-vlm: VLM (visão)
   # - gpu-embeddings: embeddings (texto+imagem)
   # - gpu-asr: ASR (transcrição)
-  # - gpu-trainer: QLoRA (12GB) - Sob demanda via profile
+  # - gpu-trainer: QLoRA (sob demanda via profile)
+  #
+  # VLM (visão) local (`gpu-vlm`) foi REMOVIDO completamente:
+  # - A análise de imagens (Vision) e a geração de imagens são feitas via OpenAI API.
   #
   # Benefícios:
-  # - Zero latência de troca (todos sempre ativos)
-  # - 5GB livres para operações extras
-  # - Treinamento sob demanda pausa serviços temporariamente
+  # - VRAM liberada para contexto 8k no LLM + ASR always-on
+  # - Menos complexidade operacional (sem serviço VLM local)
+  # - Treinamento permanece sob demanda (libera VRAM quando necessário)
   # ===========================================================================
 
-  # Qwen2.5-VL 7B AWQ - LLM + Vision
-  # Gate 2 (15/01/2026): VLM dedicado (visão) para análise multimodal de imagens/gráficos
-  # 
-  # CORREÇÃO VRAM (Gate 2):
-  # - Modelo AWQ ocupa ~6.5GB (pesos), NÃO ~4GB como estimado
-  # - max-model-len=2048 reduz KV cache para coexistência em 20GB (LLM + VLM + Embeddings + ASR)
-  # - gpu_memory_utilization=0.36 (~7.2GB) evita overcommit ao coexistir com outros serviços GPU
-  # 
-  # Nota (Gate 2): valores reais variam por `MAX_MODEL_LEN`/`GPU_MEMORY_UTILIZATION` e backend.
-  # Use Prometheus/Grafana (GPU Manager + GPU Services) como fonte de verdade em produção.
-  gpu-vlm:
-    image: ${IMAGE_PREFIX}-qwen-vl:${IMAGE_TAG:-latest}
-    platform: linux/amd64
-    container_name: gpu-vlm
-    restart: unless-stopped
-    runtime: nvidia
-    security_opt:
-      - no-new-privileges:true
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=0
-      - CUDA_VISIBLE_DEVICES=0
-      - MODEL_NAME=${QWEN_VL_MODEL_NAME:-Qwen/Qwen2.5-VL-7B-Instruct-AWQ}
-      - QUANTIZATION=awq
-      # Gate 2: max-model-len reduzido para caber com serviços GPU simultâneos
-      - MAX_MODEL_LEN=${QWEN_VL_MAX_MODEL_LEN:-2048}
-      # Gate 2: budget conservador para coexistência (evita alocação excessiva pelo vLLM)
-      - GPU_MEMORY_UTILIZATION=${QWEN_VL_GPU_MEMORY_UTILIZATION:-0.36}
-      - TENSOR_PARALLEL_SIZE=1
-      - HOST=0.0.0.0
-      - PORT=8000
-      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
-    ports:
-      - "127.0.0.1:8000:8000"
-    networks:
-      - alice-network
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-        limits:
-          memory: 8G
-          cpus: '4.0'
-    healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
-      interval: 20s
-      timeout: 10s
-      start_period: 90s
-      retries: 10
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
   # ===========================================================================
-  # LLM (texto) - Mistral 7B Instruct (AWQ) - Gate 2
+  # LLM (texto) - Qwen2.5 7B Instruct (AWQ)
   # ===========================================================================
   gpu-llm:
-    image: ${IMAGE_PREFIX}-llm-mistral:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX}-llm-qwen25:${IMAGE_TAG:-latest}
     platform: linux/amd64
     container_name: gpu-llm
     restart: unless-stopped
@@ -599,11 +543,12 @@ services:
     environment:
       - NVIDIA_VISIBLE_DEVICES=0
       - CUDA_VISIBLE_DEVICES=0
-      - MODEL_NAME=${LLM_MODEL_NAME:-TheBloke/Mistral-7B-Instruct-v0.2-AWQ}
+      - MODEL_NAME=${LLM_MODEL_NAME:-Qwen/Qwen2.5-7B-Instruct-AWQ}
       - QUANTIZATION=awq
-      - MAX_MODEL_LEN=${LLM_MAX_MODEL_LEN:-2048}
-      # Gate 2: budget conservador para coexistência (LLM + VLM + Embeddings + ASR em 20GB)
-      - GPU_MEMORY_UTILIZATION=${LLM_GPU_MEMORY_UTILIZATION:-0.28}
+      - MAX_MODEL_LEN=${LLM_MAX_MODEL_LEN:-8192}
+      # Budget conservador para 20GB com Embeddings + ASR always-on.
+      # Nota: fonte de verdade é o consumo real via métricas/nvidia-smi.
+      - GPU_MEMORY_UTILIZATION=${LLM_GPU_MEMORY_UTILIZATION:-0.40}
       - TENSOR_PARALLEL_SIZE=1
       - HOST=0.0.0.0
       - PORT=8000
@@ -683,21 +628,15 @@ services:
         max-file: "3"
 
   # ASR Canary-1B - Transcrição de Áudio
-  # AJUSTE ENTERPRISE (16/01/2026):
-  # Em GPU 20GB (RTX 4000 Ada SFF), rodar LLM+VLM+Embeddings+ASR simultaneamente
-  # pode exceder o budget real de VRAM observado em produção, causando restart loop
-  # do VLM. Para preservar o core multimodal (VLM) e o core de chat (LLM), o ASR
-  # passa a ser iniciado sob demanda via profile.
-  #
-  # Fonte de verdade: nvidia-smi em produção + métricas (Grafana).
+  # ARQUITETURA ATUAL (16/01/2026+):
+  # ASR é always-on. O VLM local foi removido e a visão é via OpenAI.
+  # Fonte de verdade: métricas (Grafana) + nvidia-smi em produção.
   gpu-asr:
     image: ${IMAGE_PREFIX}-asr-canary:${IMAGE_TAG:-latest}
     platform: linux/amd64
     container_name: gpu-asr
     restart: unless-stopped
     runtime: nvidia
-    profiles:
-      - gpu-asr
     security_opt:
       - no-new-privileges:true
     environment:
@@ -755,7 +694,7 @@ services:
       - STORAGE_DIR=/opt/alice/uploads/training
       # Gate 2 (SSOT): Treinamento deve usar o MESMO modelo base do LLM (texto),
       # evitando divergência entre inference e fine-tuning.
-      - BASE_MODEL=${LLM_MODEL_NAME:-TheBloke/Mistral-7B-Instruct-v0.2-AWQ}
+      - BASE_MODEL=${LLM_MODEL_NAME:-Qwen/Qwen2.5-7B-Instruct-AWQ}
       - TRAINING_METHOD=qlora
     volumes:
       - /opt/alice/uploads:/opt/alice/uploads:rw
