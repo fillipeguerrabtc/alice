@@ -151,7 +151,7 @@ initFeatureFlags(featureFlagStorage);
 logger.info('Sistema de feature flags inicializado');
 
 initOrchestrator(db);
-// ARQUITETURA v4.0.0: initImageGeneration removido - Qwen2.5-VL analisa imagens via chat
+// ARQUITETURA 16/01/2026+: geração e análise de imagens via OpenAI
 initTradingOrchestrator(db);
 
 const app = express();
@@ -177,7 +177,7 @@ app.use(metricsRouter);
 setupSwaggerUI(app, {
   serviceName: 'chat-service',
   version: '1.0.0',
-  description: 'Serviço de chat com WebSocket, LLM streaming e análise de imagens (Qwen2.5-VL Vision).',
+  description: 'Serviço de chat com WebSocket, LLM streaming e análise de imagens via OpenAI (gpt-4.1).',
   port: Number(PORT),
   tags: CHAT_SERVICE_TAGS,
   paths: chatServicePaths,
@@ -910,9 +910,9 @@ function getAgentLLMConfig(agent?: AgentConfig | null): LLMConfig {
 
 /**
  * Mapeia nome amigável do modelo para o nome usado pelo runtime GPU (vLLM/OpenAI).
- * Gate 2: LLM (texto) passa a ser Mistral 7B; VLM (visão) será configurado separadamente.
+ * Gate 2: LLM (texto) usa Qwen2.5 7B AWQ; Vision via OpenAI.
  * 
- * @param modelName - Nome do modelo no banco (ex: "Mistral-7B-Instruct")
+ * @param modelName - Nome do modelo no banco (ex: "Qwen2.5-7B-Instruct-AWQ")
  * @returns Nome do modelo para o runtime (ex: repo Hugging Face)
  */
 function mapModelNameToGpuModel(modelName: string): string {
@@ -947,7 +947,7 @@ type OpenAIChatCompletionResponse = {
   }>;
 };
 
-const DEFAULT_VLM_IMAGE_PROMPT =
+const DEFAULT_VISION_IMAGE_PROMPT =
   'Você é um assistente especializado em Trading, Finanças, Contabilidade e Matemática. ' +
   'Analise a imagem enviada. Se for um gráfico (candles, indicadores), descreva padrões, tendência, suportes/resistências, ' +
   'possíveis sinais e riscos. Se houver texto na imagem, transcreva o que for legível. ' +
@@ -1000,7 +1000,7 @@ async function analyzeImageWithOpenAI(params: {
       input: [
         {
           role: 'developer',
-          content: [{ type: 'input_text', text: DEFAULT_VLM_IMAGE_PROMPT }],
+          content: [{ type: 'input_text', text: DEFAULT_VISION_IMAGE_PROMPT }],
         },
         {
           role: 'user',
@@ -1903,7 +1903,7 @@ app.get('/api/chat/health', async (_req: Request, res: Response) => {
     invalidAgentsCount = null;
   }
 
-  // Gate 2: LLM (texto) separado de VLM (visão) e model-agnóstico por capability
+  // Gate 2: LLM (texto) model-agnóstico por capability
   res.json({ 
     status: overallStatus, 
     service: 'chat-service',
@@ -3255,9 +3255,8 @@ wss.on('connection', (ws, req) => {
 
         ws.send(JSON.stringify({ type: 'message', data: userMsg }));
 
-        // ARQUITETURA v4.0.0: Geração de imagens REMOVIDA
-        // Alice agora ANALISA imagens via Qwen2.5-VL mas NÃO gera
-        // Se o usuário pedir para gerar imagem, informamos que a funcionalidade foi removida
+        // ARQUITETURA 16/01/2026+: geração de imagens via OpenAI (gpt-image-1)
+        // Se o usuário pedir para gerar imagem, orientamos para o fluxo OpenAI
         const imageDetection = detectImageGenerationRequest(messageContent);
         
         if (imageDetection.isImageRequest && imageDetection.prompt) {
@@ -3266,12 +3265,12 @@ wss.on('connection', (ws, req) => {
             prompt: imageDetection.prompt,
             confidence: imageDetection.confidence,
             reason: imageDetection.reason,
-          }, 'Pedido de geração de imagem detectado - funcionalidade removida na v4.0.0');
+          }, 'Pedido de geração de imagem detectado - OpenAI Images disponível');
 
-          // Informar ao usuário que geração de imagens foi removida
-          const removalMessage = 'Desculpe, a geração de imagens não está mais disponível na Alice v4.0.0. ' +
-            'Agora eu consigo **analisar e interpretar imagens** que você enviar (gráficos, documentos, screenshots), ' +
-            'mas não posso criar novas imagens. Se você tiver uma imagem para analisar, basta enviá-la no chat!';
+          // Informar ao usuário sobre geração via OpenAI e manter fluxo explícito
+          const removalMessage = 'A geração de imagens está disponível via OpenAI. ' +
+            'Use a opção **Gerar imagem** no painel ou o endpoint `/api/chat/images/generate`. ' +
+            'Se quiser, descreva o que deseja e eu formulo o prompt ideal.';
 
           const inserted = await db.insert(schema.messages).values({
             conversationId,
@@ -3280,9 +3279,9 @@ wss.on('connection', (ws, req) => {
             tipo: 'text',
             isFromUser: false,
             metadata: { 
-              featureRemoved: 'image_generation',
+              featureAvailable: 'openai_image_generation',
               originalPrompt: imageDetection.prompt,
-              architecture: 'v4.0.0',
+              architecture: '16/01/2026',
             },
           }).returning();
           
@@ -3492,7 +3491,7 @@ wss.on('connection', (ws, req) => {
               // ======================================================================
               // ANÁLISE PÓS-RESPOSTA: Verificar se LLM deu resposta de baixa confiança
               // Se sim, incrementa fallback counter e pode escalar automaticamente
-              // (Mixtral 8x7B não retorna confidence score - usamos indicadores proxy)
+              // (LLM atual não retorna confidence score - usamos indicadores proxy)
               // ======================================================================
               const postResponseEscalation = await processLLMResponseForEscalation(
                 conversationId,
@@ -3543,7 +3542,7 @@ wss.on('connection', (ws, req) => {
       
       // ========================================================================
       // HANDLER MULTIMODAL (FASE 9 - Upload de mídia via WebSocket)
-      // IMPORTANTE: Mixtral 8x7B é SOMENTE TEXTO - não processa imagens diretamente
+      // IMPORTANTE: LLM texto (Qwen2.5 7B) é SOMENTE TEXTO - não processa imagens diretamente
       // Para imagens: usa RAG com embeddings CLIP para busca semântica por contexto
       // Para áudio/vídeo: usa transcrição (texto) + RAG
       // ========================================================================
@@ -3753,8 +3752,8 @@ wss.on('connection', (ws, req) => {
               size: Buffer.from(mediaMessage.media.file, 'base64').length,
               url: uploadResult.fileUrl,
               thumbnailUrl: uploadResult.thumbnailUrl,
-              vlmDescription: visionDescriptionForRag,
-              vlmModel: visionModelForRag,
+              visionDescription: visionDescriptionForRag,
+              visionModel: visionModelForRag,
             }],
           })
           .where(eq(schema.messages.id, userMsg.id));
@@ -3767,8 +3766,8 @@ wss.on('connection', (ws, req) => {
           processingStatus: uploadResult.processingStatus,
         }));
 
-        // Preparar prompt para Mixtral 8x7B (SOMENTE TEXTO)
-        // CORREÇÃO 17/12/2025: Mixtral NÃO processa imagens - usar RAG com embeddings CLIP
+        // Preparar prompt para LLM texto (Qwen2.5 7B é SOMENTE TEXTO)
+        // Não processa imagens diretamente - usar RAG + OpenAI Vision
         const agent = conversation.agent as AgentConfig | null;
         let systemPrompt = buildSystemPrompt(agent, mediaMessage.content);
         
@@ -3779,12 +3778,12 @@ wss.on('connection', (ws, req) => {
         // BUG FIX 23/12/2025: Usar validatedMediaType consistentemente em todo o código
         // Após validação e type narrowing, usar apenas validatedMediaType para garantir type safety
         if (validatedMediaType === 'image') {
-          // Gate 2: VLM fornece análise visual; LLM (texto) usa essa análise para responder com stream.
-          if (vlmDescriptionForRag && vlmDescriptionForRag.trim().length > 0) {
-            systemPrompt += `\n\n[ANÁLISE VISUAL (VLM)]\n${vlmDescriptionForRag}\n[/ANÁLISE VISUAL (VLM)]\n`;
+          // Gate 2: OpenAI Vision fornece análise visual; LLM (texto) usa essa análise para responder com stream.
+          if (visionDescriptionForRag && visionDescriptionForRag.trim().length > 0) {
+            systemPrompt += `\n\n[ANÁLISE VISUAL (OpenAI Vision)]\n${visionDescriptionForRag}\n[/ANÁLISE VISUAL (OpenAI Vision)]\n`;
             userContent = userContent || 'Com base na análise visual acima, explique a imagem e possíveis implicações para trading.';
           } else {
-            systemPrompt += '\n\nO usuário enviou uma imagem, mas a análise visual (VLM) está indisponível no momento.';
+            systemPrompt += '\n\nO usuário enviou uma imagem, mas a análise visual (OpenAI Vision) está indisponível no momento.';
             userContent = userContent || 'Recebi a imagem. No momento, não consegui analisar visualmente. Descreva o que deseja avaliar.';
           }
         } else if (validatedMediaType === 'audio') {
@@ -3802,8 +3801,8 @@ wss.on('connection', (ws, req) => {
         // Buscar contexto RAG
         const namespaceId = mediaMessage.namespaceId || conversation.namespaceId || undefined;
         const ragQuery =
-          validatedMediaType === 'image' && vlmDescriptionForRag
-            ? `${vlmDescriptionForRag}\n\nPergunta do usuário:\n${userContent}`
+          validatedMediaType === 'image' && visionDescriptionForRag
+            ? `${visionDescriptionForRag}\n\nPergunta do usuário:\n${userContent}`
             : userContent;
         const ragResult = await buscarContextoRAG(ragQuery, namespaceId);
         
@@ -3822,9 +3821,8 @@ wss.on('connection', (ws, req) => {
         // BUG FIX 02/01/2026: Extrair configuração LLM do agente para uso nas chamadas
         const mediaLlmConfig = getAgentLLMConfig(agent);
         
-        // CORREÇÃO 17/12/2025: Mixtral 8x7B é SOMENTE TEXTO
-        // NÃO envia imagens diretamente - usa contexto RAG via embeddings CLIP
-        // Formato multimodal removido (não funciona com Mixtral)
+        // LLM texto (Qwen2.5 7B) é SOMENTE TEXTO
+        // Não envia imagens diretamente - usa contexto RAG via embeddings CLIP e OpenAI Vision
         const llmMessages: LLMMessage[] = [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userContent },
@@ -4656,8 +4654,7 @@ app.get('/api/chat/escalation-config', requireAuth(), requireSameTenant(getTenan
 // Schema de validação para criação/atualização de agentes
 const agentModelNameSchema = z.enum([
   // Gate 2 (LLM texto)
-  'Mistral-7B-Instruct',
-  'Mistral-7B-Instruct-AWQ',
+  'Qwen2.5-7B-Instruct-AWQ',
 ] as const);
 
 const createAgentSchema = z.object({
@@ -4668,7 +4665,7 @@ const createAgentSchema = z.object({
   instrucoes: z.string().max(10000).optional().nullable(),
   avatar: z.string().url().optional().nullable(),
   capacidades: z.array(z.string()).optional().nullable(),
-  modeloBase: agentModelNameSchema.optional().default('Mistral-7B-Instruct-AWQ'),
+  modeloBase: agentModelNameSchema.optional().default('Qwen2.5-7B-Instruct-AWQ'),
   temperaturaModelo: z.number().min(0).max(2).optional().default(0.7),
   // Gate 2: max_tokens deve respeitar max-model-len do stack (2048)
   maxTokens: z.number().int().min(100).max(2048).optional().default(2048),
@@ -4694,22 +4691,14 @@ function buildAgentModelOptionsResponse(opts: {
   constraints: { maxTokensMin: number; maxTokensMax: number };
 } {
   const models: AgentModelOption[] = opts.allowedModels.map((value) => {
-    switch (value) {
-      case 'Mistral-7B-Instruct-AWQ':
-        return {
-          value,
-          label: 'Mistral 7B Instruct (AWQ)',
-          description: 'Gate 2 LLM (texto) - vLLM (AWQ 4-bit)',
-        };
-      case 'Mistral-7B-Instruct':
-        return {
-          value,
-          label: 'Mistral 7B Instruct',
-          description: 'Alias legado (normalizado para AWQ no runtime)',
-        };
-      default:
-        return { value, label: value, description: '' };
+    if (value === 'Qwen2.5-7B-Instruct-AWQ') {
+      return {
+        value,
+        label: 'Qwen2.5 7B Instruct (AWQ)',
+        description: 'Gate 2 LLM (texto) - vLLM (AWQ 4-bit)',
+      };
     }
+    return { value, label: value, description: '' };
   });
 
   return {
@@ -4734,7 +4723,7 @@ app.get('/api/agents/model-options', requireAuth(), requireSameTenant(getTenantI
     buildAgentModelOptionsResponse({
       allowedModels: agentModelNameSchema.options,
       defaults: {
-        modeloBase: 'Mistral-7B-Instruct-AWQ',
+        modeloBase: 'Qwen2.5-7B-Instruct-AWQ',
         temperaturaModelo: DEFAULT_LLM_CONFIG.temperature,
         maxTokens: DEFAULT_LLM_CONFIG.maxTokens,
       },
@@ -5591,7 +5580,7 @@ app.get('/api/chat/images/stats', requireAuth(), requireSameTenant(getTenantIdFr
       usedInFineTuning: images.filter((img: GeneratedImage) => img.usedInFineTuning).length,
       averageGenerationTimeMs: Math.round(avgGenerationTime),
       // ARQUITETURA v4.0.0: Circuit breaker removido (geração de imagens não disponível)
-      note: 'Geração de imagens removida na v4.0.0 - Alice agora ANALISA imagens via Qwen2.5-VL',
+      note: 'Geração de imagens via OpenAI (gpt-image-1) e análise via OpenAI Vision (gpt-4.1)',
     };
     
     res.json(stats);

@@ -1,8 +1,8 @@
 # Sistema de Aprendizado da Alice
 
 **Autor:** Fillipe Guerra  
-**Versão:** 5.1 - Aprendizado multimodal (sem geração de imagens)  
-**Data:** 15 de Janeiro de 2026
+**Versão:** 5.2 - Aprendizado multimodal (Vision OpenAI)  
+**Data:** 16 de Janeiro de 2026
 
 > **ATUALIZAÇÃO 05/01/2026:** Arquitetura refatorada para 5 stacks independentes com deploy/rollback modular. Sistema de aprendizado integrado ao stack ALICE, com GPU containers gerenciados pelo GPU Manager Service.
 
@@ -18,19 +18,19 @@ A Alice Enterprise Platform possui um sistema de aprendizado contínuo e agressi
 
 ### Mudança Crítica
 
-A partir de 15/01/2026, a Alice utiliza **Gate 2 (LLM separado + VLM dedicado)** via Hetzner GPU GEX44 para processamento de IA — **serviços de inferência rodam simultaneamente** (budgets em 20GB VRAM):
+A partir de 16/01/2026, a Alice utiliza **Gate 2 (LLM local + Vision OpenAI)** via Hetzner GPU GEX44 para processamento de IA — **serviços de inferência rodam simultaneamente** (budgets em 20GB VRAM):
 
 | Componente | Modelo | Dimensões/VRAM | Infraestrutura |
 |------------|--------|----------------|----------------|
-| **LLM (texto)** | **Mistral 7B Instruct (AWQ)** | ~6GB (budget) | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
-| **VLM (visão)** | **Qwen2.5-VL 7B (AWQ)** | ~8GB (budget) | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
+| **LLM (texto)** | **Qwen2.5 7B Instruct (AWQ)** | ~6GB (budget) | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
+| **Vision (análise)** | **OpenAI gpt-4.1** | N/A | OpenAI API |
 | **Embeddings de Texto** | Qwen3-Embedding-0.6B INT8 | **1024 dim** (~3GB budget) → Qdrant | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
 | **Embeddings de Imagem** | OpenCLIP ViT-H/14 | 1024 dim → pgvector | Compartilhado com embeddings de texto |
 | **Transcrição de Áudio** | Canary-1B (NeMo) | ~3GB (budget) | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
 | **Fine-tuning** | QLoRA (gpu-trainer) | dedicado (profile/on-demand) | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
 | **Trading BTC** | KuCoin Futures API | - | Hetzner (integrations-service) |
 
-> **NOTA Gate 2:** FLUX.1 Schnell REMOVIDO — Alice **analisa** imagens via VLM (Qwen2.5‑VL) mas **não gera** imagens.
+> **NOTA Gate 2:** FLUX.1 Schnell REMOVIDO — Alice **analisa e gera** imagens via OpenAI (gpt-4.1 / gpt-image-1).
 
 ### GPU Dedicada 24/7 (Hetzner GEX44) - Gate 2
 
@@ -38,7 +38,7 @@ Com servidor GPU dedicado, os serviços de inferência rodam simultaneamente (bu
 
 | Cenário | Latência | Motivo |
 |---------|----------|--------|
-| **Chat, Vision, RAG, ASR** | ~0.5-1 segundo | **ZERO troca de containers** - todos sempre carregados na VRAM |
+| **Chat, RAG, ASR (+ Vision OpenAI)** | ~0.5-1 segundo | **ZERO troca de containers** - todos sempre carregados na VRAM |
 | **Fine-tuning QLoRA** | Ativação via profile | Apenas training usa troca (semanal ou on-demand) |
 
 > **Gate 2:** Serviços GPU de inferência rodam localmente no servidor Hetzner GPU GEX44 com containers Docker 24/7. GPU Manager Service gerencia requisições com fila priorizada, monitoramento VRAM e circuit breakers. Fine-tuning QLoRA é ativado on-demand via Docker Compose profile. Ver [docs/ARQUITETURA-GPU-MANAGER.md](ARQUITETURA-GPU-MANAGER.md) para guia completo.
@@ -58,10 +58,10 @@ Com servidor GPU dedicado, os serviços de inferência rodam simultaneamente (bu
 | Tipo | Processamento | Critério de Aprovação |
 |------|---------------|----------------------|
 | **Conversas Texto** | Automático | Rating >= 4 estrelas pelo usuário |
-| **Análise de Imagens** | Automático | Qwen2.5-VL Vision analisa, dados vão para RAG multimodal |
+| **Análise de Imagens** | Automático | OpenAI Vision analisa, dados vão para RAG multimodal |
 | **Imagens Upload** | Automático | OpenCLIP ViT-H/14 embeddings (1024 dim) para RAG multimodal |
 
-> **NOTA Gate 2:** Geração de imagens REMOVIDA — Alice analisa imagens via VLM (Qwen2.5‑VL).
+> **NOTA Gate 2:** Geração de imagens via OpenAI (gpt-image-1). Análise via OpenAI Vision (gpt-4.1).
 
 **Como funciona:**
 - Cada mensagem no chat é avaliada pelo usuário (1-5 estrelas)
@@ -313,7 +313,7 @@ Cada ciclo de fine-tuning QLoRA cria uma nova versão:
 | Campo | Descrição |
 |-------|-----------|
 | `version` | Número incremental (1, 2, 3...) |
-| `baseModel` | Mistral 7B Instruct (AWQ) - LLM texto (Gate 2) |
+| `baseModel` | Qwen2.5 7B Instruct (AWQ) - LLM texto (Gate 2) |
 | `loraPath` | Caminho dos pesos QLoRA |
 | `trainingDataCount` | Quantidade de dados usados |
 | `imageDataCount` | Quantidade de imagens usadas |
@@ -377,15 +377,15 @@ Acessíveis em `/dashboard/analytics`:
 ## ✅ IMPLEMENTADO CORRETAMENTE (Gate 2)
 
 ### 1. Arquitetura Enterprise Gate 2 - GPU simultâneo (20GB VRAM budget)
-- ✅ **LLM (texto) dedicado**: Mistral 7B Instruct (AWQ) - Chat/Trading (via GPU Manager)
-- ✅ **VLM (visão) dedicado**: Qwen2.5-VL 7B (AWQ) - análise de imagens/gráficos (via GPU Manager)
+- ✅ **LLM (texto) dedicado**: Qwen2.5 7B Instruct (AWQ) - Chat/Trading (via GPU Manager)
+- ✅ **Vision (OpenAI)**: gpt-4.1 para análise de imagens/gráficos (via OpenAI API)
 - ✅ Embeddings de texto (Qwen3-Embedding-0.6B INT8, **1024 dim**, ~3GB) via GPU Manager Service → Qdrant
 - ✅ Embeddings de imagem (OpenCLIP ViT-H/14, 1024 dim) via GPU Manager Service → pgvector
 - ✅ Transcrição de áudio (Canary-1B NeMo, ~3GB) via GPU Manager Service
 - ✅ Qdrant para texto (1024 dim com HNSW) + pgvector para imagem (1024 dim)
 - ✅ Validação de dimensão em `validateEmbeddingDimension`
 - ✅ Sem fallback CPU (Regra 6)
-- ❌ Geração de imagens REMOVIDA (FLUX.1 Schnell) - não necessária para domínio financeiro
+- ✅ Geração de imagens via OpenAI (gpt-image-1) - sem GPU local
 
 ### 2. GPU Dedicada 24/7 - ZERO Latência de Troca (Gate 2)
 - ✅ **TODOS containers GPU rodando SIMULTANEAMENTE** - sem troca de containers
@@ -466,15 +466,14 @@ Acessíveis em `/dashboard/analytics`:
 **Status:** Build automático via CI/CD - TODOS SIMULTÂNEOS
 
 **Ações realizadas:**
-1. Workflow `release.yml` garante automaticamente **5 imagens GPU** (qwen-vl, llm-mistral, embeddings-gpu, asr-canary, qwen-trainer). Quando não há mudanças no contexto do serviço, o pipeline faz **retag no GHCR** (mesmo digest do release anterior) ao invés de rebuild completo.
+1. Workflow `release.yml` garante automaticamente **4 imagens GPU** (llm-qwen25, embeddings-gpu, asr-canary, qwen-trainer). Quando não há mudanças no contexto do serviço, o pipeline faz **retag no GHCR** (mesmo digest do release anterior) ao invés de rebuild completo.
 2. Timeout aumentado de 30min para 90min (imagens GPU são muito pesadas)
 3. **ATUALIZAÇÃO Gate 2**:
-   - `vllm/vllm-openai:v0.12.0` (qwen-vl - Qwen2.5-VL 7B AWQ, ~4GB VRAM)
-   - `vllm/vllm-openai:v0.12.0` (llm-mistral - Mistral 7B Instruct AWQ - LLM texto)
-   - `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` + bitsandbytes (embeddings-gpu INT8, ~8GB VRAM)
-   - `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` + nemo_toolkit pip (asr-canary, ~3GB VRAM)
-   - `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` + peft (qwen-trainer QLoRA, on-demand)
-   - ❌ **FLUX.1 Schnell REMOVIDO** - Alice não gera imagens, apenas analisa via Qwen2.5-VL Vision
+   - `vllm/vllm-openai:v0.12.0` (llm-qwen25 - Qwen2.5 7B Instruct AWQ - LLM texto)
+   - `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime` + bitsandbytes (embeddings-gpu INT8, ~8GB VRAM)
+   - `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime` + nemo_toolkit pip (asr-canary, ~3GB VRAM)
+   - `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime` + peft (qwen-trainer QLoRA, on-demand)
+   - ✅ **OpenAI Vision/Imagens** - gpt-4.1 (análise) + gpt-image-1 (geração)
    - **NOTA**: NGC_API_KEY REMOVIDO - Personal API Key não funciona para containers públicos (403 Forbidden). Todos usam Docker Hub.
 4. BuildKit cache mount adicionado para cache persistente de pip
 5. GPU Manager Service gerencia automaticamente todos os serviços GPU (sem secrets externos necessários)
@@ -511,14 +510,14 @@ Acessíveis em `/dashboard/analytics`:
 
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*
-*Versão 5.1 - 15 de Janeiro de 2026 - Gate 2*
-*LLM (texto): Mistral 7B Instruct AWQ (vLLM) + VLM (visão): Qwen2.5-VL 7B AWQ (vLLM) via GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB)*
+*Versão 5.2 - 16 de Janeiro de 2026 - Gate 2*
+*LLM (texto): Qwen2.5 7B Instruct AWQ (vLLM) via GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB)*
 *Embeddings texto: Qwen3-Embedding-0.6B INT8 (1024 dim → Qdrant) + Imagem: OpenCLIP ViT-H/14 (1024 dim → pgvector)*
 *ASR: Canary-1B via NeMo Toolkit (Apache 2.0)*
-*Vision: Qwen2.5-VL (VLM dedicado) para análise de imagens/gráficos via GPU Manager Service (Gate 2: LLM texto separado do VLM visão)*
-*Geração de Imagens: REMOVIDA (FLUX.1 Schnell) - não necessária para domínio financeiro*
+*Vision: OpenAI (gpt-4.1) para análise de imagens/gráficos via API externa*
+*Geração de Imagens: OpenAI (gpt-image-1)*
 *Fisher-Yates Shuffle (17/12/2025): Corrigido bug de distribuição enviesada em train/validation split*
 *Bug Fix Embeddings (17/12/2025): Embeddings de texto (documentos/áudio) agora vão para Qdrant (histórico: 4096 dim; Gate 2: 1024 dim)*
 *Bug Fix SQL IN Clause (19/12/2025): learning-worker.ts corrigido - sql template literal com join() parametrizava string inteira. Usa inArray() do Drizzle (3 ocorrências)*
 *Trading: KuCoin Futures BTC Perpetuals + Scalping (1m/3m/5m) + QLoRA Fine-tuning semanal*
-*GPU Gate 2 (15/01/2026): Hetzner GEX44 - serviços GPU simultâneos (budgets em 20GB VRAM). Fine-tuning QLoRA on-demand via profile.*
+*GPU Gate 2 (16/01/2026): Hetzner GEX44 - serviços GPU simultâneos (budgets em 20GB VRAM). Fine-tuning QLoRA on-demand via profile.*

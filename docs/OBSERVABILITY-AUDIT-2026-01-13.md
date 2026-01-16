@@ -36,14 +36,14 @@ Esta auditoria foi executada para eliminar pontos cegos operacionais e reduzir M
 - **Correção aplicada**:
   - Jobs/targets adicionados/alinhados em `infra/observability/prometheus.yml`:
     - `alice-services` (auth/chat/rag/training/integrations/gpu-manager)
-    - `alice-gpu-services` (gpu-llm/gpu-vlm/gpu-embeddings/gpu-asr)
+    - `alice-gpu-services` (gpu-llm/gpu-embeddings/gpu-asr)
 
 ### F2 — Dashboards acoplados a nomes de modelos (não “capability-based”)
 
 - **Problema**: Painéis e descrições citavam modelos específicos (“Mixtral/Qwen…”) em texto e/ou legendas.
 - **Impacto**: Mudança de modelos (Gate 2 / WS3) quebrava entendimento operacional e causava confusão.
 - **Correção aplicada**:
-  - Dashboards revisados para serem **modelo-agnósticos** e orientados a **capabilidades** (LLM/VLM/Embeddings/ASR).
+  - Dashboards revisados para serem **modelo-agnósticos** e orientados a **capabilidades** (LLM/Embeddings/ASR).
 
 ### F3 — Ausência de dashboard de Trading (KuCoin Futures)
 
@@ -84,7 +84,7 @@ Esta auditoria foi executada para eliminar pontos cegos operacionais e reduzir M
 
 - Abrir `/targets` e validar que:
   - `alice-services` está UP (auth/chat/rag/training/integrations/gpu-manager)
-  - `alice-gpu-services` está UP (gpu-llm/gpu-vlm/gpu-embeddings/gpu-asr)
+  - `alice-gpu-services` está UP (gpu-llm/gpu-embeddings/gpu-asr)
   - `node-exporter` e `cadvisor` do host estão UP
   - `node-exporter-deploy` e `cadvisor-deploy` do deploy server estão UP
 

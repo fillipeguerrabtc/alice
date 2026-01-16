@@ -46,7 +46,7 @@
       "gridPos": { "h": 2, "w": 24, "x": 0, "y": 0 },
       "id": 100,
       "options": {
-        "content": "# Alice LLM Metrics - Enterprise Dashboard\n**Qwen2.5-VL 7B AWQ** (Multimodal: Text + Vision) | GPU Manager Service (Hetzner GEX44) | Latência | Tokens | Taxa de Erros | Circuit Breakers | SRE Best Practices 2025",
+        "content": "# Alice LLM Metrics - Enterprise Dashboard\n**Qwen2.5 7B AWQ** (Texto) | Vision via OpenAI | GPU Manager Service (Hetzner GEX44) | Latência | Tokens | Taxa de Erros | Circuit Breakers | SRE Best Practices 2025",
         "mode": "markdown"
       },
       "transparent": true,
@@ -415,7 +415,7 @@
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "rate(alice_llm_inference_duration_seconds_sum[5m]) / rate(alice_llm_inference_duration_seconds_count[5m])",
-          "legendFormat": "Qwen2.5-VL 7B AWQ",
+          "legendFormat": "Qwen2.5 7B AWQ",
           "refId": "A"
         }
       ]

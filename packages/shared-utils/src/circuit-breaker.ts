@@ -155,13 +155,6 @@ export const CIRCUIT_BREAKER_PRESETS = {
     resetTimeout: 30000,
     volumeThreshold: 5,
   },
-  /** Gate 2: Qwen2.5-VL vLLM - VLM (visão) para análise de imagens/gráficos */
-  qwenVL: {
-    timeout: 45000, // Timeout otimizado para Qwen2.5-VL 7B AWQ
-    errorThresholdPercentage: 50,
-    resetTimeout: 30000,
-    volumeThreshold: 5,
-  },
   /** Qdrant - Banco vetorial para texto (1024 dim) */
   qdrantTrading: {
     timeout: 10000, // Busca vetorial é rápida

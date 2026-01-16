@@ -35,7 +35,7 @@
       "gridPos": { "h": 2, "w": 24, "x": 0, "y": 0 },
       "id": 100,
       "options": {
-        "content": "# Alice GPU Manager Dashboard - Enterprise\n**Hetzner GEX44** (RTX 4000 Ada 20GB VRAM) | **Modelo-agnóstico (WS3-ready)** | LLM/VLM + Embeddings + ASR | VRAM Monitoring | Queue Management | Circuit Breakers",
+        "content": "# Alice GPU Manager Dashboard - Enterprise\n**Hetzner GEX44** (RTX 4000 Ada 20GB VRAM) | **Modelo-agnóstico (WS3-ready)** | LLM + Embeddings + ASR | VRAM Monitoring | Queue Management | Circuit Breakers",
         "mode": "markdown"
       },
       "transparent": true,
@@ -123,7 +123,7 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "LLM/VLM" },
+            "matcher": { "id": "byName", "options": "LLM" },
             "properties": [
               {
                 "id": "color",
@@ -180,7 +180,7 @@
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "alice_gpu_vram_reserved_bytes{service=\"llm\"}",
-          "legendFormat": "LLM/VLM",
+          "legendFormat": "LLM",
           "refId": "A"
         },
         {
@@ -233,7 +233,7 @@
         "showPercentChange": false,
         "textMode": "value_and_name"
       },
-      "title": "Fila LLM/VLM (modelo-agnóstico)",
+      "title": "Fila LLM (modelo-agnóstico)",
       "type": "stat",
       "targets": [
         {

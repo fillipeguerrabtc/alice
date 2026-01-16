@@ -557,14 +557,14 @@ if (!DATABASE_URL) {
 }
 
 // ==============================================================================
-// ARQUITETURA MULTIMODAL ENTERPRISE - Gate 2 (LLM separado + VLM dedicado)
+// ARQUITETURA MULTIMODAL ENTERPRISE - Gate 2 (LLM separado + Vision OpenAI)
 // ==============================================================================
 // TODOS os processamentos multimodais via GPU Manager Service (Hetzner GEX44):
 // - Text embeddings: Qwen3-Embedding-0.6B INT8 (1024 dim) → Qdrant
 // - Image embeddings: OpenCLIP ViT-H/14 (1024 dim) → pgvector
 // - Transcrição de áudio: Canary-1B (NeMo)
-// - LLM (texto): Mistral 7B Instruct (AWQ) (via GPU Manager)
-// - VLM (visão): Qwen2.5-VL 7B (AWQ) (via GPU Manager)
+// - LLM (texto): Qwen2.5 7B Instruct (AWQ) (via GPU Manager)
+// - Vision (análise de imagens): OpenAI Responses API (gpt-4.1)
 //
 // GPU é OBRIGATÓRIO - sem fallback CPU (Regra 6)
 // ==============================================================================
@@ -2680,8 +2680,8 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
                 ...mediaUploadRecord.extractedMetadata as object,
                 ...result.metadata,
                 embeddingModel: result.embeddingModel,
-                vlmDescription: result.vlmDescription ?? null,
-                vlmModel: result.vlmModel ?? null,
+                visionDescription: result.visionDescription ?? null,
+                visionModel: result.visionModel ?? null,
                 hasThumbnail: !!thumbnailPath,
                 thumbnailPath,
                 thumbnailUrl,

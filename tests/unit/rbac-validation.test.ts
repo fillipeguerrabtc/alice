@@ -334,8 +334,8 @@ describe('RBAC - Matriz de Permissões (PERMISSION_MAP)', () => {
     });
   });
 
-  // ARQUITETURA v4.0.0: Alice ANALISA imagens via Qwen2.5-VL Vision, NÃO gera (FLUX removido)
-  describe('Módulo IMAGES (Análise via Qwen2.5-VL)', () => {
+  // ARQUITETURA 16/01/2026: Alice analisa e gera imagens via OpenAI
+  describe('Módulo IMAGES (OpenAI Vision)', () => {
     it('images:generate:* deve existir para upload/aprovação de imagens', () => {
       expect(PERMISSION_MAP['images:generate:read']).toBeDefined();
       expect(PERMISSION_MAP['images:generate:write']).toBeDefined();

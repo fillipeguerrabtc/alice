@@ -6,10 +6,10 @@
  * - LLM integration (GPU Manager Service - Hetzner GEX44)
  * - RAG context
  * - Conversation orchestration (takeover/handover)
- * - Análise de imagens (Qwen2.5-VL Vision)
+ * - Análise de imagens (OpenAI Vision)
  * 
  * Author: Fillipe Guerra
- * Data: 15/01/2026
+ * Data: 16/01/2026
  * 
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
@@ -22,11 +22,11 @@ import { chatServicePaths } from '../../../apps/chat-service/src/openapi-specs';
 // TESTES DE CONFIGURAÇÃO LLM
 // ============================================================================
 
-// Gate 2: LLM (texto) separado de VLM (visão)
+// Gate 2: LLM (texto) separado de Vision (OpenAI)
 describe('Chat Service - Configuração LLM', () => {
   const LLM_CONFIG = {
     provider: 'gpu-manager-service',
-    model: 'TheBloke/Mistral-7B-Instruct-v0.2-AWQ', // Gate 2 (LLM texto)
+    model: 'Qwen/Qwen2.5-7B-Instruct-AWQ', // Gate 2 (LLM texto)
     maxTokens: 2048,
     temperature: 0.7,
     topP: 0.9,
@@ -36,8 +36,8 @@ describe('Chat Service - Configuração LLM', () => {
     expect(LLM_CONFIG.provider).toBe('gpu-manager-service');
   });
 
-  it('deve usar modelo Mistral 7B (Gate 2 - LLM texto)', () => {
-    expect(LLM_CONFIG.model).toBe('TheBloke/Mistral-7B-Instruct-v0.2-AWQ');
+  it('deve usar modelo Qwen2.5 7B (Gate 2 - LLM texto)', () => {
+    expect(LLM_CONFIG.model).toBe('Qwen/Qwen2.5-7B-Instruct-AWQ');
   });
 
   it('deve ter maxTokens de 2048', () => {
@@ -336,22 +336,22 @@ describe('Chat Service - RAG Integration', () => {
 });
 
 // ============================================================================
-// TESTES DE IMAGE ANALYSIS (ARQUITETURA v4.0.0)
+// TESTES DE IMAGE ANALYSIS (ARQUITETURA 16/01/2026)
 // ============================================================================
-// NOTA: Alice ANALISA imagens via Qwen2.5-VL Vision mas NÃO gera imagens
-// A geração de imagens (FLUX.1 Schnell) foi removida na v4.0.0
+// NOTA: Alice ANALISA e GERA imagens via OpenAI
+// Vision: OpenAI Responses API (gpt-4.1)
 
 describe('Chat Service - Image Analysis (Vision)', () => {
   const VISION_CONFIG = {
-    model: 'Qwen2.5-VL-7B', // Modelo multimodal com capacidade de visão
+    model: 'gpt-4.1', // OpenAI Vision (Responses API)
     maxImageSize: 10 * 1024 * 1024, // 10MB
     supportedFormats: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
     timeout: 60000, // 60 segundos
     capabilities: ['chart_analysis', 'document_ocr', 'screenshot_interpretation'],
   };
 
-  it('deve usar modelo Qwen2.5-VL com capacidade de visão', () => {
-    expect(VISION_CONFIG.model).toBe('Qwen2.5-VL-7B');
+  it('deve usar modelo OpenAI Vision (gpt-4.1)', () => {
+    expect(VISION_CONFIG.model).toBe('gpt-4.1');
   });
 
   it('deve limitar tamanho de imagem a 10MB', () => {
@@ -404,13 +404,13 @@ describe('Chat Service - Health Check', () => {
   }
 
   it('deve retornar estrutura de health correta', () => {
-    // Gate 2: LLM (texto) separado de VLM (visão)
+    // Gate 2: LLM (texto) + Vision via OpenAI
     const health: ChatHealthResponse = {
       status: 'ok',
       service: 'chat-service',
       timestamp: new Date().toISOString(),
       llmProvider: 'gpu-manager-service',
-      model: 'TheBloke/Mistral-7B-Instruct-v0.2-AWQ',
+      model: 'Qwen/Qwen2.5-7B-Instruct-AWQ',
       circuitBreakers: {
         llm: { state: 'closed', stats: {} },
         rag: { state: 'closed', stats: {} },
@@ -419,7 +419,7 @@ describe('Chat Service - Health Check', () => {
 
     expect(health.status).toBe('ok');
     expect(health.llmProvider).toBe('gpu-manager-service');
-    expect(health.model).toBe('TheBloke/Mistral-7B-Instruct-v0.2-AWQ');
+    expect(health.model).toBe('Qwen/Qwen2.5-7B-Instruct-AWQ');
   });
 });
 

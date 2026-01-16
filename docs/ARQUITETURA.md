@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Arquitetura de Software
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 15 de Janeiro de 2026  
-> **Versão:** 3.2.0 - Docs alinhadas (Redis SSOT + observability + chat)  
+> **Data:** 16 de Janeiro de 2026  
+> **Versão:** 3.2.1 - Gate 2 (Qwen2.5 + Vision OpenAI)  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 > 
@@ -47,9 +47,9 @@
 **Alice** é uma plataforma enterprise de IA autônoma 100% self-hosted, projetada para organizações que exigem:
 
 - **Privacidade Total**: Dados nunca saem da infraestrutura própria
-- **Autonomia**: LLM próprio (Mistral 7B Instruct AWQ) sem dependência de APIs externas - **Gate 2 (LLM separado + VLM dedicado)**
+- **Autonomia**: LLM próprio (Qwen2.5 7B Instruct AWQ) com Vision e geração via OpenAI - **Gate 2 (LLM local + Vision OpenAI)**
 - **Customização**: Fine-tuning específico via QLoRA para cada domínio (especializado em finanças/matemática)
-- **Custo Previsível**: Sem cobrança por token de terceiros
+- **Custo Previsível**: LLM local sem cobrança por token; Vision/Imagens via OpenAI
 - **Compliance**: LGPD, GDPR, SOC 2 ready
 
 ### 1.2 Objetivos de Qualidade
@@ -144,7 +144,8 @@ C4Context
     
     System(alice, "Alice Platform", "Plataforma de IA Autônoma Enterprise")
     
-    System_Ext(gpuServer, "Hetzner GPU GEX44", "GPU Manager Service - LLM/Embeddings local")
+    System_Ext(gpuServer, "Hetzner GPU GEX44", "GPU Manager Service - LLM/Embeddings/ASR local")
+    System_Ext(openai, "OpenAI", "Vision + geração de imagens")
     System_Ext(kucoin, "KuCoin Futures", "Trading BTC Perpetuals")
     System_Ext(stripe, "Stripe", "Pagamentos")
     System_Ext(twilio, "Twilio", "WhatsApp/SMS")
@@ -152,7 +153,8 @@ C4Context
     
     Rel(user, alice, "Chat, consultas, trading")
     Rel(admin, alice, "Configuração, monitoramento")
-    Rel(alice, gpuServer, "Inferência LLM, Embeddings GPU (local)")
+    Rel(alice, gpuServer, "Inferência LLM, Embeddings e ASR (local)")
+    Rel(alice, openai, "Vision e geração de imagens")
     Rel(alice, kucoin, "Ordens de trading")
     Rel(alice, stripe, "Webhooks de pagamento")
     Rel(alice, twilio, "Mensagens WhatsApp")
@@ -163,7 +165,8 @@ C4Context
 
 | Sistema | Propósito | Protocolo | Autenticação |
 |---------|-----------|-----------|--------------|
-| **Hetzner GPU GEX44** | GPU Manager Service local - LLM/VLM/Embeddings/ASR (Gate 2) | HTTP (localhost) | N/A (interno) |
+| **Hetzner GPU GEX44** | GPU Manager Service local - LLM/Embeddings/ASR (Gate 2) | HTTP (localhost) | N/A (interno) |
+| **OpenAI** | Vision (gpt-4.1) + Geração de imagens (gpt-image-1) | HTTPS | API Key |
 | **KuCoin Futures** | Trading BTC | REST + WebSocket | HMAC-SHA256 |
 | **Stripe** | Pagamentos | Webhooks | Signature verification |
 | **Twilio** | WhatsApp/SMS | REST | API Key + Token |
@@ -274,7 +277,7 @@ C4Component
         Component(wsHandler, "WebSocket Handler", "Socket.io", "Gerencia conexões em tempo real")
         Component(llmClient, "LLM Client", "HTTP Client", "Comunicação com LLM (texto) via GPU Manager (Gate 2)")
         Component(ragClient, "RAG Client", "HTTP Client", "Busca contexto semântico")
-        Component(visionAnalyzer, "Vision Analyzer", "HTTP Client", "Análise de imagens via VLM (Gate 2)")
+        Component(visionAnalyzer, "Vision Analyzer", "HTTP Client", "Análise de imagens via OpenAI (Gate 2)")
         Component(responseCache, "Response Cache", "Redis", "Greetings Gate")
         Component(tradingParser, "Trading Parser", "NLP", "Comandos de trading")
         Component(tradingOrch, "Trading Orchestrator", "State Machine", "Handover/Takeover")
@@ -359,7 +362,7 @@ sequenceDiagram
     participant WS as WebSocket Handler
     participant RC as Response Cache
     participant RAG as RAG Service
-    participant LLM as LLM (texto - Mistral 7B)
+    participant LLM as LLM (texto - Qwen2.5 7B)
     participant DB as PostgreSQL
     
     U->>WS: Mensagem via WebSocket
@@ -462,17 +465,18 @@ C4Deployment
                 Container(backup, "pgBackRest", "Backup")
             }
         }
-        Deployment_Node(gpuServices, "GPU Services (Gate 2 - budgets em 20GB VRAM)", "Local GPU Services - SIMULTÂNEOS") {
+        Deployment_Node(gpuServices, "GPU Services (Gate 2 - budget 20GB VRAM)", "Local GPU Services - SIMULTÂNEOS") {
             Container(gpuManager, "GPU Manager Service", "Fila priorizada, VRAM monitoring")
-            Container(llm, "Mistral 7B Instruct (AWQ)", "LLM texto (~6GB budget)")
-            Container(vlm, "Qwen2.5-VL 7B (AWQ)", "VLM visão (~8GB budget)")
+            Container(llm, "Qwen2.5 7B Instruct (AWQ)", "LLM texto (~6GB budget)")
             Container(qwen, "Qwen3-Embedding-0.6B INT8", "1024 dim (~3GB budget)")
             Container(canary, "Canary-1B", "ASR (~3GB)")
         }
     }
+    System_Ext(openai, "OpenAI APIs", "Vision (gpt-4.1) + Imagens (gpt-image-1)")
     
     Rel(caddy, services, "HTTP")
     Rel(services, gpuServices, "HTTP", "GPU Inference (local)")
+    Rel(services, openai, "HTTPS", "Vision e geração de imagens")
 ```
 
 ### 7.2 Estrutura de Volumes
@@ -664,7 +668,6 @@ const PRESETS = {
   kucoinFutures: { threshold: 3, timeout: 10000, resetTimeout: 60000 },
   embeddingsGPU: { threshold: 3, timeout: 60000, resetTimeout: 120000 },
   asrCanary: { threshold: 3, timeout: 120000, resetTimeout: 180000 },
-  qwenVL: { threshold: 3, timeout: 60000, resetTimeout: 120000 }, // Gate 2: preset usado para VLM (visão) via vLLM
 };
 ```
 
@@ -742,15 +745,15 @@ logger.info({
 
 ## 9. Decisões Arquiteturais (ADRs)
 
-### ADR-001: Gate 2 - Separação LLM (texto) e VLM (visão)
+### ADR-001: Gate 2 - LLM local + Vision via OpenAI
 
 | Aspecto | Decisão |
 |---------|---------|
-| **Status** | Aceito (Atualizado 15/01/2026) |
-| **Contexto** | Necessidade de IA enterprise 100% self-hosted com suporte a texto + visão (análise de gráficos) sem estourar 20GB VRAM |
-| **Decisão** | Separar **LLM (texto)** e **VLM (visão)** em containers dedicados, orquestrados pelo GPU Manager (capability-based) |
-| **Alternativas** | Modelo único multimodal para tudo (simplifica, mas reduz controle de VRAM e governança por capability) |
-| **Consequências** | + Governança e budgets por capability, + previsibilidade de VRAM, + observability model-agnóstica, - mais serviços para operar |
+| **Status** | Aceito (Atualizado 16/01/2026) |
+| **Contexto** | Necessidade de LLM local com orçamento de 20GB VRAM e visão confiável para análise de imagens sem manter VLM local |
+| **Decisão** | Manter **LLM (texto)** local via GPU Manager e mover **Vision/Imagens** para OpenAI (Responses + Images APIs) |
+| **Alternativas** | VLM local dedicado (maior VRAM, maior complexidade operacional) |
+| **Consequências** | + VRAM liberada para LLM/Embeddings/ASR, + menor complexidade GPU local, + evolução rápida de visão, - dependência de API externa para visão/imagens |
 
 ### ADR-002: Arquitetura de Embeddings
 
@@ -1316,7 +1319,7 @@ A plataforma possui uma **suite de testes unitários completa** usando **Vitest*
 *Versão: 1.11.0 - Server GPU Optimizations Enterprise*
 *Total de Containers: 50 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 4 GPU + 1 backup + 1 trainer on-demand)*
 *Stack: Express 5.2, Vite 7.3, Tailwind CSS 4.1, HTTP/2*
-*LLM: Mistral 7B Instruct (AWQ) via GPU Manager Service (Hetzner GEX44) - Gate 2*
+*LLM: Qwen2.5 7B Instruct (AWQ) via GPU Manager Service (Hetzner GEX44) - Gate 2*
 *Embeddings: Qwen3-Embedding-0.6B INT8 (1024 dim) + OpenCLIP (1024 dim)*
 *Performance: HTTP Compression, HNSW m=24, SHA Pinning 95%+*
 *GPU: Todos serviços simultâneos (15GB/20GB VRAM), QLoRA fine-tuning semanal, Zero latência de troca*

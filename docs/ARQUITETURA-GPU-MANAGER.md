@@ -1,8 +1,8 @@
 # Arquitetura GPU Manager Service
 
 **Autor:** Fillipe Guerra  
-**Data:** 15 de Janeiro de 2026  
-**Versão:** 4.1.0 - Gate 2: LLM separado (Mistral) + tipos capability-based
+**Data:** 16 de Janeiro de 2026  
+**Versão:** 4.2.0 - Gate 2: LLM Qwen2.5 7B + Vision via OpenAI
 
 > **OTIMIZAÇÃO CRÍTICA v4.0.4 (12/01/2026):** Migração de **TODAS AS 3 IMAGENS** GPU de `pytorch-devel` para `pytorch-runtime`:
 > - **embeddings-gpu**: 17.6GB → ~11GB (-6GB, -35%)
@@ -13,7 +13,7 @@
 > **Causa Raiz:** CUDA dev tools (gcc, nvcc, headers) são desnecessários para inferência/training.
 
 > **NOTA (Histórico v4.0.x):** Ajustes finos de VRAM em vLLM foram feitos após análise de erro "No available memory for cache blocks".
-> No **Gate 2**, a plataforma usa **LLM (texto)** e **VLM (visão)** separados, com **budgets conservadores** para coexistência em 20GB.
+> No **Gate 2**, a plataforma usa **LLM (texto)**, **Embeddings** e **ASR** locais, com **budgets conservadores** para coexistência em 20GB. **Vision** e **geração de imagens** são via OpenAI.
 
 > **ATUALIZAÇÃO v4.0.1 (12/01/2026):** Correções para vLLM v0.12.0: `--limit-mm-per-prompt` (formato JSON), `--dtype float16` (obrigatório para AWQ).
 
@@ -26,7 +26,7 @@
 O **GPU Manager Service** é um serviço centralizado que gerencia todas as requisições para serviços GPU na Alice Enterprise Platform. Ele implementa:
 
 - **Arquitetura Simplificada**: Serviços GPU rodam simultaneamente (com budgets de VRAM)
-- **Gate 2**: Separação explícita de **LLM (texto)** e **VLM (visão)** (tipos capability-based)
+- **Gate 2**: Separação explícita de **LLM (texto)** + Embeddings + ASR (tipos capability-based)
 - **Fila Priorizada**: Chat > Trading > Embeddings > ASR > Training
 - **Monitoramento de VRAM**: Tempo real via nvidia-smi
 - **Circuit Breakers**: Proteção centralizada por serviço
@@ -44,11 +44,10 @@ Budgets conservadores para coexistência (fonte de verdade em runtime: `nvidia-s
 GPU 20GB VRAM - Serviços sempre ativos (Gate 2):
 ┌─────────────────────────────────────────────────────────────┐
 │  LLM (texto)        ~6GB  (gpu-llm)                          │
-│  VLM (visão)        ~8GB  (gpu-vlm)                          │
 │  Embeddings         ~3GB  (gpu-embeddings)                   │
 │  ASR                ~3GB  (gpu-asr)                          │
 ├─────────────────────────────────────────────────────────────┤
-│  TOTAL (budget)     20GB                                     │
+│  TOTAL (budget)     ~12GB + margem de segurança              │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -56,23 +55,21 @@ GPU 20GB VRAM - Serviços sempre ativos (Gate 2):
 
 | Serviço | Modelo | VRAM Real | Configuração | Função | Imagem Base | Imagem Size |
 |---------|--------|-----------|--------------|--------|-------------|-------------|
-| **gpu-llm** | Mistral 7B Instruct (AWQ) | ~5-6GB (budget) | `gpu-memory-utilization=0.28`, `max-model-len=2048`, `dtype=float16` | **LLM texto** (chat, trading) | vllm/vllm-openai | ~8GB |
-| **gpu-vlm** | Qwen2.5-VL 7B AWQ | ~7-8GB (budget) | `gpu-memory-utilization=0.36`, `max-model-len=2048`, `dtype=float16` | **VLM visão** (análise de imagens) | vllm/vllm-openai | ~8GB |
+| **gpu-llm** | Qwen2.5 7B Instruct (AWQ) | ~5-6GB (budget) | `gpu-memory-utilization=0.40`, `max-model-len=8192`, `dtype=float16` | **LLM texto** (chat, trading) | vllm/vllm-openai | ~8GB |
 | **gpu-embeddings** | Qwen3-Embedding-0.6B INT8 | ~2-3GB (budget) | `quantization=int8` | Embeddings para RAG | **pytorch-runtime** | **~11GB (-35% ✅)** |
 | **gpu-asr** | Canary-1B | ~3GB (budget) | NeMo | Transcrição de áudio | **pytorch-runtime** | **~11GB (-35% ✅)** |
 
 ### Configuração vLLM 0.12.0 (Gate 2)
 
-O Qwen2.5-VL usa vLLM v0.12.0 com as seguintes configurações **corrigidas**:
+O Qwen2.5 7B usa vLLM v0.12.0 com as seguintes configurações **corrigidas**:
 
 ```bash
 python3 -m vllm.entrypoints.openai.api_server \
-    --model "Qwen/Qwen2.5-VL-7B-Instruct-AWQ" \
+    --model "Qwen/Qwen2.5-7B-Instruct-AWQ" \
     --quantization awq \
     --dtype float16 \                     # OBRIGATÓRIO para AWQ (bfloat16 não suportado)
-    --max-model-len 2048 \                # Gate 2: reduz KV cache para coexistência
-    --gpu-memory-utilization 0.36 \       # Gate 2: budget conservador para coexistência em 20GB
-    --limit-mm-per-prompt '{"image": 5}'  # Formato JSON (vLLM 0.12.0+)
+    --max-model-len 8192 \                # Gate 2: contexto 8k com KV cache calibrado
+    --gpu-memory-utilization 0.40         # Gate 2: budget conservador para coexistência em 20GB
 ```
 
 **Nota (VRAM):** Budgets e `max-model-len` impactam KV cache. Em produção, valide o consumo real via `alice_gpu_*` e `nvidia-smi`.
@@ -104,7 +101,7 @@ python3 -m vllm.entrypoints.openai.api_server \
 - ✅ Todos os serviços rodando simultaneamente (com budgets conservadores)
 - ✅ **Zero latência de troca**
 - ✅ Arquitetura simplificada (sem Docker API)
-- ✅ Separação explícita: LLM (texto) + VLM (visão)
+- ✅ Separação explícita: LLM (texto) + Vision via OpenAI
 - ✅ Observabilidade model-agnóstica (capability-based)
 
 ---
@@ -138,12 +135,12 @@ python3 -m vllm.entrypoints.openai.api_server \
                             ▼
 ┌─────────────────────────────────────────────────────────────┐
 │     Containers GPU (TODOS SEMPRE ATIVOS - Gate 2)           │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐    │
-│  │   VLM    │  │   LLM    │  │Embeddings│  │   ASR    │    │
-│  │ :8000    │  │  :8004   │  │  :8001   │  │  :8002   │    │
-│  │  ~8GB    │  │  ~6GB    │  │  ~3GB    │  │  ~3GB    │    │
-│  │ SEMPRE   │  │ SEMPRE   │  │ SEMPRE   │  │ SEMPRE   │    │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────┘    │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐                  │
+│  │   LLM    │  │Embeddings│  │   ASR    │                  │
+│  │  :8004   │  │  :8001   │  │  :8002   │                  │
+│  │  ~6GB    │  │  ~3GB    │  │  ~3GB    │                  │
+│  │ SEMPRE   │  │ SEMPRE   │  │ SEMPRE   │                  │
+│  └──────────┘  └──────────┘  └──────────┘                  │
 │                                                             │
 │  ┌──────────┐ (profile: gpu-training - sob demanda)        │
 │  │ Trainer  │                                              │
@@ -194,7 +191,7 @@ python3 -m vllm.entrypoints.openai.api_server \
 | `PORT` | Porta do serviço | `3010` |
 | `REDIS_URL` | URL do Redis | (obrigatório) |
 | `INTERNAL_API_SECRET` | Secret para autenticação interna | (obrigatório) |
-| `VLM_GPU_URL` | URL do serviço VLM | `http://gpu-vlm:8000` |
+| `LLM_GPU_URL` | URL do serviço LLM | `http://gpu-llm:8000` |
 | `EMBEDDINGS_GPU_URL` | URL do serviço de embeddings | `http://gpu-embeddings:8000` |
 | `ASR_GPU_URL` | URL do serviço ASR | `http://gpu-asr:8000` |
 | `TRAINING_GPU_URL` | URL do serviço de training | `http://gpu-trainer:8000` |
@@ -251,14 +248,19 @@ DELETE /api/training/run/cancel
 
 ## Modelos (Gate 2)
 
-### LLM (texto): Mistral 7B Instruct (AWQ)
+### LLM (texto): Qwen2.5 7B Instruct (AWQ)
 
 - Usado para: chat e trading (texto).
 - Requisito: deve ser o mesmo **modelo base** do pipeline de treinamento (QLoRA) para evitar divergência.
 
-### VLM (visão): Qwen2.5-VL 7B (AWQ)
+### Vision (análise de imagens): OpenAI Responses API (`gpt-4.1`)
 
 - Usado para: análise multimodal de imagens (ex.: screenshots e gráficos).
+- Não utiliza GPU local (remove carga e complexidade operacional).
+
+### Geração de imagens: OpenAI Images API (`gpt-image-1`)
+
+- Usado para: geração de imagens a partir de prompt.
 
 ---
 
@@ -266,6 +268,7 @@ DELETE /api/training/run/cancel
 
 | Versão | Data | Descrição |
 |--------|------|-----------|
+| 4.2.0 | 16/01/2026 | Remoção do VLM local e migração de Vision/Images para OpenAI; LLM Qwen2.5 7B com contexto 8k |
 | 4.0.5 | 15/01/2026 | WS3: Corrigir SSOT GPU e garantir QUANTIZATION=int8 refletido no runtime (fail-fast, sem fallback) |
 | 4.0.4 | 12/01/2026 | Otimização COMPLETA: embeddings + asr + trainer pytorch-devel → runtime (-18GB total, -35%) |
 | 4.0.3 | 12/01/2026 | Otimização imagem embeddings: pytorch-devel → pytorch-runtime (-6GB, -35%) |
@@ -280,6 +283,8 @@ DELETE /api/training/run/cancel
 
 ## Referências
 
-- [Qwen2.5-VL Documentation](https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct)
+- [Qwen2.5 7B Instruct AWQ](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-AWQ)
+- [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses)
+- [OpenAI Image Generation](https://platform.openai.com/docs/guides/images/image-generation)
 - [vLLM Documentation](https://docs.vllm.ai/)
 - [CLAUDE.md - Regras do Projeto](../CLAUDE.md)

@@ -551,12 +551,12 @@ Storage interno do servidor GEX44 (1.92TB utilizável) montado diretamente em `/
 |---------|-------|
 | Servidor GPU GEX44 | €184.00/mês (fixo) |
 | GPU Manager Service | Incluído (gerencia requisições localmente) |
-| LLM (vLLM) | Local (sem custo adicional) - Gate 2 (LLM texto separado) |
-| VLM (vLLM) | Local (sem custo adicional) - Gate 2 (VLM visão dedicado) |
+| LLM (vLLM) | Local (sem custo adicional) - Gate 2 (LLM texto Qwen2.5) |
 | Embeddings (GPU) | Local (sem custo adicional) |
 | ASR (GPU) | Local (sem custo adicional) |
+| OpenAI Vision/Imagens | API externa (custo variável por uso) |
 
-> **NOTA Gate 2:** FLUX.1 Schnell REMOVIDO. Serviços GPU rodam SIMULTANEAMENTE (budgets em 20GB VRAM); **treinamento** roda via profile (on-demand).
+> **NOTA Gate 2:** FLUX.1 Schnell REMOVIDO. Serviços GPU rodam SIMULTANEAMENTE (budgets em 20GB VRAM); **treinamento** roda via profile (on-demand). Vision e geração de imagens via OpenAI.
 
 ### DuckDNS (Gratuito)
 
@@ -1051,7 +1051,7 @@ O workflow de release (`release.yml`) suporta versionamento automático baseado 
 │  │ • SSH para Hetzner  │   50 containers                        │
 │  │ • Docker Compose up │                                        │
 │  │ • Validate GPU URLs │   5 GPU Services (Gate 2)              │
-│  │ • Health checks     │   RTX 4000 Ada 20GB (LLM + VLM + Emb + ASR) │
+│  │ • Health checks     │   RTX 4000 Ada 20GB (LLM + Emb + ASR)        │
 │  │ • Rollback auto     │                                        │
 │  └─────────────────────┘                                        │
 │                                                                  │
@@ -1068,7 +1068,7 @@ O workflow de release (`release.yml`) suporta versionamento automático baseado 
 | **Validate GPU** | Deploy Hetzner passa | Valida URLs GPU (Container Groups pré-criados) |
 | **Health Check** | Validate GPU passa | Validação e rollback automático |
 
-### GPU é OBRIGATÓRIO - Enterprise-Grade - Gate 2 (LLM separado + VLM dedicado)
+### GPU é OBRIGATÓRIO - Enterprise-Grade - Gate 2 (LLM local + Vision OpenAI)
 
 **⚠️ Gate 2:** Os serviços GPU são **OBRIGATÓRIOS**, não opcionais. GPUs são o coração da plataforma de IA — sem eles, a plataforma não funciona. Todos os serviços GPU rodam localmente no servidor Hetzner GPU GEX44, gerenciados pelo GPU Manager Service. **Todos os serviços de inferência rodam simultaneamente** (budgets em 20GB VRAM). Treinamento roda via profile (on-demand/agendado) e não deve concorrer com inferência.
 
@@ -1076,12 +1076,11 @@ O workflow de release (`release.yml`) suporta versionamento automático baseado 
 |-------------|--------|------|-------------------|
 | **GPU Manager Service** | Gerenciamento centralizado (fila, VRAM, circuit breakers) | N/A | Todas as requisições GPU falham |
 | **GPU LLM (texto)** | Chat/Trading (texto) | ~6GB (budget) | Chat/Trading degradam (texto) |
-| **GPU VLM (visão)** | Análise de imagens/gráficos | ~8GB (budget) | Análise de imagem degrada |
 | **Embeddings (GPU)** | Embeddings texto/imagem (RAG) | ~3GB (budget) | RAG degrada |
 | **ASR (GPU)** | Transcrição de áudio | ~3GB (budget) | Áudio degrada |
 | **GPU Trainer** | Fine-tuning QLoRA (profile) | variável (dedicado) | Fine-tuning indisponível (inferência segue) |
 
-> **NOTA Gate 2:** FLUX.1 Schnell REMOVIDO — Alice **analisa** imagens (VLM) mas **não gera** imagens. O tipo de serviço é capability-based (LLM/VLM/Embeddings/ASR), evitando retrabalho em dashboards/alertas ao trocar modelos.
+> **NOTA Gate 2:** FLUX.1 Schnell REMOVIDO — Alice **analisa e gera** imagens via OpenAI (gpt-4.1 / gpt-image-1). O tipo de serviço é capability-based (LLM/Embeddings/ASR), evitando retrabalho em dashboards/alertas ao trocar modelos.
 
 **Health Check Completo:**
 - Verifica **6 serviços Hetzner**: Frontend, Auth, Chat, RAG, ERPNext, Grafana
@@ -2209,20 +2208,20 @@ O workflow `deploy-stack-modular.yml` executa automaticamente este script no job
 ---
 
 *Autor: Fillipe Guerra*
-*Documento atualizado em: 15 de Janeiro de 2026*
-*Versão: 9.3 - Gate 2 (LLM separado + VLM dedicado)*
-*Data: 15 de Janeiro de 2026*
+*Documento atualizado em: 16 de Janeiro de 2026*
+*Versão: 9.4 - Gate 2 (LLM local + Vision OpenAI)*
+*Data: 16 de Janeiro de 2026*
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Alpine 3.21*
 *Total de Containers: 50 (7 infra + 7 Alice + 15 ERPNext + 14 observability + 4 GPU + 1 backup + 1 trainer on-demand)*
 *Security Hardening: 100% completo - 50/50 containers com no-new-privileges, 50/50 com resource limits, 25/50 com read_only*
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.1.3, Docker Compose v5.0.0*
 *Storage: Volume Hetzner alice-data 100GB montado em /opt/alice*
-*ARQUITETURA ENTERPRISE Gate 2: Texto Qwen3-Embedding-0.6B INT8 (1024 dim → Qdrant) | Imagem OpenCLIP (1024 dim → pgvector) | LLM (texto) Mistral 7B Instruct AWQ + VLM (visão) Qwen2.5-VL 7B AWQ (vLLM)*
+*ARQUITETURA ENTERPRISE Gate 2: Texto Qwen3-Embedding-0.6B INT8 (1024 dim → Qdrant) | Imagem OpenCLIP (1024 dim → pgvector) | LLM (texto) Qwen2.5 7B Instruct AWQ (vLLM) | Vision/Imagens via OpenAI*
 *Pipeline Enterprise (26/12/2025): Deploy Server (CPX32 - IP 46.224.46.93, 4 vCPU, 8GB RAM) separado + Production Server (GEX44 GPU - IP 178.63.41.108). Todos os 50 containers rodam no servidor único, incluindo GPU services gerenciados pelo GPU Manager Service.*
 
 *Migração Traefik→Caddy (02/01/2026): Traefik, traefik-init e dockerproxy substituídos por Caddy. Vantagens: SSL automático com retry inteligente, HTTP/3 nativo (QUIC), footprint 40MB vs 100MB. Total: 7 infra (era 8).*
 *Otimização CI (27/12/2025): Composite action `.github/actions/setup-node-pnpm` elimina duplicação de setup (14x → 1x). Economia de ~6-10min por run. Fix cache persistence: usa actions/cache/restore + actions/cache/save separados (best practice 2025).*
-*GPU Gate 2 (15/01/2026): RTX 4000 SFF Ada (20GB VRAM) - simultâneo (budgets): LLM (texto) + VLM (visão) + Embeddings + ASR. Trainer QLoRA on-demand via profile.*
+*GPU Gate 2 (16/01/2026): RTX 4000 SFF Ada (20GB VRAM) - simultâneo (budgets): LLM (texto) + Embeddings + ASR. Vision/Imagens via OpenAI. Trainer QLoRA on-demand via profile.*
 *Redis Alice: 7.4.7-alpine - Cache distribuído (node-redis 5.x suporta Redis 7.x)*
 *Redis ERPNext: 6.2.21-alpine - ERPNext v15 requer Redis 6.x (docs.frappe.io)*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*

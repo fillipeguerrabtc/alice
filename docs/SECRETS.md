@@ -13,7 +13,7 @@ Este documento contém a lista completa de todos os secrets necessários para a 
 **Arquitetura Multi-Stack:** 5 stacks independentes (INFRA, ALICE, OBSERVABILITY, ERPNEXT, BACKUP)
 **Total de Containers:** 50 em produção (10 infra + 8 Alice + 5 GPU + 13 observability + 15 ERPNext + 1 backup)
 **Redis Alice:** Container dedicado para cache distribuído (segregação enterprise do ERPNext)
-**LLM (Gate 2):** Mistral 7B Instruct AWQ (texto) + Qwen2.5-VL 7B AWQ (visão) via GPU Manager Service (Hetzner GPU)
+**LLM (Gate 2):** Qwen2.5 7B Instruct AWQ (texto) via GPU Manager Service (Hetzner GPU) + **Vision/Imagens via OpenAI**
 **Trading:** KuCoin Futures BTC Perpetuals (XBTUSDTM)
 **URL de Produção:** `https://yesyoudeserve.duckdns.org`
 **URL ERPNext:** `https://erp.yesyoudeserve.duckdns.org`
@@ -29,8 +29,8 @@ Este documento contém a lista completa de todos os secrets necessários para a 
 |-----------|----------|----------------------|
 | **Infraestrutura** | postgres, caddy, alice-redis | POSTGRES_PASSWORD, REDIS_PASSWORD, ACME_EMAIL |
 | **Alice Auth** | alice-auth | SESSION_SECRET, GOOGLE_*, OAUTH_GITHUB_* |
-| **Alice Chat** | alice-chat | GPU_MANAGER_URL (opcional, default: http://alice-gpu-manager:3010) |
-| **Alice RAG (GPU + Web Search)** | alice-rag | GPU_MANAGER_URL, SEARXNG_URL |
+| **Alice Chat** | alice-chat | GPU_MANAGER_URL (opcional, default: http://alice-gpu-manager:3010), **OPENAI_API_KEY** |
+| **Alice RAG (GPU + Web Search)** | alice-rag | GPU_MANAGER_URL, SEARXNG_URL, **OPENAI_API_KEY** |
 | **GPU Manager Service** | gpu-manager-service | INTERNAL_API_SECRET, REDIS_URL |
 | **Alice Integrations** | alice-integrations | STRIPE_*, WISE_*, TWILIO_*, GMAIL_*, KUCOIN_* |
 | **Alice Trading** | alice-integrations | KUCOIN_PRO_API_KEY, KUCOIN_PRO_API_SECRET, KUCOIN_PRO_API_PASSPHRASE, KUCOIN_PRO_BASE_URL |
@@ -94,6 +94,7 @@ Estes são necessários para o deploy funcionar:
 | `REDIS_PASSWORD` | Senha Redis Alice (obrigatório) | `openssl rand -hex 32` |
 | `SESSION_SECRET` | String aleatória 64+ chars (mínimo) | `openssl rand -hex 64` |
 | `INTERNAL_API_SECRET` | Secret para comunicação S2S | `openssl rand -hex 32` |
+| `OPENAI_API_KEY` | Chave OpenAI (Vision + imagens) | Painel OpenAI |
 | `GRAFANA_ADMIN_USER` | Username admin Grafana 12 (ex: admin ou email) | Definir username |
 | `GRAFANA_ADMIN_PASSWORD` | Senha admin Grafana 12 (mín. 8 chars recomendado) | Definir forte e exclusiva |
 | `ERPNEXT_ADMIN_PASSWORD` | Senha admin ERPNext 15 (mín. 8 chars) - Username fixo "Administrator" | Definir forte e exclusiva |
@@ -204,17 +205,16 @@ Estas variáveis **não são secrets**, mas são **obrigatórias em produção**
 | `GPU_MANAGER_URL` | Opcional (default: `http://alice-gpu-manager:3010`) | URL do GPU Manager Service (usado internamente pelos serviços - não precisa de secret) | ⏳ **Opcional** |
 | `INTERNAL_API_SECRET` | Gerar com `openssl rand -hex 32` | Secret para comunicação segura entre serviços (já configurado na FASE 1) | ✅ **SIM** |
 
-**Containers GPU (Gate 2 - 15/01/2026) - TODOS 100% PÚBLICOS:**
+**Containers GPU (Gate 2 - 16/01/2026) - TODOS 100% PÚBLICOS:**
 
 | Container | Imagem | Origem | Autenticação |
 |-----------|--------|--------|--------------|
-| **llm-mistral** | `vllm/vllm-openai:v0.12.0` | Docker Hub | ❌ Não precisa |
-| **qwen-vl (VLM)** | `vllm/vllm-openai:v0.12.0` | Docker Hub | ❌ Não precisa |
-| **asr-canary** | `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` + NeMo pip | Docker Hub | ❌ Não precisa |
-| **embeddings-gpu** | `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` | Docker Hub | ❌ Não precisa |
-| **qwen-trainer** | `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` | Docker Hub | ❌ Não precisa |
+| **llm-qwen25** | `vllm/vllm-openai:v0.12.0` | Docker Hub | ❌ Não precisa |
+| **asr-canary** | `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime` + NeMo pip | Docker Hub | ❌ Não precisa |
+| **embeddings-gpu** | `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime` | Docker Hub | ❌ Não precisa |
+| **qwen-trainer** | `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime` | Docker Hub | ❌ Não precisa |
 
-> **Gate 2:** LLM (texto) e VLM (visão) são serviços separados. Alice **analisa** imagens (VLM) mas **não gera** imagens.
+> **Gate 2:** LLM (texto), Embeddings e ASR são serviços GPU locais. **Vision** e **geração de imagens** via OpenAI.
 
 **NOTA:** NGC_API_KEY foi **REMOVIDO** - Personal API Key do NGC não funciona para containers públicos (retorna 403 Forbidden). Todos os containers agora usam Docker Hub que é 100% público e gratuito.
 
@@ -225,7 +225,7 @@ Estas variáveis **não são secrets**, mas são **obrigatórias em produção**
 - Retry logic com backoff exponencial
 - Métricas Prometheus (latência, fila, VRAM, erros)
 
-> **IMPORTANTE (Gate 2):** Não são necessários secrets para URLs dos serviços GPU (LLM/VLM/Embeddings/ASR) — todos rodam localmente no servidor Hetzner GEX44 e são gerenciados pelo GPU Manager Service. URLs são internas (Docker network) e não precisam de secrets. Arquitetura simplificada: serviços GPU rodam simultaneamente dentro do budget de 20GB VRAM (fonte de verdade = métricas + `nvidia-smi`).
+> **IMPORTANTE (Gate 2):** Não são necessários secrets para URLs dos serviços GPU (LLM/Embeddings/ASR) — todos rodam localmente no servidor Hetzner GEX44 e são gerenciados pelo GPU Manager Service. URLs são internas (Docker network) e não precisam de secrets. Arquitetura simplificada: serviços GPU rodam simultaneamente dentro do budget de 20GB VRAM (fonte de verdade = métricas + `nvidia-smi`).
 
 ### FASE 4: Pagamentos Stripe (receber EUR/SEPA)
 
@@ -298,7 +298,7 @@ Estas variáveis são **configuração** (não secrets) e podem ser definidas vi
 - `/api/integrations/trading/market/:symbol` - Dados de mercado
 - `/api/integrations/trading/account` - Saldo da conta
 - `/api/integrations/trading/orders` - Gerenciamento de ordens
-- `/api/integrations/trading/signals` - Sinais do Qwen2.5-VL LLM
+- `/api/integrations/trading/signals` - Sinais do LLM Qwen2.5 7B
 
 ### FASE 5c: Qdrant - Banco Vetorial para Texto (Gate 2: 1024 dimensões)
 
@@ -508,7 +508,7 @@ docker logs alice-minio-init --tail 50
 | `SALAD_WHISPER_URL` | ❌ **REMOVER** | GitHub → Settings → Secrets → Delete |
 | `SALAD_ASR_URL` | ❌ **REMOVER** | GitHub → Settings → Secrets → Delete |
 
-> **NOTA v4.0.0:** SALAD_MIXTRAL_URL e SALAD_FLUX_URL foram REMOVIDOS - agora usamos GPU local com Qwen2.5-VL (sem geração de imagens).
+> **NOTA v4.0.0:** SALAD_MIXTRAL_URL e SALAD_FLUX_URL foram REMOVIDOS - agora usamos GPU local com Qwen2.5 7B (sem geração local de imagens).
 | `SALAD_EMBEDDINGS_URL` | ❌ **REMOVER** | GitHub → Settings → Secrets → Delete |
 | `SALAD_MEDIA_PROJECT` | ❌ **REMOVER** | GitHub → Settings → Secrets → Delete |
 | `SALAD_GPU_CLASS` | ❌ **REMOVER** | GitHub → Settings → Secrets → Delete |
@@ -556,7 +556,7 @@ docker logs alice-minio-init --tail 50
 
 | Secret | Status | Obrigatório? |
 |--------|--------|--------------|
-| `HUGGINGFACE_TOKEN` | ✅ | ✅ **SIM** (obrigatório para downloads de modelos - Qwen2.5-VL, Qwen3-Embedding, OpenCLIP, Canary) |
+| `HUGGINGFACE_TOKEN` | ✅ | ✅ **SIM** (obrigatório para downloads de modelos - Qwen2.5 7B, Qwen3-Embedding, OpenCLIP, Canary) |
 
 > **NOTA (26/12/2025):** GPU dedicada Hetzner GEX44 (24/7) - containers Docker rodam continuamente. URLs dos serviços GPU são internas via rede Docker e não precisam de secrets.
 

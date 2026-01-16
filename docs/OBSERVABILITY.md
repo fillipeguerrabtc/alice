@@ -235,7 +235,6 @@ A plataforma Alice implementa observabilidade **enterprise-grade** baseada em **
 | `alice-training-service` | host.docker.internal:3004 | 60s | Training jobs, loss, GPU utilization |
 | `alice-integrations-service` | host.docker.internal:3005 | 30s | KuCoin, Stripe, Wise, circuit breakers |
 | `alice-gpu-manager-service` | host.docker.internal:3010 | 15s | GPU Manager, VRAM, filas, circuit breakers |
-| `gpu-vlm` | host.docker.internal:8000 | 30s | Serviço GPU VLM (vLLM OpenAI API - visão) |
 | `gpu-llm` | host.docker.internal:8004 | 30s | Serviço GPU LLM (vLLM OpenAI API - texto) |
 | `gpu-embeddings` | host.docker.internal:8001 | 30s | Serviço GPU de embeddings (FastAPI) |
 | `gpu-asr` | host.docker.internal:8002 | 60s | Serviço GPU ASR (FastAPI) |
@@ -432,7 +431,7 @@ docker logs loki
 ### Alice Platform
 
 - `CLAUDE.md` - 18 Regras Fundamentais
-- `docs/ARQUITETURA.md` - Arquitetura Gate 2 (LLM separado + VLM dedicado)
+- `docs/ARQUITETURA.md` - Arquitetura Gate 2 (LLM separado + Vision via OpenAI)
 - `docs/ARQUITETURA-GPU-MANAGER.md` - GPU Manager Service
 - `docs/OBSERVABILITY-AUDIT-2026-01-13.md` - Auditoria completa
 

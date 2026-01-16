@@ -20,7 +20,7 @@ import { validateEmbeddingDimension } from '@alice/database';
 
 const logger = createLogger('image-processor');
 
-type OpenAIResponsesApiResponse = {
+export type OpenAIResponsesApiResponse = {
   id?: string;
   model?: string;
   output?: Array<{
@@ -28,7 +28,7 @@ type OpenAIResponsesApiResponse = {
   }>;
 };
 
-function extractOutputTextFromResponsesApi(resp: OpenAIResponsesApiResponse | undefined): string | null {
+export function extractOutputTextFromResponsesApi(resp: OpenAIResponsesApiResponse | undefined): string | null {
   const output = resp?.output;
   if (!output || !Array.isArray(output)) return null;
   const parts: string[] = [];
@@ -47,7 +47,7 @@ function extractOutputTextFromResponsesApi(resp: OpenAIResponsesApiResponse | un
 
 // Prompt de descrição de imagens (Vision via OpenAI) - especializado no vertical financeiro.
 // Regra 6: não é secret nem valor de infra; é parte da lógica de produto (prompt engineering).
-const DEFAULT_VLM_IMAGE_PROMPT =
+const DEFAULT_VISION_IMAGE_PROMPT =
   'Você é um assistente especializado em Trading, Finanças, Contabilidade e Matemática. ' +
   'Analise a imagem enviada. Se for um gráfico (candles, indicadores), descreva padrões, tendência, suportes/resistências, ' +
   'possíveis sinais e riscos. Se houver texto na imagem, transcreva o que for legível. ' +
@@ -78,7 +78,7 @@ interface TextForImageApiParams {
   text: string;
 }
 
-interface VlmDescribeImageParams {
+interface VisionDescribeImageParams {
   imageDataUri: string;
   question?: string;
 }
@@ -157,7 +157,7 @@ if (!OPENAI_API_KEY && process.env.NODE_ENV === 'production') {
 /**
  * Chama OpenAI (Responses API) para extrair descrição/análise de imagem.
  */
-async function callOpenAiDescribeImage(params: VlmDescribeImageParams): Promise<{ text: string; model: string }> {
+async function callOpenAiDescribeImage(params: VisionDescribeImageParams): Promise<{ text: string; model: string }> {
   const question =
     params.question && params.question.trim().length > 0 ? params.question.trim() : 'Descreva e analise esta imagem.';
 
@@ -177,7 +177,7 @@ async function callOpenAiDescribeImage(params: VlmDescribeImageParams): Promise<
       input: [
         {
           role: 'developer',
-          content: [{ type: 'input_text', text: DEFAULT_VLM_IMAGE_PROMPT }],
+          content: [{ type: 'input_text', text: DEFAULT_VISION_IMAGE_PROMPT }],
         },
         {
           role: 'user',
@@ -232,7 +232,7 @@ async function callGpuTextForImageApi(params: TextForImageApiParams): Promise<{ 
   return gpuTextForImageBreaker.fire(params) as Promise<{ embedding: number[]; model: string }>;
 }
 
-async function callOpenAiVisionDescribeApi(params: VlmDescribeImageParams): Promise<{ text: string; model: string }> {
+async function callOpenAiVisionDescribeApi(params: VisionDescribeImageParams): Promise<{ text: string; model: string }> {
   return openAiVisionDescribeBreaker.fire(params) as Promise<{ text: string; model: string }>;
 }
 
@@ -250,8 +250,8 @@ export interface ImageMetadata {
 export interface ProcessedImage {
   embedding: number[];
   embeddingModel: string;
-  vlmDescription?: string;
-  vlmModel?: string;
+  visionDescription?: string;
+  visionModel?: string;
   thumbnailBuffer?: Buffer;
   thumbnailMimeType?: string;
   metadata: ImageMetadata;
@@ -330,15 +330,15 @@ class ImageProcessorService {
     }
 
     // Descrever imagem via OpenAI Vision
-    let vlmDescription: string | undefined;
-    let vlmModel: string | undefined;
+    let visionDescription: string | undefined;
+    let visionModel: string | undefined;
     if (generateDescription) {
       try {
         const base64Image = imageBuffer.toString('base64');
         const imageDataUri = `data:${mimeType};base64,${base64Image}`;
         const described = await callOpenAiVisionDescribeApi({ imageDataUri, question: descriptionQuestion });
-        vlmDescription = described.text;
-        vlmModel = described.model;
+        visionDescription = described.text;
+        visionModel = described.model;
       } catch (error) {
         logger.error({ error }, 'Erro ao gerar descrição de imagem via OpenAI Vision');
         // Regra 6: não inventar descrição. O processamento da imagem continua (embeddings + thumbnail).
@@ -368,8 +368,8 @@ class ImageProcessorService {
     return {
       embedding,
       embeddingModel,
-      vlmDescription,
-      vlmModel,
+      visionDescription,
+      visionModel,
       thumbnailBuffer,
       thumbnailMimeType,
       metadata,

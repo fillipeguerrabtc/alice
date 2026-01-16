@@ -1,15 +1,15 @@
 # Alice - Plataforma Enterprise de IA Autônoma
 
 **Autor:** Fillipe Guerra  
-**Data:** 15 de Janeiro de 2026  
-**Versão:** 7.2 - Tests sem mocks + OpenAPI chat alinhado (410 Gone)
+**Data:** 16 de Janeiro de 2026  
+**Versão:** 7.3 - Gate 2 Qwen2.5 + Vision OpenAI
 
 <div align="center">
 
 ![Alice Logo](https://img.shields.io/badge/Alice-IA%20Enterprise-blue?style=for-the-badge&logo=robot&logoColor=white)
-![Version](https://img.shields.io/badge/versão-7.2-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/versão-7.3-green?style=for-the-badge)
 ![License](https://img.shields.io/badge/licença-Proprietária-red?style=for-the-badge)
-![LLM](https://img.shields.io/badge/LLM-Qwen2.5--VL%207B-purple?style=for-the-badge)
+![LLM](https://img.shields.io/badge/LLM-Qwen2.5%207B-purple?style=for-the-badge)
 
 **Plataforma de IA autônoma multimodal 100% self-hosted com LLM próprio**
 
@@ -21,15 +21,15 @@
 
 ## Visão Geral
 
-**Alice** é uma plataforma enterprise de IA autônoma pronta para produção, **especializada em Finanças, Trading e Gestão Financeira**. Utiliza o modelo multimodal **Qwen2.5-VL 7B (vLLM AWQ)** hospedado em infraestrutura própria (Hetzner GPU Server GEX44 - RTX 4000 Ada 20GB), garantindo 100% de autonomia sem dependência de APIs externas como OpenAI ou Anthropic.
+**Alice** é uma plataforma enterprise de IA autônoma pronta para produção, **especializada em Finanças, Trading e Gestão Financeira**. Utiliza o LLM **Qwen2.5 7B (vLLM AWQ)** hospedado em infraestrutura própria (Hetzner GPU Server GEX44 - RTX 4000 Ada 20GB), com Vision e geração de imagens via OpenAI.
 
 ### Capacidades Principais
 
 | Capacidade | Descrição |
 |------------|-----------|
-| **IA 100% Autônoma** | LLM próprio (Qwen2.5-VL 7B vLLM AWQ) hospedado em servidor Hetzner GPU GEX44 (RTX 4000 Ada 20GB) |
+| **IA 100% Autônoma** | LLM próprio (Qwen2.5 7B vLLM AWQ) hospedado em servidor Hetzner GPU GEX44 (RTX 4000 Ada 20GB) |
 | **Chat em Tempo Real** | Conversação via WebSocket com streaming de tokens |
-| **Análise de Imagens** | Vision nativo via Qwen2.5-VL (análise de gráficos, documentos, screenshots) |
+| **Análise de Imagens** | OpenAI Vision (gpt-4.1) para gráficos, documentos, screenshots |
 | **Deduplicação Semântica** | SemHash para filtragem de dados duplicados no treinamento |
 | **Multi-tenant** | Suporte a múltiplas organizações com agentes IA especializados |
 | **RAG Agentic** | Busca híbrida (interna + Brave Search) com classificador inteligente |
@@ -43,9 +43,9 @@
 |-----------|-----------|
 | **Autonomia Total** | Controle completo sobre modelo e inferência |
 | **Privacidade** | Dados nunca saem da sua infraestrutura |
-| **Custo Previsível** | Sem cobrança por token de terceiros |
+| **Custo Previsível** | LLM local sem cobrança por token; Vision/Imagens via OpenAI |
 | **Customização** | Fine-tuning específico para cada cliente |
-| **Disponibilidade** | Sem dependência de SLAs externos |
+| **Disponibilidade** | LLM local resiliente; Vision depende de API OpenAI |
 
 > **🚀 ATUALIZAÇÃO ENTERPRISE v3.0.0 (06/01/2026) - Pipeline CI/CD:**  
 > Pipeline CI/CD enterprise completo com deploy modular em 5 stacks independentes.
@@ -225,7 +225,7 @@
 │  │  └─────────────┘ └─────────────────────────────────────────┘   ││
 │  │  ┌─────────────────────────────────────────────────────────┐   ││
 │  │  │              GPU SERVICES (Localhost) v4.0.0             │   ││
-│  │  │  GPU Manager │ Qwen2.5-VL │ Embeddings INT8 │ ASR       │   ││
+│  │  │  GPU Manager │ Qwen2.5 7B │ Embeddings INT8 │ ASR       │   ││
 │  │  └─────────────────────────────────────────────────────────┘   ││
 │  └─────────────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────────────┘
@@ -318,15 +318,16 @@ A plataforma Alice é composta por **50 containers** organizados em **5 stacks i
 
 > **NOTA**: Alertmanager foi removido em 01/01/2026 e substituído pelo **Grafana Alerting**.
 
-#### Categoria 5: GPU Services (5 serviços) - Gate 2 (LLM separado + VLM dedicado)
+#### Categoria 5: GPU Services (4 serviços) - Gate 2 (LLM local + Vision OpenAI)
 
 | # | Serviço | Container | Descrição |
 |---|---------|-----------|-----------|
 | 42 | GPU Manager Service | `gpu-manager-service` | Gerenciamento centralizado de requisições GPU (fila priorizada, VRAM monitoring, circuit breakers) |
-| 43 | GPU LLM (texto) | `gpu-llm` | Mistral 7B Instruct AWQ (vLLM OpenAI API) para chat e trading |
-| 44 | GPU VLM (visão) | `gpu-vlm` | Qwen2.5-VL 7B AWQ (vLLM OpenAI API) para análise de imagens |
-| 45 | GPU Embeddings | `gpu-embeddings` | Qwen3-Embedding-0.6B INT8 (texto) + OpenCLIP ViT-H/14 (imagem) |
-| 46 | GPU ASR | `gpu-asr` | Canary-1B (NeMo) para transcrição de áudio |
+| 43 | GPU LLM (texto) | `gpu-llm` | Qwen2.5 7B Instruct AWQ (vLLM OpenAI API) para chat e trading |
+| 44 | GPU Embeddings | `gpu-embeddings` | Qwen3-Embedding-0.6B INT8 (texto) + OpenCLIP ViT-H/14 (imagem) |
+| 45 | GPU ASR | `gpu-asr` | Canary-1B (NeMo) para transcrição de áudio |
+
+> **Nota:** Vision e geração de imagens são via OpenAI (gpt-4.1 / gpt-image-1).
 
 #### Categoria 6: Backup (1 serviço)
 
@@ -773,8 +774,8 @@ Todos os 50 containers têm security hardening completo aplicado. Containers que
 *Storage: Servidor GEX44 1.92TB interno (/opt/alice) - SEM S3 externo*
 *ARQUITETURA ENTERPRISE: Texto 1024 dim Qwen3-Embedding-0.6B (Qdrant) | Imagem 1024 dim OpenCLIP (pgvector)*
 *Trading BTC Futures: KuCoin Perpetuals + Indicadores Técnicos Determinísticos + Validação Cruzada Anti-Alucinação*
-*LLM: Qwen2.5-VL 7B (vLLM AWQ) via Hetzner GPU Server GEX44 (RTX 4000 Ada 20GB) - Multimodal (texto + vision)*
-*GPU Services (Gate 2): LLM separado (Mistral 7B AWQ), VLM (Qwen2.5-VL), Embeddings Qwen3-Embedding-0.6B INT8 (1024 dim), ASR Canary-1B - gerenciados pelo GPU Manager Service*
+*LLM: Qwen2.5 7B (vLLM AWQ) via Hetzner GPU Server GEX44 (RTX 4000 Ada 20GB) - Texto*
+*GPU Services (Gate 2): LLM (Qwen2.5 7B), Embeddings Qwen3-Embedding-0.6B INT8 (1024 dim), ASR Canary-1B - gerenciados pelo GPU Manager Service. Vision/Imagens via OpenAI*
 *Pipeline Enterprise (06/01/2026): Release (`release.yml`) → Deploy Modular (`deploy-stack-modular.yml` - 5 stacks independentes ~10min)*
 *Rollback Cirúrgico: Só reverte stack com falha, outros continuam funcionando 100%*
 

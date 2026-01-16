@@ -55,7 +55,7 @@ const SYSTEM_MODULES = [
   {
     codigo: "chat",
     nome: "Chat IA",
-    descricao: "Interface de conversação com Alice (Qwen2.5-VL 7B - multimodal)",
+    descricao: "Interface de conversação com Alice (Qwen2.5 7B - texto)",
     icone: "MessageSquare",
     categoria: "core",
     urlExterna: null,
@@ -85,7 +85,7 @@ const SYSTEM_MODULES = [
   {
     codigo: "image_analysis",
     nome: "Análise de Imagens",
-    descricao: "Análise de imagens via Qwen2.5-VL Vision (gráficos, documentos)",
+    descricao: "Análise de imagens via OpenAI Vision (gpt-4.1)",
     icone: "Image",
     categoria: "core",
     urlExterna: null,

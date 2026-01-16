@@ -87,10 +87,10 @@ const authHealthSchema = baseHealthSchema.extend({
  * Schema para chat-service /api/chat/health
  * Nota: O RAG breaker retorna estrutura flat (não nested em stats)
  */
-// ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral
+// ARQUITETURA 16/01/2026: LLM texto Qwen2.5 7B
 const chatHealthSchema = baseHealthSchema.extend({
   llmProvider: z.literal('gpu-manager-service'),
-  model: z.literal('Qwen/Qwen2.5-VL-7B-Instruct-AWQ'),
+  model: z.literal('Qwen/Qwen2.5-7B-Instruct-AWQ'),
   circuitBreakers: z.object({
     llm: z.object({
       state: z.enum(['open', 'closed', 'half-open']),
@@ -207,13 +207,13 @@ const mockAuthHealthResponse = {
   note: 'OAuth/SAML usam redirecionamentos HTTP do navegador - circuit breakers não são aplicáveis para fluxos de redirecionamento',
 };
 
-// ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral
+// ARQUITETURA 16/01/2026: LLM texto Qwen2.5 7B
 const mockChatHealthResponse = {
   status: 'ok',
   service: 'chat-service',
   timestamp: FIXED_TIMESTAMP,
   llmProvider: 'gpu-manager-service',
-  model: 'Qwen/Qwen2.5-VL-7B-Instruct-AWQ',
+  model: 'Qwen/Qwen2.5-7B-Instruct-AWQ',
   circuitBreakers: {
     llm: {
       state: 'closed',
@@ -353,9 +353,9 @@ describe('Health Endpoints - Contratos de Schema', () => {
       expect(mockChatHealthResponse.llmProvider).toBe('gpu-manager-service');
     });
 
-    // ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral
-    it('deve usar modelo "Qwen2.5-VL-7B-AWQ"', () => {
-      expect(mockChatHealthResponse.model).toBe('Qwen/Qwen2.5-VL-7B-Instruct-AWQ');
+    // ARQUITETURA 16/01/2026: LLM texto Qwen2.5 7B
+    it('deve usar modelo "Qwen2.5-7B-AWQ"', () => {
+      expect(mockChatHealthResponse.model).toBe('Qwen/Qwen2.5-7B-Instruct-AWQ');
     });
 
     it('deve ter circuit breakers para LLM e RAG', () => {

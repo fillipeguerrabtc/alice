@@ -2,7 +2,7 @@
 # ALICE PLATFORM - ALICE STACK (Microserviços + GPU)
 # =============================================================================
 # Versão: 6.1 (GPU: Texto+Embeddings+ASR; Vision via OpenAI)
-# Data: 15 de Janeiro de 2026
+# Data: 16 de Janeiro de 2026
 # Autor: Fillipe Guerra
 #
 # PROPÓSITO: Serviços core da plataforma Alice + GPU Manager + GPU containers
@@ -465,7 +465,7 @@ services:
   # GPU MANAGER SERVICE - Gerenciamento Centralizado de GPU
   # ===========================================================================
   # ARQUITETURA GPU (Gate 2):
-  # - Separar LLM (texto) e VLM (visão) em serviços distintos (capability-based)
+  # - LLM (texto), Embeddings e ASR locais (capability-based)
   # - GPU Manager permanece modelo-agnóstico (dashboards/alertas não mudam quando trocar modelo)
   # ===========================================================================
   gpu-manager:
@@ -520,12 +520,11 @@ services:
   # - gpu-asr: ASR (transcrição)
   # - gpu-trainer: QLoRA (sob demanda via profile)
   #
-  # VLM (visão) local (`gpu-vlm`) foi REMOVIDO completamente:
-  # - A análise de imagens (Vision) e a geração de imagens são feitas via OpenAI API.
+  # Vision e geração de imagens são feitas via OpenAI API.
   #
   # Benefícios:
   # - VRAM liberada para contexto 8k no LLM + ASR always-on
-  # - Menos complexidade operacional (sem serviço VLM local)
+  # - Menos complexidade operacional (sem serviço local de visão)
   # - Treinamento permanece sob demanda (libera VRAM quando necessário)
   # ===========================================================================
 
@@ -629,7 +628,7 @@ services:
 
   # ASR Canary-1B - Transcrição de Áudio
   # ARQUITETURA ATUAL (16/01/2026+):
-  # ASR é always-on. O VLM local foi removido e a visão é via OpenAI.
+  # ASR é always-on. Vision e geração de imagens são via OpenAI.
   # Fonte de verdade: métricas (Grafana) + nvidia-smi em produção.
   gpu-asr:
     image: ${IMAGE_PREFIX}-asr-canary:${IMAGE_TAG:-latest}

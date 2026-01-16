@@ -1,14 +1,14 @@
 # Sistema de Treinamento - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 15 de Janeiro de 2026  
-**Versão:** 4.1.0 - Gate 2 (LLM separado + VLM dedicado)
+**Data:** 16 de Janeiro de 2026  
+**Versão:** 4.2.0 - Gate 2 (LLM local + Vision OpenAI)
 
 ---
 
 ## Visão Geral
 
-O sistema de treinamento da Alice permite fine-tuning incremental do **LLM (texto)** usando **QLoRA (4-bit)**. No **Gate 2**, o LLM de produção é o **Mistral 7B Instruct (AWQ)** e o treinamento deve usar o **mesmo modelo base do LLM** para evitar divergência entre inference e fine-tuning. O sistema suporta treinamento agendado (semanal) e on-demand via dashboard admin.
+O sistema de treinamento da Alice permite fine-tuning incremental do **LLM (texto)** usando **QLoRA (4-bit)**. No **Gate 2**, o LLM de produção é o **Qwen2.5 7B Instruct (AWQ)** e o treinamento deve usar o **mesmo modelo base do LLM** para evitar divergência entre inference e fine-tuning. O sistema suporta treinamento agendado (semanal) e on-demand via dashboard admin.
 
 ---
 
@@ -39,7 +39,7 @@ O sistema de treinamento da Alice permite fine-tuning incremental do **LLM (text
 │                    GPU Trainer Service                        │
 │  ┌────────────────────────────────────────────────────────┐  │
 │  │  QLoRA Fine-tuning                                      │  │
-│  │  - Base: Mistral 7B Instruct (LLM texto)                │  │
+│  │  - Base: Qwen2.5 7B Instruct (LLM texto)                │  │
 │  │  - Método: QLoRA 4-bit                                   │  │
 │  │  - VRAM: ~12GB                                           │  │
 │  │  - Dataset: JSONL persistido                             │  │
@@ -266,7 +266,7 @@ O sistema usa deduplicação semântica para evitar dados redundantes:
 
 | Parâmetro | Valor | Descrição |
 |-----------|-------|-----------|
-| **Base Model** | Mistral 7B Instruct (AWQ) | Modelo base do LLM (texto) no Gate 2 |
+| **Base Model** | Qwen2.5 7B Instruct (AWQ) | Modelo base do LLM (texto) no Gate 2 |
 | **LoRA Rank** | 16 | Rank das matrizes LoRA |
 | **LoRA Alpha** | 32 | Fator de escala |
 | **Target Modules** | q_proj, k_proj, v_proj | Camadas alvo |
@@ -362,6 +362,5 @@ A página de treinamento no dashboard oferece:
 
 - [ARQUITETURA-GPU-MANAGER.md](./ARQUITETURA-GPU-MANAGER.md)
 - [CLAUDE.md - Regras do Projeto](../CLAUDE.md)
-- [Mistral 7B Instruct (AWQ) - Hugging Face](https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-AWQ)
-- [Qwen2.5-VL Documentation](https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct)
+- [Qwen2.5 7B Instruct AWQ - Hugging Face](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-AWQ)
 - [PEFT/LoRA Documentation](https://huggingface.co/docs/peft)

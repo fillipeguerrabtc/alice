@@ -1,9 +1,9 @@
 /**
  * Training - Gestão de Fine-tuning
  * 
- * Gate 2 (15/01/2026):
+ * Gate 2 (16/01/2026):
  * Página para gerenciar dados de treinamento e jobs de fine-tuning (QLoRA)
- * usando o MESMO modelo base do LLM (texto) em produção (Mistral 7B),
+ * usando o MESMO modelo base do LLM (texto) em produção (Qwen2.5 7B),
  * com execução via Training Service + gpu-trainer (sob demanda).
  * 
  * Funcionalidades:
@@ -19,7 +19,7 @@
  * Regra 13 - Internacionalização i18next
  * 
  * Autor: Fillipe Guerra
- * Data: 15 de Janeiro de 2026
+ * Data: 16 de Janeiro de 2026
  */
 
 import { useState, useCallback } from 'react';
@@ -536,7 +536,7 @@ function CreateJobDialog({ open, onClose, approvedCount, t }: {
 // ============================================================================
 // COMPONENTE: MultimodalUploadTab - Upload de mídia multimodal para RAG
 // ARQUITETURA 100% GPU (Gate 2):
-// - Imagens: OpenCLIP ViT-H/14 embeddings (1024 dim) + análise via VLM (quando aplicável)
+  // - Imagens: OpenCLIP ViT-H/14 embeddings (1024 dim) + análise via OpenAI Vision (quando aplicável)
 // - Áudios: Canary-1B (ASR) + Qwen3-Embedding-0.6B embeddings (1024 dim)
 // - Vídeo: NÃO suportado (desabilitado por custo/peso de GPU)
 // REGRA 8: TypeScript strict, zero any

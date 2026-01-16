@@ -5,7 +5,8 @@
  * com retry, timeout e tratamento de erros enterprise.
  * 
  * ARQUITETURA GPU (Gate 2):
- * - LLM (texto) e VLM (visão) são serviços separados
+ * - LLM (texto), Embeddings e ASR são serviços locais
+ * - Vision e geração de imagens via OpenAI
  * - O tipo do serviço é **capability-based** (modelo-agnóstico) para evitar
  *   mudanças em dashboards/alertas quando os modelos forem trocados.
  * 
@@ -41,10 +42,9 @@ export enum GpuRequestPriority {
   LOW = 2,        // Geração de imagens, ASR, Treinamento (LoRA)
 }
 
-/** Tipos de serviços GPU - Gate 2 (LLM separado + VLM dedicado) */
+/** Tipos de serviços GPU - Gate 2 (LLM separado + Embeddings + ASR) */
 export enum GpuServiceType {
-  LLM = 'llm',                   // LLM (texto) - ex: Mistral 7B Instruct (vLLM)
-  VLM = 'vlm',                   // VLM (visão) - ex: Qwen2.5-VL (vLLM)
+  LLM = 'llm',                   // LLM (texto) - ex: Qwen2.5 7B (vLLM)
   EMBEDDINGS = 'embeddings',     // Text + image embeddings (GPU)
   ASR = 'asr',                   // ASR (Speech-to-Text)
   TRAINING = 'training',         // Fine-tuning (QLoRA) - sob demanda

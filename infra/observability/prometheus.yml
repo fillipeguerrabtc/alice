@@ -115,11 +115,6 @@ scrape_configs:
           service: 'llm'
           gpu_service: 'llm'
       - targets:
-        - 'gpu-vlm:8000'
-        labels:
-          service: 'vlm'
-          gpu_service: 'vlm'
-      - targets:
         - 'gpu-embeddings:8000'
         labels:
           service: 'embeddings'

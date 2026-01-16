@@ -439,12 +439,11 @@ groups:
           service: rag-service
 
       # -----------------------------------------------------------------------
-      # IMAGENS (REMOVIDO - FLUX.1 obsoleto na v4.0.0)
+      # IMAGENS (OpenAI)
       # -----------------------------------------------------------------------
-      # NOTA 13/01/2026: Alertas de geração de imagens REMOVIDOS
-      # Alice NÃO gera imagens (FLUX.1 Schnell removido na v4.0.0)
-      # Alice pode ANALISAR imagens via serviço VLM (modelo pode variar no WS3)
-      # Métricas image_generation_* não existem mais - alerts causavam spam
+      # NOTA 16/01/2026: Geração e análise via OpenAI
+      # Alice gera imagens via gpt-image-1 e analisa via gpt-4.1 (Responses API)
+      # Métricas image_generation_* devem refletir o pipeline OpenAI
 
   # ===========================================================================
   # INFRASTRUCTURE ALERTS - Alertas de Infraestrutura

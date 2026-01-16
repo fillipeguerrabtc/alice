@@ -611,7 +611,7 @@ export default function Chat() {
           <div className="flex items-center gap-1">
             <Badge variant="secondary" className="hidden md:flex gap-1 text-xs">
               <Sparkles className="h-3 w-3" />
-              Qwen2.5-VL
+              Qwen2.5 7B
             </Badge>
             {/* Mobile: Badge compacto */}
             {isMobile && (

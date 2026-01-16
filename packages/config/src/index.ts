@@ -34,8 +34,8 @@ const authConfigSchema = z.object({
 
 const llmConfigSchema = z.object({
   // GPU Manager Service (Hetzner GEX44) - GPU dedicada 24/7
-  // Gate 2: LLM (texto) separado de VLM (visão). Este schema reflete o LLM default (texto).
-  LLM_MODEL: z.string().default('Mistral-7B-Instruct-AWQ'),
+  // Gate 2: LLM (texto) separado de Vision (OpenAI). Este schema reflete o LLM default (texto).
+  LLM_MODEL: z.string().default('Qwen2.5-7B-Instruct-AWQ'),
   // Gate 2: coerente com max-model-len padrão do stack (2048)
   LLM_MAX_TOKENS: z.coerce.number().default(2048),
   LLM_TEMPERATURE: z.coerce.number().default(0.7),

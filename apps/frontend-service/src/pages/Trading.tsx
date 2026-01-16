@@ -5,9 +5,9 @@
  * na KuCoin Futures. Integrado com Alice IA (Gate 2) para sinais
  * autônomos e execução automática de ordens.
  * 
- * Gate 2 (LLM separado + VLM dedicado):
- * - LLM (texto): Mistral 7B Instruct (AWQ) via GPU Manager (sinais/decisão)
- * - VLM (visão): Qwen2.5-VL 7B (AWQ) via GPU Manager (análise de imagens/gráficos)
+ * Gate 2 (LLM separado + Vision via OpenAI):
+ * - LLM (texto): Qwen2.5 7B Instruct (AWQ) via GPU Manager (sinais/decisão)
+ * - Vision (análise de imagens/gráficos): OpenAI Responses API (gpt-4.1)
  * 
  * Funcionalidades:
  * - Visualização em tempo real de dados de mercado
@@ -15,7 +15,7 @@
  * - Monitoramento de posições abertas
  * - Configuração de gestão de risco
  * - Sinais de trading via LLM (texto)
- * - Análise visual de gráficos via VLM (visão)
+ * - Análise visual de gráficos via OpenAI Vision
  * - Histórico completo de operações com auditoria
  * - Execução autônoma via Alice (Chat/WhatsApp)
  * 
@@ -24,7 +24,7 @@
  * Regra 13 - Internacionalização i18next
  * 
  * Autor: Fillipe Guerra
- * Data: 15 de Janeiro de 2026
+ * Data: 16 de Janeiro de 2026
  */
 
 import { useState, useEffect } from 'react';

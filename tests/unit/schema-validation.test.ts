@@ -315,8 +315,8 @@ describe('Schema - Tabelas Principais', () => {
     });
   });
 
-  // ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral
-  describe('llmConfig (Qwen2.5-VL 7B)', () => {
+  // ARQUITETURA 16/01/2026: LLM texto Qwen2.5 7B
+  describe('llmConfig (Qwen2.5 7B)', () => {
     it('deve ter configuração de modelo LLM', () => {
       const columns = Object.keys(llmConfig);
       expect(columns).toContain('modelo');
@@ -459,11 +459,11 @@ describe('Schema - Insert Schemas (Zod Validation)', () => {
     });
 
     it('deve aceitar dados válidos de agente', () => {
-      // ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral
+      // ARQUITETURA 16/01/2026: LLM texto Qwen2.5 7B
       const validAgent = {
         nome: 'Agente Vendas',
         slug: 'agente-vendas',
-        modeloBase: 'Qwen2.5-VL-7B',
+        modeloBase: 'Qwen2.5-7B-Instruct-AWQ',
       };
       const result = insertAgentSchema.safeParse(validAgent);
       expect(result.success).toBe(true);
@@ -500,7 +500,7 @@ describe('Schema - Insert Schemas (Zod Validation)', () => {
     it('deve aceitar configuração de LLM', () => {
       const validConfig = {
         // Gate 2: modelo LLM (texto) padrão
-        modelo: 'Mistral-7B-Instruct-AWQ',
+        modelo: 'Qwen2.5-7B-Instruct-AWQ',
         endpoint: 'http://alice-gpu-manager:3010/v1/chat',
         maxTokens: 2048,
         temperatura: 0.7,

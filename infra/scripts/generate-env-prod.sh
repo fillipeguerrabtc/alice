@@ -359,6 +359,12 @@ if [ -z "${INTERNAL_API_SECRET}" ]; then
   exit 1
 fi
 
+OPENAI_API_KEY="${OPENAI_API_KEY_SECRET:-}"
+if [ -z "${OPENAI_API_KEY}" ]; then
+  echo "::error::OPENAI_API_KEY não definido. Obrigatório para Vision e geração de imagens via OpenAI." >&2
+  exit 1
+fi
+
 SEARXNG_SECRET_KEY="${SEARXNG_SECRET_KEY_SECRET:-}"
 if [ -z "${SEARXNG_SECRET_KEY}" ]; then
   echo "::error::SEARXNG_SECRET_KEY não definido. Configure o secret SEARXNG_SECRET_KEY no repositório (necessário para alice-searxng)." >&2
@@ -773,6 +779,9 @@ echo "📄 Gerando arquivo .env.prod..."
   printf '# GPU Services (Hetzner GPU Server)\n'
   printf 'HUGGINGFACE_TOKEN=%s\n' "${HUGGINGFACE_TOKEN:-}"
   printf 'GPU_MANAGER_URL=http://alice-gpu-manager:3010\n'
+  printf '\n'
+  printf '# OpenAI (Vision + geração de imagens)\n'
+  printf 'OPENAI_API_KEY=%s\n' "${OPENAI_API_KEY}"
   printf '\n'
   printf '# Qdrant - Banco Vetorial para Texto\n'
   printf 'QDRANT_API_KEY=%s\n' "${QDRANT_API_KEY}"

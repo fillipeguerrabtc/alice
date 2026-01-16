@@ -264,7 +264,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Gate 2: LLM (texto) separado do VLM (visão) via GPU Manager Service
+  // Gate 2: LLM (texto) via GPU Manager Service, Vision via OpenAI
   app.get("/api/llm/status", isAuthenticated, async (_req: Request, res: Response) => {
     res.json({
       available: llmClient.isAvailable(),

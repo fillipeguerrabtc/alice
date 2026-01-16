@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 15 de Janeiro de 2026  
+> **Data:** 16 de Janeiro de 2026  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 7.3 - Gate 2 (parcial): LLM separado (Mistral) + SSOT capability-based
+> **Versão:** 7.4 - Gate 2: LLM Qwen2.5 7B + Vision via OpenAI + SSOT capability-based
 
 > **🚀 ATUALIZAÇÃO v3.0.0 (06/01/2026) - Pipeline Enterprise:**  
 > Pipeline CI/CD enterprise completo com deploy modular em 5 stacks independentes.
@@ -28,7 +28,7 @@
 >
 > **📚 Chat OpenAPI Consistency (15/01/2026):**
 > - OpenAPI agora documenta corretamente o endpoint legado `/api/chat/images/generate` como **410 Gone** (feature removida).
-> - Swagger do `chat-service` descreve **análise de imagens** (Qwen2.5-VL Vision), não geração.
+> - Swagger do `chat-service` descreve **análise de imagens** via OpenAI (`gpt-4.1`), não geração.
 
 ---
 
@@ -44,12 +44,12 @@
 | **Docker** | 29.1.3 + Compose v5.0.0 |
 | **Domínio** | yesyoudeserve.duckdns.org |
 | **IP** | 178.63.41.108 |
-| **LLM (texto)** | **Mistral 7B Instruct (AWQ)** via GPU Manager (Gate 2) |
-| **VLM (visão)** | **Qwen2.5-VL 7B AWQ** (multimodal: texto + vision) — ainda usado para visão até migração do VLM |
+| **LLM (texto)** | **Qwen2.5 7B Instruct (AWQ)** via GPU Manager (Gate 2) |
+| **Vision (análise de imagens)** | **OpenAI Responses API (`gpt-4.1`)** |
 | **CI/CD** | 100% automatizado (Push → CI → Release → Deploy) |
 | **Imagens Docker** | Google Distroless (Node.js), Alpine (nginx, Python) |
 | **Storage** | Volume local Hetzner (SEM S3 externo) |
-| **GPU (Gate 2 - em andamento)** | **LLM separado** (gpu-llm) + VLM atual + embeddings + ASR, gerenciados pelo GPU Manager (capability-based) |
+| **GPU (Gate 2)** | **LLM separado** (gpu-llm) + embeddings + ASR, gerenciados pelo GPU Manager (capability-based) |
 
 ### Security Hardening (19/12/2025)
 
@@ -108,7 +108,7 @@
 
 > **Bug Fix Log Capture 21/12/2025:** Captura de logs agora respeita `DEPLOY_SERVICES`: `alice-only` captura containers Alice (12), `erpnext-only` captura containers ERPNext (15 incluindo workers -2), `all` captura ambos (27 total). Bug anterior só capturava Alice mesmo quando ERPNext falhava. Corrigidos nomes `postgres`→`alice-postgres`, `traefik`→`alice-caddy` (migração 02/01/2026). Adicionados workers faltantes: `erpnext-worker-*-2`.
 
-> **ARQUITETURA GPU Gate 2 (15/01/2026):** Serviços GPU rodam **simultaneamente** no Hetzner GEX44 (RTX 4000 Ada 20GB) com **budgets conservadores**. **LLM (texto)** = Mistral 7B (AWQ) e **VLM (visão)** = Qwen2.5-VL (AWQ), ambos via GPU Manager (capability-based). **Geração de imagens removida** — Alice analisa imagens, não gera. Guia completo: [docs/ARQUITETURA-GPU-MANAGER.md](ARQUITETURA-GPU-MANAGER.md).
+> **ARQUITETURA GPU Gate 2 (16/01/2026):** Serviços GPU rodam **simultaneamente** no Hetzner GEX44 (RTX 4000 Ada 20GB) com **budgets conservadores**. **LLM (texto)** = Qwen2.5 7B (AWQ) via GPU Manager (capability-based). **Vision** e **geração de imagens** via OpenAI (`gpt-4.1` / `gpt-image-1`). Guia completo: [docs/ARQUITETURA-GPU-MANAGER.md](ARQUITETURA-GPU-MANAGER.md).
 
 > **Bug Fix ERPNext install-app --verbose 25/12/2025:** O comando `bench install-app` no container `erpnext-create-site` (ETAPA 2) usava a flag `--verbose` que não é suportada. Erro: "No such option: --verbose" causava falha na instalação do ERPNext durante o deploy. Corrigido: Removida flag `--verbose` do comando `bench install-app` na linha 1641 do docker-compose.prod.yml. O `bench new-site` (ETAPA 1) aceita `--verbose` e funcionou corretamente, mas `bench install-app` não aceita essa flag. Comando corrigido: `timeout 1200 bench --site "${SITE_NAME}" install-app erpnext 2>&1 | tee -a /tmp/bench-new-site.log`.
 
@@ -154,7 +154,7 @@
 | 5 | Training | `apps/training-service` | alice-training | 3004 | Node.js, fine-tuning, SemHash |
 | 6 | Integrations | `apps/integrations-service` | alice-integrations | 3005 | Node.js, Stripe, Wise, Twilio |
 | 7 | Observability | `apps/observability-service` | alice-observability | 3007 | Node.js, backup orchestrator |
-| 43-48 | GPU Services | `gpu-manager-service`, `gpu-llm`, `gpu-vlm`, `gpu-embeddings`, `gpu-asr`, **gpu-trainer** | - | - | GPU Manager Service + 5 serviços GPU locais - **Gate 2 (LLM separado + VLM dedicado)**: **TODOS SIMULTÂNEOS** (20GB VRAM budget): LLM Mistral 7B (~6GB budget), VLM Qwen2.5-VL 7B (~8GB budget), Embeddings INT8 (~3GB budget), ASR Canary-1B (~3GB budget), **Fine-tuning QLoRA (on-demand via profile)** |
+| 43-48 | GPU Services | `gpu-manager-service`, `gpu-llm`, `gpu-embeddings`, `gpu-asr`, **gpu-trainer** | - | - | GPU Manager Service + 4 serviços GPU locais - **Gate 2 (LLM separado + Vision via OpenAI)**: **TODOS SIMULTÂNEOS** (20GB VRAM budget): LLM Qwen2.5 7B (~6GB budget), Embeddings INT8 (~3GB budget), ASR Canary-1B (~3GB budget), **Fine-tuning QLoRA (on-demand via profile)** |
 | 9 | API Gateway | `apps/api-gateway` | **N/A (dev only)** | 3000 | Node.js (Caddy em prod) |
 
 > **NOTA:** O `api-gateway` Node.js é APENAS para desenvolvimento local. Em produção, Caddy 2.8.4 atua como API Gateway (migração de Traefik em 02/01/2026).
@@ -191,8 +191,8 @@
 | Funcionalidade | Status | Arquivo |
 |----------------|--------|---------|
 | WebSocket tempo real | ✅ | `index.ts` |
-| LLM Hetzner GPU (Mistral 7B vLLM AWQ) | ✅ | `index.ts` (via GPU Manager Service) - Gate 2 |
-| Vision Analysis (análise de imagens) | ✅ | `index.ts` (via GPU Manager Service → gpu-vlm/Qwen2.5-VL) - Gate 2 |
+| LLM Hetzner GPU (Qwen2.5 7B vLLM AWQ) | ✅ | `index.ts` (via GPU Manager Service) - Gate 2 |
+| Vision Analysis (análise de imagens) | ✅ | `index.ts` (via OpenAI Responses API `gpt-4.1`) - Gate 2 |
 | RAG Client (busca contexto) | ✅ | `rag-client.ts` |
 | ❌ Image Generation (REMOVIDO) | ❌ | FLUX.1 removido da v4.0.0 - Alice apenas ANALISA imagens |
 | Takeover/Handover Humano | ✅ | `conversation-orchestrator.ts` |
@@ -258,11 +258,10 @@
 > **Nota (GPU Enterprise - 17/12/2025):** Todos os embeddings e transcrição agora são 100% via GPU Manager Service (Hetzner GEX44) GPUs (Container Groups).
 >
 > **Endpoints GPU via GPU Manager Service (Hetzner GEX44) - Gate 2:**
-> - `gpu-llm (localhost)` - LLM Mistral 7B vLLM (`/v1/chat/completions`) - texto
-> - `gpu-vlm (localhost)` - VLM Qwen2.5-VL 7B vLLM (`/v1/chat/completions`) - visão (análise de imagens)
+> - `gpu-llm (localhost)` - LLM Qwen2.5 7B vLLM (`/v1/chat/completions`) - texto
 > - `gpu-asr (localhost)` - Canary-1B NeMo (`/transcribe`)
 > - `gpu-embeddings (localhost)` - Qwen3-Embedding-0.6B INT8 + OpenCLIP (`/embed/text`, `/embed/image`)
-> - ❌ `gpu-flux` REMOVIDO - Alice ANALISA imagens via Qwen2.5-VL mas NÃO gera
+> - ❌ `gpu-flux` REMOVIDO - Vision e geração de imagens via OpenAI
 >
 > **Semântica HTTP (enterprise-grade):** quando `WHISPER_REQUIRED=false` e Whisper não está carregado, o endpoint `POST /inference/transcribe` responde **501 (Not Implemented)** com a mensagem “Transcrição desabilitada…”, evitando retornar **503** (que sinaliza indisponibilidade temporária).
 >
@@ -271,8 +270,7 @@
 > **Nota (Readiness por capability):** Endpoints GPU validam disponibilidade via health checks dedicados:
 > - `gpu-embeddings (localhost)/health` (embeddings INT8)
 > - `gpu-asr (localhost)/health` (transcrição Canary-1B)
-> - `gpu-vlm (localhost)/health` (VLM - Qwen2.5-VL)
-> - `gpu-llm (localhost)/health` (LLM - Mistral)
+> - `gpu-llm (localhost)/health` (LLM - Qwen2.5)
 
 > **Nota (Robustez enterprise):**
 > - `document-processor`: valida **explicitamente** a dimensão de cada embedding de chunk (1024 dim) antes de inserir no Qdrant.
@@ -398,8 +396,8 @@
 | **Embeddings de Texto (Trading/RAG)** | ✅ | Qwen3-Embedding-0.6B (1024 dim) → Qdrant - GPU Manager Service (Hetzner GEX44) |
 | **Embeddings de Imagem** | ✅ | OpenCLIP ViT-H/14 (1024 dim) → pgvector - GPU Manager Service (Hetzner GEX44) |
 | **ASR (Transcrição)** | ✅ | Canary-1B (NeMo) - GPU Manager Service (Hetzner GEX44) |
-| **LLM (Chat/Trading)** | ✅ | **Mistral 7B Instruct (AWQ)** - GPU Manager Service (Hetzner GEX44) - Gate 2 |
-| **Vision (Análise de Imagens)** | ✅ | **Qwen2.5-VL 7B (AWQ)** via `gpu-vlm` - GPU Manager Service - Gate 2 |
+| **LLM (Chat/Trading)** | ✅ | **Qwen2.5 7B Instruct (AWQ)** - GPU Manager Service (Hetzner GEX44) - Gate 2 |
+| **Vision (Análise de Imagens)** | ✅ | **OpenAI Responses API (`gpt-4.1`)** - Gate 2 |
 | ❌ **Geração de Imagens** | ❌ | **REMOVIDO** - FLUX.1 não necessário para domínio financeiro |
 | Suporte Multilíngue (100+ idiomas) | ✅ | Embeddings de texto via Qwen3-Embedding-0.6B (1024 dim) |
 | GPU Dedicada 24/7 | ✅ | Hetzner GEX44 - serviços GPU simultâneos (Gate 2) |
@@ -412,8 +410,8 @@
 > - **Embeddings de imagem:** OpenCLIP ViT-H/14 (1024 dim) - pgvector
 > - **ASR:** Canary-1B (NeMo) - GPU Manager Service (Hetzner GEX44)
 > - **GPU Dedicada 24/7:** Hetzner GEX44 - serviços GPU simultâneos (Gate 2)
-> - **LLM Trading:** Mistral 7B (texto) via GPU Manager
-> - **Vision:** Qwen2.5-VL (visão) via GPU Manager
+> - **LLM Trading:** Qwen2.5 7B (texto) via GPU Manager
+> - **Vision:** OpenAI (`gpt-4.1`) para análise de imagens
 >
 > **Nota (licenças):** O modelo de embeddings atual (`Qwen3-Embedding-0.6B`) usa licença **Apache 2.0** (compatível com uso comercial).
 > - **Performance Qwen3 em Trading:** 79.43% return, Sharpe 0.322 (NOF1 AI Arena)
@@ -600,11 +598,11 @@ Retenção Arquivo:   30 dias
 | `generated_images` | Histórico (FLUX.1 removido da v4.0.0) |
 | `media_uploads` | Uploads multimodais |
 
-### Schema Trading (8 tabelas) - Gate 2 (LLM separado + VLM dedicado)
+### Schema Trading (8 tabelas) - Gate 2 (LLM separado + Vision via OpenAI)
 
 | Tabela | Propósito | RLS |
 |--------|-----------|-----|
-| `trading_signals` | Sinais gerados pelo LLM (Mistral - Gate 2) | ✅ |
+| `trading_signals` | Sinais gerados pelo LLM (Qwen2.5 - Gate 2) | ✅ |
 | `trading_orders` | OMS - Order Management System | ✅ |
 | `trading_positions` | EMS - Execution Management System | ✅ |
 | `trading_risk_config` | Configuração de risco por tenant | ✅ |
@@ -615,8 +613,8 @@ Retenção Arquivo:   30 dias
 
 > **Arquitetura Trading - Gate 2:**
 > - **Exchange:** KuCoin Futures (XBTUSDTM - BTC/USDT Perpetual)
-> - **LLM (texto):** Mistral 7B Instruct (AWQ) via `gpu-llm` (vLLM)
-> - **VLM (visão):** Qwen2.5-VL 7B (AWQ) via `gpu-vlm` (vLLM) para análise de imagens/gráficos
+> - **LLM (texto):** Qwen2.5 7B Instruct (AWQ) via `gpu-llm` (vLLM)
+> - **Vision (análise de imagens/gráficos):** OpenAI Responses API (`gpt-4.1`)
 > - **Embeddings:** Qwen3-Embedding-0.6B INT8 (1024 dim) para análise de mercado
 > - **Circuit Breaker:** Preset `kucoinFutures` (timeout 5s, threshold 30%)
 > - **Risk Management:** Limites diários, max posições, alavancagem configurável
@@ -671,7 +669,7 @@ Retenção Arquivo:   30 dias
 | **OrderBook** | Visualização de profundidade de mercado, bids/asks, spread |
 | **Orders** | Tabela completa, criar/cancelar/sincronizar ordens, filtro por status |
 | **Positions** | Posições abertas com PnL, preço de liquidação, margem utilizada |
-| **Signals** | Sinais do LLM (Mistral - Gate 2) com confidence + **Painel de Aprovação** (aprovar/rejeitar sinais) |
+| **Signals** | Sinais do LLM (Qwen2.5 - Gate 2) com confidence + **Painel de Aprovação** (aprovar/rejeitar sinais) |
 | **Analysis** | **NOVO 21/12** - Análise Técnica: RSI, MACD, EMAs, Bollinger, ATR, Stochastic, ADX, Pivot Points |
 | **History** | Histórico completo de operações com auditoria |
 | **Control** | Handover/takeover entre Alice (IA) e operador manual, histórico de controle |
@@ -720,9 +718,9 @@ Retenção Arquivo:   30 dias
 > - **Texto (Trading/RAG):** Qwen3-Embedding-0.6B (1024 dim) → Qdrant
 > - **Imagem:** OpenCLIP ViT-H/14 (1024 dim) → pgvector (MIT)
 > - **ASR:** Canary-1B (NeMo, Apache 2.0)
-> - **LLM (texto):** Mistral 7B Instruct (AWQ) via `gpu-llm` (vLLM)
-> - **VLM (visão):** Qwen2.5-VL 7B (AWQ) via `gpu-vlm` (vLLM)
-> - ❌ **FLUX REMOVIDO** - Alice ANALISA imagens via Qwen2.5-VL mas NÃO gera
+> - **LLM (texto):** Qwen2.5 7B Instruct (AWQ) via `gpu-llm` (vLLM)
+> - **Vision (visão):** OpenAI Responses API (`gpt-4.1`)
+> - ❌ **FLUX REMOVIDO** - Vision e geração de imagens via OpenAI
 
 ### ERPNext Stack (12)
 
@@ -1108,12 +1106,12 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 | Capacidade | Tecnologia | Status |
 |------------|------------|--------|
-| Chat Conversacional + Trading | **Mistral 7B Instruct (AWQ)** (LLM texto) via GPU Manager - **Gate 2** | ✅ |
-| Vision (Análise de Gráficos) | **Qwen2.5-VL 7B (AWQ)** (VLM visão) via `gpu-vlm` - **Gate 2** | ✅ |
-| ❌ Geração de Imagens | **REMOVIDO** - não necessário para domínio financeiro | ❌ |
+| Chat Conversacional + Trading | **Qwen2.5 7B Instruct (AWQ)** (LLM texto) via GPU Manager - **Gate 2** | ✅ |
+| Vision (Análise de Gráficos) | **OpenAI Responses API (`gpt-4.1`)** - **Gate 2** | ✅ |
+| Geração de Imagens | **OpenAI Images API (`gpt-image-1`)** | ✅ |
 | Embeddings Imagem | OpenCLIP ViT-H/14 (1024 dim → pgvector) | ✅ |
 | Embeddings Texto (Trading/RAG) | **Qwen3-Embedding-0.6B INT8** (**1024 dim → Qdrant**) | ✅ |
-| Trading BTC Futures | KuCoin Futures API + **QLoRA (base = Mistral LLM)** | ✅ API REST (22 endpoints) |
+| Trading BTC Futures | KuCoin Futures API + **QLoRA (base = Qwen2.5 LLM)** | ✅ API REST (22 endpoints) |
 
 ### Processamento Multimodal (INPUT) - ARQUITETURA ENTERPRISE (17/12/2025)
 
@@ -1130,12 +1128,12 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | Documento | `document-processor.ts` | pdf-parse, mammoth, xlsx + Qwen3 | 1024 dim (Qdrant) |
 
 **Serviços de Inferência (GPU Manager Service - Hetzner GEX44) - Gate 2:**
-- **LLM (texto):** Mistral 7B Instruct (AWQ) via `gpu-llm` (vLLM)
-- **VLM (visão):** Qwen2.5-VL 7B (AWQ) via `gpu-vlm` (vLLM)
+- **LLM (texto):** Qwen2.5 7B Instruct (AWQ) via `gpu-llm` (vLLM)
+- **Vision (visão):** OpenAI Responses API (`gpt-4.1`)
 - **Embeddings Texto:** Qwen3-Embedding-0.6B INT8 (1024 dim → Qdrant)
 - **Embeddings Imagem:** OpenCLIP ViT-H/14 (1024 dim → pgvector)
 - **ASR:** Canary-1B (~3GB VRAM, NeMo, transcrição)
-- **TOTAL:** Budgets em 20GB VRAM (LLM + VLM + Embeddings + ASR simultâneos; Trainer sob demanda via profile)
+- **TOTAL:** Budgets em 20GB VRAM (LLM + Embeddings + ASR simultâneos; Trainer sob demanda via profile)
 
 ### Auto-Learning
 
@@ -1202,7 +1200,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | **Integrações** | ✅ | Stripe, Wise, ERPNext, Twilio, Gmail SMTP |
 | **Identity Provisioning** | ✅ | Grafana + ERPNext |
 | **Multimodal INPUT** | ✅ | Image, Audio, Document |
-| **Geração** | ✅ | LLM (Qwen2.5-VL) - FLUX.1 REMOVIDO |
+| **Geração** | ✅ | OpenAI Images API (`gpt-image-1`) - FLUX.1 REMOVIDO |
 | **Auto-learning** | ✅ | Scheduler + QLoRA + Versioning (semanal) |
 | **Takeover/Handover** | ✅ | Completo com escalação |
 | **Backup Enterprise** | ✅ | PostgreSQL, MariaDB, Redis, Volume Local, PITR |
@@ -1273,7 +1271,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 *Documento atualizado em: 15/01/2026*
 *Autor: Fillipe Guerra*
-*Versão: 7.3 - Gate 2 (parcial): LLM separado (Mistral) + SSOT capability-based*
+*Versão: 7.4 - Gate 2: LLM Qwen2.5 7B + Vision via OpenAI + SSOT capability-based*
 *Pipeline Unificada (25/12/2025): GPU services integrados em docker-compose.prod.yml - todos os serviços GPU rodam localmente no servidor Hetzner GEX44*
 *Otimização CI Performance (27/12/2025): Composite action `.github/actions/setup-node-pnpm` elimina duplicação de setup (14x → 1x). Versões Node.js/pnpm calculadas UMA VEZ no job detect-changes e passadas via outputs. Jobs sem dependência de Node.js (compliance-checks, trigger-release) não fazem setup. Economia estimada: ~6-10min por run de CI.*
 *Fix Cache Persistence (27/12/2025): Composite action corrigida para usar `actions/cache/restore` + `actions/cache/save` separados. actions/cache não executa post-step de save corretamente em composite actions - best practice GitHub Actions 2025.*

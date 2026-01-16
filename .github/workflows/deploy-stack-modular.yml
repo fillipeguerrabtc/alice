@@ -684,6 +684,7 @@ jobs:
           SECRET_CLICKHOUSE_MIGRATION_URL: ${{ secrets.CLICKHOUSE_MIGRATION_URL }}
           SECRET_SEARXNG_SECRET_KEY: ${{ secrets.SEARXNG_SECRET_KEY }}
           SECRET_CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
+          SECRET_OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SECRET_GMAIL_USER: ${{ secrets.GMAIL_USER }}
           SECRET_GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           SECRET_HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
@@ -731,6 +732,7 @@ jobs:
           export ERPNEXT_MYSQL_ROOT_PASSWORD_SECRET="${SECRET_ERPNEXT_MYSQL_ROOT_PASSWORD}"
           export ERPNEXT_MYSQL_EXPORTER_PASSWORD_SECRET="${SECRET_ERPNEXT_MYSQL_EXPORTER_PASSWORD}"
           export CORS_ORIGINS_SECRET="${SECRET_CORS_ORIGINS}"
+          export OPENAI_API_KEY_SECRET="${SECRET_OPENAI_API_KEY}"
           export BACKUP_CIPHER_PASS_SECRET="${SECRET_BACKUP_CIPHER_PASS}"
           export LANGFUSE_DB_USER_SECRET="${SECRET_LANGFUSE_DB_USER}"
           export LANGFUSE_DB_PASSWORD_SECRET="${SECRET_LANGFUSE_DB_PASSWORD}"
@@ -768,6 +770,7 @@ jobs:
           export KUCOIN_PRO_API_SECRET="${SECRET_KUCOIN_PRO_API_SECRET}"
           export KUCOIN_PRO_API_PASSPHRASE="${SECRET_KUCOIN_PRO_API_PASSPHRASE}"
           export KUCOIN_PRO_BASE_URL="${SECRET_KUCOIN_PRO_BASE_URL}"
+          export OPENAI_API_KEY="${SECRET_OPENAI_API_KEY}"
           
           # Variáveis da pipeline
           export IMAGE_PREFIX="${ENV_IMAGE_PREFIX}"
@@ -3700,17 +3703,13 @@ jobs:
             
             # Pull TODOS os serviços GPU (cada serviço separadamente para melhor diagnóstico)
             # Gate 2: Serviços GPU sempre ativos (budgets em 20GB VRAM)
-            # - gpu-llm: LLM (texto) (Mistral 7B AWQ)
-            # - gpu-vlm: VLM (visão) (Qwen2.5-VL 7B AWQ)
+            # - gpu-llm: LLM (texto) (Qwen2.5 7B AWQ)
             # - gpu-embeddings: Qwen3-Embedding-0.6B INT8 (1024 dim) + OpenCLIP
             # - gpu-asr: Canary-1B (transcrição)
             # - gpu-trainer: QLoRA fine-tuning (sob demanda via profile)
-            # NOTA: Geração de imagens removida (Alice analisa mas NÃO gera imagens)
+            # NOTA: Vision e geração de imagens são via OpenAI (sem VLM local)
             echo ""
-            echo "📥 Pull GPU VLM (Qwen2.5-VL)..."
-            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull gpu-vlm 2>&1 || echo "   ⚠️ gpu-vlm: pull falhou"
-            
-            echo "📥 Pull GPU LLM (Mistral)..."
+            echo "📥 Pull GPU LLM (Qwen2.5)..."
             docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull gpu-llm 2>&1 || echo "   ⚠️ gpu-llm: pull falhou"
             
             echo "📥 Pull GPU Embeddings..."
@@ -3733,7 +3732,7 @@ jobs:
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             
             # Gate 2: Serviços Alice + containers GPU
-            ALICE_SERVICES="alice-auth alice-chat alice-rag alice-training alice-integrations alice-gpu-manager alice-frontend alice-observability gpu-llm gpu-vlm gpu-embeddings gpu-asr gpu-trainer"
+            ALICE_SERVICES="alice-auth alice-chat alice-rag alice-training alice-integrations alice-gpu-manager alice-frontend alice-observability gpu-llm gpu-embeddings gpu-asr gpu-trainer"
             PROBLEM_FOUND=false
             
             for svc in $ALICE_SERVICES; do
@@ -3757,11 +3756,10 @@ jobs:
             # =================================================================
             # Todos os serviços GPU rodam simultaneamente (budgets em 20GB VRAM):
             # - gpu-llm: LLM (~6GB budget) - chat/trading (texto)
-            # - gpu-vlm: VLM (~8GB budget) - análise de imagens (visão)
             # - gpu-embeddings: Qwen3-Embedding-0.6B INT8 (~3GB) + OpenCLIP
             # - gpu-asr: Canary-1B (~3GB) - transcrição de áudio
             # - gpu-trainer: QLoRA fine-tuning (~12GB) - SOB DEMANDA via profile
-            # NOTA: Geração de imagens removida - Alice analisa mas NÃO gera imagens
+            # NOTA: Vision e geração de imagens são via OpenAI (sem VLM local)
             # =================================================================
             
             # Gate 2: Containers GPU rodam SIMULTANEAMENTE (não mais on-demand)
@@ -3769,8 +3767,7 @@ jobs:
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "🐳 Gate 2: Serviços GPU simultâneos (budgets em 20GB VRAM)"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "   📦 gpu-llm: LLM (Mistral) (~6GB budget)"
-            echo "   📦 gpu-vlm: VLM (Qwen2.5-VL) (~8GB budget)"
+            echo "   📦 gpu-llm: LLM (Qwen2.5) (~6GB budget)"
             echo "   📦 gpu-embeddings: Qwen3-Embedding-0.6B INT8 (~3GB)"
             echo "   📦 gpu-asr: Canary-1B (~3GB)"
             echo "   📦 gpu-trainer: QLoRA (sob demanda via profile training)"
@@ -3818,7 +3815,7 @@ jobs:
             echo "🎮 Containers GPU (gerenciados pelo GPU Manager):"
             docker ps -a --filter "name=gpu-" --format "table {{.Names}}\t{{.Status}}" || echo "   (nenhum container GPU encontrado)"
             echo ""
-            echo "📝 Gate 2: Todos os serviços GPU rodam simultaneamente (LLM + VLM + Embeddings + ASR)"
+            echo "📝 Gate 2: Todos os serviços GPU rodam simultaneamente (LLM + Embeddings + ASR)"
             echo "         Budgets conservadores para coexistência em 20GB VRAM (fonte de verdade: métricas + nvidia-smi)"
             echo ""
             
@@ -3895,12 +3892,8 @@ jobs:
             # Gate 2: containers GPU são parte do stack ALICE e DEVEM estar healthy
             # para evitar "Deploy OK" enquanto inference está em crash/restart loop.
             #
-            # NOTA (16/01/2026): gpu-asr pode ser iniciado via profile (on-demand).
-            # Logo, só exigimos gpu-asr se o container existir.
-            CONTAINERS="alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager gpu-llm gpu-vlm gpu-embeddings"
-            if docker inspect gpu-asr >/dev/null 2>&1; then
-              CONTAINERS="$CONTAINERS gpu-asr"
-            fi
+            # NOTA (16/01/2026): gpu-asr é always-on no stack Alice.
+            CONTAINERS="alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager gpu-llm gpu-embeddings gpu-asr"
             # =================================================================
             # CORREÇÃO PR#100 (09/01/2026): Alinhar workflow timeout com Docker healthcheck
             # =================================================================

@@ -334,7 +334,7 @@ describe('Training Service - Validação Zod', () => {
   // Gate 2: Treinamento usa o MESMO modelo base do LLM (texto)
   const createJobSchema = z.object({
     name: z.string().min(1).max(100),
-    baseModel: z.string().default('TheBloke/Mistral-7B-Instruct-v0.2-AWQ'),
+    baseModel: z.string().default('Qwen/Qwen2.5-7B-Instruct-AWQ'),
     maxExamples: z.number().positive().max(10000).optional(),
     epochs: z.number().min(1).max(10).optional(),
     learningRate: z.number().positive().max(0.01).optional(),
@@ -349,7 +349,7 @@ describe('Training Service - Validação Zod', () => {
   it('deve validar criação de job', () => {
     const job = {
       name: 'Treinamento Q1 2026',
-      baseModel: 'TheBloke/Mistral-7B-Instruct-v0.2-AWQ', // Gate 2 (LLM texto)
+      baseModel: 'Qwen/Qwen2.5-7B-Instruct-AWQ', // Gate 2 (LLM texto)
       epochs: 3,
     };
 
@@ -360,7 +360,7 @@ describe('Training Service - Validação Zod', () => {
   it('deve rejeitar nome vazio', () => {
     const job = {
       name: '',
-      baseModel: 'TheBloke/Mistral-7B-Instruct-v0.2-AWQ',
+      baseModel: 'Qwen/Qwen2.5-7B-Instruct-AWQ',
     };
 
     const result = createJobSchema.safeParse(job);

@@ -1,7 +1,7 @@
 -- ============================================================================
 -- Gate 2: Migração de agentes legados (modeloBase + maxTokens)
 -- Autor: Fillipe Guerra
--- Data: 15 de Janeiro de 2026
+-- Data: 16 de Janeiro de 2026
 --
 -- Objetivo:
 -- - Evitar "silent model swap" no Chat Service:

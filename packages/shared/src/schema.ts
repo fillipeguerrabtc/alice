@@ -24,7 +24,7 @@
  * Campos mantidos para compatibilidade com dados existentes.
  * 
  * Autor: Fillipe Guerra
- * Data: 15 de Janeiro de 2026
+ * Data: 16 de Janeiro de 2026
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
@@ -169,9 +169,9 @@ export const MessageAnexoSchema = z.object({
   size: z.number().int().nonnegative(),
   url: z.string().url().optional(),
   thumbnailUrl: z.string().url().optional(),
-  // Gate 2: campos opcionais para auditoria do VLM (visão) quando aplicável
-  vlmDescription: z.string().max(20000).optional(),
-  vlmModel: z.string().max(200).optional(),
+  // Gate 2: campos opcionais para auditoria do Vision (OpenAI) quando aplicável
+  visionDescription: z.string().max(20000).optional(),
+  visionModel: z.string().max(200).optional(),
 });
 export const MessageAnexosSchema = z.array(MessageAnexoSchema);
 export type MessageAnexo = z.infer<typeof MessageAnexoSchema>;
@@ -811,9 +811,9 @@ export const agents = pgTable(
     personalidade: text("personalidade"),
     instrucoes: text("instrucoes"),
     capacidades: text("capacidades").array(),
-    // Gate 2: modelo base do agente (LLM texto) deve refletir o runtime padrão (Mistral)
+    // Gate 2: modelo base do agente (LLM texto) deve refletir o runtime padrão (Qwen2.5)
     // (mantemos compatibilidade com modelos legados via mapping no chat-service).
-    modeloBase: varchar("modelo_base", { length: 100 }).default("Mistral-7B-Instruct-AWQ"),
+    modeloBase: varchar("modelo_base", { length: 100 }).default("Qwen2.5-7B-Instruct-AWQ"),
     temperaturaModelo: real("temperatura_modelo").default(0.7),
     // Gate 2: coerente com max-model-len padrão do stack (2048)
     maxTokens: integer("max_tokens").default(2048),
@@ -1129,15 +1129,15 @@ export const integrations = pgTable(
 );
 
 // ============================================================================
-// CONFIGURAÇÕES DO MODELO LLM (Gate 2 - LLM texto separado do VLM visão)
-// - LLM (texto): Mistral 7B Instruct (AWQ) via GPU Manager Service
-// - VLM (visão): Qwen2.5-VL 7B (AWQ) via GPU Manager Service (configuração separada)
+// CONFIGURAÇÕES DO MODELO LLM (Gate 2 - LLM texto + Vision via OpenAI)
+// - LLM (texto): Qwen2.5 7B Instruct (AWQ) via GPU Manager Service
+// - Vision (análise de imagens): OpenAI Responses API (gpt-4.1)
 // ============================================================================
 
 export const llmConfig = pgTable("llm_config", {
   id: uuid("id").primaryKey().defaultRandom(),
   tenantId: uuid("tenant_id").references(() => tenants.id),
-  modelo: varchar("modelo", { length: 100 }).notNull().default("Mistral-7B-Instruct-AWQ"),
+  modelo: varchar("modelo", { length: 100 }).notNull().default("Qwen2.5-7B-Instruct-AWQ"),
   endpoint: text("endpoint").notNull(),
   apiKey: text("api_key"),
   maxTokens: integer("max_tokens").default(2048),
@@ -1479,8 +1479,8 @@ export const TradingPositionMetadataSchema = z.object({
 export type TradingPositionMetadata = z.infer<typeof TradingPositionMetadataSchema>;
 
 // SINAIS DE TRADING (Gate 2)
-// - Sinais de texto: gerados pelo LLM (Mistral 7B) com RAG
-// - Análise de imagens/gráficos (quando aplicável): via VLM (Qwen2.5-VL) em fluxo separado
+// - Sinais de texto: gerados pelo LLM (Qwen2.5 7B) com RAG
+// - Análise de imagens/gráficos (quando aplicável): via OpenAI Vision em fluxo separado
 // Cada sinal é uma recomendação do LLM baseada em análise de mercado
 export const tradingSignals = pgTable(
   "trading_signals",
@@ -2085,7 +2085,7 @@ export const tradingMarketData = pgTable(
 );
 
 // DATASET DE TREINAMENTO (Pares prompt/response para LoRA)
-// Estrutura de conversação para fine-tuning do Mistral
+// Estrutura de conversação para fine-tuning do Qwen2.5
 export const tradingDataset = pgTable(
   "trading_dataset",
   {
@@ -2163,7 +2163,7 @@ export const tradingLoraJobs = pgTable(
     description: text("description"),
     
     // Modelo base e configuração (Gate 2 - LLM texto)
-    baseModel: varchar("base_model", { length: 255 }).notNull().default("mistralai/Mistral-7B-Instruct-v0.2"),
+    baseModel: varchar("base_model", { length: 255 }).notNull().default("Qwen/Qwen2.5-7B-Instruct-AWQ"),
     // NOTA: Valores default devem corresponder ao TradingLoraHyperparamsSchema
     hyperparameters: jsonb("hyperparameters").$type<TradingLoraHyperparams>().default({
       loraRank: 16,
@@ -2371,7 +2371,7 @@ export const modelVersions = pgTable(
     name: varchar("name", { length: 255 }).notNull(),
     version: integer("version").notNull().default(1),
     // Gate 2: modelo base do LLM (texto) para versionamento/LoRA
-    baseModel: varchar("base_model", { length: 100 }).notNull().default("Mistral-7B-Instruct-AWQ"),
+    baseModel: varchar("base_model", { length: 100 }).notNull().default("Qwen2.5-7B-Instruct-AWQ"),
     loraPath: text("lora_path"),
     status: modelVersionStatusEnum("status").default("training"),
     fineTuningJobId: uuid("fine_tuning_job_id").references(() => fineTuningJobs.id),
@@ -2432,9 +2432,9 @@ export const autoLearningSchedule = pgTable(
 );
 
 // ============================================================================
-// ANALYZED IMAGES (Gate 2 - VLM dedicado: Qwen2.5-VL Vision)
-// NOTA: Tabela mantida para armazenar imagens analisadas pelo VLM (Qwen2.5-VL)
-// FLUX.1 Schnell REMOVIDO - Alice NÃO gera imagens, apenas ANALISA
+// ANALYZED IMAGES (Gate 2 - Vision OpenAI)
+// NOTA: Tabela mantida para armazenar imagens analisadas/geradas via OpenAI
+// FLUX.1 Schnell REMOVIDO - Alice usa OpenAI para análise e geração
 // ============================================================================
 
 export const generatedImageStatusEnum = pgEnum("generated_image_status", [
@@ -2456,7 +2456,7 @@ export const generatedImages = pgTable(
     // Parâmetros de geração
     prompt: text("prompt").notNull(),
     negativePrompt: text("negative_prompt"),
-    model: varchar("model", { length: 50 }).default("flux-schnell"),
+    model: varchar("model", { length: 50 }).default("gpt-image-1"),
     steps: integer("steps").default(4),
     seed: integer("seed"),
     width: integer("width").default(1024),

@@ -607,8 +607,8 @@ describe('Config - Timeouts Padrão', () => {
       expect(DEFAULT_TIMEOUTS.http).toBe(30000);
     });
 
-    // ARQUITETURA v4.0.0: Qwen2.5-VL substitui Mixtral
-    it('deve ter timeout LLM de 60 segundos (inferência Qwen2.5-VL 7B)', () => {
+    // ARQUITETURA 16/01/2026+: LLM texto Qwen2.5 7B
+    it('deve ter timeout LLM de 60 segundos (inferência Qwen2.5 7B)', () => {
       expect(DEFAULT_TIMEOUTS.llm).toBe(60000);
     });
 
@@ -708,7 +708,7 @@ describe('Config - GPU Manager Service Configuration', () => {
 
     it('deve ter modelo LLM configurado (Qwen2.5 7B AWQ)', () => {
       expect(GPU_MANAGER_CONFIG.models.llm).toBe('Qwen/Qwen2.5-7B-Instruct-AWQ');
-      // Arquitetura atual: VLM local removido (Vision via OpenAI)
+      // Arquitetura atual: Vision via OpenAI (sem serviço local de visão)
       expect('vlm' in GPU_MANAGER_CONFIG.models).toBe(false);
     });
 

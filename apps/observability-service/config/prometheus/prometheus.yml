@@ -92,7 +92,7 @@ scrape_configs:
         action: keep
 
   # ============================================================================
-  # GPU SERVICES (FastAPI - Gate 2: LLM separado + VLM dedicado)
+  # GPU SERVICES (FastAPI - Gate 2: LLM separado + Embeddings + ASR)
   # NOTA 13/01/2026: Métricas PyTorch/vLLM expostas via /metrics endpoint
   # ============================================================================
   - job_name: 'gpu-llm'
@@ -101,15 +101,6 @@ scrape_configs:
         labels:
           service: 'llm'
           gpu_service: 'llm'
-    metrics_path: /metrics
-    scrape_interval: 30s
-
-  - job_name: 'gpu-vlm'
-    static_configs:
-      - targets: ['host.docker.internal:8000']
-        labels:
-          service: 'vlm'
-          gpu_service: 'vlm'
     metrics_path: /metrics
     scrape_interval: 30s
 
