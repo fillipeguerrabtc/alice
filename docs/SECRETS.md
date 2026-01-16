@@ -386,6 +386,7 @@ Estas variáveis são **configuração** (não secrets) e podem ser definidas vi
 | `ERPNEXT_MYSQL_ROOT_PASSWORD` | Senha root MariaDB | `openssl rand -base64 24` |
 | `ERPNEXT_DB_PASSWORD` | Senha usuário ERPNext no DB | `openssl rand -base64 24` |
 | `ERPNEXT_ADMIN_PASSWORD` | Senha admin do site ERPNext | `openssl rand -base64 24` |
+| `ERPNEXT_MYSQL_EXPORTER_PASSWORD` | Senha do usuário do MySQL exporter (observabilidade ERPNext) | `openssl rand -hex 32` ⚠️ **RECOMENDADO HEX (DSN-safe)** |
 | `REDIS_CACHE_PASSWORD` | Senha Redis Cache (ACL) | `openssl rand -hex 32` ⚠️ **OBRIGATÓRIO HEX** |
 | `REDIS_QUEUE_PASSWORD` | Senha Redis Queue (ACL) | `openssl rand -hex 32` ⚠️ **OBRIGATÓRIO HEX** |
 
@@ -520,7 +521,7 @@ docker logs alice-minio-init --tail 50
 ## Checklist de Verificação
 
 > **Status atualizado em:** 20 de Dezembro de 2025  
-> **Resumo:** 54 secrets de produção ✅ configurados no repositório. Pendentes opcionais pós-deploy: `ERPNEXT_API_KEY`, `ERPNEXT_API_SECRET`, `WISE_WEBHOOK_SECRET`.
+> **Resumo:** Checklist histórico (20/12/2025). Além dos opcionais pós-deploy (`ERPNEXT_API_KEY`, `ERPNEXT_API_SECRET`, `WISE_WEBHOOK_SECRET`), o deploy modular agora também exige `ERPNEXT_MYSQL_EXPORTER_PASSWORD` (obrigatório para o MySQL exporter do ERPNext).
 
 ### Infraestrutura
 
@@ -610,6 +611,7 @@ docker logs alice-minio-init --tail 50
 | `ERPNEXT_MYSQL_ROOT_PASSWORD` | ✅ | 🔴 Sim |
 | `ERPNEXT_DB_PASSWORD` | ✅ | 🔴 Sim |
 | `ERPNEXT_ADMIN_PASSWORD` | ✅ | 🔴 Sim |
+| `ERPNEXT_MYSQL_EXPORTER_PASSWORD` | ⏳ (novo - configurar no GitHub) | 🔴 Sim |
 | `REDIS_CACHE_PASSWORD` | ✅ | 🔴 Sim |
 | `REDIS_QUEUE_PASSWORD` | ✅ | 🔴 Sim |
 | `ERPNEXT_API_KEY` | ⏳ (gerar após deploy via ERPNext) | 🟢 Não |

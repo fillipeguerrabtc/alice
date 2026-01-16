@@ -431,6 +431,27 @@ if [ -z "${ERPNEXT_DB_PASSWORD}" ]; then
   exit 1
 fi
 
+# -----------------------------------------------------------------------------
+# ERPNext MySQL Exporter (Observability ERPNext) - credencial obrigatória
+# -----------------------------------------------------------------------------
+# O stack ERPNext inclui mysqld_exporter. O docker-compose.erpnext.yml marca
+# ERPNEXT_MYSQL_EXPORTER_PASSWORD como obrigatória (fail-fast).
+#
+# Recomendação enterprise: usar senha URL-safe/DSN-safe (ex: openssl rand -hex 32).
+ERPNEXT_MYSQL_EXPORTER_PASSWORD="${ERPNEXT_MYSQL_EXPORTER_PASSWORD_SECRET:-}"
+if [ -z "${ERPNEXT_MYSQL_EXPORTER_PASSWORD}" ]; then
+  echo "::error::ERPNEXT_MYSQL_EXPORTER_PASSWORD não definido. Configure o secret ERPNEXT_MYSQL_EXPORTER_PASSWORD no repositório (credencial do MySQL exporter para observabilidade ERPNext)." >&2
+  echo "   Recomendado: openssl rand -hex 32" >&2
+  exit 1
+fi
+
+# DATA_SOURCE_NAME do mysqld_exporter usa formato user:pass@(host:port)/.
+# Caracteres como @ e : tendem a quebrar parsing do DSN.
+if echo "${ERPNEXT_MYSQL_EXPORTER_PASSWORD}" | grep -qE '[@:/?#%]'; then
+  echo "::error::ERPNEXT_MYSQL_EXPORTER_PASSWORD contém caracteres que podem quebrar o DSN do MySQL exporter (@:/?#%). Regenere com: openssl rand -hex 32" >&2
+  exit 1
+fi
+
 # =============================================================================
 # VALIDAÇÃO GPU SERVICES (Hetzner GPU Server - 25/12/2025)
 # =============================================================================
@@ -798,6 +819,7 @@ echo "📄 Gerando arquivo .env.prod..."
   printf '# ERPNext Database\n'
   printf 'ERPNEXT_SITE_NAME=erp.yesyoudeserve.duckdns.org\n'
   printf 'ERPNEXT_MYSQL_ROOT_PASSWORD=%s\n' "${ERPNEXT_MYSQL_ROOT_PASSWORD}"
+  printf 'ERPNEXT_MYSQL_EXPORTER_PASSWORD=%s\n' "${ERPNEXT_MYSQL_EXPORTER_PASSWORD}"
   printf 'ERPNEXT_ADMIN_PASSWORD=%s\n' "${ERPNEXT_ADMIN_PASSWORD}"
   printf 'ERPNEXT_DB_NAME=erpnext\n'
   printf 'ERPNEXT_DB_USER=erpnext\n'

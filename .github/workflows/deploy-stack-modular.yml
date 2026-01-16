@@ -688,6 +688,7 @@ jobs:
           SECRET_GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           SECRET_HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
           SECRET_ERPNEXT_MYSQL_ROOT_PASSWORD: ${{ secrets.ERPNEXT_MYSQL_ROOT_PASSWORD }}
+          SECRET_ERPNEXT_MYSQL_EXPORTER_PASSWORD: ${{ secrets.ERPNEXT_MYSQL_EXPORTER_PASSWORD }}
           SECRET_ERPNEXT_DB_PASSWORD: ${{ secrets.ERPNEXT_DB_PASSWORD }}
           SECRET_ERPNEXT_ADMIN_PASSWORD: ${{ secrets.ERPNEXT_ADMIN_PASSWORD }}
           SECRET_ERPNEXT_OAUTH_CLIENT_SECRET: ${{ secrets.ERPNEXT_OAUTH_CLIENT_SECRET }}
@@ -728,6 +729,7 @@ jobs:
           export REDIS_CACHE_PASSWORD_SECRET="${SECRET_REDIS_CACHE_PASSWORD}"
           export REDIS_QUEUE_PASSWORD_SECRET="${SECRET_REDIS_QUEUE_PASSWORD}"
           export ERPNEXT_MYSQL_ROOT_PASSWORD_SECRET="${SECRET_ERPNEXT_MYSQL_ROOT_PASSWORD}"
+          export ERPNEXT_MYSQL_EXPORTER_PASSWORD_SECRET="${SECRET_ERPNEXT_MYSQL_EXPORTER_PASSWORD}"
           export CORS_ORIGINS_SECRET="${SECRET_CORS_ORIGINS}"
           export BACKUP_CIPHER_PASS_SECRET="${SECRET_BACKUP_CIPHER_PASS}"
           export LANGFUSE_DB_USER_SECRET="${SECRET_LANGFUSE_DB_USER}"
@@ -1323,6 +1325,14 @@ jobs:
           rsync -avz --delete \
             -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
             --include='infra/***' \
+            # WS2 (Observability): dashboards Grafana são SSOT no repo (apps/observability-service/config/grafana/dashboards)
+            # Necessário sincronizar este subtree para o deploy-observability conseguir provisionar dashboards.
+            --include='apps/' \
+            --include='apps/observability-service/' \
+            --include='apps/observability-service/config/' \
+            --include='apps/observability-service/config/grafana/' \
+            --include='apps/observability-service/config/grafana/dashboards/' \
+            --include='apps/observability-service/config/grafana/dashboards/***' \
             --include='drizzle.config.ts' \
             --include='shared/***' \
             --include='packages/***' \
@@ -3834,7 +3844,9 @@ jobs:
             set -euo pipefail
             echo "🏥 Checking ALICE stack health..."
             
-            CONTAINERS="alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager"
+            # Gate 2: containers GPU são parte do stack ALICE e DEVEM estar healthy
+            # para evitar "Deploy OK" enquanto inference está em crash/restart loop.
+            CONTAINERS="alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager gpu-llm gpu-vlm gpu-embeddings gpu-asr"
             # =================================================================
             # CORREÇÃO PR#100 (09/01/2026): Alinhar workflow timeout com Docker healthcheck
             # =================================================================
@@ -3843,7 +3855,8 @@ jobs:
             # CORREÇÃO PR#104: Reduzir para 15 tentativas (5 min total)
             # Problema real NÃO é timeout - são healthchecks com bugs
             # =================================================================
-            MAX_RETRIES=15
+            DEFAULT_MAX_RETRIES=15
+            GPU_MAX_RETRIES=30
             SLEEP_TIME=20
             
             for container in $CONTAINERS; do
@@ -3854,11 +3867,36 @@ jobs:
               retry=0
               last_health_log=""
               
+              # GPU containers podem demorar mais para baixar/carregar modelos no primeiro boot
+              if echo "$container" | grep -qE '^gpu-'; then
+                MAX_RETRIES=$GPU_MAX_RETRIES
+              else
+                MAX_RETRIES=$DEFAULT_MAX_RETRIES
+              fi
+
               while [ $retry -lt $MAX_RETRIES ]; do
-                STATUS=$(docker inspect --format='{{.State.Health.Status}}' $container 2>/dev/null || echo "not_found")
+                # Detectar crash/restart loop (não depende de healthcheck)
+                STATE_STATUS=$(docker inspect --format='{{.State.Status}}' $container 2>/dev/null || echo "not_found")
+                RESTARTING=$(docker inspect --format='{{.State.Restarting}}' $container 2>/dev/null || echo "false")
+                RESTART_COUNT=$(docker inspect --format='{{.RestartCount}}' $container 2>/dev/null || echo "0")
+
+                if [ "$STATE_STATUS" = "not_found" ]; then
+                  STATUS="not_found"
+                else
+                  STATUS=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' $container 2>/dev/null || echo "none")
+                fi
+
+                if [ "$STATE_STATUS" != "running" ] || [ "$RESTARTING" = "true" ]; then
+                  echo "❌ $container: status=$STATE_STATUS restarting=$RESTARTING restarts=$RESTART_COUNT (tentativa $((retry+1))/$MAX_RETRIES)"
+                  echo "   📋 Logs (últimas 50 linhas):"
+                  docker logs $container --tail 50 2>&1 || true
+                  sleep $SLEEP_TIME
+                  retry=$((retry+1))
+                  continue
+                fi
                 
                 if [ "$STATUS" = "healthy" ]; then
-                  echo "✅ $container: healthy"
+                  echo "✅ $container: healthy (restarts=$RESTART_COUNT)"
                   break
                 elif [ "$STATUS" = "not_found" ]; then
                   echo "❌ ERRO: Container $container não encontrado!"
@@ -3871,7 +3909,7 @@ jobs:
                   HEALTH_LOG=$(docker inspect --format='{{range .State.Health.Log}}{{.Output}}{{end}}' $container 2>/dev/null | tail -c 500)
                   HEALTH_EXIT=$(docker inspect --format='{{range .State.Health.Log}}{{.ExitCode}}{{end}}' $container 2>/dev/null | tail -c 20)
                   
-                  echo "❌ $container: UNHEALTHY (tentativa $((retry+1))/$MAX_RETRIES)"
+                  echo "❌ $container: UNHEALTHY (restarts=$RESTART_COUNT) (tentativa $((retry+1))/$MAX_RETRIES)"
                   
                   # Mostrar detalhes apenas se mudou ou a cada 5 tentativas
                   if [ "$HEALTH_LOG" != "$last_health_log" ] || [ $((retry % 5)) -eq 0 ]; then
@@ -3884,7 +3922,7 @@ jobs:
                   retry=$((retry+1))
                 else
                   # starting ou outro status
-                  echo "⏳ $container: $STATUS (tentativa $((retry+1))/$MAX_RETRIES)"
+                  echo "⏳ $container: $STATUS (restarts=$RESTART_COUNT) (tentativa $((retry+1))/$MAX_RETRIES)"
                   sleep $SLEEP_TIME
                   retry=$((retry+1))
                 fi

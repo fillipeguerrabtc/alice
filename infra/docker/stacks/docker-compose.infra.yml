@@ -587,7 +587,8 @@ services:
   # REDIS EXPORTER - Métricas Redis (Prometheus)
   # ===========================================================================
   redis-exporter:
-    image: oliver006/redis_exporter:v1.69.0
+    # Tag alpine inclui /bin/sh + wget, necessário para healthcheck HTTP (evita falso "unhealthy")
+    image: oliver006/redis_exporter:v1.69.0-alpine
     platform: linux/amd64
     container_name: alice-redis-exporter
     restart: unless-stopped

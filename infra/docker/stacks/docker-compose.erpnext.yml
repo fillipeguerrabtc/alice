@@ -850,7 +850,8 @@ services:
           cpus: '0.1'
 
   erpnext-redis-cache-exporter:
-    image: oliver006/redis_exporter:v1.69.0
+    # Tag alpine inclui /bin/sh + wget, necessário para healthcheck HTTP (evita falso "unhealthy")
+    image: oliver006/redis_exporter:v1.69.0-alpine
     platform: linux/amd64
     container_name: erpnext-redis-cache-exporter
     restart: unless-stopped
@@ -875,7 +876,8 @@ services:
           cpus: '0.1'
 
   erpnext-redis-queue-exporter:
-    image: oliver006/redis_exporter:v1.69.0
+    # Tag alpine inclui /bin/sh + wget, necessário para healthcheck HTTP (evita falso "unhealthy")
+    image: oliver006/redis_exporter:v1.69.0-alpine
     platform: linux/amd64
     container_name: erpnext-redis-queue-exporter
     restart: unless-stopped
