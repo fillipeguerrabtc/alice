@@ -180,12 +180,11 @@ export const chatServicePaths = {
       responses: { 200: { description: 'Controle devolvido' } },
     },
   },
-  // NOTA (Gate 2): Endpoint mantido APENAS para retrocompatibilidade.
-  // A geração de imagens foi removida; o endpoint retorna 410 (Gone) de forma determinística.
+  // Gate 2: Geração de imagens via OpenAI (gpt-image-1).
   '/api/chat/images/generate': {
     post: {
-      summary: 'Endpoint descontinuado: geração de imagens removida (410 Gone)',
-      tags: ['Deprecated'],
+      summary: 'Gerar imagem via OpenAI (gpt-image-1)',
+      tags: ['Images'],
       requestBody: {
         content: {
           'application/json': {
@@ -194,25 +193,80 @@ export const chatServicePaths = {
               required: ['prompt'],
               properties: {
                 prompt: { type: 'string', example: 'Um gato laranja usando óculos de sol' },
+                negativePrompt: { type: 'string', example: 'texto borrado' },
                 width: { type: 'integer', default: 1024 },
                 height: { type: 'integer', default: 1024 },
-                steps: { type: 'integer', default: 4 },
               },
             },
           },
         },
       },
       responses: {
-        410: {
-          description: 'Funcionalidade removida (Gone)',
+        200: {
+          description: 'Imagem gerada',
           content: {
             'application/json': {
               schema: {
                 type: 'object',
                 properties: {
-                  error: { type: 'string', example: 'Funcionalidade removida' },
-                  message: { type: 'string' },
-                  alternative: { type: 'string' },
+                  image: {
+                    type: 'object',
+                    description: 'Registro completo da imagem gerada',
+                  },
+                },
+              },
+            },
+          },
+        },
+        400: {
+          description: 'Input inválido',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  error: { type: 'string', example: 'Input inválido' },
+                },
+              },
+            },
+          },
+        },
+        401: {
+          description: 'Autenticação necessária',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  error: { type: 'string', example: 'Autenticação necessária' },
+                },
+              },
+            },
+          },
+        },
+        502: {
+          description: 'Falha ao gerar imagem',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  error: { type: 'string', example: 'Falha ao gerar imagem' },
+                  details: { type: 'string' },
+                },
+              },
+            },
+          },
+        },
+        503: {
+          description: 'OpenAI não configurado',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  error: { type: 'string', example: 'OpenAI não configurado' },
+                  code: { type: 'string', example: 'OPENAI_NOT_CONFIGURED' },
                 },
               },
             },

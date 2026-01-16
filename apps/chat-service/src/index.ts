@@ -5340,9 +5340,6 @@ const imageGenerationSchema = z.object({
   negativePrompt: z.string().max(1000).optional(),
   width: z.number().min(256).max(2048).default(1024),
   height: z.number().min(256).max(2048).default(1024),
-  steps: z.number().min(1).max(50).default(4),
-  seed: z.number().optional(),
-  guidanceScale: z.number().min(1).max(20).default(3.5),
 });
 
 app.post('/api/chat/images/generate', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:write'), async (req: Request, res: Response) => {
@@ -5363,7 +5360,7 @@ app.post('/api/chat/images/generate', requireAuth(), requireSameTenant(getTenant
     return res.status(503).json({ error: 'OpenAI não configurado', code: 'OPENAI_NOT_CONFIGURED' });
   }
 
-  const { prompt, negativePrompt, width, height, steps, seed, guidanceScale } = parseResult.data;
+  const { prompt, negativePrompt, width, height } = parseResult.data;
   const startedAt = Date.now();
 
   // Criar registro inicial (auditoria e UX: status generating)
@@ -5373,11 +5370,8 @@ app.post('/api/chat/images/generate', requireAuth(), requireSameTenant(getTenant
     prompt,
     negativePrompt: negativePrompt ?? null,
     model: 'gpt-image-1',
-    steps,
-    seed: seed ?? null,
     width,
     height,
-    guidanceScale: guidanceScale ?? null,
     status: 'generating',
     approvedForTraining: false,
     usedInFineTuning: false,

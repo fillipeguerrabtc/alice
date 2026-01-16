@@ -26,9 +26,9 @@
 > - Removidos `vi.mock` e “implementações espelho” em testes (Regra 6).
 > - Testes agora validam SSOT real de `CIRCUIT_BREAKER_PRESETS` e a extração de células Excel é testada via função exportada do `document-processor` (código real, sem mocks).
 >
-> **📚 Chat OpenAPI Consistency (15/01/2026):**
-> - OpenAPI agora documenta corretamente o endpoint legado `/api/chat/images/generate` como **410 Gone** (feature removida).
-> - Swagger do `chat-service` descreve **análise de imagens** via OpenAI (`gpt-4.1`), não geração.
+> **📚 Chat OpenAPI Consistency (16/01/2026):**
+> - OpenAPI agora documenta corretamente `/api/chat/images/generate` como geração via OpenAI (`gpt-image-1`).
+> - Parâmetros suportados: `prompt`, `negativePrompt`, `width`, `height` (sem `steps/seed/guidanceScale`).
 
 ---
 
