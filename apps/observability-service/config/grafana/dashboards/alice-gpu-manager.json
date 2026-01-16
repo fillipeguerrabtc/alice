@@ -179,7 +179,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "alice_gpu_vram_used_bytes{service=\"qwen-vl\"}",
+          "expr": "alice_gpu_vram_used_bytes{service=\"llm\"}",
           "legendFormat": "Qwen2.5 7B",
           "refId": "A"
         },
