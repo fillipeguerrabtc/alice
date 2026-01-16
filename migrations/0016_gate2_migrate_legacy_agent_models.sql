@@ -5,14 +5,16 @@
 --
 -- Objetivo:
 -- - Evitar "silent model swap" no Chat Service:
---   * Gate 2 roteia chat (texto) para GpuServiceType.LLM (Mistral).
---   * Valores legados (Qwen2.5-VL/Mixtral) não devem permanecer em agents.modelo_base.
+--   * Chat Service valida modelo_base contra allowlist (texto-only).
+--   * Valores legados (VLM/Mixtral/Mistral) não devem permanecer em agents.modelo_base.
 -- - Normalizar max_tokens para o budget do stack (2048) quando acima do limite.
 -- ============================================================================
 
 UPDATE agents
-SET modelo_base = 'Mistral-7B-Instruct-AWQ'
+SET modelo_base = 'Qwen2.5-7B-Instruct-AWQ'
 WHERE modelo_base IN (
+  'Mistral-7B-Instruct',
+  'Mistral-7B-Instruct-AWQ',
   'Qwen2.5-VL-7B',
   'Qwen2.5-VL-7B-AWQ',
   'Qwen2.5-VL-7B-Instruct-AWQ',
