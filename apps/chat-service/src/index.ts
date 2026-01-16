@@ -5338,8 +5338,23 @@ app.post('/api/chat/notify-agent', asyncHandler(async (req: Request, res: Respon
 const imageGenerationSchema = z.object({
   prompt: z.string().min(1).max(2000),
   negativePrompt: z.string().max(1000).optional(),
-  width: z.number().min(256).max(2048).default(1024),
-  height: z.number().min(256).max(2048).default(1024),
+  width: z.number().int().min(1024).max(1536).default(1024),
+  height: z.number().int().min(1024).max(1536).default(1024),
+}).superRefine((value, ctx) => {
+  const size = `${value.width}x${value.height}`;
+  const allowed = new Set(['1024x1024', '1536x1024', '1024x1536']);
+  if (!allowed.has(size)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Tamanho inválido. Use 1024x1024, 1536x1024 ou 1024x1536.',
+      path: ['width'],
+    });
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Tamanho inválido. Use 1024x1024, 1536x1024 ou 1024x1536.',
+      path: ['height'],
+    });
+  }
 });
 
 app.post('/api/chat/images/generate', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:write'), async (req: Request, res: Response) => {

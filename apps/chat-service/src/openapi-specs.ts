@@ -194,8 +194,8 @@ export const chatServicePaths = {
               properties: {
                 prompt: { type: 'string', example: 'Um gato laranja usando óculos de sol' },
                 negativePrompt: { type: 'string', example: 'texto borrado' },
-                width: { type: 'integer', default: 1024 },
-                height: { type: 'integer', default: 1024 },
+                width: { type: 'integer', default: 1024, description: 'Somente 1024 ou 1536' },
+                height: { type: 'integer', default: 1024, description: 'Somente 1024 ou 1536' },
               },
             },
           },
