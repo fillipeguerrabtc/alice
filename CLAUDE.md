@@ -1,5 +1,8 @@
 # Alice - Plataforma Enterprise de IA Autônoma
 
+**Autor:** Fillipe Guerra  
+**Data:** 16 de Janeiro de 2026
+
 ## Overview
 Alice is an autonomous AI enterprise platform served on Hetzner GPU server GEX44 (RTX 4000 Ada 20GB). Its core purpose is to provide a fully autonomous AI solution with absolute privacy, predictable costs, and unlimited customization via QLoRA fine-tuning. The platform is **specialized in Finance, Trading, and Financial Management** with built-in vision capabilities for chart analysis. Key capabilities include real-time chat with streaming, deduplication, multi-tenancy, RBAC, a RAG backend with enterprise embeddings (**Qwen3-Embedding-0.6B INT8 1024 dim → Qdrant**, OpenCLIP 1024 dim → pgvector), **Trading BTC Futures** on KuCoin Perpetuals with scalping capabilities (1m, 3m, 5m candles), aggressive self-learning with scheduled training (weekly), and a robust observability stack. The business vision is to deliver an enterprise-grade AI solution with unparalleled control, performance, data security, and cost predictability for financial verticals.
 
@@ -1358,7 +1361,7 @@ git commit -a -m "test: adiciona testes unitários"
 - *CORREÇÃO 5 - Dashboard ERPNext (alice-erpnext.json - NOVO): Criado dashboard completo com 13 painéis: Workers Status (3x default, 3x short, 3x long), Jobs Pendentes/Processando/Falhos/Completados, Sync Status (Wise + Stripe), MariaDB Connections/Slow Queries, Redis Queue/Cache Memory Usage. UID: alice-erpnext.*
 - *CORREÇÃO 6 - Portal Home (00-home.json): Atualizado link "LLM Metrics" de "Mixtral 8x7B" para "Qwen2.5-VL 7B AWQ". Adicionados links para novos dashboards: GPU Manager, Trading, ERPNext.*
 - *DOCUMENTAÇÃO COMPLETA (NOVO):*
-  - *docs/OBSERVABILITY-AUDIT-2026-01-13.md: Auditoria completa (6 problemas, plano de ação, checklist validação).*
+  - *Auditoria consolidada em docs/OBSERVABILITY.md (arquivo dedicado removido para evitar duplicidade).*
   - *docs/OBSERVABILITY.md: Guia completo de observabilidade (dashboards, métricas, alertas, troubleshooting).*
 - *ARQUIVOS MODIFICADOS:*
   - *apps/observability-service/config/prometheus/prometheus.yml: 41 linhas adicionadas (4 novos targets).*
@@ -1367,7 +1370,7 @@ git commit -a -m "test: adiciona testes unitários"
   - *apps/observability-service/config/grafana/dashboards/alice-trading.json: 600 linhas adicionadas (NOVO).*
   - *apps/observability-service/config/grafana/dashboards/alice-gpu-manager.json: 700 linhas adicionadas (NOVO).*
   - *apps/observability-service/config/grafana/dashboards/alice-erpnext.json: 550 linhas adicionadas (NOVO).*
-  - *docs/OBSERVABILITY-AUDIT-2026-01-13.md: criado (auditoria + checklist de validação).*
+  - *Auditoria consolidada em docs/OBSERVABILITY.md (arquivo dedicado removido para evitar duplicidade).*
   - *docs/OBSERVABILITY.md: 600 linhas adicionadas (NOVO).*
 - *MELHORES PRÁTICAS 2026: Dashboards seguem Grafana Best Practices (separação por persona SRE/Dev/Business, nomenclatura Prometheus, Golden Signals). Métricas seguem padrão alice_<subsystem>_<metric>_<unit>.*
 - *IMPACTO BUSINESS: Agora é possível monitorar GPU ($1,100/mês), Trading (BTC Futures), ERPNext (workers), LLM (cache, streaming). Dashboards precisos (sem referências obsoletas). Observabilidade enterprise-grade completa.*

@@ -1,7 +1,7 @@
 # Guia de Observabilidade - Alice Enterprise Platform
 
-**Versão:** 2.3.0  
-**Data:** 15 de Janeiro de 2026  
+**Versão:** 2.4.0  
+**Data:** 16 de Janeiro de 2026  
 **Autor:** Fillipe Guerra
 
 ---
@@ -20,6 +20,13 @@
 | 6 | Infra sem visibilidade de DB/Cache | Impossível monitorar Postgres/PgBouncer/Redis/Qdrant | Adicionados exporters (Postgres/PgBouncer/Redis) + scrape Qdrant `/metrics` | ✅ CORRIGIDO |
 | 7 | Painéis "No data" (RBAC 0%, logs vazios) | Métricas/logs não aparecendo | Promtail atualizado para coletar logs reais dos containers (`/var/lib/docker/containers/*/*-json.log`) sem usar Docker socket (seguro) | ✅ CORRIGIDO |
 | 8 | Circuit breaker HALF_OPEN não aparecia | Grafana mapeava HALF_OPEN como `2`, mas métrica usa `0.5` | Mapeamento dashboards corrigido para `0.5` (HALF-OPEN) | ✅ CORRIGIDO |
+
+### Checklist de validação (pós-deploy)
+
+- **Prometheus (`/targets`)**: `alice-services`, `alice-gpu-services`, `node-exporter`, `cadvisor` em **UP**.
+- **Grafana**: dashboards Home, LLM/Chat, GPU Manager, Trading, ERPNext provisionados.
+- **Loki/Promtail**: logs do job `docker-containers` chegando com parsing JSON.
+- **Alertas**: regras ativas para LLM, GPU, KuCoin e infraestrutura.
 
 ---
 
@@ -433,9 +440,9 @@ docker logs loki
 - `CLAUDE.md` - 18 Regras Fundamentais
 - `docs/ARQUITETURA.md` - Arquitetura Gate 2 (LLM separado + Vision via OpenAI)
 - `docs/ARQUITETURA-GPU-MANAGER.md` - GPU Manager Service
-- `docs/OBSERVABILITY-AUDIT-2026-01-13.md` - Auditoria completa
+- Auditoria 13/01/2026 consolidada neste documento
 
 ---
 
-**Última atualização:** 15 de Janeiro de 2026  
+**Última atualização:** 16 de Janeiro de 2026  
 **Autor:** Fillipe Guerra

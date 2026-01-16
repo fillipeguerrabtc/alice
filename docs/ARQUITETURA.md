@@ -6,19 +6,7 @@
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 > 
-> **🧠 ATUALIZAÇÃO v3.1.0 (09/01/2026) - Smart Deploy:**  
-> Deploy inteligente que detecta stacks healthy e pula desnecessariamente:
-> - **Smart Deploy**: `smart_deploy=true` verifica servidor, pula stacks healthy
-> - **Bug Fixes PR#96**: pgBackRest SSH, Vector healthcheck, outputs, rollback validation
-> - **Arquitetura Redis**: INFRA (alice-redis 7.x) + ERPNEXT (redis-cache/queue 6.x)
-> - Ver seções ADR-007 e ADR-009 abaixo
->
-> **🚀 ATUALIZAÇÃO v3.0.0 (06/01/2026) - Pipeline Enterprise:**  
-> Pipeline CI/CD enterprise completo com deploy modular:
-> - **Release Consolidado**: `release.yml` (build 17 imagens, retag inteligente, dispara deploy)
-> - **Deploy Modular v3**: Jobs independentes (5 stacks ‖ ~10min, 66% mais rápido)
-> - **Rollback Cirúrgico**: Só reverte stack com falha
-> - Ver seções ADR-007 e ADR-009 abaixo
+> **Notas de atualização:** detalhes de CI/CD, Smart Deploy e troubleshooting ficam em `docs/DEPLOYMENT.md` (SSOT).
 
 ---
 
