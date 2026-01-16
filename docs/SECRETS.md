@@ -89,11 +89,11 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `GRAFANA_OAUTH_CLIENT_SECRET` | OAuth Grafana | ✅ |
 | `ERPNEXT_OAUTH_CLIENT_SECRET` | OAuth ERPNext | ✅ |
 
-## Secrets opcionais
+## Variáveis opcionais (não secret)
 
 | Secret | Descrição |
 | --- | --- |
-| `PGBACKREST_ALLOW_STANZA_RESET` | `true` permite reset controlado de stanza em mismatch de system-id |
+| `PGBACKREST_ALLOW_STANZA_RESET` | `true` permite reset controlado de stanza em mismatch de system-id (input do workflow) |
 | `DOCKERHUB_USERNAME` | Evita rate limit Docker Hub |
 | `DOCKERHUB_TOKEN` | Token Docker Hub |
 | `HUGGINGFACE_TOKEN` | Token HF (se necessário) |
