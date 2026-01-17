@@ -698,6 +698,13 @@ if [ -z "${ACME_EMAIL:-}" ]; then
 fi
 
 # =============================================================================
+# FASE 7.1: Validar usuário do mysqld_exporter (ERPNext)
+# =============================================================================
+if [ -z "${ERPNEXT_MYSQL_EXPORTER_USER:-}" ]; then
+  ERPNEXT_MYSQL_EXPORTER_USER="erpnext_exporter"
+fi
+
+# =============================================================================
 # FASE 8: Gerar arquivo .env.prod
 # =============================================================================
 echo "📄 Gerando arquivo .env.prod..."
@@ -828,6 +835,7 @@ echo "📄 Gerando arquivo .env.prod..."
   printf '\n'
   printf '# ERPNext Database\n'
   printf 'ERPNEXT_SITE_NAME=erp.yesyoudeserve.duckdns.org\n'
+  printf 'ERPNEXT_MYSQL_EXPORTER_USER=%s\n' "${ERPNEXT_MYSQL_EXPORTER_USER}"
   printf 'ERPNEXT_MYSQL_ROOT_PASSWORD=%s\n' "${ERPNEXT_MYSQL_ROOT_PASSWORD}"
   printf 'ERPNEXT_MYSQL_EXPORTER_PASSWORD=%s\n' "${ERPNEXT_MYSQL_EXPORTER_PASSWORD}"
   printf 'ERPNEXT_ADMIN_PASSWORD=%s\n' "${ERPNEXT_ADMIN_PASSWORD}"

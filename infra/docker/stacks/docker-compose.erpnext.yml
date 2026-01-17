@@ -839,6 +839,10 @@ services:
     command:
       - |
         set -eu
+        if [ -z "${ERPNEXT_MYSQL_EXPORTER_USER:-}" ]; then
+          echo "ERRO: ERPNEXT_MYSQL_EXPORTER_USER não definido (exporter)."
+          exit 1
+        fi
         cat > /tmp/my.cnf <<EOF
         [client]
         user=${ERPNEXT_MYSQL_EXPORTER_USER}

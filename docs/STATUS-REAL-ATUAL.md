@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 17 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.6 - Gate 2: LLM Qwen2.5 7B + Vision via OpenAI + Configuração central da Alice
+**Versão:** 7.7 - Gate 2: LLM Qwen2.5 7B + Vision via OpenAI + Configuração central da Alice
 
 ---
 
@@ -206,6 +206,7 @@ Retenção Arquivo:   30 dias
 - pgBackRest: stop file + limpeza de metadados no reset automático.
 - ERPNext: mysqld_exporter usa .my.cnf gerado em runtime com usuário dedicado.
 - TLS Caddy: ACME_EMAIL agora é obrigatório (fail-fast no deploy).
+- ERPNext: ERPNEXT_MYSQL_EXPORTER_USER garantido na geração do .env.prod.
 
 ---
 

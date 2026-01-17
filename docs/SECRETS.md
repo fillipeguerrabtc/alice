@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 17 de Janeiro de 2026  
-**Versão:** 7.1 - ACME obrigatório para TLS
+**Versão:** 7.2 - exporter user ERPNext
 
 ## Visão geral
 
@@ -99,6 +99,7 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `DOCKERHUB_TOKEN` | Token Docker Hub |
 | `HUGGINGFACE_TOKEN` | Token HF (se necessário) |
 | `SEARXNG_SECRET_KEY` | Secret do SearXNG |
+| `ERPNEXT_MYSQL_EXPORTER_USER` | Usuário do mysqld_exporter (default: `erpnext_exporter`) |
 
 ## Geração recomendada
 
