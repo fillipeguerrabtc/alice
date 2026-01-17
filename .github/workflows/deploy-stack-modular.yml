@@ -3256,13 +3256,14 @@ jobs:
         env:
           IS_ROLLBACK: ${{ needs.validate.outputs.is_rollback }}
           ROLLBACK_VERSION: ${{ needs.validate.outputs.rollback_version }}
+          DEPLOY_RESULT: ${{ needs.deploy-infra.result }}
         with:
           host: ${{ env.HETZNER_HOST }}
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
           command_timeout: 7m
-          envs: IS_ROLLBACK,ROLLBACK_VERSION
+          envs: IS_ROLLBACK,ROLLBACK_VERSION,DEPLOY_RESULT
           script: |
             set -euo pipefail
             # =================================================================
@@ -3289,6 +3290,12 @@ jobs:
                 ROLLBACK_MODE="auto"
                 echo "📌 ROLLBACK AUTOMÁTICO para versão anterior: $TARGET_VERSION"
               fi
+            fi
+
+            if [ "$ROLLBACK_MODE" != "manual" ] && [ "${DEPLOY_RESULT}" = "failure" ]; then
+              ROLLBACK_MODE="cleanup"
+              TARGET_VERSION=""
+              echo "🧹 Deploy falhou - forçando cleanup (sem rollback automático)"
             fi
             
             if [ "$ROLLBACK_MODE" = "cleanup" ]; then

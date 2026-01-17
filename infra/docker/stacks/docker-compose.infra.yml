@@ -273,9 +273,13 @@ services:
           fi
         fi
         HAS_BACKUPS="false"
+        HAS_REAL_BACKUPS="false"
         if [ -d "$$BACKUP_DIR" ]; then
           if [ -n "$(ls -A "$$BACKUP_DIR" 2>/dev/null || true)" ]; then
             HAS_BACKUPS="true"
+          fi
+          if ls "$$BACKUP_DIR"/*/backup.manifest* >/dev/null 2>&1; then
+            HAS_REAL_BACKUPS="true"
           fi
         fi
         if grep -qE "ArchiveMismatchError|backup and archive info files exist" "$$INFO_ERR"; then
@@ -283,8 +287,8 @@ services:
           if [ "$$ALLOW_RESET" = "true" ]; then
             echo "🧹 Reset autorizado: removendo stanza '$$STANZA' (metadados de backup serão recriados)."
             pgbackrest stanza-delete --stanza="$$STANZA" --force --log-level-console=info
-          elif [ "$$HAS_BACKUPS" = "false" ]; then
-            echo "🧹 Reset automático autorizado: repositório sem backups para '$$STANZA'."
+          elif [ "$$HAS_REAL_BACKUPS" = "false" ]; then
+            echo "🧹 Reset automático autorizado: repositório sem backups reais para '$$STANZA'."
             pgbackrest stanza-delete --stanza="$$STANZA" --force --log-level-console=info
           else
             echo "❌ Stanza inconsistente. Para resetar, defina PGBACKREST_ALLOW_STANZA_RESET=true."
@@ -302,8 +306,8 @@ services:
               echo "🧹 Reset autorizado: removendo stanza '$$STANZA' e recriando."
               pgbackrest stanza-delete --stanza="$$STANZA" --force --log-level-console=info
               pgbackrest stanza-create --stanza="$$STANZA" --no-online --log-level-console=info
-            elif [ "$$HAS_BACKUPS" = "false" ]; then
-              echo "🧹 Reset automático autorizado: repositório sem backups para '$$STANZA'."
+            elif [ "$$HAS_REAL_BACKUPS" = "false" ]; then
+              echo "🧹 Reset automático autorizado: repositório sem backups reais para '$$STANZA'."
               pgbackrest stanza-delete --stanza="$$STANZA" --force --log-level-console=info
               pgbackrest stanza-create --stanza="$$STANZA" --no-online --log-level-console=info
             else
