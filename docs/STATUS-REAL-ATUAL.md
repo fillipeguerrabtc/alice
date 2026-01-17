@@ -197,6 +197,7 @@ Retenção Arquivo:   30 dias
 - Remoção definitiva de VLM/FLUX local.
 - Persistência completa do chat via streaming (conversas e mensagens salvas).
 - Página enterprise de Configuração da Alice (system prompt, comportamento e humor).
+- Validação do SSE `/api/chat/stream` antes de iniciar o streaming (evita erro de headers enviados).
 
 ---
 

@@ -2606,6 +2606,11 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
   }
 
   try {
+    const lastUserMessage = inputMessages.filter(m => m.role === 'user').pop();
+    if (!lastUserMessage?.content) {
+      return res.status(400).json({ error: 'Mensagem do usuário obrigatória' });
+    }
+
     let conversationId = _conversationId;
     let conversation = null;
     let conversationCreated = false;
@@ -2643,11 +2648,6 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
     if (conversationCreated && conversationId) {
       res.write(`data: ${JSON.stringify({ type: 'conversation', conversationId })}\n\n`);
-    }
-
-    const lastUserMessage = inputMessages.filter(m => m.role === 'user').pop();
-    if (!lastUserMessage?.content) {
-      return res.status(400).json({ error: 'Mensagem do usuário obrigatória' });
     }
 
     const [userMessage] = await db.insert(schema.messages).values({
