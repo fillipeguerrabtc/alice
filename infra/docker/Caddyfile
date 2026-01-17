@@ -21,9 +21,9 @@
 	# =================================================================
 	# CORREÇÃO 03/01/2026: Email com Fallback para Fail-Safe
 	# =================================================================
-	# PROBLEMA: Caddy crashava se ACME_EMAIL estava vazio
-	# SOLUÇÃO: Adicionar fallback para email válido (fillipe.backup@gmail.com)
-	# Permite graceful degradation ao invés de crash total
+	# PROBLEMA: Caddy falha se ACME_EMAIL estiver vazio
+	# SOLUÇÃO: Fallback para email válido (admin@yesyoudeserve.duckdns.org)
+	# Permite validação do Caddyfile em CI sem envs
 	# 
 	# SINTAXE CORRETA: {$VAR:default} - usa default se VAR vazio
 	# A opção 'email' precisa de valor no STARTUP para registro ACME
