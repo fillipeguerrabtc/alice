@@ -203,6 +203,7 @@ Retenção Arquivo:   30 dias
 - pgBackRest: reset controlado quando `archive.info` existe sem `backup.info`.
 - pgBackRest: captura stderr+stdout no stanza-create para detectar mismatch.
 - pgBackRest: stanza-delete com `--force --force` no reset controlado.
+- pgBackRest: stop file + limpeza de metadados no reset automático.
 
 ---
 

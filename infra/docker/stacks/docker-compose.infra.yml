@@ -267,7 +267,7 @@ services:
           ALLOW_RESET="false"
         fi
         BACKUP_DIR="$$REPO_PATH/backup/$$STANZA"
-        MISMATCH_REGEX="ArchiveMismatchError|backup and archive info files exist|archive\.info exists but backup\.info is missing|do not match the database"
+        MISMATCH_REGEX="ArchiveMismatchError|backup and archive info files exist|archive\.info exists but backup\.info is missing|stop file does not exist|do not match the database"
 
         has_real_backups() {
           if [ -d "$$BACKUP_DIR" ]; then
@@ -303,7 +303,14 @@ services:
             cat "$$error_file" >&2
             return 1
           fi
+          echo "📝 Criando stop file para permitir stanza-delete..."
+          mkdir -p "$$REPO_PATH/backup/$$STANZA"
+          touch "$$REPO_PATH/backup/$$STANZA/backup.stop"
+          echo "🗑️  Executando stanza-delete..."
           pgbackrest stanza-delete --stanza="$$STANZA" --force --force --log-level-console=info || true
+          echo "🧹 Limpando metadados corrompidos do disco..."
+          rm -rf "$$REPO_PATH/archive/$$STANZA"
+          rm -rf "$$REPO_PATH/backup/$$STANZA"
           return 0
         }
 
