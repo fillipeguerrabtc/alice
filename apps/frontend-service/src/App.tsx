@@ -64,6 +64,7 @@ const ImageGalleryPage = lazy(() => import('@/pages/ImageGalleryPage'));
 const ModulesAdmin = lazy(() => import('@/pages/ModulesAdmin'));
 const Observability = lazy(() => import('@/pages/Observability'));
 const NotFound = lazy(() => import('@/pages/NotFound'));
+const AliceConfig = lazy(() => import('@/pages/AliceConfig'));
 
 // Loading spinner para Suspense fallback
 function PageLoader() {
@@ -144,6 +145,7 @@ function Router() {
       <Route path="/trading" component={Trading} />
       <Route path="/modules" component={ModulesAdmin} />
       <Route path="/observability" component={Observability} />
+      <Route path="/alice-config" component={AliceConfig} />
       <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
     </Switch>

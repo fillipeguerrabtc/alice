@@ -18,6 +18,7 @@ import {
   Shield,
   Boxes,
   LineChart,
+  Settings2,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -69,6 +70,7 @@ const adminItems = [
   { title: 'Observabilidade', url: '/observability', icon: Activity },
   { title: 'Namespaces', url: '/namespaces', icon: FolderKanban },
   { title: 'Módulos', url: '/modules', icon: Boxes },
+  { title: 'Configuração da Alice', url: '/alice-config', icon: Settings2 },
 ];
 
 export function AppSidebar() {

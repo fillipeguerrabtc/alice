@@ -574,6 +574,7 @@ interface ExtendedWebSocket extends WebSocket {
   isAlive?: boolean;
   userId?: string;
   tenantId?: string;
+  role?: Role;
   clientKey?: string;
   // Trading subscriptions (17/12/2025)
   tradingSubscriptions?: Set<string>;
@@ -722,6 +723,135 @@ function extractImagePrompt(message: string, keyword: string): string {
   return message;
 }
 
+type ImageGenerationInput = {
+  tenantId: string;
+  userId: string;
+  prompt: string;
+  negativePrompt?: string | null;
+  width?: number;
+  height?: number;
+  conversationId?: string | null;
+  messageId?: string | null;
+};
+
+async function generateImageFromPrompt(input: ImageGenerationInput) {
+  if (!OPENAI_API_KEY) {
+    throw new Error('OpenAI não configurado - geração de imagens indisponível');
+  }
+
+  const width = input.width ?? 1024;
+  const height = input.height ?? 1024;
+  const size = `${width}x${height}`;
+  const composedPrompt = input.negativePrompt && input.negativePrompt.trim().length > 0
+    ? `${input.prompt}\n\nNegative prompt: ${input.negativePrompt}`
+    : input.prompt;
+
+  const [created] = await db.insert(schema.generatedImages).values({
+    tenantId: input.tenantId,
+    createdBy: input.userId,
+    conversationId: input.conversationId ?? undefined,
+    messageId: input.messageId ?? undefined,
+    prompt: input.prompt,
+    negativePrompt: input.negativePrompt ?? null,
+    model: 'gpt-image-1',
+    width,
+    height,
+    status: 'generating',
+    approvedForTraining: false,
+    usedInFineTuning: false,
+    metadata: {
+      provider: 'openai',
+      api: 'images',
+    },
+  }).returning();
+
+  if (!created) {
+    throw new Error('Falha ao criar registro de geração de imagem');
+  }
+
+  const startedAt = Date.now();
+
+  try {
+    const openAiResponse = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-image-1',
+        prompt: composedPrompt,
+        size,
+        n: 1,
+        response_format: 'b64_json',
+      }),
+      signal: AbortSignal.timeout(120000),
+    });
+
+    if (!openAiResponse.ok) {
+      const errText = await openAiResponse.text().catch(() => '');
+      throw new Error(`OpenAI Images error: ${openAiResponse.status} - ${errText}`);
+    }
+
+    const payload = await openAiResponse.json() as { data?: Array<{ b64_json?: string }> };
+    const b64 = payload?.data?.[0]?.b64_json;
+    if (!b64 || typeof b64 !== 'string' || b64.length < 64) {
+      throw new Error('Resposta inválida da OpenAI Images API (b64_json ausente)');
+    }
+
+    const filename = `generated-${created.id}.png`;
+    const uploadResult = await uploadMediaToRAG(
+      b64,
+      filename,
+      'image/png',
+      input.tenantId,
+      input.prompt,
+      input.messageId ?? undefined,
+      input.conversationId ?? undefined,
+    );
+
+    if (!uploadResult?.fileUrl) {
+      throw new Error('Falha ao persistir imagem no RAG Service');
+    }
+
+    const generationTimeMs = Date.now() - startedAt;
+
+    await db.update(schema.generatedImages)
+      .set({
+        status: 'completed',
+        imageUrl: uploadResult.fileUrl,
+        thumbnailPath: uploadResult.thumbnailUrl ?? null,
+        generationTimeMs,
+        errorMessage: null,
+        metadata: {
+          ...(created.metadata ?? {}),
+          openai: { model: 'gpt-image-1', size },
+        },
+      })
+      .where(eq(schema.generatedImages.id, created.id));
+
+    const updated = await db.query.generatedImages.findFirst({
+      where: eq(schema.generatedImages.id, created.id),
+    });
+
+    if (!updated) {
+      throw new Error('Falha ao buscar registro atualizado da imagem gerada');
+    }
+
+    return updated;
+  } catch (error) {
+    const generationTimeMs = Date.now() - startedAt;
+    await db.update(schema.generatedImages)
+      .set({
+        status: 'failed',
+        generationTimeMs,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      })
+      .where(eq(schema.generatedImages.id, created.id));
+    throw error;
+  }
+}
+
 // ============================================================================
 // SYSTEM PROMPT DINÂMICO - Configurável via Dashboard Admin (02/01/2026)
 // Regra 6 CLAUDE.md: Sem hardcoded - usa instruções do agente quando disponível
@@ -736,6 +866,12 @@ interface AgentConfig {
   modeloBase?: string | null;
   temperaturaModelo?: number | null;
   maxTokens?: number | null;
+}
+
+interface AssistantSettings {
+  systemPrompt?: string | null;
+  behavior?: string | null;
+  mood?: string | null;
 }
 
 /**
@@ -761,10 +897,30 @@ BEHAVIOR GUIDELINES:
 - Provide accurate and relevant information
 - Be respectful and maintain a positive tone`;
 
+const CREATOR_PROMPT_RULE = `CREATOR IDENTITY RULES:
+- Your creator is Fillipe Guerra, the developer of the Alice Enterprise platform.
+- If asked who created you or your origin, ALWAYS answer that you were created by Fillipe Guerra.
+- Do not mention any other creator or company.`;
+
+function applyAssistantSettings(prompt: string, settings?: AssistantSettings | null): string {
+  let result = prompt;
+
+  if (settings?.behavior && settings.behavior.trim()) {
+    result += `\n\nBEHAVIOR: ${settings.behavior.trim()}`;
+  }
+
+  if (settings?.mood && settings.mood.trim()) {
+    result += `\n\nTONE: ${settings.mood.trim()}`;
+  }
+
+  return result;
+}
+
 /**
  * Constrói o system prompt dinâmico baseado na configuração do agente
  * 
  * @param agent - Configuração do agente (opcional)
+ * @param assistantSettings - Configuração global da assistente (opcional)
  * @param _userMessage - Mensagem do usuário para detecção de idioma (reservado para uso futuro)
  * @returns System prompt completo
  * 
@@ -772,29 +928,61 @@ BEHAVIOR GUIDELINES:
  * do DEFAULT_SYSTEM_PROMPT. O parâmetro userMessage está reservado para
  * implementação futura de detecção de idioma programática se necessário.
  */
-function buildSystemPrompt(agent?: AgentConfig | null, _userMessage?: string): string {
-  // Se o agente tem instruções customizadas, usar elas
-  if (agent?.instrucoes && agent.instrucoes.trim()) {
-    let prompt = agent.instrucoes;
-    
-    // Se o agente tem personalidade, adicionar como complemento
-    if (agent.personalidade && agent.personalidade.trim()) {
-      prompt += `\n\nPERSONALITY: ${agent.personalidade}`;
-    }
-    
-    // Adicionar instrução de idioma se não estiver presente
-    // (para garantir que agentes customizados também respeitem o idioma do usuário)
-    if (!prompt.toLowerCase().includes('language') && 
-        !prompt.toLowerCase().includes('idioma') && 
-        !prompt.toLowerCase().includes('língua')) {
-      prompt += `\n\nIMPORTANT: Always respond in the same language as the user's message.`;
-    }
-    
-    return prompt;
+function buildSystemPrompt(
+  agent?: AgentConfig | null,
+  assistantSettings?: AssistantSettings | null,
+  _userMessage?: string
+): string {
+  let prompt = DEFAULT_SYSTEM_PROMPT;
+
+  if (assistantSettings?.systemPrompt && assistantSettings.systemPrompt.trim()) {
+    prompt = assistantSettings.systemPrompt.trim();
   }
-  
-  // Fallback para prompt padrão
-  return DEFAULT_SYSTEM_PROMPT;
+
+  if (agent?.instrucoes && agent.instrucoes.trim()) {
+    prompt = agent.instrucoes.trim();
+  }
+
+  if (agent?.personalidade && agent.personalidade.trim()) {
+    prompt += `\n\nPERSONALITY: ${agent.personalidade.trim()}`;
+  }
+
+  prompt = applyAssistantSettings(prompt, assistantSettings);
+
+  // Adicionar instrução de idioma se não estiver presente
+  if (!prompt.toLowerCase().includes('language') && 
+      !prompt.toLowerCase().includes('idioma') && 
+      !prompt.toLowerCase().includes('língua')) {
+    prompt += `\n\nIMPORTANT: Always respond in the same language as the user's message.`;
+  }
+
+  // Regra mandatória de identidade do criador
+  prompt += `\n\n${CREATOR_PROMPT_RULE}`;
+
+  return prompt;
+}
+
+async function getAssistantSettingsForTenant(tenantId?: string | null): Promise<AssistantSettings | null> {
+  if (!tenantId) {
+    return null;
+  }
+
+  try {
+    const settings = await db.query.assistantSettings.findFirst({
+      where: eq(schema.assistantSettings.tenantId, tenantId),
+    });
+    if (!settings) {
+      return null;
+    }
+    return {
+      systemPrompt: settings.systemPrompt ?? null,
+      behavior: settings.behavior ?? null,
+      mood: settings.mood ?? null,
+    };
+  } catch (error) {
+    logger.error({ error, tenantId }, 'Falha ao carregar assistant_settings');
+    return null;
+  }
 }
 
 // ============================================================================
@@ -2190,9 +2378,13 @@ const createConversationSchema = z.object({
 app.post('/api/chat/conversations', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:conversations:write'), async (req: Request, res: Response) => {
   // SEGURANÇA: Usar req.user populado pelo middleware ao invés de header direto
   const auth = req.user;
+  const tenantId = req.tenantId;
   
   if (!auth?.userId) {
     return res.status(401).json({ error: 'ID do usuário necessário' });
+  }
+  if (!tenantId) {
+    return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
   }
 
   const userId = auth.userId;
@@ -2201,6 +2393,7 @@ app.post('/api/chat/conversations', requireAuth(), requireSameTenant(getTenantId
     const body = createConversationSchema.parse(req.body);
 
     const [conversation] = await db.insert(schema.conversations).values({
+      tenantId,
       userId,
       agentId: body.agentId,
       namespaceId: body.namespaceId,
@@ -2320,7 +2513,8 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
     }).returning();
 
     const agent = conversation.agent as AgentConfig | null;
-    let systemPrompt = buildSystemPrompt(agent, body.conteudo);
+    const assistantSettings = await getAssistantSettingsForTenant(req.tenantId);
+    let systemPrompt = buildSystemPrompt(agent, assistantSettings, body.conteudo);
     
     const ragStartTime = Date.now();
     const ragResult = await buscarContextoRAG(body.conteudo, conversation.namespaceId || undefined);
@@ -2404,20 +2598,69 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     return res.status(400).json({ error: 'Input inválido' });
   }
   const { messages: inputMessages, conversationId: _conversationId, namespaceId } = parseResult.data;
+  const userId = req.user?.userId;
+  const tenantId = req.tenantId;
 
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  // BUG FIX 25/12/2025: Enviar headers explicitamente para garantir que res.headersSent seja true
-  // Se nenhum chunk for recebido, onChunk nunca é chamado e headers nunca são enviados
-  // Isso causa condição onde onDone verifica res.headersSent && !res.writableEnded e falha
-  // Enviar headers explicitamente garante que resposta pode ser fechada mesmo sem dados
-  res.flushHeaders();
+  if (!userId || !tenantId) {
+    return res.status(401).json({ error: 'Autenticação necessária' });
+  }
 
   try {
-    // Usar último mensagem do usuário para detecção de idioma
+    let conversationId = _conversationId;
+    let conversation = null;
+    let conversationCreated = false;
+
+    if (conversationId) {
+      conversation = await db.query.conversations.findFirst({
+        where: eq(schema.conversations.id, conversationId),
+        with: { agent: true },
+      });
+
+      if (!conversation || conversation.userId !== userId) {
+        return res.status(404).json({ error: 'Conversa não encontrada' });
+      }
+    } else {
+      const [created] = await db.insert(schema.conversations).values({
+        tenantId,
+        userId,
+        namespaceId,
+        titulo: 'Nova Conversa',
+      }).returning();
+
+      conversation = created;
+      conversationId = created.id;
+      conversationCreated = true;
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    // BUG FIX 25/12/2025: Enviar headers explicitamente para garantir que res.headersSent seja true
+    // Se nenhum chunk for recebido, onChunk nunca é chamado e headers nunca são enviados
+    // Isso causa condição onde onDone verifica res.headersSent && !res.writableEnded e falha
+    // Enviar headers explicitamente garante que resposta pode ser fechada mesmo sem dados
+    res.flushHeaders();
+
+    if (conversationCreated && conversationId) {
+      res.write(`data: ${JSON.stringify({ type: 'conversation', conversationId })}\n\n`);
+    }
+
     const lastUserMessage = inputMessages.filter(m => m.role === 'user').pop();
-    let systemPrompt = buildSystemPrompt(null, lastUserMessage?.content);
+    if (!lastUserMessage?.content) {
+      return res.status(400).json({ error: 'Mensagem do usuário obrigatória' });
+    }
+
+    const [userMessage] = await db.insert(schema.messages).values({
+      conversationId,
+      userId,
+      conteudo: lastUserMessage.content,
+      tipo: 'text',
+      isFromUser: true,
+    }).returning();
+
+    const agent = (conversation as { agent?: AgentConfig | null })?.agent || null;
+    const assistantSettings = await getAssistantSettingsForTenant(tenantId);
+    let systemPrompt = buildSystemPrompt(agent, assistantSettings, lastUserMessage.content);
     let ragSources: Array<{ documentId: string; titulo: string; similarity: number }> = [];
     
     if (lastUserMessage) {
@@ -2445,10 +2688,16 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     }
 
     // BUG FIX 25/12/2025: Usar função auxiliar para proxy de stream do GPU Manager Service
+    let assistantResponse = '';
+    let assistantPersisted = false;
+
     try {
       await proxyStreamFromGpuManager(
         llmMessages,
         (content) => {
+          if (content) {
+            assistantResponse += content;
+          }
           // BUG FIX 25/12/2025: Envolver res.write() em try-catch para tratamento gracioso de clientes desconectados
           // Se cliente desconectar durante streaming, erro não deve interromper processamento do stream
           try {
@@ -2470,6 +2719,37 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           // BUG FIX 25/12/2025: Usar AND (&&) ao invés de OR (||) - só escrever se headers foram enviados E resposta não foi finalizada
           // BUG FIX 25/12/2025: Headers são enviados explicitamente via res.flushHeaders() (linha 2004)
           // Mesmo se nenhum chunk for recebido, headers já foram enviados, então podemos fechar a resposta
+          if (!assistantPersisted && conversationId && userMessage) {
+            assistantPersisted = true;
+            if (assistantResponse.trim().length > 0) {
+              const [assistantMessage] = await db.insert(schema.messages).values({
+                conversationId,
+                agentId: conversation?.agentId,
+                conteudo: assistantResponse,
+                tipo: 'text',
+                isFromUser: false,
+              }).returning();
+
+              await db.update(schema.conversations)
+                .set({
+                  totalMensagens: (conversation?.totalMensagens || 0) + 2,
+                  ultimaMensagemEm: new Date(),
+                  atualizadoEm: new Date(),
+                })
+                .where(eq(schema.conversations.id, conversationId));
+
+              res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+            } else {
+              await db.update(schema.conversations)
+                .set({
+                  totalMensagens: (conversation?.totalMensagens || 0) + 1,
+                  ultimaMensagemEm: new Date(),
+                  atualizadoEm: new Date(),
+                })
+                .where(eq(schema.conversations.id, conversationId));
+            }
+          }
+
           if (!res.writableEnded) {
             try {
               // Se nenhum dado foi enviado, enviar [DONE] para fechar o stream corretamente
@@ -2805,6 +3085,7 @@ wss.on('connection', (ws, req) => {
   extWs.isAlive = true;
   extWs.userId = userId;
   extWs.tenantId = tenantId;
+  extWs.role = authResult.role as Role | undefined;
   extWs.clientKey = clientKey;
   
   // Responder ao pong mantém conexão viva
@@ -3247,7 +3528,7 @@ wss.on('connection', (ws, req) => {
         ws.send(JSON.stringify({ type: 'message', data: userMsg }));
 
         // ARQUITETURA 16/01/2026+: geração de imagens via OpenAI (gpt-image-1)
-        // Se o usuário pedir para gerar imagem, orientamos para o fluxo OpenAI
+        // Se o usuário pedir para gerar imagem, executar fluxo OpenAI (gpt-image-1)
         const imageDetection = detectImageGenerationRequest(messageContent);
         
         if (imageDetection.isImageRequest && imageDetection.prompt) {
@@ -3258,30 +3539,87 @@ wss.on('connection', (ws, req) => {
             reason: imageDetection.reason,
           }, 'Pedido de geração de imagem detectado - OpenAI Images disponível');
 
-          // Informar ao usuário sobre geração via OpenAI e manter fluxo explícito
-          const removalMessage = 'A geração de imagens está disponível via OpenAI. ' +
-            'Use a opção **Gerar imagem** no painel ou o endpoint `/api/chat/images/generate`. ' +
-            'Se quiser, descreva o que deseja e eu formulo o prompt ideal.';
-
-          const inserted = await db.insert(schema.messages).values({
-            conversationId,
-            agentId: conversation?.agentId,
-            conteudo: removalMessage,
-            tipo: 'text',
-            isFromUser: false,
-            metadata: { 
-              featureAvailable: 'openai_image_generation',
-              originalPrompt: imageDetection.prompt,
-              architecture: '16/01/2026',
-            },
-          }).returning();
-          
-          if (inserted && inserted.length > 0 && inserted[0]) {
-            const infoMsg = inserted[0];
-            ws.send(JSON.stringify({ type: 'message', data: infoMsg }));
-            ws.send(JSON.stringify({ type: 'complete', data: infoMsg }));
+          const userRole = extWs.role;
+          if (!userRole) {
+            ws.send(JSON.stringify({ 
+              type: 'error', 
+              error: 'Permissão insuficiente para gerar imagens.' 
+            }));
+            return;
           }
-          
+
+          const permissionCheck = await checkPermission(
+            { userId, tenantId: safeTenantId, role: userRole },
+            'images:generate:write'
+          );
+
+          if (!permissionCheck.allowed) {
+            ws.send(JSON.stringify({ 
+              type: 'error', 
+              error: 'Você não possui permissão para gerar imagens.' 
+            }));
+            return;
+          }
+
+          if (!conversationId) {
+            ws.send(JSON.stringify({ 
+              type: 'error', 
+              error: 'Conversa inválida para geração de imagem.' 
+            }));
+            return;
+          }
+
+          try {
+            const generatedImage = await generateImageFromPrompt({
+              tenantId: safeTenantId,
+              userId,
+              prompt: imageDetection.prompt,
+              conversationId,
+              messageId: userMsg.id,
+            });
+
+            const inserted = await db.insert(schema.messages).values({
+              conversationId,
+              agentId: conversation?.agentId ?? undefined,
+              conteudo: 'Imagem gerada com sucesso via OpenAI.',
+              tipo: 'text',
+              isFromUser: false,
+              metadata: {
+                generatedImages: [generatedImage.id],
+                model: generatedImage.model ?? undefined,
+              },
+            }).returning();
+
+            if (!inserted || inserted.length === 0 || !inserted[0]) {
+              logger.error({ conversationId }, 'Falha ao salvar mensagem de imagem gerada - .returning() retornou array vazio ou undefined');
+              throw new Error('Falha ao salvar mensagem de imagem gerada - resultado do banco de dados inválido');
+            }
+
+            const infoMsg = inserted[0];
+            const messagePayload = {
+              ...infoMsg,
+              generatedImage: {
+                id: generatedImage.id,
+                prompt: generatedImage.prompt,
+                imageUrl: generatedImage.imageUrl ?? undefined,
+                imagePath: generatedImage.imagePath ?? undefined,
+                status: generatedImage.status === 'generating' ? 'processing' : generatedImage.status,
+                width: generatedImage.width ?? undefined,
+                height: generatedImage.height ?? undefined,
+                feedbackScore: generatedImage.feedbackScore ?? undefined,
+              },
+            };
+
+            ws.send(JSON.stringify({ type: 'message', data: messagePayload }));
+            ws.send(JSON.stringify({ type: 'complete', data: messagePayload }));
+          } catch (error) {
+            logger.error({ error, conversationId }, 'Falha ao gerar imagem via OpenAI');
+            ws.send(JSON.stringify({ 
+              type: 'error', 
+              error: 'Falha ao gerar imagem via OpenAI. Tente novamente em instantes.' 
+            }));
+          }
+
           return;
         }
 
@@ -3369,7 +3707,8 @@ wss.on('connection', (ws, req) => {
         // Métricas já foram registradas no bloco acima quando hasResponse=true
 
         const agent = conversation?.agent as AgentConfig | null;
-        let systemPrompt = buildSystemPrompt(agent, messageContent);
+        const assistantSettings = await getAssistantSettingsForTenant(safeTenantId);
+        let systemPrompt = buildSystemPrompt(agent, assistantSettings, messageContent);
 
         const namespaceId = message.namespaceId || conversation?.namespaceId || undefined;
         // CORREÇÃO 17/12/2025: Usar messageContent (com fallback) ao invés de message.content (potencialmente undefined)
@@ -3760,7 +4099,8 @@ wss.on('connection', (ws, req) => {
         // Preparar prompt para LLM texto (Qwen2.5 7B é SOMENTE TEXTO)
         // Não processa imagens diretamente - usar RAG + OpenAI Vision
         const agent = conversation.agent as AgentConfig | null;
-        let systemPrompt = buildSystemPrompt(agent, mediaMessage.content);
+        const assistantSettings = await getAssistantSettingsForTenant(tenantId);
+        let systemPrompt = buildSystemPrompt(agent, assistantSettings, mediaMessage.content);
         
         // Para imagens: usa RAG com embeddings CLIP (1024 dim) para buscar contexto similar
         // Para áudio: usar transcrição quando disponível
@@ -4723,6 +5063,91 @@ app.get('/api/agents/model-options', requireAuth(), requireSameTenant(getTenantI
   );
 });
 
+// ============================================================================
+// ASSISTANT SETTINGS (System Prompt / Comportamento / Humor)
+// ============================================================================
+
+const assistantSettingsSchema = z.object({
+  systemPrompt: z.string().min(10).max(20000).optional().nullable(),
+  behavior: z.string().max(5000).optional().nullable(),
+  mood: z.string().max(2000).optional().nullable(),
+});
+
+app.get('/api/assistant-settings', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:agents:read'), async (req: Request, res: Response) => {
+  const tenantId = req.tenantId;
+  if (!tenantId) {
+    return res.status(401).json({ error: 'Tenant obrigatório' });
+  }
+
+  try {
+    const settings = await db.query.assistantSettings.findFirst({
+      where: eq(schema.assistantSettings.tenantId, tenantId),
+    });
+
+    res.json({
+      settings,
+      defaults: {
+        systemPrompt: DEFAULT_SYSTEM_PROMPT,
+        behavior: null,
+        mood: null,
+      },
+      enforced: {
+        creator: 'Fillipe Guerra',
+      },
+    });
+  } catch (error) {
+    logger.error({ error, tenantId }, 'Falha ao buscar assistant_settings');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.patch('/api/assistant-settings', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:agents:write'), async (req: Request, res: Response) => {
+  const tenantId = req.tenantId;
+  const userId = req.user?.userId;
+
+  if (!tenantId || !userId) {
+    return res.status(401).json({ error: 'Tenant e usuário obrigatórios' });
+  }
+
+  const parseResult = assistantSettingsSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    logger.warn({ errors: parseResult.error.flatten() }, 'Input inválido em /api/assistant-settings');
+    return res.status(400).json({ error: 'Input inválido', details: parseResult.error.format() });
+  }
+
+  try {
+    const existing = await db.query.assistantSettings.findFirst({
+      where: eq(schema.assistantSettings.tenantId, tenantId),
+    });
+
+    const payload = {
+      systemPrompt: parseResult.data.systemPrompt?.trim() || null,
+      behavior: parseResult.data.behavior?.trim() || null,
+      mood: parseResult.data.mood?.trim() || null,
+      updatedBy: userId,
+    };
+
+    if (existing) {
+      const [updated] = await db.update(schema.assistantSettings)
+        .set(payload)
+        .where(eq(schema.assistantSettings.id, existing.id))
+        .returning();
+      return res.json({ settings: updated });
+    }
+
+    const [created] = await db.insert(schema.assistantSettings).values({
+      tenantId,
+      createdBy: userId,
+      ...payload,
+    }).returning();
+
+    res.json({ settings: created });
+  } catch (error) {
+    logger.error({ error, tenantId }, 'Falha ao atualizar assistant_settings');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
 /**
  * GET /api/agents
  * Lista todos os agentes do tenant atual
@@ -5174,7 +5599,8 @@ app.post('/api/chat/message', asyncHandler(async (req: Request, res: Response) =
     
     // Processar mensagem com LLM
     const agent = conversation.agent as AgentConfig | null;
-    let systemPrompt = buildSystemPrompt(agent, content);
+    const assistantSettings = await getAssistantSettingsForTenant(conversation.tenantId || req.tenantId);
+    let systemPrompt = buildSystemPrompt(agent, assistantSettings, content);
     
     // Buscar contexto RAG se disponível
     const ragResult = await buscarContextoRAG(content, conversation.namespaceId || undefined);
@@ -5367,110 +5793,19 @@ app.post('/api/chat/images/generate', requireAuth(), requireSameTenant(getTenant
   }
 
   const { prompt, negativePrompt, width, height } = parseResult.data;
-  const startedAt = Date.now();
-
-  // Criar registro inicial (auditoria e UX: status generating)
-  const [created] = await db.insert(schema.generatedImages).values({
-    tenantId,
-    createdBy: userId,
-    prompt,
-    negativePrompt: negativePrompt ?? null,
-    model: 'gpt-image-1',
-    width,
-    height,
-    status: 'generating',
-    approvedForTraining: false,
-    usedInFineTuning: false,
-    metadata: {
-      provider: 'openai',
-      api: 'images',
-    },
-  }).returning();
-
-  if (!created) {
-    return res.status(500).json({ error: 'Falha ao criar registro de geração' });
-  }
 
   try {
-    const size = `${width}x${height}`;
-    const composedPrompt = negativePrompt && negativePrompt.trim().length > 0
-      ? `${prompt}\n\nNegative prompt: ${negativePrompt}`
-      : prompt;
-
-    const openAiResponse = await fetch('https://api.openai.com/v1/images/generations', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-image-1',
-        prompt: composedPrompt,
-        size,
-        n: 1,
-        response_format: 'b64_json',
-      }),
-      signal: AbortSignal.timeout(120000),
-    });
-
-    if (!openAiResponse.ok) {
-      const errText = await openAiResponse.text().catch(() => '');
-      throw new Error(`OpenAI Images error: ${openAiResponse.status} - ${errText}`);
-    }
-
-    const payload = await openAiResponse.json() as { data?: Array<{ b64_json?: string }> };
-    const b64 = payload?.data?.[0]?.b64_json;
-    if (!b64 || typeof b64 !== 'string' || b64.length < 64) {
-      throw new Error('Resposta inválida da OpenAI Images API (b64_json ausente)');
-    }
-
-    // Persistir via RAG Service (storage + thumbnail + embeddings OpenCLIP)
-    const filename = `generated-${created.id}.png`;
-    const uploadResult = await uploadMediaToRAG(
-      b64,
-      filename,
-      'image/png',
+    const image = await generateImageFromPrompt({
       tenantId,
+      userId,
       prompt,
-      created.messageId ?? undefined,
-      created.conversationId ?? undefined,
-    );
-    if (!uploadResult?.fileUrl) {
-      throw new Error('Falha ao persistir imagem no RAG Service');
-    }
-
-    const generationTimeMs = Date.now() - startedAt;
-
-    await db.update(schema.generatedImages)
-      .set({
-        status: 'completed',
-        imageUrl: uploadResult.fileUrl,
-        thumbnailPath: uploadResult.thumbnailUrl ?? null,
-        generationTimeMs,
-        errorMessage: null,
-        metadata: {
-          ...(created.metadata ?? {}),
-          openai: { model: 'gpt-image-1', size },
-        },
-      })
-      .where(eq(schema.generatedImages.id, created.id));
-
-    const updated = await db.query.generatedImages.findFirst({
-      where: eq(schema.generatedImages.id, created.id),
+      negativePrompt,
+      width,
+      height,
     });
-
-    res.json({ image: updated });
+    res.json({ image });
   } catch (error) {
-    const generationTimeMs = Date.now() - startedAt;
-    await db.update(schema.generatedImages)
-      .set({
-        status: 'failed',
-        generationTimeMs,
-        errorMessage: error instanceof Error ? error.message : String(error),
-      })
-      .where(eq(schema.generatedImages.id, created.id));
-
-    logger.error({ error, imageId: created.id }, 'Erro ao gerar imagem via OpenAI');
+    logger.error({ error }, 'Erro ao gerar imagem via OpenAI');
     res.status(502).json({ error: 'Falha ao gerar imagem', details: error instanceof Error ? error.message : 'Erro desconhecido' });
   }
 });
@@ -5570,14 +5905,24 @@ app.get('/api/chat/images/stats', requireAuth(), requireSameTenant(getTenantIdFr
     const images = await db.query.generatedImages.findMany() as GeneratedImage[];
     
     const completed = images.filter((img: GeneratedImage) => img.status === 'completed');
+    const ratedImages = images.filter(
+      (img: GeneratedImage) => typeof img.feedbackScore === 'number' && (img.feedbackScore ?? 0) > 0
+    );
     const avgGenerationTime = completed.length > 0
       ? completed.reduce((sum: number, img: GeneratedImage) => sum + (img.generationTimeMs || 0), 0) / completed.length
       : 0;
+    const avgRating = ratedImages.length > 0
+      ? ratedImages.reduce((sum: number, img: GeneratedImage) => sum + (img.feedbackScore || 0), 0) / ratedImages.length
+      : 0;
     
     const stats = {
+      totalGenerated: images.length,
+      approved: images.filter((img: GeneratedImage) => img.approvedForTraining).length,
+      pending: images.filter((img: GeneratedImage) => img.status === 'pending' || img.status === 'generating').length,
+      inTraining: images.filter((img: GeneratedImage) => img.usedInFineTuning).length,
+      avgRating: Number(avgRating.toFixed(1)),
       total: images.length,
       completed: completed.length,
-      pending: images.filter((img: GeneratedImage) => img.status === 'pending' || img.status === 'generating').length,
       failed: images.filter((img: GeneratedImage) => img.status === 'failed').length,
       approvedForTraining: images.filter((img: GeneratedImage) => img.approvedForTraining).length,
       usedInFineTuning: images.filter((img: GeneratedImage) => img.usedInFineTuning).length,

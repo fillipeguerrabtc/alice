@@ -318,6 +318,16 @@ export default function Chat() {
     enabled: !!conversationId,
   });
 
+  const createConversation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest('POST', '/api/chat/conversations', { titulo: 'Nova Conversa' });
+      return res.json() as Promise<{ conversation: Conversation }>;
+    },
+    onSuccess: () => {
+      queryClientRef.invalidateQueries({ queryKey: ['/api/chat/conversations'] });
+    },
+  });
+
   useEffect(() => {
     if (conversationMessages?.messages) {
       setMessages(conversationMessages.messages);
@@ -350,8 +360,15 @@ export default function Chat() {
       };
       setMessages((prev) => [...prev, assistantMessage]);
 
+      let activeConversationId = conversationId;
+      if (!activeConversationId) {
+        const created = await createConversation.mutateAsync();
+        activeConversationId = created.conversation.id;
+        navigate(`/chat/${activeConversationId}`);
+      }
+
       const res = await apiRequest('POST', '/api/chat/stream', {
-        conversationId,
+        conversationId: activeConversationId,
         messages: [...messages, userMessage].map((m) => ({
           role: m.role,
           content: m.content,
@@ -378,6 +395,11 @@ export default function Chat() {
 
             try {
               const parsed = JSON.parse(data);
+              if (parsed.type === 'conversation' && parsed.conversationId && !conversationId) {
+                navigate(`/chat/${parsed.conversationId}`);
+                queryClientRef.invalidateQueries({ queryKey: ['/api/chat/conversations'] });
+              }
+
               if (parsed.content) {
                 fullContent += parsed.content;
                 setMessages((prev) => {

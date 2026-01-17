@@ -1362,5 +1362,27 @@
       "circuitBreakerOpen": "Circuit Breaker Aberto",
       "history": "Histórico de Mudanças"
     }
+  },
+  "aliceConfig": {
+    "title": "Configuração da Alice",
+    "description": "Ajuste o system prompt, comportamento e humor da assistente.",
+    "creatorTitle": "Identidade do Criador",
+    "creatorDescription": "Informação fixa aplicada em todas as respostas.",
+    "settingsTitle": "Configurações da Assistente",
+    "settingsDescription": "Atualize as diretrizes principais que guiam a Alice.",
+    "systemPrompt": "System Prompt",
+    "systemPromptPlaceholder": "Defina o prompt base da Alice. Ele será aplicado antes das respostas.",
+    "behavior": "Comportamentos",
+    "behaviorPlaceholder": "Liste regras, limites e comportamentos esperados.",
+    "mood": "Humor e Tom",
+    "moodPlaceholder": "Defina o tom (ex: profissional, cordial, objetivo).",
+    "save": "Salvar configurações",
+    "reset": "Restaurar padrão",
+    "saveSuccessTitle": "Configurações atualizadas",
+    "saveSuccessDesc": "As novas diretrizes foram aplicadas.",
+    "saveErrorTitle": "Erro ao salvar",
+    "saveErrorDesc": "Não foi possível atualizar as configurações.",
+    "defaultPromptTitle": "Prompt Padrão (somente leitura)",
+    "defaultPromptDescription": "Referência do prompt padrão caso queira voltar ao original."
   }
 }

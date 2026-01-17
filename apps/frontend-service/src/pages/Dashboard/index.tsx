@@ -73,6 +73,40 @@ import { SLAMonitorCard } from './components/SLAMonitorCard';
 import { CircuitBreakerCard } from './components/CircuitBreakerCard';
 import { ConversationsBarChart } from './components/ConversationsBarChart';
 
+type ImageStatsApi = {
+  total?: number;
+  completed?: number;
+  pending?: number;
+  failed?: number;
+  approvedForTraining?: number;
+  usedInFineTuning?: number;
+  averageGenerationTimeMs?: number;
+  totalGenerated?: number;
+  approved?: number;
+  inTraining?: number;
+  avgRating?: number;
+};
+
+function normalizeImageStats(stats?: ImageStatsApi | null): ImageGenerationStats {
+  if (!stats) {
+    return {
+      totalGenerated: 0,
+      approved: 0,
+      pending: 0,
+      inTraining: 0,
+      avgRating: 0,
+    };
+  }
+
+  return {
+    totalGenerated: stats.totalGenerated ?? stats.total ?? 0,
+    approved: stats.approved ?? stats.approvedForTraining ?? 0,
+    pending: stats.pending ?? 0,
+    inTraining: stats.inTraining ?? stats.usedInFineTuning ?? 0,
+    avgRating: Number.isFinite(stats.avgRating) ? Number(stats.avgRating) : 0,
+  };
+}
+
 export default function Dashboard() {
   const { t } = useTranslation();
 
@@ -103,7 +137,7 @@ export default function Dashboard() {
     staleTime: 1000 * 60 * 5,
   });
 
-  const { data: imageStats, isLoading: imageStatsLoading } = useQuery<ImageGenerationStats>({
+  const { data: imageStats, isLoading: imageStatsLoading } = useQuery<ImageStatsApi>({
     queryKey: ['/api/chat/images/stats'],
     staleTime: 1000 * 60 * 2,
     refetchInterval: 1000 * 60 * 2,
@@ -121,13 +155,7 @@ export default function Dashboard() {
     refetchInterval: 1000 * 30,
   });
 
-  const displayImageStats: ImageGenerationStats = imageStats || {
-    totalGenerated: 0,
-    approved: 0,
-    pending: 0,
-    inTraining: 0,
-    avgRating: 0,
-  };
+  const displayImageStats = normalizeImageStats(imageStats);
 
   const displayTakeoverStats: TakeoverStats = {
     pendingHandoffs: pendingHandoffs?.conversations?.length || 0,

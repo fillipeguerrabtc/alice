@@ -1362,5 +1362,27 @@
       "circuitBreakerOpen": "Circuit Breaker Open",
       "history": "Change History"
     }
+  },
+  "aliceConfig": {
+    "title": "Alice Configuration",
+    "description": "Adjust the system prompt, behavior, and tone of the assistant.",
+    "creatorTitle": "Creator Identity",
+    "creatorDescription": "Fixed information applied to every response.",
+    "settingsTitle": "Assistant Settings",
+    "settingsDescription": "Update the main guidelines that steer Alice.",
+    "systemPrompt": "System Prompt",
+    "systemPromptPlaceholder": "Define Alice's base prompt. It will be applied before every response.",
+    "behavior": "Behaviors",
+    "behaviorPlaceholder": "List rules, limits, and expected behaviors.",
+    "mood": "Tone & Mood",
+    "moodPlaceholder": "Define the tone (e.g. professional, cordial, concise).",
+    "save": "Save settings",
+    "reset": "Restore default",
+    "saveSuccessTitle": "Settings updated",
+    "saveSuccessDesc": "New guidelines have been applied.",
+    "saveErrorTitle": "Save failed",
+    "saveErrorDesc": "Unable to update settings.",
+    "defaultPromptTitle": "Default Prompt (read-only)",
+    "defaultPromptDescription": "Reference for the default prompt if you want to revert."
   }
 }

@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 **Autor:** Fillipe Guerra  
-**Data:** 16 de Janeiro de 2026  
+**Data:** 17 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.4 - Gate 2: LLM Qwen2.5 7B + Vision via OpenAI + SSOT capability-based
+**Versão:** 7.5 - Gate 2: LLM Qwen2.5 7B + Vision via OpenAI + Configuração central da Alice
 
 ---
 
@@ -103,7 +103,7 @@
 
 ### Schema Core
 
-- `sessions`, `tenants`, `users`, `permissions`, `role_permissions`, `oauth_clients`, `oauth_authorization_codes`, `oauth_tokens`, `oidc_payloads`, `oidc_jwks`, `feature_flags`.
+- `sessions`, `tenants`, `users`, `permissions`, `role_permissions`, `oauth_clients`, `oauth_authorization_codes`, `oauth_tokens`, `oidc_payloads`, `oidc_jwks`, `feature_flags`, `assistant_settings`.
 
 ### Schema Chat
 
@@ -195,6 +195,8 @@ Retenção Arquivo:   30 dias
 - Healthchecks reais para todos os serviços.
 - OpenAPI atualizado para geração de imagens via OpenAI.
 - Remoção definitiva de VLM/FLUX local.
+- Persistência completa do chat via streaming (conversas e mensagens salvas).
+- Página enterprise de Configuração da Alice (system prompt, comportamento e humor).
 
 ---
 

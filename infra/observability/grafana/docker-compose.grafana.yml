@@ -56,7 +56,7 @@ services:
       - GF_SMTP_HOST=smtp.gmail.com:587
       - GF_SMTP_USER=${GMAIL_USER:-}
       - GF_SMTP_PASSWORD=${GMAIL_APP_PASSWORD:-}
-      - GF_SMTP_FROM=${GMAIL_USER:-}
+      - GF_SMTP_FROM=${GMAIL_USER:-fillipe.backup@gmail.com}
       
       # Instalação de plugins
       - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource,grafana-piechart-panel

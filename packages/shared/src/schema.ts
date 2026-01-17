@@ -2609,6 +2609,27 @@ export const featureFlags = pgTable(
 );
 
 // ============================================================================
+// ASSISTANT SETTINGS (Configuração da Alice - System Prompt/Comportamento/Humor)
+// ============================================================================
+export const assistantSettings = pgTable(
+  "assistant_settings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id),
+    systemPrompt: text("system_prompt"),
+    behavior: text("behavior"),
+    mood: text("mood"),
+    createdBy: uuid("created_by").references(() => users.id),
+    updatedBy: uuid("updated_by").references(() => users.id),
+    criadoEm: timestamp("criado_em").defaultNow(),
+    atualizadoEm: timestamp("atualizado_em").defaultNow(),
+  },
+  (table) => ({
+    idxAssistantSettingsTenant: uniqueIndex("idx_assistant_settings_tenant").on(table.tenantId),
+  })
+);
+
+// ============================================================================
 // BACKUP JOBS (Regra 6 - Enterprise-Grade Persistence)
 // Estado de backup persistido em PostgreSQL (NÃO in-memory)
 // ============================================================================
@@ -2694,6 +2715,7 @@ export const tenantsRelations = relations(tenants, ({ many }) => ({
   llmConfigs: many(llmConfig),
   auditLogs: many(auditLogs),
   usageMetrics: many(usageMetrics),
+  assistantSettings: many(assistantSettings),
 }));
 
 export const usersRelations = relations(users, ({ one, many }) => ({
@@ -2764,6 +2786,21 @@ export const messagesRelations = relations(messages, ({ one }) => ({
   agent: one(agents, {
     fields: [messages.agentId],
     references: [agents.id],
+  }),
+}));
+
+export const assistantSettingsRelations = relations(assistantSettings, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [assistantSettings.tenantId],
+    references: [tenants.id],
+  }),
+  createdByUser: one(users, {
+    fields: [assistantSettings.createdBy],
+    references: [users.id],
+  }),
+  updatedByUser: one(users, {
+    fields: [assistantSettings.updatedBy],
+    references: [users.id],
   }),
 }));
 

@@ -4,13 +4,15 @@
 
 Este documento descreve o sistema de gestão de permissões da plataforma Alice Enterprise, implementado como Single Source of Truth (SSOT) para garantir consistência entre todos os scripts e componentes.
 
-**Data de Implementação:** 09 de Janeiro de 2026  
-**Versão:** 1.1.0  
+**Data de Implementação:** 17 de Janeiro de 2026  
+**Versão:** 1.2.0  
 **Autor:** Fillipe Guerra
 
 > **ATUALIZAÇÃO v1.1.0 (09/01/2026):** Adicionada Regra 5 para remoção agressiva de bits especiais
 > com `chmod a-st` e validação imediata após chmod. Corrige problema onde `chmod 0755` não
 > removia setgid bit em alguns filesystems.
+>
+> **ATUALIZAÇÃO v1.2.0 (17/01/2026):** Documentado diretório de logs do Caddy no SSOT e na tabela de permissões.
 
 ## Single Source of Truth (SSOT)
 
@@ -55,6 +57,7 @@ Servidor de produção com permissões corretas
 | **Redis Alice** | 999 | 999 | redis | 755 | Alpine Redis padrão |
 | **Caddy** | 1000 | 1000 | caddy | 755 | Web server, serve certificados públicos |
 | **Caddy Config** | 1000 | 1000 | caddy | 755 | Configurações Caddy |
+| **Caddy Logs** | 1000 | 1000 | caddy | 755 | Logs do reverse proxy |
 | **SearXNG** | 977 | 977 | searxng | 755 | Metabusca interna |
 | **MinIO** | 0 | 0 | root | 755 | Object storage (requer root) |
 | **Qdrant** | 0 | 0 | root | 755 | Banco vetorial (requer root) |
