@@ -129,8 +129,21 @@ O PostgreSQL foi reinitializado, mas o repositório de backup contém metadados 
 
 **Solução controlada:**
 
-1. Definir `PGBACKREST_ALLOW_STANZA_RESET=true` (secret no GitHub).
-2. Reexecutar o deploy.
+1. Reexecutar o deploy com input `pgbackrest_allow_stanza_reset=true`.
+
+**Via GitHub CLI:**
+
+```bash
+gh workflow run deploy-stack-modular.yml \
+  -f stack=infra \
+  -f version=v1.0.0 \
+  -f pgbackrest_allow_stanza_reset=true
+```
+
+**Via GitHub UI:**
+
+- Actions → Deploy - Production (Modular) → Run workflow
+- Marcar checkbox `pgbackrest_allow_stanza_reset`
 
 **Observação:** O reset remove metadados de backups anteriores da stanza. Use apenas quando o reinit do banco for intencional.
 

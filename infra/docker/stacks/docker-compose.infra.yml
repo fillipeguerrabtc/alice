@@ -292,7 +292,14 @@ services:
             echo "🧹 Reset automático autorizado: repositório sem backups reais para '$$STANZA'."
           else
             echo "❌ Stanza inconsistente com backups reais. Reset bloqueado."
-            echo "   Para resetar, defina PGBACKREST_ALLOW_STANZA_RESET=true."
+            echo ""
+            echo "   CAUSA PROVÁVEL: PostgreSQL foi reinitializado (novo system-id),"
+            echo "   mas o repositório contém metadados/backup da instância anterior."
+            echo ""
+            echo "   SOLUÇÃO (CONTROLADA): reexecutar deploy com:"
+            echo "   -f pgbackrest_allow_stanza_reset=true"
+            echo ""
+            echo "   ⚠️  ATENÇÃO: Isso remove metadados da stanza antiga."
             cat "$$error_file" >&2
             return 1
           fi
