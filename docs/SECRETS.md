@@ -1,8 +1,8 @@
 # Guia Completo de Secrets - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 16 de Janeiro de 2026  
-**Versão:** 7.0 - Lista consolidada e formatada
+**Data:** 17 de Janeiro de 2026  
+**Versão:** 7.1 - ACME obrigatório para TLS
 
 ## Visão geral
 
@@ -34,6 +34,7 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `GRAFANA_ADMIN_USER` | Usuário admin Grafana | ✅ |
 | `GRAFANA_ADMIN_PASSWORD` | Senha admin Grafana | ✅ |
 | `ERPNEXT_ADMIN_PASSWORD` | Senha admin ERPNext | ✅ |
+| `ACME_EMAIL` | Email Let's Encrypt (Caddy TLS) | ✅ |
 
 ## Secrets de observabilidade
 

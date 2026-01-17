@@ -692,8 +692,9 @@ fi
 # NOTA: Grafana Alerting usa GMAIL_USER para SMTP (NÃO ACME_EMAIL).
 # =============================================================================
 if [ -z "${ACME_EMAIL:-}" ]; then
-  echo "::warning::ACME_EMAIL não definido. Let's Encrypt não conseguirá emitir certificados SSL."
-  echo "   Configure o secret ACME_EMAIL com um email válido para receber avisos do Let's Encrypt."
+  echo "::error::ACME_EMAIL não definido. Let's Encrypt não conseguirá emitir certificados SSL." >&2
+  echo "Configure o secret ACME_EMAIL com um email válido para receber avisos do Let's Encrypt." >&2
+  exit 1
 fi
 
 # =============================================================================
