@@ -938,15 +938,6 @@ function mapModelNameToGpuModel(modelName: string): string {
   );
 }
 
-type OpenAIChatCompletionResponse = {
-  id: string;
-  model: string;
-  choices: Array<{
-    message?: { role: 'assistant'; content: string };
-    finish_reason?: string | null;
-  }>;
-};
-
 const DEFAULT_VISION_IMAGE_PROMPT =
   'Você é um assistente especializado em Trading, Finanças, Contabilidade e Matemática. ' +
   'Analise a imagem enviada. Se for um gráfico (candles, indicadores), descreva padrões, tendência, suportes/resistências, ' +

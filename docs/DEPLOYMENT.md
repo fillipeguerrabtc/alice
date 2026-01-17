@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 16 de Janeiro de 2026  
-**Versão:** 10.1 - Rollback com cleanup completo e seguro
+**Data:** 17 de Janeiro de 2026  
+**Versão:** 10.2 - Stanza reset seguro em repositório vazio
 
 ## Visão geral
 
@@ -132,6 +132,11 @@ O PostgreSQL foi reinitializado, mas o repositório de backup contém metadados 
 2. Reexecutar o deploy.
 
 **Observação:** O reset remove metadados de backups anteriores da stanza. Use apenas quando o reinit do banco for intencional.
+
+**Comportamento seguro adicional:**
+
+- Se o repositório **não possui backups** para a stanza (`/var/lib/pgbackrest/backup/<stanza>` vazio), o init container executa **reset automático** para destravar a criação da stanza.
+- Se **existirem backups**, o reset **continua bloqueado** e exige `PGBACKREST_ALLOW_STANZA_RESET=true`.
 
 ## Troubleshooting rápido
 

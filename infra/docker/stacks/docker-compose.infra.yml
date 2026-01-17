@@ -244,7 +244,7 @@ services:
       PGBACKREST_LOG_LEVEL_FILE: "off"
       PGBACKREST_STANZA: alice_prod
       # Se true, permite resetar stanza inconsistente (perda de metadados de backup)
-      PGBACKREST_ALLOW_STANZA_RESET: ${PGBACKREST_ALLOW_STANZA_RESET:-false}
+      STANZA_RESET_ALLOWED: ${PGBACKREST_ALLOW_STANZA_RESET:-false}
     volumes:
       - /opt/alice/backups/postgresql:/var/lib/pgbackrest:rw
       - postgres_data:/var/lib/postgresql/data:ro
@@ -254,9 +254,11 @@ services:
       - |
         set -eu
         STANZA="$$PGBACKREST_STANZA"
-        ALLOW_RESET="$$PGBACKREST_ALLOW_STANZA_RESET"
+        ALLOW_RESET="$$STANZA_RESET_ALLOWED"
         INFO_ERR="/tmp/pgbackrest_info.err"
         CREATE_ERR="/tmp/pgbackrest_create.err"
+        REPO_PATH="/var/lib/pgbackrest"
+        BACKUP_DIR="$$REPO_PATH/backup/$$STANZA"
         if [ -z "$$STANZA" ]; then
           STANZA="alice_prod"
         fi
@@ -270,10 +272,19 @@ services:
             exit 0
           fi
         fi
+        HAS_BACKUPS="false"
+        if [ -d "$$BACKUP_DIR" ]; then
+          if [ -n "$(ls -A "$$BACKUP_DIR" 2>/dev/null || true)" ]; then
+            HAS_BACKUPS="true"
+          fi
+        fi
         if grep -qE "ArchiveMismatchError|backup and archive info files exist" "$$INFO_ERR"; then
           echo "⚠️  Stanza '$$STANZA' inconsistente com o PostgreSQL atual."
           if [ "$$ALLOW_RESET" = "true" ]; then
             echo "🧹 Reset autorizado: removendo stanza '$$STANZA' (metadados de backup serão recriados)."
+            pgbackrest stanza-delete --stanza="$$STANZA" --force --log-level-console=info
+          elif [ "$$HAS_BACKUPS" = "false" ]; then
+            echo "🧹 Reset automático autorizado: repositório sem backups para '$$STANZA'."
             pgbackrest stanza-delete --stanza="$$STANZA" --force --log-level-console=info
           else
             echo "❌ Stanza inconsistente. Para resetar, defina PGBACKREST_ALLOW_STANZA_RESET=true."
@@ -289,6 +300,10 @@ services:
             echo "⚠️  Stanza '$$STANZA' inconsistente durante criação."
             if [ "$$ALLOW_RESET" = "true" ]; then
               echo "🧹 Reset autorizado: removendo stanza '$$STANZA' e recriando."
+              pgbackrest stanza-delete --stanza="$$STANZA" --force --log-level-console=info
+              pgbackrest stanza-create --stanza="$$STANZA" --no-online --log-level-console=info
+            elif [ "$$HAS_BACKUPS" = "false" ]; then
+              echo "🧹 Reset automático autorizado: repositório sem backups para '$$STANZA'."
               pgbackrest stanza-delete --stanza="$$STANZA" --force --log-level-console=info
               pgbackrest stanza-create --stanza="$$STANZA" --no-online --log-level-console=info
             else
