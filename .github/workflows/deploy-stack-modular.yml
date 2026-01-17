@@ -1436,71 +1436,6 @@ jobs:
             echo ""
             echo "✅ Validação do servidor de produção OK (GPU disponível)"
 
-      - name: Pre-deploy cleanup (força estado limpo)
-        uses: appleboy/ssh-action@v1.2.2
-        with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
-          command_timeout: 5m
-          script: |
-            set -euo pipefail
-            # =================================================================
-            # SEÇÃO 2.6: Pre-Deploy Cleanup (Mandatory)
-            # =================================================================
-            # PROBLEMA: Containers exited/dead de deploys anteriores acumulam
-            # SOLUÇÃO: Remover TODOS antes do novo deploy (fail-fast, estado limpo)
-            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 16 (Idempotência)
-            # =================================================================
-            echo "🧹 PRE-DEPLOY CLEANUP (Mandatory)"
-            echo "========================================"
-            
-            # Remover TODOS os containers exited (de qualquer stack)
-            echo "Removendo containers exited..."
-            EXITED=$(docker ps -a --filter "status=exited" -q | wc -l)
-            if [ $EXITED -gt 0 ]; then
-              docker ps -a --filter "status=exited" -q | xargs -r docker rm -f
-              echo "   ✅ Removidos $EXITED container(s) exited"
-            else
-              echo "   ✅ Nenhum container exited encontrado"
-            fi
-            
-            # Remover TODOS os containers dead (de qualquer stack)
-            echo "Removendo containers dead..."
-            DEAD=$(docker ps -a --filter "status=dead" -q | wc -l)
-            if [ $DEAD -gt 0 ]; then
-              docker ps -a --filter "status=dead" -q | xargs -r docker rm -f
-              echo "   ✅ Removidos $DEAD container(s) dead"
-            else
-              echo "   ✅ Nenhum container dead encontrado"
-            fi
-            
-            # Remover dangling images (economia de espaço)
-            echo "Removendo dangling images..."
-            DANGLING=$(docker images -f "dangling=true" -q | wc -l)
-            if [ $DANGLING -gt 0 ]; then
-              docker image prune -f
-              echo "   ✅ Removidas $DANGLING imagem(ns) dangling"
-            else
-              echo "   ✅ Nenhuma dangling image encontrada"
-            fi
-            
-            # Validação final
-            EXITED_FINAL=$(docker ps -a --filter "status=exited" -q | wc -l)
-            DEAD_FINAL=$(docker ps -a --filter "status=dead" -q | wc -l)
-            
-            if [ $EXITED_FINAL -eq 0 ] && [ $DEAD_FINAL -eq 0 ]; then
-              echo ""
-              echo "✅ Servidor limpo - ready for deploy"
-            else
-              echo ""
-              echo "⚠️  WARNING: $EXITED_FINAL exited + $DEAD_FINAL dead containers ainda presentes"
-              echo "Listando containers problemáticos:"
-              docker ps -a --filter "status=exited" --filter "status=dead" --format "table {{.Names}}\t{{.Status}}"
-            fi
-            echo "========================================"
-
       - name: Preparar infraestrutura base (networks, volumes, permissões)
         uses: appleboy/ssh-action@v1.2.2
         with:
@@ -2796,15 +2731,7 @@ jobs:
                 df -h /opt/alice 2>&1 || true
                 
                 echo ""
-                echo "🧹 Executando cleanup..."
-                cd /opt/alice/app/infra/docker/stacks
-                docker compose -p alice-infra --env-file ../.env.prod \
-                               -f docker-compose.base.yml \
-                               -f docker-compose.infra.yml \
-                               down --remove-orphans --timeout 30 2>&1 || true
-
-                echo "🧭 Cleanup profundo (volumes/imagens/redes) é responsabilidade do rollback-infra."
-                echo "✅ Cleanup básico concluído (containers removidos)"
+                echo "✅ Diagnósticos capturados. Cleanup será executado apenas no rollback."
               fi
             }
             
@@ -2936,46 +2863,6 @@ jobs:
             
             # Lista de containers que devem ficar healthy
             HEALTH_CONTAINERS="alice-postgres alice-redis alice-qdrant alice-caddy alice-minio alice-tor alice-searxng alice-pgbouncer"
-            
-            # =================================================================
-            # PRE-CLEANUP: Remover containers problemáticos do deploy anterior
-            # =================================================================
-            # PROBLEMA: Se deploy anterior falhou, containers podem estar:
-            #   - unhealthy: serviço não respondendo
-            #   - exited: processo terminou com erro
-            #   - dead: falha crítica
-            #
-            # SOLUÇÃO: Remover containers problemáticos ANTES do up
-            #   - Docker Compose vai recriá-los automaticamente
-            #   - Containers healthy são preservados (zero downtime)
-            #   - Volumes são SEMPRE preservados
-            #
-            # REF: CLAUDE.md Regra 6 (Enterprise-grade)
-            # =================================================================
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "🧹 PRE-CLEANUP: Verificando containers problemáticos..."
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            
-            # CORREÇÃO: Usar lista explícita de serviços do INFRA stack
-            # NÃO usar filtro genérico "alice-" que capturaria containers de outros stacks
-            INFRA_SERVICES="alice-postgres alice-redis alice-qdrant alice-caddy alice-minio alice-tor alice-searxng alice-pgbouncer alice-minio-init alice-pgbackrest-init"
-            PROBLEM_FOUND=false
-            
-            for svc in $INFRA_SERVICES; do
-              STATUS=$(docker inspect --format='{{.State.Status}}' $svc 2>/dev/null || echo "not_found")
-              HEALTH=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' $svc 2>/dev/null || echo "none")
-              
-              if [ "$STATUS" = "exited" ] || [ "$STATUS" = "dead" ] || [ "$HEALTH" = "unhealthy" ]; then
-                echo "⚠️  $svc: status=$STATUS health=$HEALTH → removendo"
-                docker rm -f $svc 2>/dev/null || true
-                PROBLEM_FOUND=true
-              fi
-            done
-            
-            if [ "$PROBLEM_FOUND" = "false" ]; then
-              echo "✅ Nenhum container problemático encontrado"
-            fi
-            echo ""
             
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "🚀 UP: Iniciando containers..."
@@ -3425,8 +3312,11 @@ jobs:
             echo "🧹 Stage 2: Force cleaning ALL INFRA containers..."
             INFRA_CONTAINERS=(
               "alice-postgres"
+              "alice-postgres-exporter"
               "alice-pgbouncer"
+              "alice-pgbouncer-exporter"
               "alice-redis"
+              "alice-redis-exporter"
               "alice-qdrant"
               "alice-tor"
               "alice-searxng"
@@ -3728,20 +3618,7 @@ jobs:
               local exit_code=$?
               if [ $exit_code -ne 0 ]; then
                 echo ""
-                echo "🚨 Deploy failed - executing automatic cleanup..."
-                cd /opt/alice/app/infra/docker/stacks
-                # =================================================================
-                # CORREÇÃO (12/01/2026): Timeout aumentado para GPU containers
-                # =================================================================
-                # PROBLEMA: GPU containers (17.6GB) precisam mais tempo para graceful shutdown
-                # SOLUÇÃO: 120s = margem adequada para stop + cleanup de containers GPU
-                # REF: Docker Compose best practices 2025, CLAUDE.md Regra 6
-                # =================================================================
-                docker compose -p alice-alice --env-file ../.env.prod \
-                               -f docker-compose.base.yml \
-                               -f docker-compose.alice.yml \
-                               down --remove-orphans --timeout 120 2>&1 || true
-                echo "✅ Cleanup completed"
+                echo "🚨 Deploy failed - cleanup será executado apenas no rollback."
               fi
             }
             trap cleanup_on_failure EXIT
@@ -3802,33 +3679,6 @@ jobs:
             docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile training pull gpu-trainer 2>&1 || echo "   ⚠️ gpu-trainer: pull falhou"
             
             echo "✅ Pull concluído"
-            echo ""
-
-            # =================================================================
-            # PRE-CLEANUP: Remover containers problemáticos do deploy anterior
-            # =================================================================
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "🧹 PRE-CLEANUP: Verificando containers problemáticos..."
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            
-            # Gate 2: Serviços Alice + containers GPU
-            ALICE_SERVICES="alice-auth alice-chat alice-rag alice-training alice-integrations alice-gpu-manager alice-frontend alice-observability gpu-llm gpu-embeddings gpu-asr gpu-trainer"
-            PROBLEM_FOUND=false
-            
-            for svc in $ALICE_SERVICES; do
-              STATUS=$(docker inspect --format='{{.State.Status}}' $svc 2>/dev/null || echo "not_found")
-              HEALTH=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' $svc 2>/dev/null || echo "none")
-              
-              if [ "$STATUS" = "exited" ] || [ "$STATUS" = "dead" ] || [ "$HEALTH" = "unhealthy" ]; then
-                echo "⚠️  $svc: status=$STATUS health=$HEALTH → removendo"
-                docker rm -f $svc 2>/dev/null || true
-                PROBLEM_FOUND=true
-              fi
-            done
-            
-            if [ "$PROBLEM_FOUND" = "false" ]; then
-              echo "✅ Nenhum container problemático encontrado"
-            fi
             echo ""
 
             # =================================================================
@@ -4281,13 +4131,7 @@ jobs:
               local exit_code=$?
               if [ $exit_code -ne 0 ]; then
                 echo ""
-                echo "🚨 Deploy failed - executing automatic cleanup..."
-                cd /opt/alice/app/infra/docker/stacks
-                docker compose -p alice-observability --env-file ../.env.prod \
-                               -f docker-compose.base.yml \
-                               -f docker-compose.observability.yml \
-                               down --remove-orphans --timeout 30 2>&1 || true
-                echo "✅ Cleanup completed"
+                echo "🚨 Deploy failed - cleanup será executado apenas no rollback."
               fi
             }
             trap cleanup_on_failure EXIT
@@ -4382,31 +4226,6 @@ jobs:
             echo ""
             
             # =================================================================
-            # PRE-CLEANUP: Remover containers problemáticos do deploy anterior
-            # =================================================================
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "🧹 PRE-CLEANUP: Verificando containers problemáticos..."
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            
-            OBS_SERVICES="prometheus grafana loki promtail jaeger alice-otel-collector alice-vector alice-clickhouse alice-cadvisor alice-node-exporter langfuse langfuse-worker alice-langfuse-db"
-            PROBLEM_FOUND=false
-            
-            for svc in $OBS_SERVICES; do
-              STATUS=$(docker inspect --format='{{.State.Status}}' $svc 2>/dev/null || echo "not_found")
-              HEALTH=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' $svc 2>/dev/null || echo "none")
-              
-              if [ "$STATUS" = "exited" ] || [ "$STATUS" = "dead" ] || [ "$HEALTH" = "unhealthy" ]; then
-                echo "⚠️  $svc: status=$STATUS health=$HEALTH → removendo"
-                docker rm -f $svc 2>/dev/null || true
-                PROBLEM_FOUND=true
-              fi
-            done
-            
-            if [ "$PROBLEM_FOUND" = "false" ]; then
-              echo "✅ Nenhum container problemático encontrado"
-            fi
-            echo ""
-
             # Deploy
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "🚀 UP: Iniciando containers..."
@@ -4834,13 +4653,7 @@ jobs:
               local exit_code=$?
               if [ $exit_code -ne 0 ]; then
                 echo ""
-                echo "🚨 Deploy failed - executing automatic cleanup..."
-                cd /opt/alice/app/infra/docker/stacks
-                docker compose -p alice-erpnext --env-file ../.env.prod \
-                               -f docker-compose.base.yml \
-                               -f docker-compose.erpnext.yml \
-                               down --remove-orphans --timeout 30 2>&1 || true
-                echo "✅ Cleanup completed"
+                echo "🚨 Deploy failed - cleanup será executado apenas no rollback."
               fi
             }
             trap cleanup_on_failure EXIT
@@ -4878,32 +4691,6 @@ jobs:
               exit 1
             fi
             echo "✅ Pull concluído"
-            echo ""
-
-            # =================================================================
-            # PRE-CLEANUP: Remover containers problemáticos do deploy anterior
-            # =================================================================
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "🧹 PRE-CLEANUP: Verificando containers problemáticos..."
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            
-            ERPNEXT_SERVICES="erpnext-backend erpnext-frontend erpnext-websocket erpnext-scheduler erpnext-worker-default erpnext-worker-short erpnext-worker-long erpnext-mariadb erpnext-redis-queue erpnext-redis-cache"
-            PROBLEM_FOUND=false
-            
-            for svc in $ERPNEXT_SERVICES; do
-              STATUS=$(docker inspect --format='{{.State.Status}}' $svc 2>/dev/null || echo "not_found")
-              HEALTH=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' $svc 2>/dev/null || echo "none")
-              
-              if [ "$STATUS" = "exited" ] || [ "$STATUS" = "dead" ] || [ "$HEALTH" = "unhealthy" ]; then
-                echo "⚠️  $svc: status=$STATUS health=$HEALTH → removendo"
-                docker rm -f $svc 2>/dev/null || true
-                PROBLEM_FOUND=true
-              fi
-            done
-            
-            if [ "$PROBLEM_FOUND" = "false" ]; then
-              echo "✅ Nenhum container problemático encontrado"
-            fi
             echo ""
 
             # Deploy
@@ -5280,13 +5067,7 @@ jobs:
               local exit_code=$?
               if [ $exit_code -ne 0 ]; then
                 echo ""
-                echo "🚨 Deploy failed - executing automatic cleanup..."
-                cd /opt/alice/app/infra/docker/stacks
-                docker compose -p alice-backup --env-file ../.env.prod \
-                               -f docker-compose.base.yml \
-                               -f docker-compose.backup.yml \
-                               down --remove-orphans --timeout 30 2>&1 || true
-                echo "✅ Cleanup completed"
+                echo "🚨 Deploy failed - cleanup será executado apenas no rollback."
               fi
             }
             trap cleanup_on_failure EXIT
@@ -5324,32 +5105,6 @@ jobs:
               exit 1
             fi
             echo "✅ Pull concluído"
-            echo ""
-
-            # =================================================================
-            # PRE-CLEANUP: Remover containers problemáticos do deploy anterior
-            # =================================================================
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "🧹 PRE-CLEANUP: Verificando containers problemáticos..."
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            
-            BACKUP_SERVICES="alice-pgbackrest"
-            PROBLEM_FOUND=false
-            
-            for svc in $BACKUP_SERVICES; do
-              STATUS=$(docker inspect --format='{{.State.Status}}' $svc 2>/dev/null || echo "not_found")
-              HEALTH=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' $svc 2>/dev/null || echo "none")
-              
-              if [ "$STATUS" = "exited" ] || [ "$STATUS" = "dead" ] || [ "$HEALTH" = "unhealthy" ]; then
-                echo "⚠️  $svc: status=$STATUS health=$HEALTH → removendo"
-                docker rm -f $svc 2>/dev/null || true
-                PROBLEM_FOUND=true
-              fi
-            done
-            
-            if [ "$PROBLEM_FOUND" = "false" ]; then
-              echo "✅ Nenhum container problemático encontrado"
-            fi
             echo ""
 
             # Deploy
