@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 17 de Janeiro de 2026  
-**Versão:** 10.2 - Stanza reset seguro em repositório vazio
+**Versão:** 10.3 - Cleanup INFRA remove volumes mesmo com outros stacks
 
 ## Visão geral
 
@@ -56,8 +56,9 @@ gh workflow run deploy-stack-modular.yml -f stack=erpnext -f version=v1.0.0 -f r
 ### Rollback automático e cleanup (INFRA)
 
 - Em falha de primeiro deploy (sem versão anterior), o rollback entra em modo **cleanup**.
-- O cleanup remove **containers** e, quando **nenhum outro stack** estiver ativo, remove também **volumes, imagens e redes** do stack INFRA.
-- Se houver outros stacks ativos, a limpeza completa é **bloqueada** para evitar impacto nos serviços em produção.
+- O cleanup remove **containers**, **volumes** e **imagens** do stack INFRA.
+- Redes compartilhadas são removidas **somente** quando não há containers anexados.
+- Outros stacks não são removidos, mas podem perder dependências se INFRA for limpo.
 
 ## Primeiro deploy (servidor limpo)
 

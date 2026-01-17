@@ -256,6 +256,7 @@ services:
         STANZA="$$PGBACKREST_STANZA"
         ALLOW_RESET="$$STANZA_RESET_ALLOWED"
         INFO_ERR="/tmp/pgbackrest_info.err"
+        INFO_OUT="/tmp/pgbackrest_info.txt"
         CREATE_ERR="/tmp/pgbackrest_create.err"
         REPO_PATH="/var/lib/pgbackrest"
         BACKUP_DIR="$$REPO_PATH/backup/$$STANZA"
@@ -265,56 +266,66 @@ services:
         if [ -z "$$ALLOW_RESET" ]; then
           ALLOW_RESET="false"
         fi
+        BACKUP_DIR="$$REPO_PATH/backup/$$STANZA"
+        MISMATCH_REGEX="ArchiveMismatchError|backup and archive info files exist|do not match the database"
+
+        has_real_backups() {
+          if [ -d "$$BACKUP_DIR" ]; then
+            if ls "$$BACKUP_DIR"/*/backup.manifest* >/dev/null 2>&1; then
+              return 0
+            fi
+          fi
+          return 1
+        }
+
+        handle_stanza_mismatch() {
+          local error_file="$$1"
+          local origin="$$2"
+          local has_real="false"
+          if has_real_backups; then
+            has_real="true"
+          fi
+          echo "⚠️  Stanza '$$STANZA' inconsistente (origem: $$origin)."
+          if [ "$$ALLOW_RESET" = "true" ]; then
+            echo "🧹 Reset autorizado: removendo stanza '$$STANZA' (metadados serão recriados)."
+          elif [ "$$has_real" = "false" ]; then
+            echo "🧹 Reset automático autorizado: repositório sem backups reais para '$$STANZA'."
+          else
+            echo "❌ Stanza inconsistente com backups reais. Reset bloqueado."
+            echo "   Para resetar, defina PGBACKREST_ALLOW_STANZA_RESET=true."
+            cat "$$error_file" >&2
+            return 1
+          fi
+          pgbackrest stanza-delete --stanza="$$STANZA" --force --log-level-console=info || true
+          return 0
+        }
+
         echo "🔍 Verificando se stanza '$$STANZA' já existe..."
-        if pgbackrest info --stanza="$$STANZA" > /tmp/pgbackrest_info.txt 2> "$$INFO_ERR"; then
-          if grep -q "status: ok" /tmp/pgbackrest_info.txt; then
+        if pgbackrest info --stanza="$$STANZA" > "$$INFO_OUT" 2> "$$INFO_ERR"; then
+          if grep -q "status: ok" "$$INFO_OUT"; then
             echo "✅ Stanza '$$STANZA' já existe e está OK"
             exit 0
           fi
-        fi
-        HAS_BACKUPS="false"
-        HAS_REAL_BACKUPS="false"
-        if [ -d "$$BACKUP_DIR" ]; then
-          if [ -n "$(ls -A "$$BACKUP_DIR" 2>/dev/null || true)" ]; then
-            HAS_BACKUPS="true"
-          fi
-          if ls "$$BACKUP_DIR"/*/backup.manifest* >/dev/null 2>&1; then
-            HAS_REAL_BACKUPS="true"
-          fi
-        fi
-        if grep -qE "ArchiveMismatchError|backup and archive info files exist" "$$INFO_ERR"; then
-          echo "⚠️  Stanza '$$STANZA' inconsistente com o PostgreSQL atual."
-          if [ "$$ALLOW_RESET" = "true" ]; then
-            echo "🧹 Reset autorizado: removendo stanza '$$STANZA' (metadados de backup serão recriados)."
-            pgbackrest stanza-delete --stanza="$$STANZA" --force --log-level-console=info
-          elif [ "$$HAS_REAL_BACKUPS" = "false" ]; then
-            echo "🧹 Reset automático autorizado: repositório sem backups reais para '$$STANZA'."
-            pgbackrest stanza-delete --stanza="$$STANZA" --force --log-level-console=info
-          else
-            echo "❌ Stanza inconsistente. Para resetar, defina PGBACKREST_ALLOW_STANZA_RESET=true."
+        else
+          if grep -qE "$$MISMATCH_REGEX" "$$INFO_ERR"; then
+            if ! handle_stanza_mismatch "$$INFO_ERR" "info"; then
+              exit 1
+            fi
+          elif [ -s "$$INFO_ERR" ]; then
             cat "$$INFO_ERR" >&2
             exit 1
           fi
         fi
+
         echo "📦 Criando stanza '$$STANZA' (modo offline - postgres já está healthy)..."
         # --no-online: Cria stanza sem verificar cluster via SSH/TCP
         # Seguro porque depends_on já garante postgres:service_healthy
         if ! pgbackrest stanza-create --stanza="$$STANZA" --no-online --log-level-console=info 2> "$$CREATE_ERR"; then
-          if grep -qE "ArchiveMismatchError|backup and archive info files exist" "$$CREATE_ERR"; then
-            echo "⚠️  Stanza '$$STANZA' inconsistente durante criação."
-            if [ "$$ALLOW_RESET" = "true" ]; then
-              echo "🧹 Reset autorizado: removendo stanza '$$STANZA' e recriando."
-              pgbackrest stanza-delete --stanza="$$STANZA" --force --log-level-console=info
-              pgbackrest stanza-create --stanza="$$STANZA" --no-online --log-level-console=info
-            elif [ "$$HAS_REAL_BACKUPS" = "false" ]; then
-              echo "🧹 Reset automático autorizado: repositório sem backups reais para '$$STANZA'."
-              pgbackrest stanza-delete --stanza="$$STANZA" --force --log-level-console=info
-              pgbackrest stanza-create --stanza="$$STANZA" --no-online --log-level-console=info
-            else
-              echo "❌ Stanza inconsistente. Para resetar, defina PGBACKREST_ALLOW_STANZA_RESET=true."
-              cat "$$CREATE_ERR" >&2
+          if grep -qE "$$MISMATCH_REGEX" "$$CREATE_ERR"; then
+            if ! handle_stanza_mismatch "$$CREATE_ERR" "create"; then
               exit 1
             fi
+            pgbackrest stanza-create --stanza="$$STANZA" --no-online --log-level-console=info
           else
             cat "$$CREATE_ERR" >&2
             exit 1
