@@ -199,6 +199,7 @@ Retenção Arquivo:   30 dias
 - Página enterprise de Configuração da Alice (system prompt, comportamento e humor).
 - Validação do SSE `/api/chat/stream` antes de iniciar o streaming (evita erro de headers enviados).
 - Incremento atômico de `totalMensagens` em streams concorrentes (evita perda de contagem).
+- Upsert atômico em `/api/assistant-settings` para evitar conflito em concorrência.
 
 ---
 

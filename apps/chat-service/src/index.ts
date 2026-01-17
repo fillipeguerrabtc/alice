@@ -5116,10 +5116,6 @@ app.patch('/api/assistant-settings', requireAuth(), requireSameTenant(getTenantI
   }
 
   try {
-    const existing = await db.query.assistantSettings.findFirst({
-      where: eq(schema.assistantSettings.tenantId, tenantId),
-    });
-
     const payload = {
       systemPrompt: parseResult.data.systemPrompt?.trim() || null,
       behavior: parseResult.data.behavior?.trim() || null,
@@ -5127,21 +5123,19 @@ app.patch('/api/assistant-settings', requireAuth(), requireSameTenant(getTenantI
       updatedBy: userId,
     };
 
-    if (existing) {
-      const [updated] = await db.update(schema.assistantSettings)
-        .set(payload)
-        .where(eq(schema.assistantSettings.id, existing.id))
-        .returning();
-      return res.json({ settings: updated });
-    }
+    const [settings] = await db.insert(schema.assistantSettings)
+      .values({
+        tenantId,
+        createdBy: userId,
+        ...payload,
+      })
+      .onConflictDoUpdate({
+        target: schema.assistantSettings.tenantId,
+        set: payload,
+      })
+      .returning();
 
-    const [created] = await db.insert(schema.assistantSettings).values({
-      tenantId,
-      createdBy: userId,
-      ...payload,
-    }).returning();
-
-    res.json({ settings: created });
+    res.json({ settings });
   } catch (error) {
     logger.error({ error, tenantId }, 'Falha ao atualizar assistant_settings');
     res.status(500).json({ error: 'Erro interno do servidor' });
