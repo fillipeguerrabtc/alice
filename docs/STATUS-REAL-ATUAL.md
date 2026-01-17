@@ -204,6 +204,7 @@ Retenção Arquivo:   30 dias
 - pgBackRest: captura stderr+stdout no stanza-create para detectar mismatch.
 - pgBackRest: stanza-delete com `--force --force` no reset controlado.
 - pgBackRest: stop file + limpeza de metadados no reset automático.
+- ERPNext: mysqld_exporter usa .my.cnf gerado em runtime com usuário dedicado.
 
 ---
 

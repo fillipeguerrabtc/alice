@@ -833,7 +833,20 @@ services:
       - no-new-privileges:true
     environment:
       # Least privilege: usuário dedicado criado via init script do MariaDB (infra/erpnext/mariadb-init)
-      DATA_SOURCE_NAME: "${ERPNEXT_MYSQL_EXPORTER_USER:-erpnext_exporter}:${ERPNEXT_MYSQL_EXPORTER_PASSWORD}@(erpnext-mariadb:3306)/"
+      ERPNEXT_MYSQL_EXPORTER_USER: ${ERPNEXT_MYSQL_EXPORTER_USER:-erpnext_exporter}
+      ERPNEXT_MYSQL_EXPORTER_PASSWORD: ${ERPNEXT_MYSQL_EXPORTER_PASSWORD:?ERPNEXT_MYSQL_EXPORTER_PASSWORD obrigatorio}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        cat > /tmp/my.cnf <<EOF
+        [client]
+        user=${ERPNEXT_MYSQL_EXPORTER_USER}
+        password=${ERPNEXT_MYSQL_EXPORTER_PASSWORD}
+        host=erpnext-mariadb
+        port=3306
+        EOF
+        exec /bin/mysqld_exporter --config.my-cnf=/tmp/my.cnf --mysqld.address=erpnext-mariadb:3306
     networks:
       - erpnext-network
       - alice-network
