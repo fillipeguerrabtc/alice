@@ -267,7 +267,7 @@ services:
           ALLOW_RESET="false"
         fi
         BACKUP_DIR="$$REPO_PATH/backup/$$STANZA"
-        MISMATCH_REGEX="ArchiveMismatchError|backup and archive info files exist|do not match the database"
+        MISMATCH_REGEX="ArchiveMismatchError|backup and archive info files exist|archive\.info exists but backup\.info is missing|do not match the database"
 
         has_real_backups() {
           if [ -d "$$BACKUP_DIR" ]; then

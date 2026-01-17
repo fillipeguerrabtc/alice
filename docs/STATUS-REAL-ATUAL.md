@@ -200,6 +200,7 @@ Retenção Arquivo:   30 dias
 - Validação do SSE `/api/chat/stream` antes de iniciar o streaming (evita erro de headers enviados).
 - Incremento atômico de `totalMensagens` em streams concorrentes (evita perda de contagem).
 - Upsert atômico em `/api/assistant-settings` para evitar conflito em concorrência.
+- pgBackRest: reset controlado quando `archive.info` existe sem `backup.info`.
 
 ---
 
