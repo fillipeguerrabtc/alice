@@ -28,10 +28,11 @@
 	# SINTAXE CORRETA: {$VAR:default} - usa default se VAR vazio
 	# A opção 'email' precisa de valor no STARTUP para registro ACME
 	# 
-	# Email obrigatório: ACME_EMAIL deve estar definido em produção
+	# Email obrigatório em produção (ACME_EMAIL)
+	# Fallback garante validação do Caddyfile em CI sem envs
 	# Ref: https://caddyserver.com/docs/caddyfile/concepts#environment-variables
 	# =================================================================
-	email {$ACME_EMAIL}
+	email {$ACME_EMAIL:admin@yesyoudeserve.duckdns.org}
 	
 	# Produção - Let's Encrypt oficial
 	# NOTA: Caddy automaticamente usa staging para domínios localhost/local
