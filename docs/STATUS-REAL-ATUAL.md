@@ -202,6 +202,7 @@ Retenção Arquivo:   30 dias
 - Upsert atômico em `/api/assistant-settings` para evitar conflito em concorrência.
 - pgBackRest: reset controlado quando `archive.info` existe sem `backup.info`.
 - pgBackRest: captura stderr+stdout no stanza-create para detectar mismatch.
+- pgBackRest: stanza-delete com `--force --force` no reset controlado.
 
 ---
 

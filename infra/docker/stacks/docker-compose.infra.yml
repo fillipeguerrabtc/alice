@@ -303,7 +303,7 @@ services:
             cat "$$error_file" >&2
             return 1
           fi
-          pgbackrest stanza-delete --stanza="$$STANZA" --force --log-level-console=info || true
+          pgbackrest stanza-delete --stanza="$$STANZA" --force --force --log-level-console=info || true
           return 0
         }
 
