@@ -327,7 +327,7 @@ services:
         echo "📦 Criando stanza '$$STANZA' (modo offline - postgres já está healthy)..."
         # --no-online: Cria stanza sem verificar cluster via SSH/TCP
         # Seguro porque depends_on já garante postgres:service_healthy
-        if ! pgbackrest stanza-create --stanza="$$STANZA" --no-online --log-level-console=info 2> "$$CREATE_ERR"; then
+        if ! pgbackrest stanza-create --stanza="$$STANZA" --no-online --log-level-console=info > "$$CREATE_ERR" 2>&1; then
           if grep -qE "$$MISMATCH_REGEX" "$$CREATE_ERR"; then
             if ! handle_stanza_mismatch "$$CREATE_ERR" "create"; then
               exit 1

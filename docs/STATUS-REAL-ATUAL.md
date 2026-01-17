@@ -201,6 +201,7 @@ Retenção Arquivo:   30 dias
 - Incremento atômico de `totalMensagens` em streams concorrentes (evita perda de contagem).
 - Upsert atômico em `/api/assistant-settings` para evitar conflito em concorrência.
 - pgBackRest: reset controlado quando `archive.info` existe sem `backup.info`.
+- pgBackRest: captura stderr+stdout no stanza-create para detectar mismatch.
 
 ---
 
