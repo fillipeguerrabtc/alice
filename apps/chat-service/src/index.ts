@@ -2732,7 +2732,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
               await db.update(schema.conversations)
                 .set({
-                  totalMensagens: (conversation?.totalMensagens || 0) + 2,
+                  totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
                   ultimaMensagemEm: new Date(),
                   atualizadoEm: new Date(),
                 })
@@ -2742,7 +2742,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             } else {
               await db.update(schema.conversations)
                 .set({
-                  totalMensagens: (conversation?.totalMensagens || 0) + 1,
+                  totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 1`,
                   ultimaMensagemEm: new Date(),
                   atualizadoEm: new Date(),
                 })
