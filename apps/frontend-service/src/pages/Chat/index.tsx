@@ -367,6 +367,7 @@ export default function Chat() {
   const [deleteSelectedOpen, setDeleteSelectedOpen] = useState(false);
   const [deleteAllOpen, setDeleteAllOpen] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [isRecordingStarting, setIsRecordingStarting] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -377,6 +378,7 @@ export default function Chat() {
   const recordingSendModeRef = useRef<'review' | 'direct'>('review');
   const pendingMediaRef = useRef<MediaAttachment[]>([]);
   const inputRef = useRef('');
+  const recordingStartingRef = useRef(false);
 
   // Fechar drawer mobile ao mudar de conversa
   useEffect(() => {
@@ -392,6 +394,11 @@ export default function Chat() {
   useEffect(() => {
     inputRef.current = input;
   }, [input]);
+
+  const setRecordingStartingState = useCallback((value: boolean) => {
+    recordingStartingRef.current = value;
+    setIsRecordingStarting(value);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -705,11 +712,13 @@ export default function Chat() {
   }, [resolveRecordingExtension, sendRecordingDirect, t, toast, uploadAudioForReview]);
 
   const handleStartRecording = useCallback(async () => {
-    if (isStreaming) {
+    if (isStreaming || isRecording || recordingStartingRef.current) {
       return;
     }
+    setRecordingStartingState(true);
 
     if (!navigator.mediaDevices?.getUserMedia) {
+      setRecordingStartingState(false);
       toast({
         title: t('chat.recordingUnsupported'),
         description: t('chat.recordingUnsupportedDesc'),
@@ -720,6 +729,18 @@ export default function Chat() {
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (recordingUnmountedRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        setRecordingStartingState(false);
+        return;
+      }
+      if (recordingStreamRef.current) {
+        recordingStreamRef.current.getTracks().forEach((track) => track.stop());
+        recordingStreamRef.current = null;
+      }
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
       const mimeType = resolveRecordingMimeType();
       const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
 
@@ -735,6 +756,7 @@ export default function Chat() {
 
       recorder.onerror = (event) => {
         frontendLogger.error('Falha ao gravar áudio', { error: event });
+        setRecordingStartingState(false);
         recordingCancelledRef.current = true;
         recorder.stop();
       };
@@ -745,15 +767,17 @@ export default function Chat() {
 
       recorder.start();
       setIsRecording(true);
+      setRecordingStartingState(false);
     } catch (error) {
       frontendLogger.error('Permissão negada ou erro ao iniciar gravação', { error });
+      setRecordingStartingState(false);
       toast({
         title: t('chat.recordingPermissionDenied'),
         description: t('chat.recordingPermissionDeniedDesc'),
         variant: 'destructive',
       });
     }
-  }, [finalizeRecording, isStreaming, resolveRecordingMimeType, t, toast]);
+  }, [finalizeRecording, isRecording, isStreaming, resolveRecordingMimeType, setRecordingStartingState, t, toast]);
 
   const handleStopRecordingReview = useCallback(() => {
     if (!isRecording) return;
@@ -1633,7 +1657,7 @@ export default function Chat() {
             pendingMedia={pendingMedia}
             isStreaming={isStreaming}
             isRecording={isRecording}
-            isRecordingDisabled={isStreaming}
+            isRecordingDisabled={isStreaming || isRecording || isRecordingStarting}
             isMobile={isMobile}
             acceptedTypes={[...ACCEPTED_TYPES.image, ...ACCEPTED_TYPES.audio].join(',')}
           />
