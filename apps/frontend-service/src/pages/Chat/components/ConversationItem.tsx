@@ -38,7 +38,7 @@ export function ConversationItem({
       variants={itemVariants}
       onClick={onClick}
       className={cn(
-        'w-full text-left p-3 rounded-lg transition-colors hover-elevate',
+        'group w-full text-left p-3 rounded-lg transition-colors hover-elevate',
         isActive ? 'bg-accent' : 'hover:bg-muted/50'
       )}
       data-testid={`conversation-item-${conversation.id}`}

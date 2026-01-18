@@ -769,7 +769,7 @@ export default function Chat() {
                 }
 
                 if (parsed.type === 'generated_image') {
-                  const serverMessage = parsed.message as {
+                  const serverMessage = (parsed.message && typeof parsed.message === 'object' ? parsed.message : {}) as {
                     id?: string;
                     conteudo?: string | null;
                     criadoEm?: string | null;

@@ -75,6 +75,15 @@ export const chatServicePaths = {
     },
   },
   '/api/chat/conversations/{id}': {
+    get: {
+      summary: 'Buscar conversa',
+      tags: ['Chat'],
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+      responses: {
+        200: { description: 'Dados da conversa' },
+        404: { $ref: '#/components/responses/NotFound' },
+      },
+    },
     delete: {
       tags: ['Chat'],
       summary: 'Excluir conversa (soft delete)',
@@ -170,23 +179,6 @@ export const chatServicePaths = {
           },
         },
       },
-    },
-  },
-  '/api/chat/conversations/{id}': {
-    get: {
-      summary: 'Buscar conversa',
-      tags: ['Chat'],
-      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
-      responses: {
-        200: { description: 'Dados da conversa' },
-        404: { $ref: '#/components/responses/NotFound' },
-      },
-    },
-    delete: {
-      summary: 'Arquivar conversa',
-      tags: ['Chat'],
-      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
-      responses: { 204: { description: 'Conversa arquivada' } },
     },
   },
   '/api/chat/conversations/{id}/messages': {
