@@ -3633,7 +3633,12 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         },
       }).returning();
 
-      conversation = created;
+      const createdWithAgent = await db.query.conversations.findFirst({
+        where: eq(schema.conversations.id, created.id),
+        with: { agent: true },
+      });
+
+      conversation = createdWithAgent || created;
       conversationId = created.id;
       conversationCreated = true;
     }
@@ -3735,7 +3740,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       const lastUserInHistory = lastUserIndex >= 0 ? previousMessages[lastUserIndex] : undefined;
       if (lastUserInHistory?.conteudo &&
           normalizeContent(lastUserInHistory.conteudo) === normalizeContent(lastUserMessageContent)) {
-        const assistantAfterLastUser = previousMessages.find((msg, idx) => idx > lastUserIndex && !msg.isFromUser);
+        const assistantAfterLastUser = previousMessages.find((msg, idx) => idx < lastUserIndex && !msg.isFromUser);
         if (assistantAfterLastUser?.conteudo) {
           const reuseSeed = `${tenantId}:${lastUserMessageContent}:${assistantAfterLastUser.id}`;
           const reuseResponse = buildReuseResponse(assistantAfterLastUser.conteudo, reuseSeed);
