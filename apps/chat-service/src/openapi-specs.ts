@@ -75,6 +75,104 @@ export const chatServicePaths = {
     },
   },
   '/api/chat/conversations/{id}': {
+    delete: {
+      tags: ['Chat'],
+      summary: 'Excluir conversa (soft delete)',
+      description: 'Marca a conversa como deleted e remove as mensagens associadas.',
+      parameters: [
+        {
+          name: 'id',
+          in: 'path',
+          required: true,
+          schema: { type: 'string', format: 'uuid' },
+        },
+      ],
+      responses: {
+        '200': {
+          description: 'Conversa excluída',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  success: { type: 'boolean' },
+                  conversationId: { type: 'string', format: 'uuid' },
+                },
+              },
+            },
+          },
+        },
+        '404': { description: 'Conversa não encontrada' },
+      },
+    },
+  },
+  '/api/chat/conversations/bulk-delete': {
+    post: {
+      tags: ['Chat'],
+      summary: 'Excluir conversas em lote',
+      description: 'Marca as conversas como deleted e remove as mensagens associadas.',
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                ids: {
+                  type: 'array',
+                  items: { type: 'string', format: 'uuid' },
+                  minItems: 1,
+                  maxItems: 200,
+                },
+              },
+              required: ['ids'],
+            },
+          },
+        },
+      },
+      responses: {
+        '200': {
+          description: 'Conversas excluídas',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  success: { type: 'boolean' },
+                  deleted: { type: 'number' },
+                  skipped: { type: 'number' },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+  '/api/chat/conversations/delete-all': {
+    post: {
+      tags: ['Chat'],
+      summary: 'Excluir todas as conversas do usuário',
+      description: 'Marca todas as conversas do usuário como deleted e remove as mensagens associadas.',
+      responses: {
+        '200': {
+          description: 'Conversas excluídas',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  success: { type: 'boolean' },
+                  deleted: { type: 'number' },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+  '/api/chat/conversations/{id}': {
     get: {
       summary: 'Buscar conversa',
       tags: ['Chat'],

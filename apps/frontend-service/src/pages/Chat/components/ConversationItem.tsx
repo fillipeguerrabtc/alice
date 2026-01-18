@@ -5,7 +5,7 @@
  */
 
 import { motion } from 'framer-motion';
-import { MessageSquare } from 'lucide-react';
+import { MessageSquare, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Conversation } from './types';
 
@@ -17,13 +17,21 @@ const itemVariants = {
 interface ConversationItemProps {
   conversation: Conversation;
   isActive: boolean;
+  isSelectionMode?: boolean;
+  isSelected?: boolean;
   onClick: () => void;
+  onToggleSelect?: () => void;
+  onDelete?: () => void;
 }
 
 export function ConversationItem({ 
   conversation, 
   isActive, 
-  onClick 
+  isSelectionMode = false,
+  isSelected = false,
+  onClick,
+  onToggleSelect,
+  onDelete,
 }: ConversationItemProps) {
   return (
     <motion.button
@@ -36,10 +44,36 @@ export function ConversationItem({
       data-testid={`conversation-item-${conversation.id}`}
     >
       <div className="flex items-center gap-2 mb-1">
+        {isSelectionMode && (
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={(event) => {
+              event.stopPropagation();
+              onToggleSelect?.();
+            }}
+            onClick={(event) => event.stopPropagation()}
+            className="h-4 w-4 accent-primary"
+            aria-label="Selecionar conversa"
+          />
+        )}
         <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
-        <span className="font-medium text-sm truncate">
+        <span className="font-medium text-sm truncate flex-1">
           {conversation.titulo || 'Nova Conversa'}
         </span>
+        {!isSelectionMode && (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onDelete?.();
+            }}
+            className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+            aria-label="Excluir conversa"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        )}
       </div>
       <p className="text-xs text-muted-foreground">
         {new Date(conversation.criadoEm).toLocaleDateString('pt-BR', {

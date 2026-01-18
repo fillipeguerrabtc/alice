@@ -62,7 +62,7 @@ import {
   validateAgentTenantConsistency,
 } from '@alice/shared-utils';
 import type { Role } from '@alice/shared-utils';
-import { eq, desc, inArray, and, or, lt, sql } from '@alice/database';
+import { eq, desc, inArray, and, or, lt, sql, not } from '@alice/database';
 import { z } from 'zod';
 import { ProxyAgent } from 'undici';
 import type { Dispatcher } from 'undici';
@@ -675,14 +675,22 @@ const IMAGE_KEYWORDS_PT = [
   'gere uma imagem',
   'crie uma imagem',
   'faça uma imagem',
+  'gera uma imagem',
+  'cria uma imagem',
+  'faz uma imagem',
   'desenhe',
   'ilustre',
   'gerar imagem',
   'criar imagem',
   'fazer imagem',
+  'gerar uma imagem',
+  'criar uma imagem',
+  'fazer uma imagem',
   'quero uma imagem',
   'preciso de uma imagem',
   'pode criar uma imagem',
+  'pode gerar uma imagem',
+  'pode fazer uma imagem',
   'gere um',
   'crie um',
   'desenha',
@@ -693,6 +701,10 @@ const IMAGE_KEYWORDS_PT = [
   'criar uma foto',
   'gerar uma ilustração',
   'criar uma ilustração',
+  'gere uma foto',
+  'crie uma foto',
+  'gere uma ilustração',
+  'crie uma ilustração',
 ];
 
 const IMAGE_KEYWORDS_EN = [
@@ -2305,8 +2317,7 @@ async function proxyStreamFromGpuManager(
     
     // CORREÇÃO 13/01/2026: Retornar mensagem amigável ao invés de crashar
     // GPU pode estar reiniciando após correção de bugs (ex: vLLM profile_run crash)
-    const errorMessage = 'Desculpe, o serviço de IA está temporariamente indisponível. ' +
-      'Nossos servidores de GPU estão sendo reiniciados após manutenção. ' +
+    const errorMessage = 'Desculpe, o serviço de LLM está temporariamente indisponível. ' +
       'Por favor, tente novamente em alguns minutos.';
     
     // Enviar mensagem de erro via chunk callback
@@ -3233,6 +3244,14 @@ const conversationListQuerySchema = z.object({
   cursorId: z.string().uuid().optional(),
 });
 
+const conversationDeleteParamsSchema = z.object({
+  id: z.string().uuid(),
+});
+
+const conversationBulkDeleteSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1).max(200),
+});
+
 app.get('/api/chat/conversations', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:conversations:read'), async (req: Request, res: Response) => {
   // SEGURANÇA: Usar req.user populado pelo middleware ao invés de header direto
   const auth = req.user;
@@ -3262,6 +3281,7 @@ app.get('/api/chat/conversations', requireAuth(), requireSameTenant(getTenantIdF
     const baseFilters = [
       eq(schema.conversations.userId, userId),
       tenantId ? eq(schema.conversations.tenantId, tenantId) : undefined,
+      not(eq(schema.conversations.status, 'deleted')),
     ].filter(Boolean);
 
     const cursorFilters = cursorUpdatedAt && cursorId
@@ -3310,6 +3330,132 @@ app.get('/api/chat/conversations', requireAuth(), requireSameTenant(getTenantIdF
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
+
+app.delete(
+  '/api/chat/conversations/:id',
+  requireAuth(),
+  requireSameTenant(getTenantIdFromRequest),
+  requirePermission('chat:conversations:delete'),
+  async (req: Request, res: Response) => {
+    const paramsResult = conversationDeleteParamsSchema.safeParse(req.params);
+    if (!paramsResult.success) {
+      return res.status(400).json({ error: 'ID de conversa inválido', details: paramsResult.error.format() });
+    }
+
+    const userId = req.user?.userId;
+    const tenantId = req.tenantId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Autenticação necessária' });
+    }
+
+    const { id } = paramsResult.data;
+    try {
+      const conversation = await db.query.conversations.findFirst({
+        where: and(
+          eq(schema.conversations.id, id),
+          eq(schema.conversations.userId, userId),
+          tenantId ? eq(schema.conversations.tenantId, tenantId) : undefined
+        ),
+      });
+
+      if (!conversation) {
+        return res.status(404).json({ error: 'Conversa não encontrada' });
+      }
+
+      await db.delete(schema.messages).where(eq(schema.messages.conversationId, id));
+      await db.update(schema.conversations)
+        .set({ status: 'deleted', atualizadoEm: new Date() })
+        .where(eq(schema.conversations.id, id));
+
+      res.json({ success: true, conversationId: id });
+    } catch (error) {
+      logger.error({ error, conversationId: id }, 'Falha ao excluir conversa');
+      res.status(500).json({ error: 'Erro interno do servidor' });
+    }
+  }
+);
+
+app.post(
+  '/api/chat/conversations/bulk-delete',
+  requireAuth(),
+  requireSameTenant(getTenantIdFromRequest),
+  requirePermission('chat:conversations:delete'),
+  async (req: Request, res: Response) => {
+    const bodyResult = conversationBulkDeleteSchema.safeParse(req.body);
+    if (!bodyResult.success) {
+      return res.status(400).json({ error: 'Input inválido', details: bodyResult.error.format() });
+    }
+
+    const userId = req.user?.userId;
+    const tenantId = req.tenantId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Autenticação necessária' });
+    }
+
+    const ids = bodyResult.data.ids;
+    try {
+      const conversations = await db.query.conversations.findMany({
+        where: and(
+          inArray(schema.conversations.id, ids),
+          eq(schema.conversations.userId, userId),
+          tenantId ? eq(schema.conversations.tenantId, tenantId) : undefined
+        ),
+      });
+      const allowedIds = conversations.map((conv) => conv.id);
+      if (allowedIds.length === 0) {
+        return res.json({ success: true, deleted: 0, skipped: ids.length });
+      }
+
+      await db.delete(schema.messages).where(inArray(schema.messages.conversationId, allowedIds));
+      await db.update(schema.conversations)
+        .set({ status: 'deleted', atualizadoEm: new Date() })
+        .where(inArray(schema.conversations.id, allowedIds));
+
+      res.json({ success: true, deleted: allowedIds.length, skipped: ids.length - allowedIds.length });
+    } catch (error) {
+      logger.error({ error }, 'Falha ao excluir conversas em lote');
+      res.status(500).json({ error: 'Erro interno do servidor' });
+    }
+  }
+);
+
+app.post(
+  '/api/chat/conversations/delete-all',
+  requireAuth(),
+  requireSameTenant(getTenantIdFromRequest),
+  requirePermission('chat:conversations:delete'),
+  async (req: Request, res: Response) => {
+    const userId = req.user?.userId;
+    const tenantId = req.tenantId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Autenticação necessária' });
+    }
+
+    try {
+      const conversations = await db.query.conversations.findMany({
+        where: and(
+          eq(schema.conversations.userId, userId),
+          tenantId ? eq(schema.conversations.tenantId, tenantId) : undefined,
+          not(eq(schema.conversations.status, 'deleted'))
+        ),
+      });
+      const ids = conversations.map((conv) => conv.id);
+      if (ids.length === 0) {
+        return res.json({ success: true, deleted: 0 });
+      }
+
+      await db.delete(schema.messages).where(inArray(schema.messages.conversationId, ids));
+      await db.update(schema.conversations)
+        .set({ status: 'deleted', atualizadoEm: new Date() })
+        .where(inArray(schema.conversations.id, ids));
+
+      res.json({ success: true, deleted: ids.length });
+    } catch (error) {
+      logger.error({ error }, 'Falha ao excluir todas as conversas do usuário');
+      res.status(500).json({ error: 'Erro interno do servidor' });
+    }
+  }
+);
 
 // ============================================================================
 // SCHEMAS ZOD PARA WEBSOCKET (OWASP API3 - Input Validation Enterprise)
@@ -4335,12 +4481,16 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         res.end();
         return;
       } catch (imageError) {
+        const resolvedError = imageError instanceof Error ? imageError.message : String(imageError);
         logger.error({
-          errorMessage: imageError instanceof Error ? imageError.message : String(imageError),
+          errorMessage: resolvedError,
           stack: imageError instanceof Error ? imageError.stack : undefined,
           conversationId,
         }, 'Falha ao gerar imagem via OpenAI (stream)');
-        res.write(`data: ${JSON.stringify({ error: 'Falha ao gerar imagem via OpenAI.' })}\n\n`);
+        res.write(`data: ${JSON.stringify({
+          error: 'Falha ao gerar imagem via OpenAI. Verifique a configuração e tente novamente.',
+          code: 'OPENAI_IMAGE_ERROR',
+        })}\n\n`);
         res.end();
         return;
       }

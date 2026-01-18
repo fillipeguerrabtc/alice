@@ -28,7 +28,9 @@ export function InlineMediaAttachment({ media }: InlineMediaAttachmentProps) {
 
   // REMOVIDO 23/12/2025: Bloco de vídeo removido (muito pesado para GPU)
 
-  if (media.status === 'uploading' || media.status === 'processing') {
+  const canRenderImage = media.type === 'image' && Boolean(media.url);
+
+  if (!canRenderImage && (media.status === 'uploading' || media.status === 'processing')) {
     return (
       <Skeleton className="w-full aspect-square max-w-[200px] rounded-lg" />
     );

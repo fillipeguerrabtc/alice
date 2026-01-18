@@ -32,6 +32,8 @@ import {
   Plus, 
   MessageSquare,
   Paperclip,
+  Trash2,
+  CheckSquare,
   ChevronLeft,
   ChevronRight,
   Sparkles,
@@ -46,6 +48,16 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Skeleton } from '@/components/ui/skeleton';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   Dialog,
   DialogContent,
@@ -191,6 +203,13 @@ interface ConversationsListProps {
   onLoadMore: () => void;
   hasMore: boolean;
   isLoadingMore: boolean;
+  isSelectionMode: boolean;
+  selectedIds: Set<string>;
+  onToggleSelectionMode: () => void;
+  onToggleSelectConversation: (id: string) => void;
+  onDeleteConversation: (id: string) => void;
+  onDeleteSelected: () => void;
+  onDeleteAll: () => void;
 }
 
 function ConversationsList({
@@ -202,10 +221,17 @@ function ConversationsList({
   onLoadMore,
   hasMore,
   isLoadingMore,
+  isSelectionMode,
+  selectedIds,
+  onToggleSelectionMode,
+  onToggleSelectConversation,
+  onDeleteConversation,
+  onDeleteSelected,
+  onDeleteAll,
 }: ConversationsListProps) {
   return (
     <>
-      <div className="p-3 border-b">
+      <div className="p-3 border-b space-y-2">
         <Button 
           onClick={onNewChat}
           className="w-full justify-start gap-2"
@@ -214,6 +240,39 @@ function ConversationsList({
           <Plus className="h-4 w-4" />
           Nova Conversa
         </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant={isSelectionMode ? 'secondary' : 'outline'}
+            size="sm"
+            className="flex-1"
+            onClick={onToggleSelectionMode}
+            data-testid="button-toggle-selection"
+          >
+            <CheckSquare className="h-4 w-4 mr-2" />
+            {isSelectionMode ? 'Cancelar seleção' : 'Selecionar'}
+          </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            className="flex-1"
+            onClick={onDeleteAll}
+            data-testid="button-delete-all"
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            Excluir tudo
+          </Button>
+        </div>
+        {isSelectionMode && (
+          <Button
+            variant="destructive"
+            size="sm"
+            disabled={selectedIds.size === 0}
+            onClick={onDeleteSelected}
+            data-testid="button-delete-selected"
+          >
+            Excluir selecionadas ({selectedIds.size})
+          </Button>
+        )}
       </div>
       
       <ScrollArea className="flex-1 p-2">
@@ -233,7 +292,11 @@ function ConversationsList({
                 key={conv.id}
                 conversation={conv}
                 isActive={conv.id === conversationId}
+                isSelectionMode={isSelectionMode}
+                isSelected={selectedIds.has(conv.id)}
                 onClick={() => onSelectConversation(conv.id)}
+                onToggleSelect={() => onToggleSelectConversation(conv.id)}
+                onDelete={() => onDeleteConversation(conv.id)}
               />
             ))
           ) : (
@@ -282,6 +345,11 @@ export default function Chat() {
   const [pendingMedia, setPendingMedia] = useState<MediaAttachment[]>([]);
   const [showTrainingDialog, setShowTrainingDialog] = useState(false);
   const [trainingNamespaceId, setTrainingNamespaceId] = useState<string>('');
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [selectedConversationIds, setSelectedConversationIds] = useState<Set<string>>(new Set());
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [deleteSelectedOpen, setDeleteSelectedOpen] = useState(false);
+  const [deleteAllOpen, setDeleteAllOpen] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -461,6 +529,43 @@ export default function Chat() {
     },
     onSuccess: () => {
       queryClientRef.invalidateQueries({ queryKey: ['/api/chat/conversations'] });
+    },
+  });
+
+  const deleteConversation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest('DELETE', `/api/chat/conversations/${id}`);
+    },
+    onSuccess: (_, id) => {
+      queryClientRef.invalidateQueries({ queryKey: ['/api/chat/conversations'] });
+      if (conversationId === id) {
+        setMessages([]);
+        navigate('/chat');
+      }
+    },
+  });
+
+  const deleteConversationsBulk = useMutation({
+    mutationFn: async (ids: string[]) => {
+      await apiRequest('POST', '/api/chat/conversations/bulk-delete', { ids });
+    },
+    onSuccess: (_, ids) => {
+      queryClientRef.invalidateQueries({ queryKey: ['/api/chat/conversations'] });
+      if (conversationId && ids.includes(conversationId)) {
+        setMessages([]);
+        navigate('/chat');
+      }
+    },
+  });
+
+  const deleteAllConversations = useMutation({
+    mutationFn: async () => {
+      await apiRequest('POST', '/api/chat/conversations/delete-all');
+    },
+    onSuccess: () => {
+      queryClientRef.invalidateQueries({ queryKey: ['/api/chat/conversations'] });
+      setMessages([]);
+      navigate('/chat');
     },
   });
 
@@ -663,7 +768,7 @@ export default function Chat() {
                   resetTimeout();
                 }
 
-                if (parsed.type === 'generated_image' && parsed.message) {
+                if (parsed.type === 'generated_image') {
                   const serverMessage = parsed.message as {
                     id?: string;
                     conteudo?: string | null;
@@ -675,7 +780,7 @@ export default function Chat() {
                     role: 'assistant',
                     content: serverMessage.conteudo || 'Imagem gerada com sucesso via OpenAI.',
                     createdAt: serverMessage.criadoEm || new Date().toISOString(),
-                    generatedImage: serverMessage.generatedImage,
+                    generatedImage: serverMessage.generatedImage ?? parsed.generatedImage,
                   };
                   setMessages((prev) => {
                     const newMessages = [...prev];
@@ -962,6 +1067,38 @@ export default function Chat() {
     if (isMobile) setMobileDrawerOpen(false);
   }, [navigate, isMobile]);
 
+  const handleToggleSelectionMode = useCallback(() => {
+    setIsSelectionMode((prev) => !prev);
+    setSelectedConversationIds(new Set());
+  }, []);
+
+  const handleToggleSelectConversation = useCallback((id: string) => {
+    setSelectedConversationIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleConfirmDeleteSelected = useCallback(() => {
+    if (selectedConversationIds.size === 0) return;
+    deleteConversationsBulk.mutate(Array.from(selectedConversationIds));
+    setSelectedConversationIds(new Set());
+    setIsSelectionMode(false);
+    setDeleteSelectedOpen(false);
+  }, [deleteConversationsBulk, selectedConversationIds]);
+
+  const handleConfirmDeleteAll = useCallback(() => {
+    deleteAllConversations.mutate();
+    setSelectedConversationIds(new Set());
+    setIsSelectionMode(false);
+    setDeleteAllOpen(false);
+  }, [deleteAllConversations]);
+
   return (
     <div className="flex h-full">
       {/* MOBILE: Drawer offcanvas para lista de conversas */}
@@ -981,6 +1118,13 @@ export default function Chat() {
                 onLoadMore={() => fetchNextPage()}
                 hasMore={Boolean(hasNextPage)}
                 isLoadingMore={isFetchingNextPage}
+                isSelectionMode={isSelectionMode}
+                selectedIds={selectedConversationIds}
+                onToggleSelectionMode={handleToggleSelectionMode}
+                onToggleSelectConversation={handleToggleSelectConversation}
+                onDeleteConversation={(id) => setDeleteTargetId(id)}
+                onDeleteSelected={() => setDeleteSelectedOpen(true)}
+                onDeleteAll={() => setDeleteAllOpen(true)}
               />
             </div>
           </SheetContent>
@@ -1007,6 +1151,13 @@ export default function Chat() {
                 onLoadMore={() => fetchNextPage()}
                 hasMore={Boolean(hasNextPage)}
                 isLoadingMore={isFetchingNextPage}
+                isSelectionMode={isSelectionMode}
+                selectedIds={selectedConversationIds}
+                onToggleSelectionMode={handleToggleSelectionMode}
+                onToggleSelectConversation={handleToggleSelectConversation}
+                onDeleteConversation={(id) => setDeleteTargetId(id)}
+                onDeleteSelected={() => setDeleteSelectedOpen(true)}
+                onDeleteAll={() => setDeleteAllOpen(true)}
               />
             </motion.div>
           )}
@@ -1265,6 +1416,61 @@ export default function Chat() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        <AlertDialog open={Boolean(deleteTargetId)} onOpenChange={(open) => setDeleteTargetId(open ? deleteTargetId : null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Excluir conversa</AlertDialogTitle>
+              <AlertDialogDescription>
+                Esta ação remove a conversa e todas as mensagens associadas. Deseja continuar?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (deleteTargetId) {
+                    deleteConversation.mutate(deleteTargetId);
+                  }
+                  setDeleteTargetId(null);
+                }}
+              >
+                Excluir
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+        <AlertDialog open={deleteSelectedOpen} onOpenChange={setDeleteSelectedOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Excluir conversas selecionadas</AlertDialogTitle>
+              <AlertDialogDescription>
+                Esta ação remove {selectedConversationIds.size} conversas e todas as mensagens associadas.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction onClick={handleConfirmDeleteSelected}>
+                Excluir selecionadas
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+        <AlertDialog open={deleteAllOpen} onOpenChange={setDeleteAllOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Excluir todas as conversas</AlertDialogTitle>
+              <AlertDialogDescription>
+                Esta ação remove todas as conversas e mensagens associadas. Esta operação não pode ser desfeita.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction onClick={handleConfirmDeleteAll}>
+                Excluir tudo
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   );
