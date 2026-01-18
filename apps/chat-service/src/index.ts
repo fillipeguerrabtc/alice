@@ -869,6 +869,10 @@ interface AgentConfig {
   maxTokens?: number | null;
 }
 
+type ConversationWithAgent = typeof schema.conversations.$inferSelect & {
+  agent?: AgentConfig | null;
+};
+
 interface AssistantSettings {
   systemPrompt?: string | null;
   behavior?: string | null;
@@ -1423,6 +1427,15 @@ function getAdaptiveRagParams(
 
 type StoredMessage = { isFromUser: boolean; conteudo: string | null };
 
+function normalizeStoredMessages(
+  messages: Array<{ isFromUser: boolean | null; conteudo: string | null }>
+): StoredMessage[] {
+  return messages.map((msg) => ({
+    isFromUser: Boolean(msg.isFromUser),
+    conteudo: msg.conteudo,
+  }));
+}
+
 function tokenizeForRelevance(text: string): string[] {
   return text
     .toLowerCase()
@@ -1756,11 +1769,13 @@ function buildPromptMessages(params: {
   const remaining = Math.max(0, maxPromptTokens - systemTokens - userTokens);
   const historyMessages = buildHistoryMessages(params.history, remaining, params.userMessage, profile);
 
-  return [
+  const messages: LLMMessage[] = [
     { role: 'system', content: params.systemPrompt },
     ...historyMessages,
     { role: 'user', content: params.userMessage },
-  ].filter((msg) => msg.content && msg.content.trim().length > 0);
+  ];
+
+  return messages.filter((msg) => msg.content && msg.content.trim().length > 0);
 }
 
 function dropLeadingDuplicateUserMessage(
@@ -3462,6 +3477,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       orderBy: [desc(schema.messages.criadoEm)],
       limit: 10,
     });
+    const storedPreviousMessages = normalizeStoredMessages(previousMessages);
 
     const ragStartTime = Date.now();
     const ragParams = getAdaptiveRagParams(body.conteudo, previousMessages.length);
@@ -3482,7 +3498,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       }, 'Contexto RAG injetado no prompt');
     }
 
-    const historyForPrompt = dropLeadingDuplicateUserMessage(previousMessages, body.conteudo);
+    const historyForPrompt = dropLeadingDuplicateUserMessage(storedPreviousMessages, body.conteudo);
     const llmMessages = buildPromptMessages({
       systemPrompt,
       userMessage: body.conteudo,
@@ -3601,7 +3617,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     const imageDetection = detectImageGenerationRequest(lastUserMessageContent);
 
     let conversationId = _conversationId;
-    let conversation = null;
+    let conversation: ConversationWithAgent | null = null;
     let conversationCreated = false;
 
     if (conversationId) {
@@ -3665,6 +3681,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         limit: 10,
       })
       : [];
+    const storedPreviousMessages = normalizeStoredMessages(previousMessages);
 
     const [userMessage] = await db.insert(schema.messages).values({
       conversationId,
@@ -3868,7 +3885,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       }
     }
 
-      const agent = (conversation as { agent?: AgentConfig | null })?.agent || null;
+      const agent = conversation?.agent ?? null;
       const ragParams = getAdaptiveRagParams(lastUserMessageContent, previousMessages.length);
       const [assistantSettings, ragResult] = await Promise.all([
         getAssistantSettingsForTenant(tenantId),
@@ -3917,7 +3934,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     const llmMessages = buildPromptMessages({
       systemPrompt,
       userMessage: lastUserMessageContent,
-      history: previousMessages,
+      history: storedPreviousMessages,
       source: 'stream',
     });
 
@@ -4427,6 +4444,8 @@ wss.on('connection', (ws, req) => {
         return;
       }
       
+      const userRole = extWs.role;
+
       // CORREÇÃO 17/12/2025: Type assertion alinhada com schema Zod
       // content é opcional no schema (z.string().optional())
       const message = parseResult.data as {
@@ -4827,7 +4846,6 @@ wss.on('connection', (ws, req) => {
             reason: imageDetection.reason,
           }, 'Pedido de geração de imagem detectado - OpenAI Images disponível');
 
-          const userRole = extWs.role;
           if (!userRole) {
             ws.send(JSON.stringify({ 
               type: 'error', 
@@ -6995,6 +7013,7 @@ app.post('/api/chat/message', asyncHandler(async (req: Request, res: Response) =
       orderBy: [desc(schema.messages.criadoEm)],
       limit: 10,
     });
+    const storedPreviousMessages = normalizeStoredMessages(previousMessages);
     
     // Buscar contexto RAG se disponível
     const ragParams = getAdaptiveRagParams(content, previousMessages.length);
@@ -7008,7 +7027,7 @@ app.post('/api/chat/message', asyncHandler(async (req: Request, res: Response) =
       systemPrompt += formatarContextoParaLLM(ragResult);
     }
     
-    const historyForPrompt = dropLeadingDuplicateUserMessage(previousMessages, content);
+    const historyForPrompt = dropLeadingDuplicateUserMessage(storedPreviousMessages, content);
     const llmMessages = buildPromptMessages({
       systemPrompt,
       userMessage: content,
