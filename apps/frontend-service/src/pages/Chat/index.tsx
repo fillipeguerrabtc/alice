@@ -375,6 +375,8 @@ export default function Chat() {
   const recordingCancelledRef = useRef(false);
   const recordingUnmountedRef = useRef(false);
   const recordingSendModeRef = useRef<'review' | 'direct'>('review');
+  const pendingMediaRef = useRef<MediaAttachment[]>([]);
+  const inputRef = useRef('');
 
   // Fechar drawer mobile ao mudar de conversa
   useEffect(() => {
@@ -382,6 +384,14 @@ export default function Chat() {
       setMobileDrawerOpen(false);
     }
   }, [conversationId, isMobile]);
+
+  useEffect(() => {
+    pendingMediaRef.current = pendingMedia;
+  }, [pendingMedia]);
+
+  useEffect(() => {
+    inputRef.current = input;
+  }, [input]);
 
   useEffect(() => {
     return () => {
@@ -633,14 +643,15 @@ export default function Chat() {
       file,
     };
 
-    const combined = pendingMedia.length > 0 ? [...pendingMedia, attachment] : [attachment];
+    const currentPending = pendingMediaRef.current;
+    const combined = currentPending.length > 0 ? [...currentPending, attachment] : [attachment];
     sendMessage.mutate({
-      content: input.trim(),
+      content: inputRef.current.trim(),
       mediaAttachments: combined,
     });
     setInput('');
     clearPendingMedia();
-  }, [clearPendingMedia, input, pendingMedia, sendMessage]);
+  }, [clearPendingMedia, sendMessage]);
 
   const finalizeRecording = useCallback(async () => {
     const recorder = mediaRecorderRef.current;
