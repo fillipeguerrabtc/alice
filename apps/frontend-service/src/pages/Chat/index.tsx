@@ -118,6 +118,12 @@ type StreamMediaAttachmentPayload = {
   file: string;
 };
 
+type ServerMessage = Partial<Message> & {
+  conteudo?: string | null;
+  criadoEm?: string | null;
+  isFromUser?: boolean | null;
+};
+
 async function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -476,23 +482,30 @@ export default function Chat() {
     }));
   }, []);
 
+  const normalizeServerMessage = useCallback((message: ServerMessage): Message => {
+    const role = message.role ?? (message.isFromUser ? 'user' : 'assistant');
+    const content = message.content ?? message.conteudo ?? '';
+    const createdAt = message.createdAt ?? message.criadoEm ?? new Date().toISOString();
+    const mediaAttachments = message.mediaAttachments && message.mediaAttachments.length > 0
+      ? message.mediaAttachments
+      : message.anexos && message.anexos.length > 0
+        ? mapAnexosToMediaAttachments(message.anexos)
+        : undefined;
+
+    return {
+      ...message,
+      role,
+      content,
+      createdAt,
+      mediaAttachments,
+    } as Message;
+  }, [mapAnexosToMediaAttachments]);
+
   useEffect(() => {
     if (conversationMessages?.messages) {
-      const normalized = conversationMessages.messages.map((message) => {
-        if (message.mediaAttachments && message.mediaAttachments.length > 0) {
-          return message;
-        }
-        if (message.anexos && message.anexos.length > 0) {
-          return {
-            ...message,
-            mediaAttachments: mapAnexosToMediaAttachments(message.anexos),
-          };
-        }
-        return message;
-      });
-      setMessages(normalized);
+      setMessages(conversationMessages.messages.map((message) => normalizeServerMessage(message)));
     }
-  }, [conversationMessages, mapAnexosToMediaAttachments]);
+  }, [conversationMessages, normalizeServerMessage]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
