@@ -3932,7 +3932,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       const mediaMessages = buildPromptMessages({
         systemPrompt,
         userMessage: userContent,
-        history: [],
+        history: storedPreviousMessages,
         source: 'stream',
       });
 
