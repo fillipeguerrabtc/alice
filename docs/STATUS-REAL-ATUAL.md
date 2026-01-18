@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 18 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.16 - Correções de OpenAPI e UX no chat
+**Versão:** 7.17 - Transações atômicas na exclusão de conversas
 
 ---
 
@@ -212,6 +212,7 @@ Retenção Arquivo:   30 dias
 - OpenAPI Chat: unificação do path `/api/chat/conversations/{id}` (GET + DELETE soft delete sem chave duplicada).
 - Chat Sidebar: botão de excluir conversa visível via `group-hover` com classe `group` no item.
 - Streaming de imagem: guarda defensiva quando `parsed.message` não é enviado no SSE de `generated_image`.
+- Chat Service: exclusões (individual, lote, tudo) agora são transacionais para evitar perda de mensagens com conversa ainda ativa.
 - pgBackRest: reset controlado quando `archive.info` existe sem `backup.info`.
 - pgBackRest: captura stderr+stdout no stanza-create para detectar mismatch.
 - pgBackRest: stanza-delete com `--force --force` no reset controlado.

@@ -3350,22 +3350,31 @@ app.delete(
 
     const { id } = paramsResult.data;
     try {
-      const conversation = await db.query.conversations.findFirst({
-        where: and(
-          eq(schema.conversations.id, id),
-          eq(schema.conversations.userId, userId),
-          tenantId ? eq(schema.conversations.tenantId, tenantId) : undefined
-        ),
+      let conversationFound = false;
+
+      await db.transaction(async (tx) => {
+        const conversation = await tx.query.conversations.findFirst({
+          where: and(
+            eq(schema.conversations.id, id),
+            eq(schema.conversations.userId, userId),
+            tenantId ? eq(schema.conversations.tenantId, tenantId) : undefined
+          ),
+        });
+
+        if (!conversation) {
+          return;
+        }
+
+        conversationFound = true;
+        await tx.delete(schema.messages).where(eq(schema.messages.conversationId, id));
+        await tx.update(schema.conversations)
+          .set({ status: 'deleted', atualizadoEm: new Date() })
+          .where(eq(schema.conversations.id, id));
       });
 
-      if (!conversation) {
+      if (!conversationFound) {
         return res.status(404).json({ error: 'Conversa não encontrada' });
       }
-
-      await db.delete(schema.messages).where(eq(schema.messages.conversationId, id));
-      await db.update(schema.conversations)
-        .set({ status: 'deleted', atualizadoEm: new Date() })
-        .where(eq(schema.conversations.id, id));
 
       res.json({ success: true, conversationId: id });
     } catch (error) {
@@ -3394,22 +3403,30 @@ app.post(
 
     const ids = bodyResult.data.ids;
     try {
-      const conversations = await db.query.conversations.findMany({
-        where: and(
-          inArray(schema.conversations.id, ids),
-          eq(schema.conversations.userId, userId),
-          tenantId ? eq(schema.conversations.tenantId, tenantId) : undefined
-        ),
+      let allowedIds: string[] = [];
+
+      await db.transaction(async (tx) => {
+        const conversations = await tx.query.conversations.findMany({
+          where: and(
+            inArray(schema.conversations.id, ids),
+            eq(schema.conversations.userId, userId),
+            tenantId ? eq(schema.conversations.tenantId, tenantId) : undefined
+          ),
+        });
+        allowedIds = conversations.map((conv) => conv.id);
+        if (allowedIds.length === 0) {
+          return;
+        }
+
+        await tx.delete(schema.messages).where(inArray(schema.messages.conversationId, allowedIds));
+        await tx.update(schema.conversations)
+          .set({ status: 'deleted', atualizadoEm: new Date() })
+          .where(inArray(schema.conversations.id, allowedIds));
       });
-      const allowedIds = conversations.map((conv) => conv.id);
+
       if (allowedIds.length === 0) {
         return res.json({ success: true, deleted: 0, skipped: ids.length });
       }
-
-      await db.delete(schema.messages).where(inArray(schema.messages.conversationId, allowedIds));
-      await db.update(schema.conversations)
-        .set({ status: 'deleted', atualizadoEm: new Date() })
-        .where(inArray(schema.conversations.id, allowedIds));
 
       res.json({ success: true, deleted: allowedIds.length, skipped: ids.length - allowedIds.length });
     } catch (error) {
@@ -3432,22 +3449,30 @@ app.post(
     }
 
     try {
-      const conversations = await db.query.conversations.findMany({
-        where: and(
-          eq(schema.conversations.userId, userId),
-          tenantId ? eq(schema.conversations.tenantId, tenantId) : undefined,
-          not(eq(schema.conversations.status, 'deleted'))
-        ),
+      let ids: string[] = [];
+
+      await db.transaction(async (tx) => {
+        const conversations = await tx.query.conversations.findMany({
+          where: and(
+            eq(schema.conversations.userId, userId),
+            tenantId ? eq(schema.conversations.tenantId, tenantId) : undefined,
+            not(eq(schema.conversations.status, 'deleted'))
+          ),
+        });
+        ids = conversations.map((conv) => conv.id);
+        if (ids.length === 0) {
+          return;
+        }
+
+        await tx.delete(schema.messages).where(inArray(schema.messages.conversationId, ids));
+        await tx.update(schema.conversations)
+          .set({ status: 'deleted', atualizadoEm: new Date() })
+          .where(inArray(schema.conversations.id, ids));
       });
-      const ids = conversations.map((conv) => conv.id);
+
       if (ids.length === 0) {
         return res.json({ success: true, deleted: 0 });
       }
-
-      await db.delete(schema.messages).where(inArray(schema.messages.conversationId, ids));
-      await db.update(schema.conversations)
-        .set({ status: 'deleted', atualizadoEm: new Date() })
-        .where(inArray(schema.conversations.id, ids));
 
       res.json({ success: true, deleted: ids.length });
     } catch (error) {
