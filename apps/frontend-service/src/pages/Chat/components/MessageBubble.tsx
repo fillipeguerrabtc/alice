@@ -8,7 +8,7 @@
 
 import { useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Bot, User, Copy, Check } from 'lucide-react';
+import { User, Copy, Check } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -55,6 +55,9 @@ export function MessageBubble({
 }: MessageBubbleProps) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
+  const assistantAvatarSrc = !isUser && isStreaming && isLast
+    ? '/packman.gif'
+    : '/gato.gif';
 
   const handleCopy = useCallback(async () => {
     try {
@@ -80,8 +83,13 @@ export function MessageBubble({
       )}
     >
       {!isUser && (
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-sm">
-          <Bot className="h-4 w-4" />
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted shadow-sm overflow-hidden">
+          <img
+            src={assistantAvatarSrc}
+            alt="Alice avatar"
+            className="h-full w-full object-cover"
+            loading="lazy"
+          />
         </div>
       )}
       
@@ -205,7 +213,7 @@ export function MessageBubble({
       </div>
 
       {isUser && (
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary text-secondary-foreground">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-secondary text-secondary-foreground">
           <User className="h-4 w-4" />
         </div>
       )}

@@ -27,11 +27,9 @@ import { useParams, useLocation } from 'wouter';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Send, 
   Loader2, 
   Plus, 
   MessageSquare,
-  Paperclip,
   Trash2,
   CheckSquare,
   ChevronLeft,
@@ -44,7 +42,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -120,14 +117,17 @@ interface Namespace {
 }
 import { MessageBubble } from './components/MessageBubble';
 import { ConversationItem } from './components/ConversationItem';
-import { MediaPreview } from './components/MediaPreview';
 import { WelcomeScreen } from './components/WelcomeScreen';
+import { ChatInput } from './components/ChatInput';
 
 type StreamMediaAttachmentPayload = {
   id: string;
   filename: string;
   mimeType: string;
-  file: string;
+  file?: string;
+  uploadId?: string;
+  fileUrl?: string;
+  size?: number;
 };
 
 type ServerMessage = Partial<Message> & {
@@ -210,6 +210,7 @@ interface ConversationsListProps {
   onDeleteConversation: (id: string) => void;
   onDeleteSelected: () => void;
   onDeleteAll: () => void;
+  onCloseSidebar?: () => void;
 }
 
 function ConversationsList({
@@ -228,10 +229,25 @@ function ConversationsList({
   onDeleteConversation,
   onDeleteSelected,
   onDeleteAll,
+  onCloseSidebar,
 }: ConversationsListProps) {
+  const { t } = useTranslation();
   return (
     <>
       <div className="p-3 border-b space-y-2">
+        {onCloseSidebar && (
+          <div className="flex items-center justify-end">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onCloseSidebar}
+              aria-label={t('common.close')}
+              data-testid="button-close-conversations"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
         <Button 
           onClick={onNewChat}
           className="w-full justify-start gap-2"
@@ -350,10 +366,15 @@ export default function Chat() {
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [deleteSelectedOpen, setDeleteSelectedOpen] = useState(false);
   const [deleteAllOpen, setDeleteAllOpen] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordingStreamRef = useRef<MediaStream | null>(null);
+  const recordingChunksRef = useRef<Blob[]>([]);
+  const recordingCancelledRef = useRef(false);
+  const recordingUnmountedRef = useRef(false);
+  const recordingSendModeRef = useRef<'review' | 'direct'>('review');
 
   // Fechar drawer mobile ao mudar de conversa
   useEffect(() => {
@@ -362,11 +383,24 @@ export default function Chat() {
     }
   }, [conversationId, isMobile]);
 
-  const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
+  useEffect(() => {
+    return () => {
+      recordingUnmountedRef.current = true;
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        recordingCancelledRef.current = true;
+        mediaRecorderRef.current.stop();
+      }
+      if (recordingStreamRef.current) {
+        recordingStreamRef.current.getTracks().forEach((track) => track.stop());
+        recordingStreamRef.current = null;
+      }
+    };
+  }, []);
+
+  const processSelectedFiles = useCallback(async (files: File[]) => {
     if (!files || files.length === 0) return;
 
-    for (const file of Array.from(files)) {
+    for (const file of files) {
       const mediaType = getMediaType(file.type);
       
       if (!mediaType) {
@@ -451,24 +485,310 @@ export default function Chat() {
 
       setPendingMedia(prev => [...prev, newMedia]);
     }
+  }, [t, toast]);
 
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+  const handleFileSelect = useCallback(async (files: File[]) => {
+    if (!files || files.length === 0) return;
+    await processSelectedFiles(files);
+  }, [processSelectedFiles]);
+
+  const resolveRecordingMimeType = useCallback(() => {
+    const candidates = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/ogg;codecs=opus',
+      'audio/ogg',
+      'audio/wav',
+      'audio/mpeg',
+      'audio/mp4',
+    ];
+    return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate)) ?? '';
+  }, []);
+
+  const resolveRecordingExtension = useCallback((mimeType: string) => {
+    const normalized = mimeType.split(';')[0].toLowerCase();
+    switch (normalized) {
+      case 'audio/ogg':
+        return 'ogg';
+      case 'audio/wav':
+        return 'wav';
+      case 'audio/mpeg':
+        return 'mp3';
+      case 'audio/mp4':
+        return 'm4a';
+      default:
+        return 'webm';
+    }
+  }, []);
+
+  const pollMediaTranscription = useCallback(async (uploadId: string, attemptsLeft = 30) => {
+    if (recordingUnmountedRef.current) {
+      return;
+    }
+    try {
+      const res = await apiRequest('GET', `/api/media/${uploadId}`);
+      if (!res.ok) {
+        throw new Error('Falha ao buscar status do áudio');
+      }
+      const data = await res.json() as {
+        processingStatus?: 'pending' | 'processing' | 'completed' | 'failed';
+        transcription?: string | null;
+        fileUrl?: string | null;
+      };
+      const status = data.processingStatus ?? 'processing';
+
+      setPendingMedia((prev) => prev.map((media) => {
+        if (media.uploadId !== uploadId) return media;
+        const resolvedStatus: MediaAttachment['status'] =
+          status === 'completed'
+            ? 'ready'
+            : status === 'failed'
+              ? 'error'
+              : 'processing';
+        return {
+          ...media,
+          status: resolvedStatus,
+          transcription: data.transcription ?? media.transcription,
+          url: data.fileUrl ?? media.url,
+        };
+      }));
+
+      if (status === 'completed') {
+        const transcriptionText = data.transcription?.trim();
+        if (transcriptionText) {
+          setInput((prev) => {
+            const base = prev.trim();
+            return base.length > 0 ? `${base}\n${transcriptionText}` : transcriptionText;
+          });
+        }
+        return;
+      }
+
+      if (status === 'failed') {
+        toast({
+          title: t('chat.recordingTranscriptionFailed'),
+          description: t('chat.recordingTranscriptionFailedDesc'),
+          variant: 'destructive',
+        });
+        return;
+      }
+    } catch (error) {
+      frontendLogger.error('Falha ao consultar transcrição do áudio', { error, uploadId });
+    }
+
+    if (attemptsLeft > 0 && !recordingUnmountedRef.current) {
+      setTimeout(() => {
+        void pollMediaTranscription(uploadId, attemptsLeft - 1);
+      }, 2000);
     }
   }, [t, toast]);
+
+  const uploadAudioForReview = useCallback(async (file: File) => {
+    const base64 = await fileToBase64(file);
+    const response = await apiRequest('POST', '/api/media/upload/json', {
+      file: base64,
+      filename: file.name,
+      mimeType: file.type,
+    });
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || 'Falha ao enviar áudio para transcrição');
+    }
+
+    const result = await response.json() as {
+      uploadId: string;
+      fileUrl: string;
+      processingStatus: 'pending' | 'processing' | 'completed' | 'failed';
+    };
+
+    const mediaId = crypto.randomUUID();
+    setPendingMedia((prev) => [
+      ...prev,
+      {
+        id: mediaId,
+        type: 'audio',
+        url: result.fileUrl,
+        fileName: file.name,
+        fileSize: file.size,
+        mimeType: file.type,
+        status: result.processingStatus === 'completed' ? 'ready' : 'processing',
+        uploadId: result.uploadId,
+      },
+    ]);
+
+    void pollMediaTranscription(result.uploadId);
+  }, [pollMediaTranscription]);
+
+  const sendRecordingDirect = useCallback((file: File) => {
+    const mediaId = crypto.randomUUID();
+    const objectUrl = URL.createObjectURL(file);
+    const attachment: MediaAttachment = {
+      id: mediaId,
+      type: 'audio',
+      url: objectUrl,
+      fileName: file.name,
+      fileSize: file.size,
+      mimeType: file.type,
+      status: 'ready',
+      file,
+    };
+
+    const combined = pendingMedia.length > 0 ? [...pendingMedia, attachment] : [attachment];
+    sendMessage.mutate({
+      content: input.trim(),
+      mediaAttachments: combined,
+    });
+    setInput('');
+    clearPendingMedia();
+  }, [clearPendingMedia, input, pendingMedia, sendMessage]);
+
+  const finalizeRecording = useCallback(async () => {
+    const recorder = mediaRecorderRef.current;
+    const stream = recordingStreamRef.current;
+    const cancelled = recordingCancelledRef.current;
+    const unmounted = recordingUnmountedRef.current;
+    recordingCancelledRef.current = false;
+
+    const mimeType = recorder?.mimeType || 'audio/webm';
+    const chunks = recordingChunksRef.current;
+    recordingChunksRef.current = [];
+
+    stream?.getTracks().forEach((track) => track.stop());
+    recordingStreamRef.current = null;
+    mediaRecorderRef.current = null;
+
+    if (!unmounted) {
+      setIsRecording(false);
+    }
+
+    if (cancelled || unmounted || chunks.length === 0) {
+      return;
+    }
+
+    const blob = new Blob(chunks, { type: mimeType });
+    if (blob.size === 0) {
+      return;
+    }
+
+    const extension = resolveRecordingExtension(mimeType);
+    const safeTimestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const fileName = `gravacao-${safeTimestamp}.${extension}`;
+    const file = new File([blob], fileName, { type: mimeType });
+
+    if (recordingSendModeRef.current === 'direct') {
+      sendRecordingDirect(file);
+    } else {
+      try {
+        await uploadAudioForReview(file);
+      } catch (error) {
+        frontendLogger.error('Falha ao preparar áudio para revisão', { error });
+        toast({
+          title: t('chat.recordingUploadFailed'),
+          description: t('chat.recordingUploadFailedDesc'),
+          variant: 'destructive',
+        });
+      }
+    }
+
+    recordingSendModeRef.current = 'review';
+  }, [resolveRecordingExtension, sendRecordingDirect, t, toast, uploadAudioForReview]);
+
+  const handleStartRecording = useCallback(async () => {
+    if (isStreaming) {
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      toast({
+        title: t('chat.recordingUnsupported'),
+        description: t('chat.recordingUnsupportedDesc'),
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = resolveRecordingMimeType();
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+
+      recordingStreamRef.current = stream;
+      mediaRecorderRef.current = recorder;
+      recordingChunksRef.current = [];
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          recordingChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onerror = (event) => {
+        frontendLogger.error('Falha ao gravar áudio', { error: event });
+        recordingCancelledRef.current = true;
+        recorder.stop();
+      };
+
+      recorder.onstop = () => {
+        void finalizeRecording();
+      };
+
+      recorder.start();
+      setIsRecording(true);
+    } catch (error) {
+      frontendLogger.error('Permissão negada ou erro ao iniciar gravação', { error });
+      toast({
+        title: t('chat.recordingPermissionDenied'),
+        description: t('chat.recordingPermissionDeniedDesc'),
+        variant: 'destructive',
+      });
+    }
+  }, [finalizeRecording, isStreaming, resolveRecordingMimeType, t, toast]);
+
+  const handleStopRecordingReview = useCallback(() => {
+    if (!isRecording) return;
+    recordingSendModeRef.current = 'review';
+    const recorder = mediaRecorderRef.current;
+    if (recorder && recorder.state !== 'inactive') {
+      recorder.stop();
+    } else if (!recordingUnmountedRef.current) {
+      setIsRecording(false);
+    }
+  }, [isRecording]);
+
+  const handleSendRecordingNow = useCallback(() => {
+    if (!isRecording || isStreaming) return;
+    recordingSendModeRef.current = 'direct';
+    const recorder = mediaRecorderRef.current;
+    if (recorder && recorder.state !== 'inactive') {
+      recorder.stop();
+    } else if (!recordingUnmountedRef.current) {
+      setIsRecording(false);
+    }
+  }, [isRecording, isStreaming]);
 
   const removePendingMedia = useCallback((mediaId: string) => {
     setPendingMedia(prev => {
       const media = prev.find(m => m.id === mediaId);
       if (media) {
-        URL.revokeObjectURL(media.url);
+        if (media.url && media.url.startsWith('blob:')) {
+          URL.revokeObjectURL(media.url);
+        }
+        if (media.uploadId) {
+          apiRequest('DELETE', `/api/media/uploads/${media.uploadId}`).catch((error) => {
+            frontendLogger.warn('Falha ao remover upload de mídia', { error, uploadId: media.uploadId });
+          });
+        }
       }
       return prev.filter(m => m.id !== mediaId);
     });
   }, []);
 
   const clearPendingMedia = useCallback(() => {
-    pendingMedia.forEach(m => URL.revokeObjectURL(m.url));
+    pendingMedia.forEach(m => {
+      if (m.url && m.url.startsWith('blob:')) {
+        URL.revokeObjectURL(m.url);
+      }
+    });
     setPendingMedia([]);
   }, [pendingMedia]);
 
@@ -704,6 +1024,16 @@ export default function Chat() {
       const mediaPayload: StreamMediaAttachmentPayload[] | undefined = mediaAttachments?.length
         ? await Promise.all(
           mediaAttachments.map(async (media) => {
+            if (media.uploadId) {
+              return {
+                id: media.id,
+                filename: media.fileName,
+                mimeType: media.mimeType,
+                uploadId: media.uploadId,
+                fileUrl: media.url,
+                size: media.fileSize,
+              };
+            }
             return {
               id: media.id,
               filename: media.fileName,
@@ -1030,9 +1360,8 @@ export default function Chat() {
     }
   }, [messages, isStreaming, sendMessage]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if ((!input.trim() && pendingMedia.length === 0) || isStreaming) return;
+  const handleSend = useCallback(() => {
+    if ((!input.trim() && pendingMedia.length === 0) || isStreaming || isRecording) return;
 
     sendMessage.mutate({ 
       content: input.trim(), 
@@ -1040,16 +1369,11 @@ export default function Chat() {
     });
     setInput('');
     clearPendingMedia();
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-    }
-  };
+  }, [clearPendingMedia, input, isRecording, isStreaming, pendingMedia, sendMessage]);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit(e);
-    }
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    handleSend();
   };
 
   const conversations = conversationsData?.pages.flatMap((page) => page.conversations) || [];
@@ -1099,6 +1423,14 @@ export default function Chat() {
     setDeleteAllOpen(false);
   }, [deleteAllConversations]);
 
+  const handleCloseConversationsSidebar = useCallback(() => {
+    if (isMobile) {
+      setMobileDrawerOpen(false);
+    } else {
+      setSidebarOpen(false);
+    }
+  }, [isMobile]);
+
   return (
     <div className="flex h-full">
       {/* MOBILE: Drawer offcanvas para lista de conversas */}
@@ -1125,6 +1457,7 @@ export default function Chat() {
                 onDeleteConversation={(id) => setDeleteTargetId(id)}
                 onDeleteSelected={() => setDeleteSelectedOpen(true)}
                 onDeleteAll={() => setDeleteAllOpen(true)}
+                onCloseSidebar={handleCloseConversationsSidebar}
               />
             </div>
           </SheetContent>
@@ -1158,6 +1491,7 @@ export default function Chat() {
                 onDeleteConversation={(id) => setDeleteTargetId(id)}
                 onDeleteSelected={() => setDeleteSelectedOpen(true)}
                 onDeleteAll={() => setDeleteAllOpen(true)}
+                onCloseSidebar={handleCloseConversationsSidebar}
               />
             </motion.div>
           )}
@@ -1276,91 +1610,22 @@ export default function Chat() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept={[...ACCEPTED_TYPES.image, ...ACCEPTED_TYPES.audio].join(',')}
-            multiple
-            onChange={handleFileSelect}
-            className="hidden"
-            data-testid="input-file-upload"
+          <ChatInput
+            value={input}
+            onChange={setInput}
+            onSend={handleSend}
+            onFilesSelected={handleFileSelect}
+            onStartRecording={handleStartRecording}
+            onStopRecording={handleStopRecordingReview}
+            onSendRecording={handleSendRecordingNow}
+            onRemoveMedia={removePendingMedia}
+            pendingMedia={pendingMedia}
+            isStreaming={isStreaming}
+            isRecording={isRecording}
+            isRecordingDisabled={isStreaming}
+            isMobile={isMobile}
+            acceptedTypes={[...ACCEPTED_TYPES.image, ...ACCEPTED_TYPES.audio].join(',')}
           />
-
-          {/* Preview de mídia anexada */}
-          {pendingMedia.length > 0 && (
-            <div className="flex flex-wrap gap-2 mb-2 md:mb-3 max-w-4xl mx-auto">
-              {pendingMedia.map((media) => (
-                <MediaPreview 
-                  key={media.id} 
-                  media={media} 
-                  onRemove={() => removePendingMedia(media.id)} 
-                />
-              ))}
-            </div>
-          )}
-
-          {/* Container do input - mobile-first */}
-          <div className="flex gap-2 max-w-4xl mx-auto">
-            <div className="flex-1 flex items-end gap-1.5 md:gap-2 p-1.5 md:p-2 rounded-xl md:rounded-lg border bg-background shadow-sm">
-              {/* Botão de anexo - maior em mobile para touch */}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-9 w-9 md:h-8 md:w-8 shrink-0 touch-manipulation"
-                    disabled={isStreaming}
-                    onClick={() => fileInputRef.current?.click()}
-                    data-testid="button-attach-file"
-                  >
-                    <Paperclip className="h-5 w-5 md:h-4 md:w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Anexar arquivo (imagem, áudio)</TooltipContent>
-              </Tooltip>
-              
-              {/* Textarea - altura mínima maior em mobile */}
-              <textarea
-                ref={textareaRef}
-                value={input}
-                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => {
-                  setInput(e.target.value);
-                  e.target.style.height = 'auto';
-                  e.target.style.height = `${Math.min(e.target.scrollHeight, isMobile ? 120 : 200)}px`;
-                }}
-                onKeyDown={handleKeyDown}
-                placeholder={pendingMedia.length > 0 ? t('chat.placeholderWithMedia') : t('chat.placeholder')}
-                className="flex-1 min-h-[40px] md:min-h-[36px] max-h-[120px] md:max-h-[200px] resize-none bg-transparent text-base md:text-sm leading-relaxed focus-visible:outline-none"
-                disabled={isStreaming}
-                data-testid="input-chat-message"
-                // Mobile: desabilitar autocorrect para nomes próprios
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="sentences"
-              />
-              
-              {/* Botão de enviar - maior em mobile para touch */}
-              <Button
-                type="submit"
-                size="icon"
-                className="h-9 w-9 md:h-8 md:w-8 shrink-0 rounded-full md:rounded-md touch-manipulation"
-                disabled={(!input.trim() && pendingMedia.length === 0) || isStreaming}
-                data-testid="button-send-message"
-              >
-                {isStreaming ? (
-                  <Loader2 className="h-5 w-5 md:h-4 md:w-4 animate-spin" />
-                ) : (
-                  <Send className="h-5 w-5 md:h-4 md:w-4" />
-                )}
-              </Button>
-            </div>
-          </div>
-          
-          {/* Disclaimer - escondido em mobile para economizar espaço */}
-          <p className="hidden md:block text-xs text-center text-muted-foreground mt-2">
-            Alice pode cometer erros. Verifique informações importantes.
-          </p>
         </motion.form>
 
         <Dialog open={showTrainingDialog} onOpenChange={setShowTrainingDialog}>

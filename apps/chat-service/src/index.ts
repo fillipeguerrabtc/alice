@@ -71,8 +71,10 @@ import {
   buscarContextoAgentic,
   formatarContextoParaLLM, 
   getRAGBreakerStats,
+  getMediaStatus,
   uploadMediaToRAG,
 } from './rag-client.js';
+import type { MediaUploadResult } from './rag-client.js';
 import {
   initOrchestrator,
   getOrCreateConversationState,
@@ -3357,7 +3359,8 @@ app.delete(
           where: and(
             eq(schema.conversations.id, id),
             eq(schema.conversations.userId, userId),
-            tenantId ? eq(schema.conversations.tenantId, tenantId) : undefined
+            tenantId ? eq(schema.conversations.tenantId, tenantId) : undefined,
+            not(eq(schema.conversations.status, 'deleted'))
           ),
         });
 
@@ -3410,7 +3413,8 @@ app.post(
           where: and(
             inArray(schema.conversations.id, ids),
             eq(schema.conversations.userId, userId),
-            tenantId ? eq(schema.conversations.tenantId, tenantId) : undefined
+            tenantId ? eq(schema.conversations.tenantId, tenantId) : undefined,
+            not(eq(schema.conversations.status, 'deleted'))
           ),
         });
         allowedIds = conversations.map((conv) => conv.id);
@@ -3676,7 +3680,12 @@ const streamMediaAttachmentSchema = z.object({
   id: z.string().uuid().optional(),
   filename: z.string().min(1).max(255),
   mimeType: z.string().min(1).max(150),
-  file: z.string().min(1),
+  file: z.string().min(1).optional(),
+  uploadId: z.string().uuid().optional(),
+  fileUrl: z.string().min(1).optional(),
+  size: z.number().int().min(1).optional(),
+}).refine((data) => Boolean(data.file) || Boolean(data.uploadId), {
+  message: 'Arquivo de mídia obrigatório',
 });
 
 // OWASP API3 - Schemas Zod para validação de input em todas as rotas
@@ -3978,13 +3987,38 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             { statusCode: 400, code: 'UNSUPPORTED_MEDIA_TYPE' }
           );
         }
+        if (attachment.uploadId && resolvedType !== 'audio') {
+          throw new ClientInputError(
+            'Uploads pré-processados são suportados apenas para áudio.',
+            { statusCode: 400, code: 'PREUPLOADED_MEDIA_UNSUPPORTED' }
+          );
+        }
+        if (!attachment.file && !attachment.uploadId) {
+          throw new ClientInputError(
+            'Arquivo de mídia obrigatório.',
+            { statusCode: 400, code: 'MISSING_MEDIA_FILE' }
+          );
+        }
+        let resolvedSize: number;
+        if (attachment.file) {
+          resolvedSize = Buffer.from(attachment.file, 'base64').length;
+        } else if (typeof attachment.size === 'number') {
+          resolvedSize = attachment.size;
+        } else {
+          throw new ClientInputError(
+            'Tamanho do arquivo obrigatório para mídia pré-processada.',
+            { statusCode: 400, code: 'MISSING_MEDIA_SIZE' }
+          );
+        }
         return {
           id: attachment.id ?? crypto.randomUUID(),
           type: resolvedType,
           filename: attachment.filename,
           mimeType: attachment.mimeType,
           file: attachment.file,
-          size: Buffer.from(attachment.file, 'base64').length,
+          uploadId: attachment.uploadId,
+          fileUrl: attachment.fileUrl,
+          size: resolvedSize,
         };
       })
       : [];
@@ -4078,6 +4112,9 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         let visionModelForRag: string | undefined;
         if (attachment.type === 'image') {
           try {
+            if (!attachment.file) {
+              throw new Error('Arquivo de imagem ausente para análise');
+            }
             const imageDataUri = `data:${attachment.mimeType};base64,${attachment.file}`;
             const analysis = await analyzeImageWithOpenAI({
               imageDataUri,
@@ -4096,16 +4133,25 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           }
         }
 
-        const uploadResult = await uploadMediaToRAG(
-          attachment.file,
-          attachment.filename,
-          attachment.mimeType,
-          mediaSafeTenantId,
-          visionDescriptionForRag,
-          userMessage.id,
-          conversationId,
-          internalHeaders
-        );
+        let uploadResult: MediaUploadResult | null = null;
+        if (attachment.uploadId) {
+          uploadResult = await getMediaStatus(attachment.uploadId, mediaSafeTenantId, internalHeaders);
+        } else {
+          const attachmentFile = attachment.file;
+          if (!attachmentFile) {
+            throw new Error('Arquivo de mídia ausente para upload');
+          }
+          uploadResult = await uploadMediaToRAG(
+            attachmentFile,
+            attachment.filename,
+            attachment.mimeType,
+            mediaSafeTenantId,
+            visionDescriptionForRag,
+            userMessage.id,
+            conversationId,
+            internalHeaders
+          );
+        }
 
         if (!uploadResult) {
           res.write(`data: ${JSON.stringify({ error: 'Falha ao processar mídia. Tente novamente.' })}\n\n`);

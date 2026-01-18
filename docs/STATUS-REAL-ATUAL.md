@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 18 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.17 - Transações atômicas na exclusão de conversas
+**Versão:** 7.19 - Dark mode real + avatar dinâmico no chat
 
 ---
 
@@ -213,6 +213,12 @@ Retenção Arquivo:   30 dias
 - Chat Sidebar: botão de excluir conversa visível via `group-hover` com classe `group` no item.
 - Streaming de imagem: guarda defensiva quando `parsed.message` não é enviado no SSE de `generated_image`.
 - Chat Service: exclusões (individual, lote, tudo) agora são transacionais para evitar perda de mensagens com conversa ainda ativa.
+- Sidebar Desktop: colapso real ajusta largura e libera espaço do conteúdo.
+- Chat Input: componente unificado com UX mobile-first e mesmas ações do input atual.
+- Áudio no Chat: gravação com duas opções (revisar transcrição ou enviar direto).
+- ASR GPU: gravação em revisão usa upload real no RAG + transcrição Canary-1B antes de envio.
+- Dark Mode: paleta preta/cinza para experiência similar ao ChatGPT.
+- Avatar do Chat: GIF dinâmico (packman pensando, gato após resposta) com tamanho ajustado.
 - pgBackRest: reset controlado quando `archive.info` existe sem `backup.info`.
 - pgBackRest: captura stderr+stdout no stanza-create para detectar mismatch.
 - pgBackRest: stanza-delete com `--force --force` no reset controlado.

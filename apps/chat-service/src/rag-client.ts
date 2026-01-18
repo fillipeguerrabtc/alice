@@ -382,12 +382,14 @@ export async function uploadMediaToRAG(
 export async function getMediaStatus(
   uploadId: string,
   tenantId: string,
+  internalHeaders?: Record<string, string>,
 ): Promise<MediaUploadResult | null> {
   try {
     const response = await fetch(`${RAG_SERVICE_URL_FINAL}/api/media/${uploadId}`, {
       method: 'GET',
       headers: {
         'X-Tenant-Id': tenantId,
+        ...(internalHeaders ?? {}),
       },
     });
 

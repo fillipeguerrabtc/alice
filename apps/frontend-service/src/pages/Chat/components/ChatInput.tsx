@@ -6,9 +6,9 @@
  * @module Chat/components/ChatInput
  */
 
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Send, Loader2, Paperclip } from 'lucide-react';
+import { Send, Loader2, Paperclip, Mic, Square } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -19,10 +19,16 @@ interface ChatInputProps {
   value: string;
   onChange: (value: string) => void;
   onSend: () => void;
-  onFileSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  onRemoveMedia: (index: number) => void;
+  onFilesSelected: (files: File[]) => void;
+  onStartRecording: () => void;
+  onStopRecording: () => void;
+  onSendRecording: () => void;
+  onRemoveMedia: (mediaId: string) => void;
   pendingMedia: MediaAttachment[];
   isStreaming: boolean;
+  isRecording: boolean;
+  isRecordingDisabled: boolean;
+  isMobile: boolean;
   acceptedTypes: string;
 }
 
@@ -30,10 +36,16 @@ export function ChatInput({
   value,
   onChange,
   onSend,
-  onFileSelect,
+  onFilesSelected,
+  onStartRecording,
+  onStopRecording,
+  onSendRecording,
   onRemoveMedia,
   pendingMedia,
   isStreaming,
+  isRecording,
+  isRecordingDisabled,
+  isMobile,
   acceptedTypes,
 }: ChatInputProps) {
   const { t } = useTranslation();
@@ -50,101 +62,176 @@ export function ChatInput({
   const adjustTextareaHeight = useCallback(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, isMobile ? 120 : 200)}px`;
     }
-  }, []);
+  }, [isMobile]);
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     onChange(e.target.value);
     adjustTextareaHeight();
   }, [onChange, adjustTextareaHeight]);
 
+  useEffect(() => {
+    adjustTextareaHeight();
+  }, [adjustTextareaHeight, value]);
+
+  const handleFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files ? Array.from(event.target.files) : [];
+    if (files.length > 0) {
+      onFilesSelected(files);
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  }, [onFilesSelected]);
+
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="flex-shrink-0 border-t bg-background/80 backdrop-blur-sm p-4"
-    >
+    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
       {pendingMedia.length > 0 && (
-        <div className="flex gap-2 mb-3 flex-wrap">
-          {pendingMedia.map((media, index) => (
+        <div className="flex flex-wrap gap-2 mb-2 md:mb-3 max-w-4xl mx-auto">
+          {pendingMedia.map((media) => (
             <MediaPreview
-              key={index}
+              key={media.id}
               media={media}
-              onRemove={() => onRemoveMedia(index)}
+              onRemove={() => onRemoveMedia(media.id)}
             />
           ))}
         </div>
       )}
 
-      <div className="flex items-end gap-2">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept={acceptedTypes}
-          multiple
-          className="hidden"
-          onChange={onFileSelect}
-          data-testid="input-file-upload"
-        />
+      <div className="flex gap-2 max-w-4xl mx-auto">
+        <div className="flex-1 flex items-end gap-1.5 md:gap-2 p-1.5 md:p-2 rounded-xl md:rounded-lg border bg-background shadow-sm">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={acceptedTypes}
+            multiple
+            className="hidden"
+            onChange={handleFileChange}
+            data-testid="input-file-upload"
+          />
 
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isStreaming}
-              data-testid="button-attach-file"
-            >
-              <Paperclip className="h-4 w-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>
-            {t('chat.attachFile')}
-          </TooltipContent>
-        </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 md:h-8 md:w-8 shrink-0 touch-manipulation"
+                disabled={isStreaming || isRecording}
+                onClick={() => fileInputRef.current?.click()}
+                data-testid="button-attach-file"
+              >
+                <Paperclip className="h-5 w-5 md:h-4 md:w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t('chat.attachFile')}</TooltipContent>
+          </Tooltip>
 
-        <div className="flex-1 relative">
+          {!isRecording ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 md:h-8 md:w-8 shrink-0 touch-manipulation"
+                  disabled={isRecordingDisabled}
+                  onClick={onStartRecording}
+                  data-testid="button-record-audio"
+                >
+                  <Mic className="h-5 w-5 md:h-4 md:w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('chat.recordAudio')}</TooltipContent>
+            </Tooltip>
+          ) : (
+            <>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="icon"
+                    className="h-9 w-9 md:h-8 md:w-8 shrink-0 touch-manipulation"
+                    disabled={isStreaming}
+                    onClick={onStopRecording}
+                    data-testid="button-stop-recording"
+                  >
+                    <Square className="h-5 w-5 md:h-4 md:w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t('chat.stopRecordingReview')}</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="default"
+                    size="icon"
+                    className="h-9 w-9 md:h-8 md:w-8 shrink-0 touch-manipulation"
+                    disabled={isStreaming}
+                    onClick={onSendRecording}
+                    data-testid="button-send-recording"
+                  >
+                    <Send className="h-5 w-5 md:h-4 md:w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t('chat.sendAudioNow')}</TooltipContent>
+              </Tooltip>
+            </>
+          )}
+
           <textarea
             ref={textareaRef}
             value={value}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
-            placeholder={t('chat.placeholder')}
-            disabled={isStreaming}
-            rows={1}
-            className="w-full resize-none rounded-lg border bg-background px-4 py-3 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+            placeholder={pendingMedia.length > 0 ? t('chat.placeholderWithMedia') : t('chat.placeholder')}
+            className="flex-1 min-h-[40px] md:min-h-[36px] max-h-[120px] md:max-h-[200px] resize-none bg-transparent text-base md:text-sm leading-relaxed focus-visible:outline-none"
+            disabled={isStreaming || isRecording}
             data-testid="input-chat-message"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="sentences"
           />
-        </div>
 
-        <Button
-          onClick={onSend}
-          disabled={isStreaming || (!value.trim() && pendingMedia.length === 0)}
-          size="icon"
-          data-testid="button-send-message"
-        >
-          {isStreaming ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Send className="h-4 w-4" />
-          )}
-        </Button>
+          <Button
+            type="button"
+            size="icon"
+            className="h-9 w-9 md:h-8 md:w-8 shrink-0 rounded-full md:rounded-md touch-manipulation"
+            disabled={(!value.trim() && pendingMedia.length === 0) || isStreaming || isRecording}
+            onClick={onSend}
+            data-testid="button-send-message"
+          >
+            {isStreaming ? (
+              <Loader2 className="h-5 w-5 md:h-4 md:w-4 animate-spin" />
+            ) : (
+              <Send className="h-5 w-5 md:h-4 md:w-4" />
+            )}
+          </Button>
+        </div>
       </div>
 
-      <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
-        <span>
-          {t('chat.enterToSend')}
-        </span>
+      <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground max-w-4xl mx-auto">
+        <span>{t('chat.enterToSend')}</span>
         {isStreaming && (
           <span className="flex items-center gap-1 text-primary">
             <Loader2 className="h-3 w-3 animate-spin" />
             {t('chat.generating')}
           </span>
         )}
+        {isRecording && (
+          <span className="flex items-center gap-1 text-destructive">
+            <span className="h-2 w-2 rounded-full bg-destructive animate-pulse" />
+            {t('chat.recording')}
+          </span>
+        )}
       </div>
+
+      <p className="hidden md:block text-xs text-center text-muted-foreground mt-2">
+        Alice pode cometer erros. Verifique informações importantes.
+      </p>
     </motion.div>
   );
 }
