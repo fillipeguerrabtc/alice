@@ -1,8 +1,8 @@
 # Guia Completo de Secrets - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 17 de Janeiro de 2026  
-**Versão:** 7.2 - exporter user ERPNext
+**Data:** 18 de Janeiro de 2026  
+**Versão:** 7.3 - Qdrant metrics scraper
 
 ## Visão geral
 
@@ -35,6 +35,7 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `GRAFANA_ADMIN_PASSWORD` | Senha admin Grafana | ✅ |
 | `ERPNEXT_ADMIN_PASSWORD` | Senha admin ERPNext | ✅ |
 | `ACME_EMAIL` | Email Let's Encrypt (Caddy TLS) | ✅ |
+| `QDRANT_API_KEY` | API key do Qdrant (também usado pelo scrape Prometheus) | ✅ |
 
 ## Secrets de observabilidade
 

@@ -80,6 +80,7 @@ services:
       - /opt/alice/data/prometheus:/prometheus
       - ../../observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ../../observability/rules:/etc/prometheus/rules:ro
+      - /opt/alice/secrets/qdrant_api_key:/run/secrets/qdrant_api_key:ro
     networks:
       - alice-network
     healthcheck:
@@ -403,14 +404,13 @@ services:
   # ===========================================================================
   # NODE EXPORTER - Métricas do Host
   # ===========================================================================
-  # NOTA: Usa network_mode: host para acessar métricas do sistema
+  # NOTA: Usa bind mounts do host; não depende de network_mode: host
   # ===========================================================================
   node-exporter:
     image: prom/node-exporter:${NODE_EXPORTER_VERSION:-v1.9.1}
     platform: linux/amd64
     container_name: alice-node-exporter
     restart: unless-stopped
-    network_mode: host
     pid: host
     security_opt:
       - no-new-privileges:true
@@ -424,6 +424,8 @@ services:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
       - /:/host:ro
+    networks:
+      - alice-network
     healthcheck:
       # Node Exporter é scratch (não tem wget/curl/shell)
       # CORREÇÃO PR#94: disable: true é a forma correta de desabilitar

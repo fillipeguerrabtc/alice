@@ -67,6 +67,9 @@ scrape_configs:
           environment: 'production'
     metrics_path: '/metrics'
     scrape_timeout: 10s
+    authorization:
+      type: Bearer
+      credentials_file: /run/secrets/qdrant_api_key
 
   # ===========================================================================
   # ERPNEXT EXPORTERS (WS2)
@@ -134,7 +137,7 @@ scrape_configs:
 
   - job_name: 'vector'
     static_configs:
-      - targets: ['alice-vector:8686']
+      - targets: ['alice-vector:9598']
     metrics_path: '/metrics'
 
   - job_name: 'prometheus'
@@ -174,12 +177,11 @@ scrape_configs:
           environment: 'production'
     metrics_path: '/metrics'
 
-  # REGRA 6: node-exporter usa network_mode: host, então está acessível via host.docker.internal
-  # Docker Compose v2+ mapeia host.docker.internal:host-gateway automaticamente no Linux
-  # Se host.docker.internal não funcionar, usar o IP do gateway da rede Docker diretamente
+  # REGRA 6: node-exporter expõe métricas via bridge + bind mounts do host
+  # Evita dependência de host.docker.internal e melhora confiabilidade do scrape
   - job_name: 'node-exporter'
     static_configs:
-      - targets: ['host.docker.internal:9100']
+      - targets: ['alice-node-exporter:9100']
         labels:
           instance: 'alice-prod'
           environment: 'production'
@@ -223,7 +225,4 @@ scrape_configs:
     metrics_path: '/metrics'
     scrape_timeout: 10s
 
-  - job_name: 'langfuse'
-    static_configs:
-      - targets: ['langfuse:3000']
-    metrics_path: '/api/public/metrics'  # Endpoint oficial Langfuse 2.x para Prometheus
+  # Langfuse não expõe endpoint Prometheus nativo; usar adapter dedicado se necessário

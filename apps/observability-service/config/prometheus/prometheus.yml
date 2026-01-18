@@ -49,13 +49,13 @@ scrape_configs:
   # ============================================================================
   - job_name: 'alice-auth-service'
     static_configs:
-      - targets: ['host.docker.internal:3001']
+      - targets: ['alice-auth:3001']
     metrics_path: /metrics
     scrape_interval: 30s
 
   - job_name: 'alice-chat-service'
     static_configs:
-      - targets: ['host.docker.internal:3002']
+      - targets: ['alice-chat:3002']
     metrics_path: /metrics
     scrape_interval: 15s
     metric_relabel_configs:
@@ -65,25 +65,25 @@ scrape_configs:
 
   - job_name: 'alice-rag-service'
     static_configs:
-      - targets: ['host.docker.internal:3003']
+      - targets: ['alice-rag:3003']
     metrics_path: /metrics
     scrape_interval: 30s
 
   - job_name: 'alice-training-service'
     static_configs:
-      - targets: ['host.docker.internal:3004']
+      - targets: ['alice-training:3004']
     metrics_path: /metrics
     scrape_interval: 60s
 
   - job_name: 'alice-integrations-service'
     static_configs:
-      - targets: ['host.docker.internal:3005']
+      - targets: ['alice-integrations:3005']
     metrics_path: /metrics
     scrape_interval: 30s
 
   - job_name: 'alice-gpu-manager-service'
     static_configs:
-      - targets: ['host.docker.internal:3010']
+      - targets: ['alice-gpu-manager:3010']
     metrics_path: /metrics
     scrape_interval: 15s
     metric_relabel_configs:
@@ -97,7 +97,7 @@ scrape_configs:
   # ============================================================================
   - job_name: 'gpu-llm'
     static_configs:
-      - targets: ['host.docker.internal:8004']
+      - targets: ['gpu-llm:8000']
         labels:
           service: 'llm'
           gpu_service: 'llm'
@@ -106,7 +106,7 @@ scrape_configs:
 
   - job_name: 'gpu-embeddings'
     static_configs:
-      - targets: ['host.docker.internal:8001']
+      - targets: ['gpu-embeddings:8000']
         labels:
           service: 'embeddings'
           gpu_service: 'rag'
@@ -115,7 +115,7 @@ scrape_configs:
 
   - job_name: 'gpu-asr'
     static_configs:
-      - targets: ['host.docker.internal:8002']
+      - targets: ['gpu-asr:8000']
         labels:
           service: 'asr'
           gpu_service: 'transcription'
@@ -127,9 +127,24 @@ scrape_configs:
   # ============================================================================
   - job_name: 'caddy'
     static_configs:
-      - targets: ['host.docker.internal:2019']
+      - targets: ['alice-caddy:2019']
     metrics_path: /metrics
     scrape_interval: 15s
+
+  # ============================================================================
+  # QDRANT - Vetorial texto
+  # ============================================================================
+  - job_name: 'qdrant'
+    static_configs:
+      - targets: ['alice-qdrant:6333']
+        labels:
+          instance: 'alice-prod'
+          environment: 'production'
+    metrics_path: '/metrics'
+    scrape_timeout: 10s
+    authorization:
+      type: Bearer
+      credentials_file: /run/secrets/qdrant_api_key
 
   # ============================================================================
   # JAEGER - ATUALIZADO 28/12/2025 para v2 (métricas na porta 8888)
@@ -139,6 +154,11 @@ scrape_configs:
     static_configs:
       - targets: ['jaeger:8888']
     metrics_path: /metrics
+
+  - job_name: 'vector'
+    static_configs:
+      - targets: ['alice-vector:9598']
+    metrics_path: '/metrics'
 
   # ============================================================================
   # NOTA: Langfuse não expõe endpoint /metrics nativo.
@@ -159,14 +179,13 @@ scrape_configs:
   # ============================================================================
   # NODE EXPORTER - Métricas de infraestrutura (CPU, memória, disco, rede)
   # Exporta: node_cpu_seconds_total, node_memory_*, node_filesystem_*, node_network_*
-  # Nota: node_exporter usa host networking para métricas reais do host Hetzner
-  # extra_hosts no Prometheus resolve host.docker.internal -> IP do host
+  # Nota: node_exporter usa bind mounts do host (bridge network)
   # ============================================================================
   - job_name: 'node-exporter'
     static_configs:
-      - targets: ['host.docker.internal:9100']
+      - targets: ['alice-node-exporter:9100']
         labels:
-          instance: 'hetzner-primary'
+          instance: 'alice-prod'
           environment: 'production'
     metrics_path: /metrics
     scrape_interval: 15s
@@ -177,6 +196,6 @@ scrape_configs:
   # ============================================================================
   - job_name: 'cadvisor'
     static_configs:
-      - targets: ['cadvisor:8080']
+      - targets: ['alice-cadvisor:8080']
     metrics_path: /metrics
     scrape_interval: 15s

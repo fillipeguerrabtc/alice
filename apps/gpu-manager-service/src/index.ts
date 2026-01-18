@@ -436,11 +436,16 @@ async function getVramFallback(): Promise<VramStatus> {
 
   // Proteção: fallback não pode gerar VRAM negativa e travar a fila.
   // Em ambientes sem nvidia-smi, o lock global Redis já garante execução serial.
-  const freeGB = Math.max(0, TOTAL_VRAM_GB - estimatedUsedGB);
+  const boundedUsedGB = Math.min(TOTAL_VRAM_GB, estimatedUsedGB);
+  const freeGB = Math.max(0, TOTAL_VRAM_GB - boundedUsedGB);
   const utilizationPercent = Math.max(
     0,
-    Math.min(100, Math.round((estimatedUsedGB / TOTAL_VRAM_GB) * 100))
+    Math.min(100, Math.round((boundedUsedGB / TOTAL_VRAM_GB) * 100))
   );
+
+  // Métricas agregadas (bytes) - fallback baseado em budget declarado
+  gpuVramTotalBytes.set({ gpu_id: GPU_ID }, TOTAL_VRAM_GB * 1024 * 1024 * 1024);
+  gpuVramUsedBytes.set({ gpu_id: GPU_ID }, boundedUsedGB * 1024 * 1024 * 1024);
 
   // Métricas: VRAM reservada estimada por capacidade (bytes)
   // Zerar primeiro para evitar séries "stale" quando um serviço fica inativo.
@@ -456,7 +461,7 @@ async function getVramFallback(): Promise<VramStatus> {
 
   return {
     totalGB: TOTAL_VRAM_GB,
-    usedGB: estimatedUsedGB,
+    usedGB: boundedUsedGB,
     freeGB,
     utilizationPercent,
     activeServices,

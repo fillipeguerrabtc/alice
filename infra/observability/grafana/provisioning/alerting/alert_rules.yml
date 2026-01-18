@@ -41,7 +41,7 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: histogram_quantile(0.95, sum(rate(alice_llm_inference_duration_seconds_bucket[5m])) by (le))
+              expr: histogram_quantile(0.95, sum(rate(alice_llm_inference_duration_seconds_bucket[5m])) by (le)) and on() (sum(rate(alice_llm_inference_duration_seconds_count[5m])) > 0)
               refId: A
           - refId: B
             relativeTimeRange:
@@ -83,7 +83,7 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: histogram_quantile(0.99, sum(rate(alice_llm_inference_duration_seconds_bucket[5m])) by (le))
+              expr: histogram_quantile(0.99, sum(rate(alice_llm_inference_duration_seconds_bucket[5m])) by (le)) and on() (sum(rate(alice_llm_inference_duration_seconds_count[5m])) > 0)
               refId: A
           - refId: B
             datasourceUid: __expr__
@@ -125,7 +125,7 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: histogram_quantile(0.95, sum(rate(alice_llm_ttft_seconds_bucket[5m])) by (le))
+              expr: histogram_quantile(0.95, sum(rate(alice_llm_ttft_seconds_bucket[5m])) by (le)) and on() (sum(rate(alice_llm_ttft_seconds_count[5m])) > 0)
               refId: A
           - refId: B
             datasourceUid: __expr__
@@ -466,7 +466,7 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: up == 0
+              expr: up{environment!="deploy"} == 0
               refId: A
           - refId: B
             datasourceUid: __expr__

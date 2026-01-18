@@ -23,6 +23,9 @@
 # ===========================================================================
 service:
   extensions: [healthcheckv2, jaeger_storage, jaeger_query]
+  telemetry:
+    metrics:
+      address: 0.0.0.0:8888
   pipelines:
     traces:
       receivers: [otlp]

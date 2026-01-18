@@ -28,6 +28,9 @@ type = "host_metrics"
 collectors = ["cpu", "disk", "filesystem", "load", "memory", "network"]
 scrape_interval_secs = 30
 
+[sources.internal_metrics]
+type = "internal_metrics"
+
 # ============================================
 # TRANSFORMS - Parse and enrich logs
 # ============================================
@@ -106,6 +109,11 @@ endpoint = "${GRAFANA_PROMETHEUS_URL}"
 auth.strategy = "basic"
 auth.user = "${GRAFANA_USER}"
 auth.password = "${GRAFANA_API_KEY}"
+
+[sinks.vector_prometheus_exporter]
+type = "prometheus_exporter"
+inputs = ["internal_metrics"]
+address = "0.0.0.0:9598"
 
 # Local file sink for backup
 [sinks.file_logs]

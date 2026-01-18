@@ -1,7 +1,7 @@
 # Guia de Observabilidade - Alice Enterprise Platform
 
-**Versão:** 2.4.0  
-**Data:** 16 de Janeiro de 2026  
+**Versão:** 2.5.0  
+**Data:** 18 de Janeiro de 2026  
 **Autor:** Fillipe Guerra
 
 ---
@@ -20,10 +20,11 @@
 | 6 | Infra sem visibilidade de DB/Cache | Impossível monitorar Postgres/PgBouncer/Redis/Qdrant | Adicionados exporters (Postgres/PgBouncer/Redis) + scrape Qdrant `/metrics` | ✅ CORRIGIDO |
 | 7 | Painéis "No data" (RBAC 0%, logs vazios) | Métricas/logs não aparecendo | Promtail atualizado para coletar logs reais dos containers (`/var/lib/docker/containers/*/*-json.log`) sem usar Docker socket (seguro) | ✅ CORRIGIDO |
 | 8 | Circuit breaker HALF_OPEN não aparecia | Grafana mapeava HALF_OPEN como `2`, mas métrica usa `0.5` | Mapeamento dashboards corrigido para `0.5` (HALF-OPEN) | ✅ CORRIGIDO |
+| 9 | Alertas "DatasourceNoData" em CPU/VRAM/Qdrant/Jaeger/Vector | Targets sem scrape válido geravam falsos positivos | Ajuste de targets + auth Qdrant + exporter Vector + métricas Jaeger | ✅ CORRIGIDO |
 
 ### Checklist de validação (pós-deploy)
 
-- **Prometheus (`/targets`)**: `alice-services`, `alice-gpu-services`, `node-exporter`, `cadvisor` em **UP**.
+- **Prometheus (`/targets`)**: `alice-services`, `alice-gpu-services`, `node-exporter`, `cadvisor`, `qdrant`, `jaeger`, `vector` em **UP**.
 - **Grafana**: dashboards Home, LLM/Chat, GPU Manager, Trading, ERPNext provisionados.
 - **Loki/Promtail**: logs do job `docker-containers` chegando com parsing JSON.
 - **Alertas**: regras ativas para LLM, GPU, KuCoin e infraestrutura.
@@ -39,7 +40,7 @@ A plataforma Alice implementa observabilidade **enterprise-grade** baseada em **
 - **Prometheus 3.8.1** - Métricas (**18 jobs**; scrape 15-60s)
 - **Grafana OSS 12.3.1** - Dashboards + Alerting
 - **Loki 3.6.3** - Logs centralizados
-- **Jaeger 2.13.0** - Distributed tracing
+- **Jaeger 2.13.0** - Distributed tracing (métricas via telemetry)
 - **Langfuse 3.89** - LLM observability
 - **Node Exporter 1.9.1** - Métricas de host
 - **cAdvisor 0.52.1** - Métricas de containers
@@ -230,26 +231,30 @@ A plataforma Alice implementa observabilidade **enterprise-grade** baseada em **
 
 ## 🔍 PROMETHEUS TARGETS
 
-### Targets Configurados (16 jobs)
+### Targets Configurados (18 jobs)
 
 | Job Name | Target | Scrape Interval | Métricas Principais |
 | --- | --- | --- | --- |
 | `prometheus` | localhost:9090 | 15s | Prometheus self-monitoring |
 | `otel-collector` | otel-collector:8888 | 15s | OTel Collector metrics |
-| `alice-auth-service` | host.docker.internal:3001 | 30s | HTTP, RBAC, sessions |
-| `alice-chat-service` | host.docker.internal:3002 | 15s | LLM, tokens, streaming, Response Cache |
-| `alice-rag-service` | host.docker.internal:3003 | 30s | Embeddings, vector search, Qdrant |
-| `alice-training-service` | host.docker.internal:3004 | 60s | Training jobs, loss, GPU utilization |
-| `alice-integrations-service` | host.docker.internal:3005 | 30s | KuCoin, Stripe, Wise, circuit breakers |
-| `alice-gpu-manager-service` | host.docker.internal:3010 | 15s | GPU Manager, VRAM, filas, circuit breakers |
-| `gpu-llm` | host.docker.internal:8004 | 30s | Serviço GPU LLM (vLLM OpenAI API - texto) |
-| `gpu-embeddings` | host.docker.internal:8001 | 30s | Serviço GPU de embeddings (FastAPI) |
-| `gpu-asr` | host.docker.internal:8002 | 60s | Serviço GPU ASR (FastAPI) |
-| `caddy` | host.docker.internal:2019 | 15s | API Gateway, SSL, HTTP/3 |
+| `alice-auth-service` | alice-auth:3001 | 30s | HTTP, RBAC, sessions |
+| `alice-chat-service` | alice-chat:3002 | 15s | LLM, tokens, streaming, Response Cache |
+| `alice-rag-service` | alice-rag:3003 | 30s | Embeddings, vector search, Qdrant |
+| `alice-training-service` | alice-training:3004 | 60s | Training jobs, loss, GPU utilization |
+| `alice-integrations-service` | alice-integrations:3005 | 30s | KuCoin, Stripe, Wise, circuit breakers |
+| `alice-gpu-manager-service` | alice-gpu-manager:3010 | 15s | GPU Manager, VRAM, filas, circuit breakers |
+| `gpu-llm` | gpu-llm:8000 | 30s | Serviço GPU LLM (vLLM OpenAI API - texto) |
+| `gpu-embeddings` | gpu-embeddings:8000 | 30s | Serviço GPU de embeddings (FastAPI) |
+| `gpu-asr` | gpu-asr:8000 | 60s | Serviço GPU ASR (FastAPI) |
+| `caddy` | alice-caddy:2019 | 15s | API Gateway, SSL, HTTP/3 |
+| `qdrant` | alice-qdrant:6333 | 10s | Vetorial texto (metrics com API key) |
+| `vector` | alice-vector:9598 | 30s | Métricas internas do Vector (prometheus_exporter) |
 | `jaeger` | jaeger:8888 | 15s | Distributed tracing |
 | `observability-health` | health-checker:3007 | 30s | Stack health checks |
-| `node-exporter` | host.docker.internal:9100 | 15s | Host metrics (CPU, RAM, Disk, Network) |
+| `node-exporter` | alice-node-exporter:9100 | 15s | Host metrics (CPU, RAM, Disk, Network) |
 | `cadvisor` | cadvisor:8080 | 15s | Container metrics |
+
+> Nota: Langfuse não expõe endpoint Prometheus nativo. Para métricas Langfuse, usar adapter dedicado ou queries via API pública autenticada.
 
 ---
 

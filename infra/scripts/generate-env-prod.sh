@@ -934,6 +934,9 @@ echo "🔐 Gerando arquivos de secret..."
 printf '%s' "${LANGFUSE_DB_PASSWORD}" > langfuse_db_password
 chmod 600 langfuse_db_password
 
+printf '%s' "${QDRANT_API_KEY}" > qdrant_api_key
+chmod 600 qdrant_api_key
+
 # Gmail App Password para Grafana Alerting SMTP
 # NOTA 01/01/2026: Alertmanager removido, Grafana usa variável GF_SMTP_PASSWORD diretamente
 # Arquivo de secret não é mais necessário - mantido apenas para retrocompatibilidade

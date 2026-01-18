@@ -663,14 +663,33 @@ export default function Chat() {
                       const targetIndex = newMessages.length - 1 - lastUserIndex;
                       const target = newMessages[targetIndex];
                       if (target?.mediaAttachments) {
-                        const updated = target.mediaAttachments.map((media) => {
-                          const serverAttachment = parsed.attachments.find((att: { id: string }) => att.id === media.id);
+                        const updated: MediaAttachment[] = target.mediaAttachments.map((media) => {
+                          const serverAttachment = parsed.attachments.find((att: { id: string }) => att.id === media.id) as
+                            | {
+                                id: string;
+                                url?: string;
+                                thumbnailUrl?: string;
+                                processingStatus?: string;
+                                uploadId?: string;
+                                transcription?: string;
+                                visionDescription?: string;
+                                visionModel?: string;
+                              }
+                            | undefined;
                           if (!serverAttachment) return media;
+                          const resolvedStatus: MediaAttachment['status'] =
+                            serverAttachment.processingStatus === 'completed'
+                              ? 'ready'
+                              : serverAttachment.processingStatus === 'failed' || serverAttachment.processingStatus === 'error'
+                                ? 'error'
+                                : serverAttachment.processingStatus === 'uploading'
+                                  ? 'uploading'
+                                  : 'processing';
                           return {
                             ...media,
                             url: serverAttachment.url ?? media.url,
                             thumbnailUrl: serverAttachment.thumbnailUrl ?? media.thumbnailUrl,
-                            status: serverAttachment.processingStatus === 'completed' ? 'ready' : 'processing',
+                            status: resolvedStatus,
                             uploadId: serverAttachment.uploadId ?? media.uploadId,
                             transcription: serverAttachment.transcription ?? media.transcription,
                             visionDescription: serverAttachment.visionDescription ?? media.visionDescription,
