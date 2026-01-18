@@ -82,7 +82,7 @@ COPY apps/chat-service/ ./apps/chat-service/
 # Compilar pacotes internos primeiro (ordem de dependências)
 RUN pnpm run build:packages
 
-# Criar bundle com esbuild (inclui @alice/* inline)
+# Criar bundle com esbuild (externaliza @alice/*)
 RUN pnpm --filter @alice/chat-service run build
 
 # ==============================================================================
@@ -93,7 +93,7 @@ FROM builder AS pruner
 WORKDIR /app
 
 # Usar pnpm deploy para extrair dependências de produção (--legacy para pnpm v10)
-# O bundle.js já contém @alice/*, então precisamos apenas das deps externas
+# O bundle.js externaliza @alice/*, então node_modules deve incluir pacotes internos e externos
 RUN pnpm --filter @alice/chat-service deploy --prod --legacy /prod/chat-service
 
 # ==============================================================================

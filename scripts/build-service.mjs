@@ -2,13 +2,14 @@
 /**
  * Alice Enterprise Platform - Script de Build para Microsserviços
  * 
- * Usa esbuild para criar bundles que incluem pacotes @alice/* inline,
- * mantendo dependências externas (express, pg, redis, prom-client, etc.) separadas.
+ * Usa esbuild para criar bundles dos microsserviços, mantendo pacotes internos
+ * (@alice/*) e dependências externas como módulos separados.
  * 
- * CORREÇÃO ENTERPRISE 20/12/2025:
- * - Coleta dependências de TODOS os pacotes @alice/* (shared-utils, database, etc.)
+ * CORREÇÃO ENTERPRISE 17/01/2026:
+ * - Externaliza pacotes @alice/* para evitar falha de resolução no build do Docker
+ * - Coleta dependências externas de TODOS os pacotes @alice/*
  * - Externaliza TODAS as dependências externas encontradas
- * - Resolve o problema de "Dynamic require" de forma DEFINITIVA
+ * - Resolve o problema de "Dynamic require" de forma definitiva
  * - Pacotes como redis, prom-client, pgvector são externalizados automaticamente
  * 
  * PROBLEMA ANTERIOR:
@@ -20,7 +21,7 @@
  * SOLUÇÃO:
  * - Ler package.json de todos os pacotes em packages/
  * - Coletar TODAS as dependências externas
- * - Externalizar TODAS (não só as do serviço)
+ * - Externalizar pacotes internos @alice/* e dependências externas
  * 
  * Uso: node scripts/build-service.mjs <service-name>
  * Exemplo: node scripts/build-service.mjs auth-service
@@ -28,7 +29,7 @@
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  * 
  * Autor: Fillipe Guerra
- * Data: 20 de Dezembro de 2025
+ * Data: 17 de Janeiro de 2026
  */
 
 import * as esbuild from 'esbuild';
@@ -88,6 +89,7 @@ const serviceDeps = collectExternalDeps(servicePkgPath);
 // ============================================================================
 const packagesDir = join(rootDir, 'packages');
 const packagesDeps = new Set();
+const internalPackages = new Set();
 
 if (existsSync(packagesDir)) {
   const packageFolders = readdirSync(packagesDir, { withFileTypes: true })
@@ -96,6 +98,17 @@ if (existsSync(packagesDir)) {
   
   for (const folder of packageFolders) {
     const pkgPath = join(packagesDir, folder, 'package.json');
+    if (!existsSync(pkgPath)) continue;
+
+    try {
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+      if (pkg?.name?.startsWith('@alice/')) {
+        internalPackages.add(pkg.name);
+      }
+    } catch {
+      // Ignorar pacotes com JSON inválido
+    }
+
     const deps = collectExternalDeps(pkgPath);
     deps.forEach(dep => packagesDeps.add(dep));
   }
@@ -122,16 +135,21 @@ const nodeBuiltins = [
 // ============================================================================
 // PASSO 5: Lista completa de externals
 // ============================================================================
+const internalPatterns = ['@alice/*', '@alice/*/*'];
+
 const externalPackages = [
   ...allExternalDeps,
+  ...internalPackages,
+  ...internalPatterns,
   ...nodeBuiltins,
 ];
 
 console.log(`\n🔨 Building ${serviceName}...`);
-console.log(`📦 Pacotes @alice/* serão incluídos no bundle (código inline)`);
+console.log(`📦 Pacotes @alice/* serão externalizados (módulos separados)`);
 console.log(`📤 Dependências do serviço: ${serviceDeps.length} pacotes`);
 console.log(`📤 Dependências dos packages/: ${packagesDeps.size} pacotes`);
-console.log(`📤 Total de externals: ${allExternalDeps.size} pacotes únicos`);
+console.log(`📤 Pacotes internos @alice/*: ${internalPackages.size} pacotes`);
+console.log(`📤 Total de externals: ${allExternalDeps.size + internalPackages.size + internalPatterns.length} pacotes únicos`);
 console.log(`📤 Node.js builtins: ${builtinModules.length} módulos (com e sem prefixo node:)`);
 
 // Log detalhado das dependências externalizadas (debug)
@@ -156,7 +174,7 @@ try {
     metafile: true,
     logLevel: 'info',
     banner: {
-      js: `// Alice Enterprise Platform - ${serviceName}\n// Build: ${new Date().toISOString()}\n// Externalized: ${allExternalDeps.size} packages + ${builtinModules.length} builtins\n`,
+      js: `// Alice Enterprise Platform - ${serviceName}\n// Build: ${new Date().toISOString()}\n// Externalized: ${allExternalDeps.size} deps + ${internalPackages.size} internal + ${internalPatterns.length} patterns + ${builtinModules.length} builtins\n`,
     },
   });
 

@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 **Autor:** Fillipe Guerra  
-**Data:** 18 de Janeiro de 2026  
+**Data:** 17 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.10 - OpenAI Vision/Images com proxy + diagnóstico avançado
+**Versão:** 7.11 - Build externo @alice/* para release estável
 
 ---
 
@@ -206,6 +206,7 @@ Retenção Arquivo:   30 dias
 - OpenAI Vision: logs com `status` e `x-request-id` para diagnóstico real.
 - Suporte enterprise a proxy (`OPENAI_PROXY`, `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`).
 - Limite configurável de payload para Vision (`OPENAI_VISION_MAX_BYTES`).
+- Build de microsserviços: esbuild externaliza `@alice/*` (inclui subpaths) para evitar falhas de resolução no Docker build.
 - Incremento atômico de `totalMensagens` em streams concorrentes (evita perda de contagem).
 - Upsert atômico em `/api/assistant-settings` para evitar conflito em concorrência.
 - pgBackRest: reset controlado quando `archive.info` existe sem `backup.info`.

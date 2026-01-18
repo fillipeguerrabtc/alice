@@ -82,7 +82,7 @@ COPY apps/integrations-service/ ./apps/integrations-service/
 # Compilar pacotes internos primeiro (ordem de dependências)
 RUN pnpm run build:packages
 
-# Criar bundle com esbuild (inclui @alice/* inline)
+# Criar bundle com esbuild (externaliza @alice/*)
 RUN pnpm --filter @alice/integrations-service run build
 
 # ==============================================================================
@@ -93,7 +93,7 @@ FROM builder AS pruner
 WORKDIR /app
 
 # Usar pnpm deploy para extrair dependências de produção (--legacy para pnpm v10)
-# O bundle.js já contém @alice/*, então precisamos apenas das deps externas
+# O bundle.js externaliza @alice/*, então node_modules deve incluir pacotes internos e externos
 RUN pnpm --filter @alice/integrations-service deploy --prod --legacy /prod/integrations-service
 
 # ==============================================================================
@@ -127,7 +127,7 @@ WORKDIR /app
 # Usando --chown para garantir que o usuário node tenha acesso
 COPY --from=pruner --chown=node:node /prod/integrations-service/node_modules ./node_modules
 
-# Copiar bundle compilado (com @alice/* inline)
+# Copiar bundle compilado (com @alice/* externalizados)
 COPY --from=builder --chown=node:node /app/apps/integrations-service/dist/bundle.js ./dist/bundle.js
 COPY --from=builder --chown=node:node /app/apps/integrations-service/dist/bundle.js.map ./dist/bundle.js.map
 
