@@ -867,6 +867,7 @@ interface AgentConfig {
   modeloBase?: string | null;
   temperaturaModelo?: number | null;
   maxTokens?: number | null;
+  namespaceId?: string | null;
 }
 
 type ConversationWithAgent = typeof schema.conversations.$inferSelect & {
@@ -1732,7 +1733,6 @@ function buildHistoryMessages(
     const content = msg.conteudo?.trim();
     if (!content) continue;
     const tokens = estimateTokensFromText(content);
-    const normalizedContent = content.toLowerCase();
     const isRecent = i < alwaysIncludeCount;
     const score = computeRelevanceScore(content, normalizedUser);
     const shouldInclude = isRecent || score >= relevanceThreshold;
@@ -3621,14 +3621,15 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     let conversationCreated = false;
 
     if (conversationId) {
-      conversation = await db.query.conversations.findFirst({
+      const existingConversation = await db.query.conversations.findFirst({
         where: eq(schema.conversations.id, conversationId),
         with: { agent: true },
       });
 
-      if (!conversation || conversation.userId !== userId) {
+      if (!existingConversation || existingConversation.userId !== userId) {
         return res.status(404).json({ error: 'Conversa não encontrada' });
       }
+      conversation = existingConversation;
     } else {
       const route = await resolveSemanticRoute({
         tenantId,
@@ -3649,12 +3650,16 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         },
       }).returning();
 
+      if (!created) {
+        throw new Error('Falha ao criar conversa - resultado do banco de dados inválido');
+      }
+
       const createdWithAgent = await db.query.conversations.findFirst({
         where: eq(schema.conversations.id, created.id),
         with: { agent: true },
       });
 
-      conversation = createdWithAgent || created;
+      conversation = createdWithAgent ?? created;
       conversationId = created.id;
       conversationCreated = true;
     }
@@ -4011,7 +4016,8 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
               }
 
               const streamProfile = detectContextProfile(lastUserMessageContent);
-              if (shouldAutoCollectTraining({
+              const streamUserRole = req.user?.role as Role | undefined;
+              if (streamUserRole && shouldAutoCollectTraining({
                 profile: streamProfile,
                 namespaceId: conversation?.namespaceId || conversation?.agent?.namespaceId,
                 userMessage: lastUserMessageContent,
@@ -4027,7 +4033,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                     { role: 'assistant', content: assistantResponse },
                   ],
                   userId,
-                  role: req.user?.role as Role,
+                  role: streamUserRole,
                 });
               }
 
@@ -5137,7 +5143,7 @@ wss.on('connection', (ws, req) => {
               }
 
               const websocketProfile = detectContextProfile(messageContent);
-              if (shouldAutoCollectTraining({
+              if (userRole && shouldAutoCollectTraining({
                 profile: websocketProfile,
                 namespaceId: conversation?.namespaceId || conversation?.agent?.namespaceId,
                 userMessage: messageContent,
