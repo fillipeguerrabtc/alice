@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 18 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.19 - Dark mode real + avatar dinâmico no chat
+**Versão:** 7.20 - Transcrição de áudio sem vazamento pós-envio
 
 ---
 
@@ -217,6 +217,7 @@ Retenção Arquivo:   30 dias
 - Chat Input: componente unificado com UX mobile-first e mesmas ações do input atual.
 - Áudio no Chat: gravação com duas opções (revisar transcrição ou enviar direto).
 - ASR GPU: gravação em revisão usa upload real no RAG + transcrição Canary-1B antes de envio.
+- Áudio no Chat: polling de transcrição encerra quando mídia é removida/enviada (sem texto fantasma).
 - Dark Mode: paleta preta/cinza para experiência similar ao ChatGPT.
 - Avatar do Chat: GIF dinâmico (packman pensando, gato após resposta) com tamanho ajustado.
 - pgBackRest: reset controlado quando `archive.info` existe sem `backup.info`.

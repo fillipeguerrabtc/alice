@@ -542,6 +542,9 @@ export default function Chat() {
     if (recordingUnmountedRef.current) {
       return;
     }
+    if (!pendingMediaRef.current.some((media) => media.uploadId === uploadId)) {
+      return;
+    }
     try {
       const res = await apiRequest('GET', `/api/media/${uploadId}`);
       if (!res.ok) {
@@ -554,6 +557,9 @@ export default function Chat() {
       };
       const status = data.processingStatus ?? 'processing';
 
+      if (!pendingMediaRef.current.some((media) => media.uploadId === uploadId)) {
+        return;
+      }
       setPendingMedia((prev) => prev.map((media) => {
         if (media.uploadId !== uploadId) return media;
         const resolvedStatus: MediaAttachment['status'] =
@@ -571,6 +577,9 @@ export default function Chat() {
       }));
 
       if (status === 'completed') {
+        if (!pendingMediaRef.current.some((media) => media.uploadId === uploadId)) {
+          return;
+        }
         const transcriptionText = data.transcription?.trim();
         if (transcriptionText) {
           setInput((prev) => {
@@ -582,6 +591,9 @@ export default function Chat() {
       }
 
       if (status === 'failed') {
+        if (!pendingMediaRef.current.some((media) => media.uploadId === uploadId)) {
+          return;
+        }
         toast({
           title: t('chat.recordingTranscriptionFailed'),
           description: t('chat.recordingTranscriptionFailedDesc'),
@@ -593,7 +605,11 @@ export default function Chat() {
       frontendLogger.error('Falha ao consultar transcrição do áudio', { error, uploadId });
     }
 
-    if (attemptsLeft > 0 && !recordingUnmountedRef.current) {
+    if (
+      attemptsLeft > 0
+      && !recordingUnmountedRef.current
+      && pendingMediaRef.current.some((media) => media.uploadId === uploadId)
+    ) {
       setTimeout(() => {
         void pollMediaTranscription(uploadId, attemptsLeft - 1);
       }, 2000);
