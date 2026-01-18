@@ -3457,6 +3457,12 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
     const assistantSettings = await getAssistantSettingsForTenant(req.tenantId);
     let systemPrompt = buildSystemPrompt(agent, assistantSettings, body.conteudo);
     
+    const previousMessages = await db.query.messages.findMany({
+      where: eq(schema.messages.conversationId, id),
+      orderBy: [desc(schema.messages.criadoEm)],
+      limit: 10,
+    });
+
     const ragStartTime = Date.now();
     const ragParams = getAdaptiveRagParams(body.conteudo, previousMessages.length);
     const ragResult = await buscarContextoRAG(
@@ -3475,12 +3481,6 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
         ragLatencyMs: ragLatency,
       }, 'Contexto RAG injetado no prompt');
     }
-    
-    const previousMessages = await db.query.messages.findMany({
-      where: eq(schema.messages.conversationId, id),
-      orderBy: [desc(schema.messages.criadoEm)],
-      limit: 10,
-    });
 
     const historyForPrompt = dropLeadingDuplicateUserMessage(previousMessages, body.conteudo);
     const llmMessages = buildPromptMessages({
