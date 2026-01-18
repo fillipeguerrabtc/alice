@@ -46,6 +46,7 @@ import {
   ChevronRight,
   Filter,
   TrendingUp,
+  Folder,
   Upload,
   FileJson,
   Info,
@@ -92,6 +93,7 @@ import { frontendLogger } from '@/lib/logger';
 interface TrainingData {
   id: string;
   source: string;
+  namespaceId?: string | null;
   messages: Array<{ role: string; content: string }>;
   rating: number | null;
   status: 'pending' | 'approved' | 'rejected' | 'used';
@@ -124,6 +126,12 @@ interface TrainingDataResponse {
 
 interface JobsResponse {
   jobs: FineTuningJob[];
+}
+
+interface Namespace {
+  id: string;
+  nome: string;
+  slug: string;
 }
 
 type AutoLearningStatusResponse = {
@@ -238,8 +246,9 @@ function getJobStatusBadge(status: FineTuningJob['status'], t: (key: string) => 
   }
 }
 
-function TrainingDataCard({ data, onApprove, onReject, isPending, t }: { 
+function TrainingDataCard({ data, namespaceName, onApprove, onReject, isPending, t }: { 
   data: TrainingData; 
+  namespaceName?: string | null;
   onApprove: () => void;
   onReject: () => void;
   isPending: boolean;
@@ -255,6 +264,11 @@ function TrainingDataCard({ data, onApprove, onReject, isPending, t }: {
             <div className="flex items-center gap-2">
               <MessageSquare className="h-4 w-4 text-primary" />
               <span className="text-sm font-medium">{data.source}</span>
+              {namespaceName && (
+                <Badge variant="secondary" className="text-xs">
+                  {namespaceName}
+                </Badge>
+              )}
             </div>
             {getStatusBadge(data.status, t)}
           </div>
@@ -1531,7 +1545,11 @@ export default function Training() {
   const tenantId = user?.tenantId;
   
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [namespaceFilter, setNamespaceFilter] = useState<string>('all');
+  const [sourceFilter, setSourceFilter] = useState<string>('all');
   const [showCreateJob, setShowCreateJob] = useState(false);
+  const [showTradingJob, setShowTradingJob] = useState(false);
+  const [tradingNamespaceId, setTradingNamespaceId] = useState<string>('');
   const [showOnDemandRun, setShowOnDemandRun] = useState(false);
 
   // Auto-learning (status + schedules) - Gate 2
@@ -1689,6 +1707,37 @@ export default function Training() {
     },
   });
 
+  const createTradingJob = useMutation({
+    mutationFn: async () => {
+      if (!tradingNamespaceId) {
+        throw new Error('Namespace de Trading obrigatório');
+      }
+      const res = await apiRequest('POST', '/api/training/jobs/trading', {
+        tenantId,
+        namespaceId: tradingNamespaceId,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      setShowTradingJob(false);
+      queryClient.invalidateQueries({ queryKey: ['/api/training/jobs'] });
+      toast({ title: t('training.trading.success') });
+    },
+    onError: (error) => {
+      frontendLogger.error('Erro ao criar job Trading', {
+        error: error instanceof Error ? error.message : String(error),
+        tenantId,
+        namespaceId: tradingNamespaceId,
+      });
+      toast({ title: t('training.trading.error'), variant: 'destructive' });
+    },
+  });
+
+  const { data: namespaces } = useQuery<Namespace[]>({
+    queryKey: ['/api/namespaces'],
+    staleTime: 1000 * 60,
+  });
+
   const { data: trainingData, isLoading: dataLoading } = useQuery<TrainingDataResponse>({
     queryKey: ['/api/training/data'],
     staleTime: 1000 * 30,
@@ -1717,9 +1766,15 @@ export default function Training() {
   const allData = trainingData?.trainingData || [];
   const allJobs = jobs?.jobs || [];
 
-  const filteredData = statusFilter === 'all' 
-    ? allData 
-    : allData.filter(d => d.status === statusFilter);
+  const namespacesById = new Map((namespaces || []).map((ns) => [ns.id, ns.nome]));
+  const sourceOptions = Array.from(new Set(allData.map((d) => d.source))).sort();
+
+  const filteredData = allData.filter((entry) => {
+    if (statusFilter !== 'all' && entry.status !== statusFilter) return false;
+    if (namespaceFilter !== 'all' && entry.namespaceId !== namespaceFilter) return false;
+    if (sourceFilter !== 'all' && entry.source !== sourceFilter) return false;
+    return true;
+  });
 
   const stats = {
     total: allData.length,
@@ -1762,6 +1817,15 @@ export default function Training() {
             >
               <Play className="h-4 w-4 mr-2" />
               {t('training.autoLearning.onDemand')}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setShowTradingJob(true)}
+              disabled={!tenantId}
+              data-testid="button-trading-job"
+            >
+              <TrendingUp className="h-4 w-4 mr-2" />
+              {t('training.trading.button')}
             </Button>
             <Button onClick={() => setShowCreateJob(true)} data-testid="button-new-job">
               <Brain className="h-4 w-4 mr-2" />
@@ -1853,7 +1917,7 @@ export default function Training() {
         </div>
 
         <TabsContent value="data" className="flex-1 m-0">
-          <div className="p-4 border-b flex items-center gap-2">
+          <div className="p-4 border-b flex items-center gap-2 flex-wrap">
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-[160px]" data-testid="select-status-filter">
                 <Filter className="h-4 w-4 mr-2" />
@@ -1867,9 +1931,45 @@ export default function Training() {
                 <SelectItem value="used">{t('training.filter.used')}</SelectItem>
               </SelectContent>
             </Select>
+            <Select value={namespaceFilter} onValueChange={setNamespaceFilter}>
+              <SelectTrigger className="w-[200px]" data-testid="select-namespace-filter">
+                <Folder className="h-4 w-4 mr-2" />
+                <SelectValue placeholder={t('training.filter.namespace')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t('training.filter.allNamespaces')}</SelectItem>
+                {(namespaces || []).map((namespace) => (
+                  <SelectItem key={namespace.id} value={namespace.id}>
+                    {namespace.nome}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={sourceFilter} onValueChange={setSourceFilter}>
+              <SelectTrigger className="w-[200px]" data-testid="select-source-filter">
+                <Database className="h-4 w-4 mr-2" />
+                <SelectValue placeholder={t('training.filter.source')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t('training.filter.allSources')}</SelectItem>
+                {sourceOptions.map((source) => (
+                  <SelectItem key={source} value={source}>
+                    {source}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <span className="text-sm text-muted-foreground">
               {t('training.filter.results', { count: filteredData.length })}
             </span>
+          </div>
+
+          <div className="px-4 pt-4">
+            <Alert>
+              <Info className="h-4 w-4" />
+              <AlertTitle>{t('training.approval.title')}</AlertTitle>
+              <AlertDescription>{t('training.approval.desc')}</AlertDescription>
+            </Alert>
           </div>
 
           <ScrollArea className="flex-1 p-4">
@@ -1902,6 +2002,7 @@ export default function Training() {
                   <TrainingDataCard
                     key={data.id}
                     data={data}
+                    namespaceName={data.namespaceId ? namespacesById.get(data.namespaceId) : null}
                     isPending={updateStatus.isPending}
                     onApprove={() => updateStatus.mutate({ id: data.id, status: 'approved' })}
                     onReject={() => updateStatus.mutate({ id: data.id, status: 'rejected' })}
@@ -2113,6 +2214,60 @@ export default function Training() {
         approvedCount={stats.approved}
         t={t}
       />
+
+      <Dialog open={showTradingJob} onOpenChange={setShowTradingJob}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('training.trading.title')}</DialogTitle>
+            <DialogDescription>{t('training.trading.desc')}</DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2">
+              <Label>{t('training.trading.namespace')}</Label>
+              <Select value={tradingNamespaceId} onValueChange={setTradingNamespaceId}>
+                <SelectTrigger>
+                  <SelectValue placeholder={t('training.trading.selectNamespace')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {(namespaces || []).map((namespace) => (
+                    <SelectItem key={namespace.id} value={namespace.id}>
+                      {namespace.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Alert>
+              <Info className="h-4 w-4" />
+              <AlertTitle>{t('training.trading.noticeTitle')}</AlertTitle>
+              <AlertDescription>{t('training.trading.noticeDesc')}</AlertDescription>
+            </Alert>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowTradingJob(false)}>
+              {t('training.createJob.cancel')}
+            </Button>
+            <Button
+              onClick={() => createTradingJob.mutate()}
+              disabled={!tenantId || !tradingNamespaceId || createTradingJob.isPending}
+            >
+              {createTradingJob.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  {t('training.trading.starting')}
+                </>
+              ) : (
+                <>
+                  <TrendingUp className="h-4 w-4 mr-2" />
+                  {t('training.trading.start')}
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showOnDemandRun} onOpenChange={setShowOnDemandRun}>
         <DialogContent className="max-w-lg">

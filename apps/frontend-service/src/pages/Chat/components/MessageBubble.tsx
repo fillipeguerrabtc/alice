@@ -36,6 +36,7 @@ interface MessageBubbleProps {
   message: Message;
   isStreaming: boolean;
   isLast: boolean;
+  streamStatus?: string | null;
   onRateImage?: (imageId: string, score: number) => void;
   onFeedback?: (messageId: string, isPositive: boolean) => void;
   onRegenerate?: () => void;
@@ -45,6 +46,7 @@ export function MessageBubble({
   message, 
   isStreaming, 
   isLast,
+  streamStatus,
   onRateImage,
   onFeedback,
   onRegenerate,
@@ -99,6 +101,17 @@ export function MessageBubble({
               {message.mediaAttachments.map((media) => (
                 <InlineMediaAttachment key={media.id} media={media} />
               ))}
+            </div>
+          )}
+
+          {isStreaming && isLast && message.role === 'assistant' && (
+            <div className="text-xs text-muted-foreground mb-1 flex items-center gap-2">
+              <span>{streamStatus || t('chat.streaming.thinking')}</span>
+              <span className="inline-flex gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
+                <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse delay-150" />
+                <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse delay-300" />
+              </span>
             </div>
           )}
 

@@ -262,6 +262,20 @@
     "processing": "Processando...",
     "thinking": "Pensando...",
     "typing": "Digitando...",
+    "streaming": {
+      "thinking": "Alice está pensando",
+      "error": "Erro ao receber resposta da Alice. Tente novamente.",
+      "timeout": "Tempo de resposta excedido. Tente novamente.",
+      "status": {
+        "preparing": "Preparando resposta",
+        "greeting": "Aplicando resposta rápida",
+        "reuse": "Reutilizando resposta anterior",
+        "ragInternal": "Buscando conhecimento interno",
+        "ragWeb": "Buscando na web e deep web",
+        "llm": "Gerando resposta",
+        "writing": "Escrevendo resposta"
+      }
+    },
     "agent": {
       "ai": "Alice IA",
       "human": "Agente Humano",
@@ -285,6 +299,20 @@
       "regenerate": "Regenerar",
       "helpful": "Útil",
       "notHelpful": "Não útil"
+    },
+    "training": {
+      "send": "Enviar p/ Treino",
+      "title": "Enviar conversa para treinamento",
+      "desc": "A conversa será enviada como dado pendente para aprovação no Training.",
+      "namespace": "Namespace",
+      "selectNamespace": "Selecione um namespace",
+      "noticeTitle": "Aprovação obrigatória",
+      "noticeDesc": "Os dados enviados precisam ser aprovados antes de iniciar o treinamento.",
+      "confirm": "Enviar agora",
+      "sending": "Enviando...",
+      "cancel": "Cancelar",
+      "sent": "Conversa enviada para aprovação",
+      "error": "Falha ao enviar conversa para treinamento"
     }
   },
   "agents": {
@@ -904,7 +932,28 @@
       "approved": "Aprovados",
       "rejected": "Rejeitados",
       "used": "Usados",
-      "results": "{{count}} resultado(s)"
+      "results": "{{count}} resultado(s)",
+      "namespace": "Namespace",
+      "allNamespaces": "Todos os namespaces",
+      "source": "Fonte",
+      "allSources": "Todas as fontes"
+    },
+    "approval": {
+      "title": "Aprovação de dados coletados",
+      "desc": "Dados coletados automaticamente do chat ficam em \"Pendente\". Revise e aprove antes de treinar."
+    },
+    "trading": {
+      "button": "Pipeline Trading",
+      "title": "Treinamento Trading",
+      "desc": "Cria um job de fine-tuning usando apenas dados aprovados do namespace selecionado.",
+      "namespace": "Namespace Trading",
+      "selectNamespace": "Selecione um namespace",
+      "noticeTitle": "Curadoria obrigatória",
+      "noticeDesc": "Apenas dados aprovados no namespace serão usados no treino.",
+      "start": "Iniciar pipeline",
+      "starting": "Iniciando...",
+      "success": "Pipeline Trading iniciado",
+      "error": "Erro ao iniciar pipeline Trading"
     },
     "data": {
       "duplicate": "Duplicado ({{percent}}%)",
@@ -1383,6 +1432,23 @@
     "saveErrorTitle": "Erro ao salvar",
     "saveErrorDesc": "Não foi possível atualizar as configurações.",
     "defaultPromptTitle": "Prompt Padrão (somente leitura)",
-    "defaultPromptDescription": "Referência do prompt padrão caso queira voltar ao original."
+    "defaultPromptDescription": "Referência do prompt padrão caso queira voltar ao original.",
+    "sliders": {
+      "directness": "Diretividade",
+      "proactivity": "Proatividade",
+      "formality": "Formalidade",
+      "empathy": "Empatia"
+    },
+    "agentsTitle": "Prompts por Agente",
+    "agentsDescription": "Configure instruções e personalidade sobrepostas ao prompt central.",
+    "agentsSelect": "Selecionar agente",
+    "agentsSelectPlaceholder": "Escolha um agente",
+    "agentInstructions": "Instruções do agente",
+    "agentPersonality": "Personalidade do agente",
+    "agentSave": "Salvar agente",
+    "agentSaveSuccessTitle": "Agente atualizado",
+    "agentSaveSuccessDesc": "As instruções do agente foram salvas.",
+    "agentSaveErrorTitle": "Erro ao salvar agente",
+    "agentSaveErrorDesc": "Não foi possível atualizar o agente."
   }
 }

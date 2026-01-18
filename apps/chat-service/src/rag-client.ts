@@ -8,7 +8,13 @@
  * @module chat-service/rag-client
  */
 
-import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
+import type { Role } from '@alice/shared-utils';
+import { 
+  createCircuitBreaker, 
+  CIRCUIT_BREAKER_PRESETS,
+  generateInternalAuthHeaders,
+  isInternalAuthEnabled,
+} from '@alice/shared-utils';
 import { createLogger } from '@alice/logger';
 
 // CORREÇÃO AUDITORIA 17/12/2025: Usar createLogger padronizado da plataforma
@@ -37,6 +43,14 @@ export interface RAGSource {
 export interface RAGContextResponse {
   context: string;
   sources: RAGSource[];
+}
+
+export interface AgenticContextResponse {
+  context: string;
+  sources?: {
+    internal?: Array<{ documentId: string; titulo?: string; similarity: number }>;
+    web?: Array<{ title: string; url: string }>;
+  };
 }
 
 // Circuit Breaker usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
@@ -73,6 +87,57 @@ async function fetchContextInternal(
 
 const ragBreaker = createCircuitBreaker(fetchContextInternal, {
   name: 'rag-service',
+  ...CIRCUIT_BREAKER_PRESETS.ragService,
+});
+
+async function fetchAgenticContextInternal(params: {
+  query: string;
+  namespaceId?: string;
+  limit?: number;
+  threshold?: number;
+  forceMode?: 'internal' | 'web' | 'hybrid';
+  auth: { userId: string; tenantId: string; role: Role };
+}): Promise<AgenticContextResponse> {
+  const { query, namespaceId, limit, threshold, forceMode, auth } = params;
+  if (!isInternalAuthEnabled()) {
+    throw new Error('INTERNAL_API_SECRET não configurado - busca agentic indisponível');
+  }
+
+  const internalHeaders = generateInternalAuthHeaders({
+    userId: auth.userId,
+    tenantId: auth.tenantId,
+    role: auth.role,
+  });
+
+  const response = await fetch(`${RAG_SERVICE_URL_FINAL}/api/rag/agentic`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-internal-signature': internalHeaders['x-internal-signature'],
+      'x-internal-timestamp': internalHeaders['x-internal-timestamp'],
+      'x-internal-user-id': internalHeaders['x-internal-user-id'],
+      'x-internal-role': internalHeaders['x-internal-role'],
+      ...(internalHeaders['x-internal-tenant-id'] ? { 'x-internal-tenant-id': internalHeaders['x-internal-tenant-id'] } : {}),
+    },
+    body: JSON.stringify({
+      query,
+      namespaceId,
+      limit,
+      threshold,
+      forceMode,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`RAG agentic erro: ${response.status} - ${errorText}`);
+  }
+
+  return response.json() as Promise<AgenticContextResponse>;
+}
+
+const ragAgenticBreaker = createCircuitBreaker(fetchAgenticContextInternal, {
+  name: 'rag-agentic',
   ...CIRCUIT_BREAKER_PRESETS.ragService,
 });
 
@@ -129,6 +194,37 @@ export async function buscarContextoRAG(
       logger.warn('Circuit breaker RAG aberto - continuando sem contexto');
     } else {
       logger.warn({ error }, 'Falha ao buscar contexto RAG - continuando sem contexto');
+    }
+    return null;
+  }
+}
+
+export async function buscarContextoAgentic(params: {
+  query: string;
+  namespaceId?: string;
+  limit?: number;
+  threshold?: number;
+  forceMode?: 'internal' | 'web' | 'hybrid';
+  auth: { userId: string; tenantId: string; role: Role };
+}): Promise<AgenticContextResponse | null> {
+  if (!params.query || params.query.trim().length === 0) {
+    logger.debug('Query vazia - ignorando busca agentic');
+    return null;
+  }
+
+  if (!isInternalAuthEnabled()) {
+    logger.warn('INTERNAL_API_SECRET não configurado - busca agentic desabilitada');
+    return null;
+  }
+
+  try {
+    const result = await ragAgenticBreaker.fire(params) as AgenticContextResponse;
+    return result;
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('Breaker is open')) {
+      logger.warn('Circuit breaker RAG agentic aberto - continuando sem busca web');
+    } else {
+      logger.warn({ error }, 'Falha ao buscar contexto agentic - continuando sem web');
     }
     return null;
   }

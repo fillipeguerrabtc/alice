@@ -262,6 +262,20 @@
     "processing": "Processing...",
     "thinking": "Thinking...",
     "typing": "Typing...",
+    "streaming": {
+      "thinking": "Alice is thinking",
+      "error": "Failed to receive Alice's response. Please try again.",
+      "timeout": "Response timed out. Please try again.",
+      "status": {
+        "preparing": "Preparing response",
+        "greeting": "Applying quick response",
+        "reuse": "Reusing previous response",
+        "ragInternal": "Searching internal knowledge",
+        "ragWeb": "Searching the web and deep web",
+        "llm": "Generating response",
+        "writing": "Writing response"
+      }
+    },
     "agent": {
       "ai": "Alice AI",
       "human": "Human Agent",
@@ -285,6 +299,20 @@
       "regenerate": "Regenerate",
       "helpful": "Helpful",
       "notHelpful": "Not helpful"
+    },
+    "training": {
+      "send": "Send to Training",
+      "title": "Send conversation to training",
+      "desc": "This conversation will be submitted as pending data for approval in Training.",
+      "namespace": "Namespace",
+      "selectNamespace": "Select a namespace",
+      "noticeTitle": "Approval required",
+      "noticeDesc": "Submitted data must be approved before training starts.",
+      "confirm": "Send now",
+      "sending": "Sending...",
+      "cancel": "Cancel",
+      "sent": "Conversation sent for approval",
+      "error": "Failed to send conversation to training"
     }
   },
   "agents": {
@@ -904,7 +932,28 @@
       "approved": "Approved",
       "rejected": "Rejected",
       "used": "Used",
-      "results": "{{count}} result(s)"
+      "results": "{{count}} result(s)",
+      "namespace": "Namespace",
+      "allNamespaces": "All namespaces",
+      "source": "Source",
+      "allSources": "All sources"
+    },
+    "approval": {
+      "title": "Collected data approval",
+      "desc": "Automatically collected chat data stays as \"Pending\". Review and approve before training."
+    },
+    "trading": {
+      "button": "Trading Pipeline",
+      "title": "Trading Training",
+      "desc": "Creates a fine-tuning job using approved data from the selected namespace.",
+      "namespace": "Trading Namespace",
+      "selectNamespace": "Select a namespace",
+      "noticeTitle": "Curation required",
+      "noticeDesc": "Only approved data in the namespace will be used for training.",
+      "start": "Start pipeline",
+      "starting": "Starting...",
+      "success": "Trading pipeline started",
+      "error": "Failed to start trading pipeline"
     },
     "data": {
       "duplicate": "Duplicate ({{percent}}%)",
@@ -1383,6 +1432,23 @@
     "saveErrorTitle": "Save failed",
     "saveErrorDesc": "Unable to update settings.",
     "defaultPromptTitle": "Default Prompt (read-only)",
-    "defaultPromptDescription": "Reference for the default prompt if you want to revert."
+    "defaultPromptDescription": "Reference for the default prompt if you want to revert.",
+    "sliders": {
+      "directness": "Directness",
+      "proactivity": "Proactivity",
+      "formality": "Formality",
+      "empathy": "Empathy"
+    },
+    "agentsTitle": "Agent Prompts",
+    "agentsDescription": "Configure instructions and personality layered over the central prompt.",
+    "agentsSelect": "Select agent",
+    "agentsSelectPlaceholder": "Choose an agent",
+    "agentInstructions": "Agent instructions",
+    "agentPersonality": "Agent personality",
+    "agentSave": "Save agent",
+    "agentSaveSuccessTitle": "Agent updated",
+    "agentSaveSuccessDesc": "Agent instructions were saved.",
+    "agentSaveErrorTitle": "Agent save failed",
+    "agentSaveErrorDesc": "Unable to update the agent."
   }
 }

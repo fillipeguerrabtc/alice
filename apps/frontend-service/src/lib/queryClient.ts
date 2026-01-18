@@ -62,7 +62,8 @@ async function throwIfResNotOk(res: Response) {
 export async function apiRequest(
   method: string,
   url: string,
-  data?: unknown
+  data?: unknown,
+  options?: { signal?: AbortSignal }
 ): Promise<Response> {
   const headers: Record<string, string> = {};
   
@@ -80,6 +81,7 @@ export async function apiRequest(
     headers: Object.keys(headers).length > 0 ? headers : undefined,
     body: data ? JSON.stringify(data) : undefined,
     credentials: 'include',
+    signal: options?.signal,
   });
 
   await throwIfResNotOk(res);

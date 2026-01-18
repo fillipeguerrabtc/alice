@@ -398,6 +398,45 @@ const messageSchema = z.object({
   content: z.string().min(1, 'Conteúdo da mensagem é obrigatório'),
 });
 
+const TRADING_MIN_DATA_REQUIRED = parseEnvInt(
+  process.env.TRAINING_TRADING_MIN_DATA,
+  30,
+  'TRAINING_TRADING_MIN_DATA'
+);
+const TRADING_EPOCHS = parseEnvInt(process.env.TRAINING_TRADING_EPOCHS, 4, 'TRAINING_TRADING_EPOCHS');
+const TRADING_BATCH_SIZE = parseEnvInt(process.env.TRAINING_TRADING_BATCH_SIZE, 2, 'TRAINING_TRADING_BATCH_SIZE');
+
+function parseEnvFloat(envValue: string | undefined, defaultValue: number, varName: string): number {
+  const raw = envValue ?? String(defaultValue);
+  const trimmed = raw.trim();
+  if (!/^\d+(\.\d+)?$/.test(trimmed)) {
+    const errorMsg = `${varName} inválido: "${raw}". Deve ser número positivo.`;
+    if (process.env.NODE_ENV === 'production') {
+      logger.error({ varName, rawValue: raw }, errorMsg);
+      throw new Error(errorMsg);
+    }
+    logger.warn({ varName, rawValue: raw, defaultValue }, `${errorMsg} Usando valor padrão.`);
+    return defaultValue;
+  }
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    const errorMsg = `${varName} inválido: "${raw}". Deve ser número positivo.`;
+    if (process.env.NODE_ENV === 'production') {
+      logger.error({ varName, rawValue: raw, parsed }, errorMsg);
+      throw new Error(errorMsg);
+    }
+    logger.warn({ varName, rawValue: raw, parsed, defaultValue }, `${errorMsg} Usando valor padrão.`);
+    return defaultValue;
+  }
+  return parsed;
+}
+
+const TRADING_LEARNING_RATE = parseEnvFloat(
+  process.env.TRAINING_TRADING_LEARNING_RATE,
+  0.00008,
+  'TRAINING_TRADING_LEARNING_RATE'
+);
+
 const collectTrainingDataSchema = z.object({
   tenantId: z.string().uuid('Tenant ID deve ser UUID válido'),
   namespaceId: z.string().uuid('Namespace ID deve ser UUID válido'),
@@ -579,6 +618,18 @@ const createJobSchema = z.object({
   }).optional(),
 });
 
+const createTradingJobSchema = z.object({
+  tenantId: z.string().uuid().optional(),
+  namespaceId: z.string().uuid(),
+  name: z.string().min(1).optional(),
+  baseModel: z.string().default(GPU_MANAGER_CONFIG.models.llm),
+  hyperparameters: z.object({
+    epochs: z.number().default(TRADING_EPOCHS),
+    learningRate: z.number().default(TRADING_LEARNING_RATE),
+    batchSize: z.number().default(TRADING_BATCH_SIZE),
+  }).optional(),
+});
+
 app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:start'), async (req: Request, res: Response) => {
   try {
     const body = createJobSchema.parse(req.body);
@@ -626,6 +677,69 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
     res.json({ job });
   } catch (error) {
     logger.error({ error }, 'Falha ao criar job');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.post('/api/training/jobs/trading', requirePermission('training:fine_tuning_jobs:start'), async (req: Request, res: Response) => {
+  try {
+    const body = createTradingJobSchema.parse(req.body);
+
+    const namespace = await db.query.namespaces.findFirst({
+      where: eq(schema.namespaces.id, body.namespaceId),
+    });
+
+    if (!namespace) {
+      return res.status(404).json({ error: 'Namespace não encontrado' });
+    }
+
+    if (body.tenantId && namespace.tenantId && namespace.tenantId !== body.tenantId) {
+      return res.status(403).json({ error: 'Namespace não pertence ao tenant informado' });
+    }
+
+    const tenantId = body.tenantId || namespace.tenantId || undefined;
+
+    const approvedConditions = [
+      eq(schema.trainingData.status, 'approved'),
+      eq(schema.trainingData.namespaceId, body.namespaceId),
+    ];
+    if (tenantId) approvedConditions.push(eq(schema.trainingData.tenantId, tenantId));
+
+    const approvedData = await db.query.trainingData.findMany({
+      where: and(...approvedConditions),
+    });
+
+    if (approvedData.length < TRADING_MIN_DATA_REQUIRED) {
+      return res.status(400).json({
+        error: 'Dados de treinamento insuficientes para Trading',
+        required: TRADING_MIN_DATA_REQUIRED,
+        available: approvedData.length,
+      });
+    }
+
+    const hyperparameters = body.hyperparameters || {
+      epochs: TRADING_EPOCHS,
+      learningRate: TRADING_LEARNING_RATE,
+      batchSize: TRADING_BATCH_SIZE,
+    };
+
+    const [job] = await db.insert(schema.fineTuningJobs).values({
+      tenantId,
+      name: body.name || 'Trading Fine-Tuning',
+      baseModel: body.baseModel,
+      status: 'pending',
+      trainingDataCount: approvedData.length,
+      hyperparameters,
+    }).returning();
+
+    processFineTuningJob(job.id, hyperparameters).catch((err: unknown) => {
+      logger.error({ error: err, jobId: job.id }, 'Job de fine-tuning Trading falhou');
+    });
+
+    logger.info({ jobId: job.id, namespaceId: body.namespaceId, dataCount: approvedData.length }, 'Job de fine-tuning Trading criado');
+    res.json({ job });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao criar job de Trading');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });

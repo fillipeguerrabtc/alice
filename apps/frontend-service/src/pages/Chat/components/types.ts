@@ -62,6 +62,12 @@ export interface Conversation {
 
 export interface ConversationsResponse {
   conversations: Conversation[];
+  nextCursor?: {
+    updatedAt: string;
+    id: string;
+  } | null;
+  hasMore?: boolean;
+  total?: number;
 }
 
 // BUG FIX 23/12/2025: Tipo explícito garante que todas as chaves de MediaType existam

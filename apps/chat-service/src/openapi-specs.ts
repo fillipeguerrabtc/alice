@@ -123,6 +123,32 @@ export const chatServicePaths = {
       responses: { 201: { description: 'Mensagem enviada' } },
     },
   },
+  '/api/chat/conversations/{id}/training/collect': {
+    post: {
+      summary: 'Enviar conversa para coleta de treinamento',
+      tags: ['Training'],
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                namespaceId: { type: 'string', format: 'uuid' },
+                maxMessages: { type: 'integer', minimum: 2, maximum: 100 },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Conversa enviada para aprovação' },
+        400: { $ref: '#/components/responses/ValidationError' },
+        403: { $ref: '#/components/responses/Forbidden' },
+        404: { $ref: '#/components/responses/NotFound' },
+      },
+    },
+  },
   '/api/chat/conversations/{id}/stream': {
     post: {
       summary: 'Enviar mensagem com streaming',

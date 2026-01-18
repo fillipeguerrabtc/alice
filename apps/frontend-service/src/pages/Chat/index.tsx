@@ -22,7 +22,7 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { useParams, useLocation } from 'wouter';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -36,6 +36,8 @@ import {
   ChevronRight,
   Sparkles,
   Menu,
+  FileCheck,
+  Info,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -43,6 +45,23 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
 import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
@@ -81,6 +100,12 @@ import {
   getMediaType,
   formatFileSize,
 } from './components/types';
+
+interface Namespace {
+  id: string;
+  nome: string;
+  slug: string;
+}
 import { MessageBubble } from './components/MessageBubble';
 import { ConversationItem } from './components/ConversationItem';
 import { MediaPreview } from './components/MediaPreview';
@@ -117,6 +142,9 @@ interface ConversationsListProps {
   isLoading: boolean;
   onNewChat: () => void;
   onSelectConversation: (id: string) => void;
+  onLoadMore: () => void;
+  hasMore: boolean;
+  isLoadingMore: boolean;
 }
 
 function ConversationsList({
@@ -125,6 +153,9 @@ function ConversationsList({
   isLoading,
   onNewChat,
   onSelectConversation,
+  onLoadMore,
+  hasMore,
+  isLoadingMore,
 }: ConversationsListProps) {
   return (
     <>
@@ -165,6 +196,19 @@ function ConversationsList({
               <p className="text-sm">Nenhuma conversa</p>
             </div>
           )}
+          {hasMore && (
+            <div className="pt-2">
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={onLoadMore}
+                disabled={isLoadingMore}
+                data-testid="button-load-more-conversations"
+              >
+                {isLoadingMore ? 'Carregando...' : 'Carregar mais'}
+              </Button>
+            </div>
+          )}
         </motion.div>
       </ScrollArea>
     </>
@@ -182,11 +226,14 @@ export default function Chat() {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [streamStatus, setStreamStatus] = useState<string | null>(null);
   // Desktop: sidebar aberta por padrão | Mobile: fechada por padrão
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
   // Estado separado para drawer mobile
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [pendingMedia, setPendingMedia] = useState<MediaAttachment[]>([]);
+  const [showTrainingDialog, setShowTrainingDialog] = useState(false);
+  const [trainingNamespaceId, setTrainingNamespaceId] = useState<string>('');
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -308,14 +355,39 @@ export default function Chat() {
     setPendingMedia([]);
   }, [pendingMedia]);
 
-  const { data: conversationsData, isLoading: conversationsLoading } = useQuery<ConversationsResponse>({
+  const fetchConversations = useCallback(async ({ pageParam }: { pageParam?: { updatedAt: string; id: string } }) => {
+    const params = new URLSearchParams();
+    params.set('limit', '50');
+    if (pageParam?.updatedAt && pageParam?.id) {
+      params.set('cursorUpdatedAt', pageParam.updatedAt);
+      params.set('cursorId', pageParam.id);
+    }
+    const res = await apiRequest('GET', `/api/chat/conversations?${params.toString()}`);
+    return res.json() as Promise<ConversationsResponse>;
+  }, []);
+
+  const {
+    data: conversationsData,
+    isLoading: conversationsLoading,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
     queryKey: ['/api/chat/conversations'],
+    queryFn: fetchConversations,
+    initialPageParam: undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     staleTime: 1000 * 60,
   });
 
   const { data: conversationMessages } = useQuery<{ messages: Message[] }>({
     queryKey: ['/api/chat/conversations', conversationId, 'messages'],
     enabled: !!conversationId,
+  });
+
+  const { data: namespaces } = useQuery<Namespace[]>({
+    queryKey: ['/api/namespaces'],
+    staleTime: 1000 * 60,
   });
 
   const createConversation = useMutation({
@@ -338,6 +410,26 @@ export default function Chat() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  const STREAM_NO_CHUNK_TIMEOUT_MS = 60000;
+  const resolveStreamStatus = useCallback((stage?: string) => {
+    switch (stage) {
+      case 'rag_internal':
+        return t('chat.streaming.status.ragInternal');
+      case 'rag_web':
+        return t('chat.streaming.status.ragWeb');
+      case 'greeting':
+        return t('chat.streaming.status.greeting');
+      case 'reuse':
+        return t('chat.streaming.status.reuse');
+      case 'llm':
+        return t('chat.streaming.status.llm');
+      case 'writing':
+        return t('chat.streaming.status.writing');
+      case 'preparing':
+      default:
+        return t('chat.streaming.status.preparing');
+    }
+  }, [t]);
   const sendMessage = useMutation({
     mutationFn: async ({ content, mediaAttachments }: { content: string; mediaAttachments?: MediaAttachment[] }) => {
       const userMessage: Message = {
@@ -351,6 +443,7 @@ export default function Chat() {
 
       setMessages((prev) => [...prev, userMessage]);
       setIsStreaming(true);
+      setStreamStatus(resolveStreamStatus('preparing'));
 
       const assistantMessage: Message = {
         id: crypto.randomUUID(),
@@ -367,63 +460,190 @@ export default function Chat() {
         navigate(`/chat/${activeConversationId}`);
       }
 
+      const controller = new AbortController();
+      let streamTimeoutId: ReturnType<typeof setTimeout> | null = null;
+      const resetTimeout = () => {
+        if (streamTimeoutId) clearTimeout(streamTimeoutId);
+        streamTimeoutId = setTimeout(() => {
+          controller.abort();
+        }, STREAM_NO_CHUNK_TIMEOUT_MS);
+      };
+      const clearTimeoutSafe = () => {
+        if (streamTimeoutId) {
+          clearTimeout(streamTimeoutId);
+          streamTimeoutId = null;
+        }
+      };
+
       const res = await apiRequest('POST', '/api/chat/stream', {
         conversationId: activeConversationId,
-        messages: [...messages, userMessage].map((m) => ({
-          role: m.role,
-          content: m.content,
-        })),
-      });
+        message: content,
+      }, { signal: controller.signal });
 
       if (!res.body) throw new Error('No response body');
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let fullContent = '';
+      let buffer = '';
+      resetTimeout();
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
+          const chunk = decoder.decode(value, { stream: true });
+          buffer += chunk;
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
 
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6);
-            if (data === '[DONE]') continue;
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6).trim();
+              if (data === '[DONE]') continue;
 
-            try {
-              const parsed = JSON.parse(data);
-              if (parsed.type === 'conversation' && parsed.conversationId && !conversationId) {
-                navigate(`/chat/${parsed.conversationId}`);
-                queryClientRef.invalidateQueries({ queryKey: ['/api/chat/conversations'] });
+              try {
+                const parsed = JSON.parse(data);
+                if (parsed.type === 'conversation' && parsed.conversationId && !conversationId) {
+                  navigate(`/chat/${parsed.conversationId}`);
+                  queryClientRef.invalidateQueries({ queryKey: ['/api/chat/conversations'] });
+                  resetTimeout();
+                }
+
+                if (parsed.type === 'status') {
+                  setStreamStatus(resolveStreamStatus(parsed.stage));
+                  resetTimeout();
+                }
+
+                if (parsed.type === 'sources') {
+                  resetTimeout();
+                }
+
+                if (parsed.type === 'message_saved') {
+                  resetTimeout();
+                }
+
+                if (parsed.type === 'generated_image' && parsed.message) {
+                  const serverMessage = parsed.message as {
+                    id?: string;
+                    conteudo?: string | null;
+                    criadoEm?: string | null;
+                    generatedImage?: Message['generatedImage'];
+                  };
+                  const normalizedMessage: Message = {
+                    id: serverMessage.id || crypto.randomUUID(),
+                    role: 'assistant',
+                    content: serverMessage.conteudo || 'Imagem gerada com sucesso via OpenAI.',
+                    createdAt: serverMessage.criadoEm || new Date().toISOString(),
+                    generatedImage: serverMessage.generatedImage,
+                  };
+                  setMessages((prev) => {
+                    const newMessages = [...prev];
+                    const lastIdx = newMessages.length - 1;
+                    if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
+                      newMessages[lastIdx] = { ...newMessages[lastIdx], ...normalizedMessage };
+                    } else {
+                      newMessages.push(normalizedMessage);
+                    }
+                    return newMessages;
+                  });
+                  resetTimeout();
+                }
+
+                if (parsed.error) {
+                  const errorMessage = typeof parsed.error === 'string' ? parsed.error : t('chat.streaming.error');
+                  setMessages((prev) => {
+                    const newMessages = [...prev];
+                    const lastIdx = newMessages.length - 1;
+                    if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
+                      newMessages[lastIdx] = {
+                        ...newMessages[lastIdx],
+                        content: errorMessage,
+                      };
+                    } else {
+                      newMessages.push({
+                        id: crypto.randomUUID(),
+                        role: 'assistant',
+                        content: errorMessage,
+                        createdAt: new Date().toISOString(),
+                      });
+                    }
+                    return newMessages;
+                  });
+                  resetTimeout();
+                }
+
+                if (parsed.content) {
+                  fullContent += parsed.content;
+                  setMessages((prev) => {
+                    const newMessages = [...prev];
+                    const lastIdx = newMessages.length - 1;
+                    if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
+                      newMessages[lastIdx] = { ...newMessages[lastIdx], content: fullContent };
+                    }
+                    return newMessages;
+                  });
+                  setStreamStatus(resolveStreamStatus('writing'));
+                  resetTimeout();
+                }
+              } catch {
+                // Ignorar erros de parse
               }
-
-              if (parsed.content) {
-                fullContent += parsed.content;
-                setMessages((prev) => {
-                  const newMessages = [...prev];
-                  const lastMsg = newMessages[newMessages.length - 1];
-                  if (lastMsg.role === 'assistant') {
-                    lastMsg.content = fullContent;
-                  }
-                  return newMessages;
-                });
-              }
-            } catch {
-              // Ignorar erros de parse
             }
           }
         }
+      } finally {
+        clearTimeoutSafe();
       }
 
       setIsStreaming(false);
+      setStreamStatus(null);
       queryClientRef.invalidateQueries({ queryKey: ['/api/chat/conversations'] });
       return fullContent;
     },
-    onError: () => {
+    onError: (error) => {
+      const isAbort = error instanceof Error && error.name === 'AbortError';
+      const errorMessage = isAbort ? t('chat.streaming.timeout') : t('chat.streaming.error');
+      setMessages((prev) => {
+        const newMessages = [...prev];
+        const lastIdx = newMessages.length - 1;
+        if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
+          newMessages[lastIdx] = { ...newMessages[lastIdx], content: errorMessage };
+        } else {
+          newMessages.push({
+            id: crypto.randomUUID(),
+            role: 'assistant',
+            content: errorMessage,
+            createdAt: new Date().toISOString(),
+          });
+        }
+        return newMessages;
+      });
       setIsStreaming(false);
+      setStreamStatus(null);
+    },
+  });
+
+  const sendConversationToTraining = useMutation({
+    mutationFn: async () => {
+      if (!conversationId) {
+        throw new Error('Conversa não identificada');
+      }
+      if (!trainingNamespaceId) {
+        throw new Error('Namespace obrigatório');
+      }
+      const res = await apiRequest('POST', `/api/chat/conversations/${conversationId}/training/collect`, {
+        namespaceId: trainingNamespaceId,
+      });
+      return res.json() as Promise<{ success: boolean; messages: number }>;
+    },
+    onSuccess: () => {
+      setShowTrainingDialog(false);
+      toast({ title: t('chat.training.sent') });
+    },
+    onError: () => {
+      toast({ title: t('chat.training.error'), variant: 'destructive' });
     },
   });
 
@@ -536,7 +756,7 @@ export default function Chat() {
     }
   };
 
-  const conversations = conversationsData?.conversations || [];
+  const conversations = conversationsData?.pages.flatMap((page) => page.conversations) || [];
 
   // Handler para nova conversa com fechamento de drawer mobile
   const handleNewChatWithClose = useCallback(() => {
@@ -567,6 +787,9 @@ export default function Chat() {
                 isLoading={conversationsLoading}
                 onNewChat={handleNewChatWithClose}
                 onSelectConversation={handleSelectConversation}
+                onLoadMore={() => fetchNextPage()}
+                hasMore={Boolean(hasNextPage)}
+                isLoadingMore={isFetchingNextPage}
               />
             </div>
           </SheetContent>
@@ -590,6 +813,9 @@ export default function Chat() {
                 isLoading={conversationsLoading}
                 onNewChat={handleNewChatWithClose}
                 onSelectConversation={handleSelectConversation}
+                onLoadMore={() => fetchNextPage()}
+                hasMore={Boolean(hasNextPage)}
+                isLoadingMore={isFetchingNextPage}
               />
             </motion.div>
           )}
@@ -635,11 +861,36 @@ export default function Chat() {
               <Sparkles className="h-3 w-3" />
               Qwen2.5 7B
             </Badge>
+            {conversationId && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="hidden md:flex"
+                onClick={() => setShowTrainingDialog(true)}
+                data-testid="button-send-to-training"
+              >
+                <FileCheck className="h-4 w-4 mr-2" />
+                {t('chat.training.send')}
+              </Button>
+            )}
             {/* Mobile: Badge compacto */}
             {isMobile && (
-              <Badge variant="secondary" className="h-6 px-2">
-                <Sparkles className="h-3 w-3" />
-              </Badge>
+              <>
+                <Badge variant="secondary" className="h-6 px-2">
+                  <Sparkles className="h-3 w-3" />
+                </Badge>
+                {conversationId && (
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={() => setShowTrainingDialog(true)}
+                    data-testid="button-send-to-training-mobile"
+                  >
+                    <FileCheck className="h-3 w-3" />
+                  </Button>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -662,6 +913,7 @@ export default function Chat() {
                     message={message}
                     isStreaming={isStreaming}
                     isLast={index === messages.length - 1}
+                    streamStatus={isStreaming && index === messages.length - 1 ? streamStatus : null}
                     onRateImage={handleRateImage}
                     onFeedback={handleFeedback}
                     onRegenerate={handleRegenerate}
@@ -766,6 +1018,60 @@ export default function Chat() {
             Alice pode cometer erros. Verifique informações importantes.
           </p>
         </motion.form>
+
+        <Dialog open={showTrainingDialog} onOpenChange={setShowTrainingDialog}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>{t('chat.training.title')}</DialogTitle>
+              <DialogDescription>{t('chat.training.desc')}</DialogDescription>
+            </DialogHeader>
+
+            <div className="grid gap-4 py-2">
+              <div className="grid gap-2">
+                <Label>{t('chat.training.namespace')}</Label>
+                <Select value={trainingNamespaceId} onValueChange={setTrainingNamespaceId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={t('chat.training.selectNamespace')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(namespaces || []).map((namespace) => (
+                      <SelectItem key={namespace.id} value={namespace.id}>
+                        {namespace.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Alert>
+                <Info className="h-4 w-4" />
+                <AlertTitle>{t('chat.training.noticeTitle')}</AlertTitle>
+                <AlertDescription>{t('chat.training.noticeDesc')}</AlertDescription>
+              </Alert>
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => setShowTrainingDialog(false)}>
+                {t('chat.training.cancel')}
+              </Button>
+              <Button
+                onClick={() => sendConversationToTraining.mutate()}
+                disabled={!trainingNamespaceId || sendConversationToTraining.isPending}
+              >
+                {sendConversationToTraining.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    {t('chat.training.sending')}
+                  </>
+                ) : (
+                  <>
+                    <FileCheck className="h-4 w-4 mr-2" />
+                    {t('chat.training.confirm')}
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

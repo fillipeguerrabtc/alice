@@ -133,6 +133,64 @@ Content-Type: application/json
 }
 ```
 
+### Iniciar Treinamento Trading (Pipeline Específico)
+
+```http
+POST /api/training/jobs/trading
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "tenantId": "uuid",
+  "namespaceId": "uuid",
+  "name": "Trading Fine-Tuning",
+  "baseModel": "Qwen/Qwen2.5-7B-Instruct-AWQ",
+  "hyperparameters": {
+    "epochs": 4,
+    "learningRate": 0.00008,
+    "batchSize": 2
+  }
+}
+```
+
+**Regras do Pipeline Trading:**
+- Filtra **apenas dados aprovados** do **namespace Trading**.
+- Exige **mínimo de dados** configurável (`TRAINING_TRADING_MIN_DATA`).
+- Hiperparâmetros ajustados para precisão em finanças/trading.
+
+**Resposta:**
+```json
+{
+  "job": {
+    "id": "uuid",
+    "status": "pending",
+    "trainingDataCount": 120,
+    "name": "Trading Fine-Tuning"
+  }
+}
+```
+
+---
+
+## Coleta de Dados do Chat (com aprovação)
+
+### Coleta automática (Trading)
+
+A coleta automática envia pares **usuário → assistente** para o Training Service como **pendentes** (exigem aprovação).
+
+**Regras:**
+- Só coleta quando a conversa está no perfil **Trading** e possui **namespace**.
+- Não bloqueia a resposta do chat (envio assíncrono).
+
+**Variáveis de ambiente:**
+- `TRAINING_AUTO_COLLECT_CHAT=true` (habilita a coleta automática)
+- `TRAINING_CONVERSATION_MAX_MESSAGES=20` (limite para curadoria manual)
+
+### Curadoria manual (Enviar conversa ao namespace)
+
+No chat, use **"Enviar p/ Treino"** para enviar a conversa ao namespace.  
+Os dados ficam em **Pendente** no Training até aprovação.
+
 **Resposta:**
 ```json
 {

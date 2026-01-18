@@ -62,10 +62,11 @@ import {
   validateAgentTenantConsistency,
 } from '@alice/shared-utils';
 import type { Role } from '@alice/shared-utils';
-import { eq, desc, inArray, and, sql } from '@alice/database';
+import { eq, desc, inArray, and, or, lt, sql } from '@alice/database';
 import { z } from 'zod';
 import { 
   buscarContextoRAG, 
+  buscarContextoAgentic,
   formatarContextoParaLLM, 
   getRAGBreakerStats,
   uploadMediaToRAG,
@@ -872,6 +873,10 @@ interface AssistantSettings {
   systemPrompt?: string | null;
   behavior?: string | null;
   mood?: string | null;
+  behaviorDirectness?: number | null;
+  behaviorProactivity?: number | null;
+  moodFormality?: number | null;
+  moodEmpathy?: number | null;
 }
 
 /**
@@ -911,6 +916,31 @@ function applyAssistantSettings(prompt: string, settings?: AssistantSettings | n
 
   if (settings?.mood && settings.mood.trim()) {
     result += `\n\nTONE: ${settings.mood.trim()}`;
+  }
+
+  const traitLines: string[] = [];
+  const scaleToLabel = (value: number): string => {
+    if (value <= 25) return 'baixo';
+    if (value <= 50) return 'moderado';
+    if (value <= 75) return 'alto';
+    return 'muito alto';
+  };
+
+  if (settings?.behaviorDirectness !== null && settings?.behaviorDirectness !== undefined) {
+    traitLines.push(`Diretividade: ${scaleToLabel(settings.behaviorDirectness)}`);
+  }
+  if (settings?.behaviorProactivity !== null && settings?.behaviorProactivity !== undefined) {
+    traitLines.push(`Proatividade: ${scaleToLabel(settings.behaviorProactivity)}`);
+  }
+  if (settings?.moodFormality !== null && settings?.moodFormality !== undefined) {
+    traitLines.push(`Formalidade: ${scaleToLabel(settings.moodFormality)}`);
+  }
+  if (settings?.moodEmpathy !== null && settings?.moodEmpathy !== undefined) {
+    traitLines.push(`Empatia: ${scaleToLabel(settings.moodEmpathy)}`);
+  }
+
+  if (traitLines.length > 0) {
+    result += `\n\nTRAÇOS (0-100):\n- ${traitLines.join('\n- ')}`;
   }
 
   return result;
@@ -978,6 +1008,10 @@ async function getAssistantSettingsForTenant(tenantId?: string | null): Promise<
       systemPrompt: settings.systemPrompt ?? null,
       behavior: settings.behavior ?? null,
       mood: settings.mood ?? null,
+      behaviorDirectness: settings.behaviorDirectness ?? null,
+      behaviorProactivity: settings.behaviorProactivity ?? null,
+      moodFormality: settings.moodFormality ?? null,
+      moodEmpathy: settings.moodEmpathy ?? null,
     };
   } catch (error) {
     logger.error({ error, tenantId }, 'Falha ao carregar assistant_settings');
@@ -1006,6 +1040,101 @@ interface LLMResponse {
   }>;
 }
 
+// ============================================================================
+// TÍTULOS DE CONVERSA (LLM) - Enterprise Auto-Title
+// ============================================================================
+const TITLE_MAX_CHARS = 120;
+const TITLE_MIN_CHARS = 4;
+const TITLE_SYSTEM_PROMPT = `Você é um gerador de títulos de conversa.
+Gere um título curto, específico e relacionado ao conteúdo.
+Regras:
+- Responda SOMENTE com o título (sem aspas, sem emojis, sem lista).
+- Use a mesma língua da conversa.
+- Máximo de 8 palavras.`;
+
+function sanitizeConversationTitle(raw: string): string {
+  const firstLine = raw.split('\n')[0] ?? '';
+  const trimmed = firstLine.trim().replace(/^["'“”‘’]+|["'“”‘’]+$/g, '');
+  const normalized = trimmed.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= TITLE_MAX_CHARS) {
+    return normalized;
+  }
+  return normalized.slice(0, TITLE_MAX_CHARS).trim();
+}
+
+async function generateConversationTitle(params: {
+  userMessage: string;
+  assistantResponse?: string | null;
+}): Promise<string | null> {
+  const userMessage = params.userMessage?.trim();
+  if (!userMessage) {
+    return null;
+  }
+
+  const context = params.assistantResponse?.trim()
+    ? `${userMessage}\n\nResposta:\n${params.assistantResponse.trim()}`
+    : userMessage;
+
+  try {
+    const titleResponse = await callLlamaAPI(
+      [
+        { role: 'system', content: TITLE_SYSTEM_PROMPT },
+        { role: 'user', content: context },
+      ],
+      false,
+      {
+        temperature: 0.2,
+        maxTokens: 24,
+      },
+      getAdaptiveGpuPriority('title', 'general')
+    );
+    const rawTitle = String(titleResponse || '').trim();
+    if (!rawTitle || rawTitle === LLM_FALLBACK_MESSAGE) {
+      return null;
+    }
+
+    const sanitized = sanitizeConversationTitle(rawTitle);
+    if (sanitized.length < TITLE_MIN_CHARS) {
+      return null;
+    }
+    return sanitized;
+  } catch (error) {
+    logger.warn({ error }, 'Falha ao gerar título automático da conversa');
+    return null;
+  }
+}
+
+async function ensureConversationTitle(params: {
+  conversationId: string;
+  userMessage: string;
+  assistantResponse?: string | null;
+}): Promise<void> {
+  const title = await generateConversationTitle(params);
+  if (!title) {
+    return;
+  }
+
+  const [updated] = await db.update(schema.conversations)
+    .set({
+      titulo: title,
+      atualizadoEm: new Date(),
+    })
+    .where(
+      and(
+        eq(schema.conversations.id, params.conversationId),
+        or(
+          sql`${schema.conversations.titulo} is null`,
+          eq(schema.conversations.titulo, 'Nova Conversa')
+        )
+      )
+    )
+    .returning();
+
+  if (updated) {
+    logger.info({ conversationId: params.conversationId, title }, 'Título automático aplicado à conversa');
+  }
+}
+
 /**
  * Configuração de parâmetros LLM para chamadas de inferência
  * 
@@ -1024,6 +1153,7 @@ interface LLMRequest {
   messages: LLMMessage[];
   stream: boolean;
   config?: LLMConfig;
+  priority?: GpuRequestPriority;
 }
 
 // Valores padrão centralizados (Regra 2 - Não Duplicar)
@@ -1034,6 +1164,658 @@ const DEFAULT_LLM_CONFIG: Required<LLMConfig> = {
   maxTokens: 2048,
   model: 'Qwen/Qwen2.5-7B-Instruct-AWQ',
 };
+
+// ============================================================================
+// PERFORMANCE 2025: Budget dinâmico de tokens + RAG adaptativo
+// ============================================================================
+const MIN_LLM_OUTPUT_TOKENS = 256;
+
+function parseEnvInt(value: string | undefined, defaultValue: number, name: string): number {
+  const raw = (value ?? String(defaultValue)).trim();
+  if (!/^\d+$/.test(raw)) {
+    const message = `${name} inválido: "${raw}". Deve ser inteiro positivo.`;
+    if (process.env.NODE_ENV === 'production') {
+      logger.error({ name, raw }, message);
+      throw new Error(message);
+    }
+    logger.warn({ name, raw, defaultValue }, `${message} Usando valor padrão.`);
+    return defaultValue;
+  }
+  const parsed = parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    const message = `${name} inválido: "${raw}". Deve ser inteiro positivo.`;
+    if (process.env.NODE_ENV === 'production') {
+      logger.error({ name, raw, parsed }, message);
+      throw new Error(message);
+    }
+    logger.warn({ name, raw, parsed, defaultValue }, `${message} Usando valor padrão.`);
+    return defaultValue;
+  }
+  return parsed;
+}
+
+function parseEnvBool(value: string | undefined, defaultValue: boolean, name: string): boolean {
+  if (value === undefined) return defaultValue;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'true') return true;
+  if (normalized === 'false') return false;
+  const message = `${name} inválido: "${value}". Deve ser 'true' ou 'false'.`;
+  if (process.env.NODE_ENV === 'production') {
+    logger.error({ name, raw: value }, message);
+    throw new Error(message);
+  }
+  logger.warn({ name, raw: value, defaultValue }, `${message} Usando valor padrão.`);
+  return defaultValue;
+}
+type LlmSource =
+  | 'sync'
+  | 'stream'
+  | 'websocket'
+  | 'websocket-media'
+  | 'external-channel'
+  | 'title';
+
+type LlmContextProfile = 'trading' | 'general' | 'analysis';
+
+const LLM_TOKENS_PER_SECOND = parseEnvInt(
+  process.env.LLM_TOKENS_PER_SECOND,
+  40,
+  'LLM_TOKENS_PER_SECOND'
+);
+const TRAINING_AUTO_COLLECT_CHAT = parseEnvBool(
+  process.env.TRAINING_AUTO_COLLECT_CHAT,
+  true,
+  'TRAINING_AUTO_COLLECT_CHAT'
+);
+const TRAINING_CONVERSATION_MAX_MESSAGES = parseEnvInt(
+  process.env.TRAINING_CONVERSATION_MAX_MESSAGES,
+  20,
+  'TRAINING_CONVERSATION_MAX_MESSAGES'
+);
+const SLA_SECONDS_STREAM = parseEnvInt(process.env.SLA_SECONDS_STREAM, 12, 'SLA_SECONDS_STREAM');
+const SLA_SECONDS_SYNC = parseEnvInt(process.env.SLA_SECONDS_SYNC, 18, 'SLA_SECONDS_SYNC');
+const SLA_SECONDS_WEBSOCKET = parseEnvInt(process.env.SLA_SECONDS_WEBSOCKET, 12, 'SLA_SECONDS_WEBSOCKET');
+const SLA_SECONDS_MEDIA = parseEnvInt(process.env.SLA_SECONDS_MEDIA, 18, 'SLA_SECONDS_MEDIA');
+const SLA_SECONDS_EXTERNAL = parseEnvInt(process.env.SLA_SECONDS_EXTERNAL, 20, 'SLA_SECONDS_EXTERNAL');
+const SLA_SECONDS_TITLE = parseEnvInt(process.env.SLA_SECONDS_TITLE, 6, 'SLA_SECONDS_TITLE');
+
+function getSlaTargetSeconds(source: LlmSource, profile: LlmContextProfile): number {
+  const base = (() => {
+    switch (source) {
+      case 'stream':
+        return SLA_SECONDS_STREAM;
+      case 'websocket':
+        return SLA_SECONDS_WEBSOCKET;
+      case 'websocket-media':
+        return SLA_SECONDS_MEDIA;
+      case 'external-channel':
+        return SLA_SECONDS_EXTERNAL;
+      case 'title':
+        return SLA_SECONDS_TITLE;
+      case 'sync':
+      default:
+        return SLA_SECONDS_SYNC;
+    }
+  })();
+
+  if (profile === 'trading') {
+    return Math.max(6, Math.floor(base * 0.8));
+  }
+  if (profile === 'analysis') {
+    return Math.min(30, Math.ceil(base * 1.2));
+  }
+  return base;
+}
+
+function detectContextProfile(userMessage: string): LlmContextProfile {
+  const normalized = userMessage.toLowerCase();
+  const tradingKeywords = [
+    'buy', 'sell', 'long', 'short', 'btc', 'eth', 'alavancagem', 'stop loss',
+    'take profit', 'kucoin', 'futuros', 'ordem', 'limit', 'market', 'scalping',
+  ];
+  if (tradingKeywords.some((k) => normalized.includes(k))) {
+    return 'trading';
+  }
+  if (normalized.length > 1200 || /analis|estrat|relat|compar|detalh/.test(normalized)) {
+    return 'analysis';
+  }
+  return 'general';
+}
+
+function getPromptTokenBudget(source: LlmSource, profile: LlmContextProfile): number {
+  const slaSeconds = getSlaTargetSeconds(source, profile);
+  const budget = Math.floor(slaSeconds * 120);
+  if (profile === 'trading') {
+    return Math.min(2800, Math.max(900, Math.floor(budget * 0.75)));
+  }
+  if (profile === 'analysis') {
+    return Math.min(3600, Math.max(1400, Math.floor(budget * 1.1)));
+  }
+  return Math.min(3200, Math.max(1200, budget));
+}
+
+function getGpuPriority(source: LlmSource, profile: LlmContextProfile): GpuRequestPriority {
+  if (profile === 'trading') {
+    return GpuRequestPriority.CRITICAL;
+  }
+  switch (source) {
+    case 'title':
+      return GpuRequestPriority.LOW;
+    case 'external-channel':
+    case 'websocket-media':
+      return GpuRequestPriority.HIGH;
+    case 'stream':
+    case 'websocket':
+      return GpuRequestPriority.CRITICAL;
+    case 'sync':
+    default:
+      return GpuRequestPriority.CRITICAL;
+  }
+}
+
+function getAdaptiveGpuPriority(source: LlmSource, profile: LlmContextProfile): GpuRequestPriority {
+  const base = getGpuPriority(source, profile);
+  if (base === GpuRequestPriority.CRITICAL) return base;
+  if (gpuManagerBreaker.opened || gpuManagerBreaker.halfOpen) {
+    if (source === 'title') return GpuRequestPriority.LOW;
+    if (source === 'external-channel') return GpuRequestPriority.MEDIUM;
+    if (source === 'websocket-media') return GpuRequestPriority.MEDIUM;
+  }
+  return base;
+}
+
+function estimateTokensFromText(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+function estimateTokensFromMessages(messages: LLMMessage[]): number {
+  return messages.reduce((sum, msg) => sum + estimateTokensFromText(msg.content || ''), 0);
+}
+
+function computeDynamicMaxTokens(baseMax: number, promptTokens: number): number {
+  let dynamicMax = baseMax;
+  if (promptTokens > 3600) {
+    dynamicMax = Math.min(dynamicMax, 512);
+  } else if (promptTokens > 2800) {
+    dynamicMax = Math.min(dynamicMax, 768);
+  } else if (promptTokens > 2200) {
+    dynamicMax = Math.min(dynamicMax, 1024);
+  } else if (promptTokens > 1600) {
+    dynamicMax = Math.min(dynamicMax, 1536);
+  }
+  return Math.max(MIN_LLM_OUTPUT_TOKENS, dynamicMax);
+}
+
+function applyDynamicTokenBudget(
+  llmConfig: LLMConfig,
+  llmMessages: LLMMessage[],
+  context: { conversationId?: string; source: LlmSource; profile: LlmContextProfile }
+): LLMConfig {
+  const baseMaxTokens = llmConfig.maxTokens ?? DEFAULT_LLM_CONFIG.maxTokens;
+  const baseTemperature = llmConfig.temperature ?? DEFAULT_LLM_CONFIG.temperature;
+  const promptTokens = estimateTokensFromMessages(llmMessages);
+  const slaSeconds = getSlaTargetSeconds(context.source, context.profile);
+  const slaMaxTokens = Math.max(MIN_LLM_OUTPUT_TOKENS, Math.floor(slaSeconds * LLM_TOKENS_PER_SECOND));
+  const dynamicMaxTokens = Math.min(
+    computeDynamicMaxTokens(baseMaxTokens, promptTokens),
+    slaMaxTokens
+  );
+  const adjustedTemperature = (() => {
+    if (context.profile === 'trading') {
+      return Math.min(baseTemperature, 0.3);
+    }
+    if (context.profile === 'analysis') {
+      return Math.min(baseTemperature, 0.6);
+    }
+    return baseTemperature;
+  })();
+
+  if (dynamicMaxTokens !== baseMaxTokens) {
+    logger.info({
+      ...context,
+      promptTokens,
+      slaSeconds,
+      profile: context.profile,
+      slaMaxTokens,
+      baseMaxTokens,
+      dynamicMaxTokens,
+    }, 'Budget dinâmico de tokens aplicado');
+  }
+
+  return {
+    ...llmConfig,
+    maxTokens: dynamicMaxTokens,
+    temperature: adjustedTemperature,
+  };
+}
+
+function getAdaptiveRagParams(
+  query: string,
+  historyCount: number
+): { limit: number; threshold: number } {
+  const length = query.trim().length;
+  let limit = 5;
+  let threshold = 0.7;
+
+  if (length > 800) {
+    limit = 4;
+    threshold = 0.72;
+  }
+  if (length > 1200) {
+    limit = 3;
+    threshold = 0.75;
+  }
+  if (length > 1800) {
+    limit = 2;
+    threshold = 0.8;
+  }
+  if (length > 2600) {
+    limit = 1;
+    threshold = 0.85;
+  }
+
+  if (historyCount > 8) {
+    limit = Math.max(1, limit - 1);
+  }
+
+  return { limit, threshold };
+}
+
+type StoredMessage = { isFromUser: boolean; conteudo: string | null };
+
+function tokenizeForRelevance(text: string): string[] {
+  return text
+    .toLowerCase()
+    .split(/[^a-z0-9áéíóúãõç]+/i)
+    .filter((t) => t.length >= 3);
+}
+
+function toTokenSet(tokens: string[]): Set<string> {
+  return new Set(tokens);
+}
+
+function buildBigrams(tokens: string[]): Set<string> {
+  return new Set(
+    tokens.slice(0, -1).map((t, idx) => `${t} ${tokens[idx + 1]}`)
+  );
+}
+
+function computeRelevanceScore(message: string, userMessage: string): number {
+  const messageTokens = tokenizeForRelevance(message);
+  const userTokens = tokenizeForRelevance(userMessage);
+  if (messageTokens.length === 0 || userTokens.length === 0) return 0;
+  const messageTokenSet = toTokenSet(messageTokens);
+  const userTokenSet = toTokenSet(userTokens);
+  const messageBigrams = buildBigrams(messageTokens);
+  const userBigrams = buildBigrams(userTokens);
+  let overlap = 0;
+  for (const token of messageTokenSet) {
+    if (userTokenSet.has(token)) overlap += 1;
+  }
+  let bigramOverlap = 0;
+  for (const bigram of messageBigrams) {
+    if (userBigrams.has(bigram)) bigramOverlap += 1;
+  }
+  const unigramScore = overlap / Math.max(1, userTokenSet.size);
+  const bigramScore = bigramOverlap / Math.max(1, userBigrams.size);
+  return (unigramScore * 0.7) + (bigramScore * 0.3);
+}
+
+function buildRoutingText(parts: Array<string | null | undefined>): string {
+  return parts.filter(Boolean).join(' ');
+}
+
+const ROUTING_TRADING_KEYWORDS = [
+  'trading', 'trade', 'finanças', 'finance', 'investimento', 'invest', 'portfolio',
+  'ações', 'stocks', 'futuros', 'futures', 'alavancagem', 'leverage', 'kucoin',
+  'order', 'ordem', 'stop loss', 'take profit', 'btc', 'eth', 'market', 'limit',
+] as const;
+
+function computeRoutingScore(text: string, userMessage: string, profile: LlmContextProfile): number {
+  const base = computeRelevanceScore(text, userMessage);
+  if (profile !== 'trading') return base;
+  const normalized = text.toLowerCase();
+  const hasTradingKeyword = ROUTING_TRADING_KEYWORDS.some((k) => normalized.includes(k));
+  const boost = hasTradingKeyword ? 0.06 : 0;
+  return Math.min(1, base + boost);
+}
+
+function getRoutingThreshold(profile: LlmContextProfile): number {
+  if (profile === 'trading') return 0.06;
+  if (profile === 'analysis') return 0.1;
+  return 0.12;
+}
+
+async function resolveSemanticRoute(params: {
+  tenantId: string;
+  userMessage: string;
+}): Promise<{ agentId?: string; namespaceId?: string; score: number; source: 'agent' | 'namespace' | 'none'; profile: LlmContextProfile }> {
+  const profile = detectContextProfile(params.userMessage);
+  const threshold = getRoutingThreshold(profile);
+
+  const agents = await db.query.agents.findMany({
+    where: and(
+      eq(schema.agents.tenantId, params.tenantId),
+      eq(schema.agents.status, 'active')
+    ),
+  });
+
+  let bestAgent: { id: string; namespaceId?: string | null; score: number } | null = null;
+  for (const agent of agents) {
+    const text = buildRoutingText([
+      agent.nome,
+      agent.slug,
+      agent.descricao,
+      agent.personalidade,
+      agent.instrucoes,
+      agent.capacidades ? agent.capacidades.join(' ') : null,
+    ]);
+    if (!text) continue;
+    const score = computeRoutingScore(text, params.userMessage, profile);
+    if (!bestAgent || score > bestAgent.score) {
+      bestAgent = { id: agent.id, namespaceId: agent.namespaceId, score };
+    }
+  }
+
+  if (bestAgent && bestAgent.score >= threshold) {
+    let resolvedNamespaceId = bestAgent.namespaceId ?? undefined;
+    if (!resolvedNamespaceId) {
+      const namespaces = await db.query.namespaces.findMany({
+        where: and(
+          eq(schema.namespaces.tenantId, params.tenantId),
+          eq(schema.namespaces.ativo, true)
+        ),
+      });
+      let bestNamespace: { id: string; score: number } | null = null;
+      for (const namespace of namespaces) {
+        const text = buildRoutingText([
+          namespace.nome,
+          namespace.slug,
+          namespace.descricao,
+          namespace.contextoSistema,
+        ]);
+        if (!text) continue;
+        const score = computeRoutingScore(text, params.userMessage, profile);
+        if (!bestNamespace || score > bestNamespace.score) {
+          bestNamespace = { id: namespace.id, score };
+        }
+      }
+      if (bestNamespace && bestNamespace.score >= threshold) {
+        resolvedNamespaceId = bestNamespace.id;
+      }
+    }
+    return {
+      agentId: bestAgent.id,
+      namespaceId: resolvedNamespaceId,
+      score: bestAgent.score,
+      source: 'agent',
+      profile,
+    };
+  }
+
+  const namespaces = await db.query.namespaces.findMany({
+    where: and(
+      eq(schema.namespaces.tenantId, params.tenantId),
+      eq(schema.namespaces.ativo, true)
+    ),
+  });
+
+  let bestNamespace: { id: string; score: number } | null = null;
+  for (const namespace of namespaces) {
+    const text = buildRoutingText([
+      namespace.nome,
+      namespace.slug,
+      namespace.descricao,
+      namespace.contextoSistema,
+    ]);
+    if (!text) continue;
+    const score = computeRoutingScore(text, params.userMessage, profile);
+    if (!bestNamespace || score > bestNamespace.score) {
+      bestNamespace = { id: namespace.id, score };
+    }
+  }
+
+  if (bestNamespace && bestNamespace.score >= threshold) {
+    const namespaceAgents = agents.filter((agent) => agent.namespaceId === bestNamespace.id);
+    let bestAgentInNamespace: { id: string; score: number } | null = null;
+    for (const agent of namespaceAgents) {
+      const text = buildRoutingText([
+        agent.nome,
+        agent.slug,
+        agent.descricao,
+        agent.personalidade,
+        agent.instrucoes,
+        agent.capacidades ? agent.capacidades.join(' ') : null,
+      ]);
+      if (!text) continue;
+      const score = computeRoutingScore(text, params.userMessage, profile);
+      if (!bestAgentInNamespace || score > bestAgentInNamespace.score) {
+        bestAgentInNamespace = { id: agent.id, score };
+      }
+    }
+    return {
+      agentId: bestAgentInNamespace?.id,
+      namespaceId: bestNamespace.id,
+      score: bestNamespace.score,
+      source: 'namespace',
+      profile,
+    };
+  }
+
+  return { score: 0, source: 'none', profile };
+}
+
+function buildInternalTrainingHeaders(params: { userId: string; tenantId: string; role: Role }): Record<string, string> {
+  const internal = generateInternalAuthHeaders({
+    userId: params.userId,
+    tenantId: params.tenantId,
+    role: params.role,
+  });
+  const headers: Record<string, string> = {
+    'X-Internal-Signature': internal['x-internal-signature'],
+    'X-Internal-Timestamp': internal['x-internal-timestamp'],
+    'X-Internal-User-Id': internal['x-internal-user-id'],
+    'X-Internal-Role': internal['x-internal-role'],
+  };
+  if (internal['x-internal-tenant-id']) {
+    headers['X-Internal-Tenant-Id'] = internal['x-internal-tenant-id'];
+  }
+  return headers;
+}
+
+async function collectTrainingSample(params: {
+  tenantId: string;
+  namespaceId: string;
+  conversationId?: string;
+  source: string;
+  messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
+  rating?: number;
+  userId: string;
+  role: Role;
+}): Promise<void> {
+  if (!TRAINING_SERVICE_URL_FINAL) {
+    logger.warn('TRAINING_SERVICE_URL não configurado - coleta de treinamento ignorada');
+    return;
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+  try {
+    const headers = buildInternalTrainingHeaders({
+      userId: params.userId,
+      tenantId: params.tenantId,
+      role: params.role,
+    });
+
+    const response = await fetch(`${TRAINING_SERVICE_URL_FINAL}/api/training/data`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...headers,
+      },
+      body: JSON.stringify({
+        tenantId: params.tenantId,
+        namespaceId: params.namespaceId,
+        conversationId: params.conversationId,
+        source: params.source,
+        messages: params.messages,
+        rating: params.rating,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.error({
+        status: response.status,
+        error: errorText,
+        source: params.source,
+      }, 'Falha ao coletar dados de treinamento');
+      return;
+    }
+
+    const trainingData = await response.json() as { trainingData?: { id: string }; isDuplicate?: boolean };
+    logger.info({
+      trainingDataId: trainingData.trainingData?.id,
+      isDuplicate: trainingData.isDuplicate,
+      source: params.source,
+    }, 'Coleta de treinamento enviada');
+  } catch (error) {
+    logger.error({ error, source: params.source }, 'Erro ao coletar dados de treinamento');
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function shouldAutoCollectTraining(params: {
+  profile: LlmContextProfile;
+  namespaceId?: string | null;
+  userMessage: string;
+  assistantResponse: string;
+}): boolean {
+  if (!TRAINING_AUTO_COLLECT_CHAT) return false;
+  if (!params.namespaceId) return false;
+  if (params.profile !== 'trading') return false;
+  if (params.userMessage.trim().length === 0 || params.assistantResponse.trim().length === 0) return false;
+  return true;
+}
+
+function buildHistoryMessages(
+  history: StoredMessage[],
+  maxTokens: number,
+  userMessage: string,
+  profile: LlmContextProfile
+): LLMMessage[] {
+  if (maxTokens <= 0) return [];
+  const selected: LLMMessage[] = [];
+  let totalTokens = 0;
+  const relevanceThreshold = profile === 'trading' ? 0.08 : 0.12;
+  const alwaysIncludeCount = profile === 'trading' ? 6 : 4;
+  const normalizedUser = userMessage.trim().toLowerCase();
+
+  for (let i = 0; i < history.length; i += 1) {
+    const msg = history[i];
+    const content = msg.conteudo?.trim();
+    if (!content) continue;
+    const tokens = estimateTokensFromText(content);
+    const normalizedContent = content.toLowerCase();
+    const isRecent = i < alwaysIncludeCount;
+    const score = computeRelevanceScore(content, normalizedUser);
+    const shouldInclude = isRecent || score >= relevanceThreshold;
+    if (!shouldInclude) continue;
+    if (totalTokens + tokens > maxTokens) {
+      if (totalTokens === 0) {
+        selected.push({
+          role: msg.isFromUser ? 'user' : 'assistant',
+          content,
+        });
+      }
+      break;
+    }
+    selected.push({
+      role: msg.isFromUser ? 'user' : 'assistant',
+      content,
+    });
+    totalTokens += tokens;
+  }
+
+  return selected.reverse();
+}
+
+function buildPromptMessages(params: {
+  systemPrompt: string;
+  userMessage: string;
+  history: StoredMessage[];
+  source: LlmSource;
+}): LLMMessage[] {
+  const profile = detectContextProfile(params.userMessage);
+  const maxPromptTokens = getPromptTokenBudget(params.source, profile);
+  const systemTokens = estimateTokensFromText(params.systemPrompt);
+  const userTokens = estimateTokensFromText(params.userMessage);
+  const remaining = Math.max(0, maxPromptTokens - systemTokens - userTokens);
+  const historyMessages = buildHistoryMessages(params.history, remaining, params.userMessage, profile);
+
+  return [
+    { role: 'system', content: params.systemPrompt },
+    ...historyMessages,
+    { role: 'user', content: params.userMessage },
+  ].filter((msg) => msg.content && msg.content.trim().length > 0);
+}
+
+function dropLeadingDuplicateUserMessage(
+  history: StoredMessage[],
+  userMessage: string
+): StoredMessage[] {
+  if (history.length === 0) return history;
+  const first = history[0];
+  if (!first.isFromUser) return history;
+  const normalizedHistory = (first.conteudo || '').trim().toLowerCase();
+  const normalizedUser = userMessage.trim().toLowerCase();
+  if (normalizedHistory === normalizedUser) {
+    return history.slice(1);
+  }
+  return history;
+}
+
+const REUSE_INTROS_PT = [
+  'Você já perguntou isso há pouco. Segue a mesma resposta:',
+  'A pergunta se repetiu. Mantendo consistência, segue a resposta anterior:',
+  'Repetindo a resposta para manter a continuidade:',
+] as const;
+
+const GREETING_HINTS_PT = [
+  'Se quiser, posso ajudar com algo específico.',
+  'Se preferir, posso continuar de onde paramos.',
+  'Me diga em que posso ajudar agora.',
+] as const;
+
+function pickDeterministicIntro(seed: string, options: readonly string[]): string {
+  const hash = crypto.createHash('sha256').update(seed).digest('hex');
+  const index = parseInt(hash.slice(0, 8), 16) % options.length;
+  return options[index];
+}
+
+function buildReuseResponse(baseResponse: string, seed: string): string {
+  const intro = pickDeterministicIntro(seed, REUSE_INTROS_PT);
+  const normalizedBase = baseResponse.trim().toLowerCase();
+  const normalizedIntro = intro.toLowerCase();
+  if (normalizedBase.startsWith(normalizedIntro)) {
+    return baseResponse;
+  }
+  return `${intro}\n\n${baseResponse}`;
+}
+
+function buildGreetingResponse(baseResponse: string, seed: string, shouldAugment: boolean): string {
+  if (!shouldAugment) {
+    return baseResponse;
+  }
+  const hint = pickDeterministicIntro(seed, GREETING_HINTS_PT);
+  if (baseResponse.includes(hint)) {
+    return baseResponse;
+  }
+  return `${baseResponse}\n\n${hint}`;
+}
 
 // ============================================================================
 // Gate 2: SSOT de modelos suportados para Agents (LLM texto)
@@ -1223,6 +2005,7 @@ async function callLlamaAPIInternal(request: LLMRequest): Promise<globalThis.Res
   const temperature = config.temperature ?? DEFAULT_LLM_CONFIG.temperature;
   const maxTokens = config.maxTokens ?? DEFAULT_LLM_CONFIG.maxTokens;
   const model = config.model || DEFAULT_LLM_CONFIG.model;
+  const priority = request.priority ?? GpuRequestPriority.CRITICAL;
   
   // Não-streaming: usar GPU Manager Service (fila priorizada, monitoramento VRAM)
   {
@@ -1233,7 +2016,7 @@ async function callLlamaAPIInternal(request: LLMRequest): Promise<globalThis.Res
         serviceType: GpuServiceType.LLM,
         endpoint: '/v1/chat/completions',
         method: 'POST',
-        priority: GpuRequestPriority.CRITICAL,
+        priority,
         timeout,
         body: {
           model,
@@ -1300,7 +2083,12 @@ const LLM_FALLBACK_MESSAGE = 'Desculpe, estou temporariamente indisponível. Por
  * 
  * BUG FIX 02/01/2026: Agora aceita configuração do agente para temperatura e maxTokens
  */
-async function callLlamaAPI(messages: LLMMessage[], stream = false, config?: LLMConfig): Promise<string | AsyncGenerator<string>> {
+async function callLlamaAPI(
+  messages: LLMMessage[],
+  stream = false,
+  config?: LLMConfig,
+  priority?: GpuRequestPriority
+): Promise<string | AsyncGenerator<string>> {
   // BUG FIX 25/12/2025: callLlamaAPI NÃO suporta streaming
   // Streaming deve ser feito diretamente no endpoint/handler usando proxy direto do GPU Manager Service
   // porque o GPU Manager Service consome o body ao fazer proxy
@@ -1309,7 +2097,7 @@ async function callLlamaAPI(messages: LLMMessage[], stream = false, config?: LLM
   }
   
   try {
-    const response = await gpuManagerBreaker.fire({ messages, stream: false, config }) as globalThis.Response;
+    const response = await gpuManagerBreaker.fire({ messages, stream: false, config, priority }) as globalThis.Response;
     const data = await response.json() as LLMResponse;
     return data.choices[0]?.message?.content || '';
   } catch (error) {
@@ -1356,7 +2144,8 @@ async function proxyStreamFromGpuManager(
   llmMessages: LLMMessage[],
   onChunk: (content: string) => void,
   onDone?: (fullResponse: string) => Promise<void> | void,
-  config?: LLMConfig
+  config?: LLMConfig,
+  priority: GpuRequestPriority = GpuRequestPriority.CRITICAL
 ): Promise<string> {
   // BUG FIX 02/01/2026: Usar configuração do agente ou valores padrão
   const temperature = config?.temperature ?? DEFAULT_LLM_CONFIG.temperature;
@@ -1380,7 +2169,7 @@ async function proxyStreamFromGpuManager(
   try {
     gpuResponse = await requestGpuStream({
       serviceType: GpuServiceType.LLM,
-      priority: GpuRequestPriority.CRITICAL, // Chat em tempo real = prioridade máxima
+      priority, // Prioridade configurável por tipo de mensagem
       endpoint: '/v1/chat/completions',
       method: 'POST',
       body: {
@@ -2314,9 +3103,16 @@ app.get('/api/chat/usage', requireAuth(), requireSameTenant(getTenantIdFromReque
   }
 });
 
+const conversationListQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+  cursorUpdatedAt: z.string().optional(),
+  cursorId: z.string().uuid().optional(),
+});
+
 app.get('/api/chat/conversations', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:conversations:read'), async (req: Request, res: Response) => {
   // SEGURANÇA: Usar req.user populado pelo middleware ao invés de header direto
   const auth = req.user;
+  const tenantId = req.tenantId;
   
   if (!auth?.userId) {
     return res.status(401).json({ error: 'ID do usuário necessário' });
@@ -2325,13 +3121,66 @@ app.get('/api/chat/conversations', requireAuth(), requireSameTenant(getTenantIdF
   const userId = auth.userId;
 
   try {
+    const queryResult = conversationListQuerySchema.safeParse(req.query);
+    if (!queryResult.success) {
+      return res.status(400).json({ error: 'Parâmetros inválidos', details: queryResult.error.format() });
+    }
+
+    const limit = queryResult.data.limit ?? 50;
+    const cursorUpdatedAtRaw = queryResult.data.cursorUpdatedAt;
+    const cursorId = queryResult.data.cursorId;
+    const cursorUpdatedAt = cursorUpdatedAtRaw ? new Date(cursorUpdatedAtRaw) : null;
+
+    if (cursorUpdatedAtRaw && Number.isNaN(cursorUpdatedAt?.getTime())) {
+      return res.status(400).json({ error: 'cursorUpdatedAt inválido' });
+    }
+
+    const baseFilters = [
+      eq(schema.conversations.userId, userId),
+      tenantId ? eq(schema.conversations.tenantId, tenantId) : undefined,
+    ].filter(Boolean);
+
+    const cursorFilters = cursorUpdatedAt && cursorId
+      ? or(
+          lt(schema.conversations.atualizadoEm, cursorUpdatedAt),
+          and(
+            eq(schema.conversations.atualizadoEm, cursorUpdatedAt),
+            lt(schema.conversations.id, cursorId)
+          )
+        )
+      : undefined;
+
+    const whereClause = cursorFilters
+      ? and(...baseFilters, cursorFilters)
+      : and(...baseFilters);
+
+    const [countRow] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(schema.conversations)
+      .where(and(...baseFilters));
+
     const conversations = await db.query.conversations.findMany({
-      where: eq(schema.conversations.userId, userId),
-      orderBy: [desc(schema.conversations.atualizadoEm)],
-      limit: 50,
+      where: whereClause,
+      orderBy: [desc(schema.conversations.atualizadoEm), desc(schema.conversations.id)],
+      limit: limit + 1,
     });
 
-    res.json({ conversations });
+    const hasMore = conversations.length > limit;
+    const items = hasMore ? conversations.slice(0, limit) : conversations;
+    const lastItem = items[items.length - 1];
+    const nextCursor = hasMore && lastItem
+      ? {
+          updatedAt: (lastItem.atualizadoEm ?? lastItem.criadoEm ?? new Date()).toISOString(),
+          id: lastItem.id,
+        }
+      : null;
+
+    res.json({
+      conversations: items,
+      nextCursor,
+      hasMore,
+      total: Number(countRow?.count ?? 0),
+    });
   } catch (error) {
     logger.error({ error }, 'Falha ao buscar conversas');
     res.status(500).json({ error: 'Erro interno do servidor' });
@@ -2429,6 +3278,88 @@ app.get('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenant
   }
 });
 
+app.post('/api/chat/conversations/:id/training/collect', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('training:training_data:write'), async (req: Request, res: Response) => {
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID de conversa inválido', details: paramsResult.error.format() });
+  }
+  const bodyResult = collectConversationTrainingSchema.safeParse(req.body);
+  if (!bodyResult.success) {
+    return res.status(400).json({ error: 'Input inválido', details: bodyResult.error.format() });
+  }
+
+  const tenantId = req.tenantId;
+  const userId = req.user?.userId;
+  const userRole = req.user?.role as Role | undefined;
+  if (!tenantId || !userId || !userRole) {
+    return res.status(401).json({ error: 'Autenticação necessária' });
+  }
+
+  const { id } = paramsResult.data;
+  const { namespaceId: requestedNamespaceId, maxMessages } = bodyResult.data;
+  const limit = maxMessages ?? TRAINING_CONVERSATION_MAX_MESSAGES;
+
+  try {
+    const conversation = await db.query.conversations.findFirst({
+      where: eq(schema.conversations.id, id),
+      with: { agent: true },
+    });
+
+    if (!conversation || conversation.tenantId !== tenantId) {
+      return res.status(404).json({ error: 'Conversa não encontrada' });
+    }
+
+    const namespaceId = requestedNamespaceId || conversation.namespaceId || conversation.agent?.namespaceId;
+    if (!namespaceId) {
+      return res.status(400).json({ error: 'Namespace obrigatório para coleta de treinamento' });
+    }
+
+    const namespace = await db.query.namespaces.findFirst({
+      where: eq(schema.namespaces.id, namespaceId),
+    });
+    if (!namespace || namespace.tenantId !== tenantId) {
+      return res.status(403).json({ error: 'Namespace inválido para o tenant' });
+    }
+
+    const recentMessages = await db.query.messages.findMany({
+      where: eq(schema.messages.conversationId, id),
+      orderBy: [desc(schema.messages.criadoEm)],
+      limit,
+    });
+    const ordered = [...recentMessages].reverse();
+
+    if (ordered.length < 2) {
+      return res.status(400).json({ error: 'Conversa não possui mensagens suficientes' });
+    }
+
+    const trainingMessages = ordered
+      .filter((msg) => msg.conteudo && msg.conteudo.trim().length > 0)
+      .map((msg) => ({
+        role: (msg.isFromUser ? 'user' : 'assistant') as 'user' | 'assistant',
+        content: msg.conteudo as string,
+      }));
+
+    if (trainingMessages.length < 2) {
+      return res.status(400).json({ error: 'Conversa não possui conteúdo válido para treinamento' });
+    }
+
+    await collectTrainingSample({
+      tenantId,
+      namespaceId,
+      conversationId: id,
+      source: 'chat-curated',
+      messages: trainingMessages,
+      userId,
+      role: userRole,
+    });
+
+    res.json({ success: true, messages: trainingMessages.length, namespaceId });
+  } catch (error) {
+    logger.error({ error, conversationId: id }, 'Falha ao coletar treinamento da conversa');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
 const sendMessageSchema = z.object({
   conteudo: z.string().min(1),
   // ATUALIZADO 23/12/2025: Removido 'video' (muito pesado para GPU)
@@ -2441,14 +3372,22 @@ const sendMessageSchema = z.object({
   tipo: z.enum(['text', 'image', 'audio', 'mixed']).default('text'),
 });
 
+const collectConversationTrainingSchema = z.object({
+  namespaceId: z.string().uuid().optional(),
+  maxMessages: z.number().int().min(2).max(100).optional(),
+});
+
 // OWASP API3 - Schemas Zod para validação de input em todas as rotas
 const streamMessageSchema = z.object({
+  message: z.string().min(1).max(32000).optional(),
   messages: z.array(z.object({
     role: z.enum(['user', 'assistant', 'system']),
     content: z.string().min(1).max(32000),
-  })).min(1).max(50),
+  })).min(1).max(50).optional(),
   conversationId: z.string().uuid().optional(),
   namespaceId: z.string().uuid().optional(),
+}).refine((data) => Boolean(data.message) || Boolean(data.messages?.length), {
+  message: 'Mensagem do usuário obrigatória',
 });
 
 const takeoverNoteSchema = z.object({
@@ -2487,9 +3426,11 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
   
   // SEGURANÇA: Usar req.user populado pelo middleware ao invés de header direto
   const userId = req.user?.userId;
+  const userRole = req.user?.role as Role | undefined;
+  const tenantId = req.tenantId;
 
-  if (!userId) {
-    return res.status(401).json({ error: 'ID do usuário necessário' });
+  if (!userId || !userRole || !tenantId) {
+    return res.status(401).json({ error: 'Autenticação necessária' });
   }
 
   try {
@@ -2517,7 +3458,13 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
     let systemPrompt = buildSystemPrompt(agent, assistantSettings, body.conteudo);
     
     const ragStartTime = Date.now();
-    const ragResult = await buscarContextoRAG(body.conteudo, conversation.namespaceId || undefined);
+    const ragParams = getAdaptiveRagParams(body.conteudo, previousMessages.length);
+    const ragResult = await buscarContextoRAG(
+      body.conteudo,
+      conversation.namespaceId || undefined,
+      ragParams.limit,
+      ragParams.threshold
+    );
     const ragLatency = Date.now() - ragStartTime;
     
     if (ragResult && ragResult.context) {
@@ -2535,19 +3482,29 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       limit: 10,
     });
 
-    const llmMessages: LLMMessage[] = [
-      { role: 'system', content: systemPrompt },
-      ...previousMessages.reverse().map(m => ({
-        role: (m.isFromUser ? 'user' : 'assistant') as 'user' | 'assistant',
-        content: m.conteudo || '',
-      })),
-    ];
+    const historyForPrompt = dropLeadingDuplicateUserMessage(previousMessages, body.conteudo);
+    const llmMessages = buildPromptMessages({
+      systemPrompt,
+      userMessage: body.conteudo,
+      history: historyForPrompt,
+      source: 'sync',
+    });
 
     // BUG FIX 02/01/2026: Extrair configuração LLM do agente para uso nas chamadas
-    const llmConfig = getAgentLLMConfig(agent);
+    const syncProfile = detectContextProfile(body.conteudo);
+    const llmConfig = applyDynamicTokenBudget(
+      getAgentLLMConfig(agent),
+      llmMessages,
+      { conversationId: id, source: 'sync', profile: syncProfile }
+    );
 
     const llmStartTime = Date.now();
-    const response = await callLlamaAPI(llmMessages, false, llmConfig);
+    const response = await callLlamaAPI(
+      llmMessages,
+      false,
+      llmConfig,
+      getAdaptiveGpuPriority('sync', syncProfile)
+    );
     const llmLatency = Date.now() - llmStartTime;
     const totalLatency = Date.now() - ragStartTime;
 
@@ -2567,6 +3524,36 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
         atualizadoEm: new Date(),
       })
       .where(eq(schema.conversations.id, id));
+
+    try {
+      await ensureConversationTitle({
+        conversationId: id,
+        userMessage: body.conteudo,
+        assistantResponse: response as string,
+      });
+    } catch (titleError) {
+      logger.warn({ error: titleError, conversationId: id }, 'Falha ao aplicar título automático (sync)');
+    }
+
+    if (shouldAutoCollectTraining({
+      profile: syncProfile,
+      namespaceId: conversation.namespaceId || conversation.agent?.namespaceId,
+      userMessage: body.conteudo,
+      assistantResponse: response as string,
+    })) {
+      void collectTrainingSample({
+        tenantId,
+        namespaceId: (conversation.namespaceId || conversation.agent?.namespaceId) as string,
+        conversationId: id,
+        source: 'chat-auto',
+        messages: [
+          { role: 'user', content: body.conteudo },
+          { role: 'assistant', content: response as string },
+        ],
+        userId,
+        role: userRole,
+      });
+    }
 
     logger.info({ 
       conversationId: id, 
@@ -2597,7 +3584,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
   if (!parseResult.success) {
     return res.status(400).json({ error: 'Input inválido' });
   }
-  const { messages: inputMessages, conversationId: _conversationId, namespaceId } = parseResult.data;
+  const { messages: inputMessages, conversationId: _conversationId, namespaceId, message } = parseResult.data;
   const userId = req.user?.userId;
   const tenantId = req.tenantId;
 
@@ -2606,10 +3593,12 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
   }
 
   try {
-    const lastUserMessage = inputMessages.filter(m => m.role === 'user').pop();
-    if (!lastUserMessage?.content) {
+    const lastUserMessageContent = message || inputMessages?.filter(m => m.role === 'user').pop()?.content;
+    if (!lastUserMessageContent) {
       return res.status(400).json({ error: 'Mensagem do usuário obrigatória' });
     }
+
+    const imageDetection = detectImageGenerationRequest(lastUserMessageContent);
 
     let conversationId = _conversationId;
     let conversation = null;
@@ -2625,11 +3614,23 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         return res.status(404).json({ error: 'Conversa não encontrada' });
       }
     } else {
+      const route = await resolveSemanticRoute({
+        tenantId,
+        userMessage: lastUserMessageContent,
+      });
       const [created] = await db.insert(schema.conversations).values({
         tenantId,
         userId,
-        namespaceId,
+        agentId: route.agentId,
+        namespaceId: route.namespaceId ?? namespaceId,
         titulo: 'Nova Conversa',
+        metadata: {
+          routing: {
+            source: route.source,
+            score: route.score,
+            profile: route.profile,
+          },
+        },
       }).returning();
 
       conversation = created;
@@ -2640,31 +3641,241 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-    // BUG FIX 25/12/2025: Enviar headers explicitamente para garantir que res.headersSent seja true
-    // Se nenhum chunk for recebido, onChunk nunca é chamado e headers nunca são enviados
-    // Isso causa condição onde onDone verifica res.headersSent && !res.writableEnded e falha
-    // Enviar headers explicitamente garante que resposta pode ser fechada mesmo sem dados
     res.flushHeaders();
 
     if (conversationCreated && conversationId) {
       res.write(`data: ${JSON.stringify({ type: 'conversation', conversationId })}\n\n`);
     }
 
+    const writeStatus = (stage: string) => {
+      if (res.headersSent && !res.writableEnded) {
+        res.write(`data: ${JSON.stringify({ type: 'status', stage })}\n\n`);
+      }
+    };
+
+    const previousMessages = conversationId
+      ? await db.query.messages.findMany({
+        where: eq(schema.messages.conversationId, conversationId),
+        orderBy: [desc(schema.messages.criadoEm)],
+        limit: 10,
+      })
+      : [];
+
     const [userMessage] = await db.insert(schema.messages).values({
       conversationId,
       userId,
-      conteudo: lastUserMessage.content,
+      conteudo: lastUserMessageContent,
       tipo: 'text',
       isFromUser: true,
     }).returning();
 
-    const agent = (conversation as { agent?: AgentConfig | null })?.agent || null;
-    const assistantSettings = await getAssistantSettingsForTenant(tenantId);
-    let systemPrompt = buildSystemPrompt(agent, assistantSettings, lastUserMessage.content);
-    let ragSources: Array<{ documentId: string; titulo: string; similarity: number }> = [];
-    
-    if (lastUserMessage) {
-      const ragResult = await buscarContextoRAG(lastUserMessage.content, namespaceId);
+    const normalizeContent = (text: string) => text.trim().toLowerCase();
+
+    if (!imageDetection.isImageRequest) {
+      // ============================================================================
+      // GREETINGS GATE (Redis cache) - evita GPU para saudações simples
+      // ============================================================================
+      writeStatus('greeting');
+      const cacheResult = await checkResponseCache(tenantId, lastUserMessageContent);
+      if (cacheResult.hasResponse && cacheResult.response) {
+        const lastAssistantMessage = previousMessages.find((msg) => !msg.isFromUser && msg.conteudo);
+        const shouldAugmentGreeting = Boolean(
+          lastAssistantMessage?.conteudo &&
+          normalizeContent(lastAssistantMessage.conteudo) === normalizeContent(cacheResult.response)
+        );
+        const greetingSeed = `${tenantId}:${lastUserMessageContent}:${lastAssistantMessage?.id || 'first'}`;
+        const greetingResponse = buildGreetingResponse(
+          cacheResult.response,
+          greetingSeed,
+          shouldAugmentGreeting
+        );
+        const [assistantMessage] = await db.insert(schema.messages).values({
+          conversationId,
+          agentId: conversation?.agentId ?? undefined,
+          conteudo: greetingResponse,
+          tipo: 'text',
+          isFromUser: false,
+          metadata: {
+            source: 'response-cache',
+            cacheKey: cacheResult.cacheKey,
+            isGreeting: cacheResult.isGreeting,
+          },
+        }).returning();
+
+        await db.update(schema.conversations)
+          .set({
+            totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+            ultimaMensagemEm: new Date(),
+            atualizadoEm: new Date(),
+          })
+          .where(eq(schema.conversations.id, conversationId));
+
+        try {
+          await ensureConversationTitle({
+            conversationId,
+            userMessage: lastUserMessageContent,
+            assistantResponse: greetingResponse,
+          });
+        } catch (titleError) {
+          logger.warn({ error: titleError, conversationId }, 'Falha ao aplicar título automático (greetings gate)');
+        }
+
+        res.write(`data: ${JSON.stringify({ content: greetingResponse })}\n\n`);
+        res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
+
+      // ============================================================================
+      // REUSE GATE (deduplicação na própria conversa)
+      // ============================================================================
+      writeStatus('reuse');
+      const lastUserIndex = previousMessages.findIndex((msg) => msg.isFromUser);
+      const lastUserInHistory = lastUserIndex >= 0 ? previousMessages[lastUserIndex] : undefined;
+      if (lastUserInHistory?.conteudo &&
+          normalizeContent(lastUserInHistory.conteudo) === normalizeContent(lastUserMessageContent)) {
+        const assistantAfterLastUser = previousMessages.find((msg, idx) => idx > lastUserIndex && !msg.isFromUser);
+        if (assistantAfterLastUser?.conteudo) {
+          const reuseSeed = `${tenantId}:${lastUserMessageContent}:${assistantAfterLastUser.id}`;
+          const reuseResponse = buildReuseResponse(assistantAfterLastUser.conteudo, reuseSeed);
+          const [assistantMessage] = await db.insert(schema.messages).values({
+            conversationId,
+            agentId: conversation?.agentId ?? undefined,
+            conteudo: reuseResponse,
+            tipo: 'text',
+            isFromUser: false,
+            metadata: {
+              source: 'reuse-gate',
+              reusedMessageId: assistantAfterLastUser.id,
+            },
+          }).returning();
+
+          await db.update(schema.conversations)
+            .set({
+              totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+              ultimaMensagemEm: new Date(),
+              atualizadoEm: new Date(),
+            })
+            .where(eq(schema.conversations.id, conversationId));
+
+          try {
+            await ensureConversationTitle({
+              conversationId,
+              userMessage: lastUserMessageContent,
+              assistantResponse: reuseResponse,
+            });
+          } catch (titleError) {
+            logger.warn({ error: titleError, conversationId }, 'Falha ao aplicar título automático (reuse gate)');
+          }
+
+          res.write(`data: ${JSON.stringify({ content: reuseResponse })}\n\n`);
+          res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+          res.write('data: [DONE]\n\n');
+          res.end();
+          return;
+        }
+      }
+    }
+
+    if (imageDetection.isImageRequest && imageDetection.prompt) {
+      const userRole = req.user?.role as Role | undefined;
+      if (!userRole) {
+        return res.status(403).json({ error: 'Permissão insuficiente para gerar imagens.' });
+      }
+      const permissionCheck = await checkPermission(
+        { userId, tenantId, role: userRole },
+        'images:generate:write'
+      );
+      if (!permissionCheck.allowed) {
+        return res.status(403).json({ error: 'Você não possui permissão para gerar imagens.' });
+      }
+
+      try {
+        const generatedImage = await generateImageFromPrompt({
+          tenantId,
+          userId,
+          prompt: imageDetection.prompt,
+          conversationId,
+          messageId: userMessage.id,
+        });
+
+        const [assistantMessage] = await db.insert(schema.messages).values({
+          conversationId,
+          agentId: conversation?.agentId ?? undefined,
+          conteudo: 'Imagem gerada com sucesso via OpenAI.',
+          tipo: 'text',
+          isFromUser: false,
+          metadata: {
+            generatedImages: [generatedImage.id],
+            model: generatedImage.model ?? undefined,
+          },
+        }).returning();
+
+        await db.update(schema.conversations)
+          .set({
+            totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+            ultimaMensagemEm: new Date(),
+            atualizadoEm: new Date(),
+          })
+          .where(eq(schema.conversations.id, conversationId));
+
+        await ensureConversationTitle({
+          conversationId,
+          userMessage: lastUserMessageContent,
+          assistantResponse: 'Imagem gerada com sucesso via OpenAI.',
+        });
+
+        const generatedImagePayload = {
+          id: generatedImage.id,
+          prompt: generatedImage.prompt,
+          imageUrl: generatedImage.imageUrl ?? undefined,
+          imagePath: generatedImage.imagePath ?? undefined,
+          status: generatedImage.status === 'generating' ? 'processing' : generatedImage.status,
+          width: generatedImage.width ?? undefined,
+          height: generatedImage.height ?? undefined,
+          feedbackScore: generatedImage.feedbackScore ?? undefined,
+        };
+
+        res.write(`data: ${JSON.stringify({
+          type: 'generated_image',
+          content: 'Imagem gerada com sucesso via OpenAI.',
+          generatedImage: generatedImagePayload,
+          message: {
+            ...assistantMessage,
+            generatedImage: generatedImagePayload,
+          },
+        })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      } catch (imageError) {
+        logger.error({ error: imageError, conversationId }, 'Falha ao gerar imagem via OpenAI (stream)');
+        res.write(`data: ${JSON.stringify({ error: 'Falha ao gerar imagem via OpenAI.' })}\n\n`);
+        res.end();
+        return;
+      }
+    }
+
+      const agent = (conversation as { agent?: AgentConfig | null })?.agent || null;
+      const ragParams = getAdaptiveRagParams(lastUserMessageContent, previousMessages.length);
+      const [assistantSettings, ragResult] = await Promise.all([
+        getAssistantSettingsForTenant(tenantId),
+        (async () => {
+          writeStatus('rag_internal');
+          return buscarContextoRAG(
+            lastUserMessageContent,
+            conversation?.namespaceId || namespaceId,
+            ragParams.limit,
+            ragParams.threshold
+          );
+        })(),
+      ]);
+
+      let systemPrompt = buildSystemPrompt(agent, assistantSettings, lastUserMessageContent);
+      let ragSources: Array<{ documentId: string; titulo: string; similarity: number }> = [];
+      let webSources: Array<{ title: string; url: string }> = [];
+
       if (ragResult && ragResult.context) {
         systemPrompt += formatarContextoParaLLM(ragResult);
         ragSources = ragResult.sources;
@@ -2672,19 +3883,35 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           ragChunks: ragResult.sources.length,
           namespaceId,
         }, 'Contexto RAG injetado no streaming');
-      }
-    }
-    
-    const llmMessages: LLMMessage[] = [
-      { role: 'system', content: systemPrompt },
-      ...inputMessages.map(m => ({
-        role: m.role as 'user' | 'assistant',
-        content: m.content,
-      })),
-    ];
+      } else {
+        writeStatus('rag_web');
+        const agenticResult = await buscarContextoAgentic({
+          query: lastUserMessageContent,
+          namespaceId: conversation?.namespaceId || namespaceId,
+          forceMode: 'web',
+          limit: ragParams.limit,
+          auth: {
+            userId,
+            tenantId,
+            role: req.user?.role as Role,
+          },
+        });
 
-    if (ragSources.length > 0) {
-      res.write(`data: ${JSON.stringify({ type: 'sources', sources: ragSources })}\n\n`);
+        if (agenticResult?.context) {
+          systemPrompt += `\n\n[CONTEXTO WEB]\n${agenticResult.context}\n[/CONTEXTO WEB]\n\n`;
+          webSources = agenticResult.sources?.web || [];
+        }
+      }
+    
+    const llmMessages = buildPromptMessages({
+      systemPrompt,
+      userMessage: lastUserMessageContent,
+      history: previousMessages,
+      source: 'stream',
+    });
+
+    if (ragSources.length > 0 || webSources.length > 0) {
+      res.write(`data: ${JSON.stringify({ type: 'sources', sources: { internal: ragSources, web: webSources } })}\n\n`);
     }
 
     // BUG FIX 25/12/2025: Usar função auxiliar para proxy de stream do GPU Manager Service
@@ -2692,6 +3919,13 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     let assistantPersisted = false;
 
     try {
+      writeStatus('llm');
+      const streamProfile = detectContextProfile(lastUserMessageContent);
+      const llmConfig = applyDynamicTokenBudget(
+        getAgentLLMConfig(agent),
+        llmMessages,
+        { conversationId, source: 'stream', profile: streamProfile }
+      );
       await proxyStreamFromGpuManager(
         llmMessages,
         (content) => {
@@ -2738,6 +3972,37 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                 })
                 .where(eq(schema.conversations.id, conversationId));
 
+              try {
+                await ensureConversationTitle({
+                  conversationId,
+                  userMessage: lastUserMessageContent,
+                  assistantResponse: assistantResponse,
+                });
+              } catch (titleError) {
+                logger.warn({ error: titleError, conversationId }, 'Falha ao aplicar título automático (stream)');
+              }
+
+              const streamProfile = detectContextProfile(lastUserMessageContent);
+              if (shouldAutoCollectTraining({
+                profile: streamProfile,
+                namespaceId: conversation?.namespaceId || conversation?.agent?.namespaceId,
+                userMessage: lastUserMessageContent,
+                assistantResponse: assistantResponse,
+              })) {
+                void collectTrainingSample({
+                  tenantId,
+                  namespaceId: (conversation?.namespaceId || conversation?.agent?.namespaceId) as string,
+                  conversationId,
+                  source: 'chat-auto',
+                  messages: [
+                    { role: 'user', content: lastUserMessageContent },
+                    { role: 'assistant', content: assistantResponse },
+                  ],
+                  userId,
+                  role: req.user?.role as Role,
+                });
+              }
+
               res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
             } else {
               await db.update(schema.conversations)
@@ -2747,6 +4012,16 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                   atualizadoEm: new Date(),
                 })
                 .where(eq(schema.conversations.id, conversationId));
+
+              try {
+                await ensureConversationTitle({
+                  conversationId,
+                  userMessage: lastUserMessageContent,
+                  assistantResponse: assistantResponse,
+                });
+              } catch (titleError) {
+                logger.warn({ error: titleError, conversationId }, 'Falha ao aplicar título automático (stream sem resposta)');
+              }
             }
           }
 
@@ -2772,7 +4047,9 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
               throw endError;
             }
           }
-        }
+        },
+        llmConfig,
+        getAdaptiveGpuPriority('stream', streamProfile)
       );
     } catch (streamError) {
       logger.error({ 
@@ -3610,6 +4887,16 @@ wss.on('connection', (ws, req) => {
               },
             };
 
+            try {
+              await ensureConversationTitle({
+                conversationId,
+                userMessage: messageContent,
+                assistantResponse: 'Imagem gerada com sucesso via OpenAI.',
+              });
+            } catch (titleError) {
+              logger.warn({ error: titleError, conversationId }, 'Falha ao aplicar título automático (imagem)');
+            }
+
             ws.send(JSON.stringify({ type: 'message', data: messagePayload }));
             ws.send(JSON.stringify({ type: 'complete', data: messagePayload }));
           } catch (error) {
@@ -3678,6 +4965,16 @@ wss.on('connection', (ws, req) => {
           }
           
           const cachedMsg = inserted[0];
+
+          try {
+            await ensureConversationTitle({
+              conversationId,
+              userMessage: messageContent,
+              assistantResponse: cacheResult.response,
+            });
+          } catch (titleError) {
+            logger.warn({ error: titleError, conversationId }, 'Falha ao aplicar título automático (cache)');
+          }
           
           // Enviar resposta ao cliente (simular streaming para UX consistente)
           ws.send(JSON.stringify({ type: 'stream', data: cacheResult.response }));
@@ -3712,7 +5009,13 @@ wss.on('connection', (ws, req) => {
 
         const namespaceId = message.namespaceId || conversation?.namespaceId || undefined;
         // CORREÇÃO 17/12/2025: Usar messageContent (com fallback) ao invés de message.content (potencialmente undefined)
-        const ragResult = await buscarContextoRAG(messageContent, namespaceId);
+        const ragParams = getAdaptiveRagParams(messageContent, 0);
+        const ragResult = await buscarContextoRAG(
+          messageContent,
+          namespaceId,
+          ragParams.limit,
+          ragParams.threshold
+        );
         const ragLatency = Date.now() - ragStartTime;
         
         if (ragResult && ragResult.context) {
@@ -3734,13 +5037,20 @@ wss.on('connection', (ws, req) => {
 
         const llmStartTime = Date.now();
         // BUG FIX 25/12/2025: Usar proxyStreamFromGpuManager para streaming via GPU Manager Service
-        const llmMessages: LLMMessage[] = [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: messageContent },
-        ];
+        const llmMessages = buildPromptMessages({
+          systemPrompt,
+          userMessage: messageContent,
+          history: [],
+          source: 'websocket',
+        });
 
         // BUG FIX 02/01/2026: Extrair configuração LLM do agente para uso nas chamadas
-        const llmConfig = getAgentLLMConfig(agent);
+        const websocketProfile = detectContextProfile(messageContent);
+        const llmConfig = applyDynamicTokenBudget(
+          getAgentLLMConfig(agent),
+          llmMessages,
+          { conversationId, source: 'websocket', profile: websocketProfile }
+        );
         
         // BUG FIX 26/12/2025: Prefixado com _ - resultado não usado pois callback onDone usa responseText diretamente
         let _fullResponse = '';
@@ -3786,6 +5096,37 @@ wss.on('connection', (ws, req) => {
               }
               
               const assistantMsg = inserted[0];
+
+              try {
+                await ensureConversationTitle({
+                  conversationId,
+                  userMessage: messageContent,
+                  assistantResponse: responseText,
+                });
+              } catch (titleError) {
+                logger.warn({ error: titleError, conversationId }, 'Falha ao aplicar título automático (websocket)');
+              }
+
+              const websocketProfile = detectContextProfile(messageContent);
+              if (shouldAutoCollectTraining({
+                profile: websocketProfile,
+                namespaceId: conversation?.namespaceId || conversation?.agent?.namespaceId,
+                userMessage: messageContent,
+                assistantResponse: responseText,
+              })) {
+                void collectTrainingSample({
+                  tenantId: safeTenantId,
+                  namespaceId: (conversation?.namespaceId || conversation?.agent?.namespaceId) as string,
+                  conversationId,
+                  source: 'chat-auto',
+                  messages: [
+                    { role: 'user', content: messageContent },
+                    { role: 'assistant', content: responseText },
+                  ],
+                  userId,
+                  role: userRole,
+                });
+              }
 
               // BUG FIX 25/12/2025: Envolver ws.send() em try-catch para tratamento gracioso de clientes desconectados
               // Mesmo se cliente desconectou, mensagem já foi salva no banco (integridade de dados)
@@ -3857,7 +5198,8 @@ wss.on('connection', (ws, req) => {
                 }, 'Escalação automática após resposta de baixa confiança do LLM');
               }
             },
-            llmConfig // BUG FIX 02/01/2026: Passar configuração do agente
+            llmConfig, // BUG FIX 02/01/2026: Passar configuração do agente
+            getAdaptiveGpuPriority('websocket', websocketProfile)
           );
         } catch (streamError) {
           logger.error({ error: streamError }, 'Erro no streaming WebSocket');
@@ -4135,7 +5477,13 @@ wss.on('connection', (ws, req) => {
           validatedMediaType === 'image' && visionDescriptionForRag
             ? `${visionDescriptionForRag}\n\nPergunta do usuário:\n${userContent}`
             : userContent;
-        const ragResult = await buscarContextoRAG(ragQuery, namespaceId);
+        const ragParams = getAdaptiveRagParams(ragQuery, 0);
+        const ragResult = await buscarContextoRAG(
+          ragQuery,
+          namespaceId,
+          ragParams.limit,
+          ragParams.threshold
+        );
         
         if (ragResult?.context) {
           systemPrompt += formatarContextoParaLLM(ragResult);
@@ -4150,14 +5498,24 @@ wss.on('connection', (ws, req) => {
         const llmStartTime = Date.now();
         
         // BUG FIX 02/01/2026: Extrair configuração LLM do agente para uso nas chamadas
-        const mediaLlmConfig = getAgentLLMConfig(agent);
+        const mediaProfile = detectContextProfile(userContent);
+        const mediaLlmConfig = applyDynamicTokenBudget(
+          getAgentLLMConfig(agent),
+          [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userContent },
+          ],
+          { conversationId: mediaMessage.conversationId, source: 'websocket-media', profile: mediaProfile }
+        );
         
         // LLM texto (Qwen2.5 7B) é SOMENTE TEXTO
         // Não envia imagens diretamente - usa contexto RAG via embeddings CLIP e OpenAI Vision
-        const llmMessages: LLMMessage[] = [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userContent },
-        ];
+        const llmMessages = buildPromptMessages({
+          systemPrompt,
+          userMessage: userContent,
+          history: [],
+          source: 'websocket-media',
+        });
 
         // BUG FIX 26/12/2025: Prefixado com _ - resultado não usado pois callback onDone usa responseText diretamente
         let _fullResponse = '';
@@ -4203,6 +5561,16 @@ wss.on('connection', (ws, req) => {
               
               const assistantMsg = inserted[0];
 
+              try {
+                await ensureConversationTitle({
+                  conversationId: mediaMessage.conversationId,
+                  userMessage: mediaMessage.content || `[${validatedMediaType.toUpperCase()}] ${mediaMessage.media.filename}`,
+                  assistantResponse: responseText,
+                });
+              } catch (titleError) {
+                logger.warn({ error: titleError, conversationId: mediaMessage.conversationId }, 'Falha ao aplicar título automático (mídia)');
+              }
+
               // BUG FIX 25/12/2025: Envolver ws.send() em try-catch para tratamento gracioso de clientes desconectados
               // Mesmo se cliente desconectou, mensagem já foi salva no banco (integridade de dados)
               try {
@@ -4232,7 +5600,8 @@ wss.on('connection', (ws, req) => {
                 llmLatencyMs: llmLatency,
               }, 'Mensagem multimodal processada via WebSocket');
             },
-            mediaLlmConfig // BUG FIX 02/01/2026: Passar configuração do agente
+            mediaLlmConfig, // BUG FIX 02/01/2026: Passar configuração do agente
+            getAdaptiveGpuPriority('websocket-media', mediaProfile)
           );
         } catch (streamError) {
           logger.error({ error: streamError }, 'Erro no streaming WebSocket');
@@ -5071,6 +6440,10 @@ const assistantSettingsSchema = z.object({
   systemPrompt: z.string().min(10).max(20000).optional().nullable(),
   behavior: z.string().max(5000).optional().nullable(),
   mood: z.string().max(2000).optional().nullable(),
+  behaviorDirectness: z.number().int().min(0).max(100).optional().nullable(),
+  behaviorProactivity: z.number().int().min(0).max(100).optional().nullable(),
+  moodFormality: z.number().int().min(0).max(100).optional().nullable(),
+  moodEmpathy: z.number().int().min(0).max(100).optional().nullable(),
 });
 
 app.get('/api/assistant-settings', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:agents:read'), async (req: Request, res: Response) => {
@@ -5090,9 +6463,14 @@ app.get('/api/assistant-settings', requireAuth(), requireSameTenant(getTenantIdF
         systemPrompt: DEFAULT_SYSTEM_PROMPT,
         behavior: null,
         mood: null,
+        behaviorDirectness: 50,
+        behaviorProactivity: 50,
+        moodFormality: 50,
+        moodEmpathy: 70,
       },
       enforced: {
         creator: 'Fillipe Guerra',
+        creatorRule: CREATOR_PROMPT_RULE,
       },
     });
   } catch (error) {
@@ -5120,6 +6498,10 @@ app.patch('/api/assistant-settings', requireAuth(), requireSameTenant(getTenantI
       systemPrompt: parseResult.data.systemPrompt?.trim() || null,
       behavior: parseResult.data.behavior?.trim() || null,
       mood: parseResult.data.mood?.trim() || null,
+      behaviorDirectness: parseResult.data.behaviorDirectness ?? null,
+      behaviorProactivity: parseResult.data.behaviorProactivity ?? null,
+      moodFormality: parseResult.data.moodFormality ?? null,
+      moodEmpathy: parseResult.data.moodEmpathy ?? null,
       updatedBy: userId,
     };
 
@@ -5596,12 +6978,6 @@ app.post('/api/chat/message', asyncHandler(async (req: Request, res: Response) =
     const assistantSettings = await getAssistantSettingsForTenant(conversation.tenantId || req.tenantId);
     let systemPrompt = buildSystemPrompt(agent, assistantSettings, content);
     
-    // Buscar contexto RAG se disponível
-    const ragResult = await buscarContextoRAG(content, conversation.namespaceId || undefined);
-    if (ragResult && ragResult.context) {
-      systemPrompt += formatarContextoParaLLM(ragResult);
-    }
-    
     // Buscar histórico recente
     const previousMessages = await db.query.messages.findMany({
       where: eq(schema.messages.conversationId, conversationId),
@@ -5609,19 +6985,41 @@ app.post('/api/chat/message', asyncHandler(async (req: Request, res: Response) =
       limit: 10,
     });
     
-    const llmMessages: LLMMessage[] = [
-      { role: 'system', content: systemPrompt },
-      ...previousMessages.reverse().map(m => ({
-        role: (m.isFromUser ? 'user' : 'assistant') as 'user' | 'assistant',
-        content: m.conteudo || '',
-      })),
-    ];
+    // Buscar contexto RAG se disponível
+    const ragParams = getAdaptiveRagParams(content, previousMessages.length);
+    const ragResult = await buscarContextoRAG(
+      content,
+      conversation.namespaceId || undefined,
+      ragParams.limit,
+      ragParams.threshold
+    );
+    if (ragResult && ragResult.context) {
+      systemPrompt += formatarContextoParaLLM(ragResult);
+    }
+    
+    const historyForPrompt = dropLeadingDuplicateUserMessage(previousMessages, content);
+    const llmMessages = buildPromptMessages({
+      systemPrompt,
+      userMessage: content,
+      history: historyForPrompt,
+      source: 'external-channel',
+    });
     
     // BUG FIX 02/01/2026: Extrair configuração LLM do agente para uso nas chamadas
-    const externalChannelLlmConfig = getAgentLLMConfig(agent);
+    const externalProfile = detectContextProfile(content);
+    const externalChannelLlmConfig = applyDynamicTokenBudget(
+      getAgentLLMConfig(agent),
+      llmMessages,
+      { conversationId, source: 'external-channel', profile: externalProfile }
+    );
     
     const llmStartTime = Date.now();
-    const llmResponse = await callLlamaAPI(llmMessages, false, externalChannelLlmConfig);
+    const llmResponse = await callLlamaAPI(
+      llmMessages,
+      false,
+      externalChannelLlmConfig,
+      getAdaptiveGpuPriority('external-channel', externalProfile)
+    );
     const llmLatency = Date.now() - llmStartTime;
     
     // Salvar resposta do bot
@@ -6150,7 +7548,11 @@ app.post('/api/chat/messages/:id/rate', requireAuth(), requireSameTenant(getTena
         
         // Se temos par user/assistant, coletar para treinamento
         if (userMessage && assistantMessage && userMessage.conteudo && assistantMessage.conteudo) {
-          const namespaceId = message.conversation?.agent?.namespaceId;
+          const namespaceId = message.conversation?.namespaceId || message.conversation?.agent?.namespaceId;
+          if (!namespaceId) {
+            logger.warn({ messageId: id, conversationId: message.conversationId }, 'Namespace ausente para coleta de treinamento');
+            return res.json({ success: true, rating: finalRating });
+          }
           
           // Chamar training-service para coletar dados
           // REGRA 6: Integração real com training-service (sem mocks)
