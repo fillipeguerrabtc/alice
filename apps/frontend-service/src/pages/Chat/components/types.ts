@@ -31,8 +31,12 @@ export interface MediaAttachment {
   height?: number;
   thumbnailUrl?: string;
   transcription?: string;
+  uploadId?: string;
+  visionDescription?: string;
+  visionModel?: string;
   status: 'uploading' | 'processing' | 'ready' | 'error';
   progress?: number;
+  file?: File;
 }
 
 export interface Message {
@@ -43,9 +47,21 @@ export interface Message {
   tokensUsados?: number;
   // ATUALIZADO 23/12/2025: Removido 'video' (muito pesado para GPU)
   tipo?: 'text' | 'image' | 'audio' | 'mixed';
-  anexos?: unknown[];
   generatedImage?: GeneratedImageData;
   mediaAttachments?: MediaAttachment[];
+  anexos?: Array<{
+    id: string;
+    type: MediaType;
+    filename: string;
+    mimeType: string;
+    size?: number;
+    url?: string;
+    thumbnailUrl?: string;
+    transcription?: string;
+    uploadId?: string;
+    visionDescription?: string;
+    visionModel?: string;
+  }>;
   metadata?: {
     rating?: number;
     feedback?: 'positive' | 'negative';

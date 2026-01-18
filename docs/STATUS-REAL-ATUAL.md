@@ -198,6 +198,11 @@ Retenção Arquivo:   30 dias
 - Persistência completa do chat via streaming (conversas e mensagens salvas).
 - Página enterprise de Configuração da Alice (system prompt, comportamento e humor).
 - Validação do SSE `/api/chat/stream` antes de iniciar o streaming (evita erro de headers enviados).
+- Upload multimodal no streaming com análise de imagens via OpenAI e SSE `media_uploaded`.
+- Headers internos para upload de mídia no RAG e geração de imagem via OpenAI (auth service-to-service).
+- Badge do chat mostra versão da Alice (ex: Alice x.xx 7B) via `__APP_VERSION__`.
+- Status de streaming inclui processamento de mídia (melhora UX durante análise de imagens).
+- Favicon ajustado para melhor legibilidade na aba (logo-round como base).
 - Incremento atômico de `totalMensagens` em streams concorrentes (evita perda de contagem).
 - Upsert atômico em `/api/assistant-settings` para evitar conflito em concorrência.
 - pgBackRest: reset controlado quando `archive.info` existe sem `backup.info`.

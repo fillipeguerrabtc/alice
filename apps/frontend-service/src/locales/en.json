@@ -264,10 +264,12 @@
     "typing": "Typing...",
     "streaming": {
       "thinking": "Alice is thinking",
+      "steps": "Steps:",
       "error": "Failed to receive Alice's response. Please try again.",
       "timeout": "Response timed out. Please try again.",
       "status": {
         "preparing": "Preparing response",
+        "media": "Processing media",
         "greeting": "Applying quick response",
         "reuse": "Reusing previous response",
         "ragInternal": "Searching internal knowledge",

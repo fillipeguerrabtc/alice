@@ -111,6 +111,46 @@ import { ConversationItem } from './components/ConversationItem';
 import { MediaPreview } from './components/MediaPreview';
 import { WelcomeScreen } from './components/WelcomeScreen';
 
+type StreamMediaAttachmentPayload = {
+  id: string;
+  filename: string;
+  mimeType: string;
+  file: string;
+};
+
+async function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Falha ao ler arquivo'));
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== 'string') {
+        reject(new Error('Falha ao converter arquivo em base64'));
+        return;
+      }
+      const base64 = result.includes(',') ? result.split(',')[1] : result;
+      resolve(base64);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function mediaAttachmentToBase64(media: MediaAttachment): Promise<string> {
+  if (media.file) {
+    return fileToBase64(media.file);
+  }
+  if (media.url) {
+    const response = await fetch(media.url, { credentials: 'include' });
+    if (!response.ok) {
+      throw new Error('Falha ao baixar arquivo de mídia');
+    }
+    const blob = await response.blob();
+    const file = new File([blob], media.fileName, { type: media.mimeType });
+    return fileToBase64(file);
+  }
+  throw new Error('Arquivo de mídia indisponível para upload');
+}
+
 const containerVariants = {
   hidden: { opacity: 0 },
   visible: {
@@ -222,11 +262,14 @@ export default function Chat() {
   const queryClientRef = useQueryClient();
   const { toast } = useToast();
   const isMobile = useIsMobile();
+  const appVersion = __APP_VERSION__;
+  const modelBadgeLabel = appVersion ? `Alice ${appVersion} 7B` : 'Alice 7B';
   
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamStatus, setStreamStatus] = useState<string | null>(null);
+  const [streamSteps, setStreamSteps] = useState<string[]>([]);
   // Desktop: sidebar aberta por padrão | Mobile: fechada por padrão
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
   // Estado separado para drawer mobile
@@ -309,6 +352,7 @@ export default function Chat() {
         fileSize: file.size,
         mimeType: file.type,
         status: 'ready',
+        file,
       };
 
       // ATUALIZADO 23/12/2025: Removido suporte a vídeo (muito pesado para GPU)
@@ -400,11 +444,41 @@ export default function Chat() {
     },
   });
 
+  const mapAnexosToMediaAttachments = useCallback((anexos: Message['anexos']): MediaAttachment[] => {
+    if (!anexos || anexos.length === 0) return [];
+    return anexos.map((anexo) => ({
+      id: anexo.id,
+      type: anexo.type,
+      url: anexo.url || '',
+      fileName: anexo.filename,
+      fileSize: anexo.size ?? 0,
+      mimeType: anexo.mimeType,
+      status: anexo.url ? 'ready' : 'processing',
+      thumbnailUrl: anexo.thumbnailUrl,
+      transcription: anexo.transcription,
+      uploadId: anexo.uploadId,
+      visionDescription: anexo.visionDescription,
+      visionModel: anexo.visionModel,
+    }));
+  }, []);
+
   useEffect(() => {
     if (conversationMessages?.messages) {
-      setMessages(conversationMessages.messages);
+      const normalized = conversationMessages.messages.map((message) => {
+        if (message.mediaAttachments && message.mediaAttachments.length > 0) {
+          return message;
+        }
+        if (message.anexos && message.anexos.length > 0) {
+          return {
+            ...message,
+            mediaAttachments: mapAnexosToMediaAttachments(message.anexos),
+          };
+        }
+        return message;
+      });
+      setMessages(normalized);
     }
-  }, [conversationMessages]);
+  }, [conversationMessages, mapAnexosToMediaAttachments]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -421,6 +495,8 @@ export default function Chat() {
         return t('chat.streaming.status.greeting');
       case 'reuse':
         return t('chat.streaming.status.reuse');
+      case 'media':
+        return t('chat.streaming.status.media');
       case 'llm':
         return t('chat.streaming.status.llm');
       case 'writing':
@@ -430,6 +506,14 @@ export default function Chat() {
         return t('chat.streaming.status.preparing');
     }
   }, [t]);
+  const pushStreamStep = useCallback((label: string) => {
+    setStreamSteps((prev) => {
+      if (prev.length === 0) return [label];
+      const last = prev[prev.length - 1];
+      if (last === label) return prev;
+      return [...prev, label];
+    });
+  }, []);
   const sendMessage = useMutation({
     mutationFn: async ({ content, mediaAttachments }: { content: string; mediaAttachments?: MediaAttachment[] }) => {
       const userMessage: Message = {
@@ -443,7 +527,9 @@ export default function Chat() {
 
       setMessages((prev) => [...prev, userMessage]);
       setIsStreaming(true);
-      setStreamStatus(resolveStreamStatus('preparing'));
+      const preparingLabel = resolveStreamStatus('preparing');
+      setStreamStatus(preparingLabel);
+      setStreamSteps([preparingLabel]);
 
       const assistantMessage: Message = {
         id: crypto.randomUUID(),
@@ -475,10 +561,26 @@ export default function Chat() {
         }
       };
 
-      const res = await apiRequest('POST', '/api/chat/stream', {
+      const mediaPayload: StreamMediaAttachmentPayload[] | undefined = mediaAttachments?.length
+        ? await Promise.all(
+          mediaAttachments.map(async (media) => {
+            return {
+              id: media.id,
+              filename: media.fileName,
+              mimeType: media.mimeType,
+              file: await mediaAttachmentToBase64(media),
+            };
+          })
+        )
+        : undefined;
+
+      const payload = {
         conversationId: activeConversationId,
-        message: content,
-      }, { signal: controller.signal });
+        ...(content.trim().length > 0 ? { message: content } : {}),
+        ...(mediaPayload && mediaPayload.length > 0 ? { mediaAttachments: mediaPayload } : {}),
+      };
+
+      const res = await apiRequest('POST', '/api/chat/stream', payload, { signal: controller.signal });
 
       if (!res.body) throw new Error('No response body');
 
@@ -512,7 +614,9 @@ export default function Chat() {
                 }
 
                 if (parsed.type === 'status') {
-                  setStreamStatus(resolveStreamStatus(parsed.stage));
+                  const label = resolveStreamStatus(parsed.stage);
+                  setStreamStatus(label);
+                  pushStreamStep(label);
                   resetTimeout();
                 }
 
@@ -545,6 +649,36 @@ export default function Chat() {
                       newMessages[lastIdx] = { ...newMessages[lastIdx], ...normalizedMessage };
                     } else {
                       newMessages.push(normalizedMessage);
+                    }
+                    return newMessages;
+                  });
+                  resetTimeout();
+                }
+
+                if (parsed.type === 'media_uploaded' && Array.isArray(parsed.attachments)) {
+                  setMessages((prev) => {
+                    const newMessages = [...prev];
+                    const lastUserIndex = [...newMessages].reverse().findIndex((msg) => msg.role === 'user');
+                    if (lastUserIndex >= 0) {
+                      const targetIndex = newMessages.length - 1 - lastUserIndex;
+                      const target = newMessages[targetIndex];
+                      if (target?.mediaAttachments) {
+                        const updated = target.mediaAttachments.map((media) => {
+                          const serverAttachment = parsed.attachments.find((att: { id: string }) => att.id === media.id);
+                          if (!serverAttachment) return media;
+                          return {
+                            ...media,
+                            url: serverAttachment.url ?? media.url,
+                            thumbnailUrl: serverAttachment.thumbnailUrl ?? media.thumbnailUrl,
+                            status: serverAttachment.processingStatus === 'completed' ? 'ready' : 'processing',
+                            uploadId: serverAttachment.uploadId ?? media.uploadId,
+                            transcription: serverAttachment.transcription ?? media.transcription,
+                            visionDescription: serverAttachment.visionDescription ?? media.visionDescription,
+                            visionModel: serverAttachment.visionModel ?? media.visionModel,
+                          };
+                        });
+                        newMessages[targetIndex] = { ...target, mediaAttachments: updated };
+                      }
                     }
                     return newMessages;
                   });
@@ -585,6 +719,7 @@ export default function Chat() {
                     return newMessages;
                   });
                   setStreamStatus(resolveStreamStatus('writing'));
+                  pushStreamStep(resolveStreamStatus('writing'));
                   resetTimeout();
                 }
               } catch {
@@ -599,6 +734,7 @@ export default function Chat() {
 
       setIsStreaming(false);
       setStreamStatus(null);
+      setStreamSteps([]);
       queryClientRef.invalidateQueries({ queryKey: ['/api/chat/conversations'] });
       return fullContent;
     },
@@ -622,6 +758,7 @@ export default function Chat() {
       });
       setIsStreaming(false);
       setStreamStatus(null);
+      setStreamSteps([]);
     },
   });
 
@@ -859,7 +996,7 @@ export default function Chat() {
           <div className="flex items-center gap-1">
             <Badge variant="secondary" className="hidden md:flex gap-1 text-xs">
               <Sparkles className="h-3 w-3" />
-              Qwen2.5 7B
+              {modelBadgeLabel}
             </Badge>
             {conversationId && (
               <Button
@@ -876,8 +1013,9 @@ export default function Chat() {
             {/* Mobile: Badge compacto */}
             {isMobile && (
               <>
-                <Badge variant="secondary" className="h-6 px-2">
+                <Badge variant="secondary" className="h-6 px-2 text-[10px] gap-1">
                   <Sparkles className="h-3 w-3" />
+                  {modelBadgeLabel}
                 </Badge>
                 {conversationId && (
                   <Button
@@ -914,6 +1052,7 @@ export default function Chat() {
                     isStreaming={isStreaming}
                     isLast={index === messages.length - 1}
                     streamStatus={isStreaming && index === messages.length - 1 ? streamStatus : null}
+                    streamSteps={isStreaming && index === messages.length - 1 ? streamSteps : null}
                     onRateImage={handleRateImage}
                     onFeedback={handleFeedback}
                     onRegenerate={handleRegenerate}

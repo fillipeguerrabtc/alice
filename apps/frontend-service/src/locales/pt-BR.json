@@ -264,10 +264,12 @@
     "typing": "Digitando...",
     "streaming": {
       "thinking": "Alice está pensando",
+      "steps": "Etapas:",
       "error": "Erro ao receber resposta da Alice. Tente novamente.",
       "timeout": "Tempo de resposta excedido. Tente novamente.",
       "status": {
         "preparing": "Preparando resposta",
+        "media": "Processando mídia",
         "greeting": "Aplicando resposta rápida",
         "reuse": "Reutilizando resposta anterior",
         "ragInternal": "Buscando conhecimento interno",

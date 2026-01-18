@@ -311,6 +311,7 @@ export async function uploadMediaToRAG(
   description?: string,
   messageId?: string,
   conversationId?: string,
+  internalHeaders?: Record<string, string>,
 ): Promise<MediaUploadResult | null> {
   try {
     const startTime = Date.now();
@@ -321,6 +322,7 @@ export async function uploadMediaToRAG(
       headers: {
         'Content-Type': 'application/json',
         'X-Tenant-Id': tenantId,
+        ...(internalHeaders ?? {}),
       },
       body: JSON.stringify({
         file, // base64

@@ -37,6 +37,7 @@ interface MessageBubbleProps {
   isStreaming: boolean;
   isLast: boolean;
   streamStatus?: string | null;
+  streamSteps?: string[] | null;
   onRateImage?: (imageId: string, score: number) => void;
   onFeedback?: (messageId: string, isPositive: boolean) => void;
   onRegenerate?: () => void;
@@ -47,6 +48,7 @@ export function MessageBubble({
   isStreaming, 
   isLast,
   streamStatus,
+  streamSteps,
   onRateImage,
   onFeedback,
   onRegenerate,
@@ -105,13 +107,20 @@ export function MessageBubble({
           )}
 
           {isStreaming && isLast && message.role === 'assistant' && (
-            <div className="text-xs text-muted-foreground mb-1 flex items-center gap-2">
-              <span>{streamStatus || t('chat.streaming.thinking')}</span>
-              <span className="inline-flex gap-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
-                <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse delay-150" />
-                <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse delay-300" />
-              </span>
+            <div className="text-xs text-muted-foreground mb-1 flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <span>{streamStatus || t('chat.streaming.thinking')}</span>
+                <span className="inline-flex gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse delay-150" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse delay-300" />
+                </span>
+              </div>
+              {streamSteps && streamSteps.length > 1 && (
+                <div className="text-[11px] text-muted-foreground/80">
+                  {t('chat.streaming.steps')} {streamSteps.join(' → ')}
+                </div>
+              )}
             </div>
           )}
 

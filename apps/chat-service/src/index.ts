@@ -724,6 +724,20 @@ function extractImagePrompt(message: string, keyword: string): string {
   return message;
 }
 
+const SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const;
+const SUPPORTED_AUDIO_TYPES = ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/mp4'] as const;
+
+function resolveSupportedMediaType(mimeType: string): 'image' | 'audio' | null {
+  const normalizedMimeType = mimeType.toLowerCase().trim().split(';')[0].trim();
+  if (SUPPORTED_IMAGE_TYPES.includes(normalizedMimeType as typeof SUPPORTED_IMAGE_TYPES[number])) {
+    return 'image';
+  }
+  if (SUPPORTED_AUDIO_TYPES.includes(normalizedMimeType as typeof SUPPORTED_AUDIO_TYPES[number])) {
+    return 'audio';
+  }
+  return null;
+}
+
 type ImageGenerationInput = {
   tenantId: string;
   userId: string;
@@ -733,6 +747,7 @@ type ImageGenerationInput = {
   height?: number;
   conversationId?: string | null;
   messageId?: string | null;
+  internalHeaders?: Record<string, string>;
 };
 
 async function generateImageFromPrompt(input: ImageGenerationInput) {
@@ -809,6 +824,7 @@ async function generateImageFromPrompt(input: ImageGenerationInput) {
       input.prompt,
       input.messageId ?? undefined,
       input.conversationId ?? undefined,
+      input.internalHeaders,
     );
 
     if (!uploadResult?.fileUrl) {
@@ -1619,7 +1635,7 @@ async function resolveSemanticRoute(params: {
   return { score: 0, source: 'none', profile };
 }
 
-function buildInternalTrainingHeaders(params: { userId: string; tenantId: string; role: Role }): Record<string, string> {
+function buildInternalServiceHeaders(params: { userId: string; tenantId: string; role: Role }): Record<string, string> {
   const internal = generateInternalAuthHeaders({
     userId: params.userId,
     tenantId: params.tenantId,
@@ -1656,7 +1672,7 @@ async function collectTrainingSample(params: {
   const timeoutId = setTimeout(() => controller.abort(), 10000);
 
   try {
-    const headers = buildInternalTrainingHeaders({
+    const headers = buildInternalServiceHeaders({
       userId: params.userId,
       tenantId: params.tenantId,
       role: params.role,
@@ -3392,6 +3408,13 @@ const collectConversationTrainingSchema = z.object({
   maxMessages: z.number().int().min(2).max(100).optional(),
 });
 
+const streamMediaAttachmentSchema = z.object({
+  id: z.string().uuid().optional(),
+  filename: z.string().min(1).max(255),
+  mimeType: z.string().min(1).max(150),
+  file: z.string().min(1),
+});
+
 // OWASP API3 - Schemas Zod para validação de input em todas as rotas
 const streamMessageSchema = z.object({
   message: z.string().min(1).max(32000).optional(),
@@ -3401,7 +3424,8 @@ const streamMessageSchema = z.object({
   })).min(1).max(50).optional(),
   conversationId: z.string().uuid().optional(),
   namespaceId: z.string().uuid().optional(),
-}).refine((data) => Boolean(data.message) || Boolean(data.messages?.length), {
+  mediaAttachments: z.array(streamMediaAttachmentSchema).min(1).max(5).optional(),
+}).refine((data) => Boolean(data.message) || Boolean(data.messages?.length) || Boolean(data.mediaAttachments?.length), {
   message: 'Mensagem do usuário obrigatória',
 });
 
@@ -3600,7 +3624,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
   if (!parseResult.success) {
     return res.status(400).json({ error: 'Input inválido' });
   }
-  const { messages: inputMessages, conversationId: _conversationId, namespaceId, message } = parseResult.data;
+  const { messages: inputMessages, conversationId: _conversationId, namespaceId, message, mediaAttachments } = parseResult.data;
   const userId = req.user?.userId;
   const tenantId = req.tenantId;
 
@@ -3609,12 +3633,28 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
   }
 
   try {
-    const lastUserMessageContent = message || inputMessages?.filter(m => m.role === 'user').pop()?.content;
-    if (!lastUserMessageContent) {
+    const hasMediaAttachments = Array.isArray(mediaAttachments) && mediaAttachments.length > 0;
+    const lastUserMessageContent = message?.trim().length
+      ? message.trim()
+      : inputMessages?.filter(m => m.role === 'user').pop()?.content?.trim();
+    const mediaFallbackContent = hasMediaAttachments
+      ? mediaAttachments
+        .map((attachment) => {
+          const resolvedType = resolveSupportedMediaType(attachment.mimeType);
+          const label = resolvedType ? resolvedType.toUpperCase() : 'MIDIA';
+          return `[${label}] ${attachment.filename}`;
+        })
+        .join(' | ')
+      : undefined;
+    const normalizedUserMessageContent = lastUserMessageContent || mediaFallbackContent;
+    if (!normalizedUserMessageContent) {
       return res.status(400).json({ error: 'Mensagem do usuário obrigatória' });
     }
+    const userMessageContent = normalizedUserMessageContent;
 
-    const imageDetection = detectImageGenerationRequest(lastUserMessageContent);
+    const imageDetection = !hasMediaAttachments
+      ? detectImageGenerationRequest(userMessageContent)
+      : { isImageRequest: false, prompt: null, confidence: 0, reason: 'Mensagem com mídia anexada' };
 
     let conversationId = _conversationId;
     let conversation: ConversationWithAgent | null = null;
@@ -3633,7 +3673,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     } else {
       const route = await resolveSemanticRoute({
         tenantId,
-        userMessage: lastUserMessageContent,
+        userMessage: userMessageContent,
       });
       const [created] = await db.insert(schema.conversations).values({
         tenantId,
@@ -3664,6 +3704,26 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       conversationCreated = true;
     }
 
+    const preparedMediaAttachments = hasMediaAttachments
+      ? mediaAttachments.map((attachment) => {
+        const resolvedType = resolveSupportedMediaType(attachment.mimeType);
+        if (!resolvedType) {
+          throw new ClientInputError(
+            `Tipo de arquivo não suportado: ${attachment.mimeType}. Tipos suportados: imagens (${SUPPORTED_IMAGE_TYPES.join(', ')}) e áudio (${SUPPORTED_AUDIO_TYPES.join(', ')}).`,
+            { statusCode: 400, code: 'UNSUPPORTED_MEDIA_TYPE' }
+          );
+        }
+        return {
+          id: attachment.id ?? crypto.randomUUID(),
+          type: resolvedType,
+          filename: attachment.filename,
+          mimeType: attachment.mimeType,
+          file: attachment.file,
+          size: Buffer.from(attachment.file, 'base64').length,
+        };
+      })
+      : [];
+
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -3688,29 +3748,312 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       : [];
     const storedPreviousMessages = normalizeStoredMessages(previousMessages);
 
+    const messageType = hasMediaAttachments
+      ? (preparedMediaAttachments.length === 1 ? preparedMediaAttachments[0].type : 'mixed')
+      : 'text';
     const [userMessage] = await db.insert(schema.messages).values({
       conversationId,
       userId,
-      conteudo: lastUserMessageContent,
-      tipo: 'text',
+      conteudo: userMessageContent,
+      tipo: messageType,
       isFromUser: true,
+      anexos: hasMediaAttachments
+        ? preparedMediaAttachments.map((attachment) => ({
+          id: attachment.id,
+          type: attachment.type,
+          filename: attachment.filename,
+          mimeType: attachment.mimeType,
+          size: attachment.size,
+        }))
+        : [],
     }).returning();
 
     const normalizeContent = (text: string) => text.trim().toLowerCase();
+
+    if (hasMediaAttachments) {
+      writeStatus('media');
+      const mediaSafeTenantId = conversation?.tenantId || tenantId;
+      if (!mediaSafeTenantId) {
+        res.write(`data: ${JSON.stringify({ error: 'Tenant inválido para upload de mídia.' })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
+      const internalHeaders = buildInternalServiceHeaders({
+        userId,
+        tenantId: mediaSafeTenantId,
+        role: (req.user?.role as Role) || 'guest',
+      });
+
+      const updatedAttachments: Array<{
+        id: string;
+        type: 'image' | 'audio';
+        filename: string;
+        mimeType: string;
+        size: number;
+        url?: string;
+        thumbnailUrl?: string;
+        uploadId?: string;
+        processingStatus?: string;
+        transcription?: string;
+        visionDescription?: string;
+        visionModel?: string;
+      }> = [];
+      const visionSummaries: string[] = [];
+      const hasAudioAttachments = preparedMediaAttachments.some((attachment) => attachment.type === 'audio');
+
+      for (const attachment of preparedMediaAttachments) {
+        let visionDescriptionForRag: string | undefined;
+        let visionModelForRag: string | undefined;
+        if (attachment.type === 'image') {
+          try {
+            const imageDataUri = `data:${attachment.mimeType};base64,${attachment.file}`;
+            const analysis = await analyzeImageWithOpenAI({
+              imageDataUri,
+              question: userMessageContent || 'Descreva e analise esta imagem.',
+            });
+            visionDescriptionForRag = analysis.text;
+            visionModelForRag = analysis.model;
+            if (analysis.text?.trim()) {
+              visionSummaries.push(`Arquivo ${attachment.filename}: ${analysis.text}`);
+            }
+          } catch (visionErr) {
+            logger.error(
+              { error: visionErr instanceof Error ? visionErr.message : String(visionErr) },
+              'Falha ao analisar imagem via OpenAI Vision (stream)'
+            );
+          }
+        }
+
+        const uploadResult = await uploadMediaToRAG(
+          attachment.file,
+          attachment.filename,
+          attachment.mimeType,
+          mediaSafeTenantId,
+          visionDescriptionForRag,
+          userMessage.id,
+          conversationId,
+          internalHeaders
+        );
+
+        if (!uploadResult) {
+          res.write(`data: ${JSON.stringify({ error: 'Falha ao processar mídia. Tente novamente.' })}\n\n`);
+          res.write('data: [DONE]\n\n');
+          res.end();
+          return;
+        }
+
+        updatedAttachments.push({
+          id: attachment.id,
+          type: attachment.type,
+          filename: attachment.filename,
+          mimeType: attachment.mimeType,
+          size: attachment.size,
+          url: uploadResult.fileUrl,
+          thumbnailUrl: uploadResult.thumbnailUrl,
+          uploadId: uploadResult.uploadId,
+          processingStatus: uploadResult.processingStatus,
+          transcription: uploadResult.transcription,
+          visionDescription: visionDescriptionForRag,
+          visionModel: visionModelForRag,
+        });
+      }
+
+      await db.update(schema.messages)
+        .set({
+          anexos: updatedAttachments.map((attachment) => ({
+            id: attachment.id,
+            type: attachment.type,
+            filename: attachment.filename,
+            mimeType: attachment.mimeType,
+            size: attachment.size,
+            url: attachment.url,
+            thumbnailUrl: attachment.thumbnailUrl,
+            uploadId: attachment.uploadId,
+            transcription: attachment.transcription,
+            visionDescription: attachment.visionDescription,
+            visionModel: attachment.visionModel,
+          })),
+        })
+        .where(eq(schema.messages.id, userMessage.id));
+
+      res.write(`data: ${JSON.stringify({
+        type: 'media_uploaded',
+        attachments: updatedAttachments,
+      })}\n\n`);
+
+      const agent = conversation?.agent as AgentConfig | null;
+      const assistantSettings = await getAssistantSettingsForTenant(tenantId);
+      let systemPrompt = buildSystemPrompt(agent, assistantSettings, userMessageContent);
+      let userContent = userMessageContent;
+
+      if (visionSummaries.length > 0) {
+        systemPrompt += `\n\n[ANÁLISE VISUAL (OpenAI Vision)]\n${visionSummaries.join('\n\n')}\n[/ANÁLISE VISUAL (OpenAI Vision)]\n`;
+        if (!userContent) {
+          userContent = 'Com base na análise visual acima, explique a imagem e possíveis implicações para trading.';
+        }
+      } else if (preparedMediaAttachments.some((attachment) => attachment.type === 'image')) {
+        systemPrompt += '\n\nO usuário enviou uma imagem, mas a análise visual (OpenAI Vision) está indisponível no momento.';
+        if (!userContent) {
+          userContent = 'Recebi a imagem. No momento, não consegui analisar visualmente. Descreva o que deseja avaliar.';
+        }
+      }
+
+      if (hasAudioAttachments) {
+        const transcriptions = updatedAttachments
+          .filter((attachment) => attachment.type === 'audio' && attachment.transcription)
+          .map((attachment) => `[${attachment.filename}] ${attachment.transcription}`);
+        if (transcriptions.length > 0) {
+          userContent = `[Transcrição do áudio]\n${transcriptions.join('\n')}\n\n${userContent}`;
+        } else {
+          systemPrompt += '\n\nO usuário enviou um áudio que está sendo processado.';
+          if (!userContent) {
+            userContent = 'Recebi seu áudio. Estou processando a transcrição.';
+          }
+        }
+      }
+
+      const namespaceIdForMedia = namespaceId || conversation?.namespaceId || conversation?.agent?.namespaceId;
+      const ragQuery = visionSummaries.length > 0
+        ? `${visionSummaries.join('\n\n')}\n\nPergunta do usuário:\n${userContent}`
+        : userContent;
+      const ragParams = getAdaptiveRagParams(ragQuery, 0);
+      const ragResult = await buscarContextoRAG(
+        ragQuery,
+        namespaceIdForMedia || undefined,
+        ragParams.limit,
+        ragParams.threshold
+      );
+      if (ragResult?.context) {
+        systemPrompt += formatarContextoParaLLM(ragResult);
+        res.write(`data: ${JSON.stringify({ type: 'sources', sources: { internal: ragResult.sources || [] } })}\n\n`);
+      }
+
+      const mediaMessages = buildPromptMessages({
+        systemPrompt,
+        userMessage: userContent,
+        history: [],
+        source: 'stream',
+      });
+
+      let assistantResponse = '';
+      let assistantPersisted = false;
+      try {
+        writeStatus('llm');
+        const mediaProfile = detectContextProfile(userContent);
+        const llmConfig = applyDynamicTokenBudget(
+          getAgentLLMConfig(agent),
+          mediaMessages,
+          { conversationId, source: 'stream', profile: mediaProfile }
+        );
+        await proxyStreamFromGpuManager(
+          mediaMessages,
+          (content) => {
+            if (content) {
+              assistantResponse += content;
+            }
+            try {
+              if (res.headersSent && !res.writableEnded) {
+                res.write(`data: ${JSON.stringify({ content })}\n\n`);
+              }
+            } catch (writeError) {
+              logger.warn({ error: writeError, conversationId }, 'Erro ao escrever chunk SSE (mídia) - cliente pode ter desconectado');
+            }
+          },
+          async () => {
+            if (!assistantPersisted && conversationId && userMessage) {
+              assistantPersisted = true;
+              if (assistantResponse.trim().length > 0) {
+                const [assistantMessage] = await db.insert(schema.messages).values({
+                  conversationId,
+                  agentId: conversation?.agentId,
+                  conteudo: assistantResponse,
+                  tipo: 'text',
+                  isFromUser: false,
+                }).returning();
+
+                await db.update(schema.conversations)
+                  .set({
+                    totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+                    ultimaMensagemEm: new Date(),
+                    atualizadoEm: new Date(),
+                  })
+                  .where(eq(schema.conversations.id, conversationId));
+
+                try {
+                  await ensureConversationTitle({
+                    conversationId,
+                    userMessage: userContent,
+                    assistantResponse: assistantResponse,
+                  });
+                } catch (titleError) {
+                  logger.warn({ error: titleError, conversationId }, 'Falha ao aplicar título automático (stream mídia)');
+                }
+
+                const streamUserRole = req.user?.role as Role | undefined;
+                if (streamUserRole && shouldAutoCollectTraining({
+                  profile: mediaProfile,
+                  namespaceId: namespaceIdForMedia,
+                  userMessage: userContent,
+                  assistantResponse: assistantResponse,
+                })) {
+                  void collectTrainingSample({
+                    tenantId,
+                    namespaceId: namespaceIdForMedia as string,
+                    conversationId,
+                    source: 'chat-auto',
+                    messages: [
+                      { role: 'user', content: userContent },
+                      { role: 'assistant', content: assistantResponse },
+                    ],
+                    userId,
+                    role: streamUserRole,
+                  });
+                }
+
+                res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+              } else {
+                await db.update(schema.conversations)
+                  .set({
+                    totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 1`,
+                    ultimaMensagemEm: new Date(),
+                    atualizadoEm: new Date(),
+                  })
+                  .where(eq(schema.conversations.id, conversationId));
+              }
+            }
+
+            if (!res.writableEnded) {
+              res.write('data: [DONE]\n\n');
+              res.end();
+            }
+          },
+          llmConfig,
+          getAdaptiveGpuPriority('stream', mediaProfile)
+        );
+      } catch (streamError) {
+        logger.error({ error: streamError }, 'Erro no streaming de mídia (stream)');
+        if (res.headersSent && !res.writableEnded) {
+          res.write(`data: ${JSON.stringify({ error: 'Erro ao processar mídia' })}\n\n`);
+          res.end();
+        }
+      }
+      return;
+    }
 
     if (!imageDetection.isImageRequest) {
       // ============================================================================
       // GREETINGS GATE (Redis cache) - evita GPU para saudações simples
       // ============================================================================
       writeStatus('greeting');
-      const cacheResult = await checkResponseCache(tenantId, lastUserMessageContent);
+      const cacheResult = await checkResponseCache(tenantId, userMessageContent);
       if (cacheResult.hasResponse && cacheResult.response) {
         const lastAssistantMessage = previousMessages.find((msg) => !msg.isFromUser && msg.conteudo);
         const shouldAugmentGreeting = Boolean(
           lastAssistantMessage?.conteudo &&
           normalizeContent(lastAssistantMessage.conteudo) === normalizeContent(cacheResult.response)
         );
-        const greetingSeed = `${tenantId}:${lastUserMessageContent}:${lastAssistantMessage?.id || 'first'}`;
+        const greetingSeed = `${tenantId}:${userMessageContent}:${lastAssistantMessage?.id || 'first'}`;
         const greetingResponse = buildGreetingResponse(
           cacheResult.response,
           greetingSeed,
@@ -3740,7 +4083,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         try {
           await ensureConversationTitle({
             conversationId,
-            userMessage: lastUserMessageContent,
+            userMessage: userMessageContent,
             assistantResponse: greetingResponse,
           });
         } catch (titleError) {
@@ -3761,10 +4104,10 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       const lastUserIndex = previousMessages.findIndex((msg) => msg.isFromUser);
       const lastUserInHistory = lastUserIndex >= 0 ? previousMessages[lastUserIndex] : undefined;
       if (lastUserInHistory?.conteudo &&
-          normalizeContent(lastUserInHistory.conteudo) === normalizeContent(lastUserMessageContent)) {
+          normalizeContent(lastUserInHistory.conteudo) === normalizeContent(userMessageContent)) {
         const assistantAfterLastUser = previousMessages.find((msg, idx) => idx < lastUserIndex && !msg.isFromUser);
         if (assistantAfterLastUser?.conteudo) {
-          const reuseSeed = `${tenantId}:${lastUserMessageContent}:${assistantAfterLastUser.id}`;
+          const reuseSeed = `${tenantId}:${userMessageContent}:${assistantAfterLastUser.id}`;
           const reuseResponse = buildReuseResponse(assistantAfterLastUser.conteudo, reuseSeed);
           const [assistantMessage] = await db.insert(schema.messages).values({
             conversationId,
@@ -3789,7 +4132,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           try {
             await ensureConversationTitle({
               conversationId,
-              userMessage: lastUserMessageContent,
+              userMessage: userMessageContent,
               assistantResponse: reuseResponse,
             });
           } catch (titleError) {
@@ -3813,6 +4156,11 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         res.end();
         return;
       }
+      const internalHeaders = buildInternalServiceHeaders({
+        userId,
+        tenantId,
+        role: userRole,
+      });
       const permissionCheck = await checkPermission(
         { userId, tenantId, role: userRole },
         'images:generate:write'
@@ -3831,6 +4179,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           prompt: imageDetection.prompt,
           conversationId,
           messageId: userMessage.id,
+          internalHeaders,
         });
 
         const [assistantMessage] = await db.insert(schema.messages).values({
@@ -3855,7 +4204,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
         await ensureConversationTitle({
           conversationId,
-          userMessage: lastUserMessageContent,
+          userMessage: userMessageContent,
           assistantResponse: 'Imagem gerada com sucesso via OpenAI.',
         });
 
@@ -3891,13 +4240,13 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     }
 
       const agent = conversation?.agent ?? null;
-      const ragParams = getAdaptiveRagParams(lastUserMessageContent, previousMessages.length);
+      const ragParams = getAdaptiveRagParams(userMessageContent, previousMessages.length);
       const [assistantSettings, ragResult] = await Promise.all([
         getAssistantSettingsForTenant(tenantId),
         (async () => {
           writeStatus('rag_internal');
           return buscarContextoRAG(
-            lastUserMessageContent,
+            userMessageContent,
             conversation?.namespaceId || namespaceId,
             ragParams.limit,
             ragParams.threshold
@@ -3905,7 +4254,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         })(),
       ]);
 
-      let systemPrompt = buildSystemPrompt(agent, assistantSettings, lastUserMessageContent);
+      let systemPrompt = buildSystemPrompt(agent, assistantSettings, userMessageContent);
       let ragSources: Array<{ documentId: string; titulo: string; similarity: number }> = [];
       let webSources: Array<{ title: string; url: string }> = [];
 
@@ -3919,7 +4268,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       } else {
         writeStatus('rag_web');
         const agenticResult = await buscarContextoAgentic({
-          query: lastUserMessageContent,
+          query: userMessageContent,
           namespaceId: conversation?.namespaceId || namespaceId,
           forceMode: 'web',
           limit: ragParams.limit,
@@ -3938,7 +4287,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     
     const llmMessages = buildPromptMessages({
       systemPrompt,
-      userMessage: lastUserMessageContent,
+      userMessage: userMessageContent,
       history: storedPreviousMessages,
       source: 'stream',
     });
@@ -3953,7 +4302,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
     try {
       writeStatus('llm');
-      const streamProfile = detectContextProfile(lastUserMessageContent);
+      const streamProfile = detectContextProfile(userMessageContent);
       const llmConfig = applyDynamicTokenBudget(
         getAgentLLMConfig(agent),
         llmMessages,
@@ -4008,19 +4357,19 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
               try {
                 await ensureConversationTitle({
                   conversationId,
-                  userMessage: lastUserMessageContent,
+                  userMessage: userMessageContent,
                   assistantResponse: assistantResponse,
                 });
               } catch (titleError) {
                 logger.warn({ error: titleError, conversationId }, 'Falha ao aplicar título automático (stream)');
               }
 
-              const streamProfile = detectContextProfile(lastUserMessageContent);
+              const streamProfile = detectContextProfile(userMessageContent);
               const streamUserRole = req.user?.role as Role | undefined;
               if (streamUserRole && shouldAutoCollectTraining({
                 profile: streamProfile,
                 namespaceId: conversation?.namespaceId || conversation?.agent?.namespaceId,
-                userMessage: lastUserMessageContent,
+                userMessage: userMessageContent,
                 assistantResponse: assistantResponse,
               })) {
                 void collectTrainingSample({
@@ -4029,7 +4378,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                   conversationId,
                   source: 'chat-auto',
                   messages: [
-                    { role: 'user', content: lastUserMessageContent },
+                    { role: 'user', content: userMessageContent },
                     { role: 'assistant', content: assistantResponse },
                   ],
                   userId,
@@ -4050,7 +4399,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
               try {
                 await ensureConversationTitle({
                   conversationId,
-                  userMessage: lastUserMessageContent,
+                  userMessage: userMessageContent,
                   assistantResponse: assistantResponse,
                 });
               } catch (titleError) {
@@ -4106,6 +4455,16 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       }
     }
   } catch (error) {
+    if (error instanceof ClientInputError) {
+      if (!res.headersSent) {
+        return res.status(error.statusCode).json({ error: error.message, code: error.code });
+      }
+      if (!res.writableEnded) {
+        res.write(`data: ${JSON.stringify({ error: error.message, code: error.code })}\n\n`);
+        res.end();
+      }
+      return;
+    }
     logger.error({ error }, 'Erro no streaming');
     // BUG FIX 25/12/2025: Verificar se resposta ainda não foi fechada antes de escrever
     // O onDone callback pode ter fechado a resposta com res.end() (linha 2069)
@@ -4860,6 +5219,12 @@ wss.on('connection', (ws, req) => {
             return;
           }
 
+          const internalHeaders = buildInternalServiceHeaders({
+            userId,
+            tenantId: safeTenantId,
+            role: userRole,
+          });
+
           const permissionCheck = await checkPermission(
             { userId, tenantId: safeTenantId, role: userRole },
             'images:generate:write'
@@ -4888,6 +5253,7 @@ wss.on('connection', (ws, req) => {
               prompt: imageDetection.prompt,
               conversationId,
               messageId: userMsg.id,
+              internalHeaders,
             });
 
             const inserted = await db.insert(schema.messages).values({
@@ -5322,6 +5688,11 @@ wss.on('connection', (ws, req) => {
         
         // Usar tenantId derivado da conversa (SEMPRE da fonte confiável)
         const mediaSafeTenantId = mediaConversationTenantId;
+        const wsInternalHeaders = buildInternalServiceHeaders({
+          userId,
+          tenantId: mediaSafeTenantId,
+          role: (userRole || 'guest') as Role,
+        });
 
         // Determinar tipo de mídia
         // BUG FIX 23/12/2025: Validação defensiva explícita de tipos suportados ao invés de assumir 'image' por padrão
@@ -5332,27 +5703,12 @@ wss.on('connection', (ws, req) => {
         // .toLowerCase() e .trim() garantem matching correto mesmo com variações
         // Extrair apenas o tipo base (antes de ;) para suportar parâmetros adicionais
         // Consistente com normalização em integrations-service para evitar rejeição de tipos legítimos
-        const normalizedMimeType = mediaMessage.media.mimeType.toLowerCase().trim().split(';')[0].trim();
-        
-        // Tipos de mídia suportados (consistente com RAG service e frontend)
-        const SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const;
-        const SUPPORTED_AUDIO_TYPES = ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/mp4'] as const;
-        
-        // BUG FIX 23/12/2025: Validação com type narrowing explícito para garantir type safety
-        // includes() com type assertion garante que TypeScript entenda o tipo correto
-        // Isso previne falsos negativos onde tipos legítimos são rejeitados por problemas de case/whitespace/parâmetros
-        let mediaType: 'image' | 'audio' | null = null;
-        
-        if (SUPPORTED_IMAGE_TYPES.includes(normalizedMimeType as typeof SUPPORTED_IMAGE_TYPES[number])) {
-          mediaType = 'image';
-        } else if (SUPPORTED_AUDIO_TYPES.includes(normalizedMimeType as typeof SUPPORTED_AUDIO_TYPES[number])) {
-          mediaType = 'audio';
-        }
+        const resolvedMediaType = resolveSupportedMediaType(mediaMessage.media.mimeType);
         
         // Validação defensiva: apenas tipos explicitamente suportados são aceitos
-        if (!mediaType) {
+        if (!resolvedMediaType) {
           logger.warn({ 
-            normalizedMimeType: normalizedMimeType,
+            normalizedMimeType: mediaMessage.media.mimeType.toLowerCase().trim().split(';')[0].trim(),
             originalMimeType: mediaMessage.media.mimeType,
             filename: mediaMessage.media.filename,
             conversationId: mediaMessage.conversationId,
@@ -5371,7 +5727,7 @@ wss.on('connection', (ws, req) => {
         // BUG FIX 23/12/2025: Type narrowing após validação para garantir type safety
         // Após o early return acima, TypeScript não infere automaticamente que mediaType não é null
         // Criar variável não-nullable para garantir type safety em todas as operações subsequentes
-        const validatedMediaType: 'image' | 'audio' = mediaType;
+        const validatedMediaType: 'image' | 'audio' = resolvedMediaType;
 
         ws.send(JSON.stringify({ 
           type: 'media_uploading',
@@ -5438,6 +5794,7 @@ wss.on('connection', (ws, req) => {
           visionDescriptionForRag,
           userMsg.id,
           mediaMessage.conversationId,
+          wsInternalHeaders,
         );
 
         if (!uploadResult) {
@@ -7221,6 +7578,11 @@ app.post('/api/chat/images/generate', requireAuth(), requireSameTenant(getTenant
   }
 
   const { prompt, negativePrompt, width, height } = parseResult.data;
+  const internalHeaders = buildInternalServiceHeaders({
+    userId,
+    tenantId,
+    role: req.user?.role ?? 'guest',
+  });
 
   try {
     const image = await generateImageFromPrompt({
@@ -7230,6 +7592,7 @@ app.post('/api/chat/images/generate', requireAuth(), requireSameTenant(getTenant
       negativePrompt,
       width,
       height,
+      internalHeaders,
     });
     res.json({ image });
   } catch (error) {
