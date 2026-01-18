@@ -3786,14 +3786,20 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     if (imageDetection.isImageRequest && imageDetection.prompt) {
       const userRole = req.user?.role as Role | undefined;
       if (!userRole) {
-        return res.status(403).json({ error: 'Permissão insuficiente para gerar imagens.' });
+        res.write(`data: ${JSON.stringify({ error: 'Permissão insuficiente para gerar imagens.' })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
       }
       const permissionCheck = await checkPermission(
         { userId, tenantId, role: userRole },
         'images:generate:write'
       );
       if (!permissionCheck.allowed) {
-        return res.status(403).json({ error: 'Você não possui permissão para gerar imagens.' });
+        res.write(`data: ${JSON.stringify({ error: 'Você não possui permissão para gerar imagens.' })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
       }
 
       try {
