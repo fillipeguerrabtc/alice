@@ -263,7 +263,6 @@ export default function Chat() {
   const { toast } = useToast();
   const isMobile = useIsMobile();
   const appVersion = __APP_VERSION__;
-  const modelBadgeLabel = appVersion ? `Alice ${appVersion} 7B` : 'Alice 7B';
   
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -424,10 +423,25 @@ export default function Chat() {
     staleTime: 1000 * 60,
   });
 
+  const fetchConversationMessages = useCallback(async () => {
+    if (!conversationId) {
+      throw new Error('ConversationId ausente para carregamento de mensagens');
+    }
+    const res = await apiRequest('GET', `/api/chat/conversations/${conversationId}/messages`);
+    return res.json() as Promise<{ messages: Message[] }>;
+  }, [conversationId]);
+
   const { data: conversationMessages } = useQuery<{ messages: Message[] }>({
     queryKey: ['/api/chat/conversations', conversationId, 'messages'],
+    queryFn: fetchConversationMessages,
     enabled: !!conversationId,
   });
+  const { data: versionData } = useQuery<{ version: string | null }>({
+    queryKey: ['/api/chat/version'],
+    staleTime: 1000 * 60 * 5,
+  });
+  const resolvedVersion = versionData?.version || appVersion;
+  const modelBadgeLabel = resolvedVersion ? `Alice ${resolvedVersion} 7B` : 'Alice 7B';
 
   const { data: namespaces } = useQuery<Namespace[]>({
     queryKey: ['/api/namespaces'],
@@ -487,6 +501,14 @@ export default function Chat() {
   const STREAM_NO_CHUNK_TIMEOUT_MS = 60000;
   const resolveStreamStatus = useCallback((stage?: string) => {
     switch (stage) {
+      case 'routing':
+        return t('chat.streaming.status.routing');
+      case 'history':
+        return t('chat.streaming.status.history');
+      case 'prompt':
+        return t('chat.streaming.status.prompt');
+      case 'finalizing':
+        return t('chat.streaming.status.finalizing');
       case 'rag_internal':
         return t('chat.streaming.status.ragInternal');
       case 'rag_web':

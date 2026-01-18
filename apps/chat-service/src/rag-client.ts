@@ -62,12 +62,21 @@ async function fetchContextInternal(
   query: string,
   namespaceId?: string,
   limit = 5,
-  threshold = 0.7
+  threshold = 0.7,
+  auth?: { userId: string; tenantId: string; role: Role }
 ): Promise<RAGContextResponse> {
-    const response = await fetch(`${RAG_SERVICE_URL_FINAL}/api/rag/context`, {
+  const internalHeaders = auth && isInternalAuthEnabled()
+    ? generateInternalAuthHeaders({
+        userId: auth.userId,
+        tenantId: auth.tenantId,
+        role: auth.role,
+      })
+    : undefined;
+  const response = await fetch(`${RAG_SERVICE_URL_FINAL}/api/rag/context`, {
     method: 'POST',
     headers: { 
       'Content-Type': 'application/json',
+      ...(internalHeaders ?? {}),
     },
     body: JSON.stringify({
       query,
@@ -166,7 +175,8 @@ export async function buscarContextoRAG(
   query: string,
   namespaceId?: string,
   limit = 5,
-  threshold = 0.7
+  threshold = 0.7,
+  auth?: { userId: string; tenantId: string; role: Role }
 ): Promise<RAGContextResponse | null> {
   if (!query || query.trim().length === 0) {
     logger.debug('Query vazia - ignorando busca RAG');
@@ -175,7 +185,7 @@ export async function buscarContextoRAG(
 
   try {
     const startTime = Date.now();
-    const result = await ragBreaker.fire(query, namespaceId, limit, threshold) as RAGContextResponse;
+    const result = await ragBreaker.fire(query, namespaceId, limit, threshold, auth) as RAGContextResponse;
     const latency = Date.now() - startTime;
 
     if (result.sources.length > 0) {

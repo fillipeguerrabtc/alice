@@ -269,13 +269,17 @@
       "timeout": "Tempo de resposta excedido. Tente novamente.",
       "status": {
         "preparing": "Preparando resposta",
+        "routing": "Roteando agente e contexto",
+        "history": "Carregando histórico da conversa",
         "media": "Processando mídia",
         "greeting": "Aplicando resposta rápida",
         "reuse": "Reutilizando resposta anterior",
+        "prompt": "Montando prompt inteligente",
         "ragInternal": "Buscando conhecimento interno",
         "ragWeb": "Buscando na web e deep web",
         "llm": "Gerando resposta",
-        "writing": "Escrevendo resposta"
+        "writing": "Escrevendo resposta",
+        "finalizing": "Finalizando resposta"
       }
     },
     "agent": {

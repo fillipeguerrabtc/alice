@@ -192,6 +192,7 @@ services:
       NODE_ENV: production
       PORT: 3002
       SERVICE_NAME: chat-service
+      APP_VERSION: ${IMAGE_TAG:-latest}
       DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@alice-pgbouncer:6432/${POSTGRES_DB:-alice_prod}?sslmode=disable
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
       SESSION_SECRET: ${SESSION_SECRET}

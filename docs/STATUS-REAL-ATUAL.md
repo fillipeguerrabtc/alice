@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 18 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.8 - Correções observabilidade + métricas GPU Manager
+**Versão:** 7.9 - Versão dinâmica do chat + RAG com auth interno
 
 ---
 
@@ -202,9 +202,9 @@ Retenção Arquivo:   30 dias
 - GPU Manager: métricas de VRAM total/usada no fallback quando `nvidia-smi` não está disponível.
 - Upload multimodal no streaming com análise de imagens via OpenAI e SSE `media_uploaded`.
 - Headers internos para upload de mídia no RAG e geração de imagem via OpenAI (auth service-to-service).
-- Badge do chat mostra versão da Alice (ex: Alice x.xx 7B) via `__APP_VERSION__`.
-- Status de streaming inclui processamento de mídia (melhora UX durante análise de imagens).
-- Favicon ajustado para melhor legibilidade na aba (logo-round como base).
+- Badge do chat mostra versão da Alice via `/api/chat/version` (APP_VERSION do deploy).
+- Status de streaming inclui etapas adicionais em tempo real (routing, history, prompt, finalizing).
+- Favicon ajustado para melhor legibilidade na aba (favicon dedicado para tabs).
 - Incremento atômico de `totalMensagens` em streams concorrentes (evita perda de contagem).
 - Upsert atômico em `/api/assistant-settings` para evitar conflito em concorrência.
 - pgBackRest: reset controlado quando `archive.info` existe sem `backup.info`.

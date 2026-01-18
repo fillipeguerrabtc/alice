@@ -116,9 +116,23 @@ export function MessageBubble({
                   <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse delay-300" />
                 </span>
               </div>
-              {streamSteps && streamSteps.length > 1 && (
-                <div className="text-[11px] text-muted-foreground/80">
-                  {t('chat.streaming.steps')} {streamSteps.join(' → ')}
+              {streamSteps && streamSteps.length > 0 && (
+                <div className="flex flex-wrap gap-1 text-[11px] text-muted-foreground/80">
+                  <span className="mr-1">{t('chat.streaming.steps')}</span>
+                  {streamSteps.map((step, index) => {
+                    const isActive = index === streamSteps.length - 1;
+                    return (
+                      <span
+                        key={`${step}-${index}`}
+                        className={cn(
+                          'px-1.5 py-0.5 rounded-md',
+                          isActive ? 'bg-muted text-foreground' : 'bg-muted/40'
+                        )}
+                      >
+                        {step}
+                      </span>
+                    );
+                  })}
                 </div>
               )}
             </div>

@@ -115,6 +115,7 @@ if (!OPENAI_API_KEY && process.env.NODE_ENV === 'production') {
   logger.error('OPENAI_API_KEY é obrigatório em produção (Vision + geração de imagens via OpenAI)');
   process.exit(1);
 }
+const APP_VERSION = process.env.APP_VERSION?.trim() || null;
 
 // URL do Integrations Service para comunicação cross-service (Regra 15 - Microsserviços)
 // REGRA 6: Fail-fast em TODOS os ambientes - variável DEVE estar definida
@@ -799,13 +800,18 @@ async function generateImageFromPrompt(input: ImageGenerationInput) {
         prompt: composedPrompt,
         size,
         n: 1,
-        response_format: 'b64_json',
+        output_format: 'png',
       }),
       signal: AbortSignal.timeout(120000),
     });
 
     if (!openAiResponse.ok) {
       const errText = await openAiResponse.text().catch(() => '');
+      logger.error({
+        status: openAiResponse.status,
+        requestId: openAiResponse.headers.get('x-request-id'),
+        error: errText,
+      }, 'OpenAI Images API retornou erro');
       throw new Error(`OpenAI Images error: ${openAiResponse.status} - ${errText}`);
     }
 
@@ -2928,6 +2934,14 @@ app.get('/api/chat/health', async (_req: Request, res: Response) => {
   });
 });
 
+app.get('/api/chat/version', (_req: Request, res: Response) => {
+  res.json({
+    version: APP_VERSION,
+    service: 'chat-service',
+    timestamp: new Date().toISOString(),
+  });
+});
+
 // ============================================================================
 // KUBERNETES PROBES: /ready e /live (Regra 16 - Best Practices 2025)
 // /live: Processo está vivo? Se não, Kubernetes reinicia o container
@@ -3509,7 +3523,8 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       body.conteudo,
       conversation.namespaceId || undefined,
       ragParams.limit,
-      ragParams.threshold
+      ragParams.threshold,
+      { userId, tenantId, role: userRole }
     );
     const ragLatency = Date.now() - ragStartTime;
     
@@ -3739,6 +3754,12 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       }
     };
 
+    writeStatus('preparing');
+    if (conversationCreated) {
+      writeStatus('routing');
+    }
+
+    writeStatus('history');
     const previousMessages = conversationId
       ? await db.query.messages.findMany({
         where: eq(schema.messages.conversationId, conversationId),
@@ -3922,13 +3943,15 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         ragQuery,
         namespaceIdForMedia || undefined,
         ragParams.limit,
-        ragParams.threshold
+        ragParams.threshold,
+        { userId, tenantId, role: req.user?.role as Role }
       );
       if (ragResult?.context) {
         systemPrompt += formatarContextoParaLLM(ragResult);
         res.write(`data: ${JSON.stringify({ type: 'sources', sources: { internal: ragResult.sources || [] } })}\n\n`);
       }
 
+      writeStatus('prompt');
       const mediaMessages = buildPromptMessages({
         systemPrompt,
         userMessage: userContent,
@@ -4024,6 +4047,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             }
 
             if (!res.writableEnded) {
+              writeStatus('finalizing');
               res.write('data: [DONE]\n\n');
               res.end();
             }
@@ -4232,7 +4256,11 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         res.end();
         return;
       } catch (imageError) {
-        logger.error({ error: imageError, conversationId }, 'Falha ao gerar imagem via OpenAI (stream)');
+        logger.error({
+          errorMessage: imageError instanceof Error ? imageError.message : String(imageError),
+          stack: imageError instanceof Error ? imageError.stack : undefined,
+          conversationId,
+        }, 'Falha ao gerar imagem via OpenAI (stream)');
         res.write(`data: ${JSON.stringify({ error: 'Falha ao gerar imagem via OpenAI.' })}\n\n`);
         res.end();
         return;
@@ -4249,7 +4277,8 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             userMessageContent,
             conversation?.namespaceId || namespaceId,
             ragParams.limit,
-            ragParams.threshold
+            ragParams.threshold,
+            { userId, tenantId, role: req.user?.role as Role }
           );
         })(),
       ]);
@@ -4285,6 +4314,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         }
       }
     
+    writeStatus('prompt');
     const llmMessages = buildPromptMessages({
       systemPrompt,
       userMessage: userMessageContent,
@@ -4418,6 +4448,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                 res.setHeader('Connection', 'keep-alive');
                 res.flushHeaders();
               }
+              writeStatus('finalizing');
               res.write('data: [DONE]\n\n');
               res.end();
             } catch (endError) {
@@ -5301,7 +5332,11 @@ wss.on('connection', (ws, req) => {
             ws.send(JSON.stringify({ type: 'message', data: messagePayload }));
             ws.send(JSON.stringify({ type: 'complete', data: messagePayload }));
           } catch (error) {
-            logger.error({ error, conversationId }, 'Falha ao gerar imagem via OpenAI');
+            logger.error({
+              errorMessage: error instanceof Error ? error.message : String(error),
+              stack: error instanceof Error ? error.stack : undefined,
+              conversationId,
+            }, 'Falha ao gerar imagem via OpenAI');
             ws.send(JSON.stringify({ 
               type: 'error', 
               error: 'Falha ao gerar imagem via OpenAI. Tente novamente em instantes.' 
@@ -5415,7 +5450,8 @@ wss.on('connection', (ws, req) => {
           messageContent,
           namespaceId,
           ragParams.limit,
-          ragParams.threshold
+          ragParams.threshold,
+          { userId, tenantId: safeTenantId, role: userRole }
         );
         const ragLatency = Date.now() - ragStartTime;
         
@@ -5874,7 +5910,8 @@ wss.on('connection', (ws, req) => {
           ragQuery,
           namespaceId,
           ragParams.limit,
-          ragParams.threshold
+          ragParams.threshold,
+          { userId, tenantId, role: userRole }
         );
         
         if (ragResult?.context) {
@@ -7384,7 +7421,8 @@ app.post('/api/chat/message', asyncHandler(async (req: Request, res: Response) =
       content,
       conversation.namespaceId || undefined,
       ragParams.limit,
-      ragParams.threshold
+      ragParams.threshold,
+      { userId: req.user?.userId as string, tenantId: req.tenantId as string, role: req.user?.role as Role }
     );
     if (ragResult && ragResult.context) {
       systemPrompt += formatarContextoParaLLM(ragResult);

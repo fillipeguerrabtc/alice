@@ -269,13 +269,17 @@
       "timeout": "Response timed out. Please try again.",
       "status": {
         "preparing": "Preparing response",
+        "routing": "Routing agent and context",
+        "history": "Loading conversation history",
         "media": "Processing media",
         "greeting": "Applying quick response",
         "reuse": "Reusing previous response",
+        "prompt": "Assembling prompt",
         "ragInternal": "Searching internal knowledge",
         "ragWeb": "Searching the web and deep web",
         "llm": "Generating response",
-        "writing": "Writing response"
+        "writing": "Writing response",
+        "finalizing": "Finalizing response"
       }
     },
     "agent": {
