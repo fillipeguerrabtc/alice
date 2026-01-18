@@ -64,6 +64,8 @@ import {
 import type { Role } from '@alice/shared-utils';
 import { eq, desc, inArray, and, or, lt, sql } from '@alice/database';
 import { z } from 'zod';
+import { ProxyAgent } from 'undici';
+import type { Dispatcher } from 'undici';
 import { 
   buscarContextoRAG, 
   buscarContextoAgentic,
@@ -115,7 +117,64 @@ if (!OPENAI_API_KEY && process.env.NODE_ENV === 'production') {
   logger.error('OPENAI_API_KEY é obrigatório em produção (Vision + geração de imagens via OpenAI)');
   process.exit(1);
 }
+const OPENAI_PROXY = process.env.OPENAI_PROXY ?? process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY ?? null;
+const OPENAI_NO_PROXY = process.env.NO_PROXY ?? process.env.no_proxy ?? null;
+const OPENAI_VISION_MAX_BYTES = (() => {
+  const raw = process.env.OPENAI_VISION_MAX_BYTES;
+  if (!raw) return null;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    logger.error({ value: raw }, 'OPENAI_VISION_MAX_BYTES inválido - precisa ser número > 0');
+    process.exit(1);
+  }
+  return parsed;
+})();
 const APP_VERSION = process.env.APP_VERSION?.trim() || null;
+
+const OPENAI_HOSTNAME = 'api.openai.com';
+const OPENAI_NO_PROXY_ENTRIES = OPENAI_NO_PROXY
+  ? OPENAI_NO_PROXY.split(',').map((entry) => entry.trim()).filter(Boolean)
+  : [];
+
+type OpenAiRequestInit = RequestInit & { dispatcher?: Dispatcher };
+
+function isNoProxyMatch(hostname: string, entry: string): boolean {
+  if (entry === '*') return true;
+  if (entry.startsWith('.')) {
+    return hostname.endsWith(entry);
+  }
+  if (hostname === entry) return true;
+  return hostname.endsWith(`.${entry}`);
+}
+
+function shouldBypassProxy(hostname: string, entries: string[]): boolean {
+  if (!entries.length) return false;
+  return entries.some((entry) => isNoProxyMatch(hostname, entry));
+}
+
+const OPENAI_PROXY_URL = (() => {
+  if (!OPENAI_PROXY) return null;
+  try {
+    return new URL(OPENAI_PROXY).toString();
+  } catch (error) {
+    logger.error({ error, value: OPENAI_PROXY }, 'OPENAI_PROXY inválido - URL malformada');
+    process.exit(1);
+  }
+})();
+
+const OPENAI_DISPATCHER: Dispatcher | undefined = (() => {
+  if (!OPENAI_PROXY_URL) return undefined;
+  if (shouldBypassProxy(OPENAI_HOSTNAME, OPENAI_NO_PROXY_ENTRIES)) {
+    logger.info({ hostname: OPENAI_HOSTNAME }, 'OpenAI sem proxy (NO_PROXY aplicado)');
+    return undefined;
+  }
+  logger.info({ proxy: OPENAI_PROXY_URL }, 'OpenAI configurado com proxy');
+  return new ProxyAgent(OPENAI_PROXY_URL);
+})();
+
+function getOpenAiFetchOptions(): Pick<OpenAiRequestInit, 'dispatcher'> {
+  return OPENAI_DISPATCHER ? { dispatcher: OPENAI_DISPATCHER } : {};
+}
 
 // URL do Integrations Service para comunicação cross-service (Regra 15 - Microsserviços)
 // REGRA 6: Fail-fast em TODOS os ambientes - variável DEVE estar definida
@@ -800,8 +859,10 @@ async function generateImageFromPrompt(input: ImageGenerationInput) {
         prompt: composedPrompt,
         size,
         n: 1,
+        response_format: 'b64_json',
         output_format: 'png',
       }),
+      ...getOpenAiFetchOptions(),
       signal: AbortSignal.timeout(120000),
     });
 
@@ -818,6 +879,11 @@ async function generateImageFromPrompt(input: ImageGenerationInput) {
     const payload = await openAiResponse.json() as { data?: Array<{ b64_json?: string }> };
     const b64 = payload?.data?.[0]?.b64_json;
     if (!b64 || typeof b64 !== 'string' || b64.length < 64) {
+      logger.error({
+        status: openAiResponse.status,
+        requestId: openAiResponse.headers.get('x-request-id'),
+        payload,
+      }, 'Resposta inválida da OpenAI Images API (b64_json ausente)');
       throw new Error('Resposta inválida da OpenAI Images API (b64_json ausente)');
     }
 
@@ -1986,6 +2052,13 @@ async function analyzeImageWithOpenAI(params: {
     throw new Error('OPENAI_API_KEY não configurada - Vision via OpenAI é obrigatória');
   }
 
+  const imageBytes = Buffer.byteLength(params.imageDataUri, 'utf8');
+  const imageKb = Math.round(imageBytes / 1024);
+  logger.debug({ imageBytes, imageKb }, 'Tamanho do payload de imagem (Vision)');
+  if (OPENAI_VISION_MAX_BYTES && imageBytes > OPENAI_VISION_MAX_BYTES) {
+    throw new Error('Imagem excede o limite configurado para análise (OPENAI_VISION_MAX_BYTES)');
+  }
+
   const response = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: {
@@ -2009,11 +2082,17 @@ async function analyzeImageWithOpenAI(params: {
         },
       ],
     }),
+    ...getOpenAiFetchOptions(),
     signal: AbortSignal.timeout(60000),
   });
 
   if (!response.ok) {
     const errText = await response.text().catch(() => '');
+    logger.error({
+      status: response.status,
+      requestId: response.headers.get('x-request-id'),
+      error: errText,
+    }, 'OpenAI Vision retornou erro');
     throw new Error(`OpenAI Vision error: ${response.status} - ${errText}`);
   }
 
@@ -4841,6 +4920,7 @@ wss.on('connection', (ws, req) => {
       }
       
       const userRole = extWs.role;
+      const safeUserRole: Role = userRole ?? 'guest';
 
       // CORREÇÃO 17/12/2025: Type assertion alinhada com schema Zod
       // content é opcional no schema (z.string().optional())
@@ -5451,7 +5531,7 @@ wss.on('connection', (ws, req) => {
           namespaceId,
           ragParams.limit,
           ragParams.threshold,
-          { userId, tenantId: safeTenantId, role: userRole }
+          { userId, tenantId: safeTenantId, role: safeUserRole }
         );
         const ragLatency = Date.now() - ragStartTime;
         
@@ -5911,7 +5991,7 @@ wss.on('connection', (ws, req) => {
           namespaceId,
           ragParams.limit,
           ragParams.threshold,
-          { userId, tenantId, role: userRole }
+          { userId, tenantId, role: safeUserRole }
         );
         
         if (ragResult?.context) {

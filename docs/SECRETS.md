@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 18 de Janeiro de 2026  
-**Versão:** 7.3 - Qdrant metrics scraper
+**Versão:** 7.4 - OpenAI proxy + limite Vision
 
 ## Visão geral
 
@@ -101,6 +101,11 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `HUGGINGFACE_TOKEN` | Token HF (se necessário) |
 | `SEARXNG_SECRET_KEY` | Secret do SearXNG |
 | `ERPNEXT_MYSQL_EXPORTER_USER` | Usuário do mysqld_exporter (default: `erpnext_exporter`) |
+| `OPENAI_PROXY` | Proxy dedicado para chamadas OpenAI (ex: `http://proxy:3128`) |
+| `HTTP_PROXY` | Proxy global (fallback para OpenAI se `OPENAI_PROXY` não existir) |
+| `HTTPS_PROXY` | Proxy global TLS (fallback para OpenAI se `OPENAI_PROXY` não existir) |
+| `NO_PROXY` | Hosts que não devem usar proxy (ex: `api.openai.com,.openai.com`) |
+| `OPENAI_VISION_MAX_BYTES` | Limite de payload (bytes) para Vision via OpenAI |
 
 ## Geração recomendada
 
