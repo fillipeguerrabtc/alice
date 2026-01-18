@@ -652,171 +652,6 @@ export default function Chat() {
     void pollMediaTranscription(result.uploadId);
   }, [pollMediaTranscription]);
 
-  const sendRecordingDirect = useCallback((file: File) => {
-    const mediaId = crypto.randomUUID();
-    const objectUrl = URL.createObjectURL(file);
-    const attachment: MediaAttachment = {
-      id: mediaId,
-      type: 'audio',
-      url: objectUrl,
-      fileName: file.name,
-      fileSize: file.size,
-      mimeType: file.type,
-      status: 'ready',
-      file,
-    };
-
-    const currentPending = pendingMediaRef.current;
-    const combined = currentPending.length > 0 ? [...currentPending, attachment] : [attachment];
-    sendMessage.mutate({
-      content: inputRef.current.trim(),
-      mediaAttachments: combined,
-    });
-    setInput('');
-    clearPendingMedia();
-  }, [clearPendingMedia, sendMessage]);
-
-  const finalizeRecording = useCallback(async () => {
-    const recorder = mediaRecorderRef.current;
-    const stream = recordingStreamRef.current;
-    const cancelled = recordingCancelledRef.current;
-    const unmounted = recordingUnmountedRef.current;
-    recordingCancelledRef.current = false;
-
-    const mimeType = recorder?.mimeType || 'audio/webm';
-    const chunks = recordingChunksRef.current;
-    recordingChunksRef.current = [];
-
-    stream?.getTracks().forEach((track) => track.stop());
-    recordingStreamRef.current = null;
-    mediaRecorderRef.current = null;
-
-    if (!unmounted) {
-      setIsRecording(false);
-    }
-
-    if (cancelled || unmounted || chunks.length === 0) {
-      return;
-    }
-
-    const blob = new Blob(chunks, { type: mimeType });
-    if (blob.size === 0) {
-      return;
-    }
-
-    const extension = resolveRecordingExtension(mimeType);
-    const safeTimestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const fileName = `gravacao-${safeTimestamp}.${extension}`;
-    const file = new File([blob], fileName, { type: mimeType });
-
-    if (recordingSendModeRef.current === 'direct') {
-      sendRecordingDirect(file);
-    } else {
-      try {
-        await uploadAudioForReview(file);
-      } catch (error) {
-        frontendLogger.error('Falha ao preparar áudio para revisão', { error });
-        toast({
-          title: t('chat.recordingUploadFailed'),
-          description: t('chat.recordingUploadFailedDesc'),
-          variant: 'destructive',
-        });
-      }
-    }
-
-    recordingSendModeRef.current = 'review';
-  }, [resolveRecordingExtension, sendRecordingDirect, t, toast, uploadAudioForReview]);
-
-  const handleStartRecording = useCallback(async () => {
-    if (isStreaming || isRecording || recordingStartingRef.current) {
-      return;
-    }
-    setRecordingStartingState(true);
-
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setRecordingStartingState(false);
-      toast({
-        title: t('chat.recordingUnsupported'),
-        description: t('chat.recordingUnsupportedDesc'),
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      if (recordingUnmountedRef.current) {
-        stream.getTracks().forEach((track) => track.stop());
-        setRecordingStartingState(false);
-        return;
-      }
-      if (recordingStreamRef.current) {
-        recordingStreamRef.current.getTracks().forEach((track) => track.stop());
-        recordingStreamRef.current = null;
-      }
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop();
-      }
-      const mimeType = resolveRecordingMimeType();
-      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-
-      recordingStreamRef.current = stream;
-      mediaRecorderRef.current = recorder;
-      recordingChunksRef.current = [];
-
-      recorder.ondataavailable = (event) => {
-        if (event.data && event.data.size > 0) {
-          recordingChunksRef.current.push(event.data);
-        }
-      };
-
-      recorder.onerror = (event) => {
-        frontendLogger.error('Falha ao gravar áudio', { error: event });
-        setRecordingStartingState(false);
-        recordingCancelledRef.current = true;
-        recorder.stop();
-      };
-
-      recorder.onstop = () => {
-        void finalizeRecording();
-      };
-
-      recorder.start();
-      setIsRecording(true);
-      setRecordingStartingState(false);
-    } catch (error) {
-      frontendLogger.error('Permissão negada ou erro ao iniciar gravação', { error });
-      setRecordingStartingState(false);
-      toast({
-        title: t('chat.recordingPermissionDenied'),
-        description: t('chat.recordingPermissionDeniedDesc'),
-        variant: 'destructive',
-      });
-    }
-  }, [finalizeRecording, isRecording, isStreaming, resolveRecordingMimeType, setRecordingStartingState, t, toast]);
-
-  const handleStopRecordingReview = useCallback(() => {
-    if (!isRecording) return;
-    recordingSendModeRef.current = 'review';
-    const recorder = mediaRecorderRef.current;
-    if (recorder && recorder.state !== 'inactive') {
-      recorder.stop();
-    } else if (!recordingUnmountedRef.current) {
-      setIsRecording(false);
-    }
-  }, [isRecording]);
-
-  const handleSendRecordingNow = useCallback(() => {
-    if (!isRecording || isStreaming) return;
-    recordingSendModeRef.current = 'direct';
-    const recorder = mediaRecorderRef.current;
-    if (recorder && recorder.state !== 'inactive') {
-      recorder.stop();
-    } else if (!recordingUnmountedRef.current) {
-      setIsRecording(false);
-    }
-  }, [isRecording, isStreaming]);
-
   const removePendingMedia = useCallback((mediaId: string) => {
     setPendingMedia(prev => {
       const media = prev.find(m => m.id === mediaId);
@@ -1301,6 +1136,171 @@ export default function Chat() {
       setStreamSteps([]);
     },
   });
+
+  const sendRecordingDirect = useCallback((file: File) => {
+    const mediaId = crypto.randomUUID();
+    const objectUrl = URL.createObjectURL(file);
+    const attachment: MediaAttachment = {
+      id: mediaId,
+      type: 'audio',
+      url: objectUrl,
+      fileName: file.name,
+      fileSize: file.size,
+      mimeType: file.type,
+      status: 'ready',
+      file,
+    };
+
+    const currentPending = pendingMediaRef.current;
+    const combined = currentPending.length > 0 ? [...currentPending, attachment] : [attachment];
+    sendMessage.mutate({
+      content: inputRef.current.trim(),
+      mediaAttachments: combined,
+    });
+    setInput('');
+    clearPendingMedia();
+  }, [clearPendingMedia, sendMessage]);
+
+  const finalizeRecording = useCallback(async () => {
+    const recorder = mediaRecorderRef.current;
+    const stream = recordingStreamRef.current;
+    const cancelled = recordingCancelledRef.current;
+    const unmounted = recordingUnmountedRef.current;
+    recordingCancelledRef.current = false;
+
+    const mimeType = recorder?.mimeType || 'audio/webm';
+    const chunks = recordingChunksRef.current;
+    recordingChunksRef.current = [];
+
+    stream?.getTracks().forEach((track) => track.stop());
+    recordingStreamRef.current = null;
+    mediaRecorderRef.current = null;
+
+    if (!unmounted) {
+      setIsRecording(false);
+    }
+
+    if (cancelled || unmounted || chunks.length === 0) {
+      return;
+    }
+
+    const blob = new Blob(chunks, { type: mimeType });
+    if (blob.size === 0) {
+      return;
+    }
+
+    const extension = resolveRecordingExtension(mimeType);
+    const safeTimestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const fileName = `gravacao-${safeTimestamp}.${extension}`;
+    const file = new File([blob], fileName, { type: mimeType });
+
+    if (recordingSendModeRef.current === 'direct') {
+      sendRecordingDirect(file);
+    } else {
+      try {
+        await uploadAudioForReview(file);
+      } catch (error) {
+        frontendLogger.error('Falha ao preparar áudio para revisão', { error });
+        toast({
+          title: t('chat.recordingUploadFailed'),
+          description: t('chat.recordingUploadFailedDesc'),
+          variant: 'destructive',
+        });
+      }
+    }
+
+    recordingSendModeRef.current = 'review';
+  }, [resolveRecordingExtension, sendRecordingDirect, t, toast, uploadAudioForReview]);
+
+  const handleStartRecording = useCallback(async () => {
+    if (isStreaming || isRecording || recordingStartingRef.current) {
+      return;
+    }
+    setRecordingStartingState(true);
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setRecordingStartingState(false);
+      toast({
+        title: t('chat.recordingUnsupported'),
+        description: t('chat.recordingUnsupportedDesc'),
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (recordingUnmountedRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        setRecordingStartingState(false);
+        return;
+      }
+      if (recordingStreamRef.current) {
+        recordingStreamRef.current.getTracks().forEach((track) => track.stop());
+        recordingStreamRef.current = null;
+      }
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
+      const mimeType = resolveRecordingMimeType();
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+
+      recordingStreamRef.current = stream;
+      mediaRecorderRef.current = recorder;
+      recordingChunksRef.current = [];
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          recordingChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onerror = (event) => {
+        frontendLogger.error('Falha ao gravar áudio', { error: event });
+        setRecordingStartingState(false);
+        recordingCancelledRef.current = true;
+        recorder.stop();
+      };
+
+      recorder.onstop = () => {
+        void finalizeRecording();
+      };
+
+      recorder.start();
+      setIsRecording(true);
+      setRecordingStartingState(false);
+    } catch (error) {
+      frontendLogger.error('Permissão negada ou erro ao iniciar gravação', { error });
+      setRecordingStartingState(false);
+      toast({
+        title: t('chat.recordingPermissionDenied'),
+        description: t('chat.recordingPermissionDeniedDesc'),
+        variant: 'destructive',
+      });
+    }
+  }, [finalizeRecording, isRecording, isStreaming, resolveRecordingMimeType, setRecordingStartingState, t, toast]);
+
+  const handleStopRecordingReview = useCallback(() => {
+    if (!isRecording) return;
+    recordingSendModeRef.current = 'review';
+    const recorder = mediaRecorderRef.current;
+    if (recorder && recorder.state !== 'inactive') {
+      recorder.stop();
+    } else if (!recordingUnmountedRef.current) {
+      setIsRecording(false);
+    }
+  }, [isRecording]);
+
+  const handleSendRecordingNow = useCallback(() => {
+    if (!isRecording || isStreaming) return;
+    recordingSendModeRef.current = 'direct';
+    const recorder = mediaRecorderRef.current;
+    if (recorder && recorder.state !== 'inactive') {
+      recorder.stop();
+    } else if (!recordingUnmountedRef.current) {
+      setIsRecording(false);
+    }
+  }, [isRecording, isStreaming]);
 
   const sendConversationToTraining = useMutation({
     mutationFn: async () => {

@@ -55,6 +55,7 @@ export function MessageBubble({
 }: MessageBubbleProps) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
+  const isUser = message.role === 'user';
   const assistantAvatarSrc = !isUser && isStreaming && isLast
     ? '/packman.gif'
     : '/gato.gif';
@@ -68,8 +69,6 @@ export function MessageBubble({
       // Falha silenciosa - clipboard pode não estar disponível em alguns contextos
     }
   }, [message.content]);
-
-  const isUser = message.role === 'user';
 
   return (
     <motion.div
