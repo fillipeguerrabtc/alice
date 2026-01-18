@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 **Autor:** Fillipe Guerra  
-**Data:** 18 de Janeiro de 2026  
+**Data:** 17 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.14 - Build-service externaliza @alice/* + subpaths
+**Versão:** 7.15 - Reinjeção workspace em todos os serviços Alice
 
 ---
 
@@ -206,7 +206,7 @@ Retenção Arquivo:   30 dias
 - OpenAI Vision: logs com `status` e `x-request-id` para diagnóstico real.
 - Suporte enterprise a proxy (`OPENAI_PROXY`, `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`).
 - Limite configurável de payload para Vision (`OPENAI_VISION_MAX_BYTES`).
-- Build de microsserviços: `build-service.mjs` externaliza pacotes `@alice/*` e subpaths de `exports`.
+- Build de microsserviços: serviços Alice reinstalam dependências após build de packages para injetar `dist/` dos workspaces.
 - Incremento atômico de `totalMensagens` em streams concorrentes (evita perda de contagem).
 - Upsert atômico em `/api/assistant-settings` para evitar conflito em concorrência.
 - pgBackRest: reset controlado quando `archive.info` existe sem `backup.info`.

@@ -82,7 +82,11 @@ COPY apps/chat-service/ ./apps/chat-service/
 # Compilar pacotes internos primeiro (ordem de dependências)
 RUN pnpm run build:packages
 
-# Criar bundle com esbuild (externaliza @alice/*)
+# Reinstalar para injetar dist dos pacotes workspace (inject-workspace-packages)
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm install --frozen-lockfile
+
+# Criar bundle com esbuild (inclui @alice/* inline)
 RUN pnpm --filter @alice/chat-service run build
 
 # ==============================================================================
@@ -93,7 +97,7 @@ FROM builder AS pruner
 WORKDIR /app
 
 # Usar pnpm deploy para extrair dependências de produção (--legacy para pnpm v10)
-# O bundle.js externaliza @alice/*, então node_modules deve incluir pacotes internos e externos
+# O bundle.js inclui @alice/* inline, então precisamos apenas das deps externas
 RUN pnpm --filter @alice/chat-service deploy --prod --legacy /prod/chat-service
 
 # ==============================================================================

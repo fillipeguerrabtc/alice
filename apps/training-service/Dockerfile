@@ -82,7 +82,11 @@ COPY apps/training-service/ ./apps/training-service/
 # Compilar pacotes internos primeiro (ordem de dependências)
 RUN pnpm run build:packages
 
-# Criar bundle com esbuild (externaliza @alice/*)
+# Reinstalar para injetar dist dos pacotes workspace (inject-workspace-packages)
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm install --frozen-lockfile
+
+# Criar bundle com esbuild (inclui @alice/* inline)
 RUN pnpm --filter @alice/training-service run build
 
 # ==============================================================================
@@ -93,7 +97,7 @@ FROM builder AS pruner
 WORKDIR /app
 
 # Usar pnpm deploy para extrair dependências de produção (--legacy para pnpm v10)
-# O bundle.js externaliza @alice/*, então node_modules deve incluir pacotes internos e externos
+# O bundle.js inclui @alice/* inline, então precisamos apenas das deps externas
 RUN pnpm --filter @alice/training-service deploy --prod --legacy /prod/training-service
 
 # ==============================================================================
@@ -127,7 +131,7 @@ WORKDIR /app
 # Usando --chown para garantir que o usuário node tenha acesso
 COPY --from=pruner --chown=node:node /prod/training-service/node_modules ./node_modules
 
-# Copiar bundle compilado (com @alice/* externalizados)
+# Copiar bundle compilado (com @alice/* inline)
 COPY --from=builder --chown=node:node /app/apps/training-service/dist/bundle.js ./dist/bundle.js
 COPY --from=builder --chown=node:node /app/apps/training-service/dist/bundle.js.map ./dist/bundle.js.map
 

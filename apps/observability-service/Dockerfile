@@ -83,6 +83,10 @@ COPY scripts/build-service.mjs ./scripts/
 # Compilar pacotes internos primeiro (ordem de dependências)
 RUN pnpm run build:packages
 
+# Reinstalar para injetar dist dos pacotes workspace (inject-workspace-packages)
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm install --frozen-lockfile
+
 # Compilar serviço
 RUN pnpm --filter @alice/observability-service run build
 
