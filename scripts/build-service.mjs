@@ -88,6 +88,8 @@ const serviceDeps = collectExternalDeps(servicePkgPath);
 // ============================================================================
 const packagesDir = join(rootDir, 'packages');
 const packagesDeps = new Set();
+const internalPackages = new Set();
+const internalSubpaths = new Set();
 
 if (existsSync(packagesDir)) {
   const packageFolders = readdirSync(packagesDir, { withFileTypes: true })
@@ -96,6 +98,29 @@ if (existsSync(packagesDir)) {
   
   for (const folder of packageFolders) {
     const pkgPath = join(packagesDir, folder, 'package.json');
+    if (!existsSync(pkgPath)) continue;
+
+    try {
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+      if (pkg?.name?.startsWith('@alice/')) {
+        internalPackages.add(pkg.name);
+
+        const exportsField = pkg.exports;
+        if (exportsField && typeof exportsField === 'object') {
+          Object.keys(exportsField)
+            .filter((key) => key.startsWith('./') && key !== './')
+            .forEach((key) => {
+              const subpath = key.slice(2);
+              if (subpath.length > 0) {
+                internalSubpaths.add(`${pkg.name}/${subpath}`);
+              }
+            });
+        }
+      }
+    } catch {
+      // Ignorar pacotes com JSON inválido
+    }
+
     const deps = collectExternalDeps(pkgPath);
     deps.forEach(dep => packagesDeps.add(dep));
   }
@@ -124,14 +149,18 @@ const nodeBuiltins = [
 // ============================================================================
 const externalPackages = [
   ...allExternalDeps,
+  ...internalPackages,
+  ...internalSubpaths,
   ...nodeBuiltins,
 ];
 
 console.log(`\n🔨 Building ${serviceName}...`);
-console.log(`📦 Pacotes @alice/* serão incluídos no bundle (código inline)`);
+console.log(`📦 Pacotes @alice/* e subpaths serão externalizados`);
 console.log(`📤 Dependências do serviço: ${serviceDeps.length} pacotes`);
 console.log(`📤 Dependências dos packages/: ${packagesDeps.size} pacotes`);
-console.log(`📤 Total de externals: ${allExternalDeps.size} pacotes únicos`);
+console.log(`📤 Pacotes internos @alice/*: ${internalPackages.size} pacotes`);
+console.log(`📤 Subpaths internos exportados: ${internalSubpaths.size} itens`);
+console.log(`📤 Total de externals: ${allExternalDeps.size + internalPackages.size + internalSubpaths.size} pacotes únicos`);
 console.log(`📤 Node.js builtins: ${builtinModules.length} módulos (com e sem prefixo node:)`);
 
 // Log detalhado das dependências externalizadas (debug)

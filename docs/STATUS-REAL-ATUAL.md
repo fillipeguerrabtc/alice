@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 18 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.13 - Build-service alinhado à release v3.21.1
+**Versão:** 7.14 - Build-service externaliza @alice/* + subpaths
 
 ---
 
@@ -206,7 +206,7 @@ Retenção Arquivo:   30 dias
 - OpenAI Vision: logs com `status` e `x-request-id` para diagnóstico real.
 - Suporte enterprise a proxy (`OPENAI_PROXY`, `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`).
 - Limite configurável de payload para Vision (`OPENAI_VISION_MAX_BYTES`).
-- Build de microsserviços: `build-service.mjs` igual à release v3.21.1 (produção).
+- Build de microsserviços: `build-service.mjs` externaliza pacotes `@alice/*` e subpaths de `exports`.
 - Incremento atômico de `totalMensagens` em streams concorrentes (evita perda de contagem).
 - Upsert atômico em `/api/assistant-settings` para evitar conflito em concorrência.
 - pgBackRest: reset controlado quando `archive.info` existe sem `backup.info`.
