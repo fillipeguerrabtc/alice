@@ -70,15 +70,8 @@ const textVector = customType<{ data: number[]; driverData: number[] }>({
   // pgvector driver já faz a conversão automaticamente
 });
 
-// IMAGEM: descrição textual → Qdrant (embeddings de texto)
-// Full-precision (4 bytes/valor) para máxima qualidade visual
-// ATIVO - imagens continuam em pgvector
-const _imageVector = customType<{ data: number[]; driverData: number[] }>({
-  dataType() {
-    return 'vector(1024)';
-  },
-  // pgvector driver já faz a conversão automaticamente
-});
+// IMAGEM: embeddings de imagem removidos do schema principal
+// Mantido apenas como referência histórica do modelo (OpenAI-only para imagens)
 
 // Alias para compatibilidade
 // NOTA: Novos embeddings de texto devem ir para Qdrant (1024 dim)

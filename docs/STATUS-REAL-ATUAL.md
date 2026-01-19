@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 18 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.27 - Sincronização segura de mensagens no chat
+**Versão:** 7.28 - Build frontend estável (schema sem unused)
 
 ---
 
@@ -243,6 +243,7 @@ Retenção Arquivo:   30 dias
 - Chat: Enter cria nova linha; envio via botão ou Alt+Enter.
 - Chat: anexos clicáveis no input e mensagens com preview.
 - Chat: sincronização de mensagens aguarda refetch após streaming (evita overwrite).
+- Build frontend: removido tipo não utilizado no schema compartilhado (TS6133).
 
 ---
 
