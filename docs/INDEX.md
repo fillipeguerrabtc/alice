@@ -1,7 +1,7 @@
 # Índice de Documentação (SSOT) - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 16 de Janeiro de 2026  
+**Data:** 18 de Janeiro de 2026  
 **Objetivo:** Centralizar a fonte de verdade (SSOT) e reduzir redundância entre documentos.
 
 ---
@@ -19,7 +19,7 @@
 | `docs/SISTEMA-APRENDIZADO.md` | Aprendizado contínuo (auto-learning) | Sim | Fluxos e status do sistema de aprendizado |
 | `docs/TRAINING.md` | Treinamento/QLoRA | Sim | API, schedule, requisitos e fluxo |
 | `docs/SECRETS.md` | Secrets e variáveis | Sim | SSOT de secrets + geração de `.env.prod` |
-| `docs/PERMISSIONS.md` | SSOT de permissões | Sim | UIDs/GIDs e scripts SSOT |
+| `docs/PERMISSIONS.md` | SSOT de permissões | Sim | UIDs/GIDs + RBAC de aplicação |
 | `docs/FRAPPE-PATCHING.md` | Patching ERPNext/Frappe | Sim | Segurança e procedimento de atualização |
 
 ---

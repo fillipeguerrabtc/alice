@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 18 de Janeiro de 2026  
-**Versão:** 7.4 - OpenAI proxy + limite Vision
+**Versão:** 7.5 - BASE_URL para OAuth
 
 ## Visão geral
 
@@ -95,6 +95,7 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 
 | Secret | Descrição |
 | --- | --- |
+| `BASE_URL` | Base URL pública da plataforma (OAuth callbacks) |
 | `PGBACKREST_ALLOW_STANZA_RESET` | `true` permite reset controlado de stanza em mismatch de system-id (input do workflow) |
 | `DOCKERHUB_USERNAME` | Evita rate limit Docker Hub |
 | `DOCKERHUB_TOKEN` | Token Docker Hub |

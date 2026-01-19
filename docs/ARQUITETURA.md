@@ -2,7 +2,7 @@
 
 > **Autor:** Fillipe Guerra  
 > **Data:** 18 de Janeiro de 2026  
-> **Versão:** 3.2.1 - Gate 2 (Qwen2.5 + Vision OpenAI)  
+> **Versão:** 3.2.2 - RBAC Core + Gestão de Usuários  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 > 
@@ -567,6 +567,11 @@ flowchart TB
 | `operator` | Operador | conversations:read, trading:read |
 | `viewer` | Visualizador | conversations:read, dashboard:read |
 | `guest` | Convidado | public:read |
+
+**Governança do Core e Gestão Administrativa (2026):**
+- **Core da Alice**: edição protegida por `admin:alice_core:write` (prompts centrais).
+- **Permissões**: CRUD de permissões e atribuição por role via painel administrativo.
+- **Grupos organizacionais**: associação usuário↔grupo para organização interna (sem impacto direto em RBAC).
 
 #### 8.1.3 Row Level Security (RLS)
 

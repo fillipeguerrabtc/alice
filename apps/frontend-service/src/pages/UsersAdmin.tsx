@@ -348,6 +348,13 @@ function GroupMembersDialog({
   const { data: membersData, isLoading } = useQuery<{ members: Array<{ id: string; userId: string }> }>({
     queryKey: ['/api/auth/groups', group?.id, 'users'],
     enabled: open && !!group?.id,
+    queryFn: async () => {
+      if (!group?.id) {
+        return { members: [] };
+      }
+      const response = await apiRequest('GET', `/api/auth/groups/${group.id}/users`);
+      return response.json();
+    },
   });
 
   const addMemberMutation = useMutation({
@@ -489,6 +496,10 @@ export default function UsersAdmin() {
   const { data: rolePermissionsData } = useQuery<{ rolePermissions: RolePermissionItem[] }>({
     queryKey: ['/api/auth/roles', selectedRole, 'permissions'],
     enabled: !!selectedRole,
+    queryFn: async () => {
+      const response = await apiRequest('GET', `/api/auth/roles/${selectedRole}/permissions`);
+      return response.json();
+    },
   });
 
   const updateUserRole = useMutation({

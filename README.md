@@ -2,12 +2,12 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 18 de Janeiro de 2026  
-**Versão:** 7.3 - Gate 2 Qwen2.5 + Vision OpenAI
+**Versão:** 7.38 - Correções RBAC cache e queries dinâmicas
 
 <div align="center">
 
 ![Alice Logo](https://img.shields.io/badge/Alice-IA%20Enterprise-blue?style=for-the-badge&logo=robot&logoColor=white)
-![Version](https://img.shields.io/badge/versão-7.3-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/versão-7.38-green?style=for-the-badge)
 ![License](https://img.shields.io/badge/licença-Proprietária-red?style=for-the-badge)
 ![LLM](https://img.shields.io/badge/LLM-Qwen2.5%207B-purple?style=for-the-badge)
 
@@ -34,6 +34,8 @@
 | **Multi-tenant** | Suporte a múltiplas organizações com agentes IA especializados |
 | **RAG Agentic** | Busca híbrida (interna + Brave Search) com classificador inteligente |
 | **Enterprise RBAC** | Controle de acesso granular com 6 roles hierárquicas |
+| **Gestão de Usuários/Grupos/Permissões** | Painel dedicado com CRUD e atribuição por role |
+| **Governança do Core** | Permissão `admin:alice_core:write` para editar prompts centrais |
 | **Observabilidade LLM** | Prometheus, Grafana, Jaeger, Langfuse para métricas específicas |
 | **Auto-aprendizado** | QLoRA semanal (domingo 3:00 AM) com dados aprovados |
 
@@ -61,6 +63,7 @@
 
 - **Gate 2**: LLM local (Qwen2.5 7B) + Vision/Imagens via OpenAI.
 - **GPU local**: LLM + Embeddings + ASR (always-on) com budget 20GB.
+- **RBAC**: painel de usuários/grupos/permissões e controle de Core via `admin:alice_core:write`.
 - **Deploy**: multi-stack modular com rollback cirúrgico.
 
 Para detalhes completos de arquitetura, pipeline e deploy, utilize os documentos SSOT acima.

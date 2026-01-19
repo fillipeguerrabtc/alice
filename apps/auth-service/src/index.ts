@@ -48,6 +48,7 @@ import {
   createCircuitBreaker,
   CIRCUIT_BREAKER_PRESETS,
   invalidateTenantPermissions,
+  clearPermissionCache,
 } from '@alice/shared-utils';
 import { eq, or, and, inArray } from '@alice/database';
 import type { AuthContext } from '@alice/shared-utils';
@@ -2369,9 +2370,7 @@ app.put('/api/auth/roles/:role/permissions', requireAuth(), requirePermission('a
     }
   });
 
-  if (req.tenantId) {
-    await invalidateTenantPermissions(req.tenantId);
-  }
+  await clearPermissionCache();
   res.json({ success: true, role: roleParse.data, permissions: requestedCodes });
 }));
 

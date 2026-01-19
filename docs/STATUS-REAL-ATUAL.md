@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 19 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.37 - Gestão de usuários, grupos e permissões core
+**Versão:** 7.38 - Correções RBAC cache e queries dinâmicas
 
 ---
 
@@ -266,6 +266,8 @@ Retenção Arquivo:   30 dias
 - Alice Config: edição do core bloqueada sem permissão (somente leitura).
 - Chat: regex de geração de imagem exige verbo de ação (evita falso positivo).
 - Trading: cache de risk-config sincroniza via queryClient.
+- UsersAdmin: queries dinâmicas corrigidas para membros de grupo e permissões por role.
+- RBAC: cache global de permissões limpo ao atualizar roles (evita permissões stale).
 
 ---
 
