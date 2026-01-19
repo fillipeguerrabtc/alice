@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Label } from '@/components/ui/label';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { toast } from '@/hooks/use-toast';
 import { Slider } from '@/components/ui/slider';
@@ -75,10 +76,11 @@ export default function AliceConfig() {
     },
   });
 
-  const { data, isLoading } = useQuery<AssistantSettingsResponse>({
+  const { data, isLoading, error: settingsError } = useQuery<AssistantSettingsResponse>({
     queryKey: ['/api/assistant-settings'],
     staleTime: 1000 * 60,
   });
+  const settingsErrorRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (data) {
@@ -128,10 +130,11 @@ export default function AliceConfig() {
     });
   };
 
-  const { data: agentsData, isLoading: agentsLoading } = useQuery<AgentPrompt[]>({
+  const { data: agentsData, isLoading: agentsLoading, error: agentsError } = useQuery<AgentPrompt[]>({
     queryKey: ['/api/agents'],
     staleTime: 1000 * 60,
   });
+  const agentsErrorRef = useRef<string | null>(null);
 
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [agentInstructions, setAgentInstructions] = useState('');
@@ -154,6 +157,30 @@ export default function AliceConfig() {
       setAgentPersonality(selectedAgent.personalidade ?? '');
     }
   }, [selectedAgent]);
+
+  useEffect(() => {
+    if (!settingsError) return;
+    const message = settingsError instanceof Error ? settingsError.message : t('aliceConfig.loadErrorDesc');
+    if (settingsErrorRef.current === message) return;
+    settingsErrorRef.current = message;
+    toast({
+      title: t('aliceConfig.loadErrorTitle'),
+      description: message,
+      variant: 'destructive',
+    });
+  }, [settingsError, t, toast]);
+
+  useEffect(() => {
+    if (!agentsError) return;
+    const message = agentsError instanceof Error ? agentsError.message : t('aliceConfig.agentsLoadErrorDesc');
+    if (agentsErrorRef.current === message) return;
+    agentsErrorRef.current = message;
+    toast({
+      title: t('aliceConfig.agentsLoadErrorTitle'),
+      description: message,
+      variant: 'destructive',
+    });
+  }, [agentsError, t, toast]);
 
   const updateAgentPrompt = useMutation({
     mutationFn: async () => {
@@ -216,6 +243,10 @@ export default function AliceConfig() {
               <Skeleton className="h-24 w-full" />
               <Skeleton className="h-6 w-48" />
               <Skeleton className="h-16 w-full" />
+            </div>
+          ) : settingsError ? (
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+              {t('aliceConfig.loadErrorDesc')}
             </div>
           ) : (
             <Form {...form}>
@@ -395,10 +426,14 @@ export default function AliceConfig() {
         <CardContent className="space-y-4">
           {agentsLoading ? (
             <Skeleton className="h-24 w-full" />
+          ) : agentsError ? (
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+              {t('aliceConfig.agentsLoadErrorDesc')}
+            </div>
           ) : (
             <>
               <div className="flex flex-col gap-2">
-                <FormLabel>{t('aliceConfig.agentsSelect')}</FormLabel>
+                <Label>{t('aliceConfig.agentsSelect')}</Label>
                 <Select value={selectedAgentId ?? ''} onValueChange={setSelectedAgentId}>
                   <SelectTrigger>
                     <SelectValue placeholder={t('aliceConfig.agentsSelectPlaceholder')} />
@@ -413,27 +448,23 @@ export default function AliceConfig() {
                 </Select>
               </div>
 
-              <FormItem>
-                <FormLabel>{t('aliceConfig.agentInstructions')}</FormLabel>
-                <FormControl>
-                  <Textarea
-                    rows={4}
-                    value={agentInstructions}
-                    onChange={(event) => setAgentInstructions(event.target.value)}
-                  />
-                </FormControl>
-              </FormItem>
+              <div className="space-y-2">
+                <Label>{t('aliceConfig.agentInstructions')}</Label>
+                <Textarea
+                  rows={4}
+                  value={agentInstructions}
+                  onChange={(event) => setAgentInstructions(event.target.value)}
+                />
+              </div>
 
-              <FormItem>
-                <FormLabel>{t('aliceConfig.agentPersonality')}</FormLabel>
-                <FormControl>
-                  <Textarea
-                    rows={3}
-                    value={agentPersonality}
-                    onChange={(event) => setAgentPersonality(event.target.value)}
-                  />
-                </FormControl>
-              </FormItem>
+              <div className="space-y-2">
+                <Label>{t('aliceConfig.agentPersonality')}</Label>
+                <Textarea
+                  rows={3}
+                  value={agentPersonality}
+                  onChange={(event) => setAgentPersonality(event.target.value)}
+                />
+              </div>
 
               <div className="flex flex-wrap gap-2">
                 <Button

@@ -185,7 +185,7 @@ const Sidebar = React.forwardRef<
     },
     ref
   ) => {
-    const { state, isMobile, openMobile, setOpenMobile } = useSidebar();
+    const { state, isMobile, openMobile, setOpenMobile, setOpen } = useSidebar();
 
     // MOBILE: Usar Sheet (drawer) para navegação offcanvas
     if (isMobile) {
@@ -210,6 +210,18 @@ const Sidebar = React.forwardRef<
     }
 
     // DESKTOP: Sidebar fixa com collapse
+    const handleMouseEnter = () => {
+      if (collapsible === 'icon' && state === 'collapsed') {
+        setOpen(true);
+      }
+    };
+
+    const handleMouseLeave = () => {
+      if (collapsible === 'icon' && state === 'expanded') {
+        setOpen(false);
+      }
+    };
+
     return (
       <div
         ref={ref}
@@ -221,6 +233,8 @@ const Sidebar = React.forwardRef<
         data-collapsible={state === 'collapsed' ? collapsible : ''}
         data-variant={variant}
         data-side={side}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
       >
         <div
           className={cn(
@@ -396,7 +410,7 @@ const SidebarMenuButton = React.forwardRef<
   }
 >(({ asChild = false, isActive = false, className, onClick, ...props }, ref) => {
   const Comp = asChild ? Slot : 'button';
-  const { isMobile, setOpenMobile } = useSidebar();
+  const { isMobile, setOpenMobile, setOpen } = useSidebar();
 
   // CORREÇÃO: Fechar sidebar mobile quando um item do menu é clicado
   const handleClick = React.useCallback(
@@ -405,9 +419,11 @@ const SidebarMenuButton = React.forwardRef<
       // Fechar menu mobile após navegação
       if (isMobile) {
         setOpenMobile(false);
+      } else {
+        setOpen(false);
       }
     },
-    [onClick, isMobile, setOpenMobile]
+    [onClick, isMobile, setOpenMobile, setOpen]
   );
 
   return (

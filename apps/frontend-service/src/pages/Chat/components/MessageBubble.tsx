@@ -56,9 +56,14 @@ export function MessageBubble({
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const isUser = message.role === 'user';
-  const assistantAvatarSrc = !isUser && isStreaming && isLast
+  const assistantAvatarSrc = !isUser && isStreaming && (isLast || (message.content ?? '').length === 0)
     ? '/packman.gif'
     : '/gato.gif';
+  const normalizedStreamSteps = streamSteps?.filter((step, index, list) => {
+    return index === 0 || step !== list[index - 1];
+  }) ?? [];
+  const shouldShowSteps = normalizedStreamSteps.length > 1
+    || (normalizedStreamSteps.length === 1 && normalizedStreamSteps[0] !== streamStatus);
 
   const handleCopy = useCallback(async () => {
     try {
@@ -123,11 +128,11 @@ export function MessageBubble({
                   <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse delay-300" />
                 </span>
               </div>
-              {streamSteps && streamSteps.length > 0 && (
+              {shouldShowSteps && (
                 <div className="flex flex-wrap gap-1 text-[11px] text-muted-foreground/80">
                   <span className="mr-1">{t('chat.streaming.steps')}</span>
-                  {streamSteps.map((step, index) => {
-                    const isActive = index === streamSteps.length - 1;
+                  {normalizedStreamSteps.map((step, index) => {
+                    const isActive = index === normalizedStreamSteps.length - 1;
                     return (
                       <span
                         key={`${step}-${index}`}

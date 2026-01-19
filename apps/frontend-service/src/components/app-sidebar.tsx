@@ -88,7 +88,7 @@ export function AppSidebar() {
           <img
             src="/logo-round.png"
             alt="Yes You Deserve"
-            className="h-16 w-16 rounded-lg"
+            className="h-20 w-20 rounded-2xl object-contain group-data-[collapsible=icon]:h-10 group-data-[collapsible=icon]:w-10"
             data-testid="img-logo"
           />
           <span className="font-bold text-lg" data-testid="text-app-name">Alice</span>

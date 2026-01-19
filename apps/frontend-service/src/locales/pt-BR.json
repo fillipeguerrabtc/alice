@@ -1452,6 +1452,8 @@
     "saveSuccessDesc": "As novas diretrizes foram aplicadas.",
     "saveErrorTitle": "Erro ao salvar",
     "saveErrorDesc": "Não foi possível atualizar as configurações.",
+    "loadErrorTitle": "Erro ao carregar configurações",
+    "loadErrorDesc": "Não foi possível carregar as configurações da assistente.",
     "defaultPromptTitle": "Prompt Padrão (somente leitura)",
     "defaultPromptDescription": "Referência do prompt padrão caso queira voltar ao original.",
     "sliders": {
@@ -1470,6 +1472,8 @@
     "agentSaveSuccessTitle": "Agente atualizado",
     "agentSaveSuccessDesc": "As instruções do agente foram salvas.",
     "agentSaveErrorTitle": "Erro ao salvar agente",
-    "agentSaveErrorDesc": "Não foi possível atualizar o agente."
+    "agentSaveErrorDesc": "Não foi possível atualizar o agente.",
+    "agentsLoadErrorTitle": "Erro ao carregar agentes",
+    "agentsLoadErrorDesc": "Não foi possível carregar os agentes disponíveis."
   }
 }

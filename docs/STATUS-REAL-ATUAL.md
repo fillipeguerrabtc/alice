@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 **Autor:** Fillipe Guerra  
-**Data:** 18 de Janeiro de 2026  
+**Data:** 19 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.21 - Correção build frontend (ordem de handlers)
+**Versão:** 7.22 - Correções UX chat, permissões de microfone e sidebar
 
 ---
 
@@ -228,6 +228,13 @@ Retenção Arquivo:   30 dias
 - ERPNext: mysqld_exporter usa .my.cnf gerado em runtime com usuário dedicado.
 - TLS Caddy: ACME_EMAIL agora é obrigatório (fail-fast no deploy).
 - ERPNext: ERPNEXT_MYSQL_EXPORTER_USER garantido na geração do .env.prod.
+- Permissions-Policy: microfone liberado apenas para `self` (Caddy + Nginx).
+- Alice Config: tratamento de erro de carregamento com UI estável e labels corretos.
+- Chat streaming: status duplicado removido e sincronização de mensagens durante stream.
+- Avatar do Chat: packman mantém estado durante streaming inicial sem flicker.
+- Detecção de prompts de imagem ampliada (PT/EN + regex robusto).
+- Branding: logo responsivo com `object-contain` e favicons ampliados.
+- Sidebar desktop: auto-colapso após seleção + expansão por hover.
 
 ---
 

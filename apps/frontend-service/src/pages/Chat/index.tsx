@@ -813,10 +813,10 @@ export default function Chat() {
   }, [mapAnexosToMediaAttachments]);
 
   useEffect(() => {
-    if (conversationMessages?.messages) {
+    if (conversationMessages?.messages && !isStreaming) {
       setMessages(conversationMessages.messages.map((message) => normalizeServerMessage(message)));
     }
-  }, [conversationMessages, normalizeServerMessage]);
+  }, [conversationMessages, normalizeServerMessage, isStreaming]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

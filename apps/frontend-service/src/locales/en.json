@@ -1452,6 +1452,8 @@
     "saveSuccessDesc": "New guidelines have been applied.",
     "saveErrorTitle": "Save failed",
     "saveErrorDesc": "Unable to update settings.",
+    "loadErrorTitle": "Load failed",
+    "loadErrorDesc": "Unable to load assistant settings.",
     "defaultPromptTitle": "Default Prompt (read-only)",
     "defaultPromptDescription": "Reference for the default prompt if you want to revert.",
     "sliders": {
@@ -1470,6 +1472,8 @@
     "agentSaveSuccessTitle": "Agent updated",
     "agentSaveSuccessDesc": "Agent instructions were saved.",
     "agentSaveErrorTitle": "Agent save failed",
-    "agentSaveErrorDesc": "Unable to update the agent."
+    "agentSaveErrorDesc": "Unable to update the agent.",
+    "agentsLoadErrorTitle": "Load failed",
+    "agentsLoadErrorDesc": "Unable to load available agents."
   }
 }
