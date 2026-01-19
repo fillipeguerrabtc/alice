@@ -73,7 +73,7 @@ const textVector = customType<{ data: number[]; driverData: number[] }>({
 // IMAGEM: descrição textual → Qdrant (embeddings de texto)
 // Full-precision (4 bytes/valor) para máxima qualidade visual
 // ATIVO - imagens continuam em pgvector
-const imageVector = customType<{ data: number[]; driverData: number[] }>({
+const _imageVector = customType<{ data: number[]; driverData: number[] }>({
   dataType() {
     return 'vector(1024)';
   },

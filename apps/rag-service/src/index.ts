@@ -24,7 +24,7 @@ import multer from 'multer';
 import path from 'path';
 import crypto from 'crypto';
 // CircuitBreaker via createCircuitBreaker de @alice/shared-utils
-import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, validateEmbeddingDimension, EMBEDDING_DIMENSIONS, withTenantContext } from '@alice/database';
+import { getDatabase, getPool, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, validateEmbeddingDimension, EMBEDDING_DIMENSIONS, withTenantContext } from '@alice/database';
 import { eq, sql, desc, and } from '@alice/database';
 import { z } from 'zod';
 import {

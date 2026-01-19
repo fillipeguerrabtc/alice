@@ -147,7 +147,7 @@ async function processTextJob(job: EmbeddingJob): Promise<void> {
   
   await completeEmbeddingJob(job.id, {
     embedding: resolvedEmbedding,
-    model: result.model,
+    model: result.model ?? 'Qwen/Qwen3-Embedding-0.6B',
     dimension: resolvedDimension,
     processingTimeMs,
   });
@@ -188,7 +188,7 @@ async function processBatchTextJob(job: EmbeddingJob): Promise<void> {
   
   await completeEmbeddingJob(job.id, {
     embeddings: result.embeddings,
-    model: result.model,
+    model: result.model ?? 'Qwen/Qwen3-Embedding-0.6B',
     dimension: resolvedDimension,
     processingTimeMs,
   });

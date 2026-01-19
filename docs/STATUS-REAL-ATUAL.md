@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 **Autor:** Fillipe Guerra  
-**Data:** 19 de Janeiro de 2026  
+**Data:** 18 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.22 - Correções UX chat, permissões de microfone e sidebar
+**Versão:** 7.23 - Ajuste de avatar do chat
 
 ---
 
@@ -235,6 +235,7 @@ Retenção Arquivo:   30 dias
 - Detecção de prompts de imagem ampliada (PT/EN + regex robusto).
 - Branding: logo responsivo com `object-contain` e favicons ampliados.
 - Sidebar desktop: auto-colapso após seleção + expansão por hover.
+- Chat: avatar do assistente ampliado para melhor legibilidade.
 
 ---
 

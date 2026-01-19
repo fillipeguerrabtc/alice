@@ -87,7 +87,7 @@ export function MessageBubble({
       )}
     >
       {!isUser && (
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted shadow-sm overflow-hidden">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-muted shadow-sm overflow-hidden">
           <img
             src={assistantAvatarSrc}
             alt="Alice avatar"
@@ -217,7 +217,7 @@ export function MessageBubble({
       </div>
 
       {isUser && (
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-secondary text-secondary-foreground">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-secondary text-secondary-foreground">
           <User className="h-4 w-4" />
         </div>
       )}
