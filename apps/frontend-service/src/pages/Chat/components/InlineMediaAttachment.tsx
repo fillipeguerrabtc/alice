@@ -89,7 +89,7 @@ export function InlineMediaAttachment({ media }: InlineMediaAttachmentProps) {
             className="h-6 w-6"
             onClick={() => {
               const link = document.createElement('a');
-              link.href = media.url || '';
+              link.href = media.url || imageUrl || '';
               link.download = media.fileName;
               link.click();
             }}
