@@ -8,7 +8,7 @@
 
 import { useRef, useCallback, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Send, Loader2, Paperclip, Mic, Square } from 'lucide-react';
+import { Send, Loader2, Paperclip, Mic, Square, Camera } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -23,6 +23,7 @@ interface ChatInputProps {
   onStartRecording: () => void;
   onStopRecording: () => void;
   onSendRecording: () => void;
+  onStopStreaming: () => void;
   onRemoveMedia: (mediaId: string) => void;
   pendingMedia: MediaAttachment[];
   isStreaming: boolean;
@@ -40,6 +41,7 @@ export function ChatInput({
   onStartRecording,
   onStopRecording,
   onSendRecording,
+  onStopStreaming,
   onRemoveMedia,
   pendingMedia,
   isStreaming,
@@ -51,6 +53,7 @@ export function ChatInput({
   const { t } = useTranslation();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -74,6 +77,12 @@ export function ChatInput({
   useEffect(() => {
     adjustTextareaHeight();
   }, [adjustTextareaHeight, value]);
+
+  useEffect(() => {
+    if (!isRecording) {
+      textareaRef.current?.focus();
+    }
+  }, [isRecording]);
 
   const handleFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files ? Array.from(event.target.files) : [];
@@ -110,6 +119,15 @@ export function ChatInput({
             onChange={handleFileChange}
             data-testid="input-file-upload"
           />
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={handleFileChange}
+            data-testid="input-camera-upload"
+          />
 
           <Tooltip>
             <TooltipTrigger asChild>
@@ -118,7 +136,7 @@ export function ChatInput({
                 variant="ghost"
                 size="icon"
                 className="h-9 w-9 md:h-8 md:w-8 shrink-0 touch-manipulation"
-                disabled={isStreaming || isRecording}
+                disabled={isRecording}
                 onClick={() => fileInputRef.current?.click()}
                 data-testid="button-attach-file"
               >
@@ -126,6 +144,23 @@ export function ChatInput({
               </Button>
             </TooltipTrigger>
             <TooltipContent>{t('chat.attachFile')}</TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 md:h-8 md:w-8 shrink-0 touch-manipulation"
+                disabled={isRecording}
+                onClick={() => cameraInputRef.current?.click()}
+                data-testid="button-open-camera"
+              >
+                <Camera className="h-5 w-5 md:h-4 md:w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t('chat.openCamera')}</TooltipContent>
           </Tooltip>
 
           {!isRecording ? (
@@ -189,26 +224,39 @@ export function ChatInput({
             onKeyDown={handleKeyDown}
             placeholder={pendingMedia.length > 0 ? t('chat.placeholderWithMedia') : t('chat.placeholder')}
             className="flex-1 min-h-[40px] md:min-h-[36px] max-h-[120px] md:max-h-[200px] resize-none bg-transparent text-base md:text-sm leading-relaxed focus-visible:outline-none"
-            disabled={isStreaming || isRecording}
+            disabled={isRecording}
             data-testid="input-chat-message"
             autoComplete="off"
             autoCorrect="off"
             autoCapitalize="sentences"
           />
 
+          {isStreaming && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="destructive"
+                  className="h-9 w-9 md:h-8 md:w-8 shrink-0 rounded-full md:rounded-md touch-manipulation"
+                  onClick={onStopStreaming}
+                  data-testid="button-stop-streaming"
+                >
+                  <Square className="h-5 w-5 md:h-4 md:w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('chat.stopGenerating')}</TooltipContent>
+            </Tooltip>
+          )}
           <Button
             type="button"
             size="icon"
             className="h-9 w-9 md:h-8 md:w-8 shrink-0 rounded-full md:rounded-md touch-manipulation"
-            disabled={(!value.trim() && pendingMedia.length === 0) || isStreaming || isRecording}
+            disabled={(!value.trim() && pendingMedia.length === 0) || isRecording}
             onClick={onSend}
             data-testid="button-send-message"
           >
-            {isStreaming ? (
-              <Loader2 className="h-5 w-5 md:h-4 md:w-4 animate-spin" />
-            ) : (
-              <Send className="h-5 w-5 md:h-4 md:w-4" />
-            )}
+            <Send className="h-5 w-5 md:h-4 md:w-4" />
           </Button>
         </div>
       </div>

@@ -379,6 +379,9 @@ export default function Chat() {
   const pendingMediaRef = useRef<MediaAttachment[]>([]);
   const inputRef = useRef('');
   const recordingStartingRef = useRef(false);
+  const streamControllerRef = useRef<AbortController | null>(null);
+  const stopRequestedRef = useRef(false);
+  const pendingSendRef = useRef<{ content: string; mediaAttachments?: MediaAttachment[] } | null>(null);
 
   // Fechar drawer mobile ao mudar de conversa
   useEffect(() => {
@@ -892,7 +895,9 @@ export default function Chat() {
         navigate(`/chat/${activeConversationId}`);
       }
 
+      stopRequestedRef.current = false;
       const controller = new AbortController();
+      streamControllerRef.current = controller;
       let streamTimeoutId: ReturnType<typeof setTimeout> | null = null;
       const resetTimeout = () => {
         if (streamTimeoutId) clearTimeout(streamTimeoutId);
@@ -1105,6 +1110,7 @@ export default function Chat() {
         }
       } finally {
         clearTimeoutSafe();
+        streamControllerRef.current = null;
       }
 
       setIsStreaming(false);
@@ -1115,6 +1121,13 @@ export default function Chat() {
     },
     onError: (error) => {
       const isAbort = error instanceof Error && error.name === 'AbortError';
+      if (isAbort && stopRequestedRef.current) {
+        stopRequestedRef.current = false;
+        setIsStreaming(false);
+        setStreamStatus(null);
+        setStreamSteps([]);
+        return;
+      }
       const errorMessage = isAbort ? t('chat.streaming.timeout') : t('chat.streaming.error');
       setMessages((prev) => {
         const newMessages = [...prev];
@@ -1136,6 +1149,13 @@ export default function Chat() {
       setStreamSteps([]);
     },
   });
+
+  useEffect(() => {
+    if (isStreaming || !pendingSendRef.current) return;
+    const pending = pendingSendRef.current;
+    pendingSendRef.current = null;
+    sendMessage.mutate(pending);
+  }, [isStreaming, sendMessage]);
 
   const sendRecordingDirect = useCallback((file: File) => {
     const mediaId = crypto.randomUUID();
@@ -1411,8 +1431,25 @@ export default function Chat() {
     }
   }, [messages, isStreaming, sendMessage]);
 
+  const handleStopStreaming = useCallback(() => {
+    if (!streamControllerRef.current) return;
+    stopRequestedRef.current = true;
+    streamControllerRef.current.abort('user_stop');
+  }, []);
+
   const handleSend = useCallback(() => {
-    if ((!input.trim() && pendingMedia.length === 0) || isStreaming || isRecording) return;
+    if ((!input.trim() && pendingMedia.length === 0) || isRecording) return;
+
+    if (isStreaming) {
+      pendingSendRef.current = {
+        content: input.trim(),
+        mediaAttachments: pendingMedia.length > 0 ? [...pendingMedia] : undefined,
+      };
+      handleStopStreaming();
+      setInput('');
+      clearPendingMedia();
+      return;
+    }
 
     sendMessage.mutate({ 
       content: input.trim(), 
@@ -1420,7 +1457,7 @@ export default function Chat() {
     });
     setInput('');
     clearPendingMedia();
-  }, [clearPendingMedia, input, isRecording, isStreaming, pendingMedia, sendMessage]);
+  }, [clearPendingMedia, handleStopStreaming, input, isRecording, isStreaming, pendingMedia, sendMessage]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1669,6 +1706,7 @@ export default function Chat() {
             onStartRecording={handleStartRecording}
             onStopRecording={handleStopRecordingReview}
             onSendRecording={handleSendRecordingNow}
+            onStopStreaming={handleStopStreaming}
             onRemoveMedia={removePendingMedia}
             pendingMedia={pendingMedia}
             isStreaming={isStreaming}

@@ -62,7 +62,7 @@ import {
   validateAgentTenantConsistency,
 } from '@alice/shared-utils';
 import type { Role } from '@alice/shared-utils';
-import { eq, desc, inArray, and, or, lt, sql, not } from '@alice/database';
+import { eq, desc, inArray, and, or, lt, sql, not, asc } from '@alice/database';
 import { z } from 'zod';
 import { ProxyAgent } from 'undici';
 import type { Dispatcher } from 'undici';
@@ -7047,6 +7047,31 @@ const _serviceNameParamSchema = z.object({
   name: z.string().min(1).max(50).regex(/^[a-z0-9-]+$/, 'Nome deve conter apenas letras minúsculas, números e hífens'),
 });
 
+// ============================================================================
+// API CRUD DE NAMESPACES (Contextos de Negócio)
+// ============================================================================
+
+const namespaceSchema = z.object({
+  nome: z.string().min(2, 'Nome deve ter no mínimo 2 caracteres').max(255),
+  slug: z.string().min(2).max(100).regex(/^[a-zA-Z0-9-]+$/, 'Slug deve conter apenas letras, números e hífens'),
+  descricao: z.string().max(2000).optional().nullable(),
+  cor: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Cor deve ser um HEX válido').optional().nullable(),
+  icone: z.string().max(50).optional().nullable(),
+  contextoSistema: z.string().max(20000).optional().nullable(),
+  ordem: z.number().int().min(0).max(9999).optional().nullable(),
+  ativo: z.boolean().optional().nullable(),
+});
+
+const updateNamespaceSchema = namespaceSchema.partial();
+
+function normalizeNamespaceSlug(value: string): string {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 app.get('/api/chat/urgent-conversations', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:takeover:read'), async (req: Request, res: Response) => {
   // OWASP API3: Validação estrita de query params - rejeita inputs inválidos
   const queryResult = urgentConversationsQuerySchema.safeParse(req.query);
@@ -7090,6 +7115,195 @@ app.post('/api/chat/check-sla', requireAuth(), requireSameTenant(getTenantIdFrom
 
 app.get('/api/chat/escalation-config', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:escalation:read'), (_req: Request, res: Response) => {
   res.json(ESCALATION_CONFIG);
+});
+
+// ============================================================================
+// CRUD de namespaces
+// ============================================================================
+
+app.get('/api/namespaces', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:namespaces:read'), async (req: Request, res: Response) => {
+  const tenantId = req.tenantId;
+  if (!tenantId) {
+    return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
+  }
+
+  try {
+    const namespaces = await db.query.namespaces.findMany({
+      where: and(
+        eq(schema.namespaces.tenantId, tenantId),
+        eq(schema.namespaces.ativo, true)
+      ),
+      orderBy: [asc(schema.namespaces.ordem), asc(schema.namespaces.nome)],
+    });
+    res.json(namespaces);
+  } catch (error) {
+    logger.error({ error, tenantId }, 'Erro ao listar namespaces');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.post('/api/namespaces', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:namespaces:write'), async (req: Request, res: Response) => {
+  const tenantId = req.tenantId;
+  if (!tenantId) {
+    return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
+  }
+
+  const parseResult = namespaceSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Dados inválidos', details: parseResult.error.format() });
+  }
+
+  const data = parseResult.data;
+  const normalizedSlug = normalizeNamespaceSlug(data.slug);
+  if (normalizedSlug.length < 2) {
+    return res.status(400).json({ error: 'Slug inválido após normalização' });
+  }
+
+  try {
+    const slugConflict = await db.query.namespaces.findFirst({
+      where: and(
+        eq(schema.namespaces.slug, normalizedSlug),
+        eq(schema.namespaces.tenantId, tenantId)
+      ),
+    });
+
+    if (slugConflict) {
+      return res.status(409).json({ error: 'Já existe um namespace com este slug' });
+    }
+
+    const [createdNamespace] = await db.insert(schema.namespaces)
+      .values({
+        tenantId,
+        nome: data.nome.trim(),
+        slug: normalizedSlug,
+        descricao: data.descricao ?? null,
+        cor: data.cor ?? '#3B82F6',
+        icone: data.icone ?? null,
+        contextoSistema: data.contextoSistema ?? null,
+        ordem: data.ordem ?? 0,
+        ativo: data.ativo ?? true,
+        atualizadoEm: new Date(),
+      })
+      .returning();
+
+    logger.info({ namespaceId: createdNamespace.id, tenantId }, 'Namespace criado');
+    res.status(201).json(createdNamespace);
+  } catch (error) {
+    logger.error({ error, tenantId }, 'Erro ao criar namespace');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.patch('/api/namespaces/:id', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:namespaces:write'), async (req: Request, res: Response) => {
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID de namespace inválido', details: paramsResult.error.format() });
+  }
+  const { id } = paramsResult.data;
+  const tenantId = req.tenantId;
+
+  if (!tenantId) {
+    return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
+  }
+
+  const parseResult = updateNamespaceSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Dados inválidos', details: parseResult.error.format() });
+  }
+  const data = parseResult.data;
+
+  try {
+    const existingNamespace = await db.query.namespaces.findFirst({
+      where: eq(schema.namespaces.id, id),
+    });
+
+    if (!existingNamespace || existingNamespace.tenantId !== tenantId) {
+      return res.status(404).json({ error: 'Namespace não encontrado' });
+    }
+
+    let normalizedSlug: string | undefined;
+    if (data.slug) {
+      normalizedSlug = normalizeNamespaceSlug(data.slug);
+      if (normalizedSlug.length < 2) {
+        return res.status(400).json({ error: 'Slug inválido após normalização' });
+      }
+      if (normalizedSlug !== existingNamespace.slug) {
+        const slugConflict = await db.query.namespaces.findFirst({
+          where: and(
+            eq(schema.namespaces.slug, normalizedSlug),
+            eq(schema.namespaces.tenantId, tenantId),
+            not(eq(schema.namespaces.id, id))
+          ),
+        });
+        if (slugConflict) {
+          return res.status(409).json({ error: 'Já existe um namespace com este slug' });
+        }
+      }
+    }
+
+    const updatePayload = {
+      ...data,
+      nome: data.nome?.trim(),
+      slug: normalizedSlug ?? data.slug,
+      atualizadoEm: new Date(),
+    };
+
+    const [updatedNamespace] = await db.update(schema.namespaces)
+      .set(updatePayload)
+      .where(eq(schema.namespaces.id, id))
+      .returning();
+
+    logger.info({ namespaceId: id, tenantId, updates: Object.keys(data) }, 'Namespace atualizado');
+    res.json(updatedNamespace);
+  } catch (error) {
+    logger.error({ error, namespaceId: id }, 'Erro ao atualizar namespace');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.delete('/api/namespaces/:id', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:namespaces:delete'), async (req: Request, res: Response) => {
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID de namespace inválido', details: paramsResult.error.format() });
+  }
+  const { id } = paramsResult.data;
+  const tenantId = req.tenantId;
+
+  if (!tenantId) {
+    return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
+  }
+
+  try {
+    const existingNamespace = await db.query.namespaces.findFirst({
+      where: eq(schema.namespaces.id, id),
+    });
+
+    if (!existingNamespace || existingNamespace.tenantId !== tenantId) {
+      return res.status(404).json({ error: 'Namespace não encontrado' });
+    }
+
+    const namespaceInUse =
+      await db.query.agents.findFirst({ where: eq(schema.agents.namespaceId, id) })
+      || await db.query.documents.findFirst({ where: eq(schema.documents.namespaceId, id) })
+      || await db.query.conversations.findFirst({ where: eq(schema.conversations.namespaceId, id) });
+
+    if (namespaceInUse) {
+      const [disabledNamespace] = await db.update(schema.namespaces)
+        .set({ ativo: false, atualizadoEm: new Date() })
+        .where(eq(schema.namespaces.id, id))
+        .returning();
+
+      logger.info({ namespaceId: id, tenantId }, 'Namespace marcado como inativo (em uso)');
+      return res.json({ message: 'Namespace marcado como inativo (em uso)', namespace: disabledNamespace });
+    }
+
+    await db.delete(schema.namespaces).where(eq(schema.namespaces.id, id));
+    logger.info({ namespaceId: id, tenantId }, 'Namespace excluído');
+    res.status(204).send();
+  } catch (error) {
+    logger.error({ error, namespaceId: id }, 'Erro ao excluir namespace');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
 });
 
 // ============================================================================

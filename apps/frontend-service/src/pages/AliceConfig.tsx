@@ -159,7 +159,10 @@ export default function AliceConfig() {
   }, [selectedAgent]);
 
   useEffect(() => {
-    if (!settingsError) return;
+    if (!settingsError) {
+      settingsErrorRef.current = null;
+      return;
+    }
     const message = settingsError instanceof Error ? settingsError.message : t('aliceConfig.loadErrorDesc');
     if (settingsErrorRef.current === message) return;
     settingsErrorRef.current = message;
@@ -171,7 +174,10 @@ export default function AliceConfig() {
   }, [settingsError, t, toast]);
 
   useEffect(() => {
-    if (!agentsError) return;
+    if (!agentsError) {
+      agentsErrorRef.current = null;
+      return;
+    }
     const message = agentsError instanceof Error ? agentsError.message : t('aliceConfig.agentsLoadErrorDesc');
     if (agentsErrorRef.current === message) return;
     agentsErrorRef.current = message;

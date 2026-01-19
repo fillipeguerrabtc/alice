@@ -479,6 +479,65 @@ export const chatServicePaths = {
       responses: { 200: { description: 'Métricas', content: { 'text/plain': { schema: { type: 'string' } } } } },
     },
   },
+  '/api/namespaces': {
+    get: {
+      summary: 'Listar namespaces',
+      tags: ['Namespaces'],
+      responses: {
+        200: {
+          description: 'Lista de namespaces',
+          content: {
+            'application/json': {
+              schema: { type: 'array', items: { $ref: '#/components/schemas/Namespace' } },
+            },
+          },
+        },
+      },
+    },
+    post: {
+      summary: 'Criar namespace',
+      tags: ['Namespaces'],
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/NamespaceInput' },
+          },
+        },
+      },
+      responses: {
+        201: {
+          description: 'Namespace criado',
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/Namespace' } } },
+        },
+      },
+    },
+  },
+  '/api/namespaces/{id}': {
+    patch: {
+      summary: 'Atualizar namespace',
+      tags: ['Namespaces'],
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/NamespaceInput' },
+          },
+        },
+      },
+      responses: {
+        200: {
+          description: 'Namespace atualizado',
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/Namespace' } } },
+        },
+      },
+    },
+    delete: {
+      summary: 'Excluir namespace',
+      tags: ['Namespaces'],
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+      responses: { 204: { description: 'Namespace excluído' } },
+    },
+  },
 };
 
 export const chatServiceSchemas = {
@@ -490,6 +549,35 @@ export const chatServiceSchemas = {
       status: { type: 'string', enum: ['active', 'archived', 'escalated'] },
       controlMode: { type: 'string', enum: ['ai', 'human', 'auto'] },
       createdAt: { type: 'string', format: 'date-time' },
+    },
+  },
+  Namespace: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      nome: { type: 'string' },
+      slug: { type: 'string' },
+      descricao: { type: 'string', nullable: true },
+      cor: { type: 'string', nullable: true },
+      icone: { type: 'string', nullable: true },
+      contextoSistema: { type: 'string', nullable: true },
+      ordem: { type: 'integer' },
+      ativo: { type: 'boolean' },
+      criadoEm: { type: 'string', format: 'date-time' },
+      atualizadoEm: { type: 'string', format: 'date-time' },
+    },
+  },
+  NamespaceInput: {
+    type: 'object',
+    properties: {
+      nome: { type: 'string' },
+      slug: { type: 'string' },
+      descricao: { type: 'string', nullable: true },
+      cor: { type: 'string', nullable: true },
+      icone: { type: 'string', nullable: true },
+      contextoSistema: { type: 'string', nullable: true },
+      ordem: { type: 'integer' },
+      ativo: { type: 'boolean' },
     },
   },
 };

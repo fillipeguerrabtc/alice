@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 **Autor:** Fillipe Guerra  
-**Data:** 18 de Janeiro de 2026  
+**Data:** 19 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.23 - Ajuste de avatar do chat
+**Versão:** 7.25 - Chat input ativo + stop/câmera + namespaces
 
 ---
 
@@ -236,6 +236,10 @@ Retenção Arquivo:   30 dias
 - Branding: logo responsivo com `object-contain` e favicons ampliados.
 - Sidebar desktop: auto-colapso após seleção + expansão por hover.
 - Chat: avatar do assistente ampliado para melhor legibilidade.
+- Namespaces: rotas do gateway ajustadas para o chat-service.
+- Alice Config: refs de erro resetadas para permitir novos toasts após retry.
+- Chat: input sempre ativo, botão Stop e opção de câmera no anexo.
+- Permissions-Policy: câmera liberada para `self` no gateway e Nginx.
 
 ---
 

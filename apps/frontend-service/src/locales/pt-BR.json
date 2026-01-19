@@ -254,6 +254,7 @@
     "typeMessage": "Digite sua mensagem...",
     "send": "Enviar",
     "attachFile": "Anexar arquivo",
+    "openCamera": "Abrir câmera",
     "recordAudio": "Gravar áudio",
     "stopRecording": "Parar gravação",
     "recording": "Gravando áudio...",
@@ -277,6 +278,7 @@
     "typing": "Digitando...",
     "enterToSend": "Enter para enviar",
     "generating": "Gerando resposta...",
+    "stopGenerating": "Parar geração",
     "streaming": {
       "thinking": "Alice está pensando",
       "steps": "Etapas:",
