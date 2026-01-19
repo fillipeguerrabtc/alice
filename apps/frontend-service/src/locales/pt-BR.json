@@ -276,7 +276,7 @@
     "processing": "Processando...",
     "thinking": "Pensando...",
     "typing": "Digitando...",
-    "enterToSend": "Enter para enviar",
+    "enterToSend": "Enter para nova linha • Alt+Enter para enviar",
     "generating": "Gerando resposta...",
     "stopGenerating": "Parar geração",
     "streaming": {

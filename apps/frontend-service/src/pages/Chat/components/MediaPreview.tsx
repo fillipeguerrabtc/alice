@@ -14,9 +14,19 @@ interface MediaPreviewProps {
 }
 
 export function MediaPreview({ media, onRemove }: MediaPreviewProps) {
+  const handleOpenMedia = () => {
+    if (!media.url) return;
+    window.open(media.url, '_blank', 'noopener,noreferrer');
+  };
+
   return (
     <div className="relative group">
-      <div className="flex items-center gap-2 p-2 bg-muted rounded-lg max-w-[200px]">
+      <button
+        type="button"
+        onClick={handleOpenMedia}
+        className="flex items-center gap-2 p-2 bg-muted rounded-lg max-w-[200px] text-left"
+        aria-label={`Abrir ${media.fileName}`}
+      >
         {media.type === 'image' && (
           <div className="h-10 w-10 rounded bg-background flex items-center justify-center overflow-hidden shrink-0">
             <img src={media.url} alt={media.fileName} className="h-full w-full object-cover" />
@@ -33,7 +43,7 @@ export function MediaPreview({ media, onRemove }: MediaPreviewProps) {
           <p className="text-xs font-medium truncate">{media.fileName}</p>
           <p className="text-xs text-muted-foreground">{formatFileSize(media.fileSize)}</p>
         </div>
-      </div>
+      </button>
       
       <Button
         variant="destructive"

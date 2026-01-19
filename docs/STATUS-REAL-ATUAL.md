@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 19 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.25 - Chat input ativo + stop/câmera + namespaces
+**Versão:** 7.26 - Chat input multiline e anexos clicáveis
 
 ---
 
@@ -240,6 +240,8 @@ Retenção Arquivo:   30 dias
 - Alice Config: refs de erro resetadas para permitir novos toasts após retry.
 - Chat: input sempre ativo, botão Stop e opção de câmera no anexo.
 - Permissions-Policy: câmera liberada para `self` no gateway e Nginx.
+- Chat: Enter cria nova linha; envio via botão ou Alt+Enter.
+- Chat: anexos clicáveis no input e mensagens com preview.
 
 ---
 

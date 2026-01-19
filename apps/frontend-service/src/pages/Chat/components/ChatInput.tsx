@@ -56,7 +56,7 @@ export function ChatInput({
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && e.altKey) {
       e.preventDefault();
       onSend();
     }

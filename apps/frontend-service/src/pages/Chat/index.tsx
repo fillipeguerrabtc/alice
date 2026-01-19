@@ -1461,7 +1461,6 @@ export default function Chat() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    handleSend();
   };
 
   const conversations = conversationsData?.pages.flatMap((page) => page.conversations) || [];
