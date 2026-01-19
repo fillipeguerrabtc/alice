@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 18 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.39 - Correções RBAC resolver e cache global
+**Versão:** 7.40 - Correções de formulários e toggles RBAC
 
 ---
 
@@ -221,6 +221,8 @@ Retenção Arquivo:   30 dias
 - RBAC: resolver combina DB + PERMISSION_MAP para evitar 403 em permissões não seedadas.
 - Auth: CRUD de permissões limpa cache global (evita permissões stale entre tenants).
 - Chat: fullscreen de imagem usa a mesma URL resolvida do thumbnail.
+- Usuários: formulários de grupos e permissões resetam ao trocar o item editado.
+- RBAC UI: toggles de permissões evitam overwrite em cliques rápidos.
 - Frontend build: ordem de handlers de gravação e avatar corrigida (evita TS2448/TS2454).
 - Dark Mode: paleta preta/cinza para experiência similar ao ChatGPT.
 - Avatar do Chat: GIF dinâmico (packman pensando, gato após resposta) com tamanho ajustado.

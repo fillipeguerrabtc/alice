@@ -6,7 +6,7 @@
  * Regra 13: Internacionalização i18next
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -147,6 +147,14 @@ function GroupFormDialog({
     },
   });
 
+  useEffect(() => {
+    form.reset({
+      nome: group?.nome || '',
+      descricao: group?.descricao || '',
+      ativo: group?.ativo ?? true,
+    });
+  }, [form, group?.ativo, group?.descricao, group?.id, group?.nome]);
+
   const handleSubmit = (data: GroupFormData) => {
     onSubmit(data);
   };
@@ -244,6 +252,15 @@ function PermissionFormDialog({
       modulo: permission?.modulo || '',
     },
   });
+
+  useEffect(() => {
+    form.reset({
+      codigo: permission?.codigo || '',
+      nome: permission?.nome || '',
+      descricao: permission?.descricao || '',
+      modulo: permission?.modulo || '',
+    });
+  }, [form, permission?.codigo, permission?.descricao, permission?.id, permission?.modulo, permission?.nome]);
 
   const handleSubmit = (data: PermissionFormData) => {
     onSubmit(data);
@@ -659,6 +676,7 @@ export default function UsersAdmin() {
       toast({ title: t('usersAdmin.permissions.roleUpdated') });
     },
     onError: (error: Error) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/auth/roles', selectedRole, 'permissions'] });
       toast({ title: t('usersAdmin.permissions.roleUpdateError'), description: error.message, variant: 'destructive' });
     },
   });
@@ -666,9 +684,12 @@ export default function UsersAdmin() {
   const users = usersData?.users ?? [];
   const groups = groupsData?.groups ?? [];
   const permissions = permissionsData?.permissions ?? [];
-  const rolePermissionCodes = new Set(
-    rolePermissionsData?.rolePermissions?.map((item) => item.permission?.codigo).filter(Boolean) ?? []
-  );
+  const [rolePermissionCodes, setRolePermissionCodes] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    const nextCodes = rolePermissionsData?.rolePermissions?.map((item) => item.permission?.codigo).filter(Boolean) ?? [];
+    setRolePermissionCodes(new Set(nextCodes));
+  }, [rolePermissionsData?.rolePermissions, selectedRole]);
 
   const filteredUsers = useMemo(() => {
     const query = searchUsers.toLowerCase();
@@ -969,13 +990,16 @@ export default function UsersAdmin() {
                             <Switch
                               checked={hasRole}
                               onCheckedChange={(checked) => {
-                                const nextCodes = new Set(rolePermissionCodes);
-                                if (checked) {
-                                  nextCodes.add(permission.codigo);
-                                } else {
-                                  nextCodes.delete(permission.codigo);
-                                }
-                                updateRolePermissions.mutate(Array.from(nextCodes));
+                                setRolePermissionCodes((currentCodes) => {
+                                  const nextCodes = new Set(currentCodes);
+                                  if (checked) {
+                                    nextCodes.add(permission.codigo);
+                                  } else {
+                                    nextCodes.delete(permission.codigo);
+                                  }
+                                  updateRolePermissions.mutate(Array.from(nextCodes));
+                                  return nextCodes;
+                                });
                               }}
                             />
                           </TableCell>
