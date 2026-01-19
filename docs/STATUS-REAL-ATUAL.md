@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 18 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.42 - Rotas UsersAdmin no gateway
+**Versão:** 7.43 - Reset de formulários ao reabrir diálogo
 
 ---
 
@@ -225,6 +225,7 @@ Retenção Arquivo:   30 dias
 - RBAC UI: toggles de permissões evitam overwrite em cliques rápidos.
 - RBAC UI: fila sequencial e debounce evitam race em atualizações de permissões.
 - Gateway: rota `/api/users*` encaminhada ao auth-service para gestão de usuários.
+- Usuários: reset de formulário ao reabrir diálogo evita estado pendente.
 - Frontend build: ordem de handlers de gravação e avatar corrigida (evita TS2448/TS2454).
 - Dark Mode: paleta preta/cinza para experiência similar ao ChatGPT.
 - Avatar do Chat: GIF dinâmico (packman pensando, gato após resposta) com tamanho ajustado.

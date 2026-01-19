@@ -148,12 +148,15 @@ function GroupFormDialog({
   });
 
   useEffect(() => {
+    if (!open) {
+      return;
+    }
     form.reset({
       nome: group?.nome || '',
       descricao: group?.descricao || '',
       ativo: group?.ativo ?? true,
     });
-  }, [form, group?.ativo, group?.descricao, group?.id, group?.nome]);
+  }, [form, group?.ativo, group?.descricao, group?.id, group?.nome, open]);
 
   const handleSubmit = (data: GroupFormData) => {
     onSubmit(data);
@@ -254,13 +257,16 @@ function PermissionFormDialog({
   });
 
   useEffect(() => {
+    if (!open) {
+      return;
+    }
     form.reset({
       codigo: permission?.codigo || '',
       nome: permission?.nome || '',
       descricao: permission?.descricao || '',
       modulo: permission?.modulo || '',
     });
-  }, [form, permission?.codigo, permission?.descricao, permission?.id, permission?.modulo, permission?.nome]);
+  }, [form, open, permission?.codigo, permission?.descricao, permission?.id, permission?.modulo, permission?.nome]);
 
   const handleSubmit = (data: PermissionFormData) => {
     onSubmit(data);
