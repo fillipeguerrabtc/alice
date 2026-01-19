@@ -490,6 +490,7 @@ async function getCachedPermissions(
   cacheStats.misses++;
   updateRbacMetrics('miss', tenantId);
   
+  const basePermissions = getRolePermissions(role);
   let resolvedPermissions: string[] = [];
   if (permissionResolver) {
     try {
@@ -499,10 +500,14 @@ async function getCachedPermissions(
       resolvedPermissions = [];
     }
   } else {
-    resolvedPermissions = getRolePermissions(role);
+    resolvedPermissions = basePermissions;
   }
 
-  const permissions = new Set(resolvedPermissions);
+  if (permissionResolver && resolvedPermissions.length === 0 && basePermissions.length > 0) {
+    logger.warn({ userId, tenantId, role }, 'Resolver retornou vazio; aplicando permissões base do PERMISSION_MAP');
+  }
+
+  const permissions = new Set([...basePermissions, ...resolvedPermissions]);
   
   // Salvar no cache se inicializado
   if (permissionCache.isInitialized()) {

@@ -2245,9 +2245,7 @@ app.post('/api/auth/permissions', requireAuth(), requirePermission('admin:permis
     })
     .returning();
 
-  if (req.tenantId) {
-    await invalidateTenantPermissions(req.tenantId);
-  }
+  await clearPermissionCache();
   res.status(201).json({ permission });
 }));
 
@@ -2274,9 +2272,7 @@ app.patch('/api/auth/permissions/:id', requireAuth(), requirePermission('admin:p
     return;
   }
 
-  if (req.tenantId) {
-    await invalidateTenantPermissions(req.tenantId);
-  }
+  await clearPermissionCache();
   res.json({ permission });
 }));
 
@@ -2292,9 +2288,7 @@ app.delete('/api/auth/permissions/:id', requireAuth(), requirePermission('admin:
     return;
   }
 
-  if (req.tenantId) {
-    await invalidateTenantPermissions(req.tenantId);
-  }
+  await clearPermissionCache();
   res.json({ success: true, permission });
 }));
 

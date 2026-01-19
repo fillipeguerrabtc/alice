@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 **Autor:** Fillipe Guerra  
-**Data:** 19 de Janeiro de 2026  
+**Data:** 18 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.38 - Correções RBAC cache e queries dinâmicas
+**Versão:** 7.39 - Correções RBAC resolver e cache global
 
 ---
 
@@ -218,6 +218,9 @@ Retenção Arquivo:   30 dias
 - Áudio no Chat: gravação com duas opções (revisar transcrição ou enviar direto).
 - ASR GPU: gravação em revisão usa upload real no RAG + transcrição Canary-1B antes de envio.
 - Áudio no Chat: polling de transcrição encerra quando mídia é removida/enviada (sem texto fantasma).
+- RBAC: resolver combina DB + PERMISSION_MAP para evitar 403 em permissões não seedadas.
+- Auth: CRUD de permissões limpa cache global (evita permissões stale entre tenants).
+- Chat: fullscreen de imagem usa a mesma URL resolvida do thumbnail.
 - Frontend build: ordem de handlers de gravação e avatar corrigida (evita TS2448/TS2454).
 - Dark Mode: paleta preta/cinza para experiência similar ao ChatGPT.
 - Avatar do Chat: GIF dinâmico (packman pensando, gato após resposta) com tamanho ajustado.

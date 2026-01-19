@@ -107,7 +107,7 @@ export function InlineMediaAttachment({ media }: InlineMediaAttachmentProps) {
           </DialogHeader>
           <div className="flex justify-center">
             <img
-              src={media.url || ''}
+              src={imageUrl || media.url || ''}
               alt={media.fileName}
               className="max-h-[70vh] rounded-lg object-contain"
             />
