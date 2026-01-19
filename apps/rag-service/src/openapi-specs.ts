@@ -238,26 +238,6 @@ export const ragServicePaths = {
       },
     },
   },
-  '/api/rag/embeddings/image': {
-    post: {
-      summary: 'CLIP embedding para imagem',
-      tags: ['Embeddings'],
-      requestBody: {
-        content: {
-          'multipart/form-data': {
-            schema: {
-              type: 'object',
-              required: ['image'],
-              properties: {
-                image: { type: 'string', format: 'binary' },
-              },
-            },
-          },
-        },
-      },
-      responses: { 200: { description: 'OpenCLIP embedding (1024 dim - ViT-H/14 GPU via GPU Manager Service)' } },
-    },
-  },
   '/api/rag/stats': {
     get: {
       summary: 'Estatísticas',

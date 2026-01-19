@@ -5953,7 +5953,7 @@ wss.on('connection', (ws, req) => {
       // ========================================================================
       // HANDLER MULTIMODAL (FASE 9 - Upload de mídia via WebSocket)
       // IMPORTANTE: LLM texto (Qwen2.5 7B) é SOMENTE TEXTO - não processa imagens diretamente
-      // Para imagens: usa RAG com embeddings CLIP para busca semântica por contexto
+      // Para imagens: usa RAG com descrição OpenAI Vision + embeddings de texto (Qwen3)
       // Para áudio/vídeo: usa transcrição (texto) + RAG
       // ========================================================================
       else if (message.type === 'media') {
@@ -6173,7 +6173,7 @@ wss.on('connection', (ws, req) => {
         const assistantSettings = await getAssistantSettingsForTenant(tenantId);
         let systemPrompt = buildSystemPrompt(agent, assistantSettings, mediaMessage.content);
         
-        // Para imagens: usa RAG com embeddings CLIP (1024 dim) para buscar contexto similar
+        // Para imagens: usa RAG com embeddings de texto a partir da descrição OpenAI Vision
         // Para áudio: usar transcrição quando disponível
         let userContent = mediaMessage.content || '';
         
@@ -6239,7 +6239,7 @@ wss.on('connection', (ws, req) => {
         );
         
         // LLM texto (Qwen2.5 7B) é SOMENTE TEXTO
-        // Não envia imagens diretamente - usa contexto RAG via embeddings CLIP e OpenAI Vision
+        // Não envia imagens diretamente - usa contexto RAG via OpenAI Vision + embeddings de texto
         const llmMessages = buildPromptMessages({
           systemPrompt,
           userMessage: userContent,

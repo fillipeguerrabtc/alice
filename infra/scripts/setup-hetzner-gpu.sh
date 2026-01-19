@@ -7,7 +7,7 @@
 #
 # ARQUITETURA ENTERPRISE (02/01/2026):
 # - 50 containers (7 infra + 7 Alice + 15 ERPNext + 14 obs + 1 backup + 6 GPU)
-# - GPU Services: Mixtral 8x7B, Embeddings (Qwen3+OpenCLIP), FLUX.1, ASR Canary, Trainer
+# - GPU Services: Mixtral 8x7B, Embeddings (Qwen3), ASR Canary, Trainer
 # - Servidor Único: Todos os containers no mesmo servidor (latência zero)
 #
 # Uso: Executado automaticamente pelo pipeline CI/CD

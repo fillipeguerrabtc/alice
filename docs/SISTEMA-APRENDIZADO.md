@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Versão:** 5.2 - Aprendizado multimodal (Vision OpenAI)  
-**Data:** 16 de Janeiro de 2026
+**Data:** 18 de Janeiro de 2026
 
 > **ATUALIZAÇÃO 05/01/2026:** Arquitetura refatorada para 5 stacks independentes com deploy/rollback modular. Sistema de aprendizado integrado ao stack ALICE, com GPU containers gerenciados pelo GPU Manager Service.
 
@@ -25,7 +25,7 @@ A partir de 16/01/2026, a Alice utiliza **Gate 2 (LLM local + Vision OpenAI)** v
 | **LLM (texto)** | **Qwen2.5 7B Instruct (AWQ)** | ~6GB (budget) | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
 | **Vision (análise)** | **OpenAI gpt-4.1** | N/A | OpenAI API |
 | **Embeddings de Texto** | Qwen3-Embedding-0.6B INT8 | **1024 dim** (~3GB budget) → Qdrant | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
-| **Embeddings de Imagem** | OpenCLIP ViT-H/14 | 1024 dim → pgvector | Compartilhado com embeddings de texto |
+| **Embeddings de Imagem** | OpenAI Vision (descrição) | Texto → Qdrant | Baseado em descrição textual |
 | **Transcrição de Áudio** | Canary-1B (NeMo) | ~3GB (budget) | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
 | **Fine-tuning** | QLoRA (gpu-trainer) | dedicado (profile/on-demand) | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
 | **Trading BTC** | KuCoin Futures API | - | Hetzner (integrations-service) |
@@ -59,7 +59,7 @@ Com servidor GPU dedicado, os serviços de inferência rodam simultaneamente (bu
 |------|---------------|----------------------|
 | **Conversas Texto** | Automático | Rating >= 4 estrelas pelo usuário |
 | **Análise de Imagens** | Automático | OpenAI Vision analisa, dados vão para RAG multimodal |
-| **Imagens Upload** | Automático | OpenCLIP ViT-H/14 embeddings (1024 dim) para RAG multimodal |
+| **Imagens Upload** | Automático | OpenAI Vision (descrição) + embeddings de texto para RAG multimodal |
 
 > **NOTA Gate 2:** Geração de imagens via OpenAI (gpt-image-1). Análise via OpenAI Vision (gpt-4.1).
 
@@ -87,7 +87,7 @@ const trainingResponse = await fetch(`${TRAINING_SERVICE_URL}/api/training/data`
 | Tipo | Processamento | Critério de Aprovação |
 |------|---------------|----------------------|
 | **Texto** | Automático | Rating inferido (5 = sem escalação, 1 = escalou) |
-| **Imagens** | Automático | OpenCLIP ViT-H/14 embeddings (1024 dim → pgvector) |
+| **Imagens** | Automático | OpenAI Vision (descrição → Qdrant) |
 | **Áudios** | Automático | Canary-1B transcrição + Qwen3-Embedding-0.6B embeddings (1024 dim → Qdrant) |
 
 **Integração Implementada (integrations-service/index.ts linha 2369):**
@@ -165,7 +165,7 @@ const trainingResponse = await fetch(`${TRAINING_SERVICE_URL}/api/training/data`
 ┌─────────────────────────────────────────────────────────────┐
 │      PROCESSAMENTO MULTIMODAL (GPU Manager Service)       │
 │  • Texto: Qwen3-Embedding-0.6B (1024 dim) → Qdrant          │
-│  • Imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector          │
+│  • Imagem: OpenAI Vision (descrição → Qdrant)               │
 │  • Áudio: Canary-1B + Qwen3 (1024 dim) → Qdrant             │
 └─────────────────────────────────────────────────────────────┘
                               ↓
@@ -291,8 +291,8 @@ O processamento de áudio utiliza **GPU obrigatória** via GPU Manager Service:
 
 | Tipo | Modelo | Dimensões | Uso |
 |------|--------|-----------|-----|
-| **Imagem → Embedding** | OpenCLIP ViT-H/14 | 1024 dim (nativo) | Busca por imagem |
-| **Texto → Embedding (para buscar imagem)** | OpenCLIP Text Encoder | 1024 dim (pgvector) | Busca texto→imagem |
+| **Imagem → Embedding** | OpenAI Vision (descrição) | Texto → Qdrant | Busca por imagem |
+| **Texto → Embedding (para buscar imagem)** | Qwen3-Embedding-0.6B | 1024 dim (Qdrant) | Busca texto→imagem |
 | **Texto genérico** | Qwen3-Embedding-0.6B | 1024 dim (Qdrant) | Documentos, chat, trading |
 
 ### Endpoints GPU
@@ -300,8 +300,6 @@ O processamento de áudio utiliza **GPU obrigatória** via GPU Manager Service:
 | Endpoint | Modelo | Uso |
 |----------|--------|-----|
 | `/embed/text` | Qwen3-Embedding-0.6B | Texto de documentos, transcrições (1024 dim → Qdrant) |
-| `/embed/image` | OpenCLIP ViT-H/14 | Embeddings de imagens (1024 dim → pgvector) |
-| `/embed/text-for-image` | OpenCLIP Text Encoder | Busca texto→imagem (1024 dim) |
 | `/embed/batch` | Ambos | Processamento em lote |
 
 ---
@@ -380,7 +378,7 @@ Acessíveis em `/dashboard/analytics`:
 - ✅ **LLM (texto) dedicado**: Qwen2.5 7B Instruct (AWQ) - Chat/Trading (via GPU Manager)
 - ✅ **Vision (OpenAI)**: gpt-4.1 para análise de imagens/gráficos (via OpenAI API)
 - ✅ Embeddings de texto (Qwen3-Embedding-0.6B INT8, **1024 dim**, ~3GB) via GPU Manager Service → Qdrant
-- ✅ Embeddings de imagem (OpenCLIP ViT-H/14, 1024 dim) via GPU Manager Service → pgvector
+- ✅ Embeddings de imagem via descrição OpenAI Vision → Qdrant (texto)
 - ✅ Transcrição de áudio (Canary-1B NeMo, ~3GB) via GPU Manager Service
 - ✅ Qdrant para texto (1024 dim com HNSW) + pgvector para imagem (1024 dim)
 - ✅ Validação de dimensão em `validateEmbeddingDimension`
@@ -427,7 +425,7 @@ Acessíveis em `/dashboard/analytics`:
 - Drag & drop para imagens (JPEG, PNG, WebP, GIF até 10MB)
 - Drag & drop para áudios (MP3, WAV, OGG, WEBM até 25MB)
 - Fila de upload visual com status em tempo real
-- Processamento via GPU (Qwen3-Embedding-0.6B + OpenCLIP + Canary-1B ASR)
+- Processamento via GPU (Qwen3-Embedding-0.6B + Canary-1B ASR)
 - Internacionalização PT-BR e EN
 
 **Arquivos modificados:**
@@ -452,7 +450,7 @@ Acessíveis em `/dashboard/analytics`:
 **Solução Implementada:**
 - Nova função `processWhatsAppMediaForRAG()` em `integrations-service`
 - Mídia do WhatsApp é baixada do Twilio e enviada para `/api/media/upload/json`
-- Imagens: OpenCLIP embeddings (1024 dim)
+- Imagens: OpenAI Vision (descrição) + embeddings de texto
 - Áudios: Canary-1B transcrição + Qwen3-Embedding-0.6B embeddings (1024 dim → Qdrant)
 - Vídeo: **não suportado** (removido). Uploads `video/*` são rejeitados explicitamente.
 - Processamento fire-and-forget (não bloqueia resposta ao usuário)
@@ -512,7 +510,7 @@ Acessíveis em `/dashboard/analytics`:
 *Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*
 *Versão 5.2 - 16 de Janeiro de 2026 - Gate 2*
 *LLM (texto): Qwen2.5 7B Instruct AWQ (vLLM) via GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB)*
-*Embeddings texto: Qwen3-Embedding-0.6B INT8 (1024 dim → Qdrant) + Imagem: OpenCLIP ViT-H/14 (1024 dim → pgvector)*
+*Embeddings texto: Qwen3-Embedding-0.6B INT8 (1024 dim → Qdrant) + Imagem: OpenAI Vision (descrição → Qdrant)*
 *ASR: Canary-1B via NeMo Toolkit (Apache 2.0)*
 *Vision: OpenAI (gpt-4.1) para análise de imagens/gráficos via API externa*
 *Geração de Imagens: OpenAI (gpt-image-1)*

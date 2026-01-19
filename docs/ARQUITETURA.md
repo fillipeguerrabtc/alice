@@ -1,7 +1,7 @@
 # Alice Enterprise Platform - Arquitetura de Software
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 16 de Janeiro de 2026  
+> **Data:** 18 de Janeiro de 2026  
 > **Versão:** 3.2.1 - Gate 2 (Qwen2.5 + Vision OpenAI)  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
@@ -296,7 +296,7 @@ C4Component
     Container_Boundary(rag, "RAG Service") {
         Component(docProc, "Document Processor", "Chunking", "PDF, DOCX, TXT")
         Component(audioProc, "Audio Processor", "Canary-1B", "Transcrição ASR")
-        Component(imageProc, "Image Processor", "OpenCLIP", "Embeddings 1024 dim")
+        Component(imageProc, "Image Processor", "OpenAI Vision", "Descrição → embeddings de texto")
         Component(embQueue, "Embedding Queue", "Redis", "Processamento assíncrono")
         Component(embWorker, "Embedding Worker", "Background", "GPU dedicada 24/7")
         Component(vectorSearch, "Vector Search", "Qdrant", "Busca semântica")
@@ -749,7 +749,7 @@ logger.info({
 |---------|---------|
 | **Status** | Aceito |
 | **Contexto** | Embeddings de alta qualidade para RAG e Trading |
-| **Decisão** | Qwen3-Embedding-0.6B (1024 dim) → Qdrant, OpenCLIP (1024 dim) → pgvector |
+| **Decisão** | Qwen3-Embedding-0.6B (1024 dim) → Qdrant, OpenAI Vision → descrição → Qdrant |
 | **Alternativas** | Outros modelos 1024 dim com restrições de licença/uso comercial (avaliar caso a caso) |
 | **Consequências** | + Dimensão consistente (1024) em toda a plataforma, + storage menor, + compatível com budgets de VRAM |
 
@@ -1308,7 +1308,7 @@ A plataforma possui uma **suite de testes unitários completa** usando **Vitest*
 *Total de Containers: 50 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 4 GPU + 1 backup + 1 trainer on-demand)*
 *Stack: Express 5.2, Vite 7.3, Tailwind CSS 4.1, HTTP/2*
 *LLM: Qwen2.5 7B Instruct (AWQ) via GPU Manager Service (Hetzner GEX44) - Gate 2*
-*Embeddings: Qwen3-Embedding-0.6B INT8 (1024 dim) + OpenCLIP (1024 dim)*
+*Embeddings: Qwen3-Embedding-0.6B INT8 (1024 dim) + OpenAI Vision (descrição)*
 *Performance: HTTP Compression, HNSW m=24, SHA Pinning 95%+*
 *GPU: Todos serviços simultâneos (15GB/20GB VRAM), QLoRA fine-tuning semanal, Zero latência de troca*
 *Framework: arc42 + C4 Model + ADRs*  

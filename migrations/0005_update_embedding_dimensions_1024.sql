@@ -1,10 +1,10 @@
 -- ============================================================================
--- MIGRAÇÃO: Atualizar dimensões de embeddings de imagem para 1024 (OpenCLIP ViT-H/14)
+-- MIGRAÇÃO: Atualizar dimensões de embeddings de imagem para 1024
 -- Descrição: Migra colunas de embedding de vector(768) para vector(1024)
 -- 
 -- ARQUITETURA ENTERPRISE (17/12/2025):
 -- - Texto: Qwen3-Embedding-8B (4096 dim) → Qdrant (não usa pgvector para texto)
--- - Imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector (esta migration)
+-- - Imagem: embeddings de imagem (1024 dim) → pgvector (esta migration)
 -- 
 -- NOTA: Esta migration aplica-se APENAS a embeddings de IMAGEM (clip_embedding).
 -- Embeddings de TEXTO agora usam Qdrant com 4096 dimensões.
@@ -125,7 +125,7 @@ BEGIN
     FROM information_schema.tables 
     WHERE table_name = 'media_uploads'
   ) THEN
-    -- clip_embedding (OpenCLIP ViT-H/14 - 1024 dim)
+    -- clip_embedding (embeddings de imagem - 1024 dim)
     IF EXISTS (
       SELECT 1 
       FROM information_schema.columns 
@@ -241,7 +241,7 @@ END $$;
 -- MIGRAÇÃO CONCLUÍDA
 -- Todas as colunas de embedding agora são vector(1024)
 -- Compatível com:
--- - OpenCLIP ViT-H/14 (1024 dim, imagem) via GPU Manager Service (Hetzner GEX44) → pgvector
+-- - Embeddings de imagem (1024 dim) via GPU Manager Service (Hetzner GEX44) → pgvector
 -- - NOTA: Texto usa Qwen3-Embedding-8B (4096 dim) → Qdrant (não pgvector)
 -- 
 -- ARQUITETURA 100% GPU (Opção B - Alta Qualidade)

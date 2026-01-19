@@ -35,7 +35,7 @@
 
 ## Arquitetura Gate 2 (GPU + OpenAI)
 
-- GPU local: LLM (texto), embeddings (texto/imagem) e ASR (always-on).
+- GPU local: LLM (texto), embeddings (texto) e ASR (always-on).
 - Vision e geração de imagens: OpenAI (sem VLM local).
 - GPU Manager Service: fila priorizada, monitoramento VRAM, circuit breakers e métricas Prometheus.
 - Budget VRAM: 20GB com serviços simultâneos.
@@ -68,7 +68,7 @@
 ### Stack GPU (local)
 
 - `gpu-llm`: Qwen2.5 7B (vLLM).
-- `gpu-embeddings`: Qwen3-Embedding-0.6B INT8 + OpenCLIP.
+- `gpu-embeddings`: Qwen3-Embedding-0.6B INT8 (texto).
 - `gpu-asr`: Canary-1B.
 - `gpu-trainer`: QLoRA sob demanda (profile).
 
@@ -165,7 +165,7 @@
 - Chat e trading via LLM local (Qwen2.5 7B AWQ).
 - Vision e geração de imagens via OpenAI (gpt-4.1 / gpt-image-1).
 - Embeddings texto: Qwen3-Embedding-0.6B INT8 (1024 dim) → Qdrant.
-- Embeddings imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector.
+- Embeddings imagem: descrição OpenAI Vision → embeddings de texto (Qdrant).
 - ASR: Canary-1B (GPU).
 
 ---

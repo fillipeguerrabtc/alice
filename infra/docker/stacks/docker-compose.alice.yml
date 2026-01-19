@@ -20,7 +20,7 @@
 #
 #   GPU (SEMPRE ATIVOS):
 #   - gpu-llm - Qwen2.5 7B Instruct AWQ (LLM texto, contexto 8k)
-#   - gpu-embeddings - Qwen3-Embedding-0.6B INT8 (1024 dim) + OpenCLIP (1024 dim)
+#   - gpu-embeddings - Qwen3-Embedding-0.6B INT8 (1024 dim)
 #   - gpu-asr - Canary-1B (ASR) - Transcrição de áudio
 #
 #   GPU (SOB DEMANDA via profile):
@@ -517,7 +517,7 @@ services:
   # ARQUITETURA ATUAL (16/01/2026+):
   # GPU local é usada SOMENTE para:
   # - gpu-llm: LLM (texto)
-  # - gpu-embeddings: embeddings (texto+imagem)
+  # - gpu-embeddings: embeddings (texto)
   # - gpu-asr: ASR (transcrição)
   # - gpu-trainer: QLoRA (sob demanda via profile)
   #
@@ -546,9 +546,9 @@ services:
       - MODEL_NAME=${LLM_MODEL_NAME:-Qwen/Qwen2.5-7B-Instruct-AWQ}
       - QUANTIZATION=awq
       - MAX_MODEL_LEN=${LLM_MAX_MODEL_LEN:-8192}
-      # Budget conservador para 20GB com Embeddings + ASR always-on.
+      # Budget ajustado para 20GB após remoção de embeddings de imagem (mais folga de VRAM).
       # Nota: fonte de verdade é o consumo real via métricas/nvidia-smi.
-      - GPU_MEMORY_UTILIZATION=${LLM_GPU_MEMORY_UTILIZATION:-0.40}
+      - GPU_MEMORY_UTILIZATION=${LLM_GPU_MEMORY_UTILIZATION:-0.50}
       - TENSOR_PARALLEL_SIZE=1
       - HOST=0.0.0.0
       - PORT=8000
@@ -594,8 +594,6 @@ services:
       - CUDA_VISIBLE_DEVICES=0
       - TEXT_MODEL_NAME=${TEXT_MODEL_NAME:-Qwen/Qwen3-Embedding-0.6B}
       - TEXT_EMBEDDING_DIM=${TEXT_EMBEDDING_DIM:-1024}
-      - IMAGE_MODEL_NAME=${IMAGE_MODEL_NAME:-laion/CLIP-ViT-H-14-laion2B-s32B-b79K}
-      - IMAGE_EMBEDDING_DIM=${IMAGE_EMBEDDING_DIM:-1024}
       # ARQUITETURA v4.0.0: Quantização INT8 para reduzir VRAM de 16GB para 8GB
       - QUANTIZATION=int8
       - DEVICE=cuda

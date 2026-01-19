@@ -1,10 +1,10 @@
 # Alice - Plataforma Enterprise de IA Autônoma
 
 **Autor:** Fillipe Guerra  
-**Data:** 16 de Janeiro de 2026
+**Data:** 18 de Janeiro de 2026
 
 ## Overview
-Alice is an autonomous AI enterprise platform served on Hetzner GPU server GEX44 (RTX 4000 Ada 20GB). Its core purpose is to provide a fully autonomous AI solution with absolute privacy, predictable costs, and unlimited customization via QLoRA fine-tuning. The platform is **specialized in Finance, Trading, and Financial Management** with built-in vision capabilities for chart analysis. Key capabilities include real-time chat with streaming, deduplication, multi-tenancy, RBAC, a RAG backend with enterprise embeddings (**Qwen3-Embedding-0.6B INT8 1024 dim → Qdrant**, OpenCLIP 1024 dim → pgvector), **Trading BTC Futures** on KuCoin Perpetuals with scalping capabilities (1m, 3m, 5m candles), aggressive self-learning with scheduled training (weekly), and a robust observability stack. The business vision is to deliver an enterprise-grade AI solution with unparalleled control, performance, data security, and cost predictability for financial verticals.
+Alice is an autonomous AI enterprise platform served on Hetzner GPU server GEX44 (RTX 4000 Ada 20GB). Its core purpose is to provide a fully autonomous AI solution with absolute privacy, predictable costs, and unlimited customization via QLoRA fine-tuning. The platform is **specialized in Finance, Trading, and Financial Management** with built-in vision capabilities for chart analysis. Key capabilities include real-time chat with streaming, deduplication, multi-tenancy, RBAC, a RAG backend with enterprise embeddings (**Qwen3-Embedding-0.6B INT8 1024 dim → Qdrant**, OpenAI Vision → descrição → Qdrant), **Trading BTC Futures** on KuCoin Perpetuals with scalping capabilities (1m, 3m, 5m candles), aggressive self-learning with scheduled training (weekly), and a robust observability stack. The business vision is to deliver an enterprise-grade AI solution with unparalleled control, performance, data security, and cost predictability for financial verticals.
 
 ## User Preferences
 ### 18 Regras Fundamentais
@@ -91,7 +91,7 @@ Alice employs a **modular multi-stack architecture** with 51 containerized servi
         - LLM (texto): Qwen2.5 7B Instruct AWQ (vLLM) - chat e trading - GPU OBRIGATÓRIO
         - Vision (análise de imagens): OpenAI Responses API (`gpt-4.1`)
         - Embeddings de texto: Qwen3-Embedding-0.6B INT8 (1024 dim, ~3GB) → Qdrant - GPU OBRIGATÓRIO
-        - Embeddings de imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector - GPU OBRIGATÓRIO
+        - Embeddings de imagem: OpenAI Vision (descrição → Qdrant) - GPU NÃO usada para imagens
         - ASR: Canary-1B (NeMo, ~3GB) - GPU OBRIGATÓRIO
         - GPU Manager: Gerenciamento centralizado com fila priorizada, monitoramento VRAM, circuit breakers
         - Serviços GPU rodam simultaneamente (20GB VRAM budget; métricas = fonte de verdade) - zero latência de troca
@@ -113,7 +113,7 @@ Alice employs a **modular multi-stack architecture** with 51 containerized servi
 - **Vision (análise de imagens)**: OpenAI Responses API (`gpt-4.1`)
 - **Geração de imagens**: OpenAI Images API (`gpt-image-1`)
 - **Embeddings Texto**: Qwen3-Embedding-0.6B INT8 (1024 dim, ~3GB) → Qdrant - quantização INT8
-- **Embeddings Imagem**: OpenCLIP ViT-H/14 (1024 dim) → pgvector - dimensão nativa
+- **Embeddings Imagem**: OpenAI Vision → descrição → Qdrant (embeddings de texto)
 - **ASR**: Canary-1B (NeMo, ~3GB) - transcrição de áudio
 - **Fine-tuning**: Treinamento QLoRA via GPU Trainer (~12GB, sob demanda) - schedule semanal + on-demand
 - **GPU Manager Service**: Gerenciamento centralizado com fila priorizada (Redis), monitoramento VRAM (nvidia-smi), circuit breakers, retry logic e métricas Prometheus
@@ -125,7 +125,7 @@ Embeddings otimizados por caso de uso para máxima qualidade:
 | Modalidade | Modelo | Dimensões | Storage | Licença |
 |------------|--------|-----------|---------|---------|
 | **Texto (Trading/RAG)** | Qwen3-Embedding-0.6B | **1024** | **Qdrant** | Apache 2.0 |
-| **Imagem** | OpenCLIP ViT-H/14 | **1024** | PostgreSQL `vector` | MIT |
+| **Imagem** | OpenAI Vision (descrição) | **texto** | Qdrant | OpenAI |
 | **Transcrição** | Canary-1B (NeMo) | - | - | Apache 2.0 |
 
 - **GPU é OBRIGATÓRIO** - sem fallback CPU (Regra 6)
@@ -770,11 +770,11 @@ git commit -a -m "test: adiciona testes unitários"
 *Modelos Non-Commercial Identificados: Fin-E5, Linq-Embed-Mistral, NV-Embed-v2 (todos CC BY-NC - PROIBIDO uso comercial)*
 *Fisher-Yates Shuffle (17/12/2025): Corrigido bug de distribuição enviesada em train/validation split (lora-job-manager.ts)*
 *Security Hardening: 100% no-new-privileges, 100% resource limits, 24/43 com read_only (aplicável apenas onde não há escrita), healthchecks 38/38*
-*ARQUITETURA ENTERPRISE (17/12/2025): Texto 4096 dim Qwen3-Embedding-8B Apache 2.0 (Qdrant) | Imagem vector(1024) OpenCLIP MIT (pgvector)*
+*ARQUITETURA ENTERPRISE (17/12/2025): Texto 4096 dim Qwen3-Embedding-8B Apache 2.0 (Qdrant) | Imagem: OpenAI Vision → descrição → Qdrant*
 *Bug Fix Embeddings (17/12/2025): Embeddings de texto (documentos/áudio) agora vão para Qdrant (4096 dim), não PostgreSQL*
 *LLM Trading: Qwen2.5-VL 7B (vLLM AWQ, multimodal) para Trading BTC Futures KuCoin - ARQUITETURA v4.0.0*
 *GPU Dedicada 24/7 (26/12/2025): Hetzner GEX44 - containers Docker rodam continuamente, sem cold start (estratégia Warm on Demand removida)*
-*GPU Services v4.0.0 (Hetzner): Qwen2.5-VL 7B AWQ (LLM + Vision), Qwen3-Embedding-8B INT8 (embeddings 4096), OpenCLIP ViT-H/14 (1024), Canary-1B (ASR) - todos rodam simultaneamente, gerenciados pelo GPU Manager Service*
+*GPU Services v4.0.0 (Hetzner): Qwen2.5-VL 7B AWQ (LLM texto), Qwen3-Embedding-8B INT8 (embeddings 4096), Canary-1B (ASR) - todos rodam simultaneamente, gerenciados pelo GPU Manager Service*
 *Pipeline CI/CD Unificada (17/12/2025): 3 workflows (CI → Release → Deploy) - 100% automático no servidor Hetzner GPU*
 *Code Review Enterprise (17/12/2025): 100% validado - zero TODO/FIXME/HACK, zero console.log, zero any, zero mocks/stubs*
 *Bug Fix maxOrderValue (17/12/2025): Campo adicionado ao schema tradingRiskConfig + migration 0006*

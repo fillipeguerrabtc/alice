@@ -1,7 +1,7 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 17 de Janeiro de 2026  
+**Data:** 18 de Janeiro de 2026  
 **Versão:** 10.3 - Cleanup INFRA remove volumes mesmo com outros stacks
 
 ## Visão geral
@@ -30,7 +30,7 @@ prepare
   ↓
 deploy-infra + health-infra
   ↓
-drizzle-push
+drizzle-push (executa somente quando há diff real)
   ↓
 deploy-alice + deploy-observability + deploy-erpnext + deploy-backup (paralelo)
   ↓

@@ -9,7 +9,7 @@
 # ARQUITETURA GPU (Gate 2 - 15/01/2026):
 # SERVIÇOS GPU (SSOT no stack modular; este arquivo é apenas compat local):
 # - gpu-llm: LLM (texto) - Qwen2.5 7B Instruct AWQ (contexto 8k)
-# - gpu-embeddings: Qwen3-Embedding-0.6B INT8 (1024 dim) + OpenCLIP (1024 dim) (budget ~2-3GB + ~2GB)
+# - gpu-embeddings: Qwen3-Embedding-0.6B INT8 (1024 dim) (budget ~2-3GB)
 # - gpu-asr: Canary-1B (transcrição de áudio) (budget ~3-4GB)
 # - gpu-trainer: QLoRA fine-tuning (sob demanda) (~12GB)
 # 
@@ -49,7 +49,7 @@ services:
       - MODEL_NAME=${LLM_MODEL_NAME:-Qwen/Qwen2.5-7B-Instruct-AWQ}
       - QUANTIZATION=awq
       - MAX_MODEL_LEN=${LLM_MAX_MODEL_LEN:-8192}
-      - GPU_MEMORY_UTILIZATION=${LLM_GPU_MEMORY_UTILIZATION:-0.40}
+      - GPU_MEMORY_UTILIZATION=${LLM_GPU_MEMORY_UTILIZATION:-0.50}
       - TENSOR_PARALLEL_SIZE=1
       - HOST=0.0.0.0
       - PORT=8000
@@ -81,7 +81,7 @@ services:
         max-file: "3"
 
   # =============================================================================
-  # Embeddings GPU - Qwen3-Embedding-0.6B INT8 + OpenCLIP
+  # Embeddings GPU - Qwen3-Embedding-0.6B INT8
   # Gate 2: Texto 1024 dim (Qdrant) + Imagem 1024 dim (pgvector)
   # =============================================================================
   gpu-embeddings:
@@ -95,8 +95,6 @@ services:
       - CUDA_VISIBLE_DEVICES=0
       - TEXT_MODEL_NAME=${TEXT_MODEL_NAME:-Qwen/Qwen3-Embedding-0.6B}
       - TEXT_EMBEDDING_DIM=${TEXT_EMBEDDING_DIM:-1024}
-      - IMAGE_MODEL_NAME=${IMAGE_MODEL_NAME:-laion/CLIP-ViT-H-14-laion2B-s32B-b79K}
-      - IMAGE_EMBEDDING_DIM=${IMAGE_EMBEDDING_DIM:-1024}
       - QUANTIZATION=int8
       - DEVICE=cuda
       - PORT=8000

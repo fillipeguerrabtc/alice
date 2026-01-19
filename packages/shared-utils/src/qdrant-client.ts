@@ -6,7 +6,7 @@
  * 
  * Arquitetura (17/12/2025):
  * - Texto: Qdrant (1024 dim) - Qwen3-Embedding-0.6B
- * - Imagem: pgvector (1024 dim) - OpenCLIP ViT-H/14
+ * - Imagem: descrição textual → Qdrant (embeddings de texto)
  * 
  * Funcionalidades:
  * - Autenticação via API Key

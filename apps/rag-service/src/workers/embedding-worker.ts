@@ -14,7 +14,6 @@
  * 
  * EMBEDDINGS:
  * - Qwen3-Embedding-0.6B: 1024 dim (texto/documentos → Qdrant) via GPU Manager Service
- * - OpenCLIP ViT-H/14: 1024 dim (imagens + text-to-image → pgvector) via GPU Manager Service
  * 
  * Autor: Fillipe Guerra
  * Data: 26 de Dezembro de 2025
@@ -60,23 +59,19 @@ const MAX_CONCURRENT = 3;
 
 interface GpuTextParams {
   text: string;
-  endpoint: '/embed/text' | '/embed/text-for-image';
-}
-
-interface GpuImageParams {
-  image: string;
+  endpoint: '/embed/text';
 }
 
 interface GpuBatchParams {
-  texts?: string[];
-  images?: string[];
+  texts: string[];
 }
 
 interface GpuResponse {
   embedding?: number[];
   embeddings?: number[][];
-  model: string;
-  dimension: number;
+  model?: string;
+  dimension?: number;
+  dimensions?: number;
   processing_time_ms?: number;
 }
 
@@ -89,32 +84,12 @@ async function callGpuTextApi(params: GpuTextParams): Promise<GpuResponse> {
     priority: GpuRequestPriority.MEDIUM,
     timeout: GPU_TIMEOUT_MS,
     body: {
-      text: params.text,
+      texts: [params.text],
     },
   });
 
   if (!gpuResponse.success || !gpuResponse.data) {
     throw new Error(gpuResponse.error || 'Erro ao gerar embedding de texto');
-  }
-
-  return gpuResponse.data as GpuResponse;
-}
-
-async function callGpuImageApi(params: GpuImageParams): Promise<GpuResponse> {
-  // ARQUITETURA ENTERPRISE (25/12/2025): Usar GPU Manager Service
-  const gpuResponse = await requestGpu({
-    serviceType: GpuServiceType.EMBEDDINGS,
-    endpoint: '/embed/image',
-    method: 'POST',
-    priority: GpuRequestPriority.MEDIUM,
-    timeout: GPU_TIMEOUT_MS,
-    body: {
-      image: params.image,
-    },
-  });
-
-  if (!gpuResponse.success || !gpuResponse.data) {
-    throw new Error(gpuResponse.error || 'Erro ao gerar embedding de imagem');
   }
 
   return gpuResponse.data as GpuResponse;
@@ -141,7 +116,6 @@ async function callGpuBatchApi(params: GpuBatchParams): Promise<GpuResponse> {
 // Circuit breakers serão criados no start do worker
 // Tipos corrigidos: TArgs deve ser array (tuple) para createCircuitBreaker<TArgs extends unknown[], TResult>
 let gpuTextBreaker: ReturnType<typeof createCircuitBreaker<[GpuTextParams], GpuResponse>> | null = null;
-let gpuImageBreaker: ReturnType<typeof createCircuitBreaker<[GpuImageParams], GpuResponse>> | null = null;
 let gpuBatchBreaker: ReturnType<typeof createCircuitBreaker<[GpuBatchParams], GpuResponse>> | null = null;
 
 // ============================================================================
@@ -158,24 +132,23 @@ async function processTextJob(job: EmbeddingJob): Promise<void> {
   }
   
   const startTime = Date.now();
-  const endpoint = job.type === 'text-for-image' ? '/embed/text-for-image' : '/embed/text';
+  const result = await gpuTextBreaker.fire({ text: job.input.text, endpoint: '/embed/text' }) as GpuResponse;
+  const resolvedEmbedding = result.embedding ?? result.embeddings?.[0];
   
-  const result = await gpuTextBreaker.fire({ text: job.input.text, endpoint }) as GpuResponse;
-  
-  if (!result.embedding) {
+  if (!resolvedEmbedding) {
     throw new Error('Embedding não retornado pela GPU');
   }
   
   // Validar dimensão
-  const expectedDim = job.type === 'text-for-image' ? EMBEDDING_DIMENSIONS.CLIP : EMBEDDING_DIMENSIONS.TEXT;
-  validateEmbeddingDimension(result.embedding, expectedDim, job.type === 'text-for-image' ? 'CLIP' : 'TEXT');
+  validateEmbeddingDimension(resolvedEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
   
   const processingTimeMs = Date.now() - startTime;
+  const resolvedDimension = result.dimension ?? result.dimensions ?? resolvedEmbedding.length;
   
   await completeEmbeddingJob(job.id, {
-    embedding: result.embedding,
+    embedding: resolvedEmbedding,
     model: result.model,
-    dimension: result.dimension,
+    dimension: resolvedDimension,
     processingTimeMs,
   });
   
@@ -186,50 +159,7 @@ async function processTextJob(job: EmbeddingJob): Promise<void> {
     tenantId: job.tenantId,
     data: {
       type: job.type,
-      dimension: result.dimension,
-      processingTimeMs,
-    },
-    timestamp: new Date().toISOString(),
-  });
-}
-
-async function processImageJob(job: EmbeddingJob): Promise<void> {
-  if (!job.input.imageBase64) {
-    throw new Error('Imagem não fornecida para job de embedding');
-  }
-  
-  if (!gpuImageBreaker) {
-    throw new Error('Worker não inicializado');
-  }
-  
-  const startTime = Date.now();
-  
-  const result = await gpuImageBreaker.fire({ image: job.input.imageBase64 }) as GpuResponse;
-  
-  if (!result.embedding) {
-    throw new Error('Embedding não retornado pela GPU');
-  }
-  
-  // Validar dimensão
-  validateEmbeddingDimension(result.embedding, EMBEDDING_DIMENSIONS.CLIP, 'CLIP');
-  
-  const processingTimeMs = Date.now() - startTime;
-  
-  await completeEmbeddingJob(job.id, {
-    embedding: result.embedding,
-    model: result.model,
-    dimension: result.dimension,
-    processingTimeMs,
-  });
-  
-  // Publicar notificação
-  await publishNotification({
-    type: 'job_completed',
-    jobId: job.id,
-    tenantId: job.tenantId,
-    data: {
-      type: job.type,
-      dimension: result.dimension,
+      dimension: resolvedDimension,
       processingTimeMs,
     },
     timestamp: new Date().toISOString(),
@@ -254,11 +184,12 @@ async function processBatchTextJob(job: EmbeddingJob): Promise<void> {
   }
   
   const processingTimeMs = Date.now() - startTime;
+  const resolvedDimension = result.dimension ?? result.dimensions ?? result.embeddings?.[0]?.length ?? 0;
   
   await completeEmbeddingJob(job.id, {
     embeddings: result.embeddings,
     model: result.model,
-    dimension: result.dimension,
+    dimension: resolvedDimension,
     processingTimeMs,
   });
   
@@ -270,48 +201,7 @@ async function processBatchTextJob(job: EmbeddingJob): Promise<void> {
     data: {
       type: job.type,
       count: result.embeddings.length,
-      dimension: result.dimension,
-      processingTimeMs,
-    },
-    timestamp: new Date().toISOString(),
-  });
-}
-
-async function processBatchImageJob(job: EmbeddingJob): Promise<void> {
-  if (!job.input.imagesBase64 || job.input.imagesBase64.length === 0) {
-    throw new Error('Imagens não fornecidas para batch');
-  }
-  
-  if (!gpuBatchBreaker) {
-    throw new Error('Worker não inicializado');
-  }
-  
-  const startTime = Date.now();
-  
-  const result = await gpuBatchBreaker.fire({ images: job.input.imagesBase64 }) as GpuResponse;
-  
-  if (!result.embeddings || result.embeddings.length === 0) {
-    throw new Error('Embeddings não retornados pela GPU');
-  }
-  
-  const processingTimeMs = Date.now() - startTime;
-  
-  await completeEmbeddingJob(job.id, {
-    embeddings: result.embeddings,
-    model: result.model,
-    dimension: result.dimension,
-    processingTimeMs,
-  });
-  
-  // Publicar notificação
-  await publishNotification({
-    type: 'job_completed',
-    jobId: job.id,
-    tenantId: job.tenantId,
-    data: {
-      type: job.type,
-      count: result.embeddings.length,
-      dimension: result.dimension,
+      dimension: resolvedDimension,
       processingTimeMs,
     },
     timestamp: new Date().toISOString(),
@@ -328,17 +218,10 @@ async function processJob(job: EmbeddingJob): Promise<void> {
   try {
     switch (job.type) {
       case 'text':
-      case 'text-for-image':
         await processTextJob(job);
-        break;
-      case 'image':
-        await processImageJob(job);
         break;
       case 'batch-text':
         await processBatchTextJob(job);
-        break;
-      case 'batch-image':
-        await processBatchImageJob(job);
         break;
       default:
         throw new Error(`Tipo de job não suportado: ${job.type}`);
@@ -460,23 +343,17 @@ export function startEmbeddingWorker(config: EmbeddingWorkerConfig): void {
   // Criar circuit breakers
   gpuTextBreaker = createCircuitBreaker(callGpuTextApi, {
     name: 'embedding-worker-text',
-    ...CIRCUIT_BREAKER_PRESETS.clipEmbeddings,
-  });
-  
-  gpuImageBreaker = createCircuitBreaker(callGpuImageApi, {
-    name: 'embedding-worker-image',
-    ...CIRCUIT_BREAKER_PRESETS.clipEmbeddings,
+    ...CIRCUIT_BREAKER_PRESETS.embeddingsGPU,
   });
   
   gpuBatchBreaker = createCircuitBreaker(callGpuBatchApi, {
     name: 'embedding-worker-batch',
-    ...CIRCUIT_BREAKER_PRESETS.clipEmbeddings,
+    ...CIRCUIT_BREAKER_PRESETS.embeddingsGPU,
     timeout: GPU_TIMEOUT_MS * 2, // Batch leva mais tempo
   });
   
   // Instrumentar com Prometheus
   instrumentCircuitBreaker(config.metrics, 'embedding-worker-text', gpuTextBreaker as unknown);
-  instrumentCircuitBreaker(config.metrics, 'embedding-worker-image', gpuImageBreaker as unknown);
   instrumentCircuitBreaker(config.metrics, 'embedding-worker-batch', gpuBatchBreaker as unknown);
   
   isRunning = true;

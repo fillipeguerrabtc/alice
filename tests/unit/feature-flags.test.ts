@@ -54,7 +54,6 @@ const FEATURE_FLAGS = {
   // AI Features
   IMAGE_GENERATION_ENABLED: 'image_generation_enabled',
   RAG_ENABLED: 'rag_enabled',
-  CLIP_EMBEDDINGS_ENABLED: 'clip_embeddings_enabled',
   TRAINING_ENABLED: 'training_enabled',
   
   // Autenticação
@@ -90,7 +89,6 @@ const DEFAULT_FLAGS: Record<FeatureFlagKey, boolean> = {
   // AI Features - HABILITADAS (core da plataforma)
   [FEATURE_FLAGS.IMAGE_GENERATION_ENABLED]: true,
   [FEATURE_FLAGS.RAG_ENABLED]: true,
-  [FEATURE_FLAGS.CLIP_EMBEDDINGS_ENABLED]: true,
   [FEATURE_FLAGS.TRAINING_ENABLED]: true,
   
   // Autenticação - DESABILITADAS (requer OAuth configurado)
@@ -115,8 +113,8 @@ const DEFAULT_FLAGS: Record<FeatureFlagKey, boolean> = {
 
 describe('Feature Flags - Keys e Constantes', () => {
   describe('FEATURE_FLAGS constantes', () => {
-    it('deve ter todas as 18 feature flags definidas', () => {
-      expect(Object.keys(FEATURE_FLAGS)).toHaveLength(18);
+    it('deve ter todas as 17 feature flags definidas', () => {
+      expect(Object.keys(FEATURE_FLAGS)).toHaveLength(17);
     });
 
     it('todas as keys devem seguir padrão lowercase_underscore', () => {
@@ -137,7 +135,6 @@ describe('Feature Flags - Keys e Constantes', () => {
     it('deve ter flags de AI features', () => {
       expect(FEATURE_FLAGS.IMAGE_GENERATION_ENABLED).toBe('image_generation_enabled');
       expect(FEATURE_FLAGS.RAG_ENABLED).toBe('rag_enabled');
-      expect(FEATURE_FLAGS.CLIP_EMBEDDINGS_ENABLED).toBe('clip_embeddings_enabled');
       expect(FEATURE_FLAGS.TRAINING_ENABLED).toBe('training_enabled');
     });
 
@@ -172,7 +169,6 @@ describe('Feature Flags - Keys e Constantes', () => {
     it('AI features (core) devem estar HABILITADAS por padrão', () => {
       expect(DEFAULT_FLAGS[FEATURE_FLAGS.IMAGE_GENERATION_ENABLED]).toBe(true);
       expect(DEFAULT_FLAGS[FEATURE_FLAGS.RAG_ENABLED]).toBe(true);
-      expect(DEFAULT_FLAGS[FEATURE_FLAGS.CLIP_EMBEDDINGS_ENABLED]).toBe(true);
       expect(DEFAULT_FLAGS[FEATURE_FLAGS.TRAINING_ENABLED]).toBe(true);
     });
 

@@ -11,7 +11,7 @@
 # Para bancos existentes, o deploy-production.yml tem retry logic separado
 #
 # EXTENSÕES:
-# - pgvector: OBRIGATÓRIO para embeddings de imagem (OpenCLIP 1024 dim)
+# - pgvector: OBRIGATÓRIO para embeddings vetoriais (texto)
 #
 # CORREÇÃO 01/01/2026: Adicionado teste de operação vetorial para detectar SIGILL
 # PROBLEMA: Binário pgvector compilado com AVX-512 causava Illegal Instruction
@@ -25,7 +25,7 @@ echo "🔌 [postgres-init] Iniciando criação de extensões obrigatórias..."
 # ETAPA 1: Criar extensão pgvector
 echo "📦 [postgres-init] Criando extensão pgvector..."
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
-    -- Criar extensão pgvector (obrigatório para embeddings de imagem OpenCLIP)
+    -- Criar extensão pgvector (obrigatório para embeddings vetoriais)
     CREATE EXTENSION IF NOT EXISTS vector;
 EOSQL
 

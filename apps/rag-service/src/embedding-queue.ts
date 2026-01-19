@@ -15,7 +15,6 @@
  * 
  * EMBEDDINGS:
  * - Qwen3-Embedding-0.6B: 1024 dim (texto/documentos → Qdrant)
- * - OpenCLIP ViT-H/14: 1024 dim (imagens + text-to-image → pgvector)
  * 
  * Autor: Fillipe Guerra
  * Data: 26 de Dezembro de 2025
@@ -60,7 +59,7 @@ const MAX_BATCH_SIZE = 10;
 // TIPOS
 // ============================================================================
 
-export type EmbeddingJobType = 'text' | 'text-for-image' | 'image' | 'batch-text' | 'batch-image';
+export type EmbeddingJobType = 'text' | 'batch-text';
 
 export type EmbeddingJobStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
@@ -79,8 +78,6 @@ export interface EmbeddingJob {
   input: {
     text?: string;
     texts?: string[];
-    imageBase64?: string;
-    imagesBase64?: string[];
   };
   // Resultado
   result?: {

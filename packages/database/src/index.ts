@@ -511,10 +511,8 @@ export const toSql = pgvector.toSql;
 // Dimensões dos embeddings (conforme CLAUDE.md)
 // ARQUITETURA ENTERPRISE (17/12/2025):
 // - Texto: Qwen3-Embedding-0.6B (1024 dim) → Qdrant
-// - Imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector
 export const EMBEDDING_DIMENSIONS = {
   TEXT: 1024,    // Qwen3-Embedding-0.6B (GPU Manager Service - Hetzner GEX44) → Qdrant
-  CLIP: 1024,    // OpenCLIP ViT-H/14 (GPU Manager Service - Hetzner GEX44) → pgvector
 } as const;
 
 /**
@@ -522,30 +520,28 @@ export const EMBEDDING_DIMENSIONS = {
  * Lança erro se dimensão estiver incorreta (enterprise-grade - Regra 6)
  * 
  * @param embedding - Array de números representando o embedding
- * @param expectedDim - Dimensão esperada (1024 para TEXT/Qdrant, 1024 para CLIP/pgvector)
- * @param type - Tipo de embedding ('TEXT' ou 'CLIP') para mensagem de erro
+ * @param expectedDim - Dimensão esperada (1024 para TEXT/Qdrant)
+ * @param type - Tipo de embedding ('TEXT') para mensagem de erro
  * @throws Error se dimensão estiver incorreta
  * 
  * ARQUITETURA ENTERPRISE (17/12/2025):
  * - TEXT: Qwen3-Embedding-0.6B (1024 dim) → Qdrant
- * - CLIP: OpenCLIP ViT-H/14 (1024 dim) → pgvector
  * 
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 export function validateEmbeddingDimension(
   embedding: number[] | null | undefined,
   expectedDim: number = EMBEDDING_DIMENSIONS.TEXT,
-  type: 'TEXT' | 'CLIP' = 'TEXT'
+  type: 'TEXT' = 'TEXT'
 ): void {
   if (!embedding || embedding.length === 0) {
     throw new Error(`Embedding ${type} vazio ou nulo não pode ser salvo`);
   }
   
-  const storage = type === 'TEXT' ? 'Qdrant' : 'pgvector';
   if (embedding.length !== expectedDim) {
     throw new Error(
       `Embedding ${type} com dimensão incorreta: ${embedding.length} (esperado: ${expectedDim}). ` +
-      `Isso causará erro no ${storage}. Verifique o serviço de embeddings GPU.`
+      `Isso causará erro no Qdrant. Verifique o serviço de embeddings GPU.`
     );
   }
   

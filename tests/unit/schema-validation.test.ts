@@ -394,10 +394,9 @@ describe('Schema - Tabelas Principais', () => {
     });
   });
 
-  describe('mediaUploads (CLIP + pgvector)', () => {
-    it('deve ter campos de embedding CLIP', () => {
+  describe('mediaUploads (embeddings de texto)', () => {
+    it('deve ter campos de embedding de texto', () => {
       const columns = Object.keys(mediaUploads);
-      expect(columns).toContain('clipEmbedding');
       expect(columns).toContain('textEmbedding');
       expect(columns).toContain('mediaType');
       expect(columns).toContain('filePath');
@@ -589,8 +588,7 @@ describe('Schema - Integridade Estrutural', () => {
       expect(Object.keys(trainingData)).toContain('embedding');
     });
 
-    it('mediaUploads deve ter embeddings CLIP e texto separados', () => {
-      expect(Object.keys(mediaUploads)).toContain('clipEmbedding');
+    it('mediaUploads deve ter embedding de texto', () => {
       expect(Object.keys(mediaUploads)).toContain('textEmbedding');
     });
   });

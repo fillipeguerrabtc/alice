@@ -3,10 +3,8 @@ Alice Enterprise Platform - Embeddings GPU Service (Arquitetura Unificada)
 ==========================================================================
 Serviço de embeddings enterprise:
 - Texto (Trading/RAG): Qwen3-Embedding-0.6B → 1024 dimensões (Qdrant)
-- Imagem: OpenCLIP ViT-H/14 → 1024 dimensões (pgvector)
 
 Qwen3-Embedding-0.6B: 0.6B parâmetros, Apache 2.0, ótimo custo/benefício
-OpenCLIP ViT-H/14: 1024 dim nativos, MIT license
 
 ARQUITETURA v4.0.0 (11/01/2026):
 - Suporte a quantização INT8 para reduzir VRAM de ~16GB para ~8GB
@@ -18,19 +16,16 @@ Data: 11 de Janeiro de 2026
 """
 
 import os
-import io
 import logging
 import time
 from typing import List, Optional, Union
 
 import torch
 import numpy as np
-from fastapi import FastAPI, HTTPException, File, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
 from starlette.responses import Response
-from PIL import Image
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -42,7 +37,7 @@ logger = logging.getLogger(__name__)
 EMBEDDING_COUNTER = Counter(
     "embeddings_generated_total",
     "Total de embeddings gerados",
-    ["type", "status"]  # type: text, image
+    ["type", "status"]  # type: text
 )
 EMBEDDING_DURATION = Histogram(
     "embedding_generation_duration_seconds",
@@ -65,8 +60,6 @@ LAST_REQUEST_TIME = Gauge(
 
 TEXT_MODEL_NAME = os.environ.get("TEXT_MODEL_NAME", "Qwen/Qwen3-Embedding-0.6B")
 TEXT_EMBEDDING_DIM = int(os.environ.get("TEXT_EMBEDDING_DIM", "1024"))
-IMAGE_MODEL_NAME = os.environ.get("IMAGE_MODEL_NAME", "laion/CLIP-ViT-H-14-laion2B-s32B-b79K")
-IMAGE_EMBEDDING_DIM = int(os.environ.get("IMAGE_EMBEDDING_DIM", "1024"))
 DEVICE = os.environ.get("DEVICE", "cuda" if torch.cuda.is_available() else "cpu")
 # ARQUITETURA v4.0.0: Suporte a quantização para reduzir VRAM
 # NOTA ENTERPRISE (WS3): QUANTIZATION=int8 no compose DEVE refletir o runtime.
@@ -86,7 +79,6 @@ app = FastAPI(
     description=f"""
 Serviço de embeddings enterprise:
 - **Texto (Trading/RAG)**: {TEXT_MODEL_NAME} → {TEXT_EMBEDDING_DIM} dim (Qdrant)
-- **Imagem**: {IMAGE_MODEL_NAME} → {IMAGE_EMBEDDING_DIM} dim (pgvector)
 - **Quantização**: {QUANTIZATION} (INT8 reduz VRAM significativamente)
 
 Qwen3-Embedding-0.6B: 0.6B params, ótimo custo/benefício para trading/RAG.
@@ -97,8 +89,6 @@ Qwen3-Embedding-0.6B: 0.6B params, ótimo custo/benefício para trading/RAG.
 # Modelos (carregados no startup)
 text_model = None
 text_tokenizer = None
-image_model = None
-image_preprocess = None
 
 
 # =============================================================================
@@ -123,14 +113,6 @@ class TextEmbeddingResponse(BaseModel):
     processing_time_ms: int
 
 
-class ImageEmbeddingResponse(BaseModel):
-    """Response com embedding de imagem."""
-    embedding: List[float]
-    model: str
-    dimensions: int
-    processing_time_ms: int
-
-
 # =============================================================================
 # STARTUP - CARREGAR MODELOS
 # =============================================================================
@@ -138,7 +120,7 @@ class ImageEmbeddingResponse(BaseModel):
 @app.on_event("startup")
 async def load_models():
     """Carrega os modelos de embedding no startup."""
-    global text_model, text_tokenizer, image_model, image_preprocess
+    global text_model, text_tokenizer
     
     logger.info("=" * 60)
     logger.info("Alice Embeddings GPU - Arquitetura v4.0.0")
@@ -146,7 +128,6 @@ async def load_models():
     logger.info(f"Dispositivo: {DEVICE}")
     logger.info(f"Quantização: {QUANTIZATION}")
     logger.info(f"Texto: {TEXT_MODEL_NAME} ({TEXT_EMBEDDING_DIM} dim)")
-    logger.info(f"Imagem: {IMAGE_MODEL_NAME} ({IMAGE_EMBEDDING_DIM} dim)")
     logger.info("=" * 60)
     
     # Carregar modelo de texto (Qwen3-Embedding)
@@ -232,28 +213,6 @@ async def load_models():
         logger.error(f"Erro ao carregar modelo de texto: {e}")
         raise
     
-    # Carregar modelo de imagem (OpenCLIP)
-    try:
-        logger.info(f"Carregando modelo de imagem: {IMAGE_MODEL_NAME}")
-        
-        import open_clip
-        
-        model_name = "ViT-H-14"
-        pretrained = "laion2b_s32b_b79k"
-        
-        image_model, _, image_preprocess = open_clip.create_model_and_transforms(
-            model_name,
-            pretrained=pretrained,
-            device=DEVICE
-        )
-        image_model.eval()
-        
-        logger.info(f"✅ Modelo de imagem carregado: {IMAGE_EMBEDDING_DIM} dimensões")
-        
-    except Exception as e:
-        logger.error(f"Erro ao carregar modelo de imagem: {e}")
-        raise
-    
     # Log GPU memory
     if torch.cuda.is_available():
         memory = torch.cuda.memory_allocated() / 1024**3
@@ -287,9 +246,6 @@ async def health_check():
         "text_model": TEXT_MODEL_NAME,
         "text_dimensions": TEXT_EMBEDDING_DIM,
         "text_storage": "qdrant",
-        "image_model": IMAGE_MODEL_NAME,
-        "image_dimensions": IMAGE_EMBEDDING_DIM,
-        "image_storage": "pgvector",
         "device": DEVICE,
         "gpu": gpu_info
     }
@@ -298,8 +254,8 @@ async def health_check():
 @app.get("/ready")
 async def ready_check():
     """Readiness check - verifica se modelos estão carregados."""
-    if text_model is None or image_model is None:
-        raise HTTPException(status_code=503, detail="Modelos não carregados")
+    if text_model is None:
+        raise HTTPException(status_code=503, detail="Modelo de texto não carregado")
     return {"status": "ready"}
 
 
@@ -357,56 +313,6 @@ async def embed_text(request: TextEmbeddingRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/embed/image", response_model=ImageEmbeddingResponse)
-async def embed_image(file: UploadFile = File(...)):
-    """
-    Gera embedding de imagem (1024 dimensões).
-    
-    Usado para:
-    - Busca de imagens similares
-    - RAG multimodal
-    - Geração de imagens (feedback)
-    """
-    if image_model is None:
-        raise HTTPException(status_code=503, detail="Modelo de imagem não carregado")
-    
-    LAST_REQUEST_TIME.set(time.time())
-    start_time = time.time()
-    
-    try:
-        # Ler imagem
-        content = await file.read()
-        image = Image.open(io.BytesIO(content)).convert("RGB")
-        
-        # Preprocessar
-        image_tensor = image_preprocess(image).unsqueeze(0).to(DEVICE)
-        
-        # Gerar embedding
-        with torch.inference_mode():
-            embedding = image_model.encode_image(image_tensor)
-            embedding = embedding / embedding.norm(dim=-1, keepdim=True)  # Normalizar
-            embedding = embedding.cpu().numpy().flatten()
-        
-        processing_time_ms = int((time.time() - start_time) * 1000)
-        
-        EMBEDDING_COUNTER.labels(type="image", status="success").inc()
-        EMBEDDING_DURATION.labels(type="image").observe(processing_time_ms / 1000)
-        
-        logger.info(f"Image embedding: {file.filename} em {processing_time_ms}ms")
-        
-        return ImageEmbeddingResponse(
-            embedding=embedding.tolist(),
-            model=IMAGE_MODEL_NAME,
-            dimensions=len(embedding),
-            processing_time_ms=processing_time_ms
-        )
-        
-    except Exception as e:
-        EMBEDDING_COUNTER.labels(type="image", status="error").inc()
-        logger.error(f"Erro em image embedding: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @app.get("/metrics")
 async def metrics():
     """Endpoint de métricas Prometheus."""
@@ -432,14 +338,6 @@ async def model_info():
                 "storage": "Qdrant",
                 "license": "Apache 2.0",
                 "use_case": "Trading BTC, RAG, document search"
-            },
-            "image": {
-                "name": IMAGE_MODEL_NAME,
-                "dimensions": IMAGE_EMBEDDING_DIM,
-                "storage": "PostgreSQL pgvector",
-                "pgvector_type": "vector(1024)",
-                "license": "MIT",
-                "use_case": "Image similarity, multimodal RAG"
             }
         },
         "storage_mapping": {
@@ -448,10 +346,6 @@ async def model_info():
                 "Trading signals",
                 "RAG documents",
                 "Market data"
-            ],
-            "pgvector_1024": [
-                "generatedImages.clipEmbedding",
-                "mediaUploads.clipEmbedding"
             ]
         }
     }

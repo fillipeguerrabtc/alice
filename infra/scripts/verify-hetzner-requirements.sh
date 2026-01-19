@@ -7,7 +7,7 @@
 #
 # ARQUITETURA ENTERPRISE (02/01/2026):
 # - LLM: Mixtral 8x7B (vLLM AWQ) via GPU Manager Service (Hetzner GEX44)
-# - Embeddings: Qwen3-Embedding-0.6B (1024 dim) + OpenCLIP (1024 dim) via GPU Manager Service
+# - Embeddings: Qwen3-Embedding-0.6B (1024 dim) via GPU Manager Service
 # - Vector DB: Qdrant (texto 1024 dim) + PostgreSQL pgvector (imagem 1024 dim)
 # - Containers: 50 totais (7 infra + 7 Alice + 15 ERPNext + 14 obs + 6 GPU + 1 backup)
 #

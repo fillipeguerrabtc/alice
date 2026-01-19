@@ -382,7 +382,6 @@ export const GPU_MANAGER_CONFIG = {
     // LLM (texto) - SSOT do stack (`LLM_MODEL_NAME` em produção)
     llm: process.env.LLM_MODEL_NAME || 'Qwen/Qwen2.5-7B-Instruct-AWQ',
     embeddings: 'Qwen/Qwen3-Embedding-0.6B',
-    image: 'laion/CLIP-ViT-H-14-laion2B-s32B-b79K',
     asr: 'nvidia/Canary-1B',
   },
   defaults: {

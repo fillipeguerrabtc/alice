@@ -2,21 +2,19 @@
  * Image Processor Service - Alice Enterprise Platform
  * 
  * Processamento de imagens:
- * - OpenCLIP ViT-H/14 embeddings (1024 dimensões) via GPU Manager Service
+ * - Análise via OpenAI Vision (Responses API)
  * - Thumbnails via sharp (quando disponível)
  * - Extração de metadata EXIF
- * - Circuit breaker para resiliência (Regra 16 CLAUDE.md)
  * 
- * ARQUITETURA 100% GPU (25/12/2025):
- * - OpenCLIP ViT-H/14 roda em GPU via GPU Manager Service (1024 dim)
- * - GPU é OBRIGATÓRIO - SEM fallback CPU (Regra 6 - sem workarounds)
+ * ARQUITETURA ENTERPRISE:
+ * - Toda análise/geração de imagens usa OpenAI (sem GPU)
+ * - GPU é reservada apenas para texto, áudio, embeddings e treinamento
  * 
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
 import { createLogger } from '@alice/logger';
-import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS, requestGpu, GpuServiceType, GpuRequestPriority } from '@alice/shared-utils';
-import { validateEmbeddingDimension } from '@alice/database';
+import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
 
 const logger = createLogger('image-processor');
 
@@ -53,99 +51,9 @@ const DEFAULT_VISION_IMAGE_PROMPT =
   'possíveis sinais e riscos. Se houver texto na imagem, transcreva o que for legível. ' +
   'Se a imagem não for de trading, descreva objetivamente o conteúdo. Responda em PT-BR.';
 
-// GPU Manager Service - Gerenciamento centralizado de requisições GPU (25/12/2025)
-// GPU é OBRIGATÓRIO - OpenCLIP ViT-H/14 (1024 dim) → pgvector
-const GPU_MANAGER_URL = process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager:3010';
-
-// Dimensão dos embeddings de imagem (OpenCLIP ViT-H/14 - 1024 dim → pgvector)
-export const CLIP_EMBEDDING_DIM = 1024;
-
-// ============================================================================
-// CIRCUIT BREAKER - GPU Embeddings API (Regra 16 - Melhores Práticas 2025)
-// ============================================================================
-
-// ============================================================================
-// CIRCUIT BREAKERS - GPU Embeddings API (Regra 16 - Melhores Práticas 2025)
-// ============================================================================
-
-// Parâmetros para embedding de imagem
-interface ImageEmbeddingsApiParams {
-  image: string;
-}
-
-// Parâmetros para embedding de texto (busca text-to-image)
-interface TextForImageApiParams {
-  text: string;
-}
-
 interface VisionDescribeImageParams {
   imageDataUri: string;
   question?: string;
-}
-
-/**
- * Chama API GPU para embedding de IMAGEM (OpenCLIP ViT-H/14)
- */
-async function callImageEmbeddingsGpuApi(params: ImageEmbeddingsApiParams): Promise<{ embedding: number[]; model: string }> {
-  // ARQUITETURA ENTERPRISE (25/12/2025): Usar GPU Manager Service
-  const gpuResponse = await requestGpu({
-    serviceType: GpuServiceType.EMBEDDINGS,
-    endpoint: '/embed/image',
-    method: 'POST',
-    priority: GpuRequestPriority.MEDIUM,
-    timeout: 60000, // 60s timeout
-    body: params,
-  });
-
-  if (!gpuResponse.success || !gpuResponse.data) {
-    throw new Error(gpuResponse.error || 'Erro ao gerar embedding de imagem');
-  }
-
-  const result = gpuResponse.data as { embedding: number[]; model: string; dimension: number };
-  
-  if (!result.embedding || !Array.isArray(result.embedding)) {
-    throw new Error('Resposta GPU inválida - embedding ausente');
-  }
-
-  return {
-    embedding: result.embedding,
-    model: result.model || 'OpenCLIP-ViT-H-14',
-  };
-}
-
-/**
- * Chama API GPU para embedding de TEXTO para busca de imagens (OpenCLIP text encoder)
- * 
- * IMPORTANTE: Usa /embed/text-for-image que gera embeddings no MESMO espaço vetorial
- * das imagens (OpenCLIP 1024 dim), permitindo busca semântica correta text-to-image.
- * 
- * NÃO confundir com /embed/text que usa Qwen3-Embedding-0.6B (1024 dim - espaço vetorial diferente!)
- */
-async function callTextForImageGpuApi(params: TextForImageApiParams): Promise<{ embedding: number[]; model: string }> {
-  // ARQUITETURA ENTERPRISE (25/12/2025): Usar GPU Manager Service
-  const gpuResponse = await requestGpu({
-    serviceType: GpuServiceType.EMBEDDINGS,
-    endpoint: '/embed/text-for-image',
-    method: 'POST',
-    priority: GpuRequestPriority.MEDIUM,
-    timeout: 30000, // 30s timeout
-    body: params,
-  });
-
-  if (!gpuResponse.success || !gpuResponse.data) {
-    throw new Error(gpuResponse.error || 'Erro ao gerar embedding de texto para imagem');
-  }
-
-  const result = gpuResponse.data as { embedding: number[]; model: string; dimension: number };
-  
-  if (!result.embedding || !Array.isArray(result.embedding)) {
-    throw new Error('Resposta GPU inválida - embedding ausente');
-  }
-
-  return {
-    embedding: result.embedding,
-    model: result.model || 'OpenCLIP-ViT-H-14',
-  };
 }
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -206,31 +114,11 @@ async function callOpenAiDescribeImage(params: VisionDescribeImageParams): Promi
 }
 
 
-// Circuit breaker para chamadas GPU de IMAGEM
-const gpuImageBreaker = createCircuitBreaker(callImageEmbeddingsGpuApi, {
-  name: 'embeddings-gpu-image',
-  ...CIRCUIT_BREAKER_PRESETS.clipEmbeddings,
-});
-
-// Circuit breaker para chamadas GPU de TEXTO para busca de imagens
-const gpuTextForImageBreaker = createCircuitBreaker(callTextForImageGpuApi, {
-  name: 'embeddings-gpu-text-for-image',
-  ...CIRCUIT_BREAKER_PRESETS.clipEmbeddings,
-});
-
 // Circuit breaker para descrição de imagem via OpenAI (Vision)
 const openAiVisionDescribeBreaker = createCircuitBreaker(callOpenAiDescribeImage, {
   name: 'openai-vision-describe-image',
   ...CIRCUIT_BREAKER_PRESETS.default,
 });
-
-async function callGpuImageApi(params: ImageEmbeddingsApiParams): Promise<{ embedding: number[]; model: string }> {
-  return gpuImageBreaker.fire(params) as Promise<{ embedding: number[]; model: string }>;
-}
-
-async function callGpuTextForImageApi(params: TextForImageApiParams): Promise<{ embedding: number[]; model: string }> {
-  return gpuTextForImageBreaker.fire(params) as Promise<{ embedding: number[]; model: string }>;
-}
 
 async function callOpenAiVisionDescribeApi(params: VisionDescribeImageParams): Promise<{ text: string; model: string }> {
   return openAiVisionDescribeBreaker.fire(params) as Promise<{ text: string; model: string }>;
@@ -276,16 +164,13 @@ export interface ImageProcessorOptions {
 }
 
 class ImageProcessorService {
-  // GPU Manager Service (Hetzner GEX44) sempre disponível - GPU dedicada 24/7
-  private readonly isConfigured: boolean = true;
+  // OpenAI Vision é obrigatório para processamento de imagens
+  private readonly isConfigured: boolean = Boolean(OPENAI_API_KEY);
 
   constructor() {
-    // ARQUITETURA ENTERPRISE (26/12/2025): GPU dedicada Hetzner GEX44 sempre disponível
-    // GPU Manager Service gerencia todos os serviços GPU via rede Docker interna
-    // Não há cold start - containers rodam 24/7
     logger.info(
-      { gpuManagerUrl: GPU_MANAGER_URL, embeddingDim: CLIP_EMBEDDING_DIM },
-      'Image Processor configurado - GPU dedicada 24/7 (OpenCLIP ViT-H/14, 1024 dim)'
+      { openaiConfigured: this.isConfigured },
+      'Image Processor configurado - OpenAI Vision (sem GPU para imagens)'
     );
   }
 
@@ -309,25 +194,9 @@ class ImageProcessorService {
     // Extrair metadata básica
     const metadata = await this.extractMetadata(imageBuffer, mimeType, extractExif);
 
-    // Gerar embedding via GPU (OBRIGATÓRIO)
-    let embedding: number[] = [];
-    let embeddingModel = 'none';
-
-    if (this.isConfigured) {
-      try {
-        const result = await this.generateImageEmbedding(imageBuffer, mimeType);
-        embedding = result.embedding;
-        embeddingModel = result.model;
-      } catch (error) {
-        logger.error({ error }, 'Erro ao gerar embedding de imagem via GPU');
-        // Regra 6: NÃO retornar embedding falso, deixar vazio
-        embedding = [];
-        embeddingModel = 'error';
-      }
-    } else {
-      logger.error('GPU não configurado - embedding de imagem não gerado');
-      embeddingModel = 'not_configured';
-    }
+    // Embeddings de imagem via GPU foram removidos (OpenAI-only para imagens)
+    const embedding: number[] = [];
+    const embeddingModel = 'openai-vision';
 
     // Descrever imagem via OpenAI Vision
     let visionDescription: string | undefined;
@@ -358,7 +227,6 @@ class ImageProcessorService {
     const processingTimeMs = Date.now() - startTime;
 
     logger.info({
-      embeddingDim: embedding.length,
       embeddingModel,
       hasThumbnail: !!thumbnailBuffer,
       metadata: { width: metadata.width, height: metadata.height, format: metadata.format },
@@ -376,50 +244,6 @@ class ImageProcessorService {
       processedAt: new Date().toISOString(),
       processingTimeMs,
     };
-  }
-
-  /**
-   * Gera embedding de texto via GPU para busca por descrição de imagens
-   * 
-   * IMPORTANTE (Bug Fix 15/12/2025):
-   * - Usa /embed/text-for-image (OpenCLIP text encoder)
-   * - Gera embeddings no MESMO espaço vetorial das imagens
-   * - Permite busca semântica correta text-to-image
-   * - Protegido por circuit breaker (Regra 16)
-   * 
-   * NÃO confundir com embeddings de documentos que usam Qwen3-Embedding-0.6B (1024 dim → Qdrant)!
-   */
-  async generateTextEmbedding(text: string): Promise<{ embedding: number[]; model: string }> {
-    if (!this.isConfigured) {
-      throw new Error('GPU_MANAGER_URL não configurado - GPU é OBRIGATÓRIO');
-    }
-
-    if (!text || text.trim().length === 0) {
-      throw new Error('Texto vazio não é permitido para geração de embedding');
-    }
-
-    const startTime = Date.now();
-    const trimmedText = text.trim();
-
-      // Usar circuit breaker para resiliência (Regra 16)
-    // Chama /embed/text-for-image (OpenCLIP) para mesmo espaço vetorial das imagens
-    const result = await callGpuTextForImageApi({ text: trimmedText });
-    
-      validateEmbeddingDimension(result.embedding, CLIP_EMBEDDING_DIM, 'CLIP');
-
-      const processingTimeMs = Date.now() - startTime;
-
-      logger.info({
-        textLength: trimmedText.length,
-        embeddingDim: result.embedding.length,
-      model: result.model,
-        processingTimeMs,
-    }, 'Text-for-image embedding gerado via GPU (OpenCLIP)');
-
-      return {
-        embedding: result.embedding,
-      model: result.model,
-      };
   }
 
   /**
@@ -477,25 +301,6 @@ class ImageProcessorService {
       logger.error({ error }, 'Erro ao gerar thumbnail');
       return null;
     }
-  }
-
-  /**
-   * Gera embedding de imagem via GPU (OpenCLIP ViT-H/14, 1024 dim)
-   * Protegido por circuit breaker (Regra 16)
-   */
-  private async generateImageEmbedding(
-    imageBuffer: Buffer,
-    mimeType: string
-  ): Promise<{ embedding: number[]; model: string }> {
-    const base64Image = imageBuffer.toString('base64');
-    const imageDataUri = `data:${mimeType};base64,${base64Image}`;
-      
-    // Usar circuit breaker para resiliência (Regra 16)
-    const result = await callGpuImageApi({ image: imageDataUri });
-    
-      validateEmbeddingDimension(result.embedding, CLIP_EMBEDDING_DIM, 'CLIP');
-
-    return result;
   }
 
   /**
@@ -640,37 +445,16 @@ class ImageProcessorService {
   }
 
   async isReadyAsync(): Promise<boolean> {
-    if (!this.isConfigured) return false;
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3000);
-
-    try {
-      // Verificar se GPU Manager Service está pronto
-      // BUG FIX 25/12/2025: Container name correto é alice-gpu-manager (definido em docker-compose.prod.yml)
-      const response = await fetch(`${process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager:3010'}/ready`, {
-        method: 'GET',
-        signal: controller.signal,
-      });
-      return response.ok;
-    } catch {
-      return false;
-    } finally {
-      clearTimeout(timeoutId);
-    }
+    return this.isConfigured;
   }
 
   getConfig(): { 
     configured: boolean; 
-    embeddingDim: number; 
     model: string; 
-    gpuManagerUrl: string;
   } {
     return {
       configured: this.isConfigured,
-      embeddingDim: CLIP_EMBEDDING_DIM,
-      model: 'OpenCLIP-ViT-H-14 (GPU Manager Service)',
-      gpuManagerUrl: GPU_MANAGER_URL,
+      model: 'OpenAI Vision (Responses API)',
     };
   }
 }
@@ -690,8 +474,8 @@ export const imageProcessor = getImageProcessor();
 /**
  * Retorna status dos circuit breakers GPU
  */
-export function getGpuCircuitBreakerStatus(): {
-  image: {
+export function getVisionCircuitBreakerStatus(): {
+  openaiVision: {
     state: string;
     stats: {
       fires: number;
@@ -703,45 +487,20 @@ export function getGpuCircuitBreakerStatus(): {
       latencyMean: number;
     };
   };
-  textForImage: {
-  state: string;
-  stats: {
-    fires: number;
-    failures: number;
-    successes: number;
-    fallbacks: number;
-    timeouts: number;
-    cacheHits: number;
-    latencyMean: number;
-    };
-  };
 } {
-  const imageStats = gpuImageBreaker.stats;
-  const textStats = gpuTextForImageBreaker.stats;
-  
+  const visionStats = openAiVisionDescribeBreaker.stats;
+
   return {
-    image: {
-      state: gpuImageBreaker.opened ? 'open' : (gpuImageBreaker.halfOpen ? 'half-open' : 'closed'),
+    openaiVision: {
+      state: openAiVisionDescribeBreaker.opened ? 'open' : (openAiVisionDescribeBreaker.halfOpen ? 'half-open' : 'closed'),
       stats: {
-        fires: imageStats.fires || 0,
-        failures: imageStats.failures || 0,
-        successes: imageStats.successes || 0,
-        fallbacks: imageStats.fallbacks || 0,
-        timeouts: imageStats.timeouts || 0,
-        cacheHits: imageStats.cacheHits || 0,
-        latencyMean: imageStats.latencyMean || 0,
-      },
-    },
-    textForImage: {
-      state: gpuTextForImageBreaker.opened ? 'open' : (gpuTextForImageBreaker.halfOpen ? 'half-open' : 'closed'),
-    stats: {
-        fires: textStats.fires || 0,
-        failures: textStats.failures || 0,
-        successes: textStats.successes || 0,
-        fallbacks: textStats.fallbacks || 0,
-        timeouts: textStats.timeouts || 0,
-        cacheHits: textStats.cacheHits || 0,
-        latencyMean: textStats.latencyMean || 0,
+        fires: visionStats.fires || 0,
+        failures: visionStats.failures || 0,
+        successes: visionStats.successes || 0,
+        fallbacks: visionStats.fallbacks || 0,
+        timeouts: visionStats.timeouts || 0,
+        cacheHits: visionStats.cacheHits || 0,
+        latencyMean: visionStats.latencyMean || 0,
       },
     },
   };

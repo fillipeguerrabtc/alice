@@ -71,22 +71,15 @@ describe('RAG Service - Tipos de Mídia Suportados', () => {
 describe('RAG Service - Dimensões de Embedding', () => {
   // SSOT: @alice/database
   const TEXT_EMBEDDING_DIM = EMBEDDING_DIMENSIONS.TEXT;
-  const CLIP_EMBEDDING_DIM = EMBEDDING_DIMENSIONS.CLIP;
 
   it('deve ter text embedding de 1024 dimensões (Qwen3-Embedding-0.6B)', () => {
     expect(TEXT_EMBEDDING_DIM).toBe(1024);
   });
 
-  it('deve ter image embedding de 1024 dimensões (OpenCLIP ViT-H/14 GPU)', () => {
-    expect(CLIP_EMBEDDING_DIM).toBe(1024);
-  });
-
   it('deve criar array de embedding com dimensão correta', () => {
     const textEmb = new Array(TEXT_EMBEDDING_DIM).fill(0);
-    const clipEmb = new Array(CLIP_EMBEDDING_DIM).fill(0);
     
     expect(textEmb.length).toBe(1024);
-    expect(clipEmb.length).toBe(1024);
   });
 });
 
@@ -387,13 +380,13 @@ describe('RAG Service - Deduplicação', () => {
 // ============================================================================
 
 describe('RAG Service - Circuit Breakers', () => {
-  it('deve usar presets SSOT para embeddings de texto e imagem', () => {
+  it('deve usar presets SSOT para embeddings de texto', () => {
     // Texto (Qwen3-Embedding) via GPU Manager
     expect(CIRCUIT_BREAKER_PRESETS.textEmbeddings.timeout).toBe(60000);
     expect(CIRCUIT_BREAKER_PRESETS.textEmbeddings.resetTimeout).toBe(30000);
 
-    // Imagem (OpenCLIP) via GPU Manager
-    expect(CIRCUIT_BREAKER_PRESETS.clipEmbeddings.timeout).toBe(60000);
-    expect(CIRCUIT_BREAKER_PRESETS.clipEmbeddings.resetTimeout).toBe(30000);
+    // Embeddings GPU (texto)
+    expect(CIRCUIT_BREAKER_PRESETS.embeddingsGPU.timeout).toBe(60000);
+    expect(CIRCUIT_BREAKER_PRESETS.embeddingsGPU.resetTimeout).toBe(30000);
   });
 });

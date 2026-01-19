@@ -1097,7 +1097,7 @@
         "title": "Como funciona o processamento",
         "images": {
           "title": "Imagens",
-          "desc": "OpenCLIP ViT-H/14 gera embeddings de 1024 dimensões para busca visual semântica"
+          "desc": "OpenAI Vision gera descrição textual, e o Qwen3-Embedding-0.6B cria embeddings para busca semântica"
         },
         "audio": {
           "title": "Áudios",

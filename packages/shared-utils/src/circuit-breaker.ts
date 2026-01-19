@@ -78,13 +78,6 @@ export const CIRCUIT_BREAKER_PRESETS = {
     resetTimeout: 30000,
     volumeThreshold: 3,
   },
-  /** OpenCLIP ViT-H/14 embeddings - ARQUITETURA 100% GPU (GPU Manager Service) */
-  clipEmbeddings: {
-    timeout: 60000, // Timeout para embeddings de imagem (imagens maiores levam mais tempo)
-    errorThresholdPercentage: 50,
-    resetTimeout: 30000,
-    volumeThreshold: 5,
-  },
   /** S3/Object Storage - operações de storage */
   s3Storage: {
     timeout: 30000,
@@ -141,7 +134,7 @@ export const CIRCUIT_BREAKER_PRESETS = {
     resetTimeout: 15000, // Recuperação rápida
     volumeThreshold: 3, // Abre circuit com poucos erros
   },
-  /** Embeddings GPU Dual-Dimension - Qwen3 (1024 dim) + OpenCLIP (1024 dim) */
+  /** Embeddings GPU - Qwen3 (1024 dim) */
   embeddingsGPU: {
     timeout: 60000, // GPU pode precisar warm-up
     errorThresholdPercentage: 50,

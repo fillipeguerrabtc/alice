@@ -71,7 +71,6 @@ export const FEATURE_FLAGS = {
   // AI Features
   IMAGE_GENERATION_ENABLED: 'image_generation_enabled',
   RAG_ENABLED: 'rag_enabled',
-  CLIP_EMBEDDINGS_ENABLED: 'clip_embeddings_enabled',
   TRAINING_ENABLED: 'training_enabled',
   
   // Autenticação
@@ -234,7 +233,6 @@ const DEFAULT_FLAGS: Record<FeatureFlagKey, boolean> = {
   // AI Features - HABILITADAS (core da plataforma)
   [FEATURE_FLAGS.IMAGE_GENERATION_ENABLED]: true,
   [FEATURE_FLAGS.RAG_ENABLED]: true,
-  [FEATURE_FLAGS.CLIP_EMBEDDINGS_ENABLED]: true,
   [FEATURE_FLAGS.TRAINING_ENABLED]: true,
   
   // Autenticação - DESABILITADAS (requer OAuth configurado)

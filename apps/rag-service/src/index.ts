@@ -6,7 +6,7 @@
  * 
  * ARQUITETURA ENTERPRISE (25/12/2025):
  * - Texto: Qwen3-Embedding-0.6B (1024 dim) → Qdrant via GPU Manager Service
- * - Imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector via GPU Manager Service
+ * - Imagem: OpenAI Vision → descrição textual → Qdrant (embeddings de texto)
  * 
  * Autor: Fillipe Guerra
  * Data: 25 de Dezembro de 2025
@@ -24,7 +24,7 @@ import multer from 'multer';
 import path from 'path';
 import crypto from 'crypto';
 // CircuitBreaker via createCircuitBreaker de @alice/shared-utils
-import { getDatabase, getPool, schema, toSql, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, validateEmbeddingDimension, EMBEDDING_DIMENSIONS, withTenantContext } from '@alice/database';
+import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, validateEmbeddingDimension, EMBEDDING_DIMENSIONS, withTenantContext } from '@alice/database';
 import { eq, sql, desc, and } from '@alice/database';
 import { z } from 'zod';
 import {
@@ -65,7 +65,7 @@ import { createLogger } from '@alice/logger';
 // Verificado: todos os módulos importados usam process.env.NODE_ENV diretamente, não isProduction local.
 const isProduction = process.env.NODE_ENV === 'production';
 import { getStorageService } from './storage.js';
-import { getImageProcessor, CLIP_EMBEDDING_DIM, getGpuCircuitBreakerStatus } from './image-processor.js';
+import { getImageProcessor, getVisionCircuitBreakerStatus } from './image-processor.js';
 import { startEmbeddingWorker, getEmbeddingWorkerStatus } from './workers/embedding-worker.js';
 import {
   enqueueEmbeddingJob,
@@ -559,23 +559,21 @@ if (!DATABASE_URL) {
 // ==============================================================================
 // ARQUITETURA MULTIMODAL ENTERPRISE - Gate 2 (LLM separado + Vision OpenAI)
 // ==============================================================================
-// TODOS os processamentos multimodais via GPU Manager Service (Hetzner GEX44):
+// GPU Manager Service (Hetzner GEX44):
 // - Text embeddings: Qwen3-Embedding-0.6B INT8 (1024 dim) → Qdrant
-// - Image embeddings: OpenCLIP ViT-H/14 (1024 dim) → pgvector
 // - Transcrição de áudio: Canary-1B (NeMo)
-// - LLM (texto): Qwen2.5 7B Instruct (AWQ) (via GPU Manager)
-// - Vision (análise de imagens): OpenAI Responses API (gpt-4.1)
-//
-// GPU é OBRIGATÓRIO - sem fallback CPU (Regra 6)
+// - LLM (texto): Qwen2.5 7B Instruct (AWQ)
+// - Treinamento: gpu-trainer
+// Vision (análise/geração de imagens): OpenAI Responses/Images API (sem GPU)
 // ==============================================================================
 //
 // ARQUITETURA DE STORAGE:
 // - Texto (1024 dim): Qdrant (HNSW)
-// - Imagem (1024 dim): pgvector vector(1024)
+// - Imagem: descrição textual → Qdrant (embeddings de texto)
 //
 // GPU MANAGER SERVICE (Hetzner GEX44) é usado para:
 // - chat-service: inferência LLM (texto)
-// - rag-service: embeddings + processamento multimodal
+// - rag-service: embeddings de texto + processamento multimodal (sem GPU para imagens)
 // - training-service: fine-tuning (gpu-trainer sob demanda via profile)
 
 function normalizeBaseUrl(raw?: string): string {
@@ -732,7 +730,7 @@ async function generateEmbeddingInternal(text: string): Promise<number[]> {
       priority: GpuRequestPriority.MEDIUM,
       timeout: 30000, // 30s timeout
       body: {
-        text,
+        texts: [text],
       },
     });
 
@@ -740,8 +738,12 @@ async function generateEmbeddingInternal(text: string): Promise<number[]> {
       throw new Error(gpuResponse.error || 'Erro ao gerar embedding de texto');
     }
 
-    const data = gpuResponse.data as TextEmbeddingResponse;
-    const resultEmbedding = data.embedding;
+    const data = gpuResponse.data as Partial<TextEmbeddingResponse> & {
+      embedding?: number[];
+      embeddings?: number[][];
+      dimensions?: number;
+    };
+    const resultEmbedding = data.embedding ?? data.embeddings?.[0];
     
     if (!resultEmbedding || resultEmbedding.length === 0) {
       throw new Error('Serviço GPU de embeddings retornou resultado vazio');
@@ -1176,7 +1178,7 @@ app.get('/api/rag/health', async (_req: Request, res: Response) => {
     timestamp: new Date().toISOString(),
     architecture: {
       text: 'Qwen3-Embedding-0.6B (1024 dim) → Qdrant',
-      image: 'OpenCLIP ViT-H/14 (1024 dim) → pgvector',
+      image: 'OpenAI Vision → descrição → Qdrant (embeddings de texto)',
     },
     embeddingsProvider: 'gpu-manager-service',
     qdrant: {
@@ -2260,7 +2262,7 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
     const processMediaAsync = async () => {
       try {
         if (mediaType === 'image') {
-          // Processar imagem com CLIP embedding
+          // Processar imagem com OpenAI Vision (sem GPU para imagens)
           const imageProcessor = getImageProcessor();
           const result = await imageProcessor.processImage(
             req.file!.buffer,
@@ -2283,32 +2285,53 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
             thumbnailUrl = thumbStored.fileUrl;
           }
 
-          // Validar dimensão CLIP antes de salvar (Enterprise-Grade - Regra 6)
-          validateEmbeddingDimension(result.embedding, EMBEDDING_DIMENSIONS.CLIP, 'CLIP');
-          
-          // Atualizar registro com embedding CLIP, thumbnail (em metadata) e metadata
+          const visionDescription = result.visionDescription?.trim() || null;
+          const visionModel = result.visionModel ?? null;
+
+          // Atualizar registro com thumbnail, descrição e metadata
           await db.update(schema.mediaUploads)
             .set({
               processingStatus: 'completed',
-              clipEmbedding: result.embedding, // CLIP embedding 1024 dim para imagens (OpenCLIP ViT-H/14 GPU)
               extractedMetadata: {
                 ...mediaUploadRecord.extractedMetadata as object,
                 ...result.metadata,
-                embeddingModel: result.embeddingModel,
+                visionDescription,
+                visionModel,
                 hasThumbnail: !!thumbnailPath,
                 thumbnailPath, // Armazenar em metadata (não há coluna no schema)
                 thumbnailUrl,  // Armazenar em metadata (não há coluna no schema)
                 processingTimeMs: result.processingTimeMs,
               },
+              llmDescription: visionDescription,
             })
             .where(eq(schema.mediaUploads.id, mediaUploadRecord.id));
 
           logger.info({
             uploadId: mediaUploadRecord.id,
-            embeddingDim: result.embedding.length,
-            embeddingModel: result.embeddingModel,
+            visionModel,
             hasThumbnail: !!thumbnailPath,
           }, 'Imagem processada com sucesso');
+
+          if (visionDescription && isQdrantConfigured()) {
+            const descriptionEmbedding = await generateEmbedding(visionDescription);
+            await upsertPoints(TEXT_COLLECTION_NAME, [{
+              id: `media-image-${mediaUploadRecord.id}`,
+              vector: descriptionEmbedding,
+              payload: {
+                type: 'media_image',
+                mediaUploadId: mediaUploadRecord.id,
+                mediaType: 'image',
+                tenantId: req.tenantId,
+                description: visionDescription,
+                filename: req.file!.originalname,
+                mimeType: req.file!.mimetype,
+                fileUrl: mediaUploadRecord.fileUrl ?? null,
+                thumbnailUrl,
+                criadoEm: new Date().toISOString(),
+              },
+            }]);
+            logger.debug({ uploadId: mediaUploadRecord.id }, 'Embedding textual da imagem inserido no Qdrant');
+          }
         } else if (mediaType === 'audio') {
           // Processar áudio com ASR Canary-1B (GPU)
           const audioProcessor = getAudioProcessor();
@@ -2389,7 +2412,7 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
           );
 
           // IMPORTANTE: no document-processor, `combinedEmbedding` é a MÉDIA dos embeddings de TEXTO
-          // (Qwen3-Embedding-0.6B GPU, 1024 dim → Qdrant). Portanto, a validação correta aqui é `TEXT` (não CLIP).
+          // (Qwen3-Embedding-0.6B GPU, 1024 dim → Qdrant). Portanto, a validação correta aqui é `TEXT`.
           // (Enterprise-Grade - Regra 6)
           // 
           // Regra 6: Validar que combinedEmbedding não está vazio antes de persistir.
@@ -2466,7 +2489,7 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
     const processingInfo: Record<string, { message: string; features: string[] }> = {
       image: {
         message: 'Upload recebido. Processamento GPU iniciado.',
-        features: ['OpenCLIP embedding (1024 dim GPU → pgvector)', 'thumbnail', 'metadata extraction'],
+        features: ['OpenAI Vision (descrição)', 'thumbnail', 'metadata extraction'],
       },
       audio: {
         message: 'Upload recebido. Transcrição GPU iniciada.',
@@ -2648,7 +2671,7 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
     // Processar assíncrono (ALINHADO com endpoint FormData - CORREÇÃO 17/12/2025)
     // ARQUITETURA ENTERPRISE:
     // - Texto: Qwen3-Embedding-0.6B (1024 dim) → Qdrant
-    // - Imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector
+    // - Imagem: OpenAI Vision → descrição → Qdrant (embeddings de texto)
     const processMediaAsync = async () => {
       try {
         if (mediaType === 'image') {
@@ -2669,33 +2692,52 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
             thumbnailUrl = thumbStored.fileUrl;
           }
 
-          // Validar dimensão CLIP antes de salvar (Enterprise-Grade - Regra 6)
-          validateEmbeddingDimension(result.embedding, EMBEDDING_DIMENSIONS.CLIP, 'CLIP');
+          const visionDescription = result.visionDescription?.trim() || null;
+          const visionModel = result.visionModel ?? null;
 
           await db.update(schema.mediaUploads)
             .set({
               processingStatus: 'completed',
-              clipEmbedding: result.embedding, // CLIP embedding 1024 dim para imagens (OpenCLIP ViT-H/14 GPU)
               extractedMetadata: {
                 ...mediaUploadRecord.extractedMetadata as object,
                 ...result.metadata,
-                embeddingModel: result.embeddingModel,
-                visionDescription: result.visionDescription ?? null,
-                visionModel: result.visionModel ?? null,
+                visionDescription,
+                visionModel,
                 hasThumbnail: !!thumbnailPath,
                 thumbnailPath,
                 thumbnailUrl,
                 processingTimeMs: result.processingTimeMs,
               },
+              llmDescription: visionDescription,
             })
             .where(eq(schema.mediaUploads.id, mediaUploadRecord.id));
 
           logger.info({
             uploadId: mediaUploadRecord.id,
-            embeddingDim: result.embedding.length,
-            embeddingModel: result.embeddingModel,
+            visionModel,
             hasThumbnail: !!thumbnailPath,
           }, 'Imagem processada com sucesso (JSON upload)');
+
+          if (visionDescription && isQdrantConfigured()) {
+            const descriptionEmbedding = await generateEmbedding(visionDescription);
+            await upsertPoints(TEXT_COLLECTION_NAME, [{
+              id: `media-image-${mediaUploadRecord.id}`,
+              vector: descriptionEmbedding,
+              payload: {
+                type: 'media_image',
+                mediaUploadId: mediaUploadRecord.id,
+                mediaType: 'image',
+                tenantId: tenantId,
+                description: visionDescription,
+                filename: body.filename,
+                mimeType: body.mimeType,
+                fileUrl: mediaUploadRecord.fileUrl ?? null,
+                thumbnailUrl,
+                criadoEm: new Date().toISOString(),
+              },
+            }]);
+            logger.debug({ uploadId: mediaUploadRecord.id }, 'Embedding textual da imagem inserido no Qdrant (JSON)');
+          }
 
         } else if (mediaType === 'audio') {
           const audioProcessor = getAudioProcessor();
@@ -3188,12 +3230,14 @@ app.post('/api/media/search', requireAuth(), requireSameTenant(getTenantIdFromRe
       });
     }
 
-    // Se temos imageId, buscar embedding da imagem de referência
-    let queryEmbedding: number[] | null = null;
+    let queryText: string | null = null;
 
     if (imageId) {
       const [referenceImage] = await db
-        .select({ clipEmbedding: schema.mediaUploads.clipEmbedding })
+        .select({
+          llmDescription: schema.mediaUploads.llmDescription,
+          extractedMetadata: schema.mediaUploads.extractedMetadata,
+        })
         .from(schema.mediaUploads)
         .where(and(
           eq(schema.mediaUploads.id, imageId),
@@ -3203,122 +3247,75 @@ app.post('/api/media/search', requireAuth(), requireSameTenant(getTenantIdFromRe
         ))
         .limit(1);
 
-      if (!referenceImage?.clipEmbedding) {
+      if (!referenceImage) {
         return res.status(404).json({ 
           error: 'Imagem de referência não encontrada ou ainda não processada' 
         });
       }
 
-      queryEmbedding = referenceImage.clipEmbedding as number[];
-    } else if (query) {
-      // Busca por texto: gerar embedding via GPU Manager Service (Hetzner GEX44)
-      // ARQUITETURA 100% GPU - sem fallback CPU (Regra 6)
-      const imageProcessor = getImageProcessor();
-      
-      try {
-        const textResult = await imageProcessor.generateTextEmbedding(query);
-        queryEmbedding = textResult.embedding;
-        
-        logger.info({
-          queryLength: query.length,
-          embeddingDim: queryEmbedding.length,
-          model: textResult.model,
-        }, 'Text embedding gerado para busca visual');
-      } catch (embeddingError) {
-        logger.error({ error: embeddingError, query }, 'Erro ao gerar text embedding para busca');
-        return res.status(500).json({
-          error: 'Falha ao processar texto para busca',
-          detail: embeddingError instanceof Error ? embeddingError.message : 'Erro desconhecido',
+      const metadataDescription = typeof referenceImage.extractedMetadata === 'object'
+        && referenceImage.extractedMetadata
+        && typeof (referenceImage.extractedMetadata as Record<string, unknown>).visionDescription === 'string'
+        ? String((referenceImage.extractedMetadata as Record<string, unknown>).visionDescription)
+        : null;
+
+      queryText = referenceImage.llmDescription || metadataDescription;
+
+      if (!queryText || queryText.trim().length === 0) {
+        return res.status(404).json({ 
+          error: 'Imagem de referência sem descrição disponível para busca' 
         });
       }
+    } else if (query) {
+      queryText = query.trim();
     }
 
-    if (!queryEmbedding) {
-      return res.status(400).json({ error: 'Não foi possível obter embedding para busca' });
+    if (!queryText) {
+      return res.status(400).json({ error: 'Não foi possível obter texto para busca' });
     }
 
-    // Validar embedding antes de usar (segurança - Regra 6)
-    if (!Array.isArray(queryEmbedding) || queryEmbedding.length !== CLIP_EMBEDDING_DIM) {
-      logger.error({ embeddingLength: queryEmbedding?.length, expected: CLIP_EMBEDDING_DIM }, 'Embedding com dimensão inválida');
-      return res.status(400).json({ error: 'Embedding inválido - dimensão incorreta' });
+    if (!isQdrantConfigured()) {
+      return res.status(503).json({ error: 'Qdrant não configurado para busca de imagens' });
     }
-    
-    // Garantir que todos os valores são números válidos (segurança)
-    const sanitizedEmbedding = queryEmbedding.map(v => {
-      const num = Number(v);
-      if (!Number.isFinite(num)) {
-        throw new Error('Embedding contém valores inválidos');
-      }
-      return num;
-    });
+
+    const queryEmbedding = await generateEmbedding(queryText);
+    validateEmbeddingDimension(queryEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
 
     const safeLimit = Math.min(Math.max(1, limit), 50);
 
-    // ============================================================================
-    // BUSCA VETORIAL NATIVA PGVECTOR COM ÍNDICE HNSW (Enterprise-Grade)
-    // ============================================================================
-    // SEGURANÇA: Prepared statement com embedding serializado como parâmetro
-    // PERFORMANCE: Índice HNSW (m=16, ef_construction=64) para O(log N)
-    // ISOLAMENTO: tenant_id garante multi-tenancy seguro
-    // ÍNDICE: idx_media_uploads_clip_embedding_hnsw (vector_cosine_ops)
-    // ============================================================================
-    
-    // Converter embedding CLIP para formato SQL pgvector (enterprise-grade - 1024 dim)
-    const embeddingVector = toSql(sanitizedEmbedding);
-    
-    // Query parametrizada para node-postgres (Regra 6 - Enterprise-grade)
-    // O operador <=> retorna distância (0 = idêntico, 2 = oposto)
-    // Similaridade = 1 - (distância / 2) para normalizar para [0, 1]
-    const pool = getPool();
-    const queryParams: (string | number)[] = [embeddingVector, tenantId, safeLimit];
-    const paramIndex = 4;
-    
-    let excludeImageFilter = '';
-    if (imageId) {
-      excludeImageFilter = `AND id != $${paramIndex}`;
-      queryParams.push(imageId);
-    }
-    
-    const { rows: nativeResults } = await pool.query<{
-      id: string;
-      originalFilename: string;
-      fileUrl: string | null;
-      mimeType: string;
-      extractedMetadata: Record<string, unknown>;
-      criadoEm: Date;
-      similarity: number;
-    }>(`
-      SELECT 
-        id,
-        original_filename as "originalFilename",
-        file_url as "fileUrl",
-        mime_type as "mimeType",
-        extracted_metadata as "extractedMetadata",
-        criado_em as "criadoEm",
-        -- Image embeddings via GPU Manager Service (OpenCLIP ViT-H/14 - 1024 dim)
-        -- GPU é OBRIGATÓRIO - schema usa vector(1024)
-        1 - (clip_embedding <=> $1::vector(1024)) / 2 as similarity
-      FROM media_uploads
-      WHERE 
-        tenant_id = $2
-        AND media_type = 'image'
-        AND processing_status = 'completed'
-        AND clip_embedding IS NOT NULL
-        ${excludeImageFilter}
-      ORDER BY clip_embedding <=> $1::vector(1024)
-      LIMIT $3
-    `, queryParams);
+    const filter = {
+      must: [
+        { key: 'tenantId', match: { value: tenantId } },
+        { key: 'type', match: { value: 'media_image' } },
+      ],
+      ...(imageId ? { must_not: [{ key: 'mediaUploadId', match: { value: imageId } }] } : {}),
+    };
 
-    // Formatar resultados
-    const results = nativeResults.map(row => ({
-      id: row.id,
-      originalFilename: row.originalFilename,
-      fileUrl: row.fileUrl,
-      mimeType: row.mimeType,
-      metadata: row.extractedMetadata,
-      similarity: Math.round(Number(row.similarity) * 10000) / 10000,
-      criadoEm: row.criadoEm,
-    }));
+    const resultsRaw = await searchPoints(TEXT_COLLECTION_NAME, queryEmbedding, {
+      limit: safeLimit * 2,
+      scoreThreshold: 0.55,
+      filter,
+      withPayload: true,
+    });
+
+    const results = resultsRaw
+      .slice(0, safeLimit)
+      .map((result: QdrantSearchResult) => {
+        const payload = result.payload || {};
+        const similarity = Math.round(result.score * 10000) / 10000;
+        return {
+          id: String(payload.mediaUploadId || result.id),
+          originalFilename: payload.filename ? String(payload.filename) : null,
+          fileUrl: payload.fileUrl ? String(payload.fileUrl) : null,
+          mimeType: payload.mimeType ? String(payload.mimeType) : 'image',
+          metadata: {
+            description: payload.description ? String(payload.description) : null,
+            thumbnailUrl: payload.thumbnailUrl ? String(payload.thumbnailUrl) : null,
+          },
+          similarity,
+          criadoEm: payload.criadoEm ? new Date(String(payload.criadoEm)) : new Date(),
+        };
+      });
 
     logger.info({
       tenantId,
@@ -3407,7 +3404,6 @@ app.get('/api/media/health', async (_req: Request, res: Response) => {
           configured: imageConfig.configured,
           required: true,
           ready: imageReady,
-          embeddingDim: imageConfig.embeddingDim,
           model: imageConfig.model,
           maxFileSizeMb: FILE_LIMITS_MB.image,
         },
@@ -3444,12 +3440,12 @@ app.get('/api/media/health', async (_req: Request, res: Response) => {
   }
 });
 
-// Status do circuit breaker GPU Embeddings (Regra 16 - Observability)
+// Status do circuit breaker OpenAI Vision (Regra 16 - Observability)
 app.get('/api/rag/circuit-breaker/embeddings', (_req: Request, res: Response) => {
-  const gpuStatus = getGpuCircuitBreakerStatus();
+  const gpuStatus = getVisionCircuitBreakerStatus();
   
   res.json({
-    service: 'embeddings-gpu',
+    service: 'openai-vision',
     timestamp: new Date().toISOString(),
     circuitBreakers: gpuStatus,
   });
@@ -3484,8 +3480,6 @@ app.post('/api/rag/embeddings/queue',
         type: EmbeddingJobType;
         text?: string;
         texts?: string[];
-        imageBase64?: string;
-        imagesBase64?: string[];
         priority?: number;
         metadata?: {
           source?: string;
@@ -3499,21 +3493,14 @@ app.post('/api/rag/embeddings/queue',
       }
       
       // Validar input conforme o tipo
-      if ((body.type === 'text' || body.type === 'text-for-image') && !body.text) {
+      if (body.type === 'text' && !body.text) {
         return res.status(400).json({ error: 'Campo "text" é obrigatório para este tipo' });
-      }
-      
-      if (body.type === 'image' && !body.imageBase64) {
-        return res.status(400).json({ error: 'Campo "imageBase64" é obrigatório para este tipo' });
       }
       
       if (body.type === 'batch-text' && (!body.texts || body.texts.length === 0)) {
         return res.status(400).json({ error: 'Campo "texts" é obrigatório para batch de texto' });
       }
       
-      if (body.type === 'batch-image' && (!body.imagesBase64 || body.imagesBase64.length === 0)) {
-        return res.status(400).json({ error: 'Campo "imagesBase64" é obrigatório para batch de imagens' });
-      }
       
       const jobId = await enqueueEmbeddingJob({
         type: body.type,
@@ -3523,8 +3510,6 @@ app.post('/api/rag/embeddings/queue',
         input: {
           text: body.text,
           texts: body.texts,
-          imageBase64: body.imageBase64,
-          imagesBase64: body.imagesBase64,
         },
         metadata: body.metadata,
       });
@@ -3832,7 +3817,7 @@ registerShutdownCallback(
         qdrantUrl: process.env.QDRANT_URL || 'not_configured',
         architecture: {
           text: 'Qwen3-Embedding-0.6B (1024 dim) → Qdrant',
-          image: 'OpenCLIP (1024 dim) → pgvector',
+          image: 'OpenAI Vision → descrição → Qdrant',
         },
         circuitBreaker: 'enabled',
         gpuDedicated: true, // Hetzner GEX44 24/7
@@ -3865,7 +3850,7 @@ registerShutdownCallback(
 // INICIALIZAÇÃO QDRANT - Banco vetorial para texto (1024 dim)
 // ARQUITETURA ENTERPRISE (17/12/2025):
 // - Texto: Qdrant (Qwen3-Embedding-0.6B, 1024 dim)
-// - Imagem: pgvector (OpenCLIP, 1024 dim)
+// - Imagem: descrição textual → Qdrant (embeddings de texto)
 // ============================================================================
 // BUG FIX 23/12/2025: Inicialização movida para dentro do IIFE async (linha ~3527)
 // Isso garante que a collection seja criada ANTES do servidor aceitar conexões

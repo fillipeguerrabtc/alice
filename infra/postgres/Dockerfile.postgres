@@ -2,7 +2,7 @@
 # PostgreSQL + pgvector + pgBackRest - Alice Enterprise Platform
 # =============================================================================
 # Imagem enterprise PostgreSQL com:
-# - pgvector: Extensão para embeddings de imagem (1024 dim OpenCLIP → PostgreSQL)
+# - pgvector: Extensão para embeddings vetoriais (texto)
 # - pgBackRest: Backup enterprise com PITR, WAL archiving, criptografia AES-256
 #
 # CORREÇÃO CRÍTICA 31/12/2025:

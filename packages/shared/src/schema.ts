@@ -17,7 +17,7 @@
  * 
  * ARQUITETURA DE EMBEDDINGS (Gate 2 - 15/01/2026):
  * - Texto (Trading/RAG): Qdrant (1024 dim) - Qwen3-Embedding-0.6B
- * - Imagem: pgvector vector(1024) - OpenCLIP ViT-H/14
+ * - Imagem: descrição textual → Qdrant (embeddings de texto)
  * 
  * NOTA: Campos de embedding de texto neste schema estão DEPRECATED.
  * Novos embeddings de texto são armazenados em Qdrant.
@@ -53,9 +53,9 @@ import {
 //   - Armazenado em Qdrant (HNSW)
 //   - Campos abaixo DEPRECATED - mantidos para compatibilidade
 //
-// IMAGEM: pgvector vector(1024) - OpenCLIP ViT-H/14
+// IMAGEM: descrição textual → Qdrant (embeddings de texto)
 //   - Dimensão nativa do modelo (full precision para qualidade visual)
-//   - Usado em: generatedImages.clipEmbedding, mediaUploads.clipEmbedding
+//   - Usado em: embeddings de texto (Qdrant)
 //
 // Referência: https://github.com/pgvector/pgvector
 // ============================================================================
@@ -70,7 +70,7 @@ const textVector = customType<{ data: number[]; driverData: number[] }>({
   // pgvector driver já faz a conversão automaticamente
 });
 
-// IMAGEM: vector(1024) - OpenCLIP ViT-H/14 para geração/análise de imagens
+// IMAGEM: descrição textual → Qdrant (embeddings de texto)
 // Full-precision (4 bytes/valor) para máxima qualidade visual
 // ATIVO - imagens continuam em pgvector
 const imageVector = customType<{ data: number[]; driverData: number[] }>({
@@ -2469,9 +2469,7 @@ export const generatedImages = pgTable(
     thumbnailPath: text("thumbnail_path"),
     imageUrl: text("image_url"),
     
-    // Embeddings para RAG multimodal - ARQUITETURA DUAL-DIMENSION (16/12/2025)
-    // OpenCLIP ViT-H/14 (1024 dim) - imageVector para qualidade visual
-    clipEmbedding: imageVector("clip_embedding"),
+    // Embeddings de imagem foram removidos (OpenAI-only para imagens)
     
     // Feedback e aprovação para training
     feedbackScore: integer("feedback_score"), // 1-5 estrelas
@@ -2542,9 +2540,7 @@ export const mediaUploads = pgTable(
     processingError: text("processing_error"),
     processingTimeMs: integer("processing_time_ms"),
     
-    // Embeddings para RAG multimodal - ARQUITETURA ENTERPRISE (17/12/2025)
-    // Imagem: OpenCLIP ViT-H/14 (1024 dim) - GPU Manager Service (Hetzner GEX44) → pgvector
-    clipEmbedding: imageVector("clip_embedding"),
+    // Embeddings para RAG multimodal
     // Texto: DEPRECATED - Novos embeddings vão para Qdrant (Qwen3-Embedding-0.6B, 1024 dim)
     textEmbedding: textVector("text_embedding"),
     

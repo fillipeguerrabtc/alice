@@ -1167,8 +1167,7 @@ export const generatedImages = pgTable(
     thumbnailPath: text("thumbnail_path"),
     imageUrl: text("image_url"),
     
-    // Embeddings para RAG multimodal (OpenCLIP ViT-H/14 - 1024 dim) - ARQUITETURA 100% GPU
-    clipEmbedding: real("clip_embedding").array(),
+    // Embeddings de imagem foram removidos (OpenAI-only para imagens)
     
     // Feedback e aprovação para training
     feedbackScore: integer("feedback_score"), // 1-5 estrelas
@@ -1239,8 +1238,7 @@ export const mediaUploads = pgTable(
     processingError: text("processing_error"),
     processingTimeMs: integer("processing_time_ms"),
     
-    // Embeddings para RAG multimodal - ARQUITETURA ENTERPRISE (17/12/2025)
-    clipEmbedding: real("clip_embedding").array(), // OpenCLIP ViT-H/14 para imagens (1024 dim → pgvector)
+    // Embeddings para RAG multimodal
     textEmbedding: real("text_embedding").array(), // Qwen3-Embedding-0.6B para transcrição de áudio (1024 dim → Qdrant)
     
     // Transcrição (para áudio)

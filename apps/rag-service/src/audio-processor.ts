@@ -259,7 +259,7 @@ class AudioProcessorService {
         method: 'POST',
         priority: GpuRequestPriority.MEDIUM,
         timeout: EMBEDDING_TIMEOUT_MS,
-        body: { text },
+        body: { texts: [text] },
       });
 
       if (!gpuResponse.success || !gpuResponse.data) {
@@ -267,20 +267,23 @@ class AudioProcessorService {
       }
 
       const result = gpuResponse.data as {
-        embedding: number[];
-        model: string;
-        dimension: number;
+        embedding?: number[];
+        embeddings?: number[][];
+        model?: string;
+        dimension?: number;
+        dimensions?: number;
       };
+      const resolvedEmbedding = result.embedding ?? result.embeddings?.[0];
 
-      if (!result.embedding || result.embedding.length === 0) {
+      if (!resolvedEmbedding || resolvedEmbedding.length === 0) {
         throw new Error('Resposta de embedding GPU vazia');
       }
 
       // Validar dimensão (SSOT) - Enterprise-Grade
-      validateEmbeddingDimension(result.embedding, TEXT_EMBEDDING_DIM, 'TEXT');
+      validateEmbeddingDimension(resolvedEmbedding, TEXT_EMBEDDING_DIM, 'TEXT');
 
       return {
-        embedding: result.embedding,
+        embedding: resolvedEmbedding,
         model: result.model || 'Qwen/Qwen3-Embedding-0.6B',
       };
     } catch (error) {

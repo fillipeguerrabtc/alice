@@ -194,7 +194,7 @@ async function generateEmbeddingInternal(text: string): Promise<number[]> {
       priority: GpuRequestPriority.MEDIUM,
       timeout: EXTERNAL_API_TIMEOUT_MS,
       body: {
-        text: text.slice(0, 2000), // Limitar tamanho para evitar problemas
+        texts: [text.slice(0, 2000)], // Limitar tamanho para evitar problemas
       },
     });
 
@@ -202,8 +202,12 @@ async function generateEmbeddingInternal(text: string): Promise<number[]> {
       throw new Error(gpuResponse.error || 'Erro ao gerar embedding de texto');
     }
 
-    const data = gpuResponse.data as TextEmbeddingResponse;
-    const resultEmbedding = data.embedding;
+    const data = gpuResponse.data as Partial<TextEmbeddingResponse> & {
+      embedding?: number[];
+      embeddings?: number[][];
+      dimensions?: number;
+    };
+    const resultEmbedding = data.embedding ?? data.embeddings?.[0];
     
     if (!resultEmbedding || resultEmbedding.length === 0) {
       throw new Error('Serviço de embeddings GPU retornou resultado vazio');

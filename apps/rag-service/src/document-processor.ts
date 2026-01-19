@@ -244,7 +244,7 @@ async function generateEmbeddingInternal(params: EmbeddingParams): Promise<{ emb
       priority: GpuRequestPriority.MEDIUM,
       timeout: 30000, // 30s timeout
       body: {
-        text: params.text,
+        texts: [params.text],
       },
     });
 
@@ -253,20 +253,23 @@ async function generateEmbeddingInternal(params: EmbeddingParams): Promise<{ emb
     }
 
     const result = gpuResponse.data as {
-      embedding: number[];
-      model: string;
-      dimension: number;
+      embedding?: number[];
+      embeddings?: number[][];
+      model?: string;
+      dimension?: number;
+      dimensions?: number;
     };
+    const resolvedEmbedding = result.embedding ?? result.embeddings?.[0];
 
-    if (!result.embedding || result.embedding.length === 0) {
+    if (!resolvedEmbedding || resolvedEmbedding.length === 0) {
       throw new Error('Resposta de embedding GPU vazia');
     }
 
     // Validar dimensão (SSOT) antes de retornar
-    validateEmbeddingDimension(result.embedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
+    validateEmbeddingDimension(resolvedEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
 
     return {
-      embedding: result.embedding,
+      embedding: resolvedEmbedding,
       model: result.model || 'Qwen/Qwen3-Embedding-0.6B',
     };
   } catch (error) {

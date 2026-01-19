@@ -31,7 +31,7 @@ SET max_parallel_maintenance_workers = 4;
 -- então CREATE CONCURRENTLY (permite queries durante construção)
 
 -- ============================================================================
--- OTIMIZAÇÃO: media_uploads.clip_embedding (1024 dim - OpenCLIP)
+-- OTIMIZAÇÃO: media_uploads.clip_embedding (1024 dim - embeddings de imagem)
 -- ============================================================================
 
 -- Drop antigo e recriar com parâmetros otimizados
@@ -42,7 +42,7 @@ ON media_uploads USING hnsw (clip_embedding vector_cosine_ops)
 WITH (m = 24, ef_construction = 128);
 
 -- ============================================================================
--- OTIMIZAÇÃO: generated_images.clip_embedding (1024 dim - OpenCLIP)
+-- OTIMIZAÇÃO: generated_images.clip_embedding (1024 dim - embeddings de imagem)
 -- ============================================================================
 
 DROP INDEX IF EXISTS idx_generated_images_clip_embedding_hnsw;
@@ -70,7 +70,7 @@ WITH (m = 24, ef_construction = 128);
 -- Definir ef_search padrão otimizado para qualidade/performance
 -- Valor será usado por todas as queries de similaridade
 COMMENT ON INDEX idx_media_uploads_clip_embedding_hnsw_opt IS 
-  'Índice HNSW otimizado para busca semântica de imagens (OpenCLIP 1024 dim). Usar SET hnsw.ef_search=100 para melhor recall.';
+  'Índice HNSW otimizado para busca semântica de imagens (1024 dim). Usar SET hnsw.ef_search=100 para melhor recall.';
 
 COMMENT ON INDEX idx_generated_images_clip_embedding_hnsw_opt IS 
-  'Índice HNSW otimizado para busca semântica de imagens geradas (OpenCLIP 1024 dim). Usar SET hnsw.ef_search=100 para melhor recall.';
+  'Índice HNSW otimizado para busca semântica de imagens geradas (1024 dim). Usar SET hnsw.ef_search=100 para melhor recall.';

@@ -3549,48 +3549,48 @@ jobs:
             # URL encode da senha PostgreSQL (evitar caracteres especiais)
             POSTGRES_PASSWORD_ENCODED=$(urlencode "$POSTGRES_PASSWORD")
             
-            # CRITICAL FIX (06/01/2026): Verificar se banco já tem tabelas (skip se já tiver)
-            # - Usar variáveis ao invés de hardcoded (alice, alice_prod)
-            # - Usar || echo "0" diretamente no comando (xargs com input vazio retorna 0)
-            # - Usar ${TABLE_COUNT:-0} para fallback caso comando falhe
-            # - Usar -tAc ao invés de -t -c (mais robusto)
-            TABLE_COUNT=$(docker exec alice-postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';" 2>/dev/null || echo "0")
+            # Checagem de migrations pendentes (drizzle-kit não possui dry-run oficial)
+            # - Executa drizzle-kit push com saída verbosa
+            # - Se não houver diff real, o comando retorna "no changes" e não aplica nada
+            # - Mantém fail-fast em erros reais
             
-            if [ "${TABLE_COUNT:-0}" = "0" ] || [ "${TABLE_COUNT:-0}" -lt 5 ]; then
-              echo "📦 Banco vazio ou incompleto ($TABLE_COUNT tabelas) - aplicando schema via Drizzle Push..."
-              
-              # Copiar código para diretório temporário
+            # Copiar código para diretório temporário
+            rm -rf /tmp/drizzle-app
+            cp -r /opt/alice/app /tmp/drizzle-app
+            cd /tmp/drizzle-app
+            
+            # Construir DATABASE_URL com senha URL-encoded
+            DATABASE_URL="postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD_ENCODED@alice-postgres:5432/$POSTGRES_DB"
+            DRIZZLE_LOG="/tmp/drizzle-push.log"
+            
+            # Executar drizzle-kit push via container node
+            # CRÍTICO: Se falhar, os serviços Alice não terão tabelas e crasharão
+            if ! docker run --rm \
+              --network alice-network \
+              -v /tmp/drizzle-app:/app \
+              -w /app \
+              -e DATABASE_URL="$DATABASE_URL" \
+              node:22-alpine sh -c "
+                npm install -g pnpm
+                pnpm install --no-frozen-lockfile
+                pnpm drizzle-kit push --verbose
+              " 2>&1 | tee "$DRIZZLE_LOG"; then
+              echo "❌ ERRO CRÍTICO: Drizzle push falhou!"
+              echo "   O schema do banco não foi aplicado."
+              echo "   Os serviços Alice irão falhar sem as tabelas."
+              rm -f "$DRIZZLE_LOG"
               rm -rf /tmp/drizzle-app
-              cp -r /opt/alice/app /tmp/drizzle-app
-              cd /tmp/drizzle-app
-              
-              # Construir DATABASE_URL com senha URL-encoded
-              DATABASE_URL="postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD_ENCODED@alice-postgres:5432/$POSTGRES_DB"
-              
-              # Executar drizzle-kit push via container node
-              # CRÍTICO: Se falhar, os serviços Alice não terão tabelas e crasharão
-              if ! docker run --rm \
-                --network alice-network \
-                -v /tmp/drizzle-app:/app \
-                -w /app \
-                -e DATABASE_URL="$DATABASE_URL" \
-                node:22-alpine sh -c "
-                  npm install -g pnpm
-                  pnpm install --no-frozen-lockfile
-                  pnpm drizzle-kit push
-                "; then
-                echo "❌ ERRO CRÍTICO: Drizzle push falhou!"
-                echo "   O schema do banco não foi criado."
-                echo "   Os serviços Alice irão falhar sem as tabelas."
-                rm -rf /tmp/drizzle-app
-                exit 1
-              fi
-              
-              echo "✅ Schema aplicado com sucesso!"
-              rm -rf /tmp/drizzle-app
-            else
-              echo "✅ Banco já possui $TABLE_COUNT tabelas (skip drizzle push)"
+              exit 1
             fi
+            
+            if grep -Eqi "no schema changes|no changes detected|nothing to migrate" "$DRIZZLE_LOG"; then
+              echo "✅ Nenhuma mudança de schema detectada (skip)"
+            else
+              echo "✅ Schema aplicado com sucesso!"
+            fi
+            
+            rm -f "$DRIZZLE_LOG"
+            rm -rf /tmp/drizzle-app
   
   # ===========================================================================
   # ALICE STACK - Deploy + Health + Rollback
@@ -3680,7 +3680,7 @@ jobs:
             # Pull TODOS os serviços GPU (cada serviço separadamente para melhor diagnóstico)
             # Gate 2: Serviços GPU sempre ativos (budgets em 20GB VRAM)
             # - gpu-llm: LLM (texto) (Qwen2.5 7B AWQ)
-            # - gpu-embeddings: Qwen3-Embedding-0.6B INT8 (1024 dim) + OpenCLIP
+            # - gpu-embeddings: Qwen3-Embedding-0.6B INT8 (1024 dim)
             # - gpu-asr: Canary-1B (transcrição)
             # - gpu-trainer: QLoRA fine-tuning (sob demanda via profile)
             # NOTA: Vision e geração de imagens são via OpenAI (sem VLM local)
@@ -3705,7 +3705,7 @@ jobs:
             # =================================================================
             # Todos os serviços GPU rodam simultaneamente (budgets em 20GB VRAM):
             # - gpu-llm: LLM (~6GB budget) - chat/trading (texto)
-            # - gpu-embeddings: Qwen3-Embedding-0.6B INT8 (~3GB) + OpenCLIP
+            # - gpu-embeddings: Qwen3-Embedding-0.6B INT8 (~3GB)
             # - gpu-asr: Canary-1B (~3GB) - transcrição de áudio
             # - gpu-trainer: QLoRA fine-tuning (~12GB) - SOB DEMANDA via profile
             # NOTA: Vision e geração de imagens são via OpenAI (sem VLM local)

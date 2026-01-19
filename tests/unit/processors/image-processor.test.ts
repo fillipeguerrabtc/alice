@@ -3,7 +3,7 @@
  * 
  * Testes unitários para processamento de imagens:
  * - Validação de MIME types
- * - Estrutura de embeddings CLIP
+ * - Estrutura de descrição via OpenAI Vision
  * - Metadados de imagem
  * - Thumbnails
  * 
@@ -14,12 +14,6 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-
-// ============================================================================
-// CONSTANTES
-// ============================================================================
-
-const CLIP_EMBEDDING_DIM = 1024;
 
 // ============================================================================
 // TESTES DE TIPOS DE IMAGEM SUPORTADOS
@@ -69,37 +63,6 @@ describe('Image Processor - MIME Types Suportados', () => {
     expect(isImageSupported('video/mp4')).toBe(false);
     expect(isImageSupported('audio/mp3')).toBe(false);
     expect(isImageSupported('application/pdf')).toBe(false);
-  });
-});
-
-// ============================================================================
-// TESTES DE EMBEDDINGS CLIP
-// ============================================================================
-
-describe('Image Processor - Embeddings CLIP', () => {
-  it('deve ter dimensão de embedding de 1024 (OpenCLIP ViT-H/14 GPU)', () => {
-    expect(CLIP_EMBEDDING_DIM).toBe(1024);
-  });
-
-  it('deve criar embedding com dimensão correta', () => {
-    const embedding = new Array(CLIP_EMBEDDING_DIM).fill(0);
-    expect(embedding.length).toBe(1024);
-  });
-
-  it('deve normalizar embeddings para busca semântica', () => {
-    // Simula normalização L2
-    const embedding = [3, 4]; // norma = 5
-    const norm = Math.sqrt(embedding.reduce((sum, v) => sum + v * v, 0));
-    const normalized = embedding.map(v => v / norm);
-    
-    expect(normalized[0]).toBeCloseTo(0.6, 5);
-    expect(normalized[1]).toBeCloseTo(0.8, 5);
-  });
-
-  it('deve usar modelo OpenCLIP ViT-H/14 GPU', () => {
-    const model = 'openclip-vit-h-14';
-    expect(model).toContain('clip');
-    expect(model).toContain('vit');
   });
 });
 
@@ -201,33 +164,33 @@ describe('Image Processor - Estrutura de Resultado', () => {
     processingTimeMs: number;
   }
 
-  it('deve ter embedding obrigatório', () => {
+  it('deve manter embedding vazio (sem GPU para imagens)', () => {
     const result: ProcessedImage = {
-      embedding: new Array(1024).fill(0),
-      embeddingModel: 'OpenCLIP-ViT-H-14 (GPU)',
+      embedding: [],
+      embeddingModel: 'openai-vision',
       metadata: { fileSize: 1000 },
       processedAt: new Date().toISOString(),
       processingTimeMs: 200,
     };
     expect(result.embedding).toBeDefined();
-    expect(result.embedding.length).toBe(1024);
+    expect(result.embedding.length).toBe(0);
   });
 
-  it('deve usar modelo OpenCLIP GPU', () => {
+  it('deve usar modelo OpenAI Vision', () => {
     const result: ProcessedImage = {
       embedding: [],
-      embeddingModel: 'OpenCLIP-ViT-H-14 (GPU)',
+      embeddingModel: 'openai-vision',
       metadata: { fileSize: 1000 },
       processedAt: new Date().toISOString(),
       processingTimeMs: 200,
     };
-    expect(result.embeddingModel).toContain('CLIP');
+    expect(result.embeddingModel).toContain('openai');
   });
 
   it('deve incluir thumbnail base64 quando gerado', () => {
     const result: ProcessedImage = {
       embedding: [],
-      embeddingModel: 'clip-vit-large-patch14',
+      embeddingModel: 'openai-vision',
       thumbnailBase64: 'data:image/jpeg;base64,/9j/4AAQ...',
       metadata: { fileSize: 1000 },
       processedAt: new Date().toISOString(),
@@ -239,7 +202,7 @@ describe('Image Processor - Estrutura de Resultado', () => {
   it('deve registrar tempo de processamento', () => {
     const result: ProcessedImage = {
       embedding: [],
-      embeddingModel: 'clip-vit-large-patch14',
+      embeddingModel: 'openai-vision',
       metadata: { fileSize: 1000 },
       processedAt: new Date().toISOString(),
       processingTimeMs: 150,
