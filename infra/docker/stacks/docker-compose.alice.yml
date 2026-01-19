@@ -144,6 +144,7 @@ services:
       GITHUB_CLIENT_ID: ${OAUTH_GITHUB_CLIENT_ID}
       GITHUB_CLIENT_SECRET: ${OAUTH_GITHUB_CLIENT_SECRET}
       OAUTH_CALLBACK_URL: https://yesyoudeserve.duckdns.org/api/auth/callback
+      BASE_URL: ${BASE_URL:-https://yesyoudeserve.duckdns.org}
       OIDC_ISSUER: ${OIDC_ISSUER:-https://yesyoudeserve.duckdns.org}
       # Audience esperado para Bearer JWT validado localmente pelos microsserviços (session-auth.ts)
       OIDC_API_AUDIENCE: ${OIDC_API_AUDIENCE:-alice-api}

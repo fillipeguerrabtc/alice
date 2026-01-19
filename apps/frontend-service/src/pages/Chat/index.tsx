@@ -383,6 +383,23 @@ export default function Chat() {
   const stopRequestedRef = useRef(false);
   const pendingSendRef = useRef<{ content: string; mediaAttachments?: MediaAttachment[] } | null>(null);
   const lastMessagesSyncRef = useRef(0);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const scrollViewportRef = useRef<HTMLDivElement | null>(null);
+  const autoScrollRef = useRef(true);
+
+  const resolveScrollViewport = useCallback(() => {
+    const root = scrollAreaRef.current;
+    if (!root) return null;
+    return root.querySelector<HTMLDivElement>('[data-radix-scroll-area-viewport]');
+  }, []);
+
+  const updateAutoScroll = useCallback(() => {
+    const viewport = scrollViewportRef.current ?? resolveScrollViewport();
+    if (!viewport) return;
+    scrollViewportRef.current = viewport;
+    const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+    autoScrollRef.current = distanceFromBottom <= 80;
+  }, [resolveScrollViewport]);
 
   // Fechar drawer mobile ao mudar de conversa
   useEffect(() => {
@@ -401,7 +418,19 @@ export default function Chat() {
 
   useEffect(() => {
     lastMessagesSyncRef.current = 0;
+    autoScrollRef.current = true;
   }, [conversationId]);
+
+  useEffect(() => {
+    const viewport = resolveScrollViewport();
+    if (!viewport) return;
+    scrollViewportRef.current = viewport;
+    updateAutoScroll();
+
+    const handleScroll = () => updateAutoScroll();
+    viewport.addEventListener('scroll', handleScroll, { passive: true });
+    return () => viewport.removeEventListener('scroll', handleScroll);
+  }, [resolveScrollViewport, updateAutoScroll]);
 
   const setRecordingStartingState = useCallback((value: boolean) => {
     recordingStartingRef.current = value;
@@ -626,10 +655,11 @@ export default function Chat() {
 
   const uploadAudioForReview = useCallback(async (file: File) => {
     const base64 = await fileToBase64(file);
+    const resolvedMimeType = file.type || resolveRecordingMimeType() || 'audio/webm';
     const response = await apiRequest('POST', '/api/media/upload/json', {
       file: base64,
       filename: file.name,
-      mimeType: file.type,
+      mimeType: resolvedMimeType,
     });
     if (!response.ok) {
       const errorText = await response.text();
@@ -658,7 +688,7 @@ export default function Chat() {
     ]);
 
     void pollMediaTranscription(result.uploadId);
-  }, [pollMediaTranscription]);
+  }, [pollMediaTranscription, resolveRecordingMimeType]);
 
   const removePendingMedia = useCallback((mediaId: string) => {
     setPendingMedia(prev => {
@@ -840,8 +870,9 @@ export default function Chat() {
   ]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (!autoScrollRef.current) return;
+    messagesEndRef.current?.scrollIntoView({ behavior: isStreaming ? 'auto' : 'smooth' });
+  }, [messages, isStreaming]);
 
   const STREAM_NO_CHUNK_TIMEOUT_MS = 60000;
   const resolveStreamStatus = useCallback((stage?: string) => {
@@ -1178,13 +1209,14 @@ export default function Chat() {
   const sendRecordingDirect = useCallback((file: File) => {
     const mediaId = crypto.randomUUID();
     const objectUrl = URL.createObjectURL(file);
+    const resolvedMimeType = file.type || resolveRecordingMimeType() || 'audio/webm';
     const attachment: MediaAttachment = {
       id: mediaId,
       type: 'audio',
       url: objectUrl,
       fileName: file.name,
       fileSize: file.size,
-      mimeType: file.type,
+      mimeType: resolvedMimeType,
       status: 'ready',
       file,
     };
@@ -1197,7 +1229,7 @@ export default function Chat() {
     });
     setInput('');
     clearPendingMedia();
-  }, [clearPendingMedia, sendMessage]);
+  }, [clearPendingMedia, resolveRecordingMimeType, sendMessage]);
 
   const finalizeRecording = useCallback(async () => {
     const recorder = mediaRecorderRef.current;
@@ -1458,6 +1490,8 @@ export default function Chat() {
   const handleSend = useCallback(() => {
     if ((!input.trim() && pendingMedia.length === 0) || isRecording) return;
 
+    autoScrollRef.current = true;
+
     if (isStreaming) {
       pendingSendRef.current = {
         content: input.trim(),
@@ -1678,7 +1712,7 @@ export default function Chat() {
         </div>
 
         {/* Área de mensagens - responsiva */}
-        <ScrollArea className="flex-1 p-2 md:p-4">
+        <ScrollArea ref={scrollAreaRef} className="flex-1 p-2 md:p-4">
           <AnimatePresence mode="popLayout">
             {messages.length === 0 ? (
               <WelcomeScreen />

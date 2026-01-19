@@ -730,11 +730,14 @@ export default function Trading() {
       });
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast({
         title: t('trading.success.riskConfigUpdated'),
       });
       setShowRiskConfigDialog(false);
+      if (data?.success) {
+        queryClientRef.setQueryData(['/api/integrations/trading/risk-config'], data);
+      }
       refetchRiskConfig();
       refetchStatus();
     },
@@ -854,6 +857,7 @@ export default function Trading() {
       });
       const data = await res.json();
       if (data.success) {
+        queryClientRef.setQueryData(['/api/integrations/trading/risk-config'], data);
         refetchRiskConfig();
         toast({
           title: enabled ? t('trading.handover.tradingEnabled') : t('trading.handover.tradingDisabled'),

@@ -4,7 +4,7 @@
  * @module Chat/components/InlineMediaAttachment
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Download, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -21,6 +21,7 @@ interface InlineMediaAttachmentProps {
 export function InlineMediaAttachment({ media }: InlineMediaAttachmentProps) {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [showFullscreen, setShowFullscreen] = useState(false);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
 
   if (media.type === 'audio') {
     return <AudioPlayer media={media} />;
@@ -28,7 +29,16 @@ export function InlineMediaAttachment({ media }: InlineMediaAttachmentProps) {
 
   // REMOVIDO 23/12/2025: Bloco de vídeo removido (muito pesado para GPU)
 
-  const canRenderImage = media.type === 'image' && Boolean(media.url);
+  const canRenderImage = media.type === 'image' && Boolean(media.url || media.thumbnailUrl);
+
+  useEffect(() => {
+    if (media.type !== 'image') {
+      setImageUrl(null);
+      return;
+    }
+    setImageLoaded(false);
+    setImageUrl(media.thumbnailUrl || media.url || null);
+  }, [media.thumbnailUrl, media.type, media.url]);
 
   if (!canRenderImage && (media.status === 'uploading' || media.status === 'processing')) {
     return (
@@ -51,13 +61,18 @@ export function InlineMediaAttachment({ media }: InlineMediaAttachmentProps) {
           <Skeleton className="w-full aspect-square max-w-[200px] rounded-lg" />
         )}
         <img
-          src={media.url}
+          src={imageUrl || undefined}
           alt={media.fileName}
           className={cn(
             "rounded-lg max-w-[200px] w-full object-cover cursor-pointer",
             !imageLoaded && "hidden"
           )}
           onLoad={() => setImageLoaded(true)}
+          onError={() => {
+            if (imageUrl && media.url && imageUrl !== media.url) {
+              setImageUrl(media.url);
+            }
+          }}
           onClick={() => setShowFullscreen(true)}
           data-testid={`image-attachment-${media.id}`}
         />
@@ -74,7 +89,7 @@ export function InlineMediaAttachment({ media }: InlineMediaAttachmentProps) {
             className="h-6 w-6"
             onClick={() => {
               const link = document.createElement('a');
-              link.href = media.url;
+              link.href = media.url || '';
               link.download = media.fileName;
               link.click();
             }}
@@ -92,7 +107,7 @@ export function InlineMediaAttachment({ media }: InlineMediaAttachmentProps) {
           </DialogHeader>
           <div className="flex justify-center">
             <img
-              src={media.url}
+              src={media.url || ''}
               alt={media.fileName}
               className="max-h-[70vh] rounded-lg object-contain"
             />

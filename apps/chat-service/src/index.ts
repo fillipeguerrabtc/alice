@@ -73,6 +73,7 @@ import {
   getRAGBreakerStats,
   getMediaStatus,
   uploadMediaToRAG,
+  classificarConsultaAgentic,
 } from './rag-client.js';
 import type { MediaUploadResult } from './rag-client.js';
 import {
@@ -717,6 +718,38 @@ const IMAGE_KEYWORDS_PT = [
   'crie uma foto',
   'gere uma ilustração',
   'crie uma ilustração',
+  'criar um logo',
+  'crie um logo',
+  'gerar um logo',
+  'gere um logo',
+  'criar logotipo',
+  'crie logotipo',
+  'gerar logotipo',
+  'gere logotipo',
+  'criar um banner',
+  'crie um banner',
+  'gerar um banner',
+  'gere um banner',
+  'criar uma capa',
+  'crie uma capa',
+  'gerar uma capa',
+  'gere uma capa',
+  'criar um avatar',
+  'crie um avatar',
+  'gerar um avatar',
+  'gere um avatar',
+  'criar um wallpaper',
+  'crie um wallpaper',
+  'gerar um wallpaper',
+  'gere um wallpaper',
+  'criar um ícone',
+  'crie um ícone',
+  'gerar um ícone',
+  'gere um ícone',
+  'criar um icone',
+  'crie um icone',
+  'gerar um icone',
+  'gere um icone',
 ];
 
 const IMAGE_KEYWORDS_EN = [
@@ -745,6 +778,25 @@ const IMAGE_KEYWORDS_EN = [
   'create a photo',
   'generate an illustration',
   'create an illustration',
+  'create a logo',
+  'generate a logo',
+  'make a logo',
+  'design a logo',
+  'create a banner',
+  'generate a banner',
+  'make a banner',
+  'create a cover',
+  'generate a cover',
+  'make a cover',
+  'create an avatar',
+  'generate an avatar',
+  'make an avatar',
+  'create a wallpaper',
+  'generate a wallpaper',
+  'make a wallpaper',
+  'create an icon',
+  'generate an icon',
+  'make an icon',
 ];
 
 function detectImageGenerationRequest(message: string): ImageGenerationDetection {
@@ -780,6 +832,8 @@ function detectImageGenerationRequest(message: string): ImageGenerationDetection
     /(?:generate|create|make|draw|illustrate)\s+(?:an?\s+)?(?:image|photo|illustration|drawing)/i,
     /(?:generate|create|make|draw|illustrate|render|paint)\s+(?:an?\s+)?(?:image|photo|illustration|drawing|artwork)/i,
     /(?:quero|preciso|gostaria)\s+(?:de\s+)?(?:ver|uma?\s+)?(?:imagem|foto|ilustração)/i,
+    /(?:logo|logotipo|banner|capa|avatar|wallpaper|ícone|icone)/i,
+    /(?:logo|logotype|banner|cover|avatar|wallpaper|icon)/i,
   ];
   
   for (const pattern of visualPatterns) {
@@ -879,23 +933,52 @@ async function generateImageFromPrompt(input: ImageGenerationInput) {
   const startedAt = Date.now();
 
   try {
-    const openAiResponse = await fetch('https://api.openai.com/v1/images/generations', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-image-1',
-        prompt: composedPrompt,
-        size,
-        n: 1,
-        response_format: 'b64_json',
-        output_format: 'png',
-      }),
-      ...getOpenAiFetchOptions(),
-      signal: AbortSignal.timeout(120000),
+    const basePayload = {
+      model: 'gpt-image-1',
+      prompt: composedPrompt,
+      size,
+      n: 1,
+      output_format: 'png',
+    };
+
+    const tryGenerateImage = async (payload: Record<string, unknown>) => {
+      const response = await fetch('https://api.openai.com/v1/images/generations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify(payload),
+        ...getOpenAiFetchOptions(),
+        signal: AbortSignal.timeout(120000),
+      });
+      return response;
+    };
+
+    let openAiResponse = await tryGenerateImage({
+      ...basePayload,
+      response_format: 'b64_json',
     });
+
+    if (!openAiResponse.ok) {
+      const errText = await openAiResponse.text().catch(() => '');
+      const isResponseFormatError = errText.includes('response_format') || errText.includes('Unknown parameter');
+      if (openAiResponse.status === 400 && isResponseFormatError) {
+        logger.warn({
+          status: openAiResponse.status,
+          requestId: openAiResponse.headers.get('x-request-id'),
+          error: errText,
+        }, 'OpenAI Images rejeitou response_format, tentando sem o parâmetro');
+        openAiResponse = await tryGenerateImage(basePayload);
+      } else {
+        logger.error({
+          status: openAiResponse.status,
+          requestId: openAiResponse.headers.get('x-request-id'),
+          error: errText,
+        }, 'OpenAI Images API retornou erro');
+        throw new Error(`OpenAI Images error: ${openAiResponse.status} - ${errText}`);
+      }
+    }
 
     if (!openAiResponse.ok) {
       const errText = await openAiResponse.text().catch(() => '');
@@ -903,12 +986,32 @@ async function generateImageFromPrompt(input: ImageGenerationInput) {
         status: openAiResponse.status,
         requestId: openAiResponse.headers.get('x-request-id'),
         error: errText,
-      }, 'OpenAI Images API retornou erro');
+      }, 'OpenAI Images API retornou erro após fallback');
       throw new Error(`OpenAI Images error: ${openAiResponse.status} - ${errText}`);
     }
 
-    const payload = await openAiResponse.json() as { data?: Array<{ b64_json?: string }> };
-    const b64 = payload?.data?.[0]?.b64_json;
+    const payload = await openAiResponse.json() as { data?: Array<{ b64_json?: string; url?: string }> };
+    const first = payload?.data?.[0];
+    let b64 = first?.b64_json;
+
+    if (!b64 && first?.url) {
+      const imageResponse = await fetch(first.url, {
+        signal: AbortSignal.timeout(60000),
+      });
+      if (!imageResponse.ok) {
+        const errText = await imageResponse.text().catch(() => '');
+        logger.error({
+          status: imageResponse.status,
+          error: errText,
+          imageUrl: first.url,
+        }, 'Falha ao baixar imagem gerada pela OpenAI');
+        throw new Error(`Falha ao baixar imagem gerada pela OpenAI: ${imageResponse.status} - ${errText}`);
+      }
+      const buffer = Buffer.from(await imageResponse.arrayBuffer());
+      b64 = buffer.toString('base64');
+      logger.info({ source: 'url' }, 'Imagem gerada pela OpenAI recebida via URL');
+    }
+
     if (!b64 || typeof b64 !== 'string' || b64.length < 64) {
       logger.error({
         status: openAiResponse.status,
@@ -1026,6 +1129,11 @@ BEHAVIOR GUIDELINES:
 - Provide accurate and relevant information
 - Be respectful and maintain a positive tone`;
 
+const CORE_CAPABILITIES_PROMPT = `CAPABILITIES:
+- You can access the internet (web + deep web) through Alice's internal search modules.
+- You can execute actions in this platform (trading, reports, integrations) when the user requests, following permissions and risk limits.
+- Do not claim lack of internet or execution capability when these modules are available. If a module is temporarily unavailable, explain the technical reason and suggest retry.`;
+
 const CREATOR_PROMPT_RULE = `CREATOR IDENTITY RULES:
 - Your creator is Fillipe Guerra, the developer of the Alice Enterprise platform.
 - If asked who created you or your origin, ALWAYS answer that you were created by Fillipe Guerra.
@@ -1085,7 +1193,7 @@ function applyAssistantSettings(prompt: string, settings?: AssistantSettings | n
 function buildSystemPrompt(
   agent?: AgentConfig | null,
   assistantSettings?: AssistantSettings | null,
-  _userMessage?: string
+  userMessage?: string
 ): string {
   let prompt = DEFAULT_SYSTEM_PROMPT;
 
@@ -1102,6 +1210,16 @@ function buildSystemPrompt(
   }
 
   prompt = applyAssistantSettings(prompt, assistantSettings);
+
+  const normalizedPrompt = prompt.toLowerCase();
+  if (!normalizedPrompt.includes('capabilities') && !normalizedPrompt.includes('internet') && !normalizedPrompt.includes('deep web')) {
+    prompt += `\n\n${CORE_CAPABILITIES_PROMPT}`;
+  }
+
+  if (userMessage && /(?:data|dia)\s+(?:de\s+)?hoje|que\s+dia\s+é\s+hoje|hoje\s+é|qual\s+a\s+data/i.test(userMessage)) {
+    const now = new Date();
+    prompt += `\n\nSERVER_TIME:\n- ISO: ${now.toISOString()}\n- Local: ${now.toLocaleString('pt-BR')}`;
+  }
 
   // Adicionar instrução de idioma se não estiver presente
   if (!prompt.toLowerCase().includes('language') && 
@@ -2090,41 +2208,59 @@ async function analyzeImageWithOpenAI(params: {
     throw new Error('Imagem excede o limite configurado para análise (OPENAI_VISION_MAX_BYTES)');
   }
 
-  const response = await fetch('https://api.openai.com/v1/responses', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: 'gpt-4.1',
-      max_output_tokens: 800,
-      input: [
-        {
-          role: 'developer',
-          content: [{ type: 'input_text', text: DEFAULT_VISION_IMAGE_PROMPT }],
-        },
-        {
-          role: 'user',
-          content: [
-            { type: 'input_text', text: question },
-            { type: 'input_image', image_url: params.imageDataUri, detail: 'auto' },
-          ],
-        },
-      ],
-    }),
-    ...getOpenAiFetchOptions(),
-    signal: AbortSignal.timeout(60000),
-  });
+  const retryableStatuses = new Set([408, 429, 500, 502, 503, 504]);
+  let response: globalThis.Response | null = null;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    response = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-4.1',
+        max_output_tokens: 800,
+        input: [
+          {
+            role: 'developer',
+            content: [{ type: 'input_text', text: DEFAULT_VISION_IMAGE_PROMPT }],
+          },
+          {
+            role: 'user',
+            content: [
+              { type: 'input_text', text: question },
+              { type: 'input_image', image_url: params.imageDataUri, detail: 'auto' },
+            ],
+          },
+        ],
+      }),
+      ...getOpenAiFetchOptions(),
+      signal: AbortSignal.timeout(60000),
+    });
 
-  if (!response.ok) {
+    if (response.ok) {
+      break;
+    }
+
     const errText = await response.text().catch(() => '');
-    logger.error({
+    const shouldRetry = retryableStatuses.has(response.status) && attempt < 2;
+    logger.warn({
       status: response.status,
       requestId: response.headers.get('x-request-id'),
       error: errText,
+      attempt,
+      shouldRetry,
     }, 'OpenAI Vision retornou erro');
-    throw new Error(`OpenAI Vision error: ${response.status} - ${errText}`);
+
+    if (!shouldRetry) {
+      throw new Error(`OpenAI Vision error: ${response.status} - ${errText}`);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+
+  if (!response || !response.ok) {
+    throw new Error('OpenAI Vision falhou após tentativas de retry');
   }
 
   const payload = (await response.json()) as OpenAIResponsesApiResponse;
@@ -4579,6 +4715,128 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           error: 'Falha ao gerar imagem via OpenAI. Verifique a configuração e tente novamente.',
           code: 'OPENAI_IMAGE_ERROR',
         })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
+    }
+
+    const { parseTradingCommand, isTradingCommand, getCommandDescription, validateCommand } = await import('./trading-command-parser.js');
+    const { canExecuteTradingCommand } = await import('./trading-orchestrator.js');
+
+    if (isTradingCommand(userMessageContent)) {
+      const parsedCommand = parseTradingCommand(userMessageContent);
+      const validation = validateCommand(parsedCommand);
+
+      if (!validation.valid) {
+        const hint = getValidationHint(parsedCommand.type, validation.missingFields, 'pt');
+        const responseContent = `Comando de trading incompleto. ${hint}`;
+        const [assistantMessage] = await db.insert(schema.messages).values({
+          conversationId,
+          agentId: conversation?.agentId ?? undefined,
+          conteudo: responseContent,
+          tipo: 'text',
+          isFromUser: false,
+          metadata: {
+            tradingCommand: parsedCommand,
+            validationError: true,
+            missingFields: validation.missingFields,
+          },
+        }).returning();
+
+        await db.update(schema.conversations)
+          .set({
+            totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+            ultimaMensagemEm: new Date(),
+            atualizadoEm: new Date(),
+          })
+          .where(eq(schema.conversations.id, conversationId));
+
+        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
+
+      const canExecute = await canExecuteTradingCommand(tenantId, 'user');
+      if (!canExecute.canExecute) {
+        const responseContent = `Trading bloqueado: ${canExecute.reason || 'permite operação apenas após habilitar o trading e configurar risco.'}`;
+        const [assistantMessage] = await db.insert(schema.messages).values({
+          conversationId,
+          agentId: conversation?.agentId ?? undefined,
+          conteudo: responseContent,
+          tipo: 'text',
+          isFromUser: false,
+          metadata: {
+            tradingCommand: parsedCommand,
+            blocked: true,
+            reason: canExecute.reason ?? null,
+          },
+        }).returning();
+
+        await db.update(schema.conversations)
+          .set({
+            totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+            ultimaMensagemEm: new Date(),
+            atualizadoEm: new Date(),
+          })
+          .where(eq(schema.conversations.id, conversationId));
+
+        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
+
+      try {
+        const result = await executeTradingCommand(userId, tenantId, parsedCommand);
+        const description = getCommandDescription(parsedCommand, 'pt');
+        const responseContent = result.success
+          ? `Comando de trading executado: ${description}.`
+          : `Falha ao executar comando de trading (${description}): ${result.error || 'erro desconhecido'}.`;
+
+        const [assistantMessage] = await db.insert(schema.messages).values({
+          conversationId,
+          agentId: conversation?.agentId ?? undefined,
+          conteudo: responseContent,
+          tipo: 'text',
+          isFromUser: false,
+          metadata: {
+            tradingCommand: parsedCommand,
+            tradingResult: result,
+          },
+        }).returning();
+
+        await db.update(schema.conversations)
+          .set({
+            totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+            ultimaMensagemEm: new Date(),
+            atualizadoEm: new Date(),
+          })
+          .where(eq(schema.conversations.id, conversationId));
+
+        try {
+          await ensureConversationTitle({
+            conversationId,
+            userMessage: userMessageContent,
+            assistantResponse: responseContent,
+          });
+        } catch (titleError) {
+          logger.warn({ error: titleError, conversationId }, 'Falha ao aplicar título automático (trading command)');
+        }
+
+        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      } catch (commandError) {
+        const errorMessage = commandError instanceof Error ? commandError.message : 'Erro desconhecido';
+        logger.error({ error: errorMessage, command: parsedCommand.type }, 'Falha ao executar comando de trading (stream)');
+        res.write(`data: ${JSON.stringify({ error: `Erro ao executar comando de trading: ${errorMessage}` })}\n\n`);
+        res.write('data: [DONE]\n\n');
         res.end();
         return;
       }
@@ -4586,7 +4844,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
       const agent = conversation?.agent ?? null;
       const ragParams = getAdaptiveRagParams(userMessageContent, previousMessages.length);
-      const [assistantSettings, ragResult] = await Promise.all([
+      const [assistantSettings, ragResult, ragClassification] = await Promise.all([
         getAssistantSettingsForTenant(tenantId),
         (async () => {
           writeStatus('rag_internal');
@@ -4598,6 +4856,10 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             { userId, tenantId, role: req.user?.role as Role }
           );
         })(),
+        classificarConsultaAgentic({
+          query: userMessageContent,
+          auth: { userId, tenantId, role: req.user?.role as Role },
+        }),
       ]);
 
       let systemPrompt = buildSystemPrompt(agent, assistantSettings, userMessageContent);
@@ -4611,7 +4873,33 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           ragChunks: ragResult.sources.length,
           namespaceId,
         }, 'Contexto RAG injetado no streaming');
-      } else {
+      }
+
+      const shouldUseWeb = Boolean(
+        ragClassification?.webSearchAvailable &&
+        ragClassification?.classification?.type &&
+        ragClassification.classification.type !== 'internal'
+      );
+
+      if (shouldUseWeb) {
+        writeStatus('rag_web');
+        const agenticResult = await buscarContextoAgentic({
+          query: userMessageContent,
+          namespaceId: conversation?.namespaceId || namespaceId,
+          forceMode: 'web',
+          limit: ragParams.limit,
+          auth: {
+            userId,
+            tenantId,
+            role: req.user?.role as Role,
+          },
+        });
+
+        if (agenticResult?.context) {
+          systemPrompt += `\n\n[CONTEXTO WEB]\n${agenticResult.context}\n[/CONTEXTO WEB]\n\n`;
+          webSources = agenticResult.sources?.web || [];
+        }
+      } else if (!ragResult || !ragResult.context) {
         writeStatus('rag_web');
         const agenticResult = await buscarContextoAgentic({
           query: userMessageContent,

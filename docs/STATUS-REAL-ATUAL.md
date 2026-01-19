@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 19 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.30 - SSOT de permissões Redis alinhado (UID/GID)
+**Versão:** 7.36 - Compatibilidade OpenAI Images (response_format)
 
 ---
 
@@ -243,6 +243,18 @@ Retenção Arquivo:   30 dias
 - Chat: Enter cria nova linha; envio via botão ou Alt+Enter.
 - Chat: anexos clicáveis no input e mensagens com preview.
 - Chat: sincronização de mensagens aguarda refetch após streaming (evita overwrite).
+- Chat: auto-scroll respeita leitura e permite navegar toda a conversa.
+- Chat: consulta web/deepweb habilitada para perguntas atuais (classificação agentic + contexto web).
+- Chat: comandos de trading executáveis via conversa (parser + execução direta).
+- Trading: toggle de habilitação sincroniza cache do risco em tempo real.
+- Jaeger: telemetry metrics com endpoint Prometheus compatível (0.0.0.0:8888).
+- Chat: gravação de áudio com fallback de MIME type ao enviar/transcrever.
+- Auth: BASE_URL definido para OAuth Google (evita redirect_uri_mismatch).
+- Sidebar: colapso desktop reduz largura real (flex-basis).
+- Chat: geração de imagens finaliza SSE com [DONE] em caso de erro.
+- Chat: detecção de pedidos de imagem ampliada (logo/banner/avatar/etc).
+- Chat: retry controlado na análise OpenAI Vision (erros transitórios).
+- Chat: fallback automático quando OpenAI rejeita response_format.
 - Build frontend: removido tipo não utilizado no schema compartilhado (TS6133).
 - Caddy: entrypoint ajusta permissões de /data e /config antes de iniciar (certificados OK).
 - Jaeger v2: telemetry metrics migrada para readers + exporter prometheus (sem restart loop).

@@ -779,6 +779,7 @@ echo "📄 Gerando arquivo .env.prod..."
   printf '# OAuth Google\n'
   printf 'GOOGLE_CLIENT_ID=%s\n' "${GOOGLE_CLIENT_ID:-}"
   printf 'GOOGLE_CLIENT_SECRET=%s\n' "${GOOGLE_CLIENT_SECRET:-}"
+  printf 'BASE_URL=https://yesyoudeserve.duckdns.org\n'
   printf '\n'
   printf '# OAuth GitHub\n'
   printf 'OAUTH_GITHUB_CLIENT_ID=%s\n' "${OAUTH_GITHUB_CLIENT_ID:-}"

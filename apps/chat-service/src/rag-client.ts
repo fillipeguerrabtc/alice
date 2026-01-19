@@ -53,6 +53,16 @@ export interface AgenticContextResponse {
   };
 }
 
+export interface AgenticClassificationResponse {
+  query: string;
+  classification: {
+    type: 'internal' | 'web' | 'hybrid';
+    confidence: number;
+    reason: string;
+  };
+  webSearchAvailable: boolean;
+}
+
 // Circuit Breaker usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
 
 /**
@@ -236,6 +246,52 @@ export async function buscarContextoAgentic(params: {
     } else {
       logger.warn({ error }, 'Falha ao buscar contexto agentic - continuando sem web');
     }
+    return null;
+  }
+}
+
+export async function classificarConsultaAgentic(params: {
+  query: string;
+  auth: { userId: string; tenantId: string; role: Role };
+}): Promise<AgenticClassificationResponse | null> {
+  if (!params.query || params.query.trim().length === 0) {
+    logger.debug('Query vazia - ignorando classificação agentic');
+    return null;
+  }
+
+  if (!isInternalAuthEnabled()) {
+    logger.warn('INTERNAL_API_SECRET não configurado - classificação agentic desabilitada');
+    return null;
+  }
+
+  try {
+    const internalHeaders = generateInternalAuthHeaders({
+      userId: params.auth.userId,
+      tenantId: params.auth.tenantId,
+      role: params.auth.role,
+    });
+
+    const response = await fetch(`${RAG_SERVICE_URL_FINAL}/api/rag/classify`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-internal-signature': internalHeaders['x-internal-signature'],
+        'x-internal-timestamp': internalHeaders['x-internal-timestamp'],
+        'x-internal-user-id': internalHeaders['x-internal-user-id'],
+        'x-internal-role': internalHeaders['x-internal-role'],
+        ...(internalHeaders['x-internal-tenant-id'] ? { 'x-internal-tenant-id': internalHeaders['x-internal-tenant-id'] } : {}),
+      },
+      body: JSON.stringify({ query: params.query }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`RAG classify erro: ${response.status} - ${errorText}`);
+    }
+
+    return response.json() as Promise<AgenticClassificationResponse>;
+  } catch (error) {
+    logger.warn({ error }, 'Falha ao classificar consulta agentic - continuando sem classificação');
     return null;
   }
 }
