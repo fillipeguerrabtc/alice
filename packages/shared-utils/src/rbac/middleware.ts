@@ -25,6 +25,22 @@ import { permissionCache } from './cache.js';
 const logger = createLogger('rbac');
 
 /**
+ * Resolver de permissões dinâmicas (DB-driven).
+ * Pode ser registrado pelos serviços no startup.
+ */
+export type PermissionResolver = (auth: AuthContext) => Promise<string[]>;
+
+let permissionResolver: PermissionResolver | null = null;
+
+/**
+ * Registra um resolver de permissões (ex.: consulta role_permissions no PostgreSQL).
+ */
+export function setPermissionResolver(resolver: PermissionResolver): void {
+  permissionResolver = resolver;
+  logger.info('Permission resolver registrado para RBAC');
+}
+
+/**
  * Token interno para comunicação service-to-service segura.
  * OBRIGATÓRIO em produção (Regra 14 CLAUDE.md).
  * Em desenvolvimento, permite operação sem token para facilitar testes locais.
@@ -257,7 +273,8 @@ export function requirePermission(
       }
     }
 
-    const allowed = hasPermission(auth.role, permission);
+    const permissions = await getCachedPermissions(auth.userId, auth.tenantId, auth.role);
+    const allowed = permissions.has(permission);
 
     if (!allowed) {
       logger.info({ 
@@ -473,7 +490,19 @@ async function getCachedPermissions(
   cacheStats.misses++;
   updateRbacMetrics('miss', tenantId);
   
-  const permissions = new Set(getRolePermissions(role));
+  let resolvedPermissions: string[] = [];
+  if (permissionResolver) {
+    try {
+      resolvedPermissions = await permissionResolver({ userId, tenantId, role });
+    } catch (error) {
+      logger.error({ error, userId, tenantId, role }, 'Falha ao resolver permissões via resolver');
+      resolvedPermissions = [];
+    }
+  } else {
+    resolvedPermissions = getRolePermissions(role);
+  }
+
+  const permissions = new Set(resolvedPermissions);
   
   // Salvar no cache se inicializado
   if (permissionCache.isInitialized()) {

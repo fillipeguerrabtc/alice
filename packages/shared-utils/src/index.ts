@@ -47,6 +47,7 @@ export {
   invalidateUserPermissions,
   invalidateTenantPermissions,
   clearPermissionCache,
+  setPermissionResolver,
 } from './rbac/middleware.js';
 export type { InternalAuthHeaders, RbacPrometheusMetrics } from './rbac/middleware.js';
 export { 

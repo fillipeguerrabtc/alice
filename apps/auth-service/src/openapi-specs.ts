@@ -524,6 +524,255 @@ export const authServicePaths = {
       },
     },
   },
+  '/api/auth/permissions': {
+    get: {
+      summary: 'Listar permissões do sistema',
+      tags: ['Permissions'],
+      responses: {
+        200: {
+          description: 'Lista de permissões',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  permissions: { type: 'array', items: { $ref: '#/components/schemas/Permission' } },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    post: {
+      summary: 'Criar permissão',
+      tags: ['Permissions'],
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['codigo', 'nome', 'modulo'],
+              properties: {
+                codigo: { type: 'string' },
+                nome: { type: 'string' },
+                descricao: { type: 'string' },
+                modulo: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        201: { description: 'Permissão criada' },
+        409: { $ref: '#/components/responses/Conflict' },
+      },
+    },
+  },
+  '/api/auth/permissions/{id}': {
+    get: {
+      summary: 'Buscar permissão por ID',
+      tags: ['Permissions'],
+      parameters: [
+        { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+      ],
+      responses: {
+        200: { description: 'Permissão encontrada' },
+        404: { $ref: '#/components/responses/NotFound' },
+      },
+    },
+    patch: {
+      summary: 'Atualizar permissão',
+      tags: ['Permissions'],
+      parameters: [
+        { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+      ],
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                nome: { type: 'string' },
+                descricao: { type: 'string' },
+                modulo: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Permissão atualizada' },
+        404: { $ref: '#/components/responses/NotFound' },
+      },
+    },
+    delete: {
+      summary: 'Excluir permissão',
+      tags: ['Permissions'],
+      parameters: [
+        { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+      ],
+      responses: {
+        200: { description: 'Permissão excluída' },
+        404: { $ref: '#/components/responses/NotFound' },
+      },
+    },
+  },
+  '/api/auth/roles/{role}/permissions': {
+    get: {
+      summary: 'Listar permissões por role',
+      tags: ['Permissions'],
+      parameters: [
+        { name: 'role', in: 'path', required: true, schema: { type: 'string' } },
+      ],
+      responses: {
+        200: { description: 'Permissões da role' },
+      },
+    },
+    put: {
+      summary: 'Definir permissões da role',
+      tags: ['Permissions'],
+      parameters: [
+        { name: 'role', in: 'path', required: true, schema: { type: 'string' } },
+      ],
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['permissionCodes'],
+              properties: {
+                permissionCodes: { type: 'array', items: { type: 'string' } },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Permissões atualizadas' },
+        400: { $ref: '#/components/responses/BadRequest' },
+      },
+    },
+  },
+  '/api/auth/groups': {
+    get: {
+      summary: 'Listar grupos organizacionais',
+      tags: ['Groups'],
+      responses: {
+        200: { description: 'Lista de grupos' },
+      },
+    },
+    post: {
+      summary: 'Criar grupo organizacional',
+      tags: ['Groups'],
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['nome'],
+              properties: {
+                nome: { type: 'string' },
+                descricao: { type: 'string' },
+                ativo: { type: 'boolean' },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        201: { description: 'Grupo criado' },
+        409: { $ref: '#/components/responses/Conflict' },
+      },
+    },
+  },
+  '/api/auth/groups/{id}': {
+    patch: {
+      summary: 'Atualizar grupo organizacional',
+      tags: ['Groups'],
+      parameters: [
+        { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+      ],
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                nome: { type: 'string' },
+                descricao: { type: 'string' },
+                ativo: { type: 'boolean' },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Grupo atualizado' },
+        404: { $ref: '#/components/responses/NotFound' },
+      },
+    },
+    delete: {
+      summary: 'Excluir grupo organizacional',
+      tags: ['Groups'],
+      parameters: [
+        { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+      ],
+      responses: {
+        200: { description: 'Grupo excluído' },
+        404: { $ref: '#/components/responses/NotFound' },
+      },
+    },
+  },
+  '/api/auth/groups/{id}/users': {
+    get: {
+      summary: 'Listar membros do grupo',
+      tags: ['Groups'],
+      parameters: [
+        { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+      ],
+      responses: {
+        200: { description: 'Lista de membros' },
+        404: { $ref: '#/components/responses/NotFound' },
+      },
+    },
+    post: {
+      summary: 'Adicionar usuário ao grupo',
+      tags: ['Groups'],
+      parameters: [
+        { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+      ],
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['userId'],
+              properties: { userId: { type: 'string', format: 'uuid' } },
+            },
+          },
+        },
+      },
+      responses: {
+        201: { description: 'Usuário adicionado' },
+        404: { $ref: '#/components/responses/NotFound' },
+      },
+    },
+  },
+  '/api/auth/groups/{id}/users/{userId}': {
+    delete: {
+      summary: 'Remover usuário do grupo',
+      tags: ['Groups'],
+      parameters: [
+        { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+        { name: 'userId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+      ],
+      responses: {
+        200: { description: 'Usuário removido' },
+        404: { $ref: '#/components/responses/NotFound' },
+      },
+    },
+  },
   '/metrics': {
     get: {
       summary: 'Métricas Prometheus',
@@ -542,4 +791,41 @@ export const authServicePaths = {
 };
 
 // Schemas adicionais específicos do auth-service
-export const authServiceSchemas = {};
+export const authServiceSchemas = {
+  Permission: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      codigo: { type: 'string' },
+      nome: { type: 'string' },
+      descricao: { type: 'string', nullable: true },
+      modulo: { type: 'string' },
+      criadoEm: { type: 'string', format: 'date-time' },
+    },
+  },
+  UserGroup: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      tenantId: { type: 'string', format: 'uuid' },
+      nome: { type: 'string' },
+      descricao: { type: 'string', nullable: true },
+      ativo: { type: 'boolean' },
+      criadoPor: { type: 'string', format: 'uuid', nullable: true },
+      atualizadoPor: { type: 'string', format: 'uuid', nullable: true },
+      criadoEm: { type: 'string', format: 'date-time' },
+      atualizadoEm: { type: 'string', format: 'date-time' },
+    },
+  },
+  UserGroupMember: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      tenantId: { type: 'string', format: 'uuid' },
+      groupId: { type: 'string', format: 'uuid' },
+      userId: { type: 'string', format: 'uuid' },
+      criadoPor: { type: 'string', format: 'uuid', nullable: true },
+      criadoEm: { type: 'string', format: 'date-time' },
+    },
+  },
+};

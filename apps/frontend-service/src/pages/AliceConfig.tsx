@@ -80,7 +80,12 @@ export default function AliceConfig() {
     queryKey: ['/api/assistant-settings'],
     staleTime: 1000 * 60,
   });
+  const { data: permissionsData } = useQuery<{ permissions: string[] }>({
+    queryKey: ['/api/auth/rbac/permissions'],
+    staleTime: 1000 * 60,
+  });
   const settingsErrorRef = useRef<string | null>(null);
+  const canEditCore = Boolean(permissionsData?.permissions?.includes('admin:alice_core:write'));
 
   useEffect(() => {
     if (data) {
@@ -241,6 +246,9 @@ export default function AliceConfig() {
         <CardHeader>
           <CardTitle>{t('aliceConfig.settingsTitle')}</CardTitle>
           <CardDescription>{t('aliceConfig.settingsDescription')}</CardDescription>
+          {!canEditCore && (
+            <Badge variant="secondary">{t('aliceConfig.readOnlyBadge')}</Badge>
+          )}
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -272,6 +280,7 @@ export default function AliceConfig() {
                           placeholder={t('aliceConfig.systemPromptPlaceholder')}
                           {...field}
                           value={field.value ?? ''}
+                          disabled={!canEditCore}
                         />
                       </FormControl>
                       <FormMessage />
@@ -291,6 +300,7 @@ export default function AliceConfig() {
                           placeholder={t('aliceConfig.behaviorPlaceholder')}
                           {...field}
                           value={field.value ?? ''}
+                          disabled={!canEditCore}
                         />
                       </FormControl>
                       <FormMessage />
@@ -312,6 +322,7 @@ export default function AliceConfig() {
                             min={0}
                             max={100}
                             step={5}
+                            disabled={!canEditCore}
                           />
                         </FormControl>
                       </FormItem>
@@ -330,6 +341,7 @@ export default function AliceConfig() {
                             min={0}
                             max={100}
                             step={5}
+                            disabled={!canEditCore}
                           />
                         </FormControl>
                       </FormItem>
@@ -349,6 +361,7 @@ export default function AliceConfig() {
                           placeholder={t('aliceConfig.moodPlaceholder')}
                           {...field}
                           value={field.value ?? ''}
+                          disabled={!canEditCore}
                         />
                       </FormControl>
                       <FormMessage />
@@ -370,6 +383,7 @@ export default function AliceConfig() {
                             min={0}
                             max={100}
                             step={5}
+                            disabled={!canEditCore}
                           />
                         </FormControl>
                       </FormItem>
@@ -388,6 +402,7 @@ export default function AliceConfig() {
                             min={0}
                             max={100}
                             step={5}
+                            disabled={!canEditCore}
                           />
                         </FormControl>
                       </FormItem>
@@ -396,10 +411,10 @@ export default function AliceConfig() {
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                  <Button type="submit" disabled={updateSettings.isPending}>
+                  <Button type="submit" disabled={!canEditCore || updateSettings.isPending}>
                     {t('aliceConfig.save')}
                   </Button>
-                  <Button type="button" variant="outline" onClick={handleReset}>
+                  <Button type="button" variant="outline" onClick={handleReset} disabled={!canEditCore}>
                     {t('aliceConfig.reset')}
                   </Button>
                 </div>

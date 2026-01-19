@@ -31,6 +31,7 @@ import {
   ShutdownPriority,
   setupSwaggerUI,
   INTEGRATIONS_SERVICE_TAGS,
+  setPermissionResolver,
   // CORREÇÃO PR#107 (10/01/2026): Middleware de sessão HTTP para autenticação
   createSessionAuthMiddleware,
   initializeSessionAuthCache,
@@ -38,6 +39,7 @@ import {
   Gauge as PromGauge,
   Counter as PromCounter,
 } from '@alice/shared-utils';
+import type { AuthContext } from '@alice/shared-utils';
 import { integrationsServicePaths, integrationsServiceSchemas } from './openapi-specs.js';
 import { loadConfig, integrationsServiceConfigSchema } from '@alice/config';
 import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, getPool } from '@alice/database';
@@ -62,6 +64,16 @@ const logger = createLogger('integrations-service');
 const config = loadConfig(integrationsServiceConfigSchema);
 
 const app = express();
+setPermissionResolver(async (auth: AuthContext) => {
+  const db = getDatabase();
+  const rolePermissions = await db.query.rolePermissions.findMany({
+    where: eq(schema.rolePermissions.role, auth.role),
+    with: { permission: true },
+  });
+  return rolePermissions
+    .map((rp) => (rp as { permission?: { codigo?: string | null } }).permission?.codigo)
+    .filter((code): code is string => Boolean(code));
+});
 
 // ============================================================================
 // PROMETHEUS: Instrumentação de métricas (Regra 16 - Observability Enterprise)

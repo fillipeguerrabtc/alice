@@ -5,7 +5,7 @@
 Este documento descreve o sistema de gestão de permissões da plataforma Alice Enterprise, implementado como Single Source of Truth (SSOT) para garantir consistência entre todos os scripts e componentes.
 
 **Data de Implementação:** 19 de Janeiro de 2026  
-**Versão:** 1.3.0  
+**Versão:** 1.3.1  
 **Autor:** Fillipe Guerra
 
 > **ATUALIZAÇÃO v1.1.0 (09/01/2026):** Adicionada Regra 5 para remoção agressiva de bits especiais
@@ -15,6 +15,8 @@ Este documento descreve o sistema de gestão de permissões da plataforma Alice 
 > **ATUALIZAÇÃO v1.2.0 (17/01/2026):** Documentado diretório de logs do Caddy no SSOT e na tabela de permissões.
 >
 > **ATUALIZAÇÃO v1.3.0 (19/01/2026):** Ajuste de GID do Redis para 1000 (grupo `redis` nas imagens Alpine 7.x).
+>
+> **ATUALIZAÇÃO v1.3.1 (19/01/2026):** Adicionada gestão RBAC de permissões e grupos organizacionais (UI + API).
 
 ## Single Source of Truth (SSOT)
 
@@ -78,6 +80,14 @@ Servidor de produção com permissões corretas
 | **Secrets** | 0 | 0 | root | 700 | Apenas root pode ler |
 
 ### Notas Importantes
+
+## Permissões RBAC (Aplicação)
+
+Além das permissões de filesystem (SSOT), a plataforma usa RBAC em nível de aplicação.
+
+- **Permissão Core:** `admin:alice_core:write` controla edição do core da Alice.
+- **Gestão de Permissões:** CRUD de permissões e atribuição por role via painel de Usuários.
+- **Grupos Organizacionais:** agrupamento de usuários sem impacto direto em RBAC.
 
 #### PostgreSQL e Langfuse DB (permissão 700)
 

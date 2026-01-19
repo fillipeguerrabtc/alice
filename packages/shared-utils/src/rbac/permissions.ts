@@ -207,6 +207,16 @@ export const PERMISSION_MAP: Record<string, Role[]> = {
   'admin:users:write': ['super_admin', 'admin'],
   'admin:users:delete': ['super_admin'],
   'admin:users:manage': ['super_admin', 'admin'],
+
+  'admin:permissions:read': ['super_admin', 'admin'],
+  'admin:permissions:write': ['super_admin', 'admin'],
+  'admin:permissions:delete': ['super_admin', 'admin'],
+  'admin:permissions:manage': ['super_admin', 'admin'],
+
+  'admin:groups:read': ['super_admin', 'admin'],
+  'admin:groups:write': ['super_admin', 'admin'],
+  'admin:groups:delete': ['super_admin', 'admin'],
+  'admin:groups:manage': ['super_admin', 'admin'],
   
   'admin:tenants:read': ['super_admin'],
   'admin:tenants:write': ['super_admin'],
@@ -232,6 +242,8 @@ export const PERMISSION_MAP: Record<string, Role[]> = {
   'admin:namespaces:write': ['super_admin', 'admin'],
   'admin:namespaces:delete': ['super_admin', 'admin'],
   'admin:namespaces:manage': ['super_admin', 'admin'],
+
+  'admin:alice_core:write': ['super_admin', 'admin'],
   
   'admin:agents:read': ['super_admin', 'admin', 'manager'],
   'admin:agents:write': ['super_admin', 'admin'],

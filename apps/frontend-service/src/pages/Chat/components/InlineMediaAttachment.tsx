@@ -23,10 +23,6 @@ export function InlineMediaAttachment({ media }: InlineMediaAttachmentProps) {
   const [showFullscreen, setShowFullscreen] = useState(false);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
 
-  if (media.type === 'audio') {
-    return <AudioPlayer media={media} />;
-  }
-
   // REMOVIDO 23/12/2025: Bloco de vídeo removido (muito pesado para GPU)
 
   const canRenderImage = media.type === 'image' && Boolean(media.url || media.thumbnailUrl);
@@ -39,6 +35,10 @@ export function InlineMediaAttachment({ media }: InlineMediaAttachmentProps) {
     setImageLoaded(false);
     setImageUrl(media.thumbnailUrl || media.url || null);
   }, [media.thumbnailUrl, media.type, media.url]);
+
+  if (media.type === 'audio') {
+    return <AudioPlayer media={media} />;
+  }
 
   if (!canRenderImage && (media.status === 'uploading' || media.status === 'processing')) {
     return (

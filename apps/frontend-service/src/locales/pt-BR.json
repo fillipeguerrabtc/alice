@@ -35,6 +35,7 @@
     "view": "Visualizar",
     "refresh": "Atualizar",
     "remove": "Remover",
+    "add": "Adicionar",
     "settings": "Configurações"
   },
   "auth": {
@@ -1442,6 +1443,7 @@
     "creatorDescription": "Informação fixa aplicada em todas as respostas.",
     "settingsTitle": "Configurações da Assistente",
     "settingsDescription": "Atualize as diretrizes principais que guiam a Alice.",
+    "readOnlyBadge": "Somente leitura (sem permissão de Core)",
     "systemPrompt": "System Prompt",
     "systemPromptPlaceholder": "Defina o prompt base da Alice. Ele será aplicado antes das respostas.",
     "behavior": "Comportamentos",
@@ -1477,5 +1479,102 @@
     "agentSaveErrorDesc": "Não foi possível atualizar o agente.",
     "agentsLoadErrorTitle": "Erro ao carregar agentes",
     "agentsLoadErrorDesc": "Não foi possível carregar os agentes disponíveis."
+  },
+  "usersAdmin": {
+    "title": "Gestão de Usuários",
+    "description": "Controle usuários, grupos organizacionais e permissões de acesso.",
+    "tabs": {
+      "users": "Usuários",
+      "groups": "Grupos",
+      "permissions": "Permissões"
+    },
+    "users": {
+      "title": "Usuários",
+      "description": "Gerencie roles, status e provedores de autenticação.",
+      "searchPlaceholder": "Buscar por nome, email ou role",
+      "columns": {
+        "name": "Nome",
+        "email": "Email",
+        "role": "Role",
+        "status": "Status",
+        "provider": "Provedor"
+      },
+      "empty": "Nenhum usuário encontrado",
+      "roleUpdated": "Role atualizada com sucesso",
+      "roleUpdateError": "Erro ao atualizar role",
+      "statusUpdated": "Status atualizado com sucesso",
+      "statusUpdateError": "Erro ao atualizar status",
+      "providerLocal": "Local"
+    },
+    "groups": {
+      "title": "Grupos Organizacionais",
+      "description": "Organize usuários em times internos sem impacto em permissões.",
+      "new": "Novo Grupo",
+      "searchPlaceholder": "Buscar por nome do grupo",
+      "empty": "Nenhum grupo cadastrado",
+      "noDescription": "Sem descrição",
+      "manageMembers": "Gerenciar membros",
+      "deleteTitle": "Excluir grupo",
+      "deleteDescription": "Esta ação remove o grupo e todos os membros associados.",
+      "created": "Grupo criado com sucesso",
+      "createError": "Erro ao criar grupo",
+      "updated": "Grupo atualizado com sucesso",
+      "updateError": "Erro ao atualizar grupo",
+      "deleted": "Grupo excluído com sucesso",
+      "deleteError": "Erro ao excluir grupo",
+      "editTitle": "Editar grupo",
+      "newTitle": "Novo grupo",
+      "editDescription": "Atualize as informações do grupo organizacional.",
+      "newDescription": "Crie um grupo para organizar seus usuários.",
+      "fields": {
+        "name": "Nome",
+        "description": "Descrição",
+        "active": "Ativo"
+      },
+      "manageMembersTitle": "Gerenciar membros do grupo",
+      "addMember": "Adicionar membro",
+      "selectUser": "Selecione um usuário",
+      "currentMembers": "Membros atuais",
+      "noMembers": "Nenhum membro neste grupo",
+      "membersAdded": "Membro adicionado ao grupo",
+      "membersAddError": "Erro ao adicionar membro",
+      "membersRemoved": "Membro removido do grupo",
+      "membersRemoveError": "Erro ao remover membro"
+    },
+    "permissions": {
+      "title": "Permissões do Sistema",
+      "description": "Gerencie permissões e atribua acessos por role.",
+      "new": "Nova Permissão",
+      "roleLabel": "Role selecionada",
+      "searchLabel": "Pesquisar permissões",
+      "searchPlaceholder": "Buscar por código, nome ou módulo",
+      "empty": "Nenhuma permissão encontrada",
+      "columns": {
+        "permission": "Permissão",
+        "module": "Módulo",
+        "roleAccess": "Acesso da role",
+        "actions": "Ações"
+      },
+      "created": "Permissão criada com sucesso",
+      "createError": "Erro ao criar permissão",
+      "updated": "Permissão atualizada com sucesso",
+      "updateError": "Erro ao atualizar permissão",
+      "deleted": "Permissão excluída com sucesso",
+      "deleteError": "Erro ao excluir permissão",
+      "roleUpdated": "Permissões da role atualizadas",
+      "roleUpdateError": "Erro ao atualizar permissões da role",
+      "editTitle": "Editar permissão",
+      "newTitle": "Nova permissão",
+      "editDescription": "Atualize os dados da permissão selecionada.",
+      "newDescription": "Cadastre uma nova permissão do sistema.",
+      "fields": {
+        "code": "Código",
+        "name": "Nome",
+        "description": "Descrição",
+        "module": "Módulo"
+      },
+      "deleteTitle": "Excluir permissão",
+      "deleteDescription": "A exclusão remove a permissão de todas as roles."
+    }
   }
 }

@@ -748,6 +748,48 @@ export const userModules = pgTable(
 );
 
 // ============================================================================
+// GRUPOS ORGANIZACIONAIS (sem impacto em permissões)
+// ============================================================================
+
+export const userGroups = pgTable(
+  "user_groups",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    nome: varchar("nome", { length: 255 }).notNull(),
+    descricao: text("descricao"),
+    ativo: boolean("ativo").default(true),
+    criadoPor: uuid("criado_por").references(() => users.id),
+    atualizadoPor: uuid("atualizado_por").references(() => users.id),
+    criadoEm: timestamp("criado_em").defaultNow(),
+    atualizadoEm: timestamp("atualizado_em").defaultNow(),
+  },
+  (table) => ({
+    idxUserGroupsTenant: index("idx_user_groups_tenant").on(table.tenantId),
+    idxUserGroupsNome: index("idx_user_groups_nome").on(table.nome),
+    uniqueUserGroupTenantName: uniqueIndex("uniq_user_groups_tenant_nome").on(table.tenantId, table.nome),
+  })
+);
+
+export const userGroupMembers = pgTable(
+  "user_group_members",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    groupId: uuid("group_id").references(() => userGroups.id, { onDelete: "cascade" }).notNull(),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    criadoPor: uuid("criado_por").references(() => users.id),
+    criadoEm: timestamp("criado_em").defaultNow(),
+  },
+  (table) => ({
+    idxUserGroupMembersTenant: index("idx_user_group_members_tenant").on(table.tenantId),
+    idxUserGroupMembersUser: index("idx_user_group_members_user").on(table.userId),
+    idxUserGroupMembersGroup: index("idx_user_group_members_group").on(table.groupId),
+    uniqueUserGroupMember: uniqueIndex("uniq_user_group_members_group_user").on(table.groupId, table.userId),
+  })
+);
+
+// ============================================================================
 // NAMESPACES (Contextos de Negócio Verticalizados)
 // ============================================================================
 
@@ -2701,6 +2743,7 @@ export type BackupJob = typeof backupJobs.$inferSelect;
 
 export const tenantsRelations = relations(tenants, ({ many }) => ({
   users: many(users),
+  userGroups: many(userGroups),
   namespaces: many(namespaces),
   agents: many(agents),
   conversations: many(conversations),
@@ -2720,6 +2763,42 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   messages: many(messages),
   auditLogs: many(auditLogs),
   usageMetrics: many(usageMetrics),
+  groupMemberships: many(userGroupMembers),
+}));
+
+export const userGroupsRelations = relations(userGroups, ({ one, many }) => ({
+  tenant: one(tenants, {
+    fields: [userGroups.tenantId],
+    references: [tenants.id],
+  }),
+  members: many(userGroupMembers),
+  createdByUser: one(users, {
+    fields: [userGroups.criadoPor],
+    references: [users.id],
+  }),
+  updatedByUser: one(users, {
+    fields: [userGroups.atualizadoPor],
+    references: [users.id],
+  }),
+}));
+
+export const userGroupMembersRelations = relations(userGroupMembers, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [userGroupMembers.tenantId],
+    references: [tenants.id],
+  }),
+  group: one(userGroups, {
+    fields: [userGroupMembers.groupId],
+    references: [userGroups.id],
+  }),
+  user: one(users, {
+    fields: [userGroupMembers.userId],
+    references: [users.id],
+  }),
+  createdByUser: one(users, {
+    fields: [userGroupMembers.criadoPor],
+    references: [users.id],
+  }),
 }));
 
 export const namespacesRelations = relations(namespaces, ({ one, many }) => ({
@@ -3029,6 +3108,17 @@ export const insertMediaUploadSchema: z.ZodType<unknown> = createInsertSchema(me
   processadoEm: true,
 });
 
+export const insertUserGroupSchema: z.ZodType<unknown> = createInsertSchema(userGroups).omit({
+  id: true,
+  criadoEm: true,
+  atualizadoEm: true,
+});
+
+export const insertUserGroupMemberSchema: z.ZodType<unknown> = createInsertSchema(userGroupMembers).omit({
+  id: true,
+  criadoEm: true,
+});
+
 // ============================================================================
 // TYPES
 // ============================================================================
@@ -3039,6 +3129,11 @@ export type InsertTenant = z.infer<typeof insertTenantSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type UpsertUser = typeof users.$inferInsert;
+
+export type UserGroup = typeof userGroups.$inferSelect;
+export type InsertUserGroup = z.infer<typeof insertUserGroupSchema>;
+export type UserGroupMember = typeof userGroupMembers.$inferSelect;
+export type InsertUserGroupMember = z.infer<typeof insertUserGroupMemberSchema>;
 
 export type Permission = typeof permissions.$inferSelect;
 export type RolePermission = typeof rolePermissions.$inferSelect;

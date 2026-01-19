@@ -35,6 +35,7 @@
     "view": "View",
     "refresh": "Refresh",
     "remove": "Remove",
+    "add": "Add",
     "settings": "Settings"
   },
   "auth": {
@@ -1442,6 +1443,7 @@
     "creatorDescription": "Fixed information applied to every response.",
     "settingsTitle": "Assistant Settings",
     "settingsDescription": "Update the main guidelines that steer Alice.",
+    "readOnlyBadge": "Read-only (no Core permission)",
     "systemPrompt": "System Prompt",
     "systemPromptPlaceholder": "Define Alice's base prompt. It will be applied before every response.",
     "behavior": "Behaviors",
@@ -1477,5 +1479,102 @@
     "agentSaveErrorDesc": "Unable to update the agent.",
     "agentsLoadErrorTitle": "Load failed",
     "agentsLoadErrorDesc": "Unable to load available agents."
+  },
+  "usersAdmin": {
+    "title": "User Management",
+    "description": "Manage users, organizational groups, and access permissions.",
+    "tabs": {
+      "users": "Users",
+      "groups": "Groups",
+      "permissions": "Permissions"
+    },
+    "users": {
+      "title": "Users",
+      "description": "Manage roles, status, and authentication providers.",
+      "searchPlaceholder": "Search by name, email, or role",
+      "columns": {
+        "name": "Name",
+        "email": "Email",
+        "role": "Role",
+        "status": "Status",
+        "provider": "Provider"
+      },
+      "empty": "No users found",
+      "roleUpdated": "Role updated successfully",
+      "roleUpdateError": "Error updating role",
+      "statusUpdated": "Status updated successfully",
+      "statusUpdateError": "Error updating status",
+      "providerLocal": "Local"
+    },
+    "groups": {
+      "title": "Organizational Groups",
+      "description": "Organize users into internal teams without permission impact.",
+      "new": "New Group",
+      "searchPlaceholder": "Search by group name",
+      "empty": "No groups found",
+      "noDescription": "No description",
+      "manageMembers": "Manage members",
+      "deleteTitle": "Delete group",
+      "deleteDescription": "This action removes the group and all associated members.",
+      "created": "Group created successfully",
+      "createError": "Error creating group",
+      "updated": "Group updated successfully",
+      "updateError": "Error updating group",
+      "deleted": "Group deleted successfully",
+      "deleteError": "Error deleting group",
+      "editTitle": "Edit group",
+      "newTitle": "New group",
+      "editDescription": "Update the organizational group details.",
+      "newDescription": "Create a group to organize your users.",
+      "fields": {
+        "name": "Name",
+        "description": "Description",
+        "active": "Active"
+      },
+      "manageMembersTitle": "Manage group members",
+      "addMember": "Add member",
+      "selectUser": "Select a user",
+      "currentMembers": "Current members",
+      "noMembers": "No members in this group",
+      "membersAdded": "Member added to group",
+      "membersAddError": "Error adding member",
+      "membersRemoved": "Member removed from group",
+      "membersRemoveError": "Error removing member"
+    },
+    "permissions": {
+      "title": "System Permissions",
+      "description": "Manage permissions and assign access by role.",
+      "new": "New Permission",
+      "roleLabel": "Selected role",
+      "searchLabel": "Search permissions",
+      "searchPlaceholder": "Search by code, name, or module",
+      "empty": "No permissions found",
+      "columns": {
+        "permission": "Permission",
+        "module": "Module",
+        "roleAccess": "Role access",
+        "actions": "Actions"
+      },
+      "created": "Permission created successfully",
+      "createError": "Error creating permission",
+      "updated": "Permission updated successfully",
+      "updateError": "Error updating permission",
+      "deleted": "Permission deleted successfully",
+      "deleteError": "Error deleting permission",
+      "roleUpdated": "Role permissions updated",
+      "roleUpdateError": "Error updating role permissions",
+      "editTitle": "Edit permission",
+      "newTitle": "New permission",
+      "editDescription": "Update the selected permission details.",
+      "newDescription": "Register a new system permission.",
+      "fields": {
+        "code": "Code",
+        "name": "Name",
+        "description": "Description",
+        "module": "Module"
+      },
+      "deleteTitle": "Delete permission",
+      "deleteDescription": "Deleting removes the permission from all roles."
+    }
   }
 }

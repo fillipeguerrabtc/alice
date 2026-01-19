@@ -38,6 +38,7 @@ import {
   requirePermission, 
   requireAuth,
   requireRole,
+  setPermissionResolver,
   createAlicePrometheus,
   initRbacPrometheusMetrics,
   instrumentCircuitBreaker,
@@ -46,8 +47,10 @@ import {
   Counter as PromCounter,
   createCircuitBreaker,
   CIRCUIT_BREAKER_PRESETS,
+  invalidateTenantPermissions,
 } from '@alice/shared-utils';
-import { eq, or, and } from '@alice/database';
+import { eq, or, and, inArray } from '@alice/database';
+import type { AuthContext } from '@alice/shared-utils';
 import { z } from 'zod';
 import { 
   getDatabase, 
@@ -77,6 +80,17 @@ const logger = createLogger('auth-service');
 const featureFlagStorage = createDrizzleFeatureFlagStorage();
 initFeatureFlags(featureFlagStorage);
 logger.info('Sistema de feature flags inicializado');
+
+setPermissionResolver(async (auth: AuthContext) => {
+  const db = getDatabase();
+  const rolePermissions = await db.query.rolePermissions.findMany({
+    where: eq(schema.rolePermissions.role, auth.role),
+    with: { permission: true },
+  });
+  return rolePermissions
+    .map((rp) => (rp as { permission?: { codigo?: string | null } }).permission?.codigo)
+    .filter((code): code is string => Boolean(code));
+});
 
 type DbUser = typeof schema.users.$inferSelect;
 
@@ -1749,10 +1763,10 @@ app.post('/api/auth/logout', (req: Request, res: Response) => {
 });
 
 // ============================================================================
-// ROTAS: Permissões RBAC
+// ROTAS: Permissões RBAC (usuário autenticado)
 // ============================================================================
 
-app.get('/api/auth/permissions', requireAuth(), async (req: Request, res: Response) => {
+app.get('/api/auth/rbac/permissions', requireAuth(), async (req: Request, res: Response) => {
   if (!req.isAuthenticated() || !req.user) {
     return res.status(401).json({ error: 'Não autenticado' });
   }
@@ -1881,6 +1895,35 @@ const assignRoleModuleSchema = z.object({
   acessoLeitura: z.boolean().optional(),
   acessoEscrita: z.boolean().optional(),
   acessoAdmin: z.boolean().optional(),
+});
+
+const createPermissionSchema = z.object({
+  codigo: z.string().min(2).max(100),
+  nome: z.string().min(2).max(255),
+  descricao: z.string().optional(),
+  modulo: z.string().min(2).max(100),
+});
+
+const updatePermissionSchema = z.object({
+  nome: z.string().min(2).max(255).optional(),
+  descricao: z.string().optional(),
+  modulo: z.string().min(2).max(100).optional(),
+});
+
+const assignRolePermissionsSchema = z.object({
+  permissionCodes: z.array(z.string().min(2).max(100)).min(1),
+});
+
+const createGroupSchema = z.object({
+  nome: z.string().min(2).max(255),
+  descricao: z.string().optional(),
+  ativo: z.boolean().optional(),
+});
+
+const updateGroupSchema = createGroupSchema.partial();
+
+const groupMemberSchema = z.object({
+  userId: z.string().uuid(),
 });
 
 // GET /api/auth/modules - Listar todos os módulos do sistema
@@ -2147,6 +2190,422 @@ app.post('/api/auth/modules/role/assign', requireAuth(), requireRole('super_admi
 
   logger.info({ role: result.data.role, moduleId: result.data.moduleId }, 'Módulo atribuído à role');
   res.status(201).json({ roleModule });
+}));
+
+// ============================================================================
+// ROTAS: Gestão de Permissões (RBAC Enterprise)
+// ============================================================================
+
+// GET /api/auth/permissions - Listar permissões do sistema
+app.get('/api/auth/permissions', requireAuth(), requirePermission('admin:permissions:read'), asyncHandler(async (_req: Request, res: Response) => {
+  const db = getDatabase();
+  const permissions = await db.query.permissions.findMany({
+    orderBy: (perm, { asc }) => [asc(perm.modulo), asc(perm.nome)],
+  });
+  res.json({ permissions });
+}));
+
+// GET /api/auth/permissions/:id - Buscar permissão por ID
+app.get('/api/auth/permissions/:id', requireAuth(), requirePermission('admin:permissions:read'), asyncHandler(async (req: Request, res: Response) => {
+  const db = getDatabase();
+  const permission = await db.query.permissions.findFirst({
+    where: eq(schema.permissions.id, req.params.id),
+  });
+  if (!permission) {
+    res.status(404).json({ error: 'Permissão não encontrada' });
+    return;
+  }
+  res.json({ permission });
+}));
+
+// POST /api/auth/permissions - Criar permissão
+app.post('/api/auth/permissions', requireAuth(), requirePermission('admin:permissions:write'), asyncHandler(async (req: Request, res: Response) => {
+  const result = createPermissionSchema.safeParse(req.body);
+  if (!result.success) {
+    res.status(400).json({ error: 'Dados inválidos', details: result.error.format() });
+    return;
+  }
+
+  const db = getDatabase();
+  const existing = await db.query.permissions.findFirst({
+    where: eq(schema.permissions.codigo, result.data.codigo),
+  });
+  if (existing) {
+    res.status(409).json({ error: 'Código de permissão já existe' });
+    return;
+  }
+
+  const [permission] = await db.insert(schema.permissions)
+    .values({
+      codigo: result.data.codigo,
+      nome: result.data.nome,
+      descricao: result.data.descricao,
+      modulo: result.data.modulo,
+    })
+    .returning();
+
+  if (req.tenantId) {
+    await invalidateTenantPermissions(req.tenantId);
+  }
+  res.status(201).json({ permission });
+}));
+
+// PATCH /api/auth/permissions/:id - Atualizar permissão
+app.patch('/api/auth/permissions/:id', requireAuth(), requirePermission('admin:permissions:write'), asyncHandler(async (req: Request, res: Response) => {
+  const result = updatePermissionSchema.safeParse(req.body);
+  if (!result.success) {
+    res.status(400).json({ error: 'Dados inválidos', details: result.error.format() });
+    return;
+  }
+  if (Object.keys(result.data).length === 0) {
+    res.status(400).json({ error: 'Nenhum campo para atualizar' });
+    return;
+  }
+
+  const db = getDatabase();
+  const [permission] = await db.update(schema.permissions)
+    .set(result.data)
+    .where(eq(schema.permissions.id, req.params.id))
+    .returning();
+
+  if (!permission) {
+    res.status(404).json({ error: 'Permissão não encontrada' });
+    return;
+  }
+
+  if (req.tenantId) {
+    await invalidateTenantPermissions(req.tenantId);
+  }
+  res.json({ permission });
+}));
+
+// DELETE /api/auth/permissions/:id - Excluir permissão
+app.delete('/api/auth/permissions/:id', requireAuth(), requirePermission('admin:permissions:delete'), asyncHandler(async (req: Request, res: Response) => {
+  const db = getDatabase();
+  const [permission] = await db.delete(schema.permissions)
+    .where(eq(schema.permissions.id, req.params.id))
+    .returning();
+
+  if (!permission) {
+    res.status(404).json({ error: 'Permissão não encontrada' });
+    return;
+  }
+
+  if (req.tenantId) {
+    await invalidateTenantPermissions(req.tenantId);
+  }
+  res.json({ success: true, permission });
+}));
+
+// GET /api/auth/roles/:role/permissions - Listar permissões por role
+app.get('/api/auth/roles/:role/permissions', requireAuth(), requirePermission('admin:permissions:read'), asyncHandler(async (req: Request, res: Response) => {
+  const roleParse = z.enum(['super_admin', 'admin', 'manager', 'operator', 'viewer', 'guest']).safeParse(req.params.role);
+  if (!roleParse.success) {
+    res.status(400).json({ error: 'Role inválida' });
+    return;
+  }
+
+  const db = getDatabase();
+  const rolePermissions = await db.select({
+    id: schema.rolePermissions.id,
+    role: schema.rolePermissions.role,
+    permissionId: schema.rolePermissions.permissionId,
+    permission: schema.permissions,
+  })
+    .from(schema.rolePermissions)
+    .innerJoin(schema.permissions, eq(schema.rolePermissions.permissionId, schema.permissions.id))
+    .where(eq(schema.rolePermissions.role, roleParse.data));
+
+  res.json({ rolePermissions });
+}));
+
+// PUT /api/auth/roles/:role/permissions - Definir permissões de uma role
+app.put('/api/auth/roles/:role/permissions', requireAuth(), requirePermission('admin:permissions:manage'), asyncHandler(async (req: Request, res: Response) => {
+  const roleParse = z.enum(['super_admin', 'admin', 'manager', 'operator', 'viewer', 'guest']).safeParse(req.params.role);
+  if (!roleParse.success) {
+    res.status(400).json({ error: 'Role inválida' });
+    return;
+  }
+
+  const bodyParse = assignRolePermissionsSchema.safeParse(req.body);
+  if (!bodyParse.success) {
+    res.status(400).json({ error: 'Dados inválidos', details: bodyParse.error.format() });
+    return;
+  }
+
+  const requestedCodes = Array.from(new Set(bodyParse.data.permissionCodes));
+  const db = getDatabase();
+  const permissions = await db.query.permissions.findMany({
+    where: (perm, { inArray }) => inArray(perm.codigo, requestedCodes),
+  });
+
+  const foundCodes = new Set(permissions.map((perm) => perm.codigo));
+  const missingCodes = requestedCodes.filter((code) => !foundCodes.has(code));
+  if (missingCodes.length > 0) {
+    res.status(400).json({ error: 'Permissões não encontradas', missing: missingCodes });
+    return;
+  }
+
+  await db.transaction(async (tx) => {
+    const current = await tx.query.rolePermissions.findMany({
+      where: eq(schema.rolePermissions.role, roleParse.data),
+    });
+    const currentIds = new Set(current.map((rp) => rp.permissionId));
+    const nextIds = new Set(permissions.map((perm) => perm.id));
+
+    const toRemove = current.filter((rp) => !nextIds.has(rp.permissionId));
+    if (toRemove.length > 0) {
+      await tx.delete(schema.rolePermissions)
+        .where(inArray(schema.rolePermissions.id, toRemove.map((item) => item.id)));
+    }
+
+    const toAdd = permissions.filter((perm) => !currentIds.has(perm.id));
+    if (toAdd.length > 0) {
+      await tx.insert(schema.rolePermissions)
+        .values(toAdd.map((perm) => ({
+          role: roleParse.data,
+          permissionId: perm.id,
+        })));
+    }
+  });
+
+  if (req.tenantId) {
+    await invalidateTenantPermissions(req.tenantId);
+  }
+  res.json({ success: true, role: roleParse.data, permissions: requestedCodes });
+}));
+
+// ============================================================================
+// ROTAS: Gestão de Grupos Organizacionais (sem impacto em permissões)
+// ============================================================================
+
+// GET /api/auth/groups - Listar grupos do tenant
+app.get('/api/auth/groups', requireAuth(), requirePermission('admin:groups:read'), asyncHandler(async (req: Request, res: Response) => {
+  if (!req.tenantId) {
+    res.status(400).json({ error: 'Tenant não definido' });
+    return;
+  }
+
+  const db = getDatabase();
+  const groups = await db.query.userGroups.findMany({
+    where: eq(schema.userGroups.tenantId, req.tenantId),
+    orderBy: (group, { asc }) => [asc(group.nome)],
+  });
+
+  res.json({ groups });
+}));
+
+// POST /api/auth/groups - Criar grupo
+app.post('/api/auth/groups', requireAuth(), requirePermission('admin:groups:write'), asyncHandler(async (req: Request, res: Response) => {
+  if (!req.tenantId) {
+    res.status(400).json({ error: 'Tenant não definido' });
+    return;
+  }
+
+  const result = createGroupSchema.safeParse(req.body);
+  if (!result.success) {
+    res.status(400).json({ error: 'Dados inválidos', details: result.error.format() });
+    return;
+  }
+
+  const db = getDatabase();
+  const existing = await db.query.userGroups.findFirst({
+    where: and(
+      eq(schema.userGroups.tenantId, req.tenantId),
+      eq(schema.userGroups.nome, result.data.nome)
+    ),
+  });
+  if (existing) {
+    res.status(409).json({ error: 'Já existe um grupo com esse nome' });
+    return;
+  }
+
+  const [group] = await db.insert(schema.userGroups)
+    .values({
+      tenantId: req.tenantId,
+      nome: result.data.nome,
+      descricao: result.data.descricao,
+      ativo: result.data.ativo ?? true,
+      criadoPor: req.user?.userId,
+      atualizadoPor: req.user?.userId,
+    })
+    .returning();
+
+  res.status(201).json({ group });
+}));
+
+// PATCH /api/auth/groups/:id - Atualizar grupo
+app.patch('/api/auth/groups/:id', requireAuth(), requirePermission('admin:groups:write'), asyncHandler(async (req: Request, res: Response) => {
+  const result = updateGroupSchema.safeParse(req.body);
+  if (!result.success) {
+    res.status(400).json({ error: 'Dados inválidos', details: result.error.format() });
+    return;
+  }
+  if (Object.keys(result.data).length === 0) {
+    res.status(400).json({ error: 'Nenhum campo para atualizar' });
+    return;
+  }
+
+  const db = getDatabase();
+  const group = await db.query.userGroups.findFirst({
+    where: eq(schema.userGroups.id, req.params.id),
+  });
+  if (!group) {
+    res.status(404).json({ error: 'Grupo não encontrado' });
+    return;
+  }
+  if (req.user?.role !== 'super_admin' && group.tenantId !== req.tenantId) {
+    res.status(403).json({ error: 'Acesso negado - tenant diferente' });
+    return;
+  }
+
+  const [updated] = await db.update(schema.userGroups)
+    .set({
+      ...result.data,
+      atualizadoPor: req.user?.userId,
+      atualizadoEm: new Date(),
+    })
+    .where(eq(schema.userGroups.id, req.params.id))
+    .returning();
+
+  res.json({ group: updated });
+}));
+
+// DELETE /api/auth/groups/:id - Excluir grupo
+app.delete('/api/auth/groups/:id', requireAuth(), requirePermission('admin:groups:delete'), asyncHandler(async (req: Request, res: Response) => {
+  const db = getDatabase();
+  const group = await db.query.userGroups.findFirst({
+    where: eq(schema.userGroups.id, req.params.id),
+  });
+  if (!group) {
+    res.status(404).json({ error: 'Grupo não encontrado' });
+    return;
+  }
+  if (req.user?.role !== 'super_admin' && group.tenantId !== req.tenantId) {
+    res.status(403).json({ error: 'Acesso negado - tenant diferente' });
+    return;
+  }
+
+  const [deleted] = await db.delete(schema.userGroups)
+    .where(eq(schema.userGroups.id, req.params.id))
+    .returning();
+
+  res.json({ success: true, group: deleted });
+}));
+
+// GET /api/auth/groups/:id/users - Listar membros do grupo
+app.get('/api/auth/groups/:id/users', requireAuth(), requirePermission('admin:groups:read'), asyncHandler(async (req: Request, res: Response) => {
+  const db = getDatabase();
+  const group = await db.query.userGroups.findFirst({
+    where: eq(schema.userGroups.id, req.params.id),
+  });
+  if (!group) {
+    res.status(404).json({ error: 'Grupo não encontrado' });
+    return;
+  }
+  if (req.user?.role !== 'super_admin' && group.tenantId !== req.tenantId) {
+    res.status(403).json({ error: 'Acesso negado - tenant diferente' });
+    return;
+  }
+
+  const members = await db.select({
+    id: schema.userGroupMembers.id,
+    userId: schema.userGroupMembers.userId,
+    groupId: schema.userGroupMembers.groupId,
+    criadoEm: schema.userGroupMembers.criadoEm,
+    user: schema.users,
+  })
+    .from(schema.userGroupMembers)
+    .innerJoin(schema.users, eq(schema.userGroupMembers.userId, schema.users.id))
+    .where(eq(schema.userGroupMembers.groupId, req.params.id));
+
+  res.json({ members });
+}));
+
+// POST /api/auth/groups/:id/users - Adicionar usuário ao grupo
+app.post('/api/auth/groups/:id/users', requireAuth(), requirePermission('admin:groups:manage'), asyncHandler(async (req: Request, res: Response) => {
+  const result = groupMemberSchema.safeParse(req.body);
+  if (!result.success) {
+    res.status(400).json({ error: 'Dados inválidos', details: result.error.format() });
+    return;
+  }
+
+  const db = getDatabase();
+  const group = await db.query.userGroups.findFirst({
+    where: eq(schema.userGroups.id, req.params.id),
+  });
+  if (!group) {
+    res.status(404).json({ error: 'Grupo não encontrado' });
+    return;
+  }
+  if (req.user?.role !== 'super_admin' && group.tenantId !== req.tenantId) {
+    res.status(403).json({ error: 'Acesso negado - tenant diferente' });
+    return;
+  }
+
+  const user = await db.query.users.findFirst({
+    where: eq(schema.users.id, result.data.userId),
+  });
+  if (!user) {
+    res.status(404).json({ error: 'Usuário não encontrado' });
+    return;
+  }
+  if (req.user?.role !== 'super_admin' && user.tenantId !== req.tenantId) {
+    res.status(400).json({ error: 'Usuário de outro tenant não pode ser adicionado' });
+    return;
+  }
+
+  const existing = await db.query.userGroupMembers.findFirst({
+    where: and(
+      eq(schema.userGroupMembers.groupId, req.params.id),
+      eq(schema.userGroupMembers.userId, result.data.userId)
+    ),
+  });
+  if (existing) {
+    res.json({ member: existing });
+    return;
+  }
+
+  const [member] = await db.insert(schema.userGroupMembers)
+    .values({
+      tenantId: group.tenantId,
+      groupId: group.id,
+      userId: result.data.userId,
+      criadoPor: req.user?.userId,
+    })
+    .returning();
+
+  res.status(201).json({ member });
+}));
+
+// DELETE /api/auth/groups/:id/users/:userId - Remover usuário do grupo
+app.delete('/api/auth/groups/:id/users/:userId', requireAuth(), requirePermission('admin:groups:manage'), asyncHandler(async (req: Request, res: Response) => {
+  const db = getDatabase();
+  const group = await db.query.userGroups.findFirst({
+    where: eq(schema.userGroups.id, req.params.id),
+  });
+  if (!group) {
+    res.status(404).json({ error: 'Grupo não encontrado' });
+    return;
+  }
+  if (req.user?.role !== 'super_admin' && group.tenantId !== req.tenantId) {
+    res.status(403).json({ error: 'Acesso negado - tenant diferente' });
+    return;
+  }
+
+  const [deleted] = await db.delete(schema.userGroupMembers)
+    .where(and(
+      eq(schema.userGroupMembers.groupId, req.params.id),
+      eq(schema.userGroupMembers.userId, req.params.userId)
+    ))
+    .returning();
+
+  if (!deleted) {
+    res.status(404).json({ error: 'Membro não encontrado' });
+    return;
+  }
+
+  res.json({ success: true, member: deleted });
 }));
 
 // ============================================================================

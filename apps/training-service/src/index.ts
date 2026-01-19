@@ -43,6 +43,7 @@ import {
   TRAINING_SERVICE_TAGS,
   requirePermission,
   extractAuthContext,
+  setPermissionResolver,
   // Auth híbrida (WS4): Sessão (cookie) + Bearer JWT (OIDC) com validação local via JWKS
   createSessionAuthMiddleware,
   initializeRedisCache,
@@ -117,6 +118,15 @@ logger.info('Training service inicializado - fine-tuning LoRA ativo via GPU Mana
 
 // Usar package @alice/database centralizado (node-postgres para produção Hetzner)
 const db = getDatabase();
+setPermissionResolver(async (auth) => {
+  const rolePermissions = await db.query.rolePermissions.findMany({
+    where: eq(schema.rolePermissions.role, auth.role),
+    with: { permission: true },
+  });
+  return rolePermissions
+    .map((rp) => (rp as { permission?: { codigo?: string | null } }).permission?.codigo)
+    .filter((code): code is string => Boolean(code));
+});
 
 // Inicializar sistema de feature flags com storage PostgreSQL (Regra 16 - Enterprise)
 const featureFlagStorage = createDrizzleFeatureFlagStorage();

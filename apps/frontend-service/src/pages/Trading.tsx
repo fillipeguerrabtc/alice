@@ -108,8 +108,7 @@ import {
 } from '@/components/ui/tooltip';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
-// CORREÇÃO 19/12/2025: Remover queryClient não utilizado (no-unused-vars)
-import { apiRequest, ApiError } from '@/lib/queryClient';
+import { apiRequest, ApiError, queryClient } from '@/lib/queryClient';
 import { 
   CandleChart, 
   OrderBookViz, 
@@ -736,7 +735,7 @@ export default function Trading() {
       });
       setShowRiskConfigDialog(false);
       if (data?.success) {
-        queryClientRef.setQueryData(['/api/integrations/trading/risk-config'], data);
+        queryClient.setQueryData(['/api/integrations/trading/risk-config'], data);
       }
       refetchRiskConfig();
       refetchStatus();
@@ -857,7 +856,7 @@ export default function Trading() {
       });
       const data = await res.json();
       if (data.success) {
-        queryClientRef.setQueryData(['/api/integrations/trading/risk-config'], data);
+        queryClient.setQueryData(['/api/integrations/trading/risk-config'], data);
         refetchRiskConfig();
         toast({
           title: enabled ? t('trading.handover.tradingEnabled') : t('trading.handover.tradingDisabled'),

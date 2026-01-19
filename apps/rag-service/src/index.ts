@@ -44,6 +44,7 @@ import {
   CIRCUIT_BREAKER_PRESETS,
   registerShutdownCallback,
   ShutdownPriority,
+  setPermissionResolver,
   createCacheAdapter,
   type CacheAdapter,
   setupSwaggerUI,
@@ -3644,6 +3645,17 @@ registerShutdownCallback(
 // BUG FIX 23/12/2025: Converter para async/await para melhor controle de erros e evitar unhandled rejections
 (async () => {
   try {
+    setPermissionResolver(async (auth) => {
+      const db = getDatabase();
+      const rolePermissions = await db.query.rolePermissions.findMany({
+        where: eq(schema.rolePermissions.role, auth.role),
+        with: { permission: true },
+      });
+      return rolePermissions
+        .map((rp) => (rp as { permission?: { codigo?: string | null } }).permission?.codigo)
+        .filter((code): code is string => Boolean(code));
+    });
+
     // Inicializar Redis cache (crítico para embedding-websocket Pub/Sub)
     // BUG FIX 23/12/2025: Unificar tratamento de erro - uma única verificação após try-catch
     // Evita múltiplos pontos de exit e lógica duplicada

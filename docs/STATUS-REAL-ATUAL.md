@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 19 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.36 - Compatibilidade OpenAI Images (response_format)
+**Versão:** 7.37 - Gestão de usuários, grupos e permissões core
 
 ---
 
@@ -259,6 +259,13 @@ Retenção Arquivo:   30 dias
 - Caddy: entrypoint ajusta permissões de /data e /config antes de iniciar (certificados OK).
 - Jaeger v2: telemetry metrics migrada para readers + exporter prometheus (sem restart loop).
 - Permissões: Redis com GID 1000 alinhado ao usuário `redis` nas imagens Alpine 7.x.
+- RBAC: nova permissão `admin:alice_core:write` para edição do Core da Alice.
+- Auth: CRUD de permissões e atribuição por role via API.
+- Auth: grupos organizacionais com membros por tenant.
+- Frontend: página de gestão de usuários/grupos/permissões com filtros e ações.
+- Alice Config: edição do core bloqueada sem permissão (somente leitura).
+- Chat: regex de geração de imagem exige verbo de ação (evita falso positivo).
+- Trading: cache de risk-config sincroniza via queryClient.
 
 ---
 

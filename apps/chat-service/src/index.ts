@@ -58,9 +58,11 @@ import {
   registerShutdownCallback,
   ShutdownPriority,
   permissionCache,
+  setPermissionResolver,
   requestGpuStream,
   validateAgentTenantConsistency,
 } from '@alice/shared-utils';
+import type { AuthContext } from '@alice/shared-utils';
 import type { Role } from '@alice/shared-utils';
 import { eq, desc, inArray, and, or, lt, sql, not, asc } from '@alice/database';
 import { z } from 'zod';
@@ -333,6 +335,16 @@ async function initializeAllCaches(): Promise<void> {
   // Inicializar cache de permissões RBAC
   // Usa o mesmo cliente Redis já inicializado
   await permissionCache.initialize();
+  setPermissionResolver(async (auth: AuthContext) => {
+    const db = getDatabase();
+    const rolePermissions = await db.query.rolePermissions.findMany({
+      where: eq(schema.rolePermissions.role, auth.role),
+      with: { permission: true },
+    });
+    return rolePermissions
+      .map((rp) => (rp as { permission?: { codigo?: string | null } }).permission?.codigo)
+      .filter((code): code is string => Boolean(code));
+  });
   logger.info({ 
     sessionDistributed: sessionCacheAdapter?.isDistributed() ?? false,
     rbacDistributed: permissionCache.getStats().distributed,
@@ -832,8 +844,8 @@ function detectImageGenerationRequest(message: string): ImageGenerationDetection
     /(?:generate|create|make|draw|illustrate)\s+(?:an?\s+)?(?:image|photo|illustration|drawing)/i,
     /(?:generate|create|make|draw|illustrate|render|paint)\s+(?:an?\s+)?(?:image|photo|illustration|drawing|artwork)/i,
     /(?:quero|preciso|gostaria)\s+(?:de\s+)?(?:ver|uma?\s+)?(?:imagem|foto|ilustração)/i,
-    /(?:logo|logotipo|banner|capa|avatar|wallpaper|ícone|icone)/i,
-    /(?:logo|logotype|banner|cover|avatar|wallpaper|icon)/i,
+    /(?:criar|crie|gerar|gere|desenhar|desenhe|fazer|faça)\s+(?:um[a]?\s+)?(?:logo|logotipo|banner|capa|avatar|wallpaper|ícone|icone)/i,
+    /(?:create|generate|make|design|draw|render)\s+(?:an?\s+)?(?:logo|logotype|banner|cover|avatar|wallpaper|icon)/i,
   ];
   
   for (const pattern of visualPatterns) {
@@ -7728,7 +7740,7 @@ app.get('/api/assistant-settings', requireAuth(), requireSameTenant(getTenantIdF
   }
 });
 
-app.patch('/api/assistant-settings', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:agents:write'), async (req: Request, res: Response) => {
+app.patch('/api/assistant-settings', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('admin:alice_core:write'), async (req: Request, res: Response) => {
   const tenantId = req.tenantId;
   const userId = req.user?.userId;
 
