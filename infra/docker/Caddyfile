@@ -152,6 +152,15 @@ yesyoudeserve.duckdns.org {
 			import proxy_headers
 		}
 	}
+
+	# =========================================================================
+	# Users API (auth-service)
+	# =========================================================================
+	handle /api/users* {
+		reverse_proxy alice-auth:3001 {
+			import proxy_headers
+		}
+	}
 	
 	# =========================================================================
 	# Audit API (logs de auditoria - parte do auth-service)
