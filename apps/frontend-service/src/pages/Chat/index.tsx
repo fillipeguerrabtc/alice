@@ -382,6 +382,7 @@ export default function Chat() {
   const streamControllerRef = useRef<AbortController | null>(null);
   const stopRequestedRef = useRef(false);
   const pendingSendRef = useRef<{ content: string; mediaAttachments?: MediaAttachment[] } | null>(null);
+  const lastMessagesSyncRef = useRef(0);
 
   // Fechar drawer mobile ao mudar de conversa
   useEffect(() => {
@@ -397,6 +398,10 @@ export default function Chat() {
   useEffect(() => {
     inputRef.current = input;
   }, [input]);
+
+  useEffect(() => {
+    lastMessagesSyncRef.current = 0;
+  }, [conversationId]);
 
   const setRecordingStartingState = useCallback((value: boolean) => {
     recordingStartingRef.current = value;
@@ -714,7 +719,11 @@ export default function Chat() {
     return res.json() as Promise<{ messages: Message[] }>;
   }, [conversationId]);
 
-  const { data: conversationMessages } = useQuery<{ messages: Message[] }>({
+  const {
+    data: conversationMessages,
+    dataUpdatedAt: conversationMessagesUpdatedAt,
+    isFetching: isFetchingConversationMessages,
+  } = useQuery<{ messages: Message[] }>({
     queryKey: ['/api/chat/conversations', conversationId, 'messages'],
     queryFn: fetchConversationMessages,
     enabled: !!conversationId,
@@ -816,10 +825,19 @@ export default function Chat() {
   }, [mapAnexosToMediaAttachments]);
 
   useEffect(() => {
-    if (conversationMessages?.messages && !isStreaming) {
-      setMessages(conversationMessages.messages.map((message) => normalizeServerMessage(message)));
-    }
-  }, [conversationMessages, normalizeServerMessage, isStreaming]);
+    if (isStreaming || isFetchingConversationMessages) return;
+    if (!conversationMessages?.messages) return;
+    if (conversationMessagesUpdatedAt <= lastMessagesSyncRef.current) return;
+
+    setMessages(conversationMessages.messages.map((message) => normalizeServerMessage(message)));
+    lastMessagesSyncRef.current = conversationMessagesUpdatedAt;
+  }, [
+    conversationMessages,
+    conversationMessagesUpdatedAt,
+    normalizeServerMessage,
+    isFetchingConversationMessages,
+    isStreaming,
+  ]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

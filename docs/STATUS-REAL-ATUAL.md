@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 **Autor:** Fillipe Guerra  
-**Data:** 19 de Janeiro de 2026  
+**Data:** 18 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.26 - Chat input multiline e anexos clicáveis
+**Versão:** 7.27 - Sincronização segura de mensagens no chat
 
 ---
 
@@ -242,6 +242,7 @@ Retenção Arquivo:   30 dias
 - Permissions-Policy: câmera liberada para `self` no gateway e Nginx.
 - Chat: Enter cria nova linha; envio via botão ou Alt+Enter.
 - Chat: anexos clicáveis no input e mensagens com preview.
+- Chat: sincronização de mensagens aguarda refetch após streaming (evita overwrite).
 
 ---
 
