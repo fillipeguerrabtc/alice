@@ -48,10 +48,10 @@ readonly ALICE_SECRETS_DIR="${ALICE_BASE_DIR}/secrets"
 readonly POSTGRES_UID=70
 readonly POSTGRES_GID=70
 
-# Redis Alpine (UID 999)
+# Redis Alpine (UID 999, GID 1000 - grupo "redis" em alpine 7.x)
 # REF: https://github.com/docker-library/redis
 readonly REDIS_UID=999
-readonly REDIS_GID=999
+readonly REDIS_GID=1000
 
 # Caddy (UID 1000 - custom build)
 # REF: infra/docker/caddy/Dockerfile

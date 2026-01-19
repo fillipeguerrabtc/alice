@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 19 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.29 - Caddy TLS estável + Jaeger v2 metrics corrigidas
+**Versão:** 7.30 - SSOT de permissões Redis alinhado (UID/GID)
 
 ---
 
@@ -246,6 +246,7 @@ Retenção Arquivo:   30 dias
 - Build frontend: removido tipo não utilizado no schema compartilhado (TS6133).
 - Caddy: entrypoint ajusta permissões de /data e /config antes de iniciar (certificados OK).
 - Jaeger v2: telemetry metrics migrada para readers + exporter prometheus (sem restart loop).
+- Permissões: Redis com GID 1000 alinhado ao usuário `redis` nas imagens Alpine 7.x.
 
 ---
 
