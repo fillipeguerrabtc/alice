@@ -6,7 +6,7 @@
  * Regra 13: Internacionalização i18next
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -685,11 +685,36 @@ export default function UsersAdmin() {
   const groups = groupsData?.groups ?? [];
   const permissions = permissionsData?.permissions ?? [];
   const [rolePermissionCodes, setRolePermissionCodes] = useState<Set<string>>(new Set());
+  const rolePermissionCodesRef = useRef<Set<string>>(new Set());
+  const rolePermissionSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rolePermissionSaveQueueRef = useRef(Promise.resolve());
+
+  const enqueueRolePermissionSave = (codes: string[]) => {
+    rolePermissionSaveQueueRef.current = rolePermissionSaveQueueRef.current
+      .then(() => updateRolePermissions.mutateAsync(codes))
+      .catch(() => undefined);
+  };
 
   useEffect(() => {
     const nextCodes = rolePermissionsData?.rolePermissions?.map((item) => item.permission?.codigo).filter(Boolean) ?? [];
-    setRolePermissionCodes(new Set(nextCodes));
+    const nextSet = new Set(nextCodes);
+    rolePermissionCodesRef.current = nextSet;
+    setRolePermissionCodes(nextSet);
   }, [rolePermissionsData?.rolePermissions, selectedRole]);
+
+  useEffect(() => {
+    rolePermissionSaveQueueRef.current = Promise.resolve();
+    if (rolePermissionSaveTimerRef.current) {
+      clearTimeout(rolePermissionSaveTimerRef.current);
+      rolePermissionSaveTimerRef.current = null;
+    }
+    return () => {
+      if (rolePermissionSaveTimerRef.current) {
+        clearTimeout(rolePermissionSaveTimerRef.current);
+        rolePermissionSaveTimerRef.current = null;
+      }
+    };
+  }, [selectedRole]);
 
   const filteredUsers = useMemo(() => {
     const query = searchUsers.toLowerCase();
@@ -997,7 +1022,13 @@ export default function UsersAdmin() {
                                   } else {
                                     nextCodes.delete(permission.codigo);
                                   }
-                                  updateRolePermissions.mutate(Array.from(nextCodes));
+                                  rolePermissionCodesRef.current = nextCodes;
+                                  if (rolePermissionSaveTimerRef.current) {
+                                    clearTimeout(rolePermissionSaveTimerRef.current);
+                                  }
+                                  rolePermissionSaveTimerRef.current = setTimeout(() => {
+                                    enqueueRolePermissionSave(Array.from(rolePermissionCodesRef.current));
+                                  }, 300);
                                   return nextCodes;
                                 });
                               }}

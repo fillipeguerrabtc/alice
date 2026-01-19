@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 18 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.40 - Correções de formulários e toggles RBAC
+**Versão:** 7.41 - Fila e debounce em toggles RBAC
 
 ---
 
@@ -223,6 +223,7 @@ Retenção Arquivo:   30 dias
 - Chat: fullscreen de imagem usa a mesma URL resolvida do thumbnail.
 - Usuários: formulários de grupos e permissões resetam ao trocar o item editado.
 - RBAC UI: toggles de permissões evitam overwrite em cliques rápidos.
+- RBAC UI: fila sequencial e debounce evitam race em atualizações de permissões.
 - Frontend build: ordem de handlers de gravação e avatar corrigida (evita TS2448/TS2454).
 - Dark Mode: paleta preta/cinza para experiência similar ao ChatGPT.
 - Avatar do Chat: GIF dinâmico (packman pensando, gato após resposta) com tamanho ajustado.
