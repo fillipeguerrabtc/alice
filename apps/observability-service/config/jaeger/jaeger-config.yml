@@ -21,6 +21,11 @@
 # ===========================================================================
 service:
   extensions: [healthcheckv2, jaeger_storage, jaeger_query]
+  telemetry:
+    metrics:
+      readers:
+        - pull:
+            exporter: prometheus
   pipelines:
     traces:
       receivers: [otlp]
@@ -87,3 +92,6 @@ exporters:
   # Exporter para Badger storage
   jaeger_storage_exporter:
     trace_storage: badger_main
+  # Exporter Prometheus para métricas internas do Jaeger (OTel)
+  prometheus:
+    endpoint: 0.0.0.0:8888

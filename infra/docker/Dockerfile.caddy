@@ -30,7 +30,8 @@ COPY caddy-entrypoint.sh /usr/local/bin/caddy-entrypoint.sh
 
 # CORREÇÃO 02/01/2026: Instalar wget para healthcheck
 # Alpine base não tem wget instalado por padrão
-RUN apk add --no-cache wget && \
+# CORREÇÃO 19/01/2026: Instalar su-exec para drop de privilégios no entrypoint
+RUN apk add --no-cache wget su-exec && \
     chmod +x /usr/local/bin/caddy-entrypoint.sh
 
 # Garantir existência do usuário/grupo caddy (imagens oficiais geralmente já têm)
@@ -57,9 +58,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=5 \
 # 2019: Admin API (interno)
 EXPOSE 80 443 443/udp 2019
 
-# Caddy roda como non-root por padrão (UID/GID 1000)
-USER caddy
-
 # ENTRYPOINT de diagnóstico (03/01/2026)
 # Valida configuração e loga startup antes de iniciar Caddy
+# CORREÇÃO 19/01/2026: Permite ajuste de permissões antes de dropar privilégios
 ENTRYPOINT ["/usr/local/bin/caddy-entrypoint.sh"]

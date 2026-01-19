@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 **Autor:** Fillipe Guerra  
-**Data:** 18 de Janeiro de 2026  
+**Data:** 19 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.28 - Build frontend estável (schema sem unused)
+**Versão:** 7.29 - Caddy TLS estável + Jaeger v2 metrics corrigidas
 
 ---
 
@@ -244,6 +244,8 @@ Retenção Arquivo:   30 dias
 - Chat: anexos clicáveis no input e mensagens com preview.
 - Chat: sincronização de mensagens aguarda refetch após streaming (evita overwrite).
 - Build frontend: removido tipo não utilizado no schema compartilhado (TS6133).
+- Caddy: entrypoint ajusta permissões de /data e /config antes de iniciar (certificados OK).
+- Jaeger v2: telemetry metrics migrada para readers + exporter prometheus (sem restart loop).
 
 ---
 
