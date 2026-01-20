@@ -128,236 +128,232 @@
 }
 
 # =============================================================================
-# FRONTEND + APIs ALICE
+# DOMÍNIO ÚNICO + WILDCARD (certificado único)
 # =============================================================================
-yesyoudeserve.duckdns.org {
+yesyoudeserve.duckdns.org, *.yesyoudeserve.duckdns.org {
 	import tls_duckdns
 	# Security headers em todas as respostas
 	import security_headers
-	
-	# Content Security Policy específica para SPA React
-	header Content-Security-Policy "default-src 'self'; base-uri 'self'; form-action 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' wss://yesyoudeserve.duckdns.org https:; frame-ancestors 'none'; upgrade-insecure-requests"
-	
+
 	# =========================================================================
-	# OIDC Provider (Alice como IdP)
+	# ROOT DOMAIN - FRONTEND + APIs ALICE
 	# =========================================================================
-	handle /.well-known/openid-configuration {
-		reverse_proxy alice-auth:3001 {
-			import proxy_headers
+	@root host yesyoudeserve.duckdns.org
+	handle @root {
+		# Content Security Policy específica para SPA React
+		header Content-Security-Policy "default-src 'self'; base-uri 'self'; form-action 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' wss://yesyoudeserve.duckdns.org https:; frame-ancestors 'none'; upgrade-insecure-requests"
+
+		# =========================================================================
+		# OIDC Provider (Alice como IdP)
+		# =========================================================================
+		handle /.well-known/openid-configuration {
+			reverse_proxy alice-auth:3001 {
+				import proxy_headers
+			}
+		}
+
+		handle /oauth/* {
+			reverse_proxy alice-auth:3001 {
+				import proxy_headers
+			}
+		}
+
+		# =========================================================================
+		# Auth API (rate limit mais restritivo: 10 req/min)
+		# =========================================================================
+		handle /api/auth/* {
+			reverse_proxy alice-auth:3001 {
+				import proxy_headers
+			}
+		}
+
+		# =========================================================================
+		# Users API (auth-service)
+		# =========================================================================
+		handle /api/users* {
+			reverse_proxy alice-auth:3001 {
+				import proxy_headers
+			}
+		}
+
+		# =========================================================================
+		# Audit API (logs de auditoria - parte do auth-service)
+		# CORREÇÃO 12/01/2026: Rota faltante causava 403 no Dashboard
+		# =========================================================================
+		handle /api/audit/* {
+			reverse_proxy alice-auth:3001 {
+				import proxy_headers
+			}
+		}
+
+		# =========================================================================
+		# WebSocket (streaming LLM)
+		# =========================================================================
+		handle /ws/* {
+			reverse_proxy alice-chat:3002 {
+				import websocket_headers
+			}
+		}
+
+		# =========================================================================
+		# Chat API
+		# =========================================================================
+		handle /api/chat/* {
+			reverse_proxy alice-chat:3002 {
+				import proxy_headers
+			}
+		}
+
+		# =========================================================================
+		# Chat API (rotas fora do prefixo /api/chat)
+		# =========================================================================
+		handle /api/namespaces* {
+			reverse_proxy alice-chat:3002 {
+				import proxy_headers
+			}
+		}
+		handle /api/agents* {
+			reverse_proxy alice-chat:3002 {
+				import proxy_headers
+			}
+		}
+		handle /api/assistant-settings* {
+			reverse_proxy alice-chat:3002 {
+				import proxy_headers
+			}
+		}
+		handle /api/takeover* {
+			reverse_proxy alice-chat:3002 {
+				import proxy_headers
+			}
+		}
+		handle /api/llm* {
+			reverse_proxy alice-chat:3002 {
+				import proxy_headers
+			}
+		}
+
+		# =========================================================================
+		# Media API (uploads/arquivos do RAG)
+		# =========================================================================
+		handle /api/media* {
+			reverse_proxy alice-rag:3003 {
+				import proxy_headers
+			}
+		}
+
+		# =========================================================================
+		# RAG API
+		# =========================================================================
+		handle /api/rag/* {
+			reverse_proxy alice-rag:3003 {
+				import proxy_headers
+			}
+		}
+
+		# =========================================================================
+		# Training API
+		# =========================================================================
+		handle /api/training/* {
+			reverse_proxy alice-training:3004 {
+				import proxy_headers
+			}
+		}
+
+		# =========================================================================
+		# Integrations API
+		# =========================================================================
+		handle /api/integrations/* {
+			reverse_proxy alice-integrations:3005 {
+				import proxy_headers
+			}
+		}
+
+		# =========================================================================
+		# Webhook (Stripe, Wise, Twilio)
+		# =========================================================================
+		handle /webhook/* {
+			reverse_proxy alice-integrations:3005 {
+				import proxy_headers
+			}
+		}
+
+		# =========================================================================
+		# Observability API
+		# =========================================================================
+		handle /api/observability/* {
+			reverse_proxy alice-observability:3007 {
+				import proxy_headers
+			}
+		}
+
+		# =========================================================================
+		# Frontend SPA React (fallback - todas as outras rotas)
+		# =========================================================================
+		handle {
+			reverse_proxy alice-frontend:8080 {
+				import proxy_headers
+			}
 		}
 	}
-	
-	handle /oauth/* {
-		reverse_proxy alice-auth:3001 {
-			import proxy_headers
-		}
-	}
-	
+
 	# =========================================================================
-	# Auth API (rate limit mais restritivo: 10 req/min)
+	# GRAFANA (Observability Dashboard)
 	# =========================================================================
-	handle /api/auth/* {
-		reverse_proxy alice-auth:3001 {
+	@observability host observability.yesyoudeserve.duckdns.org
+	handle @observability {
+		reverse_proxy grafana:3000 {
 			import proxy_headers
 		}
 	}
 
 	# =========================================================================
-	# Users API (auth-service)
+	# PROMETHEUS (Métricas)
 	# =========================================================================
-	handle /api/users* {
-		reverse_proxy alice-auth:3001 {
-			import proxy_headers
-		}
-	}
-	
-	# =========================================================================
-	# Audit API (logs de auditoria - parte do auth-service)
-	# CORREÇÃO 12/01/2026: Rota faltante causava 403 no Dashboard
-	# =========================================================================
-	handle /api/audit/* {
-		reverse_proxy alice-auth:3001 {
-			import proxy_headers
-		}
-	}
-	
-	# =========================================================================
-	# WebSocket (streaming LLM)
-	# =========================================================================
-	handle /ws/* {
-		reverse_proxy alice-chat:3002 {
-			import websocket_headers
-		}
-	}
-	
-	# =========================================================================
-	# Chat API
-	# =========================================================================
-	handle /api/chat/* {
-		reverse_proxy alice-chat:3002 {
+	@metrics host metrics.yesyoudeserve.duckdns.org
+	handle @metrics {
+		reverse_proxy prometheus:9090 {
 			import proxy_headers
 		}
 	}
 
 	# =========================================================================
-	# Chat API (rotas fora do prefixo /api/chat)
+	# JAEGER (Distributed Tracing)
 	# =========================================================================
-	handle /api/namespaces* {
-		reverse_proxy alice-chat:3002 {
+	@traces host traces.yesyoudeserve.duckdns.org
+	handle @traces {
+		reverse_proxy jaeger:16686 {
 			import proxy_headers
 		}
 	}
-	handle /api/agents* {
-		reverse_proxy alice-chat:3002 {
-			import proxy_headers
-		}
-	}
-	handle /api/assistant-settings* {
-		reverse_proxy alice-chat:3002 {
-			import proxy_headers
-		}
-	}
-	handle /api/takeover* {
-		reverse_proxy alice-chat:3002 {
-			import proxy_headers
-		}
-	}
-	handle /api/llm* {
-		reverse_proxy alice-chat:3002 {
-			import proxy_headers
-		}
-	}
-	
-	# =========================================================================
-	# Media API (uploads/arquivos do RAG)
-	# =========================================================================
-	handle /api/media* {
-		reverse_proxy alice-rag:3003 {
-			import proxy_headers
-		}
-	}
-	
-	# =========================================================================
-	# RAG API
-	# =========================================================================
-	handle /api/rag/* {
-		reverse_proxy alice-rag:3003 {
-			import proxy_headers
-		}
-	}
-	
-	# =========================================================================
-	# Training API
-	# =========================================================================
-	handle /api/training/* {
-		reverse_proxy alice-training:3004 {
-			import proxy_headers
-		}
-	}
-	
-	# =========================================================================
-	# Integrations API
-	# =========================================================================
-	handle /api/integrations/* {
-		reverse_proxy alice-integrations:3005 {
-			import proxy_headers
-		}
-	}
-	
-	# =========================================================================
-	# Webhook (Stripe, Wise, Twilio)
-	# =========================================================================
-	handle /webhook/* {
-		reverse_proxy alice-integrations:3005 {
-			import proxy_headers
-		}
-	}
-	
-	# =========================================================================
-	# Observability API
-	# =========================================================================
-	handle /api/observability/* {
-		reverse_proxy alice-observability:3007 {
-			import proxy_headers
-		}
-	}
-	
-	# =========================================================================
-	# Frontend SPA React (fallback - todas as outras rotas)
-	# =========================================================================
-	handle {
-		reverse_proxy alice-frontend:8080 {
-			import proxy_headers
-		}
-	}
-}
 
-# =============================================================================
-# GRAFANA (Observability Dashboard)
-# =============================================================================
-observability.yesyoudeserve.duckdns.org {
-	import tls_duckdns
-	import security_headers
-	
-	reverse_proxy grafana:3000 {
-		import proxy_headers
-	}
-}
-
-# =============================================================================
-# PROMETHEUS (Métricas)
-# =============================================================================
-metrics.yesyoudeserve.duckdns.org {
-	import tls_duckdns
-	import security_headers
-	
-	reverse_proxy prometheus:9090 {
-		import proxy_headers
-	}
-}
-
-# =============================================================================
-# JAEGER (Distributed Tracing)
-# =============================================================================
-traces.yesyoudeserve.duckdns.org {
-	import tls_duckdns
-	import security_headers
-	
-	reverse_proxy jaeger:16686 {
-		import proxy_headers
-	}
-}
-
-# =============================================================================
-# LANGFUSE (LLM Observability)
-# =============================================================================
-langfuse.yesyoudeserve.duckdns.org {
-	import tls_duckdns
-	import security_headers
-	
-	reverse_proxy langfuse:3000 {
-		import proxy_headers
-	}
-}
-
-# =============================================================================
-# ERPNEXT (ERP/CRM)
-# =============================================================================
-erp.yesyoudeserve.duckdns.org {
-	import tls_duckdns
-	import security_headers
-	
-	# WebSocket ERPNext (socket.io)
-	handle /socket.io/* {
-		reverse_proxy erpnext-websocket:9000 {
-			import websocket_headers
+	# =========================================================================
+	# LANGFUSE (LLM Observability)
+	# =========================================================================
+	@langfuse host langfuse.yesyoudeserve.duckdns.org
+	handle @langfuse {
+		reverse_proxy langfuse:3000 {
+			import proxy_headers
 		}
 	}
-	
-	# Frontend ERPNext (fallback)
-	handle {
-		reverse_proxy erpnext-frontend:8080 {
-			import proxy_headers
+
+	# =========================================================================
+	# ERPNEXT (ERP/CRM)
+	# =========================================================================
+	@erpnext host erp.yesyoudeserve.duckdns.org
+	handle @erpnext {
+		# WebSocket ERPNext (socket.io)
+		handle /socket.io/* {
+			reverse_proxy erpnext-websocket:9000 {
+				import websocket_headers
+			}
+		}
+
+		# Frontend ERPNext (fallback)
+		handle {
+			reverse_proxy erpnext-frontend:8080 {
+				import proxy_headers
+			}
 		}
 	}
 }
