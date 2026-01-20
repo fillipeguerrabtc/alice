@@ -11,7 +11,14 @@
 
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_action_requests_tenant_id') THEN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conrelid = 'action_requests'::regclass
+      AND contype = 'f'
+      AND confrelid = 'tenants'::regclass
+      AND conkey = ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid = 'action_requests'::regclass AND attname = 'tenant_id')]::smallint[]
+  ) THEN
     ALTER TABLE action_requests
       ADD CONSTRAINT fk_action_requests_tenant_id
       FOREIGN KEY (tenant_id) REFERENCES tenants(id);
@@ -20,7 +27,14 @@ END$$;
 
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_action_requests_conversation_id') THEN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conrelid = 'action_requests'::regclass
+      AND contype = 'f'
+      AND confrelid = 'conversations'::regclass
+      AND conkey = ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid = 'action_requests'::regclass AND attname = 'conversation_id')]::smallint[]
+  ) THEN
     ALTER TABLE action_requests
       ADD CONSTRAINT fk_action_requests_conversation_id
       FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE;
@@ -29,7 +43,14 @@ END$$;
 
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_action_requests_user_id') THEN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conrelid = 'action_requests'::regclass
+      AND contype = 'f'
+      AND confrelid = 'users'::regclass
+      AND conkey = ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid = 'action_requests'::regclass AND attname = 'user_id')]::smallint[]
+  ) THEN
     ALTER TABLE action_requests
       ADD CONSTRAINT fk_action_requests_user_id
       FOREIGN KEY (user_id) REFERENCES users(id);
@@ -38,7 +59,14 @@ END$$;
 
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_action_requests_agent_id') THEN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conrelid = 'action_requests'::regclass
+      AND contype = 'f'
+      AND confrelid = 'agents'::regclass
+      AND conkey = ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid = 'action_requests'::regclass AND attname = 'agent_id')]::smallint[]
+  ) THEN
     ALTER TABLE action_requests
       ADD CONSTRAINT fk_action_requests_agent_id
       FOREIGN KEY (agent_id) REFERENCES agents(id);
@@ -47,7 +75,14 @@ END$$;
 
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_action_requests_resolved_by') THEN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conrelid = 'action_requests'::regclass
+      AND contype = 'f'
+      AND confrelid = 'users'::regclass
+      AND conkey = ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid = 'action_requests'::regclass AND attname = 'resolved_by')]::smallint[]
+  ) THEN
     ALTER TABLE action_requests
       ADD CONSTRAINT fk_action_requests_resolved_by
       FOREIGN KEY (resolved_by) REFERENCES users(id);
