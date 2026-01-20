@@ -122,7 +122,7 @@
 # TLS via DNS-01 (DuckDNS)
 (tls_duckdns) {
 	tls {
-		dns duckdns {env.DUCKDNS_TOKEN}
+		dns duckdns {$DUCKDNS_TOKEN}
 	}
 }
 

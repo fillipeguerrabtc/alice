@@ -195,7 +195,7 @@ Retenção Arquivo:   30 dias
 - Grafana: regras de alerta ajustadas para evitar `DatasourceNoData` falso (bool + fallback 0/1).
 - Grafana: alerta de restart filtrado por containers Docker Compose (sem slices do host).
 - DB: migration `action_requests` agora aplica FKs completos (tenant/conversation/user/agent/resolved_by).
-- OAuth GitHub: suporte a OAUTH_GITHUB_* e fallback para GITHUB_* legado.
+- OAuth GitHub: suporte a OAUTH_GITHUB_\* e fallback para GITHUB_\* legado.
 - Docs: `SECRETS.md` atualizado com Redis cache/queue, MinIO e CORS.
 - Frontend: normalização de line endings (CRLF → LF) em componentes de mídia do chat.
 - Chat UI: mensagens somente com mídia agora ficam realmente sem fundo (bg transparente).
