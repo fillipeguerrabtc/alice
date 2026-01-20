@@ -895,6 +895,51 @@ function resolveSupportedMediaType(mimeType: string): 'image' | 'audio' | null {
   return null;
 }
 
+type ActionConfirmationIntent = 'approve' | 'reject';
+
+const ACTION_CONFIRMATION_PATTERNS = {
+  approve: [
+    /\b(confirmar|confirmo|confirmado|aprovar|aprovado|prosseguir|execute|executar|pode\s+executar|pode\s+prosseguir|ok|pode\s+seguir|sim)\b/i,
+  ],
+  reject: [
+    /\b(cancelar|cancele|cancelado|rejeitar|rejeito|negado|negar|pare|abortar|não|nao|stop)\b/i,
+  ],
+};
+
+function resolveActionConfirmationIntent(message: string): ActionConfirmationIntent | null {
+  const normalized = message.trim();
+  if (!normalized) return null;
+  const shortInput = normalized.length <= 32;
+  if (!shortInput) {
+    if (ACTION_CONFIRMATION_PATTERNS.approve.some((pattern) => pattern.test(normalized))) {
+      return 'approve';
+    }
+    if (ACTION_CONFIRMATION_PATTERNS.reject.some((pattern) => pattern.test(normalized))) {
+      return 'reject';
+    }
+    return null;
+  }
+  if (ACTION_CONFIRMATION_PATTERNS.approve.some((pattern) => pattern.test(normalized))) {
+    return 'approve';
+  }
+  if (ACTION_CONFIRMATION_PATTERNS.reject.some((pattern) => pattern.test(normalized))) {
+    return 'reject';
+  }
+  return null;
+}
+
+const EXPLICIT_WEB_REQUEST_PATTERNS = [
+  /\b(pesquis[ae]r?|buscar|procure|consulte)\s+(na|no)\s+(web|internet|google|deep\s*web|deepweb)\b/i,
+  /\b(search|look\s+up|google)\s+(on\s+)?(the\s+)?(web|internet)\b/i,
+  /\bquero\s+que\s+você\s+(pesquise|busque)\b/i,
+];
+
+function isExplicitWebRequest(message: string): boolean {
+  const normalized = message.trim();
+  if (!normalized) return false;
+  return EXPLICIT_WEB_REQUEST_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
 type ImageGenerationInput = {
   tenantId: string;
   userId: string;
@@ -945,12 +990,17 @@ async function generateImageFromPrompt(input: ImageGenerationInput) {
   const startedAt = Date.now();
 
   try {
+    logger.info({
+      imageId: created.id,
+      tenantId: input.tenantId,
+      size,
+      promptLength: input.prompt.length,
+    }, 'Iniciando geração de imagem via OpenAI');
     const basePayload = {
       model: 'gpt-image-1',
       prompt: composedPrompt,
       size,
       n: 1,
-      output_format: 'png',
     };
 
     const tryGenerateImage = async (payload: Record<string, unknown>) => {
@@ -970,18 +1020,27 @@ async function generateImageFromPrompt(input: ImageGenerationInput) {
     let openAiResponse = await tryGenerateImage({
       ...basePayload,
       response_format: 'b64_json',
+      output_format: 'png',
     });
 
     if (!openAiResponse.ok) {
       const errText = await openAiResponse.text().catch(() => '');
       const isResponseFormatError = errText.includes('response_format') || errText.includes('Unknown parameter');
-      if (openAiResponse.status === 400 && isResponseFormatError) {
+      const isOutputFormatError = errText.includes('output_format') || errText.includes('Unknown parameter');
+      if (openAiResponse.status === 400 && (isResponseFormatError || isOutputFormatError)) {
         logger.warn({
           status: openAiResponse.status,
           requestId: openAiResponse.headers.get('x-request-id'),
           error: errText,
-        }, 'OpenAI Images rejeitou response_format, tentando sem o parâmetro');
-        openAiResponse = await tryGenerateImage(basePayload);
+        }, 'OpenAI Images rejeitou parâmetros de formato, tentando payload compatível');
+        const fallbackPayload: Record<string, unknown> = { ...basePayload };
+        if (!isOutputFormatError) {
+          fallbackPayload.output_format = 'png';
+        }
+        if (!isResponseFormatError) {
+          fallbackPayload.response_format = 'b64_json';
+        }
+        openAiResponse = await tryGenerateImage(fallbackPayload);
       } else {
         logger.error({
           status: openAiResponse.status,
@@ -1125,41 +1184,39 @@ interface AssistantSettings {
  * IMPORTANTE: O prompt instrui a IA a detectar o idioma do usuário
  * e responder no mesmo idioma (não mais hardcoded em português).
  */
-const DEFAULT_SYSTEM_PROMPT = `You are Alice, an intelligent and helpful enterprise AI assistant.
+const DEFAULT_SYSTEM_PROMPT = `Você é Alice, uma assistente de IA enterprise inteligente e confiável.
 
-IMPORTANT LANGUAGE RULES:
-- ALWAYS detect the language of the user's message
-- ALWAYS respond in the SAME language as the user's message
-- If the user writes in Portuguese, respond in Portuguese
-- If the user writes in English, respond in English
-- If the user writes in Spanish, respond in Spanish
-- And so on for any language
+REGRAS DE IDIOMA (OBRIGATÓRIO):
+- Detecte o idioma da mensagem do usuário
+- Responda EXCLUSIVAMENTE no MESMO idioma do usuário
+- Não misture idiomas na mesma resposta
 
-BEHAVIOR GUIDELINES:
-- Be professional, helpful, and concise
-- If you don't know something, say so honestly
-- Provide accurate and relevant information
-- Be respectful and maintain a positive tone`;
+GUIDELINES DE COMPORTAMENTO:
+- Seja profissional, útil e objetiva
+- Se não souber algo, diga com transparência
+- Forneça informações precisas e relevantes
+- Mantenha tom respeitoso e positivo`;
 
-const CORE_CAPABILITIES_PROMPT = `CAPABILITIES:
-- You can access the internet (web + deep web) through Alice's internal search modules.
-- You can execute actions in this platform (trading, reports, integrations) when the user requests, following permissions and risk limits.
-- Do not claim lack of internet or execution capability when these modules are available. If a module is temporarily unavailable, explain the technical reason and suggest retry.`;
+const CORE_CAPABILITIES_PROMPT = `CAPACIDADES:
+- Você pode acessar a internet (web + deep web) através dos módulos internos da Alice.
+- Você pode executar ações na plataforma (trading, relatórios, integrações) quando o usuário solicitar, seguindo permissões e limites de risco.
+- Nunca diga que não tem acesso à internet ou execução quando esses módulos estiverem disponíveis. Se um módulo estiver indisponível, explique o motivo técnico e sugira nova tentativa.
+- Quando houver SERVER_TIME, a data/hora vem do relógio do servidor (não da web).`;
 
-const CREATOR_PROMPT_RULE = `CREATOR IDENTITY RULES:
-- Your creator is Fillipe Guerra, the developer of the Alice Enterprise platform.
-- If asked who created you or your origin, ALWAYS answer that you were created by Fillipe Guerra.
-- Do not mention any other creator or company.`;
+const CREATOR_PROMPT_RULE = `REGRAS DE IDENTIDADE DO CRIADOR:
+- Seu criador é Fillipe Guerra, desenvolvedor da plataforma Alice Enterprise.
+- Se perguntarem quem criou você ou sua origem, responda que foi criada por Fillipe Guerra.
+- Não mencione outro criador ou empresa.`;
 
 function applyAssistantSettings(prompt: string, settings?: AssistantSettings | null): string {
   let result = prompt;
 
   if (settings?.behavior && settings.behavior.trim()) {
-    result += `\n\nBEHAVIOR: ${settings.behavior.trim()}`;
+    result += `\n\nCOMPORTAMENTO: ${settings.behavior.trim()}`;
   }
 
   if (settings?.mood && settings.mood.trim()) {
-    result += `\n\nTONE: ${settings.mood.trim()}`;
+    result += `\n\nTOM: ${settings.mood.trim()}`;
   }
 
   const traitLines: string[] = [];
@@ -1218,13 +1275,17 @@ function buildSystemPrompt(
   }
 
   if (agent?.personalidade && agent.personalidade.trim()) {
-    prompt += `\n\nPERSONALITY: ${agent.personalidade.trim()}`;
+    prompt += `\n\nPERSONALIDADE: ${agent.personalidade.trim()}`;
   }
 
   prompt = applyAssistantSettings(prompt, assistantSettings);
 
   const normalizedPrompt = prompt.toLowerCase();
-  if (!normalizedPrompt.includes('capabilities') && !normalizedPrompt.includes('internet') && !normalizedPrompt.includes('deep web')) {
+  if (!normalizedPrompt.includes('capabilities')
+    && !normalizedPrompt.includes('capacidades')
+    && !normalizedPrompt.includes('internet')
+    && !normalizedPrompt.includes('deep web')
+    && !normalizedPrompt.includes('deepweb')) {
     prompt += `\n\n${CORE_CAPABILITIES_PROMPT}`;
   }
 
@@ -1234,10 +1295,10 @@ function buildSystemPrompt(
   }
 
   // Adicionar instrução de idioma se não estiver presente
-  if (!prompt.toLowerCase().includes('language') && 
-      !prompt.toLowerCase().includes('idioma') && 
+  if (!prompt.toLowerCase().includes('language') &&
+      !prompt.toLowerCase().includes('idioma') &&
       !prompt.toLowerCase().includes('língua')) {
-    prompt += `\n\nIMPORTANT: Always respond in the same language as the user's message.`;
+    prompt += `\n\nIMPORTANTE: Responda sempre no mesmo idioma da mensagem do usuário, sem misturar idiomas.`;
   }
 
   // Regra mandatória de identidade do criador
@@ -2810,6 +2871,19 @@ interface ParsedTradingCommand {
   confidence: number;
   rawText: string;
   matchedPattern?: string;
+}
+
+const TRADING_CONFIRMATION_REQUIRED_TYPES = new Set<TradingCommandType>([
+  'buy',
+  'sell',
+  'close_position',
+  'cancel_order',
+  'set_stop_loss',
+  'set_take_profit',
+]);
+
+function requiresTradingConfirmation(command: ParsedTradingCommand): boolean {
+  return TRADING_CONFIRMATION_REQUIRED_TYPES.has(command.type);
 }
 
 /**
@@ -4736,6 +4810,243 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     const { parseTradingCommand, isTradingCommand, getCommandDescription, validateCommand } = await import('./trading-command-parser.js');
     const { canExecuteTradingCommand } = await import('./trading-orchestrator.js');
 
+    const pendingAction = await db.query.actionRequests.findFirst({
+      where: and(
+        eq(schema.actionRequests.tenantId, tenantId),
+        eq(schema.actionRequests.conversationId, conversationId),
+        eq(schema.actionRequests.status, 'pending')
+      ),
+      orderBy: desc(schema.actionRequests.criadoEm),
+    });
+
+    if (pendingAction) {
+      const intent = resolveActionConfirmationIntent(userMessageContent);
+      if (intent) {
+        const payload = (pendingAction.payload ?? {}) as {
+          command?: ParsedTradingCommand;
+          summary?: string;
+          sourceMessageId?: string;
+        };
+        const pendingCommand = payload.command;
+        if (!pendingCommand) {
+          await db.update(schema.actionRequests)
+            .set({
+              status: 'failed',
+              resolutionNote: 'Payload sem comando válido',
+              resolvidoEm: new Date(),
+              atualizadoEm: new Date(),
+            })
+            .where(eq(schema.actionRequests.id, pendingAction.id));
+
+          const responseContent = 'Não foi possível localizar os detalhes da ação pendente. Por favor, envie o comando novamente.';
+          const [assistantMessage] = await db.insert(schema.messages).values({
+            conversationId,
+            agentId: conversation?.agentId ?? undefined,
+            conteudo: responseContent,
+            tipo: 'text',
+            isFromUser: false,
+            metadata: {
+              actionRequestId: pendingAction.id,
+              actionStatus: 'failed',
+            },
+          }).returning();
+
+          await db.update(schema.conversations)
+            .set({
+              totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+              ultimaMensagemEm: new Date(),
+              atualizadoEm: new Date(),
+            })
+            .where(eq(schema.conversations.id, conversationId));
+
+          res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+          res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+          res.write('data: [DONE]\n\n');
+          res.end();
+          return;
+        }
+
+        if (intent === 'reject') {
+          await db.update(schema.actionRequests)
+            .set({
+              status: 'rejected',
+              resolvedBy: userId,
+              resolutionNote: 'Ação rejeitada pelo usuário',
+              resolvidoEm: new Date(),
+              atualizadoEm: new Date(),
+            })
+            .where(eq(schema.actionRequests.id, pendingAction.id));
+
+          const responseContent = 'Ação cancelada conforme solicitado.';
+          const [assistantMessage] = await db.insert(schema.messages).values({
+            conversationId,
+            agentId: conversation?.agentId ?? undefined,
+            conteudo: responseContent,
+            tipo: 'text',
+            isFromUser: false,
+            metadata: {
+              actionRequestId: pendingAction.id,
+              tradingCommand: pendingCommand,
+              actionStatus: 'rejected',
+            },
+          }).returning();
+
+          await db.update(schema.conversations)
+            .set({
+              totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+              ultimaMensagemEm: new Date(),
+              atualizadoEm: new Date(),
+            })
+            .where(eq(schema.conversations.id, conversationId));
+
+          res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+          res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+          res.write('data: [DONE]\n\n');
+          res.end();
+          return;
+        }
+
+        const canExecute = await canExecuteTradingCommand(tenantId, 'user');
+        if (!canExecute.canExecute) {
+          await db.update(schema.actionRequests)
+            .set({
+              status: 'failed',
+              resolutionNote: canExecute.reason ?? 'Trading bloqueado no momento da confirmação',
+              resolvidoEm: new Date(),
+              atualizadoEm: new Date(),
+            })
+            .where(eq(schema.actionRequests.id, pendingAction.id));
+
+          const responseContent = `Não foi possível executar a ação: ${canExecute.reason ?? 'trading bloqueado no momento da confirmação'}.`;
+          const [assistantMessage] = await db.insert(schema.messages).values({
+            conversationId,
+            agentId: conversation?.agentId ?? undefined,
+            conteudo: responseContent,
+            tipo: 'text',
+            isFromUser: false,
+            metadata: {
+              actionRequestId: pendingAction.id,
+              tradingCommand: pendingCommand,
+              actionStatus: 'failed',
+              reason: canExecute.reason ?? null,
+            },
+          }).returning();
+
+          await db.update(schema.conversations)
+            .set({
+              totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+              ultimaMensagemEm: new Date(),
+              atualizadoEm: new Date(),
+            })
+            .where(eq(schema.conversations.id, conversationId));
+
+          res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+          res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+          res.write('data: [DONE]\n\n');
+          res.end();
+          return;
+        }
+
+        try {
+          await db.update(schema.actionRequests)
+            .set({
+              status: 'approved',
+              resolvedBy: userId,
+              resolutionNote: 'Ação aprovada pelo usuário',
+              atualizadoEm: new Date(),
+            })
+            .where(eq(schema.actionRequests.id, pendingAction.id));
+
+          const result = await executeTradingCommand(userId, tenantId, pendingCommand);
+          const description = getCommandDescription(pendingCommand, 'pt');
+          const responseContent = result.success
+            ? `Ação executada: ${description}.`
+            : `Falha ao executar a ação (${description}): ${result.error || 'erro desconhecido'}.`;
+
+          await db.update(schema.actionRequests)
+            .set({
+              status: result.success ? 'executed' : 'failed',
+              resolutionNote: result.success ? 'Executado com sucesso' : (result.error || 'Falha na execução'),
+              resolvidoEm: new Date(),
+              atualizadoEm: new Date(),
+            })
+            .where(eq(schema.actionRequests.id, pendingAction.id));
+
+          const [assistantMessage] = await db.insert(schema.messages).values({
+            conversationId,
+            agentId: conversation?.agentId ?? undefined,
+            conteudo: responseContent,
+            tipo: 'text',
+            isFromUser: false,
+            metadata: {
+              actionRequestId: pendingAction.id,
+              tradingCommand: pendingCommand,
+              tradingResult: result,
+              actionStatus: result.success ? 'executed' : 'failed',
+            },
+          }).returning();
+
+          await db.update(schema.conversations)
+            .set({
+              totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+              ultimaMensagemEm: new Date(),
+              atualizadoEm: new Date(),
+            })
+            .where(eq(schema.conversations.id, conversationId));
+
+          res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+          res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+          res.write('data: [DONE]\n\n');
+          res.end();
+          return;
+        } catch (commandError) {
+          const errorMessage = commandError instanceof Error ? commandError.message : 'Erro desconhecido';
+          await db.update(schema.actionRequests)
+            .set({
+              status: 'failed',
+              resolutionNote: errorMessage,
+              resolvidoEm: new Date(),
+              atualizadoEm: new Date(),
+            })
+            .where(eq(schema.actionRequests.id, pendingAction.id));
+
+          res.write(`data: ${JSON.stringify({ error: `Erro ao executar a ação pendente: ${errorMessage}` })}\n\n`);
+          res.write('data: [DONE]\n\n');
+          res.end();
+          return;
+        }
+      }
+
+      if (isTradingCommand(userMessageContent)) {
+        const responseContent = 'Existe uma ação pendente aguardando confirmação. Responda "confirmar" para executar ou "cancelar" para abortar.';
+        const [assistantMessage] = await db.insert(schema.messages).values({
+          conversationId,
+          agentId: conversation?.agentId ?? undefined,
+          conteudo: responseContent,
+          tipo: 'text',
+          isFromUser: false,
+          metadata: {
+            actionRequestId: pendingAction.id,
+            actionStatus: 'pending',
+          },
+        }).returning();
+
+        await db.update(schema.conversations)
+          .set({
+            totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+            ultimaMensagemEm: new Date(),
+            atualizadoEm: new Date(),
+          })
+          .where(eq(schema.conversations.id, conversationId));
+
+        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
+    }
+
     if (isTradingCommand(userMessageContent)) {
       const parsedCommand = parseTradingCommand(userMessageContent);
       const validation = validateCommand(parsedCommand);
@@ -4784,6 +5095,52 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             tradingCommand: parsedCommand,
             blocked: true,
             reason: canExecute.reason ?? null,
+          },
+        }).returning();
+
+        await db.update(schema.conversations)
+          .set({
+            totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+            ultimaMensagemEm: new Date(),
+            atualizadoEm: new Date(),
+          })
+          .where(eq(schema.conversations.id, conversationId));
+
+        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
+
+      if (requiresTradingConfirmation(parsedCommand)) {
+        const description = getCommandDescription(parsedCommand, 'pt');
+        const [actionRequest] = await db.insert(schema.actionRequests).values({
+          tenantId,
+          conversationId,
+          userId,
+          agentId: conversation?.agentId ?? undefined,
+          type: 'trading',
+          status: 'pending',
+          payload: {
+            action: 'trading',
+            summary: description,
+            command: parsedCommand as unknown as Record<string, unknown>,
+          },
+        }).returning();
+
+        const responseContent = `Para executar a ação de trading (${description}), preciso de confirmação explícita.\nResponda "confirmar" para executar ou "cancelar" para abortar.`;
+        const [assistantMessage] = await db.insert(schema.messages).values({
+          conversationId,
+          agentId: conversation?.agentId ?? undefined,
+          conteudo: responseContent,
+          tipo: 'text',
+          isFromUser: false,
+          metadata: {
+            actionRequestId: actionRequest?.id,
+            tradingCommand: parsedCommand,
+            actionStatus: 'pending',
+            requiresConfirmation: true,
           },
         }).returning();
 
@@ -4856,6 +5213,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
       const agent = conversation?.agent ?? null;
       const ragParams = getAdaptiveRagParams(userMessageContent, previousMessages.length);
+      const explicitWebRequest = isExplicitWebRequest(userMessageContent);
       const [assistantSettings, ragResult, ragClassification] = await Promise.all([
         getAssistantSettingsForTenant(tenantId),
         (async () => {
@@ -4887,36 +5245,20 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         }, 'Contexto RAG injetado no streaming');
       }
 
-      const shouldUseWeb = Boolean(
-        ragClassification?.webSearchAvailable &&
-        ragClassification?.classification?.type &&
-        ragClassification.classification.type !== 'internal'
-      );
+      const shouldUseWeb = explicitWebRequest
+        ? ragClassification?.webSearchAvailable !== false
+        : Boolean(
+            ragClassification?.webSearchAvailable &&
+            ragClassification?.classification?.type &&
+            ragClassification.classification.type !== 'internal'
+          );
 
       if (shouldUseWeb) {
         writeStatus('rag_web');
         const agenticResult = await buscarContextoAgentic({
           query: userMessageContent,
           namespaceId: conversation?.namespaceId || namespaceId,
-          forceMode: 'web',
-          limit: ragParams.limit,
-          auth: {
-            userId,
-            tenantId,
-            role: req.user?.role as Role,
-          },
-        });
-
-        if (agenticResult?.context) {
-          systemPrompt += `\n\n[CONTEXTO WEB]\n${agenticResult.context}\n[/CONTEXTO WEB]\n\n`;
-          webSources = agenticResult.sources?.web || [];
-        }
-      } else if (!ragResult || !ragResult.context) {
-        writeStatus('rag_web');
-        const agenticResult = await buscarContextoAgentic({
-          query: userMessageContent,
-          namespaceId: conversation?.namespaceId || namespaceId,
-          forceMode: 'web',
+          forceMode: explicitWebRequest ? 'web' : undefined,
           limit: ragParams.limit,
           auth: {
             userId,

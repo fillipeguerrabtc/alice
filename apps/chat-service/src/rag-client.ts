@@ -27,6 +27,15 @@ if (!RAG_SERVICE_URL) {
   throw new Error('RAG_SERVICE_URL é obrigatório (Regra 6 - fail-fast)');
 }
 const RAG_SERVICE_URL_FINAL = RAG_SERVICE_URL;
+const RAG_REQUEST_TIMEOUT_MS = (() => {
+  const raw = process.env.RAG_REQUEST_TIMEOUT_MS;
+  if (!raw) return 12000;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error('RAG_REQUEST_TIMEOUT_MS inválido - precisa ser número > 0');
+  }
+  return parsed;
+})();
 
 /**
  * Fonte de documento retornada pelo RAG
@@ -94,6 +103,7 @@ async function fetchContextInternal(
       limit,
       threshold,
     }),
+    signal: AbortSignal.timeout(RAG_REQUEST_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -145,6 +155,7 @@ async function fetchAgenticContextInternal(params: {
       threshold,
       forceMode,
     }),
+    signal: AbortSignal.timeout(RAG_REQUEST_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -282,6 +293,7 @@ export async function classificarConsultaAgentic(params: {
         ...(internalHeaders['x-internal-tenant-id'] ? { 'x-internal-tenant-id': internalHeaders['x-internal-tenant-id'] } : {}),
       },
       body: JSON.stringify({ query: params.query }),
+      signal: AbortSignal.timeout(RAG_REQUEST_TIMEOUT_MS),
     });
 
     if (!response.ok) {

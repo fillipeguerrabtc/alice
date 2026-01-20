@@ -200,6 +200,16 @@ export const ConversationMetadataSchema = z.object({
 }).passthrough();
 export type ConversationMetadata = z.infer<typeof ConversationMetadataSchema>;
 
+// --- Payload de Solicitação de Ação (ex: trading, integrações) ---
+export const ActionRequestPayloadSchema = z.object({
+  action: z.string().optional(),
+  summary: z.string().optional(),
+  command: z.record(z.string(), z.unknown()).optional(),
+  parameters: z.record(z.string(), z.unknown()).optional(),
+  sourceMessageId: z.string().uuid().optional(),
+}).passthrough();
+export type ActionRequestPayload = z.infer<typeof ActionRequestPayloadSchema>;
+
 // --- Parâmetros de Learning Task ---
 export const LearningTaskParametrosSchema = z.object({
   epochs: z.number().int().positive().optional(),
@@ -436,6 +446,20 @@ export const webCrawlStatusEnum = pgEnum("web_crawl_status", [
 export const mediaJobTypeEnum = pgEnum("media_job_type", [
   "image_enhance",
   "audio_clean",
+]);
+
+export const actionRequestTypeEnum = pgEnum("action_request_type", [
+  "trading",
+  "integration",
+]);
+
+export const actionRequestStatusEnum = pgEnum("action_request_status", [
+  "pending",
+  "approved",
+  "rejected",
+  "executed",
+  "failed",
+  "cancelled",
 ]);
 
 export const backupTypeEnum = pgEnum("backup_type", [
@@ -933,6 +957,34 @@ export const messages = pgTable(
     idxMessagesConversation: index("idx_messages_conversation").on(table.conversationId),
     idxMessagesUser: index("idx_messages_user").on(table.userId),
     idxMessagesCreated: index("idx_messages_created").on(table.criadoEm),
+  })
+);
+
+// ============================================================================
+// ACTION REQUESTS (Confirmação de ações críticas - ex: trading)
+// ============================================================================
+
+export const actionRequests = pgTable(
+  "action_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    conversationId: uuid("conversation_id").references(() => conversations.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").references(() => users.id),
+    agentId: uuid("agent_id").references(() => agents.id),
+    type: actionRequestTypeEnum("type").notNull(),
+    status: actionRequestStatusEnum("status").notNull().default("pending"),
+    payload: jsonb("payload").$type<ActionRequestPayload>().default({}),
+    resolvedBy: uuid("resolved_by").references(() => users.id),
+    resolutionNote: text("resolution_note"),
+    criadoEm: timestamp("criado_em").defaultNow(),
+    atualizadoEm: timestamp("atualizado_em").defaultNow(),
+    resolvidoEm: timestamp("resolvido_em"),
+  },
+  (table) => ({
+    idxActionRequestsTenant: index("idx_action_requests_tenant").on(table.tenantId),
+    idxActionRequestsConversation: index("idx_action_requests_conversation").on(table.conversationId),
+    idxActionRequestsStatus: index("idx_action_requests_status").on(table.tenantId, table.status, table.criadoEm),
   })
 );
 

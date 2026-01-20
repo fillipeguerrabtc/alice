@@ -56,6 +56,10 @@ export function MessageBubble({
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const isUser = message.role === 'user';
+  const hasMediaAttachments = Boolean(message.mediaAttachments && message.mediaAttachments.length > 0);
+  const hasTextContent = Boolean(message.content && message.content.trim().length > 0);
+  const hasGeneratedImage = Boolean(message.generatedImage);
+  const isMediaOnly = hasMediaAttachments && !hasTextContent && !hasGeneratedImage;
   const assistantAvatarSrc = !isUser && isStreaming && (isLast || (message.content ?? '').length === 0)
     ? '/packman.gif'
     : '/gato.gif';
@@ -104,9 +108,10 @@ export function MessageBubble({
         <Card
           className={cn(
             'p-3 shadow-sm transition-all',
+            isMediaOnly && 'bg-transparent p-0 shadow-none border-0',
             isUser
-              ? 'bg-primary text-primary-foreground rounded-br-sm'
-              : 'bg-muted rounded-bl-sm'
+              ? 'bg-muted text-foreground rounded-br-sm'
+              : 'bg-muted text-foreground rounded-bl-sm'
           )}
           data-testid={`message-${message.role}-${message.id}`}
         >
@@ -217,8 +222,8 @@ export function MessageBubble({
       </div>
 
       {isUser && (
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-secondary text-secondary-foreground">
-          <User className="h-4 w-4" />
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-secondary text-secondary-foreground">
+          <User className="h-5 w-5" />
         </div>
       )}
     </motion.div>

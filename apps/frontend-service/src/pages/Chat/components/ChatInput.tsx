@@ -74,6 +74,19 @@ export function ChatInput({
     adjustTextareaHeight();
   }, [onChange, adjustTextareaHeight]);
 
+  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items ? Array.from(e.clipboardData.items) : [];
+    if (items.length === 0) return;
+    const imageFiles = items
+      .filter((item) => item.type.startsWith('image/'))
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => Boolean(file));
+    if (imageFiles.length > 0) {
+      e.preventDefault();
+      onFilesSelected(imageFiles);
+    }
+  }, [onFilesSelected]);
+
   useEffect(() => {
     adjustTextareaHeight();
   }, [adjustTextareaHeight, value]);
@@ -222,6 +235,7 @@ export function ChatInput({
             value={value}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder={pendingMedia.length > 0 ? t('chat.placeholderWithMedia') : t('chat.placeholder')}
             className="flex-1 min-h-[40px] md:min-h-[36px] max-h-[120px] md:max-h-[200px] resize-none bg-transparent text-base md:text-sm leading-relaxed focus-visible:outline-none"
             disabled={isRecording}

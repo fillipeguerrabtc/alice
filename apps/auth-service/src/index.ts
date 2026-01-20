@@ -47,7 +47,6 @@ import {
   Counter as PromCounter,
   createCircuitBreaker,
   CIRCUIT_BREAKER_PRESETS,
-  invalidateTenantPermissions,
   clearPermissionCache,
 } from '@alice/shared-utils';
 import { eq, or, and, inArray } from '@alice/database';

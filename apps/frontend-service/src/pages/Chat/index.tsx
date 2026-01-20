@@ -690,13 +690,18 @@ export default function Chat() {
     void pollMediaTranscription(result.uploadId);
   }, [pollMediaTranscription, resolveRecordingMimeType]);
 
+  const revokeMediaUrl = useCallback((media?: MediaAttachment) => {
+    if (!media?.url) return;
+    if (media.url.startsWith('blob:')) {
+      URL.revokeObjectURL(media.url);
+    }
+  }, []);
+
   const removePendingMedia = useCallback((mediaId: string) => {
     setPendingMedia(prev => {
       const media = prev.find(m => m.id === mediaId);
       if (media) {
-        if (media.url && media.url.startsWith('blob:')) {
-          URL.revokeObjectURL(media.url);
-        }
+        revokeMediaUrl(media);
         if (media.uploadId) {
           apiRequest('DELETE', `/api/media/uploads/${media.uploadId}`).catch((error) => {
             frontendLogger.warn('Falha ao remover upload de mídia', { error, uploadId: media.uploadId });
@@ -707,14 +712,12 @@ export default function Chat() {
     });
   }, []);
 
-  const clearPendingMedia = useCallback(() => {
-    pendingMedia.forEach(m => {
-      if (m.url && m.url.startsWith('blob:')) {
-        URL.revokeObjectURL(m.url);
-      }
-    });
+  const clearPendingMedia = useCallback((options?: { revokeBlobUrls?: boolean }) => {
+    if (options?.revokeBlobUrls !== false) {
+      pendingMedia.forEach((media) => revokeMediaUrl(media));
+    }
     setPendingMedia([]);
-  }, [pendingMedia]);
+  }, [pendingMedia, revokeMediaUrl]);
 
   const fetchConversations = useCallback(async ({ pageParam }: { pageParam?: { updatedAt: string; id: string } }) => {
     const params = new URLSearchParams();
@@ -1087,6 +1090,9 @@ export default function Chat() {
                               }
                             | undefined;
                           if (!serverAttachment) return media;
+                          if (media.url && media.url.startsWith('blob:') && serverAttachment.url && serverAttachment.url !== media.url) {
+                            URL.revokeObjectURL(media.url);
+                          }
                           const resolvedStatus: MediaAttachment['status'] =
                             serverAttachment.processingStatus === 'completed'
                               ? 'ready'
@@ -1228,7 +1234,7 @@ export default function Chat() {
       mediaAttachments: combined,
     });
     setInput('');
-    clearPendingMedia();
+    clearPendingMedia({ revokeBlobUrls: false });
   }, [clearPendingMedia, resolveRecordingMimeType, sendMessage]);
 
   const finalizeRecording = useCallback(async () => {
@@ -1499,7 +1505,7 @@ export default function Chat() {
       };
       handleStopStreaming();
       setInput('');
-      clearPendingMedia();
+      clearPendingMedia({ revokeBlobUrls: false });
       return;
     }
 
@@ -1508,7 +1514,7 @@ export default function Chat() {
       mediaAttachments: pendingMedia.length > 0 ? [...pendingMedia] : undefined 
     });
     setInput('');
-    clearPendingMedia();
+    clearPendingMedia({ revokeBlobUrls: false });
   }, [clearPendingMedia, handleStopStreaming, input, isRecording, isStreaming, pendingMedia, sendMessage]);
 
   const handleSubmit = (e: React.FormEvent) => {

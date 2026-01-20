@@ -28,8 +28,8 @@ export function MediaPreview({ media, onRemove }: MediaPreviewProps) {
         aria-label={`Abrir ${media.fileName}`}
       >
         {media.type === 'image' && (
-          <div className="h-10 w-10 rounded bg-background flex items-center justify-center overflow-hidden shrink-0">
-            <img src={media.url} alt={media.fileName} className="h-full w-full object-cover" />
+          <div className="h-10 w-10 rounded bg-transparent flex items-center justify-center overflow-hidden shrink-0">
+            <img src={media.url} alt={media.fileName} className="h-full w-full object-cover bg-transparent" />
           </div>
         )}
         {media.type === 'audio' && (

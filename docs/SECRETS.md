@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 18 de Janeiro de 2026  
-**Versão:** 7.6 - Callback OAuth configurável
+**Versão:** 7.7 - Timeout RAG configurável
 
 ## Visão geral
 
@@ -108,6 +108,7 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `HTTPS_PROXY` | Proxy global TLS (fallback para OpenAI se `OPENAI_PROXY` não existir) |
 | `NO_PROXY` | Hosts que não devem usar proxy (ex: `api.openai.com,.openai.com`) |
 | `OPENAI_VISION_MAX_BYTES` | Limite de payload (bytes) para Vision via OpenAI |
+| `RAG_REQUEST_TIMEOUT_MS` | Timeout (ms) para chamadas ao RAG (context/classify/agentic) |
 
 ## Geração recomendada
 

@@ -64,7 +64,7 @@ export function InlineMediaAttachment({ media }: InlineMediaAttachmentProps) {
           src={imageUrl || undefined}
           alt={media.fileName}
           className={cn(
-            "rounded-lg max-w-[200px] w-full object-cover cursor-pointer",
+            "rounded-lg max-w-[200px] w-full object-cover cursor-pointer bg-transparent",
             !imageLoaded && "hidden"
           )}
           onLoad={() => setImageLoaded(true)}

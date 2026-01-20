@@ -60,7 +60,7 @@ export function InlineImage({ image, onRate }: InlineImageProps) {
           src={imageSource}
           alt={image.prompt}
           className={cn(
-            "rounded-lg max-w-[300px] w-full object-cover cursor-pointer transition-transform",
+            "rounded-lg max-w-[300px] w-full object-cover cursor-pointer transition-transform bg-transparent",
             !imageLoaded && "hidden"
           )}
           onLoad={() => setImageLoaded(true)}

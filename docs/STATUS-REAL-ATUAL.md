@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 **Autor:** Fillipe Guerra  
-**Data:** 20 de Janeiro de 2026  
+**Data:** 18 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.50 - Sidebar sem autocollapse
+**Versão:** 7.51 - Agentic confirmations + UX chat
 
 ---
 
@@ -190,6 +190,19 @@ Retenção Arquivo:   30 dias
 ---
 
 ## Atualizações recentes (resumo)
+
+- Agentic: confirmação persistida para ações críticas de trading (action_requests).
+- Agentic: parser exige confirmação explícita antes de executar ordens sensíveis.
+- Chat UI: paste de imagem (Ctrl+V) anexa automaticamente no input.
+- Chat UI: avatar do usuário maior e cores de mensagens alinhadas às da Alice.
+- Chat UI: remoção dos cartões de sugestão no “Novo Chat”.
+- Chat mídia: preview imediato preserva blob URL até upload confirmar.
+- Chat mídia: limpeza de blob URL após upload concluído (media_uploaded).
+- RAG: timeout configurável por env (RAG_REQUEST_TIMEOUT_MS).
+- Agentic web: busca web forçada quando o usuário pedir explicitamente.
+- OpenAI Images: fallback compatível para response_format/output_format.
+- Prompt: instruções PT-BR para idioma, capacidades e SERVER_TIME.
+- DB: nova tabela action_requests + enums para auditoria de ações.
 
 - Pipeline modular enterprise e SSOT de versões.
 - Healthchecks reais para todos os serviços.

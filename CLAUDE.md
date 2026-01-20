@@ -27,7 +27,7 @@ Alice is an autonomous AI enterprise platform served on Hetzner GPU server GEX44
 | 14 | **VERIFICAR SECRETS** | Checar variáveis existentes |
 | 15 | **MICROSSERVIÇOS** | Código em apps/, compartilhado em packages/ |
 | 16 | **MELHORES PRÁTICAS** | API Gateway, health checks, circuit breakers |
-| 17 | **REVIEW ANTES DO COMMIT** | Todas as mudanças DEVEM passar por review antes de serem commitadas. Após review e aprovação, fazer commit direto (sem staging). Commits vão acumulando localmente. |
+| 17 | **REVIEW ANTES DO COMMIT** | Todas as mudanças DEVEM passar por review antes de serem commitadas. Após review e aprovação, fazer commit consolidado. **Staging é permitido** quando necessário (ex.: adicionar novos arquivos ou deleções). |
 | 18 | **COMMITS CONSOLIDADOS E PUSH MANUAL** | **OBRIGATÓRIO**: Fazer commits consolidados com várias mudanças relacionadas em modo enterprise, ao invés de commitar cada mudança individualmente. Isso otimiza a review automática do Cursor (habilitada após cada commit) e segue melhores práticas enterprise. **PROIBIDO** push automático. Push manual com "Sync Changes" SOMENTE quando todas as implementações estiverem revisadas, commitadas e aprovadas. O usuário decide quando fazer push. |
 
 ### Preferências de Idioma
@@ -552,14 +552,14 @@ Permissões Enterprise (Atualizado 09/01/2026):
 
 ## Git Workflow (Regras 17 e 18)
 
-**IMPORTANTE**: Este projeto usa um workflow Git específico que **NÃO utiliza staging** (área de preparação) e prioriza **commits consolidados** em modo enterprise.
+**IMPORTANTE**: Este projeto usa um workflow Git específico que prioriza **commits consolidados** em modo enterprise. **Staging é permitido** quando necessário (ex.: adicionar novos arquivos ou deleções).
 
 ### Fluxo de Trabalho
 
 1. **Desenvolvimento**: Código é modificado no working directory
 2. **Acumulação de Mudanças**: Múltiplas mudanças relacionadas são desenvolvidas e mantidas no working directory
 3. **Review Consolidado**: Todas as mudanças relacionadas DEVEM passar por review conjunto antes de commit
-4. **Commit Consolidado**: Após review e aprovação, fazer commit consolidado **SEM staging** (`git commit -a` ou commit direto via IDE) com várias mudanças relacionadas em um único commit
+4. **Commit Consolidado**: Após review e aprovação, fazer commit consolidado (`git commit -a` ou commit via IDE). **Staging pode ser usado** quando necessário (ex.: novos arquivos/deleções).
 5. **Acumulação Local**: Commits consolidados vão acumulando localmente (múltiplos commits consolidados são permitidos)
 6. **Push Manual**: Push manual com "Sync Changes" **SOMENTE** quando:
    - Todas as implementações estiverem completas
@@ -571,7 +571,7 @@ Permissões Enterprise (Atualizado 09/01/2026):
 
 - **OBRIGATÓRIO**: Commits consolidados com várias mudanças relacionadas (modo enterprise)
 - **PROIBIDO**: Commitar cada mudança individualmente (ineficiente e sobrecarrega review automática)
-- **PROIBIDO**: Usar `git add` ou staging automático
+- **PERMITIDO**: Usar `git add` para **novos arquivos** e **deleções**
 - **PROIBIDO**: Push automático (via hooks, CI/CD local, ou qualquer automação)
 - **OBRIGATÓRIO**: Review antes de cada commit consolidado
 - **OBRIGATÓRIO**: Aprovação do usuário antes de push
@@ -613,9 +613,9 @@ git commit -a -m "feat: implementação consolidada de feature X
 - Mudança 3 relacionada
 - Atualização de documentação"
 
-# Para incluir deleções de arquivos (git commit -a não inclui deleções automaticamente):
-git add -u  # Apenas para marcar deleções (exceção técnica necessária)
-git commit -m "feat: implementação consolidada + limpeza"
+# Para incluir novos arquivos/deleções (git commit -a não inclui novos arquivos automaticamente):
+git add -A
+git commit -m "feat: implementação consolidada + arquivos novos/deletados"
 
 # RECOMENDADO: Usar Cursor IDE que faz staging automático inteligente
 # Botão "Sync Changes" no IDE faz commit direto sem necessidade de git add manual
@@ -624,11 +624,8 @@ git commit -m "feat: implementação consolidada + limpeza"
 ### Comandos Git PROIBIDOS
 
 ```bash
-# PROIBIDO: Staging explícito para mudanças normais (use git commit -a)
-git add <arquivo>
-git add .
-# EXCEÇÃO: git add -u é permitido APENAS quando há deleções de arquivos
-# (git commit -a não inclui deleções automaticamente)
+# PROIBIDO: staging fragmentado para commits parciais sem necessidade
+# (evitar commits incompletos ou fora de escopo)
 
 # PROIBIDO: Commits individuais para cada mudança pequena
 # (deve consolidar mudanças relacionadas)
