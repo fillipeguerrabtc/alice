@@ -1,7 +1,7 @@
 # =============================================================================
 # CADDY - Reverse Proxy com SSL Automático
 # =============================================================================
-# Versão: 2.8.4-alpine
+# Versão: 2.10.0-alpine
 # Autor: Fillipe Guerra
 # Data: 02/01/2026
 #
@@ -15,7 +15,7 @@
 # Referência: https://caddyserver.com/docs/
 # =============================================================================
 
-FROM caddy:2.8.4-builder AS builder
+FROM caddy:2.10.0-builder AS builder
 
 # DuckDNS exige Go >= 1.24; toolchain auto baixa a versão necessária
 ENV GOTOOLCHAIN=auto
@@ -23,7 +23,7 @@ ENV GOTOOLCHAIN=auto
 # Build com plugin DuckDNS para ACME DNS-01
 RUN xcaddy build --with github.com/caddy-dns/duckdns
 
-FROM caddy:2.8.4-alpine
+FROM caddy:2.10.0-alpine
 
 COPY --from=builder /usr/bin/caddy /usr/bin/caddy
 

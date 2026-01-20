@@ -1,6 +1,6 @@
 {
   "pgbackrest": "2.57.0",
-  "caddy": "2.8.4-alpine",
+  "caddy": "2.10.0-alpine",
   "prometheus": "3.8.1",
   "grafana": "12.3.1",
   "loki": "3.6.3",
