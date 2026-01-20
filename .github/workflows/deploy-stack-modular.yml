@@ -1001,6 +1001,13 @@ jobs:
             exit 1
           fi
           
+          if [ -z "${DUCKDNS_TOKEN:-}" ]; then
+            echo ""
+            echo "::error::❌ ERRO: DUCKDNS_TOKEN não configurado no ambiente do workflow."
+            echo "::error::Configure o secret DUCKDNS_TOKEN no repositório e refaça o deploy."
+            exit 1
+          fi
+          
           if ! docker run --rm \
             --entrypoint caddy \
             -v "$(pwd)/infra/docker/Caddyfile:/etc/caddy/Caddyfile:ro" \
