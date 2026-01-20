@@ -17,6 +17,9 @@
 
 FROM caddy:2.8.4-builder AS builder
 
+# DuckDNS exige Go >= 1.24; toolchain auto baixa a versão necessária
+ENV GOTOOLCHAIN=auto
+
 # Build com plugin DuckDNS para ACME DNS-01
 RUN xcaddy build --with github.com/caddy-dns/duckdns
 
