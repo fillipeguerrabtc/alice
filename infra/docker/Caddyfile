@@ -122,8 +122,22 @@
 # TLS via DNS-01 (DuckDNS)
 (tls_duckdns) {
 	tls {
-		dns duckdns {$DUCKDNS_TOKEN}
-		resolvers 1.1.1.1 8.8.8.8
+		issuer acme {
+			ca https://acme.zerossl.com/v2/DV90
+			email {$ACME_EMAIL:admin@yesyoudeserve.duckdns.org}
+			dns duckdns {$DUCKDNS_TOKEN}
+			resolvers 1.1.1.1 8.8.8.8
+			eab {
+				key_id {$ZEROSSL_EAB_KID}
+				mac_key {$ZEROSSL_EAB_HMAC_KEY}
+			}
+		}
+		issuer acme {
+			ca https://acme-v02.api.letsencrypt.org/directory
+			email {$ACME_EMAIL:admin@yesyoudeserve.duckdns.org}
+			dns duckdns {$DUCKDNS_TOKEN}
+			resolvers 1.1.1.1 8.8.8.8
+		}
 	}
 }
 

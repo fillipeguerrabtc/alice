@@ -38,6 +38,8 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `ERPNEXT_ADMIN_PASSWORD` | Senha admin ERPNext | ✅ |
 | `ACME_EMAIL` | Email Let's Encrypt (Caddy TLS) | ✅ |
 | `DUCKDNS_TOKEN` | Token DuckDNS (ACME DNS-01) | ✅ |
+| `ZEROSSL_EAB_KID` | ZeroSSL EAB Key ID (fallback ACME) | ✅ |
+| `ZEROSSL_EAB_HMAC_KEY` | ZeroSSL EAB HMAC Key (fallback ACME) | ✅ |
 | `QDRANT_API_KEY` | API key do Qdrant (também usado pelo scrape Prometheus) | ✅ |
 | `MINIO_ROOT_PASSWORD` | Senha root do MinIO (Langfuse v3 S3) | ✅ |
 
@@ -56,6 +58,16 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `CLICKHOUSE_PASSWORD` | Password ClickHouse | ✅ |
 | `GMAIL_USER` | SMTP Grafana (Gmail) | ✅ |
 | `GMAIL_APP_PASSWORD` | App Password Gmail | ✅ |
+
+## ZeroSSL (EAB) - como gerar
+
+1. Criar conta gratuita no ZeroSSL.
+2. Acessar **Dashboard → Developer → Generate EAB Credentials**.
+3. Copiar e salvar:
+   - **EAB KID** → `ZEROSSL_EAB_KID`
+   - **EAB HMAC Key** → `ZEROSSL_EAB_HMAC_KEY`
+
+> As credenciais EAB não são exibidas novamente. Guarde em local seguro.
 
 ## Secrets de integrações
 

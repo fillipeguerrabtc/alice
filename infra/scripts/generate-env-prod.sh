@@ -707,6 +707,15 @@ if [ -z "${DUCKDNS_TOKEN:-}" ]; then
 fi
 
 # =============================================================================
+# FASE 7.0.1: Validar ZeroSSL EAB (ACME fallback)
+# =============================================================================
+if [ -z "${ZEROSSL_EAB_KID:-}" ] || [ -z "${ZEROSSL_EAB_HMAC_KEY:-}" ]; then
+  echo "::error::ZeroSSL EAB não definido. Caddy não conseguirá emitir certificados via ZeroSSL." >&2
+  echo "Configure os secrets ZEROSSL_EAB_KID e ZEROSSL_EAB_HMAC_KEY (EAB)." >&2
+  exit 1
+fi
+
+# =============================================================================
 # FASE 7.1: Validar usuário do mysqld_exporter (ERPNext)
 # =============================================================================
 if [ -z "${ERPNEXT_MYSQL_EXPORTER_USER:-}" ]; then
@@ -871,6 +880,8 @@ echo "📄 Gerando arquivo .env.prod..."
   printf '# SSL/TLS\n'
   printf 'ACME_EMAIL=%s\n' "${ACME_EMAIL:-}"
   printf 'DUCKDNS_TOKEN=%s\n' "${DUCKDNS_TOKEN}"
+  printf 'ZEROSSL_EAB_KID=%s\n' "${ZEROSSL_EAB_KID}"
+  printf 'ZEROSSL_EAB_HMAC_KEY=%s\n' "${ZEROSSL_EAB_HMAC_KEY}"
   printf '\n'
   printf '# Grafana\n'
   printf 'GRAFANA_ADMIN_USER=%s\n' "${GRAFANA_ADMIN_USER}"

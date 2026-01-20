@@ -209,7 +209,7 @@ C4Container
 
 | # | Container | Tecnologia | Porta | Responsabilidade |
 |---|-----------|------------|-------|------------------|
-| 1 | `alice-caddy` | Caddy 2.8.4 | 80,443 | API Gateway, SSL automático, HTTP/3 |
+| 1 | `alice-caddy` | Caddy 2.10.0 | 80,443 | API Gateway, SSL automático, HTTP/3 |
 | 2 | `alice-pgbackrest-init` | pgBackRest | - | Inicialização stanza backup |
 | 3 | `alice-postgres` | PostgreSQL 16 | 5432 | Banco principal + pgvector |
 | 4 | `alice-redis` | Redis 7.4.7 | 6379 | Cache distribuído (node-redis 5.x) |
@@ -217,7 +217,7 @@ C4Container
 | 6 | `alice-tor` | torproxy | 9050 | Proxy SOCKS5 Tor (.onion) |
 | 7 | `alice-searxng` | SearXNG | 8080 | Metabusca interna |
 
-> **NOTA 02/01/2026**: Traefik, traefik-init e dockerproxy foram substituídos por Caddy. Vantagens: SSL automático com retry inteligente, HTTP/3 nativo, footprint 40MB (vs 100MB Traefik), configuração declarativa via Caddyfile.
+> **NOTA 02/01/2026**: Traefik, traefik-init e dockerproxy foram substituídos por Caddy. Vantagens: SSL automático com retry inteligente, HTTP/3 nativo, footprint 40MB (vs 100MB Traefik), configuração declarativa via Caddyfile. **ACME resiliente**: ZeroSSL primário + Let's Encrypt fallback.
 
 #### Microsserviços Alice (7)
 

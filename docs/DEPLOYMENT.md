@@ -116,6 +116,11 @@ Consulte `docs/SECRETS.md` para a lista completa. O deploy é fail-fast se secre
 - `PGBACKREST_ALLOW_STANZA_RESET` = `true`  
   Permite reset controlado de stanza em caso de mismatch entre banco e repositório pgBackRest.
 
+**ACME resiliente (ZeroSSL + Let's Encrypt):**
+
+- O Caddy usa **ZeroSSL como emissor primário** e **Let's Encrypt como fallback**.
+- Secrets obrigatórios: `ZEROSSL_EAB_KID` e `ZEROSSL_EAB_HMAC_KEY` (EAB).
+
 ## pgBackRest (stanza)
 
 ### Criação padrão

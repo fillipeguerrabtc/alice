@@ -156,7 +156,7 @@
 - Validação Zod em endpoints e parâmetros críticos.
 - RLS aplicado nas tabelas de trading.
 - Secrets obrigatórios validados no deploy (fail-fast).
-- TLS automático via Caddy.
+- TLS automático via Caddy (ZeroSSL primário + Let's Encrypt fallback).
 
 ---
 
@@ -191,7 +191,7 @@ Retenção Arquivo:   30 dias
 
 ## Atualizações recentes (resumo)
 
-- Caddy: ACME resiliente com DNS precheck e desafio DNS-01 via DuckDNS.
+- Caddy: ACME resiliente com DNS precheck, DNS-01 DuckDNS e fallback ZeroSSL.
 - Grafana: regras de alerta ajustadas para evitar `DatasourceNoData` falso (bool + fallback 0/1).
 - Grafana: alerta de restart filtrado por containers Docker Compose (sem slices do host).
 - DB: migration `action_requests` agora aplica FKs completos (tenant/conversation/user/agent/resolved_by).
