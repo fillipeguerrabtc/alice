@@ -47,11 +47,11 @@
 	admin :2019
 	
 	# HTTP/3 habilitado globalmente (QUIC) + Métricas Prometheus
-	# CORREÇÃO 02/01/2026: 'metrics' deve estar DENTRO do bloco 'servers'
-	# Ref: https://caddyserver.com/docs/caddyfile/options#servers
+	# CORREÇÃO 20/01/2026: 'metrics' no bloco global (evita warning deprecado)
+	# Ref: https://caddyserver.com/docs/caddyfile/options#metrics
+	metrics
 	servers {
 		protocols h1 h2 h3
-		metrics
 	}
 	
 	# Logs estruturados
