@@ -1002,9 +1002,10 @@ jobs:
           fi
           
           if ! docker run --rm \
+            --entrypoint caddy \
             -v "$(pwd)/infra/docker/Caddyfile:/etc/caddy/Caddyfile:ro" \
             -e DUCKDNS_TOKEN="${DUCKDNS_TOKEN}" \
-            "$CADDY_IMAGE" caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile; then
+            "$CADDY_IMAGE" validate --config /etc/caddy/Caddyfile --adapter caddyfile; then
             echo ""
             echo "::error::❌ ERRO: Caddyfile inválido!"
             echo "::error::Corrija os erros de sintaxe antes de fazer deploy."
