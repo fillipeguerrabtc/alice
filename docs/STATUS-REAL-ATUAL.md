@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 18 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.48 - OAuth Google valida callback
+**Versão:** 7.49 - Jaeger metrics inline
 
 ---
 
@@ -231,6 +231,7 @@ Retenção Arquivo:   30 dias
 - Auth: callback Google respeita `OAUTH_CALLBACK_URL` e rota compatível.
 - Observability: config do Jaeger usa exporter prometheus suportado.
 - Auth: valida `OAUTH_CALLBACK_URL` para Google e aplica fallback seguro.
+- Observability: telemetry metrics usa host/port inline no reader.
 - Frontend build: ordem de handlers de gravação e avatar corrigida (evita TS2448/TS2454).
 - Dark Mode: paleta preta/cinza para experiência similar ao ChatGPT.
 - Avatar do Chat: GIF dinâmico (packman pensando, gato após resposta) com tamanho ajustado.
