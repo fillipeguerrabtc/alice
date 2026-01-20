@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 20 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.60 - ACME resiliente (DNS precheck + DuckDNS)
+**Versão:** 7.61 - ACME resiliente (ZeroSSL + LE)
 
 ---
 
@@ -192,6 +192,7 @@ Retenção Arquivo:   30 dias
 ## Atualizações recentes (resumo)
 
 - Caddy: ACME resiliente com DNS precheck, DNS-01 DuckDNS e fallback ZeroSSL.
+- Caddy: emissor ACME ajustado para sintaxe compatível no Caddyfile (sem propriedade `ca`).
 - Grafana: regras de alerta ajustadas para evitar `DatasourceNoData` falso (bool + fallback 0/1).
 - Grafana: alerta de restart filtrado por containers Docker Compose (sem slices do host).
 - DB: migration `action_requests` agora aplica FKs completos (tenant/conversation/user/agent/resolved_by).
