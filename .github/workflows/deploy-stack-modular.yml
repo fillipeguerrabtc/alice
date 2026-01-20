@@ -976,6 +976,8 @@ jobs:
 
       - name: Validar Caddyfile (syntax check)
         id: validate-caddyfile
+        env:
+          DUCKDNS_TOKEN: ${{ secrets.DUCKDNS_TOKEN }}
         run: |
           set -euo pipefail
           # =================================================================
