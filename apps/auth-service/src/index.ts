@@ -744,10 +744,14 @@ passport.deserializeUser(async (id: string, done) => {
 
 // URL base para callbacks OAuth
 // Produção: Hetzner Cloud (yesyoudeserve.duckdns.org)
+const normalizeBaseUrl = (value: string): string => {
+  return value.trim().replace(/\/+$/, '');
+};
+
 const getBaseUrl = (): string => {
   // Prioridade: BASE_URL definida explicitamente
   if (process.env.BASE_URL) {
-    return process.env.BASE_URL;
+    return normalizeBaseUrl(process.env.BASE_URL);
   }
   // Produção Hetzner
   if (process.env.NODE_ENV === 'production') {
@@ -776,19 +780,19 @@ const getGoogleCallbackUrl = (): string => {
   if (oauthCallback) {
     const isPathOnly = oauthCallback.startsWith('/');
     if (isPathOnly) {
-      if (oauthCallback === '/api/auth/google/callback') {
-        return `${getBaseUrl()}${oauthCallback}`;
+      const baseUrl = getBaseUrl();
+      const resolved = `${baseUrl}${oauthCallback}`;
+      if (!oauthCallback.startsWith('/api/auth/google/callback')) {
+        logger.warn({ oauthCallback }, 'OAUTH_CALLBACK_URL fora do padrão /api/auth/google/callback');
       }
-      logger.warn({ oauthCallback }, 'OAUTH_CALLBACK_URL inválido para Google; usando callback padrão');
-      return `${getBaseUrl()}/api/auth/google/callback`;
+      return resolved;
     }
     try {
       const parsed = new URL(oauthCallback);
-      if (parsed.pathname === '/api/auth/google/callback') {
-        return oauthCallback;
+      if (!parsed.pathname.startsWith('/api/auth/google/callback')) {
+        logger.warn({ oauthCallback }, 'OAUTH_CALLBACK_URL fora do padrão /api/auth/google/callback');
       }
-      logger.warn({ oauthCallback }, 'OAUTH_CALLBACK_URL inválido para Google; usando callback padrão');
-      return `${getBaseUrl()}/api/auth/google/callback`;
+      return parsed.toString();
     } catch (error) {
       logger.warn({ oauthCallback, error }, 'OAUTH_CALLBACK_URL inválido; usando callback padrão');
       return `${getBaseUrl()}/api/auth/google/callback`;
@@ -1737,10 +1741,15 @@ if (googleClientId) {
     successRedirect: '/dashboard',
   });
 
-  app.get(googleCallbackPath, googleCallbackHandler);
+  const googleCallbackPaths = new Set([
+    googleCallbackPath,
+    '/api/auth/google/callback',
+    '/api/auth/google/callback/',
+  ]);
 
-  if (googleCallbackPath !== '/api/auth/google/callback') {
-    app.get('/api/auth/google/callback', googleCallbackHandler);
+  for (const path of googleCallbackPaths) {
+    if (!path) continue;
+    app.get(path, googleCallbackHandler);
   }
 }
 

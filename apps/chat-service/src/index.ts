@@ -1025,8 +1025,10 @@ async function generateImageFromPrompt(input: ImageGenerationInput) {
 
     if (!openAiResponse.ok) {
       const errText = await openAiResponse.text().catch(() => '');
-      const isResponseFormatError = errText.includes('response_format') || errText.includes('Unknown parameter');
-      const isOutputFormatError = errText.includes('output_format') || errText.includes('Unknown parameter');
+      const unknownParamMatch = errText.match(/Unknown parameter:\s*([a-zA-Z0-9_]+)/i);
+      const unknownParam = unknownParamMatch?.[1]?.toLowerCase();
+      const isResponseFormatError = errText.includes('response_format') || unknownParam === 'response_format';
+      const isOutputFormatError = errText.includes('output_format') || unknownParam === 'output_format';
       if (openAiResponse.status === 400 && (isResponseFormatError || isOutputFormatError)) {
         logger.warn({
           status: openAiResponse.status,

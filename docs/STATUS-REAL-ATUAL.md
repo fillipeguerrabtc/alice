@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 18 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.53 - Media-only cards sem fundo
+**Versão:** 7.55 - OpenAI Images fallback corrigido
 
 ---
 
@@ -193,6 +193,8 @@ Retenção Arquivo:   30 dias
 
 - Frontend: normalização de line endings (CRLF → LF) em componentes de mídia do chat.
 - Chat UI: mensagens somente com mídia agora ficam realmente sem fundo (bg transparente).
+- OAuth Google: callbackURL alinhado com config e suporte a path com trailing slash.
+- OpenAI Images: fallback de parâmetros agora remove apenas o parâmetro inválido.
 - Agentic: confirmação persistida para ações críticas de trading (action_requests).
 - Agentic: parser exige confirmação explícita antes de executar ordens sensíveis.
 - Chat UI: paste de imagem (Ctrl+V) anexa automaticamente no input.
