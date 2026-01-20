@@ -119,10 +119,18 @@
 	header_up Upgrade {header.Upgrade}
 }
 
+# TLS via DNS-01 (DuckDNS)
+(tls_duckdns) {
+	tls {
+		dns duckdns {env.DUCKDNS_TOKEN}
+	}
+}
+
 # =============================================================================
 # FRONTEND + APIs ALICE
 # =============================================================================
 yesyoudeserve.duckdns.org {
+	import tls_duckdns
 	# Security headers em todas as respostas
 	import security_headers
 	
@@ -287,6 +295,7 @@ yesyoudeserve.duckdns.org {
 # GRAFANA (Observability Dashboard)
 # =============================================================================
 observability.yesyoudeserve.duckdns.org {
+	import tls_duckdns
 	import security_headers
 	
 	reverse_proxy grafana:3000 {
@@ -298,6 +307,7 @@ observability.yesyoudeserve.duckdns.org {
 # PROMETHEUS (Métricas)
 # =============================================================================
 metrics.yesyoudeserve.duckdns.org {
+	import tls_duckdns
 	import security_headers
 	
 	reverse_proxy prometheus:9090 {
@@ -309,6 +319,7 @@ metrics.yesyoudeserve.duckdns.org {
 # JAEGER (Distributed Tracing)
 # =============================================================================
 traces.yesyoudeserve.duckdns.org {
+	import tls_duckdns
 	import security_headers
 	
 	reverse_proxy jaeger:16686 {
@@ -320,6 +331,7 @@ traces.yesyoudeserve.duckdns.org {
 # LANGFUSE (LLM Observability)
 # =============================================================================
 langfuse.yesyoudeserve.duckdns.org {
+	import tls_duckdns
 	import security_headers
 	
 	reverse_proxy langfuse:3000 {
@@ -331,6 +343,7 @@ langfuse.yesyoudeserve.duckdns.org {
 # ERPNEXT (ERP/CRM)
 # =============================================================================
 erp.yesyoudeserve.duckdns.org {
+	import tls_duckdns
 	import security_headers
 	
 	# WebSocket ERPNext (socket.io)

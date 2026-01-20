@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 **Autor:** Fillipe Guerra  
-**Data:** 18 de Janeiro de 2026  
+**Data:** 20 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.58 - Métricas LLM/RAG e UIDs Grafana
+**Versão:** 7.60 - ACME resiliente (DNS precheck + DuckDNS)
 
 ---
 
@@ -191,6 +191,7 @@ Retenção Arquivo:   30 dias
 
 ## Atualizações recentes (resumo)
 
+- Caddy: ACME resiliente com DNS precheck e desafio DNS-01 via DuckDNS.
 - Grafana: regras de alerta ajustadas para evitar `DatasourceNoData` falso (bool + fallback 0/1).
 - Grafana: alerta de restart filtrado por containers Docker Compose (sem slices do host).
 - DB: migration `action_requests` agora aplica FKs completos (tenant/conversation/user/agent/resolved_by).

@@ -15,10 +15,17 @@
 # Referência: https://caddyserver.com/docs/
 # =============================================================================
 
+FROM caddy:2.8.4-builder AS builder
+
+# Build com plugin DuckDNS para ACME DNS-01
+RUN xcaddy build --with github.com/caddy-dns/duckdns
+
 FROM caddy:2.8.4-alpine
 
+COPY --from=builder /usr/bin/caddy /usr/bin/caddy
+
 LABEL org.opencontainers.image.source="https://github.com/fillipeguerrabtc/alice"
-LABEL org.opencontainers.image.description="Caddy Reverse Proxy for Alice Platform"
+LABEL org.opencontainers.image.description="Caddy Reverse Proxy for Alice Platform (DuckDNS DNS-01)"
 LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.authors="Fillipe Guerra"
 

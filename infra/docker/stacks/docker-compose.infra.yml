@@ -167,6 +167,7 @@ services:
       - no-new-privileges:true
     environment:
       ACME_EMAIL: ${ACME_EMAIL}
+      DUCKDNS_TOKEN: ${DUCKDNS_TOKEN}
     ports:
       - "80:80"
       - "443:443"

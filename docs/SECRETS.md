@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 20 de Janeiro de 2026  
-**Versão:** 7.9 - Secrets GitHub/Redis/MinIO alinhados
+**Versão:** 7.10 - Precheck DNS ACME configurável
 
 ## Visão geral
 
@@ -37,6 +37,7 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `GRAFANA_ADMIN_PASSWORD` | Senha admin Grafana | ✅ |
 | `ERPNEXT_ADMIN_PASSWORD` | Senha admin ERPNext | ✅ |
 | `ACME_EMAIL` | Email Let's Encrypt (Caddy TLS) | ✅ |
+| `DUCKDNS_TOKEN` | Token DuckDNS (ACME DNS-01) | ✅ |
 | `QDRANT_API_KEY` | API key do Qdrant (também usado pelo scrape Prometheus) | ✅ |
 | `MINIO_ROOT_PASSWORD` | Senha root do MinIO (Langfuse v3 S3) | ✅ |
 
@@ -117,6 +118,13 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `NO_PROXY` | Hosts que não devem usar proxy (ex: `api.openai.com,.openai.com`) |
 | `OPENAI_VISION_MAX_BYTES` | Limite de payload (bytes) para Vision via OpenAI |
 | `RAG_REQUEST_TIMEOUT_MS` | Timeout (ms) para chamadas ao RAG (context/classify/agentic) |
+| `ACME_DNS_PRECHECK_ENABLED` | `true` ativa pré-check DNS ACME antes de subir o Caddy |
+| `ACME_DNS_PRECHECK_MAX_ATTEMPTS` | Número máximo de tentativas do pré-check DNS |
+| `ACME_DNS_PRECHECK_INTERVAL_SECONDS` | Intervalo (segundos) entre tentativas do pré-check DNS |
+| `ACME_DNS_PRECHECK_TIMEOUT_SECONDS` | Timeout (segundos) por consulta DNS via DoH |
+| `ACME_DNS_PRECHECK_RESOLVERS` | Lista de resolvers DoH (separada por espaço) |
+| `ACME_DNS_PRECHECK_REQUIRE_ALL_RESOLVERS` | `true` exige sucesso em todos os resolvers DoH |
+| `ACME_DNS_PRECHECK_HOSTS` | Lista de hosts para checagem (override do Caddyfile) |
 
 ## Geração recomendada
 
