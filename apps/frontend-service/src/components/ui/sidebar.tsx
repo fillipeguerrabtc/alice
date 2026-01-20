@@ -185,7 +185,7 @@ const Sidebar = React.forwardRef<
     },
     ref
   ) => {
-    const { state, isMobile, openMobile, setOpenMobile, setOpen } = useSidebar();
+    const { state, isMobile, openMobile, setOpenMobile } = useSidebar();
 
     // MOBILE: Usar Sheet (drawer) para navegação offcanvas
     if (isMobile) {
