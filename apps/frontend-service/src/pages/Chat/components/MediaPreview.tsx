@@ -1,6 +1,6 @@
 /**
  * MediaPreview - Preview compacto de mídia na área de input
- * 
+ *
  * @module Chat/components/MediaPreview
  */
 
@@ -38,13 +38,13 @@ export function MediaPreview({ media, onRemove }: MediaPreviewProps) {
           </div>
         )}
         {/* REMOVIDO 23/12/2025: Suporte a vídeo desabilitado (muito pesado para GPU) */}
-        
+
         <div className="flex-1 min-w-0">
           <p className="text-xs font-medium truncate">{media.fileName}</p>
           <p className="text-xs text-muted-foreground">{formatFileSize(media.fileSize)}</p>
         </div>
       </button>
-      
+
       <Button
         variant="destructive"
         size="icon"

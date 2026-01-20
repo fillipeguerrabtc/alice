@@ -1,6 +1,6 @@
 /**
  * InlineMediaAttachment - Renderiza mídia inline nas mensagens
- * 
+ *
  * @module Chat/components/InlineMediaAttachment
  */
 
@@ -76,8 +76,8 @@ export function InlineMediaAttachment({ media }: InlineMediaAttachmentProps) {
           onClick={() => setShowFullscreen(true)}
           data-testid={`image-attachment-${media.id}`}
         />
-        
-        <div 
+
+        <div
           className="absolute bottom-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
           style={{ visibility: 'hidden' }}
           onMouseEnter={(e) => { e.currentTarget.style.visibility = 'visible'; }}

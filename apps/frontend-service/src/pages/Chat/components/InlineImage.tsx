@@ -1,8 +1,8 @@
 /**
  * InlineImage - Renderiza imagens geradas inline nas mensagens
- * 
+ *
  * Com sistema de rating para aprovação de training.
- * 
+ *
  * @module Chat/components/InlineImage
  */
 
@@ -67,7 +67,7 @@ export function InlineImage({ image, onRate }: InlineImageProps) {
           onClick={() => setShowFullscreen(true)}
           data-testid={`image-generated-${image.id}`}
         />
-        
+
         <div className="absolute bottom-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <Button
             variant="secondary"
@@ -95,7 +95,7 @@ export function InlineImage({ image, onRate }: InlineImageProps) {
         </div>
 
         {onRate && (
-          <div 
+          <div
             className="absolute top-2 right-2 flex gap-0.5 p-1 bg-black/50 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
             onMouseLeave={() => setHoveredStar(0)}
           >

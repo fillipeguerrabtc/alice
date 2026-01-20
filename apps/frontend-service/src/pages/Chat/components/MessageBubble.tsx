@@ -108,10 +108,11 @@ export function MessageBubble({
         <Card
           className={cn(
             'p-3 shadow-sm transition-all',
-            isMediaOnly && 'bg-transparent p-0 shadow-none border-0',
-            isUser
-              ? 'bg-muted text-foreground rounded-br-sm'
-              : 'bg-muted text-foreground rounded-bl-sm'
+            isMediaOnly
+              ? 'bg-transparent p-0 shadow-none border-0'
+              : isUser
+                ? 'bg-muted text-foreground rounded-br-sm'
+                : 'bg-muted text-foreground rounded-bl-sm'
           )}
           data-testid={`message-${message.role}-${message.id}`}
         >

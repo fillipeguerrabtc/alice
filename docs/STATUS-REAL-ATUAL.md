@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 18 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.51 - Agentic confirmations + UX chat
+**Versão:** 7.53 - Media-only cards sem fundo
 
 ---
 
@@ -191,6 +191,8 @@ Retenção Arquivo:   30 dias
 
 ## Atualizações recentes (resumo)
 
+- Frontend: normalização de line endings (CRLF → LF) em componentes de mídia do chat.
+- Chat UI: mensagens somente com mídia agora ficam realmente sem fundo (bg transparente).
 - Agentic: confirmação persistida para ações críticas de trading (action_requests).
 - Agentic: parser exige confirmação explícita antes de executar ordens sensíveis.
 - Chat UI: paste de imagem (Ctrl+V) anexa automaticamente no input.
