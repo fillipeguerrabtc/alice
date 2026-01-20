@@ -988,8 +988,19 @@ jobs:
           # =================================================================
           echo "🔍 Validando sintaxe do Caddyfile..."
           
+          # Usar a imagem customizada (com plugin DuckDNS) para validar o Caddyfile
+          VERSION="${{ github.event.inputs.version }}"
+          CADDY_IMAGE="${{ env.IMAGE_PREFIX }}-caddy:${VERSION}"
+          
+          if ! docker pull "$CADDY_IMAGE" >/dev/null 2>&1; then
+            echo ""
+            echo "::error::❌ ERRO: Imagem Caddy não encontrada no GHCR (${CADDY_IMAGE})"
+            echo "::error::A release deve construir a imagem antes do deploy."
+            exit 1
+          fi
+          
           if ! docker run --rm -v "$(pwd)/infra/docker/Caddyfile:/etc/caddy/Caddyfile:ro" \
-            caddy:2.8.4-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile; then
+            "$CADDY_IMAGE" caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile; then
             echo ""
             echo "::error::❌ ERRO: Caddyfile inválido!"
             echo "::error::Corrija os erros de sintaxe antes de fazer deploy."
