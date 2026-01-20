@@ -698,6 +698,15 @@ if [ -z "${ACME_EMAIL:-}" ]; then
 fi
 
 # =============================================================================
+# FASE 7.0: Validar DUCKDNS_TOKEN (DNS-01)
+# =============================================================================
+if [ -z "${DUCKDNS_TOKEN:-}" ]; then
+  echo "::error::DUCKDNS_TOKEN não definido. Caddy não conseguirá validar DNS-01 (DuckDNS)." >&2
+  echo "Configure o secret DUCKDNS_TOKEN com o token do DuckDNS." >&2
+  exit 1
+fi
+
+# =============================================================================
 # FASE 7.1: Validar usuário do mysqld_exporter (ERPNext)
 # =============================================================================
 if [ -z "${ERPNEXT_MYSQL_EXPORTER_USER:-}" ]; then
@@ -861,6 +870,7 @@ echo "📄 Gerando arquivo .env.prod..."
   printf '\n'
   printf '# SSL/TLS\n'
   printf 'ACME_EMAIL=%s\n' "${ACME_EMAIL:-}"
+  printf 'DUCKDNS_TOKEN=%s\n' "${DUCKDNS_TOKEN}"
   printf '\n'
   printf '# Grafana\n'
   printf 'GRAFANA_ADMIN_USER=%s\n' "${GRAFANA_ADMIN_USER}"

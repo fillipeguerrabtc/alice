@@ -656,6 +656,7 @@ jobs:
           ENV_DOMAIN: ${{ env.DOMAIN }}
           # Secrets completos (cópia exata do workflow original)
           SECRET_ACME_EMAIL: ${{ secrets.ACME_EMAIL }}
+          SECRET_DUCKDNS_TOKEN: ${{ secrets.DUCKDNS_TOKEN }}
           SECRET_POSTGRES_PASSWORD: ${{ secrets['POSTGRES_PASSWORD'] }}
           SECRET_REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
           SECRET_QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
@@ -773,6 +774,7 @@ jobs:
           export IMAGE_TAG="${DEPLOY_VERSION}"
           export DOMAIN="${ENV_DOMAIN}"
           export ACME_EMAIL="${SECRET_ACME_EMAIL}"
+          export DUCKDNS_TOKEN="${SECRET_DUCKDNS_TOKEN}"
           export DEPLOY_VERSION="${DEPLOY_VERSION}"
           export STACK_NAME="${STACK_NAME}"
           export IS_ROLLBACK="${IS_ROLLBACK}"
