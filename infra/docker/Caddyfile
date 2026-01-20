@@ -123,6 +123,7 @@
 (tls_duckdns) {
 	tls {
 		dns duckdns {$DUCKDNS_TOKEN}
+		resolvers 1.1.1.1 8.8.8.8
 	}
 }
 
