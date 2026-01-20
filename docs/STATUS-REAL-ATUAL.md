@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 **Autor:** Fillipe Guerra  
-**Data:** 20 de Janeiro de 2026  
+**Data:** 18 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.56 - Secrets GitHub/Redis/MinIO alinhados
+**Versão:** 7.58 - Métricas LLM/RAG e UIDs Grafana
 
 ---
 
@@ -191,10 +191,16 @@ Retenção Arquivo:   30 dias
 
 ## Atualizações recentes (resumo)
 
+- Grafana: regras de alerta ajustadas para evitar `DatasourceNoData` falso (bool + fallback 0/1).
+- Grafana: alerta de restart filtrado por containers Docker Compose (sem slices do host).
+- DB: migration `action_requests` agora aplica FKs completos (tenant/conversation/user/agent/resolved_by).
 - OAuth GitHub: suporte a OAUTH_GITHUB_* e fallback para GITHUB_* legado.
 - Docs: `SECRETS.md` atualizado com Redis cache/queue, MinIO e CORS.
 - Frontend: normalização de line endings (CRLF → LF) em componentes de mídia do chat.
 - Chat UI: mensagens somente com mídia agora ficam realmente sem fundo (bg transparente).
+- Métricas: LLM tokens (prompt/gerados) instrumentados no chat-service.
+- Métricas: relevância RAG emitida no chat-service por tenant quando há fontes.
+- Grafana: UIDs de dashboards ajustados para não conflitar com folderUid.
 - OAuth Google: callbackURL alinhado com config e suporte a path com trailing slash.
 - OpenAI Images: fallback de parâmetros agora remove apenas o parâmetro inválido.
 - Agentic: confirmação persistida para ações críticas de trading (action_requests).

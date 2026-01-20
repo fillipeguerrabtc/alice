@@ -167,7 +167,7 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: sum(rate(alice_llm_requests_total{status="error"}[5m])) / (sum(rate(alice_llm_requests_total[5m])) + 0.001)
+              expr: (sum(rate(alice_llm_requests_total{status="error"}[5m])) or on() vector(0)) / ((sum(rate(alice_llm_requests_total[5m])) or on() vector(0)) + 0.001)
               refId: A
           - refId: B
             datasourceUid: __expr__
@@ -206,7 +206,7 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: sum(rate(alice_llm_requests_total{status="error"}[5m])) / (sum(rate(alice_llm_requests_total[5m])) + 0.001)
+              expr: (sum(rate(alice_llm_requests_total{status="error"}[5m])) or on() vector(0)) / ((sum(rate(alice_llm_requests_total[5m])) or on() vector(0)) + 0.001)
               refId: A
           - refId: B
             datasourceUid: __expr__
@@ -248,7 +248,7 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: alice_circuit_breaker_state == 1
+              expr: alice_circuit_breaker_state == bool 1
               refId: A
           - refId: B
             datasourceUid: __expr__
@@ -289,7 +289,7 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: increase(alice_llm_tokens_prompt_total[1h]) + increase(alice_llm_tokens_generated_total[1h])
+              expr: (sum(increase(alice_llm_tokens_prompt_total[1h])) or on() vector(0)) + (sum(increase(alice_llm_tokens_generated_total[1h])) or on() vector(0))
               refId: A
           - refId: B
             datasourceUid: __expr__
@@ -328,7 +328,7 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: increase(alice_llm_tokens_prompt_total[1h]) + increase(alice_llm_tokens_generated_total[1h])
+              expr: (sum(increase(alice_llm_tokens_prompt_total[1h])) or on() vector(0)) + (sum(increase(alice_llm_tokens_generated_total[1h])) or on() vector(0))
               refId: A
           - refId: B
             datasourceUid: __expr__
@@ -409,7 +409,7 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: avg(alice_rag_relevance_score)
+              expr: avg(alice_rag_relevance_score) or on() vector(1)
               refId: A
           - refId: B
             datasourceUid: __expr__
@@ -590,7 +590,7 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: increase(kube_pod_container_status_restarts_total[15m]) > 0 or increase(container_start_time_seconds[15m]) > 2
+              expr: increase(kube_pod_container_status_restarts_total[15m]) > 0 or increase(container_start_time_seconds{container_label_com_docker_compose_service!=""}[15m]) > 2
               refId: A
           - refId: B
             datasourceUid: __expr__
@@ -628,7 +628,7 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: pg_up == 0
+              expr: pg_up == bool 0
               refId: A
           - refId: B
             datasourceUid: __expr__
@@ -761,7 +761,7 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: alice_circuit_breaker_state{name="kucoin_futures"} == 1
+              expr: alice_circuit_breaker_state{name="kucoin_futures"} == bool 1
               refId: A
           - refId: B
             datasourceUid: __expr__
@@ -800,7 +800,7 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: histogram_quantile(0.95, sum(rate(alice_integration_call_duration_seconds_bucket{integration="kucoin"}[5m])) by (le))
+              expr: histogram_quantile(0.95, sum(rate(alice_integration_call_duration_seconds_bucket{integration="kucoin"}[5m])) by (le)) or on() vector(0)
               refId: A
           - refId: B
             datasourceUid: __expr__
@@ -839,7 +839,7 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: sum(rate(alice_integration_calls_total{integration="kucoin",status="error"}[5m])) / (sum(rate(alice_integration_calls_total{integration="kucoin"}[5m])) + 0.001)
+              expr: (sum(rate(alice_integration_calls_total{integration="kucoin",status="error"}[5m])) or on() vector(0)) / ((sum(rate(alice_integration_calls_total{integration="kucoin"}[5m])) or on() vector(0)) + 0.001)
               refId: A
           - refId: B
             datasourceUid: __expr__

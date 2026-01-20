@@ -77,7 +77,7 @@ import {
   uploadMediaToRAG,
   classificarConsultaAgentic,
 } from './rag-client.js';
-import type { MediaUploadResult } from './rag-client.js';
+import type { MediaUploadResult, RAGContextResponse } from './rag-client.js';
 import {
   initOrchestrator,
   getOrCreateConversationState,
@@ -1649,6 +1649,28 @@ function estimateTokensFromMessages(messages: LLMMessage[]): number {
   return messages.reduce((sum, msg) => sum + estimateTokensFromText(msg.content || ''), 0);
 }
 
+function recordLlmTokenUsage(params: { model: string; promptTokens: number; generatedTokens?: number }): void {
+  const { model, promptTokens, generatedTokens } = params;
+  if (promptTokens > 0) {
+    metrics.llm.tokensPrompt.inc({ model }, promptTokens);
+  }
+  if (generatedTokens && generatedTokens > 0) {
+    metrics.llm.tokensGenerated.inc({ model }, generatedTokens);
+  }
+}
+
+function recordRagRelevance(tenantId: string | null | undefined, ragResult: RAGContextResponse | null): void {
+  if (!tenantId || !ragResult?.sources?.length) {
+    return;
+  }
+  const avg = ragResult.sources.reduce((sum, source) => sum + source.similarity, 0) / ragResult.sources.length;
+  if (!Number.isFinite(avg)) {
+    return;
+  }
+  const normalized = Math.max(0, Math.min(1, avg));
+  metrics.rag.relevanceScore.set({ tenant_id: tenantId }, normalized);
+}
+
 function computeDynamicMaxTokens(baseMax: number, promptTokens: number): number {
   let dynamicMax = baseMax;
   if (promptTokens > 3600) {
@@ -2454,10 +2476,17 @@ async function callLlamaAPI(
     throw new Error('callLlamaAPI não suporta streaming - use proxy direto no endpoint/handler');
   }
   
+  const model = config?.model || DEFAULT_LLM_CONFIG.model;
   try {
     const response = await gpuManagerBreaker.fire({ messages, stream: false, config, priority }) as globalThis.Response;
     const data = await response.json() as LLMResponse;
-    return data.choices[0]?.message?.content || '';
+    const content = data.choices[0]?.message?.content || '';
+    recordLlmTokenUsage({
+      model,
+      promptTokens: estimateTokensFromMessages(messages),
+      generatedTokens: estimateTokensFromText(content),
+    });
+    return content;
   } catch (error) {
     // RESILIÊNCIA: Graceful degradation quando LLM está indisponível (Best Practices 2025)
     // Retorna mensagem amigável ao invés de erro técnico
@@ -2517,6 +2546,8 @@ async function proxyStreamFromGpuManager(
   const startNs = process.hrtime.bigint();
   let observedTtft = false;
   let requestStatus: 'success' | 'error' | 'fallback' = 'error';
+  const promptTokens = estimateTokensFromMessages(llmMessages);
+  let generatedTokensRecorded = false;
   
   // BUG FIX 26/12/2025: Usar requestGpuStream centralizado de @alice/shared-utils
   // Remove duplicação de GPU_MANAGER_URL e validação de INTERNAL_API_SECRET
@@ -2539,6 +2570,7 @@ async function proxyStreamFromGpuManager(
       },
       timeout: 60000,
     });
+    recordLlmTokenUsage({ model, promptTokens });
   } catch (gpuError) {
     logger.error({ 
       error: gpuError instanceof Error ? gpuError.message : String(gpuError),
@@ -2629,6 +2661,14 @@ async function proxyStreamFromGpuManager(
           await onDone(fullResponse);
         }
         requestStatus = 'success';
+        if (!generatedTokensRecorded) {
+          recordLlmTokenUsage({
+            model,
+            promptTokens: 0,
+            generatedTokens: estimateTokensFromText(fullResponse),
+          });
+          generatedTokensRecorded = true;
+        }
         metrics.llm.requestsTotal.inc({ model, type: llmType, status: requestStatus });
         metrics.llm.inferenceDuration.observe({ model, type: llmType }, Number(process.hrtime.bigint() - startNs) / 1e9);
         return fullResponse;
@@ -2643,6 +2683,14 @@ async function proxyStreamFromGpuManager(
       await onDone(fullResponse);
     }
     requestStatus = 'success';
+    if (!generatedTokensRecorded) {
+      recordLlmTokenUsage({
+        model,
+        promptTokens: 0,
+        generatedTokens: estimateTokensFromText(fullResponse),
+      });
+      generatedTokensRecorded = true;
+    }
     metrics.llm.requestsTotal.inc({ model, type: llmType, status: requestStatus });
     metrics.llm.inferenceDuration.observe({ model, type: llmType }, Number(process.hrtime.bigint() - startNs) / 1e9);
     return fullResponse;
@@ -4027,6 +4075,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       { userId, tenantId, role: userRole }
     );
     const ragLatency = Date.now() - ragStartTime;
+    recordRagRelevance(tenantId, ragResult);
     
     if (ragResult && ragResult.context) {
       systemPrompt += formatarContextoParaLLM(ragResult);
@@ -4483,6 +4532,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         ragParams.threshold,
         { userId, tenantId, role: req.user?.role as Role }
       );
+      recordRagRelevance(tenantId, ragResult);
       if (ragResult?.context) {
         systemPrompt += formatarContextoParaLLM(ragResult);
         res.write(`data: ${JSON.stringify({ type: 'sources', sources: { internal: ragResult.sources || [] } })}\n\n`);
@@ -5233,6 +5283,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           auth: { userId, tenantId, role: req.user?.role as Role },
         }),
       ]);
+      recordRagRelevance(tenantId, ragResult);
 
       let systemPrompt = buildSystemPrompt(agent, assistantSettings, userMessageContent);
       let ragSources: Array<{ documentId: string; titulo: string; similarity: number }> = [];
@@ -6416,6 +6467,7 @@ wss.on('connection', (ws, req) => {
           { userId, tenantId: safeTenantId, role: safeUserRole }
         );
         const ragLatency = Date.now() - ragStartTime;
+        recordRagRelevance(safeTenantId, ragResult);
         
         if (ragResult && ragResult.context) {
           systemPrompt += formatarContextoParaLLM(ragResult);
@@ -6875,6 +6927,7 @@ wss.on('connection', (ws, req) => {
           ragParams.threshold,
           { userId, tenantId, role: safeUserRole }
         );
+        recordRagRelevance(tenantId, ragResult);
         
         if (ragResult?.context) {
           systemPrompt += formatarContextoParaLLM(ragResult);
@@ -8600,6 +8653,7 @@ app.post('/api/chat/message', asyncHandler(async (req: Request, res: Response) =
       ragParams.threshold,
       { userId: req.user?.userId as string, tenantId: req.tenantId as string, role: req.user?.role as Role }
     );
+    recordRagRelevance(req.tenantId, ragResult);
     if (ragResult && ragResult.context) {
       systemPrompt += formatarContextoParaLLM(ragResult);
     }
