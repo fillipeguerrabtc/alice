@@ -178,7 +178,7 @@ const Sidebar = React.forwardRef<
     {
       side = 'left',
       variant = 'sidebar',
-      collapsible = 'icon',
+      collapsible = 'offcanvas',
       className,
       children,
       ...props
@@ -210,34 +210,20 @@ const Sidebar = React.forwardRef<
     }
 
     // DESKTOP: Sidebar fixa com collapse
-    const handleMouseEnter = () => {
-      if (collapsible === 'icon' && state === 'collapsed') {
-        setOpen(true);
-      }
-    };
-
-    const handleMouseLeave = () => {
-      if (collapsible === 'icon' && state === 'expanded') {
-        setOpen(false);
-      }
-    };
-
     return (
       <div
         ref={ref}
         className={cn(
           'group peer hidden lg:block shrink-0 w-[--sidebar-width] transition-[width] duration-200 ease-linear',
           'flex-[0_0_var(--sidebar-width)]',
-          'data-[collapsible=icon]:w-[--sidebar-width-icon] data-[collapsible=icon]:flex-[0_0_var(--sidebar-width-icon)]',
-          'data-[state=collapsed]:w-[--sidebar-width-icon] data-[state=collapsed]:flex-[0_0_var(--sidebar-width-icon)]',
-          'data-[state=collapsed]:min-w-[--sidebar-width-icon] data-[state=collapsed]:max-w-[--sidebar-width-icon]'
+          'data-[state=collapsed]:w-0 data-[state=collapsed]:flex-[0_0_0]',
+          'data-[state=collapsed]:min-w-0 data-[state=collapsed]:max-w-0',
+          'data-[state=collapsed]:overflow-hidden data-[state=collapsed]:pointer-events-none'
         )}
         data-state={state}
         data-collapsible={state === 'collapsed' ? collapsible : ''}
         data-variant={variant}
         data-side={side}
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
       >
         <div
           className={cn(
