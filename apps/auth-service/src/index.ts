@@ -758,6 +758,46 @@ const getBaseUrl = (): string => {
   return 'http://localhost:5000';
 };
 
+const getCallbackPath = (callbackUrl: string, fallbackPath: string): string => {
+  if (!callbackUrl) {
+    return fallbackPath;
+  }
+  if (callbackUrl.startsWith('/')) {
+    return callbackUrl;
+  }
+  try {
+    return new URL(callbackUrl).pathname || fallbackPath;
+  } catch {
+    return fallbackPath;
+  }
+};
+
+const getGoogleCallbackUrl = (): string => {
+  const oauthCallback = process.env.OAUTH_CALLBACK_URL?.trim();
+  if (oauthCallback) {
+    const isPathOnly = oauthCallback.startsWith('/');
+    if (isPathOnly) {
+      if (oauthCallback === '/api/auth/google/callback') {
+        return `${getBaseUrl()}${oauthCallback}`;
+      }
+      logger.warn({ oauthCallback }, 'OAUTH_CALLBACK_URL inválido para Google; usando callback padrão');
+      return `${getBaseUrl()}/api/auth/google/callback`;
+    }
+    try {
+      const parsed = new URL(oauthCallback);
+      if (parsed.pathname === '/api/auth/google/callback') {
+        return oauthCallback;
+      }
+      logger.warn({ oauthCallback }, 'OAUTH_CALLBACK_URL inválido para Google; usando callback padrão');
+      return `${getBaseUrl()}/api/auth/google/callback`;
+    } catch (error) {
+      logger.warn({ oauthCallback, error }, 'OAUTH_CALLBACK_URL inválido; usando callback padrão');
+      return `${getBaseUrl()}/api/auth/google/callback`;
+    }
+  }
+  return `${getBaseUrl()}/api/auth/google/callback`;
+};
+
 // ============================================================================
 // MÉTRICAS DE AUTENTICAÇÃO (Prometheus + Legacy)
 // Monitoramento de resiliência para provedores OAuth/SAML
@@ -953,13 +993,15 @@ passport.use(new LocalStrategy(
 
 const googleClientId = process.env.GOOGLE_CLIENT_ID;
 const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+const googleCallbackUrl = getGoogleCallbackUrl();
+const googleCallbackPath = getCallbackPath(googleCallbackUrl, '/api/auth/google/callback');
 
 if (googleClientId && googleClientSecret) {
   passport.use(new GoogleStrategy(
     {
       clientID: googleClientId,
       clientSecret: googleClientSecret,
-      callbackURL: `${getBaseUrl()}/api/auth/google/callback`,
+      callbackURL: googleCallbackUrl,
       scope: ['profile', 'email'],
     },
     async (accessToken, refreshToken, profile, done) => {
@@ -1687,16 +1729,20 @@ app.post('/api/auth/login', loginRateLimiter, validateLogin, passport.authentica
 // ============================================================================
 
 if (googleClientId) {
-  app.get('/api/auth/google', passport.authenticate('google', { 
-    scope: ['profile', 'email'] 
+  app.get('/api/auth/google', passport.authenticate('google', {
+    scope: ['profile', 'email'],
   }));
 
-  app.get('/api/auth/google/callback',
-    passport.authenticate('google', { 
-      failureRedirect: '/login?error=google_auth_failed',
-      successRedirect: '/dashboard'
-    })
-  );
+  const googleCallbackHandler = passport.authenticate('google', {
+    failureRedirect: '/login?error=google_auth_failed',
+    successRedirect: '/dashboard',
+  });
+
+  app.get(googleCallbackPath, googleCallbackHandler);
+
+  if (googleCallbackPath !== '/api/auth/google/callback') {
+    app.get('/api/auth/google/callback', googleCallbackHandler);
+  }
 }
 
 // ============================================================================

@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 18 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.44 - Download usa URL visível da mídia
+**Versão:** 7.48 - OAuth Google valida callback
 
 ---
 
@@ -227,6 +227,10 @@ Retenção Arquivo:   30 dias
 - Gateway: rota `/api/users*` encaminhada ao auth-service para gestão de usuários.
 - Usuários: reset de formulário ao reabrir diálogo evita estado pendente.
 - Chat: download usa URL resolvida (thumbnail ou original) para evitar HTML.
+- UI: colapso da sidebar aplica largura ícone e elimina espaço vazio.
+- Auth: callback Google respeita `OAUTH_CALLBACK_URL` e rota compatível.
+- Observability: config do Jaeger usa exporter prometheus suportado.
+- Auth: valida `OAUTH_CALLBACK_URL` para Google e aplica fallback seguro.
 - Frontend build: ordem de handlers de gravação e avatar corrigida (evita TS2448/TS2454).
 - Dark Mode: paleta preta/cinza para experiência similar ao ChatGPT.
 - Avatar do Chat: GIF dinâmico (packman pensando, gato após resposta) com tamanho ajustado.

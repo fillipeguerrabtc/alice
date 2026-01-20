@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 18 de Janeiro de 2026  
-**Versão:** 7.5 - BASE_URL para OAuth
+**Versão:** 7.6 - Callback OAuth configurável
 
 ## Visão geral
 
@@ -96,6 +96,7 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | Secret | Descrição |
 | --- | --- |
 | `BASE_URL` | Base URL pública da plataforma (OAuth callbacks) |
+| `OAUTH_CALLBACK_URL` | URL pública de callback OAuth para Google (ex: `https://dominio/api/auth/google/callback`) |
 | `PGBACKREST_ALLOW_STANZA_RESET` | `true` permite reset controlado de stanza em mismatch de system-id (input do workflow) |
 | `DOCKERHUB_USERNAME` | Evita rate limit Docker Hub |
 | `DOCKERHUB_TOKEN` | Token Docker Hub |

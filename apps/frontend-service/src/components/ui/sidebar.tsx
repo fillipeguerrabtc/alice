@@ -228,7 +228,9 @@ const Sidebar = React.forwardRef<
         className={cn(
           'group peer hidden lg:block shrink-0 w-[--sidebar-width] transition-[width] duration-200 ease-linear',
           'flex-[0_0_var(--sidebar-width)]',
-          'data-[collapsible=icon]:w-[--sidebar-width-icon] data-[collapsible=icon]:flex-[0_0_var(--sidebar-width-icon)]'
+          'data-[collapsible=icon]:w-[--sidebar-width-icon] data-[collapsible=icon]:flex-[0_0_var(--sidebar-width-icon)]',
+          'data-[state=collapsed]:w-[--sidebar-width-icon] data-[state=collapsed]:flex-[0_0_var(--sidebar-width-icon)]',
+          'data-[state=collapsed]:min-w-[--sidebar-width-icon] data-[state=collapsed]:max-w-[--sidebar-width-icon]'
         )}
         data-state={state}
         data-collapsible={state === 'collapsed' ? collapsible : ''}
