@@ -1,8 +1,8 @@
 # Guia Completo de Secrets - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 18 de Janeiro de 2026  
-**Versão:** 7.8 - Callback OAuth flexível
+**Data:** 20 de Janeiro de 2026  
+**Versão:** 7.9 - Secrets GitHub/Redis/MinIO alinhados
 
 ## Visão geral
 
@@ -25,6 +25,8 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `GH_PAT` | Token GitHub com `repo`, `write:packages`, `workflow` | ✅ |
 | `POSTGRES_PASSWORD` | Senha PostgreSQL (32+ chars) | ✅ |
 | `REDIS_PASSWORD` | Senha Redis Alice (32+ chars) | ✅ |
+| `REDIS_CACHE_PASSWORD` | Senha Redis Cache (ERPNext) | ✅ |
+| `REDIS_QUEUE_PASSWORD` | Senha Redis Queue (ERPNext) | ✅ |
 | `SESSION_SECRET` | Secret de sessão (64+ chars) | ✅ |
 | `INTERNAL_API_SECRET` | Secret S2S interno | ✅ |
 | `OPENAI_API_KEY` | OpenAI (Vision + Images) | ✅ |
@@ -36,6 +38,7 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `ERPNEXT_ADMIN_PASSWORD` | Senha admin ERPNext | ✅ |
 | `ACME_EMAIL` | Email Let's Encrypt (Caddy TLS) | ✅ |
 | `QDRANT_API_KEY` | API key do Qdrant (também usado pelo scrape Prometheus) | ✅ |
+| `MINIO_ROOT_PASSWORD` | Senha root do MinIO (Langfuse v3 S3) | ✅ |
 
 ## Secrets de observabilidade
 
@@ -87,9 +90,13 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `GOOGLE_CLIENT_SECRET` | OAuth Google | ✅ |
 | `OAUTH_GITHUB_CLIENT_ID` | OAuth GitHub | ✅ |
 | `OAUTH_GITHUB_CLIENT_SECRET` | OAuth GitHub | ✅ |
+| `GITHUB_CLIENT_ID` | OAuth GitHub (legado, aceito) | ⚠️ |
+| `GITHUB_CLIENT_SECRET` | OAuth GitHub (legado, aceito) | ⚠️ |
 | `OIDC_COOKIE_KEYS` | Cookies OIDC | ✅ |
 | `GRAFANA_OAUTH_CLIENT_SECRET` | OAuth Grafana | ✅ |
 | `ERPNEXT_OAUTH_CLIENT_SECRET` | OAuth ERPNext | ✅ |
+
+> Preferir `OAUTH_GITHUB_CLIENT_ID` e `OAUTH_GITHUB_CLIENT_SECRET`. As chaves `GITHUB_*` existem apenas para compatibilidade.
 
 ## Variáveis opcionais (não secret)
 
@@ -101,6 +108,7 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `DOCKERHUB_USERNAME` | Evita rate limit Docker Hub |
 | `DOCKERHUB_TOKEN` | Token Docker Hub |
 | `HUGGINGFACE_TOKEN` | Token HF (se necessário) |
+| `CORS_ORIGINS` | Lista de origens CORS permitidas (CSV) |
 | `SEARXNG_SECRET_KEY` | Secret do SearXNG |
 | `ERPNEXT_MYSQL_EXPORTER_USER` | Usuário do mysqld_exporter (default: `erpnext_exporter`) |
 | `OPENAI_PROXY` | Proxy dedicado para chamadas OpenAI (ex: `http://proxy:3128`) |

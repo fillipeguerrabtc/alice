@@ -1135,8 +1135,8 @@ if (googleClientId && googleClientSecret) {
 // ESTRATÉGIA: OAuth GitHub
 // ============================================================================
 
-const githubClientId = process.env.GITHUB_CLIENT_ID;
-const githubClientSecret = process.env.GITHUB_CLIENT_SECRET;
+const githubClientId = process.env.OAUTH_GITHUB_CLIENT_ID ?? process.env.GITHUB_CLIENT_ID;
+const githubClientSecret = process.env.OAUTH_GITHUB_CLIENT_SECRET ?? process.env.GITHUB_CLIENT_SECRET;
 
 if (githubClientId && githubClientSecret) {
   passport.use(new GitHubStrategy(
@@ -1268,7 +1268,7 @@ if (githubClientId && githubClientSecret) {
   ));
   logger.info('OAuth GitHub configurado com circuit breaker');
 } else {
-  logger.warn('OAuth GitHub não configurado - GITHUB_CLIENT_ID ou GITHUB_CLIENT_SECRET ausentes');
+  logger.warn('OAuth GitHub não configurado - OAUTH_GITHUB_CLIENT_ID/GITHUB_CLIENT_ID ou OAUTH_GITHUB_CLIENT_SECRET/GITHUB_CLIENT_SECRET ausentes');
 }
 
 // ============================================================================

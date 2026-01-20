@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 **Autor:** Fillipe Guerra  
-**Data:** 18 de Janeiro de 2026  
+**Data:** 20 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.55 - OpenAI Images fallback corrigido
+**Versão:** 7.56 - Secrets GitHub/Redis/MinIO alinhados
 
 ---
 
@@ -191,6 +191,8 @@ Retenção Arquivo:   30 dias
 
 ## Atualizações recentes (resumo)
 
+- OAuth GitHub: suporte a OAUTH_GITHUB_* e fallback para GITHUB_* legado.
+- Docs: `SECRETS.md` atualizado com Redis cache/queue, MinIO e CORS.
 - Frontend: normalização de line endings (CRLF → LF) em componentes de mídia do chat.
 - Chat UI: mensagens somente com mídia agora ficam realmente sem fundo (bg transparente).
 - OAuth Google: callbackURL alinhado com config e suporte a path com trailing slash.

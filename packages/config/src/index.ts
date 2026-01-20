@@ -26,6 +26,8 @@ const authConfigSchema = z.object({
   // OAuth GitHub
   GITHUB_CLIENT_ID: z.string().optional(),
   GITHUB_CLIENT_SECRET: z.string().optional(),
+  OAUTH_GITHUB_CLIENT_ID: z.string().optional(),
+  OAUTH_GITHUB_CLIENT_SECRET: z.string().optional(),
   // SAML 2.0
   SAML_ENTRY_POINT: z.string().url().optional(),
   SAML_ISSUER: z.string().optional(),
@@ -98,13 +100,13 @@ export type FullConfig = z.infer<typeof fullConfigSchema>;
 
 export function loadConfig<T>(schema: z.ZodSchema<T>): T {
   const result = schema.safeParse(process.env);
-  
+
   if (!result.success) {
     const formattedErrors = result.error.format();
     configLogger.error({ errors: formattedErrors }, 'Falha na validação de configuração');
     throw new Error(`Falha na validação de configuração: ${JSON.stringify(formattedErrors)}`);
   }
-  
+
   return result.data;
 }
 
@@ -122,7 +124,7 @@ export function getServiceUrl(serviceName: string): string {
     training: process.env.TRAINING_SERVICE_URL,
     integrations: process.env.INTEGRATIONS_SERVICE_URL,
   };
-  
+
   const url = serviceUrls[serviceName];
 
   if (!url) {
@@ -142,6 +144,7 @@ const SECRET_KEYS = new Set([
   'INTERNAL_API_SECRET', // GPU Manager Service authentication
   'GOOGLE_CLIENT_SECRET',
   'GITHUB_CLIENT_SECRET',
+  'OAUTH_GITHUB_CLIENT_SECRET',
   'STRIPE_SECRET_KEY',
   'STRIPE_WEBHOOK_SECRET',
   'ERPNEXT_API_SECRET',
@@ -156,7 +159,7 @@ const SECRET_KEYS = new Set([
 
 export function sanitizeConfig<T extends Record<string, unknown>>(config: T): Record<string, unknown> {
   const sanitized: Record<string, unknown> = {};
-  
+
   for (const [key, value] of Object.entries(config)) {
     if (SECRET_KEYS.has(key)) {
       sanitized[key] = value ? '[REDACTED]' : '[NOT SET]';
@@ -170,7 +173,7 @@ export function sanitizeConfig<T extends Record<string, unknown>>(config: T): Re
       sanitized[key] = value;
     }
   }
-  
+
   return sanitized;
 }
 
