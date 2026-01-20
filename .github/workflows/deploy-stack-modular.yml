@@ -657,6 +657,8 @@ jobs:
           # Secrets completos (cópia exata do workflow original)
           SECRET_ACME_EMAIL: ${{ secrets.ACME_EMAIL }}
           SECRET_DUCKDNS_TOKEN: ${{ secrets.DUCKDNS_TOKEN }}
+          SECRET_ZEROSSL_EAB_KID: ${{ secrets.ZEROSSL_EAB_KID }}
+          SECRET_ZEROSSL_EAB_HMAC_KEY: ${{ secrets.ZEROSSL_EAB_HMAC_KEY }}
           SECRET_POSTGRES_PASSWORD: ${{ secrets['POSTGRES_PASSWORD'] }}
           SECRET_REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
           SECRET_QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
@@ -747,6 +749,8 @@ jobs:
           export OAUTH_GITHUB_CLIENT_ID="${SECRET_OAUTH_GITHUB_CLIENT_ID}"
           export OAUTH_GITHUB_CLIENT_SECRET="${SECRET_OAUTH_GITHUB_CLIENT_SECRET}"
           export LANGFUSE_SECRET_KEY="${SECRET_LANGFUSE_SECRET_KEY}"
+          export ZEROSSL_EAB_KID="${SECRET_ZEROSSL_EAB_KID}"
+          export ZEROSSL_EAB_HMAC_KEY="${SECRET_ZEROSSL_EAB_HMAC_KEY}"
           export LANGFUSE_NEXT_AUTH_SECRET="${SECRET_LANGFUSE_NEXT_AUTH_SECRET}"
           export LANGFUSE_SALT="${SECRET_LANGFUSE_SALT}"
           export LANGFUSE_ENCRYPTION_KEY="${SECRET_LANGFUSE_ENCRYPTION_KEY}"
