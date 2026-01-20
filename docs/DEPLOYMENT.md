@@ -93,6 +93,12 @@ ssh root@178.63.41.108
 sudo /opt/alice/app/infra/scripts/prepare-production-server.sh
 ```
 
+**Atalho Windows (PowerShell):**
+
+- Chave: `C:\Users\filli\.ssh\alice-deploy`
+- Config: `C:\Users\filli\.ssh\config` (alias `alice-prod`)
+- Comando direto: `ssh -i C:\Users\filli\.ssh\alice-deploy root@178.63.41.108`
+
 ### Checklist essencial
 
 - [ ] Secrets configurados no GitHub (`docs/SECRETS.md`)

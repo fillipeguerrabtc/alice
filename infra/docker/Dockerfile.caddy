@@ -71,4 +71,5 @@ EXPOSE 80 443 443/udp 2019
 # ENTRYPOINT de diagnóstico (03/01/2026)
 # Valida configuração e loga startup antes de iniciar Caddy
 # CORREÇÃO 19/01/2026: Permite ajuste de permissões antes de dropar privilégios
+USER root
 ENTRYPOINT ["/usr/local/bin/caddy-entrypoint.sh"]

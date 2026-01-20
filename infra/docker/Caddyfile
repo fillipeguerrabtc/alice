@@ -33,7 +33,7 @@
 	# Ref: https://caddyserver.com/docs/caddyfile/concepts#environment-variables
 	# =================================================================
 	email {$ACME_EMAIL:admin@yesyoudeserve.duckdns.org}
-	
+
 	# Produção - Let's Encrypt oficial
 	# NOTA: Caddy automaticamente usa staging para domínios localhost/local
 	acme_ca https://acme-v02.api.letsencrypt.org/directory

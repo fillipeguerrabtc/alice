@@ -51,7 +51,7 @@ DNS_PRECHECK_REQUIRE_ALL_RESOLVERS="${ACME_DNS_PRECHECK_REQUIRE_ALL_RESOLVERS:-f
 get_caddy_hosts() {
     awk '
       /^[[:space:]]*#/ { next }
-      /^[^[:space:]][^[:space:]]*[[:space:]]*{/ {
+      /^[^[:space:]][^[:space:]]*[[:space:]]*\{/ {
         host=$1
         if (host ~ /^:/) next
         if (host ~ /\./) print host

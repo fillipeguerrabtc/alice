@@ -308,6 +308,8 @@ Host alice-prod
 - Conexão Deploy Server: `ssh alice-hetzner`
 - Conexão Production Server: `ssh alice-prod`
 - Permissões da chave: `chmod 600 ~/.ssh/alice-deploy`
+ - Windows (PowerShell): chave em `C:\Users\filli\.ssh\alice-deploy` e config em `C:\Users\filli\.ssh\config`
+ - Windows (comando direto): `ssh -i C:\Users\filli\.ssh\alice-deploy root@178.63.41.108`
 
 ### URLs de Produção
 
