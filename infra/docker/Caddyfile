@@ -119,7 +119,7 @@
 	header_up Upgrade {header.Upgrade}
 }
 
-# TLS via DNS-01 (DuckDNS)
+# TLS via DNS-01 (DuckDNS) + fallback ZeroSSL (EAB)
 (tls_duckdns) {
 	tls {
 		issuer acme {
