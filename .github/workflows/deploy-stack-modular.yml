@@ -985,6 +985,8 @@ jobs:
         env:
           DUCKDNS_TOKEN: ${{ secrets.DUCKDNS_TOKEN }}
           ACME_EMAIL: ${{ secrets.ACME_EMAIL }}
+          ZEROSSL_EAB_KID: ${{ secrets.ZEROSSL_EAB_KID }}
+          ZEROSSL_EAB_HMAC_KEY: ${{ secrets.ZEROSSL_EAB_HMAC_KEY }}
         run: |
           set -euo pipefail
           # =================================================================
@@ -1014,12 +1016,21 @@ jobs:
             echo "::error::Configure o secret DUCKDNS_TOKEN no repositório e refaça o deploy."
             exit 1
           fi
+
+          if [ -z "${ZEROSSL_EAB_KID:-}" ] || [ -z "${ZEROSSL_EAB_HMAC_KEY:-}" ]; then
+            echo ""
+            echo "::error::❌ ERRO: ZeroSSL EAB não configurado (ZEROSSL_EAB_KID/ZEROSSL_EAB_HMAC_KEY)."
+            echo "::error::Configure os secrets EAB antes de validar o Caddyfile."
+            exit 1
+          fi
           
           if ! docker run --rm \
             --entrypoint caddy \
             -v "$(pwd)/infra/docker/Caddyfile:/etc/caddy/Caddyfile:ro" \
             -e DUCKDNS_TOKEN="${DUCKDNS_TOKEN}" \
             -e ACME_EMAIL="${ACME_EMAIL}" \
+            -e ZEROSSL_EAB_KID="${ZEROSSL_EAB_KID}" \
+            -e ZEROSSL_EAB_HMAC_KEY="${ZEROSSL_EAB_HMAC_KEY}" \
             "$CADDY_IMAGE" validate --config /etc/caddy/Caddyfile --adapter caddyfile; then
             echo ""
             echo "::error::❌ ERRO: Caddyfile inválido!"
