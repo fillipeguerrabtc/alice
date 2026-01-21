@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 **Autor:** Fillipe Guerra  
-**Data:** 20 de Janeiro de 2026  
+**Data:** 21 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.63 - ACME resiliente (ZeroSSL + LE)
+**Versão:** 7.64 - ACME resiliente (ZeroSSL + LE)
 
 ---
 
@@ -192,7 +192,7 @@ Retenção Arquivo:   30 dias
 ## Atualizações recentes (resumo)
 
 - Caddy: ACME resiliente com DNS precheck, DNS-01 DuckDNS e fallback ZeroSSL.
-- Caddy: emissor ACME ajustado para sintaxe compatível no Caddyfile (dir + email global).
+- Caddy: emissor ACME ajustado para sintaxe compatível no Caddyfile (dir + email global + eab inline).
 - Grafana: regras de alerta ajustadas para evitar `DatasourceNoData` falso (bool + fallback 0/1).
 - Grafana: alerta de restart filtrado por containers Docker Compose (sem slices do host).
 - DB: migration `action_requests` agora aplica FKs completos (tenant/conversation/user/agent/resolved_by).
