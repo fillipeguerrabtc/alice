@@ -984,6 +984,7 @@ jobs:
         id: validate-caddyfile
         env:
           DUCKDNS_TOKEN: ${{ secrets.DUCKDNS_TOKEN }}
+          ACME_EMAIL: ${{ secrets.ACME_EMAIL }}
         run: |
           set -euo pipefail
           # =================================================================
@@ -1018,6 +1019,7 @@ jobs:
             --entrypoint caddy \
             -v "$(pwd)/infra/docker/Caddyfile:/etc/caddy/Caddyfile:ro" \
             -e DUCKDNS_TOKEN="${DUCKDNS_TOKEN}" \
+            -e ACME_EMAIL="${ACME_EMAIL}" \
             "$CADDY_IMAGE" validate --config /etc/caddy/Caddyfile --adapter caddyfile; then
             echo ""
             echo "::error::❌ ERRO: Caddyfile inválido!"
