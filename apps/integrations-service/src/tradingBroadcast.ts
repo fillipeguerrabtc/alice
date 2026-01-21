@@ -22,12 +22,15 @@
 
 import { createClient, RedisClientType } from 'redis';
 import { createLogger } from '@alice/logger';
+import { TRADING_CHANNELS } from '@alice/shared-utils';
 import {
   type TickerData,
   type OrderBookData,
   type KlineData,
+  type TradeData,
   type OrderUpdateData,
   type PositionUpdateData,
+  type BalanceUpdateData,
 } from './kucoinWebSocket.js';
 
 const logger = createLogger('trading-broadcast');
@@ -38,18 +41,8 @@ const logger = createLogger('trading-broadcast');
 
 const REDIS_URL = process.env.REDIS_URL;
 
-// Prefixos dos canais Redis
-const CHANNEL_PREFIX = 'alice:trading';
-const CHANNELS = {
-  TICKER: `${CHANNEL_PREFIX}:ticker`,
-  ORDERBOOK: `${CHANNEL_PREFIX}:orderbook`,
-  KLINES: `${CHANNEL_PREFIX}:klines`,
-  TRADES: `${CHANNEL_PREFIX}:trades`,
-  ORDERS: `${CHANNEL_PREFIX}:orders`,
-  POSITIONS: `${CHANNEL_PREFIX}:positions`,
-  BALANCE: `${CHANNEL_PREFIX}:balance`,
-  CONTROL: `${CHANNEL_PREFIX}:control`,
-} as const;
+// SSOT de canais (compartilhado entre serviços)
+const CHANNELS = TRADING_CHANNELS;
 
 // ============================================================================
 // TIPOS
@@ -204,6 +197,18 @@ class TradingBroadcastPublisher {
   }
 
   /**
+   * Publica update de trades
+   */
+  async publishTrades(symbol: string, data: TradeData): Promise<void> {
+    await this.publish(CHANNELS.TRADES, {
+      type: 'trades',
+      symbol,
+      data,
+      timestamp: Date.now(),
+    });
+  }
+
+  /**
    * Publica update de ordem (privado - inclui tenantId)
    */
   async publishOrderUpdate(tenantId: string, data: OrderUpdateData): Promise<void> {
@@ -221,6 +226,18 @@ class TradingBroadcastPublisher {
   async publishPositionUpdate(tenantId: string, data: PositionUpdateData): Promise<void> {
     await this.publish(CHANNELS.POSITIONS, {
       type: 'positions',
+      tenantId,
+      data,
+      timestamp: Date.now(),
+    });
+  }
+
+  /**
+   * Publica update de balance (privado - inclui tenantId)
+   */
+  async publishBalanceUpdate(tenantId: string, data: BalanceUpdateData): Promise<void> {
+    await this.publish(CHANNELS.BALANCE, {
+      type: 'balance',
       tenantId,
       data,
       timestamp: Date.now(),
@@ -368,6 +385,13 @@ class TradingBroadcastSubscriber {
   }
 
   /**
+   * Atalho para inscrever em trades
+   */
+  async subscribeTrades(callback: MessageCallback<TradeData>): Promise<void> {
+    await this.subscribe(CHANNELS.TRADES, callback);
+  }
+
+  /**
    * Atalho para inscrever em orders
    */
   async subscribeOrders(callback: MessageCallback<OrderUpdateData>): Promise<void> {
@@ -379,6 +403,13 @@ class TradingBroadcastSubscriber {
    */
   async subscribePositions(callback: MessageCallback<PositionUpdateData>): Promise<void> {
     await this.subscribe(CHANNELS.POSITIONS, callback);
+  }
+
+  /**
+   * Atalho para inscrever em balance
+   */
+  async subscribeBalance(callback: MessageCallback<BalanceUpdateData>): Promise<void> {
+    await this.subscribe(CHANNELS.BALANCE, callback);
   }
 
   /**

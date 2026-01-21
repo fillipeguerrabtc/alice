@@ -61,13 +61,15 @@ import {
   setPermissionResolver,
   requestGpuStream,
   validateAgentTenantConsistency,
+  TRADING_CHANNEL_PREFIX,
+  TRADING_CHANNELS,
 } from '@alice/shared-utils';
 import type { AuthContext } from '@alice/shared-utils';
 import type { Role } from '@alice/shared-utils';
 import { eq, desc, inArray, and, or, lt, sql, not, asc } from '@alice/database';
 import { z } from 'zod';
 import { ProxyAgent } from 'undici';
-import type { Dispatcher } from 'undici';
+import { createClient } from 'redis';
 import { 
   buscarContextoRAG, 
   buscarContextoAgentic,
@@ -89,6 +91,7 @@ import {
   getPendingHandoffs,
   getUrgentConversations,
   checkSLABreaches,
+  updateConversationState,
   ESCALATION_CONFIG,
 } from './conversation-orchestrator.js';
 // Arquitetura atual (16/01/2026+):
@@ -141,7 +144,8 @@ const OPENAI_NO_PROXY_ENTRIES = OPENAI_NO_PROXY
   ? OPENAI_NO_PROXY.split(',').map((entry) => entry.trim()).filter(Boolean)
   : [];
 
-type OpenAiRequestInit = RequestInit & { dispatcher?: Dispatcher };
+type OpenAiDispatcher = RequestInit['dispatcher'];
+type OpenAiRequestInit = RequestInit & { dispatcher?: OpenAiDispatcher };
 
 function isNoProxyMatch(hostname: string, entry: string): boolean {
   if (entry === '*') return true;
@@ -167,14 +171,16 @@ const OPENAI_PROXY_URL = (() => {
   }
 })();
 
-const OPENAI_DISPATCHER: Dispatcher | undefined = (() => {
+const OPENAI_DISPATCHER: OpenAiDispatcher = (() => {
   if (!OPENAI_PROXY_URL) return undefined;
   if (shouldBypassProxy(OPENAI_HOSTNAME, OPENAI_NO_PROXY_ENTRIES)) {
     logger.info({ hostname: OPENAI_HOSTNAME }, 'OpenAI sem proxy (NO_PROXY aplicado)');
     return undefined;
   }
   logger.info({ proxy: OPENAI_PROXY_URL }, 'OpenAI configurado com proxy');
-  return new ProxyAgent(OPENAI_PROXY_URL);
+  // ProxyAgent vem de undici (runtime) e RequestInit usa undici-types (tipo).
+  // Casting via unknown mantém compatibilidade sem perder segurança de tipos.
+  return new ProxyAgent(OPENAI_PROXY_URL) as unknown as OpenAiDispatcher;
 })();
 
 function getOpenAiFetchOptions(): Pick<OpenAiRequestInit, 'dispatcher'> {
@@ -674,6 +680,118 @@ const heartbeatInterval = setInterval(() => {
 wss.on('close', () => {
   clearInterval(heartbeatInterval);
 });
+
+// ============================================================================
+// TRADING BROADCAST (Redis Pub/Sub) - KuCoin real-time
+// ============================================================================
+
+type TradingBroadcastMessageType =
+  | 'ticker'
+  | 'orderbook'
+  | 'klines'
+  | 'trades'
+  | 'orders'
+  | 'positions'
+  | 'balance'
+  | 'control';
+
+interface TradingBroadcastMessage {
+  type: TradingBroadcastMessageType;
+  symbol?: string;
+  tenantId?: string;
+  data: unknown;
+  timestamp: number;
+}
+
+let tradingSubscriber: ReturnType<typeof createClient> | null = null;
+
+function extractTradingSymbol(message: TradingBroadcastMessage): string | null {
+  if (message.symbol) return message.symbol.toUpperCase();
+  if (message.data && typeof message.data === 'object' && 'symbol' in message.data) {
+    const value = (message.data as { symbol?: unknown }).symbol;
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim().toUpperCase();
+    }
+  }
+  return null;
+}
+
+function shouldDeliverTradingMessage(
+  extWs: ExtendedWebSocket,
+  message: TradingBroadcastMessage,
+  symbol: string | null
+): boolean {
+  if (message.tenantId && extWs.tenantId && message.tenantId !== extWs.tenantId) {
+    return false;
+  }
+  if (message.type === 'control') {
+    return true;
+  }
+  if (!symbol || !extWs.tradingSubscriptions || extWs.tradingSubscriptions.size === 0) {
+    return false;
+  }
+  return extWs.tradingSubscriptions.has(`${message.type}:${symbol}`);
+}
+
+function broadcastTradingMessage(message: TradingBroadcastMessage): void {
+  const symbol = extractTradingSymbol(message);
+  const payload = {
+    type: `trading:${message.type}`,
+    symbol: symbol ?? message.symbol,
+    data: message.data,
+    timestamp: message.timestamp,
+  };
+
+  wss.clients.forEach((client) => {
+    const wsClient = client as ExtendedWebSocket;
+    if (client.readyState !== WebSocket.OPEN) return;
+    if (!shouldDeliverTradingMessage(wsClient, message, symbol)) return;
+    client.send(JSON.stringify(payload));
+  });
+}
+
+async function initializeTradingBroadcastSubscriber(): Promise<void> {
+  const redisUrl = process.env.REDIS_URL;
+  if (!redisUrl) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('REDIS_URL é obrigatório em produção para broadcast de trading');
+    }
+    logger.warn('REDIS_URL não configurado - broadcast de trading desabilitado (dev/test)');
+    return;
+  }
+
+  tradingSubscriber = createClient({
+    url: redisUrl,
+    socket: {
+      connectTimeout: 5000,
+      reconnectStrategy: (retries) => Math.min(retries * 100, 3000),
+    },
+  });
+
+  tradingSubscriber.on('error', (error) => {
+    logger.error({ error }, 'Erro no Redis subscriber de trading');
+  });
+
+  await tradingSubscriber.connect();
+
+  await tradingSubscriber.pSubscribe(`${TRADING_CHANNEL_PREFIX}:*`, (message) => {
+    try {
+      const parsed = JSON.parse(message) as TradingBroadcastMessage;
+      if (!parsed.type || !parsed.timestamp) {
+        logger.warn({ message }, 'Mensagem de trading inválida recebida via Redis');
+        return;
+      }
+      broadcastTradingMessage(parsed);
+    } catch (error) {
+      logger.error({ error, message }, 'Falha ao processar mensagem de trading');
+    }
+  });
+
+  logger.info(
+    { channels: Object.values(TRADING_CHANNELS).length },
+    'Redis subscriber de trading inicializado'
+  );
+}
 
 // ============================================================================
 // IMAGE GENERATION DETECTION (Tarefa 133 - Detectar pedidos de geração de imagem)
@@ -3786,7 +3904,7 @@ const wsMessageSchema = z.object({
   content: z.string().max(10000).optional(),
   namespaceId: z.string().uuid().optional(),
   // Trading fields (17/12/2025)
-  channel: z.enum(['ticker', 'orderbook', 'klines', 'orders', 'positions', 'control']).optional(),
+  channel: z.enum(['ticker', 'orderbook', 'klines', 'trades', 'orders', 'positions', 'balance', 'control']).optional(),
   symbol: z.string().max(20).optional(),
   interval: z.string().max(10).optional(),
 });
@@ -9358,6 +9476,7 @@ app.use(createErrorHandler({
 (async () => {
   try {
     await initializeAllCaches();
+    await initializeTradingBroadcastSubscriber();
     server.listen(PORT, () => {
       logger.info({ 
         port: PORT, 
@@ -9437,6 +9556,18 @@ registerShutdownCallback(
     logger.info('Cache de permissões encerrado');
   },
   { priority: ShutdownPriority.BACKGROUND_JOBS - 5 } // Antes do Redis client
+);
+
+registerShutdownCallback(
+  'chat-trading-broadcast',
+  async () => {
+    if (!tradingSubscriber) return;
+    logger.info('Encerrando Redis subscriber de trading...');
+    await tradingSubscriber.quit();
+    tradingSubscriber = null;
+    logger.info('Redis subscriber de trading encerrado');
+  },
+  { priority: ShutdownPriority.BACKGROUND_JOBS - 8 } // Antes do Redis cache
 );
 
 registerShutdownCallback(

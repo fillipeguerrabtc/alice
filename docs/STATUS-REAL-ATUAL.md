@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 21 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.64 - ACME resiliente (ZeroSSL + LE)
+**Versão:** 7.65 - Auditoria KuCoin alinhada a docs oficiais
 
 ---
 
@@ -14,6 +14,7 @@
 - CI/CD 100% automático (Push → CI → Release → Deploy) com versionamento e cache enterprise.
 - Observabilidade completa com Prometheus, Grafana, Loki, Jaeger e Langfuse.
 - Segurança enterprise com hardening de containers, RLS no PostgreSQL e validação Zod em APIs.
+- Integração KuCoin auditada e corrigida conforme docs oficiais (auth HMAC v2/v3, time sync, stop orders, WS broadcast via Redis).
 
 ---
 

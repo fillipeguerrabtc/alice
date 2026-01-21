@@ -85,7 +85,9 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `KUCOIN_PRO_API_KEY` | KuCoin API Key | ✅ |
 | `KUCOIN_PRO_API_SECRET` | KuCoin API Secret | ✅ |
 | `KUCOIN_PRO_API_PASSPHRASE` | KuCoin API Passphrase | ✅ |
+| `KUCOIN_PRO_API_KEY_VERSION` | Versão da API Key KuCoin (1/2/3) | ⚠️ |
 | `KUCOIN_PRO_BASE_URL` | Base URL KuCoin | ✅ |
+| `KUCOIN_TENANT_ID` | Tenant padrão para eventos privados do KuCoin WS | ⚠️ |
 
 ## ERPNext
 

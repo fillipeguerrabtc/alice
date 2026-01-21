@@ -55,6 +55,22 @@ export interface KlineData {
   turnover: string;
 }
 
+export interface TradeData {
+  symbol: string;
+  price: string;
+  size: number;
+  side: string;
+  tradeId: string;
+  ts: number;
+}
+
+export interface BalanceData {
+  availableBalance: string;
+  holdBalance: string;
+  currency: string;
+  timestamp: number;
+}
+
 export interface TradingCommandResult {
   type: string;
   command?: unknown;
@@ -74,12 +90,14 @@ export interface WebSocketState {
 
 export interface UseKucoinWebSocketOptions {
   symbol?: string;
-  channels?: ('ticker' | 'orderbook' | 'klines')[];
+  channels?: ('ticker' | 'orderbook' | 'klines' | 'trades' | 'balance')[];
   interval?: string;
   autoConnect?: boolean;
   onTicker?: (data: TickerData) => void;
   onOrderBook?: (data: OrderBookData) => void;
   onKline?: (data: KlineData) => void;
+  onTrade?: (data: TradeData) => void;
+  onBalance?: (data: BalanceData) => void;
   onCommandResult?: (result: TradingCommandResult) => void;
   onError?: (error: string) => void;
 }
@@ -89,6 +107,8 @@ export interface UseKucoinWebSocketReturn {
   ticker: TickerData | null;
   orderBook: OrderBookData | null;
   klines: KlineData[];
+  lastTrade: TradeData | null;
+  balance: BalanceData | null;
   connect: () => void;
   disconnect: () => void;
   subscribe: (channel: string, symbol?: string, interval?: string) => void;
@@ -119,6 +139,8 @@ export function useKucoinWebSocket(
     onTicker,
     onOrderBook,
     onKline,
+    onTrade,
+    onBalance,
     onCommandResult,
     onError,
   } = options;
@@ -133,6 +155,8 @@ export function useKucoinWebSocket(
   const [ticker, setTicker] = useState<TickerData | null>(null);
   const [orderBook, setOrderBook] = useState<OrderBookData | null>(null);
   const [klines, setKlines] = useState<KlineData[]>([]);
+  const [lastTrade, setLastTrade] = useState<TradeData | null>(null);
+  const [balance, setBalance] = useState<BalanceData | null>(null);
 
   // Refs
   const wsRef = useRef<WebSocket | null>(null);
@@ -217,6 +241,16 @@ export function useKucoinWebSocket(
           onKline?.(data.data);
           break;
 
+        case 'trading:trades':
+          setLastTrade(data.data);
+          onTrade?.(data.data);
+          break;
+
+        case 'trading:balance':
+          setBalance(data.data);
+          onBalance?.(data.data);
+          break;
+
         case 'trading:command_received':
         case 'trading:error':
         case 'trading:blocked':
@@ -232,7 +266,7 @@ export function useKucoinWebSocket(
       // CORREÇÃO AUDITORIA 17/12/2025: Usar frontendLogger ao invés de console.error (Regra 8)
       frontendLogger.error('Erro ao processar mensagem WebSocket', { error: err instanceof Error ? err.message : String(err) });
     }
-  }, [onTicker, onOrderBook, onKline, onCommandResult, onError]);
+  }, [onTicker, onOrderBook, onKline, onTrade, onBalance, onCommandResult, onError]);
 
   // Connect to WebSocket
   const connect = useCallback(() => {
@@ -470,6 +504,8 @@ export function useKucoinWebSocket(
     ticker,
     orderBook,
     klines,
+    lastTrade,
+    balance,
     connect,
     disconnect,
     subscribe,

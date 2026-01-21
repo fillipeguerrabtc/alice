@@ -29,6 +29,7 @@ export * from './multi-tenant-validation.js';
 export * from './qdrant-client.js';
 export * from './gpu-client.js';
 export * from './session-auth.js';
+export { TRADING_CHANNEL_PREFIX, TRADING_CHANNELS } from './trading-channels.js';
 
 export * as rbac from './rbac/index.js';
 export { 

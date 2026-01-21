@@ -66,8 +66,6 @@ export interface CreateOrderFromSignalParams {
   size: number;
   price?: number;
   leverage?: number;
-  stopLoss?: number;
-  takeProfit?: number;
 }
 
 /** Parâmetros para ordem manual */
@@ -655,6 +653,7 @@ export interface CreateStopOrderParams {
   leverage?: number;
   orderType?: 'limit' | 'market';
   price?: number;           // Preço limite (se orderType = limit)
+  stopPriceType?: 'TP' | 'MP'; // Tipo de preço para trigger
 }
 
 /**
@@ -715,7 +714,7 @@ export async function createStopOrder(
         price: params.price?.toString(),
         triggerStopUpPrice: params.takeProfit?.toString(),
         triggerStopDownPrice: params.stopLoss?.toString(),
-        stopPriceType: 'TP', // Trade Price - mais comum
+        stopPriceType: params.stopPriceType ?? 'TP', // Trade Price por padrão
         reduceOnly: true, // Stop orders geralmente são para reduzir posição
       });
       kucoinStopOrderId = kucoinResponse.orderId;

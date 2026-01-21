@@ -10,7 +10,7 @@
  * - Ping/Pong heartbeat (interval 18s, timeout 10s)
  * - Renovação de token antes de expirar (24h)
  * - Circuit breaker para resiliência
- * - Canais públicos: ticker, orderbook, klines, trades
+ * - Canais públicos: tickerV2, orderbook, klines (limitCandle), trades
  * - Canais privados: orders, positions, balances
  * 
  * Regra 6 - SEM MOCKS: Conexão real com KuCoin Futures API
@@ -22,9 +22,9 @@
  */
 
 import WebSocket from 'ws';
-import crypto from 'crypto';
+import crypto from 'node:crypto';
 import { createLogger } from '@alice/logger';
-import { EventEmitter } from 'events';
+import { EventEmitter } from 'node:events';
 
 const logger = createLogger('kucoin-websocket');
 
@@ -36,12 +36,76 @@ const KUCOIN_FUTURES_BASE_URL = process.env.KUCOIN_PRO_BASE_URL || 'https://api-
 const KUCOIN_API_KEY = process.env.KUCOIN_PRO_API_KEY;
 const KUCOIN_API_SECRET = process.env.KUCOIN_PRO_API_SECRET;
 const KUCOIN_API_PASSPHRASE = process.env.KUCOIN_PRO_API_PASSPHRASE;
+const KUCOIN_API_KEY_VERSION = (process.env.KUCOIN_PRO_API_KEY_VERSION || process.env.KUCOIN_API_KEY_VERSION || '2').trim();
+const KUCOIN_TIME_SYNC_INTERVAL_MS = Number(process.env.KUCOIN_TIME_SYNC_INTERVAL_MS || 300_000);
 const KUCOIN_SANDBOX_MODE = process.env.KUCOIN_SANDBOX_MODE === 'true';
 const KUCOIN_SANDBOX_URL = 'https://api-sandbox-futures.kucoin.com';
 
 // ============================================================================
+// TIME SYNC (conforme documentação oficial)
+// Endpoint: GET /api/v1/timestamp
+// ============================================================================
+let kucoinTimeOffsetMs = 0;
+let kucoinLastTimeSyncMs = 0;
+let kucoinTimeSyncInFlight = false;
+
+function isValidKucoinTimeSyncInterval(intervalMs: number): boolean {
+  return Number.isFinite(intervalMs) && intervalMs >= 60_000 && intervalMs <= 3_600_000;
+}
+
+async function fetchKucoinServerTimeMs(baseUrl: string): Promise<number> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5_000);
+  try {
+    const response = await fetch(`${baseUrl}/api/v1/timestamp`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const errorBody = await response.text().catch(() => '');
+      throw new Error(`KuCoin timestamp HTTP ${response.status}: ${errorBody}`);
+    }
+    const data = (await response.json()) as KucoinServerTimeResponse;
+    if (data.code !== '200000' || !Number.isFinite(data.data)) {
+      throw new Error('KuCoin timestamp inválido');
+    }
+    return data.data;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function ensureKucoinTimeSync(baseUrl: string): Promise<void> {
+  const now = Date.now();
+  const intervalMs = isValidKucoinTimeSyncInterval(KUCOIN_TIME_SYNC_INTERVAL_MS)
+    ? KUCOIN_TIME_SYNC_INTERVAL_MS
+    : 300_000;
+  if (kucoinTimeSyncInFlight) return;
+  if (now - kucoinLastTimeSyncMs < intervalMs) return;
+
+  kucoinTimeSyncInFlight = true;
+  try {
+    const serverTime = await fetchKucoinServerTimeMs(baseUrl);
+    kucoinTimeOffsetMs = serverTime - Date.now();
+    kucoinLastTimeSyncMs = now;
+    logger.info({ offsetMs: kucoinTimeOffsetMs }, 'Sincronização de tempo KuCoin (WS) atualizada');
+  } catch (error) {
+    logger.warn({ error }, 'Falha ao sincronizar horário KuCoin (WS) - usando clock local');
+  } finally {
+    kucoinTimeSyncInFlight = false;
+  }
+}
+
+// ============================================================================
 // TIPOS (TypeScript strict - Regra 8)
 // ============================================================================
+
+/** Resposta do endpoint de timestamp */
+interface KucoinServerTimeResponse {
+  code: string;
+  data: number;
+}
 
 /** Resposta do endpoint bullet para obter token WebSocket */
 export interface BulletResponse {
@@ -84,10 +148,24 @@ export interface TickerData {
 }
 
 /** Dados de order book */
-export interface OrderBookData {
+export interface OrderBookEntry {
+  price: string;
+  size: string;
   sequence: number;
-  asks: Array<[string, number]>; // [price, size]
-  bids: Array<[string, number]>; // [price, size]
+}
+
+export interface OrderBookData {
+  symbol: string;
+  sequence: number;
+  bids: OrderBookEntry[];
+  asks: OrderBookEntry[];
+  timestamp: number;
+}
+
+interface RawOrderBookData {
+  sequence: number;
+  asks: Array<[string | number, string | number]>;
+  bids: Array<[string | number, string | number]>;
   ts: number;
 }
 
@@ -225,6 +303,9 @@ function generatePassphraseSignature(): string {
   if (!KUCOIN_API_SECRET || !KUCOIN_API_PASSPHRASE) {
     throw new Error('KUCOIN_API_SECRET ou KUCOIN_API_PASSPHRASE não configurada');
   }
+  if (KUCOIN_API_KEY_VERSION === '1') {
+    return KUCOIN_API_PASSPHRASE;
+  }
   return crypto.createHmac('sha256', KUCOIN_API_SECRET).update(KUCOIN_API_PASSPHRASE).digest('base64');
 }
 
@@ -235,7 +316,10 @@ function generateAuthHeaders(method: string, endpoint: string, body: string = ''
   if (!KUCOIN_API_KEY) {
     throw new Error('KUCOIN_API_KEY não configurada');
   }
-  const timestamp = Date.now().toString();
+  if (!['1', '2', '3'].includes(KUCOIN_API_KEY_VERSION)) {
+    throw new Error(`KUCOIN_PRO_API_KEY_VERSION inválida: ${KUCOIN_API_KEY_VERSION}`);
+  }
+  const timestamp = (Date.now() + kucoinTimeOffsetMs).toString();
   const signature = generateSignature(timestamp, method, endpoint, body);
   const passphrase = generatePassphraseSignature();
 
@@ -244,7 +328,7 @@ function generateAuthHeaders(method: string, endpoint: string, body: string = ''
     'KC-API-SIGN': signature,
     'KC-API-TIMESTAMP': timestamp,
     'KC-API-PASSPHRASE': passphrase,
-    'KC-API-KEY-VERSION': '2',
+    'KC-API-KEY-VERSION': KUCOIN_API_KEY_VERSION,
     'Content-Type': 'application/json',
   };
 }
@@ -282,6 +366,10 @@ export class KucoinWebSocketClient extends EventEmitter {
     const baseUrl = KUCOIN_SANDBOX_MODE ? KUCOIN_SANDBOX_URL : KUCOIN_FUTURES_BASE_URL;
     const endpoint = isPrivate ? '/api/v1/bullet-private' : '/api/v1/bullet-public';
     const url = `${baseUrl}${endpoint}`;
+
+    if (isPrivate) {
+      await ensureKucoinTimeSync(baseUrl);
+    }
 
     const headers: Record<string, string> = isPrivate
       ? generateAuthHeaders('POST', endpoint)
@@ -448,12 +536,25 @@ export class KucoinWebSocketClient extends EventEmitter {
     // Order Book: /contractMarket/level2Depth50:{symbol}
     if (topic.startsWith('/contractMarket/level2Depth50:') || topic.startsWith('/contractMarket/level2Depth5:')) {
       const symbol = topic.split(':')[1];
-      this.emit('orderbook', data as OrderBookData, symbol);
+      const raw = data as RawOrderBookData;
+      const normalizeEntry = ([price, size]: [string | number, string | number]): OrderBookEntry => ({
+        price: String(price),
+        size: String(size),
+        sequence: raw.sequence,
+      });
+      const normalized: OrderBookData = {
+        symbol,
+        sequence: raw.sequence,
+        bids: Array.isArray(raw.bids) ? raw.bids.map(normalizeEntry) : [],
+        asks: Array.isArray(raw.asks) ? raw.asks.map(normalizeEntry) : [],
+        timestamp: raw.ts,
+      };
+      this.emit('orderbook', normalized, symbol);
       return;
     }
 
-    // Kline: /contractMarket/candle:{symbol}_{interval}
-    if (topic.startsWith('/contractMarket/candle:')) {
+    // Kline: /contractMarket/limitCandle:{symbol}_{interval}
+    if (topic.startsWith('/contractMarket/limitCandle:')) {
       this.emit('kline', data as KlineData);
       return;
     }
@@ -464,14 +565,23 @@ export class KucoinWebSocketClient extends EventEmitter {
       return;
     }
 
-    // Ordens privadas: /contractMarket/tradeOrders
-    if (topic === '/contractMarket/tradeOrders' && subject === 'orderChange') {
+    // Ordens privadas: /contractMarket/tradeOrders (all) ou /contractMarket/tradeOrders:{symbol}
+    if (
+      topic.startsWith('/contractMarket/tradeOrders') &&
+      (subject === 'orderChange' || subject === 'symbolOrderChange')
+    ) {
       this.emit('order', data as OrderUpdateData);
       return;
     }
 
     // Posições privadas: /contract/position:{symbol}
     if (topic.startsWith('/contract/position:')) {
+      this.emit('position', data as PositionUpdateData);
+      return;
+    }
+
+    // Posições privadas: /contract/positionAll
+    if (topic === '/contract/positionAll') {
       this.emit('position', data as PositionUpdateData);
       return;
     }
@@ -689,7 +799,7 @@ export class KucoinWebSocketClient extends EventEmitter {
    * @param interval - Intervalo (1min, 3min, 5min, 15min, 30min, 1hour, 2hour, 4hour, 8hour, 12hour, 1day, 1week)
    */
   subscribeKlines(symbol: string, interval: string): void {
-    this.sendSubscribe(`/contractMarket/candle:${symbol}_${interval}`);
+    this.sendSubscribe(`/contractMarket/limitCandle:${symbol}_${interval}`);
   }
 
   /**
@@ -722,6 +832,17 @@ export class KucoinWebSocketClient extends EventEmitter {
   }
 
   /**
+   * Subscreve a updates de posição de todos os símbolos (privado)
+   */
+  subscribePositionAll(): void {
+    if (!this.isPrivate) {
+      logger.warn('Tentativa de subscription privada em conexão pública');
+      return;
+    }
+    this.sendSubscribe('/contract/positionAll');
+  }
+
+  /**
    * Subscreve a updates de balance (privado)
    */
   subscribeBalance(): void {
@@ -750,7 +871,21 @@ export class KucoinWebSocketClient extends EventEmitter {
    * Cancela subscription de klines
    */
   unsubscribeKlines(symbol: string, interval: string): void {
-    this.sendUnsubscribe(`/contractMarket/candle:${symbol}_${interval}`);
+    this.sendUnsubscribe(`/contractMarket/limitCandle:${symbol}_${interval}`);
+  }
+
+  /**
+   * Cancela subscription de posição específica
+   */
+  unsubscribePosition(symbol: string): void {
+    this.sendUnsubscribe(`/contract/position:${symbol}`);
+  }
+
+  /**
+   * Cancela subscription de posição de todos os símbolos
+   */
+  unsubscribePositionAll(): void {
+    this.sendUnsubscribe('/contract/positionAll');
   }
 
   /**

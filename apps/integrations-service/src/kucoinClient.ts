@@ -33,6 +33,62 @@ const logger = createLogger('kucoin-client');
 // Regra 16: Observability enterprise (sem "No data" em dashboards críticos).
 let kucoinMetrics: ReturnType<typeof createAlicePrometheus>['metrics'] | null = null;
 
+// ============================================================================
+// TIME SYNC (conforme documentação oficial)
+// Endpoint: GET /api/v1/timestamp
+// ============================================================================
+let kucoinTimeOffsetMs = 0;
+let kucoinLastTimeSyncMs = 0;
+let kucoinTimeSyncInFlight = false;
+
+function isValidKucoinTimeSyncInterval(intervalMs: number): boolean {
+  return Number.isFinite(intervalMs) && intervalMs >= 60_000 && intervalMs <= 3_600_000;
+}
+
+async function fetchKucoinServerTimeMs(baseUrl: string): Promise<number> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5_000);
+  try {
+    const response = await fetch(`${baseUrl}/api/v1/timestamp`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const errorBody = await response.text().catch(() => '');
+      throw new Error(`KuCoin timestamp HTTP ${response.status}: ${errorBody}`);
+    }
+    const data = (await response.json()) as KucoinApiResponse<number>;
+    if (data.code !== '200000' || !Number.isFinite(data.data)) {
+      throw new Error(`KuCoin timestamp inválido: ${data.code}`);
+    }
+    return data.data;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function ensureKucoinTimeSync(baseUrl: string): Promise<void> {
+  const now = Date.now();
+  const intervalMs = isValidKucoinTimeSyncInterval(KUCOIN_TIME_SYNC_INTERVAL_MS)
+    ? KUCOIN_TIME_SYNC_INTERVAL_MS
+    : 300_000;
+  if (kucoinTimeSyncInFlight) return;
+  if (now - kucoinLastTimeSyncMs < intervalMs) return;
+
+  kucoinTimeSyncInFlight = true;
+  try {
+    const serverTime = await fetchKucoinServerTimeMs(baseUrl);
+    kucoinTimeOffsetMs = serverTime - Date.now();
+    kucoinLastTimeSyncMs = now;
+    logger.info({ offsetMs: kucoinTimeOffsetMs }, 'Sincronização de tempo KuCoin atualizada');
+  } catch (error) {
+    logger.warn({ error }, 'Falha ao sincronizar horário KuCoin - usando clock local');
+  } finally {
+    kucoinTimeSyncInFlight = false;
+  }
+}
+
 function normalizeKucoinOperation(method: string, endpoint: string): string {
   // Evitar alta cardinalidade em métricas:
   // - Remove query string
@@ -96,6 +152,8 @@ const KUCOIN_SANDBOX_URL = 'https://api-sandbox-futures.kucoin.com';
 const KUCOIN_API_KEY = process.env.KUCOIN_PRO_API_KEY;
 const KUCOIN_API_SECRET = process.env.KUCOIN_PRO_API_SECRET;
 const KUCOIN_API_PASSPHRASE = process.env.KUCOIN_PRO_API_PASSPHRASE;
+const KUCOIN_API_KEY_VERSION = (process.env.KUCOIN_PRO_API_KEY_VERSION || process.env.KUCOIN_API_KEY_VERSION || '2').trim();
+const KUCOIN_TIME_SYNC_INTERVAL_MS = Number(process.env.KUCOIN_TIME_SYNC_INTERVAL_MS || 300_000);
 
 // Modo sandbox para testes (default: false em produção)
 const KUCOIN_SANDBOX_MODE = process.env.KUCOIN_SANDBOX_MODE === 'true';
@@ -256,13 +314,13 @@ export interface CreateOrderParams {
   side: 'buy' | 'sell';        // Direção
   type: 'limit' | 'market';    // Tipo de ordem
   leverage?: number;           // Alavancagem (1-100)
-  size: number;                // Quantidade em contratos
+  size: number;                // Quantidade em contratos (inteiro positivo)
   price?: string;              // Preço (obrigatório para limit)
-  timeInForce?: 'GTC' | 'IOC' | 'FOK'; // Validade da ordem
+  timeInForce?: 'GTC' | 'IOC'; // Validade da ordem
   postOnly?: boolean;          // Apenas maker
   reduceOnly?: boolean;        // Apenas reduzir posição
   stopPrice?: string;          // Preço de stop (stop-loss/take-profit)
-  stopPriceType?: 'TP' | 'IP' | 'MP'; // Tipo de preço para stop
+  stopPriceType?: 'TP' | 'MP'; // Tipo de preço para stop (TP=Trade, MP=Mark)
 }
 
 /** Resposta de criação de ordem */
@@ -427,6 +485,10 @@ function generatePassphraseSignature(): string {
     throw new Error('KUCOIN_PRO_API_SECRET ou KUCOIN_PRO_API_PASSPHRASE não configurada');
   }
 
+  if (KUCOIN_API_KEY_VERSION === '1') {
+    return KUCOIN_API_PASSPHRASE;
+  }
+
   return crypto
     .createHmac('sha256', KUCOIN_API_SECRET)
     .update(KUCOIN_API_PASSPHRASE)
@@ -445,7 +507,11 @@ function generateAuthHeaders(
     throw new Error('KUCOIN_PRO_API_KEY não configurada');
   }
 
-  const timestamp = Date.now().toString();
+  if (!['1', '2', '3'].includes(KUCOIN_API_KEY_VERSION)) {
+    throw new Error(`KUCOIN_PRO_API_KEY_VERSION inválida: ${KUCOIN_API_KEY_VERSION}`);
+  }
+
+  const timestamp = (Date.now() + kucoinTimeOffsetMs).toString();
   const signature = generateSignature(timestamp, method, endpoint, body);
   const passphrase = generatePassphraseSignature();
 
@@ -454,7 +520,7 @@ function generateAuthHeaders(
     'KC-API-SIGN': signature,
     'KC-API-TIMESTAMP': timestamp,
     'KC-API-PASSPHRASE': passphrase,
-    'KC-API-KEY-VERSION': '2', // API v2 usa passphrase criptografada
+    'KC-API-KEY-VERSION': KUCOIN_API_KEY_VERSION,
     'Content-Type': 'application/json',
   };
 }
@@ -552,6 +618,10 @@ async function executeRequest<T>(
   const url = `${baseUrl}${endpoint}`;
   const bodyString = body ? JSON.stringify(body) : '';
   const operation = normalizeKucoinOperation(method, endpoint);
+
+  if (requiresAuth) {
+    await ensureKucoinTimeSync(baseUrl);
+  }
 
   const headers: Record<string, string> = requiresAuth
     ? generateAuthHeaders(method, endpoint, bodyString)
@@ -1156,18 +1226,31 @@ export async function getOrderHistory(
 }
 
 /**
- * Obtém detalhes de múltiplas ordens por IDs
- * GET /api/v1/orders/byIds
- * @param orderIds - Lista de IDs de ordens
+ * Obtém detalhes de uma ordem por ID
+ * GET /api/v1/orders/{order-id}
+ * @param orderId - ID da ordem
  */
-export async function getOrdersByIds(orderIds: string[]): Promise<KucoinOrder[]> {
-  const response = await executeRequest<KucoinOrder[]>(
+export async function getOrderById(orderId: string): Promise<KucoinOrder> {
+  const response = await executeRequest<KucoinOrder>(
     'GET',
-    `/api/v1/orders/byIds?orderIds=${orderIds.join(',')}`,
+    `/api/v1/orders/${orderId}`,
     undefined,
     true
   );
   return response.data;
+}
+
+/**
+ * Obtém detalhes de múltiplas ordens por IDs
+ * Implementado via chamadas sequenciais ao endpoint oficial.
+ * @param orderIds - Lista de IDs de ordens
+ */
+export async function getOrdersByIds(orderIds: string[]): Promise<KucoinOrder[]> {
+  const results: KucoinOrder[] = [];
+  for (const orderId of orderIds) {
+    results.push(await getOrderById(orderId));
+  }
+  return results;
 }
 
 // ============================================================================
@@ -1188,7 +1271,7 @@ export interface CreateStopOrderParams {
   timeInForce?: 'GTC' | 'IOC';    // Validade
   triggerStopUpPrice?: string;    // Preço de take profit (trigger para fechar com lucro)
   triggerStopDownPrice?: string;  // Preço de stop loss (trigger para fechar com perda)
-  stopPriceType?: 'TP' | 'IP' | 'MP'; // Tipo: Trade Price, Index Price, Mark Price
+  stopPriceType?: 'TP' | 'MP'; // Tipo: Trade Price, Mark Price
   reduceOnly?: boolean;           // Apenas reduzir posição
   closeOrder?: boolean;           // Fechar posição inteira
   forceHold?: boolean;            // Forçar hold de margem
@@ -1218,6 +1301,10 @@ export async function createStopOrder(params: CreateStopOrderParams): Promise<Cr
   // Validar que pelo menos um trigger está definido
   if (!params.triggerStopUpPrice && !params.triggerStopDownPrice) {
     throw new Error('Pelo menos triggerStopUpPrice (TP) ou triggerStopDownPrice (SL) deve ser definido');
+  }
+  // stopPriceType é obrigatório quando há triggers (docs oficiais KuCoin Futures)
+  if (!params.stopPriceType) {
+    throw new Error('stopPriceType é obrigatório quando há triggerStopUpPrice ou triggerStopDownPrice');
   }
 
   const response = await executeRequest<CreateStopOrderResponse>(
@@ -1378,6 +1465,7 @@ export default {
   cancelOrder,
   cancelAllOrders,
   getOrder,
+  getOrderById,
   getOrderByClientOid,
   getOpenOrders,
   getOrderHistory,

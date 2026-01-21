@@ -57,6 +57,7 @@ import {
   initializeWebSocketClients as initializeKucoinWebSocketClients,
   isWebSocketConfigured as isKucoinWebSocketConfigured,
 } from './kucoinWebSocket.js';
+import { initializeBroadcast, getPublisher, closeBroadcast } from './tradingBroadcast.js';
 import { sendKucoinErrorResponse } from './kucoin-error-mapper.js';
 import * as technicalIndicators from './technical-indicators.js';
 
@@ -119,6 +120,12 @@ const kucoinWsErrorsTotal = new PromCounter({
   labelNames: ['channel'] as const,
   registers: [metrics.registry],
 });
+
+// Tenant alvo para eventos privados de KuCoin via WS (ordens/posição/balance).
+// Evita vazamento multi-tenant quando há apenas uma integração configurada.
+const KUCOIN_TENANT_ID = process.env.KUCOIN_TENANT_ID?.trim()
+  || process.env.TRADING_TENANT_ID?.trim()
+  || null;
 
 function mapKucoinWsStateToNumber(state: KucoinWsState): number {
   switch (state) {
@@ -3068,6 +3075,69 @@ kucoinClient.initKucoinMetrics(metrics);
 if (kucoinClient.isKucoinConfigured()) {
   initializeKucoinWebSocketClients()
     .then(() => {
+      initializeBroadcast()
+        .then((status) => {
+          if (!status.publisher) {
+            logger.warn('Broadcast de trading iniciado sem publisher (Redis indisponível)');
+          }
+          const publisher = getPublisher();
+          const publicWs = getPublicWebSocketClient();
+          const privateWs = isKucoinWebSocketConfigured() ? getPrivateWebSocketClient() : null;
+          const privateTenantId = KUCOIN_TENANT_ID;
+
+          publicWs.on('ticker', (data) => {
+            void publisher.publishTicker(data.symbol, data).catch((error) => {
+              logger.error({ error }, 'Falha ao publicar ticker de trading');
+            });
+          });
+
+          publicWs.on('orderbook', (data) => {
+            void publisher.publishOrderBook(data.symbol, data).catch((error) => {
+              logger.error({ error }, 'Falha ao publicar orderbook de trading');
+            });
+          });
+
+          publicWs.on('kline', (data) => {
+            void publisher.publishKlines(data.symbol, data).catch((error) => {
+              logger.error({ error }, 'Falha ao publicar kline de trading');
+            });
+          });
+
+          publicWs.on('trade', (data) => {
+            void publisher.publishTrades(data.symbol, data).catch((error) => {
+              logger.error({ error }, 'Falha ao publicar trades de trading');
+            });
+          });
+
+          if (privateWs) {
+            if (!privateTenantId) {
+              logger.warn('KUCOIN_TENANT_ID/TRADING_TENANT_ID não definido - eventos privados não serão publicados');
+            } else {
+              privateWs.on('order', (data) => {
+                void publisher.publishOrderUpdate(privateTenantId, data).catch((error) => {
+                  logger.error({ error }, 'Falha ao publicar ordens de trading');
+                });
+              });
+              privateWs.on('position', (data) => {
+                void publisher.publishPositionUpdate(privateTenantId, data).catch((error) => {
+                  logger.error({ error }, 'Falha ao publicar posições de trading');
+                });
+              });
+              privateWs.on('balance', (data) => {
+                void publisher.publishBalanceUpdate(privateTenantId, data).catch((error) => {
+                  logger.error({ error }, 'Falha ao publicar balance de trading');
+                });
+              });
+            }
+          }
+        })
+        .catch((error) => {
+          logger.error({ error }, 'Falha ao inicializar broadcast de trading');
+          if (process.env.NODE_ENV === 'production') {
+            process.exit(1);
+          }
+        });
+
       // Subscrições mínimas (reduz custo/cardi nalidade): default symbol
       const symbol = kucoinClient.getDefaultSymbol();
       const publicWs = getPublicWebSocketClient();
@@ -3555,11 +3625,9 @@ app.post('/api/integrations/trading/orders', requirePermission('integrations:tra
       symbol: z.string().optional(),
       side: z.enum(['buy', 'sell']),
       orderType: z.enum(['limit', 'market']),
-      size: z.number().positive(),
+      size: z.number().int().positive(),
       price: z.number().positive().optional(),
       leverage: z.number().min(1).max(100).optional(),
-      stopLoss: z.number().positive().optional(),
-      takeProfit: z.number().positive().optional(),
     }).strict();
 
     const orderFromSignalSchema = baseOrderSchema
@@ -3717,12 +3785,13 @@ app.post('/api/integrations/trading/stop-orders', requirePermission('integration
     const stopOrderSchema = z.object({
       symbol: z.string().optional(),
       side: z.enum(['buy', 'sell']),
-      size: z.number().positive(),
+      size: z.number().int().positive(),
       stopLoss: z.number().positive().optional(),
       takeProfit: z.number().positive().optional(),
       leverage: z.number().int().min(1).max(100).optional(),
       orderType: z.enum(['limit', 'market']).optional(),
       price: z.number().positive().optional(),
+      stopPriceType: z.enum(['TP', 'MP']).optional(),
     })
       .refine((data) => data.stopLoss || data.takeProfit, {
         message: 'Pelo menos stopLoss ou takeProfit deve ser definido',
@@ -3733,6 +3802,13 @@ app.post('/api/integrations/trading/stop-orders', requirePermission('integration
             code: z.ZodIssueCode.custom,
             message: 'Preço é obrigatório quando orderType="limit".',
             path: ['price'],
+          });
+        }
+        if ((data.stopLoss !== undefined || data.takeProfit !== undefined) && !data.stopPriceType) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'stopPriceType é obrigatório quando stopLoss ou takeProfit são informados.',
+            path: ['stopPriceType'],
           });
         }
       });
@@ -3885,6 +3961,17 @@ app.get('/api/integrations/trading/klines/:symbol', requirePermission('integrati
           message: '"from" deve ser <= "to".',
           path: ['from'],
         });
+      }
+      if (data.from !== undefined && data.to !== undefined) {
+        const intervalMs = granularity * 60 * 1000;
+        const points = Math.floor((data.to - data.from) / intervalMs) + 1;
+        if (points > 500) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'Intervalo excede o limite de 500 klines por requisição. Divida o período.',
+            path: ['from'],
+          });
+        }
       }
     });
 
@@ -4052,7 +4139,7 @@ app.get('/api/integrations/trading/orders/history', requirePermission('integrati
 
     const querySchema = z.object({
       symbol: z.string().optional(),
-      pageSize: z.coerce.number().int().min(1).max(200).optional(),
+      pageSize: z.coerce.number().int().min(1).max(1000).optional(),
       currentPage: z.coerce.number().int().min(1).max(1000).optional(),
     });
     const queryResult = querySchema.safeParse(req.query);
@@ -4623,6 +4710,14 @@ initializeCaches().then(() => {
     async () => {
       // WS5: garante shutdown limpo dos clientes WS (evita sockets pendurados)
       closeKucoinWebSocketClients();
+    },
+    { priority: ShutdownPriority.EXTERNAL_CONNECTIONS }
+  );
+
+  registerShutdownCallback(
+    'integrations-trading-broadcast',
+    async () => {
+      await closeBroadcast();
     },
     { priority: ShutdownPriority.EXTERNAL_CONNECTIONS }
   );
