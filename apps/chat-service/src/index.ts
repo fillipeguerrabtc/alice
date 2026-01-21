@@ -934,10 +934,22 @@ const EXPLICIT_WEB_REQUEST_PATTERNS = [
   /\bquero\s+que\s+você\s+(pesquise|busque)\b/i,
 ];
 
+const EXPLICIT_DEEP_WEB_PATTERNS = [
+  /\b(deep\s*web|deepweb|dark\s*web|darkweb)\b/i,
+  /\b(onion|\.onion)\b/i,
+  /\bpesquis[ae]r?\s+na\s+deep\s*web\b/i,
+];
+
 function isExplicitWebRequest(message: string): boolean {
   const normalized = message.trim();
   if (!normalized) return false;
   return EXPLICIT_WEB_REQUEST_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+function isExplicitDeepWebRequest(message: string): boolean {
+  const normalized = message.trim();
+  if (!normalized) return false;
+  return EXPLICIT_DEEP_WEB_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
 type ImageGenerationInput = {
@@ -1001,6 +1013,7 @@ async function generateImageFromPrompt(input: ImageGenerationInput) {
       prompt: composedPrompt,
       size,
       n: 1,
+      output_format: 'png',
     };
 
     const tryGenerateImage = async (payload: Record<string, unknown>) => {
@@ -1017,73 +1030,20 @@ async function generateImageFromPrompt(input: ImageGenerationInput) {
       return response;
     };
 
-    let openAiResponse = await tryGenerateImage({
-      ...basePayload,
-      response_format: 'b64_json',
-      output_format: 'png',
-    });
-
-    if (!openAiResponse.ok) {
-      const errText = await openAiResponse.text().catch(() => '');
-      const unknownParamMatch = errText.match(/Unknown parameter:\s*([a-zA-Z0-9_]+)/i);
-      const unknownParam = unknownParamMatch?.[1]?.toLowerCase();
-      const isResponseFormatError = errText.includes('response_format') || unknownParam === 'response_format';
-      const isOutputFormatError = errText.includes('output_format') || unknownParam === 'output_format';
-      if (openAiResponse.status === 400 && (isResponseFormatError || isOutputFormatError)) {
-        logger.warn({
-          status: openAiResponse.status,
-          requestId: openAiResponse.headers.get('x-request-id'),
-          error: errText,
-        }, 'OpenAI Images rejeitou parâmetros de formato, tentando payload compatível');
-        const fallbackPayload: Record<string, unknown> = { ...basePayload };
-        if (!isOutputFormatError) {
-          fallbackPayload.output_format = 'png';
-        }
-        if (!isResponseFormatError) {
-          fallbackPayload.response_format = 'b64_json';
-        }
-        openAiResponse = await tryGenerateImage(fallbackPayload);
-      } else {
-        logger.error({
-          status: openAiResponse.status,
-          requestId: openAiResponse.headers.get('x-request-id'),
-          error: errText,
-        }, 'OpenAI Images API retornou erro');
-        throw new Error(`OpenAI Images error: ${openAiResponse.status} - ${errText}`);
-      }
-    }
-
+    const openAiResponse = await tryGenerateImage(basePayload);
     if (!openAiResponse.ok) {
       const errText = await openAiResponse.text().catch(() => '');
       logger.error({
         status: openAiResponse.status,
         requestId: openAiResponse.headers.get('x-request-id'),
         error: errText,
-      }, 'OpenAI Images API retornou erro após fallback');
+      }, 'OpenAI Images API retornou erro');
       throw new Error(`OpenAI Images error: ${openAiResponse.status} - ${errText}`);
     }
 
     const payload = await openAiResponse.json() as { data?: Array<{ b64_json?: string; url?: string }> };
     const first = payload?.data?.[0];
-    let b64 = first?.b64_json;
-
-    if (!b64 && first?.url) {
-      const imageResponse = await fetch(first.url, {
-        signal: AbortSignal.timeout(60000),
-      });
-      if (!imageResponse.ok) {
-        const errText = await imageResponse.text().catch(() => '');
-        logger.error({
-          status: imageResponse.status,
-          error: errText,
-          imageUrl: first.url,
-        }, 'Falha ao baixar imagem gerada pela OpenAI');
-        throw new Error(`Falha ao baixar imagem gerada pela OpenAI: ${imageResponse.status} - ${errText}`);
-      }
-      const buffer = Buffer.from(await imageResponse.arrayBuffer());
-      b64 = buffer.toString('base64');
-      logger.info({ source: 'url' }, 'Imagem gerada pela OpenAI recebida via URL');
-    }
+    const b64 = first?.b64_json;
 
     if (!b64 || typeof b64 !== 'string' || b64.length < 64) {
       logger.error({
@@ -2904,6 +2864,9 @@ type TradingCommandType =
   | 'set_take_profit'
   | 'unknown';
 
+type ConversationApprovalPolicy = 'always_confirm' | 'confirm_risky' | 'never_confirm';
+type TradingCommandRisk = 'low' | 'medium' | 'high';
+
 interface ParsedTradingCommand {
   type: TradingCommandType;
   isTrading: boolean;
@@ -2923,17 +2886,41 @@ interface ParsedTradingCommand {
   matchedPattern?: string;
 }
 
-const TRADING_CONFIRMATION_REQUIRED_TYPES = new Set<TradingCommandType>([
-  'buy',
-  'sell',
-  'close_position',
-  'cancel_order',
-  'set_stop_loss',
-  'set_take_profit',
-]);
+function getTradingCommandRisk(command: ParsedTradingCommand): TradingCommandRisk {
+  switch (command.type) {
+    case 'status':
+    case 'positions':
+    case 'orders':
+      return 'low';
+    case 'pause_trading':
+    case 'resume_trading':
+    case 'takeover':
+    case 'handback':
+      return 'medium';
+    case 'buy':
+    case 'sell':
+    case 'close_position':
+    case 'cancel_order':
+    case 'set_stop_loss':
+    case 'set_take_profit':
+    case 'unknown':
+    default:
+      return 'high';
+  }
+}
 
-function requiresTradingConfirmation(command: ParsedTradingCommand): boolean {
-  return TRADING_CONFIRMATION_REQUIRED_TYPES.has(command.type);
+function shouldRequireTradingConfirmation(
+  command: ParsedTradingCommand,
+  policy: ConversationApprovalPolicy
+): boolean {
+  if (policy === 'never_confirm') {
+    return false;
+  }
+  if (policy === 'always_confirm') {
+    return true;
+  }
+  const risk = getTradingCommandRisk(command);
+  return risk !== 'low';
 }
 
 /**
@@ -3533,6 +3520,11 @@ const conversationListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
   cursorUpdatedAt: z.string().optional(),
   cursorId: z.string().uuid().optional(),
+});
+
+const approvalPolicySchema = z.enum(['always_confirm', 'confirm_risky', 'never_confirm']);
+const approvalPolicyUpdateSchema = z.object({
+  approvalPolicy: approvalPolicySchema,
 });
 
 const conversationDeleteParamsSchema = z.object({
@@ -5100,6 +5092,8 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     }
 
     if (isTradingCommand(userMessageContent)) {
+      const conversationState = await getOrCreateConversationState(conversationId);
+      const approvalPolicy = (conversationState.approvalPolicy ?? 'confirm_risky') as ConversationApprovalPolicy;
       const parsedCommand = parseTradingCommand(userMessageContent);
       const validation = validateCommand(parsedCommand);
 
@@ -5165,7 +5159,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         return;
       }
 
-      if (requiresTradingConfirmation(parsedCommand)) {
+      if (shouldRequireTradingConfirmation(parsedCommand, approvalPolicy)) {
         const description = getCommandDescription(parsedCommand, 'pt');
         const [actionRequest] = await db.insert(schema.actionRequests).values({
           tenantId,
@@ -5178,6 +5172,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             action: 'trading',
             summary: description,
             command: parsedCommand as unknown as Record<string, unknown>,
+            approvalPolicy,
           },
         }).returning();
 
@@ -5265,7 +5260,8 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
       const agent = conversation?.agent ?? null;
       const ragParams = getAdaptiveRagParams(userMessageContent, previousMessages.length);
-      const explicitWebRequest = isExplicitWebRequest(userMessageContent);
+      const explicitDeepWebRequest = isExplicitDeepWebRequest(userMessageContent);
+      const explicitWebRequest = isExplicitWebRequest(userMessageContent) || explicitDeepWebRequest;
       const [assistantSettings, ragResult, ragClassification] = await Promise.all([
         getAssistantSettingsForTenant(tenantId),
         (async () => {
@@ -5288,6 +5284,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       let systemPrompt = buildSystemPrompt(agent, assistantSettings, userMessageContent);
       let ragSources: Array<{ documentId: string; titulo: string; similarity: number }> = [];
       let webSources: Array<{ title: string; url: string }> = [];
+      const classificationWebMode = ragClassification?.classification?.webMode;
 
       if (ragResult && ragResult.context) {
         systemPrompt += formatarContextoParaLLM(ragResult);
@@ -5311,7 +5308,8 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         const agenticResult = await buscarContextoAgentic({
           query: userMessageContent,
           namespaceId: conversation?.namespaceId || namespaceId,
-          forceMode: explicitWebRequest ? 'web' : undefined,
+          forceMode: explicitWebRequest || explicitDeepWebRequest ? 'web' : undefined,
+          webMode: explicitDeepWebRequest ? 'deepweb' : (classificationWebMode === 'deepweb' ? 'deepweb' : undefined),
           limit: ragParams.limit,
           auth: {
             userId,
@@ -7277,6 +7275,51 @@ app.get('/api/chat/conversations/:id/state', requireAuth(), requireSameTenant(ge
     res.json({ state });
   } catch (error) {
     logger.error({ error, conversationId: id }, 'Erro ao buscar estado da conversa');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.get('/api/chat/conversations/:id/approval-policy', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:conversations:read'), async (req: Request, res: Response) => {
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID de conversa inválido', details: paramsResult.error.format() });
+  }
+  const { id } = paramsResult.data;
+
+  try {
+    const state = await getOrCreateConversationState(id);
+    res.json({
+      approvalPolicy: state.approvalPolicy ?? 'confirm_risky',
+      allowWebSearchWithoutApproval: true,
+    });
+  } catch (error) {
+    logger.error({ error, conversationId: id }, 'Erro ao buscar política de aprovação da conversa');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.patch('/api/chat/conversations/:id/approval-policy', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:conversations:manage'), async (req: Request, res: Response) => {
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID de conversa inválido', details: paramsResult.error.format() });
+  }
+  const { id } = paramsResult.data;
+
+  const bodyResult = approvalPolicyUpdateSchema.safeParse(req.body);
+  if (!bodyResult.success) {
+    return res.status(400).json({ error: 'Política de aprovação inválida', details: bodyResult.error.format() });
+  }
+
+  try {
+    const updated = await updateConversationState(id, {
+      approvalPolicy: bodyResult.data.approvalPolicy,
+    });
+    res.json({
+      approvalPolicy: updated.approvalPolicy ?? 'confirm_risky',
+      allowWebSearchWithoutApproval: true,
+    });
+  } catch (error) {
+    logger.error({ error, conversationId: id }, 'Erro ao atualizar política de aprovação da conversa');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });

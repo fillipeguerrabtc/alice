@@ -204,17 +204,16 @@ Retenção Arquivo:   30 dias
 - Métricas: relevância RAG emitida no chat-service por tenant quando há fontes.
 - Grafana: UIDs de dashboards ajustados para não conflitar com folderUid.
 - OAuth Google: callbackURL alinhado com config e suporte a path com trailing slash.
-- OpenAI Images: fallback de parâmetros agora remove apenas o parâmetro inválido.
+- OpenAI Images: payload padronizado (gpt-image-1 + output_format=png) com retorno `b64_json`.
+- Agentic: política de aprovação por conversa (sempre confirmar / confirmar arriscadas / executar tudo).
 - Agentic: confirmação persistida para ações críticas de trading (action_requests).
-- Agentic: parser exige confirmação explícita antes de executar ordens sensíveis.
 - Chat UI: paste de imagem (Ctrl+V) anexa automaticamente no input.
 - Chat UI: avatar do usuário maior e cores de mensagens alinhadas às da Alice.
 - Chat UI: remoção dos cartões de sugestão no “Novo Chat”.
 - Chat mídia: preview imediato preserva blob URL até upload confirmar.
 - Chat mídia: limpeza de blob URL após upload concluído (media_uploaded).
 - RAG: timeout configurável por env (RAG_REQUEST_TIMEOUT_MS).
-- Agentic web: busca web forçada quando o usuário pedir explicitamente.
-- OpenAI Images: fallback compatível para response_format/output_format.
+- Agentic web: busca web forçada quando o usuário pedir explicitamente (sem aprovação).
 - Prompt: instruções PT-BR para idioma, capacidades e SERVER_TIME.
 - DB: nova tabela action_requests + enums para auditoria de ações.
 
@@ -229,7 +228,7 @@ Retenção Arquivo:   30 dias
 - GPU Manager: métricas de VRAM total/usada no fallback quando `nvidia-smi` não está disponível.
 - Upload multimodal no streaming com análise de imagens via OpenAI e SSE `media_uploaded`.
 - Headers internos para upload de mídia no RAG e geração de imagem via OpenAI (auth service-to-service).
-- OpenAI Images: `response_format` explícito + validação de retorno `b64_json`.
+- OpenAI Images: validação estrita de retorno `b64_json` (sem fallback por URL).
 - OpenAI Vision: logs com `status` e `x-request-id` para diagnóstico real.
 - Suporte enterprise a proxy (`OPENAI_PROXY`, `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`).
 - Limite configurável de payload para Vision (`OPENAI_VISION_MAX_BYTES`).
@@ -287,6 +286,7 @@ Retenção Arquivo:   30 dias
 - Chat: sincronização de mensagens aguarda refetch após streaming (evita overwrite).
 - Chat: auto-scroll respeita leitura e permite navegar toda a conversa.
 - Chat: consulta web/deepweb habilitada para perguntas atuais (classificação agentic + contexto web).
+- Chat: deepweb via SearXNG engine `ahmia` com Tor (`socks5h://alice-tor:9050`).
 - Chat: comandos de trading executáveis via conversa (parser + execução direta).
 - Trading: toggle de habilitação sincroniza cache do risco em tempo real.
 - Jaeger: telemetry metrics com endpoint Prometheus compatível (0.0.0.0:8888).

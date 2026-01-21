@@ -73,6 +73,7 @@ const ESCALATION_CONFIG = {
 // ============================================================================
 
 type ConversationControlMode = 'bot' | 'human' | 'pending_handoff' | 'hybrid';
+type ConversationApprovalPolicy = 'always_confirm' | 'confirm_risky' | 'never_confirm';
 type EscalationTrigger = 'low_confidence' | 'fallback_count' | 'negative_sentiment' | 'keyword_match' | 'manual_request' | 'sla_breach';
 
 interface EscalationContext {
@@ -93,6 +94,7 @@ interface HandoffResult {
 
 interface ConversationStateUpdate {
   controlMode?: ConversationControlMode;
+  approvalPolicy?: ConversationApprovalPolicy;
   assignedAgentId?: string | null;
   confidenceScore?: number;
   fallbackCount?: number;
@@ -252,6 +254,7 @@ export async function getOrCreateConversationState(conversationId: string) {
     const [newState] = await db.insert(schema.conversationStates).values({
       conversationId,
       controlMode: 'bot',
+      approvalPolicy: 'confirm_risky',
       fallbackCount: 0,
     }).returning();
     state = newState;

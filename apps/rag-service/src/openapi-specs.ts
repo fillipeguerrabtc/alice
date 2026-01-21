@@ -200,6 +200,83 @@ export const ragServicePaths = {
       responses: { 200: { description: 'Chunk' } },
     },
   },
+  '/api/rag/web-search': {
+    post: {
+      summary: 'Busca web via SearXNG',
+      tags: ['Search'],
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['query'],
+              properties: {
+                query: { type: 'string' },
+                limit: { type: 'integer', default: 5 },
+                mode: { type: 'string', enum: ['web', 'deepweb'] },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Resultados da web' },
+        503: { description: 'Busca web não configurada' },
+      },
+    },
+  },
+  '/api/rag/classify': {
+    post: {
+      summary: 'Classificar consulta (internal/web/hybrid)',
+      tags: ['Search'],
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['query'],
+              properties: {
+                query: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+      responses: { 200: { description: 'Classificação da consulta' } },
+    },
+  },
+  '/api/rag/agentic': {
+    post: {
+      summary: 'Busca agentic (RAG interno + web/deep web)',
+      tags: ['Search'],
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['query'],
+              properties: {
+                query: { type: 'string' },
+                namespaceId: { type: 'string' },
+                limit: { type: 'integer', default: 5 },
+                threshold: { type: 'number', default: 0.6 },
+                forceMode: { type: 'string', enum: ['internal', 'web', 'hybrid'] },
+                webMode: { type: 'string', enum: ['web', 'deepweb'] },
+              },
+            },
+          },
+        },
+      },
+      responses: { 200: { description: 'Contexto agentic consolidado' } },
+    },
+  },
+  '/api/rag/agentic/status': {
+    get: {
+      summary: 'Status agentic (circuit breakers)',
+      tags: ['Search'],
+      responses: { 200: { description: 'Status do agentic' } },
+    },
+  },
   '/api/rag/embeddings': {
     post: {
       summary: 'Gerar embedding',

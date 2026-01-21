@@ -324,6 +324,14 @@
       "helpful": "Útil",
       "notHelpful": "Não útil"
     },
+    "approvalPolicy": {
+      "label": "Aprovação",
+      "alwaysConfirm": "Sempre confirmar",
+      "confirmRisky": "Confirmar ações arriscadas",
+      "neverConfirm": "Executar tudo",
+      "updated": "Política de aprovação atualizada",
+      "error": "Falha ao atualizar política de aprovação"
+    },
     "training": {
       "send": "Enviar p/ Treino",
       "title": "Enviar conversa para treinamento",

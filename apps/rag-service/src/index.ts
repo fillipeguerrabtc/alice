@@ -78,7 +78,7 @@ import {
 import { initEmbeddingWebSocket, closeEmbeddingWebSocket, getWebSocketStats } from './embedding-websocket.js';
 import { getAudioProcessor } from './audio-processor.js';
 import { getDocumentProcessor } from './document-processor.js';
-import { createWebSearchClient, WebSearchResult } from './web-search.js';
+import { createWebSearchClient, WebSearchOptions, WebSearchResult } from './web-search.js';
 import { createLearningTask, dequeueNextLearningTask, updateLearningTaskStatus } from './learning-orchestrator.js';
 import { startLearningWorker } from './workers/learning-worker.js';
 import { startWebCrawlWorker } from './workers/web-crawl-worker.js';
@@ -987,7 +987,8 @@ const webSearchClient = createWebSearchClient({
   metrics,
 });
 
-const webSearch = (query: string, count?: number) => webSearchClient.search(query, count);
+const webSearch = (query: string, count?: number, options?: WebSearchOptions) =>
+  webSearchClient.search(query, count, options);
 
 // ============================================================================
 // WORKERS (opcionais) - ativados se WORKER_TENANT_ID estiver definido
@@ -1031,6 +1032,7 @@ interface ClassificationResult {
   type: QueryType;
   confidence: number;
   reason: string;
+  webMode?: 'web' | 'deepweb';
 }
 
 const WEB_SEARCH_KEYWORDS = [
@@ -1044,6 +1046,10 @@ const WEB_SEARCH_KEYWORDS = [
   'quem é', 'biografia', 'história de',
 ];
 
+const DEEP_WEB_KEYWORDS = [
+  'deep web', 'deepweb', 'dark web', 'darkweb', '.onion', 'onion',
+];
+
 const INTERNAL_KEYWORDS = [
   'nosso', 'nossa', 'empresa', 'produto',
   'política', 'procedimento', 'processo interno',
@@ -1055,6 +1061,7 @@ const INTERNAL_KEYWORDS = [
 
 function classifyQuery(query: string): ClassificationResult {
   const lowerQuery = query.toLowerCase();
+  const isDeepWebQuery = DEEP_WEB_KEYWORDS.some((keyword) => lowerQuery.includes(keyword));
   
   const webScore = WEB_SEARCH_KEYWORDS.reduce((score, keyword) => {
     return lowerQuery.includes(keyword) ? score + 1 : score;
@@ -1066,6 +1073,15 @@ function classifyQuery(query: string): ClassificationResult {
   
   const hasCurrentTimeReference = /(?:hoje|agora|atualmente|202\d)/i.test(query);
   
+  if (isDeepWebQuery) {
+    return {
+      type: 'web',
+      confidence: 0.9,
+      reason: 'Query explicitamente solicita deep web (.onion)',
+      webMode: 'deepweb',
+    };
+  }
+
   if (internalScore > 0 && webScore === 0) {
     return {
       type: 'internal',
@@ -1081,7 +1097,7 @@ function classifyQuery(query: string): ClassificationResult {
       reason: 'Query requer informações atualizadas da web',
     };
   }
-  
+
   if (webScore > 0 || hasCurrentTimeReference) {
     return {
       type: 'hybrid',
@@ -1828,16 +1844,19 @@ const agenticSearchSchema = z.object({
   limit: z.coerce.number().min(1).max(20).default(5),
   threshold: z.coerce.number().min(0).max(1).default(0.6),
   forceMode: z.enum(['internal', 'web', 'hybrid']).optional(),
+  webMode: z.enum(['web', 'deepweb']).optional(),
+});
+
+const webSearchSchema = z.object({
+  query: z.string().min(1),
+  limit: z.coerce.number().min(1).max(20).default(5),
+  mode: z.enum(['web', 'deepweb']).optional(),
 });
 
 app.post('/api/rag/web-search', requireAuth(), async (req: Request, res: Response) => {
   try {
-    const { query, limit = 5 } = req.body;
+    const { query, limit, mode } = webSearchSchema.parse(req.body);
     
-    if (!query || typeof query !== 'string') {
-      return res.status(400).json({ error: 'Query é obrigatória' });
-    }
-
     if (!webSearchClient.isEnabled()) {
       return res.status(503).json({ 
         error: 'Busca web não configurada', 
@@ -1845,7 +1864,10 @@ app.post('/api/rag/web-search', requireAuth(), async (req: Request, res: Respons
       });
     }
 
-    const results = await webSearch(query, limit);
+    const options: WebSearchOptions | undefined = mode === 'deepweb'
+      ? { engines: ['ahmia'] }
+      : undefined;
+    const results = await webSearch(query, limit, options);
     
     logger.info({ query, results: results.length }, 'Busca web concluída');
     res.json({ results, source: 'searxng' });
@@ -1896,6 +1918,7 @@ app.post('/api/rag/agentic', requireAuth(), requireSameTenant(getTenantIdFromReq
     const classification = body.forceMode 
       ? { type: body.forceMode, confidence: 1, reason: 'Modo forçado pelo usuário' }
       : classifyQuery(body.query);
+    const resolvedWebMode = body.webMode ?? classification.webMode ?? 'web';
     
     const results: {
       internal: Array<{ documentId: string; titulo?: string; conteudo: string; similarity: number }>;
@@ -1931,7 +1954,10 @@ app.post('/api/rag/agentic', requireAuth(), requireSameTenant(getTenantIdFromReq
     }
 
     if ((classification.type === 'web' || classification.type === 'hybrid') && webSearchClient.isEnabled()) {
-      results.web = await webSearch(body.query, body.limit);
+      const webOptions: WebSearchOptions | undefined = resolvedWebMode === 'deepweb'
+        ? { engines: ['ahmia'] }
+        : undefined;
+      results.web = await webSearch(body.query, body.limit, webOptions);
     }
 
     const context = buildAgenticContext(results.internal, results.web);

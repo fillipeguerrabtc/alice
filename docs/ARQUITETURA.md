@@ -217,6 +217,8 @@ C4Container
 | 6 | `alice-tor` | torproxy | 9050 | Proxy SOCKS5 Tor (.onion) |
 | 7 | `alice-searxng` | SearXNG | 8080 | Metabusca interna |
 
+> **Deep Web**: SearXNG usa engine `ahmia` com proxy `socks5h://alice-tor:9050` para pesquisas .onion quando solicitado.
+
 > **NOTA 02/01/2026**: Traefik, traefik-init e dockerproxy foram substituídos por Caddy. Vantagens: SSL automático com retry inteligente, HTTP/3 nativo, footprint 40MB (vs 100MB Traefik), configuração declarativa via Caddyfile. **ACME resiliente**: ZeroSSL primário + Let's Encrypt fallback.
 
 #### Microsserviços Alice (7)

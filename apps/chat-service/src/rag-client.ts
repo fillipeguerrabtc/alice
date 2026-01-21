@@ -68,6 +68,7 @@ export interface AgenticClassificationResponse {
     type: 'internal' | 'web' | 'hybrid';
     confidence: number;
     reason: string;
+    webMode?: 'web' | 'deepweb';
   };
   webSearchAvailable: boolean;
 }
@@ -125,9 +126,10 @@ async function fetchAgenticContextInternal(params: {
   limit?: number;
   threshold?: number;
   forceMode?: 'internal' | 'web' | 'hybrid';
+  webMode?: 'web' | 'deepweb';
   auth: { userId: string; tenantId: string; role: Role };
 }): Promise<AgenticContextResponse> {
-  const { query, namespaceId, limit, threshold, forceMode, auth } = params;
+  const { query, namespaceId, limit, threshold, forceMode, webMode, auth } = params;
   if (!isInternalAuthEnabled()) {
     throw new Error('INTERNAL_API_SECRET não configurado - busca agentic indisponível');
   }
@@ -154,6 +156,7 @@ async function fetchAgenticContextInternal(params: {
       limit,
       threshold,
       forceMode,
+      webMode,
     }),
     signal: AbortSignal.timeout(RAG_REQUEST_TIMEOUT_MS),
   });
@@ -236,6 +239,7 @@ export async function buscarContextoAgentic(params: {
   limit?: number;
   threshold?: number;
   forceMode?: 'internal' | 'web' | 'hybrid';
+  webMode?: 'web' | 'deepweb';
   auth: { userId: string; tenantId: string; role: Role };
 }): Promise<AgenticContextResponse | null> {
   if (!params.query || params.query.trim().length === 0) {

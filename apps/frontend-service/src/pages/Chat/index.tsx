@@ -115,6 +115,8 @@ interface Namespace {
   nome: string;
   slug: string;
 }
+
+type ApprovalPolicy = 'always_confirm' | 'confirm_risky' | 'never_confirm';
 import { MessageBubble } from './components/MessageBubble';
 import { ConversationItem } from './components/ConversationItem';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -761,12 +763,30 @@ export default function Chat() {
     queryFn: fetchConversationMessages,
     enabled: !!conversationId,
   });
+
+  const { data: approvalPolicyData } = useQuery<{ approvalPolicy: ApprovalPolicy; allowWebSearchWithoutApproval: boolean }>({
+    queryKey: ['/api/chat/conversations', conversationId, 'approval-policy'],
+    queryFn: async () => {
+      if (!conversationId) {
+        throw new Error('ConversationId ausente');
+      }
+      const res = await apiRequest('GET', `/api/chat/conversations/${conversationId}/approval-policy`);
+      return res.json() as Promise<{ approvalPolicy: ApprovalPolicy; allowWebSearchWithoutApproval: boolean }>;
+    },
+    enabled: !!conversationId,
+  });
   const { data: versionData } = useQuery<{ version: string | null }>({
     queryKey: ['/api/chat/version'],
     staleTime: 1000 * 60 * 5,
   });
   const resolvedVersion = versionData?.version || appVersion;
   const modelBadgeLabel = resolvedVersion ? `Alice ${resolvedVersion} 7B` : 'Alice 7B';
+  const approvalPolicy: ApprovalPolicy = approvalPolicyData?.approvalPolicy ?? 'confirm_risky';
+  const approvalPolicyOptions = [
+    { value: 'always_confirm', label: t('chat.approvalPolicy.alwaysConfirm') },
+    { value: 'confirm_risky', label: t('chat.approvalPolicy.confirmRisky') },
+    { value: 'never_confirm', label: t('chat.approvalPolicy.neverConfirm') },
+  ] as const;
 
   const { data: namespaces } = useQuery<Namespace[]>({
     queryKey: ['/api/namespaces'],
@@ -793,6 +813,24 @@ export default function Chat() {
         setMessages([]);
         navigate('/chat');
       }
+    },
+  });
+
+  const updateApprovalPolicy = useMutation({
+    mutationFn: async (policy: ApprovalPolicy) => {
+      if (!conversationId) {
+        throw new Error('ConversationId ausente para atualização de política');
+      }
+      await apiRequest('PATCH', `/api/chat/conversations/${conversationId}/approval-policy`, {
+        approvalPolicy: policy,
+      });
+    },
+    onSuccess: () => {
+      queryClientRef.invalidateQueries({ queryKey: ['/api/chat/conversations', conversationId, 'approval-policy'] });
+      toast({ title: t('chat.approvalPolicy.updated') });
+    },
+    onError: () => {
+      toast({ title: t('chat.approvalPolicy.error'), variant: 'destructive' });
     },
   });
 
@@ -1683,6 +1721,28 @@ export default function Chat() {
               {modelBadgeLabel}
             </Badge>
             {conversationId && (
+              <div className="hidden md:flex items-center gap-2">
+                <Label className="text-xs text-muted-foreground">
+                  {t('chat.approvalPolicy.label')}
+                </Label>
+                <Select
+                  value={approvalPolicy}
+                  onValueChange={(value) => updateApprovalPolicy.mutate(value as ApprovalPolicy)}
+                >
+                  <SelectTrigger className="h-8 w-[200px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {approvalPolicyOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {conversationId && (
               <Button
                 variant="outline"
                 size="sm"
@@ -1701,6 +1761,23 @@ export default function Chat() {
                   <Sparkles className="h-3 w-3" />
                   {modelBadgeLabel}
                 </Badge>
+                {conversationId && (
+                  <Select
+                    value={approvalPolicy}
+                    onValueChange={(value) => updateApprovalPolicy.mutate(value as ApprovalPolicy)}
+                  >
+                    <SelectTrigger className="h-6 w-[120px] text-[10px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {approvalPolicyOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
                 {conversationId && (
                   <Button
                     variant="outline"

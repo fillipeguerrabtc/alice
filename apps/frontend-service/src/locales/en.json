@@ -324,6 +324,14 @@
       "helpful": "Helpful",
       "notHelpful": "Not helpful"
     },
+    "approvalPolicy": {
+      "label": "Approval",
+      "alwaysConfirm": "Always confirm",
+      "confirmRisky": "Confirm risky actions",
+      "neverConfirm": "Execute everything",
+      "updated": "Approval policy updated",
+      "error": "Failed to update approval policy"
+    },
     "training": {
       "send": "Send to Training",
       "title": "Send conversation to training",

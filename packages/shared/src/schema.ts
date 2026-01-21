@@ -2340,6 +2340,12 @@ export const conversationControlModeEnum = pgEnum("conversation_control_mode", [
   "hybrid",        // Modo híbrido (sugestões IA + aprovação humana)
 ]);
 
+export const conversationApprovalPolicyEnum = pgEnum("conversation_approval_policy", [
+  "always_confirm", // Sempre pedir confirmação (execução manual)
+  "confirm_risky",  // Confirmar apenas ações arriscadas
+  "never_confirm",  // Executar tudo sem confirmação
+]);
+
 export const escalationTriggerEnum = pgEnum("escalation_trigger", [
   "low_confidence",     // Confiança LLM < 70%
   "fallback_count",     // 3+ fallbacks consecutivos
@@ -2365,6 +2371,7 @@ export const conversationStates = pgTable(
       .notNull()
       .unique(),
     controlMode: conversationControlModeEnum("control_mode").default("bot"),
+    approvalPolicy: conversationApprovalPolicyEnum("approval_policy").default("confirm_risky"),
     assignedAgentId: uuid("assigned_agent_id").references(() => users.id),
     pendingSince: timestamp("pending_since"),
     lastBotMessage: timestamp("last_bot_message"),
