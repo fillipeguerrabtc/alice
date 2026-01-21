@@ -144,8 +144,9 @@ const OPENAI_NO_PROXY_ENTRIES = OPENAI_NO_PROXY
   ? OPENAI_NO_PROXY.split(',').map((entry) => entry.trim()).filter(Boolean)
   : [];
 
-type OpenAiDispatcher = RequestInit['dispatcher'];
-type OpenAiRequestInit = RequestInit & { dispatcher?: OpenAiDispatcher };
+// RequestInit do TS (DOM) não inclui dispatcher. Tipamos como unknown para
+// compatibilidade entre undici e undici-types no CI.
+type OpenAiDispatcher = unknown;
 
 function isNoProxyMatch(hostname: string, entry: string): boolean {
   if (entry === '*') return true;
@@ -171,7 +172,7 @@ const OPENAI_PROXY_URL = (() => {
   }
 })();
 
-const OPENAI_DISPATCHER: OpenAiDispatcher = (() => {
+const OPENAI_DISPATCHER: OpenAiDispatcher | undefined = (() => {
   if (!OPENAI_PROXY_URL) return undefined;
   if (shouldBypassProxy(OPENAI_HOSTNAME, OPENAI_NO_PROXY_ENTRIES)) {
     logger.info({ hostname: OPENAI_HOSTNAME }, 'OpenAI sem proxy (NO_PROXY aplicado)');
@@ -183,8 +184,11 @@ const OPENAI_DISPATCHER: OpenAiDispatcher = (() => {
   return new ProxyAgent(OPENAI_PROXY_URL) as unknown as OpenAiDispatcher;
 })();
 
-function getOpenAiFetchOptions(): Pick<OpenAiRequestInit, 'dispatcher'> {
-  return OPENAI_DISPATCHER ? { dispatcher: OPENAI_DISPATCHER } : {};
+function withOpenAiDispatcher(init: RequestInit): RequestInit {
+  if (!OPENAI_DISPATCHER) return init;
+  // O dispatcher é uma extensão do fetch do undici (não existe no RequestInit do TS),
+  // então fazemos cast controlado para manter compatibilidade sem perder funcionalidade.
+  return { ...init, dispatcher: OPENAI_DISPATCHER } as unknown as RequestInit;
 }
 
 // URL do Integrations Service para comunicação cross-service (Regra 15 - Microsserviços)
@@ -1135,16 +1139,18 @@ async function generateImageFromPrompt(input: ImageGenerationInput) {
     };
 
     const tryGenerateImage = async (payload: Record<string, unknown>) => {
-      const response = await fetch('https://api.openai.com/v1/images/generations', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${OPENAI_API_KEY}`,
-        },
-        body: JSON.stringify(payload),
-        ...getOpenAiFetchOptions(),
-        signal: AbortSignal.timeout(120000),
-      });
+      const response = await fetch(
+        'https://api.openai.com/v1/images/generations',
+        withOpenAiDispatcher({
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${OPENAI_API_KEY}`,
+          },
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(120000),
+        })
+      );
       return response;
     };
 
@@ -2386,32 +2392,34 @@ async function analyzeImageWithOpenAI(params: {
   const retryableStatuses = new Set([408, 429, 500, 502, 503, 504]);
   let response: globalThis.Response | null = null;
   for (let attempt = 1; attempt <= 2; attempt += 1) {
-    response = await fetch('https://api.openai.com/v1/responses', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4.1',
-        max_output_tokens: 800,
-        input: [
-          {
-            role: 'developer',
-            content: [{ type: 'input_text', text: DEFAULT_VISION_IMAGE_PROMPT }],
-          },
-          {
-            role: 'user',
-            content: [
-              { type: 'input_text', text: question },
-              { type: 'input_image', image_url: params.imageDataUri, detail: 'auto' },
-            ],
-          },
-        ],
-      }),
-      ...getOpenAiFetchOptions(),
-      signal: AbortSignal.timeout(60000),
-    });
+    response = await fetch(
+      'https://api.openai.com/v1/responses',
+      withOpenAiDispatcher({
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: 'gpt-4.1',
+          max_output_tokens: 800,
+          input: [
+            {
+              role: 'developer',
+              content: [{ type: 'input_text', text: DEFAULT_VISION_IMAGE_PROMPT }],
+            },
+            {
+              role: 'user',
+              content: [
+                { type: 'input_text', text: question },
+                { type: 'input_image', image_url: params.imageDataUri, detail: 'auto' },
+              ],
+            },
+          ],
+        }),
+        signal: AbortSignal.timeout(60000),
+      })
+    );
 
     if (response.ok) {
       break;
