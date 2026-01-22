@@ -1524,6 +1524,7 @@
     "tabs": {
       "users": "Usuários",
       "groups": "Grupos",
+      "roles": "Roles",
       "permissions": "Permissões"
     },
     "users": {
@@ -1534,12 +1535,17 @@
         "name": "Nome",
         "email": "Email",
         "role": "Role",
+        "customRole": "Role personalizada",
         "status": "Status",
         "provider": "Provedor"
       },
       "empty": "Nenhum usuário encontrado",
       "roleUpdated": "Role atualizada com sucesso",
       "roleUpdateError": "Erro ao atualizar role",
+      "customRoleUpdated": "Role personalizada atualizada com sucesso",
+      "customRoleUpdateError": "Erro ao atualizar role personalizada",
+      "customRoleNone": "Sem role personalizada",
+      "customRolePlaceholder": "Selecionar role personalizada",
       "statusUpdated": "Status atualizado com sucesso",
       "statusUpdateError": "Erro ao atualizar status",
       "providerLocal": "Local"
@@ -1579,6 +1585,39 @@
       "membersRemoved": "Membro removido do grupo",
       "membersRemoveError": "Erro ao remover membro"
     },
+    "roles": {
+      "title": "Roles Personalizadas",
+      "description": "Crie roles por departamento/função e gerencie permissões específicas.",
+      "new": "Nova Role",
+      "searchPlaceholder": "Buscar por nome ou slug",
+      "empty": "Nenhuma role personalizada cadastrada",
+      "managePermissions": "Permissões",
+      "permissionsTitle": "Permissões da role",
+      "permissionsDescription": "Gerencie permissões para {{name}}.",
+      "permissionsUpdated": "Permissões da role atualizadas",
+      "permissionsUpdateError": "Erro ao atualizar permissões da role",
+      "created": "Role criada com sucesso",
+      "createError": "Erro ao criar role",
+      "updated": "Role atualizada com sucesso",
+      "updateError": "Erro ao atualizar role",
+      "deleted": "Role excluída com sucesso",
+      "deleteError": "Erro ao excluir role",
+      "deleteTitle": "Excluir role",
+      "deleteDescription": "Esta ação remove a role e suas permissões associadas.",
+      "newTitle": "Nova role",
+      "editTitle": "Editar role",
+      "newDescription": "Crie uma role personalizada para sua organização.",
+      "editDescription": "Atualize os dados da role personalizada.",
+      "fields": {
+        "name": "Nome",
+        "slug": "Slug",
+        "slugPlaceholder": "Gerado automaticamente se vazio",
+        "slugPreview": "Slug efetivo: {{slug}}",
+        "description": "Descrição",
+        "baseRole": "Role base",
+        "active": "Ativo"
+      }
+    },
     "permissions": {
       "title": "Permissões do Sistema",
       "description": "Gerencie permissões e atribua acessos por role.",
@@ -1612,8 +1651,12 @@
         "description": "Descrição",
         "module": "Módulo",
         "modulePlaceholder": "Selecione um módulo",
+        "customModule": "Criar novo módulo",
+        "useExistingModule": "Voltar para módulo existente",
         "resource": "Recurso",
         "resourcePlaceholder": "Ex: users, roles, settings",
+        "customResource": "Criar novo recurso",
+        "useExistingResource": "Voltar para recurso existente",
         "action": "Ação",
         "actionPlaceholder": "Selecione uma ação"
       },

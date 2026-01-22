@@ -3809,13 +3809,35 @@ registerShutdownCallback(
   try {
     setPermissionResolver(async (auth) => {
       const db = getDatabase();
-      const rolePermissions = await db.query.rolePermissions.findMany({
-        where: eq(schema.rolePermissions.role, auth.role),
-        with: { permission: true },
-      });
-      return rolePermissions
-        .map((rp) => (rp as { permission?: { codigo?: string | null } }).permission?.codigo)
-        .filter((code): code is string => Boolean(code));
+      let customRoleId = auth.customRoleId;
+      if (!customRoleId) {
+        const user = await db.query.users.findFirst({
+          where: eq(schema.users.id, auth.userId),
+          columns: { customRoleId: true },
+        });
+        customRoleId = user?.customRoleId ?? undefined;
+      }
+      const isAdminRole = auth.role === 'admin' || auth.role === 'super_admin';
+      const rolePermissions = isAdminRole
+        ? await db.query.permissions.findMany({ columns: { codigo: true } })
+        : await db.query.rolePermissions.findMany({
+          where: eq(schema.rolePermissions.role, auth.role),
+          with: { permission: true },
+        });
+      const customRolePermissions = customRoleId
+        ? await db.query.customRolePermissions.findMany({
+          where: eq(schema.customRolePermissions.customRoleId, customRoleId),
+          with: { permission: true },
+        })
+        : [];
+      return [
+        ...rolePermissions
+          .map((rp) => ('codigo' in rp ? rp.codigo : (rp as { permission?: { codigo?: string | null } }).permission?.codigo))
+          .filter((code): code is string => Boolean(code)),
+        ...customRolePermissions
+          .map((rp) => (rp as { permission?: { codigo?: string | null } }).permission?.codigo)
+          .filter((code): code is string => Boolean(code)),
+      ];
     });
 
     // Inicializar Redis cache (crítico para embedding-websocket Pub/Sub)

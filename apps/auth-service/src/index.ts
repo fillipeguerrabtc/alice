@@ -72,6 +72,8 @@ import {
   initFeatureFlags,
   setupSwaggerUI,
   AUTH_SERVICE_TAGS,
+  invalidateUserPermissions,
+  invalidateTenantPermissions,
 } from '@alice/shared-utils';
 import { authServicePaths, authServiceSchemas } from './openapi-specs.js';
 
@@ -85,13 +87,36 @@ logger.info('Sistema de feature flags inicializado');
 
 setPermissionResolver(async (auth: AuthContext) => {
   const db = getDatabase();
-  const rolePermissions = await db.query.rolePermissions.findMany({
-    where: eq(schema.rolePermissions.role, auth.role),
-    with: { permission: true },
-  });
-  return rolePermissions
-    .map((rp) => (rp as { permission?: { codigo?: string | null } }).permission?.codigo)
-    .filter((code): code is string => Boolean(code));
+  let customRoleId = auth.customRoleId;
+  if (!customRoleId) {
+    const user = await db.query.users.findFirst({
+      where: eq(schema.users.id, auth.userId),
+      columns: { customRoleId: true },
+    });
+    customRoleId = user?.customRoleId ?? undefined;
+  }
+  const isAdminRole = auth.role === 'admin' || auth.role === 'super_admin';
+  const rolePermissions = isAdminRole
+    ? await db.query.permissions.findMany({ columns: { codigo: true } })
+    : await db.query.rolePermissions.findMany({
+      where: eq(schema.rolePermissions.role, auth.role),
+      with: { permission: true },
+    });
+  const customRolePermissions = customRoleId
+    ? await db.query.customRolePermissions.findMany({
+      where: eq(schema.customRolePermissions.customRoleId, customRoleId),
+      with: { permission: true },
+    })
+    : [];
+  const resolved = [
+    ...rolePermissions
+      .map((rp) => ('codigo' in rp ? rp.codigo : (rp as { permission?: { codigo?: string | null } }).permission?.codigo))
+      .filter((code): code is string => Boolean(code)),
+    ...customRolePermissions
+      .map((rp) => (rp as { permission?: { codigo?: string | null } }).permission?.codigo)
+      .filter((code): code is string => Boolean(code)),
+  ];
+  return resolved;
 });
 
 type DbUser = typeof schema.users.$inferSelect;
@@ -101,6 +126,7 @@ function toAuthContext(dbUser: DbUser): Express.User {
     userId: dbUser.id,
     tenantId: dbUser.tenantId || undefined,
     role: dbUser.role || 'guest',
+    customRoleId: dbUser.customRoleId || undefined,
     email: dbUser.email || undefined,
     permissions: [],
   };
@@ -153,6 +179,14 @@ function humanizeToken(value: string): string {
     .split('_')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
+}
+
+function normalizeRoleSlug(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-z0-9_]/g, '');
 }
 
 function buildPermissionDefinition(code: string): PermissionDefinition {
@@ -1962,6 +1996,7 @@ app.get('/api/auth/rbac/permissions', requireAuth(), async (req: Request, res: R
   try {
     const db = getDatabase();
     const userRole = (req.user.role || 'viewer') as Role;
+    const customRoleId = req.user.customRoleId ?? null;
 
     // Buscar permissões da role
     const rolePermissions = await db.query.rolePermissions.findMany({
@@ -1970,8 +2005,17 @@ app.get('/api/auth/rbac/permissions', requireAuth(), async (req: Request, res: R
         permission: true,
       },
     });
+    const customRolePermissions = customRoleId
+      ? await db.query.customRolePermissions.findMany({
+        where: eq(schema.customRolePermissions.customRoleId, customRoleId),
+        with: { permission: true },
+      })
+      : [];
 
     const dbPermissions = rolePermissions
+      .map(rp => (rp as { permission?: { codigo?: string } }).permission?.codigo)
+      .filter(Boolean);
+    const customPermissions = customRolePermissions
       .map(rp => (rp as { permission?: { codigo?: string } }).permission?.codigo)
       .filter(Boolean);
 
@@ -1979,10 +2023,16 @@ app.get('/api/auth/rbac/permissions', requireAuth(), async (req: Request, res: R
       .filter(([, roles]) => roles.includes(userRole))
       .map(([code]) => code);
 
-    const permissions = Array.from(new Set([...(dbPermissions as string[]), ...basePermissions]));
+    const permissions = Array.from(
+      new Set([...(dbPermissions as string[]), ...(customPermissions as string[]), ...basePermissions])
+    );
+    if (['super_admin', 'admin'].includes(userRole) && !permissions.includes('admin:alice_core:write')) {
+      permissions.push('admin:alice_core:write');
+    }
 
     res.json({ 
-      role: userRole, 
+      role: userRole,
+      customRoleId,
       permissions,
       canManageUsers: ['super_admin', 'admin'].includes(userRole || ''),
       canManageAgents: ['super_admin', 'admin', 'manager'].includes(userRole || ''),
@@ -2122,6 +2172,20 @@ const updateGroupSchema = createGroupSchema.partial();
 
 const groupMemberSchema = z.object({
   userId: z.string().uuid(),
+});
+
+const createCustomRoleSchema = z.object({
+  nome: z.string().min(2).max(255),
+  slug: z.string().min(2).max(100).optional(),
+  descricao: z.string().max(1000).optional().nullable(),
+  baseRole: z.enum(['super_admin', 'admin', 'manager', 'operator', 'viewer', 'guest']).optional().default('viewer'),
+  ativo: z.boolean().optional(),
+});
+
+const updateCustomRoleSchema = createCustomRoleSchema.partial();
+
+const assignCustomRolePermissionsSchema = z.object({
+  permissionCodes: z.array(z.string().min(2).max(100)),
 });
 
 // GET /api/auth/modules - Listar todos os módulos do sistema
@@ -2509,6 +2573,255 @@ app.delete('/api/auth/permissions/:id', requireAuth(), requirePermission('admin:
   res.json({ success: true, permission });
 }));
 
+// ============================================================================
+// ROTAS: Roles Customizadas (Departamentos/Funções)
+// ============================================================================
+
+// GET /api/auth/custom-roles - Listar roles customizadas do tenant
+app.get('/api/auth/custom-roles', requireAuth(), requirePermission('admin:roles:read'), asyncHandler(async (req: Request, res: Response) => {
+  const db = getDatabase();
+  const tenantId = req.tenantId;
+  const isSuperAdmin = req.user?.role === 'super_admin';
+
+  if (!tenantId && !isSuperAdmin) {
+    return res.status(400).json({ error: 'Tenant não identificado' });
+  }
+
+  const roles = await db.query.customRoles.findMany({
+    where: tenantId ? eq(schema.customRoles.tenantId, tenantId) : undefined,
+    orderBy: (role, { asc }) => [asc(role.nome)],
+  });
+
+  res.json({ roles });
+}));
+
+// POST /api/auth/custom-roles - Criar role customizada
+app.post('/api/auth/custom-roles', requireAuth(), requirePermission('admin:roles:write'), asyncHandler(async (req: Request, res: Response) => {
+  const db = getDatabase();
+  const tenantId = req.tenantId;
+  if (!tenantId) {
+    return res.status(400).json({ error: 'Tenant não identificado' });
+  }
+
+  const result = createCustomRoleSchema.safeParse(req.body);
+  if (!result.success) {
+    return res.status(400).json({ error: 'Dados inválidos', details: result.error.format() });
+  }
+
+  const slug = normalizeRoleSlug(result.data.slug || result.data.nome);
+  if (!slug) {
+    return res.status(400).json({ error: 'Slug inválido' });
+  }
+
+  const existing = await db.query.customRoles.findFirst({
+    where: and(
+      eq(schema.customRoles.tenantId, tenantId),
+      eq(schema.customRoles.slug, slug)
+    ),
+  });
+  if (existing) {
+    return res.status(409).json({ error: 'Já existe uma role com este slug' });
+  }
+
+  const [customRole] = await db.insert(schema.customRoles)
+    .values({
+      tenantId,
+      nome: result.data.nome,
+      slug,
+      descricao: result.data.descricao ?? null,
+      baseRole: result.data.baseRole ?? 'viewer',
+      ativo: result.data.ativo ?? true,
+    })
+    .returning();
+
+  await invalidateTenantPermissions(tenantId);
+  res.status(201).json({ role: customRole });
+}));
+
+// PATCH /api/auth/custom-roles/:id - Atualizar role customizada
+app.patch('/api/auth/custom-roles/:id', requireAuth(), requirePermission('admin:roles:write'), asyncHandler(async (req: Request, res: Response) => {
+  const db = getDatabase();
+  const tenantId = req.tenantId;
+  const isSuperAdmin = req.user?.role === 'super_admin';
+
+  if (!tenantId && !isSuperAdmin) {
+    return res.status(400).json({ error: 'Tenant não identificado' });
+  }
+
+  const result = updateCustomRoleSchema.safeParse(req.body);
+  if (!result.success) {
+    return res.status(400).json({ error: 'Dados inválidos', details: result.error.format() });
+  }
+  if (Object.keys(result.data).length === 0) {
+    return res.status(400).json({ error: 'Nenhum campo para atualizar' });
+  }
+
+  const current = await db.query.customRoles.findFirst({
+    where: eq(schema.customRoles.id, req.params.id),
+  });
+  if (!current) {
+    return res.status(404).json({ error: 'Role customizada não encontrada' });
+  }
+  if (!current.tenantId) {
+    return res.status(400).json({ error: 'Role customizada sem tenant associado' });
+  }
+  if (tenantId && current.tenantId !== tenantId && !isSuperAdmin) {
+    return res.status(403).json({ error: 'Acesso negado - role de outro tenant' });
+  }
+
+  const nextSlug = result.data.slug ? normalizeRoleSlug(result.data.slug) : current.slug;
+  if (!nextSlug) {
+    return res.status(400).json({ error: 'Slug inválido' });
+  }
+
+  if (nextSlug !== current.slug) {
+    const existing = await db.query.customRoles.findFirst({
+      where: and(
+        eq(schema.customRoles.tenantId, current.tenantId),
+        eq(schema.customRoles.slug, nextSlug)
+      ),
+    });
+    if (existing) {
+      return res.status(409).json({ error: 'Já existe uma role com este slug' });
+    }
+  }
+
+  const [updated] = await db.update(schema.customRoles)
+    .set({
+      nome: result.data.nome ?? current.nome,
+      slug: nextSlug,
+      descricao: result.data.descricao ?? current.descricao,
+      baseRole: result.data.baseRole ?? current.baseRole,
+      ativo: result.data.ativo ?? current.ativo,
+      atualizadoEm: new Date(),
+    })
+    .where(eq(schema.customRoles.id, req.params.id))
+    .returning();
+
+  const invalidateTenantId = tenantId ?? current.tenantId;
+  await invalidateTenantPermissions(invalidateTenantId);
+  res.json({ role: updated });
+}));
+
+// DELETE /api/auth/custom-roles/:id - Remover role customizada
+app.delete('/api/auth/custom-roles/:id', requireAuth(), requirePermission('admin:roles:delete'), asyncHandler(async (req: Request, res: Response) => {
+  const db = getDatabase();
+  const tenantId = req.tenantId;
+  const isSuperAdmin = req.user?.role === 'super_admin';
+
+  const current = await db.query.customRoles.findFirst({
+    where: eq(schema.customRoles.id, req.params.id),
+  });
+  if (!current) {
+    return res.status(404).json({ error: 'Role customizada não encontrada' });
+  }
+  if (tenantId && current.tenantId !== tenantId && !isSuperAdmin) {
+    return res.status(403).json({ error: 'Acesso negado - role de outro tenant' });
+  }
+
+  const [deleted] = await db.delete(schema.customRoles)
+    .where(eq(schema.customRoles.id, req.params.id))
+    .returning();
+
+  if (tenantId) {
+    await invalidateTenantPermissions(tenantId);
+  }
+  res.json({ success: true, role: deleted });
+}));
+
+// GET /api/auth/custom-roles/:id/permissions - Listar permissões da role customizada
+app.get('/api/auth/custom-roles/:id/permissions', requireAuth(), requirePermission('admin:roles:read'), asyncHandler(async (req: Request, res: Response) => {
+  const db = getDatabase();
+  const tenantId = req.tenantId;
+  const isSuperAdmin = req.user?.role === 'super_admin';
+
+  const role = await db.query.customRoles.findFirst({
+    where: eq(schema.customRoles.id, req.params.id),
+  });
+  if (!role) {
+    return res.status(404).json({ error: 'Role customizada não encontrada' });
+  }
+  if (tenantId && role.tenantId !== tenantId && !isSuperAdmin) {
+    return res.status(403).json({ error: 'Acesso negado - role de outro tenant' });
+  }
+
+  const rolePermissions = await db.select({
+    id: schema.customRolePermissions.id,
+    customRoleId: schema.customRolePermissions.customRoleId,
+    permissionId: schema.customRolePermissions.permissionId,
+    permission: schema.permissions,
+  })
+    .from(schema.customRolePermissions)
+    .innerJoin(schema.permissions, eq(schema.customRolePermissions.permissionId, schema.permissions.id))
+    .where(eq(schema.customRolePermissions.customRoleId, role.id));
+
+  res.json({ rolePermissions });
+}));
+
+// PUT /api/auth/custom-roles/:id/permissions - Definir permissões da role customizada
+app.put('/api/auth/custom-roles/:id/permissions', requireAuth(), requirePermission('admin:roles:manage'), asyncHandler(async (req: Request, res: Response) => {
+  const db = getDatabase();
+  const tenantId = req.tenantId;
+  const isSuperAdmin = req.user?.role === 'super_admin';
+
+  const role = await db.query.customRoles.findFirst({
+    where: eq(schema.customRoles.id, req.params.id),
+  });
+  if (!role) {
+    return res.status(404).json({ error: 'Role customizada não encontrada' });
+  }
+  if (tenantId && role.tenantId !== tenantId && !isSuperAdmin) {
+    return res.status(403).json({ error: 'Acesso negado - role de outro tenant' });
+  }
+
+  const bodyParse = assignCustomRolePermissionsSchema.safeParse(req.body);
+  if (!bodyParse.success) {
+    return res.status(400).json({ error: 'Dados inválidos', details: bodyParse.error.format() });
+  }
+
+  const requestedCodes = Array.from(new Set(bodyParse.data.permissionCodes));
+  const permissions = requestedCodes.length > 0
+    ? await db.query.permissions.findMany({
+      where: (perm, { inArray }) => inArray(perm.codigo, requestedCodes),
+    })
+    : [];
+
+  const foundCodes = new Set(permissions.map((perm) => perm.codigo));
+  const missingCodes = requestedCodes.filter((code) => !foundCodes.has(code));
+  if (missingCodes.length > 0) {
+    return res.status(400).json({ error: 'Permissões não encontradas', missing: missingCodes });
+  }
+
+  await db.transaction(async (tx) => {
+    const current = await tx.query.customRolePermissions.findMany({
+      where: eq(schema.customRolePermissions.customRoleId, role.id),
+    });
+    const currentIds = new Set(current.map((rp) => rp.permissionId));
+    const nextIds = new Set(permissions.map((perm) => perm.id));
+
+    const toRemove = current.filter((rp) => !nextIds.has(rp.permissionId));
+    if (toRemove.length > 0) {
+      await tx.delete(schema.customRolePermissions)
+        .where(inArray(schema.customRolePermissions.id, toRemove.map((item) => item.id)));
+    }
+
+    const toAdd = permissions.filter((perm) => !currentIds.has(perm.id));
+    if (toAdd.length > 0) {
+      await tx.insert(schema.customRolePermissions).values(
+        toAdd.map((perm) => ({
+          customRoleId: role.id,
+          permissionId: perm.id,
+        }))
+      );
+    }
+  });
+
+  if (tenantId) {
+    await invalidateTenantPermissions(tenantId);
+  }
+  res.json({ success: true, roleId: role.id, permissionCodes: requestedCodes });
+}));
+
 // GET /api/auth/roles/:role/permissions - Listar permissões por role
 app.get('/api/auth/roles/:role/permissions', requireAuth(), requirePermission('admin:permissions:read'), asyncHandler(async (req: Request, res: Response) => {
   const roleParse = z.enum(['super_admin', 'admin', 'manager', 'operator', 'viewer', 'guest']).safeParse(req.params.role);
@@ -2849,6 +3162,10 @@ const updateUserRoleSchema = z.object({
   role: z.enum(['super_admin', 'admin', 'manager', 'operator', 'viewer', 'guest']),
 });
 
+const updateUserCustomRoleSchema = z.object({
+  customRoleId: z.string().uuid().nullable(),
+});
+
 const updateUserStatusSchema = z.object({
   ativo: z.boolean(),
 });
@@ -2871,6 +3188,7 @@ app.get('/api/users', requireAuth(), requireRole('admin'), asyncHandler(async (r
       firstName: true,
       lastName: true,
       role: true,
+      customRoleId: true,
       cargo: true,
       departamento: true,
       ativo: true,
@@ -2878,6 +3196,17 @@ app.get('/api/users', requireAuth(), requireRole('admin'), asyncHandler(async (r
       createdAt: true,
       profileImageUrl: true,
       authProvider: true,
+    },
+    with: {
+      customRole: {
+        columns: {
+          id: true,
+          nome: true,
+          slug: true,
+          baseRole: true,
+          ativo: true,
+        },
+      },
     },
     orderBy: (users, { desc }) => [desc(users.createdAt)],
   });
@@ -2907,6 +3236,7 @@ app.get('/api/users/:id', requireAuth(), asyncHandler(async (req: Request, res: 
       firstName: true,
       lastName: true,
       role: true,
+      customRoleId: true,
       cargo: true,
       departamento: true,
       telefone: true,
@@ -2920,6 +3250,17 @@ app.get('/api/users/:id', requireAuth(), asyncHandler(async (req: Request, res: 
       authProvider: true,
       emailVerified: true,
       tenantId: true,
+    },
+    with: {
+      customRole: {
+        columns: {
+          id: true,
+          nome: true,
+          slug: true,
+          baseRole: true,
+          ativo: true,
+        },
+      },
     },
   });
 
@@ -3157,6 +3498,8 @@ app.patch('/api/users/:id/role', requireAuth(), requireRole('admin'), asyncHandl
     logger.error({ error, userId, newRole }, 'Erro ao publicar evento user.role_changed');
   });
 
+  await invalidateUserPermissions(updatedUser.id, updatedUser.tenantId || undefined);
+
   res.json({ 
     user: { 
       id: updatedUser.id, 
@@ -3164,6 +3507,66 @@ app.patch('/api/users/:id/role', requireAuth(), requireRole('admin'), asyncHandl
       previousRole,
     }, 
     message: 'Role atualizada com sucesso',
+  });
+}));
+
+// PATCH /api/users/:id/custom-role - Atualizar role customizada (admin+ only)
+app.patch('/api/users/:id/custom-role', requireAuth(), requireRole('admin'), asyncHandler(async (req: Request, res: Response) => {
+  const db = getDatabase();
+  const userId = req.params.id;
+  const requestingUser = req.user;
+
+  const parseResult = updateUserCustomRoleSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({
+      error: 'Dados inválidos',
+      details: parseResult.error.format(),
+    });
+  }
+
+  const currentUser = await db.query.users.findFirst({
+    where: eq(schema.users.id, userId),
+    columns: { id: true, tenantId: true },
+  });
+  if (!currentUser) {
+    return res.status(404).json({ error: 'Usuário não encontrado' });
+  }
+
+  const isSuperAdmin = requestingUser?.role === 'super_admin';
+  if (req.tenantId && currentUser.tenantId !== req.tenantId && !isSuperAdmin) {
+    return res.status(403).json({ error: 'Acesso negado - tenant diferente' });
+  }
+
+  const { customRoleId } = parseResult.data;
+  if (customRoleId) {
+    const customRole = await db.query.customRoles.findFirst({
+      where: eq(schema.customRoles.id, customRoleId),
+      columns: { id: true, tenantId: true, ativo: true },
+    });
+    if (!customRole) {
+      return res.status(404).json({ error: 'Role customizada não encontrada' });
+    }
+    if (customRole.ativo === false) {
+      return res.status(400).json({ error: 'Role customizada inativa' });
+    }
+    if (req.tenantId && customRole.tenantId !== req.tenantId && !isSuperAdmin) {
+      return res.status(403).json({ error: 'Acesso negado - role de outro tenant' });
+    }
+  }
+
+  const [updatedUser] = await db.update(schema.users)
+    .set({
+      customRoleId,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.users.id, userId))
+    .returning({ id: schema.users.id, customRoleId: schema.users.customRoleId });
+
+  await invalidateUserPermissions(updatedUser.id, req.tenantId);
+
+  res.json({
+    user: updatedUser,
+    message: 'Role customizada atualizada com sucesso',
   });
 }));
 

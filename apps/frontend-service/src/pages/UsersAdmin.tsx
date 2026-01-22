@@ -52,9 +52,18 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Loader2, Users, Shield, Layers, UserPlus, Pencil, Trash2 } from 'lucide-react';
+import { Loader2, Users, Shield, Layers, UserPlus, Pencil, Trash2, ShieldCheck } from 'lucide-react';
 
 type Role = 'super_admin' | 'admin' | 'manager' | 'operator' | 'viewer' | 'guest';
+
+type CustomRoleItem = {
+  id: string;
+  nome: string;
+  slug: string;
+  descricao?: string | null;
+  baseRole: Role;
+  ativo?: boolean | null;
+};
 
 type UserItem = {
   id: string;
@@ -62,6 +71,8 @@ type UserItem = {
   firstName?: string | null;
   lastName?: string | null;
   role?: Role | null;
+  customRoleId?: string | null;
+  customRole?: CustomRoleItem | null;
   cargo?: string | null;
   departamento?: string | null;
   ativo?: boolean | null;
@@ -122,6 +133,11 @@ function buildPermissionCode(modulo: string, recurso: string, acao: string): str
   return `${normalizedModulo}:${normalizedRecurso}:${normalizedAcao}`;
 }
 
+function buildRoleSlug(name: string, slug?: string): string {
+  const source = slug?.trim() ? slug : name;
+  return normalizePermissionToken(source);
+}
+
 const groupFormSchema = z.object({
   nome: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres').max(255),
   descricao: z.string().optional(),
@@ -129,6 +145,16 @@ const groupFormSchema = z.object({
 });
 
 type GroupFormData = z.infer<typeof groupFormSchema>;
+
+const customRoleFormSchema = z.object({
+  nome: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres').max(255),
+  slug: z.string().min(2, 'Slug deve ter pelo menos 2 caracteres').max(100).optional(),
+  descricao: z.string().optional(),
+  baseRole: z.enum(['super_admin', 'admin', 'manager', 'operator', 'viewer', 'guest']),
+  ativo: z.boolean().optional(),
+});
+
+type CustomRoleFormData = z.infer<typeof customRoleFormSchema>;
 
 const permissionFormSchema = z.object({
   nome: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres').max(255),
@@ -147,6 +173,16 @@ function buildPermissionPayload(values: PermissionFormData) {
     nome: values.nome,
     descricao: values.descricao,
     modulo: normalizedModulo,
+  };
+}
+
+function buildCustomRolePayload(values: CustomRoleFormData) {
+  return {
+    nome: values.nome,
+    slug: buildRoleSlug(values.nome, values.slug),
+    descricao: values.descricao,
+    baseRole: values.baseRole,
+    ativo: values.ativo ?? true,
   };
 }
 
@@ -263,11 +299,164 @@ function GroupFormDialog({
   );
 }
 
+function CustomRoleFormDialog({
+  open,
+  onOpenChange,
+  role,
+  onSubmit,
+  isLoading,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  role?: CustomRoleItem | null;
+  onSubmit: (data: CustomRoleFormData) => void;
+  isLoading: boolean;
+}) {
+  const { t } = useTranslation();
+  const form = useForm<CustomRoleFormData>({
+    resolver: asResolver<CustomRoleFormData>(zodResolver(customRoleFormSchema)),
+    defaultValues: {
+      nome: role?.nome || '',
+      slug: role?.slug || '',
+      descricao: role?.descricao || '',
+      baseRole: role?.baseRole || 'viewer',
+      ativo: role?.ativo ?? true,
+    },
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    form.reset({
+      nome: role?.nome || '',
+      slug: role?.slug || '',
+      descricao: role?.descricao || '',
+      baseRole: role?.baseRole || 'viewer',
+      ativo: role?.ativo ?? true,
+    });
+  }, [form, open, role?.baseRole, role?.descricao, role?.id, role?.nome, role?.slug, role?.ativo]);
+
+  const slugPreview = buildRoleSlug(form.watch('nome'), form.watch('slug'));
+
+  const handleSubmit = (data: CustomRoleFormData) => {
+    onSubmit(data);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[520px]">
+        <DialogHeader>
+          <DialogTitle>
+            {role ? t('usersAdmin.roles.editTitle') : t('usersAdmin.roles.newTitle')}
+          </DialogTitle>
+          <DialogDescription>
+            {role ? t('usersAdmin.roles.editDescription') : t('usersAdmin.roles.newDescription')}
+          </DialogDescription>
+        </DialogHeader>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+            <FormField
+              control={form.control}
+              name="nome"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('usersAdmin.roles.fields.name')}</FormLabel>
+                  <FormControl>
+                    <Input {...field} data-testid="input-role-name" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="slug"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('usersAdmin.roles.fields.slug')}</FormLabel>
+                  <FormControl>
+                    <Input {...field} placeholder={t('usersAdmin.roles.fields.slugPlaceholder')} data-testid="input-role-slug" />
+                  </FormControl>
+                  <p className="text-xs text-muted-foreground">
+                    {t('usersAdmin.roles.fields.slugPreview', { slug: slugPreview || '-' })}
+                  </p>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="descricao"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('usersAdmin.roles.fields.description')}</FormLabel>
+                  <FormControl>
+                    <Input {...field} data-testid="input-role-description" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="baseRole"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('usersAdmin.roles.fields.baseRole')}</FormLabel>
+                  <FormControl>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger data-testid="input-role-base">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {roleOptions.map((roleOption) => (
+                          <SelectItem key={roleOption.value} value={roleOption.value}>
+                            {roleOption.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="ativo"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
+                  <div className="space-y-0.5">
+                    <FormLabel>{t('usersAdmin.roles.fields.active')}</FormLabel>
+                    <FormMessage />
+                  </div>
+                  <FormControl>
+                    <Switch checked={field.value} onCheckedChange={field.onChange} />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                {t('common.cancel')}
+              </Button>
+              <Button type="submit" disabled={isLoading} data-testid="button-role-save">
+                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {role ? t('common.save') : t('common.create')}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function PermissionFormDialog({
   open,
   onOpenChange,
   permission,
   moduleOptions,
+  resourceOptionsByModule,
   actionOptions,
   onSubmit,
   isLoading,
@@ -276,6 +465,7 @@ function PermissionFormDialog({
   onOpenChange: (open: boolean) => void;
   permission?: PermissionItem | null;
   moduleOptions: string[];
+  resourceOptionsByModule: Map<string, Set<string>>;
   actionOptions: Array<{ value: string; label: string }>;
   onSubmit: (data: PermissionFormData) => void;
   isLoading: boolean;
@@ -292,6 +482,16 @@ function PermissionFormDialog({
     },
   });
 
+  const selectedModule = form.watch('modulo');
+  const resourceOptions = useMemo(() => {
+    if (!selectedModule) return [];
+    const options = resourceOptionsByModule.get(selectedModule);
+    return options ? Array.from(options).sort() : [];
+  }, [resourceOptionsByModule, selectedModule]);
+
+  const [resourceMode, setResourceMode] = useState<'select' | 'custom'>('select');
+  const [moduleMode, setModuleMode] = useState<'select' | 'custom'>('select');
+
   useEffect(() => {
     if (!open) {
       return;
@@ -303,7 +503,33 @@ function PermissionFormDialog({
       recurso: permission?.codigo ? parsePermissionCode(permission.codigo).recurso : '',
       acao: permission?.codigo ? parsePermissionCode(permission.codigo).acao : 'read',
     });
-  }, [form, open, permission?.codigo, permission?.descricao, permission?.id, permission?.modulo, permission?.nome]);
+    setResourceMode('select');
+    setModuleMode('select');
+    const moduleValue = permission?.modulo || '';
+    if (moduleValue && !moduleOptions.includes(moduleValue)) {
+      setModuleMode('custom');
+    }
+  }, [form, moduleOptions, open, permission?.codigo, permission?.descricao, permission?.id, permission?.modulo, permission?.nome]);
+
+  useEffect(() => {
+    if (!selectedModule) return;
+    if (moduleMode === 'select' && resourceOptions.length === 0) {
+      setResourceMode('custom');
+      return;
+    }
+    if (resourceMode === 'select' && resourceOptions.length > 0) {
+      const current = form.getValues('recurso');
+      if (!current || !resourceOptions.includes(current)) {
+        form.setValue('recurso', resourceOptions[0]);
+      }
+    }
+  }, [form, moduleMode, resourceMode, resourceOptions, selectedModule]);
+
+  useEffect(() => {
+    if (moduleMode === 'custom') {
+      setResourceMode('custom');
+    }
+  }, [moduleMode]);
 
   const handleSubmit = (data: PermissionFormData) => {
     onSubmit(data);
@@ -369,20 +595,52 @@ function PermissionFormDialog({
                 <FormItem>
                   <FormLabel>{t('usersAdmin.permissions.fields.module')}</FormLabel>
                   <FormControl>
-                    <div className="space-y-2">
-                      <Input
-                        {...field}
-                        list="permission-module-options"
+                    {moduleMode === 'select' ? (
+                      <Select
+                        value={field.value}
+                        onValueChange={(value) => {
+                          if (value === '__custom__') {
+                            setModuleMode('custom');
+                            field.onChange('');
+                            return;
+                          }
+                          setModuleMode('select');
+                          field.onChange(value);
+                        }}
                         disabled={!!permission}
-                        placeholder={t('usersAdmin.permissions.fields.modulePlaceholder')}
-                        data-testid="input-permission-module"
-                      />
-                      <datalist id="permission-module-options">
-                        {moduleOptions.map((modulo) => (
-                          <option key={modulo} value={modulo} />
-                        ))}
-                      </datalist>
-                    </div>
+                      >
+                        <SelectTrigger data-testid="input-permission-module">
+                          <SelectValue placeholder={t('usersAdmin.permissions.fields.modulePlaceholder')} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {moduleOptions.map((modulo) => (
+                            <SelectItem key={modulo} value={modulo}>
+                              {modulo}
+                            </SelectItem>
+                          ))}
+                          <SelectItem value="__custom__">{t('usersAdmin.permissions.fields.customModule')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <div className="space-y-2">
+                        <Input
+                          {...field}
+                          disabled={!!permission}
+                          placeholder={t('usersAdmin.permissions.fields.modulePlaceholder')}
+                          data-testid="input-permission-module"
+                        />
+                        {!permission && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setModuleMode('select')}
+                          >
+                            {t('usersAdmin.permissions.fields.useExistingModule')}
+                          </Button>
+                        )}
+                      </div>
+                    )}
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -395,12 +653,52 @@ function PermissionFormDialog({
                 <FormItem>
                   <FormLabel>{t('usersAdmin.permissions.fields.resource')}</FormLabel>
                   <FormControl>
-                    <Input
-                      {...field}
-                      data-testid="input-permission-resource"
-                      disabled={!!permission}
-                      placeholder={t('usersAdmin.permissions.fields.resourcePlaceholder')}
-                    />
+                    {resourceMode === 'select' ? (
+                      <Select
+                        value={field.value}
+                        onValueChange={(value) => {
+                          if (value === '__custom__') {
+                            setResourceMode('custom');
+                            field.onChange('');
+                            return;
+                          }
+                          setResourceMode('select');
+                          field.onChange(value);
+                        }}
+                        disabled={!!permission}
+                      >
+                        <SelectTrigger data-testid="input-permission-resource">
+                          <SelectValue placeholder={t('usersAdmin.permissions.fields.resourcePlaceholder')} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {resourceOptions.map((resource) => (
+                            <SelectItem key={resource} value={resource}>
+                              {resource}
+                            </SelectItem>
+                          ))}
+                          <SelectItem value="__custom__">{t('usersAdmin.permissions.fields.customResource')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <div className="space-y-2">
+                        <Input
+                          {...field}
+                          data-testid="input-permission-resource"
+                          disabled={!!permission}
+                          placeholder={t('usersAdmin.permissions.fields.resourcePlaceholder')}
+                        />
+                        {!permission && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setResourceMode('select')}
+                          >
+                            {t('usersAdmin.permissions.fields.useExistingResource')}
+                          </Button>
+                        )}
+                      </div>
+                    )}
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -591,10 +889,14 @@ export default function UsersAdmin() {
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   const [permissionDialogOpen, setPermissionDialogOpen] = useState(false);
   const [membersDialogOpen, setMembersDialogOpen] = useState(false);
+  const [customRoleDialogOpen, setCustomRoleDialogOpen] = useState(false);
+  const [customRolePermissionsDialogOpen, setCustomRolePermissionsDialogOpen] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState<GroupItem | null>(null);
   const [selectedPermission, setSelectedPermission] = useState<PermissionItem | null>(null);
+  const [selectedCustomRole, setSelectedCustomRole] = useState<CustomRoleItem | null>(null);
   const [searchUsers, setSearchUsers] = useState('');
   const [searchGroups, setSearchGroups] = useState('');
+  const [searchRoles, setSearchRoles] = useState('');
   const [searchPermissions, setSearchPermissions] = useState('');
 
   const { data: usersData, isLoading: usersLoading } = useQuery<{ users: UserItem[] }>({
@@ -603,6 +905,10 @@ export default function UsersAdmin() {
 
   const { data: groupsData, isLoading: groupsLoading } = useQuery<{ groups: GroupItem[] }>({
     queryKey: ['/api/auth/groups'],
+  });
+
+  const { data: customRolesData, isLoading: customRolesLoading } = useQuery<{ roles: CustomRoleItem[] }>({
+    queryKey: ['/api/auth/custom-roles'],
   });
 
   const { data: permissionsData, isLoading: permissionsLoading } = useQuery<{ permissions: PermissionItem[] }>({
@@ -614,6 +920,17 @@ export default function UsersAdmin() {
     enabled: !!selectedRole,
     queryFn: async () => {
       const response = await apiRequest('GET', `/api/auth/roles/${selectedRole}/permissions`);
+      return response.json();
+    },
+  });
+
+  const { data: customRolePermissionsData, isLoading: customRolePermissionsLoading } = useQuery<{
+    rolePermissions: Array<{ id: string; permissionId: string; permission: PermissionItem }>;
+  }>({
+    queryKey: ['/api/auth/custom-roles', selectedCustomRole?.id, 'permissions'],
+    enabled: customRolePermissionsDialogOpen && !!selectedCustomRole?.id,
+    queryFn: async () => {
+      const response = await apiRequest('GET', `/api/auth/custom-roles/${selectedCustomRole?.id}/permissions`);
       return response.json();
     },
   });
@@ -632,6 +949,23 @@ export default function UsersAdmin() {
     },
     onError: (error: Error) => {
       toast({ title: t('usersAdmin.users.roleUpdateError'), description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const updateUserCustomRole = useMutation({
+    mutationFn: async ({ userId, customRoleId }: { userId: string; customRoleId: string | null }) => {
+      const response = await apiRequest('PATCH', `/api/users/${userId}/custom-role`, { customRoleId });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      toast({ title: t('usersAdmin.users.customRoleUpdated') });
+    },
+    onError: (error: Error) => {
+      toast({ title: t('usersAdmin.users.customRoleUpdateError'), description: error.message, variant: 'destructive' });
     },
   });
 
@@ -687,6 +1021,63 @@ export default function UsersAdmin() {
     },
     onError: (error: Error) => {
       toast({ title: t('usersAdmin.groups.updateError'), description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const createCustomRole = useMutation({
+    mutationFn: async (values: CustomRoleFormData) => {
+      const payload = buildCustomRolePayload(values);
+      const response = await apiRequest('POST', '/api/auth/custom-roles', payload);
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/auth/custom-roles'] });
+      setCustomRoleDialogOpen(false);
+      setSelectedCustomRole(null);
+      toast({ title: t('usersAdmin.roles.created') });
+    },
+    onError: (error: Error) => {
+      toast({ title: t('usersAdmin.roles.createError'), description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const updateCustomRole = useMutation({
+    mutationFn: async ({ id, values }: { id: string; values: CustomRoleFormData }) => {
+      const payload = buildCustomRolePayload(values);
+      const response = await apiRequest('PATCH', `/api/auth/custom-roles/${id}`, payload);
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/auth/custom-roles'] });
+      setCustomRoleDialogOpen(false);
+      setSelectedCustomRole(null);
+      toast({ title: t('usersAdmin.roles.updated') });
+    },
+    onError: (error: Error) => {
+      toast({ title: t('usersAdmin.roles.updateError'), description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const deleteCustomRole = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await apiRequest('DELETE', `/api/auth/custom-roles/${id}`);
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/auth/custom-roles'] });
+      toast({ title: t('usersAdmin.roles.deleted') });
+    },
+    onError: (error: Error) => {
+      toast({ title: t('usersAdmin.roles.deleteError'), description: error.message, variant: 'destructive' });
     },
   });
 
@@ -780,12 +1171,42 @@ export default function UsersAdmin() {
     },
   });
 
+  const updateCustomRolePermissions = useMutation({
+    mutationFn: async ({ roleId, permissionCodes }: { roleId: string; permissionCodes: string[] }) => {
+      const response = await apiRequest('PUT', `/api/auth/custom-roles/${roleId}/permissions`, { permissionCodes });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/auth/custom-roles', selectedCustomRole?.id, 'permissions'] });
+      toast({ title: t('usersAdmin.roles.permissionsUpdated') });
+    },
+    onError: (error: Error) => {
+      toast({ title: t('usersAdmin.roles.permissionsUpdateError'), description: error.message, variant: 'destructive' });
+    },
+  });
+
   const users = usersData?.users ?? [];
   const groups = groupsData?.groups ?? [];
+  const customRoles = customRolesData?.roles ?? [];
   const permissions = permissionsData?.permissions ?? [];
   const moduleOptions = useMemo(() => {
     const modules = new Set(permissions.map((perm) => perm.modulo).filter(Boolean));
     return Array.from(modules).sort();
+  }, [permissions]);
+  const resourceOptionsByModule = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    permissions.forEach((perm) => {
+      const { modulo, recurso } = parsePermissionCode(perm.codigo);
+      if (!modulo || !recurso) return;
+      if (!map.has(modulo)) {
+        map.set(modulo, new Set());
+      }
+      map.get(modulo)?.add(recurso);
+    });
+    return map;
   }, [permissions]);
   const actionOptions = useMemo(
     () => [
@@ -809,11 +1230,21 @@ export default function UsersAdmin() {
   const rolePermissionSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rolePermissionSaveQueueRef = useRef(Promise.resolve());
   const isLockedRole = selectedRole === 'admin' || selectedRole === 'super_admin';
+  const [customRolePermissionCodes, setCustomRolePermissionCodes] = useState<Set<string>>(new Set());
+  const customRolePermissionCodesRef = useRef<Set<string>>(new Set());
+  const customRolePermissionSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const customRolePermissionSaveQueueRef = useRef(Promise.resolve());
 
   const enqueueRolePermissionSave = (codes: string[]) => {
     if (isLockedRole) return;
     rolePermissionSaveQueueRef.current = rolePermissionSaveQueueRef.current
       .then(() => updateRolePermissions.mutateAsync(codes))
+      .catch(() => undefined);
+  };
+
+  const enqueueCustomRolePermissionSave = (roleId: string, codes: string[]) => {
+    customRolePermissionSaveQueueRef.current = customRolePermissionSaveQueueRef.current
+      .then(() => updateCustomRolePermissions.mutateAsync({ roleId, permissionCodes: codes }))
       .catch(() => undefined);
   };
 
@@ -823,6 +1254,13 @@ export default function UsersAdmin() {
     rolePermissionCodesRef.current = nextSet;
     setRolePermissionCodes(nextSet);
   }, [rolePermissionsData?.rolePermissions, selectedRole]);
+
+  useEffect(() => {
+    const nextCodes = customRolePermissionsData?.rolePermissions?.map((item) => item.permission?.codigo).filter(Boolean) ?? [];
+    const nextSet = new Set(nextCodes);
+    customRolePermissionCodesRef.current = nextSet;
+    setCustomRolePermissionCodes(nextSet);
+  }, [customRolePermissionsData?.rolePermissions, selectedCustomRole?.id]);
 
   useEffect(() => {
     rolePermissionSaveQueueRef.current = Promise.resolve();
@@ -838,10 +1276,24 @@ export default function UsersAdmin() {
     };
   }, [selectedRole]);
 
+  useEffect(() => {
+    customRolePermissionSaveQueueRef.current = Promise.resolve();
+    if (customRolePermissionSaveTimerRef.current) {
+      clearTimeout(customRolePermissionSaveTimerRef.current);
+      customRolePermissionSaveTimerRef.current = null;
+    }
+    return () => {
+      if (customRolePermissionSaveTimerRef.current) {
+        clearTimeout(customRolePermissionSaveTimerRef.current);
+        customRolePermissionSaveTimerRef.current = null;
+      }
+    };
+  }, [selectedCustomRole?.id]);
+
   const filteredUsers = useMemo(() => {
     const query = searchUsers.toLowerCase();
     return users.filter((user) => {
-      const composite = `${user.email ?? ''} ${user.firstName ?? ''} ${user.lastName ?? ''} ${user.role ?? ''} ${user.authProvider ?? ''}`.toLowerCase();
+      const composite = `${user.email ?? ''} ${user.firstName ?? ''} ${user.lastName ?? ''} ${user.role ?? ''} ${user.customRole?.nome ?? ''} ${user.authProvider ?? ''}`.toLowerCase();
       return composite.includes(query);
     });
   }, [users, searchUsers]);
@@ -853,6 +1305,14 @@ export default function UsersAdmin() {
       return composite.includes(query);
     });
   }, [groups, searchGroups]);
+
+  const filteredRoles = useMemo(() => {
+    const query = searchRoles.toLowerCase();
+    return customRoles.filter((role) => {
+      const composite = `${role.nome ?? ''} ${role.slug ?? ''} ${role.descricao ?? ''} ${role.baseRole ?? ''}`.toLowerCase();
+      return composite.includes(query);
+    });
+  }, [customRoles, searchRoles]);
 
   const filteredPermissions = useMemo(() => {
     const query = searchPermissions.toLowerCase();
@@ -881,6 +1341,10 @@ export default function UsersAdmin() {
             <Layers className="mr-2 h-4 w-4" />
             {t('usersAdmin.tabs.groups')}
           </TabsTrigger>
+          <TabsTrigger value="roles">
+            <ShieldCheck className="mr-2 h-4 w-4" />
+            {t('usersAdmin.tabs.roles')}
+          </TabsTrigger>
           <TabsTrigger value="permissions">
             <Shield className="mr-2 h-4 w-4" />
             {t('usersAdmin.tabs.permissions')}
@@ -907,6 +1371,7 @@ export default function UsersAdmin() {
                     <TableHead>{t('usersAdmin.users.columns.name')}</TableHead>
                     <TableHead>{t('usersAdmin.users.columns.email')}</TableHead>
                     <TableHead>{t('usersAdmin.users.columns.role')}</TableHead>
+                    <TableHead>{t('usersAdmin.users.columns.customRole')}</TableHead>
                     <TableHead>{t('usersAdmin.users.columns.status')}</TableHead>
                     <TableHead>{t('usersAdmin.users.columns.provider')}</TableHead>
                   </TableRow>
@@ -914,14 +1379,14 @@ export default function UsersAdmin() {
                 <TableBody>
                   {usersLoading ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center text-muted-foreground">
+                      <TableCell colSpan={6} className="text-center text-muted-foreground">
                         <Loader2 className="inline-block h-4 w-4 animate-spin mr-2" />
                         {t('common.loading')}
                       </TableCell>
                     </TableRow>
                   ) : filteredUsers.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center text-muted-foreground">
+                      <TableCell colSpan={6} className="text-center text-muted-foreground">
                         {t('usersAdmin.users.empty')}
                       </TableCell>
                     </TableRow>
@@ -942,6 +1407,29 @@ export default function UsersAdmin() {
                               {roleOptions.map((role) => (
                                 <SelectItem key={role.value} value={role.value}>
                                   {role.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell>
+                          <Select
+                            value={user.customRoleId ?? 'none'}
+                            onValueChange={(value) =>
+                              updateUserCustomRole.mutate({
+                                userId: user.id,
+                                customRoleId: value === 'none' ? null : value,
+                              })
+                            }
+                          >
+                            <SelectTrigger className="w-[200px]">
+                              <SelectValue placeholder={t('usersAdmin.users.customRolePlaceholder')} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">{t('usersAdmin.users.customRoleNone')}</SelectItem>
+                              {customRoles.map((role) => (
+                                <SelectItem key={role.id} value={role.id} disabled={role.ativo === false}>
+                                  {role.nome}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -1051,6 +1539,104 @@ export default function UsersAdmin() {
                       </div>
                     </div>
                   ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="roles">
+          <Card>
+            <CardHeader className="space-y-2">
+              <div className="flex items-center justify-between flex-wrap gap-4">
+                <div>
+                  <CardTitle>{t('usersAdmin.roles.title')}</CardTitle>
+                  <CardDescription>{t('usersAdmin.roles.description')}</CardDescription>
+                </div>
+                <Button onClick={() => { setSelectedCustomRole(null); setCustomRoleDialogOpen(true); }}>
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  {t('usersAdmin.roles.new')}
+                </Button>
+              </div>
+              <div className="max-w-sm">
+                <Input
+                  placeholder={t('usersAdmin.roles.searchPlaceholder')}
+                  value={searchRoles}
+                  onChange={(event) => setSearchRoles(event.target.value)}
+                />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {customRolesLoading ? (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    {t('common.loading')}
+                  </div>
+                ) : filteredRoles.length === 0 ? (
+                  <p className="text-muted-foreground">{t('usersAdmin.roles.empty')}</p>
+                ) : (
+                  filteredRoles.map((role) => {
+                    const baseLabel = roleOptions.find((item) => item.value === role.baseRole)?.label || role.baseRole;
+                    return (
+                      <div key={role.id} className="flex items-center justify-between rounded-md border p-3">
+                        <div>
+                          <p className="font-medium">{role.nome}</p>
+                          <p className="text-xs text-muted-foreground">{role.slug}</p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <Badge variant="outline">{baseLabel}</Badge>
+                            <Badge variant={role.ativo ? 'default' : 'secondary'}>
+                              {role.ativo ? t('common.active') : t('common.inactive')}
+                            </Badge>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedCustomRole(role);
+                              setCustomRolePermissionsDialogOpen(true);
+                            }}
+                          >
+                            {t('usersAdmin.roles.managePermissions')}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              setSelectedCustomRole(role);
+                              setCustomRoleDialogOpen(true);
+                            }}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button variant="ghost" size="icon">
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>{t('usersAdmin.roles.deleteTitle')}</AlertDialogTitle>
+                                <AlertDialogDescription>{t('usersAdmin.roles.deleteDescription')}</AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+                                <AlertDialogAction
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                  onClick={() => deleteCustomRole.mutate(role.id)}
+                                >
+                                  {t('common.delete')}
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                      </div>
+                    );
+                  })
                 )}
               </div>
             </CardContent>
@@ -1222,11 +1808,31 @@ export default function UsersAdmin() {
         }}
       />
 
+      <CustomRoleFormDialog
+        open={customRoleDialogOpen}
+        onOpenChange={(openValue) => {
+          setCustomRoleDialogOpen(openValue);
+          if (!openValue) {
+            setSelectedCustomRole(null);
+          }
+        }}
+        role={selectedCustomRole}
+        isLoading={createCustomRole.isPending || updateCustomRole.isPending}
+        onSubmit={(values) => {
+          if (selectedCustomRole) {
+            updateCustomRole.mutate({ id: selectedCustomRole.id, values });
+          } else {
+            createCustomRole.mutate(values);
+          }
+        }}
+      />
+
       <PermissionFormDialog
         open={permissionDialogOpen}
         onOpenChange={setPermissionDialogOpen}
         permission={selectedPermission}
         moduleOptions={moduleOptions}
+        resourceOptionsByModule={resourceOptionsByModule}
         actionOptions={actionOptions}
         isLoading={createPermission.isPending || updatePermission.isPending}
         onSubmit={(values) => {
@@ -1237,6 +1843,109 @@ export default function UsersAdmin() {
           }
         }}
       />
+
+      <Dialog
+        open={customRolePermissionsDialogOpen}
+        onOpenChange={(openValue) => {
+          setCustomRolePermissionsDialogOpen(openValue);
+          if (!openValue) {
+            setSelectedCustomRole(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>{t('usersAdmin.roles.permissionsTitle')}</DialogTitle>
+            <DialogDescription>
+              {selectedCustomRole ? t('usersAdmin.roles.permissionsDescription', { name: selectedCustomRole.nome }) : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="max-w-sm">
+              <Input
+                placeholder={t('usersAdmin.permissions.searchPlaceholder')}
+                value={searchPermissions}
+                onChange={(event) => setSearchPermissions(event.target.value)}
+              />
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t('usersAdmin.permissions.columns.permission')}</TableHead>
+                  <TableHead>{t('usersAdmin.permissions.columns.module')}</TableHead>
+                  <TableHead>{t('usersAdmin.permissions.columns.roleAccess')}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {permissionsLoading || customRolePermissionsLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-center text-muted-foreground">
+                      <Loader2 className="inline-block h-4 w-4 animate-spin mr-2" />
+                      {t('common.loading')}
+                    </TableCell>
+                  </TableRow>
+                ) : filteredPermissions.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-center text-muted-foreground">
+                      {t('usersAdmin.permissions.empty')}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredPermissions.map((permission) => {
+                    const hasRole = customRolePermissionCodes.has(permission.codigo);
+                    return (
+                      <TableRow key={permission.id}>
+                        <TableCell>
+                          <div>
+                            <p className="font-medium">{permission.nome}</p>
+                            <p className="text-xs text-muted-foreground">{permission.codigo}</p>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{permission.modulo}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Switch
+                            checked={hasRole}
+                            disabled={!selectedCustomRole}
+                            onCheckedChange={(checked) => {
+                              if (!selectedCustomRole) return;
+                              setCustomRolePermissionCodes((currentCodes) => {
+                                const nextCodes = new Set(currentCodes);
+                                if (checked) {
+                                  nextCodes.add(permission.codigo);
+                                } else {
+                                  nextCodes.delete(permission.codigo);
+                                }
+                                customRolePermissionCodesRef.current = nextCodes;
+                                if (customRolePermissionSaveTimerRef.current) {
+                                  clearTimeout(customRolePermissionSaveTimerRef.current);
+                                }
+                                customRolePermissionSaveTimerRef.current = setTimeout(() => {
+                                  enqueueCustomRolePermissionSave(
+                                    selectedCustomRole.id,
+                                    Array.from(customRolePermissionCodesRef.current)
+                                  );
+                                }, 300);
+                                return nextCodes;
+                              });
+                            }}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setCustomRolePermissionsDialogOpen(false)}>
+              {t('common.close')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <GroupMembersDialog
         open={membersDialogOpen}

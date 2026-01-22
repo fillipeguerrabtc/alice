@@ -223,10 +223,10 @@ export const PERMISSION_MAP: Record<string, Role[]> = {
   'admin:tenants:delete': ['super_admin'],
   'admin:tenants:manage': ['super_admin'],
   
-  'admin:roles:read': ['super_admin'],
-  'admin:roles:write': ['super_admin'],
-  'admin:roles:delete': ['super_admin'],
-  'admin:roles:manage': ['super_admin'],
+  'admin:roles:read': ['super_admin', 'admin'],
+  'admin:roles:write': ['super_admin', 'admin'],
+  'admin:roles:delete': ['super_admin', 'admin'],
+  'admin:roles:manage': ['super_admin', 'admin'],
   
   'admin:audit_logs:read': ['super_admin', 'admin'],
   'admin:audit_logs:write': ['super_admin'],

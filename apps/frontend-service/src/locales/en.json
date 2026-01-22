@@ -1524,6 +1524,7 @@
     "tabs": {
       "users": "Users",
       "groups": "Groups",
+      "roles": "Roles",
       "permissions": "Permissions"
     },
     "users": {
@@ -1534,12 +1535,17 @@
         "name": "Name",
         "email": "Email",
         "role": "Role",
+        "customRole": "Custom role",
         "status": "Status",
         "provider": "Provider"
       },
       "empty": "No users found",
       "roleUpdated": "Role updated successfully",
       "roleUpdateError": "Error updating role",
+      "customRoleUpdated": "Custom role updated successfully",
+      "customRoleUpdateError": "Error updating custom role",
+      "customRoleNone": "No custom role",
+      "customRolePlaceholder": "Select custom role",
       "statusUpdated": "Status updated successfully",
       "statusUpdateError": "Error updating status",
       "providerLocal": "Local"
@@ -1579,6 +1585,39 @@
       "membersRemoved": "Member removed from group",
       "membersRemoveError": "Error removing member"
     },
+    "roles": {
+      "title": "Custom Roles",
+      "description": "Create department/function roles and manage specific permissions.",
+      "new": "New Role",
+      "searchPlaceholder": "Search by name or slug",
+      "empty": "No custom roles found",
+      "managePermissions": "Permissions",
+      "permissionsTitle": "Role permissions",
+      "permissionsDescription": "Manage permissions for {{name}}.",
+      "permissionsUpdated": "Role permissions updated",
+      "permissionsUpdateError": "Error updating role permissions",
+      "created": "Role created successfully",
+      "createError": "Error creating role",
+      "updated": "Role updated successfully",
+      "updateError": "Error updating role",
+      "deleted": "Role deleted successfully",
+      "deleteError": "Error deleting role",
+      "deleteTitle": "Delete role",
+      "deleteDescription": "This action removes the role and its associated permissions.",
+      "newTitle": "New role",
+      "editTitle": "Edit role",
+      "newDescription": "Create a custom role for your organization.",
+      "editDescription": "Update the custom role details.",
+      "fields": {
+        "name": "Name",
+        "slug": "Slug",
+        "slugPlaceholder": "Auto-generated if empty",
+        "slugPreview": "Effective slug: {{slug}}",
+        "description": "Description",
+        "baseRole": "Base role",
+        "active": "Active"
+      }
+    },
     "permissions": {
       "title": "System Permissions",
       "description": "Manage permissions and assign access by role.",
@@ -1612,8 +1651,12 @@
         "description": "Description",
         "module": "Module",
         "modulePlaceholder": "Select a module",
+        "customModule": "Create new module",
+        "useExistingModule": "Back to existing module",
         "resource": "Resource",
         "resourcePlaceholder": "Example: users, roles, settings",
+        "customResource": "Create new resource",
+        "useExistingResource": "Back to existing resource",
         "action": "Action",
         "actionPlaceholder": "Select an action"
       },

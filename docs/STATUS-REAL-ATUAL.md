@@ -246,6 +246,9 @@ Retenção Arquivo:   30 dias
 - ASR GPU: gravação em revisão usa upload real no RAG + transcrição Canary-1B antes de envio.
 - Áudio no Chat: polling de transcrição encerra quando mídia é removida/enviada (sem texto fantasma).
 - RBAC: resolver combina DB + PERMISSION_MAP para evitar 403 em permissões não seedadas.
+- RBAC: roles customizadas por tenant (departamentos/funções) com permissões próprias.
+- RBAC: usuários podem ter role base + role customizada simultaneamente.
+- RBAC UI: criação de permissões guiada por módulo/recurso/ação (menos erro humano).
 - Auth: CRUD de permissões limpa cache global (evita permissões stale entre tenants).
 - Chat: fullscreen de imagem usa a mesma URL resolvida do thumbnail.
 - Usuários: formulários de grupos e permissões resetam ao trocar o item editado.

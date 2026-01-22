@@ -110,6 +110,8 @@ export interface AuthContext {
   tenantId?: string;
   /** Role do usuário */
   role: Role;
+  /** Role personalizada (opcional) */
+  customRoleId?: string;
   /** Email do usuário (opcional) */
   email?: string;
   /** Permissões adicionais (opcional) */

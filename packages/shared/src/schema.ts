@@ -527,6 +527,30 @@ export const tenants = pgTable("tenants", {
 });
 
 // ============================================================================
+// ROLES CUSTOMIZADAS (Departamentos/Funções)
+// ============================================================================
+
+export const customRoles = pgTable(
+  "custom_roles",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id),
+    nome: varchar("nome", { length: 255 }).notNull(),
+    slug: varchar("slug", { length: 100 }).notNull(),
+    descricao: text("descricao"),
+    baseRole: userRoleEnum("base_role").default("viewer").notNull(),
+    ativo: boolean("ativo").default(true),
+    criadoEm: timestamp("criado_em").defaultNow(),
+    atualizadoEm: timestamp("atualizado_em").defaultNow(),
+  },
+  (table) => ({
+    idxCustomRolesTenant: index("idx_custom_roles_tenant").on(table.tenantId),
+    idxCustomRolesBaseRole: index("idx_custom_roles_base_role").on(table.baseRole),
+    uniqueCustomRolesTenantSlug: uniqueIndex("uniq_custom_roles_tenant_slug").on(table.tenantId, table.slug),
+  })
+);
+
+// ============================================================================
 // USUÁRIOS (Autenticação Unificada: OAuth + SAML + Local)
 // Compatível com: Cursor IDE (DEV) e Hetzner Cloud (PROD)
 // ============================================================================
@@ -541,6 +565,7 @@ export const users = pgTable(
     lastName: varchar("last_name", { length: 100 }),
     profileImageUrl: text("profile_image_url"),
     role: userRoleEnum("role").default("viewer"),
+    customRoleId: uuid("custom_role_id").references(() => customRoles.id, { onDelete: "set null" }),
     cargo: varchar("cargo", { length: 100 }),
     departamento: varchar("departamento", { length: 100 }),
     telefone: varchar("telefone", { length: 20 }),
@@ -568,6 +593,7 @@ export const users = pgTable(
     idxUsersTenant: index("idx_users_tenant").on(table.tenantId),
     idxUsersEmail: index("idx_users_email").on(table.email),
     idxUsersRole: index("idx_users_role").on(table.role),
+    idxUsersCustomRole: index("idx_users_custom_role").on(table.customRoleId),
     idxUsersAuthProvider: index("idx_users_auth_provider").on(table.authProvider),
     idxUsersGoogleId: index("idx_users_google_id").on(table.googleId),
     idxUsersGithubId: index("idx_users_github_id").on(table.githubId),
@@ -601,6 +627,25 @@ export const rolePermissions = pgTable(
   (table) => ({
     idxRolePermissionsRole: index("idx_role_permissions_role").on(table.role),
     idxRolePermissionsPermission: index("idx_role_permissions_permission").on(table.permissionId),
+  })
+);
+
+export const customRolePermissions = pgTable(
+  "custom_role_permissions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    customRoleId: uuid("custom_role_id")
+      .references(() => customRoles.id, { onDelete: "cascade" })
+      .notNull(),
+    permissionId: uuid("permission_id")
+      .references(() => permissions.id, { onDelete: "cascade" })
+      .notNull(),
+    criadoEm: timestamp("criado_em").defaultNow(),
+  },
+  (table) => ({
+    idxCustomRolePermissionsRole: index("idx_custom_role_permissions_role").on(table.customRoleId),
+    idxCustomRolePermissionsPermission: index("idx_custom_role_permissions_permission").on(table.permissionId),
+    uniqueCustomRolePermission: uniqueIndex("uniq_custom_role_permissions").on(table.customRoleId, table.permissionId),
   })
 );
 
@@ -2879,11 +2924,35 @@ export const usersRelations = relations(users, ({ one, many }) => ({
     fields: [users.tenantId],
     references: [tenants.id],
   }),
+  customRole: one(customRoles, {
+    fields: [users.customRoleId],
+    references: [customRoles.id],
+  }),
   conversations: many(conversations),
   messages: many(messages),
   auditLogs: many(auditLogs),
   usageMetrics: many(usageMetrics),
   groupMemberships: many(userGroupMembers),
+}));
+
+export const customRolesRelations = relations(customRoles, ({ one, many }) => ({
+  tenant: one(tenants, {
+    fields: [customRoles.tenantId],
+    references: [tenants.id],
+  }),
+  permissions: many(customRolePermissions),
+  users: many(users),
+}));
+
+export const customRolePermissionsRelations = relations(customRolePermissions, ({ one }) => ({
+  customRole: one(customRoles, {
+    fields: [customRolePermissions.customRoleId],
+    references: [customRoles.id],
+  }),
+  permission: one(permissions, {
+    fields: [customRolePermissions.permissionId],
+    references: [permissions.id],
+  }),
 }));
 
 export const userGroupsRelations = relations(userGroups, ({ one, many }) => ({
@@ -3257,6 +3326,8 @@ export type InsertUserGroupMember = z.infer<typeof insertUserGroupMemberSchema>;
 
 export type Permission = typeof permissions.$inferSelect;
 export type RolePermission = typeof rolePermissions.$inferSelect;
+export type CustomRole = typeof customRoles.$inferSelect;
+export type CustomRolePermission = typeof customRolePermissions.$inferSelect;
 
 export type OAuthClient = typeof oauthClients.$inferSelect;
 export type InsertOAuthClient = typeof oauthClients.$inferInsert;

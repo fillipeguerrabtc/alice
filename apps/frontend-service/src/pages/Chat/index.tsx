@@ -595,8 +595,14 @@ export default function Chat() {
       const transcriptionText = data.transcription?.trim() ?? '';
       const hasErrorMarker = transcriptionText.startsWith('[Transcrição não disponível');
 
-      if (status === 'completed' && transcriptionText && !hasErrorMarker) {
-        return transcriptionText;
+      if (status === 'completed') {
+        if (transcriptionText && !hasErrorMarker) {
+          return transcriptionText;
+        }
+        if (hasErrorMarker) {
+          throw new Error('Falha ao transcrever o áudio');
+        }
+        throw new Error('Transcrição vazia retornada pelo servidor');
       }
       if (status === 'failed' || hasErrorMarker) {
         throw new Error('Falha ao transcrever o áudio');

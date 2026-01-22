@@ -72,6 +72,7 @@ function validateInternalToken(
   userId: string,
   tenantId: string | undefined,
   role: string,
+  customRoleId: string | undefined,
   timestamp: string
 ): boolean {
   if (!INTERNAL_API_SECRET) {
@@ -89,7 +90,7 @@ function validateInternalToken(
     return false;
   }
 
-  const payload = `${userId}:${tenantId || ''}:${role}:${timestamp}`;
+  const payload = `${userId}:${tenantId || ''}:${role}:${customRoleId || ''}:${timestamp}`;
   const expectedSignature = crypto
     .createHmac('sha256', INTERNAL_API_SECRET)
     .update(payload)
@@ -130,6 +131,7 @@ export function extractAuthContext(req: Request): AuthContext | undefined {
   const internalUserId = req.headers['x-internal-user-id'] as string;
   const internalTenantId = req.headers['x-internal-tenant-id'] as string | undefined;
   const internalRole = req.headers['x-internal-role'] as Role;
+  const internalCustomRoleId = req.headers['x-internal-custom-role-id'] as string | undefined;
 
   if (internalSignature && internalTimestamp && internalUserId && internalRole) {
     const isValid = validateInternalToken(
@@ -137,6 +139,7 @@ export function extractAuthContext(req: Request): AuthContext | undefined {
       internalUserId,
       internalTenantId,
       internalRole,
+      internalCustomRoleId,
       internalTimestamp
     );
 
@@ -146,6 +149,7 @@ export function extractAuthContext(req: Request): AuthContext | undefined {
         userId: internalUserId,
         tenantId: internalTenantId,
         role: internalRole,
+        customRoleId: internalCustomRoleId,
       };
     }
 
@@ -667,6 +671,7 @@ export interface InternalAuthHeaders {
   'x-internal-user-id': string;
   'x-internal-tenant-id'?: string;
   'x-internal-role': string;
+  'x-internal-custom-role-id'?: string;
 }
 
 /**
@@ -703,7 +708,7 @@ export function generateInternalAuthHeaders(auth: AuthContext): InternalAuthHead
   }
 
   const timestamp = Math.floor(Date.now() / 1000).toString();
-  const payload = `${auth.userId}:${auth.tenantId || ''}:${auth.role}:${timestamp}`;
+  const payload = `${auth.userId}:${auth.tenantId || ''}:${auth.role}:${auth.customRoleId || ''}:${timestamp}`;
   
   const signature = crypto
     .createHmac('sha256', INTERNAL_API_SECRET)
@@ -719,6 +724,9 @@ export function generateInternalAuthHeaders(auth: AuthContext): InternalAuthHead
 
   if (auth.tenantId) {
     headers['x-internal-tenant-id'] = auth.tenantId;
+  }
+  if (auth.customRoleId) {
+    headers['x-internal-custom-role-id'] = auth.customRoleId;
   }
 
   return headers;

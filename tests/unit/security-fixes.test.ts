@@ -33,6 +33,7 @@ const internalAuthHeadersSchema = z.object({
   'x-internal-user-id': z.string(),
   'x-internal-tenant-id': z.string().optional(),
   'x-internal-role': z.string(),
+  'x-internal-custom-role-id': z.string().optional(),
 });
 
 /**
