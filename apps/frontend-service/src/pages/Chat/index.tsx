@@ -370,6 +370,7 @@ export default function Chat() {
   const [deleteAllOpen, setDeleteAllOpen] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isRecordingStarting, setIsRecordingStarting] = useState(false);
+  const [isTranscribingRecording, setIsTranscribingRecording] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -577,14 +578,11 @@ export default function Chat() {
     }
   }, []);
 
-  const pollMediaTranscription = useCallback(async (uploadId: string, attemptsLeft = 30) => {
-    if (recordingUnmountedRef.current) {
-      return;
-    }
-    if (!pendingMediaRef.current.some((media) => media.uploadId === uploadId)) {
-      return;
-    }
-    try {
+  const waitForRecordingTranscription = useCallback(async (uploadId: string, attemptsLeft = 30) => {
+    for (let attempt = 0; attempt < attemptsLeft; attempt += 1) {
+      if (recordingUnmountedRef.current) {
+        throw new Error('Transcrição cancelada');
+      }
       const res = await apiRequest('GET', `/api/media/${uploadId}`);
       if (!res.ok) {
         throw new Error('Falha ao buscar status do áudio');
@@ -592,76 +590,30 @@ export default function Chat() {
       const data = await res.json() as {
         processingStatus?: 'pending' | 'processing' | 'completed' | 'failed';
         transcription?: string | null;
-        fileUrl?: string | null;
       };
       const status = data.processingStatus ?? 'processing';
+      const transcriptionText = data.transcription?.trim() ?? '';
+      const hasErrorMarker = transcriptionText.startsWith('[Transcrição não disponível');
 
-      if (!pendingMediaRef.current.some((media) => media.uploadId === uploadId)) {
-        return;
+      if (status === 'completed' && transcriptionText && !hasErrorMarker) {
+        return transcriptionText;
       }
-      setPendingMedia((prev) => prev.map((media) => {
-        if (media.uploadId !== uploadId) return media;
-        const resolvedStatus: MediaAttachment['status'] =
-          status === 'completed'
-            ? 'ready'
-            : status === 'failed'
-              ? 'error'
-              : 'processing';
-        return {
-          ...media,
-          status: resolvedStatus,
-          transcription: data.transcription ?? media.transcription,
-          url: data.fileUrl ?? media.url,
-        };
-      }));
-
-      if (status === 'completed') {
-        if (!pendingMediaRef.current.some((media) => media.uploadId === uploadId)) {
-          return;
-        }
-        const transcriptionText = data.transcription?.trim();
-        if (transcriptionText) {
-          setInput((prev) => {
-            const base = prev.trim();
-            return base.length > 0 ? `${base}\n${transcriptionText}` : transcriptionText;
-          });
-        }
-        return;
+      if (status === 'failed' || hasErrorMarker) {
+        throw new Error('Falha ao transcrever o áudio');
       }
-
-      if (status === 'failed') {
-        if (!pendingMediaRef.current.some((media) => media.uploadId === uploadId)) {
-          return;
-        }
-        toast({
-          title: t('chat.recordingTranscriptionFailed'),
-          description: t('chat.recordingTranscriptionFailedDesc'),
-          variant: 'destructive',
-        });
-        return;
-      }
-    } catch (error) {
-      frontendLogger.error('Falha ao consultar transcrição do áudio', { error, uploadId });
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     }
+    throw new Error('Timeout ao aguardar transcrição do áudio');
+  }, []);
 
-    if (
-      attemptsLeft > 0
-      && !recordingUnmountedRef.current
-      && pendingMediaRef.current.some((media) => media.uploadId === uploadId)
-    ) {
-      setTimeout(() => {
-        void pollMediaTranscription(uploadId, attemptsLeft - 1);
-      }, 2000);
-    }
-  }, [t, toast]);
-
-  const uploadAudioForReview = useCallback(async (file: File) => {
+  const transcribeRecordingAudio = useCallback(async (file: File) => {
     const base64 = await fileToBase64(file);
     const resolvedMimeType = file.type || resolveRecordingMimeType() || 'audio/webm';
     const response = await apiRequest('POST', '/api/media/upload/json', {
       file: base64,
       filename: file.name,
       mimeType: resolvedMimeType,
+      conversationId: conversationId ?? undefined,
     });
     if (!response.ok) {
       const errorText = await response.text();
@@ -670,27 +622,14 @@ export default function Chat() {
 
     const result = await response.json() as {
       uploadId: string;
-      fileUrl: string;
-      processingStatus: 'pending' | 'processing' | 'completed' | 'failed';
+      processingStatus?: 'pending' | 'processing' | 'completed' | 'failed';
+      transcription?: string | null;
     };
-
-    const mediaId = crypto.randomUUID();
-    setPendingMedia((prev) => [
-      ...prev,
-      {
-        id: mediaId,
-        type: 'audio',
-        url: result.fileUrl,
-        fileName: file.name,
-        fileSize: file.size,
-        mimeType: file.type,
-        status: result.processingStatus === 'completed' ? 'ready' : 'processing',
-        uploadId: result.uploadId,
-      },
-    ]);
-
-    void pollMediaTranscription(result.uploadId);
-  }, [pollMediaTranscription, resolveRecordingMimeType]);
+    if (result.processingStatus === 'completed' && result.transcription?.trim()) {
+      return result.transcription.trim();
+    }
+    return waitForRecordingTranscription(result.uploadId);
+  }, [conversationId, resolveRecordingMimeType, waitForRecordingTranscription]);
 
   const revokeMediaUrl = useCallback((media?: MediaAttachment) => {
     if (!media?.url) return;
@@ -1251,31 +1190,6 @@ export default function Chat() {
     sendMessage.mutate(pending);
   }, [isStreaming, sendMessage]);
 
-  const sendRecordingDirect = useCallback((file: File) => {
-    const mediaId = crypto.randomUUID();
-    const objectUrl = URL.createObjectURL(file);
-    const resolvedMimeType = file.type || resolveRecordingMimeType() || 'audio/webm';
-    const attachment: MediaAttachment = {
-      id: mediaId,
-      type: 'audio',
-      url: objectUrl,
-      fileName: file.name,
-      fileSize: file.size,
-      mimeType: resolvedMimeType,
-      status: 'ready',
-      file,
-    };
-
-    const currentPending = pendingMediaRef.current;
-    const combined = currentPending.length > 0 ? [...currentPending, attachment] : [attachment];
-    sendMessage.mutate({
-      content: inputRef.current.trim(),
-      mediaAttachments: combined,
-    });
-    setInput('');
-    clearPendingMedia({ revokeBlobUrls: false });
-  }, [clearPendingMedia, resolveRecordingMimeType, sendMessage]);
-
   const finalizeRecording = useCallback(async () => {
     const recorder = mediaRecorderRef.current;
     const stream = recordingStreamRef.current;
@@ -1309,23 +1223,44 @@ export default function Chat() {
     const fileName = `gravacao-${safeTimestamp}.${extension}`;
     const file = new File([blob], fileName, { type: mimeType });
 
-    if (recordingSendModeRef.current === 'direct') {
-      sendRecordingDirect(file);
-    } else {
-      try {
-        await uploadAudioForReview(file);
-      } catch (error) {
-        frontendLogger.error('Falha ao preparar áudio para revisão', { error });
-        toast({
-          title: t('chat.recordingUploadFailed'),
-          description: t('chat.recordingUploadFailedDesc'),
-          variant: 'destructive',
+    setIsTranscribingRecording(true);
+    try {
+      const transcription = await transcribeRecordingAudio(file);
+      if (recordingUnmountedRef.current) return;
+      if (recordingSendModeRef.current === 'direct') {
+        const base = inputRef.current.trim();
+        const content = base ? `${base}\n${transcription}` : transcription;
+        const currentPending = pendingMediaRef.current;
+        sendMessage.mutate({
+          content,
+          mediaAttachments: currentPending.length > 0 ? currentPending : undefined,
         });
+        setInput('');
+        clearPendingMedia({ revokeBlobUrls: false });
+      } else {
+        setInput((prev) => {
+          const base = prev.trim();
+          return base.length > 0 ? `${base}\n${transcription}` : transcription;
+        });
+      }
+    } catch (error) {
+      const logLabel = recordingSendModeRef.current === 'direct'
+        ? 'Falha ao transcrever áudio para envio direto'
+        : 'Falha ao transcrever áudio para revisão';
+      frontendLogger.error(logLabel, { error });
+      toast({
+        title: t('chat.recordingTranscriptionFailed'),
+        description: t('chat.recordingTranscriptionFailedDesc'),
+        variant: 'destructive',
+      });
+    } finally {
+      if (!recordingUnmountedRef.current) {
+        setIsTranscribingRecording(false);
       }
     }
 
     recordingSendModeRef.current = 'review';
-  }, [resolveRecordingExtension, sendRecordingDirect, t, toast, uploadAudioForReview]);
+  }, [clearPendingMedia, sendMessage, t, toast, transcribeRecordingAudio]);
 
   const handleStartRecording = useCallback(async () => {
     if (isStreaming || isRecording || recordingStartingRef.current) {
@@ -1846,7 +1781,7 @@ export default function Chat() {
             pendingMedia={pendingMedia}
             isStreaming={isStreaming}
             isRecording={isRecording}
-            isRecordingDisabled={isStreaming || isRecording || isRecordingStarting}
+            isRecordingDisabled={isStreaming || isRecording || isRecordingStarting || isTranscribingRecording}
             isMobile={isMobile}
             acceptedTypes={[...ACCEPTED_TYPES.image, ...ACCEPTED_TYPES.audio].join(',')}
           />
