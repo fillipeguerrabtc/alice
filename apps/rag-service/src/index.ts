@@ -1562,7 +1562,10 @@ app.patch('/api/rag/documents/:id', requireAuth(), requirePermission('rag:docume
     return res.status(400).json({ error: 'ID inválido', details: paramsResult.error.format() });
   }
   const { id } = paramsResult.data;
-  const tenantId = req.tenantId as string;
+  const tenantId = req.tenantId;
+  if (!tenantId) {
+    return res.status(401).json({ error: 'Tenant obrigatório' });
+  }
 
   try {
     const body = updateDocumentSchema.parse(req.body);
