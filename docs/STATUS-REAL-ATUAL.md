@@ -37,7 +37,7 @@
 ## Arquitetura Gate 2 (GPU + OpenAI)
 
 - GPU local: LLM (texto), embeddings (texto) e ASR (always-on).
-- Vision, geração e embeddings de imagem: OpenAI (sem VLM local).
+- Vision e geração de imagens: OpenAI (sem VLM local).
 - GPU Manager Service: fila priorizada, monitoramento VRAM, circuit breakers e métricas Prometheus.
 - Budget VRAM: 20GB com serviços simultâneos.
 
@@ -50,7 +50,7 @@
 - PostgreSQL 16 + pgvector.
 - PgBouncer.
 - Redis (cache).
-- Qdrant (texto 1024 dim + imagem 1536 dim).
+- Qdrant (texto 1024 dim).
 - Caddy (API Gateway + SSL + HTTP/3).
 - MinIO (S3 interno para Langfuse).
 - SearXNG + Tor.
@@ -92,7 +92,7 @@
 - `frontend-service`: React 19 + Vite 7.3 + i18n PT-BR/EN.
 - `auth-service`: OAuth 2.0, SAML 2.0, OIDC Provider, RBAC 6 níveis, sessões PostgreSQL.
 - `chat-service`: WebSocket, streaming LLM, RAG client, takeover/handover, comandos de trading.
-- `rag-service`: upload multimodal, embeddings texto GPU, embeddings de imagem OpenAI, fila assíncrona, WebSocket de embeddings.
+- `rag-service`: upload multimodal, embeddings texto GPU, fila assíncrona, WebSocket de embeddings.
 - `training-service`: scheduler, fine-tuning QLoRA, SemHash.
 - `integrations-service`: Stripe/Wise/Twilio/ERPNext/KuCoin + circuit breakers.
 - `observability-service`: health checker, backup orchestrator, métricas.
@@ -166,7 +166,7 @@
 - Chat e trading via LLM local (Qwen2.5 7B AWQ).
 - Vision e geração de imagens via OpenAI (gpt-4.1 / gpt-image-1).
 - Embeddings texto: Qwen3-Embedding-0.6B INT8 (1024 dim) → Qdrant.
-- Embeddings imagem: OpenAI Vision + OpenAI Embeddings (image_embeddings 1536 dim) → Qdrant.
+- Imagem: OpenAI Vision (descrição textual, sem embeddings de imagem).
 - ASR: Canary-1B (GPU).
 
 ---

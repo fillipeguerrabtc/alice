@@ -1,7 +1,7 @@
 # Sistema de Aprendizado da Alice
 
 **Autor:** Fillipe Guerra  
-**Versão:** 5.3 - Embeddings de imagem OpenAI (1536 dim)  
+**Versão:** 5.3 - Vision OpenAI (sem embeddings de imagem)  
 **Data:** 22 de Janeiro de 2026
 
 > **ATUALIZAÇÃO 05/01/2026:** Arquitetura refatorada para 5 stacks independentes com deploy/rollback modular. Sistema de aprendizado integrado ao stack ALICE, com GPU containers gerenciados pelo GPU Manager Service.
@@ -25,7 +25,7 @@ A partir de 16/01/2026, a Alice utiliza **Gate 2 (LLM local + Vision OpenAI)** v
 | **LLM (texto)** | **Qwen2.5 7B Instruct (AWQ)** | ~6GB (budget) | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
 | **Vision (análise)** | **OpenAI gpt-4.1** | N/A | OpenAI API |
 | **Embeddings de Texto** | Qwen3-Embedding-0.6B INT8 | **1024 dim** (~3GB budget) → Qdrant | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
-| **Embeddings de Imagem** | OpenAI Vision + OpenAI Embeddings | **1536 dim** → Qdrant | Coleção `image_embeddings` |
+| **Imagem (descrição)** | OpenAI Vision (gpt-4.1) | Texto (sem embeddings de imagem) | OpenAI API |
 | **Transcrição de Áudio** | Canary-1B (NeMo) | ~3GB (budget) | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
 | **Fine-tuning** | QLoRA (gpu-trainer) | dedicado (profile/on-demand) | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
 | **Trading BTC** | KuCoin Futures API | - | Hetzner (integrations-service) |
@@ -59,7 +59,7 @@ Com servidor GPU dedicado, os serviços de inferência rodam simultaneamente (bu
 |------|---------------|----------------------|
 | **Conversas Texto** | Automático | Rating >= 4 estrelas pelo usuário |
 | **Análise de Imagens** | Automático | OpenAI Vision analisa, dados vão para RAG multimodal |
-| **Imagens Upload** | Automático | OpenAI Vision + OpenAI Embeddings (1536 dim → Qdrant) |
+| **Imagens Upload** | Automático | OpenAI Vision (descrição textual, sem embeddings de imagem) |
 
 > **NOTA Gate 2:** Geração de imagens via OpenAI (gpt-image-1). Análise via OpenAI Vision (gpt-4.1).
 
@@ -87,7 +87,7 @@ const trainingResponse = await fetch(`${TRAINING_SERVICE_URL}/api/training/data`
 | Tipo | Processamento | Critério de Aprovação |
 |------|---------------|----------------------|
 | **Texto** | Automático | Rating inferido (5 = sem escalação, 1 = escalou) |
-| **Imagens** | Automático | OpenAI Vision + OpenAI Embeddings (1536 dim → Qdrant) |
+| **Imagens** | Automático | OpenAI Vision (descrição textual, sem embeddings de imagem) |
 | **Áudios** | Automático | Canary-1B transcrição + Qwen3-Embedding-0.6B embeddings (1024 dim → Qdrant) |
 
 **Integração Implementada (integrations-service/index.ts linha 2369):**
@@ -378,9 +378,9 @@ Acessíveis em `/dashboard/analytics`:
 - ✅ **LLM (texto) dedicado**: Qwen2.5 7B Instruct (AWQ) - Chat/Trading (via GPU Manager)
 - ✅ **Vision (OpenAI)**: gpt-4.1 para análise de imagens/gráficos (via OpenAI API)
 - ✅ Embeddings de texto (Qwen3-Embedding-0.6B INT8, **1024 dim**, ~3GB) via GPU Manager Service → Qdrant
-- ✅ Embeddings de imagem via OpenAI Vision + OpenAI Embeddings (1536 dim) → Qdrant (`image_embeddings`)
+- ✅ Imagens via OpenAI Vision (descrição textual, sem embeddings de imagem)
 - ✅ Transcrição de áudio (Canary-1B NeMo, ~3GB) via GPU Manager Service
-- ✅ Qdrant para texto (1024 dim com HNSW) + imagem (1536 dim via OpenAI Embeddings)
+- ✅ Qdrant para texto (1024 dim com HNSW)
 - ✅ Validação de dimensão em `validateEmbeddingDimension`
 - ✅ Sem fallback CPU (Regra 6)
 - ✅ Geração de imagens via OpenAI (gpt-image-1) - sem GPU local
@@ -450,7 +450,7 @@ Acessíveis em `/dashboard/analytics`:
 **Solução Implementada:**
 - Nova função `processWhatsAppMediaForRAG()` em `integrations-service`
 - Mídia do WhatsApp é baixada do Twilio e enviada para `/api/media/upload/json`
-- Imagens: OpenAI Vision + OpenAI Embeddings (1536 dim → Qdrant)
+- Imagens: OpenAI Vision (descrição textual, sem embeddings de imagem)
 - Áudios: Canary-1B transcrição + Qwen3-Embedding-0.6B embeddings (1024 dim → Qdrant)
 - Vídeo: **não suportado** (removido). Uploads `video/*` são rejeitados explicitamente.
 - Processamento fire-and-forget (não bloqueia resposta ao usuário)
@@ -510,7 +510,7 @@ Acessíveis em `/dashboard/analytics`:
 *Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*
 *Versão 5.2 - 16 de Janeiro de 2026 - Gate 2*
 *LLM (texto): Qwen2.5 7B Instruct AWQ (vLLM) via GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB)*
-*Embeddings texto: Qwen3-Embedding-0.6B INT8 (1024 dim → Qdrant) + Imagem: OpenAI Vision + OpenAI Embeddings (1536 dim → Qdrant)*
+*Embeddings texto: Qwen3-Embedding-0.6B INT8 (1024 dim → Qdrant) + Imagem: OpenAI Vision (descrição textual, sem embeddings de imagem)*
 *ASR: Canary-1B via NeMo Toolkit (Apache 2.0)*
 *Vision: OpenAI (gpt-4.1) para análise de imagens/gráficos via API externa*
 *Geração de Imagens: OpenAI (gpt-image-1)*

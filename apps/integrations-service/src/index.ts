@@ -2367,7 +2367,7 @@ async function processMessageWithLLM(
  * Processa mídia recebida via WhatsApp e indexa no RAG
  * 
  * ARQUITETURA ENTERPRISE (17/12/2025):
- * - Imagens: OpenAI Vision (descrição) + embeddings de texto (Qwen3 → Qdrant)
+ * - Imagens: OpenAI Vision (descrição textual, sem embeddings de imagem)
  * - Áudios: Canary-1B transcrição + Qwen3-Embedding-0.6B embeddings (1024 dim → Qdrant)
  * - Vídeos: NÃO suportado (uploads `video/*` são rejeitados explicitamente)
  * 

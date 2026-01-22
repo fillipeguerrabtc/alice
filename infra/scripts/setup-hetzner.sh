@@ -9,7 +9,7 @@
 # - 50 containers (7 infra + 7 Alice + 15 ERPNext + 14 obs + 6 GPU + 1 backup)
 # - LLM: Mixtral 8x7B (vLLM AWQ) via Hetzner GPU GEX44 (RTX 4000 Ada 20GB)
 # - Embeddings: Qwen3-Embedding-0.6B (1024 dim)
-# - Vector DB: Qdrant (texto) + PostgreSQL pgvector (imagem)
+# - Vector DB: Qdrant (texto) + PostgreSQL pgvector (vetores internos)
 # - API Gateway: Caddy 2.8.4 (MIGRAÇÃO 02/01/2026)
 # - GPU Manager Service: Gerenciamento centralizado de requisições GPU
 #

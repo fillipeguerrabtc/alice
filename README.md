@@ -449,7 +449,7 @@ Proprietário - Todos os direitos reservados.
 *Performance: HTTP Compression (gzip), HTTP/3 (Caddy), SHA Pinning 95%+*
 *PostgreSQL: HNSW indexes + 10 índices compostos + 12 tabelas Trading com RLS*
 *Storage: Servidor GEX44 1.92TB interno (/opt/alice) - SEM S3 externo*
-*ARQUITETURA ENTERPRISE: Texto 1024 dim Qwen3-Embedding-0.6B (Qdrant) | Imagem: OpenAI Vision → descrição → embeddings de texto (Qdrant)*
+*ARQUITETURA ENTERPRISE: Texto 1024 dim Qwen3-Embedding-0.6B (Qdrant) | Imagem: OpenAI Vision → descrição textual (sem embeddings de imagem)*
 *Trading BTC Futures: KuCoin Perpetuals + Indicadores Técnicos Determinísticos + Validação Cruzada Anti-Alucinação*
 *LLM: Qwen2.5 7B (vLLM AWQ) via Hetzner GPU Server GEX44 (RTX 4000 Ada 20GB) - Texto*
 *GPU Services (Gate 2): LLM (Qwen2.5 7B), Embeddings Qwen3-Embedding-0.6B INT8 (1024 dim), ASR Canary-1B - gerenciados pelo GPU Manager Service. Vision/Imagens via OpenAI*

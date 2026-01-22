@@ -17,7 +17,7 @@
  * 
  * ARQUITETURA DE EMBEDDINGS (Gate 2 - 15/01/2026):
  * - Texto (Trading/RAG): Qdrant (1024 dim) - Qwen3-Embedding-0.6B
- * - Imagem: descrição textual → Qdrant (embeddings de texto)
+ * - Imagem: OpenAI Vision (descrição textual, sem embeddings de imagem)
  * 
  * NOTA: Campos de embedding de texto neste schema estão DEPRECATED.
  * Novos embeddings de texto são armazenados em Qdrant.
@@ -53,9 +53,7 @@ import {
 //   - Armazenado em Qdrant (HNSW)
 //   - Campos abaixo DEPRECATED - mantidos para compatibilidade
 //
-// IMAGEM: descrição textual → Qdrant (embeddings de texto)
-//   - Dimensão nativa do modelo (full precision para qualidade visual)
-//   - Usado em: embeddings de texto (Qdrant)
+// IMAGEM: OpenAI Vision (descrição textual, sem embeddings de imagem)
 //
 // Referência: https://github.com/pgvector/pgvector
 // ============================================================================

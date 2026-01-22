@@ -1,15 +1,14 @@
 /**
  * Image Processor Service - Alice Enterprise Platform
- * 
+ *
  * Processamento de imagens:
  * - Análise via OpenAI Vision (Responses API)
- * - Thumbnails via sharp (quando disponível)
- * - Extração de metadata EXIF
- * 
+ *
  * ARQUITETURA ENTERPRISE:
- * - Toda análise/geração de imagens usa OpenAI (sem GPU)
- * - GPU é reservada apenas para texto, áudio, embeddings e treinamento
- * 
+ * - Toda análise/geração de imagens usa OpenAI (sem CPU/GPU local para visão)
+ * - Thumbnails são gerados localmente em CPU (OpenAI não fornece)
+ * - Não há EXIF ou metadata local (somente OpenAI)
+ *
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
@@ -113,7 +112,6 @@ async function callOpenAiDescribeImage(params: VisionDescribeImageParams): Promi
   return { text: content, model: payload.model };
 }
 
-
 // Circuit breaker para descrição de imagem via OpenAI (Vision)
 const openAiVisionDescribeBreaker = createCircuitBreaker(callOpenAiDescribeImage, {
   name: 'openai-vision-describe-image',
@@ -125,14 +123,7 @@ async function callOpenAiVisionDescribeApi(params: VisionDescribeImageParams): P
 }
 
 export interface ImageMetadata {
-  width?: number;
-  height?: number;
-  format?: string;
-  colorSpace?: string;
-  hasAlpha?: boolean;
-  exif?: Record<string, unknown>;
-  orientation?: number;
-  dpi?: number;
+  [key: string]: unknown;
 }
 
 export interface ProcessedImage {
@@ -148,9 +139,15 @@ export interface ProcessedImage {
 }
 
 export interface ImageProcessorOptions {
+  /**
+   * Se true, gera thumbnail localmente (CPU).
+   * Default: true (otimiza UX no chat).
+   */
   generateThumbnail?: boolean;
+  /**
+   * Tamanho máximo do thumbnail (px).
+   */
   thumbnailSize?: number;
-  extractExif?: boolean;
   /**
    * Se true, extrai descrição via OpenAI Vision e inclui no resultado.
    * Default: true (Vision é requisito central do produto).
@@ -170,13 +167,13 @@ class ImageProcessorService {
   constructor() {
     logger.info(
       { openaiConfigured: this.isConfigured },
-      'Image Processor configurado - OpenAI Vision (sem GPU para imagens)'
+      'Image Processor configurado - OpenAI Vision (sem CPU/GPU local)'
     );
   }
 
   /**
-   * Processa uma imagem: gera descrição (Vision), thumbnail e metadata.
-   * Embeddings de imagem são gerados separadamente via OpenAI Embeddings.
+   * Processa uma imagem: gera descrição (Vision) e thumbnail (CPU).
+   * Não gera EXIF ou metadata local.
    */
   async processImage(
     imageBuffer: Buffer,
@@ -187,13 +184,9 @@ class ImageProcessorService {
     const {
       generateThumbnail = true,
       thumbnailSize = 256,
-      extractExif = true,
       generateDescription = true,
       descriptionQuestion,
     } = options;
-
-    // Extrair metadata básica
-    const metadata = await this.extractMetadata(imageBuffer, mimeType, extractExif);
 
     // Embeddings são gerados separadamente via OpenAI Embeddings (sem GPU)
     const embedding: number[] = [];
@@ -211,16 +204,15 @@ class ImageProcessorService {
         visionModel = described.model;
       } catch (error) {
         logger.error({ error }, 'Erro ao gerar descrição de imagem via OpenAI Vision');
-        // Regra 6: não inventar descrição. O processamento da imagem continua (embeddings + thumbnail).
+        // Regra 6: não inventar descrição. O processamento da imagem continua (sem embeddings de imagem).
       }
     }
 
-    // Gerar thumbnail
+    // Gerar thumbnail local (CPU)
     let thumbnailBuffer: Buffer | undefined;
     let thumbnailMimeType: string | undefined;
-
     if (generateThumbnail) {
-      const thumbnail = await this.generateThumbnail(imageBuffer, mimeType, thumbnailSize, metadata);
+      const thumbnail = await this.generateThumbnail(imageBuffer, thumbnailSize);
       thumbnailBuffer = thumbnail?.buffer;
       thumbnailMimeType = thumbnail?.mimeType;
     }
@@ -229,10 +221,9 @@ class ImageProcessorService {
 
     logger.info({
       embeddingModel,
-      hasThumbnail: !!thumbnailBuffer,
-      metadata: { width: metadata.width, height: metadata.height, format: metadata.format },
+      hasThumbnail: Boolean(thumbnailBuffer),
       processingTimeMs,
-    }, 'Imagem processada');
+    }, 'Imagem processada (OpenAI Vision + thumbnail CPU)');
 
     return {
       embedding,
@@ -241,204 +232,50 @@ class ImageProcessorService {
       visionModel,
       thumbnailBuffer,
       thumbnailMimeType,
-      metadata,
+      metadata: {},
       processedAt: new Date().toISOString(),
       processingTimeMs,
     };
   }
 
   /**
-   * Gera thumbnail da imagem
+   * Gera thumbnail com CPU (OpenAI não fornece thumbnail).
    */
   private async generateThumbnail(
     imageBuffer: Buffer,
-    mimeType: string,
-    maxSize: number,
-    metadata: ImageMetadata
+    maxSize: number
   ): Promise<{ buffer: Buffer; mimeType: string } | null> {
     try {
-      const width = metadata.width || 0;
-      const height = metadata.height || 0;
-      
-      if (width > 0 && height > 0 && width <= maxSize * 2 && height <= maxSize * 2) {
-        return { buffer: imageBuffer, mimeType };
+      const sharpModule = await import('sharp').catch(() => null);
+
+      type SharpModule = {
+        default?: (input?: Buffer | string) => SharpInstance;
+      } & ((input?: Buffer | string) => SharpInstance);
+
+      type SharpInstance = {
+        resize: (width: number, height: number, options?: { fit?: string; withoutEnlargement?: boolean }) => SharpInstance;
+        jpeg: (options?: { quality?: number }) => SharpInstance;
+        toBuffer: () => Promise<Buffer>;
+      };
+
+      const sharp = sharpModule
+        ? ((sharpModule as unknown as SharpModule).default ?? (sharpModule as unknown as SharpModule))
+        : null;
+
+      if (sharp && typeof sharp === 'function') {
+        const thumbnailBuffer = await sharp(imageBuffer)
+          .resize(maxSize, maxSize, { fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 80 })
+          .toBuffer();
+
+        return { buffer: thumbnailBuffer, mimeType: 'image/jpeg' };
       }
 
-      try {
-        const sharpModule = await import('sharp').catch(() => null);
-        
-        type SharpModule = {
-          default?: (input?: Buffer | string) => SharpInstance;
-        } & ((input?: Buffer | string) => SharpInstance);
-        
-        type SharpInstance = {
-          resize: (width: number, height: number, options?: { fit?: string; withoutEnlargement?: boolean }) => SharpInstance;
-          jpeg: (options?: { quality?: number }) => SharpInstance;
-          toBuffer: () => Promise<Buffer>;
-        };
-        
-        const sharp = sharpModule 
-          ? ((sharpModule as unknown as SharpModule).default ?? (sharpModule as unknown as SharpModule))
-          : null;
-        
-        if (sharp && typeof sharp === 'function') {
-          const thumbnailBuffer = await sharp(imageBuffer)
-            .resize(maxSize, maxSize, { fit: 'inside', withoutEnlargement: true })
-            .jpeg({ quality: 80 })
-            .toBuffer();
-
-          return { buffer: thumbnailBuffer, mimeType: 'image/jpeg' };
-        }
-      } catch {
-        logger.debug('Sharp não disponível');
-      }
-
-      if (imageBuffer.length < 500 * 1024) {
-        return { buffer: imageBuffer, mimeType };
-      }
-      
       return null;
     } catch (error) {
-      logger.error({ error }, 'Erro ao gerar thumbnail');
+      logger.error({ error }, 'Erro ao gerar thumbnail (CPU)');
       return null;
     }
-  }
-
-  /**
-   * Extrai metadata da imagem
-   */
-  private async extractMetadata(
-    imageBuffer: Buffer,
-    mimeType: string,
-    extractExif: boolean
-  ): Promise<ImageMetadata> {
-    const metadata: ImageMetadata = {};
-
-    const formatMap: Record<string, string> = {
-      'image/jpeg': 'jpeg',
-      'image/png': 'png',
-      'image/webp': 'webp',
-      'image/gif': 'gif',
-      'image/svg+xml': 'svg',
-      'image/bmp': 'bmp',
-    };
-    metadata.format = formatMap[mimeType] || 'unknown';
-
-    try {
-      const dimensions = this.extractDimensionsFromBuffer(imageBuffer, mimeType);
-      if (dimensions) {
-        metadata.width = dimensions.width;
-        metadata.height = dimensions.height;
-      }
-    } catch (error) {
-      logger.warn({ error }, 'Não foi possível extrair dimensões da imagem');
-    }
-
-    if (extractExif && (mimeType === 'image/jpeg' || mimeType === 'image/tiff')) {
-      try {
-        const exif = this.extractBasicExif(imageBuffer);
-        if (Object.keys(exif).length > 0) {
-          metadata.exif = exif;
-        }
-      } catch (error) {
-        logger.warn({ error }, 'Não foi possível extrair EXIF');
-      }
-    }
-
-    return metadata;
-  }
-
-  /**
-   * Extrai dimensões do buffer da imagem
-   */
-  private extractDimensionsFromBuffer(
-    buffer: Buffer,
-    mimeType: string
-  ): { width: number; height: number } | null {
-    try {
-      // PNG
-      if (mimeType === 'image/png' && buffer.length >= 24) {
-        if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) {
-          return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
-        }
-      }
-
-      // JPEG
-      if (mimeType === 'image/jpeg' && buffer.length > 2) {
-        if (buffer[0] === 0xFF && buffer[1] === 0xD8) {
-          let offset = 2;
-          while (offset < buffer.length - 8) {
-            if (buffer[offset] === 0xFF) {
-              const marker = buffer[offset + 1];
-              if (marker >= 0xC0 && marker <= 0xC3) {
-                return { 
-                  width: buffer.readUInt16BE(offset + 7), 
-                  height: buffer.readUInt16BE(offset + 5) 
-                };
-              }
-              const length = buffer.readUInt16BE(offset + 2);
-              offset += 2 + length;
-            } else {
-              offset++;
-            }
-          }
-        }
-      }
-
-      // GIF
-      if (mimeType === 'image/gif' && buffer.length >= 10) {
-        if (buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46) {
-          return { width: buffer.readUInt16LE(6), height: buffer.readUInt16LE(8) };
-        }
-      }
-
-      // WebP
-      if (mimeType === 'image/webp' && buffer.length >= 30) {
-        if (buffer.slice(0, 4).toString() === 'RIFF' && buffer.slice(8, 12).toString() === 'WEBP') {
-          const chunk = buffer.slice(12, 16).toString();
-          if (chunk === 'VP8 ' && buffer.length >= 30) {
-            return { 
-              width: buffer.readUInt16LE(26) & 0x3FFF, 
-              height: buffer.readUInt16LE(28) & 0x3FFF 
-            };
-          } else if (chunk === 'VP8L' && buffer.length >= 25) {
-            const bits = buffer.readUInt32LE(21);
-            return { width: (bits & 0x3FFF) + 1, height: ((bits >> 14) & 0x3FFF) + 1 };
-          }
-        }
-      }
-
-      return null;
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * Extrai campos EXIF básicos
-   */
-  private extractBasicExif(buffer: Buffer): Record<string, unknown> {
-    const exif: Record<string, unknown> = {};
-
-    if (buffer[0] !== 0xFF || buffer[1] !== 0xD8) {
-      return exif;
-    }
-
-    let offset = 2;
-    while (offset < buffer.length - 4) {
-      if (buffer[offset] === 0xFF && buffer[offset + 1] === 0xE1) {
-        const length = buffer.readUInt16BE(offset + 2);
-        const app1Data = buffer.slice(offset + 4, offset + 2 + length);
-        
-        if (app1Data.slice(0, 6).toString() === 'Exif\0\0') {
-          exif.hasExif = true;
-        }
-        break;
-      }
-      offset++;
-    }
-
-    return exif;
   }
 
   isReady(): boolean {
@@ -449,9 +286,9 @@ class ImageProcessorService {
     return this.isConfigured;
   }
 
-  getConfig(): { 
-    configured: boolean; 
-    model: string; 
+  getConfig(): {
+    configured: boolean;
+    model: string;
   } {
     return {
       configured: this.isConfigured,
@@ -473,7 +310,7 @@ export function getImageProcessor(): ImageProcessorService {
 export const imageProcessor = getImageProcessor();
 
 /**
- * Retorna status dos circuit breakers GPU
+ * Retorna status dos circuit breakers Vision
  */
 export function getVisionCircuitBreakerStatus(): {
   openaiVision: {

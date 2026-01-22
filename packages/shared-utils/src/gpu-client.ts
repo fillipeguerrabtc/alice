@@ -45,7 +45,7 @@ export enum GpuRequestPriority {
 /** Tipos de serviços GPU - Gate 2 (LLM separado + Embeddings + ASR) */
 export enum GpuServiceType {
   LLM = 'llm',                   // LLM (texto) - ex: Qwen2.5 7B (vLLM)
-  EMBEDDINGS = 'embeddings',     // Text + image embeddings (GPU)
+  EMBEDDINGS = 'embeddings',     // Text embeddings (GPU)
   ASR = 'asr',                   // ASR (Speech-to-Text)
   TRAINING = 'training',         // Fine-tuning (QLoRA) - sob demanda
 }

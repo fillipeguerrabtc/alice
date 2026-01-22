@@ -1090,7 +1090,7 @@
     "multimodal": {
       "tabTitle": "Multimodal",
       "title": "Multimodal Media Upload",
-      "subtitle": "Upload images and audio to train Alice. Images use OpenAI (Vision + embeddings) and audio uses GPU to generate embeddings and enrich the knowledge base.",
+      "subtitle": "Upload images and audio to train Alice. Images use OpenAI Vision (text description) and audio uses GPU to generate embeddings and enrich the knowledge base.",
       "descriptionLabel": "Description (optional)",
       "descriptionPlaceholder": "Describe the media content for better contextualization",
       "dragDrop": "Drag files or click to select",
@@ -1109,7 +1109,7 @@
         "title": "How processing works",
         "images": {
           "title": "Images",
-          "desc": "OpenAI Vision generates textual descriptions and Qwen3-Embedding-0.6B creates embeddings for semantic search"
+          "desc": "OpenAI Vision generates textual descriptions (no image embeddings)"
         },
         "audio": {
           "title": "Audio",

@@ -1986,7 +1986,7 @@ let server: ReturnType<typeof app.listen>;
 (async () => {
   try {
     // Conectar ao PostgreSQL com retry logic ANTES de iniciar servidor HTTP
-    // Training-service usa pgvector para embeddings de imagem
+    // Training-service usa pgvector para colunas vetoriais (documentos/metadata)
     await connectWithRetry({
       maxRetries: 15,
       initialDelayMs: 2000,

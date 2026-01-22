@@ -107,6 +107,6 @@ echo "✅ [postgres-init] Permissões ajustadas para backup enterprise"
 
 echo ""
 echo "✅ [postgres-init] TODAS as extensões criadas e validadas com sucesso!"
-echo "   - pgvector: disponível para embeddings de imagem (1024 dim)"
+echo "   - pgvector: disponível para vetores internos (documentos/metadata)"
 echo "   - Operações vetoriais: testadas e funcionando"
 echo "   - Permissões: configuradas para pgBackRest"

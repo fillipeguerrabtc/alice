@@ -404,14 +404,14 @@ export async function connectWithRetry(options: ConnectWithRetryOptions = {}): P
       const pool = getPool();
       await pool.query('SELECT 1');
       
-      // Verificar se extensão pgvector está disponível (obrigatório para embeddings de imagem)
+      // Verificar se extensão pgvector está disponível (obrigatório para colunas vetoriais)
       if (checkPgvector) {
         const result = await pool.query(
           "SELECT 1 FROM pg_extension WHERE extname = 'vector'"
         );
         
         if (result.rows.length === 0) {
-          throw new Error('pgvector extension not available - required for image embeddings');
+          throw new Error('pgvector extension not available - required for vector columns');
         }
       }
       

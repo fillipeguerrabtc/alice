@@ -6,7 +6,7 @@
  * 
  * ARQUITETURA ENTERPRISE (25/12/2025):
  * - Texto: Qwen3-Embedding-0.6B (1024 dim) → Qdrant via GPU Manager Service
- * - Imagem: OpenAI Vision → descrição textual → Qdrant (embeddings de texto)
+ * - Imagem: OpenAI Vision → descrição textual (sem embeddings de imagem)
  * 
  * Autor: Fillipe Guerra
  * Data: 25 de Dezembro de 2025
@@ -90,19 +90,15 @@ import {
   upsertPoints,
   deletePointsByFilter,
   initTextCollection,
-  initImageCollection,
   isQdrantConfigured,
   healthCheck as qdrantHealthCheck,
   getQdrantCircuitBreakerStatus,
   TEXT_COLLECTION_NAME,
   TEXT_EMBEDDING_DIM,
-  IMAGE_COLLECTION_NAME,
-  IMAGE_EMBEDDING_DIM,
   type QdrantSearchResult,
   createSessionAuthMiddleware,
   initializeSessionAuthCache,
 } from '@alice/shared-utils';
-import { generateOpenAiImageEmbedding, getOpenAiImageEmbeddingModel, getOpenAiImageEmbeddingCircuitBreakerStatus } from './openai-embeddings.js';
 
 interface MulterRequest extends Request {
   file?: Express.Multer.File;
@@ -575,7 +571,7 @@ if (!DATABASE_URL) {
 //
 // ARQUITETURA DE STORAGE:
 // - Texto (1024 dim): Qdrant (HNSW)
-// - Imagem: descrição textual → Qdrant (embeddings de texto)
+// - Imagem: OpenAI Vision (descrição textual, sem embeddings de imagem)
 //
 // GPU MANAGER SERVICE (Hetzner GEX44) é usado para:
 // - chat-service: inferência LLM (texto)
@@ -1200,22 +1196,19 @@ app.get('/api/rag/health', async (_req: Request, res: Response) => {
     timestamp: new Date().toISOString(),
     architecture: {
       text: 'Qwen3-Embedding-0.6B (1024 dim) → Qdrant',
-      image: 'OpenAI Vision + OpenAI Embeddings → Qdrant (imagem)',
+      image: 'OpenAI Vision (descrição) - sem embeddings de imagem',
     },
     embeddingsProvider: {
       text: 'gpu-manager-service',
-      image: 'openai',
     },
     qdrant: {
       configured: isQdrantConfigured(),
       healthy: qdrantHealthy,
       collections: {
         text: TEXT_COLLECTION_NAME,
-        image: IMAGE_COLLECTION_NAME,
       },
       dimensions: {
         text: TEXT_EMBEDDING_DIM,
-        image: IMAGE_EMBEDDING_DIM,
       },
       circuitBreaker: qdrantStatus,
     },
@@ -2558,33 +2551,6 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
             hasThumbnail: !!thumbnailPath,
           }, 'Imagem processada com sucesso');
 
-          if (visionDescription && isQdrantConfigured()) {
-            const descriptionEmbedding = await generateOpenAiImageEmbedding(visionDescription);
-            if (descriptionEmbedding.embedding.length !== IMAGE_EMBEDDING_DIM) {
-              throw new Error(
-                `Embedding de imagem com dimensão inválida: ${descriptionEmbedding.embedding.length}. ` +
-                  `Esperado: ${IMAGE_EMBEDDING_DIM}.`
-              );
-            }
-            await upsertPoints(IMAGE_COLLECTION_NAME, [{
-              id: `media-image-${mediaUploadRecord.id}`,
-              vector: descriptionEmbedding.embedding,
-              payload: {
-                type: 'media_image',
-                mediaUploadId: mediaUploadRecord.id,
-                mediaType: 'image',
-                tenantId: req.tenantId,
-                description: visionDescription,
-                filename: req.file!.originalname,
-                mimeType: req.file!.mimetype,
-                fileUrl: mediaUploadRecord.fileUrl ?? null,
-                thumbnailUrl,
-                embeddingModel: descriptionEmbedding.model,
-                criadoEm: new Date().toISOString(),
-              },
-            }]);
-            logger.debug({ uploadId: mediaUploadRecord.id }, 'Embedding de imagem (OpenAI) inserido no Qdrant');
-          }
         } else if (mediaType === 'audio') {
           // Processar áudio com ASR Canary-1B (GPU)
           const audioProcessor = getAudioProcessor();
@@ -2600,8 +2566,9 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
           
           // Gate 2: Embeddings de texto são SSOT no Qdrant (PostgreSQL mantém apenas transcrição/metadados)
           if (result.embedding.length > 0 && isQdrantConfigured()) {
+            const qdrantPointId = mediaUploadRecord.id;
             await upsertPoints(TEXT_COLLECTION_NAME, [{
-              id: `media-audio-${mediaUploadRecord.id}`,
+              id: qdrantPointId,
               vector: result.embedding,
               payload: {
                 type: 'media_audio',
@@ -2632,7 +2599,7 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
                 processingTimeMs: result.processingTimeMs,
                 // CORREÇÃO 17/12/2025: qdrantPointId só é definido se Qdrant está configurado
                 // (condição deve coincidir com a do upsert para evitar referência a ponto inexistente)
-                qdrantPointId: result.embedding.length > 0 && isQdrantConfigured() ? `media-audio-${mediaUploadRecord.id}` : null,
+                qdrantPointId: result.embedding.length > 0 && isQdrantConfigured() ? mediaUploadRecord.id : null,
               },
             })
             .where(eq(schema.mediaUploads.id, mediaUploadRecord.id));
@@ -2742,7 +2709,7 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
     const processingInfo: Record<string, { message: string; features: string[] }> = {
       image: {
         message: 'Upload recebido. Processamento OpenAI iniciado.',
-        features: ['OpenAI Vision (descrição)', 'OpenAI Embeddings (imagem)', 'thumbnail', 'metadata extraction'],
+        features: ['OpenAI Vision (descrição)', 'thumbnail'],
       },
       audio: {
         message: 'Upload recebido. Transcrição GPU iniciada.',
@@ -2790,13 +2757,6 @@ const jsonUploadSchema = z.object({
   conversationId: z.string().uuid().optional(),
   messageId: z.string().uuid().optional(),
   description: z.string().optional(),
-});
-
-// OWASP API3 - Schema para busca de mídia
-const mediaSearchSchema = z.object({
-  query: z.string().max(2000).optional(),
-  imageId: z.string().uuid().optional(),
-  limit: z.number().int().min(1).max(100).default(10),
 });
 
 // ============================================================================
@@ -2924,7 +2884,7 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
     // Processar assíncrono (ALINHADO com endpoint FormData - CORREÇÃO 17/12/2025)
     // ARQUITETURA ENTERPRISE:
     // - Texto: Qwen3-Embedding-0.6B (1024 dim) → Qdrant
-    // - Imagem: OpenAI Vision + OpenAI Embeddings → Qdrant
+    // - Imagem: OpenAI Vision (descrição) - sem embeddings de imagem
     const processMediaAsync = async () => {
       try {
         if (mediaType === 'image') {
@@ -2971,34 +2931,6 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
             hasThumbnail: !!thumbnailPath,
           }, 'Imagem processada com sucesso (JSON upload)');
 
-          if (visionDescription && isQdrantConfigured()) {
-            const descriptionEmbedding = await generateOpenAiImageEmbedding(visionDescription);
-            if (descriptionEmbedding.embedding.length !== IMAGE_EMBEDDING_DIM) {
-              throw new Error(
-                `Embedding de imagem com dimensão inválida: ${descriptionEmbedding.embedding.length}. ` +
-                  `Esperado: ${IMAGE_EMBEDDING_DIM}.`
-              );
-            }
-            await upsertPoints(IMAGE_COLLECTION_NAME, [{
-              id: `media-image-${mediaUploadRecord.id}`,
-              vector: descriptionEmbedding.embedding,
-              payload: {
-                type: 'media_image',
-                mediaUploadId: mediaUploadRecord.id,
-                mediaType: 'image',
-                tenantId: tenantId,
-                description: visionDescription,
-                filename: body.filename,
-                mimeType: body.mimeType,
-                fileUrl: mediaUploadRecord.fileUrl ?? null,
-                thumbnailUrl,
-                embeddingModel: descriptionEmbedding.model,
-                criadoEm: new Date().toISOString(),
-              },
-            }]);
-            logger.debug({ uploadId: mediaUploadRecord.id }, 'Embedding de imagem (OpenAI) inserido no Qdrant (JSON)');
-          }
-
         } else if (mediaType === 'audio') {
           const audioProcessor = getAudioProcessor();
           const result = await audioProcessor.processAudio(fileBuffer, body.mimeType);
@@ -3010,8 +2942,9 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
           
           // Gate 2: Embeddings de texto são SSOT no Qdrant (PostgreSQL mantém apenas transcrição/metadados)
           if (result.embedding.length > 0 && isQdrantConfigured()) {
+            const qdrantPointId = mediaUploadRecord.id;
             await upsertPoints(TEXT_COLLECTION_NAME, [{
-              id: `media-audio-${mediaUploadRecord.id}`,
+              id: qdrantPointId,
               vector: result.embedding,
               payload: {
                 type: 'media_audio',
@@ -3041,7 +2974,7 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
                 embeddingModel: result.embeddingModel,
                 processingTimeMs: result.processingTimeMs,
                 // CORREÇÃO 17/12/2025: qdrantPointId só é definido se Qdrant está configurado
-                qdrantPointId: result.embedding.length > 0 && isQdrantConfigured() ? `media-audio-${mediaUploadRecord.id}` : null,
+                qdrantPointId: result.embedding.length > 0 && isQdrantConfigured() ? mediaUploadRecord.id : null,
               },
             })
             .where(eq(schema.mediaUploads.id, mediaUploadRecord.id));
@@ -3467,141 +3400,6 @@ app.get('/api/media/files/:tenantId/:mediaType/:filename', requireAuth(), requir
   }
 });
 
-// Busca semântica de imagens por similaridade de embedding
-app.post('/api/media/search', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
-  // SEGURANÇA: Usar req.tenantId populado pelo middleware requireAuth (Regra 8)
-  const tenantId = req.tenantId;
-  
-  if (!tenantId) {
-    return res.status(401).json({ error: 'Autenticação necessária' });
-  }
-
-  // OWASP API3 - Validação Zod obrigatória
-  const parseResult = mediaSearchSchema.safeParse(req.body);
-  if (!parseResult.success) {
-    return res.status(400).json({ error: 'Input inválido' });
-  }
-  const { query, imageId, limit } = parseResult.data;
-
-  try {
-    if (!query && !imageId) {
-      return res.status(400).json({ 
-        error: 'Forneça "query" (texto) ou "imageId" (busca por imagem similar)' 
-      });
-    }
-
-    let queryText: string | null = null;
-
-    if (imageId) {
-      const [referenceImage] = await db
-        .select({
-          llmDescription: schema.mediaUploads.llmDescription,
-          extractedMetadata: schema.mediaUploads.extractedMetadata,
-        })
-        .from(schema.mediaUploads)
-        .where(and(
-          eq(schema.mediaUploads.id, imageId),
-          eq(schema.mediaUploads.tenantId, tenantId as string),
-          eq(schema.mediaUploads.mediaType, 'image'),
-          eq(schema.mediaUploads.processingStatus, 'completed')
-        ))
-        .limit(1);
-
-      if (!referenceImage) {
-        return res.status(404).json({ 
-          error: 'Imagem de referência não encontrada ou ainda não processada' 
-        });
-      }
-
-      const metadataDescription = typeof referenceImage.extractedMetadata === 'object'
-        && referenceImage.extractedMetadata
-        && typeof (referenceImage.extractedMetadata as Record<string, unknown>).visionDescription === 'string'
-        ? String((referenceImage.extractedMetadata as Record<string, unknown>).visionDescription)
-        : null;
-
-      queryText = referenceImage.llmDescription || metadataDescription;
-
-      if (!queryText || queryText.trim().length === 0) {
-        return res.status(404).json({ 
-          error: 'Imagem de referência sem descrição disponível para busca' 
-        });
-      }
-    } else if (query) {
-      queryText = query.trim();
-    }
-
-    if (!queryText) {
-      return res.status(400).json({ error: 'Não foi possível obter texto para busca' });
-    }
-
-    if (!isQdrantConfigured()) {
-      return res.status(503).json({ error: 'Qdrant não configurado para busca de imagens' });
-    }
-
-    const queryEmbedding = await generateOpenAiImageEmbedding(queryText);
-    if (queryEmbedding.embedding.length !== IMAGE_EMBEDDING_DIM) {
-      throw new Error(
-        `Embedding de imagem com dimensão inválida: ${queryEmbedding.embedding.length}. ` +
-          `Esperado: ${IMAGE_EMBEDDING_DIM}.`
-      );
-    }
-
-    const safeLimit = Math.min(Math.max(1, limit), 50);
-
-    const filter = {
-      must: [
-        { key: 'tenantId', match: { value: tenantId } },
-        { key: 'type', match: { value: 'media_image' } },
-      ],
-      ...(imageId ? { must_not: [{ key: 'mediaUploadId', match: { value: imageId } }] } : {}),
-    };
-
-    const resultsRaw = await searchPoints(IMAGE_COLLECTION_NAME, queryEmbedding.embedding, {
-      limit: safeLimit * 2,
-      scoreThreshold: 0.55,
-      filter,
-      withPayload: true,
-    });
-
-    const results = resultsRaw
-      .slice(0, safeLimit)
-      .map((result: QdrantSearchResult) => {
-        const payload = result.payload || {};
-        const similarity = Math.round(result.score * 10000) / 10000;
-        return {
-          id: String(payload.mediaUploadId || result.id),
-          originalFilename: payload.filename ? String(payload.filename) : null,
-          fileUrl: payload.fileUrl ? String(payload.fileUrl) : null,
-          mimeType: payload.mimeType ? String(payload.mimeType) : 'image',
-          metadata: {
-            description: payload.description ? String(payload.description) : null,
-            thumbnailUrl: payload.thumbnailUrl ? String(payload.thumbnailUrl) : null,
-          },
-          similarity,
-          criadoEm: payload.criadoEm ? new Date(String(payload.criadoEm)) : new Date(),
-        };
-      });
-
-    logger.info({
-      tenantId,
-      queryType: imageId ? 'image' : 'text',
-      resultsCount: results.length,
-    }, 'Busca semântica de imagens');
-
-    res.json({
-      results,
-      query: {
-        type: imageId ? 'image' : 'text',
-        value: imageId || query,
-      },
-      total: results.length,
-    });
-  } catch (error) {
-    logger.error({ error, tenantId }, 'Erro na busca semântica');
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
 // Busca vetorial otimizada com pgvector nativo (enterprise-grade)
 
 // Health check específico para multimodal
@@ -3670,8 +3468,6 @@ app.get('/api/media/health', async (_req: Request, res: Response) => {
           required: true,
           ready: imageReady,
           model: imageConfig.model,
-          embeddingModel: getOpenAiImageEmbeddingModel(),
-          embeddingDim: IMAGE_EMBEDDING_DIM,
           maxFileSizeMb: FILE_LIMITS_MB.image,
         },
         audio: {
@@ -3710,14 +3506,12 @@ app.get('/api/media/health', async (_req: Request, res: Response) => {
 // Status do circuit breaker OpenAI Vision (Regra 16 - Observability)
 app.get('/api/rag/circuit-breaker/embeddings', (_req: Request, res: Response) => {
   const visionStatus = getVisionCircuitBreakerStatus();
-  const embeddingStatus = getOpenAiImageEmbeddingCircuitBreakerStatus();
 
   res.json({
     service: 'openai',
     timestamp: new Date().toISOString(),
     circuitBreakers: {
       vision: visionStatus,
-      imageEmbeddings: embeddingStatus,
     },
   });
 });
@@ -4003,16 +3797,10 @@ registerShutdownCallback(
     if (isQdrantConfigured()) {
       try {
         await initTextCollection();
-        await initImageCollection();
         logger.info({ 
           collection: TEXT_COLLECTION_NAME, 
           dimension: TEXT_EMBEDDING_DIM 
         }, 'Coleção Qdrant para embeddings de texto inicializada');
-        logger.info({
-          collection: IMAGE_COLLECTION_NAME,
-          dimension: IMAGE_EMBEDDING_DIM,
-          model: getOpenAiImageEmbeddingModel(),
-        }, 'Coleção Qdrant para embeddings de imagem inicializada');
       } catch (error) {
         logger.error({ error }, 'Falha ao inicializar coleção Qdrant - servidor não iniciará');
         throw error; // Fail-fast se Qdrant não puder ser inicializado
@@ -4105,7 +3893,7 @@ registerShutdownCallback(
         qdrantUrl: process.env.QDRANT_URL || 'not_configured',
         architecture: {
           text: 'Qwen3-Embedding-0.6B (1024 dim) → Qdrant',
-          image: 'OpenAI Vision → descrição → Qdrant',
+          image: 'OpenAI Vision (descrição) - sem embeddings de imagem',
         },
         circuitBreaker: 'enabled',
         gpuDedicated: true, // Hetzner GEX44 24/7
@@ -4138,7 +3926,7 @@ registerShutdownCallback(
 // INICIALIZAÇÃO QDRANT - Banco vetorial para texto (1024 dim)
 // ARQUITETURA ENTERPRISE (17/12/2025):
 // - Texto: Qdrant (Qwen3-Embedding-0.6B, 1024 dim)
-// - Imagem: descrição textual → Qdrant (embeddings de texto)
+// - Imagem: OpenAI Vision (descrição textual, sem embeddings de imagem)
 // ============================================================================
 // BUG FIX 23/12/2025: Inicialização movida para dentro do IIFE async (linha ~3527)
 // Isso garante que a collection seja criada ANTES do servidor aceitar conexões
