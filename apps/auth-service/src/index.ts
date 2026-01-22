@@ -3599,6 +3599,13 @@ app.patch('/api/users/:id/custom-role', requireAuth(), requireRole('admin'), asy
     if (req.tenantId && customRole.tenantId !== req.tenantId && !isSuperAdmin) {
       return res.status(403).json({ error: 'Acesso negado - role de outro tenant' });
     }
+    if (
+      customRole.tenantId &&
+      currentUser.tenantId &&
+      customRole.tenantId !== currentUser.tenantId
+    ) {
+      return res.status(400).json({ error: 'Role customizada de outro tenant' });
+    }
   }
 
   const [updatedUser] = await db.update(schema.users)
