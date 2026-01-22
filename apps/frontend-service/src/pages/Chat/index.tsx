@@ -782,6 +782,8 @@ export default function Chat() {
   const resolvedVersion = versionData?.version || appVersion;
   const modelBadgeLabel = resolvedVersion ? `Alice ${resolvedVersion} 7B` : 'Alice 7B';
   const approvalPolicy: ApprovalPolicy = approvalPolicyData?.approvalPolicy ?? 'always_confirm';
+  const approvalPolicyForSelect: ApprovalPolicy =
+    approvalPolicy === 'confirm_risky' ? 'always_confirm' : approvalPolicy;
   const approvalPolicyOptions = [
     { value: 'always_confirm', label: t('chat.approvalPolicy.alwaysConfirm') },
     { value: 'never_confirm', label: t('chat.approvalPolicy.neverConfirm') },
@@ -1725,7 +1727,7 @@ export default function Chat() {
                   {t('chat.approvalPolicy.label')}
                 </Label>
                 <Select
-                  value={approvalPolicy}
+                  value={approvalPolicyForSelect}
                   onValueChange={(value) => updateApprovalPolicy.mutate(value as ApprovalPolicy)}
                 >
                   <SelectTrigger className="h-8 w-[200px]">
@@ -1762,7 +1764,7 @@ export default function Chat() {
                 </Badge>
                 {conversationId && (
                   <Select
-                    value={approvalPolicy}
+                    value={approvalPolicyForSelect}
                     onValueChange={(value) => updateApprovalPolicy.mutate(value as ApprovalPolicy)}
                   >
                     <SelectTrigger className="h-6 w-[120px] text-[10px]">
