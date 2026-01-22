@@ -3723,7 +3723,6 @@ jobs:
             # Gate 2: Serviços GPU sempre ativos (budgets em 20GB VRAM)
             # - gpu-llm: LLM (texto) (Qwen2.5 7B AWQ)
             # - gpu-embeddings: Qwen3-Embedding-0.6B INT8 (1024 dim)
-            # - gpu-asr: Canary-1B (transcrição)
             # - gpu-trainer: QLoRA fine-tuning (sob demanda via profile)
             # NOTA: Vision e geração de imagens são via OpenAI (sem VLM local)
             echo ""
@@ -3732,9 +3731,6 @@ jobs:
             
             echo "📥 Pull GPU Embeddings..."
             docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull gpu-embeddings 2>&1 || echo "   ⚠️ gpu-embeddings: pull falhou"
-            
-            echo "📥 Pull GPU ASR (áudio)..."
-            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull gpu-asr 2>&1 || echo "   ⚠️ gpu-asr: pull falhou"
             
             echo "📥 Pull GPU Trainer (fine-tuning sob demanda)..."
             docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile training pull gpu-trainer 2>&1 || echo "   ⚠️ gpu-trainer: pull falhou"
@@ -3748,7 +3744,6 @@ jobs:
             # Todos os serviços GPU rodam simultaneamente (budgets em 20GB VRAM):
             # - gpu-llm: LLM (~6GB budget) - chat/trading (texto)
             # - gpu-embeddings: Qwen3-Embedding-0.6B INT8 (~3GB)
-            # - gpu-asr: Canary-1B (~3GB) - transcrição de áudio
             # - gpu-trainer: QLoRA fine-tuning (~12GB) - SOB DEMANDA via profile
             # NOTA: Vision e geração de imagens são via OpenAI (sem VLM local)
             # =================================================================
@@ -3760,7 +3755,6 @@ jobs:
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "   📦 gpu-llm: LLM (Qwen2.5) (~6GB budget)"
             echo "   📦 gpu-embeddings: Qwen3-Embedding-0.6B INT8 (~3GB)"
-            echo "   📦 gpu-asr: Canary-1B (~3GB)"
             echo "   📦 gpu-trainer: QLoRA (sob demanda via profile training)"
             echo ""
 
@@ -3806,7 +3800,7 @@ jobs:
             echo "🎮 Containers GPU (gerenciados pelo GPU Manager):"
             docker ps -a --filter "name=gpu-" --format "table {{.Names}}\t{{.Status}}" || echo "   (nenhum container GPU encontrado)"
             echo ""
-            echo "📝 Gate 2: Todos os serviços GPU rodam simultaneamente (LLM + Embeddings + ASR)"
+            echo "📝 Gate 2: Serviços GPU rodam simultaneamente (LLM + Embeddings)"
             echo "         Budgets conservadores para coexistência em 20GB VRAM (fonte de verdade: métricas + nvidia-smi)"
             echo ""
             
@@ -3883,8 +3877,7 @@ jobs:
             # Gate 2: containers GPU são parte do stack ALICE e DEVEM estar healthy
             # para evitar "Deploy OK" enquanto inference está em crash/restart loop.
             #
-            # NOTA (16/01/2026): gpu-asr é always-on no stack Alice.
-            CONTAINERS="alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager gpu-llm gpu-embeddings gpu-asr"
+            CONTAINERS="alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager gpu-llm gpu-embeddings"
             # =================================================================
             # CORREÇÃO PR#100 (09/01/2026): Alinhar workflow timeout com Docker healthcheck
             # =================================================================

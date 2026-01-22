@@ -371,8 +371,8 @@ export const RAG_CHUNK_CONFIG = {
 /**
  * Configuração GPU Manager Service (Hetzner GEX44)
  * Arquitetura atual (16/01/2026+):
- * - GPU local: LLM (texto) + Embeddings + ASR
- * - Vision e geração de imagens: OpenAI API (fora do GPU Manager)
+ * - GPU local: LLM (texto) + Embeddings + Training
+ * - Vision e ASR: OpenAI API (fora do GPU Manager)
  * - Observabilidade deve permanecer model-agnóstica (troca de modelo sem refazer dashboards)
  */
 export const GPU_MANAGER_CONFIG = {
@@ -382,7 +382,6 @@ export const GPU_MANAGER_CONFIG = {
     // LLM (texto) - SSOT do stack (`LLM_MODEL_NAME` em produção)
     llm: process.env.LLM_MODEL_NAME || 'Qwen/Qwen2.5-7B-Instruct-AWQ',
     embeddings: 'Qwen/Qwen3-Embedding-0.6B',
-    asr: 'nvidia/Canary-1B',
   },
   defaults: {
     // Default de saída (max_tokens). Observação: `MAX_MODEL_LEN` do vLLM pode ser maior (ex.: 8192).

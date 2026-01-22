@@ -563,7 +563,7 @@ if (!DATABASE_URL) {
 // ==============================================================================
 // GPU Manager Service (Hetzner GEX44):
 // - Text embeddings: Qwen3-Embedding-0.6B INT8 (1024 dim) → Qdrant
-// - Transcrição de áudio: Canary-1B (NeMo)
+// - Transcrição de áudio: OpenAI ASR (gpt-4o-transcribe)
 // - LLM (texto): Qwen2.5 7B Instruct (AWQ)
 // - Treinamento: gpu-trainer
 // Vision (análise/geração de imagens): OpenAI Responses/Images API (sem GPU)
@@ -2650,7 +2650,7 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
           }, 'Imagem processada com sucesso');
 
         } else if (mediaType === 'audio') {
-          // Processar áudio com ASR Canary-1B (GPU)
+          // Processar áudio com ASR OpenAI
           const audioProcessor = getAudioProcessor();
           const result = await audioProcessor.processAudio(
             req.file!.buffer,
@@ -2810,8 +2810,8 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
         features: ['OpenAI Vision (descrição)', 'thumbnail'],
       },
       audio: {
-        message: 'Upload recebido. Transcrição GPU iniciada.',
-        features: ['Canary-1B ASR GPU', 'Qwen3-Embedding-0.6B (1024 dim GPU → Qdrant)', 'metadata extraction'],
+        message: 'Upload recebido. Transcrição OpenAI iniciada.',
+        features: ['OpenAI ASR (gpt-4o-transcribe)', 'Qwen3-Embedding-0.6B (1024 dim GPU → Qdrant)', 'metadata extraction'],
       },
       // REMOVIDO 23/12/2025: video desabilitado (muito pesado para GPU)
       document: {

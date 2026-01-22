@@ -551,7 +551,7 @@ function CreateJobDialog({ open, onClose, approvedCount, t }: {
 // COMPONENTE: MultimodalUploadTab - Upload de mídia multimodal para RAG
 // ARQUITETURA 100% GPU (Gate 2):
 // - Imagens: OpenAI Vision (descrição textual, sem embeddings de imagem)
-// - Áudios: Canary-1B (ASR) + Qwen3-Embedding-0.6B embeddings (1024 dim)
+// - Áudios: OpenAI ASR (gpt-4o-transcribe) + Qwen3-Embedding-0.6B embeddings (1024 dim)
 // - Vídeo: NÃO suportado (desabilitado por custo/peso de GPU)
 // REGRA 8: TypeScript strict, zero any
 // REGRA 16: Validação client-side, error handling, UX feedback

@@ -75,6 +75,18 @@ setPermissionResolver(async (auth: AuthContext) => {
     });
     customRoleId = user?.customRoleId ?? undefined;
   }
+  if (customRoleId) {
+    const activeRole = await db.query.customRoles.findFirst({
+      where: and(
+        eq(schema.customRoles.id, customRoleId),
+        eq(schema.customRoles.ativo, true)
+      ),
+      columns: { id: true },
+    });
+    if (!activeRole) {
+      customRoleId = undefined;
+    }
+  }
   const isAdminRole = auth.role === 'admin' || auth.role === 'super_admin';
   const rolePermissions = isAdminRole
     ? await db.query.permissions.findMany({ columns: { codigo: true } })
@@ -2390,7 +2402,7 @@ async function processMessageWithLLM(
  * 
  * ARQUITETURA ENTERPRISE (17/12/2025):
  * - Imagens: OpenAI Vision (descrição textual, sem embeddings de imagem)
- * - Áudios: Canary-1B transcrição + Qwen3-Embedding-0.6B embeddings (1024 dim → Qdrant)
+ * - Áudios: OpenAI ASR (gpt-4o-transcribe) + Qwen3-Embedding-0.6B embeddings (1024 dim → Qdrant)
  * - Vídeos: NÃO suportado (uploads `video/*` são rejeitados explicitamente)
  * 
  * @param mediaUrl - URL do Twilio para baixar a mídia

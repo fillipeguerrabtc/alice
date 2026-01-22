@@ -1,7 +1,7 @@
 # Sistema de Aprendizado da Alice
 
 **Autor:** Fillipe Guerra  
-**Versão:** 5.3 - Vision OpenAI (sem embeddings de imagem)  
+**Versão:** 5.4 - ASR OpenAI + Vision OpenAI (sem embeddings de imagem)  
 **Data:** 22 de Janeiro de 2026
 
 > **ATUALIZAÇÃO 05/01/2026:** Arquitetura refatorada para 5 stacks independentes com deploy/rollback modular. Sistema de aprendizado integrado ao stack ALICE, com GPU containers gerenciados pelo GPU Manager Service.
@@ -26,7 +26,7 @@ A partir de 16/01/2026, a Alice utiliza **Gate 2 (LLM local + Vision OpenAI)** v
 | **Vision (análise)** | **OpenAI gpt-4.1** | N/A | OpenAI API |
 | **Embeddings de Texto** | Qwen3-Embedding-0.6B INT8 | **1024 dim** (~3GB budget) → Qdrant | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
 | **Imagem (descrição)** | OpenAI Vision (gpt-4.1) | Texto (sem embeddings de imagem) | OpenAI API |
-| **Transcrição de Áudio** | Canary-1B (NeMo) | ~3GB (budget) | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
+| **Transcrição de Áudio** | OpenAI ASR (gpt-4o-transcribe) | N/A | OpenAI API |
 | **Fine-tuning** | QLoRA (gpu-trainer) | dedicado (profile/on-demand) | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
 | **Trading BTC** | KuCoin Futures API | - | Hetzner (integrations-service) |
 
@@ -38,7 +38,7 @@ Com servidor GPU dedicado, os serviços de inferência rodam simultaneamente (bu
 
 | Cenário | Latência | Motivo |
 |---------|----------|--------|
-| **Chat, RAG, ASR (+ Vision OpenAI)** | ~0.5-1 segundo | **ZERO troca de containers** - todos sempre carregados na VRAM |
+| **Chat, RAG (+ Vision/ASR OpenAI)** | ~0.5-1 segundo | **ZERO troca de containers** - todos sempre carregados na VRAM |
 | **Fine-tuning QLoRA** | Ativação via profile | Apenas training usa troca (semanal ou on-demand) |
 
 > **Gate 2:** Serviços GPU de inferência rodam localmente no servidor Hetzner GPU GEX44 com containers Docker 24/7. GPU Manager Service gerencia requisições com fila priorizada, monitoramento VRAM e circuit breakers. Fine-tuning QLoRA é ativado on-demand via Docker Compose profile. Ver [docs/ARQUITETURA-GPU-MANAGER.md](ARQUITETURA-GPU-MANAGER.md) para guia completo.
@@ -88,7 +88,7 @@ const trainingResponse = await fetch(`${TRAINING_SERVICE_URL}/api/training/data`
 |------|---------------|----------------------|
 | **Texto** | Automático | Rating inferido (5 = sem escalação, 1 = escalou) |
 | **Imagens** | Automático | OpenAI Vision (descrição textual, sem embeddings de imagem) |
-| **Áudios** | Automático | Canary-1B transcrição + Qwen3-Embedding-0.6B embeddings (1024 dim → Qdrant) |
+| **Áudios** | Automático | OpenAI ASR (gpt-4o-transcribe) + Qwen3-Embedding-0.6B embeddings (1024 dim → Qdrant) |
 
 **Integração Implementada (integrations-service/index.ts linha 2369):**
 ```typescript
@@ -166,7 +166,7 @@ const trainingResponse = await fetch(`${TRAINING_SERVICE_URL}/api/training/data`
 │      PROCESSAMENTO MULTIMODAL (GPU Manager Service)       │
 │  • Texto: Qwen3-Embedding-0.6B (1024 dim) → Qdrant          │
 │  • Imagem: OpenAI Vision (descrição → Qdrant)               │
-│  • Áudio: Canary-1B + Qwen3 (1024 dim) → Qdrant             │
+│  • Áudio: OpenAI ASR + Qwen3 (1024 dim) → Qdrant            │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -234,16 +234,16 @@ if (evaluation.recommendation === 'proceed' && job.tenantId) {
 
 ---
 
-## Processamento de Áudio - ARQUITETURA 100% GPU
+## Processamento de Áudio - ASR OpenAI
 
 ### Visão Geral
 
-O processamento de áudio utiliza **GPU obrigatória** via GPU Manager Service:
+O processamento de áudio utiliza **OpenAI ASR** (sem GPU local para transcrição):
 
-| Aspecto | GPU Manager Service (Hetzner GEX44) |
+| Aspecto | OpenAI ASR |
 |---------|-----------------|
-| **Modelo Transcrição** | Canary-1B (NeMo) |
-| **Velocidade** | 7-9x realtime |
+| **Modelo Transcrição** | gpt-4o-transcribe |
+| **Velocidade** | Dependente de rede (latência variável) |
 | **Modelo Embeddings** | Qwen3-Embedding-0.6B (1024 dim) |
 | **Fallback CPU** | **NÃO EXISTE** (Regra 6) |
 
@@ -257,11 +257,11 @@ O processamento de áudio utiliza **GPU obrigatória** via GPU Manager Service:
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
-│          TRANSCRIÇÃO GPU (OBRIGATÓRIA)                     │
-│  • Canary-Qwen-2.5B (NeMo)                                  │
-│  • 7-9x realtime                                            │
-│  • CUDA accelerated RTX 4000 Ada 20GB                       │
-│  • GPU Manager Service gerencia requisições ASR             │
+│          TRANSCRIÇÃO OPENAI (OBRIGATÓRIA)                   │
+│  • gpt-4o-transcribe                                        │
+│  • Latência depende da rede                                 │
+│  • API OpenAI com streaming quando disponível               │
+│  • Sem dependência de GPU local para ASR                    │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -281,7 +281,10 @@ O processamento de áudio utiliza **GPU obrigatória** via GPU Manager Service:
 
 | Variável | Descrição | Obrigatoriedade |
 |----------|-----------|-----------------|
-| `GPU_MANAGER_URL` | URL do GPU Manager Service (default: http://alice-gpu-manager:3010) | ⏳ **Opcional** (tem default) |
+| `OPENAI_API_KEY` | Chave da API OpenAI (ASR) | ✅ **Obrigatória** |
+| `OPENAI_ASR_MODEL` | Modelo de transcrição | Opcional (`gpt-4o-transcribe`) |
+| `OPENAI_ASR_TIMEOUT_MS` | Timeout ASR (ms) | Opcional (default 120000) |
+| `OPENAI_ASR_STREAM` | Habilita streaming | Opcional (default true) |
 
 ---
 
@@ -379,7 +382,7 @@ Acessíveis em `/dashboard/analytics`:
 - ✅ **Vision (OpenAI)**: gpt-4.1 para análise de imagens/gráficos (via OpenAI API)
 - ✅ Embeddings de texto (Qwen3-Embedding-0.6B INT8, **1024 dim**, ~3GB) via GPU Manager Service → Qdrant
 - ✅ Imagens via OpenAI Vision (descrição textual, sem embeddings de imagem)
-- ✅ Transcrição de áudio (Canary-1B NeMo, ~3GB) via GPU Manager Service
+- ✅ Transcrição de áudio (OpenAI ASR gpt-4o-transcribe) via OpenAI API
 - ✅ Qdrant para texto (1024 dim com HNSW)
 - ✅ Validação de dimensão em `validateEmbeddingDimension`
 - ✅ Sem fallback CPU (Regra 6)
@@ -425,7 +428,7 @@ Acessíveis em `/dashboard/analytics`:
 - Drag & drop para imagens (JPEG, PNG, WebP, GIF até 10MB)
 - Drag & drop para áudios (MP3, WAV, OGG, WEBM até 25MB)
 - Fila de upload visual com status em tempo real
-- Processamento via GPU (Qwen3-Embedding-0.6B + Canary-1B ASR)
+- Processamento via GPU (Qwen3-Embedding-0.6B) + ASR OpenAI
 - Internacionalização PT-BR e EN
 
 **Arquivos modificados:**
@@ -451,7 +454,7 @@ Acessíveis em `/dashboard/analytics`:
 - Nova função `processWhatsAppMediaForRAG()` em `integrations-service`
 - Mídia do WhatsApp é baixada do Twilio e enviada para `/api/media/upload/json`
 - Imagens: OpenAI Vision (descrição textual, sem embeddings de imagem)
-- Áudios: Canary-1B transcrição + Qwen3-Embedding-0.6B embeddings (1024 dim → Qdrant)
+- Áudios: OpenAI ASR + Qwen3-Embedding-0.6B embeddings (1024 dim → Qdrant)
 - Vídeo: **não suportado** (removido). Uploads `video/*` são rejeitados explicitamente.
 - Processamento fire-and-forget (não bloqueia resposta ao usuário)
 - `RAG_SERVICE_URL` adicionado ao docker-compose para integrations-service
@@ -464,12 +467,11 @@ Acessíveis em `/dashboard/analytics`:
 **Status:** Build automático via CI/CD - TODOS SIMULTÂNEOS
 
 **Ações realizadas:**
-1. Workflow `release.yml` garante automaticamente **4 imagens GPU** (llm-qwen25, embeddings-gpu, asr-canary, qwen-trainer). Quando não há mudanças no contexto do serviço, o pipeline faz **retag no GHCR** (mesmo digest do release anterior) ao invés de rebuild completo.
+1. Workflow `release.yml` garante automaticamente **3 imagens GPU** (llm-qwen25, embeddings-gpu, qwen-trainer). Quando não há mudanças no contexto do serviço, o pipeline faz **retag no GHCR** (mesmo digest do release anterior) ao invés de rebuild completo.
 2. Timeout aumentado de 30min para 90min (imagens GPU são muito pesadas)
 3. **ATUALIZAÇÃO Gate 2**:
    - `vllm/vllm-openai:v0.12.0` (llm-qwen25 - Qwen2.5 7B Instruct AWQ - LLM texto)
    - `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime` + bitsandbytes (embeddings-gpu INT8, ~8GB VRAM)
-   - `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime` + nemo_toolkit pip (asr-canary, ~3GB VRAM)
    - `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime` + peft (qwen-trainer QLoRA, on-demand)
    - ✅ **OpenAI Vision/Imagens** - gpt-4.1 (análise) + gpt-image-1 (geração)
    - **NOTA**: NGC_API_KEY REMOVIDO - Personal API Key não funciona para containers públicos (403 Forbidden). Todos usam Docker Hub.
@@ -508,10 +510,10 @@ Acessíveis em `/dashboard/analytics`:
 
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*
-*Versão 5.2 - 16 de Janeiro de 2026 - Gate 2*
+*Versão 5.4 - 22 de Janeiro de 2026 - Gate 2*
 *LLM (texto): Qwen2.5 7B Instruct AWQ (vLLM) via GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB)*
 *Embeddings texto: Qwen3-Embedding-0.6B INT8 (1024 dim → Qdrant) + Imagem: OpenAI Vision (descrição textual, sem embeddings de imagem)*
-*ASR: Canary-1B via NeMo Toolkit (Apache 2.0)*
+*ASR: OpenAI gpt-4o-transcribe via API externa*
 *Vision: OpenAI (gpt-4.1) para análise de imagens/gráficos via API externa*
 *Geração de Imagens: OpenAI (gpt-image-1)*
 *Fisher-Yates Shuffle (17/12/2025): Corrigido bug de distribuição enviesada em train/validation split*

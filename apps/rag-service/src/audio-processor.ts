@@ -1,13 +1,13 @@
 /**
  * Audio Processor Service - Alice Enterprise Platform
  * 
- * ARQUITETURA 100% GPU (25/12/2025):
- * - Transcrição: Canary-1B via GPU Manager Service
+ * ARQUITETURA ENTERPRISE (22/01/2026):
+ * - Transcrição: OpenAI ASR (gpt-4o-transcribe) via API
  * - Text embedding: Qwen3-Embedding-0.6B via GPU Manager Service (1024 dim)
  * - Extração de metadata (duração, formato, bitrate)
  * - Embeddings de texto armazenados em Qdrant
  * 
- * GPU é OBRIGATÓRIO - SEM fallback CPU (Regra 6 - sem workarounds)
+ * GPU é OBRIGATÓRIO apenas para embeddings (sem fallback, Regra 6)
  * 
  * Autor: Fillipe Guerra
  * Data: 25 de Dezembro de 2025
@@ -16,7 +16,13 @@
 
 import { createLogger } from '@alice/logger';
 import { validateEmbeddingDimension, EMBEDDING_DIMENSIONS } from '@alice/database';
-import { requestGpu, GpuServiceType, GpuRequestPriority } from '@alice/shared-utils';
+import {
+  createCircuitBreaker,
+  CIRCUIT_BREAKER_PRESETS,
+  requestGpu,
+  GpuServiceType,
+  GpuRequestPriority,
+} from '@alice/shared-utils';
 
 const logger = createLogger('audio-processor');
 
@@ -26,9 +32,44 @@ const logger = createLogger('audio-processor');
 // Dimensão dos embeddings de texto (SSOT: @alice/database)
 export const TEXT_EMBEDDING_DIM = EMBEDDING_DIMENSIONS.TEXT;
 
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+if (!OPENAI_API_KEY && process.env.NODE_ENV === 'production') {
+  logger.error('OPENAI_API_KEY é obrigatório em produção (ASR via OpenAI)');
+  process.exit(1);
+}
+
 // Timeouts
-const WHISPER_TIMEOUT_MS = 600000; // 10 min para GPU
+const OPENAI_ASR_TIMEOUT_MS = Number.parseInt(process.env.OPENAI_ASR_TIMEOUT_MS ?? '', 10);
+const ASR_TIMEOUT_MS = Number.isFinite(OPENAI_ASR_TIMEOUT_MS) && OPENAI_ASR_TIMEOUT_MS > 0
+  ? OPENAI_ASR_TIMEOUT_MS
+  : 120000;
 const EMBEDDING_TIMEOUT_MS = 30000; // 30s para embeddings
+
+const OPENAI_ASR_MODEL = process.env.OPENAI_ASR_MODEL?.trim() || 'gpt-4o-transcribe';
+const OPENAI_ASR_STREAM = process.env.OPENAI_ASR_STREAM
+  ? process.env.OPENAI_ASR_STREAM.toLowerCase() === 'true'
+  : true;
+
+const AUDIO_EXTENSION_BY_MIME: Record<string, string> = {
+  'audio/mpeg': 'mp3',
+  'audio/mp3': 'mp3',
+  'audio/wav': 'wav',
+  'audio/wave': 'wav',
+  'audio/ogg': 'ogg',
+  'audio/webm': 'webm',
+  'audio/aac': 'aac',
+  'audio/flac': 'flac',
+  'audio/mp4': 'm4a',
+  'audio/m4a': 'm4a',
+};
+
+type OpenAiTranscriptionPayload = {
+  text?: string;
+  language?: string;
+  duration?: number;
+  duration_seconds?: number;
+  confidence?: number;
+};
 
 export interface AudioMetadata {
   duration?: number;
@@ -56,30 +97,144 @@ export interface AudioProcessorOptions {
   generateEmbedding?: boolean;
 }
 
+interface OpenAiTranscribeParams {
+  audioBuffer: Buffer;
+  mimeType: string;
+  language?: string;
+}
+
+function buildAudioFilename(mimeType: string): string {
+  const extension = AUDIO_EXTENSION_BY_MIME[mimeType] || 'wav';
+  return `audio.${extension}`;
+}
+
+async function parseOpenAiTranscriptionStream(response: Response): Promise<string> {
+  if (!response.body) {
+    throw new Error('Resposta OpenAI sem stream de dados');
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let transcript = '';
+  let finalText = '';
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let separatorIndex = buffer.indexOf('\n\n');
+    while (separatorIndex !== -1) {
+      const chunk = buffer.slice(0, separatorIndex).trim();
+      buffer = buffer.slice(separatorIndex + 2);
+
+      if (chunk.length === 0) {
+        separatorIndex = buffer.indexOf('\n\n');
+        continue;
+      }
+
+      const lines = chunk.split('\n');
+      for (const line of lines) {
+        if (!line.startsWith('data:')) continue;
+        const payload = line.slice(5).trim();
+        if (!payload || payload === '[DONE]') continue;
+        try {
+          const parsed = JSON.parse(payload) as { delta?: string; text?: string; transcript?: string };
+          if (typeof parsed.delta === 'string') {
+            transcript += parsed.delta;
+          } else if (typeof parsed.text === 'string') {
+            finalText = parsed.text;
+          } else if (typeof parsed.transcript === 'string') {
+            finalText = parsed.transcript;
+          }
+        } catch (error) {
+          logger.warn({ error, payload }, 'Falha ao parsear evento de transcrição OpenAI');
+        }
+      }
+
+      separatorIndex = buffer.indexOf('\n\n');
+    }
+  }
+
+  return (finalText || transcript).trim();
+}
+
+async function callOpenAiTranscription(params: OpenAiTranscribeParams): Promise<OpenAiTranscriptionPayload> {
+  if (!OPENAI_API_KEY) {
+    throw new Error('OPENAI_API_KEY não configurada - ASR via OpenAI é obrigatória');
+  }
+
+  const form = new FormData();
+  const audioBytes = new Uint8Array(params.audioBuffer);
+  const audioBlob = new Blob([audioBytes], { type: params.mimeType });
+  form.append('file', audioBlob, buildAudioFilename(params.mimeType));
+  form.append('model', OPENAI_ASR_MODEL);
+  form.append('response_format', 'json');
+  if (params.language) {
+    form.append('language', params.language);
+  }
+  if (OPENAI_ASR_STREAM) {
+    form.append('stream', 'true');
+  }
+
+  const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+    },
+    body: form,
+    signal: AbortSignal.timeout(ASR_TIMEOUT_MS),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => '');
+    throw new Error(`OpenAI ASR error: ${response.status} - ${errText}`);
+  }
+
+  if (OPENAI_ASR_STREAM) {
+    const text = await parseOpenAiTranscriptionStream(response);
+    return { text };
+  }
+
+  return (await response.json()) as OpenAiTranscriptionPayload;
+}
+
+const openAiAsrBreaker = createCircuitBreaker(callOpenAiTranscription, {
+  name: 'openai-asr-transcription',
+  ...CIRCUIT_BREAKER_PRESETS.whisper,
+});
+
+async function callOpenAiAsr(params: OpenAiTranscribeParams): Promise<OpenAiTranscriptionPayload> {
+  return openAiAsrBreaker.fire(params) as Promise<OpenAiTranscriptionPayload>;
+}
+
 /**
- * Audio Processor Service - ARQUITETURA ENTERPRISE (25/12/2025)
+ * Audio Processor Service - ARQUITETURA ENTERPRISE (22/01/2026)
  * 
- * - Transcrição: Canary-1B GPU via GPU Manager Service
+ * - Transcrição: OpenAI ASR (gpt-4o-transcribe) via API
  * - Embeddings: Qwen3-Embedding-0.6B GPU via GPU Manager Service (1024 dim → Qdrant)
  * 
- * GPU é OBRIGATÓRIO - sem fallback (Regra 6)
+ * GPU é OBRIGATÓRIO apenas para embeddings (Regra 6)
  */
 class AudioProcessorService {
   private configured: boolean;
-  private whisperConfigured: boolean;
+  private asrConfigured: boolean;
   private embeddingsConfigured: boolean;
 
   constructor() {
-    // GPU Manager Service é sempre usado, não precisa validar URLs individuais
-    // ARQUITETURA ENTERPRISE (26/12/2025): GPU é OBRIGATÓRIO para todos serviços
-    this.configured = true;
-    this.whisperConfigured = true;  // ASR via GPU Manager Service
+    // OpenAI é obrigatório para ASR; GPU Manager é obrigatório para embeddings
+    this.asrConfigured = Boolean(OPENAI_API_KEY);
     this.embeddingsConfigured = true;  // Text embeddings via GPU Manager Service
+    this.configured = this.asrConfigured;
     
     logger.info({ 
-      gpuManager: 'enabled',
+      openaiAsr: this.asrConfigured,
+      gpuManagerEmbeddings: 'enabled',
       embeddingDim: TEXT_EMBEDDING_DIM,
-    }, 'Audio Processor - ARQUITETURA ENTERPRISE (ASR + Text Embeddings → Qdrant via GPU Manager Service)');
+      asrModel: OPENAI_ASR_MODEL,
+      asrStream: OPENAI_ASR_STREAM,
+    }, 'Audio Processor - OpenAI ASR + Embeddings GPU (Qdrant)');
   }
 
   /**
@@ -97,29 +252,31 @@ class AudioProcessorService {
     // Extrair metadata básica
     const metadata = await this.extractMetadata(audioBuffer, mimeType);
 
-    // Transcrição via GPU (ASR Canary-1B)
+    // Transcrição via OpenAI ASR
     let transcription = '';
     let transcriptionLanguage: string | undefined;
     let transcriptionConfidence: number | undefined;
     let durationSeconds: number | null =
       typeof metadata.duration === 'number' && Number.isFinite(metadata.duration) ? metadata.duration : null;
 
-    if (this.whisperConfigured) {
+    if (this.asrConfigured) {
       try {
-        logger.info({ audioSize: audioBuffer.length }, 'Transcrevendo via GPU (ASR Canary-1B)...');
-        const result = await this.transcribeGpu(audioBuffer, mimeType, language);
+        logger.info({ audioSize: audioBuffer.length }, 'Transcrevendo via OpenAI ASR...');
+        const result = await this.transcribeOpenAi(audioBuffer, mimeType, language);
         transcription = result.text;
         transcriptionLanguage = result.language;
         transcriptionConfidence = result.confidence;
-        durationSeconds = result.duration_seconds;
-        logger.info({ durationSeconds, processingTimeMs: result.processing_time_ms }, 'Transcrição GPU concluída');
+        if (result.duration_seconds > 0) {
+          durationSeconds = result.duration_seconds;
+        }
+        logger.info({ durationSeconds, processingTimeMs: result.processing_time_ms }, 'Transcrição OpenAI concluída');
       } catch (error) {
-        logger.error({ error }, 'Erro na transcrição GPU');
+        logger.error({ error }, 'Erro na transcrição OpenAI ASR');
         transcription = '[Transcrição não disponível - erro no processamento]';
       }
     } else {
-      logger.error('Whisper GPU não configurado - transcrição não disponível');
-      transcription = '[Transcrição não disponível - GPU não configurado]';
+      logger.error('OpenAI ASR não configurado - transcrição não disponível');
+      transcription = '[Transcrição não disponível - OpenAI não configurado]';
     }
 
     // Gerar embedding via GPU (Qwen3-Embedding-0.6B → Qdrant)
@@ -152,7 +309,7 @@ class AudioProcessorService {
       embeddingDim: embedding.length,
       embeddingModel,
       processingTimeMs,
-    }, 'Áudio processado via GPU');
+    }, 'Áudio processado (ASR OpenAI + Embeddings GPU)');
 
     return {
       transcription,
@@ -168,9 +325,9 @@ class AudioProcessorService {
   }
 
   /**
-   * Transcreve áudio via GPU (ASR Canary via GPU Manager Service)
+   * Transcreve áudio via OpenAI ASR (Transcriptions API)
    */
-  private async transcribeGpu(
+  private async transcribeOpenAi(
     audioBuffer: Buffer,
     mimeType: string,
     language?: string
@@ -181,45 +338,36 @@ class AudioProcessorService {
     duration_seconds: number;
     processing_time_ms: number;
   }> {
+    const startTime = Date.now();
     try {
-      // ARQUITETURA ENTERPRISE (25/12/2025): Usar GPU Manager Service para ASR
-      const base64Audio = audioBuffer.toString('base64');
-      const audioDataUri = `data:${mimeType};base64,${base64Audio}`;
-      
-      const gpuResponse = await requestGpu({
-        serviceType: GpuServiceType.ASR,
-        endpoint: '/transcribe/json',
-        method: 'POST',
-        priority: GpuRequestPriority.LOW,
-        timeout: WHISPER_TIMEOUT_MS,
-        body: {
-          audio: audioDataUri,
-          language: (!language || language === 'auto') ? null : language,
-        },
+      const result = await callOpenAiAsr({
+        audioBuffer,
+        mimeType,
+        language: language && language !== 'auto' ? language : undefined,
       });
 
-      if (!gpuResponse.success || !gpuResponse.data) {
-        throw new Error(gpuResponse.error || 'Erro na transcrição de áudio');
+      if (!result.text || result.text.trim().length === 0) {
+        throw new Error('Resposta de transcrição OpenAI vazia');
       }
 
-      const result = gpuResponse.data as {
-        text: string;
-        language: string;
-        confidence?: number;
-        duration_seconds: number;
-        processing_time_ms: number;
-      };
+      const durationSeconds = Number.isFinite(result.duration_seconds)
+        ? result.duration_seconds
+        : Number.isFinite(result.duration)
+          ? result.duration
+          : null;
+      const resolvedDuration =
+        typeof durationSeconds === 'number' && Number.isFinite(durationSeconds) ? durationSeconds : 0;
 
       return {
         text: result.text.trim(),
-        language: result.language,
+        language: result.language || 'unknown',
         confidence: result.confidence,
-        duration_seconds: result.duration_seconds,
-        processing_time_ms: result.processing_time_ms,
+        duration_seconds: resolvedDuration,
+        processing_time_ms: Date.now() - startTime,
       };
     } catch (error) {
-      if (error instanceof Error && error.message.includes('Timeout')) {
-        throw new Error(`Timeout na transcrição GPU após ${WHISPER_TIMEOUT_MS}ms`);
+      if (error instanceof Error && error.message.toLowerCase().includes('timeout')) {
+        throw new Error(`Timeout na transcrição OpenAI após ${ASR_TIMEOUT_MS}ms`);
       }
       throw error;
     }
@@ -305,18 +453,7 @@ class AudioProcessorService {
       fileSize: audioBuffer.length,
     };
 
-    const formatMap: Record<string, string> = {
-      'audio/mpeg': 'mp3',
-      'audio/mp3': 'mp3',
-      'audio/wav': 'wav',
-      'audio/wave': 'wav',
-      'audio/ogg': 'ogg',
-      'audio/webm': 'webm',
-      'audio/aac': 'aac',
-      'audio/flac': 'flac',
-      'audio/m4a': 'm4a',
-    };
-    metadata.format = formatMap[mimeType] || 'unknown';
+    metadata.format = AUDIO_EXTENSION_BY_MIME[mimeType] || 'unknown';
 
     try {
       if (mimeType === 'audio/mpeg' || mimeType === 'audio/mp3') {
@@ -434,9 +571,9 @@ class AudioProcessorService {
     return {
       configured: this.configured,
       embeddingDim: TEXT_EMBEDDING_DIM,
-      transcriptionModel: 'Canary-1B (GPU Manager Service)',
+      transcriptionModel: `${OPENAI_ASR_MODEL} (OpenAI ASR)`,
       embeddingModel: 'Qwen/Qwen3-Embedding-0.6B (GPU Manager Service, 1024 dim → Qdrant)',
-      gpuManager: 'enabled',
+      gpuManager: this.embeddingsConfigured ? 'enabled' : 'disabled',
     };
   }
 }

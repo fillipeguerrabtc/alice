@@ -10,7 +10,7 @@
 # SERVIÇOS GPU (SSOT no stack modular; este arquivo é apenas compat local):
 # - gpu-llm: LLM (texto) - Qwen2.5 7B Instruct AWQ (contexto 8k)
 # - gpu-embeddings: Qwen3-Embedding-0.6B INT8 (1024 dim) (budget ~2-3GB)
-# - gpu-asr: Canary-1B (transcrição de áudio) (budget ~3-4GB)
+# - ASR: OpenAI API (sem GPU local)
 # - gpu-trainer: QLoRA fine-tuning (sob demanda) (~12GB)
 # 
 # HISTÓRICO (v4.0.0+):
@@ -25,7 +25,7 @@
 # DEVEM permanecer alinhados ao stack modular para evitar SSOT quebrado.
 #
 # Portas (alinhadas ao stack modular):
-# - 8004 (llm), 8001 (embeddings), 8002 (asr), 8003 (trainer)
+# - 8004 (llm), 8001 (embeddings), 8003 (trainer)
 #
 # Autor: Fillipe Guerra
 # Data: 16 de Janeiro de 2026
@@ -118,48 +118,6 @@ services:
       interval: 30s
       timeout: 10s
       start_period: 180s
-      retries: 3
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  # =============================================================================
-  # ASR Canary-1B - Transcrição de Áudio
-  # =============================================================================
-  gpu-asr:
-    image: ghcr.io/${DOCKERHUB_USERNAME:-fillipeguerrabtc}/alice-asr-canary:${IMAGE_TAG:-latest}
-    platform: linux/amd64
-    container_name: gpu-asr
-    restart: unless-stopped
-    runtime: nvidia
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=0
-      - CUDA_VISIBLE_DEVICES=0
-      - MODEL_NAME=${ASR_MODEL_NAME:-nvidia/canary-1b-v2}
-      - DEVICE=cuda
-      - PORT=8000
-      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
-    ports:
-      - "127.0.0.1:8002:8000"
-    networks:
-      - gpu-network
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-        limits:
-          memory: 6G
-          cpus: '2.0'
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      start_period: 120s
       retries: 3
     logging:
       driver: "json-file"

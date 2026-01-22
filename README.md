@@ -1,13 +1,13 @@
 # Alice - Plataforma Enterprise de IA Autônoma
 
 **Autor:** Fillipe Guerra  
-**Data:** 18 de Janeiro de 2026  
-**Versão:** 7.38 - Correções RBAC cache e queries dinâmicas
+**Data:** 22 de Janeiro de 2026  
+**Versão:** 7.39 - ASR OpenAI + RBAC Custom Roles
 
 <div align="center">
 
 ![Alice Logo](https://img.shields.io/badge/Alice-IA%20Enterprise-blue?style=for-the-badge&logo=robot&logoColor=white)
-![Version](https://img.shields.io/badge/versão-7.38-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/versão-7.39-green?style=for-the-badge)
 ![License](https://img.shields.io/badge/licença-Proprietária-red?style=for-the-badge)
 ![LLM](https://img.shields.io/badge/LLM-Qwen2.5%207B-purple?style=for-the-badge)
 
@@ -62,7 +62,7 @@
 ## Arquitetura (resumo)
 
 - **Gate 2**: LLM local (Qwen2.5 7B) + Vision/Imagens via OpenAI.
-- **GPU local**: LLM + Embeddings + ASR (always-on) com budget 20GB.
+- **GPU local**: LLM + Embeddings (always-on) e Training sob demanda; ASR via OpenAI.
 - **RBAC**: painel de usuários/grupos/permissões e controle de Core via `admin:alice_core:write`.
 - **Deploy**: multi-stack modular com rollback cirúrgico.
 
@@ -251,7 +251,6 @@ Consulte [docs/SECRETS.md](docs/SECRETS.md) para a lista completa de secrets nec
 
 > **OTIMIZAÇÃO COMPLETA (12/01/2026):** **TODAS AS 3 IMAGENS GPU** migradas de `pytorch-devel` para `pytorch-runtime`:
 > - **embeddings-gpu**: 17.6GB → ~11GB (-6GB)
-> - **asr-canary**: 17GB → ~11GB (-6GB)  
 > - **lora-trainer**: 17GB → ~11GB (-6GB)
 > 
 > **Resultado:** Economia total de **18GB (-35%)**, download **50x mais rápido**, Deploy ALICE reduzido de **~40min para ~20-25min**. Timeout configurado: command_timeout=45m (margem), job timeout=50m.
@@ -276,7 +275,7 @@ Consulte [docs/SECRETS.md](docs/SECRETS.md) para a lista completa de secrets nec
 
 **GPU Manager Service (v4.0.0):**
 - Arquitetura simplificada: todos os serviços GPU rodam simultaneamente (15GB de 20GB VRAM)
-- Gerenciamento centralizado de requisições GPU (LLM, Vision, Embeddings, ASR)
+- Gerenciamento centralizado de requisições GPU (LLM, Embeddings, Training)
 - Fila priorizada (Redis) com monitoramento VRAM em tempo real (nvidia-smi)
 - Circuit breakers, retry logic e métricas Prometheus
 - Zero latência de troca (sem orquestração dinâmica)
@@ -452,7 +451,7 @@ Proprietário - Todos os direitos reservados.
 *ARQUITETURA ENTERPRISE: Texto 1024 dim Qwen3-Embedding-0.6B (Qdrant) | Imagem: OpenAI Vision → descrição textual (sem embeddings de imagem)*
 *Trading BTC Futures: KuCoin Perpetuals + Indicadores Técnicos Determinísticos + Validação Cruzada Anti-Alucinação*
 *LLM: Qwen2.5 7B (vLLM AWQ) via Hetzner GPU Server GEX44 (RTX 4000 Ada 20GB) - Texto*
-*GPU Services (Gate 2): LLM (Qwen2.5 7B), Embeddings Qwen3-Embedding-0.6B INT8 (1024 dim), ASR Canary-1B - gerenciados pelo GPU Manager Service. Vision/Imagens via OpenAI*
+*GPU Services (Gate 2): LLM (Qwen2.5 7B) e Embeddings Qwen3-Embedding-0.6B INT8 (1024 dim) gerenciados pelo GPU Manager Service; Training sob demanda. ASR/Vision via OpenAI.*
 *Pipeline Enterprise (06/01/2026): Release (`release.yml`) → Deploy Modular (`deploy-stack-modular.yml` - 5 stacks independentes ~10min)*
 *Rollback Cirúrgico: Só reverte stack com falha, outros continuam funcionando 100%*
 

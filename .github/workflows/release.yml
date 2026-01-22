@@ -500,15 +500,13 @@ jobs:
               "$full_from"
           }
           
-          # ARQUITETURA (16/01/2026+): 4 GPU services
+          # ARQUITETURA (22/01/2026+): 3 GPU services
           # - llm-qwen25: LLM texto (Qwen2.5 7B AWQ, contexto 8k)
           # - embeddings-gpu: INT8 quantization (8GB VRAM)
-          # - asr-canary: ASR Canary-1B (3GB VRAM)
           # - qwen-trainer: QLoRA fine-tuning (sob demanda)
           GPU_SERVICES=(
             "llm-qwen25:./docker/gpu/llm-qwen25"
             "embeddings-gpu:./docker/gpu/embeddings-gpu"
-            "asr-canary:./docker/gpu/asr-canary"
             "qwen-trainer:./docker/gpu/lora-trainer"
           )
           

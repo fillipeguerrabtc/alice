@@ -1,7 +1,7 @@
 # Guia de Observabilidade - Alice Enterprise Platform
 
-**Versão:** 2.5.0  
-**Data:** 18 de Janeiro de 2026  
+**Versão:** 2.6.0  
+**Data:** 22 de Janeiro de 2026  
 **Autor:** Fillipe Guerra
 
 ---
@@ -12,7 +12,7 @@
 
 | # | Problema | Impacto | Correção | Status |
 | --- | ---------- | --------- | ---------- | -------- |
-| 1 | Prometheus NÃO coletava GPU Manager (3010) + GPU Services (8000-8002) | ZERO visibilidade de VRAM, filas, circuit breakers GPU | Adicionados 4 targets Prometheus | ✅ CORRIGIDO |
+| 1 | Prometheus NÃO coletava GPU Manager (3010) + GPU Services (8000-8001) | ZERO visibilidade de VRAM, filas, circuit breakers GPU | Adicionados 3 targets Prometheus | ✅ CORRIGIDO |
 | 2 | Dashboards acoplados a nomes de modelos | Mudança de modelos (WS3) quebrava painéis/legendas | Dashboards revisados para **modelo-agnóstico (WS3-ready)** | ✅ CORRIGIDO |
 | 3 | ZERO dashboard Trading (KuCoin BTC Futures) | Impossível monitorar P&L, ordens, posições | Criado alice-trading.json (8 painéis) | ✅ CORRIGIDO |
 | 4 | Dashboard LLM incompleto | Impossível medir Response Cache (Greetings Gate) | Adicionados 8 painéis (cache, WebSocket, streaming) | ✅ CORRIGIDO |
@@ -37,7 +37,7 @@ A plataforma Alice implementa observabilidade **enterprise-grade** baseada em **
 
 **Stack de Observabilidade:**
 
-- **Prometheus 3.8.1** - Métricas (**18 jobs**; scrape 15-60s)
+- **Prometheus 3.8.1** - Métricas (**17 jobs**; scrape 15-60s)
 - **Grafana OSS 12.3.1** - Dashboards + Alerting
 - **Loki 3.6.3** - Logs centralizados
 - **Jaeger 2.13.0** - Distributed tracing (métricas via telemetry)
@@ -119,17 +119,17 @@ A plataforma Alice implementa observabilidade **enterprise-grade** baseada em **
 **Métricas principais:**
 
 - **VRAM Total Usage:** `(sum(alice_gpu_vram_used_bytes) / sum(alice_gpu_vram_total_bytes)) * 100`
-- **VRAM Reservada por Capacidade:** `alice_gpu_vram_reserved_bytes{service="llm|embeddings|asr|training"}`
+- **VRAM Reservada por Capacidade:** `alice_gpu_vram_reserved_bytes{service="llm|embeddings|training"}`
 - **Fila LLM:** `alice_gpu_manager_queue_depth{queue="llm"}`
 - **Fila Embeddings:** `alice_gpu_manager_queue_depth{queue="embeddings"}`
-- **Fila ASR:** `alice_gpu_manager_queue_depth{queue="asr"}`
+- **Fila Training:** `alice_gpu_manager_queue_depth{queue="training"}`
 - **Tempo na Fila P95:** `histogram_quantile(0.95, rate(alice_gpu_manager_queue_wait_duration_seconds_bucket[5m]))`
 - **Circuit Breakers GPU:** `alice_circuit_breaker_state{name=~".*gpu.*"}`
 
 **Painéis:**
 
-1. **GPU VRAM Usage:** Total % + Stacked Area (capacidade: LLM/Embeddings/ASR)
-2. **Filas Redis:** Depth por tipo (LLM, embeddings, ASR) + tempo médio na fila
+1. **GPU VRAM Usage:** Total % + Stacked Area (capacidade: LLM/Embeddings/Training)
+2. **Filas Redis:** Depth por tipo (LLM, embeddings, training) + tempo médio na fila
 3. **Circuit Breakers:** Status de todos os breakers GPU
 4. **Latência End-to-End:** LLM P50/P95/P99, Embeddings P95
 
@@ -231,7 +231,7 @@ A plataforma Alice implementa observabilidade **enterprise-grade** baseada em **
 
 ## 🔍 PROMETHEUS TARGETS
 
-### Targets Configurados (18 jobs)
+### Targets Configurados (17 jobs)
 
 | Job Name | Target | Scrape Interval | Métricas Principais |
 | --- | --- | --- | --- |
@@ -245,7 +245,6 @@ A plataforma Alice implementa observabilidade **enterprise-grade** baseada em **
 | `alice-gpu-manager-service` | alice-gpu-manager:3010 | 15s | GPU Manager, VRAM, filas, circuit breakers |
 | `gpu-llm` | gpu-llm:8000 | 30s | Serviço GPU LLM (vLLM OpenAI API - texto) |
 | `gpu-embeddings` | gpu-embeddings:8000 | 30s | Serviço GPU de embeddings (FastAPI) |
-| `gpu-asr` | gpu-asr:8000 | 60s | Serviço GPU ASR (FastAPI) |
 | `caddy` | alice-caddy:2019 | 15s | API Gateway, SSL, HTTP/3 |
 | `qdrant` | alice-qdrant:6333 | 10s | Vetorial texto (metrics com API key) |
 | `vector` | alice-vector:9598 | 30s | Métricas internas do Vector (prometheus_exporter) |

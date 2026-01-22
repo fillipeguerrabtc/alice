@@ -3,14 +3,14 @@
 **Autor:** Fillipe Guerra  
 **Data:** 22 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.69 - Core RBAC + Vision OpenAI + Agentic Approval
+**Versão:** 7.70 - ASR OpenAI + RBAC Custom Roles
 
 ---
 
 ## Resumo executivo
 
 - Arquitetura multi-stack modular com 5 stacks independentes e rollback cirúrgico.
-- GPU local dedicada ao LLM, embeddings e ASR (20GB VRAM budget) com Vision e geração via OpenAI.
+- GPU local dedicada ao LLM, embeddings e training; ASR e Vision via OpenAI.
 - CI/CD 100% automático (Push → CI → Release → Deploy) com versionamento e cache enterprise.
 - Observabilidade completa com Prometheus, Grafana, Loki, Jaeger e Langfuse.
 - Segurança enterprise com hardening de containers, RLS no PostgreSQL e validação Zod em APIs.
@@ -21,7 +21,7 @@
 ## Visão geral da plataforma
 
 - Arquitetura: Multi-Stack Modular (5 stacks independentes).
-- Total de containers: 50 (10 infra + 8 Alice + 4 GPU + 13 observability + 15 ERPNext + 1 backup + 1 trainer on-demand).
+- Total de containers: 49 (10 infra + 8 Alice + 2 GPU + 13 observability + 15 ERPNext + 1 backup) + 1 trainer sob demanda.
 - Servidor: Hetzner GEX44 (Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD RAID 1, RTX 4000 Ada 20GB).
 - SO: Ubuntu 24.04.3 LTS.
 - Docker: 29.1.3 + Compose v5.0.0.
@@ -36,7 +36,7 @@
 
 ## Arquitetura Gate 2 (GPU + OpenAI)
 
-- GPU local: LLM (texto), embeddings (texto) e ASR (always-on).
+- GPU local: LLM (texto) e embeddings (texto) always-on; training sob demanda.
 - Vision e geração de imagens: OpenAI (sem VLM local).
 - GPU Manager Service: fila priorizada, monitoramento VRAM, circuit breakers e métricas Prometheus.
 - Budget VRAM: 20GB com serviços simultâneos.
@@ -70,7 +70,6 @@
 
 - `gpu-llm`: Qwen2.5 7B (vLLM).
 - `gpu-embeddings`: Qwen3-Embedding-0.6B INT8 (texto).
-- `gpu-asr`: Canary-1B.
 - `gpu-trainer`: QLoRA sob demanda (profile).
 
 ### Stack OBSERVABILITY
@@ -167,7 +166,7 @@
 - Vision e geração de imagens via OpenAI (gpt-4.1 / gpt-image-1).
 - Embeddings texto: Qwen3-Embedding-0.6B INT8 (1024 dim) → Qdrant.
 - Imagem: OpenAI Vision (descrição textual, sem embeddings de imagem).
-- ASR: Canary-1B (GPU).
+- ASR: OpenAI gpt-4o-transcribe.
 
 ---
 
@@ -245,9 +244,10 @@ Retenção Arquivo:   30 dias
 - Sidebar Desktop: colapso real ajusta largura e libera espaço do conteúdo.
 - Chat Input: componente unificado com UX mobile-first e mesmas ações do input atual.
 - Áudio no Chat: gravação com duas opções (revisar transcrição ou enviar direto).
-- ASR GPU: gravação em revisão usa upload real no RAG + transcrição Canary-1B antes de envio.
+- ASR OpenAI: gravação usa transcrição gpt-4o-transcribe via RAG (sem GPU local).
 - Áudio no Chat: polling de transcrição encerra quando mídia é removida/enviada (sem texto fantasma).
 - RBAC: resolver combina DB + PERMISSION_MAP para evitar 403 em permissões não seedadas.
+- RBAC: roles customizadas inativas não concedem permissões no resolver.
 - RBAC: roles customizadas por tenant (departamentos/funções) com permissões próprias.
 - RBAC: usuários podem ter role base + role customizada simultaneamente.
 - RBAC UI: criação de permissões guiada por módulo/recurso/ação (menos erro humano).

@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Arquitetura de Software
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 21 de Janeiro de 2026  
-> **Versão:** 3.3.0 - Agentic Tasks + Vision OpenAI (sem embeddings de imagem)  
+> **Data:** 22 de Janeiro de 2026  
+> **Versão:** 3.3.1 - ASR OpenAI + RBAC Custom Roles  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 > 
@@ -132,7 +132,7 @@ C4Context
     
     System(alice, "Alice Platform", "Plataforma de IA Autônoma Enterprise")
     
-    System_Ext(gpuServer, "Hetzner GPU GEX44", "GPU Manager Service - LLM/Embeddings/ASR local")
+    System_Ext(gpuServer, "Hetzner GPU GEX44", "GPU Manager Service - LLM/Embeddings/Training local")
     System_Ext(openai, "OpenAI", "Vision + geração de imagens (sem embeddings de imagem)")
     System_Ext(kucoin, "KuCoin Futures", "Trading BTC Perpetuals")
     System_Ext(stripe, "Stripe", "Pagamentos")
@@ -141,7 +141,7 @@ C4Context
     
     Rel(user, alice, "Chat, consultas, trading")
     Rel(admin, alice, "Configuração, monitoramento")
-    Rel(alice, gpuServer, "Inferência LLM, Embeddings e ASR (local)")
+    Rel(alice, gpuServer, "Inferência LLM, Embeddings e Training (local)")
     Rel(alice, openai, "Vision e geração de imagens")
     Rel(alice, kucoin, "Ordens de trading")
     Rel(alice, stripe, "Webhooks de pagamento")
@@ -153,7 +153,7 @@ C4Context
 
 | Sistema | Propósito | Protocolo | Autenticação |
 |---------|-----------|-----------|--------------|
-| **Hetzner GPU GEX44** | GPU Manager Service local - LLM/Embeddings/ASR (Gate 2) | HTTP (localhost) | N/A (interno) |
+| **Hetzner GPU GEX44** | GPU Manager Service local - LLM/Embeddings/Training (Gate 2) | HTTP (localhost) | N/A (interno) |
 | **OpenAI** | Vision (gpt-4.1) + Geração de imagens (gpt-image-1) | HTTPS | API Key |
 | **KuCoin Futures** | Trading BTC | REST + WebSocket | HMAC-SHA256 |
 | **Stripe** | Pagamentos | Webhooks | Signature verification |
@@ -203,7 +203,7 @@ C4Container
     Rel(auth, redis, "TCP", "Sessions")
 ```
 
-### 4.2 Catálogo de Containers (50 Total)
+### 4.2 Catálogo de Containers (49 Total)
 
 #### Infraestrutura Core (7)
 
@@ -297,7 +297,7 @@ C4Component
 
     Container_Boundary(rag, "RAG Service") {
         Component(docProc, "Document Processor", "Chunking", "PDF, DOCX, TXT")
-        Component(audioProc, "Audio Processor", "Canary-1B", "Transcrição ASR")
+        Component(audioProc, "Audio Processor", "OpenAI ASR", "Transcrição de áudio")
         Component(imageProc, "Image Processor", "OpenAI Vision", "Descrição + embeddings OpenAI (imagem)")
         Component(embQueue, "Embedding Queue", "Redis", "Processamento assíncrono")
         Component(embWorker, "Embedding Worker", "Background", "GPU dedicada 24/7")
@@ -459,10 +459,9 @@ C4Deployment
             Container(gpuManager, "GPU Manager Service", "Fila priorizada, VRAM monitoring")
             Container(llm, "Qwen2.5 7B Instruct (AWQ)", "LLM texto (~6GB budget)")
             Container(qwen, "Qwen3-Embedding-0.6B INT8", "1024 dim (~3GB budget)")
-            Container(canary, "Canary-1B", "ASR (~3GB)")
         }
     }
-    System_Ext(openai, "OpenAI APIs", "Vision (gpt-4.1) + Imagens (gpt-image-1) + Embeddings")
+    System_Ext(openai, "OpenAI APIs", "Vision (gpt-4.1) + Imagens (gpt-image-1) + ASR (gpt-4o-transcribe)")
     
     Rel(caddy, services, "HTTP")
     Rel(services, gpuServices, "HTTP", "GPU Inference (local)")
@@ -514,8 +513,8 @@ flowchart LR
     end
     
     subgraph Production
-        K --> L[51 Containers Hetzner GEX44]
-        L --> M[GPU Manager Service + 4 GPU Services (local)]
+        K --> L[49 Containers Hetzner GEX44]
+        L --> M[GPU Manager Service + 3 GPU Services (local)]
         M --> N[Prometheus Monitoring]
     end
 ```
@@ -594,9 +593,9 @@ CREATE POLICY "tenant_isolation" ON conversations
 
 | Medida | Cobertura | Status |
 |--------|-----------|--------|
-| `no-new-privileges` | 51/51 containers | ✅ 100% |
-| `read_only: true` | 25/51 containers | ✅ Onde aplicável |
-| Resource limits | 51/51 containers | ✅ 100% |
+| `no-new-privileges` | 49/49 containers | ✅ 100% |
+| `read_only: true` | 25/49 containers | ✅ Onde aplicável |
+| Resource limits | 49/49 containers | ✅ 100% |
 | SHA256 digests | 26 imagens | ✅ 100% |
 | Healthchecks | 38/38 containers | ✅ 100% |
 
@@ -662,7 +661,7 @@ const PRESETS = {
   default: { threshold: 5, timeout: 30000, resetTimeout: 30000 },
   kucoinFutures: { threshold: 3, timeout: 10000, resetTimeout: 60000 },
   embeddingsGPU: { threshold: 3, timeout: 60000, resetTimeout: 120000 },
-  asrCanary: { threshold: 3, timeout: 120000, resetTimeout: 180000 },
+  whisper: { threshold: 3, timeout: 120000, resetTimeout: 180000 },
 };
 ```
 
@@ -748,7 +747,7 @@ logger.info({
 | **Contexto** | Necessidade de LLM local com orçamento de 20GB VRAM e visão confiável para análise de imagens sem manter VLM local |
 | **Decisão** | Manter **LLM (texto)** local via GPU Manager e mover **Vision/Imagens** para OpenAI (Responses + Images APIs) |
 | **Alternativas** | VLM local dedicado (maior VRAM, maior complexidade operacional) |
-| **Consequências** | + VRAM liberada para LLM/Embeddings/ASR, + menor complexidade GPU local, + evolução rápida de visão, - dependência de API externa para visão/imagens |
+| **Consequências** | + VRAM liberada para LLM/Embeddings/Training, + menor complexidade GPU local, + evolução rápida de visão, - dependência de API externa para visão/imagens |
 
 ### ADR-002: Arquitetura de Embeddings
 
@@ -806,9 +805,9 @@ logger.info({
 |---------|---------|
 | **Status** | Aceito |
 | **Data** | 05 de Janeiro de 2026 |
-| **Contexto** | Deploy monolítico de 50 containers causava rollback total quando ERPNext falhava, derrubando Alice e Grafana que funcionavam. Pipeline era "all-or-nothing" sem possibilidade de produção parcial. |
+| **Contexto** | Deploy monolítico de 49 containers causava rollback total quando ERPNext falhava, derrubando Alice e Grafana que funcionavam. Pipeline era "all-or-nothing" sem possibilidade de produção parcial. |
 | **Decisão** | Separar a plataforma em **5 stacks independentes** (INFRA, ALICE, OBSERVABILITY, ERPNEXT, BACKUP) com Docker Compose files separados e workflow de deploy modular (`deploy-stack.yml`). |
-| **Alternativas** | (1) Kubernetes com namespaces - rejeitado por complexidade excessiva para 50 containers; (2) Docker Swarm stacks - rejeitado por falta de GPU support nativo; (3) Manter monolítico - rejeitado pelo problema de rollback total |
+| **Alternativas** | (1) Kubernetes com namespaces - rejeitado por complexidade excessiva para 49 containers; (2) Docker Swarm stacks - rejeitado por falta de GPU support nativo; (3) Manter monolítico - rejeitado pelo problema de rollback total |
 | **Consequências** | + Produção parcial (Alice funciona se ERPNext falhar); + Rollback cirúrgico por stack; + Deploy independente; + Isolamento de falhas; - Maior complexidade de orquestração; - Necessidade de manter dependências entre stacks |
 
 **Arquivos Criados:**
@@ -880,7 +879,7 @@ trigger-deploy:
 | **Contexto** | Deploy workflow v2 (`deploy-stack.yml`) tinha um único job "deploy-all" com 5 stacks deployados **sequencialmente** via SSH (~30min). Rollback automático só funcionava se TODOS os stacks falhassem. Rollback manual exigia `workflow_dispatch` separado. Violava best practices para pipelines modulares enterprise. |
 | **Decisão** | Refatorar para **Deploy Modular v3** (`deploy-stack-modular.yml`) com **15 jobs independentes**: `validate`, `prepare`, `deploy-infra`, `health-infra`, `rollback-infra`, `drizzle-push`, `deploy-alice`, `health-alice`, `rollback-alice`, `deploy-observability`, `health-observability`, `rollback-observability`, `deploy-erpnext`, `health-erpnext`, `rollback-erpnext`, `deploy-backup`, `health-backup`, `rollback-backup`, `notify`. |
 | **Alternativas** | (1) Manter monolítico com bash case - rejeitado por impossibilitar paralelização e rollback cirúrgico; (2) Matrix strategy para stacks - rejeitado por não permitir dependências condicionais entre stacks; (3) Separate workflows por stack - rejeitado por duplicação de código |
-| **Consequências** | + 66% mais rápido (~10min vs ~30min); + Rollback cirúrgico (só stack com falha); + Produção parcial real; + Paralelização de 4 stacks após infra; + Logs isolados por stack; + Rollback manual integrado; + Health checks completos (50 containers); - Maior número de jobs (15 vs 1); - Maior complexidade de `needs` e condições |
+| **Consequências** | + 66% mais rápido (~10min vs ~30min); + Rollback cirúrgico (só stack com falha); + Produção parcial real; + Paralelização de 4 stacks após infra; + Logs isolados por stack; + Rollback manual integrado; + Health checks completos (49 containers); - Maior número de jobs (15 vs 1); - Maior complexidade de `needs` e condições |
 
 **Arquitetura Jobs Independentes:**
 

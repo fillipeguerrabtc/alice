@@ -141,13 +141,6 @@ export const CIRCUIT_BREAKER_PRESETS = {
     resetTimeout: 30000,
     volumeThreshold: 5,
   },
-  /** ASR Canary-Qwen - Transcrição de áudio */
-  asrCanary: {
-    timeout: 30000, // Transcrição pode demorar para áudios longos
-    errorThresholdPercentage: 50,
-    resetTimeout: 30000,
-    volumeThreshold: 5,
-  },
   /** Qdrant - Banco vetorial para texto (1024 dim) */
   qdrantTrading: {
     timeout: 10000, // Busca vetorial é rápida
@@ -205,7 +198,7 @@ export const CIRCUIT_BREAKER_PRESETS = {
     resetTimeout: 30000,
     volumeThreshold: 5,
   },
-  /** Whisper - transcrição de áudio (timeout alto) */
+  /** OpenAI ASR - transcrição de áudio (timeout alto) */
   whisper: {
     timeout: 120000, // 2 minutos para áudios longos
     errorThresholdPercentage: 50,

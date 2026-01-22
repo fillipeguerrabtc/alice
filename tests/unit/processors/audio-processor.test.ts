@@ -5,10 +5,10 @@
  * - Validação de MIME types
  * - Extração de metadata
  * - Estrutura de transcrição
- * - Configuração Canary ASR
+ * - Configuração ASR OpenAI
  * 
  * Author: Fillipe Guerra
- * Data: 17/12/2025
+ * Data: 22/01/2026
  * 
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
@@ -206,12 +206,12 @@ describe('Audio Processor - Estrutura de Transcrição', () => {
     const result: ProcessedAudio = {
       transcription: 'Test',
       embedding: new Array(TEXT_EMBEDDING_DIM).fill(0),
-      embeddingModel: 'Qwen/Qwen3-Embedding-0.6B (GPU)',
+      embeddingModel: 'Qwen/Qwen3-Embedding-0.6B (GPU Manager Service)',
       metadata: { fileSize: 1000 },
       processedAt: new Date().toISOString(),
       processingTimeMs: 5000,
     };
-    expect(result.embeddingModel).toBe('Qwen/Qwen3-Embedding-0.6B (GPU)');
+    expect(result.embeddingModel).toBe('Qwen/Qwen3-Embedding-0.6B (GPU Manager Service)');
   });
 
   it('deve ter embedding com dimensão 1024 (Qwen3-Embedding-0.6B GPU)', () => {

@@ -1,13 +1,13 @@
 # =============================================================================
 # ALICE PLATFORM - ALICE STACK (Microserviços + GPU)
 # =============================================================================
-# Versão: 6.1 (GPU: Texto+Embeddings+ASR; Vision via OpenAI)
-# Data: 16 de Janeiro de 2026
+# Versão: 6.2 (GPU: Texto+Embeddings+Training; Vision/ASR via OpenAI)
+# Data: 22 de Janeiro de 2026
 # Autor: Fillipe Guerra
 #
 # PROPÓSITO: Serviços core da plataforma Alice + GPU Manager + GPU containers
 #
-# CONTAINERS (8 microserviços + 3 GPU sempre ativos + 1 GPU sob demanda):
+# CONTAINERS (8 microserviços + 2 GPU sempre ativos + 1 GPU sob demanda):
 #   MICROSERVIÇOS:
 #   - alice-frontend - React SPA
 #   - alice-auth - OAuth/SAML/OIDC Provider
@@ -21,7 +21,6 @@
 #   GPU (SEMPRE ATIVOS):
 #   - gpu-llm - Qwen2.5 7B Instruct AWQ (LLM texto, contexto 8k)
 #   - gpu-embeddings - Qwen3-Embedding-0.6B INT8 (1024 dim)
-#   - gpu-asr - Canary-1B (ASR) - Transcrição de áudio
 #
 #   GPU (SOB DEMANDA via profile):
 #   - gpu-trainer (profile: gpu-training) - QLoRA (12GB)
@@ -469,7 +468,7 @@ services:
   # GPU MANAGER SERVICE - Gerenciamento Centralizado de GPU
   # ===========================================================================
   # ARQUITETURA GPU (Gate 2):
-  # - LLM (texto), Embeddings e ASR locais (capability-based)
+# - LLM (texto), Embeddings e Training locais (capability-based)
   # - GPU Manager permanece modelo-agnóstico (dashboards/alertas não mudam quando trocar modelo)
   # ===========================================================================
   gpu-manager:
@@ -488,7 +487,6 @@ services:
       # URLs dos serviços GPU (capabilities)
       - LLM_GPU_URL=${LLM_GPU_URL:-http://gpu-llm:8000}
       - EMBEDDINGS_GPU_URL=${EMBEDDINGS_GPU_URL:-http://gpu-embeddings:8000}
-      - ASR_GPU_URL=${ASR_GPU_URL:-http://gpu-asr:8000}
       - TRAINING_GPU_URL=${TRAINING_GPU_URL:-http://gpu-trainer:8000}
       - NODE_ENV=production
       - GPU_SERVICE_TIMEOUT=${GPU_SERVICE_TIMEOUT:-60000}
@@ -521,13 +519,12 @@ services:
   # GPU local é usada SOMENTE para:
   # - gpu-llm: LLM (texto)
   # - gpu-embeddings: embeddings (texto)
-  # - gpu-asr: ASR (transcrição)
   # - gpu-trainer: QLoRA (sob demanda via profile)
   #
   # Vision e geração de imagens são feitas via OpenAI API.
   #
   # Benefícios:
-  # - VRAM liberada para contexto 8k no LLM + ASR always-on
+  # - VRAM liberada para contexto 8k no LLM
   # - Menos complexidade operacional (sem serviço local de visão)
   # - Treinamento permanece sob demanda (libera VRAM quando necessário)
   # ===========================================================================
@@ -615,51 +612,6 @@ services:
               capabilities: [gpu]
         limits:
           memory: 12G
-          cpus: '2.0'
-    healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
-      interval: 20s
-      timeout: 10s
-      start_period: 60s
-      retries: 5
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  # ASR Canary-1B - Transcrição de Áudio
-  # ARQUITETURA ATUAL (16/01/2026+):
-  # ASR é always-on. Vision e geração de imagens são via OpenAI.
-  # Fonte de verdade: métricas (Grafana) + nvidia-smi em produção.
-  gpu-asr:
-    image: ${IMAGE_PREFIX}-asr-canary:${IMAGE_TAG:-latest}
-    platform: linux/amd64
-    container_name: gpu-asr
-    restart: unless-stopped
-    runtime: nvidia
-    security_opt:
-      - no-new-privileges:true
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=0
-      - CUDA_VISIBLE_DEVICES=0
-      - MODEL_NAME=${ASR_MODEL_NAME:-nvidia/canary-1b-v2}
-      - DEVICE=cuda
-      - PORT=8000
-      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
-    ports:
-      - "127.0.0.1:8002:8000"
-    networks:
-      - alice-network
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-        limits:
-          memory: 6G
           cpus: '2.0'
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]

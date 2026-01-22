@@ -5,8 +5,8 @@
  * monitoramento de VRAM, circuit breakers e métricas enterprise.
  * 
  * ARQUITETURA GPU (Gate 2):
- * - LLM (texto), Embeddings e ASR são serviços GPU locais
- * - Vision e geração de imagens via OpenAI
+ * - LLM (texto), Embeddings e Training são serviços GPU locais
+ * - Vision e ASR via OpenAI
  * - Tipos de serviço são **capability-based** (modelo-agnóstico) para que
  *   a troca de modelos não exija mudanças em observabilidade.
  * - GPU Manager mantém fila priorizada, VRAM gates, circuit breakers e métricas.
@@ -125,14 +125,13 @@ export enum GpuRequestPriority {
   CRITICAL = 10,  // Chat em tempo real
   HIGH = 8,       // Trading (time-sensitive)
   MEDIUM = 5,     // Embeddings (RAG)
-  LOW = 2,        // Geração de imagens, ASR, Treinamento (LoRA)
+  LOW = 2,        // Treinamento e tarefas auxiliares
 }
 
 /** Tipos de serviços GPU */
 export enum GpuServiceType {
   LLM = 'llm',                   // LLM (texto)
   EMBEDDINGS = 'embeddings',     // Embeddings (texto + imagem)
-  ASR = 'asr',                   // ASR (Speech-to-Text)
   TRAINING = 'training',         // Fine-tuning (sob demanda)
 }
 
@@ -142,7 +141,7 @@ export enum GpuServiceType {
  * não o nome do modelo atual. A migração de modelos no WS3 não deve exigir
  * mudanças em dashboards/alertas.
  */
-type GpuCapability = 'llm' | 'embeddings' | 'asr' | 'training';
+type GpuCapability = 'llm' | 'embeddings' | 'training';
 
 function capabilityForServiceType(serviceType: GpuServiceType): GpuCapability {
   switch (serviceType) {
@@ -150,8 +149,6 @@ function capabilityForServiceType(serviceType: GpuServiceType): GpuCapability {
       return 'llm';
     case GpuServiceType.EMBEDDINGS:
       return 'embeddings';
-    case GpuServiceType.ASR:
-      return 'asr';
     case GpuServiceType.TRAINING:
       return 'training';
   }
@@ -162,7 +159,6 @@ function capabilityForServiceType(serviceType: GpuServiceType): GpuCapability {
 const GPU_SERVICE_URLS = {
   [GpuServiceType.LLM]: process.env.LLM_GPU_URL || 'http://gpu-llm:8000',
   [GpuServiceType.EMBEDDINGS]: process.env.EMBEDDINGS_GPU_URL || 'http://gpu-embeddings:8000',
-  [GpuServiceType.ASR]: process.env.ASR_GPU_URL || 'http://gpu-asr:8000',
   [GpuServiceType.TRAINING]: process.env.TRAINING_GPU_URL || 'http://gpu-trainer:8000',
 };
 
@@ -184,7 +180,6 @@ const GPU_SERVICE_URLS = {
 const VRAM_REQUIREMENTS: Record<GpuServiceType, number> = {
   [GpuServiceType.LLM]: 6,           // LLM AWQ + KV cache (budget conservador)
   [GpuServiceType.EMBEDDINGS]: 3,    // Qwen3-Embedding-0.6B INT8 (budget conservador)
-  [GpuServiceType.ASR]: 3,           // ASR (budget conservador)
   [GpuServiceType.TRAINING]: 12,     // QLoRA (sob demanda, pausa outros)
 };
 
@@ -255,7 +250,7 @@ interface VramStatus {
 
 /**
  * Circuit breakers DEVEM proteger as CHAMADAS REAIS aos serviços GPU (não apenas /health).
- * Gate 2: LLM (texto), Embeddings e ASR locais
+ * Gate 2: LLM (texto), Embeddings e Training locais
  */
 const gpuServiceClients = {
   [GpuServiceType.LLM]: createProtectedFetch({
@@ -266,10 +261,6 @@ const gpuServiceClients = {
     name: 'gpu-embeddings',
     ...CIRCUIT_BREAKER_PRESETS.embeddingsGPU,
   }),
-  [GpuServiceType.ASR]: createProtectedFetch({
-    name: 'gpu-asr',
-    ...CIRCUIT_BREAKER_PRESETS.asrCanary,
-  }),
   [GpuServiceType.TRAINING]: createProtectedFetch({
     name: 'gpu-trainer',
     ...CIRCUIT_BREAKER_PRESETS.gpuManager, // timeout alto para treinamento
@@ -279,7 +270,6 @@ const gpuServiceClients = {
 const protectedFetchByServiceType = {
   [GpuServiceType.LLM]: gpuServiceClients[GpuServiceType.LLM].fetch,
   [GpuServiceType.EMBEDDINGS]: gpuServiceClients[GpuServiceType.EMBEDDINGS].fetch,
-  [GpuServiceType.ASR]: gpuServiceClients[GpuServiceType.ASR].fetch,
   [GpuServiceType.TRAINING]: gpuServiceClients[GpuServiceType.TRAINING].fetch,
 } as const;
 
@@ -383,7 +373,6 @@ async function getVramStatus(): Promise<VramStatus> {
     // (não tenta inferir uso real por processo/container, mas mantém dashboards estáveis no WS3)
     gpuVramReservedBytes.set({ gpu_id: GPU_ID, service: 'llm' }, 0);
     gpuVramReservedBytes.set({ gpu_id: GPU_ID, service: 'embeddings' }, 0);
-    gpuVramReservedBytes.set({ gpu_id: GPU_ID, service: 'asr' }, 0);
     gpuVramReservedBytes.set({ gpu_id: GPU_ID, service: 'training' }, 0);
     for (const serviceType of activeServices) {
       const cap = capabilityForServiceType(serviceType);
@@ -451,7 +440,6 @@ async function getVramFallback(): Promise<VramStatus> {
   // Zerar primeiro para evitar séries "stale" quando um serviço fica inativo.
   gpuVramReservedBytes.set({ gpu_id: GPU_ID, service: 'llm' }, 0);
   gpuVramReservedBytes.set({ gpu_id: GPU_ID, service: 'embeddings' }, 0);
-  gpuVramReservedBytes.set({ gpu_id: GPU_ID, service: 'asr' }, 0);
   gpuVramReservedBytes.set({ gpu_id: GPU_ID, service: 'training' }, 0);
   for (const serviceType of activeServices) {
     const cap = capabilityForServiceType(serviceType);
@@ -610,7 +598,7 @@ async function markServiceInactive(serviceType: GpuServiceType): Promise<void> {
 /**
  * Processa requisição GPU com retry e circuit breaker
  * 
- * Gate 2 (16/01/2026): LLM separado + Embeddings + ASR locais
+ * Gate 2 (16/01/2026): LLM separado + Embeddings + Training locais
  * - Serviços GPU rodam simultaneamente com budget em 20GB (métricas = fonte de verdade)
  * - Zero latência de troca (não há orquestração dinâmica de start/stop)
  * - Treinamento é sob demanda via profile, com política operacional fora do caminho crítico
@@ -706,12 +694,10 @@ async function startQueueWorker(): Promise<void> {
   // para garantir que requisições críticas (chat/trading) sejam processadas primeiro.
   // 1) LLM (chat/trading - maior prioridade)
   // 2) EMBEDDINGS (RAG)
-  // 3) ASR (transcrição)
-  // 4) TRAINING (sob demanda - menor prioridade)
+  // 3) TRAINING (sob demanda - menor prioridade)
   const servicePriorityOrder: GpuServiceType[] = [
     GpuServiceType.LLM,
     GpuServiceType.EMBEDDINGS,
-    GpuServiceType.ASR,
     GpuServiceType.TRAINING,
   ];
 
@@ -1160,7 +1146,7 @@ const gpuVramReservedBytes = new Gauge({
 // Depth da fila por capacidade (zset Redis)
 const gpuManagerQueueDepth = new Gauge({
   name: 'alice_gpu_manager_queue_depth',
-  help: 'Tamanho atual da fila Redis por capacidade (LLM/embeddings/ASR/training)',
+  help: 'Tamanho atual da fila Redis por capacidade (LLM/embeddings/training)',
   labelNames: ['queue'] as const,
   registers: [prometheus.registry],
 });
@@ -1211,7 +1197,7 @@ async function start(): Promise<void> {
     }
     logger.info('Redis inicializado com sucesso');
 
-    // Gate 2: LLM (texto), Embeddings e ASR locais. Containers GPU são gerenciados pelo Docker Compose.
+    // Gate 2: LLM (texto), Embeddings e Training locais. Containers GPU são gerenciados pelo Docker Compose.
     // Observação: VRAM real deve vir de nvidia-smi (quando disponível). Os "budgets" abaixo são apenas estimativa/fallback.
     const alwaysOnBudgetGB = Object.entries(VRAM_REQUIREMENTS)
       .filter(([key]) => key !== GpuServiceType.TRAINING)

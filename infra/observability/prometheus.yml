@@ -122,11 +122,6 @@ scrape_configs:
         labels:
           service: 'embeddings'
           gpu_service: 'rag'
-      - targets:
-        - 'gpu-asr:8000'
-        labels:
-          service: 'asr'
-          gpu_service: 'transcription'
     metrics_path: '/metrics'
     scrape_timeout: 15s
 

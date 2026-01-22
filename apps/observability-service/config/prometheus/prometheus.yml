@@ -92,7 +92,7 @@ scrape_configs:
         action: keep
 
   # ============================================================================
-  # GPU SERVICES (FastAPI - Gate 2: LLM separado + Embeddings + ASR)
+  # GPU SERVICES (FastAPI - Gate 2: LLM separado + Embeddings)
   # NOTA 13/01/2026: Métricas PyTorch/vLLM expostas via /metrics endpoint
   # ============================================================================
   - job_name: 'gpu-llm'
@@ -112,15 +112,6 @@ scrape_configs:
           gpu_service: 'rag'
     metrics_path: /metrics
     scrape_interval: 30s
-
-  - job_name: 'gpu-asr'
-    static_configs:
-      - targets: ['gpu-asr:8000']
-        labels:
-          service: 'asr'
-          gpu_service: 'transcription'
-    metrics_path: /metrics
-    scrape_interval: 60s
 
   # ============================================================================
   # CADDY API GATEWAY (MIGRAÇÃO 02/01/2026)

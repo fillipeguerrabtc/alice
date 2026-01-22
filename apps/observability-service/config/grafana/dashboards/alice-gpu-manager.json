@@ -35,7 +35,7 @@
       "gridPos": { "h": 2, "w": 24, "x": 0, "y": 0 },
       "id": 100,
       "options": {
-        "content": "# Alice GPU Manager Dashboard - Enterprise\n**Hetzner GEX44** (RTX 4000 Ada 20GB VRAM) | **Gate 2** (serviços simultâneos) | LLM (texto) Qwen2.5 7B AWQ + Qwen3-Embedding-0.6B INT8 + Canary-1B ASR | VRAM Monitoring | Queue Management | Circuit Breakers",
+        "content": "# Alice GPU Manager Dashboard - Enterprise\n**Hetzner GEX44** (RTX 4000 Ada 20GB VRAM) | **Gate 2** (serviços simultâneos) | LLM (texto) Qwen2.5 7B AWQ + Qwen3-Embedding-0.6B INT8 | ASR via OpenAI | VRAM Monitoring | Queue Management | Circuit Breakers",
         "mode": "markdown"
       },
       "transparent": true,
@@ -147,12 +147,12 @@
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "Canary-1B ASR" },
+            "matcher": { "id": "byName", "options": "QLoRA Training" },
             "properties": [
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "orange",
+                  "fixedColor": "purple",
                   "mode": "fixed"
                 }
               }
@@ -191,8 +191,8 @@
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "alice_gpu_vram_used_bytes{service=\"asr\"}",
-          "legendFormat": "Canary-1B ASR",
+          "expr": "alice_gpu_vram_used_bytes{service=\"training\"}",
+          "legendFormat": "QLoRA Training",
           "refId": "C"
         }
       ]
@@ -313,13 +313,13 @@
         "showPercentChange": false,
         "textMode": "value_and_name"
       },
-      "title": "Fila ASR (Canary-1B)",
+      "title": "Fila Training (QLoRA)",
       "type": "stat",
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "alice_gpu_manager_queue_depth{queue=\"asr\"}",
-          "legendFormat": "ASR Queue",
+          "expr": "alice_gpu_manager_queue_depth{queue=\"training\"}",
+          "legendFormat": "Training Queue",
           "refId": "A"
         }
       ]
@@ -432,7 +432,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "alice_circuit_breaker_state{name=~\".*gpu.*|.*llm.*|.*embedding.*|.*asr.*\"}",
+          "expr": "alice_circuit_breaker_state{name=~\".*gpu.*|.*llm.*|.*embedding.*|.*training.*\"}",
           "format": "table",
           "instant": true,
           "legendFormat": "",
@@ -516,7 +516,7 @@
           "sort": "desc"
         }
       },
-      "title": "Latência LLM/Embeddings/ASR (P50, P95, P99)",
+      "title": "Latência LLM/Embeddings/Training (P50, P95, P99)",
       "type": "timeseries",
       "targets": [
         {

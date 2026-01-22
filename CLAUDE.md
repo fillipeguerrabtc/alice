@@ -1,7 +1,7 @@
 # Alice - Plataforma Enterprise de IA Autônoma
 
 **Autor:** Fillipe Guerra  
-**Data:** 18 de Janeiro de 2026
+**Data:** 22 de Janeiro de 2026
 
 ## Overview
 Alice is an autonomous AI enterprise platform served on Hetzner GPU server GEX44 (RTX 4000 Ada 20GB). Its core purpose is to provide a fully autonomous AI solution with absolute privacy, predictable costs, and unlimited customization via QLoRA fine-tuning. The platform is **specialized in Finance, Trading, and Financial Management** with built-in vision capabilities for chart analysis. Key capabilities include real-time chat with streaming, deduplication, multi-tenancy, RBAC, a RAG backend with enterprise embeddings (**Qwen3-Embedding-0.6B INT8 1024 dim → Qdrant**) e **OpenAI Vision para descrição textual (sem embeddings de imagem)**, **Trading BTC Futures** on KuCoin Perpetuals with scalping capabilities (1m, 3m, 5m candles), aggressive self-learning with scheduled training (weekly), and a robust observability stack. The business vision is to deliver an enterprise-grade AI solution with unparalleled control, performance, data security, and cost predictability for financial verticals.
@@ -22,7 +22,7 @@ Alice is an autonomous AI enterprise platform served on Hetzner GPU server GEX44
 | 9 | **VALIDAÇÃO CONTÍNUA** | Testar após cada micro-passo |
 | 10 | **DOCUMENTAÇÃO PT-BR** | TODA documentação em português |
 | 11 | **SEGUIR DOCS OFICIAIS** | Melhores práticas 2025 |
-| 12 | **PRODUÇÃO HETZNER GPU** | Deploy Hetzner via GitHub Actions (100% automático). Servidor único Hetzner GPU GEX44 (RTX 4000 Ada 20GB, Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD RAID 1) hospeda todos os 51 containers (11 infra + 7 Alice + 15 ERPNext + 13 observability + 6 GPU + 1 backup). GPU Manager Service gerencia requisições GPU com fila priorizada, monitoramento VRAM e circuit breakers. |
+| 12 | **PRODUÇÃO HETZNER GPU** | Deploy Hetzner via GitHub Actions (100% automático). Servidor único Hetzner GPU GEX44 (RTX 4000 Ada 20GB, Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD RAID 1) hospeda todos os 49 containers (10 infra + 8 Alice + 15 ERPNext + 13 observability + 2 GPU + 1 backup) + 1 GPU trainer sob demanda. GPU Manager Service gerencia requisições GPU com fila priorizada, monitoramento VRAM e circuit breakers. |
 | 13 | **INTERNACIONALIZAÇÃO** | PT-BR primário, EN secundário |
 | 14 | **VERIFICAR SECRETS** | Checar variáveis existentes |
 | 15 | **MICROSSERVIÇOS** | Código em apps/, compartilhado em packages/ |
@@ -45,7 +45,7 @@ Alice is an autonomous AI enterprise platform served on Hetzner GPU server GEX44
 | Ambiente | Local | Propósito | Regras |
 |----------|-------|-----------|--------|
 | DESENVOLVIMENTO | Cursor IDE | Desenvolvimento local com integrações reais | **PROIBIDO** mocks/stubs/preview responses (Regra 6) |
-| PRODUÇÃO | Hetzner Cloud GPU (servidor único - 50 containers) | Sistema enterprise real | **PROIBIDO** mocks/hardcoded (Regra 6) |
+| PRODUÇÃO | Hetzner Cloud GPU (servidor único - 49 containers + 1 trainer on-demand) | Sistema enterprise real | **PROIBIDO** mocks/hardcoded (Regra 6) |
 
 **IMPORTANTE**: Código em `apps/` (microsserviços) vai para produção via GitHub Actions. O `server/index-dev.ts` existe apenas para fluxo local, mas **sem preview/mocks** — ele exige integrações reais (PostgreSQL + GPU Manager Service).
 
@@ -92,7 +92,7 @@ Alice employs a **modular multi-stack architecture** with 51 containerized servi
         - Vision (análise de imagens): OpenAI Responses API (`gpt-4.1`)
         - Embeddings de texto: Qwen3-Embedding-0.6B INT8 (1024 dim, ~3GB) → Qdrant - GPU OBRIGATÓRIO
         - Imagens: OpenAI Vision (descrição textual, sem embeddings de imagem) - GPU NÃO usada para imagens
-        - ASR: Canary-1B (NeMo, ~3GB) - GPU OBRIGATÓRIO
+ - ASR: OpenAI gpt-4o-transcribe (API)
         - GPU Manager: Gerenciamento centralizado com fila priorizada, monitoramento VRAM, circuit breakers
         - Serviços GPU rodam simultaneamente (20GB VRAM budget; métricas = fonte de verdade) - zero latência de troca
 - **ERPNext Stack (15 serviços)**: Includes MariaDB, Redis Cache/Queue, Frappe Bench services (configurator, create-site, backend), NGINX frontend, WebSocket, Scheduler, and 9 Workers (3x default, 3x short, 3x long) for comprehensive ERP functionalities.
@@ -114,7 +114,7 @@ Alice employs a **modular multi-stack architecture** with 51 containerized servi
 - **Geração de imagens**: OpenAI Images API (`gpt-image-1`)
 - **Embeddings Texto**: Qwen3-Embedding-0.6B INT8 (1024 dim, ~3GB) → Qdrant - quantização INT8
 - **Imagem (descrição)**: OpenAI Vision (descrição textual, sem embeddings de imagem)
-- **ASR**: Canary-1B (NeMo, ~3GB) - transcrição de áudio
+- **ASR**: OpenAI gpt-4o-transcribe - transcrição de áudio
 - **Fine-tuning**: Treinamento QLoRA via GPU Trainer (~12GB, sob demanda) - schedule semanal + on-demand
 - **GPU Manager Service**: Gerenciamento centralizado com fila priorizada (Redis), monitoramento VRAM (nvidia-smi), circuit breakers, retry logic e métricas Prometheus
 - **Gate 2**: Todos os serviços rodam simultaneamente (20GB VRAM budget), zero latência de troca
@@ -126,13 +126,13 @@ Embeddings otimizados por caso de uso para máxima qualidade:
 |------------|--------|-----------|---------|---------|
 | **Texto (Trading/RAG)** | Qwen3-Embedding-0.6B | **1024** | **Qdrant** | Apache 2.0 |
 | **Imagem** | OpenAI Vision (descrição textual) | **texto** | OpenAI | OpenAI |
-| **Transcrição** | Canary-1B (NeMo) | - | - | Apache 2.0 |
+| **Transcrição** | OpenAI gpt-4o-transcribe | - | - | OpenAI |
 
 - **GPU é OBRIGATÓRIO** - sem fallback CPU (Regra 6)
 - **Qdrant para Texto**: Suporta HNSW (dimensões altas não são limitação aqui)
 - **GPU Dedicada 24/7**: Servidor Hetzner GEX44 com containers Docker rodando continuamente - sem cold start
 - **Texto unificado**: Trading e RAG usam mesmo modelo (Qwen3-Embedding-0.6B)
-- **Arquitetura Single Server**: Todos os 50 containers rodam no mesmo servidor Hetzner GPU, eliminando latência de rede entre serviços
+- **Arquitetura Single Server**: Todos os 49 containers rodam no mesmo servidor Hetzner GPU, eliminando latência de rede entre serviços
 - **Payments**: Stripe, Wise.
 - **CRM/ERP**: ERPNext.
 - **Communication**: Twilio (WhatsApp, SMS), Gmail SMTP (emails transacionais via App Password - 500 emails/dia).
@@ -145,7 +145,7 @@ Embeddings otimizados por caso de uso para máxima qualidade:
 ## Deploy Information
 - **Servidor**: Hetzner GPU GEX44 (RTX 4000 Ada 20GB, Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD RAID 1 = 1.92TB utilizável)
 - **Volume Adicional**: Não necessário - servidor GEX44 possui 1.92TB de storage interno (substitui volume externo de 100GB)
-- **GPUs**: Servidor único Hetzner (todos os 50 containers no mesmo servidor, latência zero)
+- **GPUs**: Servidor único Hetzner (todos os 49 containers no mesmo servidor, latência zero)
 - **IP Production**: 178.63.41.108 (GEX44 GPU)
 - **IP Deploy Server**: 46.224.46.93 (CPX32 Runner - 4 vCPU, 8GB RAM)
 - **Domínio**: yesyoudeserve.duckdns.org

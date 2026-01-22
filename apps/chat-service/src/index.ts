@@ -357,6 +357,18 @@ async function initializeAllCaches(): Promise<void> {
       });
       customRoleId = user?.customRoleId ?? undefined;
     }
+    if (customRoleId) {
+      const activeRole = await db.query.customRoles.findFirst({
+        where: and(
+          eq(schema.customRoles.id, customRoleId),
+          eq(schema.customRoles.ativo, true)
+        ),
+        columns: { id: true },
+      });
+      if (!activeRole) {
+        customRoleId = undefined;
+      }
+    }
     const isAdminRole = auth.role === 'admin' || auth.role === 'super_admin';
     const rolePermissions = isAdminRole
       ? await db.query.permissions.findMany({ columns: { codigo: true } })

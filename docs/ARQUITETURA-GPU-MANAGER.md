@@ -1,19 +1,18 @@
 # Arquitetura GPU Manager Service
 
 **Autor:** Fillipe Guerra  
-**Data:** 16 de Janeiro de 2026  
-**Versão:** 4.2.0 - Gate 2: LLM Qwen2.5 7B + Vision via OpenAI
+**Data:** 22 de Janeiro de 2026  
+**Versão:** 4.3.0 - Gate 2: LLM Qwen2.5 7B + ASR/Vision via OpenAI
 
-> **OTIMIZAÇÃO CRÍTICA v4.0.4 (12/01/2026):** Migração de **TODAS AS 3 IMAGENS** GPU de `pytorch-devel` para `pytorch-runtime`:
+> **OTIMIZAÇÃO CRÍTICA v4.0.4 (12/01/2026):** Migração de imagens GPU de `pytorch-devel` para `pytorch-runtime`:
 > - **embeddings-gpu**: 17.6GB → ~11GB (-6GB, -35%)
-> - **asr-canary**: 17GB → ~11GB (-6GB, -35%)
 > - **lora-trainer**: 17GB → ~11GB (-6GB, -35%)
 > 
 > **Economia Total:** 18GB (-35%), 30 fewer layers (90→60), deploy **50x mais rápido** (~20-25min vs ~40min).
 > **Causa Raiz:** CUDA dev tools (gcc, nvcc, headers) são desnecessários para inferência/training.
 
 > **NOTA (Histórico v4.0.x):** Ajustes finos de VRAM em vLLM foram feitos após análise de erro "No available memory for cache blocks".
-> No **Gate 2**, a plataforma usa **LLM (texto)**, **Embeddings** e **ASR** locais, com **budgets conservadores** para coexistência em 20GB. **Vision** e **geração de imagens** são via OpenAI.
+> No **Gate 2**, a plataforma usa **LLM (texto)** e **Embeddings** locais, com **budgets conservadores** para coexistência em 20GB. **ASR** e **Vision** são via OpenAI.
 
 > **ATUALIZAÇÃO v4.0.1 (12/01/2026):** Correções para vLLM v0.12.0: `--limit-mm-per-prompt` (formato JSON), `--dtype float16` (obrigatório para AWQ).
 
@@ -26,8 +25,8 @@
 O **GPU Manager Service** é um serviço centralizado que gerencia todas as requisições para serviços GPU na Alice Enterprise Platform. Ele implementa:
 
 - **Arquitetura Simplificada**: Serviços GPU rodam simultaneamente (com budgets de VRAM)
-- **Gate 2**: Separação explícita de **LLM (texto)** + Embeddings + ASR (tipos capability-based)
-- **Fila Priorizada**: Chat > Trading > Embeddings > ASR > Training
+- **Gate 2**: Separação explícita de **LLM (texto)** + Embeddings + Training (tipos capability-based)
+- **Fila Priorizada**: Chat > Trading > Embeddings > Training
 - **Monitoramento de VRAM**: Tempo real via nvidia-smi
 - **Circuit Breakers**: Proteção centralizada por serviço
 - **Métricas Enterprise**: Prometheus (latência, fila, VRAM, erros)
@@ -45,9 +44,8 @@ GPU 20GB VRAM - Serviços sempre ativos (Gate 2):
 ┌─────────────────────────────────────────────────────────────┐
 │  LLM (texto)        ~6GB  (gpu-llm)                          │
 │  Embeddings         ~3GB  (gpu-embeddings)                   │
-│  ASR                ~3GB  (gpu-asr)                          │
 ├─────────────────────────────────────────────────────────────┤
-│  TOTAL (budget)     ~12GB + margem de segurança              │
+│  TOTAL (budget)     ~9GB + margem de segurança               │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -57,7 +55,6 @@ GPU 20GB VRAM - Serviços sempre ativos (Gate 2):
 |---------|--------|-----------|--------------|--------|-------------|-------------|
 | **gpu-llm** | Qwen2.5 7B Instruct (AWQ) | ~5-6GB (budget) | `gpu-memory-utilization=0.40`, `max-model-len=8192`, `dtype=float16` | **LLM texto** (chat, trading) | vllm/vllm-openai | ~8GB |
 | **gpu-embeddings** | Qwen3-Embedding-0.6B INT8 | ~2-3GB (budget) | `quantization=int8` | Embeddings para RAG | **pytorch-runtime** | **~11GB (-35% ✅)** |
-| **gpu-asr** | Canary-1B | ~3GB (budget) | NeMo | Transcrição de áudio | **pytorch-runtime** | **~11GB (-35% ✅)** |
 
 ### Configuração vLLM 0.12.0 (Gate 2)
 
@@ -122,7 +119,7 @@ python3 -m vllm.entrypoints.openai.api_server \
 │  │  - Chat: Priority 10 (CRITICAL)                      │   │
 │  │  - Trading: Priority 8 (HIGH)                        │   │
 │  │  - Embeddings: Priority 5 (MEDIUM)                   │   │
-│  │  - ASR/Training: Priority 2 (LOW)                    │   │
+│  │  - Training: Priority 2 (LOW)                        │   │
 │  └──────────────────────────────────────────────────────┘   │
 │  ┌──────────────────────────────────────────────────────┐   │
 │  │  Circuit Breakers + Métricas Prometheus              │   │
@@ -134,13 +131,13 @@ python3 -m vllm.entrypoints.openai.api_server \
                             │
                             ▼
 ┌─────────────────────────────────────────────────────────────┐
-│     Containers GPU (TODOS SEMPRE ATIVOS - Gate 2)           │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐                  │
-│  │   LLM    │  │Embeddings│  │   ASR    │                  │
-│  │  :8004   │  │  :8001   │  │  :8002   │                  │
-│  │  ~6GB    │  │  ~3GB    │  │  ~3GB    │                  │
-│  │ SEMPRE   │  │ SEMPRE   │  │ SEMPRE   │                  │
-│  └──────────┘  └──────────┘  └──────────┘                  │
+│     Containers GPU (SEMPRE ATIVOS - Gate 2)                │
+│  ┌──────────┐  ┌──────────┐                               │
+│  │   LLM    │  │Embeddings│                               │
+│  │  :8004   │  │  :8001   │                               │
+│  │  ~6GB    │  │  ~3GB    │                               │
+│  │ SEMPRE   │  │ SEMPRE   │                               │
+│  └──────────┘  └──────────┘                               │
 │                                                             │
 │  ┌──────────┐ (profile: gpu-training - sob demanda)        │
 │  │ Trainer  │                                              │
@@ -193,7 +190,6 @@ python3 -m vllm.entrypoints.openai.api_server \
 | `INTERNAL_API_SECRET` | Secret para autenticação interna | (obrigatório) |
 | `LLM_GPU_URL` | URL do serviço LLM | `http://gpu-llm:8000` |
 | `EMBEDDINGS_GPU_URL` | URL do serviço de embeddings | `http://gpu-embeddings:8000` |
-| `ASR_GPU_URL` | URL do serviço ASR | `http://gpu-asr:8000` |
 | `TRAINING_GPU_URL` | URL do serviço de training | `http://gpu-trainer:8000` |
 | `GPU_SERVICE_TIMEOUT` | Timeout para requisições GPU | `60000` (60s) |
 
@@ -268,9 +264,10 @@ DELETE /api/training/run/cancel
 
 | Versão | Data | Descrição |
 |--------|------|-----------|
+| 4.3.0 | 22/01/2026 | ASR migrado para OpenAI (gpt-4o-transcribe); GPU dedicada apenas a LLM/Embeddings/Training |
 | 4.2.0 | 16/01/2026 | Remoção do VLM local e migração de Vision/Images para OpenAI; LLM Qwen2.5 7B com contexto 8k |
 | 4.0.5 | 15/01/2026 | WS3: Corrigir SSOT GPU e garantir QUANTIZATION=int8 refletido no runtime (fail-fast, sem fallback) |
-| 4.0.4 | 12/01/2026 | Otimização COMPLETA: embeddings + asr + trainer pytorch-devel → runtime (-18GB total, -35%) |
+| 4.0.4 | 12/01/2026 | Otimização COMPLETA: embeddings + trainer pytorch-devel → runtime (-12GB total, -35%) |
 | 4.0.3 | 12/01/2026 | Otimização imagem embeddings: pytorch-devel → pytorch-runtime (-6GB, -35%) |
 | 4.0.2 | 12/01/2026 | Correção VRAM Qwen-VL (ajustes de KV cache e budget) |
 | 4.0.1 | 12/01/2026 | Correções vLLM 0.12.0 (dtype float16, JSON limit-mm-per-prompt) |

@@ -1113,7 +1113,7 @@
         },
         "audio": {
           "title": "Áudios",
-          "desc": "Canary-1B transcreve o áudio, Qwen3-Embedding-0.6B gera embeddings do texto (1024 dim)"
+          "desc": "OpenAI ASR (gpt-4o-transcribe) transcreve o áudio, Qwen3-Embedding-0.6B gera embeddings do texto (1024 dim)"
         },
         "gpu": {
           "title": "Processamento GPU (Hetzner GEX44)",
