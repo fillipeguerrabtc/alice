@@ -1998,13 +1998,16 @@ app.get('/api/auth/rbac/permissions', requireAuth(), async (req: Request, res: R
     const userRole = (req.user.role || 'viewer') as Role;
     const customRoleId = req.user.customRoleId ?? null;
 
+    const isAdminRole = userRole === 'admin' || userRole === 'super_admin';
     // Buscar permissões da role
-    const rolePermissions = await db.query.rolePermissions.findMany({
-      where: eq(schema.rolePermissions.role, userRole),
-      with: {
-        permission: true,
-      },
-    });
+    const rolePermissions = isAdminRole
+      ? await db.query.permissions.findMany({ columns: { codigo: true } })
+      : await db.query.rolePermissions.findMany({
+        where: eq(schema.rolePermissions.role, userRole),
+        with: {
+          permission: true,
+        },
+      });
     const customRolePermissions = customRoleId
       ? await db.query.customRolePermissions.findMany({
         where: eq(schema.customRolePermissions.customRoleId, customRoleId),
@@ -2013,7 +2016,7 @@ app.get('/api/auth/rbac/permissions', requireAuth(), async (req: Request, res: R
       : [];
 
     const dbPermissions = rolePermissions
-      .map(rp => (rp as { permission?: { codigo?: string } }).permission?.codigo)
+      .map((rp) => ('codigo' in rp ? rp.codigo : (rp as { permission?: { codigo?: string } }).permission?.codigo))
       .filter(Boolean);
     const customPermissions = customRolePermissions
       .map(rp => (rp as { permission?: { codigo?: string } }).permission?.codigo)
@@ -2709,6 +2712,10 @@ app.delete('/api/auth/custom-roles/:id', requireAuth(), requirePermission('admin
   const tenantId = req.tenantId;
   const isSuperAdmin = req.user?.role === 'super_admin';
 
+  if (!tenantId && !isSuperAdmin) {
+    return res.status(400).json({ error: 'Tenant não identificado' });
+  }
+
   const current = await db.query.customRoles.findFirst({
     where: eq(schema.customRoles.id, req.params.id),
   });
@@ -2735,6 +2742,10 @@ app.get('/api/auth/custom-roles/:id/permissions', requireAuth(), requirePermissi
   const db = getDatabase();
   const tenantId = req.tenantId;
   const isSuperAdmin = req.user?.role === 'super_admin';
+
+  if (!tenantId && !isSuperAdmin) {
+    return res.status(400).json({ error: 'Tenant não identificado' });
+  }
 
   const role = await db.query.customRoles.findFirst({
     where: eq(schema.customRoles.id, req.params.id),
@@ -2764,6 +2775,10 @@ app.put('/api/auth/custom-roles/:id/permissions', requireAuth(), requirePermissi
   const db = getDatabase();
   const tenantId = req.tenantId;
   const isSuperAdmin = req.user?.role === 'super_admin';
+
+  if (!tenantId && !isSuperAdmin) {
+    return res.status(400).json({ error: 'Tenant não identificado' });
+  }
 
   const role = await db.query.customRoles.findFirst({
     where: eq(schema.customRoles.id, req.params.id),
