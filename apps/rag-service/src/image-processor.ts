@@ -175,7 +175,8 @@ class ImageProcessorService {
   }
 
   /**
-   * Processa uma imagem: gera embedding, thumbnail e extrai metadata
+   * Processa uma imagem: gera descrição (Vision), thumbnail e metadata.
+   * Embeddings de imagem são gerados separadamente via OpenAI Embeddings.
    */
   async processImage(
     imageBuffer: Buffer,
@@ -194,7 +195,7 @@ class ImageProcessorService {
     // Extrair metadata básica
     const metadata = await this.extractMetadata(imageBuffer, mimeType, extractExif);
 
-    // Embeddings de imagem via GPU foram removidos (OpenAI-only para imagens)
+    // Embeddings são gerados separadamente via OpenAI Embeddings (sem GPU)
     const embedding: number[] = [];
     const embeddingModel = 'openai-vision';
 

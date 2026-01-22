@@ -326,9 +326,9 @@
     },
     "approvalPolicy": {
       "label": "Approval",
-      "alwaysConfirm": "Always confirm",
+      "alwaysConfirm": "Approve each action",
       "confirmRisky": "Confirm risky actions",
-      "neverConfirm": "Execute everything",
+      "neverConfirm": "Approve everything in this chat",
       "updated": "Approval policy updated",
       "error": "Failed to update approval policy"
     },

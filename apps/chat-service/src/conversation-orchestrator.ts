@@ -254,7 +254,7 @@ export async function getOrCreateConversationState(conversationId: string) {
     const [newState] = await db.insert(schema.conversationStates).values({
       conversationId,
       controlMode: 'bot',
-      approvalPolicy: 'confirm_risky',
+      approvalPolicy: 'always_confirm',
       fallbackCount: 0,
     }).returning();
     state = newState;

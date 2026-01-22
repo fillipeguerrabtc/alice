@@ -38,6 +38,20 @@ export const TEXT_EMBEDDING_DIM = 1024;
 // Nome da coleção de texto (unificada para Trading + RAG)
 export const TEXT_COLLECTION_NAME = 'text_embeddings';
 
+// Dimensão dos embeddings de imagem (OpenAI Embeddings - configurável via env)
+export const IMAGE_EMBEDDING_DIM = (() => {
+  const raw = process.env.OPENAI_IMAGE_EMBEDDING_DIM;
+  if (!raw) return 1536;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error('OPENAI_IMAGE_EMBEDDING_DIM inválido - precisa ser número > 0');
+  }
+  return parsed;
+})();
+
+// Nome da coleção de embeddings de imagem (OpenAI)
+export const IMAGE_COLLECTION_NAME = 'image_embeddings';
+
 // Aliases para compatibilidade (Trading usa mesma coleção)
 export const TRADING_EMBEDDING_DIM = TEXT_EMBEDDING_DIM;
 export const TRADING_COLLECTION_NAME = TEXT_COLLECTION_NAME;
@@ -470,6 +484,50 @@ export async function initTextCollection(): Promise<void> {
   }
 }
 
+/**
+ * Inicializa a coleção de embeddings de imagem (OpenAI) se não existir
+ */
+export async function initImageCollection(): Promise<void> {
+  if (!isQdrantConfigured()) {
+    logger.warn('Qdrant não configurado - coleção de imagem não será criada');
+    return;
+  }
+
+  const exists = await collectionExists(IMAGE_COLLECTION_NAME);
+
+  if (!exists) {
+    await createCollection({
+      name: IMAGE_COLLECTION_NAME,
+      vectorSize: IMAGE_EMBEDDING_DIM,
+      distance: 'Cosine',
+      onDiskPayload: true,
+      hnswConfig: {
+        m: 16,
+        efConstruct: 200,
+        fullScanThreshold: 10000,
+      },
+    });
+
+    logger.info(
+      { collection: IMAGE_COLLECTION_NAME, dim: IMAGE_EMBEDDING_DIM },
+      'Coleção de embeddings de imagem criada no Qdrant'
+    );
+  } else {
+    const info = await getCollectionInfo(IMAGE_COLLECTION_NAME);
+    const existingSize = info.config?.params?.vectors?.size;
+    if (typeof existingSize === 'number' && existingSize !== IMAGE_EMBEDDING_DIM) {
+      throw new Error(
+        `Coleção Qdrant '${IMAGE_COLLECTION_NAME}' com dimensão inválida: ${existingSize}. ` +
+          `Esperado: ${IMAGE_EMBEDDING_DIM}. Execute migração/reindex dos embeddings antes do deploy.`
+      );
+    }
+    logger.info(
+      { collection: IMAGE_COLLECTION_NAME },
+      'Coleção de embeddings de imagem já existe no Qdrant'
+    );
+  }
+}
+
 // Alias para compatibilidade
 export const initTradingCollection = initTextCollection;
 
@@ -652,6 +710,8 @@ export default {
   getQdrantCircuitBreakerStatus,
   TEXT_EMBEDDING_DIM,
   TEXT_COLLECTION_NAME,
+  IMAGE_EMBEDDING_DIM,
+  IMAGE_COLLECTION_NAME,
   TRADING_EMBEDDING_DIM, // Alias
   TRADING_COLLECTION_NAME, // Alias
   
@@ -661,6 +721,7 @@ export default {
   getCollectionInfo,
   deleteCollection,
   initTextCollection,
+  initImageCollection,
   initTradingCollection, // Alias
   
   // Pontos

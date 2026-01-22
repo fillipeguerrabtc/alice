@@ -326,9 +326,9 @@
     },
     "approvalPolicy": {
       "label": "Aprovação",
-      "alwaysConfirm": "Sempre confirmar",
+      "alwaysConfirm": "Aprovar cada ação",
       "confirmRisky": "Confirmar ações arriscadas",
-      "neverConfirm": "Executar tudo",
+      "neverConfirm": "Aprovar tudo neste chat",
       "updated": "Política de aprovação atualizada",
       "error": "Falha ao atualizar política de aprovação"
     },

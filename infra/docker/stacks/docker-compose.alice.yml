@@ -196,6 +196,7 @@ services:
       APP_VERSION: ${IMAGE_TAG:-latest}
       DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@alice-pgbouncer:6432/${POSTGRES_DB:-alice_prod}?sslmode=disable
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
       SESSION_SECRET: ${SESSION_SECRET}
       RAG_SERVICE_URL: http://alice-rag:3003
       INTEGRATIONS_SERVICE_URL: http://alice-integrations:3005
@@ -247,6 +248,7 @@ services:
       SERVICE_NAME: rag-service
       DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@alice-pgbouncer:6432/${POSTGRES_DB:-alice_prod}?sslmode=disable
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:?INTERNAL_API_SECRET é obrigatório}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
       QDRANT_URL: http://alice-qdrant:6333
       QDRANT_API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY é obrigatório em produção}
       GPU_MANAGER_URL: ${GPU_MANAGER_URL:-http://alice-gpu-manager:3010}

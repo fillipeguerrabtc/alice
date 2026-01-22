@@ -357,6 +357,130 @@ export function formatarContextoParaLLM(ragResult: RAGContextResponse | null): s
 }
 
 // ============================================================================
+// DOCUMENTOS (Criação/Atualização via RAG Service)
+// ============================================================================
+
+export interface RagDocument {
+  id: string;
+  titulo: string;
+  conteudo?: string | null;
+  tipo?: string | null;
+  fonte?: string | null;
+  urlOrigem?: string | null;
+  namespaceId?: string | null;
+}
+
+export interface RagDocumentResponse {
+  document: RagDocument;
+  chunksCreated?: number;
+}
+
+export async function createDocumentInRAG(params: {
+  title: string;
+  content: string;
+  tenantId: string;
+  userId: string;
+  role: Role;
+  namespaceId?: string;
+  tipo?: string | null;
+  fonte?: string | null;
+  urlOrigem?: string | null;
+  internalHeaders?: Record<string, string>;
+}): Promise<RagDocumentResponse> {
+  if (!isInternalAuthEnabled()) {
+    throw new Error('INTERNAL_API_SECRET não configurado - criação de documento indisponível');
+  }
+
+  const headers = params.internalHeaders ?? generateInternalAuthHeaders({
+    userId: params.userId,
+    tenantId: params.tenantId,
+    role: params.role,
+  });
+
+  const response = await fetch(`${RAG_SERVICE_URL_FINAL}/api/rag/documents`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Tenant-Id': params.tenantId,
+      'x-internal-signature': headers['x-internal-signature'],
+      'x-internal-timestamp': headers['x-internal-timestamp'],
+      'x-internal-user-id': headers['x-internal-user-id'],
+      'x-internal-role': headers['x-internal-role'],
+      ...(headers['x-internal-tenant-id'] ? { 'x-internal-tenant-id': headers['x-internal-tenant-id'] } : {}),
+    },
+    body: JSON.stringify({
+      namespaceId: params.namespaceId,
+      titulo: params.title,
+      conteudo: params.content,
+      tipo: params.tipo ?? undefined,
+      fonte: params.fonte ?? undefined,
+      urlOrigem: params.urlOrigem ?? undefined,
+    }),
+    signal: AbortSignal.timeout(RAG_REQUEST_TIMEOUT_MS),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`RAG documents error: ${response.status} - ${errorText}`);
+  }
+
+  return response.json() as Promise<RagDocumentResponse>;
+}
+
+export async function updateDocumentInRAG(params: {
+  documentId: string;
+  title?: string;
+  content?: string;
+  tenantId: string;
+  userId: string;
+  role: Role;
+  namespaceId?: string;
+  tipo?: string | null;
+  fonte?: string | null;
+  urlOrigem?: string | null;
+  internalHeaders?: Record<string, string>;
+}): Promise<RagDocumentResponse> {
+  if (!isInternalAuthEnabled()) {
+    throw new Error('INTERNAL_API_SECRET não configurado - atualização de documento indisponível');
+  }
+
+  const headers = params.internalHeaders ?? generateInternalAuthHeaders({
+    userId: params.userId,
+    tenantId: params.tenantId,
+    role: params.role,
+  });
+
+  const response = await fetch(`${RAG_SERVICE_URL_FINAL}/api/rag/documents/${params.documentId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Tenant-Id': params.tenantId,
+      'x-internal-signature': headers['x-internal-signature'],
+      'x-internal-timestamp': headers['x-internal-timestamp'],
+      'x-internal-user-id': headers['x-internal-user-id'],
+      'x-internal-role': headers['x-internal-role'],
+      ...(headers['x-internal-tenant-id'] ? { 'x-internal-tenant-id': headers['x-internal-tenant-id'] } : {}),
+    },
+    body: JSON.stringify({
+      namespaceId: params.namespaceId,
+      titulo: params.title,
+      conteudo: params.content,
+      tipo: params.tipo ?? undefined,
+      fonte: params.fonte ?? undefined,
+      urlOrigem: params.urlOrigem ?? undefined,
+    }),
+    signal: AbortSignal.timeout(RAG_REQUEST_TIMEOUT_MS),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`RAG documents update error: ${response.status} - ${errorText}`);
+  }
+
+  return response.json() as Promise<RagDocumentResponse>;
+}
+
+// ============================================================================
 // UPLOAD MULTIMODAL (FASE 9 - Integração Chat + RAG Multimodal)
 // ============================================================================
 

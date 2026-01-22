@@ -88,16 +88,21 @@ import { startWebCrawlWorker } from './workers/web-crawl-worker.js';
 import {
   searchPoints,
   upsertPoints,
+  deletePointsByFilter,
   initTextCollection,
+  initImageCollection,
   isQdrantConfigured,
   healthCheck as qdrantHealthCheck,
   getQdrantCircuitBreakerStatus,
   TEXT_COLLECTION_NAME,
   TEXT_EMBEDDING_DIM,
+  IMAGE_COLLECTION_NAME,
+  IMAGE_EMBEDDING_DIM,
   type QdrantSearchResult,
   createSessionAuthMiddleware,
   initializeSessionAuthCache,
 } from '@alice/shared-utils';
+import { generateOpenAiImageEmbedding, getOpenAiImageEmbeddingModel, getOpenAiImageEmbeddingCircuitBreakerStatus } from './openai-embeddings.js';
 
 interface MulterRequest extends Request {
   file?: Express.Multer.File;
@@ -1195,14 +1200,23 @@ app.get('/api/rag/health', async (_req: Request, res: Response) => {
     timestamp: new Date().toISOString(),
     architecture: {
       text: 'Qwen3-Embedding-0.6B (1024 dim) → Qdrant',
-      image: 'OpenAI Vision → descrição → Qdrant (embeddings de texto)',
+      image: 'OpenAI Vision + OpenAI Embeddings → Qdrant (imagem)',
     },
-    embeddingsProvider: 'gpu-manager-service',
+    embeddingsProvider: {
+      text: 'gpu-manager-service',
+      image: 'openai',
+    },
     qdrant: {
       configured: isQdrantConfigured(),
       healthy: qdrantHealthy,
-      collection: TEXT_COLLECTION_NAME,
-      dimension: TEXT_EMBEDDING_DIM,
+      collections: {
+        text: TEXT_COLLECTION_NAME,
+        image: IMAGE_COLLECTION_NAME,
+      },
+      dimensions: {
+        text: TEXT_EMBEDDING_DIM,
+        image: IMAGE_EMBEDDING_DIM,
+      },
       circuitBreaker: qdrantStatus,
     },
     circuitBreaker: {
@@ -1314,12 +1328,116 @@ const createDocumentSchema = z.object({
   urlOrigem: z.string().url().optional(),
 });
 
+const updateDocumentSchema = z.object({
+  namespaceId: z.string().uuid().optional(),
+  titulo: z.string().min(1).optional(),
+  conteudo: z.string().min(1).optional(),
+  tipo: z.string().optional(),
+  fonte: z.string().optional(),
+  urlOrigem: z.string().url().optional(),
+}).refine(
+  (data) => Object.values(data).some((value) => value !== undefined),
+  { message: 'Nenhum campo fornecido para atualização' }
+);
+
+async function assertNamespaceOwnership(namespaceId: string | undefined, tenantId: string): Promise<void> {
+  if (!namespaceId) return;
+  const namespace = await db.query.namespaces.findFirst({
+    where: eq(schema.namespaces.id, namespaceId),
+  });
+  if (!namespace || namespace.tenantId !== tenantId) {
+    throw new Error('Namespace inválido ou não pertence ao tenant');
+  }
+}
+
+async function rebuildDocumentEmbeddings(params: {
+  tenantId: string;
+  documentId: string;
+  namespaceId?: string | null;
+  titulo: string;
+  conteudo: string;
+  fonte?: string | null;
+  urlOrigem?: string | null;
+}): Promise<number> {
+  const content = params.conteudo;
+  const chunks = chunkText(content);
+  const qdrantPoints: Array<{ id: string; vector: number[]; payload: Record<string, unknown> }> = [];
+
+  await db.delete(schema.documentChunks)
+    .where(eq(schema.documentChunks.documentId, params.documentId));
+
+  for (let i = 0; i < chunks.length; i += 1) {
+    const embedding = await generateEmbedding(chunks[i]);
+    validateEmbeddingDimension(embedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
+    const [chunk] = await db.insert(schema.documentChunks).values({
+      documentId: params.documentId,
+      conteudo: chunks[i],
+      posicao: i,
+    }).returning();
+
+    qdrantPoints.push({
+      id: chunk.id,
+      vector: embedding,
+      payload: {
+        type: 'document_chunk',
+        documentId: params.documentId,
+        conteudo: chunks[i],
+        posicao: i,
+        tenantId: params.tenantId,
+        namespaceId: params.namespaceId ?? null,
+        document_id: params.documentId,
+        document_titulo: params.titulo,
+        document_namespaceId: params.namespaceId ?? null,
+        criadoEm: new Date().toISOString(),
+      },
+    });
+  }
+
+  if (isQdrantConfigured()) {
+    await deletePointsByFilter(TEXT_COLLECTION_NAME, {
+      must: [
+        { key: 'tenantId', match: { value: params.tenantId } },
+        { key: 'documentId', match: { value: params.documentId } },
+      ],
+    });
+
+    const documentEmbedding = await generateEmbedding(content.slice(0, 2000));
+    validateEmbeddingDimension(documentEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
+
+    await upsertPoints(TEXT_COLLECTION_NAME, [
+      {
+        id: `document-${params.documentId}`,
+        vector: documentEmbedding,
+        payload: {
+          type: 'document',
+          documentId: params.documentId,
+          titulo: params.titulo,
+          tenantId: params.tenantId,
+          namespaceId: params.namespaceId ?? null,
+          fonte: params.fonte ?? null,
+          urlOrigem: params.urlOrigem ?? null,
+          conteudoPreview: content.slice(0, 500),
+          criadoEm: new Date().toISOString(),
+        },
+      },
+      ...qdrantPoints,
+    ]);
+  }
+
+  return chunks.length;
+}
+
 app.post('/api/rag/documents', requireAuth(), requirePermission('rag:documents:write'), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
   // SEGURANÇA: Usar req.tenantId populado pelo middleware (RLS Enterprise)
   const tenantId = req.tenantId;
   
+  if (!tenantId) {
+    return res.status(401).json({ error: 'Tenant não identificado' });
+  }
+
   try {
     const body = createDocumentSchema.parse(req.body);
+    await assertNamespaceOwnership(body.namespaceId, tenantId);
 
     const hashConteudo = hashContent(body.conteudo);
     
@@ -1345,7 +1463,7 @@ app.post('/api/rag/documents', requireAuth(), requirePermission('rag:documents:w
     validateEmbeddingDimension(documentEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
 
     // MULTI-TENANCY: Documento associado ao tenant via namespaceId
-    // namespaceId deve pertencer ao tenant do usuário (validado pelo frontend/API)
+    // namespaceId deve pertencer ao tenant do usuário (validado pelo backend)
     // Gate 2: Embeddings de TEXTO são SSOT no Qdrant (PostgreSQL mantém apenas conteúdo/metadados).
     const [document] = await db.insert(schema.documents).values({
       namespaceId: body.namespaceId,
@@ -1438,6 +1556,87 @@ app.post('/api/rag/documents', requireAuth(), requirePermission('rag:documents:w
   }
 });
 
+app.patch('/api/rag/documents/:id', requireAuth(), requirePermission('rag:documents:write'), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID inválido', details: paramsResult.error.format() });
+  }
+  const { id } = paramsResult.data;
+  const tenantId = req.tenantId as string;
+
+  try {
+    const body = updateDocumentSchema.parse(req.body);
+
+    const existing = await db.query.documents.findFirst({
+      where: eq(schema.documents.id, id),
+      with: { namespace: true },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Documento não encontrado' });
+    }
+
+    if (existing.namespace?.tenantId !== tenantId) {
+      return res.status(403).json({ error: 'Acesso negado: documento não pertence ao tenant' });
+    }
+
+    const resolvedNamespaceId = body.namespaceId ?? existing.namespaceId ?? undefined;
+    await assertNamespaceOwnership(resolvedNamespaceId, tenantId);
+
+    const conteudo = body.conteudo ?? existing.conteudo ?? '';
+    if (!conteudo || conteudo.trim().length === 0) {
+      return res.status(400).json({ error: 'Conteúdo do documento é obrigatório' });
+    }
+
+    const titulo = body.titulo ?? existing.titulo;
+    const tipo = body.tipo ?? existing.tipo ?? undefined;
+    const fonte = body.fonte ?? existing.fonte ?? undefined;
+    const urlOrigem = body.urlOrigem ?? existing.urlOrigem ?? undefined;
+    const hashConteudo = hashContent(conteudo);
+
+    await db.update(schema.documents)
+      .set({
+        namespaceId: resolvedNamespaceId,
+        titulo,
+        conteudo,
+        tipo,
+        fonte,
+        urlOrigem,
+        hashConteudo,
+        processado: false,
+        atualizadoEm: new Date(),
+      })
+      .where(eq(schema.documents.id, id));
+
+    const chunksCreated = await rebuildDocumentEmbeddings({
+      tenantId,
+      documentId: id,
+      namespaceId: resolvedNamespaceId,
+      titulo,
+      conteudo,
+      fonte,
+      urlOrigem,
+    });
+
+    await db.update(schema.documents)
+      .set({ processado: true, atualizadoEm: new Date() })
+      .where(eq(schema.documents.id, id));
+
+    const updated = await db.query.documents.findFirst({
+      where: eq(schema.documents.id, id),
+    });
+
+    res.json({
+      document: updated ?? existing,
+      chunksCreated,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro interno do servidor';
+    logger.error({ error }, 'Falha ao atualizar documento');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
 app.post('/api/rag/documents/upload', requireAuth(), requirePermission('rag:documents:upload'), requireSameTenant(getTenantIdFromRequest), upload.single('file'), async (req: MulterRequest, res: Response) => {
   // SEGURANÇA: Usar req.tenantId populado pelo middleware (RLS Enterprise)
   if (!req.file) {
@@ -1459,6 +1658,7 @@ app.post('/api/rag/documents/upload', requireAuth(), requirePermission('rag:docu
     const content = req.file.buffer.toString('utf-8');
     const titulo = req.body.titulo || req.file.originalname;
     const namespaceId = req.body.namespaceId;
+    await assertNamespaceOwnership(namespaceId, req.tenantId as string);
 
     const hashConteudo = hashContent(content);
 
@@ -1468,7 +1668,7 @@ app.post('/api/rag/documents/upload', requireAuth(), requirePermission('rag:docu
     validateEmbeddingDimension(documentEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
 
     // MULTI-TENANCY: Documento associado ao tenant via namespaceId
-    // namespaceId deve pertencer ao tenant do usuário (validado pelo middleware)
+    // namespaceId deve pertencer ao tenant do usuário (validado pelo backend)
     // Gate 2: Embeddings de TEXTO são SSOT no Qdrant (PostgreSQL mantém apenas conteúdo/metadados).
     const [document] = await db.insert(schema.documents).values({
       namespaceId,
@@ -2340,10 +2540,16 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
           }, 'Imagem processada com sucesso');
 
           if (visionDescription && isQdrantConfigured()) {
-            const descriptionEmbedding = await generateEmbedding(visionDescription);
-            await upsertPoints(TEXT_COLLECTION_NAME, [{
+            const descriptionEmbedding = await generateOpenAiImageEmbedding(visionDescription);
+            if (descriptionEmbedding.embedding.length !== IMAGE_EMBEDDING_DIM) {
+              throw new Error(
+                `Embedding de imagem com dimensão inválida: ${descriptionEmbedding.embedding.length}. ` +
+                  `Esperado: ${IMAGE_EMBEDDING_DIM}.`
+              );
+            }
+            await upsertPoints(IMAGE_COLLECTION_NAME, [{
               id: `media-image-${mediaUploadRecord.id}`,
-              vector: descriptionEmbedding,
+              vector: descriptionEmbedding.embedding,
               payload: {
                 type: 'media_image',
                 mediaUploadId: mediaUploadRecord.id,
@@ -2354,10 +2560,11 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
                 mimeType: req.file!.mimetype,
                 fileUrl: mediaUploadRecord.fileUrl ?? null,
                 thumbnailUrl,
+                embeddingModel: descriptionEmbedding.model,
                 criadoEm: new Date().toISOString(),
               },
             }]);
-            logger.debug({ uploadId: mediaUploadRecord.id }, 'Embedding textual da imagem inserido no Qdrant');
+            logger.debug({ uploadId: mediaUploadRecord.id }, 'Embedding de imagem (OpenAI) inserido no Qdrant');
           }
         } else if (mediaType === 'audio') {
           // Processar áudio com ASR Canary-1B (GPU)
@@ -2515,8 +2722,8 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
     // Determinar mensagem e features baseado no tipo de mídia
     const processingInfo: Record<string, { message: string; features: string[] }> = {
       image: {
-        message: 'Upload recebido. Processamento GPU iniciado.',
-        features: ['OpenAI Vision (descrição)', 'thumbnail', 'metadata extraction'],
+        message: 'Upload recebido. Processamento OpenAI iniciado.',
+        features: ['OpenAI Vision (descrição)', 'OpenAI Embeddings (imagem)', 'thumbnail', 'metadata extraction'],
       },
       audio: {
         message: 'Upload recebido. Transcrição GPU iniciada.',
@@ -2698,7 +2905,7 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
     // Processar assíncrono (ALINHADO com endpoint FormData - CORREÇÃO 17/12/2025)
     // ARQUITETURA ENTERPRISE:
     // - Texto: Qwen3-Embedding-0.6B (1024 dim) → Qdrant
-    // - Imagem: OpenAI Vision → descrição → Qdrant (embeddings de texto)
+    // - Imagem: OpenAI Vision + OpenAI Embeddings → Qdrant
     const processMediaAsync = async () => {
       try {
         if (mediaType === 'image') {
@@ -2746,10 +2953,16 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
           }, 'Imagem processada com sucesso (JSON upload)');
 
           if (visionDescription && isQdrantConfigured()) {
-            const descriptionEmbedding = await generateEmbedding(visionDescription);
-            await upsertPoints(TEXT_COLLECTION_NAME, [{
+            const descriptionEmbedding = await generateOpenAiImageEmbedding(visionDescription);
+            if (descriptionEmbedding.embedding.length !== IMAGE_EMBEDDING_DIM) {
+              throw new Error(
+                `Embedding de imagem com dimensão inválida: ${descriptionEmbedding.embedding.length}. ` +
+                  `Esperado: ${IMAGE_EMBEDDING_DIM}.`
+              );
+            }
+            await upsertPoints(IMAGE_COLLECTION_NAME, [{
               id: `media-image-${mediaUploadRecord.id}`,
-              vector: descriptionEmbedding,
+              vector: descriptionEmbedding.embedding,
               payload: {
                 type: 'media_image',
                 mediaUploadId: mediaUploadRecord.id,
@@ -2760,10 +2973,11 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
                 mimeType: body.mimeType,
                 fileUrl: mediaUploadRecord.fileUrl ?? null,
                 thumbnailUrl,
+                embeddingModel: descriptionEmbedding.model,
                 criadoEm: new Date().toISOString(),
               },
             }]);
-            logger.debug({ uploadId: mediaUploadRecord.id }, 'Embedding textual da imagem inserido no Qdrant (JSON)');
+            logger.debug({ uploadId: mediaUploadRecord.id }, 'Embedding de imagem (OpenAI) inserido no Qdrant (JSON)');
           }
 
         } else if (mediaType === 'audio') {
@@ -3305,8 +3519,13 @@ app.post('/api/media/search', requireAuth(), requireSameTenant(getTenantIdFromRe
       return res.status(503).json({ error: 'Qdrant não configurado para busca de imagens' });
     }
 
-    const queryEmbedding = await generateEmbedding(queryText);
-    validateEmbeddingDimension(queryEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
+    const queryEmbedding = await generateOpenAiImageEmbedding(queryText);
+    if (queryEmbedding.embedding.length !== IMAGE_EMBEDDING_DIM) {
+      throw new Error(
+        `Embedding de imagem com dimensão inválida: ${queryEmbedding.embedding.length}. ` +
+          `Esperado: ${IMAGE_EMBEDDING_DIM}.`
+      );
+    }
 
     const safeLimit = Math.min(Math.max(1, limit), 50);
 
@@ -3318,7 +3537,7 @@ app.post('/api/media/search', requireAuth(), requireSameTenant(getTenantIdFromRe
       ...(imageId ? { must_not: [{ key: 'mediaUploadId', match: { value: imageId } }] } : {}),
     };
 
-    const resultsRaw = await searchPoints(TEXT_COLLECTION_NAME, queryEmbedding, {
+    const resultsRaw = await searchPoints(IMAGE_COLLECTION_NAME, queryEmbedding.embedding, {
       limit: safeLimit * 2,
       scoreThreshold: 0.55,
       filter,
@@ -3432,6 +3651,8 @@ app.get('/api/media/health', async (_req: Request, res: Response) => {
           required: true,
           ready: imageReady,
           model: imageConfig.model,
+          embeddingModel: getOpenAiImageEmbeddingModel(),
+          embeddingDim: IMAGE_EMBEDDING_DIM,
           maxFileSizeMb: FILE_LIMITS_MB.image,
         },
         audio: {
@@ -3469,12 +3690,16 @@ app.get('/api/media/health', async (_req: Request, res: Response) => {
 
 // Status do circuit breaker OpenAI Vision (Regra 16 - Observability)
 app.get('/api/rag/circuit-breaker/embeddings', (_req: Request, res: Response) => {
-  const gpuStatus = getVisionCircuitBreakerStatus();
-  
+  const visionStatus = getVisionCircuitBreakerStatus();
+  const embeddingStatus = getOpenAiImageEmbeddingCircuitBreakerStatus();
+
   res.json({
-    service: 'openai-vision',
+    service: 'openai',
     timestamp: new Date().toISOString(),
-    circuitBreakers: gpuStatus,
+    circuitBreakers: {
+      vision: visionStatus,
+      imageEmbeddings: embeddingStatus,
+    },
   });
 });
 
@@ -3759,10 +3984,16 @@ registerShutdownCallback(
     if (isQdrantConfigured()) {
       try {
         await initTextCollection();
+        await initImageCollection();
         logger.info({ 
           collection: TEXT_COLLECTION_NAME, 
           dimension: TEXT_EMBEDDING_DIM 
         }, 'Coleção Qdrant para embeddings de texto inicializada');
+        logger.info({
+          collection: IMAGE_COLLECTION_NAME,
+          dimension: IMAGE_EMBEDDING_DIM,
+          model: getOpenAiImageEmbeddingModel(),
+        }, 'Coleção Qdrant para embeddings de imagem inicializada');
       } catch (error) {
         logger.error({ error }, 'Falha ao inicializar coleção Qdrant - servidor não iniciará');
         throw error; // Fail-fast se Qdrant não puder ser inicializado

@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Arquitetura de Software
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 18 de Janeiro de 2026  
-> **Versão:** 3.2.2 - RBAC Core + Gestão de Usuários  
+> **Data:** 21 de Janeiro de 2026  
+> **Versão:** 3.3.0 - Agentic Tasks + Embeddings de Imagem OpenAI  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 > 
@@ -35,7 +35,7 @@
 **Alice** é uma plataforma enterprise de IA autônoma 100% self-hosted, projetada para organizações que exigem:
 
 - **Privacidade Total**: Dados nunca saem da infraestrutura própria
-- **Autonomia**: LLM próprio (Qwen2.5 7B Instruct AWQ) com Vision e geração via OpenAI - **Gate 2 (LLM local + Vision OpenAI)**
+- **Autonomia**: LLM próprio (Qwen2.5 7B Instruct AWQ) com Vision, geração e embeddings de imagem via OpenAI - **Gate 2 (LLM local + OpenAI Vision/Embeddings)**
 - **Customização**: Fine-tuning específico via QLoRA para cada domínio (especializado em finanças/matemática)
 - **Custo Previsível**: LLM local sem cobrança por token; Vision/Imagens via OpenAI
 - **Compliance**: LGPD, GDPR, SOC 2 ready
@@ -133,7 +133,7 @@ C4Context
     System(alice, "Alice Platform", "Plataforma de IA Autônoma Enterprise")
     
     System_Ext(gpuServer, "Hetzner GPU GEX44", "GPU Manager Service - LLM/Embeddings/ASR local")
-    System_Ext(openai, "OpenAI", "Vision + geração de imagens")
+    System_Ext(openai, "OpenAI", "Vision + geração de imagens + embeddings de imagem")
     System_Ext(kucoin, "KuCoin Futures", "Trading BTC Perpetuals")
     System_Ext(stripe, "Stripe", "Pagamentos")
     System_Ext(twilio, "Twilio", "WhatsApp/SMS")
@@ -154,7 +154,7 @@ C4Context
 | Sistema | Propósito | Protocolo | Autenticação |
 |---------|-----------|-----------|--------------|
 | **Hetzner GPU GEX44** | GPU Manager Service local - LLM/Embeddings/ASR (Gate 2) | HTTP (localhost) | N/A (interno) |
-| **OpenAI** | Vision (gpt-4.1) + Geração de imagens (gpt-image-1) | HTTPS | API Key |
+| **OpenAI** | Vision (gpt-4.1) + Geração de imagens (gpt-image-1) + Embeddings de imagem | HTTPS | API Key |
 | **KuCoin Futures** | Trading BTC | REST + WebSocket | HMAC-SHA256 |
 | **Stripe** | Pagamentos | Webhooks | Signature verification |
 | **Twilio** | WhatsApp/SMS | REST | API Key + Token |
@@ -186,7 +186,7 @@ C4Container
         
         ContainerDb(postgres, "PostgreSQL", "PostgreSQL 16", "pgvector, RLS")
         ContainerDb(redis, "Redis", "Redis 7.4 (Alice) / 6.2 (ERPNext)", "Cache, Pub/Sub")
-        ContainerDb(qdrant, "Qdrant", "Vector DB", "Embeddings texto 1024 dim")
+        ContainerDb(qdrant, "Qdrant", "Vector DB", "Embeddings texto 1024 dim + imagem 1536 dim")
     }
     
     System_Ext(gpuManager, "GPU Manager Service", "Gerenciamento GPU local")
@@ -213,7 +213,7 @@ C4Container
 | 2 | `alice-pgbackrest-init` | pgBackRest | - | Inicialização stanza backup |
 | 3 | `alice-postgres` | PostgreSQL 16 | 5432 | Banco principal + pgvector |
 | 4 | `alice-redis` | Redis 7.4.7 | 6379 | Cache distribuído (node-redis 5.x) |
-| 5 | `alice-qdrant` | Qdrant | 6333 | Embeddings texto (1024 dim) |
+| 5 | `alice-qdrant` | Qdrant | 6333 | Embeddings texto (1024 dim) + imagem (1536 dim) |
 | 6 | `alice-tor` | torproxy | 9050 | Proxy SOCKS5 Tor (.onion) |
 | 7 | `alice-searxng` | SearXNG | 8080 | Metabusca interna |
 
@@ -298,14 +298,14 @@ C4Component
     Container_Boundary(rag, "RAG Service") {
         Component(docProc, "Document Processor", "Chunking", "PDF, DOCX, TXT")
         Component(audioProc, "Audio Processor", "Canary-1B", "Transcrição ASR")
-        Component(imageProc, "Image Processor", "OpenAI Vision", "Descrição → embeddings de texto")
+        Component(imageProc, "Image Processor", "OpenAI Vision", "Descrição + embeddings OpenAI (imagem)")
         Component(embQueue, "Embedding Queue", "Redis", "Processamento assíncrono")
         Component(embWorker, "Embedding Worker", "Background", "GPU dedicada 24/7")
         Component(vectorSearch, "Vector Search", "Qdrant", "Busca semântica")
     }
     
     ComponentDb(postgres, "PostgreSQL", "Documentos, Metadados")
-    ComponentDb(qdrant, "Qdrant", "Embeddings 1024 dim")
+    ComponentDb(qdrant, "Qdrant", "Embeddings 1024 dim (texto) + 1536 dim (imagem)")
     
     System_Ext(gpuManager, "GPU Manager Service", "GPU Processing (Hetzner GEX44)")
     
@@ -462,7 +462,7 @@ C4Deployment
             Container(canary, "Canary-1B", "ASR (~3GB)")
         }
     }
-    System_Ext(openai, "OpenAI APIs", "Vision (gpt-4.1) + Imagens (gpt-image-1)")
+    System_Ext(openai, "OpenAI APIs", "Vision (gpt-4.1) + Imagens (gpt-image-1) + Embeddings")
     
     Rel(caddy, services, "HTTP")
     Rel(services, gpuServices, "HTTP", "GPU Inference (local)")
@@ -756,7 +756,7 @@ logger.info({
 |---------|---------|
 | **Status** | Aceito |
 | **Contexto** | Embeddings de alta qualidade para RAG e Trading |
-| **Decisão** | Qwen3-Embedding-0.6B (1024 dim) → Qdrant, OpenAI Vision → descrição → Qdrant |
+| **Decisão** | Qwen3-Embedding-0.6B (1024 dim) → Qdrant, OpenAI Vision + OpenAI Embeddings (1536 dim) → Qdrant (image_embeddings) |
 | **Alternativas** | Outros modelos 1024 dim com restrições de licença/uso comercial (avaliar caso a caso) |
 | **Consequências** | + Dimensão consistente (1024) em toda a plataforma, + storage menor, + compatível com budgets de VRAM |
 
@@ -1315,7 +1315,7 @@ A plataforma possui uma **suite de testes unitários completa** usando **Vitest*
 *Total de Containers: 50 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 4 GPU + 1 backup + 1 trainer on-demand)*
 *Stack: Express 5.2, Vite 7.3, Tailwind CSS 4.1, HTTP/2*
 *LLM: Qwen2.5 7B Instruct (AWQ) via GPU Manager Service (Hetzner GEX44) - Gate 2*
-*Embeddings: Qwen3-Embedding-0.6B INT8 (1024 dim) + OpenAI Vision (descrição)*
+*Embeddings: Qwen3-Embedding-0.6B INT8 (1024 dim) + OpenAI Vision + OpenAI Embeddings (imagem, 1536 dim)*
 *Performance: HTTP Compression, HNSW m=24, SHA Pinning 95%+*
 *GPU: Todos serviços simultâneos (15GB/20GB VRAM), QLoRA fine-tuning semanal, Zero latência de troca*
 *Framework: arc42 + C4 Model + ADRs*  

@@ -781,10 +781,9 @@ export default function Chat() {
   });
   const resolvedVersion = versionData?.version || appVersion;
   const modelBadgeLabel = resolvedVersion ? `Alice ${resolvedVersion} 7B` : 'Alice 7B';
-  const approvalPolicy: ApprovalPolicy = approvalPolicyData?.approvalPolicy ?? 'confirm_risky';
+  const approvalPolicy: ApprovalPolicy = approvalPolicyData?.approvalPolicy ?? 'always_confirm';
   const approvalPolicyOptions = [
     { value: 'always_confirm', label: t('chat.approvalPolicy.alwaysConfirm') },
-    { value: 'confirm_risky', label: t('chat.approvalPolicy.confirmRisky') },
     { value: 'never_confirm', label: t('chat.approvalPolicy.neverConfirm') },
   ] as const;
 

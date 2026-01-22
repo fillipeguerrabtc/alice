@@ -206,9 +206,22 @@ export const ActionRequestPayloadSchema = z.object({
   summary: z.string().optional(),
   command: z.record(z.string(), z.unknown()).optional(),
   parameters: z.record(z.string(), z.unknown()).optional(),
+  task: z.record(z.string(), z.unknown()).optional(),
   sourceMessageId: z.string().uuid().optional(),
 }).passthrough();
 export type ActionRequestPayload = z.infer<typeof ActionRequestPayloadSchema>;
+
+// --- Payload de Tarefa Agentic (documentos/relatórios/contabilidade/planejamento) ---
+export const AgenticTaskPayloadSchema = z.object({
+  taskType: z.enum(["document", "report", "accounting", "planning"]).optional(),
+  title: z.string().optional(),
+  description: z.string().optional(),
+  instructions: z.string().optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+  sourceMessageId: z.string().uuid().optional(),
+  documentId: z.string().uuid().optional(),
+}).passthrough();
+export type AgenticTaskPayload = z.infer<typeof AgenticTaskPayloadSchema>;
 
 // --- Parâmetros de Learning Task ---
 export const LearningTaskParametrosSchema = z.object({
@@ -451,6 +464,17 @@ export const mediaJobTypeEnum = pgEnum("media_job_type", [
 export const actionRequestTypeEnum = pgEnum("action_request_type", [
   "trading",
   "integration",
+  "document",
+  "report",
+  "accounting",
+  "planning",
+]);
+
+export const agenticTaskTypeEnum = pgEnum("agentic_task_type", [
+  "document",
+  "report",
+  "accounting",
+  "planning",
 ]);
 
 export const actionRequestStatusEnum = pgEnum("action_request_status", [
@@ -985,6 +1009,38 @@ export const actionRequests = pgTable(
     idxActionRequestsTenant: index("idx_action_requests_tenant").on(table.tenantId),
     idxActionRequestsConversation: index("idx_action_requests_conversation").on(table.conversationId),
     idxActionRequestsStatus: index("idx_action_requests_status").on(table.tenantId, table.status, table.criadoEm),
+  })
+);
+
+// ============================================================================
+// TAREFAS AGENTIC (Documentos/Relatórios/Contabilidade/Planejamento)
+// ============================================================================
+
+export const agenticTasks = pgTable(
+  "agentic_tasks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    conversationId: uuid("conversation_id").references(() => conversations.id, { onDelete: "set null" }),
+    actionRequestId: uuid("action_request_id").references(() => actionRequests.id, { onDelete: "set null" }),
+    userId: uuid("user_id").references(() => users.id),
+    agentId: uuid("agent_id").references(() => agents.id),
+    type: agenticTaskTypeEnum("type").notNull(),
+    status: taskStatusEnum("status").notNull().default("pending"),
+    payload: jsonb("payload").$type<AgenticTaskPayload>().default({}),
+    result: jsonb("result").$type<GenericMetadata>(),
+    error: text("error"),
+    startedAt: timestamp("started_at"),
+    completedAt: timestamp("completed_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => ({
+    idxAgenticTasksTenant: index("idx_agentic_tasks_tenant").on(table.tenantId),
+    idxAgenticTasksStatus: index("idx_agentic_tasks_status").on(table.tenantId, table.status, table.createdAt),
+    idxAgenticTasksType: index("idx_agentic_tasks_type").on(table.tenantId, table.type),
+    idxAgenticTasksConversation: index("idx_agentic_tasks_conversation").on(table.conversationId),
+    idxAgenticTasksActionRequest: index("idx_agentic_tasks_action_request").on(table.actionRequestId),
   })
 );
 

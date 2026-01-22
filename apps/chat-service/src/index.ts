@@ -73,9 +73,11 @@ import { createClient } from 'redis';
 import { 
   buscarContextoRAG, 
   buscarContextoAgentic,
+  createDocumentInRAG,
   formatarContextoParaLLM, 
   getRAGBreakerStats,
   getMediaStatus,
+  updateDocumentInRAG,
   uploadMediaToRAG,
   classificarConsultaAgentic,
 } from './rag-client.js';
@@ -1001,6 +1003,88 @@ function extractImagePrompt(message: string, keyword: string): string {
   }
   
   return message;
+}
+
+// ============================================================================
+// AGENTIC TASK DETECTION (Documentos/Relatórios/Contabilidade/Planejamento)
+// ============================================================================
+
+const AGENTIC_TASK_CREATE_KEYWORDS = [
+  'criar', 'gerar', 'produzir', 'elaborar', 'montar', 'redigir', 'preparar',
+  'create', 'generate', 'produce', 'draft', 'prepare', 'write',
+];
+
+const AGENTIC_TASK_UPDATE_KEYWORDS = [
+  'atualizar', 'editar', 'modificar', 'revisar', 'ajustar', 'corrigir',
+  'update', 'edit', 'modify', 'revise',
+];
+
+const AGENTIC_TASK_INTENT_KEYWORDS = [
+  'preciso de', 'quero', 'gostaria', 'necessito',
+  'i need', 'i want', 'i would like',
+];
+
+const AGENTIC_TASK_TYPE_KEYWORDS: Record<AgenticTaskType, string[]> = {
+  document: ['documento', 'document', 'memorando', 'minuta'],
+  report: ['relatorio', 'relatório', 'report', 'relatório financeiro', 'relatorio financeiro'],
+  accounting: ['contabilidade', 'balanco', 'balanço', 'demonstrativo', 'lancamento', 'lançamento', 'conciliacao', 'conciliação'],
+  planning: ['planejamento', 'planejamento financeiro', 'plano', 'plan', 'roadmap', 'orcamento', 'orçamento'],
+};
+
+function normalizeForAgenticDetection(message: string): string {
+  return message
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
+function extractAgenticTitle(message: string): string | null {
+  const titleMatch = message.match(/t[ií]tulo\s*:\s*(.+)$/i);
+  if (!titleMatch || !titleMatch[1]) {
+    return null;
+  }
+  return titleMatch[1].trim();
+}
+
+function detectAgenticTaskRequest(message: string): AgenticTaskDetection {
+  const normalized = normalizeForAgenticDetection(message);
+  if (!normalized) {
+    return { isTaskRequest: false, reason: 'Mensagem vazia' };
+  }
+
+  let detectedType: AgenticTaskType | undefined;
+  for (const [taskType, keywords] of Object.entries(AGENTIC_TASK_TYPE_KEYWORDS)) {
+    if (keywords.some((keyword) => normalized.includes(keyword))) {
+      detectedType = taskType as AgenticTaskType;
+      break;
+    }
+  }
+
+  if (!detectedType) {
+    return { isTaskRequest: false, reason: 'Nenhum tipo de tarefa detectado' };
+  }
+
+  const hasCreateIntent = AGENTIC_TASK_CREATE_KEYWORDS.some((keyword) => normalized.includes(keyword));
+  const hasUpdateIntent = AGENTIC_TASK_UPDATE_KEYWORDS.some((keyword) => normalized.includes(keyword));
+  const hasGenericIntent = AGENTIC_TASK_INTENT_KEYWORDS.some((keyword) => normalized.includes(keyword));
+
+  if (!hasCreateIntent && !hasUpdateIntent && !hasGenericIntent) {
+    return { isTaskRequest: false, reason: 'Sem intenção explícita de tarefa' };
+  }
+
+  const uuidMatch = message.match(/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i);
+  const title = extractAgenticTitle(message);
+
+  return {
+    isTaskRequest: true,
+    taskType: detectedType,
+    mode: hasUpdateIntent ? 'update' : 'create',
+    title: title ?? undefined,
+    instructions: message.trim(),
+    documentId: uuidMatch?.[0],
+    reason: `Tipo detectado: ${detectedType}`,
+  };
 }
 
 const SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const;
@@ -2971,6 +3055,19 @@ interface TradingCommandResult {
   error?: string;
 }
 
+type AgenticTaskType = 'document' | 'report' | 'accounting' | 'planning';
+type AgenticTaskMode = 'create' | 'update';
+
+interface AgenticTaskDetection {
+  isTaskRequest: boolean;
+  taskType?: AgenticTaskType;
+  mode?: AgenticTaskMode;
+  title?: string;
+  instructions?: string;
+  documentId?: string;
+  reason?: string;
+}
+
 /**
  * Tipo de comando de trading (importado do parser)
  */
@@ -3047,6 +3144,10 @@ function shouldRequireTradingConfirmation(
   }
   const risk = getTradingCommandRisk(command);
   return risk !== 'low';
+}
+
+function shouldRequireAgenticConfirmation(policy: ConversationApprovalPolicy): boolean {
+  return policy !== 'never_confirm';
 }
 
 /**
@@ -3337,6 +3438,194 @@ async function executeTradingCommand(
     };
   } finally {
     clearTimeout(timeoutId);
+  }
+}
+
+// ============================================================================
+// AGENTIC TASKS - Documentos/Relatórios/Contabilidade/Planejamento
+// ============================================================================
+
+const AGENTIC_TASK_TITLES: Record<AgenticTaskType, string> = {
+  document: 'Documento',
+  report: 'Relatório',
+  accounting: 'Documento Contábil',
+  planning: 'Planejamento',
+};
+
+function buildAgenticTaskTitle(taskType: AgenticTaskType, titleOverride?: string): string {
+  if (titleOverride && titleOverride.trim().length > 0) {
+    return titleOverride.trim();
+  }
+  const dateLabel = new Date().toISOString().split('T')[0];
+  return `${AGENTIC_TASK_TITLES[taskType]} ${dateLabel}`;
+}
+
+async function resolveAgenticDocumentId(params: {
+  tenantId: string;
+  conversationId?: string | null;
+  explicitDocumentId?: string;
+}): Promise<string | null> {
+  if (params.explicitDocumentId) {
+    return params.explicitDocumentId;
+  }
+
+  if (!params.conversationId) {
+    return null;
+  }
+
+  const recentTasks = await db.query.agenticTasks.findMany({
+    where: and(
+      eq(schema.agenticTasks.tenantId, params.tenantId),
+      eq(schema.agenticTasks.conversationId, params.conversationId)
+    ),
+    orderBy: [desc(schema.agenticTasks.createdAt)],
+    limit: 5,
+  });
+
+  for (const task of recentTasks) {
+    const docId = (task.result as { documentId?: string } | null | undefined)?.documentId;
+    if (docId) {
+      return docId;
+    }
+  }
+
+  return null;
+}
+
+async function executeAgenticTask(params: {
+  tenantId: string;
+  userId: string;
+  role: Role;
+  conversationId?: string | null;
+  namespaceId?: string | null;
+  agentId?: string | null;
+  actionRequestId?: string | null;
+  taskType: AgenticTaskType;
+  mode: AgenticTaskMode;
+  instructions: string;
+  title?: string;
+  documentId?: string;
+  sourceMessageId?: string;
+}): Promise<{ success: boolean; taskId?: string; documentId?: string; title?: string; error?: string }> {
+  const startedAt = new Date();
+  const resolvedTitle = buildAgenticTaskTitle(params.taskType, params.title);
+
+  const [taskRecord] = await db.insert(schema.agenticTasks).values({
+    tenantId: params.tenantId,
+    conversationId: params.conversationId ?? undefined,
+    actionRequestId: params.actionRequestId ?? undefined,
+    userId: params.userId,
+    agentId: params.agentId ?? undefined,
+    type: params.taskType,
+    status: 'processing',
+    payload: {
+      taskType: params.taskType,
+      title: resolvedTitle,
+      instructions: params.instructions,
+      sourceMessageId: params.sourceMessageId,
+    },
+    startedAt,
+    updatedAt: startedAt,
+  }).returning();
+
+  if (!taskRecord) {
+    return { success: false, error: 'Falha ao registrar tarefa agentic' };
+  }
+
+  try {
+    const assistantSettings = await getAssistantSettingsForTenant(params.tenantId);
+    const agentConfig = params.agentId ? await db.query.agents.findFirst({ where: eq(schema.agents.id, params.agentId) }) : null;
+    let systemPrompt = buildSystemPrompt(agentConfig ?? null, assistantSettings, params.instructions);
+
+    systemPrompt += '\n\nREGRAS PARA TAREFAS:\n' +
+      '- Gere conteúdo profissional, estruturado e verificável.\n' +
+      '- Use Markdown com seções e listas quando apropriado.\n' +
+      '- Se dados específicos forem necessários e não fornecidos, destaque premissas claramente.\n' +
+      '- Não use placeholders ou informações inventadas.\n';
+
+    const taskLabel = AGENTIC_TASK_TITLES[params.taskType];
+    const taskAction = params.mode === 'update' ? 'ATUALIZAR' : 'CRIAR';
+    const taskInstructions = [
+      `${taskAction} ${taskLabel.toUpperCase()}.`,
+      `Título: ${resolvedTitle}.`,
+      `Instruções do usuário: ${params.instructions}`,
+    ].join('\n');
+
+    const content = await callLlamaAPI([
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: taskInstructions },
+    ], false);
+
+    if (typeof content !== 'string' || content.trim().length === 0) {
+      throw new Error('Conteúdo vazio retornado pelo LLM para tarefa agentic');
+    }
+
+    const internalHeaders = buildInternalServiceHeaders({
+      userId: params.userId,
+      tenantId: params.tenantId,
+      role: params.role,
+    });
+
+    let documentId = params.documentId;
+    if (params.mode === 'update') {
+      const resolvedDocumentId = await resolveAgenticDocumentId({
+        tenantId: params.tenantId,
+        conversationId: params.conversationId ?? undefined,
+        explicitDocumentId: params.documentId,
+      });
+      if (!resolvedDocumentId) {
+        throw new Error('Documento alvo não encontrado para atualização. Informe o ID do documento.');
+      }
+      documentId = resolvedDocumentId;
+      const updateResult = await updateDocumentInRAG({
+        documentId: resolvedDocumentId,
+        title: resolvedTitle,
+        content,
+        tenantId: params.tenantId,
+        userId: params.userId,
+        role: params.role,
+        namespaceId: params.namespaceId ?? undefined,
+        internalHeaders,
+      });
+      documentId = updateResult.document.id;
+    } else {
+      const createResult = await createDocumentInRAG({
+        title: resolvedTitle,
+        content,
+        tenantId: params.tenantId,
+        userId: params.userId,
+        role: params.role,
+        namespaceId: params.namespaceId ?? undefined,
+        internalHeaders,
+      });
+      documentId = createResult.document.id;
+    }
+
+    await db.update(schema.agenticTasks)
+      .set({
+        status: 'completed',
+        result: {
+          documentId,
+          title: resolvedTitle,
+        },
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.agenticTasks.id, taskRecord.id));
+
+    return { success: true, taskId: taskRecord.id, documentId, title: resolvedTitle };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    await db.update(schema.agenticTasks)
+      .set({
+        status: 'failed',
+        error: errorMessage,
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.agenticTasks.id, taskRecord.id));
+
+    return { success: false, taskId: taskRecord.id, error: errorMessage };
   }
 }
 
@@ -4996,19 +5285,28 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           command?: ParsedTradingCommand;
           summary?: string;
           sourceMessageId?: string;
+          task?: {
+            taskType?: AgenticTaskType;
+            mode?: AgenticTaskMode;
+            title?: string;
+            instructions?: string;
+            documentId?: string;
+          };
         };
         const pendingCommand = payload.command;
-        if (!pendingCommand) {
+        const pendingTask = payload.task;
+        const isAgenticAction = ['document', 'report', 'accounting', 'planning'].includes(pendingAction.type);
+        if (!pendingCommand && !pendingTask) {
           await db.update(schema.actionRequests)
             .set({
               status: 'failed',
-              resolutionNote: 'Payload sem comando válido',
+              resolutionNote: 'Payload sem comando ou tarefa válida',
               resolvidoEm: new Date(),
               atualizadoEm: new Date(),
             })
             .where(eq(schema.actionRequests.id, pendingAction.id));
 
-          const responseContent = 'Não foi possível localizar os detalhes da ação pendente. Por favor, envie o comando novamente.';
+          const responseContent = 'Não foi possível localizar os detalhes da ação pendente. Por favor, envie a solicitação novamente.';
           const [assistantMessage] = await db.insert(schema.messages).values({
             conversationId,
             agentId: conversation?.agentId ?? undefined,
@@ -5076,6 +5374,93 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           return;
         }
 
+        if (isAgenticAction) {
+          try {
+            await db.update(schema.actionRequests)
+              .set({
+                status: 'approved',
+                resolvedBy: userId,
+                resolutionNote: 'Ação aprovada pelo usuário',
+                atualizadoEm: new Date(),
+              })
+              .where(eq(schema.actionRequests.id, pendingAction.id));
+
+            const taskType = (pendingTask?.taskType ?? pendingAction.type) as AgenticTaskType;
+            const mode = pendingTask?.mode ?? 'create';
+            const taskResult = await executeAgenticTask({
+              tenantId,
+              userId,
+              role: req.user?.role as Role,
+              conversationId,
+              namespaceId: conversation?.namespaceId ?? namespaceId,
+              agentId: conversation?.agentId ?? undefined,
+              actionRequestId: pendingAction.id,
+              taskType,
+              mode,
+              instructions: pendingTask?.instructions ?? userMessageContent,
+              title: pendingTask?.title,
+              documentId: pendingTask?.documentId,
+              sourceMessageId: payload.sourceMessageId,
+            });
+
+            const verb = mode === 'update' ? 'atualizado' : 'criado';
+            const responseContent = taskResult.success
+              ? `Tarefa concluída com sucesso. Documento ${verb} ${taskResult.documentId ? `(${taskResult.documentId})` : ''}.`
+              : `Falha ao executar a tarefa: ${taskResult.error || 'erro desconhecido'}.`;
+
+            await db.update(schema.actionRequests)
+              .set({
+                status: taskResult.success ? 'executed' : 'failed',
+                resolutionNote: taskResult.success ? 'Executado com sucesso' : (taskResult.error || 'Falha na execução'),
+                resolvidoEm: new Date(),
+                atualizadoEm: new Date(),
+              })
+              .where(eq(schema.actionRequests.id, pendingAction.id));
+
+            const [assistantMessage] = await db.insert(schema.messages).values({
+              conversationId,
+              agentId: conversation?.agentId ?? undefined,
+              conteudo: responseContent,
+              tipo: 'text',
+              isFromUser: false,
+              metadata: {
+                actionRequestId: pendingAction.id,
+                actionStatus: taskResult.success ? 'executed' : 'failed',
+                agenticTask: taskResult,
+              },
+            }).returning();
+
+            await db.update(schema.conversations)
+              .set({
+                totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+                ultimaMensagemEm: new Date(),
+                atualizadoEm: new Date(),
+              })
+              .where(eq(schema.conversations.id, conversationId));
+
+            res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+            res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+            res.write('data: [DONE]\n\n');
+            res.end();
+            return;
+          } catch (taskError) {
+            const errorMessage = taskError instanceof Error ? taskError.message : 'Erro desconhecido';
+            await db.update(schema.actionRequests)
+              .set({
+                status: 'failed',
+                resolutionNote: errorMessage,
+                resolvidoEm: new Date(),
+                atualizadoEm: new Date(),
+              })
+              .where(eq(schema.actionRequests.id, pendingAction.id));
+
+            res.write(`data: ${JSON.stringify({ error: `Erro ao executar tarefa: ${errorMessage}` })}\n\n`);
+            res.write('data: [DONE]\n\n');
+            res.end();
+            return;
+          }
+        }
+
         const canExecute = await canExecuteTradingCommand(tenantId, 'user');
         if (!canExecute.canExecute) {
           await db.update(schema.actionRequests)
@@ -5127,8 +5512,12 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             })
             .where(eq(schema.actionRequests.id, pendingAction.id));
 
-          const result = await executeTradingCommand(userId, tenantId, pendingCommand);
-          const description = getCommandDescription(pendingCommand, 'pt');
+          if (!pendingCommand) {
+            throw new Error('Comando de trading pendente não encontrado');
+          }
+          const tradingCommand = pendingCommand;
+          const result = await executeTradingCommand(userId, tenantId, tradingCommand);
+          const description = getCommandDescription(tradingCommand, 'pt');
           const responseContent = result.success
             ? `Ação executada: ${description}.`
             : `Falha ao executar a ação (${description}): ${result.error || 'erro desconhecido'}.`;
@@ -5150,7 +5539,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             isFromUser: false,
             metadata: {
               actionRequestId: pendingAction.id,
-              tradingCommand: pendingCommand,
+              tradingCommand: tradingCommand,
               tradingResult: result,
               actionStatus: result.success ? 'executed' : 'failed',
             },
@@ -5187,7 +5576,8 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         }
       }
 
-      if (isTradingCommand(userMessageContent)) {
+      const pendingAgenticDetection = detectAgenticTaskRequest(userMessageContent);
+      if (isTradingCommand(userMessageContent) || pendingAgenticDetection.isTaskRequest) {
         const responseContent = 'Existe uma ação pendente aguardando confirmação. Responda "confirmar" para executar ou "cancelar" para abortar.';
         const [assistantMessage] = await db.insert(schema.messages).values({
           conversationId,
@@ -5219,7 +5609,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
     if (isTradingCommand(userMessageContent)) {
       const conversationState = await getOrCreateConversationState(conversationId);
-      const approvalPolicy = (conversationState.approvalPolicy ?? 'confirm_risky') as ConversationApprovalPolicy;
+      const approvalPolicy = (conversationState.approvalPolicy ?? 'always_confirm') as ConversationApprovalPolicy;
       const parsedCommand = parseTradingCommand(userMessageContent);
       const validation = validateCommand(parsedCommand);
 
@@ -5383,6 +5773,111 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         return;
       }
     }
+
+      const agenticDetection = detectAgenticTaskRequest(userMessageContent);
+      if (agenticDetection.isTaskRequest && agenticDetection.taskType && agenticDetection.instructions) {
+        const conversationState = await getOrCreateConversationState(conversationId);
+        const approvalPolicy = (conversationState.approvalPolicy ?? 'always_confirm') as ConversationApprovalPolicy;
+        const requiresConfirmation = shouldRequireAgenticConfirmation(approvalPolicy);
+        const taskTitle = buildAgenticTaskTitle(agenticDetection.taskType, agenticDetection.title);
+        const taskSummary = `${AGENTIC_TASK_TITLES[agenticDetection.taskType]}: ${taskTitle}`;
+
+        if (requiresConfirmation) {
+          const [actionRequest] = await db.insert(schema.actionRequests).values({
+            tenantId,
+            conversationId,
+            userId,
+            agentId: conversation?.agentId ?? undefined,
+            type: agenticDetection.taskType,
+            status: 'pending',
+            payload: {
+              action: 'agentic_task',
+              summary: taskSummary,
+              task: {
+                taskType: agenticDetection.taskType,
+                mode: agenticDetection.mode ?? 'create',
+                title: taskTitle,
+                instructions: agenticDetection.instructions,
+                documentId: agenticDetection.documentId,
+              },
+              sourceMessageId: userMessage.id,
+            },
+          }).returning();
+
+          const responseContent = `Para executar a tarefa (${taskSummary}), preciso de confirmação explícita.\nResponda "confirmar" para executar ou "cancelar" para abortar.`;
+          const [assistantMessage] = await db.insert(schema.messages).values({
+            conversationId,
+            agentId: conversation?.agentId ?? undefined,
+            conteudo: responseContent,
+            tipo: 'text',
+            isFromUser: false,
+            metadata: {
+              actionRequestId: actionRequest?.id,
+              actionStatus: 'pending',
+              requiresConfirmation: true,
+            },
+          }).returning();
+
+          await db.update(schema.conversations)
+            .set({
+              totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+              ultimaMensagemEm: new Date(),
+              atualizadoEm: new Date(),
+            })
+            .where(eq(schema.conversations.id, conversationId));
+
+          res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+          res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+          res.write('data: [DONE]\n\n');
+          res.end();
+          return;
+        }
+
+        const taskResult = await executeAgenticTask({
+          tenantId,
+          userId,
+          role: req.user?.role as Role,
+          conversationId,
+          namespaceId: conversation?.namespaceId ?? namespaceId,
+          agentId: conversation?.agentId ?? undefined,
+          taskType: agenticDetection.taskType,
+          mode: agenticDetection.mode ?? 'create',
+          instructions: agenticDetection.instructions,
+          title: taskTitle,
+          documentId: agenticDetection.documentId,
+          sourceMessageId: userMessage.id,
+        });
+
+        const verb = (agenticDetection.mode ?? 'create') === 'update' ? 'atualizado' : 'criado';
+        const responseContent = taskResult.success
+          ? `Tarefa concluída com sucesso. Documento ${verb} ${taskResult.documentId ? `(${taskResult.documentId})` : ''}.`
+          : `Falha ao executar a tarefa (${taskSummary}): ${taskResult.error || 'erro desconhecido'}.`;
+
+        const [assistantMessage] = await db.insert(schema.messages).values({
+          conversationId,
+          agentId: conversation?.agentId ?? undefined,
+          conteudo: responseContent,
+          tipo: 'text',
+          isFromUser: false,
+          metadata: {
+            agenticTask: taskResult,
+          },
+        }).returning();
+
+        await db.update(schema.conversations)
+          .set({
+            totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+            ultimaMensagemEm: new Date(),
+            atualizadoEm: new Date(),
+          })
+          .where(eq(schema.conversations.id, conversationId));
+
+        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
 
       const agent = conversation?.agent ?? null;
       const ragParams = getAdaptiveRagParams(userMessageContent, previousMessages.length);
@@ -7415,7 +7910,7 @@ app.get('/api/chat/conversations/:id/approval-policy', requireAuth(), requireSam
   try {
     const state = await getOrCreateConversationState(id);
     res.json({
-      approvalPolicy: state.approvalPolicy ?? 'confirm_risky',
+      approvalPolicy: state.approvalPolicy ?? 'always_confirm',
       allowWebSearchWithoutApproval: true,
     });
   } catch (error) {
@@ -7441,7 +7936,7 @@ app.patch('/api/chat/conversations/:id/approval-policy', requireAuth(), requireS
       approvalPolicy: bodyResult.data.approvalPolicy,
     });
     res.json({
-      approvalPolicy: updated.approvalPolicy ?? 'confirm_risky',
+      approvalPolicy: updated.approvalPolicy ?? 'always_confirm',
       allowWebSearchWithoutApproval: true,
     });
   } catch (error) {
