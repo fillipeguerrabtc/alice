@@ -120,15 +120,20 @@ setPermissionResolver(async (auth: AuthContext) => {
       with: { permission: true },
     })
     : [];
-  const resolved = [
-    ...rolePermissions
-      .map((rp) => ('codigo' in rp ? rp.codigo : (rp as { permission?: { codigo?: string | null } }).permission?.codigo))
-      .filter((code): code is string => Boolean(code)),
-    ...customRolePermissions
-      .map((rp) => (rp as { permission?: { codigo?: string | null } }).permission?.codigo)
-      .filter((code): code is string => Boolean(code)),
-  ];
-  return resolved;
+  const dbPermissions = rolePermissions
+    .map((rp) => ('codigo' in rp ? rp.codigo : (rp as { permission?: { codigo?: string | null } }).permission?.codigo))
+    .filter((code): code is string => Boolean(code));
+  const customPermissions = customRolePermissions
+    .map((rp) => (rp as { permission?: { codigo?: string | null } }).permission?.codigo)
+    .filter((code): code is string => Boolean(code));
+  const basePermissions = Object.entries(PERMISSION_MAP)
+    .filter(([, roles]) => roles.includes(auth.role))
+    .map(([code]) => code);
+  const resolved = new Set<string>([...dbPermissions, ...customPermissions, ...basePermissions]);
+  if (isAdminRole) {
+    resolved.add('admin:alice_core:write');
+  }
+  return Array.from(resolved);
 });
 
 type DbUser = typeof schema.users.$inferSelect;
