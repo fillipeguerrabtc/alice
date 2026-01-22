@@ -8,7 +8,7 @@
  * @module chat-service/rag-client
  */
 
-import type { Role } from '@alice/shared-utils';
+import type { InternalAuthHeaders, Role } from '@alice/shared-utils';
 import { 
   createCircuitBreaker, 
   CIRCUIT_BREAKER_PRESETS,
@@ -375,6 +375,12 @@ export interface RagDocumentResponse {
   chunksCreated?: number;
 }
 
+function normalizeInternalHeaders(headers: Record<string, string> | InternalAuthHeaders): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(headers).map(([key, value]) => [key.toLowerCase(), value])
+  );
+}
+
 export async function createDocumentInRAG(params: {
   title: string;
   content: string;
@@ -391,11 +397,13 @@ export async function createDocumentInRAG(params: {
     throw new Error('INTERNAL_API_SECRET não configurado - criação de documento indisponível');
   }
 
-  const headers = params.internalHeaders ?? generateInternalAuthHeaders({
+  const headers = normalizeInternalHeaders(
+    params.internalHeaders ?? generateInternalAuthHeaders({
     userId: params.userId,
     tenantId: params.tenantId,
     role: params.role,
-  });
+    })
+  );
 
   const response = await fetch(`${RAG_SERVICE_URL_FINAL}/api/rag/documents`, {
     method: 'POST',
@@ -444,11 +452,13 @@ export async function updateDocumentInRAG(params: {
     throw new Error('INTERNAL_API_SECRET não configurado - atualização de documento indisponível');
   }
 
-  const headers = params.internalHeaders ?? generateInternalAuthHeaders({
+  const headers = normalizeInternalHeaders(
+    params.internalHeaders ?? generateInternalAuthHeaders({
     userId: params.userId,
     tenantId: params.tenantId,
     role: params.role,
-  });
+    })
+  );
 
   const response = await fetch(`${RAG_SERVICE_URL_FINAL}/api/rag/documents/${params.documentId}`, {
     method: 'PATCH',

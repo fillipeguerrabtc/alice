@@ -1090,7 +1090,7 @@
     "multimodal": {
       "tabTitle": "Multimodal",
       "title": "Multimodal Media Upload",
-      "subtitle": "Upload images and audio to train Alice. Media will be processed via GPU to generate embeddings and enrich the knowledge base.",
+      "subtitle": "Upload images and audio to train Alice. Images use OpenAI (Vision + embeddings) and audio uses GPU to generate embeddings and enrich the knowledge base.",
       "descriptionLabel": "Description (optional)",
       "descriptionPlaceholder": "Describe the media content for better contextualization",
       "dragDrop": "Drag files or click to select",

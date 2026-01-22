@@ -82,7 +82,7 @@ services:
 
   # =============================================================================
   # Embeddings GPU - Qwen3-Embedding-0.6B INT8
-  # Gate 2: Texto 1024 dim (Qdrant) + Imagem 1024 dim (pgvector)
+  # Gate 2: Texto 1024 dim (Qdrant) - imagens usam OpenAI (sem GPU)
   # =============================================================================
   gpu-embeddings:
     image: ghcr.io/${DOCKERHUB_USERNAME:-fillipeguerrabtc}/alice-embeddings-gpu:${IMAGE_TAG:-latest}

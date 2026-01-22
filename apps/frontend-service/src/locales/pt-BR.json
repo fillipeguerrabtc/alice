@@ -1090,7 +1090,7 @@
     "multimodal": {
       "tabTitle": "Multimodal",
       "title": "Upload de Mídia Multimodal",
-      "subtitle": "Faça upload de imagens e áudios para treinar a Alice. A mídia será processada via GPU para gerar embeddings e enriquecer a base de conhecimento.",
+      "subtitle": "Faça upload de imagens e áudios para treinar a Alice. Imagens usam OpenAI (Vision + embeddings) e áudios usam GPU para gerar embeddings e enriquecer a base de conhecimento.",
       "descriptionLabel": "Descrição (opcional)",
       "descriptionPlaceholder": "Descreva o conteúdo das mídias para melhor contextualização",
       "dragDrop": "Arraste arquivos ou clique para selecionar",
