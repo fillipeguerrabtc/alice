@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 22 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.67 - Core RBAC + Vision OpenAI + Agentic Approval
+**Versão:** 7.68 - Core RBAC + Vision OpenAI + Agentic Approval
 
 ---
 
@@ -208,6 +208,7 @@ Retenção Arquivo:   30 dias
 - OpenAI Images: payload padronizado (gpt-image-1 + output_format=png) com retorno `b64_json`.
 - Agentic: política de aprovação por conversa (sempre confirmar / aprovar tudo neste chat).
 - Agentic: confirmação persistida para ações críticas de trading (action_requests).
+- Admin: formulário de roles customizadas aceita slug vazio e gera automaticamente.
 - Chat UI: paste de imagem (Ctrl+V) anexa automaticamente no input.
 - Chat UI: avatar do usuário maior e cores de mensagens alinhadas às da Alice.
 - Chat UI: remoção dos cartões de sugestão no “Novo Chat”.

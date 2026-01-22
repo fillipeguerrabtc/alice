@@ -317,7 +317,7 @@ function CustomRoleFormDialog({
     resolver: asResolver<CustomRoleFormData>(zodResolver(customRoleFormSchema)),
     defaultValues: {
       nome: role?.nome || '',
-      slug: role?.slug || '',
+      slug: role?.slug ?? undefined,
       descricao: role?.descricao || '',
       baseRole: role?.baseRole || 'viewer',
       ativo: role?.ativo ?? true,
@@ -328,7 +328,7 @@ function CustomRoleFormDialog({
     if (!open) return;
     form.reset({
       nome: role?.nome || '',
-      slug: role?.slug || '',
+      slug: role?.slug ?? undefined,
       descricao: role?.descricao || '',
       baseRole: role?.baseRole || 'viewer',
       ativo: role?.ativo ?? true,
