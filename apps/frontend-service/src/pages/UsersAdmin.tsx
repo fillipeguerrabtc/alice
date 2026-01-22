@@ -519,8 +519,13 @@ function PermissionFormDialog({
     }
     if (resourceMode === 'select' && resourceOptions.length > 0) {
       const current = form.getValues('recurso');
-      if (!current || !resourceOptions.includes(current)) {
+      if (!current) {
         form.setValue('recurso', resourceOptions[0]);
+        return;
+      }
+      if (!resourceOptions.includes(current)) {
+        setResourceMode('custom');
+        return;
       }
     }
   }, [form, moduleMode, resourceMode, resourceOptions, selectedModule]);
