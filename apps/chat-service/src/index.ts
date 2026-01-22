@@ -8840,15 +8840,24 @@ app.get('/api/agents/model-options', requireAuth(), requireSameTenant(getTenantI
 // ASSISTANT SETTINGS (System Prompt / Comportamento / Humor)
 // ============================================================================
 
+const optionalTextWithMin = (min: number, max: number) =>
+  z.preprocess(
+    (value) => {
+      if (typeof value !== 'string') return value;
+      return value.trim();
+    },
+    z.union([z.literal(''), z.string().min(min).max(max)]).optional().nullable()
+  );
+
 const assistantSettingsSchema = z.object({
-  systemPrompt: z.string().min(10).max(20000).optional().nullable(),
-  creatorName: z.string().min(2).max(200).optional().nullable(),
-  creatorRule: z.string().min(10).max(5000).optional().nullable(),
-  ethicsPolicy: z.string().min(10).max(5000).optional().nullable(),
-  moralPolicy: z.string().min(10).max(5000).optional().nullable(),
-  legalPolicy: z.string().min(10).max(5000).optional().nullable(),
-  safetyGuardrails: z.string().min(10).max(8000).optional().nullable(),
-  nsfwPolicy: z.string().min(10).max(5000).optional().nullable(),
+  systemPrompt: optionalTextWithMin(10, 20000),
+  creatorName: optionalTextWithMin(2, 200),
+  creatorRule: optionalTextWithMin(10, 5000),
+  ethicsPolicy: optionalTextWithMin(10, 5000),
+  moralPolicy: optionalTextWithMin(10, 5000),
+  legalPolicy: optionalTextWithMin(10, 5000),
+  safetyGuardrails: optionalTextWithMin(10, 8000),
+  nsfwPolicy: optionalTextWithMin(10, 5000),
   behavior: z.string().max(5000).optional().nullable(),
   mood: z.string().max(2000).optional().nullable(),
   behaviorDirectness: z.number().int().min(0).max(100).optional().nullable(),
