@@ -903,6 +903,7 @@ export default function UsersAdmin() {
   const [searchGroups, setSearchGroups] = useState('');
   const [searchRoles, setSearchRoles] = useState('');
   const [searchPermissions, setSearchPermissions] = useState('');
+  const [searchCustomRolePermissions, setSearchCustomRolePermissions] = useState('');
 
   const { data: usersData, isLoading: usersLoading } = useQuery<{ users: UserItem[] }>({
     queryKey: ['/api/users'],
@@ -1339,6 +1340,14 @@ export default function UsersAdmin() {
       return composite.includes(query);
     });
   }, [permissions, searchPermissions]);
+
+  const filteredCustomRolePermissions = useMemo(() => {
+    const query = searchCustomRolePermissions.toLowerCase();
+    return permissions.filter((permission) => {
+      const composite = `${permission.codigo} ${permission.nome} ${permission.modulo}`.toLowerCase();
+      return composite.includes(query);
+    });
+  }, [permissions, searchCustomRolePermissions]);
 
   return (
     <div className="container mx-auto p-6 max-w-7xl space-y-6">
@@ -1867,6 +1876,7 @@ export default function UsersAdmin() {
         onOpenChange={(openValue) => {
           setCustomRolePermissionsDialogOpen(openValue);
           if (!openValue) {
+            setSearchCustomRolePermissions('');
             flushCustomRolePermissionSave();
             setSelectedCustomRole(null);
           }
@@ -1883,8 +1893,8 @@ export default function UsersAdmin() {
             <div className="max-w-sm">
               <Input
                 placeholder={t('usersAdmin.permissions.searchPlaceholder')}
-                value={searchPermissions}
-                onChange={(event) => setSearchPermissions(event.target.value)}
+                value={searchCustomRolePermissions}
+                onChange={(event) => setSearchCustomRolePermissions(event.target.value)}
               />
             </div>
             <Table>
@@ -1903,14 +1913,14 @@ export default function UsersAdmin() {
                       {t('common.loading')}
                     </TableCell>
                   </TableRow>
-                ) : filteredPermissions.length === 0 ? (
+                ) : filteredCustomRolePermissions.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={3} className="text-center text-muted-foreground">
                       {t('usersAdmin.permissions.empty')}
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredPermissions.map((permission) => {
+                  filteredCustomRolePermissions.map((permission) => {
                     const hasRole = customRolePermissionCodes.has(permission.codigo);
                     return (
                       <TableRow key={permission.id}>

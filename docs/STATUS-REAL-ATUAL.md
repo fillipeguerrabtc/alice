@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 22 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.71 - RBAC UI Debounce + Permissões Ativas
+**Versão:** 7.72 - Busca Isolada em Permissões Custom
 
 ---
 
@@ -250,6 +250,7 @@ Retenção Arquivo:   30 dias
 - RBAC: roles customizadas inativas não concedem permissões no resolver.
 - RBAC UI: fechamento do diálogo de permissões salva pendências (debounce flush).
 - Auth API: endpoint de permissões ignora roles customizadas inativas.
+- RBAC UI: busca no diálogo de permissões customizadas isolada da aba principal.
 - RBAC: roles customizadas por tenant (departamentos/funções) com permissões próprias.
 - RBAC: usuários podem ter role base + role customizada simultaneamente.
 - RBAC UI: criação de permissões guiada por módulo/recurso/ação (menos erro humano).
