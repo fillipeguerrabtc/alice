@@ -8,7 +8,7 @@
 
 import { useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { User, Copy, Check } from 'lucide-react';
+import { Copy, Check } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -222,11 +222,6 @@ export function MessageBubble({
         </div>
       </div>
 
-      {isUser && (
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-secondary text-secondary-foreground">
-          <User className="h-5 w-5" />
-        </div>
-      )}
     </motion.div>
   );
 }
