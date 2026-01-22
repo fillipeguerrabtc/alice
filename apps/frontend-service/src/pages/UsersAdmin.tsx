@@ -1239,6 +1239,7 @@ export default function UsersAdmin() {
   const customRolePermissionCodesRef = useRef<Set<string>>(new Set());
   const customRolePermissionSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const customRolePermissionSaveQueueRef = useRef(Promise.resolve());
+  const lastCustomRoleIdRef = useRef<string | null>(null);
 
   const enqueueRolePermissionSave = (codes: string[]) => {
     if (isLockedRole) return;
@@ -1251,6 +1252,19 @@ export default function UsersAdmin() {
     customRolePermissionSaveQueueRef.current = customRolePermissionSaveQueueRef.current
       .then(() => updateCustomRolePermissions.mutateAsync({ roleId, permissionCodes: codes }))
       .catch(() => undefined);
+  };
+
+  const flushCustomRolePermissionSave = (roleId?: string | null) => {
+    const targetRoleId = roleId ?? lastCustomRoleIdRef.current;
+    if (!customRolePermissionSaveTimerRef.current) {
+      return;
+    }
+    clearTimeout(customRolePermissionSaveTimerRef.current);
+    customRolePermissionSaveTimerRef.current = null;
+    if (!targetRoleId) {
+      return;
+    }
+    enqueueCustomRolePermissionSave(targetRoleId, Array.from(customRolePermissionCodesRef.current));
   };
 
   useEffect(() => {
@@ -1282,16 +1296,15 @@ export default function UsersAdmin() {
   }, [selectedRole]);
 
   useEffect(() => {
+    const currentRoleId = selectedCustomRole?.id ?? null;
+    lastCustomRoleIdRef.current = currentRoleId;
     customRolePermissionSaveQueueRef.current = Promise.resolve();
     if (customRolePermissionSaveTimerRef.current) {
       clearTimeout(customRolePermissionSaveTimerRef.current);
       customRolePermissionSaveTimerRef.current = null;
     }
     return () => {
-      if (customRolePermissionSaveTimerRef.current) {
-        clearTimeout(customRolePermissionSaveTimerRef.current);
-        customRolePermissionSaveTimerRef.current = null;
-      }
+      flushCustomRolePermissionSave(currentRoleId);
     };
   }, [selectedCustomRole?.id]);
 
@@ -1854,6 +1867,7 @@ export default function UsersAdmin() {
         onOpenChange={(openValue) => {
           setCustomRolePermissionsDialogOpen(openValue);
           if (!openValue) {
+            flushCustomRolePermissionSave();
             setSelectedCustomRole(null);
           }
         }}

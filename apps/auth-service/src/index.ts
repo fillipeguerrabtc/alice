@@ -2020,9 +2020,22 @@ app.get('/api/auth/rbac/permissions', requireAuth(), async (req: Request, res: R
           permission: true,
         },
       });
-    const customRolePermissions = customRoleId
+    let activeCustomRoleId = customRoleId;
+    if (activeCustomRoleId) {
+      const activeRole = await db.query.customRoles.findFirst({
+        where: and(
+          eq(schema.customRoles.id, activeCustomRoleId),
+          eq(schema.customRoles.ativo, true)
+        ),
+        columns: { id: true },
+      });
+      if (!activeRole) {
+        activeCustomRoleId = null;
+      }
+    }
+    const customRolePermissions = activeCustomRoleId
       ? await db.query.customRolePermissions.findMany({
-        where: eq(schema.customRolePermissions.customRoleId, customRoleId),
+        where: eq(schema.customRolePermissions.customRoleId, activeCustomRoleId),
         with: { permission: true },
       })
       : [];
@@ -2047,7 +2060,7 @@ app.get('/api/auth/rbac/permissions', requireAuth(), async (req: Request, res: R
 
     res.json({ 
       role: userRole,
-      customRoleId,
+      customRoleId: activeCustomRoleId,
       permissions,
       canManageUsers: ['super_admin', 'admin'].includes(userRole || ''),
       canManageAgents: ['super_admin', 'admin', 'manager'].includes(userRole || ''),

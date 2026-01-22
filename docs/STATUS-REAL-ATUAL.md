@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 22 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.70 - ASR OpenAI + RBAC Custom Roles
+**Versão:** 7.71 - RBAC UI Debounce + Permissões Ativas
 
 ---
 
@@ -248,6 +248,8 @@ Retenção Arquivo:   30 dias
 - Áudio no Chat: polling de transcrição encerra quando mídia é removida/enviada (sem texto fantasma).
 - RBAC: resolver combina DB + PERMISSION_MAP para evitar 403 em permissões não seedadas.
 - RBAC: roles customizadas inativas não concedem permissões no resolver.
+- RBAC UI: fechamento do diálogo de permissões salva pendências (debounce flush).
+- Auth API: endpoint de permissões ignora roles customizadas inativas.
 - RBAC: roles customizadas por tenant (departamentos/funções) com permissões próprias.
 - RBAC: usuários podem ter role base + role customizada simultaneamente.
 - RBAC UI: criação de permissões guiada por módulo/recurso/ação (menos erro humano).
@@ -323,7 +325,8 @@ Retenção Arquivo:   30 dias
 
 ### Flags de aplicação (defaults atuais)
 
-**Chat Service (tokens + histórico)**
+#### Chat Service (tokens + histórico)
+
 - `LLM_MIN_OUTPUT_TOKENS=256`
 - `LLM_DYNAMIC_PROMPT_T1=1600`
 - `LLM_DYNAMIC_PROMPT_T2=2200`
@@ -346,7 +349,8 @@ Retenção Arquivo:   30 dias
 - `CHAT_HISTORY_SEARCH_CONVERSATIONS_LIMIT=20`
 - `CHAT_MEMORY_RELEVANCE_THRESHOLD=0.10`
 
-**RAG Service (Top-K adaptativo)**
+#### RAG Service (Top-K adaptativo)
+
 - `RAG_ADAPTIVE_K_ENABLED=false`
 - `RAG_ADAPTIVE_K_MIN_RESULTS=2`
 - `RAG_ADAPTIVE_K_MIN_THRESHOLD=0.55`
@@ -354,7 +358,8 @@ Retenção Arquivo:   30 dias
 - `RAG_ADAPTIVE_K_SHORT_QUERY=200`
 - `RAG_ADAPTIVE_K_MEDIUM_QUERY=600`
 
-**GPU Client (timeouts/retries)**
+#### GPU Client (timeouts/retries)
+
 - `GPU_REQUEST_TIMEOUT_MS=60000`
 - `GPU_REQUEST_MAX_RETRIES=3`
 - `GPU_REQUEST_FETCH_TIMEOUT_MS=30000`
@@ -363,32 +368,37 @@ Retenção Arquivo:   30 dias
 
 ### Tuning de servidor (manual, sem pipeline)
 
-**sysctl (arquivo `/etc/sysctl.d/99-alice-tuning.conf`)**
+#### sysctl (arquivo `/etc/sysctl.d/99-alice-tuning.conf`)
+
 - `vm.swappiness=10`
 - `fs.file-max=2097152`
 - `fs.inotify.max_user_watches=524288`
 - `net.core.rmem_max=16777216`
 - `net.core.wmem_max=16777216`
 
-**limits (arquivo `/etc/security/limits.d/99-alice.conf`)**
+#### limits (arquivo `/etc/security/limits.d/99-alice.conf`)
+
 - `* soft nofile 1048576`
 - `* hard nofile 1048576`
 - `* soft nproc 65535`
 - `* hard nproc 65535`
 
-**Docker runtime (arquivo `/etc/docker/daemon.json`)**
+#### Docker runtime (arquivo `/etc/docker/daemon.json`)
+
 - `log-driver: json-file`
 - `log-opts: { max-size: "100m", max-file: "5" }`
 - `max-concurrent-downloads: 10`
 - `max-concurrent-uploads: 10`
 - `live-restore: true`
 
-**GPU runtime (manual)**
+#### GPU runtime (manual)
+
 - `nvidia-persistenced` habilitado
 - runtime NVIDIA configurado como padrão
 - CDI NVIDIA ativo (`/etc/cdi/nvidia.yaml`)
 
-**Storage/IO (manual)**
+#### Storage/IO (manual)
+
 - Limpeza segura de logs antigos em `/opt/alice/logs/`
 - Remoção de volumes órfãos (`docker volume prune`) sob janela de manutenção
 
