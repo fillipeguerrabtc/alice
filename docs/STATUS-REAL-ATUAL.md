@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 **Autor:** Fillipe Guerra  
-**Data:** 21 de Janeiro de 2026  
+**Data:** 22 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.65 - Auditoria KuCoin alinhada a docs oficiais
+**Versão:** 7.67 - Core RBAC + Vision OpenAI + Agentic Approval
 
 ---
 
@@ -206,7 +206,7 @@ Retenção Arquivo:   30 dias
 - Grafana: UIDs de dashboards ajustados para não conflitar com folderUid.
 - OAuth Google: callbackURL alinhado com config e suporte a path com trailing slash.
 - OpenAI Images: payload padronizado (gpt-image-1 + output_format=png) com retorno `b64_json`.
-- Agentic: política de aprovação por conversa (sempre confirmar / confirmar arriscadas / executar tudo).
+- Agentic: política de aprovação por conversa (sempre confirmar / aprovar tudo neste chat).
 - Agentic: confirmação persistida para ações críticas de trading (action_requests).
 - Chat UI: paste de imagem (Ctrl+V) anexa automaticamente no input.
 - Chat UI: avatar do usuário maior e cores de mensagens alinhadas às da Alice.

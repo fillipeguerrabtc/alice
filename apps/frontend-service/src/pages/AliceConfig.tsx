@@ -18,15 +18,24 @@ import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
+const optionalTextWithMin = (min: number, max: number, message: string) =>
+  z.preprocess(
+    (value) => {
+      if (typeof value !== 'string') return value;
+      return value.trim();
+    },
+    z.union([z.literal(''), z.string().min(min, message).max(max)]).optional().nullable()
+  );
+
 const assistantSettingsSchema = z.object({
-  systemPrompt: z.string().min(10, 'System Prompt deve ter pelo menos 10 caracteres').max(20000).optional().nullable(),
-  creatorName: z.string().min(2, 'Nome do criador deve ter pelo menos 2 caracteres').max(200).optional().nullable(),
-  creatorRule: z.string().min(10, 'Regra do criador deve ter pelo menos 10 caracteres').max(5000).optional().nullable(),
-  ethicsPolicy: z.string().min(10, 'Política de ética deve ter pelo menos 10 caracteres').max(5000).optional().nullable(),
-  moralPolicy: z.string().min(10, 'Política moral deve ter pelo menos 10 caracteres').max(5000).optional().nullable(),
-  legalPolicy: z.string().min(10, 'Política legal deve ter pelo menos 10 caracteres').max(5000).optional().nullable(),
-  safetyGuardrails: z.string().min(10, 'Guardrails devem ter pelo menos 10 caracteres').max(8000).optional().nullable(),
-  nsfwPolicy: z.string().min(10, 'Política NSFW deve ter pelo menos 10 caracteres').max(5000).optional().nullable(),
+  systemPrompt: optionalTextWithMin(10, 20000, 'System Prompt deve ter pelo menos 10 caracteres'),
+  creatorName: optionalTextWithMin(2, 200, 'Nome do criador deve ter pelo menos 2 caracteres'),
+  creatorRule: optionalTextWithMin(10, 5000, 'Regra do criador deve ter pelo menos 10 caracteres'),
+  ethicsPolicy: optionalTextWithMin(10, 5000, 'Política de ética deve ter pelo menos 10 caracteres'),
+  moralPolicy: optionalTextWithMin(10, 5000, 'Política moral deve ter pelo menos 10 caracteres'),
+  legalPolicy: optionalTextWithMin(10, 5000, 'Política legal deve ter pelo menos 10 caracteres'),
+  safetyGuardrails: optionalTextWithMin(10, 8000, 'Guardrails devem ter pelo menos 10 caracteres'),
+  nsfwPolicy: optionalTextWithMin(10, 5000, 'Política NSFW deve ter pelo menos 10 caracteres'),
   behavior: z.string().max(5000).optional().nullable(),
   mood: z.string().max(2000).optional().nullable(),
   behaviorDirectness: z.number().min(0).max(100).optional().nullable(),
