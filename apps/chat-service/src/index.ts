@@ -1390,53 +1390,42 @@ type CoreDefaults = {
   nsfwPolicy: string;
 };
 
-function getRequiredCoreDefaults(): CoreDefaults {
-  const creatorName = process.env.CREATOR_NAME?.trim() || '';
-  const creatorRule = process.env.CREATOR_RULE?.trim() || '';
-  const ethicsPolicy = process.env.ASSISTANT_ETHICS_POLICY?.trim() || '';
-  const moralPolicy = process.env.ASSISTANT_MORAL_POLICY?.trim() || '';
-  const legalPolicy = process.env.ASSISTANT_LEGAL_POLICY?.trim() || '';
-  const safetyGuardrails = process.env.ASSISTANT_SAFETY_GUARDRAILS?.trim() || '';
-  const nsfwPolicy = process.env.ASSISTANT_NSFW_POLICY?.trim() || '';
+function resolveCoreSettings(settings?: AssistantSettings | null): {
+  core: CoreDefaults | null;
+  missing: string[];
+} {
+  const creatorName = settings?.creatorName?.trim() || '';
+  const creatorRule = settings?.creatorRule?.trim() || '';
+  const ethicsPolicy = settings?.ethicsPolicy?.trim() || '';
+  const moralPolicy = settings?.moralPolicy?.trim() || '';
+  const legalPolicy = settings?.legalPolicy?.trim() || '';
+  const safetyGuardrails = settings?.safetyGuardrails?.trim() || '';
+  const nsfwPolicy = settings?.nsfwPolicy?.trim() || '';
 
-  if (process.env.NODE_ENV === 'production') {
-    const missing: string[] = [];
-    if (!creatorName) missing.push('CREATOR_NAME');
-    if (!creatorRule) missing.push('CREATOR_RULE');
-    if (!ethicsPolicy) missing.push('ASSISTANT_ETHICS_POLICY');
-    if (!moralPolicy) missing.push('ASSISTANT_MORAL_POLICY');
-    if (!legalPolicy) missing.push('ASSISTANT_LEGAL_POLICY');
-    if (!safetyGuardrails) missing.push('ASSISTANT_SAFETY_GUARDRAILS');
-    if (!nsfwPolicy) missing.push('ASSISTANT_NSFW_POLICY');
+  const missing: string[] = [];
+  if (!creatorName) missing.push('creatorName');
+  if (!creatorRule) missing.push('creatorRule');
+  if (!ethicsPolicy) missing.push('ethicsPolicy');
+  if (!moralPolicy) missing.push('moralPolicy');
+  if (!legalPolicy) missing.push('legalPolicy');
+  if (!safetyGuardrails) missing.push('safetyGuardrails');
+  if (!nsfwPolicy) missing.push('nsfwPolicy');
 
-    if (missing.length > 0) {
-      logger.error({ missing }, 'Variáveis Core obrigatórias ausentes para identidade/ética/guardrails da Alice');
-      throw new Error(`Core env ausente: ${missing.join(', ')}`);
-    }
+  if (missing.length > 0) {
+    return { core: null, missing };
   }
 
   return {
-    creatorName,
-    creatorRule,
-    ethicsPolicy,
-    moralPolicy,
-    legalPolicy,
-    safetyGuardrails,
-    nsfwPolicy,
-  };
-}
-
-const CORE_DEFAULTS = getRequiredCoreDefaults();
-
-function resolveCoreSettings(settings?: AssistantSettings | null): CoreDefaults {
-  return {
-    creatorName: settings?.creatorName?.trim() || CORE_DEFAULTS.creatorName,
-    creatorRule: settings?.creatorRule?.trim() || CORE_DEFAULTS.creatorRule,
-    ethicsPolicy: settings?.ethicsPolicy?.trim() || CORE_DEFAULTS.ethicsPolicy,
-    moralPolicy: settings?.moralPolicy?.trim() || CORE_DEFAULTS.moralPolicy,
-    legalPolicy: settings?.legalPolicy?.trim() || CORE_DEFAULTS.legalPolicy,
-    safetyGuardrails: settings?.safetyGuardrails?.trim() || CORE_DEFAULTS.safetyGuardrails,
-    nsfwPolicy: settings?.nsfwPolicy?.trim() || CORE_DEFAULTS.nsfwPolicy,
+    core: {
+      creatorName,
+      creatorRule,
+      ethicsPolicy,
+      moralPolicy,
+      legalPolicy,
+      safetyGuardrails,
+      nsfwPolicy,
+    },
+    missing: [],
   };
 }
 
@@ -1523,7 +1512,11 @@ function buildSystemPrompt(
   userMessage?: string
 ): string {
   let prompt = DEFAULT_SYSTEM_PROMPT;
-  const coreSettings = resolveCoreSettings(assistantSettings);
+  const { core: coreSettings, missing } = resolveCoreSettings(assistantSettings);
+  if (!coreSettings) {
+    logger.error({ missing }, 'Core da Alice não configurado no banco (assistant_settings)');
+    throw new Error(`Core da Alice incompleto: ${missing.join(', ')}`);
+  }
 
   if (assistantSettings?.systemPrompt && assistantSettings.systemPrompt.trim()) {
     prompt = assistantSettings.systemPrompt.trim();
@@ -8879,19 +8872,19 @@ app.get('/api/assistant-settings', requireAuth(), requireSameTenant(getTenantIdF
     const settings = await db.query.assistantSettings.findFirst({
       where: eq(schema.assistantSettings.tenantId, tenantId),
     });
-    const coreSettings = resolveCoreSettings(settings);
+    const { core: coreSettings, missing } = resolveCoreSettings(settings);
 
     res.json({
       settings,
       defaults: {
         systemPrompt: DEFAULT_SYSTEM_PROMPT,
-        creatorName: CORE_DEFAULTS.creatorName,
-        creatorRule: CORE_DEFAULTS.creatorRule,
-        ethicsPolicy: CORE_DEFAULTS.ethicsPolicy,
-        moralPolicy: CORE_DEFAULTS.moralPolicy,
-        legalPolicy: CORE_DEFAULTS.legalPolicy,
-        safetyGuardrails: CORE_DEFAULTS.safetyGuardrails,
-        nsfwPolicy: CORE_DEFAULTS.nsfwPolicy,
+        creatorName: '',
+        creatorRule: '',
+        ethicsPolicy: '',
+        moralPolicy: '',
+        legalPolicy: '',
+        safetyGuardrails: '',
+        nsfwPolicy: '',
         behavior: null,
         mood: null,
         behaviorDirectness: 50,
@@ -8900,14 +8893,15 @@ app.get('/api/assistant-settings', requireAuth(), requireSameTenant(getTenantIdF
         moodEmpathy: 70,
       },
       enforced: {
-        creator: coreSettings.creatorName,
-        creatorRule: coreSettings.creatorRule,
-        ethicsPolicy: coreSettings.ethicsPolicy,
-        moralPolicy: coreSettings.moralPolicy,
-        legalPolicy: coreSettings.legalPolicy,
-        safetyGuardrails: coreSettings.safetyGuardrails,
-        nsfwPolicy: coreSettings.nsfwPolicy,
+        creator: coreSettings?.creatorName ?? '',
+        creatorRule: coreSettings?.creatorRule ?? '',
+        ethicsPolicy: coreSettings?.ethicsPolicy ?? '',
+        moralPolicy: coreSettings?.moralPolicy ?? '',
+        legalPolicy: coreSettings?.legalPolicy ?? '',
+        safetyGuardrails: coreSettings?.safetyGuardrails ?? '',
+        nsfwPolicy: coreSettings?.nsfwPolicy ?? '',
       },
+      missingCoreFields: missing,
     });
   } catch (error) {
     logger.error({ error, tenantId }, 'Falha ao buscar assistant_settings');

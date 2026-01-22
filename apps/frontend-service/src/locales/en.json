@@ -1452,6 +1452,21 @@
     "readOnlyBadge": "Read-only (no Core permission)",
     "coreBadge": "Core",
     "coreReadOnlyHint": "Core permission required to edit",
+    "tabs": {
+      "core": "Alice Core",
+      "behavior": "Behavior"
+    },
+    "corePreviewTitle": "Core Summary",
+    "corePreviewDescription": "Current core status per tenant.",
+    "corePreview": {
+      "creator": "Creator",
+      "systemPrompt": "System Prompt",
+      "guardrails": "Guardrails",
+      "configured": "Configured",
+      "empty": "Not configured",
+      "missing": "Pending fields: {{count}}",
+      "ready": "Core complete"
+    },
     "creatorName": "Creator name",
     "creatorNamePlaceholder": "Example: Fillipe Guerra",
     "creatorRule": "Creator identity rule",

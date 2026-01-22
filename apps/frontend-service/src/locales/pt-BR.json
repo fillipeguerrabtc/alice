@@ -1452,6 +1452,21 @@
     "readOnlyBadge": "Somente leitura (sem permissão de Core)",
     "coreBadge": "Core",
     "coreReadOnlyHint": "Permissão Core necessária para editar",
+    "tabs": {
+      "core": "Core da Alice",
+      "behavior": "Comportamento"
+    },
+    "corePreviewTitle": "Resumo do Core",
+    "corePreviewDescription": "Status atual das configurações centrais por tenant.",
+    "corePreview": {
+      "creator": "Criador",
+      "systemPrompt": "System Prompt",
+      "guardrails": "Guardrails",
+      "configured": "Configurado",
+      "empty": "Não configurado",
+      "missing": "Campos pendentes: {{count}}",
+      "ready": "Core completo"
+    },
     "creatorName": "Nome do criador",
     "creatorNamePlaceholder": "Ex: Fillipe Guerra",
     "creatorRule": "Regra de identidade do criador",

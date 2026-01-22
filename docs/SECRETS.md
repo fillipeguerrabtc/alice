@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 22 de Janeiro de 2026  
-**Versão:** 7.11 - Core policies obrigatórias (Alice)
+**Versão:** 7.12 - Core editável via DB
 
 ## Visão geral
 
@@ -42,13 +42,6 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `ZEROSSL_EAB_HMAC_KEY` | ZeroSSL EAB HMAC Key (fallback ACME) | ✅ |
 | `QDRANT_API_KEY` | API key do Qdrant (também usado pelo scrape Prometheus) | ✅ |
 | `MINIO_ROOT_PASSWORD` | Senha root do MinIO (Langfuse v3 S3) | ✅ |
-| `CREATOR_NAME` | Nome do criador (Core Alice) | ✅ |
-| `CREATOR_RULE` | Regra de identidade do criador (Core Alice) | ✅ |
-| `ASSISTANT_ETHICS_POLICY` | Política de ética (Core Alice) | ✅ |
-| `ASSISTANT_MORAL_POLICY` | Política moral (Core Alice) | ✅ |
-| `ASSISTANT_LEGAL_POLICY` | Política legal (Core Alice) | ✅ |
-| `ASSISTANT_SAFETY_GUARDRAILS` | Guardrails de segurança (Core Alice) | ✅ |
-| `ASSISTANT_NSFW_POLICY` | Política NSFW (Core Alice) | ✅ |
 
 ## Secrets de observabilidade
 

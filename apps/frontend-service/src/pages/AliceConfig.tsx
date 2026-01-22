@@ -16,6 +16,7 @@ import { apiRequest, queryClient } from '@/lib/queryClient';
 import { toast } from '@/hooks/use-toast';
 import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const assistantSettingsSchema = z.object({
   systemPrompt: z.string().min(10, 'System Prompt deve ter pelo menos 10 caracteres').max(20000).optional().nullable(),
@@ -78,6 +79,7 @@ type AssistantSettingsResponse = {
     safetyGuardrails?: string;
     nsfwPolicy?: string;
   };
+  missingCoreFields?: string[];
 };
 
 type AgentPrompt = {
@@ -301,292 +303,301 @@ export default function AliceConfig() {
                 onSubmit={form.handleSubmit((values) => updateSettings.mutate(values))}
                 className="space-y-6"
               >
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="secondary">{t('aliceConfig.coreBadge')}</Badge>
-                    {!canEditCore && (
-                      <span className="text-xs text-muted-foreground">
-                        {t('aliceConfig.coreReadOnlyHint')}
-                      </span>
-                    )}
-                  </div>
-                  <FormField
-                    control={form.control}
-                    name="creatorName"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('aliceConfig.creatorName')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder={t('aliceConfig.creatorNamePlaceholder')}
-                            {...field}
-                            value={field.value ?? ''}
-                            disabled={!canEditCore}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="creatorRule"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('aliceConfig.creatorRule')}</FormLabel>
-                        <FormControl>
-                          <Textarea
-                            rows={4}
-                            placeholder={t('aliceConfig.creatorRulePlaceholder')}
-                            {...field}
-                            value={field.value ?? ''}
-                            disabled={!canEditCore}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
+                <Tabs defaultValue="core" className="space-y-6">
+                  <TabsList>
+                    <TabsTrigger value="core">{t('aliceConfig.tabs.core')}</TabsTrigger>
+                    <TabsTrigger value="behavior">{t('aliceConfig.tabs.behavior')}</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="core" className="space-y-6">
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="secondary">{t('aliceConfig.coreBadge')}</Badge>
+                        {!canEditCore && (
+                          <span className="text-xs text-muted-foreground">
+                            {t('aliceConfig.coreReadOnlyHint')}
+                          </span>
+                        )}
+                      </div>
+                      <FormField
+                        control={form.control}
+                        name="creatorName"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{t('aliceConfig.creatorName')}</FormLabel>
+                            <FormControl>
+                              <Input
+                                placeholder={t('aliceConfig.creatorNamePlaceholder')}
+                                {...field}
+                                value={field.value ?? ''}
+                                disabled={!canEditCore}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="creatorRule"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{t('aliceConfig.creatorRule')}</FormLabel>
+                            <FormControl>
+                              <Textarea
+                                rows={4}
+                                placeholder={t('aliceConfig.creatorRulePlaceholder')}
+                                {...field}
+                                value={field.value ?? ''}
+                                disabled={!canEditCore}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
 
-                <div className="space-y-4">
-                  <FormField
-                    control={form.control}
-                    name="ethicsPolicy"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('aliceConfig.ethicsPolicy')}</FormLabel>
-                        <FormControl>
-                          <Textarea
-                            rows={4}
-                            placeholder={t('aliceConfig.ethicsPolicyPlaceholder')}
-                            {...field}
-                            value={field.value ?? ''}
-                            disabled={!canEditCore}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="moralPolicy"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('aliceConfig.moralPolicy')}</FormLabel>
-                        <FormControl>
-                          <Textarea
-                            rows={4}
-                            placeholder={t('aliceConfig.moralPolicyPlaceholder')}
-                            {...field}
-                            value={field.value ?? ''}
-                            disabled={!canEditCore}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="legalPolicy"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('aliceConfig.legalPolicy')}</FormLabel>
-                        <FormControl>
-                          <Textarea
-                            rows={4}
-                            placeholder={t('aliceConfig.legalPolicyPlaceholder')}
-                            {...field}
-                            value={field.value ?? ''}
-                            disabled={!canEditCore}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="safetyGuardrails"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('aliceConfig.safetyGuardrails')}</FormLabel>
-                        <FormControl>
-                          <Textarea
-                            rows={5}
-                            placeholder={t('aliceConfig.safetyGuardrailsPlaceholder')}
-                            {...field}
-                            value={field.value ?? ''}
-                            disabled={!canEditCore}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="nsfwPolicy"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('aliceConfig.nsfwPolicy')}</FormLabel>
-                        <FormControl>
-                          <Textarea
-                            rows={4}
-                            placeholder={t('aliceConfig.nsfwPolicyPlaceholder')}
-                            {...field}
-                            value={field.value ?? ''}
-                            disabled={!canEditCore}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-                <FormField
-                  control={form.control}
-                  name="systemPrompt"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t('aliceConfig.systemPrompt')}</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          rows={8}
-                          placeholder={t('aliceConfig.systemPromptPlaceholder')}
-                          {...field}
-                          value={field.value ?? ''}
-                          disabled={!canEditCore}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                    <div className="space-y-4">
+                      <FormField
+                        control={form.control}
+                        name="ethicsPolicy"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{t('aliceConfig.ethicsPolicy')}</FormLabel>
+                            <FormControl>
+                              <Textarea
+                                rows={4}
+                                placeholder={t('aliceConfig.ethicsPolicyPlaceholder')}
+                                {...field}
+                                value={field.value ?? ''}
+                                disabled={!canEditCore}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="moralPolicy"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{t('aliceConfig.moralPolicy')}</FormLabel>
+                            <FormControl>
+                              <Textarea
+                                rows={4}
+                                placeholder={t('aliceConfig.moralPolicyPlaceholder')}
+                                {...field}
+                                value={field.value ?? ''}
+                                disabled={!canEditCore}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="legalPolicy"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{t('aliceConfig.legalPolicy')}</FormLabel>
+                            <FormControl>
+                              <Textarea
+                                rows={4}
+                                placeholder={t('aliceConfig.legalPolicyPlaceholder')}
+                                {...field}
+                                value={field.value ?? ''}
+                                disabled={!canEditCore}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="safetyGuardrails"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{t('aliceConfig.safetyGuardrails')}</FormLabel>
+                            <FormControl>
+                              <Textarea
+                                rows={5}
+                                placeholder={t('aliceConfig.safetyGuardrailsPlaceholder')}
+                                {...field}
+                                value={field.value ?? ''}
+                                disabled={!canEditCore}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="nsfwPolicy"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{t('aliceConfig.nsfwPolicy')}</FormLabel>
+                            <FormControl>
+                              <Textarea
+                                rows={4}
+                                placeholder={t('aliceConfig.nsfwPolicyPlaceholder')}
+                                {...field}
+                                value={field.value ?? ''}
+                                disabled={!canEditCore}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                    <FormField
+                      control={form.control}
+                      name="systemPrompt"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('aliceConfig.systemPrompt')}</FormLabel>
+                          <FormControl>
+                            <Textarea
+                              rows={8}
+                              placeholder={t('aliceConfig.systemPromptPlaceholder')}
+                              {...field}
+                              value={field.value ?? ''}
+                              disabled={!canEditCore}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </TabsContent>
+                  <TabsContent value="behavior" className="space-y-6">
+                    <FormField
+                      control={form.control}
+                      name="behavior"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('aliceConfig.behavior')}</FormLabel>
+                          <FormControl>
+                            <Textarea
+                              rows={4}
+                              placeholder={t('aliceConfig.behaviorPlaceholder')}
+                              {...field}
+                              value={field.value ?? ''}
+                              disabled={!canEditCore}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
 
-                <FormField
-                  control={form.control}
-                  name="behavior"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t('aliceConfig.behavior')}</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          rows={4}
-                          placeholder={t('aliceConfig.behaviorPlaceholder')}
-                          {...field}
-                          value={field.value ?? ''}
-                          disabled={!canEditCore}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <FormField
+                        control={form.control}
+                        name="behaviorDirectness"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{t('aliceConfig.sliders.directness')}</FormLabel>
+                            <FormControl>
+                              <Slider
+                                value={[field.value ?? 50]}
+                                onValueChange={(value) => field.onChange(value[0])}
+                                min={0}
+                                max={100}
+                                step={5}
+                                disabled={!canEditCore}
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="behaviorProactivity"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{t('aliceConfig.sliders.proactivity')}</FormLabel>
+                            <FormControl>
+                              <Slider
+                                value={[field.value ?? 50]}
+                                onValueChange={(value) => field.onChange(value[0])}
+                                min={0}
+                                max={100}
+                                step={5}
+                                disabled={!canEditCore}
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                    </div>
 
-                <div className="grid gap-4 md:grid-cols-2">
-                  <FormField
-                    control={form.control}
-                    name="behaviorDirectness"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('aliceConfig.sliders.directness')}</FormLabel>
-                        <FormControl>
-                          <Slider
-                            value={[field.value ?? 50]}
-                            onValueChange={(value) => field.onChange(value[0])}
-                            min={0}
-                            max={100}
-                            step={5}
-                            disabled={!canEditCore}
-                          />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="behaviorProactivity"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('aliceConfig.sliders.proactivity')}</FormLabel>
-                        <FormControl>
-                          <Slider
-                            value={[field.value ?? 50]}
-                            onValueChange={(value) => field.onChange(value[0])}
-                            min={0}
-                            max={100}
-                            step={5}
-                            disabled={!canEditCore}
-                          />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                </div>
+                    <FormField
+                      control={form.control}
+                      name="mood"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('aliceConfig.mood')}</FormLabel>
+                          <FormControl>
+                            <Textarea
+                              rows={3}
+                              placeholder={t('aliceConfig.moodPlaceholder')}
+                              {...field}
+                              value={field.value ?? ''}
+                              disabled={!canEditCore}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
 
-                <FormField
-                  control={form.control}
-                  name="mood"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t('aliceConfig.mood')}</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          rows={3}
-                          placeholder={t('aliceConfig.moodPlaceholder')}
-                          {...field}
-                          value={field.value ?? ''}
-                          disabled={!canEditCore}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <FormField
-                    control={form.control}
-                    name="moodFormality"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('aliceConfig.sliders.formality')}</FormLabel>
-                        <FormControl>
-                          <Slider
-                            value={[field.value ?? 50]}
-                            onValueChange={(value) => field.onChange(value[0])}
-                            min={0}
-                            max={100}
-                            step={5}
-                            disabled={!canEditCore}
-                          />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="moodEmpathy"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('aliceConfig.sliders.empathy')}</FormLabel>
-                        <FormControl>
-                          <Slider
-                            value={[field.value ?? 70]}
-                            onValueChange={(value) => field.onChange(value[0])}
-                            min={0}
-                            max={100}
-                            step={5}
-                            disabled={!canEditCore}
-                          />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <FormField
+                        control={form.control}
+                        name="moodFormality"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{t('aliceConfig.sliders.formality')}</FormLabel>
+                            <FormControl>
+                              <Slider
+                                value={[field.value ?? 50]}
+                                onValueChange={(value) => field.onChange(value[0])}
+                                min={0}
+                                max={100}
+                                step={5}
+                                disabled={!canEditCore}
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="moodEmpathy"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{t('aliceConfig.sliders.empathy')}</FormLabel>
+                            <FormControl>
+                              <Slider
+                                value={[field.value ?? 70]}
+                                onValueChange={(value) => field.onChange(value[0])}
+                                min={0}
+                                max={100}
+                                step={5}
+                                disabled={!canEditCore}
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </TabsContent>
+                </Tabs>
 
                 <div className="flex flex-wrap gap-2">
                   <Button type="submit" disabled={!canEditCore || updateSettings.isPending}>
@@ -599,6 +610,40 @@ export default function AliceConfig() {
               </form>
             </Form>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('aliceConfig.corePreviewTitle')}</CardTitle>
+          <CardDescription>{t('aliceConfig.corePreviewDescription')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid gap-3 md:grid-cols-2">
+            <div>
+              <Label>{t('aliceConfig.corePreview.creator')}</Label>
+              <p className="text-sm text-muted-foreground">
+                {data?.settings?.creatorName || '-'}
+              </p>
+            </div>
+            <div>
+              <Label>{t('aliceConfig.corePreview.systemPrompt')}</Label>
+              <p className="text-sm text-muted-foreground">
+                {data?.settings?.systemPrompt ? t('aliceConfig.corePreview.configured') : t('aliceConfig.corePreview.empty')}
+              </p>
+            </div>
+          </div>
+          <div>
+            <Label>{t('aliceConfig.corePreview.guardrails')}</Label>
+            <p className="text-sm text-muted-foreground">
+              {data?.settings?.safetyGuardrails ? t('aliceConfig.corePreview.configured') : t('aliceConfig.corePreview.empty')}
+            </p>
+          </div>
+          <div className="text-xs text-muted-foreground">
+            {data?.missingCoreFields?.length
+              ? t('aliceConfig.corePreview.missing', { count: data.missingCoreFields.length })
+              : t('aliceConfig.corePreview.ready')}
+          </div>
         </CardContent>
       </Card>
 
