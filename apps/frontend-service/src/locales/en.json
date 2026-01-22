@@ -277,7 +277,8 @@
     "processing": "Processing...",
     "thinking": "Thinking...",
     "typing": "Typing...",
-    "enterToSend": "Enter for a new line • Alt+Enter to send",
+    "attachMenu": "Attachments",
+    "attachGallery": "Attach images from gallery",
     "generating": "Generating response...",
     "stopGenerating": "Stop generating",
     "streaming": {

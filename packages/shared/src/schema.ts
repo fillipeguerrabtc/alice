@@ -2427,7 +2427,7 @@ export const conversationStates = pgTable(
       .notNull()
       .unique(),
     controlMode: conversationControlModeEnum("control_mode").default("bot"),
-    approvalPolicy: conversationApprovalPolicyEnum("approval_policy").default("confirm_risky"),
+    approvalPolicy: conversationApprovalPolicyEnum("approval_policy").default("always_confirm"),
     assignedAgentId: uuid("assigned_agent_id").references(() => users.id),
     pendingSince: timestamp("pending_since"),
     lastBotMessage: timestamp("last_bot_message"),
