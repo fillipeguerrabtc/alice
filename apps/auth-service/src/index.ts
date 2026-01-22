@@ -3579,7 +3579,7 @@ app.patch('/api/users/:id/custom-role', requireAuth(), requireRole('admin'), asy
     .where(eq(schema.users.id, userId))
     .returning({ id: schema.users.id, customRoleId: schema.users.customRoleId });
 
-  await invalidateUserPermissions(updatedUser.id, req.tenantId);
+  await invalidateUserPermissions(updatedUser.id, currentUser.tenantId ?? req.tenantId);
 
   res.json({
     user: updatedUser,
