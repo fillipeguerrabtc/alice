@@ -2239,11 +2239,34 @@ function extractNameFromMessage(message: string): string | null {
   return null;
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function buildNamePattern(name: string): string {
+  return escapeRegExp(name).replace(/\s+/g, '\\s+');
+}
+
+function hasNameNegation(message: string, suggestedLower: string): boolean {
+  const namePattern = buildNamePattern(suggestedLower);
+  const patterns = [
+    new RegExp(`\\b(n[aã]o)\\s*,?\\s*${namePattern}\\b`),
+    new RegExp(`\\b${namePattern}\\b\\s*,?\\s*n[aã]o\\b`),
+    new RegExp(`\\b(n[aã]o)\\b[^.!?]{0,40}\\b(cham\\w*|usar|nome)\\b[^.!?]{0,20}\\b${namePattern}\\b`),
+    new RegExp(`\\b(n[aã]o)\\b[^.!?]{0,40}\\b${namePattern}\\b[^.!?]{0,20}\\b(cham\\w*|usar|nome)\\b`),
+    new RegExp(`\\b(prefiro|quero|gostaria)\\b[^.!?]{0,40}\\b(outro|outra)\\b\\s+nome\\b`),
+  ];
+  return patterns.some((pattern) => pattern.test(message));
+}
+
 function isNameConfirmation(message: string, suggestedName: string | null): boolean {
   if (!suggestedName) return false;
   const normalized = message.toLowerCase().trim();
   if (!normalized) return false;
   const hasSuggested = normalized.includes(suggestedName.toLowerCase());
+  if (hasSuggested && hasNameNegation(normalized, suggestedName.toLowerCase())) {
+    return false;
+  }
   if (hasSuggested) return true;
   if (/^(sim|ok|pode|pode sim|isso|isso mesmo|claro|tanto faz|pode chamar)\b/i.test(normalized)) {
     return true;
