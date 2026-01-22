@@ -2723,8 +2723,9 @@ app.delete('/api/auth/custom-roles/:id', requireAuth(), requirePermission('admin
     .where(eq(schema.customRoles.id, req.params.id))
     .returning();
 
-  if (tenantId) {
-    await invalidateTenantPermissions(tenantId);
+  const invalidateTenantId = tenantId ?? current.tenantId;
+  if (invalidateTenantId) {
+    await invalidateTenantPermissions(invalidateTenantId);
   }
   res.json({ success: true, role: deleted });
 }));
@@ -2816,8 +2817,9 @@ app.put('/api/auth/custom-roles/:id/permissions', requireAuth(), requirePermissi
     }
   });
 
-  if (tenantId) {
-    await invalidateTenantPermissions(tenantId);
+  const invalidateTenantId = tenantId ?? role.tenantId;
+  if (invalidateTenantId) {
+    await invalidateTenantPermissions(invalidateTenantId);
   }
   res.json({ success: true, roleId: role.id, permissionCodes: requestedCodes });
 }));
