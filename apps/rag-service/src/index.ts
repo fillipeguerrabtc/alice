@@ -1576,8 +1576,14 @@ app.patch('/api/rag/documents/:id', requireAuth(), requirePermission('rag:docume
       return res.status(404).json({ error: 'Documento não encontrado' });
     }
 
-    if (existing.namespace?.tenantId !== tenantId) {
-      return res.status(403).json({ error: 'Acesso negado: documento não pertence ao tenant' });
+    if (existing.namespace) {
+      if (existing.namespace.tenantId !== tenantId) {
+        return res.status(403).json({ error: 'Acesso negado: documento não pertence ao tenant' });
+      }
+    } else if (!body.namespaceId) {
+      return res.status(400).json({
+        error: 'Documento sem namespace. Informe namespaceId para validar o tenant antes de atualizar.',
+      });
     }
 
     const resolvedNamespaceId = body.namespaceId ?? existing.namespaceId ?? undefined;
