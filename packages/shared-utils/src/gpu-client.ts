@@ -34,6 +34,48 @@ if (!INTERNAL_API_SECRET_RAW) {
 // TypeScript agora sabe que é string (após validação fail-fast)
 const INTERNAL_API_SECRET: string = INTERNAL_API_SECRET_RAW;
 
+function parseEnvInt(value: string | undefined, defaultValue: number, name: string): number {
+  const raw = (value ?? String(defaultValue)).trim();
+  if (!/^\d+$/.test(raw)) {
+    const message = `${name} inválido: "${raw}". Deve ser inteiro positivo.`;
+    logger.error({ name, raw }, message);
+    throw new Error(message);
+  }
+  const parsed = parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    const message = `${name} inválido: "${raw}". Deve ser inteiro positivo.`;
+    logger.error({ name, raw, parsed }, message);
+    throw new Error(message);
+  }
+  return parsed;
+}
+
+const GPU_REQUEST_DEFAULT_TIMEOUT_MS = parseEnvInt(
+  process.env.GPU_REQUEST_TIMEOUT_MS,
+  60000,
+  'GPU_REQUEST_TIMEOUT_MS'
+);
+const GPU_REQUEST_DEFAULT_MAX_RETRIES = parseEnvInt(
+  process.env.GPU_REQUEST_MAX_RETRIES,
+  3,
+  'GPU_REQUEST_MAX_RETRIES'
+);
+const GPU_REQUEST_FETCH_TIMEOUT_MS = parseEnvInt(
+  process.env.GPU_REQUEST_FETCH_TIMEOUT_MS,
+  30000,
+  'GPU_REQUEST_FETCH_TIMEOUT_MS'
+);
+const GPU_REQUEST_POLL_INTERVAL_MS = parseEnvInt(
+  process.env.GPU_REQUEST_POLL_INTERVAL_MS,
+  500,
+  'GPU_REQUEST_POLL_INTERVAL_MS'
+);
+const GPU_REQUEST_POLL_FETCH_TIMEOUT_MS = parseEnvInt(
+  process.env.GPU_REQUEST_POLL_FETCH_TIMEOUT_MS,
+  5000,
+  'GPU_REQUEST_POLL_FETCH_TIMEOUT_MS'
+);
+
 /** Prioridades de requisições GPU (maior = mais prioritário) */
 export enum GpuRequestPriority {
   CRITICAL = 10,  // Chat em tempo real
@@ -75,10 +117,10 @@ export interface GpuResponse {
  */
 export async function requestGpu(options: GpuRequestOptions): Promise<GpuResponse> {
   const startTime = Date.now();
-  const maxWaitTime = options.timeout || 60000;
+  const maxWaitTime = options.timeout || GPU_REQUEST_DEFAULT_TIMEOUT_MS;
   // BUG FIX 26/12/2025: Timeout individual para cada fetch (30s ou metade do maxWaitTime)
   // Impede que uma única requisição bloqueie indefinidamente além do timeout total
-  const fetchTimeout = Math.min(30000, Math.floor(maxWaitTime / 2));
+  const fetchTimeout = Math.min(GPU_REQUEST_FETCH_TIMEOUT_MS, Math.floor(maxWaitTime / 2));
   
   try {
     // Enfileirar requisição
@@ -96,8 +138,8 @@ export async function requestGpu(options: GpuRequestOptions): Promise<GpuRespons
         endpoint: options.endpoint,
         method: options.method || 'POST',
         body: options.body,
-        timeout: options.timeout || 60000,
-        maxRetries: options.maxRetries || 3,
+        timeout: options.timeout || GPU_REQUEST_DEFAULT_TIMEOUT_MS,
+        maxRetries: options.maxRetries || GPU_REQUEST_DEFAULT_MAX_RETRIES,
         metadata: options.metadata,
       }),
       signal: AbortSignal.timeout(fetchTimeout),
@@ -111,11 +153,11 @@ export async function requestGpu(options: GpuRequestOptions): Promise<GpuRespons
     const { requestId } = await queueResponse.json() as { requestId: string };
     
     // Polling para obter resultado
-    const pollInterval = 500; // 500ms
+    const pollInterval = GPU_REQUEST_POLL_INTERVAL_MS;
     const startPollTime = Date.now();
     // BUG FIX 26/12/2025: Timeout individual para polling (5s) - menor que fetchTimeout
     // Polling é leve e frequente, não precisa de timeout longo
-    const pollFetchTimeout = 5000;
+    const pollFetchTimeout = GPU_REQUEST_POLL_FETCH_TIMEOUT_MS;
     
     while (Date.now() - startPollTime < maxWaitTime) {
       // BUG FIX 26/12/2025: Adicionar AbortSignal.timeout() ao fetch do polling
@@ -182,8 +224,8 @@ export async function requestGpuAsync(options: GpuRequestOptions): Promise<strin
       endpoint: options.endpoint,
       method: options.method || 'POST',
       body: options.body,
-      timeout: options.timeout || 60000,
-      maxRetries: options.maxRetries || 3,
+      timeout: options.timeout || GPU_REQUEST_DEFAULT_TIMEOUT_MS,
+      maxRetries: options.maxRetries || GPU_REQUEST_DEFAULT_MAX_RETRIES,
       metadata: options.metadata,
     }),
   });

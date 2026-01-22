@@ -130,6 +130,8 @@ export interface AliceMetrics {
     cacheMissesTotal: Counter;
     /** Queries por segundo */
     queriesTotal: Counter;
+    /** K efetivo retornado pela busca */
+    effectiveK: Histogram;
   };
   
   /** Métricas Training */
@@ -426,6 +428,14 @@ export function createAlicePrometheus(config: PrometheusConfig): {
     labelNames: ['tenant_id', 'result'] as const,
     registers: [registry],
   });
+
+  const ragEffectiveK = new Histogram({
+    name: `${prefix}rag_effective_k`,
+    help: 'Quantidade efetiva de chunks retornados pela busca RAG',
+    labelNames: ['endpoint'] as const,
+    buckets: [1, 2, 3, 5, 8, 10, 15, 20],
+    registers: [registry],
+  });
   
   // ============================================================================
   // MÉTRICAS TRAINING
@@ -655,6 +665,7 @@ export function createAlicePrometheus(config: PrometheusConfig): {
       cacheHitsTotal: ragCacheHitsTotal,
       cacheMissesTotal: ragCacheMissesTotal,
       queriesTotal: ragQueriesTotal,
+      effectiveK: ragEffectiveK,
     },
     training: {
       activeJobs: trainingActiveJobs,

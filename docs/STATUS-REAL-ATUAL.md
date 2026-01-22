@@ -314,6 +314,81 @@ Retenção Arquivo:   30 dias
 
 ---
 
+## Tuning seguro (aplicação + servidor)
+
+### Flags de aplicação (defaults atuais)
+
+**Chat Service (tokens + histórico)**
+- `LLM_MIN_OUTPUT_TOKENS=256`
+- `LLM_DYNAMIC_PROMPT_T1=1600`
+- `LLM_DYNAMIC_PROMPT_T2=2200`
+- `LLM_DYNAMIC_PROMPT_T3=2800`
+- `LLM_DYNAMIC_PROMPT_T4=3600`
+- `LLM_DYNAMIC_MAX_TOKENS_T1=1536`
+- `LLM_DYNAMIC_MAX_TOKENS_T2=1024`
+- `LLM_DYNAMIC_MAX_TOKENS_T3=768`
+- `LLM_DYNAMIC_MAX_TOKENS_T4=512`
+- `CHAT_HISTORY_FETCH_LIMIT=10`
+- `CHAT_HISTORY_ALWAYS_INCLUDE_TRADING=6`
+- `CHAT_HISTORY_ALWAYS_INCLUDE_GENERAL=4`
+- `CHAT_HISTORY_MIN_MESSAGES_TRADING=0`
+- `CHAT_HISTORY_MIN_MESSAGES_GENERAL=0`
+- `CHAT_HISTORY_RELEVANCE_THRESHOLD_TRADING=0.08`
+- `CHAT_HISTORY_RELEVANCE_THRESHOLD_GENERAL=0.12`
+- `CHAT_HISTORY_FALLBACK_ENABLED=false`
+- `CHAT_HISTORY_SEARCH_LIMIT=200`
+- `CHAT_HISTORY_SEARCH_TOKEN_BUDGET=1200`
+- `CHAT_HISTORY_SEARCH_CONVERSATIONS_LIMIT=20`
+- `CHAT_MEMORY_RELEVANCE_THRESHOLD=0.10`
+
+**RAG Service (Top-K adaptativo)**
+- `RAG_ADAPTIVE_K_ENABLED=false`
+- `RAG_ADAPTIVE_K_MIN_RESULTS=2`
+- `RAG_ADAPTIVE_K_MIN_THRESHOLD=0.55`
+- `RAG_ADAPTIVE_K_FALLBACK_DELTA=0.10`
+- `RAG_ADAPTIVE_K_SHORT_QUERY=200`
+- `RAG_ADAPTIVE_K_MEDIUM_QUERY=600`
+
+**GPU Client (timeouts/retries)**
+- `GPU_REQUEST_TIMEOUT_MS=60000`
+- `GPU_REQUEST_MAX_RETRIES=3`
+- `GPU_REQUEST_FETCH_TIMEOUT_MS=30000`
+- `GPU_REQUEST_POLL_INTERVAL_MS=500`
+- `GPU_REQUEST_POLL_FETCH_TIMEOUT_MS=5000`
+
+### Tuning de servidor (manual, sem pipeline)
+
+**sysctl (arquivo `/etc/sysctl.d/99-alice-tuning.conf`)**
+- `vm.swappiness=10`
+- `fs.file-max=2097152`
+- `fs.inotify.max_user_watches=524288`
+- `net.core.rmem_max=16777216`
+- `net.core.wmem_max=16777216`
+
+**limits (arquivo `/etc/security/limits.d/99-alice.conf`)**
+- `* soft nofile 1048576`
+- `* hard nofile 1048576`
+- `* soft nproc 65535`
+- `* hard nproc 65535`
+
+**Docker runtime (arquivo `/etc/docker/daemon.json`)**
+- `log-driver: json-file`
+- `log-opts: { max-size: "100m", max-file: "5" }`
+- `max-concurrent-downloads: 10`
+- `max-concurrent-uploads: 10`
+- `live-restore: true`
+
+**GPU runtime (manual)**
+- `nvidia-persistenced` habilitado
+- runtime NVIDIA configurado como padrão
+- CDI NVIDIA ativo (`/etc/cdi/nvidia.yaml`)
+
+**Storage/IO (manual)**
+- Limpeza segura de logs antigos em `/opt/alice/logs/`
+- Remoção de volumes órfãos (`docker volume prune`) sob janela de manutenção
+
+---
+
 ## Qualidade e conformidade
 
 - TypeScript strict e ESLint 9 com zero warnings.

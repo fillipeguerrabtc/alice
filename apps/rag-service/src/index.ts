@@ -624,10 +624,70 @@ function parseEnvInt(envValue: string | undefined, defaultValue: number, varName
   return parsed;
 }
 
+function parseEnvBool(envValue: string | undefined, defaultValue: boolean, varName: string): boolean {
+  if (envValue === undefined) return defaultValue;
+  const normalized = envValue.trim().toLowerCase();
+  if (normalized === 'true') return true;
+  if (normalized === 'false') return false;
+  const errorMsg = `${varName} inválido: "${envValue}". Deve ser 'true' ou 'false'.`;
+  if (process.env.NODE_ENV === 'production') {
+    logger.error({ varName, rawValue: envValue }, errorMsg);
+    throw new Error(errorMsg);
+  }
+  logger.warn({ varName, rawValue: envValue, defaultValue }, `${errorMsg} Usando valor padrão.`);
+  return defaultValue;
+}
+
+function parseEnvFloat(envValue: string | undefined, defaultValue: number, varName: string): number {
+  const raw = (envValue ?? String(defaultValue)).trim().replace(',', '.');
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+    const errorMsg = `${varName} inválido: "${raw}". Deve ser número entre 0 e 1.`;
+    if (process.env.NODE_ENV === 'production') {
+      logger.error({ varName, rawValue: raw, parsed }, errorMsg);
+      throw new Error(errorMsg);
+    }
+    logger.warn({ varName, rawValue: raw, parsed, defaultValue }, `${errorMsg} Usando valor padrão.`);
+    return defaultValue;
+  }
+  return parsed;
+}
+
 // Workers (defaults seguros e configuráveis) - CORREÇÃO AUDITORIA 17/12/2025
 const WORKER_POLL_MS = parseEnvInt(process.env.WORKER_POLL_MS, 3000, 'WORKER_POLL_MS');
 const WORKER_CONCURRENCY = parseEnvInt(process.env.WORKER_CONCURRENCY, 2, 'WORKER_CONCURRENCY');
 const WORKER_MAX_ATTEMPTS = parseEnvInt(process.env.WORKER_MAX_ATTEMPTS, 3, 'WORKER_MAX_ATTEMPTS');
+
+const RAG_ADAPTIVE_K_ENABLED = parseEnvBool(
+  process.env.RAG_ADAPTIVE_K_ENABLED,
+  false,
+  'RAG_ADAPTIVE_K_ENABLED'
+);
+const RAG_ADAPTIVE_K_MIN_RESULTS = parseEnvInt(
+  process.env.RAG_ADAPTIVE_K_MIN_RESULTS,
+  2,
+  'RAG_ADAPTIVE_K_MIN_RESULTS'
+);
+const RAG_ADAPTIVE_K_MIN_THRESHOLD = parseEnvFloat(
+  process.env.RAG_ADAPTIVE_K_MIN_THRESHOLD,
+  0.55,
+  'RAG_ADAPTIVE_K_MIN_THRESHOLD'
+);
+const RAG_ADAPTIVE_K_FALLBACK_DELTA = parseEnvFloat(
+  process.env.RAG_ADAPTIVE_K_FALLBACK_DELTA,
+  0.1,
+  'RAG_ADAPTIVE_K_FALLBACK_DELTA'
+);
+const RAG_ADAPTIVE_K_SHORT_QUERY = parseEnvInt(
+  process.env.RAG_ADAPTIVE_K_SHORT_QUERY,
+  200,
+  'RAG_ADAPTIVE_K_SHORT_QUERY'
+);
+const RAG_ADAPTIVE_K_MEDIUM_QUERY = parseEnvInt(
+  process.env.RAG_ADAPTIVE_K_MEDIUM_QUERY,
+  600,
+  'RAG_ADAPTIVE_K_MEDIUM_QUERY'
+);
 
 // Usar package @alice/database centralizado (node-postgres para produção Hetzner)
 const db = getDatabase();
@@ -898,9 +958,23 @@ async function searchDocumentsInQdrant(
     limit?: number;
     threshold?: number;
     namespaceId?: string;
+    queryText?: string;
   } = {}
 ): Promise<QdrantDocumentResult[]> {
-  const { limit = 10, threshold = 0.7, namespaceId } = options;
+  const { limit = 10, threshold = 0.7, namespaceId, queryText } = options;
+  const effectiveParams = (() => {
+    if (!RAG_ADAPTIVE_K_ENABLED || !queryText) {
+      return { limit, threshold };
+    }
+    const normalizedLength = queryText.trim().length;
+    let adaptiveLimit = limit;
+    if (normalizedLength <= RAG_ADAPTIVE_K_SHORT_QUERY) {
+      adaptiveLimit = Math.max(1, Math.round(limit * 0.6));
+    } else if (normalizedLength <= RAG_ADAPTIVE_K_MEDIUM_QUERY) {
+      adaptiveLimit = Math.max(1, Math.round(limit * 0.8));
+    }
+    return { limit: adaptiveLimit, threshold };
+  })();
 
   if (!isQdrantConfigured()) {
     logger.warn('Qdrant não configurado - busca de texto indisponível');
@@ -921,15 +995,35 @@ async function searchDocumentsInQdrant(
 
   try {
     const results = await searchPoints(TEXT_COLLECTION_NAME, queryEmbedding, {
-      limit: limit * 2, // Buscar mais para compensar filtro por threshold
-      scoreThreshold: threshold,
+      limit: effectiveParams.limit * 2, // Buscar mais para compensar filtro por threshold
+      scoreThreshold: effectiveParams.threshold,
       filter,
       withPayload: true,
     });
+    let mappedResults = results;
+    if (RAG_ADAPTIVE_K_ENABLED && queryText) {
+      const shouldFallback = mappedResults.length < RAG_ADAPTIVE_K_MIN_RESULTS
+        && effectiveParams.threshold > RAG_ADAPTIVE_K_MIN_THRESHOLD;
+      if (shouldFallback) {
+        const fallbackThreshold = Math.max(
+          RAG_ADAPTIVE_K_MIN_THRESHOLD,
+          effectiveParams.threshold - RAG_ADAPTIVE_K_FALLBACK_DELTA
+        );
+        const fallbackResults = await searchPoints(TEXT_COLLECTION_NAME, queryEmbedding, {
+          limit: effectiveParams.limit * 2,
+          scoreThreshold: fallbackThreshold,
+          filter,
+          withPayload: true,
+        });
+        if (fallbackResults.length > mappedResults.length) {
+          mappedResults = fallbackResults;
+        }
+      }
+    }
 
     // Mapear resultados Qdrant para formato esperado pelo RAG
-    return results
-      .slice(0, limit)
+    return mappedResults
+      .slice(0, effectiveParams.limit)
       .map((result: QdrantSearchResult): QdrantDocumentResult => {
         const payload = result.payload || {};
         return {
@@ -1841,11 +1935,13 @@ app.post('/api/rag/search', requireAuth(), requirePermission('rag:documents:read
       limit: body.limit,
       threshold: body.threshold,
       namespaceId: body.namespaceId,
+      queryText: body.query,
     });
 
     logger.info({ query: body.query, results: results.length, storage: 'qdrant' }, 'Busca concluída via Qdrant');
     // Observabilidade RAG: latência e relevância média (modelo-agnóstico)
     metrics.rag.searchDuration.observe({ tenant_id: tenantId }, Number(process.hrtime.bigint() - startNs) / 1e9);
+    metrics.rag.effectiveK.observe({ endpoint: 'search' }, results.length);
     if (results.length > 0) {
       const avg = results.reduce((acc, r) => acc + r.similarity, 0) / results.length;
       metrics.rag.relevanceScore.set({ tenant_id: tenantId }, avg);
@@ -1928,6 +2024,7 @@ app.post('/api/rag/context', requireAuth(), requirePermission('rag:documents:rea
       limit: body.limit,
       threshold: body.threshold,
       namespaceId: body.namespaceId,
+      queryText: body.query,
     });
 
     // Construir contexto formatado
@@ -1952,6 +2049,7 @@ app.post('/api/rag/context', requireAuth(), requirePermission('rag:documents:rea
 
     // Observabilidade RAG: latência e relevância média (modelo-agnóstico)
     metrics.rag.searchDuration.observe({ tenant_id: tenantId }, Number(process.hrtime.bigint() - startNs) / 1e9);
+    metrics.rag.effectiveK.observe({ endpoint: 'context' }, results.length);
     if (results.length > 0) {
       const avg = results.reduce((acc, r) => acc + r.similarity, 0) / results.length;
       metrics.rag.relevanceScore.set({ tenant_id: tenantId }, avg);

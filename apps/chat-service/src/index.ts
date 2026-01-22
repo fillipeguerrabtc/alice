@@ -1586,6 +1586,170 @@ async function getAssistantSettingsForTenant(tenantId?: string | null): Promise<
   }
 }
 
+async function getUserById(userId: string, tenantId: string | null | undefined) {
+  return db.query.users.findFirst({
+    where: and(
+      eq(schema.users.id, userId),
+      tenantId ? eq(schema.users.tenantId, tenantId) : sql`1=1`
+    ),
+  });
+}
+
+async function updateUserPreferences(
+  userId: string,
+  tenantId: string | null | undefined,
+  patch: UserPreferencesRecord
+): Promise<void> {
+  const user = await getUserById(userId, tenantId);
+  if (!user) return;
+  const currentPrefs = (user.preferencias ?? {}) as UserPreferencesRecord;
+  const nextPrefs = { ...currentPrefs, ...patch };
+  await db.update(schema.users)
+    .set({ preferencias: nextPrefs, updatedAt: new Date() })
+    .where(eq(schema.users.id, userId));
+}
+
+async function resolveUserNameContext(
+  userId: string,
+  tenantId: string | null | undefined
+): Promise<UserNameContext> {
+  const user = await getUserById(userId, tenantId);
+  if (!user) {
+    return {
+      preferredName: null,
+      suggestedName: null,
+      shouldAskConfirmation: false,
+      promptPending: false,
+    };
+  }
+  const prefs = (user.preferencias ?? {}) as UserPreferencesRecord;
+  const preferredName = typeof prefs.preferredName === 'string' ? normalizeUserName(prefs.preferredName) : null;
+  const suggestedName = typeof prefs.nameSuggested === 'string'
+    ? normalizeUserName(prefs.nameSuggested)
+    : buildLoginName({ firstName: user.firstName, lastName: user.lastName, email: user.email });
+  const promptPending = Boolean(prefs.namePromptPending);
+  const context: UserNameContext = {
+    preferredName,
+    suggestedName,
+    shouldAskConfirmation: false,
+    promptPending,
+  };
+  context.shouldAskConfirmation = shouldAskNameConfirmation(context);
+  return context;
+}
+
+async function handleUserNameUpdate(params: {
+  userId: string;
+  tenantId: string | null | undefined;
+  userMessage: string;
+  currentContext: UserNameContext;
+}): Promise<UserNameContext> {
+  const extractedName = extractNameFromMessage(params.userMessage);
+  if (extractedName) {
+    await updateUserPreferences(params.userId, params.tenantId, {
+      preferredName: extractedName,
+      namePromptPending: false,
+      nameSuggested: null,
+      nameUpdatedAt: new Date().toISOString(),
+    });
+    return {
+      ...params.currentContext,
+      preferredName: extractedName,
+      shouldAskConfirmation: false,
+      promptPending: false,
+    };
+  }
+
+  if (params.currentContext.promptPending && isNameConfirmation(params.userMessage, params.currentContext.suggestedName)) {
+    const confirmedName = params.currentContext.suggestedName;
+    if (confirmedName) {
+      await updateUserPreferences(params.userId, params.tenantId, {
+        preferredName: confirmedName,
+        namePromptPending: false,
+        nameSuggested: null,
+        nameUpdatedAt: new Date().toISOString(),
+      });
+      return {
+        ...params.currentContext,
+        preferredName: confirmedName,
+        shouldAskConfirmation: false,
+        promptPending: false,
+      };
+    }
+  }
+
+  if (params.currentContext.promptPending) {
+    const normalizedCandidate = normalizeUserName(params.userMessage);
+    const lower = params.userMessage.trim().toLowerCase();
+    const invalidCandidates = new Set([
+      'sim', 'ok', 'pode', 'pode sim', 'isso', 'isso mesmo', 'claro', 'tanto faz',
+      'não', 'nao', 'prefiro', 'obrigado', 'obrigada', 'valeu',
+    ]);
+    const looksLikePlainName = Boolean(
+      normalizedCandidate &&
+      normalizedCandidate.length <= 40 &&
+      !/[0-9]/.test(normalizedCandidate) &&
+      !invalidCandidates.has(lower) &&
+      !/[?]/.test(lower)
+    );
+    if (looksLikePlainName) {
+      await updateUserPreferences(params.userId, params.tenantId, {
+        preferredName: normalizedCandidate,
+        namePromptPending: false,
+        nameSuggested: null,
+        nameUpdatedAt: new Date().toISOString(),
+      });
+      return {
+        ...params.currentContext,
+        preferredName: normalizedCandidate,
+        shouldAskConfirmation: false,
+        promptPending: false,
+      };
+    }
+  }
+
+  return params.currentContext;
+}
+
+async function markNamePromptPending(
+  userId: string,
+  tenantId: string | null | undefined,
+  context: UserNameContext
+): Promise<void> {
+  if (!context.shouldAskConfirmation || !context.suggestedName) return;
+  await updateUserPreferences(userId, tenantId, {
+    namePromptPending: true,
+    nameSuggested: context.suggestedName,
+    namePromptedAt: new Date().toISOString(),
+  });
+}
+
+function appendUserNamePolicy(prompt: string, context: UserNameContext): string {
+  const name = context.preferredName || context.suggestedName;
+  if (!name) return prompt;
+  return `${prompt}\n\nNOME DO USUÁRIO:\n- Nome base: ${name}\n- Use o nome apenas em saudações iniciais/finais, respostas importantes e na maioria dos agradecimentos.\n- Use o nome quando o usuário perguntar sobre o próprio nome.\n- Não use o nome em todas as mensagens.`;
+}
+
+function appendNameConfirmationInstruction(prompt: string, context: UserNameContext): string {
+  if (!context.shouldAskConfirmation || !context.suggestedName) return prompt;
+  return `${prompt}\n\nIMPORTANTE: Pergunte se o usuário prefere ser chamado de "${context.suggestedName}" ou se prefere outro nome.`;
+}
+
+function appendNameConfirmationQuestion(response: string, context: UserNameContext): string {
+  if (!context.shouldAskConfirmation || !context.suggestedName) return response;
+  return `${response}\n\nPosso te chamar de ${context.suggestedName} ou você prefere outro nome?`;
+}
+
+function applyUserNameToGreeting(response: string, context: UserNameContext): string {
+  const name = context.preferredName || context.suggestedName;
+  if (!name) return response;
+  const normalizedResponse = response.toLowerCase();
+  if (normalizedResponse.includes(name.toLowerCase())) {
+    return response;
+  }
+  return response.replace(/^(\s*(?:ol[áa]|oi|hello|hi)[^,!\n]*)/i, `$1, ${name}`);
+}
+
 // ============================================================================
 // CIRCUIT BREAKER - GPU Manager Service LLM API (Regra 16 - Best Practices 2025)
 // Usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
@@ -1732,11 +1896,6 @@ const DEFAULT_LLM_CONFIG: Required<LLMConfig> = {
   model: 'Qwen/Qwen2.5-7B-Instruct-AWQ',
 };
 
-// ============================================================================
-// PERFORMANCE 2025: Budget dinâmico de tokens + RAG adaptativo
-// ============================================================================
-const MIN_LLM_OUTPUT_TOKENS = 256;
-
 function parseEnvInt(value: string | undefined, defaultValue: number, name: string): number {
   const raw = (value ?? String(defaultValue)).trim();
   if (!/^\d+$/.test(raw)) {
@@ -1751,6 +1910,21 @@ function parseEnvInt(value: string | undefined, defaultValue: number, name: stri
   const parsed = parseInt(raw, 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
     const message = `${name} inválido: "${raw}". Deve ser inteiro positivo.`;
+    if (process.env.NODE_ENV === 'production') {
+      logger.error({ name, raw, parsed }, message);
+      throw new Error(message);
+    }
+    logger.warn({ name, raw, parsed, defaultValue }, `${message} Usando valor padrão.`);
+    return defaultValue;
+  }
+  return parsed;
+}
+
+function parseEnvFloat(value: string | undefined, defaultValue: number, name: string): number {
+  const raw = (value ?? String(defaultValue)).trim().replace(',', '.');
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 1) {
+    const message = `${name} inválido: "${raw}". Deve ser número entre 0 e 1 (ex: 0.12).`;
     if (process.env.NODE_ENV === 'production') {
       logger.error({ name, raw, parsed }, message);
       throw new Error(message);
@@ -1784,6 +1958,146 @@ type LlmSource =
 
 type LlmContextProfile = 'trading' | 'general' | 'analysis';
 
+const MIN_LLM_OUTPUT_TOKENS = parseEnvInt(
+  process.env.LLM_MIN_OUTPUT_TOKENS,
+  256,
+  'LLM_MIN_OUTPUT_TOKENS'
+);
+const LLM_DYNAMIC_PROMPT_T1 = parseEnvInt(
+  process.env.LLM_DYNAMIC_PROMPT_T1,
+  1600,
+  'LLM_DYNAMIC_PROMPT_T1'
+);
+const LLM_DYNAMIC_PROMPT_T2 = parseEnvInt(
+  process.env.LLM_DYNAMIC_PROMPT_T2,
+  2200,
+  'LLM_DYNAMIC_PROMPT_T2'
+);
+const LLM_DYNAMIC_PROMPT_T3 = parseEnvInt(
+  process.env.LLM_DYNAMIC_PROMPT_T3,
+  2800,
+  'LLM_DYNAMIC_PROMPT_T3'
+);
+const LLM_DYNAMIC_PROMPT_T4 = parseEnvInt(
+  process.env.LLM_DYNAMIC_PROMPT_T4,
+  3600,
+  'LLM_DYNAMIC_PROMPT_T4'
+);
+const LLM_DYNAMIC_MAX_TOKENS_T1 = parseEnvInt(
+  process.env.LLM_DYNAMIC_MAX_TOKENS_T1,
+  1536,
+  'LLM_DYNAMIC_MAX_TOKENS_T1'
+);
+const LLM_DYNAMIC_MAX_TOKENS_T2 = parseEnvInt(
+  process.env.LLM_DYNAMIC_MAX_TOKENS_T2,
+  1024,
+  'LLM_DYNAMIC_MAX_TOKENS_T2'
+);
+const LLM_DYNAMIC_MAX_TOKENS_T3 = parseEnvInt(
+  process.env.LLM_DYNAMIC_MAX_TOKENS_T3,
+  768,
+  'LLM_DYNAMIC_MAX_TOKENS_T3'
+);
+const LLM_DYNAMIC_MAX_TOKENS_T4 = parseEnvInt(
+  process.env.LLM_DYNAMIC_MAX_TOKENS_T4,
+  512,
+  'LLM_DYNAMIC_MAX_TOKENS_T4'
+);
+const CHAT_HISTORY_FETCH_LIMIT = parseEnvInt(
+  process.env.CHAT_HISTORY_FETCH_LIMIT,
+  10,
+  'CHAT_HISTORY_FETCH_LIMIT'
+);
+const CHAT_HISTORY_ALWAYS_INCLUDE_TRADING = parseEnvInt(
+  process.env.CHAT_HISTORY_ALWAYS_INCLUDE_TRADING,
+  6,
+  'CHAT_HISTORY_ALWAYS_INCLUDE_TRADING'
+);
+const CHAT_HISTORY_ALWAYS_INCLUDE_GENERAL = parseEnvInt(
+  process.env.CHAT_HISTORY_ALWAYS_INCLUDE_GENERAL,
+  4,
+  'CHAT_HISTORY_ALWAYS_INCLUDE_GENERAL'
+);
+const CHAT_HISTORY_MIN_MESSAGES_TRADING = parseEnvInt(
+  process.env.CHAT_HISTORY_MIN_MESSAGES_TRADING,
+  0,
+  'CHAT_HISTORY_MIN_MESSAGES_TRADING'
+);
+const CHAT_HISTORY_MIN_MESSAGES_GENERAL = parseEnvInt(
+  process.env.CHAT_HISTORY_MIN_MESSAGES_GENERAL,
+  0,
+  'CHAT_HISTORY_MIN_MESSAGES_GENERAL'
+);
+const CHAT_HISTORY_RELEVANCE_THRESHOLD_TRADING = parseEnvFloat(
+  process.env.CHAT_HISTORY_RELEVANCE_THRESHOLD_TRADING,
+  0.08,
+  'CHAT_HISTORY_RELEVANCE_THRESHOLD_TRADING'
+);
+const CHAT_HISTORY_RELEVANCE_THRESHOLD_GENERAL = parseEnvFloat(
+  process.env.CHAT_HISTORY_RELEVANCE_THRESHOLD_GENERAL,
+  0.12,
+  'CHAT_HISTORY_RELEVANCE_THRESHOLD_GENERAL'
+);
+const CHAT_HISTORY_FALLBACK_ENABLED = parseEnvBool(
+  process.env.CHAT_HISTORY_FALLBACK_ENABLED,
+  false,
+  'CHAT_HISTORY_FALLBACK_ENABLED'
+);
+const CHAT_HISTORY_SEARCH_LIMIT = parseEnvInt(
+  process.env.CHAT_HISTORY_SEARCH_LIMIT,
+  200,
+  'CHAT_HISTORY_SEARCH_LIMIT'
+);
+const CHAT_HISTORY_SEARCH_TOKEN_BUDGET = parseEnvInt(
+  process.env.CHAT_HISTORY_SEARCH_TOKEN_BUDGET,
+  1200,
+  'CHAT_HISTORY_SEARCH_TOKEN_BUDGET'
+);
+const CHAT_HISTORY_SEARCH_CONVERSATIONS_LIMIT = parseEnvInt(
+  process.env.CHAT_HISTORY_SEARCH_CONVERSATIONS_LIMIT,
+  20,
+  'CHAT_HISTORY_SEARCH_CONVERSATIONS_LIMIT'
+);
+const CHAT_MEMORY_RELEVANCE_THRESHOLD = parseEnvFloat(
+  process.env.CHAT_MEMORY_RELEVANCE_THRESHOLD,
+  0.1,
+  'CHAT_MEMORY_RELEVANCE_THRESHOLD'
+);
+const CHAT_MEMORY_IMPORTANCE_KEYWORDS = [
+  'importante', 'crítico', 'critico', 'essencial', 'prioridade', 'urgente',
+  'risco', 'risks', 'compliance', 'regra', 'política', 'politica', 'sla',
+  'acordo', 'contrato', 'financeiro', 'financeira', 'pagamento', 'taxa',
+  'exposição', 'exposicao', 'limite', 'liquidação', 'liquidacao',
+  'trading', 'ordem', 'alavancagem', 'stop', 'take profit', 'kucoin',
+] as const;
+
+function validateDynamicTokenTiers(): void {
+  const thresholdValues = [
+    LLM_DYNAMIC_PROMPT_T1,
+    LLM_DYNAMIC_PROMPT_T2,
+    LLM_DYNAMIC_PROMPT_T3,
+    LLM_DYNAMIC_PROMPT_T4,
+  ];
+  const tokenCaps = [
+    LLM_DYNAMIC_MAX_TOKENS_T1,
+    LLM_DYNAMIC_MAX_TOKENS_T2,
+    LLM_DYNAMIC_MAX_TOKENS_T3,
+    LLM_DYNAMIC_MAX_TOKENS_T4,
+  ];
+  const isThresholdsAscending = thresholdValues.every((value, index, arr) => index === 0 || value > arr[index - 1]);
+  const isCapsDescending = tokenCaps.every((value, index, arr) => index === 0 || value < arr[index - 1]);
+  if (isThresholdsAscending && isCapsDescending) {
+    return;
+  }
+  const message = 'Configuração inválida dos tiers de tokens (thresholds devem subir e caps devem descer).';
+  if (process.env.NODE_ENV === 'production') {
+    logger.error({ thresholdValues, tokenCaps }, message);
+    throw new Error(message);
+  }
+  logger.warn({ thresholdValues, tokenCaps }, `${message} Usando valores configurados mesmo assim.`);
+}
+
+validateDynamicTokenTiers();
 const LLM_TOKENS_PER_SECOND = parseEnvInt(
   process.env.LLM_TOKENS_PER_SECOND,
   40,
@@ -1847,6 +2161,157 @@ function detectContextProfile(userMessage: string): LlmContextProfile {
     return 'analysis';
   }
   return 'general';
+}
+
+type UserNameContext = {
+  preferredName: string | null;
+  suggestedName: string | null;
+  shouldAskConfirmation: boolean;
+  promptPending: boolean;
+};
+
+type UserPreferencesRecord = Record<string, unknown>;
+
+function buildEmptyUserNameContext(): UserNameContext {
+  return {
+    preferredName: null,
+    suggestedName: null,
+    shouldAskConfirmation: false,
+    promptPending: false,
+  };
+}
+
+function normalizeUserName(value: string): string | null {
+  const cleaned = value
+    .replace(/[^\p{L}\p{M}\s'.-]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleaned || cleaned.length < 2 || cleaned.length > 60) return null;
+  return cleaned;
+}
+
+function buildLoginName(user: { firstName?: string | null; lastName?: string | null; email?: string | null }): string | null {
+  const firstName = user.firstName?.trim() ?? '';
+  const lastName = user.lastName?.trim() ?? '';
+  const combined = `${firstName} ${lastName}`.trim();
+  if (combined.length >= 2) return combined;
+  const emailLocal = user.email?.split('@')[0]?.replace(/[._-]+/g, ' ').trim();
+  return emailLocal && emailLocal.length >= 2 ? emailLocal : null;
+}
+
+function extractNameFromMessage(message: string): string | null {
+  const patterns = [
+    /(?:meu nome é|me chamo|pode me chamar de|me chama de|prefiro ser chamado(?:a)? de)\s+([^\n.,!?]{2,60})/i,
+    /(?:prefiro|prefiro que)\s+(?:ser\s+)?(?:chamado(?:a)?\s+de\s+)?([^\n.,!?]{2,60})/i,
+    /(?:my name is|call me)\s+([^\n.,!?]{2,60})/i,
+  ];
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+    if (!match?.[1]) continue;
+    const normalized = normalizeUserName(match[1]);
+    if (normalized) return normalized;
+  }
+  return null;
+}
+
+function isNameConfirmation(message: string, suggestedName: string | null): boolean {
+  if (!suggestedName) return false;
+  const normalized = message.toLowerCase().trim();
+  if (!normalized) return false;
+  const hasSuggested = normalized.includes(suggestedName.toLowerCase());
+  if (hasSuggested) return true;
+  return /^(sim|ok|pode|pode sim|isso|isso mesmo|claro|tanto faz|pode chamar)$/i.test(normalized);
+}
+
+function shouldAskNameConfirmation(context: UserNameContext): boolean {
+  if (context.preferredName) return false;
+  if (!context.suggestedName) return false;
+  if (context.promptPending) return false;
+  return true;
+}
+
+function isMemorySearchIntent(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return /lembra|hist[oó]rico|conversa anterior|você disse|voce disse|falamos|disse antes|qual foi|qual era|o que combinamos|meu nome|qual é meu nome|qual e meu nome|como você me chama|como voce me chama/i.test(normalized);
+}
+
+function buildMemorySearchBlock(history: StoredMessage[], userMessage: string, maxTokens: number): string | null {
+  if (maxTokens <= 0 || history.length === 0) return null;
+  const normalizedUser = userMessage.trim().toLowerCase();
+  const candidates = history
+    .map((msg, index) => {
+      const content = msg.conteudo?.trim();
+      if (!content) return null;
+      const score = computeRelevanceScore(content, normalizedUser);
+      const isImportant = CHAT_MEMORY_IMPORTANCE_KEYWORDS.some((keyword) =>
+        content.toLowerCase().includes(keyword)
+      );
+      return {
+        index,
+        content,
+        score,
+        isImportant,
+        isFromUser: msg.isFromUser,
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item))
+    .filter((item) => item.score >= CHAT_MEMORY_RELEVANCE_THRESHOLD || item.isImportant);
+
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => {
+    if (a.isImportant !== b.isImportant) return a.isImportant ? -1 : 1;
+    if (b.score !== a.score) return b.score - a.score;
+    return a.index - b.index;
+  });
+
+  const selected: string[] = [];
+  let usedTokens = 0;
+  for (const item of candidates) {
+    const prefix = item.isFromUser ? 'Usuário' : 'Alice';
+    const entry = `${prefix}: ${item.content}`;
+    const entryTokens = estimateTokensFromText(entry);
+    if (usedTokens + entryTokens > maxTokens) break;
+    selected.push(entry);
+    usedTokens += entryTokens;
+  }
+
+  if (selected.length === 0) return null;
+  return selected.join('\n');
+}
+
+async function fetchUserMemoryHistory(params: {
+  userId?: string | null;
+  tenantId?: string | null;
+  conversationId: string;
+  limit: number;
+}): Promise<StoredMessage[]> {
+  if (!params.userId || !params.tenantId) {
+    const fallback = await db.query.messages.findMany({
+      where: eq(schema.messages.conversationId, params.conversationId),
+      orderBy: [desc(schema.messages.criadoEm)],
+      limit: params.limit,
+    });
+    return normalizeStoredMessages(fallback);
+  }
+
+  const conversations = await db.query.conversations.findMany({
+    where: and(
+      eq(schema.conversations.userId, params.userId),
+      eq(schema.conversations.tenantId, params.tenantId)
+    ),
+    orderBy: [desc(schema.conversations.atualizadoEm)],
+    limit: CHAT_HISTORY_SEARCH_CONVERSATIONS_LIMIT,
+  });
+  const conversationIds = conversations.map((conv) => conv.id);
+  if (conversationIds.length === 0) {
+    return [];
+  }
+  const messages = await db.query.messages.findMany({
+    where: inArray(schema.messages.conversationId, conversationIds),
+    orderBy: [desc(schema.messages.criadoEm)],
+    limit: params.limit,
+  });
+  return normalizeStoredMessages(messages);
 }
 
 function getPromptTokenBudget(source: LlmSource, profile: LlmContextProfile): number {
@@ -1921,16 +2386,31 @@ function recordRagRelevance(tenantId: string | null | undefined, ragResult: RAGC
   metrics.rag.relevanceScore.set({ tenant_id: tenantId }, normalized);
 }
 
+function recordRagSearchMetrics(params: {
+  tenantId: string | null | undefined;
+  ragResult: RAGContextResponse | null;
+  latencyMs?: number;
+  endpoint: string;
+}): void {
+  const { tenantId, ragResult, latencyMs, endpoint } = params;
+  if (tenantId && typeof latencyMs === 'number' && latencyMs >= 0) {
+    metrics.rag.searchDuration.observe({ tenant_id: tenantId }, latencyMs / 1000);
+  }
+  if (ragResult?.sources?.length) {
+    metrics.rag.effectiveK.observe({ endpoint }, ragResult.sources.length);
+  }
+}
+
 function computeDynamicMaxTokens(baseMax: number, promptTokens: number): number {
   let dynamicMax = baseMax;
-  if (promptTokens > 3600) {
-    dynamicMax = Math.min(dynamicMax, 512);
-  } else if (promptTokens > 2800) {
-    dynamicMax = Math.min(dynamicMax, 768);
-  } else if (promptTokens > 2200) {
-    dynamicMax = Math.min(dynamicMax, 1024);
-  } else if (promptTokens > 1600) {
-    dynamicMax = Math.min(dynamicMax, 1536);
+  if (promptTokens > LLM_DYNAMIC_PROMPT_T4) {
+    dynamicMax = Math.min(dynamicMax, LLM_DYNAMIC_MAX_TOKENS_T4);
+  } else if (promptTokens > LLM_DYNAMIC_PROMPT_T3) {
+    dynamicMax = Math.min(dynamicMax, LLM_DYNAMIC_MAX_TOKENS_T3);
+  } else if (promptTokens > LLM_DYNAMIC_PROMPT_T2) {
+    dynamicMax = Math.min(dynamicMax, LLM_DYNAMIC_MAX_TOKENS_T2);
+  } else if (promptTokens > LLM_DYNAMIC_PROMPT_T1) {
+    dynamicMax = Math.min(dynamicMax, LLM_DYNAMIC_MAX_TOKENS_T1);
   }
   return Math.max(MIN_LLM_OUTPUT_TOKENS, dynamicMax);
 }
@@ -2308,8 +2788,15 @@ function buildHistoryMessages(
   if (maxTokens <= 0) return [];
   const selected: LLMMessage[] = [];
   let totalTokens = 0;
-  const relevanceThreshold = profile === 'trading' ? 0.08 : 0.12;
-  const alwaysIncludeCount = profile === 'trading' ? 6 : 4;
+  const relevanceThreshold = profile === 'trading'
+    ? CHAT_HISTORY_RELEVANCE_THRESHOLD_TRADING
+    : CHAT_HISTORY_RELEVANCE_THRESHOLD_GENERAL;
+  const alwaysIncludeCount = profile === 'trading'
+    ? CHAT_HISTORY_ALWAYS_INCLUDE_TRADING
+    : CHAT_HISTORY_ALWAYS_INCLUDE_GENERAL;
+  const minMessages = profile === 'trading'
+    ? CHAT_HISTORY_MIN_MESSAGES_TRADING
+    : CHAT_HISTORY_MIN_MESSAGES_GENERAL;
   const normalizedUser = userMessage.trim().toLowerCase();
 
   for (let i = 0; i < history.length; i += 1) {
@@ -2319,7 +2806,7 @@ function buildHistoryMessages(
     const tokens = estimateTokensFromText(content);
     const isRecent = i < alwaysIncludeCount;
     const score = computeRelevanceScore(content, normalizedUser);
-    const shouldInclude = isRecent || score >= relevanceThreshold;
+    const shouldInclude = isRecent || score >= relevanceThreshold || (minMessages > 0 && selected.length < minMessages);
     if (!shouldInclude) continue;
     if (totalTokens + tokens > maxTokens) {
       if (totalTokens === 0) {
@@ -2335,6 +2822,20 @@ function buildHistoryMessages(
       content,
     });
     totalTokens += tokens;
+  }
+
+  if (selected.length === 0 && CHAT_HISTORY_FALLBACK_ENABLED && history.length > 0) {
+    const fallback = history[0];
+    const fallbackContent = fallback.conteudo?.trim();
+    if (fallbackContent) {
+      const tokens = estimateTokensFromText(fallbackContent);
+      if (tokens <= maxTokens) {
+        selected.push({
+          role: fallback.isFromUser ? 'user' : 'assistant',
+          content: fallbackContent,
+        });
+      }
+    }
   }
 
   return selected.reverse();
@@ -4545,12 +5046,24 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
 
     const agent = conversation.agent as AgentConfig | null;
     const assistantSettings = await getAssistantSettingsForTenant(req.tenantId);
+    const baseNameContext = await resolveUserNameContext(userId, tenantId);
+    const nameContext = await handleUserNameUpdate({
+      userId,
+      tenantId,
+      userMessage: body.conteudo,
+      currentContext: baseNameContext,
+    });
     let systemPrompt = buildSystemPrompt(agent, assistantSettings, body.conteudo);
+    systemPrompt = appendUserNamePolicy(systemPrompt, nameContext);
+    systemPrompt = appendNameConfirmationInstruction(systemPrompt, nameContext);
+    if (nameContext.shouldAskConfirmation) {
+      await markNamePromptPending(userId, tenantId, nameContext);
+    }
     
     const previousMessages = await db.query.messages.findMany({
       where: eq(schema.messages.conversationId, id),
       orderBy: [desc(schema.messages.criadoEm)],
-      limit: 10,
+      limit: CHAT_HISTORY_FETCH_LIMIT,
     });
     const storedPreviousMessages = normalizeStoredMessages(previousMessages);
 
@@ -4565,6 +5078,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
     );
     const ragLatency = Date.now() - ragStartTime;
     recordRagRelevance(tenantId, ragResult);
+    recordRagSearchMetrics({ tenantId, ragResult, latencyMs: ragLatency, endpoint: 'chat-sync' });
     
     if (ragResult && ragResult.context) {
       systemPrompt += formatarContextoParaLLM(ragResult);
@@ -4573,6 +5087,23 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
         ragChunks: ragResult.sources.length,
         ragLatencyMs: ragLatency,
       }, 'Contexto RAG injetado no prompt');
+    }
+
+    if (isMemorySearchIntent(body.conteudo)) {
+      const memoryHistory = await fetchUserMemoryHistory({
+        userId,
+        tenantId,
+        conversationId: id,
+        limit: CHAT_HISTORY_SEARCH_LIMIT,
+      });
+      const memoryBlock = buildMemorySearchBlock(
+        memoryHistory,
+        body.conteudo,
+        CHAT_HISTORY_SEARCH_TOKEN_BUDGET
+      );
+      if (memoryBlock) {
+        systemPrompt += `\n\nHISTÓRICO RELEVANTE (memória solicitada):\n${memoryBlock}`;
+      }
     }
 
     const historyForPrompt = dropLeadingDuplicateUserMessage(storedPreviousMessages, body.conteudo);
@@ -4704,6 +5235,16 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       return res.status(400).json({ error: 'Mensagem do usuário obrigatória' });
     }
     const userMessageContent = normalizedUserMessageContent;
+    const baseNameContext = await resolveUserNameContext(userId, tenantId);
+    const nameContext = await handleUserNameUpdate({
+      userId,
+      tenantId,
+      userMessage: userMessageContent,
+      currentContext: baseNameContext,
+    });
+    if (nameContext.shouldAskConfirmation) {
+      await markNamePromptPending(userId, tenantId, nameContext);
+    }
 
     const imageDetection = !hasMediaAttachments
       ? detectImageGenerationRequest(userMessageContent)
@@ -4827,7 +5368,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       ? await db.query.messages.findMany({
         where: eq(schema.messages.conversationId, conversationId),
         orderBy: [desc(schema.messages.criadoEm)],
-        limit: 10,
+        limit: CHAT_HISTORY_FETCH_LIMIT,
       })
       : [];
     const storedPreviousMessages = normalizeStoredMessages(previousMessages);
@@ -4981,6 +5522,8 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       const agent = conversation?.agent as AgentConfig | null;
       const assistantSettings = await getAssistantSettingsForTenant(tenantId);
       let systemPrompt = buildSystemPrompt(agent, assistantSettings, userMessageContent);
+      systemPrompt = appendUserNamePolicy(systemPrompt, nameContext);
+      systemPrompt = appendNameConfirmationInstruction(systemPrompt, nameContext);
       let userContent = userMessageContent;
 
       if (visionSummaries.length > 0) {
@@ -5154,11 +5697,13 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           normalizeContent(lastAssistantMessage.conteudo) === normalizeContent(cacheResult.response)
         );
         const greetingSeed = `${tenantId}:${userMessageContent}:${lastAssistantMessage?.id || 'first'}`;
-        const greetingResponse = buildGreetingResponse(
+        let greetingResponse = buildGreetingResponse(
           cacheResult.response,
           greetingSeed,
           shouldAugmentGreeting
         );
+        greetingResponse = applyUserNameToGreeting(greetingResponse, nameContext);
+        greetingResponse = appendNameConfirmationQuestion(greetingResponse, nameContext);
         const [assistantMessage] = await db.insert(schema.messages).values({
           conversationId,
           agentId: conversation?.agentId ?? undefined,
@@ -5985,6 +6530,8 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       recordRagRelevance(tenantId, ragResult);
 
       let systemPrompt = buildSystemPrompt(agent, assistantSettings, userMessageContent);
+      systemPrompt = appendUserNamePolicy(systemPrompt, nameContext);
+      systemPrompt = appendNameConfirmationInstruction(systemPrompt, nameContext);
       let ragSources: Array<{ documentId: string; titulo: string; similarity: number }> = [];
       let webSources: Array<{ title: string; url: string }> = [];
       const classificationWebMode = ragClassification?.classification?.webMode;
@@ -5996,6 +6543,23 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           ragChunks: ragResult.sources.length,
           namespaceId,
         }, 'Contexto RAG injetado no streaming');
+      }
+
+      if (isMemorySearchIntent(userMessageContent)) {
+        const memoryHistory = await fetchUserMemoryHistory({
+          userId,
+          tenantId,
+          conversationId,
+          limit: CHAT_HISTORY_SEARCH_LIMIT,
+        });
+        const memoryBlock = buildMemorySearchBlock(
+          memoryHistory,
+          userMessageContent,
+          CHAT_HISTORY_SEARCH_TOKEN_BUDGET
+        );
+        if (memoryBlock) {
+          systemPrompt += `\n\nHISTÓRICO RELEVANTE (memória solicitada):\n${memoryBlock}`;
+        }
       }
 
       const shouldUseWeb = explicitWebRequest
@@ -6735,6 +7299,16 @@ wss.on('connection', (ws, req) => {
         // CORREÇÃO 18/12/2025: Definir messageContent cedo (antes de shouldEscalate)
         // message.content é opcional no schema, usar fallback vazio
         const messageContent = message.content ?? '';
+        const baseNameContext = await resolveUserNameContext(userId, tenantId);
+        const nameContext = await handleUserNameUpdate({
+          userId,
+          tenantId,
+          userMessage: messageContent,
+          currentContext: baseNameContext,
+        });
+        if (nameContext.shouldAskConfirmation) {
+          await markNamePromptPending(userId, tenantId, nameContext);
+        }
         
         // ========================================================================
         // FASE 1: VERIFICAÇÕES PRÉ-INSERT (CRÍTICO para handover correto!)
@@ -7093,10 +7667,13 @@ wss.on('connection', (ws, req) => {
           const cacheLatency = cacheResult.latencyMs;
           
           // Salvar resposta no banco
+          let cachedResponse = cacheResult.response;
+          cachedResponse = applyUserNameToGreeting(cachedResponse, nameContext);
+          cachedResponse = appendNameConfirmationQuestion(cachedResponse, nameContext);
           const inserted = await db.insert(schema.messages).values({
             conversationId,
             agentId: conversation?.agentId,
-            conteudo: cacheResult.response,
+            conteudo: cachedResponse,
             tipo: 'text',
             isFromUser: false,
             latenciaMs: cacheLatency,
@@ -7120,14 +7697,14 @@ wss.on('connection', (ws, req) => {
             await ensureConversationTitle({
               conversationId,
               userMessage: messageContent,
-              assistantResponse: cacheResult.response,
+              assistantResponse: cachedResponse,
             });
           } catch (titleError) {
             logger.warn({ error: titleError, conversationId }, 'Falha ao aplicar título automático (cache)');
           }
           
           // Enviar resposta ao cliente (simular streaming para UX consistente)
-          ws.send(JSON.stringify({ type: 'stream', data: cacheResult.response }));
+          ws.send(JSON.stringify({ type: 'stream', data: cachedResponse }));
           ws.send(JSON.stringify({ 
             type: 'complete', 
             data: cachedMsg,
@@ -7156,6 +7733,8 @@ wss.on('connection', (ws, req) => {
         const agent = conversation?.agent as AgentConfig | null;
         const assistantSettings = await getAssistantSettingsForTenant(safeTenantId);
         let systemPrompt = buildSystemPrompt(agent, assistantSettings, messageContent);
+        systemPrompt = appendUserNamePolicy(systemPrompt, nameContext);
+        systemPrompt = appendNameConfirmationInstruction(systemPrompt, nameContext);
 
         const namespaceId = message.namespaceId || conversation?.namespaceId || undefined;
         // CORREÇÃO 17/12/2025: Usar messageContent (com fallback) ao invés de message.content (potencialmente undefined)
@@ -7169,6 +7748,7 @@ wss.on('connection', (ws, req) => {
         );
         const ragLatency = Date.now() - ragStartTime;
         recordRagRelevance(safeTenantId, ragResult);
+        recordRagSearchMetrics({ tenantId: safeTenantId, ragResult, latencyMs: ragLatency, endpoint: 'chat-ws' });
         
         if (ragResult && ragResult.context) {
           systemPrompt += formatarContextoParaLLM(ragResult);
@@ -7185,6 +7765,23 @@ wss.on('connection', (ws, req) => {
             ragLatencyMs: ragLatency,
             namespaceId,
           }, 'Contexto RAG injetado via WebSocket');
+        }
+
+        if (isMemorySearchIntent(messageContent)) {
+          const memoryHistory = await fetchUserMemoryHistory({
+            userId,
+            tenantId: safeTenantId,
+            conversationId,
+            limit: CHAT_HISTORY_SEARCH_LIMIT,
+          });
+          const memoryBlock = buildMemorySearchBlock(
+            memoryHistory,
+            messageContent,
+            CHAT_HISTORY_SEARCH_TOKEN_BUDGET
+          );
+          if (memoryBlock) {
+            systemPrompt += `\n\nHISTÓRICO RELEVANTE (memória solicitada):\n${memoryBlock}`;
+          }
         }
 
         const llmStartTime = Date.now();
@@ -7436,6 +8033,17 @@ wss.on('connection', (ws, req) => {
           }));
           return;
         }
+
+        const baseNameContext = await resolveUserNameContext(userId, tenantId);
+        const nameContext = await handleUserNameUpdate({
+          userId,
+          tenantId,
+          userMessage: mediaMessage.content ?? '',
+          currentContext: baseNameContext,
+        });
+        if (nameContext.shouldAskConfirmation) {
+          await markNamePromptPending(userId, tenantId, nameContext);
+        }
         
         // Usar tenantId derivado da conversa (SEMPRE da fonte confiável)
         const mediaSafeTenantId = mediaConversationTenantId;
@@ -7586,6 +8194,8 @@ wss.on('connection', (ws, req) => {
         const agent = conversation.agent as AgentConfig | null;
         const assistantSettings = await getAssistantSettingsForTenant(tenantId);
         let systemPrompt = buildSystemPrompt(agent, assistantSettings, mediaMessage.content);
+        systemPrompt = appendUserNamePolicy(systemPrompt, nameContext);
+        systemPrompt = appendNameConfirmationInstruction(systemPrompt, nameContext);
         
         // Para imagens: usa RAG com embeddings de texto a partir da descrição OpenAI Vision
         // Para áudio: usar transcrição quando disponível
@@ -9417,13 +10027,30 @@ app.post('/api/chat/message', asyncHandler(async (req: Request, res: Response) =
     // Processar mensagem com LLM
     const agent = conversation.agent as AgentConfig | null;
     const assistantSettings = await getAssistantSettingsForTenant(conversation.tenantId || req.tenantId);
+    const userIdForName = req.user?.userId as string | undefined;
+    const baseNameContext = userIdForName
+      ? await resolveUserNameContext(userIdForName, req.tenantId)
+      : buildEmptyUserNameContext();
+    const nameContext = userIdForName
+      ? await handleUserNameUpdate({
+        userId: userIdForName,
+        tenantId: req.tenantId,
+        userMessage: content,
+        currentContext: baseNameContext,
+      })
+      : baseNameContext;
+    if (userIdForName && nameContext.shouldAskConfirmation) {
+      await markNamePromptPending(userIdForName, req.tenantId, nameContext);
+    }
     let systemPrompt = buildSystemPrompt(agent, assistantSettings, content);
+    systemPrompt = appendUserNamePolicy(systemPrompt, nameContext);
+    systemPrompt = appendNameConfirmationInstruction(systemPrompt, nameContext);
     
     // Buscar histórico recente
     const previousMessages = await db.query.messages.findMany({
       where: eq(schema.messages.conversationId, conversationId),
       orderBy: [desc(schema.messages.criadoEm)],
-      limit: 10,
+      limit: CHAT_HISTORY_FETCH_LIMIT,
     });
     const storedPreviousMessages = normalizeStoredMessages(previousMessages);
     
@@ -9439,6 +10066,23 @@ app.post('/api/chat/message', asyncHandler(async (req: Request, res: Response) =
     recordRagRelevance(req.tenantId, ragResult);
     if (ragResult && ragResult.context) {
       systemPrompt += formatarContextoParaLLM(ragResult);
+    }
+
+    if (isMemorySearchIntent(content)) {
+      const memoryHistory = await fetchUserMemoryHistory({
+        userId: req.user?.userId,
+        tenantId: req.tenantId,
+        conversationId,
+        limit: CHAT_HISTORY_SEARCH_LIMIT,
+      });
+      const memoryBlock = buildMemorySearchBlock(
+        memoryHistory,
+        content,
+        CHAT_HISTORY_SEARCH_TOKEN_BUDGET
+      );
+      if (memoryBlock) {
+        systemPrompt += `\n\nHISTÓRICO RELEVANTE (memória solicitada):\n${memoryBlock}`;
+      }
     }
     
     const historyForPrompt = dropLeadingDuplicateUserMessage(storedPreviousMessages, content);
