@@ -102,6 +102,26 @@ const roleOptions: Array<{ value: Role; label: string }> = [
   { value: 'guest', label: 'Convidado' },
 ];
 
+function parsePermissionCode(code: string): { modulo: string; recurso: string; acao: string } {
+  const [modulo = '', recurso = '', acao = 'read'] = code.split(':');
+  return { modulo, recurso, acao };
+}
+
+function normalizePermissionToken(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-z0-9_]/g, '');
+}
+
+function buildPermissionCode(modulo: string, recurso: string, acao: string): string {
+  const normalizedModulo = normalizePermissionToken(modulo);
+  const normalizedRecurso = normalizePermissionToken(recurso);
+  const normalizedAcao = normalizePermissionToken(acao);
+  return `${normalizedModulo}:${normalizedRecurso}:${normalizedAcao}`;
+}
+
 const groupFormSchema = z.object({
   nome: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres').max(255),
   descricao: z.string().optional(),
@@ -111,13 +131,24 @@ const groupFormSchema = z.object({
 type GroupFormData = z.infer<typeof groupFormSchema>;
 
 const permissionFormSchema = z.object({
-  codigo: z.string().min(2, 'Código deve ter pelo menos 2 caracteres').max(100),
   nome: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres').max(255),
   descricao: z.string().optional(),
   modulo: z.string().min(2, 'Módulo é obrigatório').max(100),
+  recurso: z.string().min(2, 'Recurso é obrigatório').max(100),
+  acao: z.string().min(2, 'Ação é obrigatória').max(50),
 });
 
 type PermissionFormData = z.infer<typeof permissionFormSchema>;
+
+function buildPermissionPayload(values: PermissionFormData) {
+  const normalizedModulo = normalizePermissionToken(values.modulo);
+  return {
+    codigo: buildPermissionCode(values.modulo, values.recurso, values.acao),
+    nome: values.nome,
+    descricao: values.descricao,
+    modulo: normalizedModulo,
+  };
+}
 
 function formatUserName(user: UserItem) {
   const name = `${user.firstName || ''} ${user.lastName || ''}`.trim();
@@ -236,12 +267,16 @@ function PermissionFormDialog({
   open,
   onOpenChange,
   permission,
+  moduleOptions,
+  actionOptions,
   onSubmit,
   isLoading,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   permission?: PermissionItem | null;
+  moduleOptions: string[];
+  actionOptions: Array<{ value: string; label: string }>;
   onSubmit: (data: PermissionFormData) => void;
   isLoading: boolean;
 }) {
@@ -249,10 +284,11 @@ function PermissionFormDialog({
   const form = useForm<PermissionFormData>({
     resolver: asResolver<PermissionFormData>(zodResolver(permissionFormSchema)),
     defaultValues: {
-      codigo: permission?.codigo || '',
       nome: permission?.nome || '',
       descricao: permission?.descricao || '',
       modulo: permission?.modulo || '',
+      recurso: permission?.codigo ? parsePermissionCode(permission.codigo).recurso : '',
+      acao: permission?.codigo ? parsePermissionCode(permission.codigo).acao : 'read',
     },
   });
 
@@ -261,10 +297,11 @@ function PermissionFormDialog({
       return;
     }
     form.reset({
-      codigo: permission?.codigo || '',
       nome: permission?.nome || '',
       descricao: permission?.descricao || '',
       modulo: permission?.modulo || '',
+      recurso: permission?.codigo ? parsePermissionCode(permission.codigo).recurso : '',
+      acao: permission?.codigo ? parsePermissionCode(permission.codigo).acao : 'read',
     });
   }, [form, open, permission?.codigo, permission?.descricao, permission?.id, permission?.modulo, permission?.nome]);
 
@@ -285,19 +322,20 @@ function PermissionFormDialog({
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="codigo"
-              render={({ field }: { field: ControllerRenderProps<PermissionFormData, 'codigo'> }) => (
-                <FormItem>
-                  <FormLabel>{t('usersAdmin.permissions.fields.code')}</FormLabel>
-                  <FormControl>
-                    <Input {...field} disabled={!!permission} data-testid="input-permission-code" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <FormItem>
+              <FormLabel>{t('usersAdmin.permissions.fields.code')}</FormLabel>
+              <FormControl>
+                <Input
+                  value={buildPermissionCode(
+                    form.watch('modulo'),
+                    form.watch('recurso'),
+                    form.watch('acao')
+                  )}
+                  readOnly
+                  data-testid="input-permission-code"
+                />
+              </FormControl>
+            </FormItem>
             <FormField
               control={form.control}
               name="nome"
@@ -331,7 +369,62 @@ function PermissionFormDialog({
                 <FormItem>
                   <FormLabel>{t('usersAdmin.permissions.fields.module')}</FormLabel>
                   <FormControl>
-                    <Input {...field} data-testid="input-permission-module" />
+                    <div className="space-y-2">
+                      <Input
+                        {...field}
+                        list="permission-module-options"
+                        disabled={!!permission}
+                        placeholder={t('usersAdmin.permissions.fields.modulePlaceholder')}
+                        data-testid="input-permission-module"
+                      />
+                      <datalist id="permission-module-options">
+                        {moduleOptions.map((modulo) => (
+                          <option key={modulo} value={modulo} />
+                        ))}
+                      </datalist>
+                    </div>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="recurso"
+              render={({ field }: { field: ControllerRenderProps<PermissionFormData, 'recurso'> }) => (
+                <FormItem>
+                  <FormLabel>{t('usersAdmin.permissions.fields.resource')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      data-testid="input-permission-resource"
+                      disabled={!!permission}
+                      placeholder={t('usersAdmin.permissions.fields.resourcePlaceholder')}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="acao"
+              render={({ field }: { field: ControllerRenderProps<PermissionFormData, 'acao'> }) => (
+                <FormItem>
+                  <FormLabel>{t('usersAdmin.permissions.fields.action')}</FormLabel>
+                  <FormControl>
+                    <Select value={field.value} onValueChange={field.onChange} disabled={!!permission}>
+                      <SelectTrigger data-testid="input-permission-action">
+                        <SelectValue placeholder={t('usersAdmin.permissions.fields.actionPlaceholder')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {actionOptions.map((action) => (
+                          <SelectItem key={action.value} value={action.value}>
+                            {action.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -616,7 +709,7 @@ export default function UsersAdmin() {
 
   const createPermission = useMutation({
     mutationFn: async (values: PermissionFormData) => {
-      const response = await apiRequest('POST', '/api/auth/permissions', values);
+      const response = await apiRequest('POST', '/api/auth/permissions', buildPermissionPayload(values));
       if (!response.ok) {
         throw new Error(await response.text());
       }
@@ -635,7 +728,7 @@ export default function UsersAdmin() {
 
   const updatePermission = useMutation({
     mutationFn: async ({ id, values }: { id: string; values: PermissionFormData }) => {
-      const response = await apiRequest('PATCH', `/api/auth/permissions/${id}`, values);
+      const response = await apiRequest('PATCH', `/api/auth/permissions/${id}`, buildPermissionPayload(values));
       if (!response.ok) {
         throw new Error(await response.text());
       }
@@ -690,12 +783,35 @@ export default function UsersAdmin() {
   const users = usersData?.users ?? [];
   const groups = groupsData?.groups ?? [];
   const permissions = permissionsData?.permissions ?? [];
+  const moduleOptions = useMemo(() => {
+    const modules = new Set(permissions.map((perm) => perm.modulo).filter(Boolean));
+    return Array.from(modules).sort();
+  }, [permissions]);
+  const actionOptions = useMemo(
+    () => [
+      { value: 'read', label: t('usersAdmin.permissions.actions.read') },
+      { value: 'write', label: t('usersAdmin.permissions.actions.write') },
+      { value: 'delete', label: t('usersAdmin.permissions.actions.delete') },
+      { value: 'manage', label: t('usersAdmin.permissions.actions.manage') },
+      { value: 'upload', label: t('usersAdmin.permissions.actions.upload') },
+      { value: 'sync', label: t('usersAdmin.permissions.actions.sync') },
+      { value: 'approve', label: t('usersAdmin.permissions.actions.approve') },
+      { value: 'start', label: t('usersAdmin.permissions.actions.start') },
+      { value: 'cancel', label: t('usersAdmin.permissions.actions.cancel') },
+      { value: 'retry', label: t('usersAdmin.permissions.actions.retry') },
+      { value: 'reconcile', label: t('usersAdmin.permissions.actions.reconcile') },
+      { value: 'assign', label: t('usersAdmin.permissions.actions.assign') },
+    ],
+    [t]
+  );
   const [rolePermissionCodes, setRolePermissionCodes] = useState<Set<string>>(new Set());
   const rolePermissionCodesRef = useRef<Set<string>>(new Set());
   const rolePermissionSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rolePermissionSaveQueueRef = useRef(Promise.resolve());
+  const isLockedRole = selectedRole === 'admin' || selectedRole === 'super_admin';
 
   const enqueueRolePermissionSave = (codes: string[]) => {
+    if (isLockedRole) return;
     rolePermissionSaveQueueRef.current = rolePermissionSaveQueueRef.current
       .then(() => updateRolePermissions.mutateAsync(codes))
       .catch(() => undefined);
@@ -969,6 +1085,9 @@ export default function UsersAdmin() {
                     </SelectContent>
                   </Select>
                 </div>
+                {isLockedRole && (
+                  <Badge variant="secondary">{t('usersAdmin.permissions.roleAlwaysAllowed')}</Badge>
+                )}
                 <div className="flex-1 min-w-[240px]">
                   <Label>{t('usersAdmin.permissions.searchLabel')}</Label>
                   <Input
@@ -1019,8 +1138,12 @@ export default function UsersAdmin() {
                           </TableCell>
                           <TableCell>
                             <Switch
-                              checked={hasRole}
+                              checked={isLockedRole ? true : hasRole}
+                              disabled={isLockedRole}
                               onCheckedChange={(checked) => {
+                                if (isLockedRole) {
+                                  return;
+                                }
                                 setRolePermissionCodes((currentCodes) => {
                                   const nextCodes = new Set(currentCodes);
                                   if (checked) {
@@ -1103,6 +1226,8 @@ export default function UsersAdmin() {
         open={permissionDialogOpen}
         onOpenChange={setPermissionDialogOpen}
         permission={selectedPermission}
+        moduleOptions={moduleOptions}
+        actionOptions={actionOptions}
         isLoading={createPermission.isPending || updatePermission.isPending}
         onSubmit={(values) => {
           if (selectedPermission) {

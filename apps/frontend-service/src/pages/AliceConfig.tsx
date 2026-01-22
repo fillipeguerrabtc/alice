@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Input } from '@/components/ui/input';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Label } from '@/components/ui/label';
 import { apiRequest, queryClient } from '@/lib/queryClient';
@@ -18,6 +19,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 
 const assistantSettingsSchema = z.object({
   systemPrompt: z.string().min(10, 'System Prompt deve ter pelo menos 10 caracteres').max(20000).optional().nullable(),
+  creatorName: z.string().min(2, 'Nome do criador deve ter pelo menos 2 caracteres').max(200).optional().nullable(),
+  creatorRule: z.string().min(10, 'Regra do criador deve ter pelo menos 10 caracteres').max(5000).optional().nullable(),
+  ethicsPolicy: z.string().min(10, 'Política de ética deve ter pelo menos 10 caracteres').max(5000).optional().nullable(),
+  moralPolicy: z.string().min(10, 'Política moral deve ter pelo menos 10 caracteres').max(5000).optional().nullable(),
+  legalPolicy: z.string().min(10, 'Política legal deve ter pelo menos 10 caracteres').max(5000).optional().nullable(),
+  safetyGuardrails: z.string().min(10, 'Guardrails devem ter pelo menos 10 caracteres').max(8000).optional().nullable(),
+  nsfwPolicy: z.string().min(10, 'Política NSFW deve ter pelo menos 10 caracteres').max(5000).optional().nullable(),
   behavior: z.string().max(5000).optional().nullable(),
   mood: z.string().max(2000).optional().nullable(),
   behaviorDirectness: z.number().min(0).max(100).optional().nullable(),
@@ -31,6 +39,13 @@ type AssistantSettingsForm = z.infer<typeof assistantSettingsSchema>;
 type AssistantSettingsResponse = {
   settings: {
     systemPrompt?: string | null;
+    creatorName?: string | null;
+    creatorRule?: string | null;
+    ethicsPolicy?: string | null;
+    moralPolicy?: string | null;
+    legalPolicy?: string | null;
+    safetyGuardrails?: string | null;
+    nsfwPolicy?: string | null;
     behavior?: string | null;
     mood?: string | null;
     behaviorDirectness?: number | null;
@@ -40,6 +55,13 @@ type AssistantSettingsResponse = {
   } | null;
   defaults: {
     systemPrompt: string;
+    creatorName: string;
+    creatorRule: string;
+    ethicsPolicy: string;
+    moralPolicy: string;
+    legalPolicy: string;
+    safetyGuardrails: string;
+    nsfwPolicy: string;
     behavior: string | null;
     mood: string | null;
     behaviorDirectness: number;
@@ -50,6 +72,11 @@ type AssistantSettingsResponse = {
   enforced: {
     creator: string;
     creatorRule?: string;
+    ethicsPolicy?: string;
+    moralPolicy?: string;
+    legalPolicy?: string;
+    safetyGuardrails?: string;
+    nsfwPolicy?: string;
   };
 };
 
@@ -67,6 +94,13 @@ export default function AliceConfig() {
     resolver: zodResolver(assistantSettingsSchema),
     defaultValues: {
       systemPrompt: '',
+      creatorName: '',
+      creatorRule: '',
+      ethicsPolicy: '',
+      moralPolicy: '',
+      legalPolicy: '',
+      safetyGuardrails: '',
+      nsfwPolicy: '',
       behavior: '',
       mood: '',
       behaviorDirectness: 50,
@@ -91,6 +125,13 @@ export default function AliceConfig() {
     if (data) {
       form.reset({
         systemPrompt: data.settings?.systemPrompt ?? data.defaults.systemPrompt ?? '',
+        creatorName: data.settings?.creatorName ?? data.defaults.creatorName ?? '',
+        creatorRule: data.settings?.creatorRule ?? data.defaults.creatorRule ?? '',
+        ethicsPolicy: data.settings?.ethicsPolicy ?? data.defaults.ethicsPolicy ?? '',
+        moralPolicy: data.settings?.moralPolicy ?? data.defaults.moralPolicy ?? '',
+        legalPolicy: data.settings?.legalPolicy ?? data.defaults.legalPolicy ?? '',
+        safetyGuardrails: data.settings?.safetyGuardrails ?? data.defaults.safetyGuardrails ?? '',
+        nsfwPolicy: data.settings?.nsfwPolicy ?? data.defaults.nsfwPolicy ?? '',
         behavior: data.settings?.behavior ?? data.defaults.behavior ?? '',
         mood: data.settings?.mood ?? data.defaults.mood ?? '',
         behaviorDirectness: data.settings?.behaviorDirectness ?? data.defaults.behaviorDirectness ?? 50,
@@ -126,6 +167,13 @@ export default function AliceConfig() {
     if (!data) return;
     form.reset({
       systemPrompt: data.defaults.systemPrompt ?? '',
+      creatorName: data.defaults.creatorName ?? '',
+      creatorRule: data.defaults.creatorRule ?? '',
+      ethicsPolicy: data.defaults.ethicsPolicy ?? '',
+      moralPolicy: data.defaults.moralPolicy ?? '',
+      legalPolicy: data.defaults.legalPolicy ?? '',
+      safetyGuardrails: data.defaults.safetyGuardrails ?? '',
+      nsfwPolicy: data.defaults.nsfwPolicy ?? '',
       behavior: data.defaults.behavior ?? '',
       mood: data.defaults.mood ?? '',
       behaviorDirectness: data.defaults.behaviorDirectness ?? 50,
@@ -229,21 +277,6 @@ export default function AliceConfig() {
 
       <Card>
         <CardHeader>
-          <CardTitle>{t('aliceConfig.creatorTitle')}</CardTitle>
-          <CardDescription>{t('aliceConfig.creatorDescription')}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Badge variant="secondary">{data?.enforced.creator || 'Fillipe Guerra'}</Badge>
-          {data?.enforced.creatorRule && (
-            <p className="mt-3 text-sm text-muted-foreground whitespace-pre-wrap">
-              {data.enforced.creatorRule}
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
           <CardTitle>{t('aliceConfig.settingsTitle')}</CardTitle>
           <CardDescription>{t('aliceConfig.settingsDescription')}</CardDescription>
           {!canEditCore && (
@@ -268,6 +301,151 @@ export default function AliceConfig() {
                 onSubmit={form.handleSubmit((values) => updateSettings.mutate(values))}
                 className="space-y-6"
               >
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary">{t('aliceConfig.coreBadge')}</Badge>
+                    {!canEditCore && (
+                      <span className="text-xs text-muted-foreground">
+                        {t('aliceConfig.coreReadOnlyHint')}
+                      </span>
+                    )}
+                  </div>
+                  <FormField
+                    control={form.control}
+                    name="creatorName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('aliceConfig.creatorName')}</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder={t('aliceConfig.creatorNamePlaceholder')}
+                            {...field}
+                            value={field.value ?? ''}
+                            disabled={!canEditCore}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="creatorRule"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('aliceConfig.creatorRule')}</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            rows={4}
+                            placeholder={t('aliceConfig.creatorRulePlaceholder')}
+                            {...field}
+                            value={field.value ?? ''}
+                            disabled={!canEditCore}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="space-y-4">
+                  <FormField
+                    control={form.control}
+                    name="ethicsPolicy"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('aliceConfig.ethicsPolicy')}</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            rows={4}
+                            placeholder={t('aliceConfig.ethicsPolicyPlaceholder')}
+                            {...field}
+                            value={field.value ?? ''}
+                            disabled={!canEditCore}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="moralPolicy"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('aliceConfig.moralPolicy')}</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            rows={4}
+                            placeholder={t('aliceConfig.moralPolicyPlaceholder')}
+                            {...field}
+                            value={field.value ?? ''}
+                            disabled={!canEditCore}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="legalPolicy"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('aliceConfig.legalPolicy')}</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            rows={4}
+                            placeholder={t('aliceConfig.legalPolicyPlaceholder')}
+                            {...field}
+                            value={field.value ?? ''}
+                            disabled={!canEditCore}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="safetyGuardrails"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('aliceConfig.safetyGuardrails')}</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            rows={5}
+                            placeholder={t('aliceConfig.safetyGuardrailsPlaceholder')}
+                            {...field}
+                            value={field.value ?? ''}
+                            disabled={!canEditCore}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="nsfwPolicy"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('aliceConfig.nsfwPolicy')}</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            rows={4}
+                            placeholder={t('aliceConfig.nsfwPolicyPlaceholder')}
+                            {...field}
+                            value={field.value ?? ''}
+                            disabled={!canEditCore}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
                 <FormField
                   control={form.control}
                   name="systemPrompt"

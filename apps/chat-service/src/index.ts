@@ -1339,6 +1339,13 @@ type ConversationWithAgent = typeof schema.conversations.$inferSelect & {
 
 interface AssistantSettings {
   systemPrompt?: string | null;
+  creatorName?: string | null;
+  creatorRule?: string | null;
+  ethicsPolicy?: string | null;
+  moralPolicy?: string | null;
+  legalPolicy?: string | null;
+  safetyGuardrails?: string | null;
+  nsfwPolicy?: string | null;
   behavior?: string | null;
   mood?: string | null;
   behaviorDirectness?: number | null;
@@ -1373,10 +1380,91 @@ const CORE_CAPABILITIES_PROMPT = `CAPACIDADES:
 - Nunca diga que não tem acesso à internet ou execução quando esses módulos estiverem disponíveis. Se um módulo estiver indisponível, explique o motivo técnico e sugira nova tentativa.
 - Quando houver SERVER_TIME, a data/hora vem do relógio do servidor (não da web).`;
 
-const CREATOR_PROMPT_RULE = `REGRAS DE IDENTIDADE DO CRIADOR:
-- Seu criador é Fillipe Guerra, desenvolvedor da plataforma Alice Enterprise.
-- Se perguntarem quem criou você ou sua origem, responda que foi criada por Fillipe Guerra.
-- Não mencione outro criador ou empresa.`;
+type CoreDefaults = {
+  creatorName: string;
+  creatorRule: string;
+  ethicsPolicy: string;
+  moralPolicy: string;
+  legalPolicy: string;
+  safetyGuardrails: string;
+  nsfwPolicy: string;
+};
+
+function getRequiredCoreDefaults(): CoreDefaults {
+  const creatorName = process.env.CREATOR_NAME?.trim() || '';
+  const creatorRule = process.env.CREATOR_RULE?.trim() || '';
+  const ethicsPolicy = process.env.ASSISTANT_ETHICS_POLICY?.trim() || '';
+  const moralPolicy = process.env.ASSISTANT_MORAL_POLICY?.trim() || '';
+  const legalPolicy = process.env.ASSISTANT_LEGAL_POLICY?.trim() || '';
+  const safetyGuardrails = process.env.ASSISTANT_SAFETY_GUARDRAILS?.trim() || '';
+  const nsfwPolicy = process.env.ASSISTANT_NSFW_POLICY?.trim() || '';
+
+  if (process.env.NODE_ENV === 'production') {
+    const missing: string[] = [];
+    if (!creatorName) missing.push('CREATOR_NAME');
+    if (!creatorRule) missing.push('CREATOR_RULE');
+    if (!ethicsPolicy) missing.push('ASSISTANT_ETHICS_POLICY');
+    if (!moralPolicy) missing.push('ASSISTANT_MORAL_POLICY');
+    if (!legalPolicy) missing.push('ASSISTANT_LEGAL_POLICY');
+    if (!safetyGuardrails) missing.push('ASSISTANT_SAFETY_GUARDRAILS');
+    if (!nsfwPolicy) missing.push('ASSISTANT_NSFW_POLICY');
+
+    if (missing.length > 0) {
+      logger.error({ missing }, 'Variáveis Core obrigatórias ausentes para identidade/ética/guardrails da Alice');
+      throw new Error(`Core env ausente: ${missing.join(', ')}`);
+    }
+  }
+
+  return {
+    creatorName,
+    creatorRule,
+    ethicsPolicy,
+    moralPolicy,
+    legalPolicy,
+    safetyGuardrails,
+    nsfwPolicy,
+  };
+}
+
+const CORE_DEFAULTS = getRequiredCoreDefaults();
+
+function resolveCoreSettings(settings?: AssistantSettings | null): CoreDefaults {
+  return {
+    creatorName: settings?.creatorName?.trim() || CORE_DEFAULTS.creatorName,
+    creatorRule: settings?.creatorRule?.trim() || CORE_DEFAULTS.creatorRule,
+    ethicsPolicy: settings?.ethicsPolicy?.trim() || CORE_DEFAULTS.ethicsPolicy,
+    moralPolicy: settings?.moralPolicy?.trim() || CORE_DEFAULTS.moralPolicy,
+    legalPolicy: settings?.legalPolicy?.trim() || CORE_DEFAULTS.legalPolicy,
+    safetyGuardrails: settings?.safetyGuardrails?.trim() || CORE_DEFAULTS.safetyGuardrails,
+    nsfwPolicy: settings?.nsfwPolicy?.trim() || CORE_DEFAULTS.nsfwPolicy,
+  };
+}
+
+function applyCorePolicies(prompt: string, core: CoreDefaults): string {
+  let result = prompt;
+
+  if (core.ethicsPolicy) {
+    result += `\n\nÉTICA:\n${core.ethicsPolicy}`;
+  }
+  if (core.moralPolicy) {
+    result += `\n\nMORAL:\n${core.moralPolicy}`;
+  }
+  if (core.legalPolicy) {
+    result += `\n\nLEGAL:\n${core.legalPolicy}`;
+  }
+  if (core.safetyGuardrails) {
+    result += `\n\nSEGURANÇA E GUARDRAILS:\n${core.safetyGuardrails}`;
+  }
+  if (core.nsfwPolicy) {
+    result += `\n\nPOLÍTICA NSFW:\n${core.nsfwPolicy}`;
+  }
+
+  if (core.creatorRule) {
+    result += `\n\n${core.creatorRule}`;
+  }
+
+  return result;
+}
 
 function applyAssistantSettings(prompt: string, settings?: AssistantSettings | null): string {
   let result = prompt;
@@ -1435,6 +1523,7 @@ function buildSystemPrompt(
   userMessage?: string
 ): string {
   let prompt = DEFAULT_SYSTEM_PROMPT;
+  const coreSettings = resolveCoreSettings(assistantSettings);
 
   if (assistantSettings?.systemPrompt && assistantSettings.systemPrompt.trim()) {
     prompt = assistantSettings.systemPrompt.trim();
@@ -1449,6 +1538,7 @@ function buildSystemPrompt(
   }
 
   prompt = applyAssistantSettings(prompt, assistantSettings);
+  prompt = applyCorePolicies(prompt, coreSettings);
 
   const normalizedPrompt = prompt.toLowerCase();
   if (!normalizedPrompt.includes('capabilities')
@@ -1471,9 +1561,6 @@ function buildSystemPrompt(
     prompt += `\n\nIMPORTANTE: Responda sempre no mesmo idioma da mensagem do usuário, sem misturar idiomas.`;
   }
 
-  // Regra mandatória de identidade do criador
-  prompt += `\n\n${CREATOR_PROMPT_RULE}`;
-
   return prompt;
 }
 
@@ -1491,6 +1578,13 @@ async function getAssistantSettingsForTenant(tenantId?: string | null): Promise<
     }
     return {
       systemPrompt: settings.systemPrompt ?? null,
+      creatorName: settings.creatorName ?? null,
+      creatorRule: settings.creatorRule ?? null,
+      ethicsPolicy: settings.ethicsPolicy ?? null,
+      moralPolicy: settings.moralPolicy ?? null,
+      legalPolicy: settings.legalPolicy ?? null,
+      safetyGuardrails: settings.safetyGuardrails ?? null,
+      nsfwPolicy: settings.nsfwPolicy ?? null,
       behavior: settings.behavior ?? null,
       mood: settings.mood ?? null,
       behaviorDirectness: settings.behaviorDirectness ?? null,
@@ -8760,6 +8854,13 @@ app.get('/api/agents/model-options', requireAuth(), requireSameTenant(getTenantI
 
 const assistantSettingsSchema = z.object({
   systemPrompt: z.string().min(10).max(20000).optional().nullable(),
+  creatorName: z.string().min(2).max(200).optional().nullable(),
+  creatorRule: z.string().min(10).max(5000).optional().nullable(),
+  ethicsPolicy: z.string().min(10).max(5000).optional().nullable(),
+  moralPolicy: z.string().min(10).max(5000).optional().nullable(),
+  legalPolicy: z.string().min(10).max(5000).optional().nullable(),
+  safetyGuardrails: z.string().min(10).max(8000).optional().nullable(),
+  nsfwPolicy: z.string().min(10).max(5000).optional().nullable(),
   behavior: z.string().max(5000).optional().nullable(),
   mood: z.string().max(2000).optional().nullable(),
   behaviorDirectness: z.number().int().min(0).max(100).optional().nullable(),
@@ -8778,11 +8879,19 @@ app.get('/api/assistant-settings', requireAuth(), requireSameTenant(getTenantIdF
     const settings = await db.query.assistantSettings.findFirst({
       where: eq(schema.assistantSettings.tenantId, tenantId),
     });
+    const coreSettings = resolveCoreSettings(settings);
 
     res.json({
       settings,
       defaults: {
         systemPrompt: DEFAULT_SYSTEM_PROMPT,
+        creatorName: CORE_DEFAULTS.creatorName,
+        creatorRule: CORE_DEFAULTS.creatorRule,
+        ethicsPolicy: CORE_DEFAULTS.ethicsPolicy,
+        moralPolicy: CORE_DEFAULTS.moralPolicy,
+        legalPolicy: CORE_DEFAULTS.legalPolicy,
+        safetyGuardrails: CORE_DEFAULTS.safetyGuardrails,
+        nsfwPolicy: CORE_DEFAULTS.nsfwPolicy,
         behavior: null,
         mood: null,
         behaviorDirectness: 50,
@@ -8791,8 +8900,13 @@ app.get('/api/assistant-settings', requireAuth(), requireSameTenant(getTenantIdF
         moodEmpathy: 70,
       },
       enforced: {
-        creator: 'Fillipe Guerra',
-        creatorRule: CREATOR_PROMPT_RULE,
+        creator: coreSettings.creatorName,
+        creatorRule: coreSettings.creatorRule,
+        ethicsPolicy: coreSettings.ethicsPolicy,
+        moralPolicy: coreSettings.moralPolicy,
+        legalPolicy: coreSettings.legalPolicy,
+        safetyGuardrails: coreSettings.safetyGuardrails,
+        nsfwPolicy: coreSettings.nsfwPolicy,
       },
     });
   } catch (error) {
@@ -8818,6 +8932,13 @@ app.patch('/api/assistant-settings', requireAuth(), requireSameTenant(getTenantI
   try {
     const payload = {
       systemPrompt: parseResult.data.systemPrompt?.trim() || null,
+      creatorName: parseResult.data.creatorName?.trim() || null,
+      creatorRule: parseResult.data.creatorRule?.trim() || null,
+      ethicsPolicy: parseResult.data.ethicsPolicy?.trim() || null,
+      moralPolicy: parseResult.data.moralPolicy?.trim() || null,
+      legalPolicy: parseResult.data.legalPolicy?.trim() || null,
+      safetyGuardrails: parseResult.data.safetyGuardrails?.trim() || null,
+      nsfwPolicy: parseResult.data.nsfwPolicy?.trim() || null,
       behavior: parseResult.data.behavior?.trim() || null,
       mood: parseResult.data.mood?.trim() || null,
       behaviorDirectness: parseResult.data.behaviorDirectness ?? null,

@@ -48,6 +48,8 @@ import {
   createCircuitBreaker,
   CIRCUIT_BREAKER_PRESETS,
   clearPermissionCache,
+  PERMISSION_MAP,
+  Role,
 } from '@alice/shared-utils';
 import { eq, or, and, inArray } from '@alice/database';
 import type { AuthContext } from '@alice/shared-utils';
@@ -102,6 +104,137 @@ function toAuthContext(dbUser: DbUser): Express.User {
     email: dbUser.email || undefined,
     permissions: [],
   };
+}
+
+type PermissionDefinition = {
+  codigo: string;
+  nome: string;
+  descricao: string;
+  modulo: string;
+};
+
+const MODULE_LABELS: Record<string, string> = {
+  auth: 'Autenticação',
+  chat: 'Chat',
+  rag: 'RAG',
+  training: 'Treinamento',
+  integrations: 'Integrações',
+  images: 'Imagens',
+  admin: 'Administração',
+  audit: 'Auditoria',
+};
+
+const ACTION_LABELS: Record<string, string> = {
+  read: 'Visualizar',
+  write: 'Editar',
+  delete: 'Excluir',
+  manage: 'Gerenciar',
+  upload: 'Enviar',
+  sync: 'Sincronizar',
+  approve: 'Aprovar',
+  start: 'Iniciar',
+  cancel: 'Cancelar',
+  retry: 'Reprocessar',
+  reconcile: 'Conciliar',
+  assign: 'Atribuir',
+};
+
+const PERMISSION_OVERRIDES: Record<string, PermissionDefinition> = {
+  'admin:alice_core:write': {
+    codigo: 'admin:alice_core:write',
+    nome: 'Editar Core da Alice',
+    descricao: 'Permite editar ética, moral, legal, guardrails, system prompt e identidade do criador.',
+    modulo: 'admin',
+  },
+};
+
+function humanizeToken(value: string): string {
+  return value
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function buildPermissionDefinition(code: string): PermissionDefinition {
+  const override = PERMISSION_OVERRIDES[code];
+  if (override) {
+    return override;
+  }
+
+  const [moduleRaw = 'admin', resourceRaw = 'resource', actionRaw = 'read'] = code.split(':');
+  const moduleLabel = MODULE_LABELS[moduleRaw] || humanizeToken(moduleRaw);
+  const actionLabel = ACTION_LABELS[actionRaw] || humanizeToken(actionRaw);
+  const resourceLabel = humanizeToken(resourceRaw);
+
+  return {
+    codigo: code,
+    nome: `${actionLabel} ${resourceLabel}`,
+    descricao: `Permite ${actionLabel.toLowerCase()} ${resourceLabel.toLowerCase()} no módulo ${moduleLabel}.`,
+    modulo: moduleRaw,
+  };
+}
+
+async function ensurePermissionCatalog(): Promise<void> {
+  const db = getDatabase();
+  const existing = await db.query.permissions.findMany({
+    columns: {
+      id: true,
+      codigo: true,
+      nome: true,
+      descricao: true,
+      modulo: true,
+    },
+  });
+  const existingCodes = new Set(existing.map((item) => item.codigo));
+  const missingCodes = Object.keys(PERMISSION_MAP).filter((code) => !existingCodes.has(code));
+
+  if (missingCodes.length > 0) {
+    const newPermissions = missingCodes.map(buildPermissionDefinition);
+    await db.insert(schema.permissions).values(newPermissions);
+    logger.info({ count: newPermissions.length }, 'Permissões ausentes criadas no catálogo');
+  }
+
+  const overrides = Object.values(PERMISSION_OVERRIDES);
+  for (const override of overrides) {
+    const current = existing.find((perm) => perm.codigo === override.codigo);
+    if (!current) continue;
+    if (current.nome !== override.nome || current.descricao !== override.descricao || current.modulo !== override.modulo) {
+      await db.update(schema.permissions)
+        .set({
+          nome: override.nome,
+          descricao: override.descricao,
+          modulo: override.modulo,
+        })
+        .where(eq(schema.permissions.codigo, override.codigo));
+    }
+  }
+
+  const allPermissions = await db.query.permissions.findMany({
+    columns: { id: true, codigo: true },
+  });
+  const permissionIds = allPermissions.map((perm) => perm.id);
+  const roles = ['admin', 'super_admin'] as const;
+
+  await db.transaction(async (tx) => {
+    for (const role of roles) {
+      const current = await tx.query.rolePermissions.findMany({
+        where: eq(schema.rolePermissions.role, role),
+        columns: { permissionId: true },
+      });
+      const currentIds = new Set(current.map((item) => item.permissionId));
+      const toAdd = permissionIds.filter((id) => !currentIds.has(id));
+
+      if (toAdd.length > 0) {
+        await tx.insert(schema.rolePermissions).values(
+          toAdd.map((permissionId) => ({
+            role,
+            permissionId,
+          }))
+        );
+        logger.info({ role, added: toAdd.length }, 'Permissões atribuídas automaticamente à role');
+      }
+    }
+  });
 }
 
 // ============================================================================
@@ -1828,19 +1961,25 @@ app.get('/api/auth/rbac/permissions', requireAuth(), async (req: Request, res: R
 
   try {
     const db = getDatabase();
-    const userRole = req.user.role;
+    const userRole = (req.user.role || 'viewer') as Role;
 
     // Buscar permissões da role
     const rolePermissions = await db.query.rolePermissions.findMany({
-      where: eq(schema.rolePermissions.role, userRole || 'viewer'),
+      where: eq(schema.rolePermissions.role, userRole),
       with: {
         permission: true,
       },
     });
 
-    const permissions = rolePermissions
+    const dbPermissions = rolePermissions
       .map(rp => (rp as { permission?: { codigo?: string } }).permission?.codigo)
       .filter(Boolean);
+
+    const basePermissions = Object.entries(PERMISSION_MAP)
+      .filter(([, roles]) => roles.includes(userRole))
+      .map(([code]) => code);
+
+    const permissions = Array.from(new Set([...(dbPermissions as string[]), ...basePermissions]));
 
     res.json({ 
       role: userRole, 
@@ -1953,16 +2092,20 @@ const assignRoleModuleSchema = z.object({
 });
 
 const createPermissionSchema = z.object({
-  codigo: z.string().min(2).max(100),
+  codigo: z.string()
+    .min(2)
+    .max(100)
+    .regex(/^[a-z0-9_]+:[a-z0-9_]+:[a-z0-9_]+$/, 'Código inválido (formato esperado: modulo:recurso:acao)')
+    .transform((value) => value.toLowerCase().trim()),
   nome: z.string().min(2).max(255),
   descricao: z.string().optional(),
-  modulo: z.string().min(2).max(100),
+  modulo: z.string().min(2).max(100).transform((value) => value.toLowerCase().trim()),
 });
 
 const updatePermissionSchema = z.object({
   nome: z.string().min(2).max(255).optional(),
   descricao: z.string().optional(),
-  modulo: z.string().min(2).max(100).optional(),
+  modulo: z.string().min(2).max(100).optional().transform((value) => value?.toLowerCase().trim()),
 });
 
 const assignRolePermissionsSchema = z.object({
@@ -2290,14 +2433,34 @@ app.post('/api/auth/permissions', requireAuth(), requirePermission('admin:permis
     return;
   }
 
-  const [permission] = await db.insert(schema.permissions)
-    .values({
-      codigo: result.data.codigo,
-      nome: result.data.nome,
-      descricao: result.data.descricao,
-      modulo: result.data.modulo,
-    })
-    .returning();
+  const [permission] = await db.transaction(async (tx) => {
+    const [created] = await tx.insert(schema.permissions)
+      .values({
+        codigo: result.data.codigo,
+        nome: result.data.nome,
+        descricao: result.data.descricao,
+        modulo: result.data.modulo,
+      })
+      .returning();
+
+    const roles = ['admin', 'super_admin'] as const;
+    for (const role of roles) {
+      const existingRolePermission = await tx.query.rolePermissions.findFirst({
+        where: and(
+          eq(schema.rolePermissions.role, role),
+          eq(schema.rolePermissions.permissionId, created.id)
+        ),
+      });
+      if (!existingRolePermission) {
+        await tx.insert(schema.rolePermissions).values({
+          role,
+          permissionId: created.id,
+        });
+      }
+    }
+
+    return [created];
+  });
 
   await clearPermissionCache();
   res.status(201).json({ permission });
@@ -2382,14 +2545,23 @@ app.put('/api/auth/roles/:role/permissions', requireAuth(), requirePermission('a
     return;
   }
 
-  const requestedCodes = Array.from(new Set(bodyParse.data.permissionCodes));
   const db = getDatabase();
+  const requestedCodes = Array.from(new Set(bodyParse.data.permissionCodes));
+  const role = roleParse.data;
+
+  const allPermissions = await db.query.permissions.findMany({
+    columns: { id: true, codigo: true },
+  });
+  const effectiveCodes = ['admin', 'super_admin'].includes(role)
+    ? allPermissions.map((perm) => perm.codigo)
+    : requestedCodes;
+
   const permissions = await db.query.permissions.findMany({
-    where: (perm, { inArray }) => inArray(perm.codigo, requestedCodes),
+    where: (perm, { inArray }) => inArray(perm.codigo, effectiveCodes),
   });
 
   const foundCodes = new Set(permissions.map((perm) => perm.codigo));
-  const missingCodes = requestedCodes.filter((code) => !foundCodes.has(code));
+  const missingCodes = effectiveCodes.filter((code) => !foundCodes.has(code));
   if (missingCodes.length > 0) {
     res.status(400).json({ error: 'Permissões não encontradas', missing: missingCodes });
     return;
@@ -2419,7 +2591,7 @@ app.put('/api/auth/roles/:role/permissions', requireAuth(), requirePermission('a
   });
 
   await clearPermissionCache();
-  res.json({ success: true, role: roleParse.data, permissions: requestedCodes });
+  res.json({ success: true, role, permissions: effectiveCodes });
 }));
 
 // ============================================================================
@@ -3217,6 +3389,11 @@ let server: ReturnType<typeof app.listen>;
       // Seed do administrador global (admin central para Alice/ERPNext/Grafana)
       ensureGlobalAdmin().catch((error) => {
         logger.error({ error }, 'Falha ao criar/atualizar administrador global');
+      });
+
+      // Seed catálogo de permissões + auto-atribuição para admin/super_admin
+      ensurePermissionCatalog().catch((error) => {
+        logger.error({ error }, 'Falha ao sincronizar catálogo de permissões');
       });
 
       // Seed de clientes OAuth para SSO 100% automatizado (31/12/2025)
