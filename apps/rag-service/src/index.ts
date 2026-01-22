@@ -1579,14 +1579,24 @@ app.patch('/api/rag/documents/:id', requireAuth(), requirePermission('rag:docume
       return res.status(404).json({ error: 'Documento não encontrado' });
     }
 
+    const user = getAuthUser(req);
+    const isSuperAdmin = user.role === 'super_admin';
+
     if (existing.namespace) {
       if (existing.namespace.tenantId !== tenantId) {
         return res.status(403).json({ error: 'Acesso negado: documento não pertence ao tenant' });
       }
-    } else if (!body.namespaceId) {
-      return res.status(400).json({
-        error: 'Documento sem namespace. Informe namespaceId para validar o tenant antes de atualizar.',
-      });
+    } else if (!existing.namespaceId) {
+      if (!isSuperAdmin) {
+        return res.status(403).json({ error: 'Documento sem namespace não pode ser atualizado por este usuário' });
+      }
+      if (!body.namespaceId) {
+        return res.status(400).json({
+          error: 'Documento sem namespace. Informe namespaceId para atualizar.',
+        });
+      }
+    } else if (body.namespaceId && body.namespaceId !== existing.namespaceId && !isSuperAdmin) {
+      return res.status(403).json({ error: 'Acesso negado: não é permitido alterar o namespace do documento' });
     }
 
     const resolvedNamespaceId = body.namespaceId ?? existing.namespaceId ?? undefined;
