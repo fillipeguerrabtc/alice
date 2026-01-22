@@ -1391,7 +1391,7 @@ type CoreDefaults = {
 };
 
 function resolveCoreSettings(settings?: AssistantSettings | null): {
-  core: CoreDefaults | null;
+  core: CoreDefaults;
   missing: string[];
 } {
   const creatorName = settings?.creatorName?.trim() || '';
@@ -1411,10 +1411,6 @@ function resolveCoreSettings(settings?: AssistantSettings | null): {
   if (!safetyGuardrails) missing.push('safetyGuardrails');
   if (!nsfwPolicy) missing.push('nsfwPolicy');
 
-  if (missing.length > 0) {
-    return { core: null, missing };
-  }
-
   return {
     core: {
       creatorName,
@@ -1425,7 +1421,7 @@ function resolveCoreSettings(settings?: AssistantSettings | null): {
       safetyGuardrails,
       nsfwPolicy,
     },
-    missing: [],
+    missing,
   };
 }
 
@@ -1513,9 +1509,8 @@ function buildSystemPrompt(
 ): string {
   let prompt = DEFAULT_SYSTEM_PROMPT;
   const { core: coreSettings, missing } = resolveCoreSettings(assistantSettings);
-  if (!coreSettings) {
-    logger.error({ missing }, 'Core da Alice não configurado no banco (assistant_settings)');
-    throw new Error(`Core da Alice incompleto: ${missing.join(', ')}`);
+  if (missing.length > 0) {
+    logger.warn({ missing }, 'Core da Alice incompleto no banco (assistant_settings)');
   }
 
   if (assistantSettings?.systemPrompt && assistantSettings.systemPrompt.trim()) {

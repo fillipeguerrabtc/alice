@@ -6,7 +6,7 @@ Este documento descreve o sistema de gestão de permissões da plataforma Alice 
 
 **Data de Implementação:** 19 de Janeiro de 2026  
 **Data de Atualização:** 22 de Janeiro de 2026  
-**Versão:** 1.4.1  
+**Versão:** 1.4.2  
 **Autor:** Fillipe Guerra
 
 > **ATUALIZAÇÃO v1.1.0 (09/01/2026):** Adicionada Regra 5 para remoção agressiva de bits especiais
@@ -102,7 +102,7 @@ Além das permissões de filesystem (SSOT), a plataforma usa RBAC em nível de a
 
 - **Origem:** configurado no banco `assistant_settings` por tenant.
 - **Edição:** exclusiva para `admin:alice_core:write`.
-- **Fail-fast:** serviços de chat bloqueiam operação se o Core estiver incompleto no banco.
+- **Observação:** campos pendentes são exibidos no painel de configuração da Alice para correção imediata.
 
 #### PostgreSQL e Langfuse DB (permissão 700)
 
