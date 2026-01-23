@@ -148,7 +148,7 @@ function resolveHighestRole(roles: Role[], fallback: Role): Role {
   if (roles.length === 0) return fallback;
   return roles.reduce((highest, role) => (
     ROLE_HIERARCHY[role] < ROLE_HIERARCHY[highest] ? role : highest
-  ), fallback);
+  ));
 }
 
 setPermissionResolver(async (auth: AuthContext) => {
