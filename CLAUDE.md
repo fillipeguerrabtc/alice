@@ -618,6 +618,7 @@ git add -A
 git commit -m "feat: implementação consolidada + arquivos novos/deletados"
 
 # Windows/PowerShell (commit confiável com mensagem multilinha):
+git add -A
 $commitMsg = @'
 feat: implementação consolidada de feature X
 
@@ -628,6 +629,7 @@ $commitFile = Join-Path $env:TEMP 'alice-commit-msg.txt'
 Set-Content -Path $commitFile -Value $commitMsg -Encoding UTF8 -NoNewline
 git commit -F $commitFile
 Remove-Item -Path $commitFile -Force
+git status -sb
 
 # RECOMENDADO: Usar Cursor IDE que faz staging automático inteligente
 # Botão "Sync Changes" no IDE faz commit direto sem necessidade de git add manual
