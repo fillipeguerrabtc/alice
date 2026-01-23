@@ -1035,7 +1035,7 @@ export default function Chat() {
                   const normalizedMessage: Message = {
                     id: serverMessage.id || crypto.randomUUID(),
                     role: 'assistant',
-                    content: serverMessage.conteudo || 'Imagem gerada com sucesso via OpenAI.',
+                    content: serverMessage.conteudo ?? '',
                     createdAt: serverMessage.criadoEm || new Date().toISOString(),
                     generatedImage: serverMessage.generatedImage ?? parsed.generatedImage,
                   };

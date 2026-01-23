@@ -5924,7 +5924,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         const [assistantMessage] = await db.insert(schema.messages).values({
           conversationId,
           agentId: conversation?.agentId ?? undefined,
-          conteudo: 'Imagem gerada com sucesso via OpenAI.',
+          conteudo: null,
           tipo: 'text',
           isFromUser: false,
           metadata: {
@@ -5944,7 +5944,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         await ensureConversationTitle({
           conversationId,
           userMessage: userMessageContent,
-          assistantResponse: 'Imagem gerada com sucesso via OpenAI.',
+          assistantResponse: 'Imagem gerada.',
         });
 
         const generatedImagePayload = {
@@ -5960,7 +5960,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
         res.write(`data: ${JSON.stringify({
           type: 'generated_image',
-          content: 'Imagem gerada com sucesso via OpenAI.',
+          content: null,
           generatedImage: generatedImagePayload,
           message: {
             ...assistantMessage,
@@ -5978,7 +5978,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           conversationId,
         }, 'Falha ao gerar imagem via OpenAI (stream)');
         res.write(`data: ${JSON.stringify({
-          error: 'Falha ao gerar imagem via OpenAI. Verifique a configuração e tente novamente.',
+          error: 'Falha ao gerar imagem. Verifique a configuração e tente novamente.',
           code: 'OPENAI_IMAGE_ERROR',
         })}\n\n`);
         res.write('data: [DONE]\n\n');
@@ -6663,6 +6663,45 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             ragClassification?.classification?.type &&
             ragClassification.classification.type !== 'internal'
           );
+
+      if (explicitWebRequest && !shouldUseWeb) {
+        const responseContent = 'Não consegui acessar a busca na internet agora. Tente novamente em instantes.';
+        const [assistantMessage] = await db.insert(schema.messages).values({
+          conversationId,
+          agentId: conversation?.agentId ?? undefined,
+          conteudo: responseContent,
+          tipo: 'text',
+          isFromUser: false,
+          metadata: {
+            webSearchAvailable: ragClassification?.webSearchAvailable ?? null,
+            reason: 'web_search_unavailable',
+          },
+        }).returning();
+
+        await db.update(schema.conversations)
+          .set({
+            totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+            ultimaMensagemEm: new Date(),
+            atualizadoEm: new Date(),
+          })
+          .where(eq(schema.conversations.id, conversationId));
+
+        try {
+          await ensureConversationTitle({
+            conversationId,
+            userMessage: userMessageContent,
+            assistantResponse: responseContent,
+          });
+        } catch (titleError) {
+          logger.warn({ error: titleError, conversationId }, 'Falha ao aplicar título automático (web indisponível)');
+        }
+
+        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
 
       if (shouldUseWeb) {
         writeStatus('rag_web');

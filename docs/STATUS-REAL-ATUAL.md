@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 **Autor:** Fillipe Guerra  
-**Data:** 22 de Janeiro de 2026  
+**Data:** 23 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.76 - Validação Chat History Non-Negative
+**Versão:** 7.78 - Web Search Guardrail
 
 ---
 
@@ -255,6 +255,8 @@ Retenção Arquivo:   30 dias
 - Auth: PATCH custom-role valida tenant da role contra tenant do usuário alvo.
 - Chat/Integrations: resolver inclui PERMISSION_MAP + admin:alice_core:write.
 - Chat: CHAT_HISTORY_MIN_MESSAGES_* aceita 0 (inteiro >= 0) sem crash em produção.
+- Chat: resposta de imagem não expõe provider e exibe apenas a imagem.
+- Chat: pedidos explícitos de web retornam resposta determinística quando busca está indisponível.
 - RBAC: roles customizadas por tenant (departamentos/funções) com permissões próprias.
 - RBAC: usuários podem ter role base + role customizada simultaneamente.
 - RBAC UI: criação de permissões guiada por módulo/recurso/ação (menos erro humano).
