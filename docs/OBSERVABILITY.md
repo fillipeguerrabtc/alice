@@ -25,7 +25,7 @@
 ### Checklist de validação (pós-deploy)
 
 - **Prometheus (`/targets`)**: `alice-services`, `alice-gpu-services`, `node-exporter`, `cadvisor`, `qdrant`, `jaeger`, `vector` em **UP**.
-- **Grafana**: dashboards Home, LLM/Chat, GPU Manager, Trading, ERPNext provisionados.
+- **Grafana**: dashboards Home, LLM/Chat, Agentic, GPU Manager, Trading, ERPNext provisionados.
 - **Loki/Promtail**: logs do job `docker-containers` chegando com parsing JSON.
 - **Alertas**: regras ativas para LLM, GPU, KuCoin e infraestrutura.
 
@@ -60,6 +60,12 @@ A plataforma Alice implementa observabilidade **enterprise-grade** baseada em **
 - **SSOT dos dashboards**: `apps/observability-service/config/grafana/dashboards/*.json`
 - **Provisionamento (produção)**: `infra/observability/grafana/provisioning/dashboards/*` (conforme `alice-dashboards.yml`)
 - **Sincronização no deploy**: o workflow `deploy-stack-modular.yml` copia os dashboards do SSOT para o diretório de provisionamento **antes** de subir o stack OBSERVABILITY, evitando deriva entre “dashboards do app” vs “dashboards provisionados”.
+
+### Métricas Agentic
+- **Ações**: `alice_agentic_actions_total` (labels: action, status)
+- **Aprovações**: `alice_agentic_approvals_total` (labels: action, decision)
+- **Latência**: `alice_agentic_action_duration_seconds` (histogram, labels: action, status)
+- **Dashboard**: `apps/observability-service/config/grafana/dashboards/alice-agentic.json`
 
 ### Portal Home (Single Pane of Glass)
 

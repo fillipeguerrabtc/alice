@@ -63,7 +63,7 @@ groups:
                     type: gt
                     params: [30]
               refId: C
-        noDataState: NoData
+        noDataState: OK
         execErrState: Error
         for: 5m
         annotations:
@@ -102,7 +102,7 @@ groups:
                     type: gt
                     params: [60]
               refId: C
-        noDataState: NoData
+        noDataState: OK
         execErrState: Error
         for: 2m
         annotations:
@@ -144,7 +144,7 @@ groups:
                     type: gt
                     params: [5]
               refId: C
-        noDataState: NoData
+        noDataState: OK
         execErrState: Error
         for: 5m
         annotations:
@@ -186,7 +186,7 @@ groups:
                     type: gt
                     params: [0.05]
               refId: C
-        noDataState: NoData
+        noDataState: OK
         execErrState: Error
         for: 5m
         annotations:
@@ -225,7 +225,7 @@ groups:
                     type: gt
                     params: [0.15]
               refId: C
-        noDataState: NoData
+        noDataState: OK
         execErrState: Error
         for: 2m
         annotations:
@@ -267,7 +267,7 @@ groups:
                     type: gt
                     params: [0]
               refId: C
-        noDataState: NoData
+        noDataState: OK
         execErrState: Error
         for: 1m
         annotations:
@@ -308,7 +308,7 @@ groups:
                     type: gt
                     params: [1000000]
               refId: C
-        noDataState: NoData
+        noDataState: OK
         execErrState: Error
         for: 5m
         annotations:
@@ -347,7 +347,7 @@ groups:
                     type: gt
                     params: [5000000]
               refId: C
-        noDataState: NoData
+        noDataState: OK
         execErrState: Error
         for: 5m
         annotations:
@@ -389,7 +389,7 @@ groups:
                     type: gt
                     params: [3]
               refId: C
-        noDataState: NoData
+        noDataState: OK
         execErrState: Error
         for: 5m
         annotations:
@@ -428,7 +428,7 @@ groups:
                     type: lt
                     params: [0.5]
               refId: C
-        noDataState: NoData
+        noDataState: OK
         execErrState: Error
         for: 10m
         annotations:
@@ -485,7 +485,7 @@ groups:
                     type: gt
                     params: [0]
               refId: C
-        noDataState: NoData
+        noDataState: OK
         execErrState: Error
         for: 2m
         annotations:
@@ -526,7 +526,7 @@ groups:
                     type: gt
                     params: [0.9]
               refId: C
-        noDataState: NoData
+        noDataState: OK
         execErrState: Error
         for: 5m
         annotations:
@@ -564,7 +564,7 @@ groups:
                     type: gt
                     params: [85]
               refId: C
-        noDataState: NoData
+        noDataState: OK
         execErrState: Error
         for: 5m
         annotations:
@@ -609,7 +609,7 @@ groups:
                     type: gt
                     params: [2]
               refId: C
-        noDataState: NoData
+        noDataState: OK
         execErrState: Error
         for: 5m
         annotations:
@@ -647,7 +647,7 @@ groups:
                     type: gt
                     params: [0]
               refId: C
-        noDataState: NoData
+        noDataState: OK
         execErrState: Error
         for: 1m
         annotations:
@@ -694,7 +694,7 @@ groups:
                     type: gt
                     params: [90]
               refId: C
-        noDataState: NoData
+        noDataState: OK
         execErrState: Error
         for: 5m
         annotations:
@@ -733,7 +733,7 @@ groups:
                     type: gt
                     params: [10]
               refId: C
-        noDataState: NoData
+        noDataState: OK
         execErrState: Error
         for: 2m
         annotations:
@@ -780,7 +780,7 @@ groups:
                     type: gt
                     params: [0]
               refId: C
-        noDataState: NoData
+        noDataState: OK
         execErrState: Error
         for: 2m
         annotations:
@@ -819,7 +819,7 @@ groups:
                     type: gt
                     params: [1]
               refId: C
-        noDataState: NoData
+        noDataState: OK
         execErrState: Error
         for: 5m
         annotations:
@@ -858,7 +858,7 @@ groups:
                     type: gt
                     params: [0.1]
               refId: C
-        noDataState: NoData
+        noDataState: OK
         execErrState: Error
         for: 5m
         annotations:

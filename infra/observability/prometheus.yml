@@ -183,30 +183,6 @@ scrape_configs:
     metrics_path: '/metrics'
 
   # ===========================================================================
-  # Deploy Server (sem GPU) - observabilidade de host + containers
-  # ===========================================================================
-  # REQUERIMENTO DE SEGURANÇA (2025):
-  # - endpoints DEVEM ser expostos apenas para allowlist do servidor de produção
-  # - firewall/ufw/nftables é responsabilidade do deploy (não do Prometheus)
-  - job_name: 'node-exporter-deploy'
-    static_configs:
-      - targets: ['46.224.46.93:9100']
-        labels:
-          instance: 'alice-deploy'
-          environment: 'deploy'
-    metrics_path: '/metrics'
-    scrape_timeout: 10s
-
-  - job_name: 'cadvisor-deploy'
-    static_configs:
-      - targets: ['46.224.46.93:8080']
-        labels:
-          instance: 'alice-deploy'
-          environment: 'deploy'
-    metrics_path: '/metrics'
-    scrape_timeout: 10s
-
-  # ===========================================================================
   # BACKUP EXPORTER (pgBackRest) - WS2
   # ===========================================================================
   - job_name: 'pgbackrest-exporter'

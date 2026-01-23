@@ -51,6 +51,17 @@ providers:
     options:
       path: /etc/grafana/provisioning/dashboards/chat-llm
 
+  - name: 'Alice - Agentic'
+    orgId: 1
+    folder: 'Alice/Agentic'
+    folderUid: 'alice-agentic'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/agentic
+
   - name: 'Alice - Trading'
     orgId: 1
     folder: 'Alice/Trading'

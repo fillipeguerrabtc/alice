@@ -10,6 +10,7 @@
  * - LLM: latência de inferência, tokens gerados
  * - RAG: documentos indexados, busca vetorial
  * - Training: jobs ativos, loss, GPU utilization
+ * - Agentic: ações, aprovações, latência de execução
  * 
  * Documentação em PT-BR (Regra 10 CLAUDE.md).
  * 
@@ -41,6 +42,11 @@ const LLM_LATENCY_BUCKETS = [0.1, 0.5, 1, 2, 5, 10, 30, 60, 120, 300];
  * Buckets para embeddings/vector search
  */
 const EMBEDDING_LATENCY_BUCKETS = [0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5];
+
+/**
+ * Buckets para execução de ações agentic (segundos)
+ */
+const AGENTIC_DURATION_BUCKETS = [0.1, 0.5, 1, 2, 5, 10, 30, 60, 120, 300];
 
 /**
  * Estados possíveis do Circuit Breaker
@@ -168,6 +174,16 @@ export interface AliceMetrics {
     callsTotal: Counter;
     /** Total de erros */
     errorsTotal: Counter;
+  };
+
+  /** Métricas Agentic */
+  agentic: {
+    /** Total de ações agentic por status */
+    actionsTotal: Counter<'action' | 'status'>;
+    /** Duração de execução/decisão das ações agentic */
+    actionDuration: Histogram<'action' | 'status'>;
+    /** Total de aprovações/rejeições */
+    approvalsTotal: Counter<'action' | 'decision'>;
   };
   
   /** Métricas RBAC - Role-Based Access Control */
@@ -545,6 +561,32 @@ export function createAlicePrometheus(config: PrometheusConfig): {
   });
   
   // ============================================================================
+  // MÉTRICAS AGENTIC
+  // ============================================================================
+
+  const agenticActionsTotal = new Counter({
+    name: `${prefix}agentic_actions_total`,
+    help: 'Total de ações agentic por status',
+    labelNames: ['action', 'status'] as const,
+    registers: [registry],
+  });
+
+  const agenticActionDuration = new Histogram({
+    name: `${prefix}agentic_action_duration_seconds`,
+    help: 'Duração de execução/decisão de ações agentic em segundos',
+    labelNames: ['action', 'status'] as const,
+    buckets: AGENTIC_DURATION_BUCKETS,
+    registers: [registry],
+  });
+
+  const agenticApprovalsTotal = new Counter({
+    name: `${prefix}agentic_approvals_total`,
+    help: 'Total de aprovações/rejeições agentic',
+    labelNames: ['action', 'decision'] as const,
+    registers: [registry],
+  });
+
+  // ============================================================================
   // MÉTRICAS RBAC
   // ============================================================================
   
@@ -684,6 +726,11 @@ export function createAlicePrometheus(config: PrometheusConfig): {
       callDuration: integrationCallDuration,
       callsTotal: integrationCallsTotal,
       errorsTotal: integrationErrorsTotal,
+    },
+    agentic: {
+      actionsTotal: agenticActionsTotal,
+      actionDuration: agenticActionDuration,
+      approvalsTotal: agenticApprovalsTotal,
     },
     rbac: {
       cacheHitsTotal: rbacCacheHitsTotal,

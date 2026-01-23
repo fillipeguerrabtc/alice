@@ -247,6 +247,47 @@ const { metrics, metricsRouter, httpMetricsMiddleware } = createAlicePrometheus(
 initRbacPrometheusMetrics(metrics.rbac);
 logger.info('Métricas RBAC Prometheus inicializadas no chat-service');
 
+type AgenticActionLabel = 'trading' | 'payments' | 'stack_ops' | 'agentic_task' | 'erp';
+type AgenticDecisionLabel = 'approve' | 'reject';
+type AgenticStatusLabel = 'pending' | 'executed' | 'rejected' | 'failed';
+
+const resolveAgenticActionLabel = (params: {
+  pendingCommand?: ParsedTradingCommand;
+  pendingTask?: { taskType?: AgenticTaskType };
+  pendingIntegration?: { action?: 'payments' | 'stack_ops' };
+  fallback?: AgenticActionLabel;
+}): AgenticActionLabel => {
+  if (params.pendingCommand) {
+    return 'trading';
+  }
+  if (params.pendingIntegration?.action === 'payments') {
+    return 'payments';
+  }
+  if (params.pendingIntegration?.action === 'stack_ops') {
+    return 'stack_ops';
+  }
+  if (params.pendingTask) {
+    return 'agentic_task';
+  }
+  return params.fallback ?? 'agentic_task';
+};
+
+const recordAgenticMetrics = (params: {
+  action: AgenticActionLabel;
+  status: AgenticStatusLabel;
+  decision?: AgenticDecisionLabel;
+  startedAt?: Date | null;
+}): void => {
+  metrics.agentic.actionsTotal.inc({ action: params.action, status: params.status });
+  if (params.decision) {
+    metrics.agentic.approvalsTotal.inc({ action: params.action, decision: params.decision });
+  }
+  if (params.startedAt) {
+    const durationSeconds = Math.max(0, (Date.now() - params.startedAt.getTime()) / 1000);
+    metrics.agentic.actionDuration.observe({ action: params.action, status: params.status }, durationSeconds);
+  }
+};
+
 // Endpoint /metrics para Prometheus scraper (antes de outros middlewares)
 app.use(metricsRouter);
 
@@ -6258,6 +6299,13 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         const pendingTask = payload.task;
         const pendingIntegration = payload.integration;
         const isAgenticAction = ['document', 'report', 'accounting', 'planning'].includes(pendingAction.type);
+        const actionLabel = resolveAgenticActionLabel({
+          pendingCommand,
+          pendingTask,
+          pendingIntegration,
+          fallback: isAgenticAction ? 'agentic_task' : undefined,
+        });
+        const actionStartedAt = pendingAction.criadoEm ?? null;
         if (!pendingCommand && !pendingTask && !pendingIntegration) {
           await db.update(schema.actionRequests)
             .set({
@@ -6267,6 +6315,12 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
               atualizadoEm: new Date(),
             })
             .where(eq(schema.actionRequests.id, pendingAction.id));
+
+          recordAgenticMetrics({
+            action: actionLabel,
+            status: 'failed',
+            startedAt: actionStartedAt,
+          });
 
           const responseContent = 'Não foi possível localizar os detalhes da ação pendente. Por favor, envie a solicitação novamente.';
           const [assistantMessage] = await db.insert(schema.messages).values({
@@ -6306,6 +6360,13 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
               atualizadoEm: new Date(),
             })
             .where(eq(schema.actionRequests.id, pendingAction.id));
+
+          recordAgenticMetrics({
+            action: actionLabel,
+            status: 'rejected',
+            decision: 'reject',
+            startedAt: actionStartedAt,
+          });
 
           const responseContent = 'Ação cancelada conforme solicitado.';
           const [assistantMessage] = await db.insert(schema.messages).values({
@@ -6423,6 +6484,13 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
               })
               .where(eq(schema.actionRequests.id, pendingAction.id));
 
+            recordAgenticMetrics({
+              action: actionLabel,
+              status: 'executed',
+              decision: 'approve',
+              startedAt: actionStartedAt,
+            });
+
             const [assistantMessage] = await db.insert(schema.messages).values({
               conversationId,
               agentId: conversation?.agentId ?? undefined,
@@ -6459,6 +6527,13 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                 atualizadoEm: new Date(),
               })
               .where(eq(schema.actionRequests.id, pendingAction.id));
+
+            recordAgenticMetrics({
+              action: actionLabel,
+              status: 'failed',
+              decision: 'approve',
+              startedAt: actionStartedAt,
+            });
 
             res.write(`data: ${JSON.stringify({ error: `Erro ao executar a ação pendente: ${errorMessage}` })}\n\n`);
             res.write('data: [DONE]\n\n');
@@ -6510,6 +6585,13 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
               })
               .where(eq(schema.actionRequests.id, pendingAction.id));
 
+            recordAgenticMetrics({
+              action: actionLabel,
+              status: taskResult.success ? 'executed' : 'failed',
+              decision: 'approve',
+              startedAt: actionStartedAt,
+            });
+
             const [assistantMessage] = await db.insert(schema.messages).values({
               conversationId,
               agentId: conversation?.agentId ?? undefined,
@@ -6547,6 +6629,13 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
               })
               .where(eq(schema.actionRequests.id, pendingAction.id));
 
+            recordAgenticMetrics({
+              action: actionLabel,
+              status: 'failed',
+              decision: 'approve',
+              startedAt: actionStartedAt,
+            });
+
             res.write(`data: ${JSON.stringify({ error: `Erro ao executar tarefa: ${errorMessage}` })}\n\n`);
             res.write('data: [DONE]\n\n');
             res.end();
@@ -6564,6 +6653,13 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
               atualizadoEm: new Date(),
             })
             .where(eq(schema.actionRequests.id, pendingAction.id));
+
+          recordAgenticMetrics({
+            action: actionLabel,
+            status: 'failed',
+            decision: 'approve',
+            startedAt: actionStartedAt,
+          });
 
           const responseContent = `Não foi possível executar a ação: ${canExecute.reason ?? 'trading bloqueado no momento da confirmação'}.`;
           const [assistantMessage] = await db.insert(schema.messages).values({
@@ -6624,6 +6720,13 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             })
             .where(eq(schema.actionRequests.id, pendingAction.id));
 
+          recordAgenticMetrics({
+            action: actionLabel,
+            status: result.success ? 'executed' : 'failed',
+            decision: 'approve',
+            startedAt: actionStartedAt,
+          });
+
           const [assistantMessage] = await db.insert(schema.messages).values({
             conversationId,
             agentId: conversation?.agentId ?? undefined,
@@ -6661,6 +6764,13 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
               atualizadoEm: new Date(),
             })
             .where(eq(schema.actionRequests.id, pendingAction.id));
+
+          recordAgenticMetrics({
+            action: actionLabel,
+            status: 'failed',
+            decision: 'approve',
+            startedAt: actionStartedAt,
+          });
 
           res.write(`data: ${JSON.stringify({ error: `Erro ao executar a ação pendente: ${errorMessage}` })}\n\n`);
           res.write('data: [DONE]\n\n');
@@ -6812,6 +6922,11 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             approvalPolicy,
           },
         }).returning();
+
+        recordAgenticMetrics({
+          action: 'trading',
+          status: 'pending',
+        });
 
         const responseContent = `Para executar a ação de trading (${description}), preciso de confirmação explícita.\nResponda "confirmar" para executar ou "cancelar" para abortar.`;
         const [assistantMessage] = await db.insert(schema.messages).values({
@@ -7087,6 +7202,11 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           atualizadoEm: new Date(),
         }).returning();
 
+        recordAgenticMetrics({
+          action: 'erp',
+          status: 'executed',
+        });
+
         const [assistantMessage] = await db.insert(schema.messages).values({
           conversationId,
           agentId: conversation?.agentId ?? undefined,
@@ -7115,6 +7235,10 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         return;
       } catch (erpError) {
         const errorMessage = erpError instanceof Error ? erpError.message : 'Erro desconhecido';
+        recordAgenticMetrics({
+          action: 'erp',
+          status: 'failed',
+        });
         res.write(`data: ${JSON.stringify({ error: `Erro ao executar operação ERPNext: ${errorMessage}` })}\n\n`);
         res.write('data: [DONE]\n\n');
         res.end();
@@ -7179,6 +7303,11 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             atualizadoEm: new Date(),
           }).returning();
 
+          recordAgenticMetrics({
+            action: 'payments',
+            status: 'executed',
+          });
+
           const [assistantMessage] = await db.insert(schema.messages).values({
             conversationId,
             agentId: conversation?.agentId ?? undefined,
@@ -7206,6 +7335,10 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           return;
         } catch (paymentError) {
           const errorMessage = paymentError instanceof Error ? paymentError.message : 'Erro desconhecido';
+          recordAgenticMetrics({
+            action: 'payments',
+            status: 'failed',
+          });
           res.write(`data: ${JSON.stringify({ error: `Erro ao consultar destinatários Wise: ${errorMessage}` })}\n\n`);
           res.write('data: [DONE]\n\n');
           res.end();
@@ -7302,6 +7435,11 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             atualizadoEm: new Date(),
           }).returning();
 
+          recordAgenticMetrics({
+            action: 'payments',
+            status: 'executed',
+          });
+
           const responseContent = `Pagamento executado: ${summary}.`;
           const [assistantMessage] = await db.insert(schema.messages).values({
             conversationId,
@@ -7330,6 +7468,10 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           return;
         } catch (paymentError) {
           const errorMessage = paymentError instanceof Error ? paymentError.message : 'Erro desconhecido';
+          recordAgenticMetrics({
+            action: 'payments',
+            status: 'failed',
+          });
           res.write(`data: ${JSON.stringify({ error: `Erro ao executar pagamento: ${errorMessage}` })}\n\n`);
           res.write('data: [DONE]\n\n');
           res.end();
@@ -7354,6 +7496,11 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           },
         },
       }).returning();
+
+      recordAgenticMetrics({
+        action: 'payments',
+        status: 'pending',
+      });
 
       const responseContent = `Para executar o pagamento (${summary}), preciso de confirmação explícita.\nResponda "confirmar" para executar ou "cancelar" para abortar.`;
       const [assistantMessage] = await db.insert(schema.messages).values({
@@ -7455,6 +7602,11 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         },
       }).returning();
 
+      recordAgenticMetrics({
+        action: 'stack_ops',
+        status: 'pending',
+      });
+
       const responseContent = `Para executar a operação (${summary}), preciso de confirmação explícita.\nResponda "confirmar" para executar ou "cancelar" para abortar.`;
       const [assistantMessage] = await db.insert(schema.messages).values({
         conversationId,
@@ -7512,6 +7664,11 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             },
           }).returning();
 
+          recordAgenticMetrics({
+            action: 'agentic_task',
+            status: 'pending',
+          });
+
           const responseContent = `Para executar a tarefa (${taskSummary}), preciso de confirmação explícita.\nResponda "confirmar" para executar ou "cancelar" para abortar.`;
           const [assistantMessage] = await db.insert(schema.messages).values({
             conversationId,
@@ -7560,6 +7717,11 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         const responseContent = taskResult.success
           ? `Tarefa concluída com sucesso. Documento ${verb} ${taskResult.documentId ? `(${taskResult.documentId})` : ''}.`
           : `Falha ao executar a tarefa (${taskSummary}): ${taskResult.error || 'erro desconhecido'}.`;
+
+        recordAgenticMetrics({
+          action: 'agentic_task',
+          status: taskResult.success ? 'executed' : 'failed',
+        });
 
         const [assistantMessage] = await db.insert(schema.messages).values({
           conversationId,
