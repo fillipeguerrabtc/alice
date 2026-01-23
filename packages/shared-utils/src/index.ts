@@ -21,6 +21,7 @@ export * from './async-context.js';
 export * from './express-hardening.js';
 export * from './feature-flags.js';
 export * from './feature-flags-storage.js';
+export * from './agentic-events.js';
 export * from './prometheus.js';
 export * from './shutdown-manager.js';
 export * from './redis-cache-adapter.js';

@@ -294,6 +294,7 @@ C4Component
 - Router de tools para web search, ERPNext (read/write), pagamentos e stack ops.
 - Ações críticas registradas em `action_requests` com aprovação explícita (financeiro).
 - Configuração por tenant persistida em `agentic_settings` (links, escopo e políticas).
+- Streaming de eventos agentic em tempo real (SSE/WS) com payload redigido.
 
 ### 5.2 RAG Service - Componentes
 

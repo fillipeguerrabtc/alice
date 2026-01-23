@@ -38,6 +38,7 @@ import {
   Menu,
   FileCheck,
   Info,
+  Activity,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -108,6 +109,7 @@ import {
   ACCEPTED_TYPES,
   getMediaType,
   formatFileSize,
+  AgentEvent,
 } from './components/types';
 
 interface Namespace {
@@ -121,6 +123,7 @@ import { MessageBubble } from './components/MessageBubble';
 import { ConversationItem } from './components/ConversationItem';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { ChatInput } from './components/ChatInput';
+import { EventsPanel } from './components/EventsPanel';
 
 type StreamMediaAttachmentPayload = {
   id: string;
@@ -356,6 +359,11 @@ export default function Chat() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamStatus, setStreamStatus] = useState<string | null>(null);
   const [streamSteps, setStreamSteps] = useState<string[]>([]);
+  const [streamEvents, setStreamEvents] = useState<AgentEvent[]>([]);
+  const [eventsPanelOpen, setEventsPanelOpen] = useState(false);
+  const [eventsPanelPinned, setEventsPanelPinned] = useState(false);
+  const [focusNonce, setFocusNonce] = useState(0);
+  const eventsPanelLabel = eventsPanelOpen ? t('chat.eventsPanel.hide') : t('chat.eventsPanel.show');
   // Desktop: sidebar aberta por padrão | Mobile: fechada por padrão
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
   // Estado separado para drawer mobile
@@ -899,6 +907,22 @@ export default function Chat() {
       return [...prev, label];
     });
   }, []);
+  const pushStreamEvent = useCallback((event: AgentEvent) => {
+    setStreamEvents((prev) => {
+      const next = [...prev, event];
+      return next.length > 200 ? next.slice(-200) : next;
+    });
+  }, []);
+  useEffect(() => {
+    if (isStreaming) {
+      setEventsPanelOpen(true);
+      return;
+    }
+    if (!eventsPanelPinned) {
+      const timeout = setTimeout(() => setEventsPanelOpen(false), 800);
+      return () => clearTimeout(timeout);
+    }
+  }, [isStreaming, eventsPanelPinned]);
   const sendMessage = useMutation({
     mutationFn: async ({ content, mediaAttachments }: { content: string; mediaAttachments?: MediaAttachment[] }) => {
       const userMessage: Message = {
@@ -912,9 +936,11 @@ export default function Chat() {
 
       setMessages((prev) => [...prev, userMessage]);
       setIsStreaming(true);
+      setStreamEvents([]);
       const preparingLabel = resolveStreamStatus('preparing');
       setStreamStatus(preparingLabel);
       setStreamSteps([preparingLabel]);
+      setEventsPanelOpen(true);
 
       const assistantMessage: Message = {
         id: crypto.randomUUID(),
@@ -1014,6 +1040,11 @@ export default function Chat() {
                   const label = resolveStreamStatus(parsed.stage);
                   setStreamStatus(label);
                   pushStreamStep(label);
+                  resetTimeout();
+                }
+
+                if (parsed.type === 'agent_event' && parsed.data) {
+                  pushStreamEvent(parsed.data as AgentEvent);
                   resetTimeout();
                 }
 
@@ -1507,14 +1538,16 @@ export default function Chat() {
   const handleNewChatWithClose = useCallback(() => {
     setMessages([]);
     navigate('/chat');
+    bumpInputFocus();
     if (isMobile) setMobileDrawerOpen(false);
-  }, [navigate, isMobile]);
+  }, [navigate, isMobile, bumpInputFocus]);
 
   // Handler para selecionar conversa (fecha drawer mobile se aberto)
   const handleSelectConversation = useCallback((id: string) => {
     navigate(`/chat/${id}`);
+    bumpInputFocus();
     if (isMobile) setMobileDrawerOpen(false);
-  }, [navigate, isMobile]);
+  }, [navigate, isMobile, bumpInputFocus]);
 
   const handleToggleSelectionMode = useCallback(() => {
     setIsSelectionMode((prev) => !prev);
@@ -1555,6 +1588,26 @@ export default function Chat() {
       setSidebarOpen(false);
     }
   }, [isMobile]);
+
+  const bumpInputFocus = useCallback(() => {
+    setFocusNonce((prev) => prev + 1);
+  }, []);
+
+  const handleToggleEventsPanel = useCallback(() => {
+    setEventsPanelOpen((prev) => {
+      const next = !prev;
+      setEventsPanelPinned(next);
+      return next;
+    });
+  }, []);
+
+  const handleClearEvents = useCallback(() => {
+    setStreamEvents([]);
+  }, []);
+
+  useEffect(() => {
+    bumpInputFocus();
+  }, [conversationId, bumpInputFocus]);
 
   return (
     <div className="flex h-full">
@@ -1696,6 +1749,16 @@ export default function Chat() {
                 {t('chat.training.send')}
               </Button>
             )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="hidden md:flex"
+              onClick={handleToggleEventsPanel}
+              data-testid="button-toggle-events-panel"
+            >
+              <Activity className="h-4 w-4 mr-2" />
+              {eventsPanelLabel}
+            </Button>
             {/* Mobile: Badge compacto */}
             {isMobile && (
               <>
@@ -1731,41 +1794,75 @@ export default function Chat() {
                     <FileCheck className="h-3 w-3" />
                   </Button>
                 )}
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={handleToggleEventsPanel}
+                  data-testid="button-toggle-events-panel-mobile"
+                >
+                  <Activity className="h-3 w-3" />
+                </Button>
               </>
             )}
           </div>
         </div>
 
-        {/* Área de mensagens - responsiva */}
-        <ScrollArea ref={scrollAreaRef} className="flex-1 p-2 md:p-4">
-          <AnimatePresence mode="popLayout">
-            {messages.length === 0 ? (
-              <WelcomeScreen />
-            ) : (
-              <motion.div
-                variants={containerVariants}
-                initial="hidden"
-                animate="visible"
-                className="space-y-3 md:space-y-4 max-w-4xl mx-auto"
-              >
-                {messages.map((message, index) => (
-                  <MessageBubble
-                    key={message.id}
-                    message={message}
-                    isStreaming={isStreaming}
-                    isLast={index === messages.length - 1}
-                    streamStatus={isStreaming && index === messages.length - 1 ? streamStatus : null}
-                    streamSteps={isStreaming && index === messages.length - 1 ? streamSteps : null}
-                    onRateImage={handleRateImage}
-                    onFeedback={handleFeedback}
-                    onRegenerate={handleRegenerate}
-                  />
-                ))}
-              </motion.div>
-            )}
-          </AnimatePresence>
-          <div ref={messagesEndRef} />
-        </ScrollArea>
+        {isMobile && (
+          <Sheet
+            open={eventsPanelOpen}
+            onOpenChange={(open) => {
+              setEventsPanelOpen(open);
+              setEventsPanelPinned(open);
+            }}
+          >
+            <SheetContent side="right" className="w-[320px] p-0">
+              <VisuallyHidden.Root>
+                <SheetTitle>Eventos em tempo real</SheetTitle>
+              </VisuallyHidden.Root>
+              <EventsPanel events={streamEvents} isStreaming={isStreaming} onClear={handleClearEvents} />
+            </SheetContent>
+          </Sheet>
+        )}
+
+        <div className="flex-1 flex min-h-0">
+          {/* Área de mensagens - responsiva */}
+          <ScrollArea ref={scrollAreaRef} className="flex-1 p-2 md:p-4">
+            <AnimatePresence mode="popLayout">
+              {messages.length === 0 ? (
+                <WelcomeScreen />
+              ) : (
+                <motion.div
+                  variants={containerVariants}
+                  initial="hidden"
+                  animate="visible"
+                  className="space-y-3 md:space-y-4 max-w-4xl mx-auto"
+                >
+                  {messages.map((message, index) => (
+                    <MessageBubble
+                      key={message.id}
+                      message={message}
+                      isStreaming={isStreaming}
+                      isLast={index === messages.length - 1}
+                      streamStatus={isStreaming && index === messages.length - 1 ? streamStatus : null}
+                      streamSteps={isStreaming && index === messages.length - 1 ? streamSteps : null}
+                      onRateImage={handleRateImage}
+                      onFeedback={handleFeedback}
+                      onRegenerate={handleRegenerate}
+                    />
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+            <div ref={messagesEndRef} />
+          </ScrollArea>
+
+          {!isMobile && eventsPanelOpen && (
+            <div className="w-[360px] border-l">
+              <EventsPanel events={streamEvents} isStreaming={isStreaming} onClear={handleClearEvents} />
+            </div>
+          )}
+        </div>
 
         {/* Input de chat - otimizado para mobile com safe area */}
         <motion.form 
@@ -1790,6 +1887,7 @@ export default function Chat() {
             isRecordingDisabled={isStreaming || isRecording || isRecordingStarting || isTranscribingRecording}
             isMobile={isMobile}
             acceptedTypes={[...ACCEPTED_TYPES.image, ...ACCEPTED_TYPES.audio].join(',')}
+            focusNonce={focusNonce}
           />
         </motion.form>
 

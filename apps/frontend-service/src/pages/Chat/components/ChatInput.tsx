@@ -6,7 +6,7 @@
  * @module Chat/components/ChatInput
  */
 
-import { useRef, useCallback, useEffect } from 'react';
+import { useRef, useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Send, Loader2, Mic, Square, Camera, Plus, FileText, Image as ImageIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -32,6 +32,7 @@ interface ChatInputProps {
   isRecordingDisabled: boolean;
   isMobile: boolean;
   acceptedTypes: string;
+  focusNonce: number;
 }
 
 export function ChatInput({
@@ -50,12 +51,15 @@ export function ChatInput({
   isRecordingDisabled,
   isMobile,
   acceptedTypes,
+  focusNonce,
 }: ChatInputProps) {
   const { t } = useTranslation();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
+  const [userBlurred, setUserBlurred] = useState(false);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (!isMobile && e.key === 'Enter' && !e.shiftKey) {
@@ -99,6 +103,18 @@ export function ChatInput({
     }
   }, [isRecording]);
 
+  useEffect(() => {
+    if (!userBlurred && !isRecording) {
+      textareaRef.current?.focus();
+    }
+  }, [isRecording, userBlurred, value]);
+
+  useEffect(() => {
+    if (!userBlurred && !isRecording) {
+      textareaRef.current?.focus();
+    }
+  }, [focusNonce, isRecording, userBlurred]);
+
   const handleFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files ? Array.from(event.target.files) : [];
     if (files.length > 0) {
@@ -124,7 +140,10 @@ export function ChatInput({
       )}
 
       <div className="flex gap-2 max-w-4xl mx-auto">
-        <div className="flex-1 flex items-end gap-1.5 md:gap-2 p-1.5 md:p-2 rounded-xl md:rounded-lg border bg-background shadow-sm">
+        <div
+          ref={containerRef}
+          className="flex-1 flex items-end gap-1.5 md:gap-2 p-1.5 md:p-2 rounded-xl md:rounded-lg border bg-background shadow-sm"
+        >
           <input
             ref={fileInputRef}
             type="file"
@@ -208,6 +227,16 @@ export function ChatInput({
             onChange={handleChange}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
+            onFocus={() => setUserBlurred(false)}
+            onBlur={(event) => {
+              const nextTarget = event.relatedTarget as Node | null;
+              if (nextTarget && containerRef.current?.contains(nextTarget)) {
+                setUserBlurred(false);
+                requestAnimationFrame(() => textareaRef.current?.focus());
+                return;
+              }
+              setUserBlurred(true);
+            }}
             placeholder={pendingMedia.length > 0 ? t('chat.placeholderWithMedia') : t('chat.placeholder')}
             className="flex-1 min-h-[40px] md:min-h-[36px] max-h-[120px] md:max-h-[200px] resize-none bg-transparent text-base md:text-sm leading-relaxed focus-visible:outline-none"
             disabled={isRecording}

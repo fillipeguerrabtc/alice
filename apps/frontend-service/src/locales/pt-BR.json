@@ -301,6 +301,10 @@
         "finalizing": "Finalizando resposta"
       }
     },
+    "eventsPanel": {
+      "show": "Eventos",
+      "hide": "Ocultar eventos"
+    },
     "agent": {
       "ai": "Alice IA",
       "human": "Agente Humano",

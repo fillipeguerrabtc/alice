@@ -301,6 +301,10 @@
         "finalizing": "Finalizing response"
       }
     },
+    "eventsPanel": {
+      "show": "Events",
+      "hide": "Hide events"
+    },
     "agent": {
       "ai": "Alice AI",
       "human": "Human Agent",

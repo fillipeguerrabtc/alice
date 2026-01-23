@@ -64,6 +64,8 @@ import {
   TRADING_CHANNEL_PREFIX,
   TRADING_CHANNELS,
   PERMISSION_MAP,
+  type AgentEvent,
+  redactSensitivePayload,
 } from '@alice/shared-utils';
 import type { AuthContext } from '@alice/shared-utils';
 import type { Role } from '@alice/shared-utils';
@@ -5728,12 +5730,52 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       }
     };
 
+    const resolvePhaseForStage = (stage: string): AgentEvent['phase'] => {
+      if (stage === 'llm' || stage === 'writing') return 'llm';
+      if (stage === 'finalizing') return 'finalizing';
+      if (stage === 'media') return 'tool';
+      return 'planning';
+    };
+
+    const emitAgentEvent = (event: Omit<AgentEvent, 'id' | 'ts' | 'payload'> & { payload?: unknown }) => {
+      if (!res.headersSent || res.writableEnded) return;
+      const { payload: rawPayload, ...rest } = event;
+      const payload = redactSensitivePayload(rawPayload);
+      const data: AgentEvent = {
+        id: crypto.randomUUID(),
+        ts: new Date().toISOString(),
+        ...rest,
+        ...(payload ? { payload } : {}),
+      };
+      res.write(`data: ${JSON.stringify({ type: 'agent_event', data })}\n\n`);
+    };
+
     writeStatus('preparing');
+    emitAgentEvent({
+      phase: resolvePhaseForStage('preparing'),
+      action: 'preparing',
+      status: 'start',
+      message: 'Preparando resposta',
+      correlationId: conversationId ?? undefined,
+      payload: {
+        hasMediaAttachments,
+        mediaCount: preparedMediaAttachments.length,
+        hasConversation: Boolean(conversationId),
+      },
+    });
     if (conversationCreated) {
       writeStatus('routing');
+      emitAgentEvent({
+        phase: resolvePhaseForStage('routing'),
+        action: 'routing',
+        status: 'in_progress',
+        message: 'Roteando conversa',
+        correlationId: conversationId ?? undefined,
+      });
     }
 
     writeStatus('history');
+    const historyStart = Date.now();
     const previousMessages = conversationId
       ? await db.query.messages.findMany({
         where: eq(schema.messages.conversationId, conversationId),
@@ -5741,6 +5783,15 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         limit: CHAT_HISTORY_FETCH_LIMIT,
       })
       : [];
+    emitAgentEvent({
+      phase: resolvePhaseForStage('history'),
+      action: 'history',
+      status: 'success',
+      message: 'Histórico carregado',
+      durationMs: Date.now() - historyStart,
+      correlationId: conversationId ?? undefined,
+      payload: { messages: previousMessages.length },
+    });
     const storedPreviousMessages = normalizeStoredMessages(previousMessages);
 
     const messageType = hasMediaAttachments
@@ -5767,6 +5818,23 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
     if (hasMediaAttachments) {
       writeStatus('media');
+      emitAgentEvent({
+        phase: resolvePhaseForStage('media'),
+        action: 'media_processing',
+        status: 'start',
+        message: 'Processando mídia',
+        correlationId: conversationId ?? undefined,
+        payload: {
+          attachments: preparedMediaAttachments.map((attachment) => ({
+            id: attachment.id,
+            type: attachment.type,
+            filename: attachment.filename,
+            mimeType: attachment.mimeType,
+            size: attachment.size,
+            uploadId: attachment.uploadId,
+          })),
+        },
+      });
       const mediaSafeTenantId = conversation?.tenantId || tenantId;
       if (!mediaSafeTenantId) {
         res.write(`data: ${JSON.stringify({ error: 'Tenant inválido para upload de mídia.' })}\n\n`);
@@ -5927,6 +5995,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         ? `${visionSummaries.join('\n\n')}\n\nPergunta do usuário:\n${userContent}`
         : userContent;
       const ragParams = getAdaptiveRagParams(ragQuery, 0);
+      const ragStart = Date.now();
       const ragResult = await buscarContextoRAG(
         ragQuery,
         namespaceIdForMedia || undefined,
@@ -5934,6 +6003,20 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         ragParams.threshold,
         { userId, tenantId, role: req.user?.role as Role }
       );
+      emitAgentEvent({
+        phase: 'tool',
+        action: 'rag_internal',
+        status: 'success',
+        message: 'RAG interno concluído',
+        durationMs: Date.now() - ragStart,
+        correlationId: conversationId ?? undefined,
+        payload: {
+          namespaceId: namespaceIdForMedia,
+          limit: ragParams.limit,
+          threshold: ragParams.threshold,
+          sources: ragResult?.sources?.length ?? 0,
+        },
+      });
       recordRagRelevance(tenantId, ragResult);
       if (ragResult?.context) {
         systemPrompt += formatarContextoParaLLM(ragResult);
@@ -5952,12 +6035,25 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       let assistantPersisted = false;
       try {
         writeStatus('llm');
+        const llmStartAt = Date.now();
         const mediaProfile = detectContextProfile(userContent);
         const llmConfig = applyDynamicTokenBudget(
           getAgentLLMConfig(agent),
           mediaMessages,
           { conversationId, source: 'stream', profile: mediaProfile }
         );
+        emitAgentEvent({
+          phase: 'llm',
+          action: 'llm_stream',
+          status: 'start',
+          message: 'Iniciando geração',
+          correlationId: conversationId ?? undefined,
+          payload: {
+            model: llmConfig.model,
+            maxTokens: llmConfig.maxTokens,
+            temperature: llmConfig.temperature,
+          },
+        });
         await proxyStreamFromGpuManager(
           mediaMessages,
           (content) => {
@@ -5973,6 +6069,17 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             }
           },
           async () => {
+            emitAgentEvent({
+              phase: 'llm',
+              action: 'llm_stream',
+              status: 'success',
+              message: 'Geração concluída',
+              durationMs: Date.now() - llmStartAt,
+              correlationId: conversationId ?? undefined,
+              payload: {
+                responseLength: assistantResponse.length,
+              },
+            });
             if (!assistantPersisted && conversationId && userMessage) {
               assistantPersisted = true;
               if (assistantResponse.trim().length > 0) {
@@ -6046,6 +6153,16 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         );
       } catch (streamError) {
         logger.error({ error: streamError }, 'Erro no streaming de mídia (stream)');
+        emitAgentEvent({
+          phase: 'llm',
+          action: 'llm_stream',
+          status: 'error',
+          message: 'Falha ao gerar resposta',
+          correlationId: conversationId ?? undefined,
+          payload: {
+            error: streamError instanceof Error ? streamError.message : String(streamError),
+          },
+        });
         if (res.headersSent && !res.writableEnded) {
           res.write(`data: ${JSON.stringify({ error: 'Erro ao processar mídia' })}\n\n`);
           res.end();
@@ -6361,6 +6478,16 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             })
             .where(eq(schema.actionRequests.id, pendingAction.id));
 
+          emitAgentEvent({
+            phase: 'approval',
+            action: actionLabel,
+            status: 'rejected',
+            message: 'Ação rejeitada',
+            correlationId: conversationId ?? undefined,
+            payload: {
+              actionRequestId: pendingAction.id,
+            },
+          });
           recordAgenticMetrics({
             action: actionLabel,
             status: 'rejected',
@@ -6406,6 +6533,18 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             customRoleId: req.user?.customRoleId ?? undefined,
           };
           try {
+            const approvalStart = Date.now();
+            emitAgentEvent({
+              phase: 'approval',
+              action: actionLabel,
+              status: 'approved',
+              message: 'Ação aprovada, executando',
+              correlationId: conversationId ?? undefined,
+              payload: {
+                actionRequestId: pendingAction.id,
+                operation: pendingIntegration.operation,
+              },
+            });
             let responseContent = 'Ação executada com sucesso.';
             let integrationResult: unknown = null;
 
@@ -6490,6 +6629,18 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
               decision: 'approve',
               startedAt: actionStartedAt,
             });
+            emitAgentEvent({
+              phase: 'execution',
+              action: actionLabel,
+              status: 'success',
+              message: 'Ação executada com sucesso',
+              durationMs: Date.now() - approvalStart,
+              correlationId: conversationId ?? undefined,
+              payload: {
+                actionRequestId: pendingAction.id,
+                operation: pendingIntegration.operation,
+              },
+            });
 
             const [assistantMessage] = await db.insert(schema.messages).values({
               conversationId,
@@ -6533,6 +6684,18 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
               status: 'failed',
               decision: 'approve',
               startedAt: actionStartedAt,
+            });
+            emitAgentEvent({
+              phase: 'execution',
+              action: actionLabel,
+              status: 'error',
+              message: 'Falha ao executar ação',
+              correlationId: conversationId ?? undefined,
+              payload: {
+                actionRequestId: pendingAction.id,
+                operation: pendingIntegration.operation,
+                error: errorMessage,
+              },
             });
 
             res.write(`data: ${JSON.stringify({ error: `Erro ao executar a ação pendente: ${errorMessage}` })}\n\n`);
@@ -7698,6 +7861,19 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           return;
         }
 
+        const agenticTaskStart = Date.now();
+        emitAgentEvent({
+          phase: 'execution',
+          action: 'agentic_task',
+          status: 'start',
+          message: 'Executando tarefa agentic',
+          correlationId: conversationId ?? undefined,
+          payload: {
+            taskType: agenticDetection.taskType,
+            mode: agenticDetection.mode ?? 'create',
+            documentId: agenticDetection.documentId,
+          },
+        });
         const taskResult = await executeAgenticTask({
           tenantId,
           userId,
@@ -7711,6 +7887,19 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           title: taskTitle,
           documentId: agenticDetection.documentId,
           sourceMessageId: userMessage.id,
+        });
+        emitAgentEvent({
+          phase: 'execution',
+          action: 'agentic_task',
+          status: taskResult.success ? 'success' : 'error',
+          message: taskResult.success ? 'Tarefa agentic concluída' : 'Falha na tarefa agentic',
+          durationMs: Date.now() - agenticTaskStart,
+          correlationId: conversationId ?? undefined,
+          payload: {
+            taskType: agenticDetection.taskType,
+            mode: agenticDetection.mode ?? 'create',
+            documentId: taskResult.documentId ?? agenticDetection.documentId,
+          },
         });
 
         const verb = (agenticDetection.mode ?? 'create') === 'update' ? 'atualizado' : 'criado';
@@ -7753,10 +7942,23 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       const ragParams = getAdaptiveRagParams(userMessageContent, previousMessages.length);
       const explicitDeepWebRequest = isExplicitDeepWebRequest(userMessageContent);
       const explicitWebRequest = isExplicitWebRequest(userMessageContent) || explicitDeepWebRequest;
+      const ragInternalStart = Date.now();
       const [assistantSettings, ragResult, ragClassification] = await Promise.all([
         getAssistantSettingsForTenant(tenantId),
         (async () => {
           writeStatus('rag_internal');
+          emitAgentEvent({
+            phase: 'tool',
+            action: 'rag_internal',
+            status: 'start',
+            message: 'Buscando contexto interno',
+            correlationId: conversationId ?? undefined,
+            payload: {
+              limit: ragParams.limit,
+              threshold: ragParams.threshold,
+              namespaceId: conversation?.namespaceId || namespaceId,
+            },
+          });
           return buscarContextoRAG(
             userMessageContent,
             conversation?.namespaceId || namespaceId,
@@ -7770,6 +7972,17 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           auth: { userId, tenantId, role: req.user?.role as Role },
         }),
       ]);
+      emitAgentEvent({
+        phase: 'tool',
+        action: 'rag_internal',
+        status: 'success',
+        message: 'Contexto interno disponível',
+        durationMs: Date.now() - ragInternalStart,
+        correlationId: conversationId ?? undefined,
+        payload: {
+          sources: ragResult?.sources?.length ?? 0,
+        },
+      });
       recordRagRelevance(tenantId, ragResult);
 
       let systemPrompt = buildSystemPrompt(agent, assistantSettings, userMessageContent);
@@ -7859,6 +8072,19 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
       if (shouldUseWeb) {
         writeStatus('rag_web');
+        const webSearchStart = Date.now();
+        emitAgentEvent({
+          phase: 'tool',
+          action: 'rag_web',
+          status: 'start',
+          message: 'Buscando na web',
+          correlationId: conversationId ?? undefined,
+          payload: {
+            forceMode: explicitWebRequest || explicitDeepWebRequest ? 'web' : undefined,
+            webMode: explicitDeepWebRequest ? 'deepweb' : (classificationWebMode === 'deepweb' ? 'deepweb' : undefined),
+            limit: ragParams.limit,
+          },
+        });
         const agenticResult = await buscarContextoAgentic({
           query: userMessageContent,
           namespaceId: conversation?.namespaceId || namespaceId,
@@ -7869,6 +8095,17 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             userId,
             tenantId,
             role: req.user?.role as Role,
+          },
+        });
+        emitAgentEvent({
+          phase: 'tool',
+          action: 'rag_web',
+          status: agenticResult?.context ? 'success' : 'error',
+          message: agenticResult?.context ? 'Busca web concluída' : 'Busca web sem resultado',
+          durationMs: Date.now() - webSearchStart,
+          correlationId: conversationId ?? undefined,
+          payload: {
+            sources: agenticResult?.sources?.web?.length ?? 0,
           },
         });
 
@@ -7926,12 +8163,25 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
     try {
       writeStatus('llm');
+      const llmStartAt = Date.now();
       const streamProfile = detectContextProfile(userMessageContent);
       const llmConfig = applyDynamicTokenBudget(
         getAgentLLMConfig(agent),
         llmMessages,
         { conversationId, source: 'stream', profile: streamProfile }
       );
+      emitAgentEvent({
+        phase: 'llm',
+        action: 'llm_stream',
+        status: 'start',
+        message: 'Iniciando geração',
+        correlationId: conversationId ?? undefined,
+        payload: {
+          model: llmConfig.model,
+          maxTokens: llmConfig.maxTokens,
+          temperature: llmConfig.temperature,
+        },
+      });
       await proxyStreamFromGpuManager(
         llmMessages,
         (content) => {
@@ -7953,6 +8203,15 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           }
         },
         async (_responseText: string) => {
+          emitAgentEvent({
+            phase: 'llm',
+            action: 'llm_stream',
+            status: 'success',
+            message: 'Geração concluída',
+            durationMs: Date.now() - llmStartAt,
+            correlationId: conversationId ?? undefined,
+            payload: { responseLength: assistantResponse.length },
+          });
           // HTTP SSE: não precisa do responseText, apenas fecha a conexão
           // BUG FIX 25/12/2025: onDone sempre será chamado (mesmo em caso de erro)
           // Garantir que não tentamos fechar resposta já fechada
@@ -8064,6 +8323,16 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         error: streamError instanceof Error ? streamError.message : String(streamError),
         stack: streamError instanceof Error ? streamError.stack : undefined 
       }, 'Erro no streaming do GPU Manager Service');
+      emitAgentEvent({
+        phase: 'llm',
+        action: 'llm_stream',
+        status: 'error',
+        message: 'Falha ao gerar resposta',
+        correlationId: conversationId ?? undefined,
+        payload: {
+          error: streamError instanceof Error ? streamError.message : String(streamError),
+        },
+      });
       // BUG FIX 25/12/2025: onDone já foi chamado no catch interno de proxyStreamFromGpuManager
       // Mas pode ter fechado a resposta com [DONE] ao invés de erro
       // Tentar enviar mensagem de erro apenas se resposta ainda estiver aberta
@@ -8436,6 +8705,18 @@ wss.on('connection', (ws, req) => {
       
       const userRole = extWs.role;
       const safeUserRole: Role = userRole ?? 'guest';
+      const emitAgentEventWs = (event: Omit<AgentEvent, 'id' | 'ts' | 'payload'> & { payload?: unknown }) => {
+        if (ws.readyState !== ws.OPEN) return;
+        const { payload: rawPayload, ...rest } = event;
+        const payload = redactSensitivePayload(rawPayload);
+        const data: AgentEvent = {
+          id: crypto.randomUUID(),
+          ts: new Date().toISOString(),
+          ...rest,
+          ...(payload ? { payload } : {}),
+        };
+        ws.send(JSON.stringify({ type: 'agent_event', data }));
+      };
 
       // CORREÇÃO 17/12/2025: Type assertion alinhada com schema Zod
       // content é opcional no schema (z.string().optional())
@@ -9056,6 +9337,19 @@ wss.on('connection', (ws, req) => {
         const namespaceId = message.namespaceId || conversation?.namespaceId || undefined;
         // CORREÇÃO 17/12/2025: Usar messageContent (com fallback) ao invés de message.content (potencialmente undefined)
         const ragParams = getAdaptiveRagParams(messageContent, 0);
+        const ragWsStart = Date.now();
+        emitAgentEventWs({
+          phase: 'tool',
+          action: 'rag_internal',
+          status: 'start',
+          message: 'Buscando contexto interno',
+          correlationId: conversationId ?? undefined,
+          payload: {
+            limit: ragParams.limit,
+            threshold: ragParams.threshold,
+            namespaceId,
+          },
+        });
         const ragResult = await buscarContextoRAG(
           messageContent,
           namespaceId,
@@ -9064,6 +9358,17 @@ wss.on('connection', (ws, req) => {
           { userId, tenantId: safeTenantId, role: safeUserRole }
         );
         const ragLatency = Date.now() - ragStartTime;
+        emitAgentEventWs({
+          phase: 'tool',
+          action: 'rag_internal',
+          status: 'success',
+          message: 'Contexto interno disponível',
+          durationMs: Date.now() - ragWsStart,
+          correlationId: conversationId ?? undefined,
+          payload: {
+            sources: ragResult?.sources?.length ?? 0,
+          },
+        });
         recordRagRelevance(safeTenantId, ragResult);
         recordRagSearchMetrics({ tenantId: safeTenantId, ragResult, latencyMs: ragLatency, endpoint: 'chat-ws' });
         
@@ -9121,6 +9426,18 @@ wss.on('connection', (ws, req) => {
         // BUG FIX 26/12/2025: Prefixado com _ - resultado não usado pois callback onDone usa responseText diretamente
         let _fullResponse = '';
         try {
+          emitAgentEventWs({
+            phase: 'llm',
+            action: 'llm_stream',
+            status: 'start',
+            message: 'Iniciando geração',
+            correlationId: conversationId ?? undefined,
+            payload: {
+              model: llmConfig.model,
+              maxTokens: llmConfig.maxTokens,
+              temperature: llmConfig.temperature,
+            },
+          });
           _fullResponse = await proxyStreamFromGpuManager(
             llmMessages,
             (content) => {
@@ -9139,6 +9456,17 @@ wss.on('connection', (ws, req) => {
               }
             },
             async (responseText: string) => {
+              emitAgentEventWs({
+                phase: 'llm',
+                action: 'llm_stream',
+                status: 'success',
+                message: 'Geração concluída',
+                durationMs: Date.now() - llmStartTime,
+                correlationId: conversationId ?? undefined,
+                payload: {
+                  responseLength: responseText.length,
+                },
+              });
               // BUG FIX 25/12/2025: Usar responseText do parâmetro ao invés de fullResponse do closure
               // fullResponse do escopo externo está vazio quando callback executa
               // Salvar resposta do assistente APÓS o stream completo

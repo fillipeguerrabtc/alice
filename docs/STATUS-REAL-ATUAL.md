@@ -197,6 +197,7 @@ Retenção Arquivo:   30 dias
 - Agentic: execução real para ERPNext (read/write), pagamentos (Wise/Stripe) e stack ops (GitHub Actions).
 - ERPNext: novos endpoints para clientes e faturas (listar/criar) + validação Zod.
 - GitHub Actions: disparo de deploy/rollback via integrations-service com token seguro.
+- Chat: foco persistente no input ao abrir novas conversas e selecionar histórico.
 - Caddy: ACME resiliente com DNS precheck, DNS-01 DuckDNS e fallback ZeroSSL.
 - Caddy: emissor ACME ajustado para sintaxe compatível no Caddyfile (dir + email global + eab inline).
 - Grafana: regras de alerta ajustadas para evitar `DatasourceNoData` falso (bool + fallback 0/1).

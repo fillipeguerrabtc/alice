@@ -76,6 +76,38 @@ export interface Conversation {
   atualizadoEm: string;
 }
 
+export type AgentEventPhase =
+  | 'planning'
+  | 'tool'
+  | 'approval'
+  | 'execution'
+  | 'llm'
+  | 'finalizing'
+  | 'system';
+
+export type AgentEventStatus =
+  | 'start'
+  | 'in_progress'
+  | 'success'
+  | 'error'
+  | 'skipped'
+  | 'pending'
+  | 'approved'
+  | 'rejected';
+
+export interface AgentEvent {
+  id: string;
+  ts: string;
+  phase: AgentEventPhase;
+  action: string;
+  status: AgentEventStatus;
+  message?: string;
+  payload?: Record<string, unknown>;
+  durationMs?: number;
+  correlationId?: string;
+  parentId?: string;
+}
+
 export interface ConversationsResponse {
   conversations: Conversation[];
   nextCursor?: {

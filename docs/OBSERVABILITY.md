@@ -67,6 +67,11 @@ A plataforma Alice implementa observabilidade **enterprise-grade** baseada em **
 - **Latência**: `alice_agentic_action_duration_seconds` (histogram, labels: action, status)
 - **Dashboard**: `apps/observability-service/config/grafana/dashboards/alice-agentic.json`
 
+### Streaming Agentic (UI)
+- **Objetivo**: exibir em tempo real as ações e ferramentas executadas durante uma resposta.
+- **Protocolo**: eventos `agent_event` enviados via SSE/WS com payload redigido.
+- **Segurança**: redaction automática de tokens/secrets antes de renderizar no frontend.
+
 ### Portal Home (Single Pane of Glass)
 
 **UID:** `alice-home`  

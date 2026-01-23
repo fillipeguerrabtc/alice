@@ -1670,6 +1670,7 @@ app.post('/api/integrations/github/deploy-stack', requirePermission('admin:alice
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT_MS);
+  const startedAt = Date.now();
 
   try {
     const response = await fetch(
@@ -1691,10 +1692,18 @@ app.post('/api/integrations/github/deploy-stack', requirePermission('admin:alice
       throw new Error(`GitHub Actions dispatch failed: ${response.status} - ${errText}`);
     }
 
-    res.json({ status: 'queued', workflow: 'deploy-stack-modular.yml', inputs: payload.inputs });
+    res.json({
+      status: 'queued',
+      workflow: 'deploy-stack-modular.yml',
+      inputs: payload.inputs,
+      durationMs: Date.now() - startedAt,
+    });
   } catch (error) {
     logger.error({ error }, 'Falha ao disparar workflow deploy-stack-modular');
-    res.status(500).json({ error: 'Falha ao disparar workflow' });
+    res.status(500).json({
+      error: 'Falha ao disparar workflow',
+      durationMs: Date.now() - startedAt,
+    });
   } finally {
     clearTimeout(timeoutId);
   }
