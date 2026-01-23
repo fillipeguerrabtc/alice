@@ -63,6 +63,7 @@ import {
   validateAgentTenantConsistency,
   TRADING_CHANNEL_PREFIX,
   TRADING_CHANNELS,
+  PERMISSION_MAP,
 } from '@alice/shared-utils';
 import type { AuthContext } from '@alice/shared-utils';
 import type { Role } from '@alice/shared-utils';
@@ -382,14 +383,20 @@ async function initializeAllCaches(): Promise<void> {
         with: { permission: true },
       })
       : [];
-    return [
-      ...rolePermissions
-        .map((rp) => ('codigo' in rp ? rp.codigo : (rp as { permission?: { codigo?: string | null } }).permission?.codigo))
-        .filter((code): code is string => Boolean(code)),
-      ...customRolePermissions
-        .map((rp) => (rp as { permission?: { codigo?: string | null } }).permission?.codigo)
-        .filter((code): code is string => Boolean(code)),
-    ];
+    const dbPermissions = rolePermissions
+      .map((rp) => ('codigo' in rp ? rp.codigo : (rp as { permission?: { codigo?: string | null } }).permission?.codigo))
+      .filter((code): code is string => Boolean(code));
+    const customPermissions = customRolePermissions
+      .map((rp) => (rp as { permission?: { codigo?: string | null } }).permission?.codigo)
+      .filter((code): code is string => Boolean(code));
+    const basePermissions = Object.entries(PERMISSION_MAP)
+      .filter(([, roles]) => roles.includes(auth.role))
+      .map(([code]) => code);
+    const resolved = new Set<string>([...dbPermissions, ...customPermissions, ...basePermissions]);
+    if (isAdminRole) {
+      resolved.add('admin:alice_core:write');
+    }
+    return Array.from(resolved);
   });
   logger.info({ 
     sessionDistributed: sessionCacheAdapter?.isDistributed() ?? false,

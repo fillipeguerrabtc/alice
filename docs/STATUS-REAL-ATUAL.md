@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 22 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.74 - Validação Tenant em Role Customizada
+**Versão:** 7.75 - Resolver RBAC Chat/Integrations Alinhado
 
 ---
 
@@ -253,6 +253,7 @@ Retenção Arquivo:   30 dias
 - RBAC UI: busca no diálogo de permissões customizadas isolada da aba principal.
 - Auth: resolver inclui PERMISSION_MAP + admin:alice_core:write (alinhado ao endpoint).
 - Auth: PATCH custom-role valida tenant da role contra tenant do usuário alvo.
+- Chat/Integrations: resolver inclui PERMISSION_MAP + admin:alice_core:write.
 - RBAC: roles customizadas por tenant (departamentos/funções) com permissões próprias.
 - RBAC: usuários podem ter role base + role customizada simultaneamente.
 - RBAC UI: criação de permissões guiada por módulo/recurso/ação (menos erro humano).
