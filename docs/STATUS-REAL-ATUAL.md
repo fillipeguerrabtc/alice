@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 23 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.89 - Chat Role Fallback Fix
+**Versão:** 7.90 - Frontend Build Fixes
 
 ---
 
@@ -204,6 +204,7 @@ Retenção Arquivo:   30 dias
 - Users Admin: atualização de roles/grupos agora é transacional (sem perda parcial).
 - Auth: buildAuthContext propaga customRoleId para headers internos.
 - Chat: fallback de role agora usa `guest` (evita ROLE_HIERARCHY inválido).
+- Frontend: corrigidos erros de build (AgenticConfig null-safe, ordem de dependências no Chat, Checkbox UI e Users Admin).
 - UX: textos didáticos reforçados em Dashboard, Integrações, Trading, Observability e Agentic.
 - Agentic: fallback determinístico quando busca web falha mesmo com request explícito.
 - Stack Ops: operações via GitHub Actions exigem confirmação explícita (action_requests).

@@ -899,6 +899,7 @@ export default function UsersAdmin() {
   const { t } = useTranslation();
   const { toast } = useToast();
   const { user: currentUser } = useAuth();
+  const [activeTab, setActiveTab] = useState<'users' | 'groups' | 'roles' | 'permissions'>('users');
   const [selectedRole, setSelectedRole] = useState<Role>('admin');
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   const [permissionDialogOpen, setPermissionDialogOpen] = useState(false);
@@ -1044,6 +1045,23 @@ export default function UsersAdmin() {
     },
   });
 
+  const updateUserStatus = useMutation({
+    mutationFn: async ({ userId, ativo }: { userId: string; ativo: boolean }) => {
+      const response = await apiRequest('PATCH', `/api/users/${userId}/status`, { ativo });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      toast({ title: t('usersAdmin.users.statusUpdated') });
+    },
+    onError: (error: Error) => {
+      toast({ title: t('usersAdmin.users.statusUpdateError'), description: error.message, variant: 'destructive' });
+    },
+  });
+
   const handleSaveUser = async () => {
     if (userDialogMode === 'edit' && !selectedUser) return;
     const trimmedEmail = userForm.email.trim();
@@ -1110,13 +1128,6 @@ export default function UsersAdmin() {
     }
   };
 
-  const isSavingUser = updateUserProfile.isPending
-    || createUser.isPending
-    || updateUserRoles.isPending
-    || updateUserCustomRoles.isPending
-    || updateUserGroups.isPending
-    || updateUserStatus.isPending;
-
   const currentUserRoles = currentUser?.roles
     ?? (currentUser?.role ? [currentUser.role] : []);
   const isAdminRole = currentUserRoles.includes('super_admin') || currentUserRoles.includes('admin');
@@ -1127,22 +1138,12 @@ export default function UsersAdmin() {
     return currentUser.id === user.id;
   };
 
-  const updateUserStatus = useMutation({
-    mutationFn: async ({ userId, ativo }: { userId: string; ativo: boolean }) => {
-      const response = await apiRequest('PATCH', `/api/users/${userId}/status`, { ativo });
-      if (!response.ok) {
-        throw new Error(await response.text());
-      }
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/users'] });
-      toast({ title: t('usersAdmin.users.statusUpdated') });
-    },
-    onError: (error: Error) => {
-      toast({ title: t('usersAdmin.users.statusUpdateError'), description: error.message, variant: 'destructive' });
-    },
-  });
+  const isSavingUser = updateUserProfile.isPending
+    || createUser.isPending
+    || updateUserRoles.isPending
+    || updateUserCustomRoles.isPending
+    || updateUserGroups.isPending
+    || updateUserStatus.isPending;
 
   const createGroup = useMutation({
     mutationFn: async (values: GroupFormData) => {
@@ -2154,7 +2155,7 @@ export default function UsersAdmin() {
                       <Checkbox
                         checked={checked}
                         disabled={assignmentsDisabled}
-                        onCheckedChange={(value) => {
+                        onCheckedChange={(value: boolean | 'indeterminate') => {
                           const isChecked = Boolean(value);
                           setUserForm((prev) => {
                             const nextRoles = isChecked
@@ -2182,7 +2183,7 @@ export default function UsersAdmin() {
                       <Checkbox
                         checked={checked}
                         disabled={assignmentsDisabled || role.ativo === false}
-                        onCheckedChange={(value) => {
+                        onCheckedChange={(value: boolean | 'indeterminate') => {
                           const isChecked = Boolean(value);
                           setUserForm((prev) => {
                             const nextIds = isChecked
@@ -2213,7 +2214,7 @@ export default function UsersAdmin() {
                       <Checkbox
                         checked={checked}
                         disabled={assignmentsDisabled}
-                        onCheckedChange={(value) => {
+                        onCheckedChange={(value: boolean | 'indeterminate') => {
                           const isChecked = Boolean(value);
                           setUserForm((prev) => {
                             const nextIds = isChecked

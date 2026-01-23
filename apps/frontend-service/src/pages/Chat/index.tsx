@@ -701,6 +701,11 @@ export default function Chat() {
     staleTime: 1000 * 60,
   });
 
+  const conversations = conversationsData?.pages.flatMap((page) => page.conversations) || [];
+  const activeConversation = conversationId
+    ? conversations.find((conversation) => conversation.id === conversationId) ?? null
+    : null;
+
   const fetchConversationMessages = useCallback(async () => {
     if (!conversationId) {
       throw new Error('ConversationId ausente para carregamento de mensagens');
@@ -1558,11 +1563,6 @@ export default function Chat() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
   };
-
-  const conversations = conversationsData?.pages.flatMap((page) => page.conversations) || [];
-  const activeConversation = conversationId
-    ? conversations.find((conversation) => conversation.id === conversationId) ?? null
-    : null;
 
   const bumpInputFocus = useCallback(() => {
     setFocusNonce((prev) => prev + 1);

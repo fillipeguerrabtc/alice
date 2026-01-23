@@ -201,7 +201,15 @@ export default function AgenticConfig() {
                       <FormItem>
                         <FormLabel>{t('agenticConfig.linkDescription')}</FormLabel>
                         <FormControl>
-                          <Input {...formField} placeholder={t('agenticConfig.linkDescriptionPlaceholder')} />
+                          <Input
+                            {...formField}
+                            value={formField.value ?? ''}
+                            onChange={(event) => {
+                              const nextValue = event.target.value;
+                              formField.onChange(nextValue.length === 0 ? null : nextValue);
+                            }}
+                            placeholder={t('agenticConfig.linkDescriptionPlaceholder')}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
