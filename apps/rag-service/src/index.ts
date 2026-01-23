@@ -1314,6 +1314,10 @@ app.get('/api/rag/health', async (_req: Request, res: Response) => {
         timeouts: gpuManagerEmbeddingsBreaker.stats.timeouts,
       },
     },
+    webSearch: {
+      enabled: webSearchClient.isEnabled(),
+      searxngUrl: SEARXNG_URL,
+    },
   });
 });
 

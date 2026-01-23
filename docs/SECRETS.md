@@ -1,8 +1,8 @@
 # Guia Completo de Secrets - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 22 de Janeiro de 2026  
-**Versão:** 7.12 - Core editável via DB
+**Data:** 23 de Janeiro de 2026  
+**Versão:** 7.13 - Stack Ops GitHub Actions
 
 ## Visão geral
 
@@ -88,6 +88,14 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `KUCOIN_PRO_API_KEY_VERSION` | Versão da API Key KuCoin (1/2/3) | ⚠️ |
 | `KUCOIN_PRO_BASE_URL` | Base URL KuCoin | ✅ |
 | `KUCOIN_TENANT_ID` | Tenant padrão para eventos privados do KuCoin WS | ⚠️ |
+
+## GitHub Actions (Stack Ops)
+
+| Secret | Descrição | Obrigatório |
+| --- | --- | --- |
+| `GITHUB_ACTIONS_TOKEN` | Token para disparar workflows (repo:workflow) | ✅ |
+| `GITHUB_REPO` | Repositório no formato `owner/repo` | ✅ |
+| `GITHUB_API_URL` | API GitHub (default: https://api.github.com) | ⚠️ |
 
 ## ERPNext
 

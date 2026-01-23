@@ -55,6 +55,12 @@ const erpNextConfigSchema = z.object({
   ERPNEXT_API_SECRET: z.string().optional(),
 });
 
+const githubActionsConfigSchema = z.object({
+  GITHUB_ACTIONS_TOKEN: z.string().optional(),
+  GITHUB_REPO: z.string().optional(),
+  GITHUB_API_URL: z.string().url().optional(),
+});
+
 const observabilityConfigSchema = z.object({
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
   GRAFANA_LOKI_USER: z.string().optional(),
@@ -79,7 +85,8 @@ export const trainingServiceConfigSchema = baseConfigSchema
 export const integrationsServiceConfigSchema = baseConfigSchema
   .merge(databaseConfigSchema)
   .merge(stripeConfigSchema)
-  .merge(erpNextConfigSchema);
+  .merge(erpNextConfigSchema)
+  .merge(githubActionsConfigSchema);
 
 export const fullConfigSchema = baseConfigSchema
   .merge(databaseConfigSchema)
@@ -87,6 +94,7 @@ export const fullConfigSchema = baseConfigSchema
   .merge(llmConfigSchema)
   .merge(stripeConfigSchema)
   .merge(erpNextConfigSchema)
+  .merge(githubActionsConfigSchema)
   .merge(observabilityConfigSchema);
 
 export type BaseConfig = z.infer<typeof baseConfigSchema>;
@@ -95,6 +103,7 @@ export type AuthConfig = z.infer<typeof authConfigSchema>;
 export type LLMConfig = z.infer<typeof llmConfigSchema>;
 export type StripeConfig = z.infer<typeof stripeConfigSchema>;
 export type ERPNextConfig = z.infer<typeof erpNextConfigSchema>;
+export type GitHubActionsConfig = z.infer<typeof githubActionsConfigSchema>;
 export type ObservabilityConfig = z.infer<typeof observabilityConfigSchema>;
 export type FullConfig = z.infer<typeof fullConfigSchema>;
 
@@ -148,6 +157,7 @@ const SECRET_KEYS = new Set([
   'STRIPE_SECRET_KEY',
   'STRIPE_WEBHOOK_SECRET',
   'ERPNEXT_API_SECRET',
+  'GITHUB_ACTIONS_TOKEN',
   'GRAFANA_LOKI_API_KEY',
   'TWILIO_AUTH_TOKEN',
   'GMAIL_APP_PASSWORD', // Gmail SMTP (substitui RESEND_API_KEY - 30/12/2025)

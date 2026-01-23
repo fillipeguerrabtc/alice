@@ -2830,6 +2830,37 @@ export const assistantSettings = pgTable(
 );
 
 // ============================================================================
+// AGENTIC SETTINGS (Execução agentic + links por tenant)
+// ============================================================================
+
+export const agenticSettings = pgTable(
+  "agentic_settings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+    webEnabled: boolean("web_enabled").notNull().default(true),
+    erpReadEnabled: boolean("erp_read_enabled").notNull().default(true),
+    erpWriteEnabled: boolean("erp_write_enabled").notNull().default(true),
+    tradingEnabled: boolean("trading_enabled").notNull().default(true),
+    paymentsEnabled: boolean("payments_enabled").notNull().default(true),
+    stackOpsEnabled: boolean("stack_ops_enabled").notNull().default(true),
+    financialApprovalRequired: boolean("financial_approval_required").notNull().default(true),
+    platformLinks: jsonb("platform_links").$type<Array<{
+      id: string;
+      name: string;
+      url: string;
+      description?: string;
+      tags?: string[];
+    }>>().notNull().default([]),
+    criadoEm: timestamp("criado_em").defaultNow(),
+    atualizadoEm: timestamp("atualizado_em").defaultNow(),
+  },
+  (table) => ({
+    idxAgenticSettingsTenant: uniqueIndex("idx_agentic_settings_tenant").on(table.tenantId),
+  })
+);
+
+// ============================================================================
 // BACKUP JOBS (Regra 6 - Enterprise-Grade Persistence)
 // Estado de backup persistido em PostgreSQL (NÃO in-memory)
 // ============================================================================
@@ -2917,6 +2948,14 @@ export const tenantsRelations = relations(tenants, ({ many }) => ({
   auditLogs: many(auditLogs),
   usageMetrics: many(usageMetrics),
   assistantSettings: many(assistantSettings),
+  agenticSettings: many(agenticSettings),
+}));
+
+export const agenticSettingsRelations = relations(agenticSettings, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [agenticSettings.tenantId],
+    references: [tenants.id],
+  }),
 }));
 
 export const usersRelations = relations(users, ({ one, many }) => ({

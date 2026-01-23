@@ -65,6 +65,7 @@ const ModulesAdmin = lazy(() => import('@/pages/ModulesAdmin'));
 const Observability = lazy(() => import('@/pages/Observability'));
 const NotFound = lazy(() => import('@/pages/NotFound'));
 const AliceConfig = lazy(() => import('@/pages/AliceConfig'));
+const AgenticConfig = lazy(() => import('@/pages/AgenticConfig'));
 const UsersAdmin = lazy(() => import('@/pages/UsersAdmin'));
 
 // Loading spinner para Suspense fallback
@@ -148,6 +149,7 @@ function Router() {
       <Route path="/users" component={UsersAdmin} />
       <Route path="/observability" component={Observability} />
       <Route path="/alice-config" component={AliceConfig} />
+      <Route path="/agentic-config" component={AgenticConfig} />
       <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
     </Switch>

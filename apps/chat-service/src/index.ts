@@ -1128,6 +1128,209 @@ function detectAgenticTaskRequest(message: string): AgenticTaskDetection {
   };
 }
 
+// ============================================================================
+// AGENTIC INTEGRATIONS - ERPNext / Pagamentos / Stack Ops / Links
+// ============================================================================
+
+type ErpCommand =
+  | { type: 'list_items' }
+  | { type: 'list_customers' }
+  | { type: 'list_invoices' }
+  | { type: 'create_customer'; payload: { customerName: string; customerType: string; territory: string; email?: string; phone?: string; taxId?: string }; missing?: string[] }
+  | { type: 'create_invoice'; payload: { customer: string; items: Array<{ itemCode: string; qty: number; rate: number }>; dueDate?: string }; missing?: string[] };
+
+type PaymentCommand =
+  | { type: 'wise_recipients' }
+  | { type: 'wise_transfer'; payload: { sourceCurrency: string; targetCurrency: string; sourceAmount: number; recipientId: string; reference?: string }; missing?: string[] }
+  | { type: 'stripe_payment_intent'; payload: { amount: number; currency: string; description?: string }; missing?: string[] };
+
+type StackCommand =
+  | { type: 'deploy'; stack: 'infra' | 'alice' | 'observability' | 'erpnext' | 'backup' | 'all'; version?: string; dryRun?: boolean; smartDeploy?: boolean }
+  | { type: 'rollback'; stack: 'infra' | 'alice' | 'observability' | 'erpnext' | 'backup' | 'all'; version: string; rollbackVersion?: string };
+
+function extractField(message: string, label: string): string | null {
+  const regex = new RegExp(`${label}\\s*[:=]\\s*([^\\n]+)`, 'i');
+  const match = message.match(regex);
+  return match?.[1]?.trim() ?? null;
+}
+
+function extractJsonField(message: string, label: string): unknown | null {
+  const regex = new RegExp(`${label}\\s*[:=]\\s*(\\{[\\s\\S]+\\}|\\[[\\s\\S]+\\])`, 'i');
+  const match = message.match(regex);
+  if (!match?.[1]) return null;
+  try {
+    return JSON.parse(match[1]);
+  } catch {
+    return null;
+  }
+}
+
+function detectErpCommand(message: string): ErpCommand | null {
+  const normalized = normalizeForAgenticDetection(message);
+  if (!normalized) return null;
+
+  if (normalized.includes('erp') || normalized.includes('erpnext') || normalized.includes('estoque') || normalized.includes('inventario') || normalized.includes('inventory')) {
+    if (normalized.includes('estoque') || normalized.includes('itens') || normalized.includes('items') || normalized.includes('inventory')) {
+      return { type: 'list_items' };
+    }
+    if (normalized.includes('clientes') || normalized.includes('customers')) {
+      return { type: 'list_customers' };
+    }
+    if (normalized.includes('faturas') || normalized.includes('invoices') || normalized.includes('invoice')) {
+      return { type: 'list_invoices' };
+    }
+  }
+
+  if (normalized.includes('criar cliente') || normalized.includes('cadastrar cliente') || normalized.includes('novo cliente')) {
+    const customerName = extractField(message, 'nome') ?? extractField(message, 'cliente');
+    const customerType = extractField(message, 'tipo');
+    const territory = extractField(message, 'territorio') ?? extractField(message, 'território');
+    const email = extractField(message, 'email') ?? undefined;
+    const phone = extractField(message, 'telefone') ?? undefined;
+    const taxId = extractField(message, 'cpf') ?? extractField(message, 'cnpj') ?? undefined;
+    const missing = [
+      !customerName ? 'nome' : null,
+      !customerType ? 'tipo' : null,
+      !territory ? 'territorio' : null,
+    ].filter(Boolean) as string[];
+    return {
+      type: 'create_customer',
+      payload: {
+        customerName: customerName ?? '',
+        customerType: customerType ?? '',
+        territory: territory ?? '',
+        email,
+        phone,
+        taxId,
+      },
+      missing: missing.length ? missing : undefined,
+    };
+  }
+
+  if (normalized.includes('criar fatura') || normalized.includes('emitir fatura') || normalized.includes('criar invoice') || normalized.includes('emitir invoice')) {
+    const customer = extractField(message, 'cliente') ?? extractField(message, 'customer');
+    const itemsRaw = extractJsonField(message, 'itens') ?? extractJsonField(message, 'items');
+    const dueDate = extractField(message, 'vencimento') ?? extractField(message, 'due_date') ?? undefined;
+    const items = Array.isArray(itemsRaw)
+      ? itemsRaw.map((item) => ({
+          itemCode: (item as { item_code?: string; itemCode?: string }).itemCode || (item as { item_code?: string }).item_code || '',
+          qty: Number((item as { qty?: number }).qty),
+          rate: Number((item as { rate?: number }).rate),
+        })).filter((item) => item.itemCode && Number.isFinite(item.qty) && Number.isFinite(item.rate))
+      : [];
+    const missing = [
+      !customer ? 'cliente' : null,
+      items.length === 0 ? 'itens' : null,
+    ].filter(Boolean) as string[];
+    return {
+      type: 'create_invoice',
+      payload: {
+        customer: customer ?? '',
+        items,
+        dueDate,
+      },
+      missing: missing.length ? missing : undefined,
+    };
+  }
+
+  return null;
+}
+
+function detectPaymentCommand(message: string): PaymentCommand | null {
+  const normalized = normalizeForAgenticDetection(message);
+  if (!normalized) return null;
+
+  if (normalized.includes('wise') && (normalized.includes('destinatario') || normalized.includes('recipient'))) {
+    return { type: 'wise_recipients' };
+  }
+
+  if (normalized.includes('wise') && (normalized.includes('transferir') || normalized.includes('transferencia') || normalized.includes('transfer'))) {
+    const sourceCurrency = (extractField(message, 'moeda_origem') ?? extractField(message, 'source_currency') ?? '').toUpperCase();
+    const targetCurrency = (extractField(message, 'moeda_destino') ?? extractField(message, 'target_currency') ?? '').toUpperCase();
+    const amountRaw = extractField(message, 'valor') ?? extractField(message, 'amount');
+    const recipientId = extractField(message, 'destinatario_id') ?? extractField(message, 'recipient_id') ?? '';
+    const reference = extractField(message, 'referencia') ?? extractField(message, 'reference') ?? undefined;
+    const sourceAmount = amountRaw ? Number(amountRaw.replace(',', '.')) : NaN;
+    const missing = [
+      !sourceCurrency ? 'moeda_origem' : null,
+      !targetCurrency ? 'moeda_destino' : null,
+      !Number.isFinite(sourceAmount) ? 'valor' : null,
+      !recipientId ? 'destinatario_id' : null,
+    ].filter(Boolean) as string[];
+    return {
+      type: 'wise_transfer',
+      payload: {
+        sourceCurrency,
+        targetCurrency,
+        sourceAmount: Number.isFinite(sourceAmount) ? sourceAmount : 0,
+        recipientId,
+        reference,
+      },
+      missing: missing.length ? missing : undefined,
+    };
+  }
+
+  if (normalized.includes('stripe') && (normalized.includes('pagamento') || normalized.includes('payment'))) {
+    const amountRaw = extractField(message, 'valor') ?? extractField(message, 'amount');
+    const currency = (extractField(message, 'moeda') ?? extractField(message, 'currency') ?? '').toUpperCase();
+    const description = extractField(message, 'descricao') ?? extractField(message, 'description') ?? undefined;
+    const amount = amountRaw ? Number(amountRaw.replace(',', '.')) : NaN;
+    const missing = [
+      !Number.isFinite(amount) ? 'valor' : null,
+      !currency ? 'moeda' : null,
+    ].filter(Boolean) as string[];
+    return {
+      type: 'stripe_payment_intent',
+      payload: {
+        amount: Number.isFinite(amount) ? amount : 0,
+        currency,
+        description,
+      },
+      missing: missing.length ? missing : undefined,
+    };
+  }
+
+  return null;
+}
+
+function detectStackCommand(message: string): StackCommand | null {
+  const normalized = normalizeForAgenticDetection(message);
+  if (!normalized) return null;
+
+  if (!normalized.includes('deploy') && !normalized.includes('rollback') && !normalized.includes('stack')) {
+    return null;
+  }
+
+  const stackMatch = normalized.match(/\b(infra|alice|observability|erpnext|backup|all)\b/i);
+  const versionMatch = message.match(/\bv\d+\.\d+\.\d+(?:[-.][\w.]+)?\b/i);
+  const stack = (stackMatch?.[1]?.toLowerCase() || 'alice') as StackCommand['stack'];
+  const dryRun = normalized.includes('dry run') || normalized.includes('dry-run');
+  const smartDeploy = normalized.includes('smart deploy') || normalized.includes('smart-deploy');
+
+  if (normalized.includes('rollback')) {
+    const rollbackVersionMatch = message.match(/\brollback\s+v\d+\.\d+\.\d+(?:[-.][\w.]+)?\b/i);
+    const rollbackVersion = rollbackVersionMatch?.[0]?.replace(/^rollback\s+/i, '');
+    return {
+      type: 'rollback',
+      stack,
+      version: versionMatch?.[0] || '',
+      rollbackVersion,
+    };
+  }
+
+  if (normalized.includes('deploy')) {
+    return {
+      type: 'deploy',
+      stack,
+      version: versionMatch?.[0],
+      dryRun,
+      smartDeploy,
+    };
+  }
+
+  return null;
+}
+
 const SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const;
 const SUPPORTED_AUDIO_TYPES = ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/mp4'] as const;
 
@@ -1176,7 +1379,7 @@ function resolveActionConfirmationIntent(message: string): ActionConfirmationInt
 }
 
 const EXPLICIT_WEB_REQUEST_PATTERNS = [
-  /\b(pesquis[ae]r?|buscar|procure|consulte)\s+(na|no)\s+(web|internet|google|deep\s*web|deepweb)\b/i,
+  /\b(pesquis[ae]r?|buscar|busque|procure|consulte)\s+(na|no)\s+(web|internet|google|deep\s*web|deepweb)\b/i,
   /\b(search|look\s+up|google)\s+(on\s+)?(the\s+)?(web|internet)\b/i,
   /\bquero\s+que\s+você\s+(pesquise|busque)\b/i,
 ];
@@ -2777,11 +2980,12 @@ async function resolveSemanticRoute(params: {
   return { score: 0, source: 'none', profile };
 }
 
-function buildInternalServiceHeaders(params: { userId: string; tenantId: string; role: Role }): Record<string, string> {
+function buildInternalServiceHeaders(params: { userId: string; tenantId: string; role: Role; customRoleId?: string | null }): Record<string, string> {
   const internal = generateInternalAuthHeaders({
     userId: params.userId,
     tenantId: params.tenantId,
     role: params.role,
+    customRoleId: params.customRoleId ?? undefined,
   });
   const headers: Record<string, string> = {
     'X-Internal-Signature': internal['x-internal-signature'],
@@ -2791,6 +2995,9 @@ function buildInternalServiceHeaders(params: { userId: string; tenantId: string;
   };
   if (internal['x-internal-tenant-id']) {
     headers['X-Internal-Tenant-Id'] = internal['x-internal-tenant-id'];
+  }
+  if (internal['x-internal-custom-role-id']) {
+    headers['X-Internal-Custom-Role-Id'] = internal['x-internal-custom-role-id'];
   }
   return headers;
 }
@@ -3823,10 +4030,6 @@ function shouldRequireTradingConfirmation(
   return risk !== 'low';
 }
 
-function shouldRequireAgenticConfirmation(policy: ConversationApprovalPolicy): boolean {
-  return policy !== 'never_confirm';
-}
-
 /**
  * Gera hint amigável para campos faltando em comandos de trading
  * 
@@ -4116,6 +4319,37 @@ async function executeTradingCommand(
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+async function callIntegrationsService<T>(params: {
+  endpoint: string;
+  method: 'GET' | 'POST' | 'DELETE';
+  body?: unknown;
+  auth: AuthContext;
+}): Promise<T> {
+  const internalHeaders = buildInternalServiceHeaders({
+    userId: params.auth.userId,
+    tenantId: params.auth.tenantId ?? '',
+    role: params.auth.role,
+    customRoleId: params.auth.customRoleId,
+  });
+
+  const response = await fetch(`${INTEGRATIONS_SERVICE_URL_FINAL}${params.endpoint}`, {
+    method: params.method,
+    headers: {
+      'Content-Type': 'application/json',
+      ...internalHeaders,
+    },
+    body: params.body ? JSON.stringify(params.body) : undefined,
+    signal: AbortSignal.timeout(20000),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => '');
+    throw new Error(`Integrations error: ${response.status} - ${errText}`);
+  }
+
+  return response.json() as Promise<T>;
 }
 
 // ============================================================================
@@ -5311,6 +5545,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
   }
 
   try {
+    const agenticSettings = await getOrCreateAgenticSettings(tenantId);
     const hasMediaAttachments = Array.isArray(mediaAttachments) && mediaAttachments.length > 0;
     const lastUserMessageContent = message?.trim().length
       ? message.trim()
@@ -6006,6 +6241,11 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           command?: ParsedTradingCommand;
           summary?: string;
           sourceMessageId?: string;
+          integration?: {
+            action?: 'payments' | 'stack_ops';
+            operation?: string;
+            params?: Record<string, unknown>;
+          };
           task?: {
             taskType?: AgenticTaskType;
             mode?: AgenticTaskMode;
@@ -6016,8 +6256,9 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         };
         const pendingCommand = payload.command;
         const pendingTask = payload.task;
+        const pendingIntegration = payload.integration;
         const isAgenticAction = ['document', 'report', 'accounting', 'planning'].includes(pendingAction.type);
-        if (!pendingCommand && !pendingTask) {
+        if (!pendingCommand && !pendingTask && !pendingIntegration) {
           await db.update(schema.actionRequests)
             .set({
               status: 'failed',
@@ -6093,6 +6334,137 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           res.write('data: [DONE]\n\n');
           res.end();
           return;
+        }
+
+        if (pendingIntegration && intent === 'approve') {
+          const userRole = (req.user?.role as Role) || 'user';
+          const authContext: AuthContext = {
+            userId,
+            tenantId,
+            role: userRole,
+            customRoleId: req.user?.customRoleId ?? undefined,
+          };
+          try {
+            let responseContent = 'Ação executada com sucesso.';
+            let integrationResult: unknown = null;
+
+            if (pendingIntegration.action === 'payments') {
+              if (pendingIntegration.operation === 'wise_transfer') {
+                const params = pendingIntegration.params as {
+                  sourceCurrency: string;
+                  targetCurrency: string;
+                  sourceAmount: number;
+                  recipientId: string;
+                  reference?: string;
+                };
+                const quote = await callIntegrationsService<{ quote: { id: string } }>({
+                  endpoint: '/api/integrations/wise/quotes',
+                  method: 'POST',
+                  body: {
+                    sourceCurrency: params.sourceCurrency,
+                    targetCurrency: params.targetCurrency,
+                    sourceAmount: params.sourceAmount,
+                  },
+                  auth: authContext,
+                });
+                const transfer = await callIntegrationsService<{ transfer: unknown }>({
+                  endpoint: '/api/integrations/wise/transfers',
+                  method: 'POST',
+                  body: {
+                    quoteId: quote.quote.id,
+                    targetRecipientId: params.recipientId,
+                    reference: params.reference,
+                  },
+                  auth: authContext,
+                });
+                integrationResult = transfer;
+                responseContent = 'Transferência Wise criada com sucesso.';
+              }
+
+              if (pendingIntegration.operation === 'stripe_payment_intent') {
+                const params = pendingIntegration.params as {
+                  amount: number;
+                  currency: string;
+                  description?: string;
+                };
+                const intentResult = await callIntegrationsService<{ paymentIntent: unknown }>({
+                  endpoint: '/api/integrations/stripe/create-payment-intent',
+                  method: 'POST',
+                  body: {
+                    amount: params.amount,
+                    currency: params.currency,
+                    description: params.description,
+                  },
+                  auth: authContext,
+                });
+                integrationResult = intentResult;
+                responseContent = 'Payment Intent Stripe criada com sucesso.';
+              }
+            }
+
+            if (pendingIntegration.action === 'stack_ops' && pendingIntegration.operation === 'deploy_stack') {
+              const params = pendingIntegration.params as Record<string, unknown>;
+              integrationResult = await callIntegrationsService({
+                endpoint: '/api/integrations/github/deploy-stack',
+                method: 'POST',
+                body: params,
+                auth: authContext,
+              });
+              responseContent = 'Workflow de deploy disparado no GitHub Actions.';
+            }
+
+            await db.update(schema.actionRequests)
+              .set({
+                status: 'executed',
+                resolvedBy: userId,
+                resolutionNote: 'Executado com sucesso',
+                resolvidoEm: new Date(),
+                atualizadoEm: new Date(),
+              })
+              .where(eq(schema.actionRequests.id, pendingAction.id));
+
+            const [assistantMessage] = await db.insert(schema.messages).values({
+              conversationId,
+              agentId: conversation?.agentId ?? undefined,
+              conteudo: responseContent,
+              tipo: 'text',
+              isFromUser: false,
+              metadata: {
+                actionRequestId: pendingAction.id,
+                integrationResult,
+                actionStatus: 'executed',
+              },
+            }).returning();
+
+            await db.update(schema.conversations)
+              .set({
+                totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+                ultimaMensagemEm: new Date(),
+                atualizadoEm: new Date(),
+              })
+              .where(eq(schema.conversations.id, conversationId));
+
+            res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+            res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+            res.write('data: [DONE]\n\n');
+            res.end();
+            return;
+          } catch (integrationError) {
+            const errorMessage = integrationError instanceof Error ? integrationError.message : 'Erro desconhecido';
+            await db.update(schema.actionRequests)
+              .set({
+                status: 'failed',
+                resolutionNote: errorMessage,
+                resolvidoEm: new Date(),
+                atualizadoEm: new Date(),
+              })
+              .where(eq(schema.actionRequests.id, pendingAction.id));
+
+            res.write(`data: ${JSON.stringify({ error: `Erro ao executar a ação pendente: ${errorMessage}` })}\n\n`);
+            res.write('data: [DONE]\n\n');
+            res.end();
+            return;
+          }
         }
 
         if (isAgenticAction) {
@@ -6298,7 +6670,8 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       }
 
       const pendingAgenticDetection = detectAgenticTaskRequest(userMessageContent);
-      if (isTradingCommand(userMessageContent) || pendingAgenticDetection.isTaskRequest) {
+      const pendingPaymentCommand = detectPaymentCommand(userMessageContent);
+      if (isTradingCommand(userMessageContent) || pendingAgenticDetection.isTaskRequest || Boolean(pendingPaymentCommand)) {
         const responseContent = 'Existe uma ação pendente aguardando confirmação. Responda "confirmar" para executar ou "cancelar" para abortar.';
         const [assistantMessage] = await db.insert(schema.messages).values({
           conversationId,
@@ -6329,6 +6702,33 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     }
 
     if (isTradingCommand(userMessageContent)) {
+      if (!agenticSettings.tradingEnabled) {
+        const responseContent = 'Trading está desativado nas configurações do tenant.';
+        const [assistantMessage] = await db.insert(schema.messages).values({
+          conversationId,
+          agentId: conversation?.agentId ?? undefined,
+          conteudo: responseContent,
+          tipo: 'text',
+          isFromUser: false,
+          metadata: {
+            tradingDisabled: true,
+          },
+        }).returning();
+
+        await db.update(schema.conversations)
+          .set({
+            totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+            ultimaMensagemEm: new Date(),
+            atualizadoEm: new Date(),
+          })
+          .where(eq(schema.conversations.id, conversationId));
+
+        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
       const conversationState = await getOrCreateConversationState(conversationId);
       const approvalPolicy = (conversationState.approvalPolicy ?? 'always_confirm') as ConversationApprovalPolicy;
       const parsedCommand = parseTradingCommand(userMessageContent);
@@ -6495,11 +6895,607 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       }
     }
 
+    const authContext: AuthContext = {
+      userId,
+      tenantId,
+      role: (req.user?.role as Role) || 'user',
+      customRoleId: req.user?.customRoleId ?? undefined,
+    };
+
+    const linksRequest = normalizeForAgenticDetection(userMessageContent).includes('links')
+      || normalizeForAgenticDetection(userMessageContent).includes('acessos')
+      || normalizeForAgenticDetection(userMessageContent).includes('urls');
+    const platformLinks = normalizeAgenticLinks(agenticSettings.platformLinks);
+    if (linksRequest && platformLinks.length > 0) {
+      const linksSummary = platformLinks
+        .map((link) => `- ${link.name}: ${link.url}${link.description ? ` (${link.description})` : ''}`)
+        .join('\n');
+      const responseContent = `Links configurados para operações agentic:\n${linksSummary}`;
+      const [assistantMessage] = await db.insert(schema.messages).values({
+        conversationId,
+        agentId: conversation?.agentId ?? undefined,
+        conteudo: responseContent,
+        tipo: 'text',
+        isFromUser: false,
+        metadata: {
+          agenticLinks: true,
+        },
+      }).returning();
+
+      await db.update(schema.conversations)
+        .set({
+          totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+          ultimaMensagemEm: new Date(),
+          atualizadoEm: new Date(),
+        })
+        .where(eq(schema.conversations.id, conversationId));
+
+      res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+      res.write('data: [DONE]\n\n');
+      res.end();
+      return;
+    }
+
+    const erpCommand = detectErpCommand(userMessageContent);
+    if (erpCommand) {
+      if ((erpCommand.type === 'list_items' || erpCommand.type === 'list_customers' || erpCommand.type === 'list_invoices') && !agenticSettings.erpReadEnabled) {
+        res.write(`data: ${JSON.stringify({ error: 'ERPNext leitura está desativada nas configurações do tenant.' })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
+      if ((erpCommand.type === 'create_customer' || erpCommand.type === 'create_invoice') && !agenticSettings.erpWriteEnabled) {
+        res.write(`data: ${JSON.stringify({ error: 'ERPNext escrita está desativada nas configurações do tenant.' })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
+
+      const permissionCheck = await checkPermission(
+        authContext,
+        erpCommand.type === 'list_items' || erpCommand.type === 'list_customers' || erpCommand.type === 'list_invoices'
+          ? 'integrations:erpnext:read'
+          : 'integrations:erpnext:write'
+      );
+      if (!permissionCheck.allowed) {
+        res.write(`data: ${JSON.stringify({ error: 'Você não possui permissão para operar o ERPNext.' })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
+
+      if ('missing' in erpCommand && erpCommand.missing?.length) {
+        const responseContent = `Para executar a ação no ERPNext, preciso dos campos: ${erpCommand.missing.join(', ')}.\nExemplo: nome: Empresa X | tipo: Company | territorio: Brasil`;
+        const [assistantMessage] = await db.insert(schema.messages).values({
+          conversationId,
+          agentId: conversation?.agentId ?? undefined,
+          conteudo: responseContent,
+          tipo: 'text',
+          isFromUser: false,
+          metadata: {
+            erpCommand,
+            validationError: true,
+          },
+        }).returning();
+
+        await db.update(schema.conversations)
+          .set({
+            totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+            ultimaMensagemEm: new Date(),
+            atualizadoEm: new Date(),
+          })
+          .where(eq(schema.conversations.id, conversationId));
+
+        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
+
+      try {
+        let responseContent = 'Ação ERPNext concluída com sucesso.';
+        let integrationResult: unknown = null;
+        if (erpCommand.type === 'list_items') {
+          const result = await callIntegrationsService<{ items: Array<Record<string, unknown>> }>({
+            endpoint: '/api/integrations/erpnext/items',
+            method: 'GET',
+            auth: authContext,
+          });
+          const items = result.items.slice(0, 10).map((item) => {
+            const name = String(item.item_name ?? item.name ?? '');
+            const group = String(item.item_group ?? '');
+            const rate = item.standard_rate ?? '';
+            return `- ${name}${group ? ` (${group})` : ''}${rate ? ` - ${rate}` : ''}`;
+          });
+          responseContent = items.length
+            ? `Itens do ERPNext (top 10):\n${items.join('\n')}`
+            : 'Nenhum item encontrado no ERPNext.';
+          integrationResult = result;
+        }
+        if (erpCommand.type === 'list_customers') {
+          const result = await callIntegrationsService<{ customers: Array<Record<string, unknown>> }>({
+            endpoint: '/api/integrations/erpnext/customers',
+            method: 'GET',
+            auth: authContext,
+          });
+          const customers = result.customers.slice(0, 10).map((customer) => {
+            const name = String(customer.customer_name ?? customer.name ?? '');
+            const type = String(customer.customer_type ?? '');
+            return `- ${name}${type ? ` (${type})` : ''}`;
+          });
+          responseContent = customers.length
+            ? `Clientes do ERPNext (top 10):\n${customers.join('\n')}`
+            : 'Nenhum cliente encontrado no ERPNext.';
+          integrationResult = result;
+        }
+        if (erpCommand.type === 'list_invoices') {
+          const result = await callIntegrationsService<{ invoices: Array<Record<string, unknown>> }>({
+            endpoint: '/api/integrations/erpnext/invoices',
+            method: 'GET',
+            auth: authContext,
+          });
+          const invoices = result.invoices.slice(0, 10).map((invoice) => {
+            const name = String(invoice.name ?? '');
+            const customer = String(invoice.customer ?? '');
+            const total = invoice.grand_total ?? '';
+            const status = String(invoice.status ?? '');
+            return `- ${name} | ${customer} | ${total} | ${status}`;
+          });
+          responseContent = invoices.length
+            ? `Faturas do ERPNext (top 10):\n${invoices.join('\n')}`
+            : 'Nenhuma fatura encontrada no ERPNext.';
+          integrationResult = result;
+        }
+        if (erpCommand.type === 'create_customer') {
+          const result = await callIntegrationsService<{ customer: Record<string, unknown> }>({
+            endpoint: '/api/integrations/erpnext/customers',
+            method: 'POST',
+            body: erpCommand.payload,
+            auth: authContext,
+          });
+          responseContent = `Cliente criado no ERPNext: ${erpCommand.payload.customerName}.`;
+          integrationResult = result;
+        }
+        if (erpCommand.type === 'create_invoice') {
+          const result = await callIntegrationsService<{ invoice: Record<string, unknown> }>({
+            endpoint: '/api/integrations/erpnext/invoices',
+            method: 'POST',
+            body: erpCommand.payload,
+            auth: authContext,
+          });
+          responseContent = `Fatura criada no ERPNext para ${erpCommand.payload.customer}.`;
+          integrationResult = result;
+        }
+
+        const [actionRequest] = await db.insert(schema.actionRequests).values({
+          tenantId,
+          conversationId,
+          userId,
+          agentId: conversation?.agentId ?? undefined,
+          type: 'integration',
+          status: 'executed',
+          payload: {
+            action: 'erp',
+            operation: erpCommand.type,
+            params: 'payload' in erpCommand ? erpCommand.payload : undefined,
+            result: integrationResult,
+          },
+          resolvedBy: userId,
+          resolvidoEm: new Date(),
+          atualizadoEm: new Date(),
+        }).returning();
+
+        const [assistantMessage] = await db.insert(schema.messages).values({
+          conversationId,
+          agentId: conversation?.agentId ?? undefined,
+          conteudo: responseContent,
+          tipo: 'text',
+          isFromUser: false,
+          metadata: {
+            actionRequestId: actionRequest?.id,
+            erpCommand,
+            actionStatus: 'executed',
+          },
+        }).returning();
+
+        await db.update(schema.conversations)
+          .set({
+            totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+            ultimaMensagemEm: new Date(),
+            atualizadoEm: new Date(),
+          })
+          .where(eq(schema.conversations.id, conversationId));
+
+        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      } catch (erpError) {
+        const errorMessage = erpError instanceof Error ? erpError.message : 'Erro desconhecido';
+        res.write(`data: ${JSON.stringify({ error: `Erro ao executar operação ERPNext: ${errorMessage}` })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
+    }
+
+    const paymentCommand = detectPaymentCommand(userMessageContent);
+    if (paymentCommand) {
+      if (!agenticSettings.paymentsEnabled) {
+        res.write(`data: ${JSON.stringify({ error: 'Pagamentos estão desativados nas configurações do tenant.' })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
+
+      const permissionCheck = await checkPermission(
+        authContext,
+        paymentCommand.type === 'stripe_payment_intent'
+          ? 'integrations:stripe:write'
+          : paymentCommand.type === 'wise_recipients'
+            ? 'integrations:wise:read'
+            : 'integrations:wise:write'
+      );
+      if (!permissionCheck.allowed) {
+        res.write(`data: ${JSON.stringify({ error: 'Você não possui permissão para executar pagamentos.' })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
+
+      if (paymentCommand.type === 'wise_recipients') {
+        try {
+          const result = await callIntegrationsService<{ recipients: Array<Record<string, unknown>> }>({
+            endpoint: '/api/integrations/wise/recipients',
+            method: 'GET',
+            auth: authContext,
+          });
+          const recipients = result.recipients.slice(0, 10).map((recipient) => {
+            const name = String(recipient.name ?? recipient.fullName ?? recipient.accountHolderName ?? '');
+            const id = String(recipient.id ?? recipient.recipientId ?? '');
+            return `- ${name} (${id})`;
+          });
+          const responseContent = recipients.length
+            ? `Destinatários Wise (top 10):\n${recipients.join('\n')}`
+            : 'Nenhum destinatário Wise encontrado.';
+
+          const [actionRequest] = await db.insert(schema.actionRequests).values({
+            tenantId,
+            conversationId,
+            userId,
+            agentId: conversation?.agentId ?? undefined,
+            type: 'integration',
+            status: 'executed',
+            payload: {
+              action: 'payments',
+              summary: 'Listagem de destinatários Wise',
+              result,
+            },
+            resolvedBy: userId,
+            resolvidoEm: new Date(),
+            atualizadoEm: new Date(),
+          }).returning();
+
+          const [assistantMessage] = await db.insert(schema.messages).values({
+            conversationId,
+            agentId: conversation?.agentId ?? undefined,
+            conteudo: responseContent,
+            tipo: 'text',
+            isFromUser: false,
+            metadata: {
+              actionRequestId: actionRequest?.id,
+              actionStatus: 'executed',
+            },
+          }).returning();
+
+          await db.update(schema.conversations)
+            .set({
+              totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+              ultimaMensagemEm: new Date(),
+              atualizadoEm: new Date(),
+            })
+            .where(eq(schema.conversations.id, conversationId));
+
+          res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+          res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+          res.write('data: [DONE]\n\n');
+          res.end();
+          return;
+        } catch (paymentError) {
+          const errorMessage = paymentError instanceof Error ? paymentError.message : 'Erro desconhecido';
+          res.write(`data: ${JSON.stringify({ error: `Erro ao consultar destinatários Wise: ${errorMessage}` })}\n\n`);
+          res.write('data: [DONE]\n\n');
+          res.end();
+          return;
+        }
+      }
+
+      if ('missing' in paymentCommand && paymentCommand.missing?.length) {
+        const responseContent = `Para executar o pagamento, preciso dos campos: ${paymentCommand.missing.join(', ')}.`;
+        const [assistantMessage] = await db.insert(schema.messages).values({
+          conversationId,
+          agentId: conversation?.agentId ?? undefined,
+          conteudo: responseContent,
+          tipo: 'text',
+          isFromUser: false,
+          metadata: {
+            paymentCommand,
+            validationError: true,
+          },
+        }).returning();
+
+        await db.update(schema.conversations)
+          .set({
+            totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+            ultimaMensagemEm: new Date(),
+            atualizadoEm: new Date(),
+          })
+          .where(eq(schema.conversations.id, conversationId));
+
+        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
+
+      const summary = paymentCommand.type === 'wise_transfer'
+        ? `Transferência Wise (${paymentCommand.payload.sourceAmount} ${paymentCommand.payload.sourceCurrency} → ${paymentCommand.payload.targetCurrency})`
+        : `Pagamento Stripe (${paymentCommand.payload.amount} ${paymentCommand.payload.currency})`;
+
+      if (!agenticSettings.financialApprovalRequired) {
+        try {
+          let result: unknown = null;
+          if (paymentCommand.type === 'wise_transfer') {
+            const quote = await callIntegrationsService<{ quote: { id: string } }>({
+              endpoint: '/api/integrations/wise/quotes',
+              method: 'POST',
+              body: {
+                sourceCurrency: paymentCommand.payload.sourceCurrency,
+                targetCurrency: paymentCommand.payload.targetCurrency,
+                sourceAmount: paymentCommand.payload.sourceAmount,
+              },
+              auth: authContext,
+            });
+            result = await callIntegrationsService({
+              endpoint: '/api/integrations/wise/transfers',
+              method: 'POST',
+              body: {
+                quoteId: quote.quote.id,
+                targetRecipientId: paymentCommand.payload.recipientId,
+                reference: paymentCommand.payload.reference,
+              },
+              auth: authContext,
+            });
+          }
+
+          if (paymentCommand.type === 'stripe_payment_intent') {
+            result = await callIntegrationsService({
+              endpoint: '/api/integrations/stripe/create-payment-intent',
+              method: 'POST',
+              body: {
+                amount: paymentCommand.payload.amount,
+                currency: paymentCommand.payload.currency,
+                description: paymentCommand.payload.description,
+              },
+              auth: authContext,
+            });
+          }
+
+          const [actionRequest] = await db.insert(schema.actionRequests).values({
+            tenantId,
+            conversationId,
+            userId,
+            agentId: conversation?.agentId ?? undefined,
+            type: 'integration',
+            status: 'executed',
+            payload: {
+              action: 'payments',
+              summary,
+              result,
+            },
+            resolvedBy: userId,
+            resolvidoEm: new Date(),
+            atualizadoEm: new Date(),
+          }).returning();
+
+          const responseContent = `Pagamento executado: ${summary}.`;
+          const [assistantMessage] = await db.insert(schema.messages).values({
+            conversationId,
+            agentId: conversation?.agentId ?? undefined,
+            conteudo: responseContent,
+            tipo: 'text',
+            isFromUser: false,
+            metadata: {
+              actionRequestId: actionRequest?.id,
+              actionStatus: 'executed',
+            },
+          }).returning();
+
+          await db.update(schema.conversations)
+            .set({
+              totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+              ultimaMensagemEm: new Date(),
+              atualizadoEm: new Date(),
+            })
+            .where(eq(schema.conversations.id, conversationId));
+
+          res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+          res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+          res.write('data: [DONE]\n\n');
+          res.end();
+          return;
+        } catch (paymentError) {
+          const errorMessage = paymentError instanceof Error ? paymentError.message : 'Erro desconhecido';
+          res.write(`data: ${JSON.stringify({ error: `Erro ao executar pagamento: ${errorMessage}` })}\n\n`);
+          res.write('data: [DONE]\n\n');
+          res.end();
+          return;
+        }
+      }
+
+      const [actionRequest] = await db.insert(schema.actionRequests).values({
+        tenantId,
+        conversationId,
+        userId,
+        agentId: conversation?.agentId ?? undefined,
+        type: 'integration',
+        status: 'pending',
+        payload: {
+          action: 'payments',
+          summary,
+          integration: {
+            action: 'payments',
+            operation: paymentCommand.type,
+            params: paymentCommand.payload,
+          },
+        },
+      }).returning();
+
+      const responseContent = `Para executar o pagamento (${summary}), preciso de confirmação explícita.\nResponda "confirmar" para executar ou "cancelar" para abortar.`;
+      const [assistantMessage] = await db.insert(schema.messages).values({
+        conversationId,
+        agentId: conversation?.agentId ?? undefined,
+        conteudo: responseContent,
+        tipo: 'text',
+        isFromUser: false,
+        metadata: {
+          actionRequestId: actionRequest?.id,
+          actionStatus: 'pending',
+          requiresConfirmation: true,
+        },
+      }).returning();
+
+      await db.update(schema.conversations)
+        .set({
+          totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+          ultimaMensagemEm: new Date(),
+          atualizadoEm: new Date(),
+        })
+        .where(eq(schema.conversations.id, conversationId));
+
+      res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+      res.write('data: [DONE]\n\n');
+      res.end();
+      return;
+    }
+
+    const stackCommand = detectStackCommand(userMessageContent);
+    if (stackCommand) {
+      if (!agenticSettings.stackOpsEnabled) {
+        res.write(`data: ${JSON.stringify({ error: 'Stack ops está desativado nas configurações do tenant.' })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
+      const permissionCheck = await checkPermission(authContext, 'admin:alice_core:write');
+      if (!permissionCheck.allowed) {
+        res.write(`data: ${JSON.stringify({ error: 'Você não possui permissão para operar stacks.' })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
+
+      if (stackCommand.type === 'deploy' && !stackCommand.version) {
+        const responseContent = 'Informe a versão para deploy. Exemplo: "deploy stack alice v1.2.3".';
+        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
+
+      if (stackCommand.type === 'rollback' && !stackCommand.version) {
+        const responseContent = 'Informe a versão alvo para rollback. Exemplo: "rollback stack alice v1.2.3".';
+        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
+
+      try {
+        const payload = stackCommand.type === 'deploy'
+          ? {
+              stack: stackCommand.stack,
+              version: stackCommand.version,
+              rollback: false,
+              dryRun: stackCommand.dryRun ?? false,
+              smartDeploy: stackCommand.smartDeploy ?? false,
+            }
+          : {
+              stack: stackCommand.stack,
+              version: stackCommand.version,
+              rollback: true,
+              rollbackVersion: stackCommand.rollbackVersion ?? stackCommand.version,
+              dryRun: false,
+              smartDeploy: false,
+            };
+        const result = await callIntegrationsService({
+          endpoint: '/api/integrations/github/deploy-stack',
+          method: 'POST',
+          body: payload,
+          auth: authContext,
+        });
+
+        const responseContent = 'Workflow de stack disparado no GitHub Actions.';
+        const [actionRequest] = await db.insert(schema.actionRequests).values({
+          tenantId,
+          conversationId,
+          userId,
+          agentId: conversation?.agentId ?? undefined,
+          type: 'integration',
+          status: 'executed',
+          payload: {
+            action: 'stack_ops',
+            operation: stackCommand.type,
+            params: payload,
+            result,
+          },
+          resolvedBy: userId,
+          resolvidoEm: new Date(),
+          atualizadoEm: new Date(),
+        }).returning();
+
+        const [assistantMessage] = await db.insert(schema.messages).values({
+          conversationId,
+          agentId: conversation?.agentId ?? undefined,
+          conteudo: responseContent,
+          tipo: 'text',
+          isFromUser: false,
+          metadata: {
+            actionRequestId: actionRequest?.id,
+            actionStatus: 'executed',
+          },
+        }).returning();
+
+        await db.update(schema.conversations)
+          .set({
+            totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+            ultimaMensagemEm: new Date(),
+            atualizadoEm: new Date(),
+          })
+          .where(eq(schema.conversations.id, conversationId));
+
+        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      } catch (stackError) {
+        const errorMessage = stackError instanceof Error ? stackError.message : 'Erro desconhecido';
+        res.write(`data: ${JSON.stringify({ error: `Erro ao executar stack ops: ${errorMessage}` })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
+    }
+
       const agenticDetection = detectAgenticTaskRequest(userMessageContent);
       if (agenticDetection.isTaskRequest && agenticDetection.taskType && agenticDetection.instructions) {
-        const conversationState = await getOrCreateConversationState(conversationId);
-        const approvalPolicy = (conversationState.approvalPolicy ?? 'always_confirm') as ConversationApprovalPolicy;
-        const requiresConfirmation = shouldRequireAgenticConfirmation(approvalPolicy);
+        const requiresConfirmation = false;
         const taskTitle = buildAgenticTaskTitle(agenticDetection.taskType, agenticDetection.title);
         const taskSummary = `${AGENTIC_TASK_TITLES[agenticDetection.taskType]}: ${taskTitle}`;
 
@@ -6656,16 +7652,20 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         }
       }
 
-      const shouldUseWeb = explicitWebRequest
-        ? ragClassification?.webSearchAvailable !== false
-        : Boolean(
-            ragClassification?.webSearchAvailable &&
-            ragClassification?.classification?.type &&
-            ragClassification.classification.type !== 'internal'
-          );
+      const shouldUseWeb = agenticSettings.webEnabled && (
+        explicitWebRequest
+          ? ragClassification?.webSearchAvailable !== false
+          : Boolean(
+              ragClassification?.webSearchAvailable &&
+              ragClassification?.classification?.type &&
+              ragClassification.classification.type !== 'internal'
+            )
+      );
 
       if (explicitWebRequest && !shouldUseWeb) {
-        const responseContent = 'Não consegui acessar a busca na internet agora. Tente novamente em instantes.';
+        const responseContent = agenticSettings.webEnabled
+          ? 'Não consegui acessar a busca na internet agora. Tente novamente em instantes.'
+          : 'Busca na internet está desativada nas configurações do tenant.';
         const [assistantMessage] = await db.insert(schema.messages).values({
           conversationId,
           agentId: conversation?.agentId ?? undefined,
@@ -6674,6 +7674,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           isFromUser: false,
           metadata: {
             webSearchAvailable: ragClassification?.webSearchAvailable ?? null,
+            webEnabled: agenticSettings.webEnabled,
             reason: 'web_search_unavailable',
           },
         }).returning();
@@ -9609,6 +10610,79 @@ const assistantSettingsSchema = z.object({
   moodEmpathy: z.number().int().min(0).max(100).optional().nullable(),
 });
 
+const agenticLinkSchema = z.object({
+  id: z.string().min(4).optional().nullable(),
+  name: z.string().min(2).max(120),
+  url: z.string().url(),
+  description: z.string().max(500).optional().nullable(),
+  tags: z.array(z.string().min(1).max(40)).optional().nullable(),
+});
+
+const agenticSettingsSchema = z.object({
+  webEnabled: z.boolean(),
+  erpReadEnabled: z.boolean(),
+  erpWriteEnabled: z.boolean(),
+  tradingEnabled: z.boolean(),
+  paymentsEnabled: z.boolean(),
+  stackOpsEnabled: z.boolean(),
+  financialApprovalRequired: z.boolean(),
+  platformLinks: z.array(agenticLinkSchema).max(100),
+});
+
+const DEFAULT_AGENTIC_SETTINGS = {
+  webEnabled: true,
+  erpReadEnabled: true,
+  erpWriteEnabled: true,
+  tradingEnabled: true,
+  paymentsEnabled: true,
+  stackOpsEnabled: true,
+  financialApprovalRequired: true,
+  platformLinks: [] as Array<z.infer<typeof agenticLinkSchema>>,
+};
+
+type AgenticLink = {
+  id: string;
+  name: string;
+  url: string;
+  description?: string;
+  tags?: string[];
+};
+
+function normalizeAgenticLinks(
+  links: Array<z.infer<typeof agenticLinkSchema>> | null | undefined
+): AgenticLink[] {
+  return (links ?? [])
+    .filter((link) => Boolean(link?.name && link?.url))
+    .map((link) => ({
+      id: link.id ?? crypto.randomUUID(),
+      name: link.name.trim(),
+      url: link.url.trim(),
+      description: link.description?.trim() || undefined,
+      tags: (link.tags ?? []).map((tag) => tag.trim()).filter(Boolean),
+    }));
+}
+
+async function getOrCreateAgenticSettings(tenantId: string) {
+  const existing = await db.query.agenticSettings.findFirst({
+    where: eq(schema.agenticSettings.tenantId, tenantId),
+  });
+  if (existing) {
+    return {
+      ...existing,
+      platformLinks: normalizeAgenticLinks(existing.platformLinks ?? []),
+    };
+  }
+  const [created] = await db.insert(schema.agenticSettings).values({
+    tenantId,
+    ...DEFAULT_AGENTIC_SETTINGS,
+    platformLinks: [],
+  }).returning();
+  if (!created) {
+    throw new Error('Falha ao criar agentic_settings');
+  }
+  return created;
+}
+
 app.get('/api/assistant-settings', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:agents:read'), async (req: Request, res: Response) => {
   const tenantId = req.tenantId;
   if (!tenantId) {
@@ -9704,6 +10778,68 @@ app.patch('/api/assistant-settings', requireAuth(), requireSameTenant(getTenantI
     res.json({ settings });
   } catch (error) {
     logger.error({ error, tenantId }, 'Falha ao atualizar assistant_settings');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// ============================================================================
+// AGENTIC SETTINGS (Links + políticas por tenant)
+// ============================================================================
+
+app.get('/api/agentic/settings', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('admin:alice_core:write'), async (req: Request, res: Response) => {
+  const tenantId = req.tenantId;
+  if (!tenantId) {
+    return res.status(401).json({ error: 'Tenant obrigatório' });
+  }
+
+  try {
+    const settings = await getOrCreateAgenticSettings(tenantId);
+    res.json({
+      settings: {
+        ...settings,
+        platformLinks: normalizeAgenticLinks(settings.platformLinks),
+      },
+      defaults: DEFAULT_AGENTIC_SETTINGS,
+    });
+  } catch (error) {
+    logger.error({ error, tenantId }, 'Falha ao buscar agentic_settings');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.patch('/api/agentic/settings', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('admin:alice_core:write'), async (req: Request, res: Response) => {
+  const tenantId = req.tenantId;
+  if (!tenantId) {
+    return res.status(401).json({ error: 'Tenant obrigatório' });
+  }
+
+  const parseResult = agenticSettingsSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    logger.warn({ errors: parseResult.error.flatten() }, 'Input inválido em /api/agentic/settings');
+    return res.status(400).json({ error: 'Input inválido', details: parseResult.error.format() });
+  }
+
+  try {
+    const links = normalizeAgenticLinks(parseResult.data.platformLinks);
+    const payload = {
+      ...parseResult.data,
+      platformLinks: links,
+      atualizadoEm: new Date(),
+    };
+    const [settings] = await db.insert(schema.agenticSettings)
+      .values({
+        tenantId,
+        ...payload,
+      })
+      .onConflictDoUpdate({
+        target: schema.agenticSettings.tenantId,
+        set: payload,
+      })
+      .returning();
+
+    res.json({ settings });
+  } catch (error) {
+    logger.error({ error, tenantId }, 'Falha ao atualizar agentic_settings');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });

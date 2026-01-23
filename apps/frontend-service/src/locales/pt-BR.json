@@ -1677,5 +1677,35 @@
       "deleteTitle": "Excluir permissão",
       "deleteDescription": "A exclusão remove a permissão de todas as roles."
     }
+  },
+  "agenticConfig": {
+    "title": "Modo Agentic",
+    "subtitle": "Configure execução agentic, aprovações e links operacionais.",
+    "togglesTitle": "Escopo de Execução",
+    "togglesDesc": "Controle quais capacidades agentic estão habilitadas para o tenant.",
+    "webEnabled": "Busca na internet (SearXNG)",
+    "erpReadEnabled": "ERPNext leitura",
+    "erpWriteEnabled": "ERPNext escrita",
+    "tradingEnabled": "Trading KuCoin",
+    "paymentsEnabled": "Pagamentos (Wise/Stripe)",
+    "stackOpsEnabled": "Stack Ops (GitHub Actions)",
+    "financialApprovalRequired": "Aprovação obrigatória para operações financeiras",
+    "linksTitle": "Links operacionais",
+    "linksDesc": "Cadastre URLs e descrições para a Alice usar como referência em operações.",
+    "linkItemTitle": "Link {{index}}",
+    "linkName": "Nome",
+    "linkUrl": "URL",
+    "linkDescription": "Descrição",
+    "linkDescriptionPlaceholder": "Ex: ERPNext CRM, Grafana, Portais internos",
+    "linkTags": "Tags (separadas por vírgula)",
+    "linkTagsPlaceholder": "erpnext, crm, vendas",
+    "addLink": "Adicionar link",
+    "removeLink": "Remover link",
+    "save": "Salvar configurações",
+    "saving": "Salvando...",
+    "saveSuccess": "Configurações atualizadas",
+    "saveSuccessDesc": "Modo Agentic atualizado com sucesso.",
+    "saveError": "Erro ao salvar",
+    "saveErrorDesc": "Não foi possível atualizar o modo agentic."
   }
 }

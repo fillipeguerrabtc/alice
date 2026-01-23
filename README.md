@@ -1,13 +1,13 @@
 # Alice - Plataforma Enterprise de IA Autônoma
 
 **Autor:** Fillipe Guerra  
-**Data:** 22 de Janeiro de 2026  
-**Versão:** 7.39 - ASR OpenAI + RBAC Custom Roles
+**Data:** 23 de Janeiro de 2026  
+**Versão:** 7.40 - Modo Agentic Enterprise
 
 <div align="center">
 
 ![Alice Logo](https://img.shields.io/badge/Alice-IA%20Enterprise-blue?style=for-the-badge&logo=robot&logoColor=white)
-![Version](https://img.shields.io/badge/versão-7.39-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/versão-7.40-green?style=for-the-badge)
 ![License](https://img.shields.io/badge/licença-Proprietária-red?style=for-the-badge)
 ![LLM](https://img.shields.io/badge/LLM-Qwen2.5%207B-purple?style=for-the-badge)
 
@@ -32,7 +32,9 @@
 | **Análise de Imagens** | OpenAI Vision (gpt-4.1) para gráficos, documentos, screenshots |
 | **Deduplicação Semântica** | SemHash para filtragem de dados duplicados no treinamento |
 | **Multi-tenant** | Suporte a múltiplas organizações com agentes IA especializados |
-| **RAG Agentic** | Busca híbrida (interna + Brave Search) com classificador inteligente |
+| **RAG Agentic** | Busca híbrida (interna + SearXNG) com classificador inteligente |
+| **Modo Agentic** | Execução real de tarefas (ERPNext, pagamentos, stack ops) com auditoria |
+| **Stack Ops** | Deploy/rollback via GitHub Actions com governança |
 | **Enterprise RBAC** | Controle de acesso granular com 6 roles hierárquicas |
 | **Gestão de Usuários/Grupos/Permissões** | Painel dedicado com CRUD e atribuição por role |
 | **Governança do Core** | Permissão `admin:alice_core:write` para editar prompts centrais |

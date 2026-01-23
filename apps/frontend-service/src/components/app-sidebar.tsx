@@ -73,6 +73,7 @@ const adminItems = [
   { title: 'Usuários', url: '/users', icon: Users },
   { title: 'Módulos', url: '/modules', icon: Boxes },
   { title: 'Configuração da Alice', url: '/alice-config', icon: Settings2 },
+  { title: 'Modo Agentic', url: '/agentic-config', icon: Shield },
 ];
 
 export function AppSidebar() {

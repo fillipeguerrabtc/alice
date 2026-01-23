@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Arquitetura de Software
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 22 de Janeiro de 2026  
-> **Versão:** 3.3.1 - ASR OpenAI + RBAC Custom Roles  
+> **Data:** 23 de Janeiro de 2026  
+> **Versão:** 3.4.0 - Modo Agentic Enterprise  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 > 
@@ -288,6 +288,12 @@ C4Component
     Rel(tradingOrch, kucoin, "Place orders")
     Rel(llmClient, gpuManager, "Inference (local)")
 ```
+
+#### Modo Agentic Enterprise (Chat Service)
+
+- Router de tools para web search, ERPNext (read/write), pagamentos e stack ops.
+- Ações críticas registradas em `action_requests` com aprovação explícita (financeiro).
+- Configuração por tenant persistida em `agentic_settings` (links, escopo e políticas).
 
 ### 5.2 RAG Service - Componentes
 

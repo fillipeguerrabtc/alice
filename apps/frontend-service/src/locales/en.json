@@ -1677,5 +1677,35 @@
       "deleteTitle": "Delete permission",
       "deleteDescription": "Deleting removes the permission from all roles."
     }
+  },
+  "agenticConfig": {
+    "title": "Agentic Mode",
+    "subtitle": "Configure agentic execution, approvals, and operational links.",
+    "togglesTitle": "Execution Scope",
+    "togglesDesc": "Control which agentic capabilities are enabled for the tenant.",
+    "webEnabled": "Web search (SearXNG)",
+    "erpReadEnabled": "ERPNext read",
+    "erpWriteEnabled": "ERPNext write",
+    "tradingEnabled": "KuCoin trading",
+    "paymentsEnabled": "Payments (Wise/Stripe)",
+    "stackOpsEnabled": "Stack Ops (GitHub Actions)",
+    "financialApprovalRequired": "Require approval for financial operations",
+    "linksTitle": "Operational links",
+    "linksDesc": "Register URLs and descriptions for Alice to reference during operations.",
+    "linkItemTitle": "Link {{index}}",
+    "linkName": "Name",
+    "linkUrl": "URL",
+    "linkDescription": "Description",
+    "linkDescriptionPlaceholder": "Example: ERPNext CRM, Grafana, Internal portals",
+    "linkTags": "Tags (comma-separated)",
+    "linkTagsPlaceholder": "erpnext, crm, sales",
+    "addLink": "Add link",
+    "removeLink": "Remove link",
+    "save": "Save settings",
+    "saving": "Saving...",
+    "saveSuccess": "Settings updated",
+    "saveSuccessDesc": "Agentic mode updated successfully.",
+    "saveError": "Save error",
+    "saveErrorDesc": "Unable to update agentic mode."
   }
 }

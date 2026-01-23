@@ -30,6 +30,34 @@ export const integrationsServicePaths = {
     post: { summary: 'Criar fatura', tags: ['ERPNext'], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['customer', 'items'], properties: { customer: { type: 'string' }, items: { type: 'array', items: { type: 'object', properties: { item_code: { type: 'string' }, qty: { type: 'number' }, rate: { type: 'number' } } } } } } } } }, responses: { 201: { description: 'Criada' } } },
   },
   '/api/integrations/erpnext/sync': { post: { summary: 'Sincronizar', tags: ['ERPNext'], requestBody: { content: { 'application/json': { schema: { type: 'object', properties: { entity: { type: 'string', enum: ['customers', 'invoices', 'items'] } } } } } }, responses: { 202: { description: 'Iniciada' } } } },
+  '/api/integrations/github/deploy-stack': {
+    post: {
+      summary: 'Disparar deploy/rollback via GitHub Actions',
+      tags: ['GitHub'],
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['stack', 'version'],
+              properties: {
+                stack: { type: 'string', enum: ['infra', 'alice', 'observability', 'erpnext', 'backup', 'all'] },
+                version: { type: 'string' },
+                rollback: { type: 'boolean' },
+                rollbackVersion: { type: 'string' },
+                dryRun: { type: 'boolean' },
+                smartDeploy: { type: 'boolean' },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Workflow disparado' },
+        503: { description: 'GitHub não configurado' },
+      },
+    },
+  },
   '/api/integrations/twilio/sms': { post: { summary: 'Enviar SMS', tags: ['Twilio'], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['to', 'body'], properties: { to: { type: 'string', example: '+5511999999999' }, body: { type: 'string' } } } } } }, responses: { 200: { description: 'Enviado' } } } },
   '/api/integrations/twilio/whatsapp': { post: { summary: 'Enviar WhatsApp', tags: ['Twilio'], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['to', 'body'], properties: { to: { type: 'string' }, body: { type: 'string' }, mediaUrl: { type: 'string', format: 'uri' } } } } } }, responses: { 200: { description: 'Enviado' } } } },
   '/api/integrations/email/send': { 

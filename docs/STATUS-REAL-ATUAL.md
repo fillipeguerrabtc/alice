@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 23 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.78 - Web Search Guardrail
+**Versão:** 7.79 - Modo Agentic Enterprise
 
 ---
 
@@ -191,6 +191,10 @@ Retenção Arquivo:   30 dias
 
 ## Atualizações recentes (resumo)
 
+- Modo Agentic: configuração por tenant (toggles + links) com persistência PostgreSQL.
+- Agentic: execução real para ERPNext (read/write), pagamentos (Wise/Stripe) e stack ops (GitHub Actions).
+- ERPNext: novos endpoints para clientes e faturas (listar/criar) + validação Zod.
+- GitHub Actions: disparo de deploy/rollback via integrations-service com token seguro.
 - Caddy: ACME resiliente com DNS precheck, DNS-01 DuckDNS e fallback ZeroSSL.
 - Caddy: emissor ACME ajustado para sintaxe compatível no Caddyfile (dir + email global + eab inline).
 - Grafana: regras de alerta ajustadas para evitar `DatasourceNoData` falso (bool + fallback 0/1).

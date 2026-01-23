@@ -65,6 +65,10 @@ import * as technicalIndicators from './technical-indicators.js';
 const logger = createLogger('integrations-service');
 const config = loadConfig(integrationsServiceConfigSchema);
 
+const GITHUB_API_URL = config.GITHUB_API_URL?.trim() || 'https://api.github.com';
+const GITHUB_REPO = config.GITHUB_REPO?.trim();
+const GITHUB_ACTIONS_TOKEN = config.GITHUB_ACTIONS_TOKEN?.trim();
+
 const app = express();
 setPermissionResolver(async (auth: AuthContext) => {
   const db = getDatabase();
@@ -1470,6 +1474,227 @@ app.get('/api/integrations/erpnext/items', requirePermission('integrations:erpne
   } catch (error) {
     logger.error({ error }, 'Failed to fetch ERPNext items');
     res.status(500).json({ error: 'Failed to fetch items' });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+});
+
+const erpNextCustomerCreateSchema = z.object({
+  customerName: z.string().min(2),
+  customerType: z.string().min(2),
+  territory: z.string().min(2),
+  email: z.string().email().optional(),
+  phone: z.string().min(3).optional(),
+  taxId: z.string().min(3).optional(),
+});
+
+app.post('/api/integrations/erpnext/customers', requirePermission('integrations:erpnext:write'), async (req: Request, res: Response) => {
+  if (!config.ERPNEXT_URL) {
+    return res.status(503).json({ error: 'ERPNext not configured' });
+  }
+
+  const parseResult = erpNextCustomerCreateSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    logger.warn({ errors: parseResult.error.flatten() }, 'Input inválido em /api/integrations/erpnext/customers');
+    return res.status(400).json({ error: 'Input inválido', details: parseResult.error.format() });
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(
+      `${config.ERPNEXT_URL}/api/resource/Customer`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `token ${config.ERPNEXT_API_KEY}:${config.ERPNEXT_API_SECRET}`,
+          'Content-Type': 'application/json',
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          customer_name: parseResult.data.customerName,
+          customer_type: parseResult.data.customerType,
+          territory: parseResult.data.territory,
+          email_id: parseResult.data.email,
+          mobile_no: parseResult.data.phone,
+          tax_id: parseResult.data.taxId,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => '');
+      throw new Error(`Failed to create customer: ${response.status} - ${errText}`);
+    }
+
+    const data = await response.json() as { data: unknown };
+    res.json({ customer: data.data });
+  } catch (error) {
+    logger.error({ error }, 'Failed to create ERPNext customer');
+    res.status(500).json({ error: 'Failed to create customer' });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+});
+
+app.get('/api/integrations/erpnext/invoices', requirePermission('integrations:erpnext:read'), async (req: Request, res: Response) => {
+  if (!config.ERPNEXT_URL) {
+    return res.status(503).json({ error: 'ERPNext not configured' });
+  }
+
+  const limit = Number(req.query.limit ?? 100);
+  const safeLimit = Number.isFinite(limit) && limit > 0 && limit <= 200 ? limit : 100;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(
+      `${config.ERPNEXT_URL}/api/resource/Sales%20Invoice?fields=["name","customer","grand_total","status","posting_date"]&limit_page_length=${safeLimit}`,
+      {
+        headers: {
+          'Authorization': `token ${config.ERPNEXT_API_KEY}:${config.ERPNEXT_API_SECRET}`,
+        },
+        signal: controller.signal,
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch invoices');
+    }
+
+    const data = await response.json() as { data: unknown[] };
+    res.json({ invoices: data.data });
+  } catch (error) {
+    logger.error({ error }, 'Failed to fetch ERPNext invoices');
+    res.status(500).json({ error: 'Failed to fetch invoices' });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+});
+
+const erpNextInvoiceItemSchema = z.object({
+  itemCode: z.string().min(2),
+  qty: z.number().positive(),
+  rate: z.number().positive(),
+});
+
+const erpNextInvoiceCreateSchema = z.object({
+  customer: z.string().min(2),
+  items: z.array(erpNextInvoiceItemSchema).min(1),
+  dueDate: z.string().optional(),
+});
+
+app.post('/api/integrations/erpnext/invoices', requirePermission('integrations:erpnext:write'), async (req: Request, res: Response) => {
+  if (!config.ERPNEXT_URL) {
+    return res.status(503).json({ error: 'ERPNext not configured' });
+  }
+
+  const parseResult = erpNextInvoiceCreateSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    logger.warn({ errors: parseResult.error.flatten() }, 'Input inválido em /api/integrations/erpnext/invoices');
+    return res.status(400).json({ error: 'Input inválido', details: parseResult.error.format() });
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(
+      `${config.ERPNEXT_URL}/api/resource/Sales%20Invoice`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `token ${config.ERPNEXT_API_KEY}:${config.ERPNEXT_API_SECRET}`,
+          'Content-Type': 'application/json',
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          customer: parseResult.data.customer,
+          items: parseResult.data.items.map((item) => ({
+            item_code: item.itemCode,
+            qty: item.qty,
+            rate: item.rate,
+          })),
+          due_date: parseResult.data.dueDate,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => '');
+      throw new Error(`Failed to create invoice: ${response.status} - ${errText}`);
+    }
+
+    const data = await response.json() as { data: unknown };
+    res.json({ invoice: data.data });
+  } catch (error) {
+    logger.error({ error }, 'Failed to create ERPNext invoice');
+    res.status(500).json({ error: 'Failed to create invoice' });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+});
+
+const githubDeploySchema = z.object({
+  stack: z.enum(['infra', 'alice', 'observability', 'erpnext', 'backup', 'all']),
+  version: z.string().min(2),
+  rollback: z.boolean().optional(),
+  rollbackVersion: z.string().optional(),
+  dryRun: z.boolean().optional(),
+  smartDeploy: z.boolean().optional(),
+});
+
+app.post('/api/integrations/github/deploy-stack', requirePermission('admin:alice_core:write'), async (req: Request, res: Response) => {
+  if (!GITHUB_ACTIONS_TOKEN || !GITHUB_REPO) {
+    return res.status(503).json({ error: 'GitHub Actions not configured' });
+  }
+
+  const parseResult = githubDeploySchema.safeParse(req.body);
+  if (!parseResult.success) {
+    logger.warn({ errors: parseResult.error.flatten() }, 'Input inválido em /api/integrations/github/deploy-stack');
+    return res.status(400).json({ error: 'Input inválido', details: parseResult.error.format() });
+  }
+
+  const payload = {
+    ref: 'main',
+    inputs: {
+      stack: parseResult.data.stack,
+      version: parseResult.data.version,
+      rollback: parseResult.data.rollback ? 'true' : 'false',
+      rollback_version: parseResult.data.rollbackVersion ?? '',
+      dry_run: parseResult.data.dryRun ? 'true' : 'false',
+      smart_deploy: parseResult.data.smartDeploy ? 'true' : 'false',
+    },
+  };
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(
+      `${GITHUB_API_URL}/repos/${GITHUB_REPO}/actions/workflows/deploy-stack-modular.yml/dispatches`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${GITHUB_ACTIONS_TOKEN}`,
+          'Accept': 'application/vnd.github+json',
+          'Content-Type': 'application/json',
+        },
+        signal: controller.signal,
+        body: JSON.stringify(payload),
+      }
+    );
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => '');
+      throw new Error(`GitHub Actions dispatch failed: ${response.status} - ${errText}`);
+    }
+
+    res.json({ status: 'queued', workflow: 'deploy-stack-modular.yml', inputs: payload.inputs });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao disparar workflow deploy-stack-modular');
+    res.status(500).json({ error: 'Falha ao disparar workflow' });
   } finally {
     clearTimeout(timeoutId);
   }
