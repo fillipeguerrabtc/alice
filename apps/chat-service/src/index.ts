@@ -7836,6 +7836,106 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         ? `Transferência Wise (${paymentCommand.payload.sourceAmount} ${paymentCommand.payload.sourceCurrency} → ${paymentCommand.payload.targetCurrency})`
         : `Pagamento Stripe (${paymentCommand.payload.amount} ${paymentCommand.payload.currency})`;
 
+      if (!agenticSettings.financialApprovalRequired) {
+        try {
+          let result: unknown = null;
+          if (paymentCommand.type === 'wise_transfer') {
+            const quote = await callIntegrationsService<{ quote: { id: string } }>({
+              endpoint: '/api/integrations/wise/quotes',
+              method: 'POST',
+              body: {
+                sourceCurrency: paymentCommand.payload.sourceCurrency,
+                targetCurrency: paymentCommand.payload.targetCurrency,
+                sourceAmount: paymentCommand.payload.sourceAmount,
+              },
+              auth: authContext,
+            });
+            result = await callIntegrationsService({
+              endpoint: '/api/integrations/wise/transfers',
+              method: 'POST',
+              body: {
+                quoteId: quote.quote.id,
+                targetRecipientId: paymentCommand.payload.recipientId,
+                reference: paymentCommand.payload.reference,
+              },
+              auth: authContext,
+            });
+          }
+
+          if (paymentCommand.type === 'stripe_payment_intent') {
+            result = await callIntegrationsService({
+              endpoint: '/api/integrations/stripe/create-payment-intent',
+              method: 'POST',
+              body: {
+                amount: paymentCommand.payload.amount,
+                currency: paymentCommand.payload.currency,
+                description: paymentCommand.payload.description,
+              },
+              auth: authContext,
+            });
+          }
+
+          const [actionRequest] = await db.insert(schema.actionRequests).values({
+            tenantId,
+            conversationId,
+            userId,
+            agentId: conversation?.agentId ?? undefined,
+            type: 'integration',
+            status: 'executed',
+            payload: {
+              action: 'payments',
+              summary,
+              result,
+            },
+            resolvedBy: userId,
+            resolvidoEm: new Date(),
+            atualizadoEm: new Date(),
+          }).returning();
+
+          recordAgenticMetrics({
+            action: 'payments',
+            status: 'executed',
+          });
+
+          const responseContent = `Pagamento executado: ${summary}.`;
+          const [assistantMessage] = await db.insert(schema.messages).values({
+            conversationId,
+            agentId: conversation?.agentId ?? undefined,
+            conteudo: responseContent,
+            tipo: 'text',
+            isFromUser: false,
+            metadata: {
+              actionRequestId: actionRequest?.id,
+              actionStatus: 'executed',
+            },
+          }).returning();
+
+          await db.update(schema.conversations)
+            .set({
+              totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+              ultimaMensagemEm: new Date(),
+              atualizadoEm: new Date(),
+            })
+            .where(eq(schema.conversations.id, conversationId));
+
+          res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+          res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+          res.write('data: [DONE]\n\n');
+          res.end();
+          return;
+        } catch (paymentError) {
+          const errorMessage = paymentError instanceof Error ? paymentError.message : 'Erro desconhecido';
+          recordAgenticMetrics({
+            action: 'payments',
+            status: 'failed',
+          });
+          res.write(`data: ${JSON.stringify({ error: `Erro ao executar pagamento: ${errorMessage}` })}\n\n`);
+          res.write('data: [DONE]\n\n');
+          res.end();
+          return;
+        }
+      }
+
       const [actionRequest] = await db.insert(schema.actionRequests).values({
         tenantId,
         conversationId,

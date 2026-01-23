@@ -667,17 +667,29 @@ validate_mode() {
         current_perms=$(stat -c '%a' "$path" 2>/dev/null || stat -f '%Lp' "$path" 2>/dev/null)
         
         if [[ -n "$wrong_files" ]]; then
-            log_error "  ❌ INVÁLIDO: Ownership incorreto detectado em $path"
-            log_error "     Primeiro arquivo incorreto: ${wrong_files}"
-            
-            # Mostrar detalhes do arquivo para debug (cross-platform)
-            local file_uid file_gid
-            file_uid=$(stat -c '%u' "$wrong_files" 2>/dev/null || stat -f '%u' "$wrong_files" 2>/dev/null || echo "unknown")
-            file_gid=$(stat -c '%g' "$wrong_files" 2>/dev/null || stat -f '%g' "$wrong_files" 2>/dev/null || echo "unknown")
-            log_error "     UID/GID atual: ${file_uid}:${file_gid}"
-            log_error "     UID/GID esperado: ${uid}:${gid}"
-            
-            ((invalid++))
+            # Se o arquivo sumiu durante a validação (ex: operações ativas do ClickHouse),
+            # revalidar para evitar falso positivo.
+            if [[ ! -e "$wrong_files" ]]; then
+                log_warning "  ⚠️  Arquivo desapareceu durante validação. Rechecando..."
+                wrong_files=$(find_wrong_files_excluding_exceptions "$path" "$uid" "$gid" 1)
+            fi
+
+            if [[ -n "$wrong_files" ]]; then
+                log_error "  ❌ INVÁLIDO: Ownership incorreto detectado em $path"
+                log_error "     Primeiro arquivo incorreto: ${wrong_files}"
+                
+                # Mostrar detalhes do arquivo para debug (cross-platform)
+                local file_uid file_gid
+                file_uid=$(stat -c '%u' "$wrong_files" 2>/dev/null || stat -f '%u' "$wrong_files" 2>/dev/null || echo "unknown")
+                file_gid=$(stat -c '%g' "$wrong_files" 2>/dev/null || stat -f '%g' "$wrong_files" 2>/dev/null || echo "unknown")
+                log_error "     UID/GID atual: ${file_uid}:${file_gid}"
+                log_error "     UID/GID esperado: ${uid}:${gid}"
+                
+                ((invalid++))
+            else
+                log_success "  ✅ VÁLIDO: $path (sem divergências após rechecagem)"
+                ((valid++))
+            fi
         elif [[ -z "$current_perms" ]]; then
             log_error "  ❌ INVÁLIDO: Não foi possível determinar permissões de $path (stat falhou)"
             ((invalid++))
@@ -800,6 +812,10 @@ validate_all_directories_have_correct_ownership() {
             local error_details=""
             
             for file in "${files_array[@]}"; do
+                if [[ ! -e "$file" ]]; then
+                    log_info "    ℹ️  Arquivo não encontrado (possível operação ativa): $file"
+                    continue
+                fi
                 # Verificar se é exceção antes de reportar erro
                 if is_validation_exception "$file" "$uid" "$gid"; then
                     log_info "    ℹ️  EXCEÇÃO CONHECIDA (multi-UID legítimo): $file"
@@ -827,6 +843,8 @@ validate_all_directories_have_correct_ownership() {
                 ((total_errors++))
             elif [[ $exceptions_found -gt 0 ]]; then
                 log_success "  ✅ $(basename "$path"): OK (${exceptions_found} exceção(ões) multi-UID legítima(s))"
+            else
+                log_success "  ✅ $(basename "$path"): OK (arquivos temporários ignorados)"
             fi
         else
             log_success "  ✅ $(basename "$path"): Ownership correto (recursivo)"
