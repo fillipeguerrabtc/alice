@@ -1514,7 +1514,11 @@ export default function UsersAdmin() {
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => setActiveTab(value as 'users' | 'groups' | 'roles' | 'permissions')}
+        className="space-y-4"
+      >
         <TabsList>
           <TabsTrigger value="users">
             <Users className="mr-2 h-4 w-4" />
