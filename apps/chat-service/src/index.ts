@@ -7416,81 +7416,72 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         return;
       }
 
-      try {
-        const payload = stackCommand.type === 'deploy'
-          ? {
-              stack: stackCommand.stack,
-              version: stackCommand.version,
-              rollback: false,
-              dryRun: stackCommand.dryRun ?? false,
-              smartDeploy: stackCommand.smartDeploy ?? false,
-            }
-          : {
-              stack: stackCommand.stack,
-              version: stackCommand.version,
-              rollback: true,
-              rollbackVersion: stackCommand.rollbackVersion ?? stackCommand.version,
-              dryRun: false,
-              smartDeploy: false,
-            };
-        const result = await callIntegrationsService({
-          endpoint: '/api/integrations/github/deploy-stack',
-          method: 'POST',
-          body: payload,
-          auth: authContext,
-        });
+      const payload = stackCommand.type === 'deploy'
+        ? {
+            stack: stackCommand.stack,
+            version: stackCommand.version,
+            rollback: false,
+            dryRun: stackCommand.dryRun ?? false,
+            smartDeploy: stackCommand.smartDeploy ?? false,
+          }
+        : {
+            stack: stackCommand.stack,
+            version: stackCommand.version,
+            rollback: true,
+            rollbackVersion: stackCommand.rollbackVersion ?? stackCommand.version,
+            dryRun: false,
+            smartDeploy: false,
+          };
 
-        const responseContent = 'Workflow de stack disparado no GitHub Actions.';
-        const [actionRequest] = await db.insert(schema.actionRequests).values({
-          tenantId,
-          conversationId,
-          userId,
-          agentId: conversation?.agentId ?? undefined,
-          type: 'integration',
-          status: 'executed',
-          payload: {
+      const summary = stackCommand.type === 'deploy'
+        ? `Deploy ${payload.stack} (${payload.version})`
+        : `Rollback ${payload.stack} (${payload.rollbackVersion || payload.version})`;
+
+      const [actionRequest] = await db.insert(schema.actionRequests).values({
+        tenantId,
+        conversationId,
+        userId,
+        agentId: conversation?.agentId ?? undefined,
+        type: 'integration',
+        status: 'pending',
+        payload: {
+          action: 'stack_ops',
+          summary,
+          integration: {
             action: 'stack_ops',
-            operation: stackCommand.type,
+            operation: 'deploy_stack',
             params: payload,
-            result,
           },
-          resolvedBy: userId,
-          resolvidoEm: new Date(),
+        },
+      }).returning();
+
+      const responseContent = `Para executar a operação (${summary}), preciso de confirmação explícita.\nResponda "confirmar" para executar ou "cancelar" para abortar.`;
+      const [assistantMessage] = await db.insert(schema.messages).values({
+        conversationId,
+        agentId: conversation?.agentId ?? undefined,
+        conteudo: responseContent,
+        tipo: 'text',
+        isFromUser: false,
+        metadata: {
+          actionRequestId: actionRequest?.id,
+          actionStatus: 'pending',
+          requiresConfirmation: true,
+        },
+      }).returning();
+
+      await db.update(schema.conversations)
+        .set({
+          totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+          ultimaMensagemEm: new Date(),
           atualizadoEm: new Date(),
-        }).returning();
+        })
+        .where(eq(schema.conversations.id, conversationId));
 
-        const [assistantMessage] = await db.insert(schema.messages).values({
-          conversationId,
-          agentId: conversation?.agentId ?? undefined,
-          conteudo: responseContent,
-          tipo: 'text',
-          isFromUser: false,
-          metadata: {
-            actionRequestId: actionRequest?.id,
-            actionStatus: 'executed',
-          },
-        }).returning();
-
-        await db.update(schema.conversations)
-          .set({
-            totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
-            ultimaMensagemEm: new Date(),
-            atualizadoEm: new Date(),
-          })
-          .where(eq(schema.conversations.id, conversationId));
-
-        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
-        res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
-        res.write('data: [DONE]\n\n');
-        res.end();
-        return;
-      } catch (stackError) {
-        const errorMessage = stackError instanceof Error ? stackError.message : 'Erro desconhecido';
-        res.write(`data: ${JSON.stringify({ error: `Erro ao executar stack ops: ${errorMessage}` })}\n\n`);
-        res.write('data: [DONE]\n\n');
-        res.end();
-        return;
-      }
+      res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+      res.write('data: [DONE]\n\n');
+      res.end();
+      return;
     }
 
       const agenticDetection = detectAgenticTaskRequest(userMessageContent);
@@ -7718,6 +7709,36 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             role: req.user?.role as Role,
           },
         });
+
+        if (explicitWebRequest && !agenticResult?.context) {
+          const responseContent = 'Não consegui acessar a busca na internet agora. Tente novamente em instantes.';
+          const [assistantMessage] = await db.insert(schema.messages).values({
+            conversationId,
+            agentId: conversation?.agentId ?? undefined,
+            conteudo: responseContent,
+            tipo: 'text',
+            isFromUser: false,
+            metadata: {
+              webSearchAvailable: ragClassification?.webSearchAvailable ?? null,
+              webEnabled: agenticSettings.webEnabled,
+              reason: 'web_search_failed',
+            },
+          }).returning();
+
+          await db.update(schema.conversations)
+            .set({
+              totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+              ultimaMensagemEm: new Date(),
+              atualizadoEm: new Date(),
+            })
+            .where(eq(schema.conversations.id, conversationId));
+
+          res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+          res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+          res.write('data: [DONE]\n\n');
+          res.end();
+          return;
+        }
 
         if (agenticResult?.context) {
           systemPrompt += `\n\n[CONTEXTO WEB]\n${agenticResult.context}\n[/CONTEXTO WEB]\n\n`;

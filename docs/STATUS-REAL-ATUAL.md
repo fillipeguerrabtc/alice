@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 23 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.79 - Modo Agentic Enterprise
+**Versão:** 7.80 - Fallbacks Agentic + Stack Ops Approval
 
 ---
 
@@ -191,6 +191,8 @@ Retenção Arquivo:   30 dias
 
 ## Atualizações recentes (resumo)
 
+- Agentic: fallback determinístico quando busca web falha mesmo com request explícito.
+- Stack Ops: operações via GitHub Actions exigem confirmação explícita (action_requests).
 - Modo Agentic: configuração por tenant (toggles + links) com persistência PostgreSQL.
 - Agentic: execução real para ERPNext (read/write), pagamentos (Wise/Stripe) e stack ops (GitHub Actions).
 - ERPNext: novos endpoints para clientes e faturas (listar/criar) + validação Zod.
