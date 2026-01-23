@@ -1964,6 +1964,30 @@ function parseEnvInt(value: string | undefined, defaultValue: number, name: stri
   return parsed;
 }
 
+function parseEnvNonNegativeInt(value: string | undefined, defaultValue: number, name: string): number {
+  const raw = (value ?? String(defaultValue)).trim();
+  if (!/^\d+$/.test(raw)) {
+    const message = `${name} inválido: "${raw}". Deve ser inteiro >= 0.`;
+    if (process.env.NODE_ENV === 'production') {
+      logger.error({ name, raw }, message);
+      throw new Error(message);
+    }
+    logger.warn({ name, raw, defaultValue }, `${message} Usando valor padrão.`);
+    return defaultValue;
+  }
+  const parsed = parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    const message = `${name} inválido: "${raw}". Deve ser inteiro >= 0.`;
+    if (process.env.NODE_ENV === 'production') {
+      logger.error({ name, raw, parsed }, message);
+      throw new Error(message);
+    }
+    logger.warn({ name, raw, parsed, defaultValue }, `${message} Usando valor padrão.`);
+    return defaultValue;
+  }
+  return parsed;
+}
+
 function parseEnvFloat(value: string | undefined, defaultValue: number, name: string): number {
   const raw = (value ?? String(defaultValue)).trim().replace(',', '.');
   const parsed = Number(raw);
@@ -2062,12 +2086,12 @@ const CHAT_HISTORY_ALWAYS_INCLUDE_GENERAL = parseEnvInt(
   4,
   'CHAT_HISTORY_ALWAYS_INCLUDE_GENERAL'
 );
-const CHAT_HISTORY_MIN_MESSAGES_TRADING = parseEnvInt(
+const CHAT_HISTORY_MIN_MESSAGES_TRADING = parseEnvNonNegativeInt(
   process.env.CHAT_HISTORY_MIN_MESSAGES_TRADING,
   0,
   'CHAT_HISTORY_MIN_MESSAGES_TRADING'
 );
-const CHAT_HISTORY_MIN_MESSAGES_GENERAL = parseEnvInt(
+const CHAT_HISTORY_MIN_MESSAGES_GENERAL = parseEnvNonNegativeInt(
   process.env.CHAT_HISTORY_MIN_MESSAGES_GENERAL,
   0,
   'CHAT_HISTORY_MIN_MESSAGES_GENERAL'
