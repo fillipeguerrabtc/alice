@@ -5,7 +5,7 @@
  * Specs definidas como objeto para compatibilidade com esbuild.
  * 
  * Author: Fillipe Guerra
- * Data: 05/12/2025
+ * Data: 23/01/2026
  * 
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
@@ -78,21 +78,25 @@ export const authServicePaths = {
   },
   '/api/auth/register': {
     post: {
-      summary: 'Registrar novo usuário',
-      description: 'Cria uma nova conta de usuário com email e senha.',
+      summary: 'Registrar novo usuário (admin-only)',
+      description: 'Cria uma nova conta de usuário. Exige autenticação de admin/super_admin e CSRF válido.',
       tags: ['Auth'],
-      security: [],
       requestBody: {
         required: true,
         content: {
           'application/json': {
             schema: {
               type: 'object',
-              required: ['email', 'password', 'name'],
+              required: ['email', 'password', 'firstName', 'lastName', 'cargo', 'departamento', 'telefone'],
               properties: {
                 email: { type: 'string', format: 'email', example: 'usuario@empresa.com' },
                 password: { type: 'string', format: 'password', minLength: 8, example: 'SenhaSegura123!' },
-                name: { type: 'string', minLength: 2, example: 'João Silva' },
+                firstName: { type: 'string', minLength: 1, example: 'João' },
+                lastName: { type: 'string', minLength: 1, example: 'Silva' },
+                cargo: { type: 'string', minLength: 1, example: 'Analista Financeiro' },
+                departamento: { type: 'string', minLength: 1, example: 'Financeiro' },
+                telefone: { type: 'string', minLength: 6, example: '+55 11 99999-0000' },
+                preferredName: { type: 'string', minLength: 2, example: 'João' },
               },
             },
           },

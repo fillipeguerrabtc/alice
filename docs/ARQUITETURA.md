@@ -2,7 +2,7 @@
 
 > **Autor:** Fillipe Guerra  
 > **Data:** 23 de Janeiro de 2026  
-> **Versão:** 3.4.0 - Modo Agentic Enterprise  
+> **Versão:** 3.4.1 - Onboarding Admin-only + Guest Default  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 > 
@@ -580,6 +580,7 @@ flowchart TB
 - **Core da Alice**: edição protegida por `admin:alice_core:write` (prompts centrais).
 - **Permissões**: CRUD de permissões e atribuição por role via painel administrativo.
 - **Grupos organizacionais**: associação usuário↔grupo para organização interna (sem impacto direto em RBAC).
+- **Onboarding seguro**: novos usuários entram como `guest` e criação de contas é admin-only.
 
 #### 8.1.3 Row Level Security (RLS)
 

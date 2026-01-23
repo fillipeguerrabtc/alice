@@ -2,12 +2,12 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 23 de Janeiro de 2026  
-**Versão:** 7.40 - Modo Agentic Enterprise
+**Versão:** 7.41 - Admin-only Users + Guest Default
 
 <div align="center">
 
 ![Alice Logo](https://img.shields.io/badge/Alice-IA%20Enterprise-blue?style=for-the-badge&logo=robot&logoColor=white)
-![Version](https://img.shields.io/badge/versão-7.40-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/versão-7.41-green?style=for-the-badge)
 ![License](https://img.shields.io/badge/licença-Proprietária-red?style=for-the-badge)
 ![LLM](https://img.shields.io/badge/LLM-Qwen2.5%207B-purple?style=for-the-badge)
 
@@ -36,7 +36,7 @@
 | **Modo Agentic** | Execução real de tarefas (ERPNext, pagamentos, stack ops) com auditoria |
 | **Stack Ops** | Deploy/rollback via GitHub Actions com governança |
 | **Enterprise RBAC** | Controle de acesso granular com 6 roles hierárquicas |
-| **Gestão de Usuários/Grupos/Permissões** | Painel dedicado com CRUD e atribuição por role |
+| **Gestão de Usuários/Grupos/Permissões** | Painel dedicado com CRUD, criação admin-only e atribuição por role |
 | **Governança do Core** | Permissão `admin:alice_core:write` para editar prompts centrais |
 | **Observabilidade LLM** | Prometheus, Grafana, Jaeger, Langfuse para métricas específicas |
 | **Auto-aprendizado** | QLoRA semanal (domingo 3:00 AM) com dados aprovados |
@@ -66,6 +66,7 @@
 - **Gate 2**: LLM local (Qwen2.5 7B) + Vision/Imagens via OpenAI.
 - **GPU local**: LLM + Embeddings (always-on) e Training sob demanda; ASR via OpenAI.
 - **RBAC**: painel de usuários/grupos/permissões e controle de Core via `admin:alice_core:write`.
+- **Onboarding seguro**: novos usuários entram como `guest` e criação é restrita a administradores.
 - **Deploy**: multi-stack modular com rollback cirúrgico.
 
 Para detalhes completos de arquitetura, pipeline e deploy, utilize os documentos SSOT acima.
