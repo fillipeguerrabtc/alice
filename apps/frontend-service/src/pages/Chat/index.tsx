@@ -38,7 +38,6 @@ import {
   Menu,
   FileCheck,
   Info,
-  Activity,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -123,7 +122,6 @@ import { MessageBubble } from './components/MessageBubble';
 import { ConversationItem } from './components/ConversationItem';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { ChatInput } from './components/ChatInput';
-import { EventsPanel } from './components/EventsPanel';
 import { useAuth } from '@/hooks/use-auth';
 
 type StreamMediaAttachmentPayload = {
@@ -359,13 +357,8 @@ export default function Chat() {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [streamStatus, setStreamStatus] = useState<string | null>(null);
-  const [streamSteps, setStreamSteps] = useState<string[]>([]);
   const [streamEvents, setStreamEvents] = useState<AgentEvent[]>([]);
-  const [eventsPanelOpen, setEventsPanelOpen] = useState(false);
-  const [eventsPanelPinned, setEventsPanelPinned] = useState(false);
   const [focusNonce, setFocusNonce] = useState(0);
-  const eventsPanelLabel = eventsPanelOpen ? t('chat.eventsPanel.hide') : t('chat.eventsPanel.show');
   // Desktop: sidebar aberta por padrão | Mobile: fechada por padrão
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
   // Estado separado para drawer mobile
@@ -920,30 +913,24 @@ export default function Chat() {
         return t('chat.streaming.status.preparing');
     }
   }, [t]);
-  const pushStreamStep = useCallback((label: string) => {
-    setStreamSteps((prev) => {
-      if (prev.length === 0) return [label];
-      const last = prev[prev.length - 1];
-      if (last === label) return prev;
-      return [...prev, label];
-    });
-  }, []);
   const pushStreamEvent = useCallback((event: AgentEvent) => {
     setStreamEvents((prev) => {
       const next = [...prev, event];
       return next.length > 200 ? next.slice(-200) : next;
     });
   }, []);
-  useEffect(() => {
-    if (isStreaming) {
-      setEventsPanelOpen(true);
-      return;
-    }
-    if (!eventsPanelPinned) {
-      const timeout = setTimeout(() => setEventsPanelOpen(false), 800);
-      return () => clearTimeout(timeout);
-    }
-  }, [isStreaming, eventsPanelPinned]);
+
+  const createStatusEvent = useCallback((stage?: string, message?: string): AgentEvent => {
+    const resolvedStage = stage?.trim() || 'preparing';
+    return {
+      id: crypto.randomUUID(),
+      ts: new Date().toISOString(),
+      phase: 'system',
+      action: resolvedStage,
+      status: 'in_progress',
+      message: message ?? resolveStreamStatus(resolvedStage),
+    };
+  }, [resolveStreamStatus]);
   const sendMessage = useMutation({
     mutationFn: async ({ content, mediaAttachments }: { content: string; mediaAttachments?: MediaAttachment[] }) => {
       const userMessage: Message = {
@@ -968,10 +955,7 @@ export default function Chat() {
       setMessages((prev) => [...prev, userMessage]);
       setIsStreaming(true);
       setStreamEvents([]);
-      const preparingLabel = resolveStreamStatus('preparing');
-      setStreamStatus(preparingLabel);
-      setStreamSteps([preparingLabel]);
-      setEventsPanelOpen(true);
+      pushStreamEvent(createStatusEvent('preparing'));
 
       const assistantMessage: Message = {
         id: crypto.randomUUID(),
@@ -1070,8 +1054,7 @@ export default function Chat() {
 
                 if (parsed.type === 'status') {
                   const label = resolveStreamStatus(parsed.stage);
-                  setStreamStatus(label);
-                  pushStreamStep(label);
+                  pushStreamEvent(createStatusEvent(parsed.stage, label));
                   resetTimeout();
                 }
 
@@ -1200,8 +1183,6 @@ export default function Chat() {
                     }
                     return newMessages;
                   });
-                  setStreamStatus(resolveStreamStatus('writing'));
-                  pushStreamStep(resolveStreamStatus('writing'));
                   resetTimeout();
                 }
               } catch {
@@ -1216,8 +1197,6 @@ export default function Chat() {
       }
 
       setIsStreaming(false);
-      setStreamStatus(null);
-      setStreamSteps([]);
       queryClientRef.invalidateQueries({ queryKey: ['/api/chat/conversations'] });
       return fullContent;
     },
@@ -1226,8 +1205,6 @@ export default function Chat() {
       if (isAbort && stopRequestedRef.current) {
         stopRequestedRef.current = false;
         setIsStreaming(false);
-        setStreamStatus(null);
-        setStreamSteps([]);
         return;
       }
       const errorMessage = isAbort ? t('chat.streaming.timeout') : t('chat.streaming.error');
@@ -1247,8 +1224,6 @@ export default function Chat() {
         return newMessages;
       });
       setIsStreaming(false);
-      setStreamStatus(null);
-      setStreamSteps([]);
     },
   });
 
@@ -1623,18 +1598,6 @@ export default function Chat() {
     }
   }, [isMobile]);
 
-  const handleToggleEventsPanel = useCallback(() => {
-    setEventsPanelOpen((prev) => {
-      const next = !prev;
-      setEventsPanelPinned(next);
-      return next;
-    });
-  }, []);
-
-  const handleClearEvents = useCallback(() => {
-    setStreamEvents([]);
-  }, []);
-
   useEffect(() => {
     bumpInputFocus();
   }, [conversationId, bumpInputFocus]);
@@ -1779,16 +1742,6 @@ export default function Chat() {
                 {t('chat.training.send')}
               </Button>
             )}
-            <Button
-              variant="outline"
-              size="sm"
-              className="hidden md:flex"
-              onClick={handleToggleEventsPanel}
-              data-testid="button-toggle-events-panel"
-            >
-              <Activity className="h-4 w-4 mr-2" />
-              {eventsPanelLabel}
-            </Button>
             {/* Mobile: Badge compacto */}
             {isMobile && (
               <>
@@ -1824,36 +1777,10 @@ export default function Chat() {
                     <FileCheck className="h-3 w-3" />
                   </Button>
                 )}
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-6 w-6"
-                  onClick={handleToggleEventsPanel}
-                  data-testid="button-toggle-events-panel-mobile"
-                >
-                  <Activity className="h-3 w-3" />
-                </Button>
               </>
             )}
           </div>
         </div>
-
-        {isMobile && (
-          <Sheet
-            open={eventsPanelOpen}
-            onOpenChange={(open) => {
-              setEventsPanelOpen(open);
-              setEventsPanelPinned(open);
-            }}
-          >
-            <SheetContent side="right" className="w-[320px] p-0">
-              <VisuallyHidden.Root>
-                <SheetTitle>Eventos em tempo real</SheetTitle>
-              </VisuallyHidden.Root>
-              <EventsPanel events={streamEvents} isStreaming={isStreaming} onClear={handleClearEvents} />
-            </SheetContent>
-          </Sheet>
-        )}
 
         <div className="flex-1 flex min-h-0">
           {/* Área de mensagens - responsiva */}
@@ -1874,8 +1801,7 @@ export default function Chat() {
                       message={message}
                       isStreaming={isStreaming}
                       isLast={index === messages.length - 1}
-                      streamStatus={isStreaming && index === messages.length - 1 ? streamStatus : null}
-                      streamSteps={isStreaming && index === messages.length - 1 ? streamSteps : null}
+                      streamEvents={isStreaming && index === messages.length - 1 ? streamEvents : null}
                       onRateImage={handleRateImage}
                       onFeedback={handleFeedback}
                       onRegenerate={handleRegenerate}
@@ -1887,11 +1813,6 @@ export default function Chat() {
             <div ref={messagesEndRef} />
           </ScrollArea>
 
-          {!isMobile && eventsPanelOpen && (
-            <div className="w-[360px] border-l">
-              <EventsPanel events={streamEvents} isStreaming={isStreaming} onClear={handleClearEvents} />
-            </div>
-          )}
         </div>
 
         {/* Input de chat - otimizado para mobile com safe area */}

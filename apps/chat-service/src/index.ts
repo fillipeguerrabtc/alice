@@ -256,7 +256,7 @@ type AgenticStatusLabel = 'pending' | 'executed' | 'rejected' | 'failed';
 const resolveAgenticActionLabel = (params: {
   pendingCommand?: ParsedTradingCommand;
   pendingTask?: { taskType?: AgenticTaskType };
-  pendingIntegration?: { action?: 'payments' | 'stack_ops' };
+  pendingIntegration?: { action?: 'payments' | 'stack_ops' | 'erp' };
   fallback?: AgenticActionLabel;
 }): AgenticActionLabel => {
   if (params.pendingCommand) {
@@ -267,6 +267,9 @@ const resolveAgenticActionLabel = (params: {
   }
   if (params.pendingIntegration?.action === 'stack_ops') {
     return 'stack_ops';
+  }
+  if (params.pendingIntegration?.action === 'erp') {
+    return 'erp';
   }
   if (params.pendingTask) {
     return 'agentic_task';
@@ -1307,6 +1310,108 @@ function detectErpCommand(message: string): ErpCommand | null {
   }
 
   return null;
+}
+
+function isErpWriteCommand(command: ErpCommand): command is Extract<ErpCommand, { type: 'create_customer' | 'create_invoice' }> {
+  return command.type === 'create_customer' || command.type === 'create_invoice';
+}
+
+function buildErpCommandSummary(command: ErpCommand): string {
+  if (command.type === 'create_customer') {
+    return `ERPNext: criar cliente (${command.payload.customerName || 'sem nome'})`;
+  }
+  if (command.type === 'create_invoice') {
+    const itemCount = command.payload.items?.length ?? 0;
+    return `ERPNext: criar fatura (${command.payload.customer} | ${itemCount} itens)`;
+  }
+  return 'ERPNext: operação';
+}
+
+async function executeErpCommand(params: {
+  command: ErpCommand;
+  auth: AuthContext;
+}): Promise<{ responseContent: string; integrationResult: unknown }> {
+  const { command, auth } = params;
+  let responseContent = 'Ação ERPNext concluída com sucesso.';
+  let integrationResult: unknown = null;
+
+  if (command.type === 'list_items') {
+    const result = await callIntegrationsService<{ items: Array<Record<string, unknown>> }>({
+      endpoint: '/api/integrations/erpnext/items',
+      method: 'GET',
+      auth,
+    });
+    const items = result.items.slice(0, 10).map((item) => {
+      const name = String(item.item_name ?? item.name ?? '');
+      const group = String(item.item_group ?? '');
+      const rate = item.standard_rate ?? '';
+      return `- ${name}${group ? ` (${group})` : ''}${rate ? ` - ${rate}` : ''}`;
+    });
+    responseContent = items.length
+      ? `Itens do ERPNext (top 10):\n${items.join('\n')}`
+      : 'Nenhum item encontrado no ERPNext.';
+    integrationResult = result;
+  }
+
+  if (command.type === 'list_customers') {
+    const result = await callIntegrationsService<{ customers: Array<Record<string, unknown>> }>({
+      endpoint: '/api/integrations/erpnext/customers',
+      method: 'GET',
+      auth,
+    });
+    const customers = result.customers.slice(0, 10).map((customer) => {
+      const name = String(customer.customer_name ?? customer.name ?? '');
+      const type = String(customer.customer_type ?? '');
+      return `- ${name}${type ? ` (${type})` : ''}`;
+    });
+    responseContent = customers.length
+      ? `Clientes do ERPNext (top 10):\n${customers.join('\n')}`
+      : 'Nenhum cliente encontrado no ERPNext.';
+    integrationResult = result;
+  }
+
+  if (command.type === 'list_invoices') {
+    const result = await callIntegrationsService<{ invoices: Array<Record<string, unknown>> }>({
+      endpoint: '/api/integrations/erpnext/invoices',
+      method: 'GET',
+      auth,
+    });
+    const invoices = result.invoices.slice(0, 10).map((invoice) => {
+      const name = String(invoice.name ?? '');
+      const customer = String(invoice.customer ?? '');
+      const total = invoice.grand_total ?? '';
+      const status = String(invoice.status ?? '');
+      return `- ${name} | ${customer} | ${total} | ${status}`;
+    });
+    responseContent = invoices.length
+      ? `Faturas do ERPNext (top 10):\n${invoices.join('\n')}`
+      : 'Nenhuma fatura encontrada no ERPNext.';
+    integrationResult = result;
+  }
+
+  if (command.type === 'create_customer') {
+    const result = await callIntegrationsService<{ customer: Record<string, unknown> }>({
+      endpoint: '/api/integrations/erpnext/customers',
+      method: 'POST',
+      body: command.payload,
+      auth,
+    });
+    responseContent = `Cliente criado no ERPNext: ${command.payload.customerName}.`;
+    integrationResult = result;
+  }
+
+  if (command.type === 'create_invoice') {
+    const result = await callIntegrationsService<{ invoice: Record<string, unknown> }>({
+      endpoint: '/api/integrations/erpnext/invoices',
+      method: 'POST',
+      body: command.payload,
+      auth,
+    });
+    responseContent = `Fatura criada no ERPNext para ${command.payload.customer}.`;
+    integrationResult = result;
+  }
+
+  return { responseContent, integrationResult };
 }
 
 function detectPaymentCommand(message: string): PaymentCommand | null {
@@ -4113,7 +4218,6 @@ type TradingCommandType =
 
 type ConversationApprovalPolicy = 'always_confirm' | 'confirm_risky' | 'never_confirm';
 type TradingCommandRisk = 'low' | 'medium' | 'high';
-type AgenticTaskRisk = 'low' | 'high';
 
 interface ParsedTradingCommand {
   type: TradingCommandType;
@@ -4161,40 +4265,21 @@ function shouldRequireTradingConfirmation(
   command: ParsedTradingCommand,
   policy: ConversationApprovalPolicy
 ): boolean {
-  if (policy === 'never_confirm') {
-    return false;
-  }
-  if (policy === 'always_confirm') {
-    return true;
-  }
-  const risk = getTradingCommandRisk(command);
-  return risk !== 'low';
-}
-
-function getAgenticTaskRisk(taskType: AgenticTaskType): AgenticTaskRisk {
-  switch (taskType) {
-    case 'document':
-    case 'report':
-      return 'low';
-    case 'accounting':
-    case 'planning':
-    default:
-      return 'high';
-  }
+  void getTradingCommandRisk(command);
+  void policy;
+  // Regra enterprise: qualquer operação de trading exige aprovação explícita.
+  return true;
 }
 
 function shouldRequireAgenticConfirmation(
   taskType: AgenticTaskType,
+  mode: AgenticTaskMode,
   policy: ConversationApprovalPolicy
 ): boolean {
-  if (policy === 'never_confirm') {
-    return false;
-  }
-  if (policy === 'always_confirm') {
-    return true;
-  }
-  const risk = getAgenticTaskRisk(taskType);
-  return risk !== 'low';
+  void taskType;
+  void policy;
+  // Regra enterprise: qualquer ação de escrita/modificação exige aprovação explícita.
+  return mode === 'create' || mode === 'update';
 }
 
 /**
@@ -6582,7 +6667,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           summary?: string;
           sourceMessageId?: string;
           integration?: {
-            action?: 'payments' | 'stack_ops';
+            action?: 'payments' | 'stack_ops' | 'erp';
             operation?: string;
             params?: Record<string, unknown>;
           };
@@ -6793,6 +6878,39 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                 auth: authContext,
               });
               responseContent = 'Workflow de deploy disparado no GitHub Actions.';
+            }
+
+            if (pendingIntegration.action === 'erp') {
+              if (pendingIntegration.operation === 'create_customer') {
+                const params = pendingIntegration.params as {
+                  customerName: string;
+                  customerType: string;
+                  territory: string;
+                  email?: string;
+                  phone?: string;
+                  taxId?: string;
+                };
+                const erpResult = await executeErpCommand({
+                  command: { type: 'create_customer', payload: params },
+                  auth: authContext,
+                });
+                responseContent = erpResult.responseContent;
+                integrationResult = erpResult.integrationResult;
+              }
+
+              if (pendingIntegration.operation === 'create_invoice') {
+                const params = pendingIntegration.params as {
+                  customer: string;
+                  items: Array<{ itemCode: string; qty: number; rate: number }>;
+                  dueDate?: string;
+                };
+                const erpResult = await executeErpCommand({
+                  command: { type: 'create_invoice', payload: params },
+                  auth: authContext,
+                });
+                responseContent = erpResult.responseContent;
+                integrationResult = erpResult.integrationResult;
+              }
             }
 
             await db.update(schema.actionRequests)
@@ -7126,7 +7244,13 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
       const pendingAgenticDetection = detectAgenticTaskRequest(userMessageContent);
       const pendingPaymentCommand = detectPaymentCommand(userMessageContent);
-      if (isTradingCommand(userMessageContent) || pendingAgenticDetection.isTaskRequest || Boolean(pendingPaymentCommand)) {
+      const pendingErpCommand = detectErpCommand(userMessageContent);
+      if (
+        isTradingCommand(userMessageContent)
+        || pendingAgenticDetection.isTaskRequest
+        || Boolean(pendingPaymentCommand)
+        || Boolean(pendingErpCommand)
+      ) {
         const responseContent = 'Existe uma ação pendente aguardando confirmação. Responda "confirmar" para executar ou "cancelar" para abortar.';
         const [assistantMessage] = await db.insert(schema.messages).values({
           conversationId,
@@ -7185,7 +7309,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         return;
       }
       const conversationState = await getOrCreateConversationState(conversationId);
-      const approvalPolicy = (conversationState.approvalPolicy ?? 'always_confirm') as ConversationApprovalPolicy;
+      const approvalPolicy = (conversationState.approvalPolicy ?? 'never_confirm') as ConversationApprovalPolicy;
       const parsedCommand = parseTradingCommand(userMessageContent);
       const validation = validateCommand(parsedCommand);
 
@@ -7454,80 +7578,67 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         return;
       }
 
+      const erpSummary = buildErpCommandSummary(erpCommand);
+
+      if (isErpWriteCommand(erpCommand)) {
+        const [actionRequest] = await db.insert(schema.actionRequests).values({
+          tenantId,
+          conversationId,
+          userId,
+          agentId: conversation?.agentId ?? undefined,
+          type: 'integration',
+          status: 'pending',
+          payload: {
+            action: 'erp',
+            summary: erpSummary,
+            integration: {
+              action: 'erp',
+              operation: erpCommand.type,
+              params: erpCommand.payload,
+            },
+            sourceMessageId: userMessage.id,
+          },
+        }).returning();
+
+        recordAgenticMetrics({
+          action: 'erp',
+          status: 'pending',
+        });
+
+        const responseContent = `Para executar a operação (${erpSummary}), preciso de confirmação explícita.\nResponda "confirmar" para executar ou "cancelar" para abortar.`;
+        const [assistantMessage] = await db.insert(schema.messages).values({
+          conversationId,
+          agentId: conversation?.agentId ?? undefined,
+          conteudo: responseContent,
+          tipo: 'text',
+          isFromUser: false,
+          metadata: {
+            actionRequestId: actionRequest?.id,
+            actionStatus: 'pending',
+            requiresConfirmation: true,
+          },
+        }).returning();
+
+        await db.update(schema.conversations)
+          .set({
+            totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+            ultimaMensagemEm: new Date(),
+            atualizadoEm: new Date(),
+          })
+          .where(eq(schema.conversations.id, conversationId));
+
+        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
+
       try {
-        let responseContent = 'Ação ERPNext concluída com sucesso.';
-        let integrationResult: unknown = null;
-        if (erpCommand.type === 'list_items') {
-          const result = await callIntegrationsService<{ items: Array<Record<string, unknown>> }>({
-            endpoint: '/api/integrations/erpnext/items',
-            method: 'GET',
-            auth: authContext,
-          });
-          const items = result.items.slice(0, 10).map((item) => {
-            const name = String(item.item_name ?? item.name ?? '');
-            const group = String(item.item_group ?? '');
-            const rate = item.standard_rate ?? '';
-            return `- ${name}${group ? ` (${group})` : ''}${rate ? ` - ${rate}` : ''}`;
-          });
-          responseContent = items.length
-            ? `Itens do ERPNext (top 10):\n${items.join('\n')}`
-            : 'Nenhum item encontrado no ERPNext.';
-          integrationResult = result;
-        }
-        if (erpCommand.type === 'list_customers') {
-          const result = await callIntegrationsService<{ customers: Array<Record<string, unknown>> }>({
-            endpoint: '/api/integrations/erpnext/customers',
-            method: 'GET',
-            auth: authContext,
-          });
-          const customers = result.customers.slice(0, 10).map((customer) => {
-            const name = String(customer.customer_name ?? customer.name ?? '');
-            const type = String(customer.customer_type ?? '');
-            return `- ${name}${type ? ` (${type})` : ''}`;
-          });
-          responseContent = customers.length
-            ? `Clientes do ERPNext (top 10):\n${customers.join('\n')}`
-            : 'Nenhum cliente encontrado no ERPNext.';
-          integrationResult = result;
-        }
-        if (erpCommand.type === 'list_invoices') {
-          const result = await callIntegrationsService<{ invoices: Array<Record<string, unknown>> }>({
-            endpoint: '/api/integrations/erpnext/invoices',
-            method: 'GET',
-            auth: authContext,
-          });
-          const invoices = result.invoices.slice(0, 10).map((invoice) => {
-            const name = String(invoice.name ?? '');
-            const customer = String(invoice.customer ?? '');
-            const total = invoice.grand_total ?? '';
-            const status = String(invoice.status ?? '');
-            return `- ${name} | ${customer} | ${total} | ${status}`;
-          });
-          responseContent = invoices.length
-            ? `Faturas do ERPNext (top 10):\n${invoices.join('\n')}`
-            : 'Nenhuma fatura encontrada no ERPNext.';
-          integrationResult = result;
-        }
-        if (erpCommand.type === 'create_customer') {
-          const result = await callIntegrationsService<{ customer: Record<string, unknown> }>({
-            endpoint: '/api/integrations/erpnext/customers',
-            method: 'POST',
-            body: erpCommand.payload,
-            auth: authContext,
-          });
-          responseContent = `Cliente criado no ERPNext: ${erpCommand.payload.customerName}.`;
-          integrationResult = result;
-        }
-        if (erpCommand.type === 'create_invoice') {
-          const result = await callIntegrationsService<{ invoice: Record<string, unknown> }>({
-            endpoint: '/api/integrations/erpnext/invoices',
-            method: 'POST',
-            body: erpCommand.payload,
-            auth: authContext,
-          });
-          responseContent = `Fatura criada no ERPNext para ${erpCommand.payload.customer}.`;
-          integrationResult = result;
-        }
+        const { responseContent, integrationResult } = await executeErpCommand({
+          command: erpCommand,
+          auth: authContext,
+        });
 
         const [actionRequest] = await db.insert(schema.actionRequests).values({
           tenantId,
@@ -7538,6 +7649,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           status: 'executed',
           payload: {
             action: 'erp',
+            summary: erpSummary,
             operation: erpCommand.type,
             params: 'payload' in erpCommand ? erpCommand.payload : undefined,
             result: integrationResult,
@@ -7723,106 +7835,6 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       const summary = paymentCommand.type === 'wise_transfer'
         ? `Transferência Wise (${paymentCommand.payload.sourceAmount} ${paymentCommand.payload.sourceCurrency} → ${paymentCommand.payload.targetCurrency})`
         : `Pagamento Stripe (${paymentCommand.payload.amount} ${paymentCommand.payload.currency})`;
-
-      if (!agenticSettings.financialApprovalRequired) {
-        try {
-          let result: unknown = null;
-          if (paymentCommand.type === 'wise_transfer') {
-            const quote = await callIntegrationsService<{ quote: { id: string } }>({
-              endpoint: '/api/integrations/wise/quotes',
-              method: 'POST',
-              body: {
-                sourceCurrency: paymentCommand.payload.sourceCurrency,
-                targetCurrency: paymentCommand.payload.targetCurrency,
-                sourceAmount: paymentCommand.payload.sourceAmount,
-              },
-              auth: authContext,
-            });
-            result = await callIntegrationsService({
-              endpoint: '/api/integrations/wise/transfers',
-              method: 'POST',
-              body: {
-                quoteId: quote.quote.id,
-                targetRecipientId: paymentCommand.payload.recipientId,
-                reference: paymentCommand.payload.reference,
-              },
-              auth: authContext,
-            });
-          }
-
-          if (paymentCommand.type === 'stripe_payment_intent') {
-            result = await callIntegrationsService({
-              endpoint: '/api/integrations/stripe/create-payment-intent',
-              method: 'POST',
-              body: {
-                amount: paymentCommand.payload.amount,
-                currency: paymentCommand.payload.currency,
-                description: paymentCommand.payload.description,
-              },
-              auth: authContext,
-            });
-          }
-
-          const [actionRequest] = await db.insert(schema.actionRequests).values({
-            tenantId,
-            conversationId,
-            userId,
-            agentId: conversation?.agentId ?? undefined,
-            type: 'integration',
-            status: 'executed',
-            payload: {
-              action: 'payments',
-              summary,
-              result,
-            },
-            resolvedBy: userId,
-            resolvidoEm: new Date(),
-            atualizadoEm: new Date(),
-          }).returning();
-
-          recordAgenticMetrics({
-            action: 'payments',
-            status: 'executed',
-          });
-
-          const responseContent = `Pagamento executado: ${summary}.`;
-          const [assistantMessage] = await db.insert(schema.messages).values({
-            conversationId,
-            agentId: conversation?.agentId ?? undefined,
-            conteudo: responseContent,
-            tipo: 'text',
-            isFromUser: false,
-            metadata: {
-              actionRequestId: actionRequest?.id,
-              actionStatus: 'executed',
-            },
-          }).returning();
-
-          await db.update(schema.conversations)
-            .set({
-              totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
-              ultimaMensagemEm: new Date(),
-              atualizadoEm: new Date(),
-            })
-            .where(eq(schema.conversations.id, conversationId));
-
-          res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
-          res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
-          res.write('data: [DONE]\n\n');
-          res.end();
-          return;
-        } catch (paymentError) {
-          const errorMessage = paymentError instanceof Error ? paymentError.message : 'Erro desconhecido';
-          recordAgenticMetrics({
-            action: 'payments',
-            status: 'failed',
-          });
-          res.write(`data: ${JSON.stringify({ error: `Erro ao executar pagamento: ${errorMessage}` })}\n\n`);
-          res.write('data: [DONE]\n\n');
-          res.end();
-          return;
-        }
-      }
 
       const [actionRequest] = await db.insert(schema.actionRequests).values({
         tenantId,
@@ -8026,8 +8038,12 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       const agenticDetection = detectAgenticTaskRequest(userMessageContent);
       if (agenticDetection.isTaskRequest && agenticDetection.taskType && agenticDetection.instructions) {
         const conversationState = await getOrCreateConversationState(conversationId);
-        const approvalPolicy = (conversationState.approvalPolicy ?? 'always_confirm') as ConversationApprovalPolicy;
-        const requiresConfirmation = shouldRequireAgenticConfirmation(agenticDetection.taskType, approvalPolicy);
+        const approvalPolicy = (conversationState.approvalPolicy ?? 'never_confirm') as ConversationApprovalPolicy;
+        const requiresConfirmation = shouldRequireAgenticConfirmation(
+          agenticDetection.taskType,
+          agenticDetection.mode ?? 'create',
+          approvalPolicy
+        );
         const taskTitle = buildAgenticTaskTitle(agenticDetection.taskType, agenticDetection.title);
         const taskSummary = `${AGENTIC_TASK_TITLES[agenticDetection.taskType]}: ${taskTitle}`;
 
@@ -10473,7 +10489,7 @@ app.get('/api/chat/conversations/:id/approval-policy', requireAuth(), requireSam
   try {
     const state = await getOrCreateConversationState(id);
     res.json({
-      approvalPolicy: state.approvalPolicy ?? 'always_confirm',
+      approvalPolicy: state.approvalPolicy ?? 'never_confirm',
       allowWebSearchWithoutApproval: true,
     });
   } catch (error) {
@@ -10499,7 +10515,7 @@ app.patch('/api/chat/conversations/:id/approval-policy', requireAuth(), requireS
       approvalPolicy: bodyResult.data.approvalPolicy,
     });
     res.json({
-      approvalPolicy: updated.approvalPolicy ?? 'always_confirm',
+      approvalPolicy: updated.approvalPolicy ?? 'never_confirm',
       allowWebSearchWithoutApproval: true,
     });
   } catch (error) {

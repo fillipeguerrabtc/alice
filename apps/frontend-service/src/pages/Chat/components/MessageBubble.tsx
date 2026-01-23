@@ -6,7 +6,7 @@
  * @module Chat/components/MessageBubble
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Copy, Check } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -15,7 +15,7 @@ import { Card } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { Message } from './types';
+import { AgentEvent, Message } from './types';
 import { InlineImage } from './InlineImage';
 import { InlineMediaAttachment } from './InlineMediaAttachment';
 import { MessageActions } from './MessageActions';
@@ -37,8 +37,7 @@ interface MessageBubbleProps {
   message: Message;
   isStreaming: boolean;
   isLast: boolean;
-  streamStatus?: string | null;
-  streamSteps?: string[] | null;
+  streamEvents?: AgentEvent[] | null;
   onRateImage?: (imageId: string, score: number) => void;
   onFeedback?: (messageId: string, isPositive: boolean) => void;
   onRegenerate?: () => void;
@@ -48,8 +47,7 @@ export function MessageBubble({
   message, 
   isStreaming, 
   isLast,
-  streamStatus,
-  streamSteps,
+  streamEvents,
   onRateImage,
   onFeedback,
   onRegenerate,
@@ -74,11 +72,41 @@ export function MessageBubble({
   const assistantAvatarSrc = !isUser && isStreaming && (isLast || (message.content ?? '').length === 0)
     ? '/packman.gif'
     : (message.agent?.avatar || '/gato.gif');
-  const normalizedStreamSteps = streamSteps?.filter((step, index, list) => {
-    return index === 0 || step !== list[index - 1];
-  }) ?? [];
-  const shouldShowSteps = normalizedStreamSteps.length > 1
-    || (normalizedStreamSteps.length === 1 && normalizedStreamSteps[0] !== streamStatus);
+  const phaseLabels: Record<AgentEvent['phase'], string> = {
+    planning: 'planejamento',
+    tool: 'ferramenta',
+    approval: 'aprovação',
+    execution: 'execução',
+    llm: 'llm',
+    finalizing: 'finalização',
+    system: 'sistema',
+  };
+
+  const statusLabels: Record<AgentEvent['status'], string> = {
+    start: 'iniciado',
+    in_progress: 'em progresso',
+    success: 'concluído',
+    error: 'erro',
+    skipped: 'ignorado',
+    pending: 'pendente',
+    approved: 'aprovado',
+    rejected: 'rejeitado',
+  };
+
+  const streamLines = useMemo(() => {
+    const recentEvents = (streamEvents ?? []).slice(-10);
+    return recentEvents.map((event) => {
+      const phaseLabel = phaseLabels[event.phase] ?? event.phase;
+      const statusLabel = statusLabels[event.status] ?? event.status;
+      const actionLabel = event.action?.trim();
+      const messageLabel = event.message?.trim();
+      const details = [actionLabel, messageLabel].filter(Boolean).join(' - ');
+      if (!details) {
+        return `${phaseLabel}: ${statusLabel}`;
+      }
+      return `${phaseLabel}: ${details} (${statusLabel})`;
+    });
+  }, [streamEvents]);
 
   const handleCopy = useCallback(async () => {
     try {
@@ -134,35 +162,31 @@ export function MessageBubble({
             </div>
           )}
 
-          {isStreaming && isLast && message.role === 'assistant' && (
-            <div className="text-xs text-muted-foreground mb-1 flex flex-col gap-1">
-              <div className="flex items-center gap-2">
-                <span>{streamStatus || t('chat.streaming.thinking')}</span>
-                <span className="inline-flex gap-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
-                  <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse delay-150" />
-                  <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse delay-300" />
-                </span>
-              </div>
-              {shouldShowSteps && (
-                <div className="flex flex-wrap gap-1 text-[11px] text-muted-foreground/80">
-                  <span className="mr-1">{t('chat.streaming.steps')}</span>
-                  {normalizedStreamSteps.map((step, index) => {
-                    const isActive = index === normalizedStreamSteps.length - 1;
-                    return (
-                      <span
-                        key={`${step}-${index}`}
-                        className={cn(
-                          'px-1.5 py-0.5 rounded-md',
-                          isActive ? 'bg-muted text-foreground' : 'bg-muted/40'
-                        )}
-                      >
-                        {step}
+          {isStreaming && isLast && message.role === 'assistant' && streamLines.length > 0 && (
+            <div className="text-xs text-muted-foreground mb-1 flex max-h-28 flex-col gap-1 overflow-y-auto pr-1">
+              {streamLines.map((line, index) => {
+                const isLatest = index === streamLines.length - 1;
+                return (
+                  <div key={`${message.id}-stream-${index}`} className="flex items-start gap-2">
+                    <span
+                      className={cn(
+                        'mt-1 h-1.5 w-1.5 rounded-full',
+                        isLatest ? 'bg-foreground' : 'bg-muted-foreground/70'
+                      )}
+                    />
+                    <span className={cn('whitespace-pre-wrap leading-relaxed', isLatest ? 'text-foreground' : '')}>
+                      {line}
+                    </span>
+                    {isLatest && (
+                      <span className="inline-flex gap-1 mt-0.5">
+                        <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
+                        <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse delay-150" />
+                        <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse delay-300" />
                       </span>
-                    );
-                  })}
-                </div>
-              )}
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
 
