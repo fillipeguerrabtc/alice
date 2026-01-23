@@ -65,9 +65,9 @@ import * as technicalIndicators from './technical-indicators.js';
 const logger = createLogger('integrations-service');
 const config = loadConfig(integrationsServiceConfigSchema);
 
-const GITHUB_API_URL = config.GITHUB_API_URL?.trim() || 'https://api.github.com';
-const GITHUB_REPO = config.GITHUB_REPO?.trim();
-const GITHUB_ACTIONS_TOKEN = config.GITHUB_ACTIONS_TOKEN?.trim();
+const GH_API_URL = config.GH_API_URL?.trim() || 'https://api.github.com';
+const GH_REPO = config.GH_REPO?.trim();
+const GH_PAT = config.GH_PAT?.trim();
 
 const app = express();
 setPermissionResolver(async (auth: AuthContext) => {
@@ -1646,7 +1646,7 @@ const githubDeploySchema = z.object({
 });
 
 app.post('/api/integrations/github/deploy-stack', requirePermission('admin:alice_core:write'), async (req: Request, res: Response) => {
-  if (!GITHUB_ACTIONS_TOKEN || !GITHUB_REPO) {
+  if (!GH_PAT || !GH_REPO) {
     return res.status(503).json({ error: 'GitHub Actions not configured' });
   }
 
@@ -1673,11 +1673,11 @@ app.post('/api/integrations/github/deploy-stack', requirePermission('admin:alice
 
   try {
     const response = await fetch(
-      `${GITHUB_API_URL}/repos/${GITHUB_REPO}/actions/workflows/deploy-stack-modular.yml/dispatches`,
+      `${GH_API_URL}/repos/${GH_REPO}/actions/workflows/deploy-stack-modular.yml/dispatches`,
       {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${GITHUB_ACTIONS_TOKEN}`,
+          'Authorization': `Bearer ${GH_PAT}`,
           'Accept': 'application/vnd.github+json',
           'Content-Type': 'application/json',
         },

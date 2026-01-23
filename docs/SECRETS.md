@@ -93,9 +93,9 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 
 | Secret | Descrição | Obrigatório |
 | --- | --- | --- |
-| `GITHUB_ACTIONS_TOKEN` | Token para disparar workflows (repo:workflow) | ✅ |
-| `GITHUB_REPO` | Repositório no formato `owner/repo` | ✅ |
-| `GITHUB_API_URL` | API GitHub (default: https://api.github.com) | ⚠️ |
+| `GH_PAT` | Token para disparar workflows (repo:workflow) | ✅ |
+| `GH_REPO` | Repositório no formato `owner/repo` | ✅ |
+| `GH_API_URL` | API GitHub (default: `https://api.github.com`) | ⚠️ |
 
 ## ERPNext
 

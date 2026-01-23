@@ -359,6 +359,23 @@ if [ -z "${INTERNAL_API_SECRET}" ]; then
   exit 1
 fi
 
+# =============================================================================
+# GITHUB ACTIONS - Stack Ops (Agentic)
+# =============================================================================
+GH_PAT="${GH_PAT_SECRET:-}"
+if [ -z "${GH_PAT}" ]; then
+  echo "::error::GH_PAT não definido. Configure o secret no GitHub (necessário para Stack Ops via GitHub Actions)." >&2
+  exit 1
+fi
+
+GH_REPO="${GH_REPO_SECRET:-}"
+if [ -z "${GH_REPO}" ]; then
+  echo "::error::GH_REPO não definido. Configure o secret no formato owner/repo (necessário para Stack Ops via GitHub Actions)." >&2
+  exit 1
+fi
+
+GH_API_URL="${GH_API_URL_SECRET:-https://api.github.com}"
+
 OPENAI_API_KEY="${OPENAI_API_KEY_SECRET:-}"
 if [ -z "${OPENAI_API_KEY}" ]; then
   echo "::error::OPENAI_API_KEY não definido. Obrigatório para Vision e geração de imagens via OpenAI." >&2
@@ -802,6 +819,11 @@ echo "📄 Gerando arquivo .env.prod..."
   printf '# OAuth GitHub\n'
   printf 'OAUTH_GITHUB_CLIENT_ID=%s\n' "${OAUTH_GITHUB_CLIENT_ID:-}"
   printf 'OAUTH_GITHUB_CLIENT_SECRET=%s\n' "${OAUTH_GITHUB_CLIENT_SECRET:-}"
+  printf '\n'
+  printf '# GitHub Actions (Stack Ops)\n'
+  printf 'GH_PAT=%s\n' "${GH_PAT}"
+  printf 'GH_REPO=%s\n' "${GH_REPO}"
+  printf 'GH_API_URL=%s\n' "${GH_API_URL}"
   printf '\n'
   printf '# GPU Services (Hetzner GPU Server)\n'
   printf 'HUGGINGFACE_TOKEN=%s\n' "${HUGGINGFACE_TOKEN:-}"

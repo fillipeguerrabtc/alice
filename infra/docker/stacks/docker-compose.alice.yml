@@ -376,9 +376,9 @@ services:
       KUCOIN_PRO_API_PASSPHRASE: ${KUCOIN_PRO_API_PASSPHRASE:-}
       KUCOIN_PRO_BASE_URL: ${KUCOIN_PRO_BASE_URL:-https://api-futures.kucoin.com}
       KUCOIN_SANDBOX_MODE: ${KUCOIN_SANDBOX_MODE:-false}
-      GITHUB_ACTIONS_TOKEN: ${GITHUB_ACTIONS_TOKEN:-}
-      GITHUB_REPO: ${GITHUB_REPO:-}
-      GITHUB_API_URL: ${GITHUB_API_URL:-https://api.github.com}
+      GH_PAT: ${GH_PAT:-}
+      GH_REPO: ${GH_REPO:-}
+      GH_API_URL: ${GH_API_URL:-https://api.github.com}
       REDIS_URL: redis://:${REDIS_PASSWORD}@alice-redis:6379
       # CORREÇÃO 12/01/2026: SESSION_SECRET obrigatório para validação de cookies
       # Sem isso, session-auth middleware não consegue validar assinatura HMAC

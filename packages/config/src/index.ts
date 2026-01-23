@@ -56,9 +56,9 @@ const erpNextConfigSchema = z.object({
 });
 
 const githubActionsConfigSchema = z.object({
-  GITHUB_ACTIONS_TOKEN: z.string().optional(),
-  GITHUB_REPO: z.string().optional(),
-  GITHUB_API_URL: z.string().url().optional(),
+  GH_PAT: z.string().optional(),
+  GH_REPO: z.string().optional(),
+  GH_API_URL: z.string().url().optional(),
 });
 
 const observabilityConfigSchema = z.object({
@@ -157,7 +157,7 @@ const SECRET_KEYS = new Set([
   'STRIPE_SECRET_KEY',
   'STRIPE_WEBHOOK_SECRET',
   'ERPNEXT_API_SECRET',
-  'GITHUB_ACTIONS_TOKEN',
+  'GH_PAT',
   'GRAFANA_LOKI_API_KEY',
   'TWILIO_AUTH_TOKEN',
   'GMAIL_APP_PASSWORD', // Gmail SMTP (substitui RESEND_API_KEY - 30/12/2025)
