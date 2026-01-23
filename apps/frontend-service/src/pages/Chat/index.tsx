@@ -1534,6 +1534,10 @@ export default function Chat() {
 
   const conversations = conversationsData?.pages.flatMap((page) => page.conversations) || [];
 
+  const bumpInputFocus = useCallback(() => {
+    setFocusNonce((prev) => prev + 1);
+  }, []);
+
   // Handler para nova conversa com fechamento de drawer mobile
   const handleNewChatWithClose = useCallback(() => {
     setMessages([]);
@@ -1588,10 +1592,6 @@ export default function Chat() {
       setSidebarOpen(false);
     }
   }, [isMobile]);
-
-  const bumpInputFocus = useCallback(() => {
-    setFocusNonce((prev) => prev + 1);
-  }, []);
 
   const handleToggleEventsPanel = useCallback(() => {
     setEventsPanelOpen((prev) => {
