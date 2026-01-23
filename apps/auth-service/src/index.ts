@@ -201,11 +201,12 @@ async function buildAuthContext(dbUser: DbUser): Promise<Express.User> {
     tenantId: dbUser.tenantId || undefined,
   });
   const effectiveRole = resolveHighestRole(assignments.baseRoles, (dbUser.role || 'guest') as Role);
+  const primaryCustomRoleId = assignments.customRoleIds[0] ?? undefined;
   return {
     userId: dbUser.id,
     tenantId: dbUser.tenantId || undefined,
     role: effectiveRole,
-    customRoleId: undefined,
+    customRoleId: primaryCustomRoleId,
     email: dbUser.email || undefined,
     permissions: [],
   };

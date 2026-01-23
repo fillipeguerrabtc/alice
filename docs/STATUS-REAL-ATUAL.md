@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 23 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.87 - User Roles Transaction Fix
+**Versão:** 7.88 - Auth Context Custom Role Fix
 
 ---
 
@@ -202,6 +202,7 @@ Retenção Arquivo:   30 dias
 - Agentic: confirmação respeita approvalPolicy novamente (sem bypass).
 - ERPNext: comando "inventario" agora mapeia corretamente para listagem de itens.
 - Users Admin: atualização de roles/grupos agora é transacional (sem perda parcial).
+- Auth: buildAuthContext propaga customRoleId para headers internos.
 - UX: textos didáticos reforçados em Dashboard, Integrações, Trading, Observability e Agentic.
 - Agentic: fallback determinístico quando busca web falha mesmo com request explícito.
 - Stack Ops: operações via GitHub Actions exigem confirmação explícita (action_requests).
