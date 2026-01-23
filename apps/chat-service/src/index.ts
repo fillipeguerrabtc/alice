@@ -1243,7 +1243,7 @@ function detectErpCommand(message: string): ErpCommand | null {
   if (!normalized) return null;
 
   if (normalized.includes('erp') || normalized.includes('erpnext') || normalized.includes('estoque') || normalized.includes('inventario') || normalized.includes('inventory')) {
-    if (normalized.includes('estoque') || normalized.includes('itens') || normalized.includes('items') || normalized.includes('inventory')) {
+    if (normalized.includes('estoque') || normalized.includes('inventario') || normalized.includes('itens') || normalized.includes('items') || normalized.includes('inventory')) {
       return { type: 'list_items' };
     }
     if (normalized.includes('clientes') || normalized.includes('customers')) {

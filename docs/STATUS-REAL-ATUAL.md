@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 23 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.85 - Agentic Approval Fix
+**Versão:** 7.86 - ERP Inventário PT-BR Fix
 
 ---
 
@@ -200,6 +200,7 @@ Retenção Arquivo:   30 dias
 - RBAC: resolveHighestRole não usa fallback quando roles existem (permite downgrade).
 - Stack Ops: validação de versão persistida no histórico da conversa (mensagem salva + contadores).
 - Agentic: confirmação respeita approvalPolicy novamente (sem bypass).
+- ERPNext: comando "inventario" agora mapeia corretamente para listagem de itens.
 - UX: textos didáticos reforçados em Dashboard, Integrações, Trading, Observability e Agentic.
 - Agentic: fallback determinístico quando busca web falha mesmo com request explícito.
 - Stack Ops: operações via GitHub Actions exigem confirmação explícita (action_requests).
