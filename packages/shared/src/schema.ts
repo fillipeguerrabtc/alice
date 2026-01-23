@@ -563,6 +563,7 @@ export const users = pgTable(
     email: varchar("email", { length: 255 }).unique(),
     firstName: varchar("first_name", { length: 100 }),
     lastName: varchar("last_name", { length: 100 }),
+    preferredName: varchar("preferred_name", { length: 120 }),
     profileImageUrl: text("profile_image_url"),
     role: userRoleEnum("role").default("viewer"),
     customRoleId: uuid("custom_role_id").references(() => customRoles.id, { onDelete: "set null" }),
@@ -646,6 +647,42 @@ export const customRolePermissions = pgTable(
     idxCustomRolePermissionsRole: index("idx_custom_role_permissions_role").on(table.customRoleId),
     idxCustomRolePermissionsPermission: index("idx_custom_role_permissions_permission").on(table.permissionId),
     uniqueCustomRolePermission: uniqueIndex("uniq_custom_role_permissions").on(table.customRoleId, table.permissionId),
+  })
+);
+
+// ============================================================================
+// MULTI-ROLES (Cargos) - Usuário pode ter múltiplas roles base
+// ============================================================================
+
+export const userRoles = pgTable(
+  "user_roles",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    role: userRoleEnum("role").notNull(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => ({
+    idxUserRolesUser: index("idx_user_roles_user").on(table.userId),
+    uniqueUserRole: uniqueIndex("uniq_user_roles_user_role").on(table.userId, table.role),
+  })
+);
+
+// ============================================================================
+// MULTI-ROLES CUSTOM (Cargos customizados)
+// ============================================================================
+
+export const userCustomRoles = pgTable(
+  "user_custom_roles",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    customRoleId: uuid("custom_role_id").references(() => customRoles.id, { onDelete: "cascade" }).notNull(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => ({
+    idxUserCustomRolesUser: index("idx_user_custom_roles_user").on(table.userId),
+    uniqueUserCustomRole: uniqueIndex("uniq_user_custom_roles_user_role").on(table.userId, table.customRoleId),
   })
 );
 
@@ -2967,11 +3004,31 @@ export const usersRelations = relations(users, ({ one, many }) => ({
     fields: [users.customRoleId],
     references: [customRoles.id],
   }),
+  roles: many(userRoles),
+  customRoles: many(userCustomRoles),
   conversations: many(conversations),
   messages: many(messages),
   auditLogs: many(auditLogs),
   usageMetrics: many(usageMetrics),
   groupMemberships: many(userGroupMembers),
+}));
+
+export const userRolesRelations = relations(userRoles, ({ one }) => ({
+  user: one(users, {
+    fields: [userRoles.userId],
+    references: [users.id],
+  }),
+}));
+
+export const userCustomRolesRelations = relations(userCustomRoles, ({ one }) => ({
+  user: one(users, {
+    fields: [userCustomRoles.userId],
+    references: [users.id],
+  }),
+  customRole: one(customRoles, {
+    fields: [userCustomRoles.customRoleId],
+    references: [customRoles.id],
+  }),
 }));
 
 export const customRolesRelations = relations(customRoles, ({ one, many }) => ({

@@ -112,7 +112,7 @@
     "overview": "Últimas ações na plataforma",
     "quickActions": "Ações Rápidas",
     "recentActivity": "Atividade Recente",
-    "summary": "Visão geral da plataforma Alice Enterprise",
+    "summary": "Visão geral operacional da plataforma (saúde, uso e integrações).",
     "noActivity": "Nenhuma atividade recente",
     "noAgents": "Nenhum agente cadastrado",
     "systemStatus": "Status do Sistema",
@@ -308,7 +308,11 @@
     "agent": {
       "ai": "Alice IA",
       "human": "Agente Humano",
-      "transferring": "Transferindo..."
+      "transferring": "Transferindo...",
+      "fallbackName": "Alice"
+    },
+    "user": {
+      "fallbackName": "Você"
     },
     "upload": {
       "unsupportedType": "Tipo não suportado",
@@ -354,7 +358,7 @@
   },
   "agents": {
     "title": "Agentes IA",
-    "subtitle": "Ativos: {{active}} / {{total}}",
+    "subtitle": "Ativos: {{active}} / {{total}} — crie agentes especialistas por área e conecte ao namespace certo.",
     "create": "Criar Agente",
     "edit": "Editar Agente",
     "deleteAgent": "Excluir Agente",
@@ -469,7 +473,7 @@
   },
   "namespaces": {
     "title": "Namespaces",
-    "subtitle": "{{count}} namespaces ativos",
+    "subtitle": "{{count}} namespaces ativos — organize contexto, documentos e agentes por domínio.",
     "create": "Criar Namespace",
     "edit": "Editar Namespace",
     "deleteNamespace": "Excluir Namespace",
@@ -591,7 +595,7 @@
   },
   "integrations": {
     "title": "Integrações",
-    "subtitle": "Configure serviços externos para expandir as capacidades da Alice",
+    "subtitle": "Conecte serviços externos para automações, pagamentos e operações de negócio.",
     "available": "Disponíveis",
     "configured": "Configuradas",
     "activeCount": "{{count}}/{{total}} ativas",
@@ -666,6 +670,9 @@
   "settings": {
     "title": "Configurações",
     "general": "Geral",
+    "profileDescription": "Atualize seus dados e defina como a Alice deve te chamar.",
+    "preferredNameLabel": "Nome preferido",
+    "preferredNameDesc": "Usaremos este nome nas mensagens da Alice e dos agentes.",
     "appearance": "Aparência",
     "language": "Idioma",
     "theme": "Tema",
@@ -893,7 +900,7 @@
   },
   "training": {
     "title": "Fine-tuning & Treinamento",
-    "subtitle": "Gerencie dados e jobs de fine-tuning para o LLM (Qwen2.5 7B)",
+    "subtitle": "Aprove dados, acompanhe jobs e controle o aprendizado contínuo do LLM com segurança.",
     "newJob": "Novo Job",
     "status": {
       "pending": "Pendente",
@@ -1162,7 +1169,7 @@
   },
   "observability": {
     "title": "Portal de Observabilidade",
-    "description": "Monitoramento unificado de métricas, traces e alertas",
+    "description": "Acompanhe métricas, traces e alertas com visibilidade ponta a ponta.",
     "stackStatus": "Status do Stack",
     "healthy": "Saudável",
     "degraded": "Degradado",
@@ -1197,7 +1204,7 @@
   },
   "trading": {
     "title": "Trading BTC Futures",
-    "subtitle": "Trading automatizado de BTC Perpetuals na KuCoin via Alice IA",
+    "subtitle": "Controle sinais, risco e execução automática em BTC Perpetuals com supervisão.",
     "notConfigured": "KuCoin não configurada",
     "notConfiguredDesc": "Configure as credenciais da API KuCoin para ativar o trading. Adicione os secrets no GitHub:",
     "status": {
@@ -1451,9 +1458,9 @@
   },
   "aliceConfig": {
     "title": "Configuração da Alice",
-    "description": "Ajuste o core, system prompt, comportamento e guardrails da assistente.",
+    "description": "Defina regras centrais, personalidade e limites operacionais da Alice com rastreabilidade.",
     "settingsTitle": "Configurações da Assistente",
-    "settingsDescription": "Atualize as diretrizes principais que guiam a Alice.",
+    "settingsDescription": "Atualize as diretrizes principais que guiam a Alice e são aplicadas em todas as respostas.",
     "readOnlyBadge": "Somente leitura (sem permissão de Core)",
     "coreBadge": "Core",
     "coreReadOnlyHint": "Permissão Core necessária para editar",
@@ -1533,16 +1540,41 @@
     },
     "users": {
       "title": "Usuários",
-      "description": "Gerencie roles, status e provedores de autenticação.",
+      "description": "Edite perfis, atribua roles e acompanhe o status de acesso de cada usuário.",
       "searchPlaceholder": "Buscar por nome, email ou role",
       "columns": {
         "name": "Nome",
         "email": "Email",
-        "role": "Role",
+        "role": "Roles base",
         "customRole": "Role personalizada",
         "status": "Status",
-        "provider": "Provedor"
+        "provider": "Provedor",
+        "actions": "Ações"
       },
+      "edit": "Editar usuário",
+      "new": "Novo usuário",
+      "editTitle": "Editar usuário",
+      "editDescription": "Atualize dados, roles, grupos e preferências do usuário.",
+      "newTitle": "Novo usuário",
+      "newDescription": "Crie um usuário com dados completos e roles iniciais.",
+      "sections": {
+        "profile": "Dados do perfil",
+        "roles": "Roles base (permissões herdadas)",
+        "customRoles": "Roles customizadas (cargos)",
+        "groups": "Grupos organizacionais"
+      },
+      "preferredName": "Nome preferido",
+      "preferredNameHint": "Define como a Alice e os agentes devem se referir ao usuário.",
+      "jobTitle": "Cargo",
+      "department": "Departamento",
+      "phone": "Telefone",
+      "status": "Status",
+      "active": "Ativo",
+      "inactive": "Inativo",
+      "rolesHint": "Usuários podem ter múltiplas roles base; as permissões são somadas.",
+      "superAdminOnly": "Apenas administradores podem alterar roles, grupos e status.",
+      "customRolesHint": "Selecione os cargos que complementam as permissões do usuário.",
+      "groupsHint": "Grupos são visuais e não alteram permissões.",
       "empty": "Nenhum usuário encontrado",
       "roleUpdated": "Role atualizada com sucesso",
       "roleUpdateError": "Erro ao atualizar role",
@@ -1552,6 +1584,11 @@
       "customRolePlaceholder": "Selecionar role personalizada",
       "statusUpdated": "Status atualizado com sucesso",
       "statusUpdateError": "Erro ao atualizar status",
+      "requiredFieldsError": "Preencha email, nome, sobrenome, cargo, departamento e telefone.",
+      "requiredPasswordError": "Defina uma senha inicial para o usuário.",
+      "requiredRolesError": "Selecione ao menos uma role base para o usuário.",
+      "updated": "Usuário atualizado com sucesso",
+      "updateError": "Erro ao atualizar usuário",
       "providerLocal": "Local"
     },
     "groups": {
@@ -1591,7 +1628,10 @@
     },
     "roles": {
       "title": "Roles Personalizadas",
-      "description": "Crie roles por departamento/função e gerencie permissões específicas.",
+      "description": "Crie cargos personalizados e associe permissões específicas por função.",
+      "baseTitle": "Roles base do sistema",
+      "baseDescription": "Roles base definem o nível hierárquico principal e liberam permissões padrão.",
+      "manageBasePermissions": "Permissões",
       "new": "Nova Role",
       "searchPlaceholder": "Buscar por nome ou slug",
       "empty": "Nenhuma role personalizada cadastrada",
@@ -1624,7 +1664,7 @@
     },
     "permissions": {
       "title": "Permissões do Sistema",
-      "description": "Gerencie permissões e atribua acessos por role.",
+      "description": "Controle acessos por role e garanta que cada pessoa veja apenas o necessário.",
       "new": "Nova Permissão",
       "roleLabel": "Role selecionada",
       "roleAlwaysAllowed": "Admin e Super Admin têm todas as permissões",
@@ -1684,9 +1724,9 @@
   },
   "agenticConfig": {
     "title": "Modo Agentic",
-    "subtitle": "Configure execução agentic, aprovações e links operacionais.",
+    "subtitle": "Defina o escopo de execução, aprovações e referências operacionais do agentic.",
     "togglesTitle": "Escopo de Execução",
-    "togglesDesc": "Controle quais capacidades agentic estão habilitadas para o tenant.",
+    "togglesDesc": "Habilite capacidades por tenant e exija aprovação para ações críticas.",
     "webEnabled": "Busca na internet (SearXNG)",
     "erpReadEnabled": "ERPNext leitura",
     "erpWriteEnabled": "ERPNext escrita",
@@ -1695,7 +1735,7 @@
     "stackOpsEnabled": "Stack Ops (GitHub Actions)",
     "financialApprovalRequired": "Aprovação obrigatória para operações financeiras",
     "linksTitle": "Links operacionais",
-    "linksDesc": "Cadastre URLs e descrições para a Alice usar como referência em operações.",
+    "linksDesc": "Cadastre URLs oficiais para orientar execuções e reduzir erros.",
     "linkItemTitle": "Link {{index}}",
     "linkName": "Nome",
     "linkUrl": "URL",

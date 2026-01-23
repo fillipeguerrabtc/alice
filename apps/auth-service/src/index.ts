@@ -50,8 +50,10 @@ import {
   clearPermissionCache,
   PERMISSION_MAP,
   Role,
+  ROLE_HIERARCHY,
+  ROLE_DESCRIPTIONS,
 } from '@alice/shared-utils';
-import { eq, or, and, inArray } from '@alice/database';
+import { eq, or, and, inArray, sql } from '@alice/database';
 import type { AuthContext } from '@alice/shared-utils';
 import { z } from 'zod';
 import { 
@@ -85,41 +87,96 @@ const featureFlagStorage = createDrizzleFeatureFlagStorage();
 initFeatureFlags(featureFlagStorage);
 logger.info('Sistema de feature flags inicializado');
 
-setPermissionResolver(async (auth: AuthContext) => {
+async function resolveUserRoleAssignments(params: {
+  userId: string;
+  tenantId?: string;
+}): Promise<{ baseRoles: Role[]; customRoleIds: string[] }> {
   const db = getDatabase();
-  let customRoleId = auth.customRoleId;
-  if (!customRoleId) {
-    const user = await db.query.users.findFirst({
-      where: eq(schema.users.id, auth.userId),
-      columns: { customRoleId: true },
+  const baseRoles = await db.query.userRoles.findMany({
+    where: eq(schema.userRoles.userId, params.userId),
+    columns: { role: true },
+  });
+  let resolvedBaseRoles = baseRoles.map((item) => item.role as Role).filter(Boolean);
+  if (resolvedBaseRoles.length === 0) {
+    const fallbackUser = await db.query.users.findFirst({
+      where: eq(schema.users.id, params.userId),
+      columns: { role: true },
     });
-    customRoleId = user?.customRoleId ?? undefined;
-  }
-  if (customRoleId) {
-    const activeRole = await db.query.customRoles.findFirst({
-      where: and(
-        eq(schema.customRoles.id, customRoleId),
-        eq(schema.customRoles.ativo, true)
-      ),
-      columns: { id: true },
-    });
-    if (!activeRole) {
-      customRoleId = undefined;
+    if (fallbackUser?.role) {
+      resolvedBaseRoles = [fallbackUser.role as Role];
     }
   }
-  const isAdminRole = auth.role === 'admin' || auth.role === 'super_admin';
+
+  const customRoleLinks = await db.query.userCustomRoles.findMany({
+    where: eq(schema.userCustomRoles.userId, params.userId),
+    with: {
+      customRole: {
+        columns: { id: true, ativo: true, tenantId: true },
+      },
+    },
+  });
+  let customRoleIds = customRoleLinks
+    .filter((link) => link.customRole?.ativo)
+    .filter((link) => !params.tenantId || link.customRole?.tenantId === params.tenantId)
+    .map((link) => link.customRoleId);
+
+  if (customRoleIds.length === 0) {
+    const fallbackUser = await db.query.users.findFirst({
+      where: eq(schema.users.id, params.userId),
+      columns: { customRoleId: true, tenantId: true },
+    });
+    const fallbackCustomRoleId = fallbackUser?.customRoleId ?? undefined;
+    if (fallbackCustomRoleId) {
+      const activeRole = await db.query.customRoles.findFirst({
+        where: and(
+          eq(schema.customRoles.id, fallbackCustomRoleId),
+          eq(schema.customRoles.ativo, true),
+          params.tenantId ? eq(schema.customRoles.tenantId, params.tenantId) : sql`1=1`
+        ),
+        columns: { id: true },
+      });
+      if (activeRole) {
+        customRoleIds = [fallbackCustomRoleId];
+      }
+    }
+  }
+
+  return { baseRoles: resolvedBaseRoles, customRoleIds };
+}
+
+function resolveHighestRole(roles: Role[], fallback: Role): Role {
+  if (roles.length === 0) return fallback;
+  return roles.reduce((highest, role) => (
+    ROLE_HIERARCHY[role] < ROLE_HIERARCHY[highest] ? role : highest
+  ), fallback);
+}
+
+setPermissionResolver(async (auth: AuthContext) => {
+  const db = getDatabase();
+  const assignments = await resolveUserRoleAssignments({
+    userId: auth.userId,
+    tenantId: auth.tenantId,
+  });
+  const baseRoles = assignments.baseRoles;
+  const customRoleIds = assignments.customRoleIds;
+  const isAdminRole = baseRoles.some((role) => role === 'admin' || role === 'super_admin');
+
   const rolePermissions = isAdminRole
     ? await db.query.permissions.findMany({ columns: { codigo: true } })
-    : await db.query.rolePermissions.findMany({
-      where: eq(schema.rolePermissions.role, auth.role),
-      with: { permission: true },
-    });
-  const customRolePermissions = customRoleId
+    : baseRoles.length > 0
+      ? await db.query.rolePermissions.findMany({
+        where: inArray(schema.rolePermissions.role, baseRoles),
+        with: { permission: true },
+      })
+      : [];
+
+  const customRolePermissions = customRoleIds.length > 0
     ? await db.query.customRolePermissions.findMany({
-      where: eq(schema.customRolePermissions.customRoleId, customRoleId),
+      where: inArray(schema.customRolePermissions.customRoleId, customRoleIds),
       with: { permission: true },
     })
     : [];
+
   const dbPermissions = rolePermissions
     .map((rp) => ('codigo' in rp ? rp.codigo : (rp as { permission?: { codigo?: string | null } }).permission?.codigo))
     .filter((code): code is string => Boolean(code));
@@ -127,7 +184,7 @@ setPermissionResolver(async (auth: AuthContext) => {
     .map((rp) => (rp as { permission?: { codigo?: string | null } }).permission?.codigo)
     .filter((code): code is string => Boolean(code));
   const basePermissions = Object.entries(PERMISSION_MAP)
-    .filter(([, roles]) => roles.includes(auth.role))
+    .filter(([, roles]) => roles.some((role) => baseRoles.includes(role as Role)))
     .map(([code]) => code);
   const resolved = new Set<string>([...dbPermissions, ...customPermissions, ...basePermissions]);
   if (isAdminRole) {
@@ -138,12 +195,17 @@ setPermissionResolver(async (auth: AuthContext) => {
 
 type DbUser = typeof schema.users.$inferSelect;
 
-function toAuthContext(dbUser: DbUser): Express.User {
+async function buildAuthContext(dbUser: DbUser): Promise<Express.User> {
+  const assignments = await resolveUserRoleAssignments({
+    userId: dbUser.id,
+    tenantId: dbUser.tenantId || undefined,
+  });
+  const effectiveRole = resolveHighestRole(assignments.baseRoles, (dbUser.role || 'guest') as Role);
   return {
     userId: dbUser.id,
     tenantId: dbUser.tenantId || undefined,
-    role: dbUser.role || 'guest',
-    customRoleId: dbUser.customRoleId || undefined,
+    role: effectiveRole,
+    customRoleId: undefined,
     email: dbUser.email || undefined,
     permissions: [],
   };
@@ -325,7 +387,6 @@ function csrfProtection(req: Request, res: Response, next: NextFunction): void {
   // Rotas isentas (login inicial, webhooks, health checks)
   const exemptRoutes = [
     '/api/auth/login',
-    '/api/auth/register', 
     '/api/auth/google',
     '/api/auth/github',
     '/api/auth/saml',
@@ -919,7 +980,8 @@ passport.deserializeUser(async (id: string, done) => {
     if (!dbUser) {
       return done(null, null);
     }
-    done(null, toAuthContext(dbUser));
+    const authContext = await buildAuthContext(dbUser);
+    done(null, authContext);
   } catch (error) {
     logger.error({ error, userId: id }, 'Erro ao deserializar usuário');
     done(error, null);
@@ -1160,7 +1222,8 @@ passport.use(new LocalStrategy(
 
       recordAuthAttempt('local', true);
       logger.info({ userId: user.id, email }, 'Login local bem-sucedido');
-      return done(null, toAuthContext(user));
+      const authContext = await buildAuthContext(user);
+      return done(null, authContext);
     } catch (error) {
       recordAuthAttempt('local', false);
       // Tratamento específico para circuit breaker aberto
@@ -1251,7 +1314,7 @@ if (googleClientId && googleClientSecret) {
               googleId,
               authProvider: 'google',
               emailVerified: true,
-              role: 'viewer',
+              role: 'guest',
               idioma: 'pt-BR',
               timezone: 'Europe/Lisbon',
               tenantId: defaultTenant.id, // BUG FIX 13/01/2026: SEMPRE associar a um tenant
@@ -1259,6 +1322,11 @@ if (googleClientId && googleClientSecret) {
           });
           user = newUser;
           const createdUserId = user.id;
+          await db.insert(schema.userRoles).values({
+            userId: createdUserId,
+            role: 'guest',
+          }).onConflictDoNothing();
+
           logger.info({ userId: createdUserId, email }, 'Novo usuário criado via Google');
           
           // Identity Provisioning: Sincronizar usuário com Grafana/ERPNext
@@ -1267,7 +1335,7 @@ if (googleClientId && googleClientSecret) {
             email: user.email || email,
             firstName: user.firstName || undefined,
             lastName: user.lastName || undefined,
-            role: user.role || 'viewer',
+            role: user.role || 'guest',
             tenantId: user.tenantId || undefined,
           }).catch((error: unknown) => {
             logger.error({ error, userId: createdUserId }, 'Erro ao publicar evento de provisioning');
@@ -1297,7 +1365,8 @@ if (googleClientId && googleClientSecret) {
         }
 
         recordAuthAttempt('google', true);
-        return done(null, toAuthContext(user));
+        const authContext = await buildAuthContext(user);
+        return done(null, authContext);
       } catch (error) {
         recordAuthAttempt('google', false);
         // Tratamento específico para circuit breaker aberto
@@ -1391,7 +1460,7 @@ if (githubClientId && githubClientSecret) {
               githubId,
               authProvider: 'github',
               emailVerified: true,
-              role: 'viewer',
+              role: 'guest',
               idioma: 'pt-BR',
               timezone: 'Europe/Lisbon',
               tenantId: defaultTenant.id, // BUG FIX 13/01/2026: SEMPRE associar a um tenant
@@ -1399,6 +1468,11 @@ if (githubClientId && githubClientSecret) {
           });
           user = newUser;
           const createdUserId = user.id;
+          await db.insert(schema.userRoles).values({
+            userId: createdUserId,
+            role: 'guest',
+          }).onConflictDoNothing();
+
           logger.info({ userId: createdUserId, email }, 'Novo usuário criado via GitHub');
           
           // Identity Provisioning: Sincronizar usuário com Grafana/ERPNext
@@ -1407,7 +1481,7 @@ if (githubClientId && githubClientSecret) {
             email: user.email || email,
             firstName: user.firstName || undefined,
             lastName: user.lastName || undefined,
-            role: user.role || 'viewer',
+            role: user.role || 'guest',
             tenantId: user.tenantId || undefined,
           }).catch((error: unknown) => {
             logger.error({ error, userId: createdUserId }, 'Erro ao publicar evento de provisioning');
@@ -1437,7 +1511,8 @@ if (githubClientId && githubClientSecret) {
         }
 
         recordAuthAttempt('github', true);
-        return done(null, toAuthContext(user));
+        const authContext = await buildAuthContext(user);
+        return done(null, authContext);
       } catch (error) {
         recordAuthAttempt('github', false);
         // Tratamento específico para circuit breaker aberto
@@ -1544,7 +1619,7 @@ if (samlEntryPoint && samlIssuer && samlCert) {
               samlNameId,
               authProvider: 'saml',
               emailVerified: true,
-              role: 'viewer',
+              role: 'guest',
               idioma: 'pt-BR',
               timezone: 'Europe/Lisbon',
               tenantId: defaultTenant.id, // BUG FIX 13/01/2026: SEMPRE associar a um tenant
@@ -1552,6 +1627,11 @@ if (samlEntryPoint && samlIssuer && samlCert) {
           });
           user = newUser;
           const createdUserId = user.id;
+          await db.insert(schema.userRoles).values({
+            userId: createdUserId,
+            role: 'guest',
+          }).onConflictDoNothing();
+
           logger.info({ userId: createdUserId, email }, 'Novo usuário criado via SAML');
           
           // Identity Provisioning: Sincronizar usuário com Grafana/ERPNext
@@ -1589,7 +1669,8 @@ if (samlEntryPoint && samlIssuer && samlCert) {
         }
 
         recordAuthAttempt('saml', true);
-        return done(null, toAuthContext(user) as unknown as Record<string, unknown>);
+        const authContext = await buildAuthContext(user);
+        return done(null, authContext as unknown as Record<string, unknown>);
       } catch (error) {
         recordAuthAttempt('saml', false);
         // Tratamento específico para circuit breaker aberto
@@ -1747,10 +1828,22 @@ const registerSchema = z.object({
     .regex(/[0-9]/, 'Senha deve conter pelo menos um número'),
   firstName: z.string()
     .min(1, 'Nome é obrigatório')
-    .max(100, 'Nome muito longo')
-    .optional(),
+    .max(100, 'Nome muito longo'),
   lastName: z.string()
-    .max(100, 'Sobrenome muito longo')
+    .min(1, 'Sobrenome é obrigatório')
+    .max(100, 'Sobrenome muito longo'),
+  cargo: z.string()
+    .min(1, 'Cargo é obrigatório')
+    .max(120, 'Cargo muito longo'),
+  departamento: z.string()
+    .min(1, 'Departamento é obrigatório')
+    .max(120, 'Departamento muito longo'),
+  telefone: z.string()
+    .min(6, 'Telefone é obrigatório')
+    .max(30, 'Telefone muito longo'),
+  preferredName: z.string()
+    .min(2, 'Nome preferido muito curto')
+    .max(120, 'Nome preferido muito longo')
     .optional(),
 });
 
@@ -1767,7 +1860,7 @@ const loginSchema = z.object({
 // ROTAS: Autenticação Local
 // ============================================================================
 
-app.post('/api/auth/register', asyncHandler(async (req: Request, res: Response) => {
+app.post('/api/auth/register', requireAuth(), requireRole('admin'), asyncHandler(async (req: Request, res: Response) => {
   // Validação Zod (OWASP API3 - Injection Prevention)
   const parseResult = registerSchema.safeParse(req.body);
   
@@ -1779,7 +1872,7 @@ app.post('/api/auth/register', asyncHandler(async (req: Request, res: Response) 
     });
   }
 
-  const { email, password, firstName, lastName } = parseResult.data;
+  const { email, password, firstName, lastName, cargo, departamento, telefone, preferredName } = parseResult.data;
 
   const db = getDatabase();
   
@@ -1835,13 +1928,22 @@ app.post('/api/auth/register', asyncHandler(async (req: Request, res: Response) 
     passwordHash,
     firstName,
     lastName,
+    preferredName: preferredName || null,
+    cargo,
+    departamento,
+    telefone,
     authProvider: 'local',
     emailVerified: false,
-    role: 'viewer',
+    role: 'guest',
     idioma: 'pt-BR',
     timezone: 'Europe/Lisbon',
     tenantId: defaultTenant.id, // BUG FIX 13/01/2026: SEMPRE associar a um tenant
   }).returning();
+
+  await db.insert(schema.userRoles).values({
+    userId: newUser.id,
+    role: 'guest',
+  }).onConflictDoNothing();
 
   logger.info({ userId: newUser.id, email }, 'Novo usuário registrado');
 
@@ -1851,7 +1953,7 @@ app.post('/api/auth/register', asyncHandler(async (req: Request, res: Response) 
     email: newUser.email || email,
     firstName: newUser.firstName || undefined,
     lastName: newUser.lastName || undefined,
-    role: newUser.role || 'viewer',
+    role: newUser.role || 'guest',
     tenantId: newUser.tenantId || undefined,
   }).catch((error) => {
     // Log error mas não falhar a requisição principal
@@ -2610,6 +2712,15 @@ app.delete('/api/auth/permissions/:id', requireAuth(), requirePermission('admin:
 // ROTAS: Roles Customizadas (Departamentos/Funções)
 // ============================================================================
 
+// GET /api/auth/roles - Listar roles base do sistema
+app.get('/api/auth/roles', requireAuth(), requirePermission('admin:roles:read'), asyncHandler(async (_req: Request, res: Response) => {
+  const roles = (Object.keys(ROLE_DESCRIPTIONS) as Role[]).map((role) => ({
+    role,
+    descricao: ROLE_DESCRIPTIONS[role],
+  }));
+  res.json({ roles });
+}));
+
 // GET /api/auth/custom-roles - Listar roles customizadas do tenant
 app.get('/api/auth/custom-roles', requireAuth(), requirePermission('admin:roles:read'), asyncHandler(async (req: Request, res: Response) => {
   const db = getDatabase();
@@ -3196,6 +3307,7 @@ app.delete('/api/auth/groups/:id/users/:userId', requireAuth(), requirePermissio
 const updateUserProfileSchema = z.object({
   firstName: z.string().min(1).max(100).optional(),
   lastName: z.string().max(100).optional(),
+  preferredName: z.string().min(2).max(120).optional(),
   email: z.string().email().max(255).transform(v => v.toLowerCase().trim()).optional(),
   cargo: z.string().max(100).optional(),
   departamento: z.string().max(100).optional(),
@@ -3217,6 +3329,18 @@ const updateUserStatusSchema = z.object({
   ativo: z.boolean(),
 });
 
+const updateUserRolesSchema = z.object({
+  roles: z.array(z.enum(['super_admin', 'admin', 'manager', 'operator', 'viewer', 'guest'])).min(1),
+});
+
+const updateUserCustomRolesSchema = z.object({
+  customRoleIds: z.array(z.string().uuid()).default([]),
+});
+
+const updateUserGroupsSchema = z.object({
+  groupIds: z.array(z.string().uuid()).default([]),
+});
+
 // GET /api/users - Listar usuários do tenant (admin+ only)
 app.get('/api/users', requireAuth(), requireRole('admin'), asyncHandler(async (req: Request, res: Response) => {
   const db = getDatabase();
@@ -3234,6 +3358,7 @@ app.get('/api/users', requireAuth(), requireRole('admin'), asyncHandler(async (r
       email: true,
       firstName: true,
       lastName: true,
+      preferredName: true,
       role: true,
       customRoleId: true,
       cargo: true,
@@ -3258,7 +3383,79 @@ app.get('/api/users', requireAuth(), requireRole('admin'), asyncHandler(async (r
     orderBy: (users, { desc }) => [desc(users.createdAt)],
   });
 
-  res.json({ users });
+  const userIds = users.map((user) => user.id);
+  const [roleRows, customRoleRows, groupRows] = userIds.length > 0
+    ? await Promise.all([
+      db.query.userRoles.findMany({
+        where: inArray(schema.userRoles.userId, userIds),
+        columns: { userId: true, role: true },
+      }),
+      db.query.userCustomRoles.findMany({
+        where: inArray(schema.userCustomRoles.userId, userIds),
+        with: {
+          customRole: {
+            columns: { id: true, nome: true, slug: true, baseRole: true, ativo: true },
+          },
+        },
+      }),
+      db.query.userGroupMembers.findMany({
+        where: inArray(schema.userGroupMembers.userId, userIds),
+        with: {
+          group: {
+            columns: { id: true, nome: true, descricao: true, ativo: true },
+          },
+        },
+      }),
+    ])
+    : [[], [], []];
+
+  const rolesByUser = roleRows.reduce<Record<string, Role[]>>((acc, row) => {
+    if (!acc[row.userId]) acc[row.userId] = [];
+    acc[row.userId].push(row.role as Role);
+    return acc;
+  }, {});
+
+  const customRolesByUser = customRoleRows.reduce<Record<string, Array<{ id: string; nome: string; slug: string; baseRole: Role; ativo: boolean }>>>((acc, row) => {
+    if (!acc[row.userId]) acc[row.userId] = [];
+    if (row.customRole) {
+      acc[row.userId].push({
+        id: row.customRole.id,
+        nome: row.customRole.nome,
+        slug: row.customRole.slug,
+        baseRole: row.customRole.baseRole as Role,
+        ativo: row.customRole.ativo ?? false,
+      });
+    }
+    return acc;
+  }, {});
+
+  const groupsByUser = groupRows.reduce<Record<string, Array<{ id: string; nome: string; descricao?: string | null; ativo?: boolean | null }>>>((acc, row) => {
+    if (!acc[row.userId]) acc[row.userId] = [];
+    if (row.group) {
+      acc[row.userId].push({
+        id: row.group.id,
+        nome: row.group.nome,
+        descricao: row.group.descricao,
+        ativo: row.group.ativo,
+      });
+    }
+    return acc;
+  }, {});
+
+  const enrichedUsers = users.map((user) => ({
+    ...user,
+    roles: rolesByUser[user.id] ?? (user.role ? [user.role as Role] : []),
+    customRoles: customRolesByUser[user.id] ?? (user.customRole ? [{
+      id: user.customRole.id,
+      nome: user.customRole.nome,
+      slug: user.customRole.slug,
+      baseRole: user.customRole.baseRole as Role,
+      ativo: user.customRole.ativo,
+    }] : []),
+    groups: groupsByUser[user.id] ?? [],
+  }));
+
+  res.json({ users: enrichedUsers });
 }));
 
 // GET /api/users/:id - Buscar usuário específico
@@ -3282,6 +3479,7 @@ app.get('/api/users/:id', requireAuth(), asyncHandler(async (req: Request, res: 
       email: true,
       firstName: true,
       lastName: true,
+      preferredName: true,
       role: true,
       customRoleId: true,
       cargo: true,
@@ -3320,7 +3518,49 @@ app.get('/api/users/:id', requireAuth(), asyncHandler(async (req: Request, res: 
     return res.status(403).json({ error: 'Acesso negado - tenant diferente' });
   }
 
-  res.json({ user });
+  const [roleRows, customRoleRows, groupRows] = await Promise.all([
+    db.query.userRoles.findMany({
+      where: eq(schema.userRoles.userId, userId),
+      columns: { userId: true, role: true },
+    }),
+    db.query.userCustomRoles.findMany({
+      where: eq(schema.userCustomRoles.userId, userId),
+      with: {
+        customRole: {
+          columns: { id: true, nome: true, slug: true, baseRole: true, ativo: true },
+        },
+      },
+    }),
+    db.query.userGroupMembers.findMany({
+      where: eq(schema.userGroupMembers.userId, userId),
+      with: {
+        group: {
+          columns: { id: true, nome: true, descricao: true, ativo: true },
+        },
+      },
+    }),
+  ]);
+
+  const roles = roleRows.map((row) => row.role as Role);
+  const customRoles = customRoleRows
+    .filter((row) => row.customRole)
+    .map((row) => ({
+      id: row.customRole!.id,
+      nome: row.customRole!.nome,
+      slug: row.customRole!.slug,
+      baseRole: row.customRole!.baseRole as Role,
+      ativo: row.customRole!.ativo,
+    }));
+  const groups = groupRows
+    .filter((row) => row.group)
+    .map((row) => ({
+      id: row.group!.id,
+      nome: row.group!.nome,
+      descricao: row.group!.descricao,
+      ativo: row.group!.ativo,
+    }));
+
+  res.json({ user: { ...user, roles, customRoles, groups } });
 }));
 
 // PATCH /api/users/:id - Atualizar perfil do usuário
@@ -3719,6 +3959,149 @@ app.patch('/api/users/:id/status', requireAuth(), requireRole('admin'), asyncHan
     }, 
     message: ativo ? 'Usuário ativado com sucesso' : 'Usuário desativado com sucesso',
   });
+}));
+
+// PATCH /api/users/:id/roles - Atualizar roles base do usuário (admin+ only)
+app.patch('/api/users/:id/roles', requireAuth(), requireRole('admin'), asyncHandler(async (req: Request, res: Response) => {
+  const db = getDatabase();
+  const userId = req.params.id;
+  const requestingUser = req.user;
+  const isSuperAdmin = requestingUser?.role === 'super_admin';
+  const requesterTenantId = requestingUser?.tenantId;
+
+  const parseResult = updateUserRolesSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Dados inválidos', details: parseResult.error.format() });
+  }
+
+  const currentUser = await db.query.users.findFirst({ where: eq(schema.users.id, userId) });
+  if (!currentUser) {
+    return res.status(404).json({ error: 'Usuário não encontrado' });
+  }
+  if (!isSuperAdmin) {
+    if (!requesterTenantId || !currentUser.tenantId || requesterTenantId !== currentUser.tenantId) {
+      return res.status(403).json({ error: 'Acesso negado - tenant diferente' });
+    }
+  }
+
+  const { roles } = parseResult.data;
+  await db.delete(schema.userRoles).where(eq(schema.userRoles.userId, userId));
+  await db.insert(schema.userRoles).values(
+    roles.map((role) => ({ userId, role }))
+  );
+
+  const effectiveRole = resolveHighestRole(roles, (currentUser.role || 'guest') as Role);
+  await db.update(schema.users)
+    .set({ role: effectiveRole, updatedAt: new Date() })
+    .where(eq(schema.users.id, userId));
+
+  await invalidateUserPermissions(userId, currentUser.tenantId ?? req.tenantId);
+  res.json({ success: true, roles, effectiveRole });
+}));
+
+// PATCH /api/users/:id/custom-roles - Atualizar roles customizadas (admin+ only)
+app.patch('/api/users/:id/custom-roles', requireAuth(), requireRole('admin'), asyncHandler(async (req: Request, res: Response) => {
+  const db = getDatabase();
+  const userId = req.params.id;
+  const requestingUser = req.user;
+  const isSuperAdmin = requestingUser?.role === 'super_admin';
+  const requesterTenantId = requestingUser?.tenantId;
+
+  const parseResult = updateUserCustomRolesSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Dados inválidos', details: parseResult.error.format() });
+  }
+
+  const currentUser = await db.query.users.findFirst({ where: eq(schema.users.id, userId) });
+  if (!currentUser) {
+    return res.status(404).json({ error: 'Usuário não encontrado' });
+  }
+  if (!isSuperAdmin) {
+    if (!requesterTenantId || !currentUser.tenantId || requesterTenantId !== currentUser.tenantId) {
+      return res.status(403).json({ error: 'Acesso negado - tenant diferente' });
+    }
+  }
+
+  const { customRoleIds } = parseResult.data;
+  if (customRoleIds.length > 0) {
+    const roles = await db.query.customRoles.findMany({
+      where: and(
+        inArray(schema.customRoles.id, customRoleIds),
+        eq(schema.customRoles.ativo, true),
+        currentUser.tenantId ? eq(schema.customRoles.tenantId, currentUser.tenantId) : sql`1=1`
+      ),
+      columns: { id: true },
+    });
+    if (roles.length !== customRoleIds.length) {
+      return res.status(400).json({ error: 'Role customizada inválida ou inativa' });
+    }
+  }
+
+  await db.delete(schema.userCustomRoles).where(eq(schema.userCustomRoles.userId, userId));
+  if (customRoleIds.length > 0) {
+    await db.insert(schema.userCustomRoles).values(
+      customRoleIds.map((customRoleId) => ({ userId, customRoleId }))
+    );
+  }
+
+  await invalidateUserPermissions(userId, currentUser.tenantId ?? req.tenantId);
+  res.json({ success: true, customRoleIds });
+}));
+
+// PATCH /api/users/:id/groups - Atualizar grupos do usuário (admin+ only)
+app.patch('/api/users/:id/groups', requireAuth(), requireRole('admin'), asyncHandler(async (req: Request, res: Response) => {
+  const db = getDatabase();
+  const userId = req.params.id;
+  const requestingUser = req.user;
+  const isSuperAdmin = requestingUser?.role === 'super_admin';
+  const requesterTenantId = requestingUser?.tenantId;
+
+  const parseResult = updateUserGroupsSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Dados inválidos', details: parseResult.error.format() });
+  }
+
+  const currentUser = await db.query.users.findFirst({ where: eq(schema.users.id, userId) });
+  if (!currentUser) {
+    return res.status(404).json({ error: 'Usuário não encontrado' });
+  }
+  if (!isSuperAdmin) {
+    if (!requesterTenantId || !currentUser.tenantId || requesterTenantId !== currentUser.tenantId) {
+      return res.status(403).json({ error: 'Acesso negado - tenant diferente' });
+    }
+  }
+
+  const { groupIds } = parseResult.data;
+  const targetTenantId = currentUser.tenantId ?? req.tenantId;
+  if (!targetTenantId) {
+    return res.status(400).json({ error: 'Tenant indefinido para associação de grupos' });
+  }
+  if (groupIds.length > 0) {
+    const groups = await db.query.userGroups.findMany({
+      where: and(
+        inArray(schema.userGroups.id, groupIds),
+        targetTenantId ? eq(schema.userGroups.tenantId, targetTenantId) : sql`1=1`
+      ),
+      columns: { id: true },
+    });
+    if (groups.length !== groupIds.length) {
+      return res.status(400).json({ error: 'Grupo inválido para o tenant' });
+    }
+  }
+
+  await db.delete(schema.userGroupMembers).where(eq(schema.userGroupMembers.userId, userId));
+  if (groupIds.length > 0) {
+    await db.insert(schema.userGroupMembers).values(
+      groupIds.map((groupId) => ({
+        userId,
+        groupId,
+        tenantId: targetTenantId,
+        criadoPor: requestingUser?.userId,
+      }))
+    );
+  }
+
+  res.json({ success: true, groupIds });
 }));
 
 // DELETE /api/users/:id - Deletar usuário (super_admin only)

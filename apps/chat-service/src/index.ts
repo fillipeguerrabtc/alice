@@ -393,36 +393,66 @@ async function initializeAllCaches(): Promise<void> {
   await permissionCache.initialize();
   setPermissionResolver(async (auth: AuthContext) => {
     const db = getDatabase();
-    let customRoleId = auth.customRoleId;
-    if (!customRoleId) {
-      const user = await db.query.users.findFirst({
+    const baseRoleRows = await db.query.userRoles.findMany({
+      where: eq(schema.userRoles.userId, auth.userId),
+      columns: { role: true },
+    });
+    let baseRoles = baseRoleRows.map((row) => row.role as Role).filter(Boolean);
+    if (baseRoles.length === 0) {
+      const fallbackUser = await db.query.users.findFirst({
+        where: eq(schema.users.id, auth.userId),
+        columns: { role: true },
+      });
+      if (fallbackUser?.role) {
+        baseRoles = [fallbackUser.role as Role];
+      }
+    }
+
+    const customRoleRows = await db.query.userCustomRoles.findMany({
+      where: eq(schema.userCustomRoles.userId, auth.userId),
+      with: {
+        customRole: {
+          columns: { id: true, ativo: true, tenantId: true },
+        },
+      },
+    });
+    let customRoleIds = customRoleRows
+      .filter((row) => row.customRole?.ativo)
+      .filter((row) => !auth.tenantId || row.customRole?.tenantId === auth.tenantId)
+      .map((row) => row.customRoleId);
+    if (customRoleIds.length === 0) {
+      const fallbackUser = await db.query.users.findFirst({
         where: eq(schema.users.id, auth.userId),
         columns: { customRoleId: true },
       });
-      customRoleId = user?.customRoleId ?? undefined;
-    }
-    if (customRoleId) {
-      const activeRole = await db.query.customRoles.findFirst({
-        where: and(
-          eq(schema.customRoles.id, customRoleId),
-          eq(schema.customRoles.ativo, true)
-        ),
-        columns: { id: true },
-      });
-      if (!activeRole) {
-        customRoleId = undefined;
+      const fallbackCustomRoleId = fallbackUser?.customRoleId ?? undefined;
+      if (fallbackCustomRoleId) {
+        const activeRole = await db.query.customRoles.findFirst({
+          where: and(
+            eq(schema.customRoles.id, fallbackCustomRoleId),
+            eq(schema.customRoles.ativo, true),
+            auth.tenantId ? eq(schema.customRoles.tenantId, auth.tenantId) : sql`1=1`
+          ),
+          columns: { id: true },
+        });
+        if (activeRole) {
+          customRoleIds = [fallbackCustomRoleId];
+        }
       }
     }
-    const isAdminRole = auth.role === 'admin' || auth.role === 'super_admin';
+
+    const isAdminRole = baseRoles.some((role) => role === 'admin' || role === 'super_admin');
     const rolePermissions = isAdminRole
       ? await db.query.permissions.findMany({ columns: { codigo: true } })
-      : await db.query.rolePermissions.findMany({
-        where: eq(schema.rolePermissions.role, auth.role),
-        with: { permission: true },
-      });
-    const customRolePermissions = customRoleId
+      : baseRoles.length > 0
+        ? await db.query.rolePermissions.findMany({
+          where: inArray(schema.rolePermissions.role, baseRoles),
+          with: { permission: true },
+        })
+        : [];
+    const customRolePermissions = customRoleIds.length > 0
       ? await db.query.customRolePermissions.findMany({
-        where: eq(schema.customRolePermissions.customRoleId, customRoleId),
+        where: inArray(schema.customRolePermissions.customRoleId, customRoleIds),
         with: { permission: true },
       })
       : [];
@@ -433,7 +463,7 @@ async function initializeAllCaches(): Promise<void> {
       .map((rp) => (rp as { permission?: { codigo?: string | null } }).permission?.codigo)
       .filter((code): code is string => Boolean(code));
     const basePermissions = Object.entries(PERMISSION_MAP)
-      .filter(([, roles]) => roles.includes(auth.role))
+      .filter(([, roles]) => roles.some((role) => baseRoles.includes(role as Role)))
       .map(([code]) => code);
     const resolved = new Set<string>([...dbPermissions, ...customPermissions, ...basePermissions]);
     if (isAdminRole) {
@@ -1896,6 +1926,18 @@ async function updateUserPreferences(
     .where(eq(schema.users.id, userId));
 }
 
+async function updateUserPreferredName(
+  userId: string,
+  tenantId: string | null | undefined,
+  preferredName: string | null
+): Promise<void> {
+  const user = await getUserById(userId, tenantId);
+  if (!user) return;
+  await db.update(schema.users)
+    .set({ preferredName, updatedAt: new Date() })
+    .where(eq(schema.users.id, userId));
+}
+
 async function resolveUserNameContext(
   userId: string,
   tenantId: string | null | undefined
@@ -1910,7 +1952,13 @@ async function resolveUserNameContext(
     };
   }
   const prefs = (user.preferencias ?? {}) as UserPreferencesRecord;
-  const preferredName = typeof prefs.preferredName === 'string' ? normalizeUserName(prefs.preferredName) : null;
+  const preferredName = normalizeUserName(
+    typeof user.preferredName === 'string' && user.preferredName.trim().length > 0
+      ? user.preferredName
+      : typeof prefs.preferredName === 'string'
+        ? prefs.preferredName
+        : ''
+  );
   const suggestedName = typeof prefs.nameSuggested === 'string'
     ? normalizeUserName(prefs.nameSuggested)
     : buildLoginName({ firstName: user.firstName, lastName: user.lastName, email: user.email });
@@ -1933,8 +1981,8 @@ async function handleUserNameUpdate(params: {
 }): Promise<UserNameContext> {
   const extractedName = extractNameFromMessage(params.userMessage);
   if (extractedName) {
+    await updateUserPreferredName(params.userId, params.tenantId, extractedName);
     await updateUserPreferences(params.userId, params.tenantId, {
-      preferredName: extractedName,
       namePromptPending: false,
       nameSuggested: null,
       nameUpdatedAt: new Date().toISOString(),
@@ -1950,8 +1998,8 @@ async function handleUserNameUpdate(params: {
   if (params.currentContext.promptPending && isNameConfirmation(params.userMessage, params.currentContext.suggestedName)) {
     const confirmedName = params.currentContext.suggestedName;
     if (confirmedName) {
+      await updateUserPreferredName(params.userId, params.tenantId, confirmedName);
       await updateUserPreferences(params.userId, params.tenantId, {
-        preferredName: confirmedName,
         namePromptPending: false,
         nameSuggested: null,
         nameUpdatedAt: new Date().toISOString(),
@@ -1983,8 +2031,8 @@ async function handleUserNameUpdate(params: {
       !/[?]/.test(lower)
     );
     if (looksLikePlainName) {
+      await updateUserPreferredName(params.userId, params.tenantId, normalizedCandidate);
       await updateUserPreferences(params.userId, params.tenantId, {
-        preferredName: normalizedCandidate,
         namePromptPending: false,
         nameSuggested: null,
         nameUpdatedAt: new Date().toISOString(),
@@ -2014,10 +2062,27 @@ async function markNamePromptPending(
   });
 }
 
-function appendUserNamePolicy(prompt: string, context: UserNameContext): string {
+function appendUserNamePolicy(
+  prompt: string,
+  context: UserNameContext,
+  usage?: UserNameUsageContext
+): string {
   const name = context.preferredName || context.suggestedName;
   if (!name) return prompt;
-  return `${prompt}\n\nNOME DO USUÁRIO:\n- Nome base: ${name}\n- Use o nome apenas em saudações iniciais/finais, respostas importantes e na maioria dos agradecimentos.\n- Use o nome quando o usuário perguntar sobre o próprio nome.\n- Não use o nome em todas as mensagens.`;
+  const usageLines = [
+    `Nome base: ${name}`,
+    'Use o nome apenas em saudações iniciais/finais, respostas importantes e em conclusões de atividades críticas.',
+    'Use o nome quando o usuário perguntar sobre o próprio nome.',
+    'Não use o nome em todas as mensagens.',
+  ];
+  if (usage?.isFirstResponse) {
+    usageLines.push('Esta é a primeira resposta da conversa: cumprimente o usuário pelo nome.');
+  }
+  if (usage?.shouldGreet && !usage?.isFirstResponse) {
+    const hours = usage?.hoursSinceLast;
+    usageLines.push(`Usuário retornou após ${hours ?? 1}h: cumprimente e diga algo acolhedor (ex.: “que bom que você voltou”).`);
+  }
+  return `${prompt}\n\nNOME DO USUÁRIO:\n- ${usageLines.join('\n- ')}`;
 }
 
 function appendNameConfirmationInstruction(prompt: string, context: UserNameContext): string {
@@ -2484,6 +2549,12 @@ type UserNameContext = {
   promptPending: boolean;
 };
 
+type UserNameUsageContext = {
+  isFirstResponse: boolean;
+  shouldGreet: boolean;
+  hoursSinceLast: number | null;
+};
+
 type UserPreferencesRecord = Record<string, unknown>;
 
 function buildEmptyUserNameContext(): UserNameContext {
@@ -2511,6 +2582,32 @@ function buildLoginName(user: { firstName?: string | null; lastName?: string | n
   if (combined.length >= 2) return combined;
   const emailLocal = user.email?.split('@')[0]?.replace(/[._-]+/g, ' ').trim();
   return emailLocal && emailLocal.length >= 2 ? emailLocal : null;
+}
+
+function parseMessageTimestamp(value: unknown): number | null {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(String(value));
+  const time = date.getTime();
+  return Number.isNaN(time) ? null : time;
+}
+
+function resolveUserNameUsageContext(params: {
+  previousMessages: Array<{ criadoEm?: Date | string | null; isFromUser?: boolean | null; conteudo?: string | null }>;
+  conversationCreated: boolean;
+}): UserNameUsageContext {
+  const previousMessages = params.previousMessages ?? [];
+  const hasAssistantHistory = previousMessages.some((msg) => !msg.isFromUser && Boolean(msg.conteudo));
+  const isFirstResponse = params.conversationCreated || !hasAssistantHistory;
+  const lastMessageTimestamp = previousMessages.length > 0 ? parseMessageTimestamp(previousMessages[0]?.criadoEm) : null;
+  const hoursSinceLast = lastMessageTimestamp
+    ? (Date.now() - lastMessageTimestamp) / (1000 * 60 * 60)
+    : null;
+  const shouldGreet = isFirstResponse || (hoursSinceLast !== null && hoursSinceLast >= 1);
+  return {
+    isFirstResponse,
+    shouldGreet,
+    hoursSinceLast: hoursSinceLast !== null ? Number(hoursSinceLast.toFixed(2)) : null,
+  };
 }
 
 function extractNameFromMessage(message: string): string | null {
@@ -4959,6 +5056,16 @@ app.get('/api/chat/conversations', requireAuth(), requireSameTenant(getTenantIdF
       where: whereClause,
       orderBy: [desc(schema.conversations.atualizadoEm), desc(schema.conversations.id)],
       limit: limit + 1,
+      with: {
+        agent: {
+          columns: {
+            id: true,
+            nome: true,
+            avatar: true,
+            slug: true,
+          },
+        },
+      },
     });
 
     const hasMore = conversations.length > limit;
@@ -5218,6 +5325,26 @@ app.get('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenant
     const messages = await db.query.messages.findMany({
       where: eq(schema.messages.conversationId, id),
       orderBy: [schema.messages.criadoEm],
+      with: {
+        user: {
+          columns: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            preferredName: true,
+            email: true,
+            profileImageUrl: true,
+          },
+        },
+        agent: {
+          columns: {
+            id: true,
+            nome: true,
+            avatar: true,
+            slug: true,
+          },
+        },
+      },
     });
 
     res.json({ messages });
@@ -5424,19 +5551,23 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       userMessage: body.conteudo,
       currentContext: baseNameContext,
     });
-    let systemPrompt = buildSystemPrompt(agent, assistantSettings, body.conteudo);
-    systemPrompt = appendUserNamePolicy(systemPrompt, nameContext);
-    systemPrompt = appendNameConfirmationInstruction(systemPrompt, nameContext);
-    if (nameContext.shouldAskConfirmation) {
-      await markNamePromptPending(userId, tenantId, nameContext);
-    }
-    
     const previousMessages = await db.query.messages.findMany({
       where: eq(schema.messages.conversationId, id),
       orderBy: [desc(schema.messages.criadoEm)],
       limit: CHAT_HISTORY_FETCH_LIMIT,
     });
     const storedPreviousMessages = normalizeStoredMessages(previousMessages);
+    const nameUsageContext = resolveUserNameUsageContext({
+      previousMessages,
+      conversationCreated: false,
+    });
+
+    let systemPrompt = buildSystemPrompt(agent, assistantSettings, body.conteudo);
+    systemPrompt = appendUserNamePolicy(systemPrompt, nameContext, nameUsageContext);
+    systemPrompt = appendNameConfirmationInstruction(systemPrompt, nameContext);
+    if (nameContext.shouldAskConfirmation) {
+      await markNamePromptPending(userId, tenantId, nameContext);
+    }
 
     const ragStartTime = Date.now();
     const ragParams = getAdaptiveRagParams(body.conteudo, previousMessages.length);
@@ -5558,9 +5689,29 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       usedRag: !!ragResult?.context,
     }, 'Mensagem processada com integração RAG');
     
-    res.json({ 
-      userMessage, 
-      assistantMessage,
+    const userRecord = await db.query.users.findFirst({
+      where: eq(schema.users.id, userId),
+      columns: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        preferredName: true,
+        email: true,
+        profileImageUrl: true,
+      },
+    });
+    const agentRecord = conversation.agent
+      ? {
+        id: conversation.agent.id,
+        nome: conversation.agent.nome,
+        avatar: conversation.agent.avatar,
+        slug: conversation.agent.slug,
+      }
+      : null;
+
+    res.json({
+      userMessage: { ...userMessage, user: userRecord },
+      assistantMessage: { ...assistantMessage, agent: agentRecord },
       ragSources: ragResult?.sources || [],
     });
   } catch (error) {
@@ -5793,6 +5944,10 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       payload: { messages: previousMessages.length },
     });
     const storedPreviousMessages = normalizeStoredMessages(previousMessages);
+    const nameUsageContext = resolveUserNameUsageContext({
+      previousMessages,
+      conversationCreated,
+    });
 
     const messageType = hasMediaAttachments
       ? (preparedMediaAttachments.length === 1 ? preparedMediaAttachments[0].type : 'mixed')
@@ -5960,7 +6115,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       const agent = conversation?.agent as AgentConfig | null;
       const assistantSettings = await getAssistantSettingsForTenant(tenantId);
       let systemPrompt = buildSystemPrompt(agent, assistantSettings, userMessageContent);
-      systemPrompt = appendUserNamePolicy(systemPrompt, nameContext);
+      systemPrompt = appendUserNamePolicy(systemPrompt, nameContext, nameUsageContext);
       systemPrompt = appendNameConfirmationInstruction(systemPrompt, nameContext);
       let userContent = userMessageContent;
 
@@ -7986,7 +8141,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       recordRagRelevance(tenantId, ragResult);
 
       let systemPrompt = buildSystemPrompt(agent, assistantSettings, userMessageContent);
-      systemPrompt = appendUserNamePolicy(systemPrompt, nameContext);
+      systemPrompt = appendUserNamePolicy(systemPrompt, nameContext, nameUsageContext);
       systemPrompt = appendNameConfirmationInstruction(systemPrompt, nameContext);
       let ragSources: Array<{ documentId: string; titulo: string; similarity: number }> = [];
       let webSources: Array<{ title: string; url: string }> = [];

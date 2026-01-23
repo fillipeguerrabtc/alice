@@ -12,6 +12,7 @@ import { Copy, Check } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { Message } from './types';
@@ -60,9 +61,19 @@ export function MessageBubble({
   const hasTextContent = Boolean(message.content && message.content.trim().length > 0);
   const hasGeneratedImage = Boolean(message.generatedImage);
   const isMediaOnly = hasMediaAttachments && !hasTextContent && !hasGeneratedImage;
+  const assistantDisplayName = message.agent?.nome?.trim() || t('chat.agent.fallbackName');
+  const userDisplayName = (() => {
+    if (message.user?.preferredName) return message.user.preferredName;
+    const firstName = message.user?.firstName?.trim() ?? '';
+    const lastName = message.user?.lastName?.trim() ?? '';
+    const fullName = `${firstName} ${lastName}`.trim();
+    if (fullName) return fullName;
+    if (message.user?.email) return message.user.email;
+    return t('chat.user.fallbackName');
+  })();
   const assistantAvatarSrc = !isUser && isStreaming && (isLast || (message.content ?? '').length === 0)
     ? '/packman.gif'
-    : '/gato.gif';
+    : (message.agent?.avatar || '/gato.gif');
   const normalizedStreamSteps = streamSteps?.filter((step, index, list) => {
     return index === 0 || step !== list[index - 1];
   }) ?? [];
@@ -91,13 +102,12 @@ export function MessageBubble({
       )}
     >
       {!isUser && (
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-muted shadow-sm overflow-hidden">
-          <img
-            src={assistantAvatarSrc}
-            alt="Alice avatar"
-            className="h-full w-full object-cover"
-            loading="lazy"
-          />
+        <div className="flex flex-col items-center gap-1">
+          <Avatar className="h-12 w-12 shadow-sm">
+            <AvatarImage src={assistantAvatarSrc} alt={assistantDisplayName} />
+            <AvatarFallback>{assistantDisplayName.slice(0, 2).toUpperCase()}</AvatarFallback>
+          </Avatar>
+          <span className="text-[11px] text-muted-foreground">{assistantDisplayName}</span>
         </div>
       )}
       
@@ -221,6 +231,16 @@ export function MessageBubble({
           )}
         </div>
       </div>
+
+      {isUser && (
+        <div className="flex flex-col items-center gap-1">
+          <Avatar className="h-12 w-12 shadow-sm">
+            <AvatarImage src={message.user?.profileImageUrl || undefined} alt={userDisplayName} />
+            <AvatarFallback>{userDisplayName.slice(0, 2).toUpperCase()}</AvatarFallback>
+          </Avatar>
+          <span className="text-[11px] text-muted-foreground">{userDisplayName}</span>
+        </div>
+      )}
 
     </motion.div>
   );

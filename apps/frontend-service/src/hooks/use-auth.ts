@@ -6,7 +6,9 @@ interface User {
   email: string;
   firstName?: string;
   lastName?: string;
+  preferredName?: string | null;
   role: string;
+  roles?: string[];
   tenantId?: string;
 }
 

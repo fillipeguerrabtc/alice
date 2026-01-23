@@ -39,12 +39,13 @@ import {
   initializeRedisCache,
   Gauge as PromGauge,
   Counter as PromCounter,
+  Role,
 } from '@alice/shared-utils';
 import type { AuthContext } from '@alice/shared-utils';
 import { integrationsServicePaths, integrationsServiceSchemas } from './openapi-specs.js';
 import { loadConfig, integrationsServiceConfigSchema } from '@alice/config';
 import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, getPool } from '@alice/database';
-import { eq, desc, sql, and } from '@alice/database';
+import { eq, desc, sql, and, inArray } from '@alice/database';
 import { z } from 'zod';
 import { wiseService } from './wiseService.js';
 import { isWiseConfigured, getSandboxStatus, getProfileIdSafe, getWiseCircuitBreakerStatus, validateWiseWebhook } from './wiseClient.js';
@@ -72,36 +73,66 @@ const GH_PAT = config.GH_PAT?.trim();
 const app = express();
 setPermissionResolver(async (auth: AuthContext) => {
   const db = getDatabase();
-  let customRoleId = auth.customRoleId;
-  if (!customRoleId) {
-    const user = await db.query.users.findFirst({
+  const baseRoleRows = await db.query.userRoles.findMany({
+    where: eq(schema.userRoles.userId, auth.userId),
+    columns: { role: true },
+  });
+  let baseRoles = baseRoleRows.map((row) => row.role as Role).filter(Boolean);
+  if (baseRoles.length === 0) {
+    const fallbackUser = await db.query.users.findFirst({
+      where: eq(schema.users.id, auth.userId),
+      columns: { role: true },
+    });
+    if (fallbackUser?.role) {
+      baseRoles = [fallbackUser.role as Role];
+    }
+  }
+
+  const customRoleRows = await db.query.userCustomRoles.findMany({
+    where: eq(schema.userCustomRoles.userId, auth.userId),
+    with: {
+      customRole: {
+        columns: { id: true, ativo: true, tenantId: true },
+      },
+    },
+  });
+  let customRoleIds = customRoleRows
+    .filter((row) => row.customRole?.ativo)
+    .filter((row) => !auth.tenantId || row.customRole?.tenantId === auth.tenantId)
+    .map((row) => row.customRoleId);
+  if (customRoleIds.length === 0) {
+    const fallbackUser = await db.query.users.findFirst({
       where: eq(schema.users.id, auth.userId),
       columns: { customRoleId: true },
     });
-    customRoleId = user?.customRoleId ?? undefined;
-  }
-  if (customRoleId) {
-    const activeRole = await db.query.customRoles.findFirst({
-      where: and(
-        eq(schema.customRoles.id, customRoleId),
-        eq(schema.customRoles.ativo, true)
-      ),
-      columns: { id: true },
-    });
-    if (!activeRole) {
-      customRoleId = undefined;
+    const fallbackCustomRoleId = fallbackUser?.customRoleId ?? undefined;
+    if (fallbackCustomRoleId) {
+      const activeRole = await db.query.customRoles.findFirst({
+        where: and(
+          eq(schema.customRoles.id, fallbackCustomRoleId),
+          eq(schema.customRoles.ativo, true),
+          auth.tenantId ? eq(schema.customRoles.tenantId, auth.tenantId) : sql`1=1`
+        ),
+        columns: { id: true },
+      });
+      if (activeRole) {
+        customRoleIds = [fallbackCustomRoleId];
+      }
     }
   }
-  const isAdminRole = auth.role === 'admin' || auth.role === 'super_admin';
+
+  const isAdminRole = baseRoles.some((role) => role === 'admin' || role === 'super_admin');
   const rolePermissions = isAdminRole
     ? await db.query.permissions.findMany({ columns: { codigo: true } })
-    : await db.query.rolePermissions.findMany({
-      where: eq(schema.rolePermissions.role, auth.role),
-      with: { permission: true },
-    });
-  const customRolePermissions = customRoleId
+    : baseRoles.length > 0
+      ? await db.query.rolePermissions.findMany({
+        where: inArray(schema.rolePermissions.role, baseRoles),
+        with: { permission: true },
+      })
+      : [];
+  const customRolePermissions = customRoleIds.length > 0
     ? await db.query.customRolePermissions.findMany({
-      where: eq(schema.customRolePermissions.customRoleId, customRoleId),
+      where: inArray(schema.customRolePermissions.customRoleId, customRoleIds),
       with: { permission: true },
     })
     : [];
@@ -112,7 +143,7 @@ setPermissionResolver(async (auth: AuthContext) => {
     .map((rp) => (rp as { permission?: { codigo?: string | null } }).permission?.codigo)
     .filter((code): code is string => Boolean(code));
   const basePermissions = Object.entries(PERMISSION_MAP)
-    .filter(([, roles]) => roles.includes(auth.role))
+    .filter(([, roles]) => roles.some((role) => baseRoles.includes(role as Role)))
     .map(([code]) => code);
   const resolved = new Set<string>([...dbPermissions, ...customPermissions, ...basePermissions]);
   if (isAdminRole) {

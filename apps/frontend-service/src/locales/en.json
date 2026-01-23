@@ -112,7 +112,7 @@
     "overview": "Latest platform actions",
     "quickActions": "Quick Actions",
     "recentActivity": "Recent Activity",
-    "summary": "Alice Enterprise platform overview",
+    "summary": "Operational overview of the platform (health, usage, integrations).",
     "noActivity": "No recent activity",
     "noAgents": "No agents registered",
     "systemStatus": "System Status",
@@ -308,7 +308,11 @@
     "agent": {
       "ai": "Alice AI",
       "human": "Human Agent",
-      "transferring": "Transferring..."
+      "transferring": "Transferring...",
+      "fallbackName": "Alice"
+    },
+    "user": {
+      "fallbackName": "You"
     },
     "upload": {
       "unsupportedType": "Unsupported type",
@@ -354,7 +358,7 @@
   },
   "agents": {
     "title": "AI Agents",
-    "subtitle": "Active: {{active}} / {{total}}",
+    "subtitle": "Active: {{active}} / {{total}} — create specialist agents and link them to the right namespace.",
     "create": "Create Agent",
     "edit": "Edit Agent",
     "deleteAgent": "Delete Agent",
@@ -469,7 +473,7 @@
   },
   "namespaces": {
     "title": "Namespaces",
-    "subtitle": "{{count}} active namespaces",
+    "subtitle": "{{count}} active namespaces — organize context, documents, and agents by domain.",
     "create": "Create Namespace",
     "edit": "Edit Namespace",
     "deleteNamespace": "Delete Namespace",
@@ -591,7 +595,7 @@
   },
   "integrations": {
     "title": "Integrations",
-    "subtitle": "Configure external services to expand Alice's capabilities",
+    "subtitle": "Connect external services for automation, payments, and business operations.",
     "available": "Available",
     "configured": "Configured",
     "activeCount": "{{count}}/{{total}} active",
@@ -666,6 +670,9 @@
   "settings": {
     "title": "Settings",
     "general": "General",
+    "profileDescription": "Update your details and set how Alice should address you.",
+    "preferredNameLabel": "Preferred name",
+    "preferredNameDesc": "We will use this name in messages from Alice and agents.",
     "appearance": "Appearance",
     "language": "Language",
     "theme": "Theme",
@@ -893,7 +900,7 @@
   },
   "training": {
     "title": "Fine-tuning & Training",
-    "subtitle": "Manage training data and fine-tuning jobs for the LLM (Qwen2.5 7B)",
+    "subtitle": "Approve data, track jobs, and control continuous learning with safety.",
     "newJob": "New Job",
     "status": {
       "pending": "Pending",
@@ -1162,7 +1169,7 @@
   },
   "observability": {
     "title": "Observability Portal",
-    "description": "Unified monitoring of metrics, traces, and alerts",
+    "description": "Track metrics, traces, and alerts with end-to-end visibility.",
     "stackStatus": "Stack Status",
     "healthy": "Healthy",
     "degraded": "Degraded",
@@ -1197,7 +1204,7 @@
   },
   "trading": {
     "title": "Trading BTC Futures",
-    "subtitle": "Automated BTC Perpetuals trading on KuCoin via Alice AI",
+    "subtitle": "Control signals, risk, and automated execution on BTC Perpetuals with oversight.",
     "notConfigured": "KuCoin not configured",
     "notConfiguredDesc": "Configure the KuCoin API credentials to enable trading. Add the secrets on GitHub:",
     "status": {
@@ -1451,9 +1458,9 @@
   },
   "aliceConfig": {
     "title": "Alice Configuration",
-    "description": "Adjust core, system prompt, behavior, and guardrails.",
+    "description": "Define core rules, personality, and operational limits with traceability.",
     "settingsTitle": "Assistant Settings",
-    "settingsDescription": "Update the main guidelines that steer Alice.",
+    "settingsDescription": "Update the main guidelines applied to every response from Alice.",
     "readOnlyBadge": "Read-only (no Core permission)",
     "coreBadge": "Core",
     "coreReadOnlyHint": "Core permission required to edit",
@@ -1533,16 +1540,41 @@
     },
     "users": {
       "title": "Users",
-      "description": "Manage roles, status, and authentication providers.",
+      "description": "Edit profiles, assign roles, and track user access status.",
       "searchPlaceholder": "Search by name, email, or role",
       "columns": {
         "name": "Name",
         "email": "Email",
-        "role": "Role",
+        "role": "Base roles",
         "customRole": "Custom role",
         "status": "Status",
-        "provider": "Provider"
+        "provider": "Provider",
+        "actions": "Actions"
       },
+      "edit": "Edit user",
+      "new": "New user",
+      "editTitle": "Edit user",
+      "editDescription": "Update profile data, roles, groups, and preferences.",
+      "newTitle": "New user",
+      "newDescription": "Create a user with complete data and initial roles.",
+      "sections": {
+        "profile": "Profile details",
+        "roles": "Base roles (inherited permissions)",
+        "customRoles": "Custom roles (job titles)",
+        "groups": "Organizational groups"
+      },
+      "preferredName": "Preferred name",
+      "preferredNameHint": "Defines how Alice and agents should address the user.",
+      "jobTitle": "Job title",
+      "department": "Department",
+      "phone": "Phone",
+      "status": "Status",
+      "active": "Active",
+      "inactive": "Inactive",
+      "rolesHint": "Users can have multiple base roles; permissions are combined.",
+      "superAdminOnly": "Only administrators can change roles, groups, and status.",
+      "customRolesHint": "Select job titles that complement user permissions.",
+      "groupsHint": "Groups are visual only and do not change permissions.",
       "empty": "No users found",
       "roleUpdated": "Role updated successfully",
       "roleUpdateError": "Error updating role",
@@ -1552,6 +1584,11 @@
       "customRolePlaceholder": "Select custom role",
       "statusUpdated": "Status updated successfully",
       "statusUpdateError": "Error updating status",
+      "requiredFieldsError": "Fill in email, first name, last name, job title, department, and phone.",
+      "requiredPasswordError": "Set an initial password for the user.",
+      "requiredRolesError": "Select at least one base role for the user.",
+      "updated": "User updated successfully",
+      "updateError": "Failed to update user",
       "providerLocal": "Local"
     },
     "groups": {
@@ -1591,7 +1628,10 @@
     },
     "roles": {
       "title": "Custom Roles",
-      "description": "Create department/function roles and manage specific permissions.",
+      "description": "Create custom job titles and attach specific permissions.",
+      "baseTitle": "Base system roles",
+      "baseDescription": "Base roles define the main hierarchy level and grant default permissions.",
+      "manageBasePermissions": "Permissions",
       "new": "New Role",
       "searchPlaceholder": "Search by name or slug",
       "empty": "No custom roles found",
@@ -1624,7 +1664,7 @@
     },
     "permissions": {
       "title": "System Permissions",
-      "description": "Manage permissions and assign access by role.",
+      "description": "Control access by role so each person sees only what they need.",
       "new": "New Permission",
       "roleLabel": "Selected role",
       "roleAlwaysAllowed": "Admin and Super Admin always have all permissions",
@@ -1684,9 +1724,9 @@
   },
   "agenticConfig": {
     "title": "Agentic Mode",
-    "subtitle": "Configure agentic execution, approvals, and operational links.",
+    "subtitle": "Define execution scope, approvals, and operational references for agentic.",
     "togglesTitle": "Execution Scope",
-    "togglesDesc": "Control which agentic capabilities are enabled for the tenant.",
+    "togglesDesc": "Enable capabilities per tenant and require approval for critical actions.",
     "webEnabled": "Web search (SearXNG)",
     "erpReadEnabled": "ERPNext read",
     "erpWriteEnabled": "ERPNext write",
@@ -1695,7 +1735,7 @@
     "stackOpsEnabled": "Stack Ops (GitHub Actions)",
     "financialApprovalRequired": "Require approval for financial operations",
     "linksTitle": "Operational links",
-    "linksDesc": "Register URLs and descriptions for Alice to reference during operations.",
+    "linksDesc": "Register official URLs to guide execution and reduce errors.",
     "linkItemTitle": "Link {{index}}",
     "linkName": "Name",
     "linkUrl": "URL",

@@ -15,6 +15,7 @@ import { useForm, ControllerRenderProps } from 'react-hook-form';
 import { asResolver } from '@/lib/form-helpers';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/use-auth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -23,6 +24,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Dialog,
@@ -70,11 +72,16 @@ type UserItem = {
   email?: string | null;
   firstName?: string | null;
   lastName?: string | null;
+  preferredName?: string | null;
   role?: Role | null;
   customRoleId?: string | null;
   customRole?: CustomRoleItem | null;
+  roles?: Role[];
+  customRoles?: CustomRoleItem[];
+  groups?: GroupItem[];
   cargo?: string | null;
   departamento?: string | null;
+  telefone?: string | null;
   ativo?: boolean | null;
   ultimoAcesso?: string | null;
   createdAt?: string | null;
@@ -187,6 +194,7 @@ function buildCustomRolePayload(values: CustomRoleFormData) {
 }
 
 function formatUserName(user: UserItem) {
+  if (user.preferredName) return user.preferredName;
   const name = `${user.firstName || ''} ${user.lastName || ''}`.trim();
   return name || user.email || 'Usuário';
 }
@@ -890,6 +898,7 @@ function GroupMembersDialog({
 export default function UsersAdmin() {
   const { t } = useTranslation();
   const { toast } = useToast();
+  const { user: currentUser } = useAuth();
   const [selectedRole, setSelectedRole] = useState<Role>('admin');
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   const [permissionDialogOpen, setPermissionDialogOpen] = useState(false);
@@ -899,6 +908,23 @@ export default function UsersAdmin() {
   const [selectedGroup, setSelectedGroup] = useState<GroupItem | null>(null);
   const [selectedPermission, setSelectedPermission] = useState<PermissionItem | null>(null);
   const [selectedCustomRole, setSelectedCustomRole] = useState<CustomRoleItem | null>(null);
+  const [selectedUser, setSelectedUser] = useState<UserItem | null>(null);
+  const [userDialogOpen, setUserDialogOpen] = useState(false);
+  const [userDialogMode, setUserDialogMode] = useState<'create' | 'edit'>('edit');
+  const [userForm, setUserForm] = useState({
+    email: '',
+    password: '',
+    firstName: '',
+    lastName: '',
+    preferredName: '',
+    cargo: '',
+    departamento: '',
+    telefone: '',
+    ativo: true,
+    roles: [] as Role[],
+    customRoleIds: [] as string[],
+    groupIds: [] as string[],
+  });
   const [searchUsers, setSearchUsers] = useState('');
   const [searchGroups, setSearchGroups] = useState('');
   const [searchRoles, setSearchRoles] = useState('');
@@ -915,6 +941,10 @@ export default function UsersAdmin() {
 
   const { data: customRolesData, isLoading: customRolesLoading } = useQuery<{ roles: CustomRoleItem[] }>({
     queryKey: ['/api/auth/custom-roles'],
+  });
+
+  const { data: baseRolesData } = useQuery<{ roles: Array<{ role: Role; descricao: string }> }>({
+    queryKey: ['/api/auth/roles'],
   });
 
   const { data: permissionsData, isLoading: permissionsLoading } = useQuery<{ permissions: PermissionItem[] }>({
@@ -941,39 +971,161 @@ export default function UsersAdmin() {
     },
   });
 
-  const updateUserRole = useMutation({
-    mutationFn: async ({ userId, role }: { userId: string; role: Role }) => {
-      const response = await apiRequest('PATCH', `/api/users/${userId}/role`, { role });
+  useEffect(() => {
+    if (!selectedUser) return;
+    setUserForm({
+      email: selectedUser.email || '',
+      password: '',
+      firstName: selectedUser.firstName || '',
+      lastName: selectedUser.lastName || '',
+      preferredName: selectedUser.preferredName || '',
+      cargo: selectedUser.cargo || '',
+      departamento: selectedUser.departamento || '',
+      telefone: selectedUser.telefone || '',
+      ativo: selectedUser.ativo ?? true,
+      roles: selectedUser.roles && selectedUser.roles.length > 0
+        ? [...selectedUser.roles]
+        : selectedUser.role
+          ? [selectedUser.role]
+          : [],
+      customRoleIds: selectedUser.customRoles?.map((role) => role.id)
+        ?? (selectedUser.customRole ? [selectedUser.customRole.id] : []),
+      groupIds: selectedUser.groups?.map((group) => group.id) ?? [],
+    });
+  }, [selectedUser]);
+
+  const updateUserProfile = useMutation({
+    mutationFn: async ({ userId, payload }: { userId: string; payload: Record<string, unknown> }) => {
+      const response = await apiRequest('PATCH', `/api/users/${userId}`, payload);
       if (!response.ok) {
         throw new Error(await response.text());
       }
       return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/users'] });
-      toast({ title: t('usersAdmin.users.roleUpdated') });
-    },
-    onError: (error: Error) => {
-      toast({ title: t('usersAdmin.users.roleUpdateError'), description: error.message, variant: 'destructive' });
     },
   });
 
-  const updateUserCustomRole = useMutation({
-    mutationFn: async ({ userId, customRoleId }: { userId: string; customRoleId: string | null }) => {
-      const response = await apiRequest('PATCH', `/api/users/${userId}/custom-role`, { customRoleId });
+  const createUser = useMutation({
+    mutationFn: async (payload: Record<string, unknown>) => {
+      const response = await apiRequest('POST', '/api/auth/register', payload);
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      return response.json() as Promise<{ user: UserItem }>;
+    },
+  });
+
+  const updateUserRoles = useMutation({
+    mutationFn: async ({ userId, roles }: { userId: string; roles: Role[] }) => {
+      const response = await apiRequest('PATCH', `/api/users/${userId}/roles`, { roles });
       if (!response.ok) {
         throw new Error(await response.text());
       }
       return response.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/users'] });
-      toast({ title: t('usersAdmin.users.customRoleUpdated') });
-    },
-    onError: (error: Error) => {
-      toast({ title: t('usersAdmin.users.customRoleUpdateError'), description: error.message, variant: 'destructive' });
+  });
+
+  const updateUserCustomRoles = useMutation({
+    mutationFn: async ({ userId, customRoleIds }: { userId: string; customRoleIds: string[] }) => {
+      const response = await apiRequest('PATCH', `/api/users/${userId}/custom-roles`, { customRoleIds });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      return response.json();
     },
   });
+
+  const updateUserGroups = useMutation({
+    mutationFn: async ({ userId, groupIds }: { userId: string; groupIds: string[] }) => {
+      const response = await apiRequest('PATCH', `/api/users/${userId}/groups`, { groupIds });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      return response.json();
+    },
+  });
+
+  const handleSaveUser = async () => {
+    if (userDialogMode === 'edit' && !selectedUser) return;
+    const trimmedEmail = userForm.email.trim();
+    const trimmedPassword = userForm.password.trim();
+    const trimmedFirstName = userForm.firstName.trim();
+    const trimmedLastName = userForm.lastName.trim();
+    const trimmedCargo = userForm.cargo.trim();
+    const trimmedDepartamento = userForm.departamento.trim();
+    const trimmedTelefone = userForm.telefone.trim();
+    if (!trimmedEmail || !trimmedFirstName || !trimmedLastName || !trimmedCargo || !trimmedDepartamento || !trimmedTelefone) {
+      toast({ title: t('usersAdmin.users.requiredFieldsError'), variant: 'destructive' });
+      return;
+    }
+    if (userDialogMode === 'create' && !trimmedPassword) {
+      toast({ title: t('usersAdmin.users.requiredPasswordError'), variant: 'destructive' });
+      return;
+    }
+    if (userForm.roles.length === 0) {
+      toast({ title: t('usersAdmin.users.requiredRolesError'), variant: 'destructive' });
+      return;
+    }
+    try {
+      let targetUserId = selectedUser?.id ?? '';
+      if (userDialogMode === 'create') {
+        const created = await createUser.mutateAsync({
+          email: trimmedEmail,
+          password: trimmedPassword,
+          firstName: trimmedFirstName,
+          lastName: trimmedLastName,
+          cargo: trimmedCargo,
+          departamento: trimmedDepartamento,
+          telefone: trimmedTelefone,
+          preferredName: userForm.preferredName || undefined,
+        });
+        targetUserId = created.user.id;
+      } else if (selectedUser) {
+        await updateUserProfile.mutateAsync({
+          userId: selectedUser.id,
+          payload: {
+            email: isAdminRole ? trimmedEmail : undefined,
+            firstName: trimmedFirstName,
+            lastName: trimmedLastName,
+            preferredName: userForm.preferredName || undefined,
+            cargo: trimmedCargo,
+            departamento: trimmedDepartamento,
+            telefone: trimmedTelefone,
+          },
+        });
+      }
+      if (isAdminRole && targetUserId) {
+        if (userForm.roles.length > 0) {
+          await updateUserRoles.mutateAsync({ userId: targetUserId, roles: userForm.roles });
+        }
+        await updateUserCustomRoles.mutateAsync({ userId: targetUserId, customRoleIds: userForm.customRoleIds });
+        await updateUserGroups.mutateAsync({ userId: targetUserId, groupIds: userForm.groupIds });
+        await updateUserStatus.mutateAsync({ userId: targetUserId, ativo: userForm.ativo });
+      }
+      queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      toast({ title: t('usersAdmin.users.updated') });
+      setUserDialogOpen(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('common.error');
+      toast({ title: t('usersAdmin.users.updateError'), description: message, variant: 'destructive' });
+    }
+  };
+
+  const isSavingUser = updateUserProfile.isPending
+    || createUser.isPending
+    || updateUserRoles.isPending
+    || updateUserCustomRoles.isPending
+    || updateUserGroups.isPending
+    || updateUserStatus.isPending;
+
+  const currentUserRoles = currentUser?.roles
+    ?? (currentUser?.role ? [currentUser.role] : []);
+  const isAdminRole = currentUserRoles.includes('super_admin') || currentUserRoles.includes('admin');
+  const assignmentsDisabled = !isAdminRole;
+  const canEditUser = (user: UserItem) => {
+    if (!currentUser) return false;
+    if (isAdminRole) return true;
+    return currentUser.id === user.id;
+  };
 
   const updateUserStatus = useMutation({
     mutationFn: async ({ userId, ativo }: { userId: string; ativo: boolean }) => {
@@ -1197,6 +1349,7 @@ export default function UsersAdmin() {
   const users = usersData?.users ?? [];
   const groups = groupsData?.groups ?? [];
   const customRoles = customRolesData?.roles ?? [];
+  const baseRoles = baseRolesData?.roles ?? roleOptions.map((role) => ({ role: role.value, descricao: role.label }));
   const permissions = permissionsData?.permissions ?? [];
   const moduleOptions = useMemo(() => {
     const modules = new Set(permissions.map((perm) => perm.modulo).filter(Boolean));
@@ -1312,7 +1465,9 @@ export default function UsersAdmin() {
   const filteredUsers = useMemo(() => {
     const query = searchUsers.toLowerCase();
     return users.filter((user) => {
-      const composite = `${user.email ?? ''} ${user.firstName ?? ''} ${user.lastName ?? ''} ${user.role ?? ''} ${user.customRole?.nome ?? ''} ${user.authProvider ?? ''}`.toLowerCase();
+      const baseRoles = user.roles?.join(' ') ?? user.role ?? '';
+      const customRoles = user.customRoles?.map((role) => role.nome).join(' ') ?? user.customRole?.nome ?? '';
+      const composite = `${user.email ?? ''} ${user.firstName ?? ''} ${user.lastName ?? ''} ${user.preferredName ?? ''} ${baseRoles} ${customRoles} ${user.authProvider ?? ''}`.toLowerCase();
       return composite.includes(query);
     });
   }, [users, searchUsers]);
@@ -1358,7 +1513,7 @@ export default function UsersAdmin() {
         </div>
       </div>
 
-      <Tabs defaultValue="users" className="space-y-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList>
           <TabsTrigger value="users">
             <Users className="mr-2 h-4 w-4" />
@@ -1381,8 +1536,37 @@ export default function UsersAdmin() {
         <TabsContent value="users">
           <Card>
             <CardHeader className="space-y-2">
-              <CardTitle>{t('usersAdmin.users.title')}</CardTitle>
-              <CardDescription>{t('usersAdmin.users.description')}</CardDescription>
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div>
+                  <CardTitle>{t('usersAdmin.users.title')}</CardTitle>
+                  <CardDescription>{t('usersAdmin.users.description')}</CardDescription>
+                </div>
+                <Button
+                  onClick={() => {
+                    setSelectedUser(null);
+                    setUserDialogMode('create');
+                    setUserForm({
+                      email: '',
+                      password: '',
+                      firstName: '',
+                      lastName: '',
+                      preferredName: '',
+                      cargo: '',
+                      departamento: '',
+                      telefone: '',
+                      ativo: true,
+                      roles: [],
+                      customRoleIds: [],
+                      groupIds: [],
+                    });
+                    setUserDialogOpen(true);
+                  }}
+                  disabled={!isAdminRole}
+                >
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  {t('usersAdmin.users.new')}
+                </Button>
+              </div>
               <div className="max-w-sm">
                 <Input
                   placeholder={t('usersAdmin.users.searchPlaceholder')}
@@ -1401,19 +1585,20 @@ export default function UsersAdmin() {
                     <TableHead>{t('usersAdmin.users.columns.customRole')}</TableHead>
                     <TableHead>{t('usersAdmin.users.columns.status')}</TableHead>
                     <TableHead>{t('usersAdmin.users.columns.provider')}</TableHead>
+                    <TableHead>{t('usersAdmin.users.columns.actions')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {usersLoading ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center text-muted-foreground">
+                      <TableCell colSpan={7} className="text-center text-muted-foreground">
                         <Loader2 className="inline-block h-4 w-4 animate-spin mr-2" />
                         {t('common.loading')}
                       </TableCell>
                     </TableRow>
                   ) : filteredUsers.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center text-muted-foreground">
+                      <TableCell colSpan={7} className="text-center text-muted-foreground">
                         {t('usersAdmin.users.empty')}
                       </TableCell>
                     </TableRow>
@@ -1423,53 +1608,52 @@ export default function UsersAdmin() {
                         <TableCell className="font-medium">{formatUserName(user)}</TableCell>
                         <TableCell>{user.email}</TableCell>
                         <TableCell>
-                          <Select
-                            value={user.role || 'viewer'}
-                            onValueChange={(value) => updateUserRole.mutate({ userId: user.id, role: value as Role })}
-                          >
-                            <SelectTrigger className="w-[170px]">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {roleOptions.map((role) => (
-                                <SelectItem key={role.value} value={role.value}>
-                                  {role.label}
-                                </SelectItem>
+                          <div className="flex flex-wrap gap-1">
+                            {(user.roles && user.roles.length > 0 ? user.roles : user.role ? [user.role] : [])
+                              .map((role) => (
+                                <Badge key={`${user.id}-${role}`} variant="secondary">
+                                  {roleOptions.find((option) => option.value === role)?.label ?? role}
+                                </Badge>
                               ))}
-                            </SelectContent>
-                          </Select>
+                          </div>
                         </TableCell>
                         <TableCell>
-                          <Select
-                            value={user.customRoleId ?? 'none'}
-                            onValueChange={(value) =>
-                              updateUserCustomRole.mutate({
-                                userId: user.id,
-                                customRoleId: value === 'none' ? null : value,
-                              })
-                            }
-                          >
-                            <SelectTrigger className="w-[200px]">
-                              <SelectValue placeholder={t('usersAdmin.users.customRolePlaceholder')} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">{t('usersAdmin.users.customRoleNone')}</SelectItem>
-                              {customRoles.map((role) => (
-                                <SelectItem key={role.id} value={role.id} disabled={role.ativo === false}>
+                          <div className="flex flex-wrap gap-1">
+                            {(user.customRoles ?? (user.customRole ? [user.customRole] : []))
+                              .map((role) => (
+                                <Badge key={`${user.id}-${role.id}`} variant={role.ativo === false ? 'outline' : 'default'}>
                                   {role.nome}
-                                </SelectItem>
+                                </Badge>
                               ))}
-                            </SelectContent>
-                          </Select>
+                            {(user.customRoles?.length ?? 0) === 0 && !user.customRole && (
+                              <span className="text-xs text-muted-foreground">{t('usersAdmin.users.customRoleNone')}</span>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <Switch
                             checked={user.ativo ?? false}
                             onCheckedChange={(value) => updateUserStatus.mutate({ userId: user.id, ativo: value })}
+                            disabled={!canEditUser(user)}
                           />
                         </TableCell>
                         <TableCell>
                           <Badge variant="secondary">{user.authProvider || t('usersAdmin.users.providerLocal')}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              setSelectedUser(user);
+                              setUserDialogMode('edit');
+                              setUserDialogOpen(true);
+                            }}
+                            aria-label={t('usersAdmin.users.edit')}
+                            disabled={!canEditUser(user)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))
@@ -1594,6 +1778,32 @@ export default function UsersAdmin() {
               </div>
             </CardHeader>
             <CardContent>
+              <div className="space-y-3 mb-6">
+                <div>
+                  <h4 className="text-sm font-semibold">{t('usersAdmin.roles.baseTitle')}</h4>
+                  <p className="text-xs text-muted-foreground">{t('usersAdmin.roles.baseDescription')}</p>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  {baseRoles.map((role) => (
+                    <div key={role.role} className="rounded-md border p-3 flex items-center justify-between">
+                      <div>
+                        <p className="font-medium">{roleOptions.find((item) => item.value === role.role)?.label ?? role.role}</p>
+                        <p className="text-xs text-muted-foreground">{role.descricao}</p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedRole(role.role);
+                          setActiveTab('permissions');
+                        }}
+                      >
+                        {t('usersAdmin.roles.manageBasePermissions')}
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
               <div className="space-y-3">
                 {customRolesLoading ? (
                   <div className="flex items-center gap-2 text-muted-foreground">
@@ -1820,6 +2030,219 @@ export default function UsersAdmin() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog
+        open={userDialogOpen}
+        onOpenChange={(openValue) => {
+          setUserDialogOpen(openValue);
+          if (!openValue) {
+            setSelectedUser(null);
+            setUserDialogMode('edit');
+          }
+        }}
+      >
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>
+              {userDialogMode === 'create' ? t('usersAdmin.users.newTitle') : t('usersAdmin.users.editTitle')}
+            </DialogTitle>
+            <DialogDescription>
+              {userDialogMode === 'create' ? t('usersAdmin.users.newDescription') : t('usersAdmin.users.editDescription')}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6">
+            <div className="space-y-3">
+              <h4 className="text-sm font-semibold">{t('usersAdmin.users.sections.profile')}</h4>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="user-email">{t('auth.email')}</Label>
+                  <Input
+                    id="user-email"
+                    type="email"
+                    value={userForm.email}
+                    onChange={(event) => setUserForm((prev) => ({ ...prev, email: event.target.value }))}
+                    disabled={!isAdminRole}
+                  />
+                </div>
+                {userDialogMode === 'create' && (
+                  <div className="space-y-2 md:col-span-2">
+                    <Label htmlFor="user-password">{t('auth.password')}</Label>
+                    <Input
+                      id="user-password"
+                      type="password"
+                      value={userForm.password}
+                      onChange={(event) => setUserForm((prev) => ({ ...prev, password: event.target.value }))}
+                    />
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label htmlFor="user-first-name">{t('auth.firstName')}</Label>
+                  <Input
+                    id="user-first-name"
+                    value={userForm.firstName}
+                    onChange={(event) => setUserForm((prev) => ({ ...prev, firstName: event.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="user-last-name">{t('auth.lastName')}</Label>
+                  <Input
+                    id="user-last-name"
+                    value={userForm.lastName}
+                    onChange={(event) => setUserForm((prev) => ({ ...prev, lastName: event.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="user-preferred-name">{t('usersAdmin.users.preferredName')}</Label>
+                  <Input
+                    id="user-preferred-name"
+                    value={userForm.preferredName}
+                    onChange={(event) => setUserForm((prev) => ({ ...prev, preferredName: event.target.value }))}
+                  />
+                  <p className="text-xs text-muted-foreground">{t('usersAdmin.users.preferredNameHint')}</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="user-cargo">{t('usersAdmin.users.jobTitle')}</Label>
+                  <Input
+                    id="user-cargo"
+                    value={userForm.cargo}
+                    onChange={(event) => setUserForm((prev) => ({ ...prev, cargo: event.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="user-departamento">{t('usersAdmin.users.department')}</Label>
+                  <Input
+                    id="user-departamento"
+                    value={userForm.departamento}
+                    onChange={(event) => setUserForm((prev) => ({ ...prev, departamento: event.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="user-telefone">{t('usersAdmin.users.phone')}</Label>
+                  <Input
+                    id="user-telefone"
+                    value={userForm.telefone}
+                    onChange={(event) => setUserForm((prev) => ({ ...prev, telefone: event.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('usersAdmin.users.status')}</Label>
+                  <div className="flex items-center gap-3">
+                    <Switch
+                      checked={userForm.ativo}
+                      onCheckedChange={(value) => setUserForm((prev) => ({ ...prev, ativo: value }))}
+                      disabled={assignmentsDisabled}
+                    />
+                    <span className="text-xs text-muted-foreground">
+                      {userForm.ativo ? t('usersAdmin.users.active') : t('usersAdmin.users.inactive')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <h4 className="text-sm font-semibold">{t('usersAdmin.users.sections.roles')}</h4>
+              <p className="text-xs text-muted-foreground">{t('usersAdmin.users.rolesHint')}</p>
+              {assignmentsDisabled && (
+                <p className="text-xs text-muted-foreground">{t('usersAdmin.users.superAdminOnly')}</p>
+              )}
+              <div className="grid gap-2 md:grid-cols-2">
+                {roleOptions.map((role) => {
+                  const checked = userForm.roles.includes(role.value);
+                  return (
+                    <label key={role.value} className="flex items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={checked}
+                        disabled={assignmentsDisabled}
+                        onCheckedChange={(value) => {
+                          const isChecked = Boolean(value);
+                          setUserForm((prev) => {
+                            const nextRoles = isChecked
+                              ? Array.from(new Set([...prev.roles, role.value]))
+                              : prev.roles.filter((item) => item !== role.value);
+                            return { ...prev, roles: nextRoles };
+                          });
+                        }}
+                      />
+                      {role.label}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <h4 className="text-sm font-semibold">{t('usersAdmin.users.sections.customRoles')}</h4>
+              <p className="text-xs text-muted-foreground">{t('usersAdmin.users.customRolesHint')}</p>
+              <div className="grid gap-2 md:grid-cols-2">
+                {customRoles.map((role) => {
+                  const checked = userForm.customRoleIds.includes(role.id);
+                  return (
+                    <label key={role.id} className="flex items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={checked}
+                        disabled={assignmentsDisabled || role.ativo === false}
+                        onCheckedChange={(value) => {
+                          const isChecked = Boolean(value);
+                          setUserForm((prev) => {
+                            const nextIds = isChecked
+                              ? Array.from(new Set([...prev.customRoleIds, role.id]))
+                              : prev.customRoleIds.filter((item) => item !== role.id);
+                            return { ...prev, customRoleIds: nextIds };
+                          });
+                        }}
+                      />
+                      {role.nome}
+                    </label>
+                  );
+                })}
+                {customRoles.length === 0 && (
+                  <p className="text-xs text-muted-foreground">{t('usersAdmin.users.customRoleNone')}</p>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <h4 className="text-sm font-semibold">{t('usersAdmin.users.sections.groups')}</h4>
+              <p className="text-xs text-muted-foreground">{t('usersAdmin.users.groupsHint')}</p>
+              <div className="grid gap-2 md:grid-cols-2">
+                {groups.map((group) => {
+                  const checked = userForm.groupIds.includes(group.id);
+                  return (
+                    <label key={group.id} className="flex items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={checked}
+                        disabled={assignmentsDisabled}
+                        onCheckedChange={(value) => {
+                          const isChecked = Boolean(value);
+                          setUserForm((prev) => {
+                            const nextIds = isChecked
+                              ? Array.from(new Set([...prev.groupIds, group.id]))
+                              : prev.groupIds.filter((item) => item !== group.id);
+                            return { ...prev, groupIds: nextIds };
+                          });
+                        }}
+                      />
+                      {group.nome}
+                    </label>
+                  );
+                })}
+                {groups.length === 0 && (
+                  <p className="text-xs text-muted-foreground">{t('usersAdmin.groups.empty')}</p>
+                )}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setUserDialogOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button onClick={handleSaveUser} disabled={isSavingUser}>
+              {isSavingUser ? t('common.save') : t('common.save')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <GroupFormDialog
         open={groupDialogOpen}

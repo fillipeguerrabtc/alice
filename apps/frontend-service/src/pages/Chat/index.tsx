@@ -124,6 +124,7 @@ import { ConversationItem } from './components/ConversationItem';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { ChatInput } from './components/ChatInput';
 import { EventsPanel } from './components/EventsPanel';
+import { useAuth } from '@/hooks/use-auth';
 
 type StreamMediaAttachmentPayload = {
   id: string;
@@ -347,6 +348,7 @@ function ConversationsList({
 
 export default function Chat() {
   const { t } = useTranslation();
+  const { user: currentUser } = useAuth();
   const { conversationId } = useParams<{ conversationId?: string }>();
   const [, navigate] = useLocation();
   const queryClientRef = useQueryClient();
@@ -840,14 +842,28 @@ export default function Chat() {
         ? mapAnexosToMediaAttachments(message.anexos)
         : undefined;
 
+    const fallbackUser = currentUser
+      ? {
+        id: currentUser.id,
+        firstName: currentUser.firstName ?? null,
+        lastName: currentUser.lastName ?? null,
+        preferredName: currentUser.preferredName ?? null,
+        email: currentUser.email ?? null,
+        profileImageUrl: null,
+      }
+      : null;
+    const fallbackAgent = activeConversation?.agent ?? null;
+
     return {
       ...message,
       role,
       content,
       createdAt,
       mediaAttachments,
+      user: role === 'user' ? (message.user ?? fallbackUser) : message.user ?? null,
+      agent: role === 'assistant' ? (message.agent ?? fallbackAgent) : message.agent ?? null,
     } as Message;
-  }, [mapAnexosToMediaAttachments]);
+  }, [mapAnexosToMediaAttachments, currentUser, activeConversation]);
 
   useEffect(() => {
     if (isStreaming || isFetchingConversationMessages) return;
@@ -932,6 +948,16 @@ export default function Chat() {
         createdAt: new Date().toISOString(),
         tipo: mediaAttachments && mediaAttachments.length > 0 ? 'mixed' : 'text',
         mediaAttachments,
+        user: currentUser
+          ? {
+            id: currentUser.id,
+            firstName: currentUser.firstName ?? null,
+            lastName: currentUser.lastName ?? null,
+            preferredName: currentUser.preferredName ?? null,
+            email: currentUser.email ?? null,
+            profileImageUrl: null,
+          }
+          : null,
       };
 
       setMessages((prev) => [...prev, userMessage]);
@@ -947,6 +973,7 @@ export default function Chat() {
         role: 'assistant',
         content: '',
         createdAt: new Date().toISOString(),
+        agent: activeConversation?.agent ?? null,
       };
       setMessages((prev) => [...prev, assistantMessage]);
 
@@ -1533,6 +1560,9 @@ export default function Chat() {
   };
 
   const conversations = conversationsData?.pages.flatMap((page) => page.conversations) || [];
+  const activeConversation = conversationId
+    ? conversations.find((conversation) => conversation.id === conversationId) ?? null
+    : null;
 
   const bumpInputFocus = useCallback(() => {
     setFocusNonce((prev) => prev + 1);

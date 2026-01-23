@@ -67,6 +67,20 @@ export interface Message {
     feedback?: 'positive' | 'negative';
     [key: string]: unknown;
   };
+  user?: {
+    id: string;
+    firstName?: string | null;
+    lastName?: string | null;
+    preferredName?: string | null;
+    email?: string | null;
+    profileImageUrl?: string | null;
+  } | null;
+  agent?: {
+    id: string;
+    nome: string;
+    slug?: string | null;
+    avatar?: string | null;
+  } | null;
 }
 
 export interface Conversation {
@@ -74,6 +88,12 @@ export interface Conversation {
   titulo: string | null;
   criadoEm: string;
   atualizadoEm: string;
+  agent?: {
+    id: string;
+    nome: string;
+    slug?: string | null;
+    avatar?: string | null;
+  } | null;
 }
 
 export type AgentEventPhase =

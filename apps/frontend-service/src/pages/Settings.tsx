@@ -7,7 +7,7 @@
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { User, Building, Bell, Shield, Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -17,11 +17,37 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { useAuth } from '@/hooks/use-auth';
 import { LanguageSwitch } from '@/components/language-switch';
+import { apiRequest } from '@/lib/queryClient';
+import { useMutation } from '@tanstack/react-query';
 
 export default function Settings() {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('profile');
+  const [profileForm, setProfileForm] = useState({
+    firstName: user?.firstName || '',
+    lastName: user?.lastName || '',
+    preferredName: user?.preferredName || '',
+  });
+
+  useEffect(() => {
+    setProfileForm({
+      firstName: user?.firstName || '',
+      lastName: user?.lastName || '',
+      preferredName: user?.preferredName || '',
+    });
+  }, [user]);
+
+  const updateProfile = useMutation({
+    mutationFn: async () => {
+      if (!user?.id) throw new Error('Usuário inválido');
+      await apiRequest('PATCH', `/api/users/${user.id}`, {
+        firstName: profileForm.firstName || undefined,
+        lastName: profileForm.lastName || undefined,
+        preferredName: profileForm.preferredName || undefined,
+      });
+    },
+  });
 
   const tabs = [
     { id: 'profile', labelKey: 'auth.profile', icon: User },
@@ -67,7 +93,7 @@ export default function Settings() {
               <CardHeader>
                 <CardTitle>{t('auth.profile')}</CardTitle>
                 <CardDescription>
-                  {t('settings.general')}
+                  {t('settings.profileDescription')}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -76,7 +102,8 @@ export default function Settings() {
                     <label className="text-sm font-medium">{t('auth.firstName')}</label>
                     <Input
                       type="text"
-                      defaultValue={user?.firstName || ''}
+                      value={profileForm.firstName}
+                      onChange={(event) => setProfileForm((prev) => ({ ...prev, firstName: event.target.value }))}
                       className="mt-1"
                       data-testid="input-first-name"
                     />
@@ -85,11 +112,25 @@ export default function Settings() {
                     <label className="text-sm font-medium">{t('auth.lastName')}</label>
                     <Input
                       type="text"
-                      defaultValue={user?.lastName || ''}
+                      value={profileForm.lastName}
+                      onChange={(event) => setProfileForm((prev) => ({ ...prev, lastName: event.target.value }))}
                       className="mt-1"
                       data-testid="input-last-name"
                     />
                   </div>
+                </div>
+                <div>
+                  <label className="text-sm font-medium">{t('settings.preferredNameLabel')}</label>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {t('settings.preferredNameDesc')}
+                  </p>
+                  <Input
+                    type="text"
+                    value={profileForm.preferredName}
+                    onChange={(event) => setProfileForm((prev) => ({ ...prev, preferredName: event.target.value }))}
+                    className="mt-2"
+                    data-testid="input-preferred-name"
+                  />
                 </div>
                 <div>
                   <label className="text-sm font-medium">{t('auth.email')}</label>
@@ -101,7 +142,11 @@ export default function Settings() {
                     data-testid="input-email"
                   />
                 </div>
-                <Button data-testid="button-save-profile">
+                <Button
+                  data-testid="button-save-profile"
+                  onClick={() => updateProfile.mutate()}
+                  disabled={updateProfile.isPending}
+                >
                   {t('common.save')}
                 </Button>
               </CardContent>

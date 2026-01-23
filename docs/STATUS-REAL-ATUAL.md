@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 23 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.80 - Fallbacks Agentic + Stack Ops Approval
+**Versão:** 7.81 - Users Admin + Roles Guest Default
 
 ---
 
@@ -191,6 +191,11 @@ Retenção Arquivo:   30 dias
 
 ## Atualizações recentes (resumo)
 
+- Auth: novos usuários OAuth/SAML/registro local agora entram como `guest` (Convidado).
+- Users Admin: criação de usuário via dashboard (admin-only) com dados obrigatórios e roles iniciais.
+- Users Admin: edição completa com preferências, roles, grupos e validação obrigatória de perfil.
+- RBAC: admin/super_admin podem editar outros usuários; usuários comuns apenas a si mesmos.
+- UX: textos didáticos reforçados em Dashboard, Integrações, Trading, Observability e Agentic.
 - Agentic: fallback determinístico quando busca web falha mesmo com request explícito.
 - Stack Ops: operações via GitHub Actions exigem confirmação explícita (action_requests).
 - Modo Agentic: configuração por tenant (toggles + links) com persistência PostgreSQL.
