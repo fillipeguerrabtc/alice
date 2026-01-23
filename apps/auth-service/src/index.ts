@@ -1640,7 +1640,7 @@ if (samlEntryPoint && samlIssuer && samlCert) {
             email: user.email || email,
             firstName: user.firstName || undefined,
             lastName: user.lastName || undefined,
-            role: user.role || 'viewer',
+            role: user.role || 'guest',
             tenantId: user.tenantId || undefined,
           }).catch((error: unknown) => {
             logger.error({ error, userId: createdUserId }, 'Erro ao publicar evento de provisioning');
