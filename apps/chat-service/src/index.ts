@@ -6707,7 +6707,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         }
 
         if (pendingIntegration && intent === 'approve') {
-          const userRole = (req.user?.role as Role) || 'user';
+          const userRole = (req.user?.role as Role) || 'guest';
           const authContext: AuthContext = {
             userId,
             tenantId,
@@ -7358,7 +7358,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     const authContext: AuthContext = {
       userId,
       tenantId,
-      role: (req.user?.role as Role) || 'user',
+      role: (req.user?.role as Role) || 'guest',
       customRoleId: req.user?.customRoleId ?? undefined,
     };
 
