@@ -3985,15 +3985,17 @@ app.patch('/api/users/:id/roles', requireAuth(), requireRole('admin'), asyncHand
   }
 
   const { roles } = parseResult.data;
-  await db.delete(schema.userRoles).where(eq(schema.userRoles.userId, userId));
-  await db.insert(schema.userRoles).values(
-    roles.map((role) => ({ userId, role }))
-  );
-
   const effectiveRole = resolveHighestRole(roles, (currentUser.role || 'guest') as Role);
-  await db.update(schema.users)
-    .set({ role: effectiveRole, updatedAt: new Date() })
-    .where(eq(schema.users.id, userId));
+
+  await db.transaction(async (tx) => {
+    await tx.delete(schema.userRoles).where(eq(schema.userRoles.userId, userId));
+    await tx.insert(schema.userRoles).values(
+      roles.map((role) => ({ userId, role }))
+    );
+    await tx.update(schema.users)
+      .set({ role: effectiveRole, updatedAt: new Date() })
+      .where(eq(schema.users.id, userId));
+  });
 
   await invalidateUserPermissions(userId, currentUser.tenantId ?? req.tenantId);
   res.json({ success: true, roles, effectiveRole });
@@ -4037,12 +4039,14 @@ app.patch('/api/users/:id/custom-roles', requireAuth(), requireRole('admin'), as
     }
   }
 
-  await db.delete(schema.userCustomRoles).where(eq(schema.userCustomRoles.userId, userId));
-  if (customRoleIds.length > 0) {
-    await db.insert(schema.userCustomRoles).values(
-      customRoleIds.map((customRoleId) => ({ userId, customRoleId }))
-    );
-  }
+  await db.transaction(async (tx) => {
+    await tx.delete(schema.userCustomRoles).where(eq(schema.userCustomRoles.userId, userId));
+    if (customRoleIds.length > 0) {
+      await tx.insert(schema.userCustomRoles).values(
+        customRoleIds.map((customRoleId) => ({ userId, customRoleId }))
+      );
+    }
+  });
 
   await invalidateUserPermissions(userId, currentUser.tenantId ?? req.tenantId);
   res.json({ success: true, customRoleIds });
@@ -4089,17 +4093,19 @@ app.patch('/api/users/:id/groups', requireAuth(), requireRole('admin'), asyncHan
     }
   }
 
-  await db.delete(schema.userGroupMembers).where(eq(schema.userGroupMembers.userId, userId));
-  if (groupIds.length > 0) {
-    await db.insert(schema.userGroupMembers).values(
-      groupIds.map((groupId) => ({
-        userId,
-        groupId,
-        tenantId: targetTenantId,
-        criadoPor: requestingUser?.userId,
-      }))
-    );
-  }
+  await db.transaction(async (tx) => {
+    await tx.delete(schema.userGroupMembers).where(eq(schema.userGroupMembers.userId, userId));
+    if (groupIds.length > 0) {
+      await tx.insert(schema.userGroupMembers).values(
+        groupIds.map((groupId) => ({
+          userId,
+          groupId,
+          tenantId: targetTenantId,
+          criadoPor: requestingUser?.userId,
+        }))
+      );
+    }
+  });
 
   res.json({ success: true, groupIds });
 }));
