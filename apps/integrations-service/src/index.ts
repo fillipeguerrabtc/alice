@@ -45,10 +45,10 @@ import type { AuthContext } from '@alice/shared-utils';
 import { integrationsServicePaths, integrationsServiceSchemas } from './openapi-specs.js';
 import { loadConfig, integrationsServiceConfigSchema } from '@alice/config';
 import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, getPool } from '@alice/database';
-import { eq, desc, sql, and, inArray } from '@alice/database';
+import { eq, desc, sql, and, inArray, not, isNull } from '@alice/database';
 import { z } from 'zod';
 import { wiseService } from './wiseService.js';
-import { isWiseConfigured, getSandboxStatus, getProfileIdSafe, getWiseCircuitBreakerStatus, validateWiseWebhook } from './wiseClient.js';
+import { isWiseConfigured, getSandboxStatus, getProfileIdSafe, getWiseCircuitBreakerStatus, validateWiseWebhook, initWiseMetrics } from './wiseClient.js';
 import { initWiseSyncService } from './wiseSyncService.js';
 import * as kucoinClient from './kucoinClient.js';
 import * as kucoinService from './kucoinService.js';
@@ -159,6 +159,200 @@ const { metrics, metricsRouter, httpMetricsMiddleware } = createAlicePrometheus(
   serviceName: 'integrations-service',
   collectDefaultMetrics: true,
 });
+
+function classifyIntegrationError(error: unknown): string {
+  if (error instanceof Error) {
+    const message = error.message.toLowerCase();
+    if (message.includes('timeout')) return 'timeout';
+    if (message.includes('breaker')) return 'breaker_open';
+    if (message.includes('429')) return 'rate_limit';
+    if (message.includes('unauthorized') || message.includes('forbidden')) return 'auth';
+    if (message.includes('not found')) return 'not_found';
+    if (message.includes('http')) return 'http_error';
+  }
+  return 'error';
+}
+
+async function observeIntegrationCall<T>(params: {
+  integration: string;
+  operation: string;
+  fn: () => Promise<T>;
+}): Promise<T> {
+  const start = process.hrtime.bigint();
+  try {
+    const result = await params.fn();
+    const durationSeconds = Number(process.hrtime.bigint() - start) / 1e9;
+    metrics.integrations.callDuration.observe(
+      { integration: params.integration, operation: params.operation },
+      durationSeconds
+    );
+    metrics.integrations.callsTotal.inc(
+      { integration: params.integration, operation: params.operation, status: 'success' },
+      1
+    );
+    return result;
+  } catch (error) {
+    const durationSeconds = Number(process.hrtime.bigint() - start) / 1e9;
+    metrics.integrations.callDuration.observe(
+      { integration: params.integration, operation: params.operation },
+      durationSeconds
+    );
+    metrics.integrations.callsTotal.inc(
+      { integration: params.integration, operation: params.operation, status: 'error' },
+      1
+    );
+    metrics.integrations.errorsTotal.inc(
+      { integration: params.integration, operation: params.operation, error_type: classifyIntegrationError(error) },
+      1
+    );
+    throw error;
+  }
+}
+
+const tradingPnlRealizedUsd = new PromGauge({
+  name: 'alice_trading_pnl_realized_usd',
+  help: 'PnL realizado (USD) nas últimas 24h',
+  registers: [metrics.registry],
+});
+
+const tradingPnlUnrealizedUsd = new PromGauge({
+  name: 'alice_trading_pnl_unrealized_usd',
+  help: 'PnL não realizado (USD) das posições abertas',
+  registers: [metrics.registry],
+});
+
+const tradingOrdersActive = new PromGauge({
+  name: 'alice_trading_orders_active',
+  help: 'Total de ordens ativas (pending/submitted/open)',
+  registers: [metrics.registry],
+});
+
+const tradingRsiGauge = new PromGauge({
+  name: 'alice_trading_rsi',
+  help: 'RSI mais recente por símbolo',
+  labelNames: ['symbol'] as const,
+  registers: [metrics.registry],
+});
+
+const tradingBollingerUpper = new PromGauge({
+  name: 'alice_trading_bollinger_upper',
+  help: 'Bollinger Upper Band por símbolo',
+  labelNames: ['symbol'] as const,
+  registers: [metrics.registry],
+});
+
+const tradingBollingerMiddle = new PromGauge({
+  name: 'alice_trading_bollinger_middle',
+  help: 'Bollinger Middle Band por símbolo',
+  labelNames: ['symbol'] as const,
+  registers: [metrics.registry],
+});
+
+const tradingBollingerLower = new PromGauge({
+  name: 'alice_trading_bollinger_lower',
+  help: 'Bollinger Lower Band por símbolo',
+  labelNames: ['symbol'] as const,
+  registers: [metrics.registry],
+});
+
+const tradingPriceUsd = new PromGauge({
+  name: 'alice_trading_price_usd',
+  help: 'Preço atual (USD) por símbolo',
+  labelNames: ['symbol'] as const,
+  registers: [metrics.registry],
+});
+
+const TRADING_METRICS_INTERVAL_MS = Number(process.env.TRADING_METRICS_INTERVAL_MS ?? 60000);
+const TRADING_PNL_WINDOW_HOURS = Number(process.env.TRADING_PNL_WINDOW_HOURS ?? 24);
+
+function resolveTradingMetricsInterval(): number {
+  if (!Number.isFinite(TRADING_METRICS_INTERVAL_MS) || TRADING_METRICS_INTERVAL_MS < 10000) {
+    logger.warn({ TRADING_METRICS_INTERVAL_MS }, 'TRADING_METRICS_INTERVAL_MS inválido, usando 60000ms');
+    return 60000;
+  }
+  return TRADING_METRICS_INTERVAL_MS;
+}
+
+function resolveTradingPnlWindowHours(): number {
+  if (!Number.isFinite(TRADING_PNL_WINDOW_HOURS) || TRADING_PNL_WINDOW_HOURS <= 0) {
+    logger.warn({ TRADING_PNL_WINDOW_HOURS }, 'TRADING_PNL_WINDOW_HOURS inválido, usando 24h');
+    return 24;
+  }
+  return TRADING_PNL_WINDOW_HOURS;
+}
+
+let tradingMetricsInterval: NodeJS.Timeout | null = null;
+
+async function refreshTradingMetrics(): Promise<void> {
+  try {
+    const db = getDatabase();
+    const pnlWindowHours = resolveTradingPnlWindowHours();
+    const since = new Date(Date.now() - pnlWindowHours * 60 * 60 * 1000);
+
+    const [realizedPnl] = await db
+      .select({ value: sql<number>`COALESCE(SUM(${schema.tradingPositions.realizedPnl}), 0)` })
+      .from(schema.tradingPositions)
+      .where(
+        and(
+          not(isNull(schema.tradingPositions.closedAt)),
+          sql`${schema.tradingPositions.closedAt} >= ${since}`
+        )
+      );
+
+    const [unrealizedPnl] = await db
+      .select({ value: sql<number>`COALESCE(SUM(${schema.tradingPositions.unrealizedPnl}), 0)` })
+      .from(schema.tradingPositions)
+      .where(eq(schema.tradingPositions.status, 'open'));
+
+    const [ordersActive] = await db
+      .select({ value: sql<number>`count(*)` })
+      .from(schema.tradingOrders)
+      .where(inArray(schema.tradingOrders.status, ['pending', 'submitted', 'open']));
+
+    tradingPnlRealizedUsd.set(Number(realizedPnl?.value ?? 0));
+    tradingPnlUnrealizedUsd.set(Number(unrealizedPnl?.value ?? 0));
+    tradingOrdersActive.set(Number(ordersActive?.value ?? 0));
+
+    const symbols = kucoinClient.getAllowedSymbols();
+    for (const symbol of symbols) {
+      const latest = await db.query.tradingTechnicalIndicators.findFirst({
+        where: eq(schema.tradingTechnicalIndicators.symbol, symbol),
+        orderBy: [desc(schema.tradingTechnicalIndicators.calculatedAt)],
+      });
+
+      if (!latest) {
+        continue;
+      }
+
+      if (Number.isFinite(latest.rsiValue ?? NaN)) {
+        tradingRsiGauge.set({ symbol }, Number(latest.rsiValue));
+      }
+      if (Number.isFinite(latest.bollingerUpper ?? NaN)) {
+        tradingBollingerUpper.set({ symbol }, Number(latest.bollingerUpper));
+      }
+      if (Number.isFinite(latest.bollingerMiddle ?? NaN)) {
+        tradingBollingerMiddle.set({ symbol }, Number(latest.bollingerMiddle));
+      }
+      if (Number.isFinite(latest.bollingerLower ?? NaN)) {
+        tradingBollingerLower.set({ symbol }, Number(latest.bollingerLower));
+      }
+      if (Number.isFinite(latest.currentPrice ?? NaN)) {
+        tradingPriceUsd.set({ symbol }, Number(latest.currentPrice));
+      }
+    }
+  } catch (error) {
+    logger.error({ error }, 'Falha ao atualizar métricas de trading');
+  }
+}
+
+function startTradingMetricsScheduler(): void {
+  void refreshTradingMetrics();
+  const intervalMs = resolveTradingMetricsInterval();
+  tradingMetricsInterval = setInterval(() => {
+    void refreshTradingMetrics();
+  }, intervalMs);
+  logger.info({ intervalMs }, 'Scheduler de métricas de trading iniciado');
+}
 
 // ============================================================================
 // WS5: Métricas operacionais - KuCoin WebSocket
@@ -355,6 +549,14 @@ if (config.STRIPE_SECRET_KEY) {
   logger.info({ apiVersion: STRIPE_API_VERSION }, 'Cliente Stripe inicializado');
 }
 
+async function executeStripeCall<T>(operation: string, fn: () => Promise<T>): Promise<T> {
+  return observeIntegrationCall({
+    integration: 'stripe',
+    operation,
+    fn,
+  });
+}
+
 // Circuit Breaker para chamadas ao ERPNext (Best Practices 2025)
 // Usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
 
@@ -390,6 +592,19 @@ const erpNextBreaker = createCircuitBreaker(async (options: {
   ...CIRCUIT_BREAKER_PRESETS.erpnextAPI,
 });
 
+async function executeErpNextRequest<T>(operation: string, options: {
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+  body?: string;
+}): Promise<T> {
+  return observeIntegrationCall({
+    integration: 'erpnext',
+    operation,
+    fn: async () => erpNextBreaker.fire(options) as Promise<T>,
+  });
+}
+
 // Instrumentar circuit breaker com métricas Prometheus
 // Type assertion necessária: Opossum CircuitBreaker tem tipos de eventos mais específicos
 instrumentCircuitBreaker(metrics, 'erpnext', erpNextBreaker as unknown as Parameters<typeof instrumentCircuitBreaker>[2]);
@@ -417,7 +632,7 @@ async function syncToERPNext(
     // Para Payment Entry com referência a invoice, usar API especial do ERPNext
     if (type === 'payment_from_invoice' && data.against_invoice) {
       // Usar o método get_payment_entry para criar Payment Entry corretamente linkado
-      const getPaymentResult = await erpNextBreaker.fire({
+      const getPaymentResult = await executeErpNextRequest<{ message: Record<string, unknown> }>('payment_entry.get', {
         url: `${config.ERPNEXT_URL}/api/method/erpnext.accounts.doctype.payment_entry.payment_entry.get_payment_entry`,
         method: 'POST',
         headers: {
@@ -430,7 +645,7 @@ async function syncToERPNext(
           party_amount: data.paid_amount,
           payment_type: 'Receive',
         }),
-      }) as { message: Record<string, unknown> };
+      });
 
       // Salvar o Payment Entry gerado
       const paymentEntry = getPaymentResult.message;
@@ -446,7 +661,7 @@ async function syncToERPNext(
         paymentEntry.custom_wise_transfer_id = data.custom_wise_transfer_id;
       }
 
-      const result = await erpNextBreaker.fire({
+      const result = await executeErpNextRequest<{ data: { name: string } }>('payment_entry.save', {
         url: `${config.ERPNEXT_URL}/api/resource/Payment%20Entry`,
         method: 'POST',
         headers: {
@@ -454,13 +669,13 @@ async function syncToERPNext(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(paymentEntry),
-      }) as { data: { name: string } };
+      });
 
       logger.info({ type: 'payment_from_invoice', erpnextId: result.data.name, invoice: data.against_invoice }, 'Payment Entry criado com referência a Invoice');
       return result.data;
     }
 
-    const result = await erpNextBreaker.fire({
+    const result = await executeErpNextRequest<{ data: { name: string } }>(`erpnext.${type}.create`, {
       url: `${config.ERPNEXT_URL}/api/resource/${doctypes[type]}`,
       method: 'POST',
       headers: {
@@ -468,7 +683,7 @@ async function syncToERPNext(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(data),
-    }) as { data: { name: string } };
+    });
 
     logger.info({ type, erpnextId: result.data.name }, 'Sincronizado com ERPNext');
     return result.data;
@@ -490,7 +705,7 @@ async function createInvoiceFromOrder(salesOrderName: string): Promise<string | 
 
   try {
     // Usar API do ERPNext para criar Invoice a partir de Sales Order
-    const result = await erpNextBreaker.fire({
+    const result = await executeErpNextRequest<{ message: Record<string, unknown> }>('sales_order.make_invoice', {
       url: `${config.ERPNEXT_URL}/api/method/erpnext.selling.doctype.sales_order.sales_order.make_sales_invoice`,
       method: 'POST',
       headers: {
@@ -498,11 +713,11 @@ async function createInvoiceFromOrder(salesOrderName: string): Promise<string | 
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ source_name: salesOrderName }),
-    }) as { message: Record<string, unknown> };
+    });
 
     // Salvar a invoice gerada
     const invoice = result.message;
-    const saveResult = await erpNextBreaker.fire({
+    const saveResult = await executeErpNextRequest<{ data: { name: string } }>('sales_invoice.create', {
       url: `${config.ERPNEXT_URL}/api/resource/Sales%20Invoice`,
       method: 'POST',
       headers: {
@@ -510,7 +725,7 @@ async function createInvoiceFromOrder(salesOrderName: string): Promise<string | 
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(invoice),
-    }) as { data: { name: string } };
+    });
 
     logger.info({ salesOrder: salesOrderName, invoice: saveResult.data.name }, 'Sales Invoice criada a partir de Sales Order');
     return saveResult.data.name;
@@ -855,11 +1070,11 @@ app.post('/api/integrations/stripe/create-checkout', requirePermission('integrat
     let customerId = user?.stripeCustomerId;
 
     if (!customerId) {
-      const customer = await stripe.customers.create({
+      const customer = await executeStripeCall('customer.create', () => stripe.customers.create({
         email: user?.email || undefined,
         name: [user?.firstName, user?.lastName].filter(Boolean).join(' ') || undefined,
         metadata: { userId },
-      });
+      }));
       customerId = customer.id;
 
       await db.update(schema.users)
@@ -867,14 +1082,14 @@ app.post('/api/integrations/stripe/create-checkout', requirePermission('integrat
         .where(eq(schema.users.id, userId));
     }
 
-    const session = await stripe.checkout.sessions.create({
+    const session = await executeStripeCall('checkout.create', () => stripe.checkout.sessions.create({
       customer: customerId,
       mode: 'subscription',
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: successUrl,
       cancel_url: cancelUrl,
       metadata: { userId },
-    });
+    }));
 
     logger.info({ sessionId: session.id, userId }, 'Checkout session created');
     res.json({ sessionId: session.id, url: session.url });
@@ -897,14 +1112,15 @@ app.post('/api/integrations/stripe/create-portal', requirePermission('integratio
       where: eq(schema.users.id, userId),
     });
 
-    if (!user?.stripeCustomerId) {
+    const stripeCustomerId = user?.stripeCustomerId ?? undefined;
+    if (!stripeCustomerId) {
       return res.status(400).json({ error: 'User has no Stripe customer' });
     }
 
-    const session = await stripe.billingPortal.sessions.create({
-      customer: user.stripeCustomerId,
+    const session = await executeStripeCall('billing_portal.create', () => stripe.billingPortal.sessions.create({
+      customer: stripeCustomerId,
       return_url: returnUrl,
-    });
+    }));
 
     res.json({ url: session.url });
   } catch (error) {
@@ -920,8 +1136,8 @@ app.get('/api/integrations/stripe/products', requirePermission('integrations:str
   }
 
   try {
-    const products = await stripe.products.list({ active: true, limit: 100 });
-    const prices = await stripe.prices.list({ active: true, limit: 100 });
+    const products = await executeStripeCall('products.list', () => stripe.products.list({ active: true, limit: 100 }));
+    const prices = await executeStripeCall('prices.list', () => stripe.prices.list({ active: true, limit: 100 }));
 
     const productsWithPrices = products.data.map(product => ({
       ...product,
@@ -955,11 +1171,11 @@ app.post('/api/integrations/stripe/create-payment-intent', requirePermission('in
       if (user?.stripeCustomerId) {
         customerId = user.stripeCustomerId;
       } else if (user?.email) {
-        const customer = await stripe.customers.create({
-          email: user.email,
+        const customer = await executeStripeCall('customer.create', () => stripe.customers.create({
+          email: user.email ?? undefined,
           name: [user.firstName, user.lastName].filter(Boolean).join(' ') || undefined,
           metadata: { userId },
-        });
+        }));
         customerId = customer.id;
 
         await db.update(schema.users)
@@ -968,14 +1184,14 @@ app.post('/api/integrations/stripe/create-payment-intent', requirePermission('in
       }
     }
 
-    const paymentIntent = await stripe.paymentIntents.create({
+    const paymentIntent = await executeStripeCall('payment_intent.create', () => stripe.paymentIntents.create({
       amount,
       currency,
       customer: customerId,
       description,
       automatic_payment_methods: { enabled: true },
       metadata: { userId: userId || '' },
-    });
+    }));
 
     logger.info({ paymentIntentId: paymentIntent.id, amount, currency }, 'PaymentIntent created');
     res.json({ clientSecret: paymentIntent.client_secret, paymentIntentId: paymentIntent.id });
@@ -1139,7 +1355,7 @@ app.post('/api/integrations/stripe/webhook', async (req: Request, res: Response)
 
           // Step 2: Criar Sales Order quando checkout completa
           if (session.customer && session.amount_total) {
-            const customer = await stripe.customers.retrieve(session.customer as string);
+            const customer = await executeStripeCall('customer.retrieve', () => stripe.customers.retrieve(session.customer as string));
             if (customer && !customer.deleted) {
               const salesOrderResult = await syncToERPNext('sales_order', {
                 customer: customer.email || customer.id,
@@ -1797,13 +2013,17 @@ app.post('/api/integrations/email/send', requirePermission('integrations:email:w
   const fromEmail = from ?? GMAIL_USER;
 
   try {
-    const result = await emailTransporter.sendMail({
-      from: fromEmail,
-      to: Array.isArray(to) ? to.join(', ') : to,
-      subject,
-      html,
-      text: text ?? undefined,
-      replyTo: replyTo ?? undefined,
+    const result = await observeIntegrationCall({
+      integration: 'email',
+      operation: 'send',
+      fn: () => emailTransporter.sendMail({
+        from: fromEmail,
+        to: Array.isArray(to) ? to.join(', ') : to,
+        subject,
+        html,
+        text: text ?? undefined,
+        replyTo: replyTo ?? undefined,
+      }),
     });
 
     logger.info({ 
@@ -2533,23 +2753,30 @@ async function sendWhatsAppMessage(to: string, body: string, mediaUrl?: string):
       formData.append('MediaUrl', mediaUrl);
     }
 
-    const response = await fetch(
-      `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Basic ${Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64')}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: formData.toString(),
-        signal: controller.signal,
-      }
-    );
+    const response = await observeIntegrationCall({
+      integration: 'twilio',
+      operation: mediaUrl ? 'whatsapp_media' : 'whatsapp',
+      fn: async () => {
+        const result = await fetch(
+          `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Basic ${Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64')}`,
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: formData.toString(),
+            signal: controller.signal,
+          }
+        );
 
-    if (!response.ok) {
-      const errorData = await response.json() as { message?: string };
-      throw new Error(errorData.message || `Twilio API error: ${response.status}`);
-    }
+        if (!result.ok) {
+          const errorData = await result.json() as { message?: string };
+          throw new Error(errorData.message || `Twilio API error: ${result.status}`);
+        }
+        return result;
+      },
+    });
 
     const data = await response.json() as { sid: string };
     logger.info({ messageSid: data.sid, to }, 'Mensagem WhatsApp enviada com sucesso');
@@ -3363,6 +3590,7 @@ app.get('/api/integrations/twilio/status', (_req: Request, res: Response) => {
 
 // Inicializar métricas do circuit breaker KuCoin
 kucoinClient.initKucoinMetrics(metrics);
+initWiseMetrics(metrics);
 
 // ============================================================================
 // WS5: KuCoin WebSocket (REST + WS) - readiness operacional
@@ -4971,6 +5199,8 @@ initializeCaches().then(() => {
     logger.info({ port: PORT }, 'Integrations service started');
   });
 
+  startTradingMetricsScheduler();
+
   // SEGURANÇA: Timeouts para prevenir conexões pendentes (Node.js 20 LTS Best Practices)
   server.timeout = 30000; // 30s timeout para requisições
   server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
@@ -5009,6 +5239,17 @@ initializeCaches().then(() => {
       logger.info('Pool de conexões encerrado com sucesso');
     },
     { priority: ShutdownPriority.DATABASE }
+  );
+
+  registerShutdownCallback(
+    'integrations-trading-metrics',
+    async () => {
+      if (tradingMetricsInterval) {
+        clearInterval(tradingMetricsInterval);
+        tradingMetricsInterval = null;
+      }
+    },
+    { priority: ShutdownPriority.BACKGROUND_JOBS }
   );
 
   registerShutdownCallback(

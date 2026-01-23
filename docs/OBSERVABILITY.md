@@ -1,7 +1,7 @@
 # Guia de Observabilidade - Alice Enterprise Platform
 
-**Versão:** 2.6.0  
-**Data:** 22 de Janeiro de 2026  
+**Versão:** 2.6.1  
+**Data:** 23 de Janeiro de 2026  
 **Autor:** Fillipe Guerra
 
 ---
@@ -159,7 +159,7 @@ A plataforma Alice implementa observabilidade **enterprise-grade** baseada em **
 
 **Métricas principais:**
 
-- **P&L Realizado (24h):** `increase(alice_trading_pnl_realized_usd[24h])`
+- **P&L Realizado (24h):** `alice_trading_pnl_realized_usd`
 - **P&L Não Realizado:** `alice_trading_pnl_unrealized_usd`
 - **Ordens Ativas:** `alice_trading_orders_active`
 - **Circuit Breaker KuCoin:** `alice_circuit_breaker_state{name="kucoin_futures"}`

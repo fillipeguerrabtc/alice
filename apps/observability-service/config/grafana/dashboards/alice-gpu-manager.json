@@ -35,7 +35,7 @@
       "gridPos": { "h": 2, "w": 24, "x": 0, "y": 0 },
       "id": 100,
       "options": {
-        "content": "# Alice GPU Manager Dashboard - Enterprise\n**Hetzner GEX44** (RTX 4000 Ada 20GB VRAM) | **Gate 2** (serviços simultâneos) | LLM (texto) Qwen2.5 7B AWQ + Qwen3-Embedding-0.6B INT8 | ASR via OpenAI | VRAM Monitoring | Queue Management | Circuit Breakers",
+        "content": "# Alice GPU Manager Dashboard - Enterprise\n**Hetzner GEX44** (RTX 4000 Ada 20GB VRAM) | **Gate 2** (serviços simultâneos) | LLM (texto) Qwen2.5 7B AWQ + Qwen3-Embedding-0.6B INT8 | Training via GPU Manager | VRAM Monitoring | Queue Management | Circuit Breakers",
         "mode": "markdown"
       },
       "transparent": true,
@@ -521,25 +521,25 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "histogram_quantile(0.50, rate(alice_llm_inference_duration_seconds_bucket{job=\"alice-gpu-manager-service\"}[5m]))",
+          "expr": "histogram_quantile(0.50, rate(alice_llm_inference_duration_seconds_bucket{job=\"alice-services\",service=\"gpu-manager-service\"}[5m]))",
           "legendFormat": "LLM P50",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "histogram_quantile(0.95, rate(alice_llm_inference_duration_seconds_bucket{job=\"alice-gpu-manager-service\"}[5m]))",
+          "expr": "histogram_quantile(0.95, rate(alice_llm_inference_duration_seconds_bucket{job=\"alice-services\",service=\"gpu-manager-service\"}[5m]))",
           "legendFormat": "LLM P95",
           "refId": "B"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "histogram_quantile(0.99, rate(alice_llm_inference_duration_seconds_bucket{job=\"alice-gpu-manager-service\"}[5m]))",
+          "expr": "histogram_quantile(0.99, rate(alice_llm_inference_duration_seconds_bucket{job=\"alice-services\",service=\"gpu-manager-service\"}[5m]))",
           "legendFormat": "LLM P99",
           "refId": "C"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "histogram_quantile(0.95, rate(alice_rag_embedding_duration_seconds_bucket{job=\"alice-gpu-manager-service\"}[5m]))",
+          "expr": "histogram_quantile(0.95, rate(alice_rag_embedding_duration_seconds_bucket{job=\"alice-services\",service=\"gpu-manager-service\"}[5m]))",
           "legendFormat": "Embeddings P95",
           "refId": "D"
         }

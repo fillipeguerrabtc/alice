@@ -81,7 +81,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "increase(alice_trading_pnl_realized_usd[24h])",
+          "expr": "alice_trading_pnl_realized_usd",
           "legendFormat": "Realized P&L",
           "refId": "A"
         }

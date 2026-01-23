@@ -17,7 +17,7 @@
       "title": "LLM Metrics",
       "tooltip": "Métricas detalhadas do LLM",
       "type": "link",
-      "url": "/d/alice-llm-metrics/llm-metrics"
+      "url": "/d/alice-llm-metrics/alice-llm-metrics"
     },
     {
       "asDropdown": false,
@@ -64,9 +64,9 @@
       "gridPos": { "h": 4, "w": 4, "x": 0, "y": 2 },
       "id": 1,
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
-      "title": "Auth Service",
+      "title": "Serviços Core (UP)",
       "type": "stat",
-      "targets": [{ "expr": "up{job=\"alice-auth-service\"}", "legendFormat": "", "refId": "A" }]
+      "targets": [{ "expr": "sum(up{job=\"alice-services\"})", "legendFormat": "", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -88,9 +88,9 @@
       "gridPos": { "h": 4, "w": 4, "x": 4, "y": 2 },
       "id": 2,
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
-      "title": "Chat Service",
+      "title": "Serviços Core (Total)",
       "type": "stat",
-      "targets": [{ "expr": "up{job=\"alice-chat-service\"}", "legendFormat": "", "refId": "A" }]
+      "targets": [{ "expr": "count(up{job=\"alice-services\"})", "legendFormat": "", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -110,81 +110,9 @@
         }
       },
       "gridPos": { "h": 4, "w": 4, "x": 8, "y": 2 },
-      "id": 3,
-      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
-      "title": "RAG Service",
-      "type": "stat",
-      "targets": [{ "expr": "up{job=\"alice-rag-service\"}", "legendFormat": "", "refId": "A" }]
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "thresholds" },
-          "mappings": [
-            { "options": { "0": { "color": "red", "text": "DOWN" }, "1": { "color": "green", "text": "UP" } }, "type": "value" }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "red", "value": null },
-              { "color": "green", "value": 1 }
-            ]
-          }
-        }
-      },
-      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 2 },
-      "id": 4,
-      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
-      "title": "Training Service",
-      "type": "stat",
-      "targets": [{ "expr": "up{job=\"alice-training-service\"}", "legendFormat": "", "refId": "A" }]
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "thresholds" },
-          "mappings": [
-            { "options": { "0": { "color": "red", "text": "DOWN" }, "1": { "color": "green", "text": "UP" } }, "type": "value" }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "red", "value": null },
-              { "color": "green", "value": 1 }
-            ]
-          }
-        }
-      },
-      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 2 },
-      "id": 5,
-      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
-      "title": "Integrations Service",
-      "type": "stat",
-      "targets": [{ "expr": "up{job=\"alice-integrations-service\"}", "legendFormat": "", "refId": "A" }]
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "thresholds" },
-          "mappings": [
-            { "options": { "0": { "color": "red", "text": "DOWN" }, "1": { "color": "green", "text": "UP" } }, "type": "value" }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "red", "value": null },
-              { "color": "green", "value": 1 }
-            ]
-          }
-        }
-      },
-      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 2 },
       "id": 6,
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
-      "title": "API Gateway",
+      "title": "API Gateway (Caddy)",
       "type": "stat",
       "targets": [{ "expr": "up{job=\"caddy\"}", "legendFormat": "", "refId": "A" }]
     },

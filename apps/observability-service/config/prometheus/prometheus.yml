@@ -47,49 +47,40 @@ scrape_configs:
   # ============================================================================
   # ALICE MICROSERVICES
   # ============================================================================
-  - job_name: 'alice-auth-service'
+  - job_name: 'alice-services'
     static_configs:
       - targets: ['alice-auth:3001']
-    metrics_path: /metrics
-    scrape_interval: 30s
-
-  - job_name: 'alice-chat-service'
-    static_configs:
+        labels:
+          service: 'auth-service'
+          instance: 'alice-prod'
+          environment: 'production'
       - targets: ['alice-chat:3002']
-    metrics_path: /metrics
-    scrape_interval: 15s
-    metric_relabel_configs:
-      - source_labels: [__name__]
-        regex: 'llm_.*'
-        action: keep
-
-  - job_name: 'alice-rag-service'
-    static_configs:
+        labels:
+          service: 'chat-service'
+          instance: 'alice-prod'
+          environment: 'production'
       - targets: ['alice-rag:3003']
-    metrics_path: /metrics
-    scrape_interval: 30s
-
-  - job_name: 'alice-training-service'
-    static_configs:
+        labels:
+          service: 'rag-service'
+          instance: 'alice-prod'
+          environment: 'production'
       - targets: ['alice-training:3004']
-    metrics_path: /metrics
-    scrape_interval: 60s
-
-  - job_name: 'alice-integrations-service'
-    static_configs:
+        labels:
+          service: 'training-service'
+          instance: 'alice-prod'
+          environment: 'production'
       - targets: ['alice-integrations:3005']
-    metrics_path: /metrics
-    scrape_interval: 30s
-
-  - job_name: 'alice-gpu-manager-service'
-    static_configs:
+        labels:
+          service: 'integrations-service'
+          instance: 'alice-prod'
+          environment: 'production'
       - targets: ['alice-gpu-manager:3010']
-    metrics_path: /metrics
-    scrape_interval: 15s
-    metric_relabel_configs:
-      - source_labels: [__name__]
-        regex: '(alice_circuit_breaker_.*|alice_llm_.*|alice_rag_.*|alice_http_.*|alice_gpu_.*|alice_gpu_manager_.*)'
-        action: keep
+        labels:
+          service: 'gpu-manager-service'
+          instance: 'alice-prod'
+          environment: 'production'
+    metrics_path: '/metrics'
+    scrape_timeout: 10s
 
   # ============================================================================
   # GPU SERVICES (FastAPI - Gate 2: LLM separado + Embeddings)

@@ -40,7 +40,7 @@
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Stripe",
       "type": "stat",
-      "targets": [{ "expr": "alice_circuit_breaker_state{name=\"stripe\",state=\"open\"} or vector(0)", "refId": "A" }]
+      "targets": [{ "expr": "alice_circuit_breaker_state{name=\"stripe\"}", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -56,7 +56,7 @@
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Wise",
       "type": "stat",
-      "targets": [{ "expr": "alice_circuit_breaker_state{name=\"wise\",state=\"open\"} or vector(0)", "refId": "A" }]
+      "targets": [{ "expr": "alice_circuit_breaker_state{name=\"wise\"}", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -72,7 +72,7 @@
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "ERPNext",
       "type": "stat",
-      "targets": [{ "expr": "alice_circuit_breaker_state{name=\"erpnext\",state=\"open\"} or vector(0)", "refId": "A" }]
+      "targets": [{ "expr": "alice_circuit_breaker_state{name=\"erpnext\"}", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -88,7 +88,7 @@
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Twilio",
       "type": "stat",
-      "targets": [{ "expr": "alice_circuit_breaker_state{name=\"twilio\",state=\"open\"} or vector(0)", "refId": "A" }]
+      "targets": [{ "expr": "alice_circuit_breaker_state{name=\"twilio\"}", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -104,7 +104,7 @@
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Gmail SMTP",
       "type": "stat",
-      "targets": [{ "expr": "alice_circuit_breaker_state{name=\"gmailSMTP\",state=\"open\"} or vector(0)", "refId": "A" }]
+      "targets": [{ "expr": "alice_circuit_breaker_state{name=\"gmailSMTP\"}", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -120,7 +120,7 @@
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Brave Search",
       "type": "stat",
-      "targets": [{ "expr": "alice_circuit_breaker_state{name=\"brave-search\",state=\"open\"} or vector(0)", "refId": "A" }]
+      "targets": [{ "expr": "alice_circuit_breaker_state{name=\"brave-search\"}", "refId": "A" }]
     },
     {
       "collapsed": false,
@@ -147,8 +147,8 @@
       "title": "Stripe Latency (P95/P99)",
       "type": "timeseries",
       "targets": [
-        { "expr": "histogram_quantile(0.95, rate(integration_request_duration_seconds_bucket{integration=\"stripe\"}[5m]))", "legendFormat": "P95", "refId": "A" },
-        { "expr": "histogram_quantile(0.99, rate(integration_request_duration_seconds_bucket{integration=\"stripe\"}[5m]))", "legendFormat": "P99", "refId": "B" }
+        { "expr": "histogram_quantile(0.95, rate(alice_integration_call_duration_seconds_bucket{integration=\"stripe\"}[5m]))", "legendFormat": "P95", "refId": "A" },
+        { "expr": "histogram_quantile(0.99, rate(alice_integration_call_duration_seconds_bucket{integration=\"stripe\"}[5m]))", "legendFormat": "P99", "refId": "B" }
       ]
     },
     {
@@ -169,7 +169,7 @@
       "title": "Stripe Request Rate",
       "type": "timeseries",
       "targets": [
-        { "expr": "sum(rate(integration_requests_total{integration=\"stripe\"}[5m])) by (operation)", "legendFormat": "{{ operation }}", "refId": "A" }
+        { "expr": "sum(rate(alice_integration_calls_total{integration=\"stripe\"}[5m])) by (operation)", "legendFormat": "{{ operation }}", "refId": "A" }
       ]
     },
     {
@@ -188,7 +188,7 @@
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Stripe Error Rate",
       "type": "stat",
-      "targets": [{ "expr": "sum(rate(integration_requests_total{integration=\"stripe\",status=\"error\"}[5m])) / sum(rate(integration_requests_total{integration=\"stripe\"}[5m]))", "refId": "A" }]
+      "targets": [{ "expr": "sum(rate(alice_integration_calls_total{integration=\"stripe\",status=\"error\"}[5m])) / sum(rate(alice_integration_calls_total{integration=\"stripe\"}[5m]))", "refId": "A" }]
     },
     {
       "collapsed": false,
@@ -215,7 +215,7 @@
       "title": "Wise Latency",
       "type": "timeseries",
       "targets": [
-        { "expr": "histogram_quantile(0.95, rate(integration_request_duration_seconds_bucket{integration=\"wise\"}[5m]))", "legendFormat": "P95", "refId": "A" }
+        { "expr": "histogram_quantile(0.95, rate(alice_integration_call_duration_seconds_bucket{integration=\"wise\"}[5m]))", "legendFormat": "P95", "refId": "A" }
       ]
     },
     {
@@ -236,7 +236,7 @@
       "title": "Wise Transfers",
       "type": "timeseries",
       "targets": [
-        { "expr": "increase(integration_requests_total{integration=\"wise\",operation=\"transfer\"}[1h])", "legendFormat": "Transfers", "refId": "A" }
+        { "expr": "increase(alice_integration_calls_total{integration=\"wise\",operation=\"transfer\"}[1h])", "legendFormat": "Transfers", "refId": "A" }
       ]
     },
     {
@@ -255,7 +255,7 @@
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Wise Error Rate",
       "type": "stat",
-      "targets": [{ "expr": "sum(rate(integration_requests_total{integration=\"wise\",status=\"error\"}[5m])) / sum(rate(integration_requests_total{integration=\"wise\"}[5m]))", "refId": "A" }]
+      "targets": [{ "expr": "sum(rate(alice_integration_calls_total{integration=\"wise\",status=\"error\"}[5m])) / sum(rate(alice_integration_calls_total{integration=\"wise\"}[5m]))", "refId": "A" }]
     },
     {
       "collapsed": false,
@@ -282,8 +282,8 @@
       "title": "ERPNext Sync Latency",
       "type": "timeseries",
       "targets": [
-        { "expr": "histogram_quantile(0.95, rate(integration_request_duration_seconds_bucket{integration=\"erpnext\"}[5m]))", "legendFormat": "P95", "refId": "A" },
-        { "expr": "histogram_quantile(0.99, rate(integration_request_duration_seconds_bucket{integration=\"erpnext\"}[5m]))", "legendFormat": "P99", "refId": "B" }
+        { "expr": "histogram_quantile(0.95, rate(alice_integration_call_duration_seconds_bucket{integration=\"erpnext\"}[5m]))", "legendFormat": "P95", "refId": "A" },
+        { "expr": "histogram_quantile(0.99, rate(alice_integration_call_duration_seconds_bucket{integration=\"erpnext\"}[5m]))", "legendFormat": "P99", "refId": "B" }
       ]
     },
     {
@@ -304,7 +304,7 @@
       "title": "ERPNext Operations",
       "type": "timeseries",
       "targets": [
-        { "expr": "sum(rate(integration_requests_total{integration=\"erpnext\"}[5m])) by (operation)", "legendFormat": "{{ operation }}", "refId": "A" }
+        { "expr": "sum(rate(alice_integration_calls_total{integration=\"erpnext\"}[5m])) by (operation)", "legendFormat": "{{ operation }}", "refId": "A" }
       ]
     },
     {
@@ -332,8 +332,8 @@
       "title": "Twilio Messages",
       "type": "timeseries",
       "targets": [
-        { "expr": "increase(integration_requests_total{integration=\"twilio\",operation=\"whatsapp\"}[1h])", "legendFormat": "WhatsApp", "refId": "A" },
-        { "expr": "increase(integration_requests_total{integration=\"twilio\",operation=\"sms\"}[1h])", "legendFormat": "SMS", "refId": "B" }
+        { "expr": "increase(alice_integration_calls_total{integration=\"twilio\",operation=\"whatsapp\"}[1h])", "legendFormat": "WhatsApp", "refId": "A" },
+        { "expr": "increase(alice_integration_calls_total{integration=\"twilio\",operation=\"sms\"}[1h])", "legendFormat": "SMS", "refId": "B" }
       ]
     },
     {
@@ -354,8 +354,8 @@
       "title": "Gmail SMTP Emails",
       "type": "timeseries",
       "targets": [
-        { "expr": "increase(integration_requests_total{integration=\"email\",status=\"success\"}[1h])", "legendFormat": "Sent", "refId": "A" },
-        { "expr": "increase(integration_requests_total{integration=\"email\",status=\"error\"}[1h])", "legendFormat": "Failed", "refId": "B" }
+        { "expr": "increase(alice_integration_calls_total{integration=\"email\",status=\"success\"}[1h])", "legendFormat": "Sent", "refId": "A" },
+        { "expr": "increase(alice_integration_calls_total{integration=\"email\",status=\"error\"}[1h])", "legendFormat": "Failed", "refId": "B" }
       ]
     }
   ],

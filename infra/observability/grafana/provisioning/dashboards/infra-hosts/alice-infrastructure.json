@@ -82,7 +82,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\",instance=\"hetzner-primary\"}[5m])) * 100)",
+          "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\",instance=\"alice-prod\"}[5m])) * 100)",
           "legendFormat": "CPU Usage",
           "refId": "A"
         }
@@ -122,7 +122,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "((node_memory_MemTotal_bytes{instance=\"hetzner-primary\"} - node_memory_MemAvailable_bytes{instance=\"hetzner-primary\"}) / node_memory_MemTotal_bytes{instance=\"hetzner-primary\"}) * 100",
+          "expr": "((node_memory_MemTotal_bytes{instance=\"alice-prod\"} - node_memory_MemAvailable_bytes{instance=\"alice-prod\"}) / node_memory_MemTotal_bytes{instance=\"alice-prod\"}) * 100",
           "legendFormat": "RAM Usage",
           "refId": "A"
         }
@@ -162,7 +162,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "((node_filesystem_size_bytes{instance=\"hetzner-primary\",mountpoint=\"/\"} - node_filesystem_avail_bytes{instance=\"hetzner-primary\",mountpoint=\"/\"}) / node_filesystem_size_bytes{instance=\"hetzner-primary\",mountpoint=\"/\"}) * 100",
+          "expr": "((node_filesystem_size_bytes{instance=\"alice-prod\",mountpoint=\"/\"} - node_filesystem_avail_bytes{instance=\"alice-prod\",mountpoint=\"/\"}) / node_filesystem_size_bytes{instance=\"alice-prod\",mountpoint=\"/\"}) * 100",
           "legendFormat": "Disk Usage",
           "refId": "A"
         }
@@ -194,7 +194,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "node_load1{instance=\"hetzner-primary\"}",
+          "expr": "node_load1{instance=\"alice-prod\"}",
           "legendFormat": "Load 1m",
           "refId": "A"
         }
@@ -238,8 +238,8 @@
       "title": "Network Traffic (RX/TX)",
       "type": "timeseries",
       "targets": [
-        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(node_network_receive_bytes_total{instance=\"hetzner-primary\",device!~\"lo|docker.*|veth.*\"}[5m])", "legendFormat": "RX {{ device }}", "refId": "A" },
-        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(node_network_transmit_bytes_total{instance=\"hetzner-primary\",device!~\"lo|docker.*|veth.*\"}[5m])", "legendFormat": "TX {{ device }}", "refId": "B" }
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(node_network_receive_bytes_total{instance=\"alice-prod\",device!~\"lo|docker.*|veth.*\"}[5m])", "legendFormat": "RX {{ device }}", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(node_network_transmit_bytes_total{instance=\"alice-prod\",device!~\"lo|docker.*|veth.*\"}[5m])", "legendFormat": "TX {{ device }}", "refId": "B" }
       ]
     },
     {
@@ -280,8 +280,8 @@
       "title": "Disk I/O (Read/Write)",
       "type": "timeseries",
       "targets": [
-        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(node_disk_reads_completed_total{instance=\"hetzner-primary\"}[5m])", "legendFormat": "Read {{ device }}", "refId": "A" },
-        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(node_disk_writes_completed_total{instance=\"hetzner-primary\"}[5m])", "legendFormat": "Write {{ device }}", "refId": "B" }
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(node_disk_reads_completed_total{instance=\"alice-prod\"}[5m])", "legendFormat": "Read {{ device }}", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(node_disk_writes_completed_total{instance=\"alice-prod\"}[5m])", "legendFormat": "Write {{ device }}", "refId": "B" }
       ]
     },
     {

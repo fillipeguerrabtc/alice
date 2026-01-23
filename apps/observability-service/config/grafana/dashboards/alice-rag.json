@@ -41,7 +41,7 @@
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "RAG Service",
       "type": "stat",
-      "targets": [{ "expr": "up{job=\"alice-services\",instance=\"alice-rag:3003\"}", "refId": "A" }]
+      "targets": [{ "expr": "up{job=\"alice-services\",service=\"rag-service\"}", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },

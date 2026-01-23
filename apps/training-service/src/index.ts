@@ -53,9 +53,10 @@ import {
   GpuServiceType,
   GpuRequestPriority,
   GPU_MANAGER_CONFIG,
+  Gauge as PromGauge,
 } from '@alice/shared-utils';
 import { trainingServicePaths, trainingServiceSchemas } from './openapi-specs.js';
-import { eq, and, or, desc, sql, isNull, not } from '@alice/database';
+import { eq, and, or, desc, sql, isNull, not, inArray } from '@alice/database';
 import { z } from 'zod';
 import { processTradingLoraJob } from './lora-job-manager.js';
 // Fine-tuning é executado localmente via GPU Manager Service (Regra 6 - sem stubs/migração)
@@ -164,6 +165,49 @@ const { metrics, metricsRouter, httpMetricsMiddleware } = createAlicePrometheus(
   serviceName: 'training-service',
   collectDefaultMetrics: true,
 });
+
+// Métrica enterprise: total de datasets de treinamento (DB → Prometheus)
+const trainingDatasetsTotal = new PromGauge({
+  name: 'alice_training_datasets_total',
+  help: 'Total de registros de training data (todas as categorias)',
+  registers: [metrics.registry],
+});
+
+const TRAINING_METRICS_INTERVAL_MS = parseEnvInt(
+  process.env.TRAINING_METRICS_INTERVAL_MS,
+  60000,
+  'TRAINING_METRICS_INTERVAL_MS'
+);
+
+let trainingMetricsInterval: NodeJS.Timeout | null = null;
+
+async function refreshTrainingMetrics(): Promise<void> {
+  try {
+    const [datasetsTotal] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(schema.trainingData);
+
+    const [activeJobs] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(schema.fineTuningJobs)
+      .where(inArray(schema.fineTuningJobs.status, ['preparing', 'training', 'validating']));
+
+    const datasetsCount = Number(datasetsTotal?.count ?? 0);
+    const activeJobsCount = Number(activeJobs?.count ?? 0);
+
+    trainingDatasetsTotal.set(datasetsCount);
+    metrics.training.activeJobs.set(activeJobsCount);
+  } catch (error) {
+    logger.error({ error }, 'Falha ao atualizar métricas de training');
+  }
+}
+
+function startTrainingMetricsScheduler(): void {
+  void refreshTrainingMetrics();
+  trainingMetricsInterval = setInterval(() => {
+    void refreshTrainingMetrics();
+  }, TRAINING_METRICS_INTERVAL_MS);
+}
 
 // Inicializar métricas RBAC (Regra 16 - Observability Enterprise)
 initRbacPrometheusMetrics(metrics.rbac);
@@ -957,6 +1001,9 @@ async function processFineTuningJob(jobId: string, hyperparameters: FineTuningJo
     })
     .where(eq(schema.fineTuningJobs.id, jobId));
 
+  metrics.training.completedJobsTotal.inc(1);
+  void refreshTrainingMetrics();
+
   logger.info({ jobId, adapterPath }, 'Fine-tuning concluído (LoRA)');
 }
 
@@ -980,6 +1027,8 @@ async function resumePendingFineTuningJobs(): Promise<void> {
           .set({ status: 'failed', errorMessage: msg, completadoEm: new Date() })
           .where(eq(schema.fineTuningJobs.id, job.id))
           .catch(() => {});
+        metrics.training.failedJobsTotal.inc(1);
+        void refreshTrainingMetrics();
       });
   }
 }
@@ -2030,6 +2079,9 @@ let server: ReturnType<typeof app.listen>;
         circuitBreaker: 'enabled',
       }, 'Training service iniciado com Circuit Breaker');
 
+      startTrainingMetricsScheduler();
+      logger.info({ intervalMs: TRAINING_METRICS_INTERVAL_MS }, 'Scheduler de métricas de training iniciado');
+
       // Retomar jobs pendentes após restart (Regra 6: sem dependência de state em memória)
       resumePendingFineTuningJobs().catch((error: unknown) => {
         logger.error({ error }, 'Falha ao retomar jobs de fine-tuning pendentes');
@@ -2085,6 +2137,17 @@ let server: ReturnType<typeof app.listen>;
         logger.info('Cliente Redis cache encerrado com sucesso');
       },
       { priority: ShutdownPriority.CACHE }
+    );
+
+    registerShutdownCallback(
+      'training-metrics-scheduler',
+      async () => {
+        if (trainingMetricsInterval) {
+          clearInterval(trainingMetricsInterval);
+          trainingMetricsInterval = null;
+        }
+      },
+      { priority: ShutdownPriority.BACKGROUND_JOBS }
     );
 
     registerShutdownCallback(

@@ -40,7 +40,7 @@
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Auth Service",
       "type": "stat",
-      "targets": [{ "expr": "up{job=\"alice-auth-service\"}", "refId": "A" }]
+      "targets": [{ "expr": "up{job=\"alice-services\",service=\"auth-service\"}", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -56,7 +56,7 @@
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Chat Service",
       "type": "stat",
-      "targets": [{ "expr": "up{job=\"alice-chat-service\"}", "refId": "A" }]
+      "targets": [{ "expr": "up{job=\"alice-services\",service=\"chat-service\"}", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -72,7 +72,7 @@
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "RAG Service",
       "type": "stat",
-      "targets": [{ "expr": "up{job=\"alice-rag-service\"}", "refId": "A" }]
+      "targets": [{ "expr": "up{job=\"alice-services\",service=\"rag-service\"}", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -88,7 +88,7 @@
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Training Service",
       "type": "stat",
-      "targets": [{ "expr": "up{job=\"alice-training-service\"}", "refId": "A" }]
+      "targets": [{ "expr": "up{job=\"alice-services\",service=\"training-service\"}", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -104,7 +104,7 @@
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Integrations",
       "type": "stat",
-      "targets": [{ "expr": "up{job=\"alice-integrations-service\"}", "refId": "A" }]
+      "targets": [{ "expr": "up{job=\"alice-services\",service=\"integrations-service\"}", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -147,9 +147,9 @@
       "title": "Latência Global (P50/P95/P99)",
       "type": "timeseries",
       "targets": [
-        { "expr": "histogram_quantile(0.50, sum(rate(alice_http_request_duration_seconds_bucket{job=~\"alice-.*\"}[5m])) by (le))", "legendFormat": "P50", "refId": "A" },
-        { "expr": "histogram_quantile(0.95, sum(rate(alice_http_request_duration_seconds_bucket{job=~\"alice-.*\"}[5m])) by (le))", "legendFormat": "P95", "refId": "B" },
-        { "expr": "histogram_quantile(0.99, sum(rate(alice_http_request_duration_seconds_bucket{job=~\"alice-.*\"}[5m])) by (le))", "legendFormat": "P99", "refId": "C" }
+        { "expr": "histogram_quantile(0.50, sum(rate(alice_http_request_duration_seconds_bucket{job=\"alice-services\"}[5m])) by (le))", "legendFormat": "P50", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum(rate(alice_http_request_duration_seconds_bucket{job=\"alice-services\"}[5m])) by (le))", "legendFormat": "P95", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, sum(rate(alice_http_request_duration_seconds_bucket{job=\"alice-services\"}[5m])) by (le))", "legendFormat": "P99", "refId": "C" }
       ]
     },
     {
@@ -170,7 +170,7 @@
       "title": "Latência P95 por Serviço",
       "type": "timeseries",
       "targets": [
-        { "expr": "histogram_quantile(0.95, sum(rate(alice_http_request_duration_seconds_bucket{job=~\"alice-.*\"}[5m])) by (job, le))", "legendFormat": "{{ job }}", "refId": "A" }
+        { "expr": "histogram_quantile(0.95, sum(rate(alice_http_request_duration_seconds_bucket{job=\"alice-services\"}[5m])) by (service, le))", "legendFormat": "{{ service }}", "refId": "A" }
       ]
     },
     {
@@ -198,7 +198,7 @@
       "title": "RPS por Serviço",
       "type": "timeseries",
       "targets": [
-        { "expr": "sum(rate(alice_http_requests_total{job=~\"alice-.*\"}[5m])) by (job)", "legendFormat": "{{ job }}", "refId": "A" }
+        { "expr": "sum(rate(alice_http_requests_total{job=\"alice-services\"}[5m])) by (service)", "legendFormat": "{{ service }}", "refId": "A" }
       ]
     },
     {
@@ -219,7 +219,7 @@
       "title": "RPS por Endpoint (Top 10)",
       "type": "timeseries",
       "targets": [
-        { "expr": "topk(10, sum(rate(alice_http_requests_total{job=~\"alice-.*\"}[5m])) by (handler))", "legendFormat": "{{ handler }}", "refId": "A" }
+        { "expr": "topk(10, sum(rate(alice_http_requests_total{job=\"alice-services\"}[5m])) by (route))", "legendFormat": "{{ route }}", "refId": "A" }
       ]
     },
     {
@@ -247,7 +247,7 @@
       "title": "Error Rate por Serviço (%)",
       "type": "timeseries",
       "targets": [
-        { "expr": "100 * sum(rate(alice_http_requests_total{job=~\"alice-.*\",status=~\"5..\"}[5m])) by (job) / sum(rate(alice_http_requests_total{job=~\"alice-.*\"}[5m])) by (job)", "legendFormat": "{{ job }}", "refId": "A" }
+        { "expr": "100 * sum(rate(alice_http_requests_total{job=\"alice-services\",status_code=~\"5..\"}[5m])) by (service) / sum(rate(alice_http_requests_total{job=\"alice-services\"}[5m])) by (service)", "legendFormat": "{{ service }}", "refId": "A" }
       ]
     },
     {
@@ -268,10 +268,10 @@
       "title": "Status Codes Distribution",
       "type": "timeseries",
       "targets": [
-        { "expr": "sum(increase(alice_http_requests_total{job=~\"alice-.*\",status=~\"2..\"}[5m]))", "legendFormat": "2xx Success", "refId": "A" },
-        { "expr": "sum(increase(alice_http_requests_total{job=~\"alice-.*\",status=~\"3..\"}[5m]))", "legendFormat": "3xx Redirect", "refId": "B" },
-        { "expr": "sum(increase(alice_http_requests_total{job=~\"alice-.*\",status=~\"4..\"}[5m]))", "legendFormat": "4xx Client Error", "refId": "C" },
-        { "expr": "sum(increase(alice_http_requests_total{job=~\"alice-.*\",status=~\"5..\"}[5m]))", "legendFormat": "5xx Server Error", "refId": "D" }
+        { "expr": "sum(increase(alice_http_requests_total{job=\"alice-services\",status_code=~\"2..\"}[5m]))", "legendFormat": "2xx Success", "refId": "A" },
+        { "expr": "sum(increase(alice_http_requests_total{job=\"alice-services\",status_code=~\"3..\"}[5m]))", "legendFormat": "3xx Redirect", "refId": "B" },
+        { "expr": "sum(increase(alice_http_requests_total{job=\"alice-services\",status_code=~\"4..\"}[5m]))", "legendFormat": "4xx Client Error", "refId": "C" },
+        { "expr": "sum(increase(alice_http_requests_total{job=\"alice-services\",status_code=~\"5..\"}[5m]))", "legendFormat": "5xx Server Error", "refId": "D" }
       ]
     },
     {
@@ -298,7 +298,7 @@
       "title": "Latência Média por Endpoint",
       "type": "bargauge",
       "targets": [
-        { "expr": "topk(15, sum(rate(alice_http_request_duration_seconds_sum{job=~\"alice-.*\"}[5m])) by (handler) / sum(rate(alice_http_request_duration_seconds_count{job=~\"alice-.*\"}[5m])) by (handler))", "legendFormat": "{{ handler }}", "refId": "A" }
+        { "expr": "topk(15, sum(rate(alice_http_request_duration_seconds_sum{job=\"alice-services\"}[5m])) by (route) / sum(rate(alice_http_request_duration_seconds_count{job=\"alice-services\"}[5m])) by (route))", "legendFormat": "{{ route }}", "refId": "A" }
       ]
     },
     {
@@ -319,7 +319,7 @@
       "title": "Conexões HTTP Ativas",
       "type": "timeseries",
       "targets": [
-        { "expr": "alice_http_connections_active{job=~\"alice-.*\"}", "legendFormat": "{{ job }}", "refId": "A" }
+        { "expr": "sum(alice_http_requests_in_flight{job=\"alice-services\"}) by (service)", "legendFormat": "{{ service }}", "refId": "A" }
       ]
     }
   ],

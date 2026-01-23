@@ -19,13 +19,36 @@ rule_files:
 scrape_configs:
   - job_name: 'alice-services'
     static_configs:
-      - targets:
-        - 'alice-auth:3001'
-        - 'alice-chat:3002'
-        - 'alice-rag:3003'
-        - 'alice-training:3004'
-        - 'alice-integrations:3005'
-        - 'alice-gpu-manager:3010'
+      - targets: ['alice-auth:3001']
+        labels:
+          service: 'auth-service'
+          instance: 'alice-prod'
+          environment: 'production'
+      - targets: ['alice-chat:3002']
+        labels:
+          service: 'chat-service'
+          instance: 'alice-prod'
+          environment: 'production'
+      - targets: ['alice-rag:3003']
+        labels:
+          service: 'rag-service'
+          instance: 'alice-prod'
+          environment: 'production'
+      - targets: ['alice-training:3004']
+        labels:
+          service: 'training-service'
+          instance: 'alice-prod'
+          environment: 'production'
+      - targets: ['alice-integrations:3005']
+        labels:
+          service: 'integrations-service'
+          instance: 'alice-prod'
+          environment: 'production'
+      - targets: ['alice-gpu-manager:3010']
+        labels:
+          service: 'gpu-manager-service'
+          instance: 'alice-prod'
+          environment: 'production'
     metrics_path: '/metrics'
     scrape_timeout: 10s
 

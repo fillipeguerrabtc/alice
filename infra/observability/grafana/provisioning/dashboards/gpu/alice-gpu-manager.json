@@ -35,7 +35,7 @@
       "gridPos": { "h": 2, "w": 24, "x": 0, "y": 0 },
       "id": 100,
       "options": {
-        "content": "# Alice GPU Manager Dashboard - Enterprise\n**Hetzner GEX44** (RTX 4000 Ada 20GB VRAM) | **Modelo-agnóstico (WS3-ready)** | LLM + Embeddings + ASR | VRAM Monitoring | Queue Management | Circuit Breakers",
+        "content": "# Alice GPU Manager Dashboard - Enterprise\n**Hetzner GEX44** (RTX 4000 Ada 20GB VRAM) | **Modelo-agnóstico (WS3-ready)** | LLM + Embeddings + Training | VRAM Monitoring | Queue Management | Circuit Breakers",
         "mode": "markdown"
       },
       "transparent": true,
@@ -147,7 +147,7 @@
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "ASR" },
+            "matcher": { "id": "byName", "options": "Training" },
             "properties": [
               {
                 "id": "color",
@@ -191,8 +191,8 @@
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "alice_gpu_vram_reserved_bytes{service=\"asr\"}",
-          "legendFormat": "ASR",
+          "expr": "alice_gpu_vram_reserved_bytes{service=\"training\"}",
+          "legendFormat": "Training",
           "refId": "C"
         }
       ]
@@ -313,13 +313,13 @@
         "showPercentChange": false,
         "textMode": "value_and_name"
       },
-      "title": "Fila ASR (modelo-agnóstico)",
+      "title": "Fila Training (modelo-agnóstico)",
       "type": "stat",
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "alice_gpu_manager_queue_depth{queue=\"asr\"}",
-          "legendFormat": "ASR Queue",
+          "expr": "alice_gpu_manager_queue_depth{queue=\"training\"}",
+          "legendFormat": "Training Queue",
           "refId": "A"
         }
       ]
@@ -432,7 +432,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "alice_circuit_breaker_state{name=~\".*gpu.*|.*llm.*|.*embedding.*|.*asr.*\"}",
+          "expr": "alice_circuit_breaker_state{name=~\".*gpu.*|.*llm.*|.*embedding.*|.*training.*\"}",
           "format": "table",
           "instant": true,
           "legendFormat": "",
@@ -516,7 +516,7 @@
           "sort": "desc"
         }
       },
-      "title": "Latência LLM/Embeddings/ASR (P50, P95, P99)",
+      "title": "Latência LLM/Embeddings/Training (P50, P95, P99)",
       "type": "timeseries",
       "targets": [
         {

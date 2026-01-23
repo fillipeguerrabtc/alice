@@ -6,10 +6,65 @@
 
 import { createLogger } from '@alice/logger';
 import crypto from 'crypto';
-import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
+import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS, createAlicePrometheus } from '@alice/shared-utils';
 
 // Logger padronizado (Regra 2 - Não Duplicar)
 const logger = createLogger('wise-client');
+
+// ============================================================================
+// MÉTRICAS (Prometheus) - Wise
+// ============================================================================
+// Inicializado via initWiseMetrics() em apps/integrations-service/src/index.ts
+let wiseMetrics: ReturnType<typeof createAlicePrometheus>['metrics'] | null = null;
+
+export function initWiseMetrics(metrics: ReturnType<typeof createAlicePrometheus>['metrics']): void {
+  wiseMetrics = metrics;
+}
+
+function normalizeWiseOperation(method: string, endpoint: string): string {
+  const [path] = endpoint.split('?', 1);
+  const normalizedPath = path
+    .split('/')
+    .map((segment) => {
+      if (!segment) return segment;
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(segment)) return ':id';
+      if (/^\d+$/.test(segment)) return ':id';
+      return segment;
+    })
+    .join('/');
+  return `${method} ${normalizedPath}`;
+}
+
+function recordWiseCall(opts: { operation: string; status: 'success' | 'error'; durationSeconds: number }): void {
+  if (!wiseMetrics) return;
+  wiseMetrics.integrations.callDuration.observe(
+    { integration: 'wise', operation: opts.operation },
+    opts.durationSeconds
+  );
+  wiseMetrics.integrations.callsTotal.inc(
+    { integration: 'wise', operation: opts.operation, status: opts.status },
+    1
+  );
+}
+
+function recordWiseError(opts: { operation: string; errorType: string }): void {
+  if (!wiseMetrics) return;
+  wiseMetrics.integrations.errorsTotal.inc(
+    { integration: 'wise', operation: opts.operation, error_type: opts.errorType },
+    1
+  );
+}
+
+function classifyWiseError(error: unknown): string {
+  if (error instanceof Error) {
+    const message = error.message.toLowerCase();
+    if (message.includes('timeout')) return 'timeout';
+    if (message.includes('breaker')) return 'breaker_open';
+    if (message.includes('429')) return 'rate_limit';
+    if (message.includes('wise api error')) return 'http_error';
+  }
+  return 'error';
+}
 
 // RESILIÊNCIA: Timeout para chamadas à API Wise (Best Practices 2025)
 const WISE_API_TIMEOUT_MS = 30000; // 30 segundos
@@ -147,12 +202,19 @@ export async function wiseRequest<T>(
   body?: unknown
 ): Promise<T> {
   logger.info({ method, endpoint }, 'Requisição Wise API');
+  const operation = normalizeWiseOperation(method, endpoint);
+  const start = process.hrtime.bigint();
 
   try {
     const result = await wiseCircuitBreaker.fire({ method, endpoint, body }) as T;
+    const durationSeconds = Number(process.hrtime.bigint() - start) / 1e9;
+    recordWiseCall({ operation, status: 'success', durationSeconds });
     logger.info({ method, endpoint, success: true }, 'Resposta Wise API');
     return result;
   } catch (error) {
+    const durationSeconds = Number(process.hrtime.bigint() - start) / 1e9;
+    recordWiseCall({ operation, status: 'error', durationSeconds });
+    recordWiseError({ operation, errorType: classifyWiseError(error) });
     logger.error({ error, method, endpoint }, 'Falha na requisição Wise');
     throw error;
   }

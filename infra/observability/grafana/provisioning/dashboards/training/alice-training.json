@@ -41,7 +41,7 @@
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Training Service",
       "type": "stat",
-      "targets": [{ "expr": "up{job=\"alice-training-service\"}", "refId": "A" }]
+      "targets": [{ "expr": "up{job=\"alice-services\",service=\"training-service\"}", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -51,7 +51,7 @@
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Jobs Ativos",
       "type": "stat",
-      "targets": [{ "expr": "training_jobs_active", "refId": "A" }]
+      "targets": [{ "expr": "alice_training_active_jobs", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -61,7 +61,7 @@
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto", "showPercentChange": true },
       "title": "Jobs Completados",
       "type": "stat",
-      "targets": [{ "expr": "training_jobs_completed_total", "refId": "A" }]
+      "targets": [{ "expr": "alice_training_completed_jobs_total", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -71,7 +71,7 @@
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Jobs Falhos",
       "type": "stat",
-      "targets": [{ "expr": "training_jobs_failed_total", "refId": "A" }]
+      "targets": [{ "expr": "alice_training_failed_jobs_total", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -81,7 +81,7 @@
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Datasets",
       "type": "stat",
-      "targets": [{ "expr": "training_datasets_total", "refId": "A" }]
+      "targets": [{ "expr": "alice_training_datasets_total", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -91,7 +91,7 @@
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Modelos Treinados",
       "type": "stat",
-      "targets": [{ "expr": "training_models_total", "refId": "A" }]
+      "targets": [{ "expr": "alice_training_completed_jobs_total", "refId": "A" }]
     }
   ],
   "schemaVersion": 39,

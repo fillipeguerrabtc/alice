@@ -92,7 +92,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(rate(alice_llm_fallbacks_total[5m])) / (sum(rate(alice_http_requests_total{job=\"alice-chat-service\",handler=~\".*chat.*\"}[5m])) + 0.001)",
+          "expr": "sum(rate(alice_llm_fallbacks_total[5m])) / (sum(rate(alice_http_requests_total{job=\"alice-services\",service=\"chat-service\",route=~\".*chat.*\"}[5m])) + 0.001)",
           "legendFormat": "Error Rate",
           "refId": "A"
         }
@@ -203,7 +203,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(rate(alice_http_requests_total{job=\"alice-chat-service\",handler=~\".*chat.*|.*message.*\"}[5m]))",
+          "expr": "sum(rate(alice_http_requests_total{job=\"alice-services\",service=\"chat-service\",route=~\".*chat.*|.*message.*\"}[5m]))",
           "legendFormat": "RPS",
           "refId": "A"
         }
@@ -533,13 +533,13 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "rate(alice_llm_tokens_prompt_total[5m]) / (rate(alice_http_requests_total{job=\"alice-chat-service\",handler=~\".*chat.*\"}[5m]) + 0.001)",
+          "expr": "rate(alice_llm_tokens_prompt_total[5m]) / (rate(alice_http_requests_total{job=\"alice-services\",service=\"chat-service\",route=~\".*chat.*\"}[5m]) + 0.001)",
           "legendFormat": "Prompt/req",
           "refId": "A"
               },
               {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "rate(alice_llm_tokens_generated_total[5m]) / (rate(alice_http_requests_total{job=\"alice-chat-service\",handler=~\".*chat.*\"}[5m]) + 0.001)",
+          "expr": "rate(alice_llm_tokens_generated_total[5m]) / (rate(alice_http_requests_total{job=\"alice-services\",service=\"chat-service\",route=~\".*chat.*\"}[5m]) + 0.001)",
           "legendFormat": "Gerados/req",
           "refId": "B"
         }
