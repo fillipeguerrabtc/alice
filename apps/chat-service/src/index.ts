@@ -4113,6 +4113,7 @@ type TradingCommandType =
 
 type ConversationApprovalPolicy = 'always_confirm' | 'confirm_risky' | 'never_confirm';
 type TradingCommandRisk = 'low' | 'medium' | 'high';
+type AgenticTaskRisk = 'low' | 'high';
 
 interface ParsedTradingCommand {
   type: TradingCommandType;
@@ -4167,6 +4168,32 @@ function shouldRequireTradingConfirmation(
     return true;
   }
   const risk = getTradingCommandRisk(command);
+  return risk !== 'low';
+}
+
+function getAgenticTaskRisk(taskType: AgenticTaskType): AgenticTaskRisk {
+  switch (taskType) {
+    case 'document':
+    case 'report':
+      return 'low';
+    case 'accounting':
+    case 'planning':
+    default:
+      return 'high';
+  }
+}
+
+function shouldRequireAgenticConfirmation(
+  taskType: AgenticTaskType,
+  policy: ConversationApprovalPolicy
+): boolean {
+  if (policy === 'never_confirm') {
+    return false;
+  }
+  if (policy === 'always_confirm') {
+    return true;
+  }
+  const risk = getAgenticTaskRisk(taskType);
   return risk !== 'low';
 }
 
@@ -7867,7 +7894,28 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
       if (stackCommand.type === 'deploy' && !stackCommand.version) {
         const responseContent = 'Informe a versão para deploy. Exemplo: "deploy stack alice v1.2.3".';
+        const [assistantMessage] = await db.insert(schema.messages).values({
+          conversationId,
+          agentId: conversation?.agentId ?? undefined,
+          conteudo: responseContent,
+          tipo: 'text',
+          isFromUser: false,
+          metadata: {
+            stackCommand,
+            validationError: true,
+          },
+        }).returning();
+
+        await db.update(schema.conversations)
+          .set({
+            totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+            ultimaMensagemEm: new Date(),
+            atualizadoEm: new Date(),
+          })
+          .where(eq(schema.conversations.id, conversationId));
+
         res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
         res.write('data: [DONE]\n\n');
         res.end();
         return;
@@ -7875,7 +7923,28 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
       if (stackCommand.type === 'rollback' && !stackCommand.version) {
         const responseContent = 'Informe a versão alvo para rollback. Exemplo: "rollback stack alice v1.2.3".';
+        const [assistantMessage] = await db.insert(schema.messages).values({
+          conversationId,
+          agentId: conversation?.agentId ?? undefined,
+          conteudo: responseContent,
+          tipo: 'text',
+          isFromUser: false,
+          metadata: {
+            stackCommand,
+            validationError: true,
+          },
+        }).returning();
+
+        await db.update(schema.conversations)
+          .set({
+            totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+            ultimaMensagemEm: new Date(),
+            atualizadoEm: new Date(),
+          })
+          .where(eq(schema.conversations.id, conversationId));
+
         res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
         res.write('data: [DONE]\n\n');
         res.end();
         return;
@@ -7956,7 +8025,9 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
       const agenticDetection = detectAgenticTaskRequest(userMessageContent);
       if (agenticDetection.isTaskRequest && agenticDetection.taskType && agenticDetection.instructions) {
-        const requiresConfirmation = false;
+        const conversationState = await getOrCreateConversationState(conversationId);
+        const approvalPolicy = (conversationState.approvalPolicy ?? 'always_confirm') as ConversationApprovalPolicy;
+        const requiresConfirmation = shouldRequireAgenticConfirmation(agenticDetection.taskType, approvalPolicy);
         const taskTitle = buildAgenticTaskTitle(agenticDetection.taskType, agenticDetection.title);
         const taskSummary = `${AGENTIC_TASK_TITLES[agenticDetection.taskType]}: ${taskTitle}`;
 
