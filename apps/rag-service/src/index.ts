@@ -2167,6 +2167,11 @@ const webSearchSchema = z.object({
   mode: z.enum(['web', 'deepweb']).optional(),
 });
 
+const webImageSearchSchema = z.object({
+  query: z.string().min(1),
+  limit: z.coerce.number().min(1).max(12).default(5),
+});
+
 app.post('/api/rag/web-search', requireAuth(), async (req: Request, res: Response) => {
   try {
     const { query, limit, mode } = webSearchSchema.parse(req.body);
@@ -2187,6 +2192,27 @@ app.post('/api/rag/web-search', requireAuth(), async (req: Request, res: Respons
     res.json({ results, source: 'searxng' });
   } catch (error) {
     logger.error({ error }, 'Falha na busca web');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.post('/api/rag/web-search/images', requireAuth(), async (req: Request, res: Response) => {
+  try {
+    const { query, limit } = webImageSearchSchema.parse(req.body);
+
+    if (!webSearchClient.isEnabled()) {
+      return res.status(503).json({
+        error: 'Busca web não configurada',
+        message: 'SEARXNG_SECRET_KEY não está configurada',
+      });
+    }
+
+    const results = await webSearchClient.searchImages(query, limit, { categories: 'images' });
+
+    logger.info({ query, results: results.length }, 'Busca de imagens na web concluída');
+    res.json({ results, source: 'searxng' });
+  } catch (error) {
+    logger.error({ error }, 'Falha na busca de imagens na web');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });

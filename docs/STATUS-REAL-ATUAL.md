@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 24 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 8.7 - OpenAI ASR + Imagens Corrigidos
+**Versão:** 8.8 - Busca de imagens web (SearXNG) + Agentic aprimorado
 
 ---
 
@@ -167,6 +167,7 @@
 - Embeddings texto: Qwen3-Embedding-0.6B INT8 (1024 dim) → Qdrant.
 - Imagem: OpenAI Vision (descrição textual, sem embeddings de imagem).
 - ASR: OpenAI gpt-4o-transcribe.
+- Busca de imagens na web via SearXNG (sem embeddings de imagem; armazenamento no RAG com descrição textual).
 
 ---
 
@@ -196,6 +197,7 @@ Retenção Arquivo:   30 dias
 - Vision: logs detalhados de erro da OpenAI para diagnóstico preciso.
 - Imagens: mensagens recuperam imagens geradas via metadata (evita mensagem vazia no chat).
 - Imagens: resposta de geração agora inclui conteúdo padrão para não exibir bolha vazia.
+- Web: busca de imagens na web via SearXNG com envio direto no chat (sem embeddings de imagem).
 - Dashboard: takeover/SLA/circuit breakers/conversas semanais agora com dados reais do backend.
 - Integrações: métricas reais de Stripe/Wise/ERPNext expostas no dashboard.
 - Users Admin: modal de edição com rolagem, senha redefinível e colunas de grupos/nome preferido.

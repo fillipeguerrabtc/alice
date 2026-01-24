@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Arquitetura de Software
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 23 de Janeiro de 2026  
-> **Versão:** 3.4.1 - Onboarding Admin-only + Guest Default  
+> **Data:** 24 de Janeiro de 2026  
+> **Versão:** 3.4.2 - Busca de imagens web (SearXNG)  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 > 
@@ -39,6 +39,7 @@
 - **Customização**: Fine-tuning específico via QLoRA para cada domínio (especializado em finanças/matemática)
 - **Custo Previsível**: LLM local sem cobrança por token; Vision/Imagens via OpenAI
 - **Compliance**: LGPD, GDPR, SOC 2 ready
+- **Agentic Web**: Busca web (texto e imagens) via SearXNG com integração direta no chat
 
 ### 1.2 Objetivos de Qualidade
 

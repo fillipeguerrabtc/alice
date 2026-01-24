@@ -73,6 +73,13 @@ export interface AgenticClassificationResponse {
   webSearchAvailable: boolean;
 }
 
+export interface WebImageSearchResult {
+  title: string;
+  imageUrl: string;
+  sourceUrl?: string;
+  thumbnailUrl?: string;
+}
+
 // Circuit Breaker usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
 
 /**
@@ -263,6 +270,45 @@ export async function buscarContextoAgentic(params: {
     }
     return null;
   }
+}
+
+export async function buscarImagensWeb(params: {
+  query: string;
+  limit?: number;
+  auth: { userId: string; tenantId: string; role: Role };
+}): Promise<WebImageSearchResult[]> {
+  const { query, limit = 5, auth } = params;
+  if (!isInternalAuthEnabled()) {
+    throw new Error('INTERNAL_API_SECRET não configurado - busca de imagens indisponível');
+  }
+
+  const internalHeaders = generateInternalAuthHeaders({
+    userId: auth.userId,
+    tenantId: auth.tenantId,
+    role: auth.role,
+  });
+
+  const response = await fetch(`${RAG_SERVICE_URL_FINAL}/api/rag/web-search/images`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-internal-signature': internalHeaders['x-internal-signature'],
+      'x-internal-timestamp': internalHeaders['x-internal-timestamp'],
+      'x-internal-user-id': internalHeaders['x-internal-user-id'],
+      'x-internal-role': internalHeaders['x-internal-role'],
+      ...(internalHeaders['x-internal-tenant-id'] ? { 'x-internal-tenant-id': internalHeaders['x-internal-tenant-id'] } : {}),
+    },
+    body: JSON.stringify({ query, limit }),
+    signal: AbortSignal.timeout(RAG_REQUEST_TIMEOUT_MS),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`RAG web image search erro: ${response.status} - ${errorText}`);
+  }
+
+  const payload = await response.json() as { results?: WebImageSearchResult[] };
+  return payload?.results ?? [];
 }
 
 export async function classificarConsultaAgentic(params: {

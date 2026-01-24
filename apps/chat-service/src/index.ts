@@ -76,6 +76,7 @@ import { createClient } from 'redis';
 import { 
   buscarContextoRAG, 
   buscarContextoAgentic,
+  buscarImagensWeb,
   createDocumentInRAG,
   formatarContextoParaLLM, 
   getRAGBreakerStats,
@@ -143,6 +144,16 @@ const OPENAI_VISION_MAX_BYTES = (() => {
   return parsed;
 })();
 const APP_VERSION = process.env.APP_VERSION?.trim() || null;
+const WEB_IMAGE_SEARCH_MAX_RESULTS = parseEnvInt(
+  process.env.WEB_IMAGE_SEARCH_MAX_RESULTS,
+  3,
+  'WEB_IMAGE_SEARCH_MAX_RESULTS'
+);
+const WEB_IMAGE_MAX_BYTES = parseEnvInt(
+  process.env.WEB_IMAGE_MAX_BYTES,
+  8 * 1024 * 1024,
+  'WEB_IMAGE_MAX_BYTES'
+);
 
 const OPENAI_HOSTNAME = 'api.openai.com';
 const OPENAI_NO_PROXY_ENTRIES = OPENAI_NO_PROXY
@@ -927,6 +938,13 @@ interface ImageGenerationDetection {
   reason: string;
 }
 
+interface ImageSearchDetection {
+  isImageSearch: boolean;
+  query: string | null;
+  confidence: number;
+  reason: string;
+}
+
 const IMAGE_KEYWORDS_PT = [
   'gere uma imagem',
   'crie uma imagem',
@@ -1052,6 +1070,14 @@ const IMAGE_KEYWORDS_EN = [
   'make an icon',
 ];
 
+const IMAGE_SEARCH_PATTERNS = [
+  /\b(buscar|busque|pesquise|procure|encontre|traga|mostre)\s+(?:imagens|fotos|figuras|ilustrações|ilustracoes|ícones|icones|banners|capas|wallpapers|logos)\b/i,
+  /\b(imagens|fotos|figuras|ilustrações|ilustracoes|ícones|icones|banners|capas|wallpapers|logos)\s+(?:na|no)\s+(?:internet|web|google|bing)\b/i,
+  /\b(imagens|fotos|figuras|ilustrações|ilustracoes|ícones|icones)\s+online\b/i,
+  /\b(search|find|look\s+up)\s+(?:images|photos|pictures|illustrations|icons|logos|banners|covers)\b/i,
+  /\bgoogle\s+images\b/i,
+];
+
 function detectImageGenerationRequest(message: string): ImageGenerationDetection {
   const lowerMessage = message.toLowerCase().trim();
   
@@ -1120,6 +1146,42 @@ function extractImagePrompt(message: string, keyword: string): string {
   }
   
   return message;
+}
+
+function detectImageSearchRequest(message: string): ImageSearchDetection {
+  const normalized = message.trim();
+  if (!normalized) {
+    return {
+      isImageSearch: false,
+      query: null,
+      confidence: 0,
+      reason: 'Mensagem vazia',
+    };
+  }
+
+  if (!IMAGE_SEARCH_PATTERNS.some((pattern) => pattern.test(normalized))) {
+    return {
+      isImageSearch: false,
+      query: null,
+      confidence: 0,
+      reason: 'Nenhum padrão de busca de imagens detectado',
+    };
+  }
+
+  const cleaned = normalized
+    .replace(/^(buscar|busque|pesquise|procure|encontre|traga|mostre)\s+/i, '')
+    .replace(/\b(imagens|fotos|figuras|ilustrações|ilustracoes|ícones|icones|banners|capas|wallpapers|logos)\b/gi, '')
+    .replace(/\b(na|no|em)\b/gi, ' ')
+    .replace(/\b(internet|web|online|google|bing)\b/gi, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  return {
+    isImageSearch: true,
+    query: cleaned.length > 2 ? cleaned : normalized,
+    confidence: 0.85,
+    reason: 'Detectado padrão de busca de imagens na web',
+  };
 }
 
 // ============================================================================
@@ -1610,6 +1672,60 @@ async function fetchImageUrlAsBase64(imageUrl: string): Promise<{ base64: string
 
   const buffer = Buffer.from(await response.arrayBuffer());
   return { base64: buffer.toString('base64'), mimeType: contentType };
+}
+
+async function fetchExternalImageAsBase64(
+  imageUrl: string,
+  maxBytes: number
+): Promise<{ base64: string; mimeType: string; size: number }> {
+  const response = await fetch(imageUrl, {
+    method: 'GET',
+    signal: AbortSignal.timeout(20000),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => '');
+    throw new Error(`Falha ao baixar imagem externa: ${response.status} - ${errText}`);
+  }
+
+  const contentType = response.headers.get('content-type') || 'application/octet-stream';
+  if (!contentType.startsWith('image/')) {
+    throw new Error(`Conteúdo inválido ao baixar imagem externa: ${contentType}`);
+  }
+
+  const contentLength = response.headers.get('content-length');
+  if (contentLength) {
+    const parsed = Number(contentLength);
+    if (Number.isFinite(parsed) && parsed > maxBytes) {
+      throw new Error('Imagem externa excede o limite de tamanho configurado');
+    }
+  }
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (buffer.length > maxBytes) {
+    throw new Error('Imagem externa excede o limite de tamanho configurado');
+  }
+
+  return {
+    base64: buffer.toString('base64'),
+    mimeType: contentType,
+    size: buffer.length,
+  };
+}
+
+function buildWebImageFilename(imageUrl: string, index: number, mimeType: string): string {
+  try {
+    const url = new URL(imageUrl);
+    const pathname = url.pathname.split('/').filter(Boolean).pop();
+    if (pathname && pathname.length >= 3) {
+      return pathname;
+    }
+  } catch {
+    // Ignorar falha de parse, usar fallback abaixo
+  }
+
+  const extension = mimeType.split('/')[1] || 'png';
+  return `web-image-${index + 1}.${extension}`;
 }
 
 async function generateImageFromPrompt(input: ImageGenerationInput) {
@@ -6810,6 +6926,230 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       });
     }
 
+    const imageSearchDetection = detectImageSearchRequest(userMessageContent);
+    if (imageSearchDetection.isImageSearch && imageSearchDetection.query) {
+      const userRole = req.user?.role as Role | undefined;
+      const imageSearchStart = Date.now();
+      emitAgentEvent({
+        phase: 'tool',
+        action: 'web_image_search',
+        status: 'start',
+        message: 'Buscando imagens na web',
+        correlationId: conversationId ?? undefined,
+        payload: {
+          query: imageSearchDetection.query,
+          confidence: imageSearchDetection.confidence,
+        },
+      });
+
+      if (!agenticSettings.webEnabled) {
+        res.write(`data: ${JSON.stringify({ error: 'Busca na internet está desativada nas configurações do tenant.' })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
+
+      if (!userRole) {
+        res.write(`data: ${JSON.stringify({ error: 'Permissão insuficiente para buscar imagens.' })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
+
+      const permissionCheck = await checkPermission(
+        { userId, tenantId, role: userRole },
+        'images:generate:write'
+      );
+      if (!permissionCheck.allowed) {
+        res.write(`data: ${JSON.stringify({ error: 'Você não possui permissão para buscar imagens.' })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
+
+      const internalHeaders = buildInternalServiceHeaders({
+        userId,
+        tenantId,
+        role: userRole,
+      });
+
+      try {
+        const webImages = await buscarImagensWeb({
+          query: imageSearchDetection.query,
+          limit: WEB_IMAGE_SEARCH_MAX_RESULTS,
+          auth: { userId, tenantId, role: userRole },
+        });
+
+        if (!webImages.length) {
+          const responseContent = 'Não encontrei imagens na web para esse pedido agora.';
+          const [assistantMessage] = await db.insert(schema.messages).values({
+            conversationId,
+            agentId: conversation?.agentId ?? undefined,
+            conteudo: responseContent,
+            tipo: 'text',
+            isFromUser: false,
+            anexos: [],
+            metadata: {
+              webImageSearch: {
+                query: imageSearchDetection.query,
+                results: 0,
+              },
+            },
+          }).returning();
+
+          await db.update(schema.conversations)
+            .set({
+              totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+              ultimaMensagemEm: new Date(),
+              atualizadoEm: new Date(),
+            })
+            .where(eq(schema.conversations.id, conversationId));
+
+          await ensureConversationTitle({
+            conversationId,
+            userMessage: userMessageContent,
+            assistantResponse: responseContent,
+          });
+
+          res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+          res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+          res.write('data: [DONE]\n\n');
+          res.end();
+          return;
+        }
+
+        const responseContent = 'Encontrei imagens na web para você.';
+        const [assistantMessage] = await db.insert(schema.messages).values({
+          conversationId,
+          agentId: conversation?.agentId ?? undefined,
+          conteudo: responseContent,
+          tipo: 'text',
+          isFromUser: false,
+          anexos: [],
+          metadata: {
+            webImageSearch: {
+              query: imageSearchDetection.query,
+              results: webImages.length,
+            },
+          },
+        }).returning();
+
+        if (!assistantMessage) {
+          throw new Error('Falha ao criar mensagem de imagens web');
+        }
+
+        const attachments: Array<{
+          id: string;
+          type: 'image';
+          filename: string;
+          mimeType: string;
+          size: number;
+          url?: string;
+          thumbnailUrl?: string;
+        }> = [];
+        let downloadedCount = 0;
+
+        for (const [index, image] of webImages.entries()) {
+          try {
+            const downloaded = await fetchExternalImageAsBase64(image.imageUrl, WEB_IMAGE_MAX_BYTES);
+            const filename = buildWebImageFilename(image.imageUrl, index, downloaded.mimeType);
+            const uploadResult = await uploadMediaToRAG(
+              downloaded.base64,
+              filename,
+              downloaded.mimeType,
+              tenantId,
+              `Imagem encontrada na web. Fonte: ${image.sourceUrl ?? image.imageUrl}`,
+              assistantMessage.id,
+              conversationId,
+              internalHeaders
+            );
+
+            if (!uploadResult?.fileUrl) {
+              logger.warn({ imageUrl: image.imageUrl }, 'Upload de imagem web falhou');
+              continue;
+            }
+
+            downloadedCount += 1;
+            attachments.push({
+              id: uploadResult.uploadId,
+              type: 'image',
+              filename,
+              mimeType: downloaded.mimeType,
+              size: downloaded.size,
+              url: uploadResult.fileUrl,
+              thumbnailUrl: uploadResult.thumbnailUrl,
+            });
+          } catch (downloadError) {
+            logger.warn(
+              { error: downloadError, imageUrl: image.imageUrl },
+              'Falha ao baixar imagem web'
+            );
+          }
+        }
+
+        if (!attachments.length) {
+          const fallbackContent = 'Não consegui baixar imagens válidas da web neste momento.';
+          await db.update(schema.messages)
+            .set({ conteudo: fallbackContent })
+            .where(eq(schema.messages.id, assistantMessage.id));
+
+          res.write(`data: ${JSON.stringify({ content: fallbackContent })}\n\n`);
+          res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage.id })}\n\n`);
+          res.write('data: [DONE]\n\n');
+          res.end();
+          return;
+        }
+
+        await db.update(schema.messages)
+          .set({ anexos: attachments })
+          .where(eq(schema.messages.id, assistantMessage.id));
+
+        await db.update(schema.conversations)
+          .set({
+            totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+            ultimaMensagemEm: new Date(),
+            atualizadoEm: new Date(),
+          })
+          .where(eq(schema.conversations.id, conversationId));
+
+        await ensureConversationTitle({
+          conversationId,
+          userMessage: userMessageContent,
+          assistantResponse: responseContent,
+        });
+
+        emitAgentEvent({
+          phase: 'tool',
+          action: 'web_image_search',
+          status: 'success',
+          message: 'Busca de imagens web concluída',
+          durationMs: Date.now() - imageSearchStart,
+          correlationId: conversationId ?? undefined,
+          payload: {
+            downloaded: downloadedCount,
+            stored: attachments.length,
+          },
+        });
+
+        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        res.write(`data: ${JSON.stringify({
+          type: 'web_image_results',
+          message: { ...assistantMessage, anexos: attachments },
+        })}\n\n`);
+        res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage.id })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      } catch (searchError) {
+        const resolvedError = searchError instanceof Error ? searchError.message : String(searchError);
+        logger.error({ error: resolvedError }, 'Falha na busca de imagens web (stream)');
+        res.write(`data: ${JSON.stringify({ error: 'Falha ao buscar imagens na web.' })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
+    }
+
     if (imageDetection.isImageRequest && imageDetection.prompt) {
       logger.info({
         conversationId,
@@ -9889,6 +10229,192 @@ wss.on('connection', (ws, req) => {
         const userMsg = inserted[0];
 
         ws.send(JSON.stringify({ type: 'message', data: userMsg }));
+
+        const imageSearchDetection = detectImageSearchRequest(messageContent);
+        if (imageSearchDetection.isImageSearch && imageSearchDetection.query) {
+          const agenticSettings = await getOrCreateAgenticSettings(safeTenantId);
+          if (!agenticSettings.webEnabled) {
+            ws.send(JSON.stringify({
+              type: 'error',
+              error: 'Busca na internet está desativada nas configurações do tenant.',
+            }));
+            return;
+          }
+
+          if (!userRole) {
+            ws.send(JSON.stringify({
+              type: 'error',
+              error: 'Permissão insuficiente para buscar imagens.',
+            }));
+            return;
+          }
+
+          const permissionCheck = await checkPermission(
+            { userId, tenantId: safeTenantId, role: userRole },
+            'images:generate:write'
+          );
+          if (!permissionCheck.allowed) {
+            ws.send(JSON.stringify({
+              type: 'error',
+              error: 'Você não possui permissão para buscar imagens.',
+            }));
+            return;
+          }
+
+          try {
+            const webImages = await buscarImagensWeb({
+              query: imageSearchDetection.query,
+              limit: WEB_IMAGE_SEARCH_MAX_RESULTS,
+              auth: { userId, tenantId: safeTenantId, role: userRole },
+            });
+
+            if (!webImages.length) {
+              const responseContent = 'Não encontrei imagens na web para esse pedido agora.';
+              const [assistantMessage] = await db.insert(schema.messages).values({
+                conversationId,
+                agentId: conversation?.agentId ?? undefined,
+                conteudo: responseContent,
+                tipo: 'text',
+                isFromUser: false,
+                anexos: [],
+              }).returning();
+
+              await db.update(schema.conversations)
+                .set({
+                  totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+                  ultimaMensagemEm: new Date(),
+                  atualizadoEm: new Date(),
+                })
+                .where(eq(schema.conversations.id, conversationId));
+
+              await ensureConversationTitle({
+                conversationId,
+                userMessage: messageContent,
+                assistantResponse: responseContent,
+              });
+
+              ws.send(JSON.stringify({ type: 'message', data: assistantMessage }));
+              return;
+            }
+
+            const responseContent = 'Encontrei imagens na web para você.';
+            const [assistantMessage] = await db.insert(schema.messages).values({
+              conversationId,
+              agentId: conversation?.agentId ?? undefined,
+              conteudo: responseContent,
+              tipo: 'text',
+              isFromUser: false,
+              anexos: [],
+            }).returning();
+
+            if (!assistantMessage) {
+              throw new Error('Falha ao criar mensagem de imagens web');
+            }
+
+            const internalHeaders = buildInternalServiceHeaders({
+              userId,
+              tenantId: safeTenantId,
+              role: userRole,
+            });
+
+            const attachments: Array<{
+              id: string;
+              type: 'image';
+              filename: string;
+              mimeType: string;
+              size: number;
+              url?: string;
+              thumbnailUrl?: string;
+            }> = [];
+
+            for (const [index, image] of webImages.entries()) {
+              try {
+                const downloaded = await fetchExternalImageAsBase64(image.imageUrl, WEB_IMAGE_MAX_BYTES);
+                const filename = buildWebImageFilename(image.imageUrl, index, downloaded.mimeType);
+                const uploadResult = await uploadMediaToRAG(
+                  downloaded.base64,
+                  filename,
+                  downloaded.mimeType,
+                  safeTenantId,
+                  `Imagem encontrada na web. Fonte: ${image.sourceUrl ?? image.imageUrl}`,
+                  assistantMessage.id,
+                  conversationId,
+                  internalHeaders
+                );
+
+                if (!uploadResult?.fileUrl) {
+                  continue;
+                }
+
+                attachments.push({
+                  id: uploadResult.uploadId,
+                  type: 'image',
+                  filename,
+                  mimeType: downloaded.mimeType,
+                  size: downloaded.size,
+                  url: uploadResult.fileUrl,
+                  thumbnailUrl: uploadResult.thumbnailUrl,
+                });
+              } catch (downloadError) {
+                logger.warn(
+                  { error: downloadError, imageUrl: image.imageUrl },
+                  'Falha ao baixar imagem web (websocket)'
+                );
+              }
+            }
+
+            if (!attachments.length) {
+              const fallbackContent = 'Não consegui baixar imagens válidas da web neste momento.';
+              await db.update(schema.messages)
+                .set({ conteudo: fallbackContent })
+                .where(eq(schema.messages.id, assistantMessage.id));
+              await db.update(schema.conversations)
+                .set({
+                  totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+                  ultimaMensagemEm: new Date(),
+                  atualizadoEm: new Date(),
+                })
+                .where(eq(schema.conversations.id, conversationId));
+
+              await ensureConversationTitle({
+                conversationId,
+                userMessage: messageContent,
+                assistantResponse: fallbackContent,
+              });
+
+              ws.send(JSON.stringify({ type: 'message', data: { ...assistantMessage, conteudo: fallbackContent } }));
+              return;
+            }
+
+            await db.update(schema.messages)
+              .set({ anexos: attachments })
+              .where(eq(schema.messages.id, assistantMessage.id));
+
+            await db.update(schema.conversations)
+              .set({
+                totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+                ultimaMensagemEm: new Date(),
+                atualizadoEm: new Date(),
+              })
+              .where(eq(schema.conversations.id, conversationId));
+
+            await ensureConversationTitle({
+              conversationId,
+              userMessage: messageContent,
+              assistantResponse: responseContent,
+            });
+
+            ws.send(JSON.stringify({ type: 'message', data: { ...assistantMessage, anexos: attachments } }));
+            return;
+          } catch (error) {
+            logger.error({ error }, 'Falha ao buscar imagens na web (websocket)');
+            ws.send(JSON.stringify({
+              type: 'error',
+              error: 'Falha ao buscar imagens na web. Tente novamente em instantes.',
+            }));
+            return;
+          }
+        }
 
         // ARQUITETURA 16/01/2026+: geração de imagens via OpenAI (gpt-image-1)
         // Se o usuário pedir para gerar imagem, executar fluxo OpenAI (gpt-image-1)

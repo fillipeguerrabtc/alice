@@ -1239,6 +1239,21 @@ export default function Chat() {
                   resetTimeout();
                 }
 
+                if (parsed.type === 'web_image_results' && parsed.message) {
+                  const normalizedMessage = normalizeServerMessage(parsed.message as ServerMessage);
+                  setMessages((prev) => {
+                    const newMessages = [...prev];
+                    const lastIdx = newMessages.length - 1;
+                    if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
+                      newMessages[lastIdx] = { ...newMessages[lastIdx], ...normalizedMessage };
+                    } else {
+                      newMessages.push(normalizedMessage);
+                    }
+                    return newMessages;
+                  });
+                  resetTimeout();
+                }
+
                 if (parsed.type === 'media_uploaded' && Array.isArray(parsed.attachments)) {
                   setMessages((prev) => {
                     const newMessages = [...prev];

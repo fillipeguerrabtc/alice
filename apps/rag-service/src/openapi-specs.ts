@@ -225,6 +225,30 @@ export const ragServicePaths = {
       },
     },
   },
+  '/api/rag/web-search/images': {
+    post: {
+      summary: 'Busca de imagens via SearXNG',
+      tags: ['Search'],
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['query'],
+              properties: {
+                query: { type: 'string' },
+                limit: { type: 'integer', default: 5 },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Resultados de imagens na web' },
+        503: { description: 'Busca web não configurada' },
+      },
+    },
+  },
   '/api/rag/classify': {
     post: {
       summary: 'Classificar consulta (internal/web/hybrid)',
