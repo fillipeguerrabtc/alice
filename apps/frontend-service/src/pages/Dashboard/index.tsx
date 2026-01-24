@@ -143,30 +143,45 @@ export default function Dashboard() {
     refetchInterval: 1000 * 60 * 2,
   });
 
-  const { data: pendingHandoffs } = useQuery<{ conversations: Array<{ id: string; priority: string; waitTime: number }> }>({
-    queryKey: ['/api/chat/pending-handoffs'],
+  const { data: takeoverStats, isLoading: takeoverLoading } = useQuery<TakeoverStats>({
+    queryKey: ['/api/chat/takeover-stats'],
     staleTime: 1000 * 30,
     refetchInterval: 1000 * 30,
   });
 
-  const { data: urgentConversations } = useQuery<{ conversations: Array<{ id: string; reason: string }> }>({
-    queryKey: ['/api/chat/urgent-conversations'],
+  const { data: slaMetrics, isLoading: slaLoading } = useQuery<SLAMetrics>({
+    queryKey: ['/api/chat/sla-metrics'],
     staleTime: 1000 * 30,
     refetchInterval: 1000 * 30,
+  });
+
+  const { data: circuitBreakerData, isLoading: circuitBreakerLoading } = useQuery<{ breakers: CircuitBreakerStatus[] }>({
+    queryKey: ['/api/chat/circuit-breakers'],
+    staleTime: 1000 * 60,
+  });
+
+  const { data: weeklyConversations, isLoading: weeklyLoading } = useQuery<{ data: { name: string; ai: number; human: number }[] }>({
+    queryKey: ['/api/chat/conversations/weekly'],
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const { data: integrationStatsData, isLoading: integrationsLoading } = useQuery<IntegrationStats>({
+    queryKey: ['/api/integrations/stats'],
+    staleTime: 1000 * 60 * 5,
   });
 
   const displayImageStats = normalizeImageStats(imageStats);
 
-  const displayTakeoverStats: TakeoverStats = {
-    pendingHandoffs: pendingHandoffs?.conversations?.length || 0,
+  const displayTakeoverStats: TakeoverStats = takeoverStats || {
+    pendingHandoffs: 0,
     activeHumanAgents: 0,
-    urgentConversations: urgentConversations?.conversations?.length || 0,
+    urgentConversations: 0,
     avgResponseTime: 0,
     resolvedByAI: 0,
     resolvedByHuman: 0,
   };
 
-  const integrationStats: IntegrationStats = {
+  const integrationStats: IntegrationStats = integrationStatsData || {
     stripe: { totalRevenue: 0, transactions: 0, currency: 'EUR' },
     wise: { totalTransfers: 0, pendingAmount: 0, completedCount: 0 },
     erpnext: { customers: 0, orders: 0, synced: integrationData?.integrations?.erpnext || false },
@@ -189,7 +204,7 @@ export default function Dashboard() {
     { name: 'Training', value: displayStats.trainingData, color: '#f59e0b' },
   ].filter(d => d.value > 0);
 
-  const displaySLAMetrics: SLAMetrics = {
+  const displaySLAMetrics: SLAMetrics = slaMetrics || {
     breachedCount: 0,
     atRiskCount: 0,
     onTrackCount: 0,
@@ -197,22 +212,9 @@ export default function Dashboard() {
     avgResolutionTime: 0,
   };
 
-  const displayCircuitBreakers: CircuitBreakerStatus[] = [
-    { name: 'LLM (GPU Manager Service)', status: 'closed', failures: 0, successRate: 100 },
-    { name: 'RAG Embeddings', status: 'closed', failures: 0, successRate: 100 },
-    { name: 'Wise API', status: 'closed', failures: 0, successRate: 100 },
-    { name: 'ERPNext', status: 'closed', failures: 0, successRate: 100 },
-  ];
+  const displayCircuitBreakers: CircuitBreakerStatus[] = circuitBreakerData?.breakers || [];
 
-  const conversationsBarData = [
-    { name: 'Seg', ai: 0, human: 0 },
-    { name: 'Ter', ai: 0, human: 0 },
-    { name: 'Qua', ai: 0, human: 0 },
-    { name: 'Qui', ai: 0, human: 0 },
-    { name: 'Sex', ai: 0, human: 0 },
-    { name: 'Sáb', ai: 0, human: 0 },
-    { name: 'Dom', ai: 0, human: 0 },
-  ];
+  const conversationsBarData = weeklyConversations?.data || [];
 
   return (
     <motion.div
@@ -286,7 +288,7 @@ export default function Dashboard() {
         <IntegrationCard
           title="Stripe Portugal"
           icon={CreditCard}
-          isLoading={false}
+          isLoading={integrationsLoading}
           stats={
             <div className="space-y-2">
               <div className="flex justify-between items-center">
@@ -310,7 +312,7 @@ export default function Dashboard() {
         <IntegrationCard
           title="Wise Transfers"
           icon={Wallet}
-          isLoading={false}
+          isLoading={integrationsLoading}
           stats={
             <div className="space-y-2">
               <div className="flex justify-between items-center">
@@ -331,7 +333,7 @@ export default function Dashboard() {
         <IntegrationCard
           title="ERPNext CRM"
           icon={Building2}
-          isLoading={false}
+          isLoading={integrationsLoading}
           stats={
             <div className="space-y-2">
               <div className="flex justify-between items-center">
@@ -366,7 +368,7 @@ export default function Dashboard() {
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
               <TakeoverStatsCard 
                 stats={displayTakeoverStats} 
-                isLoading={imageStatsLoading} 
+                isLoading={takeoverLoading} 
               />
               <ImageGenerationCard 
                 stats={displayImageStats} 
@@ -374,17 +376,17 @@ export default function Dashboard() {
               />
               <SLAMonitorCard 
                 metrics={displaySLAMetrics} 
-                isLoading={false} 
+                isLoading={slaLoading} 
               />
               <CircuitBreakerCard 
                 breakers={displayCircuitBreakers} 
-                isLoading={false} 
+                isLoading={circuitBreakerLoading} 
               />
             </div>
             <div className="mt-4">
               <ConversationsBarChart 
                 data={conversationsBarData} 
-                isLoading={statsLoading} 
+                isLoading={weeklyLoading} 
               />
             </div>
           </CardContent>

@@ -829,6 +829,96 @@ app.get('/api/integrations/health', (_req: Request, res: Response) => {
   });
 });
 
+app.get('/api/integrations/stats', requirePermission('integrations:integrations:read'), async (req: Request, res: Response) => {
+  const tenantId = req.tenantId;
+  if (!tenantId) {
+    logger.warn({ userId: req.user?.userId }, 'Tentativa de acesso a integrations/stats sem tenantId');
+    return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
+  }
+
+  try {
+    const db = getDatabase();
+
+    const [stripeRevenueRow] = await db
+      .select({
+        total: sql<number>`coalesce(sum(((${schema.webhookEvents.payload} -> 'data' -> 'object' ->> 'amount_total')::numeric)), 0)`,
+        currency: sql<string>`max((${schema.webhookEvents.payload} -> 'data' -> 'object' ->> 'currency'))`,
+      })
+      .from(schema.webhookEvents)
+      .where(and(
+        eq(schema.webhookEvents.source, 'stripe'),
+        eq(schema.webhookEvents.eventType, 'checkout.session.completed'),
+        eq(schema.webhookEvents.processed, true),
+        eq(schema.webhookEvents.tenantId, tenantId)
+      ));
+
+    const [stripeTransactionsRow] = await db
+      .select({ total: sql<number>`count(*)` })
+      .from(schema.stripeErpnextMapping)
+      .where(eq(schema.stripeErpnextMapping.tenantId, tenantId));
+
+    const [wiseTotalRow] = await db
+      .select({ total: sql<number>`count(*)` })
+      .from(schema.wiseSyncLog)
+      .where(eq(schema.wiseSyncLog.tenantId, tenantId));
+
+    const [wiseCompletedRow] = await db
+      .select({ total: sql<number>`count(*)` })
+      .from(schema.wiseSyncLog)
+      .where(and(
+        eq(schema.wiseSyncLog.tenantId, tenantId),
+        eq(schema.wiseSyncLog.status, 'synced')
+      ));
+
+    const [wisePendingRow] = await db
+      .select({ total: sql<number>`coalesce(sum(${schema.wiseSyncLog.wiseAmount}), 0)` })
+      .from(schema.wiseSyncLog)
+      .where(and(
+        eq(schema.wiseSyncLog.tenantId, tenantId),
+        inArray(schema.wiseSyncLog.status, ['pending', 'retrying', 'manual_review'])
+      ));
+
+    const [erpnextCustomersRow] = await db
+      .select({ total: sql<number>`count(distinct ${schema.stripeErpnextMapping.erpnextCustomer})` })
+      .from(schema.stripeErpnextMapping)
+      .where(and(
+        eq(schema.stripeErpnextMapping.tenantId, tenantId),
+        sql`${schema.stripeErpnextMapping.erpnextCustomer} is not null`
+      ));
+
+    const [erpnextOrdersRow] = await db
+      .select({ total: sql<number>`count(distinct ${schema.stripeErpnextMapping.erpnextSalesOrder})` })
+      .from(schema.stripeErpnextMapping)
+      .where(and(
+        eq(schema.stripeErpnextMapping.tenantId, tenantId),
+        sql`${schema.stripeErpnextMapping.erpnextSalesOrder} is not null`
+      ));
+
+    const stripeCurrency = stripeRevenueRow?.currency ? stripeRevenueRow.currency.toUpperCase() : 'EUR';
+
+    res.json({
+      stripe: {
+        totalRevenue: Number(stripeRevenueRow?.total ?? 0) / 100,
+        transactions: Number(stripeTransactionsRow?.total ?? 0),
+        currency: stripeCurrency,
+      },
+      wise: {
+        totalTransfers: Number(wiseTotalRow?.total ?? 0),
+        pendingAmount: Number(wisePendingRow?.total ?? 0),
+        completedCount: Number(wiseCompletedRow?.total ?? 0),
+      },
+      erpnext: {
+        customers: Number(erpnextCustomersRow?.total ?? 0),
+        orders: Number(erpnextOrdersRow?.total ?? 0),
+        synced: Boolean(config.ERPNEXT_URL) && !erpNextBreaker.opened,
+      },
+    });
+  } catch (error) {
+    logger.error({ error, tenantId }, 'Erro ao calcular integrations/stats');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
 // ============================================================================
 // KUBERNETES PROBES: /ready e /live (Regra 16 - Best Practices 2025)
 // /live: Processo está vivo? Se não, Kubernetes reinicia o container

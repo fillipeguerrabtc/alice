@@ -134,7 +134,50 @@ export const integrationsServicePaths = {
       },
     },
   },
-  '/api/integrations/stats': { get: { summary: 'Estatísticas', tags: ['Health'], responses: { 200: { description: 'Stats', content: { 'application/json': { schema: { type: 'object', properties: { stripe: { type: 'object', properties: { status: { type: 'string' }, lastSync: { type: 'string' } } }, wise: { type: 'object' }, erpnext: { type: 'object' } } } } } } } } },
+  '/api/integrations/stats': {
+    get: {
+      summary: 'Estatísticas das integrações',
+      tags: ['Integrations'],
+      responses: {
+        200: {
+          description: 'Resumo das integrações',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  stripe: {
+                    type: 'object',
+                    properties: {
+                      totalRevenue: { type: 'number' },
+                      transactions: { type: 'integer' },
+                      currency: { type: 'string' },
+                    },
+                  },
+                  wise: {
+                    type: 'object',
+                    properties: {
+                      totalTransfers: { type: 'integer' },
+                      pendingAmount: { type: 'number' },
+                      completedCount: { type: 'integer' },
+                    },
+                  },
+                  erpnext: {
+                    type: 'object',
+                    properties: {
+                      customers: { type: 'integer' },
+                      orders: { type: 'integer' },
+                      synced: { type: 'boolean' },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
   '/metrics': { get: { summary: 'Métricas', tags: ['Health'], security: [], responses: { 200: { description: 'OK' } } } },
 };
 

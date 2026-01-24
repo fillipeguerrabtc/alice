@@ -42,7 +42,7 @@ const assistantSettingsSchema = z.object({
   behaviorProactivity: z.number().min(0).max(100).optional().nullable(),
   moodFormality: z.number().min(0).max(100).optional().nullable(),
   moodEmpathy: z.number().min(0).max(100).optional().nullable(),
-  typingSpeedMs: z.number().min(100).max(3000).optional().nullable(),
+  typingSpeedMs: z.number().min(100).max(5000).optional().nullable(),
 });
 
 type AssistantSettingsForm = z.infer<typeof assistantSettingsSchema>;
@@ -640,7 +640,7 @@ export default function AliceConfig() {
                                 value={[resolvedValue]}
                                 onValueChange={(value) => field.onChange(value[0])}
                                 min={100}
-                                max={3000}
+                                max={5000}
                                 step={5}
                                 disabled={!canEditCore}
                               />

@@ -11096,7 +11096,13 @@ app.get('/api/chat/pending-handoffs', requireAuth(), requireSameTenant(getTenant
     }
     
     const pending = await getPendingHandoffs(tenantId);
-    res.json({ pending, count: pending.length });
+    const now = Date.now();
+    const conversations = pending.map((state) => ({
+      id: state.conversationId,
+      priority: state.slaBreached ? 'high' : state.slaDeadline ? 'medium' : 'low',
+      waitTime: state.pendingSince ? Math.max(0, Math.floor((now - new Date(state.pendingSince).getTime()) / 1000)) : 0,
+    }));
+    res.json({ conversations });
   } catch (error) {
     logger.error({ error }, 'Erro ao listar handoffs pendentes');
     res.status(500).json({ error: 'Erro interno do servidor' });
@@ -11439,6 +11445,36 @@ const urgentConversationsQuerySchema = z.object({
     }, { message: 'minutes deve estar entre 1 e 1440' }),
 });
 
+const SLA_URGENT_THRESHOLD_MINUTES = 10;
+const WEEKLY_LOOKBACK_DAYS = 7;
+
+function formatDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getWeekdayLabel(date: Date): string {
+  const labels = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+  return labels[date.getDay()] ?? 'N/D';
+}
+
+function calculateSuccessRate(stats: {
+  successes?: number;
+  failures?: number;
+  timeouts?: number;
+  rejects?: number;
+}): number {
+  const successes = stats.successes ?? 0;
+  const failures = stats.failures ?? 0;
+  const timeouts = stats.timeouts ?? 0;
+  const rejects = stats.rejects ?? 0;
+  const total = successes + failures + timeouts + rejects;
+  if (total === 0) return 100;
+  return Math.round((successes / total) * 100);
+}
+
 // OWASP API3: Schema para listagem de imagens geradas
 const generatedImagesQuerySchema = z.object({
   status: z.enum(['pending', 'generating', 'completed', 'failed', 'all'])
@@ -11513,9 +11549,378 @@ app.get('/api/chat/urgent-conversations', requireAuth(), requireSameTenant(getTe
   
   try {
     const urgent = await getUrgentConversations(tenantId, minutesThreshold);
-    res.json({ urgent, count: urgent.length });
+    const conversations = urgent.map((state) => ({
+      id: state.conversationId,
+      reason: state.slaBreached ? 'SLA expirado' : 'SLA próximo do vencimento',
+    }));
+    res.json({ conversations });
   } catch (error) {
     logger.error({ error }, 'Erro ao listar conversas urgentes');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.get('/api/chat/takeover-stats', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:stats:read'), async (req: Request, res: Response) => {
+  const tenantId = req.tenantId;
+  if (!tenantId) {
+    logger.warn({ userId: req.user?.userId }, 'Tentativa de acesso a takeover-stats sem tenantId');
+    return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
+  }
+
+  try {
+    const urgentThreshold = new Date();
+    urgentThreshold.setMinutes(urgentThreshold.getMinutes() + SLA_URGENT_THRESHOLD_MINUTES);
+
+    const [pendingRow] = await db
+      .select({ total: sql<number>`count(*)` })
+      .from(schema.conversationStates)
+      .innerJoin(
+        schema.conversations,
+        eq(schema.conversationStates.conversationId, schema.conversations.id)
+      )
+      .where(and(
+        eq(schema.conversationStates.controlMode, 'pending_handoff'),
+        eq(schema.conversations.tenantId, tenantId)
+      ));
+
+    const [activeAgentsRow] = await db
+      .select({ total: sql<number>`count(distinct ${schema.conversationStates.assignedAgentId})` })
+      .from(schema.conversationStates)
+      .innerJoin(
+        schema.conversations,
+        eq(schema.conversationStates.conversationId, schema.conversations.id)
+      )
+      .where(and(
+        eq(schema.conversationStates.controlMode, 'human'),
+        eq(schema.conversations.tenantId, tenantId),
+        sql`${schema.conversationStates.assignedAgentId} is not null`
+      ));
+
+    const [urgentRow] = await db
+      .select({ total: sql<number>`count(*)` })
+      .from(schema.conversationStates)
+      .innerJoin(
+        schema.conversations,
+        eq(schema.conversationStates.conversationId, schema.conversations.id)
+      )
+      .where(and(
+        eq(schema.conversationStates.controlMode, 'pending_handoff'),
+        eq(schema.conversations.tenantId, tenantId),
+        or(
+          eq(schema.conversationStates.slaBreached, true),
+          lt(schema.conversationStates.slaDeadline, urgentThreshold)
+        )
+      ));
+
+    const lastResponder = sql`COALESCE(${schema.conversationStates.lastHumanMessage}, ${schema.conversationStates.lastBotMessage})`;
+    const [avgResponseRow] = await db
+      .select({
+        avgSeconds: sql<number>`avg(extract(epoch from (${lastResponder} - ${schema.conversationStates.lastCustomerMessage})))`,
+      })
+      .from(schema.conversationStates)
+      .innerJoin(
+        schema.conversations,
+        eq(schema.conversationStates.conversationId, schema.conversations.id)
+      )
+      .where(and(
+        eq(schema.conversations.tenantId, tenantId),
+        sql`${schema.conversationStates.lastCustomerMessage} is not null`,
+        sql`${lastResponder} is not null`,
+        sql`${lastResponder} >= ${schema.conversationStates.lastCustomerMessage}`
+      ));
+
+    const [resolvedByHumanRow] = await db
+      .select({ total: sql<number>`count(*)` })
+      .from(schema.conversationEscalations)
+      .innerJoin(
+        schema.conversations,
+        eq(schema.conversationEscalations.conversationId, schema.conversations.id)
+      )
+      .where(and(
+        eq(schema.conversations.tenantId, tenantId),
+        sql`${schema.conversationEscalations.resolvedAt} is not null`,
+        sql`${schema.conversationEscalations.handledBy} is not null`
+      ));
+
+    const [resolvedByAiRow] = await db
+      .select({ total: sql<number>`count(*)` })
+      .from(schema.conversationEscalations)
+      .innerJoin(
+        schema.conversations,
+        eq(schema.conversationEscalations.conversationId, schema.conversations.id)
+      )
+      .where(and(
+        eq(schema.conversations.tenantId, tenantId),
+        sql`${schema.conversationEscalations.resolvedAt} is not null`,
+        sql`${schema.conversationEscalations.handledBy} is null`
+      ));
+
+    res.json({
+      pendingHandoffs: Number(pendingRow?.total ?? 0),
+      activeHumanAgents: Number(activeAgentsRow?.total ?? 0),
+      urgentConversations: Number(urgentRow?.total ?? 0),
+      avgResponseTime: Number(avgResponseRow?.avgSeconds ?? 0),
+      resolvedByAI: Number(resolvedByAiRow?.total ?? 0),
+      resolvedByHuman: Number(resolvedByHumanRow?.total ?? 0),
+    });
+  } catch (error) {
+    logger.error({ error, tenantId }, 'Erro ao calcular takeover-stats');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.get('/api/chat/sla-metrics', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:stats:read'), async (req: Request, res: Response) => {
+  const tenantId = req.tenantId;
+  if (!tenantId) {
+    logger.warn({ userId: req.user?.userId }, 'Tentativa de acesso a sla-metrics sem tenantId');
+    return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
+  }
+
+  try {
+    const now = new Date();
+    const urgentThreshold = new Date();
+    urgentThreshold.setMinutes(urgentThreshold.getMinutes() + SLA_URGENT_THRESHOLD_MINUTES);
+
+    const [breachedRow] = await db
+      .select({ total: sql<number>`count(*)` })
+      .from(schema.conversationStates)
+      .innerJoin(
+        schema.conversations,
+        eq(schema.conversationStates.conversationId, schema.conversations.id)
+      )
+      .where(and(
+        eq(schema.conversationStates.controlMode, 'pending_handoff'),
+        eq(schema.conversationStates.slaBreached, true),
+        eq(schema.conversations.tenantId, tenantId)
+      ));
+
+    const [atRiskRow] = await db
+      .select({ total: sql<number>`count(*)` })
+      .from(schema.conversationStates)
+      .innerJoin(
+        schema.conversations,
+        eq(schema.conversationStates.conversationId, schema.conversations.id)
+      )
+      .where(and(
+        eq(schema.conversationStates.controlMode, 'pending_handoff'),
+        eq(schema.conversationStates.slaBreached, false),
+        eq(schema.conversations.tenantId, tenantId),
+        sql`${schema.conversationStates.slaDeadline} is not null`,
+        sql`${schema.conversationStates.slaDeadline} <= ${urgentThreshold}`,
+        sql`${schema.conversationStates.slaDeadline} >= ${now}`
+      ));
+
+    const [onTrackRow] = await db
+      .select({ total: sql<number>`count(*)` })
+      .from(schema.conversationStates)
+      .innerJoin(
+        schema.conversations,
+        eq(schema.conversationStates.conversationId, schema.conversations.id)
+      )
+      .where(and(
+        eq(schema.conversationStates.controlMode, 'pending_handoff'),
+        eq(schema.conversationStates.slaBreached, false),
+        eq(schema.conversations.tenantId, tenantId),
+        sql`${schema.conversationStates.slaDeadline} is not null`,
+        sql`${schema.conversationStates.slaDeadline} > ${urgentThreshold}`
+      ));
+
+    const responseWindowStart = new Date();
+    responseWindowStart.setDate(responseWindowStart.getDate() - WEEKLY_LOOKBACK_DAYS);
+
+    const responseTimes = await db
+      .select({
+        conversationId: schema.messages.conversationId,
+        firstCustomer: sql<Date | null>`min(case when ${schema.messages.isFromUser} = true then ${schema.messages.criadoEm} end)`,
+        firstAgent: sql<Date | null>`min(case when ${schema.messages.isFromUser} = false then ${schema.messages.criadoEm} end)`,
+      })
+      .from(schema.messages)
+      .innerJoin(
+        schema.conversations,
+        eq(schema.messages.conversationId, schema.conversations.id)
+      )
+      .where(and(
+        eq(schema.conversations.tenantId, tenantId),
+        sql`${schema.messages.criadoEm} >= ${responseWindowStart}`
+      ))
+      .groupBy(schema.messages.conversationId);
+
+    let responseSum = 0;
+    let responseCount = 0;
+    for (const row of responseTimes) {
+      if (!row.firstCustomer || !row.firstAgent) continue;
+      const deltaSeconds = (row.firstAgent.getTime() - row.firstCustomer.getTime()) / 1000;
+      if (deltaSeconds >= 0) {
+        responseSum += deltaSeconds;
+        responseCount += 1;
+      }
+    }
+    const avgFirstResponseTime = responseCount > 0 ? responseSum / responseCount : 0;
+
+    const resolutionTimes = await db
+      .select({
+        createdAt: schema.conversationEscalations.criadoEm,
+        resolvedAt: schema.conversationEscalations.resolvedAt,
+      })
+      .from(schema.conversationEscalations)
+      .innerJoin(
+        schema.conversations,
+        eq(schema.conversationEscalations.conversationId, schema.conversations.id)
+      )
+      .where(and(
+        eq(schema.conversations.tenantId, tenantId),
+        sql`${schema.conversationEscalations.resolvedAt} is not null`,
+        sql`${schema.conversationEscalations.criadoEm} >= ${responseWindowStart}`
+      ));
+
+    let resolutionSum = 0;
+    let resolutionCount = 0;
+    for (const row of resolutionTimes) {
+      if (!row.resolvedAt || !row.createdAt) continue;
+      const deltaSeconds = (row.resolvedAt.getTime() - row.createdAt.getTime()) / 1000;
+      if (deltaSeconds >= 0) {
+        resolutionSum += deltaSeconds;
+        resolutionCount += 1;
+      }
+    }
+    const avgResolutionTime = resolutionCount > 0 ? resolutionSum / resolutionCount : 0;
+
+    res.json({
+      breachedCount: Number(breachedRow?.total ?? 0),
+      atRiskCount: Number(atRiskRow?.total ?? 0),
+      onTrackCount: Number(onTrackRow?.total ?? 0),
+      avgFirstResponseTime,
+      avgResolutionTime,
+    });
+  } catch (error) {
+    logger.error({ error, tenantId }, 'Erro ao calcular sla-metrics');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.get('/api/chat/circuit-breakers', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:stats:read'), (_req: Request, res: Response) => {
+  const llmState = gpuManagerBreaker.opened ? 'open' : (gpuManagerBreaker.halfOpen ? 'half-open' : 'closed');
+  const ragStats = getRAGBreakerStats();
+  const integrationsStats = getIntegrationsBreakerStats();
+
+  const llmStats = gpuManagerBreaker.stats;
+  const llmSuccessRate = calculateSuccessRate({
+    successes: llmStats.successes,
+    failures: llmStats.failures,
+    timeouts: llmStats.timeouts,
+    rejects: llmStats.rejects,
+  });
+  const ragSuccessRate = calculateSuccessRate({
+    successes: ragStats.successes,
+    failures: ragStats.failures,
+    timeouts: ragStats.timeouts,
+    rejects: ragStats.rejects,
+  });
+  const integrationsSuccessRate = calculateSuccessRate({
+    successes: integrationsStats.stats.successes,
+    failures: integrationsStats.stats.failures,
+    timeouts: integrationsStats.stats.timeouts,
+    rejects: integrationsStats.stats.rejects,
+  });
+
+  res.json({
+    breakers: [
+      {
+        name: 'LLM (GPU Manager Service)',
+        status: llmState,
+        failures: llmStats.failures,
+        successRate: llmSuccessRate,
+      },
+      {
+        name: 'RAG Embeddings',
+        status: ragStats.state,
+        failures: ragStats.failures,
+        successRate: ragSuccessRate,
+      },
+      {
+        name: 'Integrations Service',
+        status: integrationsStats.state,
+        failures: integrationsStats.stats.failures,
+        successRate: integrationsSuccessRate,
+      },
+    ],
+  });
+});
+
+app.get('/api/chat/conversations/weekly', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:stats:read'), async (req: Request, res: Response) => {
+  const tenantId = req.tenantId;
+  if (!tenantId) {
+    logger.warn({ userId: req.user?.userId }, 'Tentativa de acesso a conversations/weekly sem tenantId');
+    return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
+  }
+
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const startDate = new Date(today);
+    startDate.setDate(startDate.getDate() - (WEEKLY_LOOKBACK_DAYS - 1));
+
+    const conversations = await db
+      .select({
+        id: schema.conversations.id,
+        criadoEm: schema.conversations.criadoEm,
+      })
+      .from(schema.conversations)
+      .where(and(
+        eq(schema.conversations.tenantId, tenantId),
+        sql`${schema.conversations.criadoEm} >= ${startDate}`
+      ));
+
+    const conversationIds = conversations.map((conversation) => conversation.id);
+    const states = conversationIds.length > 0
+      ? await db
+        .select({
+          conversationId: schema.conversationStates.conversationId,
+          controlMode: schema.conversationStates.controlMode,
+          assignedAgentId: schema.conversationStates.assignedAgentId,
+        })
+        .from(schema.conversationStates)
+        .where(inArray(schema.conversationStates.conversationId, conversationIds))
+      : [];
+
+    const stateMap = new Map(states.map((state) => [state.conversationId, state]));
+
+    const dailyBuckets = new Map<string, { name: string; ai: number; human: number }>();
+    for (let i = 0; i < WEEKLY_LOOKBACK_DAYS; i += 1) {
+      const current = new Date(startDate);
+      current.setDate(startDate.getDate() + i);
+      const key = formatDateKey(current);
+      dailyBuckets.set(key, {
+        name: getWeekdayLabel(current),
+        ai: 0,
+        human: 0,
+      });
+    }
+
+    for (const conversation of conversations) {
+      if (!conversation.criadoEm) continue;
+      const createdAt = new Date(conversation.criadoEm);
+      const key = formatDateKey(createdAt);
+      const bucket = dailyBuckets.get(key);
+      if (!bucket) continue;
+
+      const state = stateMap.get(conversation.id);
+      const isHuman = state?.controlMode === 'human'
+        || state?.controlMode === 'pending_handoff'
+        || Boolean(state?.assignedAgentId);
+
+      if (isHuman) {
+        bucket.human += 1;
+      } else {
+        bucket.ai += 1;
+      }
+    }
+
+    res.json({
+      data: Array.from(dailyBuckets.values()),
+    });
+  } catch (error) {
+    logger.error({ error, tenantId }, 'Erro ao calcular conversas semanais');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
@@ -11591,12 +11996,28 @@ app.get('/api/namespaces', requireAuth(), requireSameTenant(getTenantIdFromReque
     const documentsCountMap = new Map(
       documentsCountRows.map((row) => [row.namespaceId ?? '', Number(row.total)])
     );
+    const usersCountRows = namespaceIds.length
+      ? await db
+        .select({
+          namespaceId: schema.conversations.namespaceId,
+          total: sql<number>`count(distinct ${schema.conversations.userId})`,
+        })
+        .from(schema.conversations)
+        .where(and(
+          eq(schema.conversations.tenantId, tenantId),
+          inArray(schema.conversations.namespaceId, namespaceIds)
+        ))
+        .groupBy(schema.conversations.namespaceId)
+      : [];
+    const usersCountMap = new Map(
+      usersCountRows.map((row) => [row.namespaceId ?? '', Number(row.total)])
+    );
 
     res.json(namespaces.map((namespace) => ({
       ...namespace,
       agentsCount: agentsCountMap.get(namespace.id) ?? 0,
       documentsCount: documentsCountMap.get(namespace.id) ?? 0,
-      usersCount: 0,
+      usersCount: usersCountMap.get(namespace.id) ?? 0,
     })));
   } catch (error) {
     logger.error({ error, tenantId }, 'Erro ao listar namespaces');
@@ -11883,7 +12304,7 @@ const assistantSettingsSchema = z.object({
   behaviorProactivity: z.number().int().min(0).max(100).optional().nullable(),
   moodFormality: z.number().int().min(0).max(100).optional().nullable(),
   moodEmpathy: z.number().int().min(0).max(100).optional().nullable(),
-  typingSpeedMs: z.number().int().min(100).max(3000).optional().nullable(),
+  typingSpeedMs: z.number().int().min(100).max(5000).optional().nullable(),
 });
 
 const agenticLinkSchema = z.object({

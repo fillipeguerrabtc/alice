@@ -423,6 +423,120 @@ export const chatServicePaths = {
       },
     },
   },
+  '/api/chat/takeover-stats': {
+    get: {
+      summary: 'Estatísticas de takeover/handover',
+      tags: ['Takeover'],
+      responses: {
+        200: {
+          description: 'Resumo de takeover',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  pendingHandoffs: { type: 'integer' },
+                  activeHumanAgents: { type: 'integer' },
+                  urgentConversations: { type: 'integer' },
+                  avgResponseTime: { type: 'number' },
+                  resolvedByAI: { type: 'integer' },
+                  resolvedByHuman: { type: 'integer' },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+  '/api/chat/sla-metrics': {
+    get: {
+      summary: 'Métricas de SLA do chat',
+      tags: ['Takeover'],
+      responses: {
+        200: {
+          description: 'Métricas de SLA',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  breachedCount: { type: 'integer' },
+                  atRiskCount: { type: 'integer' },
+                  onTrackCount: { type: 'integer' },
+                  avgFirstResponseTime: { type: 'number' },
+                  avgResolutionTime: { type: 'number' },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+  '/api/chat/circuit-breakers': {
+    get: {
+      summary: 'Status dos circuit breakers do chat',
+      tags: ['Health'],
+      responses: {
+        200: {
+          description: 'Lista de circuit breakers',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  breakers: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        name: { type: 'string' },
+                        status: { type: 'string', enum: ['closed', 'open', 'half-open'] },
+                        failures: { type: 'integer' },
+                        successRate: { type: 'number' },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+  '/api/chat/conversations/weekly': {
+    get: {
+      summary: 'Conversas por dia (IA vs humano)',
+      tags: ['Chat'],
+      responses: {
+        200: {
+          description: 'Série semanal de conversas',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  data: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        name: { type: 'string' },
+                        ai: { type: 'integer' },
+                        human: { type: 'integer' },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
   '/api/agents/model-options': {
     get: {
       summary: 'Modelos disponíveis para Agents (SSOT)',
