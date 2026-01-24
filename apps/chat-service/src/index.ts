@@ -1801,6 +1801,7 @@ interface AssistantSettings {
   behaviorProactivity?: number | null;
   moodFormality?: number | null;
   moodEmpathy?: number | null;
+  typingSpeedMs?: number | null;
 }
 
 /**
@@ -1822,6 +1823,8 @@ GUIDELINES DE COMPORTAMENTO:
 - Se não souber algo, diga com transparência
 - Forneça informações precisas e relevantes
 - Mantenha tom respeitoso e positivo`;
+
+const DEFAULT_TYPING_SPEED_MS = 32;
 
 const CORE_CAPABILITIES_PROMPT = `CAPACIDADES:
 - Você pode acessar a internet (web + deep web) através dos módulos internos da Alice.
@@ -2028,6 +2031,7 @@ async function getAssistantSettingsForTenant(tenantId?: string | null): Promise<
       behaviorProactivity: settings.behaviorProactivity ?? null,
       moodFormality: settings.moodFormality ?? null,
       moodEmpathy: settings.moodEmpathy ?? null,
+      typingSpeedMs: settings.typingSpeedMs ?? null,
     };
   } catch (error) {
     logger.error({ error, tenantId }, 'Falha ao carregar assistant_settings');
@@ -11841,6 +11845,7 @@ const assistantSettingsSchema = z.object({
   behaviorProactivity: z.number().int().min(0).max(100).optional().nullable(),
   moodFormality: z.number().int().min(0).max(100).optional().nullable(),
   moodEmpathy: z.number().int().min(0).max(100).optional().nullable(),
+  typingSpeedMs: z.number().int().min(10).max(120).optional().nullable(),
 });
 
 const agenticLinkSchema = z.object({
@@ -11945,6 +11950,7 @@ app.get('/api/assistant-settings', requireAuth(), requireSameTenant(getTenantIdF
         behaviorProactivity: 50,
         moodFormality: 50,
         moodEmpathy: 70,
+        typingSpeedMs: DEFAULT_TYPING_SPEED_MS,
       },
       enforced: {
         creator: coreSettings?.creatorName ?? '',
@@ -11993,6 +11999,7 @@ app.patch('/api/assistant-settings', requireAuth(), requireSameTenant(getTenantI
       behaviorProactivity: parseResult.data.behaviorProactivity ?? null,
       moodFormality: parseResult.data.moodFormality ?? null,
       moodEmpathy: parseResult.data.moodEmpathy ?? null,
+      typingSpeedMs: parseResult.data.typingSpeedMs ?? null,
       updatedBy: userId,
     };
 

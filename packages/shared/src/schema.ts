@@ -2856,6 +2856,7 @@ export const assistantSettings = pgTable(
     behaviorProactivity: integer("behavior_proactivity"),
     moodFormality: integer("mood_formality"),
     moodEmpathy: integer("mood_empathy"),
+    typingSpeedMs: integer("typing_speed_ms"),
     createdBy: uuid("created_by").references(() => users.id),
     updatedBy: uuid("updated_by").references(() => users.id),
     criadoEm: timestamp("criado_em").defaultNow(),

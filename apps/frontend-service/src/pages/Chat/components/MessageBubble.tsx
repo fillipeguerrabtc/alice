@@ -38,6 +38,7 @@ interface MessageBubbleProps {
   isStreaming: boolean;
   isLast: boolean;
   streamEvents?: AgentEvent[] | null;
+  typingSpeedMs?: number;
   onRateImage?: (imageId: string, score: number) => void;
   onFeedback?: (messageId: string, isPositive: boolean) => void;
   onRegenerate?: () => void;
@@ -48,6 +49,7 @@ export function MessageBubble({
   isStreaming, 
   isLast,
   streamEvents: _streamEvents,
+  typingSpeedMs,
   onRateImage,
   onFeedback,
   onRegenerate,
@@ -73,6 +75,7 @@ export function MessageBubble({
   const assistantAvatarSrc = !isUser && isStreaming && (isLast || (message.content ?? '').length === 0)
     ? '/packman.gif'
     : (message.agent?.avatar || '/gato.gif');
+  const typingIntervalMs = Math.min(120, Math.max(10, typingSpeedMs ?? 32));
   const handleCopy = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(message.content);
@@ -99,7 +102,7 @@ export function MessageBubble({
       if (displayedContent.length >= target.length) {
         return;
       }
-      if (timestamp - lastTick < 32) {
+      if (timestamp - lastTick < typingIntervalMs) {
         rafId = window.requestAnimationFrame(stepTyping);
         return;
       }
@@ -119,7 +122,7 @@ export function MessageBubble({
         window.cancelAnimationFrame(rafId);
       }
     };
-  }, [displayedContent.length, isLast, isStreaming, message.content, message.role]);
+  }, [displayedContent.length, isLast, isStreaming, message.content, message.role, typingIntervalMs]);
 
   const shouldShowTypingCursor = isStreaming && isLast && message.role === 'assistant';
 

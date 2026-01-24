@@ -42,6 +42,7 @@ const assistantSettingsSchema = z.object({
   behaviorProactivity: z.number().min(0).max(100).optional().nullable(),
   moodFormality: z.number().min(0).max(100).optional().nullable(),
   moodEmpathy: z.number().min(0).max(100).optional().nullable(),
+  typingSpeedMs: z.number().min(10).max(120).optional().nullable(),
 });
 
 type AssistantSettingsForm = z.infer<typeof assistantSettingsSchema>;
@@ -62,6 +63,7 @@ type AssistantSettingsResponse = {
     behaviorProactivity?: number | null;
     moodFormality?: number | null;
     moodEmpathy?: number | null;
+    typingSpeedMs?: number | null;
   } | null;
   defaults: {
     systemPrompt: string;
@@ -78,6 +80,7 @@ type AssistantSettingsResponse = {
     behaviorProactivity: number;
     moodFormality: number;
     moodEmpathy: number;
+    typingSpeedMs: number;
   };
   enforced: {
     creator: string;
@@ -118,6 +121,7 @@ export default function AliceConfig() {
       behaviorProactivity: 50,
       moodFormality: 50,
       moodEmpathy: 70,
+      typingSpeedMs: 32,
     },
   });
 
@@ -149,6 +153,7 @@ export default function AliceConfig() {
         behaviorProactivity: data.settings?.behaviorProactivity ?? data.defaults.behaviorProactivity ?? 50,
         moodFormality: data.settings?.moodFormality ?? data.defaults.moodFormality ?? 50,
         moodEmpathy: data.settings?.moodEmpathy ?? data.defaults.moodEmpathy ?? 70,
+        typingSpeedMs: data.settings?.typingSpeedMs ?? data.defaults.typingSpeedMs ?? 32,
       });
     }
   }, [data, form]);
@@ -191,6 +196,7 @@ export default function AliceConfig() {
       behaviorProactivity: data.defaults.behaviorProactivity ?? 50,
       moodFormality: data.defaults.moodFormality ?? 50,
       moodEmpathy: data.defaults.moodEmpathy ?? 70,
+      typingSpeedMs: data.defaults.typingSpeedMs ?? 32,
     });
   };
 
@@ -605,6 +611,38 @@ export default function AliceConfig() {
                         )}
                       />
                     </div>
+
+                    <FormField
+                      control={form.control}
+                      name="typingSpeedMs"
+                      render={({ field }) => {
+                        const resolvedValue = field.value ?? data?.defaults.typingSpeedMs ?? 32;
+                        return (
+                          <FormItem>
+                            <FormLabel>
+                              {t('aliceConfig.typingSpeed')}
+                              <span className="ml-2 text-xs text-muted-foreground">
+                                {t('aliceConfig.typingSpeedValue', { value: resolvedValue })}
+                              </span>
+                            </FormLabel>
+                            <FormControl>
+                              <Slider
+                                value={[resolvedValue]}
+                                onValueChange={(value) => field.onChange(value[0])}
+                                min={10}
+                                max={120}
+                                step={5}
+                                disabled={!canEditCore}
+                              />
+                            </FormControl>
+                            <p className="text-xs text-muted-foreground">
+                              {t('aliceConfig.typingSpeedHint')}
+                            </p>
+                            <FormMessage />
+                          </FormItem>
+                        );
+                      }}
+                    />
                   </TabsContent>
                 </Tabs>
 

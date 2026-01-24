@@ -140,6 +140,15 @@ type ServerMessage = Partial<Message> & {
   isFromUser?: boolean | null;
 };
 
+type AssistantSettingsPreview = {
+  settings?: {
+    typingSpeedMs?: number | null;
+  } | null;
+  defaults: {
+    typingSpeedMs: number;
+  };
+};
+
 async function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -732,9 +741,14 @@ export default function Chat() {
     queryKey: ['/api/chat/version'],
     staleTime: 1000 * 60 * 5,
   });
+  const { data: assistantSettingsData } = useQuery<AssistantSettingsPreview>({
+    queryKey: ['/api/assistant-settings'],
+    staleTime: 1000 * 60,
+  });
   const resolvedVersion = versionData?.version || appVersion;
   const modelBadgeLabel = resolvedVersion ? `Alice ${resolvedVersion} 7B` : 'Alice 7B';
   const approvalPolicy: ApprovalPolicy = approvalPolicyData?.approvalPolicy ?? 'always_confirm';
+  const typingSpeedMs = assistantSettingsData?.settings?.typingSpeedMs ?? assistantSettingsData?.defaults?.typingSpeedMs;
   const approvalPolicyForSelect: ApprovalPolicy =
     approvalPolicy === 'confirm_risky' ? 'always_confirm' : approvalPolicy;
   const approvalPolicyOptions = [
@@ -1802,6 +1816,7 @@ export default function Chat() {
                       isStreaming={isStreaming}
                       isLast={index === messages.length - 1}
                       streamEvents={isStreaming && index === messages.length - 1 ? streamEvents : null}
+                      typingSpeedMs={typingSpeedMs}
                       onRateImage={handleRateImage}
                       onFeedback={handleFeedback}
                       onRegenerate={handleRegenerate}
