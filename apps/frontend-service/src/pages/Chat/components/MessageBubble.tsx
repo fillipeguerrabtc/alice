@@ -6,7 +6,7 @@
  * @module Chat/components/MessageBubble
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Copy, Check } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -57,6 +57,8 @@ export function MessageBubble({
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const [displayedContent, setDisplayedContent] = useState(message.content ?? '');
+  const latestTargetRef = useRef(message.content ?? '');
+  const displayedContentRef = useRef(displayedContent);
   const isUser = message.role === 'user';
   const hasMediaAttachments = Boolean(message.mediaAttachments && message.mediaAttachments.length > 0);
   const hasTextContent = Boolean(message.content && message.content.trim().length > 0);
@@ -87,10 +89,27 @@ export function MessageBubble({
   }, [message.content]);
 
   useEffect(() => {
-    const content = message.content ?? '';
-    const isStreamingAssistant = isStreaming && isLast && message.role === 'assistant';
-    if (!isStreamingAssistant) {
-      setDisplayedContent(content);
+    const target = message.content ?? '';
+    latestTargetRef.current = target;
+
+    displayedContentRef.current = displayedContent;
+    const isAssistantLast = isLast && message.role === 'assistant';
+    if (!isAssistantLast) {
+      setDisplayedContent(target);
+      displayedContentRef.current = target;
+      return;
+    }
+
+    // Se o conteúdo foi reescrito (não é prefixo do anterior), sincroniza imediatamente
+    if (!target.startsWith(displayedContent) || target.length < displayedContent.length) {
+      setDisplayedContent(target);
+      displayedContentRef.current = target;
+      return;
+    }
+
+    const shouldAnimate = isStreaming || displayedContent.length < target.length;
+    if (!shouldAnimate) {
+      setDisplayedContent(target);
       return;
     }
 
@@ -98,22 +117,28 @@ export function MessageBubble({
     let lastTick = 0;
 
     const stepTyping = (timestamp: number) => {
-      const target = message.content ?? '';
-      if (displayedContent.length >= target.length) {
-        return;
-      }
+      const currentTarget = latestTargetRef.current;
       if (timestamp - lastTick < typingIntervalMs) {
         rafId = window.requestAnimationFrame(stepTyping);
         return;
       }
       lastTick = timestamp;
       setDisplayedContent((prev) => {
-        if (prev.length >= target.length) return prev;
-        const remaining = target.length - prev.length;
-        const step = Math.max(1, Math.ceil(remaining / 8));
-        return target.slice(0, prev.length + step);
+        let next = prev;
+        if (!currentTarget.startsWith(prev)) {
+          next = currentTarget;
+        } else if (prev.length < currentTarget.length) {
+          const remaining = currentTarget.length - prev.length;
+          const step = Math.max(1, Math.ceil(remaining / 8));
+          next = currentTarget.slice(0, prev.length + step);
+        }
+        displayedContentRef.current = next;
+        return next;
       });
-      rafId = window.requestAnimationFrame(stepTyping);
+      const hasPendingChars = displayedContentRef.current.length < latestTargetRef.current.length;
+      if (hasPendingChars || isStreaming) {
+        rafId = window.requestAnimationFrame(stepTyping);
+      }
     };
 
     rafId = window.requestAnimationFrame(stepTyping);
@@ -122,9 +147,9 @@ export function MessageBubble({
         window.cancelAnimationFrame(rafId);
       }
     };
-  }, [displayedContent.length, isLast, isStreaming, message.content, message.role, typingIntervalMs]);
+  }, [displayedContent, isLast, isStreaming, message.content, message.role, typingIntervalMs]);
 
-  const shouldShowTypingCursor = isStreaming && isLast && message.role === 'assistant';
+  const shouldShowTypingCursor = isLast && message.role === 'assistant' && (isStreaming || displayedContent.length < (message.content ?? '').length);
 
   return (
     <motion.div
@@ -170,14 +195,12 @@ export function MessageBubble({
             </div>
           )}
 
-          {displayedContent && (
-            <div className="whitespace-pre-wrap text-sm leading-relaxed">
-              {displayedContent}
-              {shouldShowTypingCursor && (
-                <span className="inline-block w-2 h-4 ml-0.5 bg-current animate-pulse rounded-sm" />
-              )}
-            </div>
-          )}
+          <div className="whitespace-pre-wrap text-sm leading-relaxed min-h-[1.25rem]">
+            {displayedContent}
+            {shouldShowTypingCursor && (
+              <span className="inline-block w-2 h-4 ml-0.5 bg-current animate-pulse rounded-sm" />
+            )}
+          </div>
           
           {message.generatedImage && (
             <div className={cn(message.content && "mt-3")}>
