@@ -77,7 +77,7 @@ export function MessageBubble({
   const assistantAvatarSrc = !isUser && isStreaming && (isLast || (message.content ?? '').length === 0)
     ? '/packman.gif'
     : (message.agent?.avatar || '/gato.gif');
-  const typingIntervalMs = Math.min(400, Math.max(40, typingSpeedMs ?? 60));
+  const typingIntervalMs = Math.min(3000, Math.max(100, typingSpeedMs ?? 100));
   const handleCopy = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(message.content);

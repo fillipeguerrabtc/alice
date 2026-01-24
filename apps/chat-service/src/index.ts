@@ -1824,7 +1824,7 @@ GUIDELINES DE COMPORTAMENTO:
 - Forneça informações precisas e relevantes
 - Mantenha tom respeitoso e positivo`;
 
-const DEFAULT_TYPING_SPEED_MS = 60;
+const DEFAULT_TYPING_SPEED_MS = 100;
 
 const CORE_CAPABILITIES_PROMPT = `CAPACIDADES:
 - Você pode acessar a internet (web + deep web) através dos módulos internos da Alice.
@@ -11883,7 +11883,7 @@ const assistantSettingsSchema = z.object({
   behaviorProactivity: z.number().int().min(0).max(100).optional().nullable(),
   moodFormality: z.number().int().min(0).max(100).optional().nullable(),
   moodEmpathy: z.number().int().min(0).max(100).optional().nullable(),
-  typingSpeedMs: z.number().int().min(40).max(400).optional().nullable(),
+  typingSpeedMs: z.number().int().min(100).max(3000).optional().nullable(),
 });
 
 const agenticLinkSchema = z.object({

@@ -42,7 +42,7 @@ const assistantSettingsSchema = z.object({
   behaviorProactivity: z.number().min(0).max(100).optional().nullable(),
   moodFormality: z.number().min(0).max(100).optional().nullable(),
   moodEmpathy: z.number().min(0).max(100).optional().nullable(),
-  typingSpeedMs: z.number().min(40).max(400).optional().nullable(),
+  typingSpeedMs: z.number().min(100).max(3000).optional().nullable(),
 });
 
 type AssistantSettingsForm = z.infer<typeof assistantSettingsSchema>;
@@ -121,7 +121,7 @@ export default function AliceConfig() {
       behaviorProactivity: 50,
       moodFormality: 50,
       moodEmpathy: 70,
-      typingSpeedMs: 60,
+      typingSpeedMs: 100,
     },
   });
 
@@ -153,7 +153,7 @@ export default function AliceConfig() {
         behaviorProactivity: data.settings?.behaviorProactivity ?? data.defaults.behaviorProactivity ?? 50,
         moodFormality: data.settings?.moodFormality ?? data.defaults.moodFormality ?? 50,
         moodEmpathy: data.settings?.moodEmpathy ?? data.defaults.moodEmpathy ?? 70,
-        typingSpeedMs: data.settings?.typingSpeedMs ?? data.defaults.typingSpeedMs ?? 60,
+        typingSpeedMs: data.settings?.typingSpeedMs ?? data.defaults.typingSpeedMs ?? 100,
       });
     }
   }, [data, form]);
@@ -206,7 +206,7 @@ export default function AliceConfig() {
       behaviorProactivity: data.defaults.behaviorProactivity ?? 50,
       moodFormality: data.defaults.moodFormality ?? 50,
       moodEmpathy: data.defaults.moodEmpathy ?? 70,
-      typingSpeedMs: data.defaults.typingSpeedMs ?? 60,
+      typingSpeedMs: data.defaults.typingSpeedMs ?? 100,
     });
   };
 
@@ -626,7 +626,7 @@ export default function AliceConfig() {
                       control={form.control}
                       name="typingSpeedMs"
                       render={({ field }) => {
-                        const resolvedValue = field.value ?? data?.defaults.typingSpeedMs ?? 60;
+                        const resolvedValue = field.value ?? data?.defaults.typingSpeedMs ?? 100;
                         return (
                           <FormItem>
                             <FormLabel>
@@ -639,8 +639,8 @@ export default function AliceConfig() {
                               <Slider
                                 value={[resolvedValue]}
                                 onValueChange={(value) => field.onChange(value[0])}
-                                min={40}
-                                max={400}
+                                min={100}
+                                max={3000}
                                 step={5}
                                 disabled={!canEditCore}
                               />
