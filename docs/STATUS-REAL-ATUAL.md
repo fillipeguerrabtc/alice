@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 **Autor:** Fillipe Guerra  
-**Data:** 23 de Janeiro de 2026  
+**Data:** 24 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.94 - Backup Metrics Fix
+**Versão:** 7.95 - Chat Streaming Typing + RAG K Units
 
 ---
 
@@ -292,14 +292,16 @@ Retenção Arquivo:   30 dias
 - Usuários: reset de formulário ao reabrir diálogo evita estado pendente.
 - Chat: download usa URL resolvida (thumbnail ou original) para evitar HTML.
 - UI: colapso da sidebar aplica largura ícone e elimina espaço vazio.
-- Auth: callback Google respeita `OAUTH_CALLBACK_URL` e rota compativel.
+- Auth: callback Google respeita `OAUTH_CALLBACK_URL` e rota compatível.
 - Auth: callback GitHub aceita override via `OAUTH_GITHUB_CALLBACK_URL` (baseado em `BASE_URL`).
 - Observability: config do Jaeger usa exporter prometheus suportado.
 - Auth: valida `OAUTH_CALLBACK_URL` para Google e aplica fallback seguro.
 - Observability: telemetry metrics usa host/port inline no reader.
 - Observability: dashboards corrigidos para queries unicas e semantica correta.
 - Observability: backups sucesso/falha agora usam metricas reais do PostgreSQL.
+- Observability: painel Similarity Score (Top-K) exibe K real (unidade e thresholds).
 - UI: sidebar da dashboard colapsa totalmente sem autocollapse.
+- Chat: streaming exibe resposta com texto construindo em tempo real.
 - Frontend build: ordem de handlers de gravação e avatar corrigida (evita TS2448/TS2454).
 - Dark Mode: paleta preta/cinza para experiência similar ao ChatGPT.
 - Avatar do Chat: GIF dinâmico (packman pensando, gato após resposta) com tamanho ajustado.

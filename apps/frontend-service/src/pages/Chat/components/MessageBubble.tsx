@@ -6,7 +6,7 @@
  * @module Chat/components/MessageBubble
  */
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Copy, Check } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -54,6 +54,7 @@ export function MessageBubble({
 }: MessageBubbleProps) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
+  const [displayedContent, setDisplayedContent] = useState(message.content ?? '');
   const isUser = message.role === 'user';
   const hasMediaAttachments = Boolean(message.mediaAttachments && message.mediaAttachments.length > 0);
   const hasTextContent = Boolean(message.content && message.content.trim().length > 0);
@@ -174,6 +175,47 @@ export function MessageBubble({
     }
   }, [message.content]);
 
+  useEffect(() => {
+    const content = message.content ?? '';
+    const isStreamingAssistant = isStreaming && isLast && message.role === 'assistant';
+    if (!isStreamingAssistant) {
+      setDisplayedContent(content);
+      return;
+    }
+
+    let rafId: number | null = null;
+    let lastTick = 0;
+
+    const stepTyping = (timestamp: number) => {
+      const target = message.content ?? '';
+      if (displayedContent.length >= target.length) {
+        return;
+      }
+      if (timestamp - lastTick < 32) {
+        rafId = window.requestAnimationFrame(stepTyping);
+        return;
+      }
+      lastTick = timestamp;
+      setDisplayedContent((prev) => {
+        if (prev.length >= target.length) return prev;
+        const remaining = target.length - prev.length;
+        const step = Math.max(1, Math.ceil(remaining / 8));
+        return target.slice(0, prev.length + step);
+      });
+      rafId = window.requestAnimationFrame(stepTyping);
+    };
+
+    rafId = window.requestAnimationFrame(stepTyping);
+    return () => {
+      if (rafId) {
+        window.cancelAnimationFrame(rafId);
+      }
+    };
+  }, [displayedContent.length, isLast, isStreaming, message.content, message.role]);
+
+  const shouldShowStreamEvents = isStreaming && isLast && message.role === 'assistant' && streamLines.length > 0 && displayedContent.length === 0;
+  const shouldShowTypingCursor = isStreaming && isLast && message.role === 'assistant';
+
   return (
     <motion.div
       variants={messageVariants}
@@ -218,7 +260,7 @@ export function MessageBubble({
             </div>
           )}
 
-          {isStreaming && isLast && message.role === 'assistant' && streamLines.length > 0 && (
+          {shouldShowStreamEvents && (
             <div className="text-xs text-muted-foreground mb-1 flex max-h-28 flex-col gap-1 overflow-y-auto pr-1">
               {streamLines.map((line, index) => {
                 const isLatest = index === streamLines.length - 1;
@@ -253,10 +295,10 @@ export function MessageBubble({
             </div>
           )}
 
-          {message.content && (
+          {displayedContent && (
             <div className="whitespace-pre-wrap text-sm leading-relaxed">
-              {message.content}
-              {isStreaming && isLast && message.role === 'assistant' && (
+              {displayedContent}
+              {shouldShowTypingCursor && (
                 <span className="inline-block w-2 h-4 ml-0.5 bg-current animate-pulse rounded-sm" />
               )}
             </div>
