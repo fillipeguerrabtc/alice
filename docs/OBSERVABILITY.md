@@ -1,6 +1,6 @@
 # Guia de Observabilidade - Alice Enterprise Platform
 
-**Versão:** 2.6.4  
+**Versão:** 2.6.5  
 **Data:** 24 de Janeiro de 2026  
 **Autor:** Fillipe Guerra
 
@@ -24,6 +24,7 @@
 | 10 | Painéis com queries duplicadas (labels inconsistentes) | Semântica incorreta e confusão operacional | Queries alinhadas a métricas reais e labels corretos | ✅ CORRIGIDO |
 | 11 | Backups sucesso/falha com fonte incorreta | Sem separação real entre sucesso e falha | Métrica `alice_backup_jobs_total{status}` baseada em PostgreSQL | ✅ CORRIGIDO |
 | 12 | Similarity Score (Top-K) exibindo % | Unidade/thresholds não compatíveis com Effective K | Unidade ajustada para K real e thresholds revisados | ✅ CORRIGIDO |
+| 13 | Alertas "DatasourceNoData" em LLM/RAG/GPU durante uso normal | Alertas falsos por ausência de série em períodos ociosos | Fallback `or on() vector(0)` nas regras de latência/VRAM/fila | ✅ CORRIGIDO |
 
 ### Checklist de validação (pós-deploy)
 

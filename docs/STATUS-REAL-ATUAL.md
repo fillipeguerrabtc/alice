@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 24 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 8.1 - Ajuste de velocidade de digitação
+**Versão:** 8.2 - Alertas Grafana no-data
 
 ---
 
@@ -191,6 +191,7 @@ Retenção Arquivo:   30 dias
 
 ## Atualizações recentes (resumo)
 
+- Observability: alertas Grafana com fallback de no-data para evitar falsos positivos (LLM/RAG/GPU).
 - Chat: efeito de digitação agora avança 1 caractere por tick e suporta até 400ms.
 - Frontend: correção de build (variável não utilizada em AliceConfig).
 - Chat: UX de digitação incremental com "Pensando..." i18n e velocidade configurável imediata.
