@@ -163,7 +163,7 @@ export default function AliceConfig() {
       const res = await apiRequest('PATCH', '/api/assistant-settings', values);
       return res.json();
     },
-    onSuccess: (response, variables) => {
+    onSuccess: (_, variables) => {
       queryClient.setQueryData<AssistantSettingsResponse>(['/api/assistant-settings'], (prev) => {
         if (!prev) return prev;
         return {

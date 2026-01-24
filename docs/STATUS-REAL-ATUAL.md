@@ -191,6 +191,7 @@ Retenção Arquivo:   30 dias
 
 ## Atualizações recentes (resumo)
 
+- Frontend: correção de build (variável não utilizada em AliceConfig).
 - Chat: UX de digitação incremental com "Pensando..." i18n e velocidade configurável imediata.
 - Auth: novos usuários OAuth/SAML/registro local agora entram como `guest` (Convidado).
 - Users Admin: criação de usuário via dashboard (admin-only) com dados obrigatórios e roles iniciais.
