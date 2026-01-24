@@ -92,7 +92,7 @@
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Jobs Falhos",
       "type": "stat",
-      "targets": [{ "expr": "alice_training_failed_jobs_total", "refId": "A" }]
+      "targets": [{ "expr": "alice_training_active_jobs", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },

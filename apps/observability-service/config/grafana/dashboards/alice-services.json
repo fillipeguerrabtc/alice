@@ -40,7 +40,7 @@
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Auth Service",
       "type": "stat",
-      "targets": [{ "expr": "up{job=\"alice-services\",service=\"auth-service\"}", "refId": "A" }]
+      "targets": [{ "expr": "up{job=\"alice-services\",instance=\"alice-auth:3001\"}", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -56,7 +56,7 @@
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Chat Service",
       "type": "stat",
-      "targets": [{ "expr": "up{job=\"alice-services\",service=\"chat-service\"}", "refId": "A" }]
+      "targets": [{ "expr": "up{job=\"alice-services\",instance=\"alice-chat:3002\"}", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -72,7 +72,7 @@
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "RAG Service",
       "type": "stat",
-      "targets": [{ "expr": "up{job=\"alice-services\",service=\"rag-service\"}", "refId": "A" }]
+      "targets": [{ "expr": "up{job=\"alice-services\",instance=\"alice-rag:3003\"}", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -88,7 +88,7 @@
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Training Service",
       "type": "stat",
-      "targets": [{ "expr": "up{job=\"alice-services\",service=\"training-service\"}", "refId": "A" }]
+      "targets": [{ "expr": "up{job=\"alice-services\",instance=\"alice-training:3004\"}", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -104,7 +104,7 @@
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Integrations",
       "type": "stat",
-      "targets": [{ "expr": "up{job=\"alice-services\",service=\"integrations-service\"}", "refId": "A" }]
+      "targets": [{ "expr": "up{job=\"alice-services\",instance=\"alice-integrations:3005\"}", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },

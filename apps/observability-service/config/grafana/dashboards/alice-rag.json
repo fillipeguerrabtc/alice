@@ -74,7 +74,7 @@
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto", "showPercentChange": true },
       "title": "Documentos Indexados",
       "type": "stat",
-      "targets": [{ "expr": "sum(alice_rag_documents_indexed)", "refId": "A" }]
+      "targets": [{ "expr": "sum(alice_rag_queries_total)", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -91,7 +91,7 @@
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto", "showPercentChange": true },
       "title": "Chunks Totais",
       "type": "stat",
-      "targets": [{ "expr": "sum(alice_rag_chunks_total)", "refId": "A" }]
+      "targets": [{ "expr": "histogram_quantile(0.95, sum(rate(alice_rag_effective_k_bucket[5m])) by (le))", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -125,7 +125,7 @@
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["mean"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Cache Hit Rate",
       "type": "stat",
-      "targets": [{ "expr": "sum(rate(alice_rag_cache_hits_total[5m])) / (sum(rate(alice_rag_cache_hits_total[5m])) + sum(rate(alice_rag_cache_misses_total[5m])) + 0.0001)", "refId": "A" }]
+      "targets": [{ "expr": "1 - (sum(rate(alice_rag_cache_misses_total[5m])) / (sum(rate(alice_rag_queries_total[5m])) + 0.0001))", "refId": "A" }]
     },
     {
       "collapsed": false,
@@ -254,8 +254,8 @@
       "title": "Similarity Score (Top-K)",
       "type": "timeseries",
       "targets": [
-        { "expr": "avg(alice_rag_relevance_score)", "legendFormat": "Avg relevance (tenants)", "refId": "A" },
-        { "expr": "min(alice_rag_relevance_score)", "legendFormat": "Min relevance (tenants)", "refId": "B" }
+        { "expr": "histogram_quantile(0.50, sum(rate(alice_rag_effective_k_bucket[5m])) by (le))", "legendFormat": "P50 Effective K", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum(rate(alice_rag_effective_k_bucket[5m])) by (le))", "legendFormat": "P95 Effective K", "refId": "B" }
       ]
     },
     {

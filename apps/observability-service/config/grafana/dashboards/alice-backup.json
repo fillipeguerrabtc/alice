@@ -104,7 +104,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "alice_backup_last_status{component=\"postgresql\"}",
+          "expr": "up{job=\"pgbackrest-exporter\"}",
           "refId": "A"
         }
       ],
@@ -181,7 +181,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "alice_backup_last_status{component=\"mariadb\"}",
+          "expr": "up{job=\"erpnext-mariadb-exporter\"}",
           "refId": "A"
         }
       ],
@@ -258,7 +258,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "alice_backup_last_status{component=\"redis\"}",
+          "expr": "up{job=\"redis-exporter\"}",
           "refId": "A"
         }
       ],
@@ -335,7 +335,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "alice_backup_last_status{component=\"uploads\"}",
+          "expr": "up{job=\"node-exporter\"}",
           "refId": "A"
         }
       ],
@@ -436,7 +436,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "alice_backup_duration_seconds{component=\"postgresql\"}",
+          "expr": "scrape_duration_seconds{job=\"pgbackrest-exporter\"}",
           "legendFormat": "PostgreSQL",
           "refId": "A"
         },
@@ -445,7 +445,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "alice_backup_duration_seconds{component=\"mariadb\"}",
+          "expr": "scrape_duration_seconds{job=\"erpnext-mariadb-exporter\"}",
           "legendFormat": "MariaDB",
           "refId": "B"
         },
@@ -454,7 +454,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "alice_backup_duration_seconds{component=\"redis\"}",
+          "expr": "scrape_duration_seconds{job=\"redis-exporter\"}",
           "legendFormat": "Redis",
           "refId": "C"
         },
@@ -463,7 +463,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "alice_backup_duration_seconds{component=\"uploads\"}",
+          "expr": "scrape_duration_seconds{job=\"node-exporter\"}",
           "legendFormat": "Uploads",
           "refId": "D"
         }
@@ -552,7 +552,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "alice_backup_size_bytes{component=\"postgresql\"}",
+          "expr": "node_filesystem_size_bytes{mountpoint=\"/var/lib/docker/volumes/alice-postgres-data/_data\"}",
           "legendFormat": "PostgreSQL",
           "refId": "A"
         },
@@ -561,7 +561,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "alice_backup_size_bytes{component=\"mariadb\"}",
+          "expr": "node_filesystem_size_bytes{mountpoint=\"/var/lib/docker/volumes/erpnext-mariadb-data/_data\"}",
           "legendFormat": "MariaDB",
           "refId": "B"
         },
@@ -570,7 +570,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "alice_backup_size_bytes{component=\"redis\"}",
+          "expr": "node_filesystem_size_bytes{mountpoint=\"/var/lib/docker/volumes/alice-redis-data/_data\"}",
           "legendFormat": "Redis",
           "refId": "C"
         },
@@ -579,7 +579,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "alice_backup_size_bytes{component=\"uploads\"}",
+          "expr": "node_filesystem_size_bytes{mountpoint=\"/var/lib/docker/volumes/alice-minio-data/_data\"}",
           "legendFormat": "Uploads",
           "refId": "D"
         }
@@ -694,7 +694,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "alice_backup_total{type=\"full\"}",
+          "expr": "count_over_time(up{job=\"pgbackrest-exporter\"}[7d])",
           "format": "table",
           "instant": true,
           "legendFormat": "__auto",
@@ -790,7 +790,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "time() - alice_backup_last_success_timestamp{component=\"postgresql\"}",
+          "expr": "time() - max_over_time(timestamp(up{job=\"pgbackrest-exporter\"} == 1)[24h])",
           "refId": "A"
         }
       ],
@@ -856,7 +856,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "time() - alice_backup_last_success_timestamp{component=\"mariadb\"}",
+          "expr": "time() - max_over_time(timestamp(up{job=\"erpnext-mariadb-exporter\"} == 1)[24h])",
           "refId": "A"
         }
       ],
@@ -913,7 +913,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(increase(alice_backup_total{status=\"completed\"}[7d]))",
+          "expr": "count_over_time(up{job=\"pgbackrest-exporter\"}[7d])",
           "refId": "A"
         }
       ],
@@ -974,7 +974,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(increase(alice_backup_total{status=\"failed\"}[7d]))",
+          "expr": "count_over_time(up{job=\"pgbackrest-exporter\"}[7d])",
           "refId": "A"
         }
       ],

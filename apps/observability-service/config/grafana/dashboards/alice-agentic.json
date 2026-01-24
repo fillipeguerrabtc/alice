@@ -62,8 +62,8 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "sum(increase(alice_agentic_actions_total[5m])) by (action, status)",
-          "legendFormat": "{{action}} • {{status}}",
+          "expr": "sum(increase(alice_http_requests_total{route=~\"/api/agentic.*|/api/agents.*\"}[5m])) by (route, status_code)",
+          "legendFormat": "{{route}} • {{status_code}}",
           "refId": "A"
         }
       ]
@@ -82,8 +82,8 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "sum(increase(alice_agentic_approvals_total[5m])) by (action, decision)",
-          "legendFormat": "{{action}} • {{decision}}",
+          "expr": "sum(increase(alice_http_requests_total{route=~\"/api/chat/conversations/:id/approval-policy|/api/chat/pending-handoffs\"}[5m])) by (route, status_code)",
+          "legendFormat": "{{route}} • {{status_code}}",
           "refId": "A"
         }
       ]
@@ -102,8 +102,8 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum(rate(alice_agentic_action_duration_seconds_bucket[5m])) by (le, action))",
-          "legendFormat": "{{action}}",
+          "expr": "histogram_quantile(0.95, sum(rate(alice_http_request_duration_seconds_bucket{route=~\"/api/agentic.*|/api/agents.*\"}[5m])) by (le, route))",
+          "legendFormat": "{{route}}",
           "refId": "A"
         }
       ]

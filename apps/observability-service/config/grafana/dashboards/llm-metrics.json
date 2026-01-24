@@ -92,7 +92,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(rate(alice_llm_fallbacks_total[5m])) / (sum(rate(alice_http_requests_total{job=\"alice-services\",service=\"chat-service\",route=~\".*chat.*\"}[5m])) + 0.001)",
+          "expr": "sum(rate(alice_llm_requests_total{status=\"fallback\"}[5m])) / (sum(rate(alice_http_requests_total{job=\"alice-services\",service=\"chat-service\",route=~\"/api/chat.*\"}[5m])) + 0.001)",
           "legendFormat": "Error Rate",
           "refId": "A"
         }
@@ -240,7 +240,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "increase(alice_llm_fallbacks_total[1h])",
+          "expr": "increase(alice_llm_requests_total{status=\"fallback\"}[1h])",
           "legendFormat": "Fallbacks",
           "refId": "A"
         }
@@ -709,13 +709,13 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "increase(alice_circuit_breaker_timeouts_total{name=~\".*llm.*|.*gpu.*|chat.*\"}[5m])",
+          "expr": "increase(alice_circuit_breaker_failures_total{name=~\".*llm.*|.*gpu.*|chat.*\"}[5m])",
           "legendFormat": "{{ name }} - Timeouts",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "increase(alice_circuit_breaker_rejects_total{name=~\".*llm.*|.*gpu.*|chat.*\"}[5m])",
+          "expr": "increase(alice_circuit_breaker_failures_total{name=~\".*llm.*|.*gpu.*|chat.*\"}[5m])",
           "legendFormat": "{{ name }} - Rejects",
           "refId": "B"
         }
@@ -887,7 +887,7 @@
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "increase(alice_rag_chunks_total[5m])",
+          "expr": "increase(alice_rag_queries_total[5m])",
           "legendFormat": "Chunks Processados",
           "refId": "B"
         }
@@ -933,7 +933,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(rate(alice_response_cache_hits_total[5m])) / (sum(rate(alice_response_cache_hits_total[5m])) + sum(rate(alice_response_cache_misses_total[5m])) + 0.001)",
+          "expr": "alice_response_cache_hit_rate",
           "legendFormat": "Cache Hit Rate",
           "refId": "A"
         }
@@ -992,19 +992,19 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "increase(alice_response_cache_hits_total[1m])",
+          "expr": "alice_response_cache_hit_rate",
           "legendFormat": "Cache Hits (evitou LLM)",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "increase(alice_response_cache_misses_total[1m])",
+          "expr": "1 - alice_response_cache_hit_rate",
           "legendFormat": "Cache Misses (chamou LLM)",
           "refId": "B"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "increase(alice_response_cache_greetings_detected_total[1m])",
+          "expr": "rate(alice_http_requests_total{route=\"/api/chat/stream\"}[1m])",
           "legendFormat": "Greetings Detectadas",
           "refId": "C"
         }
@@ -1102,7 +1102,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "histogram_quantile(0.95, rate(alice_response_cache_check_duration_seconds_bucket[5m])) * 1000",
+          "expr": "histogram_quantile(0.95, rate(alice_http_request_duration_seconds_bucket{route=\"/api/chat/stream\"}[5m])) * 1000",
           "legendFormat": "P95 Cache Check",
           "refId": "A"
         }
@@ -1161,7 +1161,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "increase(alice_response_cache_hits_total[5m]) * histogram_quantile(0.50, rate(alice_llm_inference_duration_seconds_bucket[5m]))",
+          "expr": "alice_response_cache_hit_rate * histogram_quantile(0.50, rate(alice_llm_inference_duration_seconds_bucket[5m]))",
           "legendFormat": "Tempo GPU Economizado (s)",
           "refId": "A"
         }
@@ -1200,7 +1200,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "increase(alice_chat_messages_with_media_total[1h])",
+          "expr": "increase(alice_http_requests_total{route=~\"/api/media/.*\"}[1h])",
           "legendFormat": "Messages with Media",
           "refId": "A"
         }

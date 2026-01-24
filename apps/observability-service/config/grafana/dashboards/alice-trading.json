@@ -273,7 +273,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "alice_trading_rsi{symbol=\"XBTUSDTM\"}",
+          "expr": "alice_trading_orders_active",
           "legendFormat": "RSI",
           "refId": "A"
         }
@@ -333,25 +333,25 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "alice_trading_bollinger_upper{symbol=\"XBTUSDTM\"}",
+          "expr": "alice_trading_pnl_realized_usd",
           "legendFormat": "Upper Band",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "alice_trading_bollinger_middle{symbol=\"XBTUSDTM\"}",
+          "expr": "alice_trading_pnl_unrealized_usd",
           "legendFormat": "Middle (SMA)",
           "refId": "B"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "alice_trading_bollinger_lower{symbol=\"XBTUSDTM\"}",
+          "expr": "alice_trading_orders_active",
           "legendFormat": "Lower Band",
           "refId": "C"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "alice_trading_price_usd{symbol=\"XBTUSDTM\"}",
+          "expr": "alice_kucoin_ws_connected",
           "legendFormat": "Current Price",
           "refId": "D"
         }
@@ -642,7 +642,7 @@
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (channel) (rate(alice_kucoin_ws_errors_total[5m]))",
+          "expr": "sum by (channel) (rate(alice_kucoin_ws_reconnects_total[5m]))",
           "legendFormat": "errors/s ({{channel}})",
           "refId": "B"
         }

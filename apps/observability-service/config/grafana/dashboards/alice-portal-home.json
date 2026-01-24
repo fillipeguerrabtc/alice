@@ -249,7 +249,7 @@
       "title": "Taxa de Erro por Serviço",
       "type": "timeseries",
       "targets": [
-        { "expr": "100 * rate(alice_http_requests_total{job=~\"alice-.*\",status=~\"5..\"}[5m]) / rate(alice_http_requests_total{job=~\"alice-.*\"}[5m])", "legendFormat": "{{ job }}", "refId": "A" }
+        { "expr": "100 * rate(alice_http_requests_total{job=~\"alice-.*\",status_code=~\"5..\"}[5m]) / rate(alice_http_requests_total{job=~\"alice-.*\"}[5m])", "legendFormat": "{{ job }}", "refId": "A" }
       ]
     },
     {

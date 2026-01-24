@@ -221,7 +221,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "alice_erpnext_queue_depth{status=\"pending\"}",
+          "expr": "redis_db_keys{job=\"erpnext-redis-queue-exporter\"}",
           "legendFormat": "Pending Jobs",
           "refId": "A"
         }
@@ -259,7 +259,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "alice_erpnext_queue_depth{status=\"processing\"}",
+          "expr": "redis_blocked_clients{job=\"erpnext-redis-queue-exporter\"}",
           "legendFormat": "Processing Jobs",
           "refId": "A"
         }
@@ -298,7 +298,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "increase(alice_erpnext_jobs_failed_total[1h])",
+          "expr": "increase(redis_commands_failed_calls_total{job=\"erpnext-redis-queue-exporter\"}[1h])",
           "legendFormat": "Failed Jobs",
           "refId": "A"
         }
@@ -335,7 +335,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "increase(alice_erpnext_jobs_completed_total[1h])",
+          "expr": "increase(redis_commands_processed_total{job=\"erpnext-redis-queue-exporter\"}[1h])",
           "legendFormat": "Completed Jobs",
           "refId": "A"
         }
@@ -387,7 +387,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "alice_wise_last_sync_timestamp",
+          "expr": "increase(alice_integration_calls_total{integration=\"wise\"}[24h])",
           "format": "table",
           "instant": true,
           "legendFormat": "",
@@ -464,13 +464,13 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "increase(alice_wise_transactions_synced_total[5m])",
+          "expr": "increase(alice_integration_calls_total{integration=\"wise\"}[5m])",
           "legendFormat": "Wise Transactions",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "increase(alice_stripe_events_processed_total[5m])",
+          "expr": "increase(alice_integration_calls_total{integration=\"stripe\"}[5m])",
           "legendFormat": "Stripe Events",
           "refId": "B"
         }
