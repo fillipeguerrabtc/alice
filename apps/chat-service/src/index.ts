@@ -6291,11 +6291,35 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       }
 
       writeStatus('prompt');
+      const promptStart = Date.now();
+      emitAgentEvent({
+        phase: 'planning',
+        action: 'prompt_build',
+        status: 'start',
+        message: 'Construindo prompt para midia',
+        correlationId: conversationId ?? undefined,
+        payload: {
+          historyMessages: storedPreviousMessages.length,
+          mediaAttachments: preparedMediaAttachments.length,
+          visionSummaries: visionSummaries.length,
+        },
+      });
       const mediaMessages = buildPromptMessages({
         systemPrompt,
         userMessage: userContent,
         history: storedPreviousMessages,
         source: 'stream',
+      });
+      emitAgentEvent({
+        phase: 'planning',
+        action: 'prompt_build',
+        status: 'success',
+        message: 'Prompt de midia pronto',
+        durationMs: Date.now() - promptStart,
+        correlationId: conversationId ?? undefined,
+        payload: {
+          totalMessages: mediaMessages.length,
+        },
       });
 
       let assistantResponse = '';
@@ -6321,11 +6345,34 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             temperature: llmConfig.temperature,
           },
         });
+        let lastProgressAt = 0;
+        let lastProgressChars = 0;
+        const emitWritingProgress = () => {
+          const now = Date.now();
+          const chars = assistantResponse.length;
+          const charsDelta = chars - lastProgressChars;
+          if (now - lastProgressAt < 1200 && charsDelta < 160) return;
+          lastProgressAt = now;
+          lastProgressChars = chars;
+          emitAgentEvent({
+            phase: 'llm',
+            action: 'writing',
+            status: 'in_progress',
+            message: `Escrevendo resposta (${chars} caracteres)`,
+            correlationId: conversationId ?? undefined,
+            payload: {
+              chars,
+            },
+          });
+        };
         await proxyStreamFromGpuManager(
           mediaMessages,
           (content) => {
             if (content) {
               assistantResponse += content;
+            }
+            if (content) {
+              emitWritingProgress();
             }
             try {
               if (res.headersSent && !res.writableEnded) {
@@ -6350,6 +6397,14 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             if (!assistantPersisted && conversationId && userMessage) {
               assistantPersisted = true;
               if (assistantResponse.trim().length > 0) {
+                const persistStartedAt = Date.now();
+                emitAgentEvent({
+                  phase: 'finalizing',
+                  action: 'persist_message',
+                  status: 'start',
+                  message: 'Persistindo resposta',
+                  correlationId: conversationId ?? undefined,
+                });
                 const [assistantMessage] = await db.insert(schema.messages).values({
                   conversationId,
                   agentId: conversation?.agentId,
@@ -6398,6 +6453,17 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                 }
 
                 res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+                emitAgentEvent({
+                  phase: 'finalizing',
+                  action: 'persist_message',
+                  status: 'success',
+                  message: 'Resposta persistida',
+                  durationMs: Date.now() - persistStartedAt,
+                  correlationId: conversationId ?? undefined,
+                  payload: {
+                    messageId: assistantMessage?.id,
+                  },
+                });
               } else {
                 await db.update(schema.conversations)
                   .set({
@@ -6411,6 +6477,13 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
             if (!res.writableEnded) {
               writeStatus('finalizing');
+              emitAgentEvent({
+                phase: 'finalizing',
+                action: 'finalizing',
+                status: 'success',
+                message: 'Resposta finalizada',
+                correlationId: conversationId ?? undefined,
+              });
               res.write('data: [DONE]\n\n');
               res.end();
             }
@@ -8285,6 +8358,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       const explicitDeepWebRequest = isExplicitDeepWebRequest(userMessageContent);
       const explicitWebRequest = isExplicitWebRequest(userMessageContent) || explicitDeepWebRequest;
       const ragInternalStart = Date.now();
+      const classificationStartedAt = Date.now();
       const [assistantSettings, ragResult, ragClassification] = await Promise.all([
         getAssistantSettingsForTenant(tenantId),
         (async () => {
@@ -8327,12 +8401,31 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       });
       recordRagRelevance(tenantId, ragResult);
 
+      if (ragClassification?.classification) {
+        emitAgentEvent({
+          phase: 'planning',
+          action: 'query_classification',
+          status: 'success',
+        message: `Classificacao concluida: ${ragClassification.classification.type}`,
+          durationMs: Date.now() - classificationStartedAt,
+          correlationId: conversationId ?? undefined,
+          payload: {
+            type: ragClassification.classification.type,
+            confidence: ragClassification.classification.confidence,
+            webMode: ragClassification.classification.webMode,
+            webSearchAvailable: ragClassification.webSearchAvailable,
+            reason: ragClassification.classification.reason,
+          },
+        });
+      }
+
       let systemPrompt = buildSystemPrompt(agent, assistantSettings, userMessageContent);
       systemPrompt = appendUserNamePolicy(systemPrompt, nameContext, nameUsageContext);
       systemPrompt = appendNameConfirmationInstruction(systemPrompt, nameContext);
       let ragSources: Array<{ documentId: string; titulo: string; similarity: number }> = [];
       let webSources: Array<{ title: string; url: string }> = [];
       const classificationWebMode = ragClassification?.classification?.webMode;
+      let memorySearchApplied = false;
 
       if (ragResult && ragResult.context) {
         systemPrompt += formatarContextoParaLLM(ragResult);
@@ -8356,6 +8449,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           CHAT_HISTORY_SEARCH_TOKEN_BUDGET
         );
         if (memoryBlock) {
+          memorySearchApplied = true;
           systemPrompt += `\n\nHISTÓRICO RELEVANTE (memória solicitada):\n${memoryBlock}`;
         }
       }
@@ -8369,6 +8463,24 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
               ragClassification.classification.type !== 'internal'
             )
       );
+
+      emitAgentEvent({
+        phase: 'planning',
+        action: 'web_decision',
+        status: shouldUseWeb ? 'success' : 'skipped',
+        message: shouldUseWeb
+          ? 'Busca web habilitada para esta consulta'
+          : 'Busca web nao necessaria para esta consulta',
+        correlationId: conversationId ?? undefined,
+        payload: {
+          explicitWebRequest,
+          explicitDeepWebRequest,
+          classificationType: ragClassification?.classification?.type,
+          webSearchAvailable: ragClassification?.webSearchAvailable,
+          webEnabled: agenticSettings.webEnabled,
+          decision: shouldUseWeb ? 'use_web' : 'skip_web',
+        },
+      });
 
       if (explicitWebRequest && !shouldUseWeb) {
         const responseContent = agenticSettings.webEnabled
@@ -8488,11 +8600,36 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       }
     
     writeStatus('prompt');
+    const promptStart = Date.now();
+    emitAgentEvent({
+      phase: 'planning',
+      action: 'prompt_build',
+      status: 'start',
+      message: 'Construindo prompt final',
+      correlationId: conversationId ?? undefined,
+      payload: {
+        historyMessages: storedPreviousMessages.length,
+        ragSources: ragSources.length,
+        webSources: webSources.length,
+        memorySearchApplied,
+      },
+    });
     const llmMessages = buildPromptMessages({
       systemPrompt,
       userMessage: userMessageContent,
       history: storedPreviousMessages,
       source: 'stream',
+    });
+    emitAgentEvent({
+      phase: 'planning',
+      action: 'prompt_build',
+      status: 'success',
+      message: 'Prompt final pronto',
+      durationMs: Date.now() - promptStart,
+      correlationId: conversationId ?? undefined,
+      payload: {
+        totalMessages: llmMessages.length,
+      },
     });
 
     if (ragSources.length > 0 || webSources.length > 0) {
@@ -8524,11 +8661,34 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           temperature: llmConfig.temperature,
         },
       });
+      let lastProgressAt = 0;
+      let lastProgressChars = 0;
+      const emitWritingProgress = () => {
+        const now = Date.now();
+        const chars = assistantResponse.length;
+        const charsDelta = chars - lastProgressChars;
+        if (now - lastProgressAt < 1200 && charsDelta < 160) return;
+        lastProgressAt = now;
+        lastProgressChars = chars;
+        emitAgentEvent({
+          phase: 'llm',
+          action: 'writing',
+          status: 'in_progress',
+          message: `Escrevendo resposta (${chars} caracteres)`,
+          correlationId: conversationId ?? undefined,
+          payload: {
+            chars,
+          },
+        });
+      };
       await proxyStreamFromGpuManager(
         llmMessages,
         (content) => {
           if (content) {
             assistantResponse += content;
+          }
+          if (content) {
+            emitWritingProgress();
           }
           // BUG FIX 25/12/2025: Envolver res.write() em try-catch para tratamento gracioso de clientes desconectados
           // Se cliente desconectar durante streaming, erro não deve interromper processamento do stream
@@ -8563,6 +8723,14 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           if (!assistantPersisted && conversationId && userMessage) {
             assistantPersisted = true;
             if (assistantResponse.trim().length > 0) {
+              const persistStartedAt = Date.now();
+              emitAgentEvent({
+                phase: 'finalizing',
+                action: 'persist_message',
+                status: 'start',
+                message: 'Persistindo resposta',
+                correlationId: conversationId ?? undefined,
+              });
               const [assistantMessage] = await db.insert(schema.messages).values({
                 conversationId,
                 agentId: conversation?.agentId,
@@ -8612,6 +8780,17 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
               }
 
               res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+              emitAgentEvent({
+                phase: 'finalizing',
+                action: 'persist_message',
+                status: 'success',
+                message: 'Resposta persistida',
+                durationMs: Date.now() - persistStartedAt,
+                correlationId: conversationId ?? undefined,
+                payload: {
+                  messageId: assistantMessage?.id,
+                },
+              });
             } else {
               await db.update(schema.conversations)
                 .set({
@@ -8644,6 +8823,13 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                 res.flushHeaders();
               }
               writeStatus('finalizing');
+              emitAgentEvent({
+                phase: 'finalizing',
+                action: 'finalizing',
+                status: 'success',
+                message: 'Resposta finalizada',
+                correlationId: conversationId ?? undefined,
+              });
               res.write('data: [DONE]\n\n');
               res.end();
             } catch (endError) {

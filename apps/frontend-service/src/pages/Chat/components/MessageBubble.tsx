@@ -93,18 +93,74 @@ export function MessageBubble({
     rejected: 'rejeitado',
   };
 
+  const formatDuration = (durationMs?: number) => {
+    if (typeof durationMs !== 'number' || Number.isNaN(durationMs)) return '';
+    if (durationMs < 1000) return `${durationMs}ms`;
+    return `${(durationMs / 1000).toFixed(1)}s`;
+  };
+
+  const formatPayloadSummary = (payload?: AgentEvent['payload']) => {
+    if (!payload || typeof payload !== 'object') return '';
+    const safePayload = payload as Record<string, unknown>;
+    const summary: string[] = [];
+    const pushNumber = (label: string, value?: unknown) => {
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        summary.push(`${label} ${value}`);
+      }
+    };
+    const pushText = (label: string, value?: unknown) => {
+      if (typeof value === 'string' && value.trim().length > 0) {
+        const trimmed = value.trim();
+        summary.push(`${label} ${trimmed.length > 120 ? `${trimmed.slice(0, 117)}...` : trimmed}`);
+      }
+    };
+
+    pushNumber('fontes', safePayload.sources);
+    pushNumber('limite', safePayload.limit);
+    pushNumber('threshold', safePayload.threshold);
+    pushNumber('conf', safePayload.confidence);
+    pushNumber('chars', safePayload.chars);
+    pushNumber('tokens', safePayload.maxTokens);
+    pushNumber('mensagens', safePayload.totalMessages);
+    pushNumber('historico', safePayload.historyMessages);
+    pushNumber('RAG', safePayload.ragSources);
+    pushNumber('web', safePayload.webSources);
+    pushNumber('midias', safePayload.mediaAttachments);
+    if (typeof safePayload.temperature === 'number' && Number.isFinite(safePayload.temperature)) {
+      summary.push(`temp ${safePayload.temperature}`);
+    }
+    pushText('modelo', safePayload.model);
+    pushText('tipo', safePayload.type);
+    pushText('web', safePayload.webMode);
+    pushText('decisao', safePayload.decision);
+    if (typeof safePayload.webSearchAvailable === 'boolean') {
+      summary.push(`webDisponivel ${safePayload.webSearchAvailable ? 'sim' : 'nao'}`);
+    }
+    if (typeof safePayload.memorySearchApplied === 'boolean') {
+      summary.push(`memoria ${safePayload.memorySearchApplied ? 'sim' : 'nao'}`);
+    }
+    pushText('motivo', safePayload.reason);
+
+    return summary.join(' | ');
+  };
+
   const streamLines = useMemo(() => {
-    const recentEvents = (streamEvents ?? []).slice(-10);
+    const recentEvents = (streamEvents ?? []).slice(-20);
     return recentEvents.map((event) => {
       const phaseLabel = phaseLabels[event.phase] ?? event.phase;
       const statusLabel = statusLabels[event.status] ?? event.status;
       const actionLabel = event.action?.trim();
       const messageLabel = event.message?.trim();
       const details = [actionLabel, messageLabel].filter(Boolean).join(' - ');
-      if (!details) {
-        return `${phaseLabel}: ${statusLabel}`;
-      }
-      return `${phaseLabel}: ${details} (${statusLabel})`;
+      const summary = details ? `${phaseLabel}: ${details} (${statusLabel})` : `${phaseLabel}: ${statusLabel}`;
+      const durationLabel = formatDuration(event.durationMs);
+      const payloadLabel = formatPayloadSummary(event.payload);
+      const metaParts = [durationLabel, payloadLabel].filter(Boolean).join(' | ');
+      return {
+        id: event.id,
+        summary,
+        meta: metaParts,
+      };
     });
   }, [streamEvents]);
 
@@ -167,16 +223,23 @@ export function MessageBubble({
               {streamLines.map((line, index) => {
                 const isLatest = index === streamLines.length - 1;
                 return (
-                  <div key={`${message.id}-stream-${index}`} className="flex items-start gap-2">
+                  <div key={`${message.id}-stream-${line.id}`} className="flex items-start gap-2">
                     <span
                       className={cn(
                         'mt-1 h-1.5 w-1.5 rounded-full',
                         isLatest ? 'bg-foreground' : 'bg-muted-foreground/70'
                       )}
                     />
-                    <span className={cn('whitespace-pre-wrap leading-relaxed', isLatest ? 'text-foreground' : '')}>
-                      {line}
-                    </span>
+                    <div className="flex flex-col gap-0.5">
+                      <span className={cn('whitespace-pre-wrap leading-relaxed', isLatest ? 'text-foreground' : '')}>
+                        {line.summary}
+                      </span>
+                      {line.meta && (
+                        <span className="text-[11px] text-muted-foreground/90 whitespace-pre-wrap">
+                          {line.meta}
+                        </span>
+                      )}
+                    </div>
                     {isLatest && (
                       <span className="inline-flex gap-1 mt-0.5">
                         <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
