@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 24 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.95 - Chat Streaming Typing + RAG K Units
+**Versão:** 7.96 - Chat Streaming Typing Sem Status
 
 ---
 
@@ -301,7 +301,7 @@ Retenção Arquivo:   30 dias
 - Observability: backups sucesso/falha agora usam metricas reais do PostgreSQL.
 - Observability: painel Similarity Score (Top-K) exibe K real (unidade e thresholds).
 - UI: sidebar da dashboard colapsa totalmente sem autocollapse.
-- Chat: streaming exibe resposta com texto construindo em tempo real.
+- Chat: streaming exibe apenas texto construindo em tempo real (sem status).
 - Frontend build: ordem de handlers de gravação e avatar corrigida (evita TS2448/TS2454).
 - Dark Mode: paleta preta/cinza para experiência similar ao ChatGPT.
 - Avatar do Chat: GIF dinâmico (packman pensando, gato após resposta) com tamanho ajustado.
