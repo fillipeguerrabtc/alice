@@ -1992,6 +1992,57 @@ jobs:
             echo ""
             echo "✅ Estrutura de diretórios criada com sucesso"
 
+      - name: Sincronizar configs do SearXNG (CRÍTICO)
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          command_timeout: 3m
+          script: |
+            set -euo pipefail
+            
+            echo ""
+            echo "============================================="
+            echo "🔍 SINCRONIZANDO CONFIGS SEARXNG (CRÍTICO)"
+            echo "============================================="
+            echo ""
+            
+            CONFIG_SRC="/opt/alice/app/infra/searxng"
+            CONFIG_DEST="/opt/alice/data/searxng-config"
+            PERMISSIONS_SSOT="/opt/alice/app/infra/scripts/permissions-config.sh"
+            
+            if [ ! -f "${CONFIG_SRC}/settings.yml" ]; then
+              echo "❌ ERRO: settings.yml do SearXNG não encontrado."
+              echo "   Path: ${CONFIG_SRC}/settings.yml"
+              exit 1
+            fi
+            
+            if [ ! -f "${CONFIG_SRC}/limiter.toml" ]; then
+              echo "❌ ERRO: limiter.toml do SearXNG não encontrado."
+              echo "   Path: ${CONFIG_SRC}/limiter.toml"
+              exit 1
+            fi
+            
+            if [ ! -f "${PERMISSIONS_SSOT}" ]; then
+              echo "❌ ERRO: permissions-config.sh não encontrado."
+              echo "   Path: ${PERMISSIONS_SSOT}"
+              exit 1
+            fi
+            
+            sudo mkdir -p "${CONFIG_DEST}"
+            sudo cp "${CONFIG_SRC}/settings.yml" "${CONFIG_DEST}/settings.yml"
+            sudo cp "${CONFIG_SRC}/limiter.toml" "${CONFIG_DEST}/limiter.toml"
+            
+            # Usar SSOT para permissões (Regra 2 - Não duplicar)
+            # shellcheck disable=SC1090
+            source "${PERMISSIONS_SSOT}"
+            sudo chown -R "${SEARXNG_UID}:${SEARXNG_GID}" "${CONFIG_DEST}"
+            sudo chmod 755 "${CONFIG_DEST}"
+            
+            echo "✅ Configurações do SearXNG sincronizadas"
+
       - name: Configurar permissões PostgreSQL (CRÍTICO)
         uses: appleboy/ssh-action@v1.2.2
         with:

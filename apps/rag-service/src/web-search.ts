@@ -57,6 +57,8 @@ export function createWebSearchClient({
   defaultCount = 5,
   timeoutMs = 8000,
 }: CreateClientParams): WebSearchClient {
+  const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+
   async function webSearchInternal(
     query: string,
     count: number = defaultCount,
@@ -88,8 +90,8 @@ export function createWebSearchClient({
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      // baseUrl já vem normalizado com uma barra final; evitar dupla barra
-      const response = await fetch(`${baseUrl}search?${params.toString()}`, {
+      // URL normalizada para garantir /search correto
+      const response = await fetch(`${normalizedBaseUrl}search?${params.toString()}`, {
         method: 'GET',
         headers: {
           Accept: 'application/json',

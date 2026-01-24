@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 24 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.97 - Chat Typing Speed Config
+**Versão:** 7.98 - Agentic Web Search Fix
 
 ---
 
@@ -303,6 +303,7 @@ Retenção Arquivo:   30 dias
 - UI: sidebar da dashboard colapsa totalmente sem autocollapse.
 - Chat: streaming exibe apenas texto construindo em tempo real (sem status).
 - Chat: velocidade do efeito de digitação configurável na Alice Config.
+- Agentic: URL do SearXNG normalizada para garantir chamadas /search no web search.
 - Frontend build: ordem de handlers de gravação e avatar corrigida (evita TS2448/TS2454).
 - Dark Mode: paleta preta/cinza para experiência similar ao ChatGPT.
 - Avatar do Chat: GIF dinâmico (packman pensando, gato após resposta) com tamanho ajustado.
