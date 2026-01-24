@@ -85,13 +85,6 @@ interface NamespaceFormData {
   descricao?: string;
 }
 
-interface NamespaceSettingsFormData {
-  icone?: string;
-  contextoSistema?: string;
-  ordem?: number | null;
-  ativo: boolean;
-}
-
 /**
  * Schema Zod com tipo explícito para evitar inferência recursiva
  */
@@ -102,7 +95,7 @@ const namespaceSchema: z.ZodType<NamespaceFormData> = z.object({
   descricao: z.string().optional(),
 });
 
-const namespaceSettingsSchema: z.ZodType<NamespaceSettingsFormData> = z.object({
+const namespaceSettingsSchema = z.object({
   icone: z.string().max(50).optional(),
   contextoSistema: z.string().max(20000).optional(),
   ordem: z.preprocess((value) => {
@@ -112,6 +105,8 @@ const namespaceSettingsSchema: z.ZodType<NamespaceSettingsFormData> = z.object({
   }, z.number().int().min(0).max(9999).nullable().optional()),
   ativo: z.boolean(),
 });
+
+type NamespaceSettingsFormData = z.infer<typeof namespaceSettingsSchema>;
 
 function NamespaceCardSkeleton() {
   return (
@@ -182,7 +177,7 @@ export default function Namespaces() {
   });
 
   const updateNamespaceMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<NamespaceFormData> }) => {
+    mutationFn: async ({ id, data }: { id: string; data: Partial<NamespaceFormData & NamespaceSettingsFormData> }) => {
       const res = await apiRequest("PATCH", `/api/namespaces/${id}`, data);
       return res.json();
     },
@@ -250,8 +245,8 @@ export default function Namespaces() {
   const handleSettingsSubmit = (data: NamespaceSettingsFormData) => {
     if (!settingsNamespace) return;
     const normalizedData: Partial<NamespaceSettingsFormData> = {
-      icone: data.icone?.trim() ? data.icone.trim() : null,
-      contextoSistema: data.contextoSistema?.trim() ? data.contextoSistema.trim() : null,
+      icone: data.icone?.trim() ? data.icone.trim() : undefined,
+      contextoSistema: data.contextoSistema?.trim() ? data.contextoSistema.trim() : undefined,
       ordem: typeof data.ordem === "number" ? data.ordem : null,
       ativo: data.ativo,
     };
