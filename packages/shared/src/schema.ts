@@ -2871,6 +2871,53 @@ export const assistantSettings = pgTable(
 // AGENTIC SETTINGS (Execução agentic + links por tenant)
 // ============================================================================
 
+export interface AgenticDetectorGroup {
+  keywords: string[];
+  patterns: string[];
+}
+
+export interface AgenticDetectors {
+  webSearch: AgenticDetectorGroup;
+  deepWeb: AgenticDetectorGroup;
+  webImageSearch: AgenticDetectorGroup;
+  imageGeneration: AgenticDetectorGroup;
+  trading: AgenticDetectorGroup;
+  agenticTask: {
+    createKeywords: string[];
+    updateKeywords: string[];
+    intentKeywords: string[];
+    typeKeywords: {
+      document: string[];
+      report: string[];
+      accounting: string[];
+      planning: string[];
+    };
+  };
+  erp: {
+    baseKeywords: string[];
+    listItemsKeywords: string[];
+    listCustomersKeywords: string[];
+    listInvoicesKeywords: string[];
+    createCustomerKeywords: string[];
+    createInvoiceKeywords: string[];
+  };
+  payments: {
+    wiseKeywords: string[];
+    wiseRecipientsKeywords: string[];
+    wiseTransferKeywords: string[];
+    stripeKeywords: string[];
+    stripePaymentKeywords: string[];
+  };
+  stackOps: {
+    baseKeywords: string[];
+    deployKeywords: string[];
+    rollbackKeywords: string[];
+    dryRunKeywords: string[];
+    smartDeployKeywords: string[];
+    stackKeywords: string[];
+  };
+}
+
 export const agenticSettings = pgTable(
   "agentic_settings",
   {
@@ -2883,6 +2930,7 @@ export const agenticSettings = pgTable(
     paymentsEnabled: boolean("payments_enabled").notNull().default(true),
     stackOpsEnabled: boolean("stack_ops_enabled").notNull().default(true),
     financialApprovalRequired: boolean("financial_approval_required").notNull().default(true),
+    detectors: jsonb("detectors").$type<AgenticDetectors>().notNull().default(sql`'{}'::jsonb`),
     platformLinks: jsonb("platform_links").$type<Array<{
       id: string;
       name: string;

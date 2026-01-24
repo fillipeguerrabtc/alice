@@ -2,7 +2,7 @@
 
 > **Autor:** Fillipe Guerra  
 > **Data:** 24 de Janeiro de 2026  
-> **Versão:** 3.4.2 - Busca de imagens web (SearXNG)  
+> **Versão:** 3.4.3 - Detectores Agentic configuráveis + ASR/Vision alinhados  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 > 
@@ -294,8 +294,9 @@ C4Component
 
 - Router de tools para web search, ERPNext (read/write), pagamentos e stack ops.
 - Ações críticas registradas em `action_requests` com aprovação explícita (financeiro).
-- Configuração por tenant persistida em `agentic_settings` (links, escopo e políticas).
+- Configuração por tenant persistida em `agentic_settings` (links, escopo, políticas e detectores).
 - Streaming de eventos agentic em tempo real (SSE/WS) com payload redigido.
+- Detectores (keywords/regex) configuráveis no Modo Agentic para web, imagens, tasks, ERP, payments, stack ops e trading.
 
 ### 5.2 RAG Service - Componentes
 
@@ -306,14 +307,14 @@ C4Component
     Container_Boundary(rag, "RAG Service") {
         Component(docProc, "Document Processor", "Chunking", "PDF, DOCX, TXT")
         Component(audioProc, "Audio Processor", "OpenAI ASR", "Transcrição de áudio")
-        Component(imageProc, "Image Processor", "OpenAI Vision", "Descrição + embeddings OpenAI (imagem)")
+        Component(imageProc, "Image Processor", "OpenAI Vision", "Descrição textual (sem embeddings de imagem)")
         Component(embQueue, "Embedding Queue", "Redis", "Processamento assíncrono")
         Component(embWorker, "Embedding Worker", "Background", "GPU dedicada 24/7")
         Component(vectorSearch, "Vector Search", "Qdrant", "Busca semântica")
     }
     
     ComponentDb(postgres, "PostgreSQL", "Documentos, Metadados")
-    ComponentDb(qdrant, "Qdrant", "Embeddings 1024 dim (texto) + 1536 dim (imagem)")
+    ComponentDb(qdrant, "Qdrant", "Embeddings 1024 dim (texto)")
     
     System_Ext(gpuManager, "GPU Manager Service", "GPU Processing (Hetzner GEX44)")
     
@@ -1318,14 +1319,13 @@ A plataforma possui uma **suite de testes unitários completa** usando **Vitest*
 *Documento criado seguindo arc42 + C4 Model + ADR best practices 2025*
 
 *Autor: Fillipe Guerra*  
-*Data: 28 de Dezembro de 2025*
-*Versão: 1.11.0 - Server GPU Optimizations Enterprise*
-*Total de Containers: 50 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 4 GPU + 1 backup + 1 trainer on-demand)*
-*Stack: Express 5.2, Vite 7.3, Tailwind CSS 4.1, HTTP/2*
+*Data: 24 de Janeiro de 2026*
+*Versão: 3.4.3 - Detectores Agentic configuráveis + ASR/Vision alinhados*
+*Total de Containers: 49 (10 infra + 8 Alice + 2 GPU + 13 observability + 15 ERPNext + 1 backup) + 1 trainer sob demanda*
+*Stack: Express 5.2, Vite 7.3, Tailwind CSS 4.1, HTTP/3 via Caddy*
 *LLM: Qwen2.5 7B Instruct (AWQ) via GPU Manager Service (Hetzner GEX44) - Gate 2*
-*Embeddings: Qwen3-Embedding-0.6B INT8 (1024 dim) + OpenAI Vision + OpenAI Embeddings (imagem, 1536 dim)*
+*Embeddings: Qwen3-Embedding-0.6B INT8 (1024 dim) + OpenAI Vision (descrição textual, sem embeddings de imagem)*
 *Performance: HTTP Compression, HNSW m=24, SHA Pinning 95%+*
-*GPU: Todos serviços simultâneos (15GB/20GB VRAM), QLoRA fine-tuning semanal, Zero latência de troca*
+*GPU: Serviços simultâneos (20GB VRAM budget), QLoRA fine-tuning semanal, zero latência de troca*
 *Framework: arc42 + C4 Model + ADRs*  
 *Compliance: 18 Regras CLAUDE.md ✅ | 12-Factor App ✅*
-*Otimização CI (27/12/2025): Composite action reutilizável elimina duplicação de setup (14x → 1x), economia de ~6-10min por run*

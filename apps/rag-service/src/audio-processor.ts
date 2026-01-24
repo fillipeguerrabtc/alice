@@ -63,6 +63,10 @@ const AUDIO_EXTENSION_BY_MIME: Record<string, string> = {
   'audio/m4a': 'm4a',
 };
 
+function normalizeMimeType(mimeType: string): string {
+  return mimeType.split(';')[0].trim().toLowerCase();
+}
+
 type OpenAiTranscriptionPayload = {
   text?: string;
   language?: string;
@@ -105,7 +109,8 @@ interface OpenAiTranscribeParams {
 }
 
 function buildAudioFilename(mimeType: string): string {
-  const extension = AUDIO_EXTENSION_BY_MIME[mimeType] || 'wav';
+  const normalized = normalizeMimeType(mimeType);
+  const extension = AUDIO_EXTENSION_BY_MIME[normalized] || 'wav';
   return `audio.${extension}`;
 }
 
@@ -166,11 +171,12 @@ async function callOpenAiTranscription(params: OpenAiTranscribeParams): Promise<
     throw new Error('OPENAI_API_KEY não configurada - ASR via OpenAI é obrigatória');
   }
 
+  const normalizedMimeType = normalizeMimeType(params.mimeType);
   const shouldStream = params.streamOverride ?? OPENAI_ASR_STREAM;
   const form = new FormData();
   const audioBytes = new Uint8Array(params.audioBuffer);
-  const audioBlob = new Blob([audioBytes], { type: params.mimeType });
-  form.append('file', audioBlob, buildAudioFilename(params.mimeType));
+  const audioBlob = new Blob([audioBytes], { type: normalizedMimeType });
+  form.append('file', audioBlob, buildAudioFilename(normalizedMimeType));
   form.append('model', OPENAI_ASR_MODEL);
   form.append('response_format', 'json');
   if (params.language) {
@@ -196,7 +202,7 @@ async function callOpenAiTranscription(params: OpenAiTranscribeParams): Promise<
       statusText: response.statusText,
       stream: shouldStream,
       model: OPENAI_ASR_MODEL,
-      mimeType: params.mimeType,
+      mimeType: normalizedMimeType,
       errText,
     }, 'OpenAI ASR respondeu com erro');
 

@@ -73,6 +73,8 @@ import { eq, desc, inArray, and, or, lt, sql, not, asc } from '@alice/database';
 import { z } from 'zod';
 import { ProxyAgent } from 'undici';
 import { createClient } from 'redis';
+import type { AgenticDetectors } from '@alice/shared';
+import { isTradingCommand } from './trading-command-parser.js';
 import { 
   buscarContextoRAG, 
   buscarContextoAgentic,
@@ -1078,111 +1080,27 @@ const IMAGE_SEARCH_PATTERNS = [
   /\bgoogle\s+images\b/i,
 ];
 
-function detectImageGenerationRequest(message: string): ImageGenerationDetection {
-  const lowerMessage = message.toLowerCase().trim();
-  
-  for (const keyword of IMAGE_KEYWORDS_PT) {
-    if (lowerMessage.includes(keyword)) {
-      const prompt = extractImagePrompt(message, keyword);
-      return {
-        isImageRequest: true,
-        prompt,
-        confidence: 0.95,
-        reason: `Detectado keyword PT: "${keyword}"`,
-      };
-    }
-  }
-  
-  for (const keyword of IMAGE_KEYWORDS_EN) {
-    if (lowerMessage.includes(keyword)) {
-      const prompt = extractImagePrompt(message, keyword);
-      return {
-        isImageRequest: true,
-        prompt,
-        confidence: 0.95,
-        reason: `Detectado keyword EN: "${keyword}"`,
-      };
-    }
-  }
-  
-  const visualPatterns = [
-    /(?:gere|crie|faça|desenhe|ilustre)\s+(?:uma?\s+)?(?:imagem|foto|ilustração|desenho)/i,
-    /(?:gere|crie|faça|desenhe|ilustre|renderize|pinte)\s+(?:uma?\s+)?(?:arte|imagem|foto|ilustração|desenho)/i,
-    /(?:generate|create|make|draw|illustrate)\s+(?:an?\s+)?(?:image|photo|illustration|drawing)/i,
-    /(?:generate|create|make|draw|illustrate|render|paint)\s+(?:an?\s+)?(?:image|photo|illustration|drawing|artwork)/i,
-    /(?:quero|preciso|gostaria)\s+(?:de\s+)?(?:ver|uma?\s+)?(?:imagem|foto|ilustração)/i,
-    /(?:criar|crie|gerar|gere|desenhar|desenhe|fazer|faça)\s+(?:um[a]?\s+)?(?:logo|logotipo|banner|capa|avatar|wallpaper|ícone|icone)/i,
-    /(?:create|generate|make|design|draw|render)\s+(?:an?\s+)?(?:logo|logotype|banner|cover|avatar|wallpaper|icon)/i,
-  ];
-  
-  for (const pattern of visualPatterns) {
-    if (pattern.test(message)) {
-      return {
-        isImageRequest: true,
-        prompt: message,
-        confidence: 0.85,
-        reason: 'Detectado padrão visual regex',
-      };
-    }
-  }
-  
-  return {
-    isImageRequest: false,
-    prompt: null,
-    confidence: 0,
-    reason: 'Nenhum padrão de geração de imagem detectado',
-  };
-}
+const IMAGE_GENERATION_PATTERNS = [
+  /(?:gere|crie|faça|desenhe|ilustre)\s+(?:uma?\s+)?(?:imagem|foto|ilustração|desenho)/i,
+  /(?:gere|crie|faça|desenhe|ilustre|renderize|pinte)\s+(?:uma?\s+)?(?:arte|imagem|foto|ilustração|desenho)/i,
+  /(?:generate|create|make|draw|illustrate)\s+(?:an?\s+)?(?:image|photo|illustration|drawing)/i,
+  /(?:generate|create|make|draw|illustrate|render|paint)\s+(?:an?\s+)?(?:image|photo|illustration|drawing|artwork)/i,
+  /(?:quero|preciso|gostaria)\s+(?:de\s+)?(?:ver|uma?\s+)?(?:imagem|foto|ilustração)/i,
+  /(?:criar|crie|gerar|gere|desenhar|desenhe|fazer|faça)\s+(?:um[a]?\s+)?(?:logo|logotipo|banner|capa|avatar|wallpaper|ícone|icone)/i,
+  /(?:create|generate|make|design|draw|render)\s+(?:an?\s+)?(?:logo|logotype|banner|cover|avatar|wallpaper|icon)/i,
+];
 
-function extractImagePrompt(message: string, keyword: string): string {
-  const lowerMessage = message.toLowerCase();
-  const keywordIndex = lowerMessage.indexOf(keyword.toLowerCase());
-  
-  if (keywordIndex !== -1) {
-    const afterKeyword = message.slice(keywordIndex + keyword.length).trim();
-    if (afterKeyword.length > 5) {
-      return afterKeyword.replace(/^(de|of|:|\s)+/i, '').trim();
-    }
-  }
-  
-  return message;
-}
+const EXPLICIT_WEB_REQUEST_PATTERNS = [
+  /\b(pesquis[ae]r?|buscar|busque|procure|consulte)\s+(na|no)\s+(web|internet|google|deep\s*web|deepweb)\b/i,
+  /\b(search|look\s+up|google)\s+(on\s+)?(the\s+)?(web|internet)\b/i,
+  /\bquero\s+que\s+você\s+(pesquise|busque)\b/i,
+];
 
-function detectImageSearchRequest(message: string): ImageSearchDetection {
-  const normalized = message.trim();
-  if (!normalized) {
-    return {
-      isImageSearch: false,
-      query: null,
-      confidence: 0,
-      reason: 'Mensagem vazia',
-    };
-  }
-
-  if (!IMAGE_SEARCH_PATTERNS.some((pattern) => pattern.test(normalized))) {
-    return {
-      isImageSearch: false,
-      query: null,
-      confidence: 0,
-      reason: 'Nenhum padrão de busca de imagens detectado',
-    };
-  }
-
-  const cleaned = normalized
-    .replace(/^(buscar|busque|pesquise|procure|encontre|traga|mostre)\s+/i, '')
-    .replace(/\b(imagens|fotos|figuras|ilustrações|ilustracoes|ícones|icones|banners|capas|wallpapers|logos)\b/gi, '')
-    .replace(/\b(na|no|em)\b/gi, ' ')
-    .replace(/\b(internet|web|online|google|bing)\b/gi, ' ')
-    .replace(/\s{2,}/g, ' ')
-    .trim();
-
-  return {
-    isImageSearch: true,
-    query: cleaned.length > 2 ? cleaned : normalized,
-    confidence: 0.85,
-    reason: 'Detectado padrão de busca de imagens na web',
-  };
-}
+const EXPLICIT_DEEP_WEB_PATTERNS = [
+  /\b(deep\s*web|deepweb|dark\s*web|darkweb)\b/i,
+  /\b(onion|\.onion)\b/i,
+  /\bpesquis[ae]r?\s+na\s+deep\s*web\b/i,
+];
 
 // ============================================================================
 // AGENTIC TASK DETECTION (Documentos/Relatórios/Contabilidade/Planejamento)
@@ -1210,6 +1128,283 @@ const AGENTIC_TASK_TYPE_KEYWORDS: Record<AgenticTaskType, string[]> = {
   planning: ['planejamento', 'planejamento financeiro', 'plano', 'plan', 'roadmap', 'orcamento', 'orçamento'],
 };
 
+const DEFAULT_AGENTIC_DETECTORS: AgenticDetectors = {
+  webSearch: {
+    keywords: ['pesquisar', 'buscar', 'busque', 'procure', 'consulte', 'search', 'look up', 'google'],
+    patterns: EXPLICIT_WEB_REQUEST_PATTERNS.map((pattern) => pattern.toString()),
+  },
+  deepWeb: {
+    keywords: ['deep web', 'deepweb', 'dark web', 'darkweb', 'onion', '.onion'],
+    patterns: EXPLICIT_DEEP_WEB_PATTERNS.map((pattern) => pattern.toString()),
+  },
+  webImageSearch: {
+    keywords: ['imagens', 'fotos', 'figuras', 'google images', 'imagens na web', 'image search'],
+    patterns: IMAGE_SEARCH_PATTERNS.map((pattern) => pattern.toString()),
+  },
+  imageGeneration: {
+    keywords: [...IMAGE_KEYWORDS_PT, ...IMAGE_KEYWORDS_EN],
+    patterns: IMAGE_GENERATION_PATTERNS.map((pattern) => pattern.toString()),
+  },
+  trading: {
+    keywords: ['btc', 'bitcoin', 'trading', 'trade', 'ordem', 'order', 'posição', 'position', 'compra', 'venda', 'buy', 'sell', 'long', 'short', 'futures', 'perpetual', 'alavancagem', 'leverage', 'stop', 'profit', 'loss', 'mercado', 'market', 'kucoin', 'exchange', 'crypto', 'cripto', 'dólar', 'dollar'],
+    patterns: [],
+  },
+  agenticTask: {
+    createKeywords: AGENTIC_TASK_CREATE_KEYWORDS,
+    updateKeywords: AGENTIC_TASK_UPDATE_KEYWORDS,
+    intentKeywords: AGENTIC_TASK_INTENT_KEYWORDS,
+    typeKeywords: {
+      document: AGENTIC_TASK_TYPE_KEYWORDS.document,
+      report: AGENTIC_TASK_TYPE_KEYWORDS.report,
+      accounting: AGENTIC_TASK_TYPE_KEYWORDS.accounting,
+      planning: AGENTIC_TASK_TYPE_KEYWORDS.planning,
+    },
+  },
+  erp: {
+    baseKeywords: ['erp', 'erpnext', 'estoque', 'inventario', 'inventory'],
+    listItemsKeywords: ['estoque', 'inventario', 'itens', 'items', 'inventory'],
+    listCustomersKeywords: ['clientes', 'customers'],
+    listInvoicesKeywords: ['faturas', 'invoices', 'invoice'],
+    createCustomerKeywords: ['criar cliente', 'cadastrar cliente', 'novo cliente'],
+    createInvoiceKeywords: ['criar fatura', 'emitir fatura', 'criar invoice', 'emitir invoice'],
+  },
+  payments: {
+    wiseKeywords: ['wise'],
+    wiseRecipientsKeywords: ['destinatario', 'recipient'],
+    wiseTransferKeywords: ['transferir', 'transferencia', 'transfer'],
+    stripeKeywords: ['stripe'],
+    stripePaymentKeywords: ['pagamento', 'payment'],
+  },
+  stackOps: {
+    baseKeywords: ['deploy', 'rollback', 'stack'],
+    deployKeywords: ['deploy'],
+    rollbackKeywords: ['rollback'],
+    dryRunKeywords: ['dry run', 'dry-run'],
+    smartDeployKeywords: ['smart deploy', 'smart-deploy'],
+    stackKeywords: ['infra', 'alice', 'observability', 'erpnext', 'backup', 'all'],
+  },
+};
+
+const DETECTOR_LIST_MAX = 200;
+const DETECTOR_ITEM_MAX_LENGTH = 160;
+
+function normalizeDetectorList(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  return input
+    .map((value) => String(value ?? '').trim())
+    .filter((value) => value.length > 0)
+    .filter((value) => value.length <= DETECTOR_ITEM_MAX_LENGTH)
+    .slice(0, DETECTOR_LIST_MAX);
+}
+
+function normalizeDetectorGroup(
+  input: Partial<AgenticDetectors['webSearch']> | null | undefined,
+  fallback: AgenticDetectors['webSearch']
+): AgenticDetectors['webSearch'] {
+  return {
+    keywords: normalizeDetectorList(input?.keywords ?? fallback.keywords),
+    patterns: normalizeDetectorList(input?.patterns ?? fallback.patterns),
+  };
+}
+
+function normalizeAgenticDetectors(detectors: Partial<AgenticDetectors> | null | undefined): AgenticDetectors {
+  const safe = detectors ?? {};
+  return {
+    webSearch: normalizeDetectorGroup(safe.webSearch, DEFAULT_AGENTIC_DETECTORS.webSearch),
+    deepWeb: normalizeDetectorGroup(safe.deepWeb, DEFAULT_AGENTIC_DETECTORS.deepWeb),
+    webImageSearch: normalizeDetectorGroup(safe.webImageSearch, DEFAULT_AGENTIC_DETECTORS.webImageSearch),
+    imageGeneration: normalizeDetectorGroup(safe.imageGeneration, DEFAULT_AGENTIC_DETECTORS.imageGeneration),
+    trading: normalizeDetectorGroup(safe.trading, DEFAULT_AGENTIC_DETECTORS.trading),
+    agenticTask: {
+      createKeywords: normalizeDetectorList(safe.agenticTask?.createKeywords ?? DEFAULT_AGENTIC_DETECTORS.agenticTask.createKeywords),
+      updateKeywords: normalizeDetectorList(safe.agenticTask?.updateKeywords ?? DEFAULT_AGENTIC_DETECTORS.agenticTask.updateKeywords),
+      intentKeywords: normalizeDetectorList(safe.agenticTask?.intentKeywords ?? DEFAULT_AGENTIC_DETECTORS.agenticTask.intentKeywords),
+      typeKeywords: {
+        document: normalizeDetectorList(safe.agenticTask?.typeKeywords?.document ?? DEFAULT_AGENTIC_DETECTORS.agenticTask.typeKeywords.document),
+        report: normalizeDetectorList(safe.agenticTask?.typeKeywords?.report ?? DEFAULT_AGENTIC_DETECTORS.agenticTask.typeKeywords.report),
+        accounting: normalizeDetectorList(safe.agenticTask?.typeKeywords?.accounting ?? DEFAULT_AGENTIC_DETECTORS.agenticTask.typeKeywords.accounting),
+        planning: normalizeDetectorList(safe.agenticTask?.typeKeywords?.planning ?? DEFAULT_AGENTIC_DETECTORS.agenticTask.typeKeywords.planning),
+      },
+    },
+    erp: {
+      baseKeywords: normalizeDetectorList(safe.erp?.baseKeywords ?? DEFAULT_AGENTIC_DETECTORS.erp.baseKeywords),
+      listItemsKeywords: normalizeDetectorList(safe.erp?.listItemsKeywords ?? DEFAULT_AGENTIC_DETECTORS.erp.listItemsKeywords),
+      listCustomersKeywords: normalizeDetectorList(safe.erp?.listCustomersKeywords ?? DEFAULT_AGENTIC_DETECTORS.erp.listCustomersKeywords),
+      listInvoicesKeywords: normalizeDetectorList(safe.erp?.listInvoicesKeywords ?? DEFAULT_AGENTIC_DETECTORS.erp.listInvoicesKeywords),
+      createCustomerKeywords: normalizeDetectorList(safe.erp?.createCustomerKeywords ?? DEFAULT_AGENTIC_DETECTORS.erp.createCustomerKeywords),
+      createInvoiceKeywords: normalizeDetectorList(safe.erp?.createInvoiceKeywords ?? DEFAULT_AGENTIC_DETECTORS.erp.createInvoiceKeywords),
+    },
+    payments: {
+      wiseKeywords: normalizeDetectorList(safe.payments?.wiseKeywords ?? DEFAULT_AGENTIC_DETECTORS.payments.wiseKeywords),
+      wiseRecipientsKeywords: normalizeDetectorList(safe.payments?.wiseRecipientsKeywords ?? DEFAULT_AGENTIC_DETECTORS.payments.wiseRecipientsKeywords),
+      wiseTransferKeywords: normalizeDetectorList(safe.payments?.wiseTransferKeywords ?? DEFAULT_AGENTIC_DETECTORS.payments.wiseTransferKeywords),
+      stripeKeywords: normalizeDetectorList(safe.payments?.stripeKeywords ?? DEFAULT_AGENTIC_DETECTORS.payments.stripeKeywords),
+      stripePaymentKeywords: normalizeDetectorList(safe.payments?.stripePaymentKeywords ?? DEFAULT_AGENTIC_DETECTORS.payments.stripePaymentKeywords),
+    },
+    stackOps: {
+      baseKeywords: normalizeDetectorList(safe.stackOps?.baseKeywords ?? DEFAULT_AGENTIC_DETECTORS.stackOps.baseKeywords),
+      deployKeywords: normalizeDetectorList(safe.stackOps?.deployKeywords ?? DEFAULT_AGENTIC_DETECTORS.stackOps.deployKeywords),
+      rollbackKeywords: normalizeDetectorList(safe.stackOps?.rollbackKeywords ?? DEFAULT_AGENTIC_DETECTORS.stackOps.rollbackKeywords),
+      dryRunKeywords: normalizeDetectorList(safe.stackOps?.dryRunKeywords ?? DEFAULT_AGENTIC_DETECTORS.stackOps.dryRunKeywords),
+      smartDeployKeywords: normalizeDetectorList(safe.stackOps?.smartDeployKeywords ?? DEFAULT_AGENTIC_DETECTORS.stackOps.smartDeployKeywords),
+      stackKeywords: normalizeDetectorList(safe.stackOps?.stackKeywords ?? DEFAULT_AGENTIC_DETECTORS.stackOps.stackKeywords),
+    },
+  };
+}
+
+function compileDetectorPattern(pattern: string): RegExp | null {
+  const trimmed = pattern.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('/') && trimmed.lastIndexOf('/') > 0) {
+    const lastSlash = trimmed.lastIndexOf('/');
+    const body = trimmed.slice(1, lastSlash);
+    const flags = trimmed.slice(lastSlash + 1) || 'i';
+    try {
+      return new RegExp(body, flags);
+    } catch {
+      return null;
+    }
+  }
+  try {
+    return new RegExp(trimmed, 'i');
+  } catch {
+    return null;
+  }
+}
+
+function matchesDetector(message: string, detector: AgenticDetectors['webSearch']): boolean {
+  const normalized = normalizeForAgenticDetection(message);
+  if (!normalized) return false;
+  const keywordMatch = detector.keywords.some((keyword) => normalized.includes(normalizeForAgenticDetection(keyword)));
+  if (keywordMatch) return true;
+  return detector.patterns.some((pattern) => {
+    const compiled = compileDetectorPattern(pattern);
+    return compiled ? compiled.test(message) : false;
+  });
+}
+
+function isTradingCommandWithDetectors(message: string, detectors: AgenticDetectors): boolean {
+  const hasCustomDetectors = detectors.trading.keywords.length > 0 || detectors.trading.patterns.length > 0;
+  if (!hasCustomDetectors) {
+    return false;
+  }
+  if (!matchesDetector(message, detectors.trading)) {
+    return false;
+  }
+  return isTradingCommand(message);
+}
+
+function detectImageGenerationRequest(message: string, detectors: AgenticDetectors): ImageGenerationDetection {
+  const lowerMessage = message.toLowerCase().trim();
+  const normalizedMessage = normalizeForAgenticDetection(message);
+  
+  for (const keyword of detectors.imageGeneration.keywords) {
+    const keywordLower = keyword.toLowerCase();
+    const keywordNormalized = normalizeForAgenticDetection(keyword);
+    if (lowerMessage.includes(keywordLower) || normalizedMessage.includes(keywordNormalized)) {
+      const prompt = extractImagePrompt(message, keyword);
+      return {
+        isImageRequest: true,
+        prompt,
+        confidence: 0.95,
+        reason: `Detectado keyword: "${keyword}"`,
+      };
+    }
+  }
+
+  if (matchesDetector(message, detectors.imageGeneration)) {
+    for (const pattern of detectors.imageGeneration.patterns) {
+      const compiled = compileDetectorPattern(pattern);
+      if (!compiled) continue;
+      if (compiled.test(message)) {
+        return {
+          isImageRequest: true,
+          prompt: message,
+          confidence: 0.85,
+          reason: 'Detectado padrão visual configurado',
+        };
+      }
+    }
+
+    for (const pattern of IMAGE_GENERATION_PATTERNS) {
+      if (pattern.test(message)) {
+        return {
+          isImageRequest: true,
+          prompt: message,
+          confidence: 0.85,
+          reason: 'Detectado padrão visual regex',
+        };
+      }
+    }
+
+    if (detectors.imageGeneration.keywords.length > 0) {
+      return {
+        isImageRequest: true,
+        prompt: message,
+        confidence: 0.75,
+        reason: 'Detectado keyword configurado sem padrão específico',
+      };
+    }
+  }
+  
+  return {
+    isImageRequest: false,
+    prompt: null,
+    confidence: 0,
+    reason: 'Nenhum padrão de geração de imagem detectado',
+  };
+}
+
+function extractImagePrompt(message: string, keyword: string): string {
+  const lowerMessage = message.toLowerCase();
+  const keywordIndex = lowerMessage.indexOf(keyword.toLowerCase());
+  
+  if (keywordIndex !== -1) {
+    const afterKeyword = message.slice(keywordIndex + keyword.length).trim();
+    if (afterKeyword.length > 5) {
+      return afterKeyword.replace(/^(de|of|:|\s)+/i, '').trim();
+    }
+  }
+  
+  return message;
+}
+
+function detectImageSearchRequest(message: string, detectors: AgenticDetectors): ImageSearchDetection {
+  const normalized = message.trim();
+  if (!normalized) {
+    return {
+      isImageSearch: false,
+      query: null,
+      confidence: 0,
+      reason: 'Mensagem vazia',
+    };
+  }
+
+  if (!matchesDetector(message, detectors.webImageSearch)) {
+    return {
+      isImageSearch: false,
+      query: null,
+      confidence: 0,
+      reason: 'Nenhum padrão de busca de imagens detectado',
+    };
+  }
+
+  const cleaned = normalized
+    .replace(/^(buscar|busque|pesquise|procure|encontre|traga|mostre)\s+/i, '')
+    .replace(/\b(imagens|fotos|figuras|ilustrações|ilustracoes|ícones|icones|banners|capas|wallpapers|logos)\b/gi, '')
+    .replace(/\b(na|no|em)\b/gi, ' ')
+    .replace(/\b(internet|web|online|google|bing)\b/gi, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  return {
+    isImageSearch: true,
+    query: cleaned.length > 2 ? cleaned : normalized,
+    confidence: 0.85,
+    reason: 'Detectado padrão de busca de imagens na web',
+  };
+}
+
 function normalizeForAgenticDetection(message: string): string {
   return message
     .toLowerCase()
@@ -1226,14 +1421,14 @@ function extractAgenticTitle(message: string): string | null {
   return titleMatch[1].trim();
 }
 
-function detectAgenticTaskRequest(message: string): AgenticTaskDetection {
+function detectAgenticTaskRequest(message: string, detectors: AgenticDetectors): AgenticTaskDetection {
   const normalized = normalizeForAgenticDetection(message);
   if (!normalized) {
     return { isTaskRequest: false, reason: 'Mensagem vazia' };
   }
 
   let detectedType: AgenticTaskType | undefined;
-  for (const [taskType, keywords] of Object.entries(AGENTIC_TASK_TYPE_KEYWORDS)) {
+  for (const [taskType, keywords] of Object.entries(detectors.agenticTask.typeKeywords)) {
     if (keywords.some((keyword) => normalized.includes(keyword))) {
       detectedType = taskType as AgenticTaskType;
       break;
@@ -1244,9 +1439,9 @@ function detectAgenticTaskRequest(message: string): AgenticTaskDetection {
     return { isTaskRequest: false, reason: 'Nenhum tipo de tarefa detectado' };
   }
 
-  const hasCreateIntent = AGENTIC_TASK_CREATE_KEYWORDS.some((keyword) => normalized.includes(keyword));
-  const hasUpdateIntent = AGENTIC_TASK_UPDATE_KEYWORDS.some((keyword) => normalized.includes(keyword));
-  const hasGenericIntent = AGENTIC_TASK_INTENT_KEYWORDS.some((keyword) => normalized.includes(keyword));
+  const hasCreateIntent = detectors.agenticTask.createKeywords.some((keyword) => normalized.includes(keyword));
+  const hasUpdateIntent = detectors.agenticTask.updateKeywords.some((keyword) => normalized.includes(keyword));
+  const hasGenericIntent = detectors.agenticTask.intentKeywords.some((keyword) => normalized.includes(keyword));
 
   if (!hasCreateIntent && !hasUpdateIntent && !hasGenericIntent) {
     return { isTaskRequest: false, reason: 'Sem intenção explícita de tarefa' };
@@ -1303,23 +1498,24 @@ function extractJsonField(message: string, label: string): unknown | null {
   }
 }
 
-function detectErpCommand(message: string): ErpCommand | null {
+function detectErpCommand(message: string, detectors: AgenticDetectors): ErpCommand | null {
   const normalized = normalizeForAgenticDetection(message);
   if (!normalized) return null;
 
-  if (normalized.includes('erp') || normalized.includes('erpnext') || normalized.includes('estoque') || normalized.includes('inventario') || normalized.includes('inventory')) {
-    if (normalized.includes('estoque') || normalized.includes('inventario') || normalized.includes('itens') || normalized.includes('items') || normalized.includes('inventory')) {
+  const erpDetectors = detectors.erp;
+  if (erpDetectors.baseKeywords.some((keyword) => normalized.includes(keyword))) {
+    if (erpDetectors.listItemsKeywords.some((keyword) => normalized.includes(keyword))) {
       return { type: 'list_items' };
     }
-    if (normalized.includes('clientes') || normalized.includes('customers')) {
+    if (erpDetectors.listCustomersKeywords.some((keyword) => normalized.includes(keyword))) {
       return { type: 'list_customers' };
     }
-    if (normalized.includes('faturas') || normalized.includes('invoices') || normalized.includes('invoice')) {
+    if (erpDetectors.listInvoicesKeywords.some((keyword) => normalized.includes(keyword))) {
       return { type: 'list_invoices' };
     }
   }
 
-  if (normalized.includes('criar cliente') || normalized.includes('cadastrar cliente') || normalized.includes('novo cliente')) {
+  if (erpDetectors.createCustomerKeywords.some((keyword) => normalized.includes(keyword))) {
     const customerName = extractField(message, 'nome') ?? extractField(message, 'cliente');
     const customerType = extractField(message, 'tipo');
     const territory = extractField(message, 'territorio') ?? extractField(message, 'território');
@@ -1345,7 +1541,7 @@ function detectErpCommand(message: string): ErpCommand | null {
     };
   }
 
-  if (normalized.includes('criar fatura') || normalized.includes('emitir fatura') || normalized.includes('criar invoice') || normalized.includes('emitir invoice')) {
+  if (erpDetectors.createInvoiceKeywords.some((keyword) => normalized.includes(keyword))) {
     const customer = extractField(message, 'cliente') ?? extractField(message, 'customer');
     const itemsRaw = extractJsonField(message, 'itens') ?? extractJsonField(message, 'items');
     const dueDate = extractField(message, 'vencimento') ?? extractField(message, 'due_date') ?? undefined;
@@ -1476,15 +1672,22 @@ async function executeErpCommand(params: {
   return { responseContent, integrationResult };
 }
 
-function detectPaymentCommand(message: string): PaymentCommand | null {
+function detectPaymentCommand(message: string, detectors: AgenticDetectors): PaymentCommand | null {
   const normalized = normalizeForAgenticDetection(message);
   if (!normalized) return null;
 
-  if (normalized.includes('wise') && (normalized.includes('destinatario') || normalized.includes('recipient'))) {
+  const paymentDetectors = detectors.payments;
+  if (
+    paymentDetectors.wiseKeywords.some((keyword) => normalized.includes(keyword))
+    && paymentDetectors.wiseRecipientsKeywords.some((keyword) => normalized.includes(keyword))
+  ) {
     return { type: 'wise_recipients' };
   }
 
-  if (normalized.includes('wise') && (normalized.includes('transferir') || normalized.includes('transferencia') || normalized.includes('transfer'))) {
+  if (
+    paymentDetectors.wiseKeywords.some((keyword) => normalized.includes(keyword))
+    && paymentDetectors.wiseTransferKeywords.some((keyword) => normalized.includes(keyword))
+  ) {
     const sourceCurrency = (extractField(message, 'moeda_origem') ?? extractField(message, 'source_currency') ?? '').toUpperCase();
     const targetCurrency = (extractField(message, 'moeda_destino') ?? extractField(message, 'target_currency') ?? '').toUpperCase();
     const amountRaw = extractField(message, 'valor') ?? extractField(message, 'amount');
@@ -1510,7 +1713,10 @@ function detectPaymentCommand(message: string): PaymentCommand | null {
     };
   }
 
-  if (normalized.includes('stripe') && (normalized.includes('pagamento') || normalized.includes('payment'))) {
+  if (
+    paymentDetectors.stripeKeywords.some((keyword) => normalized.includes(keyword))
+    && paymentDetectors.stripePaymentKeywords.some((keyword) => normalized.includes(keyword))
+  ) {
     const amountRaw = extractField(message, 'valor') ?? extractField(message, 'amount');
     const currency = (extractField(message, 'moeda') ?? extractField(message, 'currency') ?? '').toUpperCase();
     const description = extractField(message, 'descricao') ?? extractField(message, 'description') ?? undefined;
@@ -1533,21 +1739,25 @@ function detectPaymentCommand(message: string): PaymentCommand | null {
   return null;
 }
 
-function detectStackCommand(message: string): StackCommand | null {
+function detectStackCommand(message: string, detectors: AgenticDetectors): StackCommand | null {
   const normalized = normalizeForAgenticDetection(message);
   if (!normalized) return null;
 
-  if (!normalized.includes('deploy') && !normalized.includes('rollback') && !normalized.includes('stack')) {
+  const stackDetectors = detectors.stackOps;
+  if (!stackDetectors.baseKeywords.some((keyword) => normalized.includes(keyword))) {
     return null;
   }
 
-  const stackMatch = normalized.match(/\b(infra|alice|observability|erpnext|backup|all)\b/i);
+  const stackKeywordPattern = stackDetectors.stackKeywords.length > 0
+    ? new RegExp(`\\b(${stackDetectors.stackKeywords.join('|')})\\b`, 'i')
+    : null;
+  const stackMatch = stackKeywordPattern ? normalized.match(stackKeywordPattern) : null;
   const versionMatch = message.match(/\bv\d+\.\d+\.\d+(?:[-.][\w.]+)?\b/i);
   const stack = (stackMatch?.[1]?.toLowerCase() || 'alice') as StackCommand['stack'];
-  const dryRun = normalized.includes('dry run') || normalized.includes('dry-run');
-  const smartDeploy = normalized.includes('smart deploy') || normalized.includes('smart-deploy');
+  const dryRun = stackDetectors.dryRunKeywords.some((keyword) => normalized.includes(keyword));
+  const smartDeploy = stackDetectors.smartDeployKeywords.some((keyword) => normalized.includes(keyword));
 
-  if (normalized.includes('rollback')) {
+  if (stackDetectors.rollbackKeywords.some((keyword) => normalized.includes(keyword))) {
     const rollbackVersionMatch = message.match(/\brollback\s+v\d+\.\d+\.\d+(?:[-.][\w.]+)?\b/i);
     const rollbackVersion = rollbackVersionMatch?.[0]?.replace(/^rollback\s+/i, '');
     return {
@@ -1558,7 +1768,7 @@ function detectStackCommand(message: string): StackCommand | null {
     };
   }
 
-  if (normalized.includes('deploy')) {
+  if (stackDetectors.deployKeywords.some((keyword) => normalized.includes(keyword))) {
     return {
       type: 'deploy',
       stack,
@@ -1618,28 +1828,12 @@ function resolveActionConfirmationIntent(message: string): ActionConfirmationInt
   return null;
 }
 
-const EXPLICIT_WEB_REQUEST_PATTERNS = [
-  /\b(pesquis[ae]r?|buscar|busque|procure|consulte)\s+(na|no)\s+(web|internet|google|deep\s*web|deepweb)\b/i,
-  /\b(search|look\s+up|google)\s+(on\s+)?(the\s+)?(web|internet)\b/i,
-  /\bquero\s+que\s+você\s+(pesquise|busque)\b/i,
-];
-
-const EXPLICIT_DEEP_WEB_PATTERNS = [
-  /\b(deep\s*web|deepweb|dark\s*web|darkweb)\b/i,
-  /\b(onion|\.onion)\b/i,
-  /\bpesquis[ae]r?\s+na\s+deep\s*web\b/i,
-];
-
-function isExplicitWebRequest(message: string): boolean {
-  const normalized = message.trim();
-  if (!normalized) return false;
-  return EXPLICIT_WEB_REQUEST_PATTERNS.some((pattern) => pattern.test(normalized));
+function isExplicitWebRequest(message: string, detectors: AgenticDetectors): boolean {
+  return matchesDetector(message, detectors.webSearch);
 }
 
-function isExplicitDeepWebRequest(message: string): boolean {
-  const normalized = message.trim();
-  if (!normalized) return false;
-  return EXPLICIT_DEEP_WEB_PATTERNS.some((pattern) => pattern.test(normalized));
+function isExplicitDeepWebRequest(message: string, detectors: AgenticDetectors): boolean {
+  return matchesDetector(message, detectors.deepWeb);
 }
 
 type ImageGenerationInput = {
@@ -6059,6 +6253,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
   try {
     const agenticSettings = await getOrCreateAgenticSettings(tenantId);
+    const agenticDetectors = normalizeAgenticDetectors(agenticSettings.detectors);
     const hasMediaAttachments = Array.isArray(mediaAttachments) && mediaAttachments.length > 0;
     const lastUserMessageContent = message?.trim().length
       ? message.trim()
@@ -6089,7 +6284,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     }
 
     const imageDetection = !hasMediaAttachments
-      ? detectImageGenerationRequest(userMessageContent)
+      ? detectImageGenerationRequest(userMessageContent, agenticDetectors)
       : { isImageRequest: false, prompt: null, confidence: 0, reason: 'Mensagem com mídia anexada' };
 
     let conversationId = _conversationId;
@@ -6926,7 +7121,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       });
     }
 
-    const imageSearchDetection = detectImageSearchRequest(userMessageContent);
+    const imageSearchDetection = detectImageSearchRequest(userMessageContent, agenticDetectors);
     if (imageSearchDetection.isImageSearch && imageSearchDetection.query) {
       const userRole = req.user?.role as Role | undefined;
       const imageSearchStart = Date.now();
@@ -7306,7 +7501,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       }
     }
 
-    const { parseTradingCommand, isTradingCommand, getCommandDescription, validateCommand } = await import('./trading-command-parser.js');
+    const { parseTradingCommand, getCommandDescription, validateCommand } = await import('./trading-command-parser.js');
     const { canExecuteTradingCommand } = await import('./trading-orchestrator.js');
 
     const pendingAction = await db.query.actionRequests.findFirst({
@@ -7901,11 +8096,11 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         }
       }
 
-      const pendingAgenticDetection = detectAgenticTaskRequest(userMessageContent);
-      const pendingPaymentCommand = detectPaymentCommand(userMessageContent);
-      const pendingErpCommand = detectErpCommand(userMessageContent);
+      const pendingAgenticDetection = detectAgenticTaskRequest(userMessageContent, agenticDetectors);
+      const pendingPaymentCommand = detectPaymentCommand(userMessageContent, agenticDetectors);
+      const pendingErpCommand = detectErpCommand(userMessageContent, agenticDetectors);
       if (
-        isTradingCommand(userMessageContent)
+        isTradingCommandWithDetectors(userMessageContent, agenticDetectors)
         || pendingAgenticDetection.isTaskRequest
         || Boolean(pendingPaymentCommand)
         || Boolean(pendingErpCommand)
@@ -7939,7 +8134,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       }
     }
 
-    if (isTradingCommand(userMessageContent)) {
+    if (isTradingCommandWithDetectors(userMessageContent, agenticDetectors)) {
       if (!agenticSettings.tradingEnabled) {
         const responseContent = 'Trading está desativado nas configurações do tenant.';
         const [assistantMessage] = await db.insert(schema.messages).values({
@@ -8180,7 +8375,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       return;
     }
 
-    const erpCommand = detectErpCommand(userMessageContent);
+    const erpCommand = detectErpCommand(userMessageContent, agenticDetectors);
     if (erpCommand) {
       if ((erpCommand.type === 'list_items' || erpCommand.type === 'list_customers' || erpCommand.type === 'list_invoices') && !agenticSettings.erpReadEnabled) {
         res.write(`data: ${JSON.stringify({ error: 'ERPNext leitura está desativada nas configurações do tenant.' })}\n\n`);
@@ -8362,7 +8557,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       }
     }
 
-    const paymentCommand = detectPaymentCommand(userMessageContent);
+    const paymentCommand = detectPaymentCommand(userMessageContent, agenticDetectors);
     if (paymentCommand) {
       if (!agenticSettings.paymentsEnabled) {
         res.write(`data: ${JSON.stringify({ error: 'Pagamentos estão desativados nas configurações do tenant.' })}\n\n`);
@@ -8647,7 +8842,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       return;
     }
 
-    const stackCommand = detectStackCommand(userMessageContent);
+    const stackCommand = detectStackCommand(userMessageContent, agenticDetectors);
     if (stackCommand) {
       if (!agenticSettings.stackOpsEnabled) {
         res.write(`data: ${JSON.stringify({ error: 'Stack ops está desativado nas configurações do tenant.' })}\n\n`);
@@ -8794,7 +8989,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       return;
     }
 
-      const agenticDetection = detectAgenticTaskRequest(userMessageContent);
+      const agenticDetection = detectAgenticTaskRequest(userMessageContent, agenticDetectors);
       if (agenticDetection.isTaskRequest && agenticDetection.taskType && agenticDetection.instructions) {
         const conversationState = await getOrCreateConversationState(conversationId);
         const approvalPolicy = (conversationState.approvalPolicy ?? 'never_confirm') as ConversationApprovalPolicy;
@@ -8941,8 +9136,8 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
       const agent = conversation?.agent ?? null;
       const ragParams = getAdaptiveRagParams(userMessageContent, previousMessages.length);
-      const explicitDeepWebRequest = isExplicitDeepWebRequest(userMessageContent);
-      const explicitWebRequest = isExplicitWebRequest(userMessageContent) || explicitDeepWebRequest;
+      const explicitDeepWebRequest = isExplicitDeepWebRequest(userMessageContent, agenticDetectors);
+      const explicitWebRequest = isExplicitWebRequest(userMessageContent, agenticDetectors) || explicitDeepWebRequest;
       const ragInternalStart = Date.now();
       const classificationStartedAt = Date.now();
       const [assistantSettings, ragResult, ragClassification] = await Promise.all([
@@ -9893,13 +10088,23 @@ wss.on('connection', (ws, req) => {
       if (message.type === 'trading:command') {
         // Processar comando de trading via chat
         // Importar parser dinamicamente para evitar circular deps
-        const { parseTradingCommand, isTradingCommand, getCommandDescription, validateCommand } = await import('./trading-command-parser.js');
+        const { parseTradingCommand, getCommandDescription, validateCommand } = await import('./trading-command-parser.js');
         // CORREÇÃO 19/12/2025: Remover getTradingControlMode não utilizado (no-unused-vars)
         const { canExecuteTradingCommand } = await import('./trading-orchestrator.js');
         
+        const agenticSettings = await getOrCreateAgenticSettings(tenantId);
+        const agenticDetectors = normalizeAgenticDetectors(agenticSettings.detectors);
         const content = message.content || '';
         
-        if (!isTradingCommand(content)) {
+        if (!agenticSettings.tradingEnabled) {
+          ws.send(JSON.stringify({
+            type: 'trading:error',
+            error: 'Trading está desativado nas configurações do tenant.',
+          }));
+          return;
+        }
+
+        if (!isTradingCommandWithDetectors(content, agenticDetectors)) {
           ws.send(JSON.stringify({
             type: 'trading:error',
             error: 'Comando de trading não reconhecido',
@@ -10230,9 +10435,10 @@ wss.on('connection', (ws, req) => {
 
         ws.send(JSON.stringify({ type: 'message', data: userMsg }));
 
-        const imageSearchDetection = detectImageSearchRequest(messageContent);
+        const agenticSettings = await getOrCreateAgenticSettings(safeTenantId);
+        const agenticDetectors = normalizeAgenticDetectors(agenticSettings.detectors);
+        const imageSearchDetection = detectImageSearchRequest(messageContent, agenticDetectors);
         if (imageSearchDetection.isImageSearch && imageSearchDetection.query) {
-          const agenticSettings = await getOrCreateAgenticSettings(safeTenantId);
           if (!agenticSettings.webEnabled) {
             ws.send(JSON.stringify({
               type: 'error',
@@ -10418,7 +10624,7 @@ wss.on('connection', (ws, req) => {
 
         // ARQUITETURA 16/01/2026+: geração de imagens via OpenAI (gpt-image-1)
         // Se o usuário pedir para gerar imagem, executar fluxo OpenAI (gpt-image-1)
-        const imageDetection = detectImageGenerationRequest(messageContent);
+        const imageDetection = detectImageGenerationRequest(messageContent, agenticDetectors);
         
         if (imageDetection.isImageRequest && imageDetection.prompt) {
           logger.info({
@@ -12889,6 +13095,53 @@ const agenticLinkSchema = z.object({
   tags: z.array(z.string().min(1).max(40)).optional().nullable(),
 });
 
+const detectorGroupSchema = z.object({
+  keywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+  patterns: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+});
+
+const agenticDetectorsSchema = z.object({
+  webSearch: detectorGroupSchema,
+  deepWeb: detectorGroupSchema,
+  webImageSearch: detectorGroupSchema,
+  imageGeneration: detectorGroupSchema,
+  trading: detectorGroupSchema,
+  agenticTask: z.object({
+    createKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+    updateKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+    intentKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+    typeKeywords: z.object({
+      document: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+      report: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+      accounting: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+      planning: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+    }),
+  }),
+  erp: z.object({
+    baseKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+    listItemsKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+    listCustomersKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+    listInvoicesKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+    createCustomerKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+    createInvoiceKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+  }),
+  payments: z.object({
+    wiseKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+    wiseRecipientsKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+    wiseTransferKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+    stripeKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+    stripePaymentKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+  }),
+  stackOps: z.object({
+    baseKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+    deployKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+    rollbackKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+    dryRunKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+    smartDeployKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+    stackKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+  }),
+});
+
 const agenticSettingsSchema = z.object({
   webEnabled: z.boolean(),
   erpReadEnabled: z.boolean(),
@@ -12897,6 +13150,7 @@ const agenticSettingsSchema = z.object({
   paymentsEnabled: z.boolean(),
   stackOpsEnabled: z.boolean(),
   financialApprovalRequired: z.boolean(),
+  detectors: agenticDetectorsSchema.optional().default(DEFAULT_AGENTIC_DETECTORS),
   platformLinks: z.array(agenticLinkSchema).max(100),
 });
 
@@ -12908,6 +13162,7 @@ const DEFAULT_AGENTIC_SETTINGS = {
   paymentsEnabled: true,
   stackOpsEnabled: true,
   financialApprovalRequired: true,
+  detectors: DEFAULT_AGENTIC_DETECTORS,
   platformLinks: [] as Array<z.infer<typeof agenticLinkSchema>>,
 };
 
@@ -12941,6 +13196,7 @@ async function getOrCreateAgenticSettings(tenantId: string) {
     return {
       ...existing,
       platformLinks: normalizeAgenticLinks(existing.platformLinks ?? []),
+      detectors: normalizeAgenticDetectors(existing.detectors ?? {}),
     };
   }
   const [created] = await db.insert(schema.agenticSettings).values({
@@ -12951,7 +13207,10 @@ async function getOrCreateAgenticSettings(tenantId: string) {
   if (!created) {
     throw new Error('Falha ao criar agentic_settings');
   }
-  return created;
+  return {
+    ...created,
+    detectors: normalizeAgenticDetectors(created.detectors ?? {}),
+  };
 }
 
 app.get('/api/assistant-settings', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:agents:read'), async (req: Request, res: Response) => {
@@ -13071,6 +13330,7 @@ app.get('/api/agentic/settings', requireAuth(), requireSameTenant(getTenantIdFro
       settings: {
         ...settings,
         platformLinks: normalizeAgenticLinks(settings.platformLinks),
+        detectors: normalizeAgenticDetectors(settings.detectors),
       },
       defaults: DEFAULT_AGENTIC_SETTINGS,
     });
@@ -13097,6 +13357,7 @@ app.patch('/api/agentic/settings', requireAuth(), requireSameTenant(getTenantIdF
     const payload = {
       ...parseResult.data,
       platformLinks: links,
+      detectors: normalizeAgenticDetectors(parseResult.data.detectors),
       atualizadoEm: new Date(),
     };
     const [settings] = await db.insert(schema.agenticSettings)

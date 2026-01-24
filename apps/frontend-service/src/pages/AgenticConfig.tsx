@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
@@ -30,6 +31,62 @@ const agenticSettingsSchema = z.object({
   paymentsEnabled: z.boolean(),
   stackOpsEnabled: z.boolean(),
   financialApprovalRequired: z.boolean(),
+  detectors: z.object({
+    webSearch: z.object({
+      keywords: z.array(z.string().min(1).max(160)).max(200),
+      patterns: z.array(z.string().min(1).max(160)).max(200),
+    }),
+    deepWeb: z.object({
+      keywords: z.array(z.string().min(1).max(160)).max(200),
+      patterns: z.array(z.string().min(1).max(160)).max(200),
+    }),
+    webImageSearch: z.object({
+      keywords: z.array(z.string().min(1).max(160)).max(200),
+      patterns: z.array(z.string().min(1).max(160)).max(200),
+    }),
+    imageGeneration: z.object({
+      keywords: z.array(z.string().min(1).max(160)).max(200),
+      patterns: z.array(z.string().min(1).max(160)).max(200),
+    }),
+    trading: z.object({
+      keywords: z.array(z.string().min(1).max(160)).max(200),
+      patterns: z.array(z.string().min(1).max(160)).max(200),
+    }),
+    agenticTask: z.object({
+      createKeywords: z.array(z.string().min(1).max(160)).max(200),
+      updateKeywords: z.array(z.string().min(1).max(160)).max(200),
+      intentKeywords: z.array(z.string().min(1).max(160)).max(200),
+      typeKeywords: z.object({
+        document: z.array(z.string().min(1).max(160)).max(200),
+        report: z.array(z.string().min(1).max(160)).max(200),
+        accounting: z.array(z.string().min(1).max(160)).max(200),
+        planning: z.array(z.string().min(1).max(160)).max(200),
+      }),
+    }),
+    erp: z.object({
+      baseKeywords: z.array(z.string().min(1).max(160)).max(200),
+      listItemsKeywords: z.array(z.string().min(1).max(160)).max(200),
+      listCustomersKeywords: z.array(z.string().min(1).max(160)).max(200),
+      listInvoicesKeywords: z.array(z.string().min(1).max(160)).max(200),
+      createCustomerKeywords: z.array(z.string().min(1).max(160)).max(200),
+      createInvoiceKeywords: z.array(z.string().min(1).max(160)).max(200),
+    }),
+    payments: z.object({
+      wiseKeywords: z.array(z.string().min(1).max(160)).max(200),
+      wiseRecipientsKeywords: z.array(z.string().min(1).max(160)).max(200),
+      wiseTransferKeywords: z.array(z.string().min(1).max(160)).max(200),
+      stripeKeywords: z.array(z.string().min(1).max(160)).max(200),
+      stripePaymentKeywords: z.array(z.string().min(1).max(160)).max(200),
+    }),
+    stackOps: z.object({
+      baseKeywords: z.array(z.string().min(1).max(160)).max(200),
+      deployKeywords: z.array(z.string().min(1).max(160)).max(200),
+      rollbackKeywords: z.array(z.string().min(1).max(160)).max(200),
+      dryRunKeywords: z.array(z.string().min(1).max(160)).max(200),
+      smartDeployKeywords: z.array(z.string().min(1).max(160)).max(200),
+      stackKeywords: z.array(z.string().min(1).max(160)).max(200),
+    }),
+  }),
   platformLinks: z.array(agenticLinkSchema).max(100),
 });
 
@@ -52,6 +109,47 @@ export default function AgenticConfig() {
       paymentsEnabled: true,
       stackOpsEnabled: true,
       financialApprovalRequired: true,
+      detectors: {
+        webSearch: { keywords: [], patterns: [] },
+        deepWeb: { keywords: [], patterns: [] },
+        webImageSearch: { keywords: [], patterns: [] },
+        imageGeneration: { keywords: [], patterns: [] },
+        trading: { keywords: [], patterns: [] },
+        agenticTask: {
+          createKeywords: [],
+          updateKeywords: [],
+          intentKeywords: [],
+          typeKeywords: {
+            document: [],
+            report: [],
+            accounting: [],
+            planning: [],
+          },
+        },
+        erp: {
+          baseKeywords: [],
+          listItemsKeywords: [],
+          listCustomersKeywords: [],
+          listInvoicesKeywords: [],
+          createCustomerKeywords: [],
+          createInvoiceKeywords: [],
+        },
+        payments: {
+          wiseKeywords: [],
+          wiseRecipientsKeywords: [],
+          wiseTransferKeywords: [],
+          stripeKeywords: [],
+          stripePaymentKeywords: [],
+        },
+        stackOps: {
+          baseKeywords: [],
+          deployKeywords: [],
+          rollbackKeywords: [],
+          dryRunKeywords: [],
+          smartDeployKeywords: [],
+          stackKeywords: [],
+        },
+      },
       platformLinks: [],
     },
   });
@@ -99,6 +197,12 @@ export default function AgenticConfig() {
   const onSubmit = (values: AgenticSettingsForm) => {
     mutation.mutate(values);
   };
+
+  const listToTextarea = (list?: string[] | null) => (list ?? []).join('\n');
+  const textareaToList = (value: string) => value
+    .split('\n')
+    .map((item) => item.trim())
+    .filter(Boolean);
 
   if (isLoading) {
     return (
@@ -257,6 +361,456 @@ export default function AgenticConfig() {
               >
                 {t('agenticConfig.addLink')}
               </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>{t('agenticConfig.detectorsTitle')}</CardTitle>
+              <CardDescription>{t('agenticConfig.detectorsDesc')}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold">{t('agenticConfig.detectorsWebTitle')}</h3>
+                <FormField
+                  control={form.control}
+                  name="detectors.webSearch.keywords"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('agenticConfig.webKeywords')}</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          value={listToTextarea(field.value)}
+                          onChange={(event) => field.onChange(textareaToList(event.target.value))}
+                          placeholder={t('agenticConfig.webKeywordsPlaceholder')}
+                          rows={4}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="detectors.webSearch.patterns"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('agenticConfig.webPatterns')}</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          value={listToTextarea(field.value)}
+                          onChange={(event) => field.onChange(textareaToList(event.target.value))}
+                          placeholder={t('agenticConfig.webPatternsPlaceholder')}
+                          rows={4}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="detectors.deepWeb.keywords"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('agenticConfig.deepWebKeywords')}</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          value={listToTextarea(field.value)}
+                          onChange={(event) => field.onChange(textareaToList(event.target.value))}
+                          placeholder={t('agenticConfig.deepWebKeywordsPlaceholder')}
+                          rows={3}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="detectors.deepWeb.patterns"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('agenticConfig.deepWebPatterns')}</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          value={listToTextarea(field.value)}
+                          onChange={(event) => field.onChange(textareaToList(event.target.value))}
+                          placeholder={t('agenticConfig.deepWebPatternsPlaceholder')}
+                          rows={3}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <Separator />
+
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold">{t('agenticConfig.detectorsImagesTitle')}</h3>
+                <FormField
+                  control={form.control}
+                  name="detectors.webImageSearch.keywords"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('agenticConfig.webImageKeywords')}</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          value={listToTextarea(field.value)}
+                          onChange={(event) => field.onChange(textareaToList(event.target.value))}
+                          placeholder={t('agenticConfig.webImageKeywordsPlaceholder')}
+                          rows={3}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="detectors.webImageSearch.patterns"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('agenticConfig.webImagePatterns')}</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          value={listToTextarea(field.value)}
+                          onChange={(event) => field.onChange(textareaToList(event.target.value))}
+                          placeholder={t('agenticConfig.webImagePatternsPlaceholder')}
+                          rows={3}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="detectors.imageGeneration.keywords"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('agenticConfig.imageGenKeywords')}</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          value={listToTextarea(field.value)}
+                          onChange={(event) => field.onChange(textareaToList(event.target.value))}
+                          placeholder={t('agenticConfig.imageGenKeywordsPlaceholder')}
+                          rows={3}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="detectors.imageGeneration.patterns"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('agenticConfig.imageGenPatterns')}</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          value={listToTextarea(field.value)}
+                          onChange={(event) => field.onChange(textareaToList(event.target.value))}
+                          placeholder={t('agenticConfig.imageGenPatternsPlaceholder')}
+                          rows={3}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <Separator />
+
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold">{t('agenticConfig.detectorsTasksTitle')}</h3>
+                <FormField
+                  control={form.control}
+                  name="detectors.agenticTask.createKeywords"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('agenticConfig.taskCreateKeywords')}</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          value={listToTextarea(field.value)}
+                          onChange={(event) => field.onChange(textareaToList(event.target.value))}
+                          placeholder={t('agenticConfig.taskCreateKeywordsPlaceholder')}
+                          rows={3}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="detectors.agenticTask.updateKeywords"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('agenticConfig.taskUpdateKeywords')}</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          value={listToTextarea(field.value)}
+                          onChange={(event) => field.onChange(textareaToList(event.target.value))}
+                          placeholder={t('agenticConfig.taskUpdateKeywordsPlaceholder')}
+                          rows={3}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="detectors.agenticTask.intentKeywords"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('agenticConfig.taskIntentKeywords')}</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          value={listToTextarea(field.value)}
+                          onChange={(event) => field.onChange(textareaToList(event.target.value))}
+                          placeholder={t('agenticConfig.taskIntentKeywordsPlaceholder')}
+                          rows={3}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <div className="grid gap-4 md:grid-cols-2">
+                  {[
+                    { name: 'document', label: t('agenticConfig.taskTypeDocument') },
+                    { name: 'report', label: t('agenticConfig.taskTypeReport') },
+                    { name: 'accounting', label: t('agenticConfig.taskTypeAccounting') },
+                    { name: 'planning', label: t('agenticConfig.taskTypePlanning') },
+                  ].map((item) => (
+                    <FormField
+                      key={item.name}
+                      control={form.control}
+                      name={`detectors.agenticTask.typeKeywords.${item.name}` as const}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{item.label}</FormLabel>
+                          <FormControl>
+                            <Textarea
+                              value={listToTextarea(field.value)}
+                              onChange={(event) => field.onChange(textareaToList(event.target.value))}
+                              placeholder={t('agenticConfig.taskTypePlaceholder')}
+                              rows={3}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <Separator />
+
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold">{t('agenticConfig.detectorsErpTitle')}</h3>
+                <FormField
+                  control={form.control}
+                  name="detectors.erp.baseKeywords"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('agenticConfig.erpBaseKeywords')}</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          value={listToTextarea(field.value)}
+                          onChange={(event) => field.onChange(textareaToList(event.target.value))}
+                          placeholder={t('agenticConfig.erpBaseKeywordsPlaceholder')}
+                          rows={3}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <div className="grid gap-4 md:grid-cols-2">
+                  {[
+                    { name: 'listItemsKeywords', label: t('agenticConfig.erpItemsKeywords') },
+                    { name: 'listCustomersKeywords', label: t('agenticConfig.erpCustomersKeywords') },
+                    { name: 'listInvoicesKeywords', label: t('agenticConfig.erpInvoicesKeywords') },
+                    { name: 'createCustomerKeywords', label: t('agenticConfig.erpCreateCustomerKeywords') },
+                    { name: 'createInvoiceKeywords', label: t('agenticConfig.erpCreateInvoiceKeywords') },
+                  ].map((item) => (
+                    <FormField
+                      key={item.name}
+                      control={form.control}
+                      name={`detectors.erp.${item.name}` as const}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{item.label}</FormLabel>
+                          <FormControl>
+                            <Textarea
+                              value={listToTextarea(field.value)}
+                              onChange={(event) => field.onChange(textareaToList(event.target.value))}
+                              placeholder={t('agenticConfig.erpKeywordsPlaceholder')}
+                              rows={3}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <Separator />
+
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold">{t('agenticConfig.detectorsPaymentsTitle')}</h3>
+                <FormField
+                  control={form.control}
+                  name="detectors.payments.wiseKeywords"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('agenticConfig.wiseKeywords')}</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          value={listToTextarea(field.value)}
+                          onChange={(event) => field.onChange(textareaToList(event.target.value))}
+                          placeholder={t('agenticConfig.wiseKeywordsPlaceholder')}
+                          rows={3}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <div className="grid gap-4 md:grid-cols-2">
+                  {[
+                    { name: 'wiseRecipientsKeywords', label: t('agenticConfig.wiseRecipientsKeywords') },
+                    { name: 'wiseTransferKeywords', label: t('agenticConfig.wiseTransferKeywords') },
+                    { name: 'stripeKeywords', label: t('agenticConfig.stripeKeywords') },
+                    { name: 'stripePaymentKeywords', label: t('agenticConfig.stripePaymentKeywords') },
+                  ].map((item) => (
+                    <FormField
+                      key={item.name}
+                      control={form.control}
+                      name={`detectors.payments.${item.name}` as const}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{item.label}</FormLabel>
+                          <FormControl>
+                            <Textarea
+                              value={listToTextarea(field.value)}
+                              onChange={(event) => field.onChange(textareaToList(event.target.value))}
+                              placeholder={t('agenticConfig.paymentsKeywordsPlaceholder')}
+                              rows={3}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <Separator />
+
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold">{t('agenticConfig.detectorsStackTitle')}</h3>
+                <FormField
+                  control={form.control}
+                  name="detectors.stackOps.baseKeywords"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('agenticConfig.stackBaseKeywords')}</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          value={listToTextarea(field.value)}
+                          onChange={(event) => field.onChange(textareaToList(event.target.value))}
+                          placeholder={t('agenticConfig.stackBaseKeywordsPlaceholder')}
+                          rows={3}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <div className="grid gap-4 md:grid-cols-2">
+                  {[
+                    { name: 'deployKeywords', label: t('agenticConfig.stackDeployKeywords') },
+                    { name: 'rollbackKeywords', label: t('agenticConfig.stackRollbackKeywords') },
+                    { name: 'dryRunKeywords', label: t('agenticConfig.stackDryRunKeywords') },
+                    { name: 'smartDeployKeywords', label: t('agenticConfig.stackSmartDeployKeywords') },
+                    { name: 'stackKeywords', label: t('agenticConfig.stackKeywords') },
+                  ].map((item) => (
+                    <FormField
+                      key={item.name}
+                      control={form.control}
+                      name={`detectors.stackOps.${item.name}` as const}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{item.label}</FormLabel>
+                          <FormControl>
+                            <Textarea
+                              value={listToTextarea(field.value)}
+                              onChange={(event) => field.onChange(textareaToList(event.target.value))}
+                              placeholder={t('agenticConfig.stackKeywordsPlaceholder')}
+                              rows={3}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <Separator />
+
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold">{t('agenticConfig.detectorsTradingTitle')}</h3>
+                <FormField
+                  control={form.control}
+                  name="detectors.trading.keywords"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('agenticConfig.tradingKeywords')}</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          value={listToTextarea(field.value)}
+                          onChange={(event) => field.onChange(textareaToList(event.target.value))}
+                          placeholder={t('agenticConfig.tradingKeywordsPlaceholder')}
+                          rows={3}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="detectors.trading.patterns"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('agenticConfig.tradingPatterns')}</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          value={listToTextarea(field.value)}
+                          onChange={(event) => field.onChange(textareaToList(event.target.value))}
+                          placeholder={t('agenticConfig.tradingPatternsPlaceholder')}
+                          rows={3}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
             </CardContent>
           </Card>
 

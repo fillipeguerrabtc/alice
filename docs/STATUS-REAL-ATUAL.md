@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 24 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 8.8 - Busca de imagens web (SearXNG) + Agentic aprimorado
+**Versão:** 8.9 - Detectores Agentic configuráveis + ASR/Vision alinhados
 
 ---
 
@@ -171,6 +171,18 @@
 
 ---
 
+## Limites de mídia e compatibilidade OpenAI
+
+- Upload de imagem (RAG/chat): **10 MB** por arquivo.
+- Upload de áudio (ASR): **25 MB** por arquivo.
+- Upload de documento (RAG): **50 MB** por arquivo.
+- Busca de imagens web (download externo): **8 MB** por imagem.
+- OpenAI Vision (gpt-4.1): aceita até **50 MB** de payload total por request (limite interno é 10 MB por imagem).
+- OpenAI ASR (gpt-4o-transcribe): **25 MB** por arquivo (limite interno alinhado).
+- Geração de imagens (gpt-image-1): prompt textual (sem imagem de entrada). Saída armazenada no RAG com anexos e descrição via Vision.
+
+---
+
 ## Backups
 
 - PostgreSQL: pgBackRest (full + incremental + WAL).
@@ -192,6 +204,8 @@ Retenção Arquivo:   30 dias
 
 ## Atualizações recentes (resumo)
 
+- Agentic: detectores configuráveis por tenant (keywords/regex) no Modo Agentic.
+- ASR: normalização de MIME para evitar erro `unsupported_format` em `audio/webm;codecs=opus`.
 - ASR: gravação converte áudio para WAV quando formato não é aceito pelo OpenAI.
 - ASR: retry automático sem stream quando OpenAI falha com stream (transcrição estável).
 - Vision: logs detalhados de erro da OpenAI para diagnóstico preciso.
