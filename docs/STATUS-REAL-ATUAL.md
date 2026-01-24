@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 23 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.91 - Frontend Tabs Typing Fix
+**Versão:** 7.92 - OAuth Callback Fix
 
 ---
 
@@ -292,7 +292,8 @@ Retenção Arquivo:   30 dias
 - Usuários: reset de formulário ao reabrir diálogo evita estado pendente.
 - Chat: download usa URL resolvida (thumbnail ou original) para evitar HTML.
 - UI: colapso da sidebar aplica largura ícone e elimina espaço vazio.
-- Auth: callback Google respeita `OAUTH_CALLBACK_URL` e rota compatível.
+- Auth: callback Google respeita `OAUTH_CALLBACK_URL` e rota compativel.
+- Auth: callback GitHub aceita override via `OAUTH_GITHUB_CALLBACK_URL` (baseado em `BASE_URL`).
 - Observability: config do Jaeger usa exporter prometheus suportado.
 - Auth: valida `OAUTH_CALLBACK_URL` para Google e aplica fallback seguro.
 - Observability: telemetry metrics usa host/port inline no reader.

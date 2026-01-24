@@ -1048,6 +1048,32 @@ const getGoogleCallbackUrl = (): string => {
   return `${getBaseUrl()}/api/auth/google/callback`;
 };
 
+const getGithubCallbackUrl = (): string => {
+  const oauthCallback = process.env.OAUTH_GITHUB_CALLBACK_URL?.trim();
+  if (oauthCallback) {
+    const isPathOnly = oauthCallback.startsWith('/');
+    if (isPathOnly) {
+      const baseUrl = getBaseUrl();
+      const resolved = `${baseUrl}${oauthCallback}`;
+      if (!oauthCallback.startsWith('/api/auth/github/callback')) {
+        logger.warn({ oauthCallback }, 'OAUTH_GITHUB_CALLBACK_URL fora do padrao /api/auth/github/callback');
+      }
+      return resolved;
+    }
+    try {
+      const parsed = new URL(oauthCallback);
+      if (!parsed.pathname.startsWith('/api/auth/github/callback')) {
+        logger.warn({ oauthCallback }, 'OAUTH_GITHUB_CALLBACK_URL fora do padrao /api/auth/github/callback');
+      }
+      return parsed.toString();
+    } catch (error) {
+      logger.warn({ oauthCallback, error }, 'OAUTH_GITHUB_CALLBACK_URL invalido; usando callback padrao');
+      return `${getBaseUrl()}/api/auth/github/callback`;
+    }
+  }
+  return `${getBaseUrl()}/api/auth/github/callback`;
+};
+
 // ============================================================================
 // MÉTRICAS DE AUTENTICAÇÃO (Prometheus + Legacy)
 // Monitoramento de resiliência para provedores OAuth/SAML
@@ -1391,13 +1417,15 @@ if (googleClientId && googleClientSecret) {
 
 const githubClientId = process.env.OAUTH_GITHUB_CLIENT_ID ?? process.env.GITHUB_CLIENT_ID;
 const githubClientSecret = process.env.OAUTH_GITHUB_CLIENT_SECRET ?? process.env.GITHUB_CLIENT_SECRET;
+const githubCallbackUrl = getGithubCallbackUrl();
+const githubCallbackPath = getCallbackPath(githubCallbackUrl, '/api/auth/github/callback');
 
 if (githubClientId && githubClientSecret) {
   passport.use(new GitHubStrategy(
     {
       clientID: githubClientId,
       clientSecret: githubClientSecret,
-      callbackURL: `${getBaseUrl()}/api/auth/github/callback`,
+      callbackURL: githubCallbackUrl,
       scope: ['user:email'],
     },
     async (accessToken: string, refreshToken: string, profile: { id: string; displayName?: string; username?: string; emails?: { value: string }[]; photos?: { value: string }[] }, done: (error: Error | null, user?: Express.User) => void) => {
@@ -2049,12 +2077,21 @@ if (githubClientId) {
     scope: ['user:email']
   }));
 
-  app.get('/api/auth/github/callback',
-    passport.authenticate('github', {
-      failureRedirect: '/login?error=github_auth_failed',
-      successRedirect: '/dashboard'
-    })
-  );
+  const githubCallbackHandler = passport.authenticate('github', {
+    failureRedirect: '/login?error=github_auth_failed',
+    successRedirect: '/dashboard'
+  });
+
+  const githubCallbackPaths = new Set([
+    githubCallbackPath,
+    '/api/auth/github/callback',
+    '/api/auth/github/callback/',
+  ]);
+
+  for (const path of githubCallbackPaths) {
+    if (!path) continue;
+    app.get(path, githubCallbackHandler);
+  }
 }
 
 // ============================================================================

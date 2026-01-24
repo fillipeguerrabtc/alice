@@ -811,14 +811,17 @@ echo "📄 Gerando arquivo .env.prod..."
   printf 'SESSION_SECRET=%s\n' "${SESSION_SECRET}"
   printf 'INTERNAL_API_SECRET=%s\n' "${INTERNAL_API_SECRET}"
   printf '\n'
+  BASE_URL_VALUE="${BASE_URL:-https://yesyoudeserve.duckdns.org}"
   printf '# OAuth Google\n'
   printf 'GOOGLE_CLIENT_ID=%s\n' "${GOOGLE_CLIENT_ID:-}"
   printf 'GOOGLE_CLIENT_SECRET=%s\n' "${GOOGLE_CLIENT_SECRET:-}"
-  printf 'BASE_URL=https://yesyoudeserve.duckdns.org\n'
+  printf 'BASE_URL=%s\n' "${BASE_URL_VALUE}"
+  printf 'OAUTH_CALLBACK_URL=%s\n' "${OAUTH_CALLBACK_URL:-${BASE_URL_VALUE}/api/auth/google/callback}"
   printf '\n'
   printf '# OAuth GitHub\n'
   printf 'OAUTH_GITHUB_CLIENT_ID=%s\n' "${OAUTH_GITHUB_CLIENT_ID:-}"
   printf 'OAUTH_GITHUB_CLIENT_SECRET=%s\n' "${OAUTH_GITHUB_CLIENT_SECRET:-}"
+  printf 'OAUTH_GITHUB_CALLBACK_URL=%s\n' "${OAUTH_GITHUB_CALLBACK_URL:-${BASE_URL_VALUE}/api/auth/github/callback}"
   printf '\n'
   printf '# GitHub Actions (Stack Ops)\n'
   printf 'GH_PAT=%s\n' "${GH_PAT}"

@@ -126,7 +126,8 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | Secret | Descrição |
 | --- | --- |
 | `BASE_URL` | Base URL pública da plataforma (OAuth callbacks) |
-| `OAUTH_CALLBACK_URL` | URL pública de callback OAuth para Google (pode ser URL completa ou path; ex: `https://dominio/api/auth/google/callback` ou `/api/auth/google/callback/`, deve casar exatamente com o redirect configurado no Google Cloud) |
+| `OAUTH_CALLBACK_URL` | URL publica de callback OAuth para Google (URL completa ou path; ex: `https://dominio/api/auth/google/callback` ou `/api/auth/google/callback/`, deve casar exatamente com o redirect configurado no Google Cloud) |
+| `OAUTH_GITHUB_CALLBACK_URL` | URL publica de callback OAuth para GitHub (URL completa ou path; ex: `https://dominio/api/auth/github/callback` ou `/api/auth/github/callback/`, deve casar exatamente com o redirect configurado no GitHub) |
 | `PGBACKREST_ALLOW_STANZA_RESET` | `true` permite reset controlado de stanza em mismatch de system-id (input do workflow) |
 | `DOCKERHUB_USERNAME` | Evita rate limit Docker Hub |
 | `DOCKERHUB_TOKEN` | Token Docker Hub |
