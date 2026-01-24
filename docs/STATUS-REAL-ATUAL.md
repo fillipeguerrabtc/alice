@@ -196,6 +196,7 @@ Retenção Arquivo:   30 dias
 - Users Admin: modal de edição com rolagem, senha redefinível e colunas de grupos/nome preferido.
 - Namespaces: contagem real de agentes/docs e detalhes clicáveis no card.
 - Observability: alertas Grafana com fallback de no-data para evitar falsos positivos (LLM/RAG/GPU).
+- Observability: histogram_quantile protegido contra NaN (filtro de buckets) para evitar DatasourceNoData.
 - Chat: efeito de digitação agora avança 1 caractere por tick e suporta até 400ms.
 - Frontend: correção de build (variável não utilizada em AliceConfig).
 - Chat: UX de digitação incremental com "Pensando..." i18n e velocidade configurável imediata.

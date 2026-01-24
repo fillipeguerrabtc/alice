@@ -1,6 +1,6 @@
 # Guia de Observabilidade - Alice Enterprise Platform
 
-**Versão:** 2.6.5  
+**Versão:** 2.6.6  
 **Data:** 24 de Janeiro de 2026  
 **Autor:** Fillipe Guerra
 
@@ -25,6 +25,7 @@
 | 11 | Backups sucesso/falha com fonte incorreta | Sem separação real entre sucesso e falha | Métrica `alice_backup_jobs_total{status}` baseada em PostgreSQL | ✅ CORRIGIDO |
 | 12 | Similarity Score (Top-K) exibindo % | Unidade/thresholds não compatíveis com Effective K | Unidade ajustada para K real e thresholds revisados | ✅ CORRIGIDO |
 | 13 | Alertas "DatasourceNoData" em LLM/RAG/GPU durante uso normal | Alertas falsos por ausência de série em períodos ociosos | Fallback `or on() vector(0)` nas regras de latência/VRAM/fila | ✅ CORRIGIDO |
+| 14 | DatasourceNoData em histogram_quantile (LLM/RAG/KuCoin) | NaN quando buckets sem tráfego gerava no-data | Filtro de buckets antes do histogram_quantile (contagem > 0) | ✅ CORRIGIDO |
 
 ### Checklist de validação (pós-deploy)
 

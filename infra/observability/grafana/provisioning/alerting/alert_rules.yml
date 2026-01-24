@@ -7,7 +7,7 @@
 #
 # Author: Fillipe Guerra
 # Data: 24 de Janeiro de 2026
-# Atualização 24/01/2026: Regras com fallback de no-data para evitar alertas falsos.
+# Atualização 24/01/2026: Filtro de buckets antes do histogram_quantile para evitar NaN/NoData.
 # Documentação PT-BR (Regra 10 CLAUDE.md)
 
 apiVersion: 1
@@ -42,7 +42,7 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: (histogram_quantile(0.95, sum(rate(alice_llm_inference_duration_seconds_bucket[5m])) by (le)) and on() (sum(rate(alice_llm_inference_duration_seconds_count[5m])) > 0)) or on() vector(0)
+              expr: histogram_quantile(0.95, sum(rate(alice_llm_inference_duration_seconds_bucket[5m])) by (le) and on() (sum(rate(alice_llm_inference_duration_seconds_count[5m])) > 0)) or on() vector(0)
               refId: A
           - refId: B
             relativeTimeRange:
@@ -84,7 +84,7 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: (histogram_quantile(0.99, sum(rate(alice_llm_inference_duration_seconds_bucket[5m])) by (le)) and on() (sum(rate(alice_llm_inference_duration_seconds_count[5m])) > 0)) or on() vector(0)
+              expr: histogram_quantile(0.99, sum(rate(alice_llm_inference_duration_seconds_bucket[5m])) by (le) and on() (sum(rate(alice_llm_inference_duration_seconds_count[5m])) > 0)) or on() vector(0)
               refId: A
           - refId: B
             datasourceUid: __expr__
@@ -126,7 +126,7 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: (histogram_quantile(0.95, sum(rate(alice_llm_ttft_seconds_bucket[5m])) by (le)) and on() (sum(rate(alice_llm_ttft_seconds_count[5m])) > 0)) or on() vector(0)
+              expr: histogram_quantile(0.95, sum(rate(alice_llm_ttft_seconds_bucket[5m])) by (le) and on() (sum(rate(alice_llm_ttft_seconds_count[5m])) > 0)) or on() vector(0)
               refId: A
           - refId: B
             datasourceUid: __expr__
@@ -371,7 +371,7 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: (histogram_quantile(0.95, sum(rate(alice_rag_search_duration_seconds_bucket[5m])) by (le)) and on() (sum(rate(alice_rag_search_duration_seconds_count[5m])) > 0)) or on() vector(0)
+              expr: histogram_quantile(0.95, sum(rate(alice_rag_search_duration_seconds_bucket[5m])) by (le) and on() (sum(rate(alice_rag_search_duration_seconds_count[5m])) > 0)) or on() vector(0)
               refId: A
           - refId: B
             datasourceUid: __expr__
@@ -801,7 +801,7 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: histogram_quantile(0.95, sum(rate(alice_integration_call_duration_seconds_bucket{integration="kucoin"}[5m])) by (le)) or on() vector(0)
+              expr: histogram_quantile(0.95, sum(rate(alice_integration_call_duration_seconds_bucket{integration="kucoin"}[5m])) by (le) and on() (sum(rate(alice_integration_call_duration_seconds_count{integration="kucoin"}[5m])) > 0)) or on() vector(0)
               refId: A
           - refId: B
             datasourceUid: __expr__
