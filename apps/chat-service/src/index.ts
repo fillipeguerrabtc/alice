@@ -1592,6 +1592,26 @@ type ImageGenerationInput = {
   internalHeaders?: Record<string, string>;
 };
 
+async function fetchImageUrlAsBase64(imageUrl: string): Promise<{ base64: string; mimeType: string }> {
+  const response = await fetch(imageUrl, {
+    method: 'GET',
+    signal: AbortSignal.timeout(60000),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => '');
+    throw new Error(`Falha ao baixar imagem OpenAI (url): ${response.status} - ${errText}`);
+  }
+
+  const contentType = response.headers.get('content-type') || 'image/png';
+  if (!contentType.startsWith('image/')) {
+    throw new Error(`Conteúdo inválido ao baixar imagem OpenAI: ${contentType}`);
+  }
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+  return { base64: buffer.toString('base64'), mimeType: contentType };
+}
+
 async function generateImageFromPrompt(input: ImageGenerationInput) {
   if (!OPENAI_API_KEY) {
     throw new Error('OpenAI não configurado - geração de imagens indisponível');
@@ -1641,6 +1661,7 @@ async function generateImageFromPrompt(input: ImageGenerationInput) {
       prompt: composedPrompt,
       size,
       n: 1,
+      response_format: 'b64_json',
       output_format: 'png',
     };
 
@@ -1673,22 +1694,29 @@ async function generateImageFromPrompt(input: ImageGenerationInput) {
 
     const payload = await openAiResponse.json() as { data?: Array<{ b64_json?: string; url?: string }> };
     const first = payload?.data?.[0];
-    const b64 = first?.b64_json;
+    let b64 = first?.b64_json;
+    let resolvedMimeType = 'image/png';
+
+    if (!b64 && first?.url) {
+      const downloaded = await fetchImageUrlAsBase64(first.url);
+      b64 = downloaded.base64;
+      resolvedMimeType = downloaded.mimeType;
+    }
 
     if (!b64 || typeof b64 !== 'string' || b64.length < 64) {
       logger.error({
         status: openAiResponse.status,
         requestId: openAiResponse.headers.get('x-request-id'),
         payload,
-      }, 'Resposta inválida da OpenAI Images API (b64_json ausente)');
-      throw new Error('Resposta inválida da OpenAI Images API (b64_json ausente)');
+      }, 'Resposta inválida da OpenAI Images API (b64_json/url ausentes)');
+      throw new Error('Resposta inválida da OpenAI Images API (b64_json/url ausentes)');
     }
 
     const filename = `generated-${created.id}.png`;
     const uploadResult = await uploadMediaToRAG(
       b64,
       filename,
-      'image/png',
+      resolvedMimeType,
       input.tenantId,
       input.prompt,
       input.messageId ?? undefined,
@@ -6516,13 +6544,45 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       // GREETINGS GATE (Redis cache) - evita GPU para saudações simples
       // ============================================================================
       writeStatus('greeting');
+      const cacheStart = Date.now();
+      emitAgentEvent({
+        phase: 'planning',
+        action: 'greeting_gate',
+        status: 'start',
+        message: 'Avaliando saudacao (cache)',
+        correlationId: conversationId ?? undefined,
+      });
       const cacheResult = await checkResponseCache(tenantId, userMessageContent);
+      emitAgentEvent({
+        phase: 'planning',
+        action: 'greeting_cache',
+        status: cacheResult.hasResponse ? 'success' : 'skipped',
+        message: cacheResult.hasResponse ? 'Saudacao encontrada no cache' : 'Sem saudacao em cache',
+        durationMs: Date.now() - cacheStart,
+        correlationId: conversationId ?? undefined,
+        payload: {
+          hasResponse: cacheResult.hasResponse,
+          cacheHit: cacheResult.cacheHit,
+          latencyMs: cacheResult.latencyMs,
+          isGreeting: cacheResult.isGreeting,
+        },
+      });
       if (cacheResult.hasResponse && cacheResult.response) {
         const lastAssistantMessage = previousMessages.find((msg) => !msg.isFromUser && msg.conteudo);
         const shouldAugmentGreeting = Boolean(
           lastAssistantMessage?.conteudo &&
           normalizeContent(lastAssistantMessage.conteudo) === normalizeContent(cacheResult.response)
         );
+        emitAgentEvent({
+          phase: 'planning',
+          action: 'greeting_compose',
+          status: 'in_progress',
+          message: 'Montando resposta de saudacao',
+          correlationId: conversationId ?? undefined,
+          payload: {
+            shouldAugment: shouldAugmentGreeting,
+          },
+        });
         const greetingSeed = `${tenantId}:${userMessageContent}:${lastAssistantMessage?.id || 'first'}`;
         let greetingResponse = buildGreetingResponse(
           cacheResult.response,
@@ -6531,6 +6591,14 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         );
         greetingResponse = applyUserNameToGreeting(greetingResponse, nameContext);
         greetingResponse = appendNameConfirmationQuestion(greetingResponse, nameContext);
+        const persistStartedAt = Date.now();
+        emitAgentEvent({
+          phase: 'finalizing',
+          action: 'persist_message',
+          status: 'start',
+          message: 'Persistindo resposta de saudacao',
+          correlationId: conversationId ?? undefined,
+        });
         const [assistantMessage] = await db.insert(schema.messages).values({
           conversationId,
           agentId: conversation?.agentId ?? undefined,
@@ -6564,6 +6632,24 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
         res.write(`data: ${JSON.stringify({ content: greetingResponse })}\n\n`);
         res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+        emitAgentEvent({
+          phase: 'finalizing',
+          action: 'persist_message',
+          status: 'success',
+          message: 'Resposta de saudacao persistida',
+          durationMs: Date.now() - persistStartedAt,
+          correlationId: conversationId ?? undefined,
+          payload: {
+            messageId: assistantMessage?.id,
+          },
+        });
+        emitAgentEvent({
+          phase: 'finalizing',
+          action: 'finalizing',
+          status: 'success',
+          message: 'Resposta finalizada',
+          correlationId: conversationId ?? undefined,
+        });
         res.write('data: [DONE]\n\n');
         res.end();
         return;
@@ -6573,6 +6659,13 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       // REUSE GATE (deduplicação na própria conversa)
       // ============================================================================
       writeStatus('reuse');
+      emitAgentEvent({
+        phase: 'planning',
+        action: 'reuse_gate',
+        status: 'start',
+        message: 'Verificando deduplicacao de conversa',
+        correlationId: conversationId ?? undefined,
+      });
       const lastUserIndex = previousMessages.findIndex((msg) => msg.isFromUser);
       const lastUserInHistory = lastUserIndex >= 0 ? previousMessages[lastUserIndex] : undefined;
       if (lastUserInHistory?.conteudo &&
@@ -6581,6 +6674,14 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         if (assistantAfterLastUser?.conteudo) {
           const reuseSeed = `${tenantId}:${userMessageContent}:${assistantAfterLastUser.id}`;
           const reuseResponse = buildReuseResponse(assistantAfterLastUser.conteudo, reuseSeed);
+          const persistStartedAt = Date.now();
+          emitAgentEvent({
+            phase: 'finalizing',
+            action: 'persist_message',
+            status: 'start',
+            message: 'Persistindo resposta reutilizada',
+            correlationId: conversationId ?? undefined,
+          });
           const [assistantMessage] = await db.insert(schema.messages).values({
             conversationId,
             agentId: conversation?.agentId ?? undefined,
@@ -6613,16 +6714,66 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
           res.write(`data: ${JSON.stringify({ content: reuseResponse })}\n\n`);
           res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+          emitAgentEvent({
+            phase: 'finalizing',
+            action: 'persist_message',
+            status: 'success',
+            message: 'Resposta reutilizada persistida',
+            durationMs: Date.now() - persistStartedAt,
+            correlationId: conversationId ?? undefined,
+            payload: {
+              messageId: assistantMessage?.id,
+            },
+          });
+          emitAgentEvent({
+            phase: 'finalizing',
+            action: 'finalizing',
+            status: 'success',
+            message: 'Resposta finalizada',
+            correlationId: conversationId ?? undefined,
+          });
           res.write('data: [DONE]\n\n');
           res.end();
           return;
         }
       }
+      emitAgentEvent({
+        phase: 'planning',
+        action: 'reuse_gate',
+        status: 'skipped',
+        message: 'Nenhuma resposta reutilizavel encontrada',
+        correlationId: conversationId ?? undefined,
+      });
     }
 
     if (imageDetection.isImageRequest && imageDetection.prompt) {
+      logger.info({
+        conversationId,
+        prompt: imageDetection.prompt,
+        confidence: imageDetection.confidence,
+        reason: imageDetection.reason,
+      }, 'Pedido de geração de imagem detectado (stream) - OpenAI Images');
+      const imageStartAt = Date.now();
+      emitAgentEvent({
+        phase: 'tool',
+        action: 'image_generation',
+        status: 'start',
+        message: 'Gerando imagem via OpenAI',
+        correlationId: conversationId ?? undefined,
+        payload: {
+          promptLength: imageDetection.prompt.length,
+          confidence: imageDetection.confidence,
+        },
+      });
       const userRole = req.user?.role as Role | undefined;
       if (!userRole) {
+        emitAgentEvent({
+          phase: 'approval',
+          action: 'image_generation',
+          status: 'rejected',
+          message: 'Permissão insuficiente para gerar imagens',
+          correlationId: conversationId ?? undefined,
+        });
         res.write(`data: ${JSON.stringify({ error: 'Permissão insuficiente para gerar imagens.' })}\n\n`);
         res.write('data: [DONE]\n\n');
         res.end();
@@ -6638,6 +6789,13 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         'images:generate:write'
       );
       if (!permissionCheck.allowed) {
+        emitAgentEvent({
+          phase: 'approval',
+          action: 'image_generation',
+          status: 'rejected',
+          message: 'Permissão negada para gerar imagens',
+          correlationId: conversationId ?? undefined,
+        });
         res.write(`data: ${JSON.stringify({ error: 'Você não possui permissão para gerar imagens.' })}\n\n`);
         res.write('data: [DONE]\n\n');
         res.end();
@@ -6690,6 +6848,19 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           height: generatedImage.height ?? undefined,
           feedbackScore: generatedImage.feedbackScore ?? undefined,
         };
+        emitAgentEvent({
+          phase: 'tool',
+          action: 'image_generation',
+          status: 'success',
+          message: 'Imagem gerada com sucesso',
+          durationMs: Date.now() - imageStartAt,
+          correlationId: conversationId ?? undefined,
+          payload: {
+            imageId: generatedImage.id,
+            status: generatedImage.status,
+            hasUrl: Boolean(generatedImage.imageUrl || generatedImage.imagePath),
+          },
+        });
 
         res.write(`data: ${JSON.stringify({
           type: 'generated_image',
@@ -6710,6 +6881,17 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           stack: imageError instanceof Error ? imageError.stack : undefined,
           conversationId,
         }, 'Falha ao gerar imagem via OpenAI (stream)');
+        emitAgentEvent({
+          phase: 'tool',
+          action: 'image_generation',
+          status: 'error',
+          message: 'Falha ao gerar imagem via OpenAI',
+          durationMs: Date.now() - imageStartAt,
+          correlationId: conversationId ?? undefined,
+          payload: {
+            error: resolvedError,
+          },
+        });
         res.write(`data: ${JSON.stringify({
           error: 'Falha ao gerar imagem. Verifique a configuração e tente novamente.',
           code: 'OPENAI_IMAGE_ERROR',
