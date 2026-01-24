@@ -389,6 +389,36 @@ export const authServicePaths = {
       },
     },
   },
+  '/api/users/{id}/password': {
+    patch: {
+      summary: 'Redefinir senha do usuário',
+      description: 'Permite que admins redefinam a senha de um usuário do mesmo tenant.',
+      tags: ['Users'],
+      parameters: [
+        { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+      ],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['newPassword'],
+              properties: {
+                newPassword: { type: 'string', minLength: 8, maxLength: 200 },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Senha atualizada com sucesso' },
+        400: { $ref: '#/components/responses/BadRequest' },
+        403: { $ref: '#/components/responses/Forbidden' },
+        404: { $ref: '#/components/responses/NotFound' },
+      },
+    },
+  },
   '/api/auth/sessions': {
     get: {
       summary: 'Listar sessões ativas',

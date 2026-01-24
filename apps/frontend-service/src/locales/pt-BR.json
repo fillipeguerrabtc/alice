@@ -517,6 +517,22 @@
       "docs": "{{count}} docs",
       "users": "{{count}} usuários"
     },
+    "details": {
+      "title": "Detalhes do Namespace",
+      "slug": "Slug",
+      "status": "Status",
+      "active": "Ativo",
+      "inactive": "Inativo",
+      "order": "Ordem",
+      "color": "Cor",
+      "description": "Descrição",
+      "noDescription": "Sem descrição",
+      "agents": "Agentes",
+      "docs": "Documentos",
+      "users": "Usuários",
+      "systemContext": "Contexto do Sistema",
+      "noSystemContext": "Sem contexto do sistema configurado"
+    },
     "success": {
       "created": "Namespace criado com sucesso",
       "updated": "Namespace atualizado",
@@ -1560,9 +1576,11 @@
       "searchPlaceholder": "Buscar por nome, email ou role",
       "columns": {
         "name": "Nome",
+        "preferredName": "Nome preferido",
         "email": "Email",
         "role": "Roles base",
         "customRole": "Role personalizada",
+        "groups": "Grupos",
         "status": "Status",
         "provider": "Provedor",
         "actions": "Ações"
@@ -1581,6 +1599,9 @@
       },
       "preferredName": "Nome preferido",
       "preferredNameHint": "Define como a Alice e os agentes devem se referir ao usuário.",
+      "newPassword": "Nova senha",
+      "newPasswordPlaceholder": "Digite para redefinir a senha do usuário",
+      "newPasswordHint": "Deixe em branco para manter a senha atual.",
       "jobTitle": "Cargo",
       "department": "Departamento",
       "phone": "Telefone",
@@ -1602,7 +1623,9 @@
       "statusUpdateError": "Erro ao atualizar status",
       "requiredFieldsError": "Preencha email, nome, sobrenome, cargo, departamento e telefone.",
       "requiredPasswordError": "Defina uma senha inicial para o usuário.",
+      "passwordMinError": "A nova senha deve ter pelo menos 8 caracteres.",
       "requiredRolesError": "Selecione ao menos uma role base para o usuário.",
+      "passwordUpdated": "Senha atualizada com sucesso",
       "updated": "Usuário atualizado com sucesso",
       "updateError": "Erro ao atualizar usuário",
       "providerLocal": "Local"

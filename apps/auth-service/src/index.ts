@@ -3355,6 +3355,10 @@ const updateUserProfileSchema = z.object({
   profileImageUrl: z.string().url().max(2048).optional().nullable(),
 });
 
+const updateUserPasswordSchema = z.object({
+  newPassword: z.string().min(8).max(200),
+});
+
 const updateUserRoleSchema = z.object({
   role: z.enum(['super_admin', 'admin', 'manager', 'operator', 'viewer', 'guest']),
 });
@@ -3702,6 +3706,62 @@ app.patch('/api/users/:id', requireAuth(), asyncHandler(async (req: Request, res
   // Remover campos sensíveis
   const { passwordHash: _, ...safeUser } = updatedUser;
   res.json({ user: safeUser, message: 'Perfil atualizado com sucesso' });
+}));
+
+// PATCH /api/users/:id/password - Redefinir senha do usuário (admin+ only)
+app.patch('/api/users/:id/password', requireAuth(), requireRole('admin'), asyncHandler(async (req: Request, res: Response) => {
+  const db = getDatabase();
+  const userId = req.params.id;
+  const requestingUser = req.user;
+
+  const isSuperAdmin = requestingUser?.role === 'super_admin';
+  const requesterTenantId = requestingUser?.tenantId;
+
+  const targetUser = await db.query.users.findFirst({
+    where: eq(schema.users.id, userId),
+  });
+
+  if (!targetUser) {
+    return res.status(404).json({ error: 'Usuário não encontrado' });
+  }
+
+  if (!isSuperAdmin) {
+    if (!requesterTenantId) {
+      return res.status(403).json({ error: 'Acesso negado - admin sem tenant definido' });
+    }
+    if (!targetUser.tenantId) {
+      return res.status(403).json({ error: 'Acesso negado - usuário alvo sem tenant definido' });
+    }
+    if (requesterTenantId !== targetUser.tenantId) {
+      return res.status(403).json({ error: 'Acesso negado - tenant diferente' });
+    }
+  }
+
+  const parseResult = updateUserPasswordSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({
+      error: 'Dados inválidos',
+      details: parseResult.error.format(),
+    });
+  }
+
+  const passwordHash = await bcrypt.hash(parseResult.data.newPassword, 12);
+  const [updatedUser] = await db.update(schema.users)
+    .set({
+      passwordHash,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.users.id, userId))
+    .returning();
+
+  const { passwordHash: _, ...safeUser } = updatedUser;
+
+  logger.info({
+    userId,
+    updatedBy: requestingUser?.userId,
+  }, 'Senha de usuário redefinida');
+
+  res.json({ user: safeUser, message: 'Senha atualizada com sucesso' });
 }));
 
 // PATCH /api/users/:id/role - Atualizar role do usuário (admin+ only)

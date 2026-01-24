@@ -199,6 +199,11 @@ function formatUserName(user: UserItem) {
   return name || user.email || 'Usuário';
 }
 
+function formatFullName(user: UserItem) {
+  const name = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+  return name || user.email || 'Usuário';
+}
+
 function GroupFormDialog({
   open,
   onOpenChange,
@@ -1005,6 +1010,16 @@ export default function UsersAdmin() {
     },
   });
 
+  const updateUserPassword = useMutation({
+    mutationFn: async ({ userId, newPassword }: { userId: string; newPassword: string }) => {
+      const response = await apiRequest('PATCH', `/api/users/${userId}/password`, { newPassword });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      return response.json();
+    },
+  });
+
   const createUser = useMutation({
     mutationFn: async (payload: Record<string, unknown>) => {
       const response = await apiRequest('POST', '/api/auth/register', payload);
@@ -1079,6 +1094,10 @@ export default function UsersAdmin() {
       toast({ title: t('usersAdmin.users.requiredPasswordError'), variant: 'destructive' });
       return;
     }
+    if (userDialogMode === 'edit' && trimmedPassword && trimmedPassword.length < 8) {
+      toast({ title: t('usersAdmin.users.passwordMinError'), variant: 'destructive' });
+      return;
+    }
     if (userForm.roles.length === 0) {
       toast({ title: t('usersAdmin.users.requiredRolesError'), variant: 'destructive' });
       return;
@@ -1119,9 +1138,14 @@ export default function UsersAdmin() {
         await updateUserGroups.mutateAsync({ userId: targetUserId, groupIds: userForm.groupIds });
         await updateUserStatus.mutateAsync({ userId: targetUserId, ativo: userForm.ativo });
       }
+      if (userDialogMode === 'edit' && isAdminRole && targetUserId && trimmedPassword) {
+        await updateUserPassword.mutateAsync({ userId: targetUserId, newPassword: trimmedPassword });
+        toast({ title: t('usersAdmin.users.passwordUpdated') });
+      }
       queryClient.invalidateQueries({ queryKey: ['/api/users'] });
       toast({ title: t('usersAdmin.users.updated') });
       setUserDialogOpen(false);
+      setUserForm((prev) => ({ ...prev, password: '' }));
     } catch (error) {
       const message = error instanceof Error ? error.message : t('common.error');
       toast({ title: t('usersAdmin.users.updateError'), description: message, variant: 'destructive' });
@@ -1143,7 +1167,8 @@ export default function UsersAdmin() {
     || updateUserRoles.isPending
     || updateUserCustomRoles.isPending
     || updateUserGroups.isPending
-    || updateUserStatus.isPending;
+    || updateUserStatus.isPending
+    || updateUserPassword.isPending;
 
   const createGroup = useMutation({
     mutationFn: async (values: GroupFormData) => {
@@ -1585,9 +1610,11 @@ export default function UsersAdmin() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>{t('usersAdmin.users.columns.name')}</TableHead>
+                    <TableHead>{t('usersAdmin.users.columns.preferredName')}</TableHead>
                     <TableHead>{t('usersAdmin.users.columns.email')}</TableHead>
                     <TableHead>{t('usersAdmin.users.columns.role')}</TableHead>
                     <TableHead>{t('usersAdmin.users.columns.customRole')}</TableHead>
+                    <TableHead>{t('usersAdmin.users.columns.groups')}</TableHead>
                     <TableHead>{t('usersAdmin.users.columns.status')}</TableHead>
                     <TableHead>{t('usersAdmin.users.columns.provider')}</TableHead>
                     <TableHead>{t('usersAdmin.users.columns.actions')}</TableHead>
@@ -1596,21 +1623,22 @@ export default function UsersAdmin() {
                 <TableBody>
                   {usersLoading ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center text-muted-foreground">
+                      <TableCell colSpan={9} className="text-center text-muted-foreground">
                         <Loader2 className="inline-block h-4 w-4 animate-spin mr-2" />
                         {t('common.loading')}
                       </TableCell>
                     </TableRow>
                   ) : filteredUsers.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center text-muted-foreground">
+                      <TableCell colSpan={9} className="text-center text-muted-foreground">
                         {t('usersAdmin.users.empty')}
                       </TableCell>
                     </TableRow>
                   ) : (
                     filteredUsers.map((user) => (
                       <TableRow key={user.id}>
-                        <TableCell className="font-medium">{formatUserName(user)}</TableCell>
+                        <TableCell className="font-medium">{formatFullName(user)}</TableCell>
+                        <TableCell>{user.preferredName || '-'}</TableCell>
                         <TableCell>{user.email}</TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-1">
@@ -1632,6 +1660,21 @@ export default function UsersAdmin() {
                               ))}
                             {(user.customRoles?.length ?? 0) === 0 && !user.customRole && (
                               <span className="text-xs text-muted-foreground">{t('usersAdmin.users.customRoleNone')}</span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1">
+                            {(user.groups ?? []).slice(0, 2).map((group) => (
+                              <Badge key={`${user.id}-${group.id}`} variant="outline">
+                                {group.nome}
+                              </Badge>
+                            ))}
+                            {(user.groups?.length ?? 0) === 0 && (
+                              <span className="text-xs text-muted-foreground">-</span>
+                            )}
+                            {(user.groups?.length ?? 0) > 2 && (
+                              <Badge variant="outline">+{(user.groups?.length ?? 0) - 2}</Badge>
                             )}
                           </div>
                         </TableCell>
@@ -2043,10 +2086,11 @@ export default function UsersAdmin() {
           if (!openValue) {
             setSelectedUser(null);
             setUserDialogMode('edit');
+            setUserForm((prev) => ({ ...prev, password: '' }));
           }
         }}
       >
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
           <DialogHeader>
             <DialogTitle>
               {userDialogMode === 'create' ? t('usersAdmin.users.newTitle') : t('usersAdmin.users.editTitle')}
@@ -2055,7 +2099,8 @@ export default function UsersAdmin() {
               {userDialogMode === 'create' ? t('usersAdmin.users.newDescription') : t('usersAdmin.users.editDescription')}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-6">
+          <ScrollArea className="flex-1 pr-4">
+            <div className="space-y-6">
             <div className="space-y-3">
               <h4 className="text-sm font-semibold">{t('usersAdmin.users.sections.profile')}</h4>
               <div className="grid gap-4 md:grid-cols-2">
@@ -2078,6 +2123,19 @@ export default function UsersAdmin() {
                       value={userForm.password}
                       onChange={(event) => setUserForm((prev) => ({ ...prev, password: event.target.value }))}
                     />
+                  </div>
+                )}
+                {userDialogMode === 'edit' && (
+                  <div className="space-y-2 md:col-span-2">
+                    <Label htmlFor="user-password-edit">{t('usersAdmin.users.newPassword')}</Label>
+                    <Input
+                      id="user-password-edit"
+                      type="password"
+                      value={userForm.password}
+                      onChange={(event) => setUserForm((prev) => ({ ...prev, password: event.target.value }))}
+                      placeholder={t('usersAdmin.users.newPasswordPlaceholder')}
+                    />
+                    <p className="text-xs text-muted-foreground">{t('usersAdmin.users.newPasswordHint')}</p>
                   </div>
                 )}
                 <div className="space-y-2">
@@ -2238,6 +2296,7 @@ export default function UsersAdmin() {
               </div>
             </div>
           </div>
+          </ScrollArea>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setUserDialogOpen(false)}>
               {t('common.cancel')}

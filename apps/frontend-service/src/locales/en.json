@@ -517,6 +517,22 @@
       "docs": "{{count}} docs",
       "users": "{{count}} users"
     },
+    "details": {
+      "title": "Namespace details",
+      "slug": "Slug",
+      "status": "Status",
+      "active": "Active",
+      "inactive": "Inactive",
+      "order": "Order",
+      "color": "Color",
+      "description": "Description",
+      "noDescription": "No description",
+      "agents": "Agents",
+      "docs": "Documents",
+      "users": "Users",
+      "systemContext": "System context",
+      "noSystemContext": "No system context configured"
+    },
     "success": {
       "created": "Namespace created successfully",
       "updated": "Namespace updated",
@@ -1560,9 +1576,11 @@
       "searchPlaceholder": "Search by name, email, or role",
       "columns": {
         "name": "Name",
+        "preferredName": "Preferred name",
         "email": "Email",
         "role": "Base roles",
         "customRole": "Custom role",
+        "groups": "Groups",
         "status": "Status",
         "provider": "Provider",
         "actions": "Actions"
@@ -1581,6 +1599,9 @@
       },
       "preferredName": "Preferred name",
       "preferredNameHint": "Defines how Alice and agents should address the user.",
+      "newPassword": "New password",
+      "newPasswordPlaceholder": "Type to reset the user password",
+      "newPasswordHint": "Leave blank to keep the current password.",
       "jobTitle": "Job title",
       "department": "Department",
       "phone": "Phone",
@@ -1602,7 +1623,9 @@
       "statusUpdateError": "Error updating status",
       "requiredFieldsError": "Fill in email, first name, last name, job title, department, and phone.",
       "requiredPasswordError": "Set an initial password for the user.",
+      "passwordMinError": "The new password must be at least 8 characters.",
       "requiredRolesError": "Select at least one base role for the user.",
+      "passwordUpdated": "Password updated successfully",
       "updated": "User updated successfully",
       "updateError": "Failed to update user",
       "providerLocal": "Local"

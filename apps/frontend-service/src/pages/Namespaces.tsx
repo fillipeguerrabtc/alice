@@ -61,6 +61,9 @@ interface Namespace {
   contextoSistema?: string | null;
   ordem?: number | null;
   ativo?: boolean | null;
+  agentsCount?: number | null;
+  documentsCount?: number | null;
+  usersCount?: number | null;
 }
 
 const defaultColors = [
@@ -134,6 +137,8 @@ export default function Namespaces() {
   const [editingNamespace, setEditingNamespace] = useState<Namespace | null>(null);
   const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false);
   const [settingsNamespace, setSettingsNamespace] = useState<Namespace | null>(null);
+  const [detailsNamespace, setDetailsNamespace] = useState<Namespace | null>(null);
+  const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
 
   const form = useForm<NamespaceFormData>({
     resolver: asResolver<NamespaceFormData>(zodResolver(namespaceSchema)),
@@ -234,6 +239,11 @@ export default function Namespaces() {
       ativo: namespace.ativo ?? true,
     });
     setIsSettingsDialogOpen(true);
+  };
+
+  const handleDetails = (namespace: Namespace) => {
+    setDetailsNamespace(namespace);
+    setIsDetailsDialogOpen(true);
   };
 
   const handleNewNamespace = () => {
@@ -525,8 +535,9 @@ export default function Namespaces() {
           {namespaces.map((namespace) => (
             <Card
               key={namespace.id}
-              className="hover-elevate transition-all duration-200"
+              className="hover-elevate transition-all duration-200 cursor-pointer"
               data-testid={`card-namespace-${namespace.id}`}
+              onClick={() => handleDetails(namespace)}
             >
               <CardContent className="p-6">
                 <div className="flex items-start justify-between mb-4">
@@ -538,22 +549,40 @@ export default function Namespaces() {
                   </div>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" data-testid={`button-menu-namespace-${namespace.id}`}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        data-testid={`button-menu-namespace-${namespace.id}`}
+                        onClick={(event) => event.stopPropagation()}
+                      >
                         <MoreHorizontal className="h-4 w-4" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => handleEdit(namespace)}>
+                      <DropdownMenuItem
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleEdit(namespace);
+                        }}
+                      >
                         <Edit className="mr-2 h-4 w-4" />
                         {t('common.edit')}
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleSettings(namespace)}>
+                      <DropdownMenuItem
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleSettings(namespace);
+                        }}
+                      >
                         <Settings className="mr-2 h-4 w-4" />
                         {t('common.settings')}
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         className="text-destructive"
-                        onClick={() => deleteNamespaceMutation.mutate(namespace.id)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          deleteNamespaceMutation.mutate(namespace.id);
+                        }}
                       >
                         <Trash2 className="mr-2 h-4 w-4" />
                         {t('common.remove')}
@@ -568,15 +597,15 @@ export default function Namespaces() {
                 <div className="flex flex-wrap gap-2">
                   <Badge variant="outline" className="gap-1 text-xs">
                     <Bot className="h-3 w-3" />
-                    {t('namespaces.stats.agents', { count: 0 })}
+                    {t('namespaces.stats.agents', { count: namespace.agentsCount ?? 0 })}
                   </Badge>
                   <Badge variant="outline" className="gap-1 text-xs">
                     <FileText className="h-3 w-3" />
-                    {t('namespaces.stats.docs', { count: 0 })}
+                    {t('namespaces.stats.docs', { count: namespace.documentsCount ?? 0 })}
                   </Badge>
                   <Badge variant="outline" className="gap-1 text-xs">
                     <Users className="h-3 w-3" />
-                    {t('namespaces.stats.users', { count: 0 })}
+                    {t('namespaces.stats.users', { count: namespace.usersCount ?? 0 })}
                   </Badge>
                 </div>
               </CardContent>
@@ -600,6 +629,86 @@ export default function Namespaces() {
           </CardContent>
         </Card>
       )}
+
+      <Dialog
+        open={isDetailsDialogOpen}
+        onOpenChange={(openValue) => {
+          setIsDetailsDialogOpen(openValue);
+          if (!openValue) {
+            setDetailsNamespace(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[560px]">
+          <DialogHeader>
+            <DialogTitle>{t('namespaces.details.title')}</DialogTitle>
+            <DialogDescription>{detailsNamespace?.nome}</DialogDescription>
+          </DialogHeader>
+          {detailsNamespace && (
+            <div className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <p className="text-xs text-muted-foreground">{t('namespaces.details.slug')}</p>
+                  <p className="text-sm font-medium">/{detailsNamespace.slug}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">{t('namespaces.details.status')}</p>
+                  <Badge variant={detailsNamespace.ativo === false ? 'outline' : 'secondary'}>
+                    {detailsNamespace.ativo === false ? t('namespaces.details.inactive') : t('namespaces.details.active')}
+                  </Badge>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">{t('namespaces.details.order')}</p>
+                  <p className="text-sm font-medium">
+                    {typeof detailsNamespace.ordem === 'number' ? detailsNamespace.ordem : '-'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">{t('namespaces.details.color')}</p>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="h-4 w-4 rounded-full border"
+                      style={{ backgroundColor: detailsNamespace.cor || '#3B82F6' }}
+                    />
+                    <span className="text-sm font-medium">{detailsNamespace.cor || '#3B82F6'}</span>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">{t('namespaces.details.description')}</p>
+                <p className="text-sm text-foreground">
+                  {detailsNamespace.descricao || t('namespaces.details.noDescription')}
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground">{t('namespaces.details.agents')}</p>
+                  <p className="text-lg font-semibold">{detailsNamespace.agentsCount ?? 0}</p>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground">{t('namespaces.details.docs')}</p>
+                  <p className="text-lg font-semibold">{detailsNamespace.documentsCount ?? 0}</p>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground">{t('namespaces.details.users')}</p>
+                  <p className="text-lg font-semibold">{detailsNamespace.usersCount ?? 0}</p>
+                </div>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">{t('namespaces.details.systemContext')}</p>
+                <p className="text-sm text-foreground">
+                  {detailsNamespace.contextoSistema || t('namespaces.details.noSystemContext')}
+                </p>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setIsDetailsDialogOpen(false)}>
+              {t('common.close')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

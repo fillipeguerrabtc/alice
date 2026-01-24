@@ -11559,7 +11559,45 @@ app.get('/api/namespaces', requireAuth(), requireSameTenant(getTenantIdFromReque
       ),
       orderBy: [asc(schema.namespaces.ordem), asc(schema.namespaces.nome)],
     });
-    res.json(namespaces);
+    const namespaceIds = namespaces.map((namespace) => namespace.id);
+    const agentsCountRows = namespaceIds.length
+      ? await db
+        .select({
+          namespaceId: schema.agents.namespaceId,
+          total: sql<number>`count(*)`,
+        })
+        .from(schema.agents)
+        .where(and(
+          eq(schema.agents.tenantId, tenantId),
+          inArray(schema.agents.namespaceId, namespaceIds)
+        ))
+        .groupBy(schema.agents.namespaceId)
+      : [];
+
+    const documentsCountRows = namespaceIds.length
+      ? await db
+        .select({
+          namespaceId: schema.documents.namespaceId,
+          total: sql<number>`count(*)`,
+        })
+        .from(schema.documents)
+        .where(inArray(schema.documents.namespaceId, namespaceIds))
+        .groupBy(schema.documents.namespaceId)
+      : [];
+
+    const agentsCountMap = new Map(
+      agentsCountRows.map((row) => [row.namespaceId ?? '', Number(row.total)])
+    );
+    const documentsCountMap = new Map(
+      documentsCountRows.map((row) => [row.namespaceId ?? '', Number(row.total)])
+    );
+
+    res.json(namespaces.map((namespace) => ({
+      ...namespace,
+      agentsCount: agentsCountMap.get(namespace.id) ?? 0,
+      documentsCount: documentsCountMap.get(namespace.id) ?? 0,
+      usersCount: 0,
+    })));
   } catch (error) {
     logger.error({ error, tenantId }, 'Erro ao listar namespaces');
     res.status(500).json({ error: 'Erro interno do servidor' });

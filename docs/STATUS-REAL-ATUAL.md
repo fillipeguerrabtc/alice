@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 24 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 8.2 - Alertas Grafana no-data
+**Versão:** 8.3 - UX Usuários e Namespaces
 
 ---
 
@@ -191,6 +191,8 @@ Retenção Arquivo:   30 dias
 
 ## Atualizações recentes (resumo)
 
+- Users Admin: modal de edição com rolagem, senha redefinível e colunas de grupos/nome preferido.
+- Namespaces: contagem real de agentes/docs e detalhes clicáveis no card.
 - Observability: alertas Grafana com fallback de no-data para evitar falsos positivos (LLM/RAG/GPU).
 - Chat: efeito de digitação agora avança 1 caractere por tick e suporta até 400ms.
 - Frontend: correção de build (variável não utilizada em AliceConfig).
