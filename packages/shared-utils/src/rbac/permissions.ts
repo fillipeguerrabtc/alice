@@ -181,6 +181,7 @@ export const PERMISSION_MAP: Record<string, Role[]> = {
   'images:generate:write': ['super_admin', 'admin', 'manager', 'operator'],
   'images:generate:delete': ['super_admin', 'admin', 'manager'],
   'images:generate:manage': ['super_admin', 'admin', 'manager'],
+  'images:search:read': ['super_admin', 'admin', 'manager', 'operator', 'viewer'],
   
   'images:approve:read': ['super_admin', 'admin', 'manager'],
   'images:approve:write': ['super_admin', 'admin', 'manager'],

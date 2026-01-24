@@ -7153,10 +7153,10 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
       const permissionCheck = await checkPermission(
         { userId, tenantId, role: userRole },
-        'images:generate:write'
+        'images:search:read'
       );
       if (!permissionCheck.allowed) {
-        res.write(`data: ${JSON.stringify({ error: 'Você não possui permissão para buscar imagens.' })}\n\n`);
+        res.write(`data: ${JSON.stringify({ error: 'Você não possui permissão para buscar imagens na web.' })}\n\n`);
         res.write('data: [DONE]\n\n');
         res.end();
         return;
@@ -10457,12 +10457,12 @@ wss.on('connection', (ws, req) => {
 
           const permissionCheck = await checkPermission(
             { userId, tenantId: safeTenantId, role: userRole },
-            'images:generate:write'
+            'images:search:read'
           );
           if (!permissionCheck.allowed) {
             ws.send(JSON.stringify({
               type: 'error',
-              error: 'Você não possui permissão para buscar imagens.',
+              error: 'Você não possui permissão para buscar imagens na web.',
             }));
             return;
           }
