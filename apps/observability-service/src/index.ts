@@ -16,6 +16,7 @@ import type { Request, Response, NextFunction } from 'express';
 import compression from 'compression';
 import cors from 'cors';
 import CircuitBreaker from 'opossum';
+import { getDatabase, schema, and, eq, gte, sql } from '@alice/database';
 import {
   createSecurityMiddleware,
   createRateLimiter,
@@ -79,6 +80,8 @@ const PROMETHEUS_URL = process.env.PROMETHEUS_URL || 'http://prometheus:9090';
 const GRAFANA_URL = process.env.GRAFANA_URL || 'http://grafana:3000';
 const JAEGER_URL = process.env.JAEGER_URL || 'http://jaeger:16686';
 const LANGFUSE_URL = process.env.LANGFUSE_URL || 'http://langfuse:3000';
+
+const BACKUP_METRICS_WINDOW_DAYS = 7;
 
 // URLs externas (para API /urls) - DEVEM corresponder às rotas do Traefik em docker-compose.prod.yml
 const PROMETHEUS_EXTERNAL = process.env.PROMETHEUS_EXTERNAL_URL || 'https://metrics.yesyoudeserve.duckdns.org';
@@ -310,6 +313,26 @@ async function checkAllServices(): Promise<StackHealth> {
   };
 }
 
+async function loadBackupJobCounts(windowDays: number): Promise<{ completed: number; failed: number }> {
+  const db = getDatabase();
+  const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
+
+  const [completed] = await db
+    .select({ value: sql<number>`count(*)` })
+    .from(schema.backupJobs)
+    .where(and(eq(schema.backupJobs.status, 'completed'), gte(schema.backupJobs.completedAt, since)));
+
+  const [failed] = await db
+    .select({ value: sql<number>`count(*)` })
+    .from(schema.backupJobs)
+    .where(and(eq(schema.backupJobs.status, 'failed'), gte(schema.backupJobs.completedAt, since)));
+
+  return {
+    completed: Number(completed?.value ?? 0),
+    failed: Number(failed?.value ?? 0),
+  };
+}
+
 const app = express();
 
 // ============================================================================
@@ -529,6 +552,18 @@ app.get('/metrics', async (_req: Request, res: Response) => {
     
     for (const [name, breaker] of circuitBreakers.entries()) {
       metrics += `observability_circuit_breaker_failures_total{service="${name.toLowerCase()}"} ${breaker.stats.failures}\n`;
+    }
+
+    metrics += '\n# HELP alice_backup_jobs_total Total de backups por status no periodo\n';
+    metrics += '# TYPE alice_backup_jobs_total gauge\n';
+
+    try {
+      const { completed, failed } = await loadBackupJobCounts(BACKUP_METRICS_WINDOW_DAYS);
+      metrics += `alice_backup_jobs_total{status="completed",window="7d"} ${completed}\n`;
+      metrics += `alice_backup_jobs_total{status="failed",window="7d"} ${failed}\n`;
+    } catch (error) {
+      logger.error({ error }, 'Erro ao carregar metricas de backup');
+      metrics += '# backup metrics unavailable\n';
     }
     
     res.set('Content-Type', 'text/plain');

@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 23 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 7.93 - Observability Dashboard Metrics Fix
+**Versão:** 7.94 - Backup Metrics Fix
 
 ---
 
@@ -298,6 +298,7 @@ Retenção Arquivo:   30 dias
 - Auth: valida `OAUTH_CALLBACK_URL` para Google e aplica fallback seguro.
 - Observability: telemetry metrics usa host/port inline no reader.
 - Observability: dashboards corrigidos para queries unicas e semantica correta.
+- Observability: backups sucesso/falha agora usam metricas reais do PostgreSQL.
 - UI: sidebar da dashboard colapsa totalmente sem autocollapse.
 - Frontend build: ordem de handlers de gravação e avatar corrigida (evita TS2448/TS2454).
 - Dark Mode: paleta preta/cinza para experiência similar ao ChatGPT.

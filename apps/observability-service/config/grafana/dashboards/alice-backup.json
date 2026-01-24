@@ -913,7 +913,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "count_over_time(up{job=\"pgbackrest-exporter\"}[7d])",
+          "expr": "alice_backup_jobs_total{status=\"completed\",window=\"7d\"}",
           "refId": "A"
         }
       ],
@@ -974,7 +974,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "count_over_time(up{job=\"pgbackrest-exporter\"}[7d])",
+          "expr": "alice_backup_jobs_total{status=\"failed\",window=\"7d\"}",
           "refId": "A"
         }
       ],

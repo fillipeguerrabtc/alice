@@ -1,6 +1,6 @@
 # Guia de Observabilidade - Alice Enterprise Platform
 
-**Versão:** 2.6.2  
+**Versão:** 2.6.3  
 **Data:** 23 de Janeiro de 2026  
 **Autor:** Fillipe Guerra
 
@@ -22,6 +22,7 @@
 | 8 | Circuit breaker HALF_OPEN não aparecia | Grafana mapeava HALF_OPEN como `2`, mas métrica usa `0.5` | Mapeamento dashboards corrigido para `0.5` (HALF-OPEN) | ✅ CORRIGIDO |
 | 9 | Alertas "DatasourceNoData" em CPU/VRAM/Qdrant/Jaeger/Vector | Targets sem scrape válido geravam falsos positivos | Ajuste de targets + auth Qdrant + exporter Vector + métricas Jaeger | ✅ CORRIGIDO |
 | 10 | Painéis com queries duplicadas (labels inconsistentes) | Semântica incorreta e confusão operacional | Queries alinhadas a métricas reais e labels corretos | ✅ CORRIGIDO |
+| 11 | Backups sucesso/falha com fonte incorreta | Sem separação real entre sucesso e falha | Métrica `alice_backup_jobs_total{status}` baseada em PostgreSQL | ✅ CORRIGIDO |
 
 ### Checklist de validação (pós-deploy)
 

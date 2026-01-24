@@ -273,7 +273,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "alice_trading_orders_active",
+          "expr": "alice_trading_rsi{symbol=\"XBTUSDTM\"}",
           "legendFormat": "RSI",
           "refId": "A"
         }
@@ -333,25 +333,25 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "alice_trading_pnl_realized_usd",
+          "expr": "alice_trading_bollinger_upper{symbol=\"XBTUSDTM\"}",
           "legendFormat": "Upper Band",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "alice_trading_pnl_unrealized_usd",
+          "expr": "alice_trading_bollinger_middle{symbol=\"XBTUSDTM\"}",
           "legendFormat": "Middle (SMA)",
           "refId": "B"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "alice_trading_orders_active",
+          "expr": "alice_trading_bollinger_lower{symbol=\"XBTUSDTM\"}",
           "legendFormat": "Lower Band",
           "refId": "C"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "alice_kucoin_ws_connected",
+          "expr": "alice_trading_price_usd{symbol=\"XBTUSDTM\"}",
           "legendFormat": "Current Price",
           "refId": "D"
         }
