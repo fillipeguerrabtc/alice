@@ -61,28 +61,29 @@ export function ConversationItem({
         <span className="font-medium text-sm truncate flex-1">
           {conversation.titulo || 'Nova Conversa'}
         </span>
-        {!isSelectionMode && (
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              onDelete?.();
-            }}
-            className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
-            aria-label="Excluir conversa"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
-        )}
       </div>
-      <p className="text-xs text-muted-foreground">
-        {new Date(conversation.criadoEm).toLocaleDateString('pt-BR', {
-          day: '2-digit',
-          month: 'short',
-          hour: '2-digit',
-          minute: '2-digit',
-        })}
-      </p>
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-muted-foreground">
+          {new Date(conversation.criadoEm).toLocaleDateString('pt-BR', {
+            day: '2-digit',
+            month: 'short',
+            hour: '2-digit',
+            minute: '2-digit',
+          })}
+        </p>
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onDelete?.();
+          }}
+          className="text-muted-foreground hover:text-destructive"
+          aria-label="Excluir conversa"
+          data-testid={`button-delete-conversation-${conversation.id}`}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </div>
     </motion.button>
   );
 }

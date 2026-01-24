@@ -77,7 +77,7 @@ export function MessageBubble({
   const assistantAvatarSrc = !isUser && isStreaming && (isLast || (message.content ?? '').length === 0)
     ? '/packman.gif'
     : (message.agent?.avatar || '/gato.gif');
-  const typingIntervalMs = Math.min(120, Math.max(10, typingSpeedMs ?? 32));
+  const typingIntervalMs = Math.min(200, Math.max(40, typingSpeedMs ?? 60));
   const handleCopy = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(message.content);
@@ -150,6 +150,7 @@ export function MessageBubble({
   }, [displayedContent, isLast, isStreaming, message.content, message.role, typingIntervalMs]);
 
   const shouldShowTypingCursor = isLast && message.role === 'assistant' && (isStreaming || displayedContent.length < (message.content ?? '').length);
+  const shouldShowThinking = shouldShowTypingCursor && displayedContent.trim().length === 0;
 
   return (
     <motion.div
@@ -196,7 +197,7 @@ export function MessageBubble({
           )}
 
           <div className="whitespace-pre-wrap text-sm leading-relaxed min-h-[1.25rem]">
-            {displayedContent}
+            {shouldShowThinking ? t('chat.thinking') : displayedContent}
             {shouldShowTypingCursor && (
               <span className="inline-block w-2 h-4 ml-0.5 bg-current animate-pulse rounded-sm" />
             )}

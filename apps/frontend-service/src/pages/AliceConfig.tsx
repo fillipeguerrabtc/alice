@@ -42,7 +42,7 @@ const assistantSettingsSchema = z.object({
   behaviorProactivity: z.number().min(0).max(100).optional().nullable(),
   moodFormality: z.number().min(0).max(100).optional().nullable(),
   moodEmpathy: z.number().min(0).max(100).optional().nullable(),
-  typingSpeedMs: z.number().min(10).max(120).optional().nullable(),
+  typingSpeedMs: z.number().min(40).max(200).optional().nullable(),
 });
 
 type AssistantSettingsForm = z.infer<typeof assistantSettingsSchema>;
@@ -121,7 +121,7 @@ export default function AliceConfig() {
       behaviorProactivity: 50,
       moodFormality: 50,
       moodEmpathy: 70,
-      typingSpeedMs: 32,
+      typingSpeedMs: 60,
     },
   });
 
@@ -153,7 +153,7 @@ export default function AliceConfig() {
         behaviorProactivity: data.settings?.behaviorProactivity ?? data.defaults.behaviorProactivity ?? 50,
         moodFormality: data.settings?.moodFormality ?? data.defaults.moodFormality ?? 50,
         moodEmpathy: data.settings?.moodEmpathy ?? data.defaults.moodEmpathy ?? 70,
-        typingSpeedMs: data.settings?.typingSpeedMs ?? data.defaults.typingSpeedMs ?? 32,
+        typingSpeedMs: data.settings?.typingSpeedMs ?? data.defaults.typingSpeedMs ?? 60,
       });
     }
   }, [data, form]);
@@ -163,7 +163,17 @@ export default function AliceConfig() {
       const res = await apiRequest('PATCH', '/api/assistant-settings', values);
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (response, variables) => {
+      queryClient.setQueryData<AssistantSettingsResponse>(['/api/assistant-settings'], (prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          settings: {
+            ...prev.settings,
+            typingSpeedMs: variables.typingSpeedMs ?? null,
+          },
+        };
+      });
       queryClient.invalidateQueries({ queryKey: ['/api/assistant-settings'] });
       toast({
         title: t('aliceConfig.saveSuccessTitle'),
@@ -196,7 +206,7 @@ export default function AliceConfig() {
       behaviorProactivity: data.defaults.behaviorProactivity ?? 50,
       moodFormality: data.defaults.moodFormality ?? 50,
       moodEmpathy: data.defaults.moodEmpathy ?? 70,
-      typingSpeedMs: data.defaults.typingSpeedMs ?? 32,
+      typingSpeedMs: data.defaults.typingSpeedMs ?? 60,
     });
   };
 
@@ -616,7 +626,7 @@ export default function AliceConfig() {
                       control={form.control}
                       name="typingSpeedMs"
                       render={({ field }) => {
-                        const resolvedValue = field.value ?? data?.defaults.typingSpeedMs ?? 32;
+                        const resolvedValue = field.value ?? data?.defaults.typingSpeedMs ?? 60;
                         return (
                           <FormItem>
                             <FormLabel>
@@ -629,8 +639,8 @@ export default function AliceConfig() {
                               <Slider
                                 value={[resolvedValue]}
                                 onValueChange={(value) => field.onChange(value[0])}
-                                min={10}
-                                max={120}
+                                min={40}
+                                max={200}
                                 step={5}
                                 disabled={!canEditCore}
                               />
