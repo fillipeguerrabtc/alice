@@ -91,6 +91,10 @@ const agenticSettingsSchema = z.object({
 });
 
 type AgenticSettingsForm = z.infer<typeof agenticSettingsSchema>;
+type AgenticTaskTypeKeyword = keyof AgenticSettingsForm['detectors']['agenticTask']['typeKeywords'];
+type ErpKeywordField = keyof AgenticSettingsForm['detectors']['erp'];
+type PaymentsKeywordField = keyof AgenticSettingsForm['detectors']['payments'];
+type StackOpsKeywordField = keyof AgenticSettingsForm['detectors']['stackOps'];
 
 type AgenticSettingsResponse = {
   settings: AgenticSettingsForm;
@@ -99,6 +103,32 @@ type AgenticSettingsResponse = {
 
 export default function AgenticConfig() {
   const { t } = useTranslation();
+  const agenticTaskTypeKeywordItems: Array<{ name: AgenticTaskTypeKeyword; label: string }> = [
+    { name: 'document', label: t('agenticConfig.taskTypeDocument') },
+    { name: 'report', label: t('agenticConfig.taskTypeReport') },
+    { name: 'accounting', label: t('agenticConfig.taskTypeAccounting') },
+    { name: 'planning', label: t('agenticConfig.taskTypePlanning') },
+  ];
+  const erpKeywordItems: Array<{ name: ErpKeywordField; label: string }> = [
+    { name: 'listItemsKeywords', label: t('agenticConfig.erpItemsKeywords') },
+    { name: 'listCustomersKeywords', label: t('agenticConfig.erpCustomersKeywords') },
+    { name: 'listInvoicesKeywords', label: t('agenticConfig.erpInvoicesKeywords') },
+    { name: 'createCustomerKeywords', label: t('agenticConfig.erpCreateCustomerKeywords') },
+    { name: 'createInvoiceKeywords', label: t('agenticConfig.erpCreateInvoiceKeywords') },
+  ];
+  const paymentsKeywordItems: Array<{ name: PaymentsKeywordField; label: string }> = [
+    { name: 'wiseRecipientsKeywords', label: t('agenticConfig.wiseRecipientsKeywords') },
+    { name: 'wiseTransferKeywords', label: t('agenticConfig.wiseTransferKeywords') },
+    { name: 'stripeKeywords', label: t('agenticConfig.stripeKeywords') },
+    { name: 'stripePaymentKeywords', label: t('agenticConfig.stripePaymentKeywords') },
+  ];
+  const stackOpsKeywordItems: Array<{ name: StackOpsKeywordField; label: string }> = [
+    { name: 'deployKeywords', label: t('agenticConfig.stackDeployKeywords') },
+    { name: 'rollbackKeywords', label: t('agenticConfig.stackRollbackKeywords') },
+    { name: 'dryRunKeywords', label: t('agenticConfig.stackDryRunKeywords') },
+    { name: 'smartDeployKeywords', label: t('agenticConfig.stackSmartDeployKeywords') },
+    { name: 'stackKeywords', label: t('agenticConfig.stackKeywords') },
+  ];
   const form = useForm<AgenticSettingsForm>({
     resolver: zodResolver(agenticSettingsSchema),
     defaultValues: {
@@ -583,16 +613,14 @@ export default function AgenticConfig() {
                   )}
                 />
                 <div className="grid gap-4 md:grid-cols-2">
-                  {[
-                    { name: 'document', label: t('agenticConfig.taskTypeDocument') },
-                    { name: 'report', label: t('agenticConfig.taskTypeReport') },
-                    { name: 'accounting', label: t('agenticConfig.taskTypeAccounting') },
-                    { name: 'planning', label: t('agenticConfig.taskTypePlanning') },
-                  ].map((item) => (
+                  {agenticTaskTypeKeywordItems.map((item) => {
+                    const fieldName: `detectors.agenticTask.typeKeywords.${AgenticTaskTypeKeyword}` =
+                      `detectors.agenticTask.typeKeywords.${item.name}`;
+                    return (
                     <FormField
                       key={item.name}
                       control={form.control}
-                      name={`detectors.agenticTask.typeKeywords.${item.name}` as const}
+                      name={fieldName}
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>{item.label}</FormLabel>
@@ -608,7 +636,8 @@ export default function AgenticConfig() {
                         </FormItem>
                       )}
                     />
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
@@ -635,17 +664,13 @@ export default function AgenticConfig() {
                   )}
                 />
                 <div className="grid gap-4 md:grid-cols-2">
-                  {[
-                    { name: 'listItemsKeywords', label: t('agenticConfig.erpItemsKeywords') },
-                    { name: 'listCustomersKeywords', label: t('agenticConfig.erpCustomersKeywords') },
-                    { name: 'listInvoicesKeywords', label: t('agenticConfig.erpInvoicesKeywords') },
-                    { name: 'createCustomerKeywords', label: t('agenticConfig.erpCreateCustomerKeywords') },
-                    { name: 'createInvoiceKeywords', label: t('agenticConfig.erpCreateInvoiceKeywords') },
-                  ].map((item) => (
+                  {erpKeywordItems.map((item) => {
+                    const fieldName: `detectors.erp.${ErpKeywordField}` = `detectors.erp.${item.name}`;
+                    return (
                     <FormField
                       key={item.name}
                       control={form.control}
-                      name={`detectors.erp.${item.name}` as const}
+                      name={fieldName}
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>{item.label}</FormLabel>
@@ -661,7 +686,8 @@ export default function AgenticConfig() {
                         </FormItem>
                       )}
                     />
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
@@ -688,16 +714,14 @@ export default function AgenticConfig() {
                   )}
                 />
                 <div className="grid gap-4 md:grid-cols-2">
-                  {[
-                    { name: 'wiseRecipientsKeywords', label: t('agenticConfig.wiseRecipientsKeywords') },
-                    { name: 'wiseTransferKeywords', label: t('agenticConfig.wiseTransferKeywords') },
-                    { name: 'stripeKeywords', label: t('agenticConfig.stripeKeywords') },
-                    { name: 'stripePaymentKeywords', label: t('agenticConfig.stripePaymentKeywords') },
-                  ].map((item) => (
+                  {paymentsKeywordItems.map((item) => {
+                    const fieldName: `detectors.payments.${PaymentsKeywordField}` =
+                      `detectors.payments.${item.name}`;
+                    return (
                     <FormField
                       key={item.name}
                       control={form.control}
-                      name={`detectors.payments.${item.name}` as const}
+                      name={fieldName}
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>{item.label}</FormLabel>
@@ -713,7 +737,8 @@ export default function AgenticConfig() {
                         </FormItem>
                       )}
                     />
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
@@ -740,17 +765,14 @@ export default function AgenticConfig() {
                   )}
                 />
                 <div className="grid gap-4 md:grid-cols-2">
-                  {[
-                    { name: 'deployKeywords', label: t('agenticConfig.stackDeployKeywords') },
-                    { name: 'rollbackKeywords', label: t('agenticConfig.stackRollbackKeywords') },
-                    { name: 'dryRunKeywords', label: t('agenticConfig.stackDryRunKeywords') },
-                    { name: 'smartDeployKeywords', label: t('agenticConfig.stackSmartDeployKeywords') },
-                    { name: 'stackKeywords', label: t('agenticConfig.stackKeywords') },
-                  ].map((item) => (
+                  {stackOpsKeywordItems.map((item) => {
+                    const fieldName: `detectors.stackOps.${StackOpsKeywordField}` =
+                      `detectors.stackOps.${item.name}`;
+                    return (
                     <FormField
                       key={item.name}
                       control={form.control}
-                      name={`detectors.stackOps.${item.name}` as const}
+                      name={fieldName}
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>{item.label}</FormLabel>
@@ -766,7 +788,8 @@ export default function AgenticConfig() {
                         </FormItem>
                       )}
                     />
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
