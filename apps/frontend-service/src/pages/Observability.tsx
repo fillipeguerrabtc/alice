@@ -308,7 +308,7 @@ function QuickLinks({ urls }: { urls?: ObservabilityUrls }) {
   const links = [
     {
       name: 'Grafana',
-      url: urls?.grafana?.external || 'https://observabilidade.yesyoudeserve.duckdns.org',
+      url: urls?.grafana?.external || 'https://observability.yesyoudeserve.duckdns.org/',
       icon: BarChart3,
       description: t('observability.grafanaDesc'),
       color: 'text-orange-500',

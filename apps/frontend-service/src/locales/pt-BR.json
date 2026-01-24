@@ -499,6 +499,19 @@
     "actions": {
       "settings": "Configurações"
     },
+    "settings": {
+      "title": "Configurações do Namespace",
+      "description": "Ajuste contexto do sistema, ordem de exibição e status do namespace.",
+      "icon": "Ícone",
+      "iconHint": "Use nomes curtos para ícones (ex: Briefcase, ChartLine).",
+      "systemContext": "Contexto do Sistema",
+      "systemContextPlaceholder": "Ex: Este namespace atende clientes de trading BTC e deve priorizar risco e compliance.",
+      "systemContextHint": "Esse contexto alimenta o system prompt do namespace.",
+      "order": "Ordem",
+      "orderHint": "Define a prioridade de listagem (0 = topo).",
+      "active": "Namespace ativo",
+      "activeHint": "Desative para ocultar este namespace no fluxo."
+    },
     "stats": {
       "agents": "{{count}} agentes",
       "docs": "{{count}} docs",

@@ -1661,7 +1661,6 @@ async function generateImageFromPrompt(input: ImageGenerationInput) {
       prompt: composedPrompt,
       size,
       n: 1,
-      response_format: 'b64_json',
       output_format: 'png',
     };
 
@@ -4831,7 +4830,19 @@ app.use(createSecurityMiddleware({
 app.use(createCorrelationMiddleware({ serviceName: 'chat-service' }));
 
 // PERFORMANCE: Compression para reduzir tamanho de respostas (Express.js 2025)
-app.use(compression());
+// SSE nao deve ser comprimido para garantir streaming em tempo real.
+app.use(compression({
+  filter: (req, res) => {
+    const acceptHeader = req.headers.accept ?? '';
+    if (typeof acceptHeader === 'string' && acceptHeader.includes('text/event-stream')) {
+      return false;
+    }
+    if (req.path === '/api/chat/stream') {
+      return false;
+    }
+    return compression.filter(req, res);
+  },
+}));
 
 app.use(cors({
   origin: CORS_ORIGINS.length > 0 ? CORS_ORIGINS : false,
@@ -6006,9 +6017,10 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       })
       : [];
 
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders();
 
     if (conversationCreated && conversationId) {

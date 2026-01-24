@@ -36,6 +36,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Switch } from "@/components/ui/switch";
 import {
   Folder,
   Plus,
@@ -56,6 +57,10 @@ interface Namespace {
   slug: string;
   descricao?: string | null;
   cor?: string | null;
+  icone?: string | null;
+  contextoSistema?: string | null;
+  ordem?: number | null;
+  ativo?: boolean | null;
 }
 
 const defaultColors = [
@@ -80,6 +85,13 @@ interface NamespaceFormData {
   descricao?: string;
 }
 
+interface NamespaceSettingsFormData {
+  icone?: string;
+  contextoSistema?: string;
+  ordem?: number | null;
+  ativo: boolean;
+}
+
 /**
  * Schema Zod com tipo explícito para evitar inferência recursiva
  */
@@ -88,6 +100,17 @@ const namespaceSchema: z.ZodType<NamespaceFormData> = z.object({
   slug: z.string().min(2).regex(/^[a-z0-9-]+$/),
   cor: z.string(),
   descricao: z.string().optional(),
+});
+
+const namespaceSettingsSchema: z.ZodType<NamespaceSettingsFormData> = z.object({
+  icone: z.string().max(50).optional(),
+  contextoSistema: z.string().max(20000).optional(),
+  ordem: z.preprocess((value) => {
+    if (value === '' || value === null || value === undefined) return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }, z.number().int().min(0).max(9999).nullable().optional()),
+  ativo: z.boolean(),
 });
 
 function NamespaceCardSkeleton() {
@@ -114,6 +137,8 @@ export default function Namespaces() {
   const { user } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingNamespace, setEditingNamespace] = useState<Namespace | null>(null);
+  const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false);
+  const [settingsNamespace, setSettingsNamespace] = useState<Namespace | null>(null);
 
   const form = useForm<NamespaceFormData>({
     resolver: asResolver<NamespaceFormData>(zodResolver(namespaceSchema)),
@@ -122,6 +147,16 @@ export default function Namespaces() {
       slug: "",
       cor: "#3B82F6",
       descricao: "",
+    },
+  });
+
+  const settingsForm = useForm<NamespaceSettingsFormData>({
+    resolver: asResolver<NamespaceSettingsFormData>(zodResolver(namespaceSettingsSchema)),
+    defaultValues: {
+      icone: "",
+      contextoSistema: "",
+      ordem: null,
+      ativo: true,
     },
   });
 
@@ -195,10 +230,34 @@ export default function Namespaces() {
     setIsDialogOpen(true);
   };
 
+  const handleSettings = (namespace: Namespace) => {
+    setSettingsNamespace(namespace);
+    settingsForm.reset({
+      icone: namespace.icone ?? "",
+      contextoSistema: namespace.contextoSistema ?? "",
+      ordem: namespace.ordem ?? null,
+      ativo: namespace.ativo ?? true,
+    });
+    setIsSettingsDialogOpen(true);
+  };
+
   const handleNewNamespace = () => {
     setEditingNamespace(null);
     form.reset();
     setIsDialogOpen(true);
+  };
+
+  const handleSettingsSubmit = (data: NamespaceSettingsFormData) => {
+    if (!settingsNamespace) return;
+    const normalizedData: Partial<NamespaceSettingsFormData> = {
+      icone: data.icone?.trim() ? data.icone.trim() : null,
+      contextoSistema: data.contextoSistema?.trim() ? data.contextoSistema.trim() : null,
+      ordem: typeof data.ordem === "number" ? data.ordem : null,
+      ativo: data.ativo,
+    };
+    updateNamespaceMutation.mutate({ id: settingsNamespace.id, data: normalizedData });
+    setIsSettingsDialogOpen(false);
+    setSettingsNamespace(null);
   };
 
   const generateSlug = (name: string) => {
@@ -347,6 +406,117 @@ export default function Namespaces() {
             </Form>
           </DialogContent>
         </Dialog>
+        <Dialog open={isSettingsDialogOpen} onOpenChange={setIsSettingsDialogOpen}>
+          <DialogContent className="sm:max-w-[560px]">
+            <DialogHeader>
+              <DialogTitle>{t('namespaces.settings.title')}</DialogTitle>
+              <DialogDescription>{t('namespaces.settings.description')}</DialogDescription>
+            </DialogHeader>
+            <Form {...settingsForm}>
+              <form onSubmit={settingsForm.handleSubmit(handleSettingsSubmit)} className="space-y-4">
+                <FormField
+                  control={settingsForm.control}
+                  name="icone"
+                  render={({ field }: { field: ControllerRenderProps<NamespaceSettingsFormData, 'icone'> }) => (
+                    <FormItem>
+                      <FormLabel>{t('namespaces.settings.icon')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="Ex: Briefcase, ChartLine"
+                          {...field}
+                          data-testid="input-namespace-icone"
+                        />
+                      </FormControl>
+                      <FormDescription>{t('namespaces.settings.iconHint')}</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={settingsForm.control}
+                  name="contextoSistema"
+                  render={({ field }: { field: ControllerRenderProps<NamespaceSettingsFormData, 'contextoSistema'> }) => (
+                    <FormItem>
+                      <FormLabel>{t('namespaces.settings.systemContext')}</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder={t('namespaces.settings.systemContextPlaceholder')}
+                          className="resize-none min-h-[140px]"
+                          rows={6}
+                          {...field}
+                          data-testid="input-namespace-contexto"
+                        />
+                      </FormControl>
+                      <FormDescription>{t('namespaces.settings.systemContextHint')}</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <FormField
+                    control={settingsForm.control}
+                    name="ordem"
+                    render={({ field }: { field: ControllerRenderProps<NamespaceSettingsFormData, 'ordem'> }) => (
+                      <FormItem>
+                        <FormLabel>{t('namespaces.settings.order')}</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min={0}
+                            max={9999}
+                            value={field.value ?? ''}
+                            onChange={(event) => {
+                              const value = event.target.value;
+                              field.onChange(value === '' ? null : Number(value));
+                            }}
+                            data-testid="input-namespace-ordem"
+                          />
+                        </FormControl>
+                        <FormDescription>{t('namespaces.settings.orderHint')}</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={settingsForm.control}
+                    name="ativo"
+                    render={({ field }: { field: ControllerRenderProps<NamespaceSettingsFormData, 'ativo'> }) => (
+                      <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                        <div className="space-y-1">
+                          <FormLabel>{t('namespaces.settings.active')}</FormLabel>
+                          <FormDescription>{t('namespaces.settings.activeHint')}</FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                            data-testid="switch-namespace-ativo"
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsSettingsDialogOpen(false)}
+                  >
+                    {t('common.cancel')}
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={updateNamespaceMutation.isPending}
+                    data-testid="button-salvar-namespace-settings"
+                  >
+                    {t('common.save')}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </Form>
+          </DialogContent>
+        </Dialog>
       </div>
 
       {isLoading ? (
@@ -382,7 +552,7 @@ export default function Namespaces() {
                         <Edit className="mr-2 h-4 w-4" />
                         {t('common.edit')}
                       </DropdownMenuItem>
-                      <DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleSettings(namespace)}>
                         <Settings className="mr-2 h-4 w-4" />
                         {t('common.settings')}
                       </DropdownMenuItem>

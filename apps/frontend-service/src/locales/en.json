@@ -499,6 +499,19 @@
     "actions": {
       "settings": "Settings"
     },
+    "settings": {
+      "title": "Namespace Settings",
+      "description": "Adjust system context, display order, and namespace status.",
+      "icon": "Icon",
+      "iconHint": "Use short icon names (e.g., Briefcase, ChartLine).",
+      "systemContext": "System Context",
+      "systemContextPlaceholder": "Example: This namespace serves BTC trading clients and must prioritize risk and compliance.",
+      "systemContextHint": "This context feeds the namespace system prompt.",
+      "order": "Order",
+      "orderHint": "Defines list priority (0 = top).",
+      "active": "Namespace active",
+      "activeHint": "Disable to hide this namespace from the flow."
+    },
     "stats": {
       "agents": "{{count}} agents",
       "docs": "{{count}} docs",
