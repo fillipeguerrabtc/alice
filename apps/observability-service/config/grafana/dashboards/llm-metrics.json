@@ -704,19 +704,19 @@
         "legend": { "calcs": ["sum"], "displayMode": "table", "placement": "bottom", "showLegend": true },
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
-      "title": "Circuit Breaker Timeouts & Rejects",
+      "title": "Circuit Breaker Failures & Successes",
       "type": "timeseries",
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "increase(alice_circuit_breaker_failures_total{name=~\".*llm.*|.*gpu.*|chat.*\"}[5m])",
-          "legendFormat": "{{ name }} - Timeouts",
+          "legendFormat": "{{ name }} - Failures",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "increase(alice_circuit_breaker_failures_total{name=~\".*llm.*|.*gpu.*|chat.*\"}[5m])",
-          "legendFormat": "{{ name }} - Rejects",
+          "expr": "increase(alice_circuit_breaker_successes_total{name=~\".*llm.*|.*gpu.*|chat.*\"}[5m])",
+          "legendFormat": "{{ name }} - Successes",
           "refId": "B"
         }
       ]
@@ -887,7 +887,7 @@
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "increase(alice_rag_queries_total[5m])",
+          "expr": "rate(alice_rag_effective_k_sum[5m])",
           "legendFormat": "Chunks Processados",
           "refId": "B"
         }

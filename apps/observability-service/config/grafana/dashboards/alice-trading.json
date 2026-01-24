@@ -642,7 +642,7 @@
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (channel) (rate(alice_kucoin_ws_reconnects_total[5m]))",
+          "expr": "sum by (channel) (rate(alice_kucoin_ws_errors_total[5m]))",
           "legendFormat": "errors/s ({{channel}})",
           "refId": "B"
         }

@@ -1,6 +1,6 @@
 # Guia de Observabilidade - Alice Enterprise Platform
 
-**Versão:** 2.6.1  
+**Versão:** 2.6.2  
 **Data:** 23 de Janeiro de 2026  
 **Autor:** Fillipe Guerra
 
@@ -21,6 +21,7 @@
 | 7 | Painéis "No data" (RBAC 0%, logs vazios) | Métricas/logs não aparecendo | Promtail atualizado para coletar logs reais dos containers (`/var/lib/docker/containers/*/*-json.log`) sem usar Docker socket (seguro) | ✅ CORRIGIDO |
 | 8 | Circuit breaker HALF_OPEN não aparecia | Grafana mapeava HALF_OPEN como `2`, mas métrica usa `0.5` | Mapeamento dashboards corrigido para `0.5` (HALF-OPEN) | ✅ CORRIGIDO |
 | 9 | Alertas "DatasourceNoData" em CPU/VRAM/Qdrant/Jaeger/Vector | Targets sem scrape válido geravam falsos positivos | Ajuste de targets + auth Qdrant + exporter Vector + métricas Jaeger | ✅ CORRIGIDO |
+| 10 | Painéis com queries duplicadas (labels inconsistentes) | Semântica incorreta e confusão operacional | Queries alinhadas a métricas reais e labels corretos | ✅ CORRIGIDO |
 
 ### Checklist de validação (pós-deploy)
 
@@ -62,12 +63,14 @@ A plataforma Alice implementa observabilidade **enterprise-grade** baseada em **
 - **Sincronização no deploy**: o workflow `deploy-stack-modular.yml` copia os dashboards do SSOT para o diretório de provisionamento **antes** de subir o stack OBSERVABILITY, evitando deriva entre “dashboards do app” vs “dashboards provisionados”.
 
 ### Métricas Agentic
-- **Ações**: `alice_agentic_actions_total` (labels: action, status)
-- **Aprovações**: `alice_agentic_approvals_total` (labels: action, decision)
-- **Latência**: `alice_agentic_action_duration_seconds` (histogram, labels: action, status)
+
+- **Ações por rota**: `alice_http_requests_total{route=~"/api/agentic.*|/api/agents.*"}`
+- **Aprovações (rotas)**: `alice_http_requests_total{route=~"/api/chat/conversations/:id/approval-policy|/api/chat/pending-handoffs"}`
+- **Latência (rotas)**: `alice_http_request_duration_seconds_bucket{route=~"/api/agentic.*|/api/agents.*"}`
 - **Dashboard**: `apps/observability-service/config/grafana/dashboards/alice-agentic.json`
 
 ### Streaming Agentic (UI)
+
 - **Objetivo**: exibir em tempo real as ações e ferramentas executadas durante uma resposta.
 - **Protocolo**: eventos `agent_event` enviados via SSE/WS com payload redigido.
 - **Segurança**: redaction automática de tokens/secrets antes de renderizar no frontend.
@@ -104,7 +107,7 @@ A plataforma Alice implementa observabilidade **enterprise-grade** baseada em **
 - **Latência P95:** `histogram_quantile(0.95, sum(rate(alice_llm_inference_duration_seconds_bucket[5m])) by (le))`
 - **TTFT P95:** `histogram_quantile(0.95, sum(rate(alice_llm_ttft_seconds_bucket[5m])) by (le))`
 - **Circuit Breaker:** `alice_circuit_breaker_state{name=~".*llm.*"}`
-- **Response Cache Hit Rate:** `sum(rate(alice_response_cache_hits_total[5m])) / (sum(rate(alice_response_cache_hits_total[5m])) + sum(rate(alice_response_cache_misses_total[5m])))`
+- **Response Cache Hit Rate:** `alice_response_cache_hit_rate`
 - **WebSocket Connections:** `alice_llm_active_sessions`
 
 **Painéis:**
@@ -163,8 +166,8 @@ A plataforma Alice implementa observabilidade **enterprise-grade** baseada em **
 - **P&L Não Realizado:** `alice_trading_pnl_unrealized_usd`
 - **Ordens Ativas:** `alice_trading_orders_active`
 - **Circuit Breaker KuCoin:** `alice_circuit_breaker_state{name="kucoin_futures"}`
-- **RSI:** `alice_trading_rsi{symbol="XBTUSDTM"}`
-- **Bollinger Bands:** `alice_trading_bollinger_{upper|middle|lower}`
+- **WS Conectado:** `alice_kucoin_ws_connected`
+- **Reconexões/Erros:** `alice_kucoin_ws_reconnects_total` e `alice_kucoin_ws_errors_total`
 - **Latência API P95:** `histogram_quantile(0.95, sum(rate(alice_integration_call_duration_seconds_bucket{integration="kucoin"}[5m])) by (le))`
 
 **Painéis:**

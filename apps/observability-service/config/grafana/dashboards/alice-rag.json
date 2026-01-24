@@ -74,7 +74,7 @@
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto", "showPercentChange": true },
       "title": "Documentos Indexados",
       "type": "stat",
-      "targets": [{ "expr": "sum(alice_rag_queries_total)", "refId": "A" }]
+      "targets": [{ "expr": "sum(alice_rag_documents_indexed)", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -91,7 +91,7 @@
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto", "showPercentChange": true },
       "title": "Chunks Totais",
       "type": "stat",
-      "targets": [{ "expr": "histogram_quantile(0.95, sum(rate(alice_rag_effective_k_bucket[5m])) by (le))", "refId": "A" }]
+      "targets": [{ "expr": "sum(alice_rag_chunks_total)", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
