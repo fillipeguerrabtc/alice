@@ -11845,7 +11845,7 @@ const assistantSettingsSchema = z.object({
   behaviorProactivity: z.number().int().min(0).max(100).optional().nullable(),
   moodFormality: z.number().int().min(0).max(100).optional().nullable(),
   moodEmpathy: z.number().int().min(0).max(100).optional().nullable(),
-  typingSpeedMs: z.number().int().min(40).max(200).optional().nullable(),
+  typingSpeedMs: z.number().int().min(40).max(400).optional().nullable(),
 });
 
 const agenticLinkSchema = z.object({

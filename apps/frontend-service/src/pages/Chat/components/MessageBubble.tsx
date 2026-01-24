@@ -77,7 +77,7 @@ export function MessageBubble({
   const assistantAvatarSrc = !isUser && isStreaming && (isLast || (message.content ?? '').length === 0)
     ? '/packman.gif'
     : (message.agent?.avatar || '/gato.gif');
-  const typingIntervalMs = Math.min(200, Math.max(40, typingSpeedMs ?? 60));
+  const typingIntervalMs = Math.min(400, Math.max(40, typingSpeedMs ?? 60));
   const handleCopy = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(message.content);
@@ -128,9 +128,7 @@ export function MessageBubble({
         if (!currentTarget.startsWith(prev)) {
           next = currentTarget;
         } else if (prev.length < currentTarget.length) {
-          const remaining = currentTarget.length - prev.length;
-          const step = Math.max(1, Math.ceil(remaining / 8));
-          next = currentTarget.slice(0, prev.length + step);
+          next = currentTarget.slice(0, prev.length + 1);
         }
         displayedContentRef.current = next;
         return next;
