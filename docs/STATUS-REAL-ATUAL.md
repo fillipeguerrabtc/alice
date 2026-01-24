@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 24 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 8.4 - Dashboard com Contagens Reais
+**Versão:** 8.5 - ASR OpenAI Estabilizado
 
 ---
 
@@ -191,6 +191,7 @@ Retenção Arquivo:   30 dias
 
 ## Atualizações recentes (resumo)
 
+- ASR: retry automático sem stream quando OpenAI falha com stream (transcrição estável).
 - Dashboard: takeover/SLA/circuit breakers/conversas semanais agora com dados reais do backend.
 - Integrações: métricas reais de Stripe/Wise/ERPNext expostas no dashboard.
 - Users Admin: modal de edição com rolagem, senha redefinível e colunas de grupos/nome preferido.

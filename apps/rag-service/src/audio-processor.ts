@@ -101,6 +101,7 @@ interface OpenAiTranscribeParams {
   audioBuffer: Buffer;
   mimeType: string;
   language?: string;
+  streamOverride?: boolean;
 }
 
 function buildAudioFilename(mimeType: string): string {
@@ -165,6 +166,7 @@ async function callOpenAiTranscription(params: OpenAiTranscribeParams): Promise<
     throw new Error('OPENAI_API_KEY não configurada - ASR via OpenAI é obrigatória');
   }
 
+  const shouldStream = params.streamOverride ?? OPENAI_ASR_STREAM;
   const form = new FormData();
   const audioBytes = new Uint8Array(params.audioBuffer);
   const audioBlob = new Blob([audioBytes], { type: params.mimeType });
@@ -174,7 +176,7 @@ async function callOpenAiTranscription(params: OpenAiTranscribeParams): Promise<
   if (params.language) {
     form.append('language', params.language);
   }
-  if (OPENAI_ASR_STREAM) {
+  if (shouldStream) {
     form.append('stream', 'true');
   }
 
@@ -189,10 +191,27 @@ async function callOpenAiTranscription(params: OpenAiTranscribeParams): Promise<
 
   if (!response.ok) {
     const errText = await response.text().catch(() => '');
+    logger.error({
+      status: response.status,
+      statusText: response.statusText,
+      stream: shouldStream,
+      model: OPENAI_ASR_MODEL,
+      mimeType: params.mimeType,
+      errText,
+    }, 'OpenAI ASR respondeu com erro');
+
+    if (shouldStream) {
+      logger.warn('Tentando ASR sem stream após falha com stream');
+      return callOpenAiTranscription({
+        ...params,
+        streamOverride: false,
+      });
+    }
+
     throw new Error(`OpenAI ASR error: ${response.status} - ${errText}`);
   }
 
-  if (OPENAI_ASR_STREAM) {
+  if (shouldStream) {
     const text = await parseOpenAiTranscriptionStream(response);
     return { text };
   }
