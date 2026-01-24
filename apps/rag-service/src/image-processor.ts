@@ -100,6 +100,12 @@ async function callOpenAiDescribeImage(params: VisionDescribeImageParams): Promi
 
   if (!response.ok) {
     const errText = await response.text().catch(() => '');
+    logger.error({
+      status: response.status,
+      statusText: response.statusText,
+      model: 'gpt-4.1',
+      errText,
+    }, 'OpenAI Vision respondeu com erro');
     throw new Error(`OpenAI Vision error: ${response.status} - ${errText}`);
   }
 

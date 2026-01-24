@@ -5475,6 +5475,11 @@ app.get('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenant
     return res.status(400).json({ error: 'ID de conversa inválido', details: paramsResult.error.format() });
   }
   const { id } = paramsResult.data;
+  const tenantId = req.tenantId;
+
+  if (!tenantId) {
+    return res.status(401).json({ error: 'Autenticação necessária' });
+  }
 
   try {
     const messages = await db.query.messages.findMany({
@@ -5502,7 +5507,50 @@ app.get('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenant
       },
     });
 
-    res.json({ messages });
+    const generatedImageIds = messages.flatMap((message) => {
+      const metadata = message.metadata as { generatedImages?: string[] } | null | undefined;
+      if (!metadata || !Array.isArray(metadata.generatedImages)) {
+        return [];
+      }
+      return metadata.generatedImages.filter((imageId): imageId is string => typeof imageId === 'string' && imageId.length > 0);
+    });
+    const uniqueGeneratedImageIds = Array.from(new Set(generatedImageIds));
+    const generatedImages = uniqueGeneratedImageIds.length > 0
+      ? await db.query.generatedImages.findMany({
+          where: and(
+            eq(schema.generatedImages.tenantId, tenantId),
+            inArray(schema.generatedImages.id, uniqueGeneratedImageIds)
+          ),
+        })
+      : [];
+    const generatedImageMap = new Map(generatedImages.map((image) => [image.id, image]));
+
+    const messagesWithGeneratedImages = messages.map((message) => {
+      const metadata = message.metadata as { generatedImages?: string[] } | null | undefined;
+      const imageId = metadata?.generatedImages?.[0];
+      if (!imageId) {
+        return message;
+      }
+      const image = generatedImageMap.get(imageId);
+      if (!image) {
+        return message;
+      }
+      return {
+        ...message,
+        generatedImage: {
+          id: image.id,
+          prompt: image.prompt,
+          imageUrl: image.imageUrl ?? undefined,
+          imagePath: image.imagePath ?? undefined,
+          status: image.status === 'generating' ? 'processing' : image.status,
+          width: image.width ?? undefined,
+          height: image.height ?? undefined,
+          feedbackScore: image.feedbackScore ?? undefined,
+        },
+      };
+    });
+
+    res.json({ messages: messagesWithGeneratedImages });
   } catch (error) {
     logger.error({ error }, 'Falha ao buscar mensagens');
     res.status(500).json({ error: 'Erro interno do servidor' });
@@ -6831,7 +6879,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         const [assistantMessage] = await db.insert(schema.messages).values({
           conversationId,
           agentId: conversation?.agentId ?? undefined,
-          conteudo: null,
+          conteudo: 'Imagem gerada.',
           tipo: 'text',
           isFromUser: false,
           metadata: {

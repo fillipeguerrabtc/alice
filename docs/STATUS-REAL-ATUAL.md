@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 24 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 8.5 - ASR OpenAI Estabilizado
+**Versão:** 8.7 - OpenAI ASR + Imagens Corrigidos
 
 ---
 
@@ -191,7 +191,11 @@ Retenção Arquivo:   30 dias
 
 ## Atualizações recentes (resumo)
 
+- ASR: gravação converte áudio para WAV quando formato não é aceito pelo OpenAI.
 - ASR: retry automático sem stream quando OpenAI falha com stream (transcrição estável).
+- Vision: logs detalhados de erro da OpenAI para diagnóstico preciso.
+- Imagens: mensagens recuperam imagens geradas via metadata (evita mensagem vazia no chat).
+- Imagens: resposta de geração agora inclui conteúdo padrão para não exibir bolha vazia.
 - Dashboard: takeover/SLA/circuit breakers/conversas semanais agora com dados reais do backend.
 - Integrações: métricas reais de Stripe/Wise/ERPNext expostas no dashboard.
 - Users Admin: modal de edição com rolagem, senha redefinível e colunas de grupos/nome preferido.
