@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 25 de Janeiro de 2026  
-**Versão:** 1.2.0  
+**Versão:** 1.3.0  
 
 ---
 
@@ -525,12 +525,234 @@ Formato: entendimento → dados necessários → ação sugerida → confirmaç�
 
 ---
 
-## 18) Checklist de secrets por ambiente (resumo)
+## 18) Configuração completa por pilar (end‑to‑end)
+
+> Objetivo: deixar **cada pilar 100% pronto** para operação e treinamento.  
+> Use estes exemplos como “copiar e colar”.
+
+### 18.1 Atendimento (Customer Support)
+**Alice Core (trecho recomendado)**
+```
+Priorize atendimento empático, respostas claras e confirmação de dados sensíveis.
+Nunca invente políticas; quando houver dúvida, peça mais informações.
+```
+
+**Namespace**
+- Nome: `Atendimento`
+- Slug: `atendimento`
+- Descrição: `Suporte ao cliente, prazos, reembolsos e informações gerais`
+- Cor: `#10B981`
+
+**Agente**
+- Nome: `Atendimento`
+- Slug: `atendimento`
+- Descrição: `Atendimento ao cliente com tom empático e objetivo`
+- Capacidades: `rag`, `web`
+- System Prompt (copiar e colar): **use o prompt do item 17.1**
+
+**Modo Agentic**
+- `webEnabled: true`
+- `financialApprovalRequired: true`
+
+**Treinamento (exemplo de descrição)**
+```
+Treino Atendimento: respostas claras e empáticas, com perguntas objetivas e sem inventar políticas.
+```
+
+---
+
+### 18.2 Trading
+**Alice Core (trecho recomendado)**
+```
+Para trading, sempre exigir confirmação explícita antes de executar qualquer ordem.
+Nunca prometer lucro. Priorizar gestão de risco.
+```
+
+**Namespace**
+- Nome: `Trading`
+- Slug: `trading`
+- Descrição: `Operações BTC Futures e sinais com gestão de risco`
+- Cor: `#3B82F6`
+
+**Agente**
+- Nome: `Trading`
+- Slug: `trading`
+- Descrição: `Especialista em KuCoin Futures com foco em risco`
+- Capacidades: `trading`, `rag`, `web`
+- System Prompt (copiar e colar): **use o prompt do item 17.2**
+
+**Modo Agentic**
+- `tradingEnabled: true`
+- `webEnabled: true`
+- `financialApprovalRequired: true`
+
+**Treinamento (exemplo de descrição)**
+```
+Treino Trading: sinais objetivos + confirmação explícita antes de execução.
+```
+
+---
+
+### 18.3 Contabilidade
+**Alice Core (trecho recomendado)**
+```
+Para contabilidade, nunca inventar números. Sempre pedir fonte/registro.
+```
+
+**Namespace**
+- Nome: `Contabilidade`
+- Slug: `contabilidade`
+- Descrição: `Lançamentos contábeis, conciliações e validações`
+- Cor: `#6366F1`
+
+**Agente**
+- Nome: `Contabilidade`
+- Slug: `contabilidade`
+- Descrição: `Agente contábil integrado ao ERPNext`
+- Capacidades: `erp`, `rag`
+- System Prompt (copiar e colar): **use o prompt do item 17.3**
+
+**Modo Agentic**
+- `erpReadEnabled: true`
+- `erpWriteEnabled: true`
+- `financialApprovalRequired: true`
+
+**Treinamento (exemplo de descrição)**
+```
+Treino Contabilidade: checklist de dados obrigatórios e confirmação explícita.
+```
+
+---
+
+### 18.4 Financeiro
+**Alice Core (trecho recomendado)**
+```
+Para financeiro, pagamentos só com aprovação explícita e dados completos.
+```
+
+**Namespace**
+- Nome: `Financeiro`
+- Slug: `financeiro`
+- Descrição: `Pagamentos, contas a pagar/receber e rotinas financeiras`
+- Cor: `#F59E0B`
+
+**Agente**
+- Nome: `Financeiro`
+- Slug: `financeiro`
+- Descrição: `Agente financeiro integrado ao ERPNext e Wise/Stripe`
+- Capacidades: `erp`, `payments`, `rag`
+- System Prompt (copiar e colar): **use o prompt do item 17.4**
+
+**Modo Agentic**
+- `erpReadEnabled: true`
+- `erpWriteEnabled: true`
+- `paymentsEnabled: true`
+- `financialApprovalRequired: true`
+
+**Treinamento (exemplo de descrição)**
+```
+Treino Financeiro: dados mínimos para pagamentos e confirmação antes de executar.
+```
+
+---
+
+### 18.5 Jurídico/Compliance
+**Alice Core (trecho recomendado)**
+```
+Jurídico/Compliance nunca emite parecer definitivo e sempre recomenda validação humana.
+```
+
+**Namespace**
+- Nome: `Jurídico/Compliance`
+- Slug: `juridico-compliance`
+- Descrição: `Análises legais, risco regulatório e compliance`
+- Cor: `#EF4444`
+
+**Agente**
+- Nome: `Jurídico e Compliance`
+- Slug: `juridico-compliance`
+- Descrição: `Agente jurídico com foco em risco e conformidade`
+- Capacidades: `web`, `rag`
+- System Prompt (copiar e colar): **use o prompt do item 17.5**
+
+**Modo Agentic**
+- `webEnabled: true`
+- `financialApprovalRequired: true`
+
+**Treinamento (exemplo de descrição)**
+```
+Treino Jurídico/Compliance: checklist de documentos e recomendação de validação humana.
+```
+
+---
+
+### 18.6 Secretaria(o)
+**Alice Core (trecho recomendado)**
+```
+Secretaria(o) organiza tarefas e pede dados faltantes sem assumir informações.
+```
+
+**Namespace**
+- Nome: `Secretaria`
+- Slug: `secretaria`
+- Descrição: `Organização de tarefas, prazos e suporte interno`
+- Cor: `#22C55E`
+
+**Agente**
+- Nome: `Secretaria`
+- Slug: `secretaria`
+- Descrição: `Agente de organização e produtividade`
+- Capacidades: `web`, `rag`
+- System Prompt (copiar e colar): **use o prompt do item 17.6**
+
+**Modo Agentic**
+- `webEnabled: true`
+
+**Treinamento (exemplo de descrição)**
+```
+Treino Secretaria: checklist de tarefas, prazos e confirmações simples.
+```
+
+---
+
+### 18.7 Backoffice
+**Alice Core (trecho recomendado)**
+```
+Backoffice padroniza processos e exige confirmação antes de alterações no ERP.
+```
+
+**Namespace**
+- Nome: `Backoffice`
+- Slug: `backoffice`
+- Descrição: `Operações internas, padronizações e revisão de cadastros`
+- Cor: `#8B5CF6`
+
+**Agente**
+- Nome: `Backoffice`
+- Slug: `backoffice`
+- Descrição: `Agente operacional para processos internos`
+- Capacidades: `erp`, `web`, `rag`
+- System Prompt (copiar e colar): **use o prompt do item 17.7**
+
+**Modo Agentic**
+- `erpReadEnabled: true`
+- `erpWriteEnabled: true`
+- `webEnabled: true`
+- `financialApprovalRequired: true`
+
+**Treinamento (exemplo de descrição)**
+```
+Treino Backoffice: padronização de processos e confirmações antes de alterar dados.
+```
+
+---
+
+## 19) Checklist de secrets por ambiente (resumo)
 
 > **SSOT obrigatório:** a lista exata e atual está em `docs/SECRETS.md`.  
 > Este checklist é um **resumo didático** para onboarding rápido.
 
-### 18.1 Desenvolvimento (local)
+### 19.1 Desenvolvimento (local)
 Obrigatórios para rodar o core:
 - `ADMIN_USER`, `ADMIN_PWD`
 - `SESSION_SECRET`, `INTERNAL_API_SECRET`
@@ -542,7 +764,7 @@ Se usar recursos avançados:
 - **Vision/ASR**: `OPENAI_API_KEY`
 - **Email**: `GMAIL_USER`, `GMAIL_APP_PASSWORD`
 
-### 18.2 Produção (Hetzner)
+### 19.2 Produção (Hetzner)
 Obrigatórios (core + compliance):
 - Admins: `ADMIN_USER`, `ADMIN_PWD`, `GRAFANA_ADMIN_USER`, `GRAFANA_ADMIN_PASSWORD`, `ERPNEXT_ADMIN_PASSWORD`
 - Segurança: `SESSION_SECRET`, `INTERNAL_API_SECRET`
@@ -558,9 +780,9 @@ Integrações opcionais (quando habilitadas):
 
 ---
 
-## 19) Apêndice — Payloads API detalhados (exemplos)
+## 20) Apêndice — Payloads API detalhados (exemplos)
 
-### 19.1 Namespaces
+### 20.1 Namespaces
 ```http
 POST /api/namespaces
 Content-Type: application/json
@@ -573,7 +795,7 @@ Content-Type: application/json
 }
 ```
 
-### 19.2 Agentes
+### 20.2 Agentes
 ```http
 POST /api/agents
 Content-Type: application/json
@@ -590,7 +812,7 @@ Content-Type: application/json
 }
 ```
 
-### 19.3 Core Settings
+### 20.3 Core Settings
 ```http
 PATCH /api/assistant-settings
 Content-Type: application/json
@@ -607,7 +829,7 @@ Content-Type: application/json
 }
 ```
 
-### 19.4 Coleta de dados de treinamento
+### 20.4 Coleta de dados de treinamento
 ```http
 POST /api/training/data
 Content-Type: application/json
@@ -624,7 +846,7 @@ Content-Type: application/json
 }
 ```
 
-### 19.5 Aprovação em lote
+### 20.5 Aprovação em lote
 ```http
 POST /api/training/data/approve-batch
 Content-Type: application/json
@@ -635,7 +857,7 @@ Content-Type: application/json
 }
 ```
 
-### 19.6 Treinamento on‑demand
+### 20.6 Treinamento on‑demand
 ```http
 POST /api/training/run/start
 Content-Type: application/json
@@ -649,7 +871,7 @@ Content-Type: application/json
 }
 ```
 
-### 19.7 Treinamento Trading
+### 20.7 Treinamento Trading
 ```http
 POST /api/training/jobs/trading
 Content-Type: application/json
@@ -660,7 +882,7 @@ Content-Type: application/json
 }
 ```
 
-### 19.8 RAG Search (texto)
+### 20.8 RAG Search (texto)
 ```http
 POST /api/rag/search
 Content-Type: application/json
@@ -672,7 +894,7 @@ Content-Type: application/json
 }
 ```
 
-### 19.9 Configuração Agentic
+### 20.9 Configuração Agentic
 ```http
 PATCH /api/agentic/settings
 Content-Type: application/json
@@ -691,7 +913,7 @@ Content-Type: application/json
 }
 ```
 
-### 19.10 Trading — Criar ordem (KuCoin)
+### 20.10 Trading — Criar ordem (KuCoin)
 ```http
 POST /api/integrations/trading/orders
 Content-Type: application/json
@@ -706,7 +928,7 @@ Content-Type: application/json
 }
 ```
 
-### 19.11 Trading — Criar stop order (TP/SL)
+### 20.11 Trading — Criar stop order (TP/SL)
 ```http
 POST /api/integrations/trading/stop-orders
 Content-Type: application/json
@@ -722,19 +944,19 @@ Content-Type: application/json
 }
 ```
 
-### 19.12 Trading — Sincronizar ordens (KuCoin)
+### 20.12 Trading — Sincronizar ordens (KuCoin)
 ```http
 POST /api/integrations/trading/orders/sync
 Content-Type: application/json
 ```
 
-### 19.13 Trading — Cancelar stop order
+### 20.13 Trading — Cancelar stop order
 ```http
 DELETE /api/integrations/trading/stop-orders/ORDER_ID
 Content-Type: application/json
 ```
 
-### 19.14 Trading — Risk Config (GET/PUT)
+### 20.14 Trading — Risk Config (GET/PUT)
 ```http
 GET /api/integrations/trading/risk-config
 ```
@@ -758,7 +980,7 @@ Content-Type: application/json
 }
 ```
 
-### 19.15 ERPNext — Criar cliente
+### 20.15 ERPNext — Criar cliente
 ```http
 POST /api/integrations/erpnext/customers
 Content-Type: application/json
@@ -773,7 +995,7 @@ Content-Type: application/json
 }
 ```
 
-### 19.16 ERPNext — Criar invoice
+### 20.16 ERPNext — Criar invoice
 ```http
 POST /api/integrations/erpnext/invoices
 Content-Type: application/json
@@ -787,7 +1009,7 @@ Content-Type: application/json
 }
 ```
 
-### 19.17 ERPNext — Nota sobre Sales Order e Payment Entry
+### 20.17 ERPNext — Nota sobre Sales Order e Payment Entry
 No `integrations-service`, **não há endpoints públicos** para `sales-order` e `payment-entry`.
 Esses registros são criados **internamente** no fluxo ERPNext (Customer → Sales Order → Sales Invoice → Payment Entry)
 usando as APIs oficiais do ERPNext:
