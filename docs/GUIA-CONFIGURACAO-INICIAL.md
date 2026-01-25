@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 25 de Janeiro de 2026  
-**Versão:** 1.3.0  
+**Versão:** 1.4.0  
 
 ---
 
@@ -537,18 +537,50 @@ Priorize atendimento empático, respostas claras e confirmação de dados sensí
 Nunca invente políticas; quando houver dúvida, peça mais informações.
 ```
 
-**Namespace**
+**Namespace (configuração completa)**
 - Nome: `Atendimento`
 - Slug: `atendimento`
-- Descrição: `Suporte ao cliente, prazos, reembolsos e informações gerais`
+- Descrição: `Suporte ao cliente, prazos, reembolsos, dúvidas gerais e acompanhamento`
 - Cor: `#10B981`
+- Objetivo do namespace: centralizar documentos de FAQ, políticas e scripts de atendimento.
 
-**Agente**
+**Exemplo pronto (copiar e colar)**
+```http
+POST /api/namespaces
+Content-Type: application/json
+
+{
+  "nome": "Atendimento",
+  "slug": "atendimento",
+  "descricao": "Suporte ao cliente, prazos, reembolsos, dúvidas gerais e acompanhamento",
+  "cor": "#10B981"
+}
+```
+
+**Agente (configuração completa)**
 - Nome: `Atendimento`
 - Slug: `atendimento`
+- Status: `active`
 - Descrição: `Atendimento ao cliente com tom empático e objetivo`
-- Capacidades: `rag`, `web`
+- Capacidades: `["rag","web"]`
 - System Prompt (copiar e colar): **use o prompt do item 17.1**
+
+**Exemplo pronto (copiar e colar)**
+```http
+POST /api/agents
+Content-Type: application/json
+
+{
+  "nome": "Atendimento",
+  "slug": "atendimento",
+  "status": "active",
+  "namespaceId": "UUID_DO_NAMESPACE_ATENDIMENTO",
+  "descricao": "Atendimento ao cliente com tom empático e objetivo",
+  "instrucoes": "Use o prompt de Atendimento do guia.",
+  "personalidade": "Empática, clara e objetiva",
+  "capacidades": ["rag", "web"]
+}
+```
 
 **Modo Agentic**
 - `webEnabled: true`
@@ -568,18 +600,50 @@ Para trading, sempre exigir confirmação explícita antes de executar qualquer 
 Nunca prometer lucro. Priorizar gestão de risco.
 ```
 
-**Namespace**
+**Namespace (configuração completa)**
 - Nome: `Trading`
 - Slug: `trading`
-- Descrição: `Operações BTC Futures e sinais com gestão de risco`
+- Descrição: `Operações BTC Futures, sinais, riscos, posições e histórico`
 - Cor: `#3B82F6`
+- Objetivo do namespace: guardar políticas de risco, playbooks e regras de execução.
 
-**Agente**
+**Exemplo pronto (copiar e colar)**
+```http
+POST /api/namespaces
+Content-Type: application/json
+
+{
+  "nome": "Trading",
+  "slug": "trading",
+  "descricao": "Operações BTC Futures, sinais, riscos, posições e histórico",
+  "cor": "#3B82F6"
+}
+```
+
+**Agente (configuração completa)**
 - Nome: `Trading`
 - Slug: `trading`
+- Status: `active`
 - Descrição: `Especialista em KuCoin Futures com foco em risco`
-- Capacidades: `trading`, `rag`, `web`
+- Capacidades: `["trading","rag","web"]`
 - System Prompt (copiar e colar): **use o prompt do item 17.2**
+
+**Exemplo pronto (copiar e colar)**
+```http
+POST /api/agents
+Content-Type: application/json
+
+{
+  "nome": "Trading",
+  "slug": "trading",
+  "status": "active",
+  "namespaceId": "UUID_DO_NAMESPACE_TRADING",
+  "descricao": "Especialista em KuCoin Futures com foco em risco",
+  "instrucoes": "Use o prompt de Trading do guia.",
+  "personalidade": "Objetiva, conservadora e focada em risco",
+  "capacidades": ["trading", "rag", "web"]
+}
+```
 
 **Modo Agentic**
 - `tradingEnabled: true`
@@ -599,18 +663,50 @@ Treino Trading: sinais objetivos + confirmação explícita antes de execução.
 Para contabilidade, nunca inventar números. Sempre pedir fonte/registro.
 ```
 
-**Namespace**
+**Namespace (configuração completa)**
 - Nome: `Contabilidade`
 - Slug: `contabilidade`
-- Descrição: `Lançamentos contábeis, conciliações e validações`
+- Descrição: `Lançamentos contábeis, conciliações, validações e fechamento`
 - Cor: `#6366F1`
+- Objetivo do namespace: centralizar regras contábeis e evidências.
 
-**Agente**
+**Exemplo pronto (copiar e colar)**
+```http
+POST /api/namespaces
+Content-Type: application/json
+
+{
+  "nome": "Contabilidade",
+  "slug": "contabilidade",
+  "descricao": "Lançamentos contábeis, conciliações, validações e fechamento",
+  "cor": "#6366F1"
+}
+```
+
+**Agente (configuração completa)**
 - Nome: `Contabilidade`
 - Slug: `contabilidade`
+- Status: `active`
 - Descrição: `Agente contábil integrado ao ERPNext`
-- Capacidades: `erp`, `rag`
+- Capacidades: `["erp","rag"]`
 - System Prompt (copiar e colar): **use o prompt do item 17.3**
+
+**Exemplo pronto (copiar e colar)**
+```http
+POST /api/agents
+Content-Type: application/json
+
+{
+  "nome": "Contabilidade",
+  "slug": "contabilidade",
+  "status": "active",
+  "namespaceId": "UUID_DO_NAMESPACE_CONTABILIDADE",
+  "descricao": "Agente contábil integrado ao ERPNext",
+  "instrucoes": "Use o prompt de Contabilidade do guia.",
+  "personalidade": "Precisa, técnica e verificável",
+  "capacidades": ["erp", "rag"]
+}
+```
 
 **Modo Agentic**
 - `erpReadEnabled: true`
@@ -630,18 +726,50 @@ Treino Contabilidade: checklist de dados obrigatórios e confirmação explícit
 Para financeiro, pagamentos só com aprovação explícita e dados completos.
 ```
 
-**Namespace**
+**Namespace (configuração completa)**
 - Nome: `Financeiro`
 - Slug: `financeiro`
-- Descrição: `Pagamentos, contas a pagar/receber e rotinas financeiras`
+- Descrição: `Pagamentos, contas a pagar/receber, fluxo de caixa e conciliações`
 - Cor: `#F59E0B`
+- Objetivo do namespace: padronizar pagamentos e checklist financeiro.
 
-**Agente**
+**Exemplo pronto (copiar e colar)**
+```http
+POST /api/namespaces
+Content-Type: application/json
+
+{
+  "nome": "Financeiro",
+  "slug": "financeiro",
+  "descricao": "Pagamentos, contas a pagar/receber, fluxo de caixa e conciliações",
+  "cor": "#F59E0B"
+}
+```
+
+**Agente (configuração completa)**
 - Nome: `Financeiro`
 - Slug: `financeiro`
+- Status: `active`
 - Descrição: `Agente financeiro integrado ao ERPNext e Wise/Stripe`
-- Capacidades: `erp`, `payments`, `rag`
+- Capacidades: `["erp","payments","rag"]`
 - System Prompt (copiar e colar): **use o prompt do item 17.4**
+
+**Exemplo pronto (copiar e colar)**
+```http
+POST /api/agents
+Content-Type: application/json
+
+{
+  "nome": "Financeiro",
+  "slug": "financeiro",
+  "status": "active",
+  "namespaceId": "UUID_DO_NAMESPACE_FINANCEIRO",
+  "descricao": "Agente financeiro integrado ao ERPNext e Wise/Stripe",
+  "instrucoes": "Use o prompt de Financeiro do guia.",
+  "personalidade": "Conservadora, analítica e objetiva",
+  "capacidades": ["erp", "payments", "rag"]
+}
+```
 
 **Modo Agentic**
 - `erpReadEnabled: true`
@@ -662,18 +790,50 @@ Treino Financeiro: dados mínimos para pagamentos e confirmação antes de execu
 Jurídico/Compliance nunca emite parecer definitivo e sempre recomenda validação humana.
 ```
 
-**Namespace**
+**Namespace (configuração completa)**
 - Nome: `Jurídico/Compliance`
 - Slug: `juridico-compliance`
-- Descrição: `Análises legais, risco regulatório e compliance`
+- Descrição: `Risco regulatório, políticas internas, contratos e conformidade`
 - Cor: `#EF4444`
+- Objetivo do namespace: centralizar políticas e documentos oficiais.
 
-**Agente**
+**Exemplo pronto (copiar e colar)**
+```http
+POST /api/namespaces
+Content-Type: application/json
+
+{
+  "nome": "Jurídico/Compliance",
+  "slug": "juridico-compliance",
+  "descricao": "Risco regulatório, políticas internas, contratos e conformidade",
+  "cor": "#EF4444"
+}
+```
+
+**Agente (configuração completa)**
 - Nome: `Jurídico e Compliance`
 - Slug: `juridico-compliance`
+- Status: `active`
 - Descrição: `Agente jurídico com foco em risco e conformidade`
-- Capacidades: `web`, `rag`
+- Capacidades: `["web","rag"]`
 - System Prompt (copiar e colar): **use o prompt do item 17.5**
+
+**Exemplo pronto (copiar e colar)**
+```http
+POST /api/agents
+Content-Type: application/json
+
+{
+  "nome": "Jurídico e Compliance",
+  "slug": "juridico-compliance",
+  "status": "active",
+  "namespaceId": "UUID_DO_NAMESPACE_JURIDICO",
+  "descricao": "Agente jurídico com foco em risco e conformidade",
+  "instrucoes": "Use o prompt de Jurídico/Compliance do guia.",
+  "personalidade": "Cautelosa, baseada em evidências",
+  "capacidades": ["web", "rag"]
+}
+```
 
 **Modo Agentic**
 - `webEnabled: true`
@@ -692,18 +852,50 @@ Treino Jurídico/Compliance: checklist de documentos e recomendação de valida�
 Secretaria(o) organiza tarefas e pede dados faltantes sem assumir informações.
 ```
 
-**Namespace**
+**Namespace (configuração completa)**
 - Nome: `Secretaria`
 - Slug: `secretaria`
-- Descrição: `Organização de tarefas, prazos e suporte interno`
+- Descrição: `Organização de tarefas, prazos, reuniões e suporte interno`
 - Cor: `#22C55E`
+- Objetivo do namespace: concentrar checklists e rotinas internas.
 
-**Agente**
+**Exemplo pronto (copiar e colar)**
+```http
+POST /api/namespaces
+Content-Type: application/json
+
+{
+  "nome": "Secretaria",
+  "slug": "secretaria",
+  "descricao": "Organização de tarefas, prazos, reuniões e suporte interno",
+  "cor": "#22C55E"
+}
+```
+
+**Agente (configuração completa)**
 - Nome: `Secretaria`
 - Slug: `secretaria`
+- Status: `active`
 - Descrição: `Agente de organização e produtividade`
-- Capacidades: `web`, `rag`
+- Capacidades: `["web","rag"]`
 - System Prompt (copiar e colar): **use o prompt do item 17.6**
+
+**Exemplo pronto (copiar e colar)**
+```http
+POST /api/agents
+Content-Type: application/json
+
+{
+  "nome": "Secretaria",
+  "slug": "secretaria",
+  "status": "active",
+  "namespaceId": "UUID_DO_NAMESPACE_SECRETARIA",
+  "descricao": "Agente de organização e produtividade",
+  "instrucoes": "Use o prompt de Secretaria do guia.",
+  "personalidade": "Organizada, objetiva e previsível",
+  "capacidades": ["web", "rag"]
+}
+```
 
 **Modo Agentic**
 - `webEnabled: true`
@@ -721,18 +913,50 @@ Treino Secretaria: checklist de tarefas, prazos e confirmações simples.
 Backoffice padroniza processos e exige confirmação antes de alterações no ERP.
 ```
 
-**Namespace**
+**Namespace (configuração completa)**
 - Nome: `Backoffice`
 - Slug: `backoffice`
-- Descrição: `Operações internas, padronizações e revisão de cadastros`
+- Descrição: `Operações internas, padronização e revisão de cadastros`
 - Cor: `#8B5CF6`
+- Objetivo do namespace: processos internos e melhorias operacionais.
 
-**Agente**
+**Exemplo pronto (copiar e colar)**
+```http
+POST /api/namespaces
+Content-Type: application/json
+
+{
+  "nome": "Backoffice",
+  "slug": "backoffice",
+  "descricao": "Operações internas, padronização e revisão de cadastros",
+  "cor": "#8B5CF6"
+}
+```
+
+**Agente (configuração completa)**
 - Nome: `Backoffice`
 - Slug: `backoffice`
+- Status: `active`
 - Descrição: `Agente operacional para processos internos`
-- Capacidades: `erp`, `web`, `rag`
+- Capacidades: `["erp","web","rag"]`
 - System Prompt (copiar e colar): **use o prompt do item 17.7**
+
+**Exemplo pronto (copiar e colar)**
+```http
+POST /api/agents
+Content-Type: application/json
+
+{
+  "nome": "Backoffice",
+  "slug": "backoffice",
+  "status": "active",
+  "namespaceId": "UUID_DO_NAMESPACE_BACKOFFICE",
+  "descricao": "Agente operacional para processos internos",
+  "instrucoes": "Use o prompt de Backoffice do guia.",
+  "personalidade": "Metódica, padronizada e orientada a processos",
+  "capacidades": ["erp", "web", "rag"]
+}
+```
 
 **Modo Agentic**
 - `erpReadEnabled: true`
