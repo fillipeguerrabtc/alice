@@ -2898,6 +2898,7 @@ export interface AgenticDetectors {
     listItemsKeywords: string[];
     listCustomersKeywords: string[];
     listInvoicesKeywords: string[];
+    annualBillingKeywords: string[];
     createCustomerKeywords: string[];
     createInvoiceKeywords: string[];
   };

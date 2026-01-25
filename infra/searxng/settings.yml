@@ -33,8 +33,8 @@ server:
   # Bind interno - Traefik faz proxy externo
   bind_address: "0.0.0.0"
   port: 8080
-  # Segredo carregado via variável de ambiente SEARXNG_SECRET_KEY
-  secret_key: ""
+  # Segredo carregado via variável de ambiente SEARXNG_SECRET
+  # (não manter valor vazio aqui para não sobrescrever o env)
   # Formato de log JSON para parsing por Loki
   limiter: false
   # Limiter desabilitado - rate limiting feito na borda

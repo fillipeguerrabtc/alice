@@ -1329,7 +1329,23 @@ Content-Type: application/json
 }
 ```
 
-### 20.17 ERPNext — Nota sobre Sales Order e Payment Entry
+### 20.17 ERPNext — Faturamento anual do cliente
+```http
+GET /api/integrations/erpnext/customer-annual-billing?customer=ACME%20LTDA&year=2025
+```
+
+Resposta (exemplo):
+```json
+{
+  "customer": "ACME LTDA",
+  "year": 2025,
+  "total": 15000,
+  "currency": "BRL",
+  "invoiceCount": 3
+}
+```
+
+### 20.18 ERPNext — Nota sobre Sales Order e Payment Entry
 No `integrations-service`, **não há endpoints públicos** para `sales-order` e `payment-entry`.
 Esses registros são criados **internamente** no fluxo ERPNext (Customer → Sales Order → Sales Invoice → Payment Entry)
 usando as APIs oficiais do ERPNext:

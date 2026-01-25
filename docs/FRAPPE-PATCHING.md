@@ -1,7 +1,7 @@
 # Frappe Framework Patching - Guia de Atualização de Segurança
 
 **Autor:** Fillipe Guerra  
-**Data:** 02 de Janeiro de 2026
+**Data:** 25 de Janeiro de 2026
 
 ## Sumário
 
@@ -56,10 +56,10 @@
 
 | Branch | Versão Mínima | Data Release | Observações |
 |--------|---------------|--------------|-------------|
-| **v15** | **v15.91.3** | Dez 2025 | Inclui TODOS os patches SQL injection |
+| **v15** | **v15.95.0** | Jan 2026 | Inclui TODOS os patches SQL injection |
 | v14 | v14.96.15 | Nov 2025 | Para instalações legadas |
 
-**STATUS ALICE:** ✅ v15.91.3 configurado em `infra/docker/docker-compose.prod.yml` (14/12/2025)
+**STATUS ALICE:** ✅ v15.95.0 configurado em `infra/versions.env` (25/01/2026)
 
 ---
 
@@ -122,10 +122,10 @@ docker compose -f docker-compose.prod.yml stop \
 # Alterar de:
 #   image: frappe/erpnext:v15
 # Para:
-#   image: frappe/erpnext:v15.91.3
+#   image: frappe/erpnext:v15.95.0
 
 # Ou usar variável de ambiente:
-export ERPNEXT_VERSION=v15.91.3
+export ERPNEXT_VERSION=v15.95.0
 
 # Pull nova imagem
 docker compose -f docker-compose.prod.yml pull \
@@ -184,7 +184,7 @@ docker compose -f docker-compose.prod.yml exec erpnext-backend \
   bench version
 
 # Deve mostrar:
-# frappe v15.91.3 ou superior
+# frappe v15.95.0 ou superior
 # erpnext v15.x.x
 
 # Health check do site

@@ -1910,6 +1910,101 @@ app.get('/api/integrations/erpnext/invoices', requirePermission('integrations:er
   }
 });
 
+app.get('/api/integrations/erpnext/customer-annual-billing', requirePermission('integrations:erpnext:read'), async (req: Request, res: Response) => {
+  if (!config.ERPNEXT_URL) {
+    return res.status(503).json({ error: 'ERPNext not configured' });
+  }
+
+  const customer = String(req.query.customer ?? '').trim();
+  const yearParam = String(req.query.year ?? '').trim();
+  const resolvedYear = yearParam ? Number(yearParam) : new Date().getFullYear();
+
+  if (!customer) {
+    return res.status(400).json({ error: 'Parâmetro customer é obrigatório' });
+  }
+  if (!Number.isFinite(resolvedYear) || resolvedYear < 2000 || resolvedYear > 2100) {
+    return res.status(400).json({ error: 'Parâmetro year inválido' });
+  }
+
+  const startDate = `${resolvedYear}-01-01`;
+  const endDate = `${resolvedYear}-12-31`;
+  const fields = encodeURIComponent(JSON.stringify([
+    'name',
+    'customer',
+    'grand_total',
+    'base_grand_total',
+    'currency',
+    'base_currency',
+    'posting_date',
+    'docstatus',
+  ]));
+  const filters = encodeURIComponent(JSON.stringify([
+    ['Sales Invoice', 'customer', '=', customer],
+    ['Sales Invoice', 'docstatus', '=', 1],
+    ['Sales Invoice', 'posting_date', '>=', startDate],
+    ['Sales Invoice', 'posting_date', '<=', endDate],
+  ]));
+
+  const pageSize = 100;
+  let offset = 0;
+  let total = 0;
+  let currency: string | null = null;
+  let invoiceCount = 0;
+
+  try {
+    while (true) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT_MS);
+      const response = await fetch(
+        `${config.ERPNEXT_URL}/api/resource/Sales%20Invoice?fields=${fields}&filters=${filters}&limit_start=${offset}&limit_page_length=${pageSize}`,
+        {
+          headers: {
+            'Authorization': `token ${config.ERPNEXT_API_KEY}:${config.ERPNEXT_API_SECRET}`,
+          },
+          signal: controller.signal,
+        }
+      ).finally(() => clearTimeout(timeoutId));
+
+      if (!response.ok) {
+        const errText = await response.text().catch(() => '');
+        throw new Error(`Failed to fetch invoices: ${response.status} - ${errText}`);
+      }
+
+      const data = await response.json() as { data: Array<Record<string, unknown>> };
+      const invoices = data.data ?? [];
+      if (invoices.length === 0) {
+        break;
+      }
+
+      for (const invoice of invoices) {
+        const baseTotal = Number(invoice.base_grand_total);
+        const grandTotal = Number(invoice.grand_total);
+        const value = Number.isFinite(baseTotal) ? baseTotal : (Number.isFinite(grandTotal) ? grandTotal : 0);
+        total += value;
+        if (!currency) {
+          currency = String(invoice.base_currency ?? invoice.currency ?? '').trim() || null;
+        }
+      }
+      invoiceCount += invoices.length;
+      offset += pageSize;
+      if (invoices.length < pageSize) {
+        break;
+      }
+    }
+
+    res.json({
+      customer,
+      year: resolvedYear,
+      total,
+      currency: currency ?? 'BRL',
+      invoiceCount,
+    });
+  } catch (error) {
+    logger.error({ error, customer, year: resolvedYear }, 'Failed to calculate ERPNext annual billing');
+    res.status(500).json({ error: 'Failed to calculate annual billing' });
+  }
+});
+
 const erpNextInvoiceItemSchema = z.object({
   itemCode: z.string().min(2),
   qty: z.number().positive(),

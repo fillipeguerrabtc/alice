@@ -128,6 +128,7 @@ services:
       - /tmp:mode=1777,size=32M
       - /etc/ssl/certs:mode=1777,size=8M
     environment:
+      - SEARXNG_SECRET=${SEARXNG_SECRET_KEY:?SEARXNG_SECRET_KEY é obrigatório}
       - SEARXNG_SECRET_KEY=${SEARXNG_SECRET_KEY:?SEARXNG_SECRET_KEY é obrigatório}
       - SEARXNG_BASE_URL=http://alice-searxng:8080/
     volumes:

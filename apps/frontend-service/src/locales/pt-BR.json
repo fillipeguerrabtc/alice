@@ -1826,6 +1826,7 @@
     "erpItemsKeywords": "Itens / estoque",
     "erpCustomersKeywords": "Clientes",
     "erpInvoicesKeywords": "Faturas",
+    "erpAnnualBillingKeywords": "Faturamento anual",
     "erpCreateCustomerKeywords": "Criar cliente",
     "erpCreateInvoiceKeywords": "Criar fatura",
     "erpKeywordsPlaceholder": "clientes\ninvoices",

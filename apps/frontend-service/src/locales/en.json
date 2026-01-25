@@ -1826,6 +1826,7 @@
     "erpItemsKeywords": "Items / stock",
     "erpCustomersKeywords": "Customers",
     "erpInvoicesKeywords": "Invoices",
+    "erpAnnualBillingKeywords": "Annual billing",
     "erpCreateCustomerKeywords": "Create customer",
     "erpCreateInvoiceKeywords": "Create invoice",
     "erpKeywordsPlaceholder": "customers\ninvoices",

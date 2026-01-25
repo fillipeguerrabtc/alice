@@ -27,7 +27,7 @@ Alice is an autonomous AI enterprise platform served on Hetzner GPU server GEX44
 | 14 | **VERIFICAR SECRETS** | Checar variáveis existentes |
 | 15 | **MICROSSERVIÇOS** | Código em apps/, compartilhado em packages/ |
 | 16 | **MELHORES PRÁTICAS** | API Gateway, health checks, circuit breakers |
-| 17 | **REVIEW ANTES DO COMMIT** | Todas as mudanças DEVEM passar por review antes de serem commitadas. Após review e aprovação, fazer commit consolidado. **Staging é permitido** quando necessário (ex.: adicionar novos arquivos ou deleções). |
+| 17 | **REVIEW APÓS COMMIT (CURSOR)** | Commits consolidados DEVEM ser feitos primeiro. A review automática do Cursor ocorre após o commit. A revisão humana acontece antes do push. **Staging é permitido** quando necessário (ex.: adicionar novos arquivos ou deleções). |
 | 18 | **COMMITS CONSOLIDADOS E PUSH MANUAL** | **OBRIGATÓRIO**: Fazer commits consolidados com várias mudanças relacionadas em modo enterprise, ao invés de commitar cada mudança individualmente. Isso otimiza a review automática do Cursor (habilitada após cada commit) e segue melhores práticas enterprise. **PROIBIDO** push automático. Push manual com "Sync Changes" SOMENTE quando todas as implementações estiverem revisadas, commitadas e aprovadas. O usuário decide quando fazer push. |
 
 ### Preferências de Idioma
@@ -558,8 +558,8 @@ Permissões Enterprise (Atualizado 09/01/2026):
 
 1. **Desenvolvimento**: Código é modificado no working directory
 2. **Acumulação de Mudanças**: Múltiplas mudanças relacionadas são desenvolvidas e mantidas no working directory
-3. **Review Consolidado**: Todas as mudanças relacionadas DEVEM passar por review conjunto antes de commit
-4. **Commit Consolidado**: Após review e aprovação, fazer commit consolidado (`git commit -a` ou commit via IDE). **Staging pode ser usado** quando necessário (ex.: novos arquivos/deleções).
+3. **Commit Consolidado**: Fazer commit consolidado (`git commit -a` ou commit via IDE). **Staging pode ser usado** quando necessário (ex.: novos arquivos/deleções).
+4. **Review Consolidado (Cursor)**: A review automática do Cursor ocorre após o commit. A revisão humana acontece antes do push.
 5. **Acumulação Local**: Commits consolidados vão acumulando localmente (múltiplos commits consolidados são permitidos)
 6. **Push Manual**: Push manual com "Sync Changes" **SOMENTE** quando:
    - Todas as implementações estiverem completas
@@ -573,7 +573,7 @@ Permissões Enterprise (Atualizado 09/01/2026):
 - **PROIBIDO**: Commitar cada mudança individualmente (ineficiente e sobrecarrega review automática)
 - **PERMITIDO**: Usar `git add` para **novos arquivos** e **deleções**
 - **PROIBIDO**: Push automático (via hooks, CI/CD local, ou qualquer automação)
-- **OBRIGATÓRIO**: Review antes de cada commit consolidado
+- **OBRIGATÓRIO**: Review após cada commit consolidado (automática via Cursor)
 - **OBRIGATÓRIO**: Aprovação do usuário antes de push
 - **PERMITIDO**: Múltiplos commits consolidados locais acumulados antes do push
 

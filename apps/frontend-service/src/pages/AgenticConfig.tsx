@@ -68,6 +68,7 @@ const agenticSettingsSchema = z.object({
       listItemsKeywords: z.array(z.string().min(1).max(160)).max(200),
       listCustomersKeywords: z.array(z.string().min(1).max(160)).max(200),
       listInvoicesKeywords: z.array(z.string().min(1).max(160)).max(200),
+      annualBillingKeywords: z.array(z.string().min(1).max(160)).max(200),
       createCustomerKeywords: z.array(z.string().min(1).max(160)).max(200),
       createInvoiceKeywords: z.array(z.string().min(1).max(160)).max(200),
     }),
@@ -113,6 +114,7 @@ export default function AgenticConfig() {
     { name: 'listItemsKeywords', label: t('agenticConfig.erpItemsKeywords') },
     { name: 'listCustomersKeywords', label: t('agenticConfig.erpCustomersKeywords') },
     { name: 'listInvoicesKeywords', label: t('agenticConfig.erpInvoicesKeywords') },
+    { name: 'annualBillingKeywords', label: t('agenticConfig.erpAnnualBillingKeywords') },
     { name: 'createCustomerKeywords', label: t('agenticConfig.erpCreateCustomerKeywords') },
     { name: 'createInvoiceKeywords', label: t('agenticConfig.erpCreateInvoiceKeywords') },
   ];
@@ -161,6 +163,7 @@ export default function AgenticConfig() {
           listItemsKeywords: [],
           listCustomersKeywords: [],
           listInvoicesKeywords: [],
+          annualBillingKeywords: [],
           createCustomerKeywords: [],
           createInvoiceKeywords: [],
         },

@@ -1161,10 +1161,19 @@ const DEFAULT_AGENTIC_DETECTORS: AgenticDetectors = {
     },
   },
   erp: {
-    baseKeywords: ['erp', 'erpnext', 'estoque', 'inventario', 'inventory'],
+    baseKeywords: ['erp', 'erpnext', 'estoque', 'inventario', 'inventory', 'fatura', 'invoice', 'cliente', 'customer'],
     listItemsKeywords: ['estoque', 'inventario', 'itens', 'items', 'inventory'],
     listCustomersKeywords: ['clientes', 'customers'],
     listInvoicesKeywords: ['faturas', 'invoices', 'invoice'],
+    annualBillingKeywords: [
+      'faturamento anual',
+      'receita anual',
+      'vendas anuais',
+      'annual revenue',
+      'annual billing',
+      'yearly revenue',
+      'yearly billing',
+    ],
     createCustomerKeywords: ['criar cliente', 'cadastrar cliente', 'novo cliente'],
     createInvoiceKeywords: ['criar fatura', 'emitir fatura', 'criar invoice', 'emitir invoice'],
   },
@@ -1231,6 +1240,7 @@ function normalizeAgenticDetectors(detectors: Partial<AgenticDetectors> | null |
       listItemsKeywords: normalizeDetectorList(safe.erp?.listItemsKeywords ?? DEFAULT_AGENTIC_DETECTORS.erp.listItemsKeywords),
       listCustomersKeywords: normalizeDetectorList(safe.erp?.listCustomersKeywords ?? DEFAULT_AGENTIC_DETECTORS.erp.listCustomersKeywords),
       listInvoicesKeywords: normalizeDetectorList(safe.erp?.listInvoicesKeywords ?? DEFAULT_AGENTIC_DETECTORS.erp.listInvoicesKeywords),
+      annualBillingKeywords: normalizeDetectorList(safe.erp?.annualBillingKeywords ?? DEFAULT_AGENTIC_DETECTORS.erp.annualBillingKeywords),
       createCustomerKeywords: normalizeDetectorList(safe.erp?.createCustomerKeywords ?? DEFAULT_AGENTIC_DETECTORS.erp.createCustomerKeywords),
       createInvoiceKeywords: normalizeDetectorList(safe.erp?.createInvoiceKeywords ?? DEFAULT_AGENTIC_DETECTORS.erp.createInvoiceKeywords),
     },
@@ -1469,6 +1479,7 @@ type ErpCommand =
   | { type: 'list_items' }
   | { type: 'list_customers' }
   | { type: 'list_invoices' }
+  | { type: 'annual_billing'; payload: { customerName: string; year: number }; missing?: string[] }
   | { type: 'create_customer'; payload: { customerName: string; customerType: string; territory: string; email?: string; phone?: string; taxId?: string }; missing?: string[] }
   | { type: 'create_invoice'; payload: { customer: string; items: Array<{ itemCode: string; qty: number; rate: number }>; dueDate?: string }; missing?: string[] };
 
@@ -1487,6 +1498,26 @@ function extractField(message: string, label: string): string | null {
   return match?.[1]?.trim() ?? null;
 }
 
+function extractInlineField(message: string, label: string): string | null {
+  const regex = new RegExp(`${label}\\s+([^\\n]+)`, 'i');
+  const match = message.match(regex);
+  return match?.[1]?.trim() ?? null;
+}
+
+function extractCustomerName(message: string): string | null {
+  return extractField(message, 'cliente')
+    ?? extractInlineField(message, 'cliente')
+    ?? extractField(message, 'customer')
+    ?? extractInlineField(message, 'customer');
+}
+
+function extractYearFromMessage(message: string): number | null {
+  const match = message.match(/\b(20\d{2})\b/);
+  if (!match?.[1]) return null;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function extractJsonField(message: string, label: string): unknown | null {
   const regex = new RegExp(`${label}\\s*[:=]\\s*(\\{[\\s\\S]+\\}|\\[[\\s\\S]+\\])`, 'i');
   const match = message.match(regex);
@@ -1503,6 +1534,22 @@ function detectErpCommand(message: string, detectors: AgenticDetectors): ErpComm
   if (!normalized) return null;
 
   const erpDetectors = detectors.erp;
+  if (erpDetectors.annualBillingKeywords.some((keyword) => normalized.includes(keyword))) {
+    const customerName = extractCustomerName(message);
+    const year = extractYearFromMessage(message) ?? new Date().getFullYear();
+    const missing = [
+      !customerName ? 'cliente' : null,
+    ].filter(Boolean) as string[];
+    return {
+      type: 'annual_billing',
+      payload: {
+        customerName: customerName ?? '',
+        year,
+      },
+      missing: missing.length ? missing : undefined,
+    };
+  }
+
   if (erpDetectors.baseKeywords.some((keyword) => normalized.includes(keyword))) {
     if (erpDetectors.listItemsKeywords.some((keyword) => normalized.includes(keyword))) {
       return { type: 'list_items' };
@@ -1516,7 +1563,7 @@ function detectErpCommand(message: string, detectors: AgenticDetectors): ErpComm
   }
 
   if (erpDetectors.createCustomerKeywords.some((keyword) => normalized.includes(keyword))) {
-    const customerName = extractField(message, 'nome') ?? extractField(message, 'cliente');
+    const customerName = extractField(message, 'nome') ?? extractCustomerName(message);
     const customerType = extractField(message, 'tipo');
     const territory = extractField(message, 'territorio') ?? extractField(message, 'território');
     const email = extractField(message, 'email') ?? undefined;
@@ -1542,7 +1589,7 @@ function detectErpCommand(message: string, detectors: AgenticDetectors): ErpComm
   }
 
   if (erpDetectors.createInvoiceKeywords.some((keyword) => normalized.includes(keyword))) {
-    const customer = extractField(message, 'cliente') ?? extractField(message, 'customer');
+    const customer = extractCustomerName(message);
     const itemsRaw = extractJsonField(message, 'itens') ?? extractJsonField(message, 'items');
     const dueDate = extractField(message, 'vencimento') ?? extractField(message, 'due_date') ?? undefined;
     const items = Array.isArray(itemsRaw)
@@ -1570,6 +1617,22 @@ function detectErpCommand(message: string, detectors: AgenticDetectors): ErpComm
   return null;
 }
 
+function detectErpIntent(message: string, detectors: AgenticDetectors): boolean {
+  const normalized = normalizeForAgenticDetection(message);
+  if (!normalized) return false;
+  const erpDetectors = detectors.erp;
+  const candidateLists = [
+    erpDetectors.baseKeywords,
+    erpDetectors.listItemsKeywords,
+    erpDetectors.listCustomersKeywords,
+    erpDetectors.listInvoicesKeywords,
+    erpDetectors.annualBillingKeywords,
+    erpDetectors.createCustomerKeywords,
+    erpDetectors.createInvoiceKeywords,
+  ];
+  return candidateLists.some((list) => list.some((keyword) => normalized.includes(keyword)));
+}
+
 function isErpWriteCommand(command: ErpCommand): command is Extract<ErpCommand, { type: 'create_customer' | 'create_invoice' }> {
   return command.type === 'create_customer' || command.type === 'create_invoice';
 }
@@ -1581,6 +1644,9 @@ function buildErpCommandSummary(command: ErpCommand): string {
   if (command.type === 'create_invoice') {
     const itemCount = command.payload.items?.length ?? 0;
     return `ERPNext: criar fatura (${command.payload.customer} | ${itemCount} itens)`;
+  }
+  if (command.type === 'annual_billing') {
+    return `ERPNext: faturamento anual (${command.payload.customerName || 'sem nome'} | ${command.payload.year})`;
   }
   return 'ERPNext: operação';
 }
@@ -1644,6 +1710,35 @@ async function executeErpCommand(params: {
     responseContent = invoices.length
       ? `Faturas do ERPNext (top 10):\n${invoices.join('\n')}`
       : 'Nenhuma fatura encontrada no ERPNext.';
+    integrationResult = result;
+  }
+
+  if (command.type === 'annual_billing') {
+    const customerParam = encodeURIComponent(command.payload.customerName);
+    const yearParam = encodeURIComponent(String(command.payload.year));
+    const result = await callIntegrationsService<{
+      customer: string;
+      year: number;
+      total: number;
+      currency: string;
+      invoiceCount: number;
+    }>({
+      endpoint: `/api/integrations/erpnext/customer-annual-billing?customer=${customerParam}&year=${yearParam}`,
+      method: 'GET',
+      auth,
+    });
+    const currency = result.currency || 'BRL';
+    let formattedTotal = `${result.total}`;
+    try {
+      formattedTotal = new Intl.NumberFormat('pt-BR', {
+        style: 'currency',
+        currency,
+      }).format(result.total);
+    } catch {
+      formattedTotal = `${result.total} ${currency}`;
+    }
+    responseContent = `Faturamento anual do cliente ${result.customer} em ${result.year}: ${formattedTotal}. ` +
+      `Total de faturas consideradas: ${result.invoiceCount}.`;
     integrationResult = result;
   }
 
@@ -8377,7 +8472,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
     const erpCommand = detectErpCommand(userMessageContent, agenticDetectors);
     if (erpCommand) {
-      if ((erpCommand.type === 'list_items' || erpCommand.type === 'list_customers' || erpCommand.type === 'list_invoices') && !agenticSettings.erpReadEnabled) {
+      if ((erpCommand.type === 'list_items' || erpCommand.type === 'list_customers' || erpCommand.type === 'list_invoices' || erpCommand.type === 'annual_billing') && !agenticSettings.erpReadEnabled) {
         res.write(`data: ${JSON.stringify({ error: 'ERPNext leitura está desativada nas configurações do tenant.' })}\n\n`);
         res.write('data: [DONE]\n\n');
         res.end();
@@ -8392,7 +8487,10 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
       const permissionCheck = await checkPermission(
         authContext,
-        erpCommand.type === 'list_items' || erpCommand.type === 'list_customers' || erpCommand.type === 'list_invoices'
+        erpCommand.type === 'list_items'
+        || erpCommand.type === 'list_customers'
+        || erpCommand.type === 'list_invoices'
+        || erpCommand.type === 'annual_billing'
           ? 'integrations:erpnext:read'
           : 'integrations:erpnext:write'
       );
@@ -8555,6 +8653,38 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         res.end();
         return;
       }
+    }
+
+    if (!erpCommand && detectErpIntent(userMessageContent, agenticDetectors)) {
+      const responseContent = [
+        'Não consegui identificar uma operação válida no ERPNext para esse pedido.',
+        'Consigo executar: listar clientes, listar itens, listar faturas, criar cliente, criar fatura e faturamento anual do cliente.',
+        'Exemplo: "faturamento anual do cliente Palmer Productions Ltd. ano 2025".',
+      ].join(' ');
+      const [assistantMessage] = await db.insert(schema.messages).values({
+        conversationId,
+        agentId: conversation?.agentId ?? undefined,
+        conteudo: responseContent,
+        tipo: 'text',
+        isFromUser: false,
+        metadata: {
+          erpCommand: 'unsupported',
+        },
+      }).returning();
+
+      await db.update(schema.conversations)
+        .set({
+          totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+          ultimaMensagemEm: new Date(),
+          atualizadoEm: new Date(),
+        })
+        .where(eq(schema.conversations.id, conversationId));
+
+      res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+      res.write('data: [DONE]\n\n');
+      res.end();
+      return;
     }
 
     const paymentCommand = detectPaymentCommand(userMessageContent, agenticDetectors);
@@ -13122,6 +13252,7 @@ const agenticDetectorsSchema = z.object({
     listItemsKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
     listCustomersKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
     listInvoicesKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+      annualBillingKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
     createCustomerKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
     createInvoiceKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
   }),
