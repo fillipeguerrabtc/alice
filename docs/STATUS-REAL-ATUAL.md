@@ -275,7 +275,7 @@ Retenção Arquivo:   30 dias
 - Docs: seção didática sobre funcionamento dos agentes no chat (roteamento, WhatsApp, handover) + prompts completos dos 7 pilares.
 - Docs: configuração end-to-end por pilar (namespaces, agentes, toggles e treino) com exemplos prontos.
 - Docs: exemplos completos de namespace + agente (payloads) para 8 pilares (inclui Fiscal).
-- Web Search: headers de encaminhamento e user-agent interno no rag-service; SearXNG marcado como instância interna para evitar 403.
+- Web Search: headers de encaminhamento e user-agent interno no rag-service; SearXNG mantido como instância interna (public_instance=false) para evitar Valkey/limiter obrigatório.
 - Prompt: instruções PT-BR para idioma, capacidades e SERVER_TIME.
 - DB: nova tabela action_requests + enums para auditoria de ações.
 
