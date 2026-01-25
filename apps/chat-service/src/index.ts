@@ -14328,10 +14328,17 @@ app.post('/api/chat/images/:id/approve', requireAuth(), requireSameTenant(getTen
 });
 
 // ARQUITETURA v4.0.0: Stats simplificado (image-generation-client removido)
-app.get('/api/chat/images/stats', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:read'), async (_req: Request, res: Response) => {
+app.get('/api/chat/images/stats', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:read'), async (req: Request, res: Response) => {
   try {
+    const tenantId = req.tenantId;
+    if (!tenantId) {
+      return res.status(401).json({ error: 'Autenticação necessária' });
+    }
+
     type GeneratedImage = typeof schema.generatedImages.$inferSelect;
-    const images = await db.query.generatedImages.findMany() as GeneratedImage[];
+    const images = await db.query.generatedImages.findMany({
+      where: eq(schema.generatedImages.tenantId, tenantId),
+    }) as GeneratedImage[];
     
     const completed = images.filter((img: GeneratedImage) => img.status === 'completed');
     const ratedImages = images.filter(

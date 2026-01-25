@@ -504,10 +504,7 @@ export default function ImageGalleryPage() {
     queryKey: ["/api/chat/images", filterStatus, filterApproved, page],
     queryFn: async () => {
       const queryString = buildQueryParams();
-      const response = await fetch(`/api/chat/images?${queryString}`, {
-        credentials: "include",
-      });
-      if (!response.ok) throw new Error("Falha ao carregar imagens");
+      const response = await apiRequest("GET", `/api/chat/images?${queryString}`);
       return response.json();
     },
     enabled: !!user,
@@ -530,7 +527,7 @@ export default function ImageGalleryPage() {
             Galeria de Imagens
           </h1>
           <p className="text-muted-foreground">
-            Imagens geradas pelo FLUX.1 Schnell
+            Imagens geradas via OpenAI (gpt-image-1)
           </p>
         </div>
       </div>

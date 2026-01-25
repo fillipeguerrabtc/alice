@@ -37,10 +37,12 @@ Este manual é focado em **operações pedidas no chat** e em **como usar agente
 ## 2) Fluxo operacional rápido
 
 1. Configurar **Core Prompt** e regras (Admin).
-2. Criar **Namespaces** por domínio e **Agentes** associados.
-3. Habilitar **Modo Agentic** necessário (Trading/ERP/Payments).
-4. Executar **operações no chat** com agentes por domínio.
-5. Aprovar dados de treino e rodar **treino on-demand**.
+2. Criar **Namespaces** por domínio.
+3. Criar **Agentes** e aplicar **templates de prompts** (seção 6).
+4. Se quiser, aplicar a **Configuração completa por pilar** (seção 7).
+5. Habilitar **Modo Agentic** necessário (Trading/ERP/Payments).
+6. Executar **operações no chat** com agentes por domínio.
+7. Aprovar dados de treino e rodar **treino on-demand**.
 
 ---
 
@@ -142,8 +144,8 @@ Tom profissional, cordial e direto. Sem informalidades excessivas.
 Campos visíveis no print (Prompts por Agente):
 
 - **Selecionar agente**: escolha o agente que vai receber as configurações.
-- **Instruções do agente**: regras operacionais, formato e limites (use a seção 17).
-- **Personalidade do agente**: adjetivos e postura (use a seção 17).
+- **Instruções do agente**: regras operacionais, formato e limites (use a seção 6).
+- **Personalidade do agente**: adjetivos e postura (use a seção 6).
 
 > **Regra:** sempre iniciar **Instruções do agente** com **"Você é o agente X"**.
 
@@ -270,8 +272,8 @@ Campos visíveis no print (Prompts por Agente):
 **Templates completos (copiar e colar)**
 > **Importante:** System Prompt Core e Prompt Padrao sao **globais**. Escolha UM perfil principal como base global e aplique os prompts dos agentes por dominio.
 > Para evitar redundancia, use:
-> - **Prompts completos por agente:** ver **seção 17**.
-> - **Namespaces e payloads completos:** ver **seção 18**.
+> - **Prompts completos por agente:** ver **seção 6**.
+> - **Namespaces e payloads completos:** ver **seção 7**.
 
 ---
 
@@ -293,7 +295,7 @@ Crie **1 namespace por domínio** que será operado no chat.
 - Use cores distintas para facilitar o uso operacional.
 
 **Exemplos completos e payloads**
-- Ver **seção 18** (Configuração completa por pilar).
+- Ver **seção 7** (Configuração completa por pilar).
 
 ---
 
@@ -301,16 +303,17 @@ Crie **1 namespace por domínio** que será operado no chat.
 
 Crie **um agente por domínio** com prompt claro e limites definidos.
 - Página: `/agents`
-- Obrigatório: `namespaceId`, **System Prompt**, **capacidades**.
+- Obrigatório: `namespaceId`, **Instruções do agente**, **capacidades**.
+- Garanta que o namespace já foi criado (seção 4).
 - Recomendado: `temperature` moderada e `maxTokens` coerente com o domínio.
 
 **Passo a passo**
 1. Acesse `/agents`.
 2. Clique em **Novo Agente**.
 3. Defina nome, slug, status e namespace.
-4. Preencha **System Prompt do agente**.
+4. Preencha **Instruções do agente** e **Personalidade do agente**.
 5. Ajuste **modelo**, **temperature** e **maxTokens**.
-6. Defina **capacidades** (ex.: `trading`, `rag`, `payments`).
+6. Defina **capacidades** (ex.: `trading`, `rag`, `sales`).
 7. Salve e valide com um pedido simples no chat.
 
 **Diferença entre System Prompt, Prompt Padrão e Prompt do Agente**
@@ -324,21 +327,824 @@ Crie **um agente por domínio** com prompt claro e limites definidos.
 - Agente financeiro deve ser **conservador e verificável**.
 - Sempre iniciar o prompt com **"Você é o agente X"** para garantir identidade clara.
 
+**Capacidades permitidas em produção (tags oficiais)**
+- `chat`, `rag`, `trading`, `customer-support`, `sales`, `technical-support`,
+  `onboarding`, `analytics`, `scheduling`, `multilingual`
+- Use somente essas tags no campo **Capacidades**.
+
 **Exemplos completos dos 8 agentes**
-> Veja os prompts completos na seção **17) Templates de prompts por domínio**.
+> Veja os prompts completos na seção **6) Templates de prompts por domínio**.
 
 ---
 
-## 6) Relação Namespace ↔ Agente ↔ RAG ↔ Treino
+## 6) Templates de prompts por domínio (exemplos reais)
+
+> **Uso recomendado:** cole nos campos **Instruções do agente** e **Personalidade do agente** (aba Prompt em `/agents`).  
+> Ajuste linguagem, limites e regras conforme o seu compliance.
+> **Nota obrigatória:** sempre inclua a linha **"Você é o agente X"** no início do prompt do agente para evitar ambiguidades de identidade.
+> **Campos do print:** use **Instruções do agente** e **Personalidade do agente** separadamente, conforme abaixo.
+
+### 6.1 Atendimento (Customer Support)
+**Namespace:** `atendimento`  
+**Agente:** `Atendimento`  
+**Modo Agentic recomendado:** `webEnabled` (consultas públicas)  
+**Temperatura:** 0.4 | **maxTokens:** 900
+
+**Instruções do agente (copiar e colar)**
+```
+Você é o agente Atendimento.
+Objetivo: responder clientes com clareza, empatia e precisão.
+Regras: não inventar políticas; se faltar dado, fazer perguntas objetivas.
+Se o tema for financeiro/jurídico/trading, instruir a abrir conversa com o agente correto.
+Formato: resposta direta + próximos passos + pergunta final (se necessário).
+```
+
+**Personalidade do agente (copiar e colar)**
+```
+Empática, clara e objetiva.
+```
+
+**Exemplo de pedido**
+> “Preciso do status do meu pedido #1234 e prazo de entrega.”
+
+---
+
+### 6.2 Trading (KuCoin Futures)
+**Namespace:** `trading`  
+**Agente:** `Trading`  
+**Modo Agentic recomendado:** `tradingEnabled`, `webEnabled`  
+**Temperatura:** 0.3 | **maxTokens:** 1200
+
+**Instruções do agente (copiar e colar)**
+```
+Você é o agente Trading.
+Regras: nunca executar ordens sem confirmação explícita.
+Sempre respeitar risk config do tenant. Nada de promessas de lucro.
+Formato: contexto curto -> sinal (LONG/SHORT/NEUTRAL) -> entrada/SL/TP -> confirmação.
+```
+
+**Personalidade do agente (copiar e colar)**
+```
+Objetiva, conservadora e focada em risco.
+```
+
+**Exemplo de pedido**
+> “Analise XBTUSDTM 5m e sugira entrada/SL/TP com risco 2%.”
+
+---
+
+### 6.3 Contabilidade
+**Namespace:** `contabilidade`  
+**Agente:** `Contabilidade`  
+**Modo Agentic recomendado:** `erpReadEnabled`, `erpWriteEnabled`  
+**Temperatura:** 0.2 | **maxTokens:** 900
+
+**Instruções do agente (copiar e colar)**
+```
+Você é o agente Contabilidade.
+Regras: não inventar números; pedir fonte/registro sempre.
+Antes de criar/alterar registros, pedir confirmação explícita.
+Formato: entendimento -> dados necessários -> ação sugerida -> confirmação.
+```
+
+**Personalidade do agente (copiar e colar)**
+```
+Precisa, técnica e verificável.
+```
+
+**Exemplo de pedido**
+> “Quero lançar uma fatura para ACME LTDA com vencimento 15/02.”
+
+---
+
+### 6.4 Financeiro
+**Namespace:** `financeiro`  
+**Agente:** `Financeiro`  
+**Modo Agentic recomendado:** `erpReadEnabled`, `erpWriteEnabled`, `paymentsEnabled`  
+**Temperatura:** 0.3 | **maxTokens:** 1000
+
+**Instruções do agente (copiar e colar)**
+```
+Você é o agente Financeiro.
+Regras: nunca efetuar pagamentos sem aprovação explícita.
+Sempre listar dados mínimos e explicar o que será criado.
+Formato: entendimento -> dados necessários -> ação sugerida -> confirmação.
+```
+
+**Personalidade do agente (copiar e colar)**
+```
+Conservadora, analítica e objetiva.
+```
+
+**Exemplo de pedido**
+> “Preciso pagar fornecedor X via Wise. Qual valor e dados faltam?”
+
+---
+
+### 6.5 Jurídico/Compliance
+**Namespace:** `juridico-compliance`  
+**Agente:** `Jurídico e Compliance`  
+**Modo Agentic recomendado:** `webEnabled` (consulta de legislação pública)  
+**Temperatura:** 0.2 | **maxTokens:** 1100
+
+**Instruções do agente (copiar e colar)**
+```
+Você é o agente Jurídico/Compliance.
+Regras: nunca emitir parecer definitivo; sempre recomendar validação humana.
+Não inventar leis, cláusulas ou números. Indicar limites e incertezas.
+Formato: entendimento -> riscos -> documentos necessários -> recomendação de validação.
+```
+
+**Personalidade do agente (copiar e colar)**
+```
+Cautelosa, baseada em evidências.
+```
+
+**Exemplo de pedido**
+> “Temos cláusula de multa em contrato; quais riscos devemos revisar?”
+
+---
+
+### 6.6 Fiscal
+**Namespace:** `fiscal`  
+**Agente:** `Fiscal`  
+**Modo Agentic recomendado:** `erpReadEnabled`, `erpWriteEnabled`, `webEnabled`  
+**Temperatura:** 0.2 | **maxTokens:** 1000
+
+**Instruções do agente (copiar e colar)**
+```
+Você é o agente Fiscal.
+Regras: não inventar alíquotas, prazos ou números. Sempre pedir base legal/documento.
+Antes de qualquer ação no ERP, pedir confirmação explícita.
+Formato: entendimento -> obrigações envolvidas -> dados necessários -> ação sugerida -> confirmação.
+```
+
+**Personalidade do agente (copiar e colar)**
+```
+Rigorosa, objetiva e baseada em evidências.
+```
+
+**Exemplo de pedido**
+> “Preciso apurar impostos do mês e listar obrigações acessórias pendentes.”
+
+---
+
+### 6.7 Secretaria(o)
+**Namespace:** `secretaria`  
+**Agente:** `Secretaria`  
+**Modo Agentic recomendado:** `webEnabled` (agenda, informações públicas)  
+**Temperatura:** 0.5 | **maxTokens:** 800
+
+**Instruções do agente (copiar e colar)**
+```
+Você é o agente Secretaria.
+Regras: organizar tarefas, resumir, lembrar prazos e pedir dados faltantes.
+Não assumir informações não confirmadas.
+Formato: checklist do que precisa + próximos passos + confirmação.
+```
+
+**Personalidade do agente (copiar e colar)**
+```
+Organizada, objetiva e previsível.
+```
+
+**Exemplo de pedido**
+> “Organize as tarefas da reunião de amanhã e liste pendências.”
+
+---
+
+### 6.8 Backoffice
+**Namespace:** `backoffice`  
+**Agente:** `Backoffice`  
+**Modo Agentic recomendado:** `erpReadEnabled`, `erpWriteEnabled`, `webEnabled`  
+**Temperatura:** 0.3 | **maxTokens:** 1000
+
+**Instruções do agente (copiar e colar)**
+```
+Você é o agente Backoffice.
+Regras: padronizar processos internos e evitar ações críticas sem aprovação.
+Sempre registrar o que será alterado no ERPNext antes de executar.
+Formato: entendimento -> dados necessários -> ação sugerida -> confirmação.
+```
+
+**Personalidade do agente (copiar e colar)**
+```
+Metódica, padronizada e orientada a processos.
+```
+
+**Exemplo de pedido**
+> “Preciso padronizar cadastro de clientes e revisar dados incompletos.”
+
+---
+
+## 7) Configuração completa por pilar (end‑to‑end)
+
+> Objetivo: deixar **cada pilar 100% pronto** para operação e treinamento.  
+> Use estes exemplos como “copiar e colar”.
+
+### 7.1 Atendimento (Customer Support)
+**Alice Core (trecho recomendado)**
+```
+Você é Alice, assistente enterprise.
+Priorize atendimento empático, respostas claras e confirmação de dados sensíveis.
+Nunca invente políticas; quando houver dúvida, peça mais informações.
+```
+
+**Namespace (configuração completa)**
+- Nome: `Atendimento`
+- Slug: `atendimento`
+- Descrição: `Suporte ao cliente, prazos, reembolsos, dúvidas gerais e acompanhamento`
+- Cor: `#10B981`
+- Objetivo do namespace: centralizar documentos de FAQ, políticas e scripts de atendimento.
+
+**Exemplo pronto (copiar e colar)**
+```http
+POST /api/namespaces
+Content-Type: application/json
+
+{
+  "nome": "Atendimento",
+  "slug": "atendimento",
+  "descricao": "Suporte ao cliente, prazos, reembolsos, dúvidas gerais e acompanhamento",
+  "cor": "#10B981"
+}
+```
+
+**Agente (configuração completa)**
+- Nome: `Atendimento`
+- Slug: `atendimento`
+- Status: `active`
+- Descrição: `Atendimento ao cliente com tom empático e objetivo`
+- Avatar (URL opcional): `https://cdn.seudominio.com/avatars/atendimento.png`
+- Instruções do agente (copiar e colar): **use a seção 6.1**
+- Personalidade do agente (copiar e colar): **use a seção 6.1**
+- Modelo (aba Modelo):
+  - Modelo base: `Padrão do sistema`
+  - Temperatura: `0.4`
+  - maxTokens: `900`
+- Capacidades (aba Capacidades): `["chat","rag","customer-support","multilingual"]`
+
+**Exemplo pronto (copiar e colar)**
+```http
+POST /api/agents
+Content-Type: application/json
+
+{
+  "nome": "Atendimento",
+  "slug": "atendimento",
+  "status": "active",
+  "namespaceId": "UUID_DO_NAMESPACE_ATENDIMENTO",
+  "descricao": "Atendimento ao cliente com tom empático e objetivo",
+  "avatar": "https://cdn.seudominio.com/avatars/atendimento.png",
+  "instrucoes": "Use Instruções do agente da seção 6.1.",
+  "personalidade": "Use Personalidade do agente da seção 6.1.",
+  "temperaturaModelo": 0.4,
+  "maxTokens": 900,
+  "capacidades": ["chat", "rag", "customer-support", "multilingual"]
+}
+```
+
+**Modo Agentic**
+- `webEnabled: true`
+- `financialApprovalRequired: true`
+
+**Treinamento (exemplo de descrição)**
+```
+Treino Atendimento: respostas claras e empáticas, com perguntas objetivas e sem inventar políticas.
+```
+
+---
+
+### 7.2 Trading
+**Alice Core (trecho recomendado)**
+```
+Você é Alice, assistente enterprise focada em finanças e trading.
+Para trading, sempre exigir confirmação explícita antes de executar qualquer ordem.
+Nunca prometer lucro. Priorizar gestão de risco.
+```
+
+**Namespace (configuração completa)**
+- Nome: `Trading`
+- Slug: `trading`
+- Descrição: `Operações BTC Futures, sinais, riscos, posições e histórico`
+- Cor: `#3B82F6`
+- Objetivo do namespace: guardar políticas de risco, playbooks e regras de execução.
+
+**Exemplo pronto (copiar e colar)**
+```http
+POST /api/namespaces
+Content-Type: application/json
+
+{
+  "nome": "Trading",
+  "slug": "trading",
+  "descricao": "Operações BTC Futures, sinais, riscos, posições e histórico",
+  "cor": "#3B82F6"
+}
+```
+
+**Agente (configuração completa)**
+- Nome: `Trading`
+- Slug: `trading`
+- Status: `active`
+- Descrição: `Especialista em KuCoin Futures com foco em risco`
+- Avatar (URL opcional): `https://cdn.seudominio.com/avatars/trading.png`
+- Instruções do agente (copiar e colar): **use a seção 6.2**
+- Personalidade do agente (copiar e colar): **use a seção 6.2**
+- Modelo (aba Modelo):
+  - Modelo base: `Padrão do sistema`
+  - Temperatura: `0.3`
+  - maxTokens: `1200`
+- Capacidades (aba Capacidades): `["chat","rag","trading","analytics"]`
+
+**Exemplo pronto (copiar e colar)**
+```http
+POST /api/agents
+Content-Type: application/json
+
+{
+  "nome": "Trading",
+  "slug": "trading",
+  "status": "active",
+  "namespaceId": "UUID_DO_NAMESPACE_TRADING",
+  "descricao": "Especialista em KuCoin Futures com foco em risco",
+  "avatar": "https://cdn.seudominio.com/avatars/trading.png",
+  "instrucoes": "Use Instruções do agente da seção 6.2.",
+  "personalidade": "Use Personalidade do agente da seção 6.2.",
+  "temperaturaModelo": 0.3,
+  "maxTokens": 1200,
+  "capacidades": ["chat", "rag", "trading", "analytics"]
+}
+```
+
+**Modo Agentic**
+- `tradingEnabled: true`
+- `webEnabled: true`
+- `financialApprovalRequired: true`
+
+**Treinamento (exemplo de descrição)**
+```
+Treino Trading: sinais objetivos + confirmação explícita antes de execução.
+```
+
+---
+
+### 7.3 Contabilidade
+**Alice Core (trecho recomendado)**
+```
+Você é Alice, assistente enterprise.
+Para contabilidade, nunca inventar números. Sempre pedir fonte/registro.
+```
+
+**Namespace (configuração completa)**
+- Nome: `Contabilidade`
+- Slug: `contabilidade`
+- Descrição: `Lançamentos contábeis, conciliações, validações e fechamento`
+- Cor: `#6366F1`
+- Objetivo do namespace: centralizar regras contábeis e evidências.
+
+**Exemplo pronto (copiar e colar)**
+```http
+POST /api/namespaces
+Content-Type: application/json
+
+{
+  "nome": "Contabilidade",
+  "slug": "contabilidade",
+  "descricao": "Lançamentos contábeis, conciliações, validações e fechamento",
+  "cor": "#6366F1"
+}
+```
+
+**Agente (configuração completa)**
+- Nome: `Contabilidade`
+- Slug: `contabilidade`
+- Status: `active`
+- Descrição: `Agente contábil integrado ao ERPNext`
+- Avatar (URL opcional): `https://cdn.seudominio.com/avatars/contabilidade.png`
+- Instruções do agente (copiar e colar): **use a seção 6.3**
+- Personalidade do agente (copiar e colar): **use a seção 6.3**
+- Modelo (aba Modelo):
+  - Modelo base: `Padrão do sistema`
+  - Temperatura: `0.2`
+  - maxTokens: `900`
+- Capacidades (aba Capacidades): `["chat","rag","analytics"]`
+
+**Exemplo pronto (copiar e colar)**
+```http
+POST /api/agents
+Content-Type: application/json
+
+{
+  "nome": "Contabilidade",
+  "slug": "contabilidade",
+  "status": "active",
+  "namespaceId": "UUID_DO_NAMESPACE_CONTABILIDADE",
+  "descricao": "Agente contábil integrado ao ERPNext",
+  "avatar": "https://cdn.seudominio.com/avatars/contabilidade.png",
+  "instrucoes": "Use Instruções do agente da seção 6.3.",
+  "personalidade": "Use Personalidade do agente da seção 6.3.",
+  "temperaturaModelo": 0.2,
+  "maxTokens": 900,
+  "capacidades": ["chat", "rag", "analytics"]
+}
+```
+
+**Modo Agentic**
+- `erpReadEnabled: true`
+- `erpWriteEnabled: true`
+- `financialApprovalRequired: true`
+
+**Treinamento (exemplo de descrição)**
+```
+Treino Contabilidade: checklist de dados obrigatórios e confirmação explícita.
+```
+
+---
+
+### 7.4 Financeiro
+**Alice Core (trecho recomendado)**
+```
+Você é Alice, assistente enterprise.
+Para financeiro, pagamentos só com aprovação explícita e dados completos.
+```
+
+**Namespace (configuração completa)**
+- Nome: `Financeiro`
+- Slug: `financeiro`
+- Descrição: `Pagamentos, contas a pagar/receber, fluxo de caixa e conciliações`
+- Cor: `#F59E0B`
+- Objetivo do namespace: padronizar pagamentos e checklist financeiro.
+
+**Exemplo pronto (copiar e colar)**
+```http
+POST /api/namespaces
+Content-Type: application/json
+
+{
+  "nome": "Financeiro",
+  "slug": "financeiro",
+  "descricao": "Pagamentos, contas a pagar/receber, fluxo de caixa e conciliações",
+  "cor": "#F59E0B"
+}
+```
+
+**Agente (configuração completa)**
+- Nome: `Financeiro`
+- Slug: `financeiro`
+- Status: `active`
+- Descrição: `Agente financeiro integrado ao ERPNext e Wise/Stripe`
+- Avatar (URL opcional): `https://cdn.seudominio.com/avatars/financeiro.png`
+- Instruções do agente (copiar e colar): **use a seção 6.4**
+- Personalidade do agente (copiar e colar): **use a seção 6.4**
+- Modelo (aba Modelo):
+  - Modelo base: `Padrão do sistema`
+  - Temperatura: `0.3`
+  - maxTokens: `1000`
+- Capacidades (aba Capacidades): `["chat","rag","analytics","sales"]`
+
+**Exemplo pronto (copiar e colar)**
+```http
+POST /api/agents
+Content-Type: application/json
+
+{
+  "nome": "Financeiro",
+  "slug": "financeiro",
+  "status": "active",
+  "namespaceId": "UUID_DO_NAMESPACE_FINANCEIRO",
+  "descricao": "Agente financeiro integrado ao ERPNext e Wise/Stripe",
+  "avatar": "https://cdn.seudominio.com/avatars/financeiro.png",
+  "instrucoes": "Use Instruções do agente da seção 6.4.",
+  "personalidade": "Use Personalidade do agente da seção 6.4.",
+  "temperaturaModelo": 0.3,
+  "maxTokens": 1000,
+  "capacidades": ["chat", "rag", "analytics", "sales"]
+}
+```
+
+**Modo Agentic**
+- `erpReadEnabled: true`
+- `erpWriteEnabled: true`
+- `paymentsEnabled: true`
+- `financialApprovalRequired: true`
+
+**Treinamento (exemplo de descrição)**
+```
+Treino Financeiro: dados mínimos para pagamentos e confirmação antes de executar.
+```
+
+---
+
+### 7.5 Jurídico/Compliance
+**Alice Core (trecho recomendado)**
+```
+Você é Alice, assistente enterprise.
+Jurídico/Compliance nunca emite parecer definitivo e sempre recomenda validação humana.
+```
+
+**Namespace (configuração completa)**
+- Nome: `Jurídico/Compliance`
+- Slug: `juridico-compliance`
+- Descrição: `Risco regulatório, políticas internas, contratos e conformidade`
+- Cor: `#EF4444`
+- Objetivo do namespace: centralizar políticas e documentos oficiais.
+
+**Exemplo pronto (copiar e colar)**
+```http
+POST /api/namespaces
+Content-Type: application/json
+
+{
+  "nome": "Jurídico/Compliance",
+  "slug": "juridico-compliance",
+  "descricao": "Risco regulatório, políticas internas, contratos e conformidade",
+  "cor": "#EF4444"
+}
+```
+
+**Agente (configuração completa)**
+- Nome: `Jurídico e Compliance`
+- Slug: `juridico-compliance`
+- Status: `active`
+- Descrição: `Agente jurídico com foco em risco e conformidade`
+- Avatar (URL opcional): `https://cdn.seudominio.com/avatars/juridico.png`
+- Instruções do agente (copiar e colar): **use a seção 6.5**
+- Personalidade do agente (copiar e colar): **use a seção 6.5**
+- Modelo (aba Modelo):
+  - Modelo base: `Padrão do sistema`
+  - Temperatura: `0.2`
+  - maxTokens: `1100`
+- Capacidades (aba Capacidades): `["chat","rag","analytics"]`
+
+**Exemplo pronto (copiar e colar)**
+```http
+POST /api/agents
+Content-Type: application/json
+
+{
+  "nome": "Jurídico e Compliance",
+  "slug": "juridico-compliance",
+  "status": "active",
+  "namespaceId": "UUID_DO_NAMESPACE_JURIDICO",
+  "descricao": "Agente jurídico com foco em risco e conformidade",
+  "avatar": "https://cdn.seudominio.com/avatars/juridico.png",
+  "instrucoes": "Use Instruções do agente da seção 6.5.",
+  "personalidade": "Use Personalidade do agente da seção 6.5.",
+  "temperaturaModelo": 0.2,
+  "maxTokens": 1100,
+  "capacidades": ["chat", "rag", "analytics"]
+}
+```
+
+**Modo Agentic**
+- `webEnabled: true`
+- `financialApprovalRequired: true`
+
+**Treinamento (exemplo de descrição)**
+```
+Treino Jurídico/Compliance: checklist de documentos e recomendação de validação humana.
+```
+
+---
+
+### 7.6 Fiscal
+**Alice Core (trecho recomendado)**
+```
+Você é Alice, assistente enterprise.
+Fiscal exige base legal, prazos e documentos comprobatórios antes de qualquer ação.
+```
+
+**Namespace (configuração completa)**
+- Nome: `Fiscal`
+- Slug: `fiscal`
+- Descrição: `Impostos, apurações, obrigações acessórias e calendário fiscal`
+- Cor: `#0EA5E9`
+- Objetivo do namespace: concentrar obrigações fiscais e documentos de apuração.
+
+**Exemplo pronto (copiar e colar)**
+```http
+POST /api/namespaces
+Content-Type: application/json
+
+{
+  "nome": "Fiscal",
+  "slug": "fiscal",
+  "descricao": "Impostos, apurações, obrigações acessórias e calendário fiscal",
+  "cor": "#0EA5E9"
+}
+```
+
+**Agente (configuração completa)**
+- Nome: `Fiscal`
+- Slug: `fiscal`
+- Status: `active`
+- Descrição: `Agente fiscal com foco em obrigações e prazos`
+- Avatar (URL opcional): `https://cdn.seudominio.com/avatars/fiscal.png`
+- Instruções do agente (copiar e colar): **use a seção 6.6**
+- Personalidade do agente (copiar e colar): **use a seção 6.6**
+- Modelo (aba Modelo):
+  - Modelo base: `Padrão do sistema`
+  - Temperatura: `0.2`
+  - maxTokens: `1000`
+- Capacidades (aba Capacidades): `["chat","rag","analytics"]`
+
+**Exemplo pronto (copiar e colar)**
+```http
+POST /api/agents
+Content-Type: application/json
+
+{
+  "nome": "Fiscal",
+  "slug": "fiscal",
+  "status": "active",
+  "namespaceId": "UUID_DO_NAMESPACE_FISCAL",
+  "descricao": "Agente fiscal com foco em obrigações e prazos",
+  "avatar": "https://cdn.seudominio.com/avatars/fiscal.png",
+  "instrucoes": "Use Instruções do agente da seção 6.6.",
+  "personalidade": "Use Personalidade do agente da seção 6.6.",
+  "temperaturaModelo": 0.2,
+  "maxTokens": 1000,
+  "capacidades": ["chat", "rag", "analytics"]
+}
+```
+
+**Modo Agentic**
+- `erpReadEnabled: true`
+- `erpWriteEnabled: true`
+- `webEnabled: true`
+- `financialApprovalRequired: true`
+
+**Treinamento (exemplo de descrição)**
+```
+Treino Fiscal: apurações com base legal, checklist de obrigações e confirmação explícita.
+```
+
+---
+
+### 7.7 Secretaria(o)
+**Alice Core (trecho recomendado)**
+```
+Você é Alice, assistente enterprise.
+Secretaria(o) organiza tarefas e pede dados faltantes sem assumir informações.
+```
+
+**Namespace (configuração completa)**
+- Nome: `Secretaria`
+- Slug: `secretaria`
+- Descrição: `Organização de tarefas, prazos, reuniões e suporte interno`
+- Cor: `#22C55E`
+- Objetivo do namespace: concentrar checklists e rotinas internas.
+
+**Exemplo pronto (copiar e colar)**
+```http
+POST /api/namespaces
+Content-Type: application/json
+
+{
+  "nome": "Secretaria",
+  "slug": "secretaria",
+  "descricao": "Organização de tarefas, prazos, reuniões e suporte interno",
+  "cor": "#22C55E"
+}
+```
+
+**Agente (configuração completa)**
+- Nome: `Secretaria`
+- Slug: `secretaria`
+- Status: `active`
+- Descrição: `Agente de organização e produtividade`
+- Avatar (URL opcional): `https://cdn.seudominio.com/avatars/secretaria.png`
+- Instruções do agente (copiar e colar): **use a seção 6.7**
+- Personalidade do agente (copiar e colar): **use a seção 6.7**
+- Modelo (aba Modelo):
+  - Modelo base: `Padrão do sistema`
+  - Temperatura: `0.5`
+  - maxTokens: `800`
+- Capacidades (aba Capacidades): `["chat","scheduling","onboarding"]`
+
+**Exemplo pronto (copiar e colar)**
+```http
+POST /api/agents
+Content-Type: application/json
+
+{
+  "nome": "Secretaria",
+  "slug": "secretaria",
+  "status": "active",
+  "namespaceId": "UUID_DO_NAMESPACE_SECRETARIA",
+  "descricao": "Agente de organização e produtividade",
+  "avatar": "https://cdn.seudominio.com/avatars/secretaria.png",
+  "instrucoes": "Use Instruções do agente da seção 6.7.",
+  "personalidade": "Use Personalidade do agente da seção 6.7.",
+  "temperaturaModelo": 0.5,
+  "maxTokens": 800,
+  "capacidades": ["chat", "scheduling", "onboarding"]
+}
+```
+
+**Modo Agentic**
+- `webEnabled: true`
+
+**Treinamento (exemplo de descrição)**
+```
+Treino Secretaria: checklist de tarefas, prazos e confirmações simples.
+```
+
+---
+
+### 7.8 Backoffice
+**Alice Core (trecho recomendado)**
+```
+Você é Alice, assistente enterprise.
+Backoffice padroniza processos e exige confirmação antes de alterações no ERP.
+```
+
+**Namespace (configuração completa)**
+- Nome: `Backoffice`
+- Slug: `backoffice`
+- Descrição: `Operações internas, padronização e revisão de cadastros`
+- Cor: `#8B5CF6`
+- Objetivo do namespace: processos internos e melhorias operacionais.
+
+**Exemplo pronto (copiar e colar)**
+```http
+POST /api/namespaces
+Content-Type: application/json
+
+{
+  "nome": "Backoffice",
+  "slug": "backoffice",
+  "descricao": "Operações internas, padronização e revisão de cadastros",
+  "cor": "#8B5CF6"
+}
+```
+
+**Agente (configuração completa)**
+- Nome: `Backoffice`
+- Slug: `backoffice`
+- Status: `active`
+- Descrição: `Agente operacional para processos internos`
+- Avatar (URL opcional): `https://cdn.seudominio.com/avatars/backoffice.png`
+- Instruções do agente (copiar e colar): **use a seção 6.8**
+- Personalidade do agente (copiar e colar): **use a seção 6.8**
+- Modelo (aba Modelo):
+  - Modelo base: `Padrão do sistema`
+  - Temperatura: `0.3`
+  - maxTokens: `1000`
+- Capacidades (aba Capacidades): `["chat","rag","analytics","technical-support"]`
+
+**Exemplo pronto (copiar e colar)**
+```http
+POST /api/agents
+Content-Type: application/json
+
+{
+  "nome": "Backoffice",
+  "slug": "backoffice",
+  "status": "active",
+  "namespaceId": "UUID_DO_NAMESPACE_BACKOFFICE",
+  "descricao": "Agente operacional para processos internos",
+  "avatar": "https://cdn.seudominio.com/avatars/backoffice.png",
+  "instrucoes": "Use Instruções do agente da seção 6.8.",
+  "personalidade": "Use Personalidade do agente da seção 6.8.",
+  "temperaturaModelo": 0.3,
+  "maxTokens": 1000,
+  "capacidades": ["chat", "rag", "analytics", "technical-support"]
+}
+```
+
+**Modo Agentic**
+- `erpReadEnabled: true`
+- `erpWriteEnabled: true`
+- `webEnabled: true`
+- `financialApprovalRequired: true`
+
+**Treinamento (exemplo de descrição)**
+```
+Treino Backoffice: padronização de processos e confirmações antes de alterar dados.
+```
+
+---
+
+## 8) Relação Namespace ↔ Agente ↔ RAG ↔ Treino
 
 Resumo operacional:
 - **Namespace** isola conhecimento e treino por domínio.
 - **Agente** executa tarefas no chat usando esse contexto.
 - **Treino** vem das conversas aprovadas e feedback.
 
+**Fluxo completo (namespace → RAG → training)**
+1. **Namespace** é criado (ex.: `financeiro`).
+2. **Documentos** são enviados para o RAG com o `namespaceId`.
+3. **RAG** indexa os documentos e só busca conteúdo desse namespace.
+4. **Agente** do namespace responde no chat usando esse contexto.
+5. **Feedback do chat** (nota/aprovação) entra na fila de treinamento.
+6. **Página Training** centraliza aprovação e disparo de treino.
+
 ---
 
-## 7) RAG (Documentos, Imagens e Áudio)
+## 9) RAG (Documentos, Imagens e Áudio)
 
 Use RAG apenas se o agente precisar de **documentos internos** para responder no chat.
 - Upload rápido: `/documents` (texto) e `/training` (multimodal).
@@ -350,9 +1156,9 @@ Use RAG apenas se o agente precisar de **documentos internos** para responder no
 
 ---
 
-## 8) Como os agentes funcionam no chat (roteamento, canais e handover)
+## 10) Como os agentes funcionam no chat (roteamento, canais e handover)
 
-### 8.1 Roteamento automático por domínio
+### 10.1 Roteamento automático por domínio
 - Ao iniciar uma **nova conversa**, a Alice analisa o pedido e seleciona o **agente do domínio**.
 - Essa decisão usa **texto do pedido**, **namespace** e **detectores do Modo Agentic**.
 - A conversa fica associada a **um único agente** até o fim.
@@ -361,7 +1167,7 @@ Use RAG apenas se o agente precisar de **documentos internos** para responder no
 - Se existir seletor de agente, use-o antes de enviar a mensagem.
 - Se não existir, escreva claramente o domínio: “Use o agente Financeiro”.
 
-### 8.2 O que acontece se o pedido não for do domínio do agente?
+### 10.2 O que acontece se o pedido não for do domínio do agente?
 - A Alice **não troca de agente automaticamente dentro da mesma conversa**.
 - Se o assunto mudar de domínio, o recomendado é:
   1. **Encerrar a conversa atual**.
@@ -370,11 +1176,11 @@ Use RAG apenas se o agente precisar de **documentos internos** para responder no
 **Exemplo de resposta correta do agente**
 > “Esse assunto não é do meu domínio. Para prosseguir, abra uma nova conversa e selecione o agente Jurídico/Compliance.”
 
-### 8.3 Handover (escalação para humano)
+### 10.3 Handover (escalação para humano)
 - Para casos sensíveis ou quando o usuário pede atendimento humano, a conversa pode entrar em **modo humano**.
 - Nesse modo, a Alice **pausa a automação** e um operador assume.
 
-### 8.4 WhatsApp (Twilio) — como o canal funciona
+### 10.4 WhatsApp (Twilio) — como o canal funciona
 - O WhatsApp usa o **Twilio** como provedor oficial.
 - Mensagens recebidas entram pelo webhook:
   - `POST /api/integrations/twilio/webhook/whatsapp`
@@ -390,7 +1196,7 @@ Use RAG apenas se o agente precisar de **documentos internos** para responder no
 
 ---
 
-## 9) Coleta de dados do Chat → Aprendizado
+## 11) Coleta de dados do Chat → Aprendizado
 
 ### Operações no chat (modo ideal de uso de agentes)
 Para obter melhores resultados e gerar dados de treino úteis, use o chat com estrutura clara.
@@ -447,7 +1253,7 @@ No chat, use **“Enviar p/ Treino”** para enviar conversa ao namespace corret
 
 ---
 
-## 10) Datasets e treinamento (QLoRA) — Página Training
+## 12) Datasets e treinamento (QLoRA) — Página Training
 
 Página: `/training`
 
@@ -493,7 +1299,7 @@ Objetivo: reduzir perguntas repetidas e melhorar checklist de dados.
 
 ---
 
-## 11) Especialização para Trading (KuCoin)
+## 13) Especialização para Trading (KuCoin)
 
 Foco em **pedidos no chat** + **confirmação explícita**.
 
@@ -512,7 +1318,7 @@ Foco em **pedidos no chat** + **confirmação explícita**.
 
 ---
 
-## 12) Especialização para Finanças/ERPNext
+## 14) Especialização para Finanças/ERPNext
 
 Foco em **tarefas financeiras pedidas no chat** com confirmação.
 
@@ -531,7 +1337,7 @@ Foco em **tarefas financeiras pedidas no chat** com confirmação.
 
 ---
 
-## 13) Permissões e RBAC essenciais
+## 15) Permissões e RBAC essenciais
 
 | Módulo | Permissões chave | Uso |
 |-------|------------------|-----|
@@ -548,7 +1354,7 @@ Foco em **tarefas financeiras pedidas no chat** com confirmação.
 
 ---
 
-## 14) Observabilidade e validação
+## 16) Observabilidade e validação
 
 Validação mínima pós-operação:
 - **Grafana** (Trading/GPU/ERPNext) e `/health`.
@@ -556,7 +1362,7 @@ Validação mínima pós-operação:
 
 ---
 
-## 15) Troubleshooting rápido
+## 17) Troubleshooting rápido
 
 - **Agente não responde**: verifique GPU Manager e containers GPU.
 - **Treino não inicia**: valide se há dados aprovados.
@@ -564,737 +1370,11 @@ Validação mínima pós-operação:
 
 ---
 
-## 16) Próximos passos recomendados
+## 18) Próximos passos recomendados
 
 1. Começar com **1 agente por domínio** (Trading, Financeiro, Atendimento).
 2. Operar no chat com pedidos estruturados e confirmação explícita.
 3. Aprovar dados e rodar o primeiro **treino on-demand**.
-
----
-
-## 17) Templates de prompts por domínio (exemplos reais)
-
-> **Uso recomendado:** cole nos campos **Instruções do agente** e **Personalidade do agente** (aba Prompt em `/agents`).  
-> Ajuste linguagem, limites e regras conforme o seu compliance.
-> **Nota obrigatória:** sempre inclua a linha **"Você é o agente X"** no início do prompt do agente para evitar ambiguidades de identidade.
-> **Campos do print:** use **Instruções do agente** e **Personalidade do agente** separadamente, conforme abaixo.
-
-### 17.1 Atendimento (Customer Support)
-**Namespace:** `atendimento`  
-**Agente:** `Atendimento`  
-**Modo Agentic recomendado:** `webEnabled` (consultas públicas)  
-**Temperatura:** 0.4 | **maxTokens:** 900
-
-**Instruções do agente (copiar e colar)**
-```
-Você é o agente Atendimento.
-Objetivo: responder clientes com clareza, empatia e precisão.
-Regras: não inventar políticas; se faltar dado, fazer perguntas objetivas.
-Se o tema for financeiro/jurídico/trading, instruir a abrir conversa com o agente correto.
-Formato: resposta direta + próximos passos + pergunta final (se necessário).
-```
-
-**Personalidade do agente (copiar e colar)**
-```
-Empatica, clara e objetiva.
-```
-
-**Exemplo de pedido**
-> “Preciso do status do meu pedido #1234 e prazo de entrega.”
-
----
-
-### 17.2 Trading (KuCoin Futures)
-**Namespace:** `trading`  
-**Agente:** `Trading`  
-**Modo Agentic recomendado:** `tradingEnabled`, `webEnabled`  
-**Temperatura:** 0.3 | **maxTokens:** 1200
-
-**Instruções do agente (copiar e colar)**
-```
-Você é o agente Trading.
-Regras: nunca executar ordens sem confirmação explícita.
-Sempre respeitar risk config do tenant. Nada de promessas de lucro.
-Formato: contexto curto -> sinal (LONG/SHORT/NEUTRAL) -> entrada/SL/TP -> confirmação.
-```
-
-**Personalidade do agente (copiar e colar)**
-```
-Objetiva, conservadora e focada em risco.
-```
-
-**Exemplo de pedido**
-> “Analise XBTUSDTM 5m e sugira entrada/SL/TP com risco 2%.”
-
----
-
-### 17.3 Contabilidade
-**Namespace:** `contabilidade`  
-**Agente:** `Contabilidade`  
-**Modo Agentic recomendado:** `erpReadEnabled`, `erpWriteEnabled`  
-**Temperatura:** 0.2 | **maxTokens:** 900
-
-**Instruções do agente (copiar e colar)**
-```
-Você é o agente Contabilidade.
-Regras: não inventar números; pedir fonte/registro sempre.
-Antes de criar/alterar registros, pedir confirmação explícita.
-Formato: entendimento -> dados necessários -> ação sugerida -> confirmação.
-```
-
-**Personalidade do agente (copiar e colar)**
-```
-Precisa, técnica e verificável.
-```
-
-**Exemplo de pedido**
-> “Quero lançar uma fatura para ACME LTDA com vencimento 15/02.”
-
----
-
-### 17.4 Financeiro
-**Namespace:** `financeiro`  
-**Agente:** `Financeiro`  
-**Modo Agentic recomendado:** `erpReadEnabled`, `erpWriteEnabled`, `paymentsEnabled`  
-**Temperatura:** 0.3 | **maxTokens:** 1000
-
-**Instruções do agente (copiar e colar)**
-```
-Você é o agente Financeiro.
-Regras: nunca efetuar pagamentos sem aprovação explícita.
-Sempre listar dados mínimos e explicar o que será criado.
-Formato: entendimento -> dados necessários -> ação sugerida -> confirmação.
-```
-
-**Personalidade do agente (copiar e colar)**
-```
-Conservadora, analítica e objetiva.
-```
-
-**Exemplo de pedido**
-> “Preciso pagar fornecedor X via Wise. Qual valor e dados faltam?”
-
----
-
-### 17.5 Jurídico/Compliance
-**Namespace:** `juridico-compliance`  
-**Agente:** `Jurídico e Compliance`  
-**Modo Agentic recomendado:** `webEnabled` (consulta de legislação pública)  
-**Temperatura:** 0.2 | **maxTokens:** 1100
-
-**Instruções do agente (copiar e colar)**
-```
-Você é o agente Jurídico/Compliance.
-Regras: nunca emitir parecer definitivo; sempre recomendar validação humana.
-Não inventar leis, cláusulas ou números. Indicar limites e incertezas.
-Formato: entendimento -> riscos -> documentos necessários -> recomendação de validação.
-```
-
-**Personalidade do agente (copiar e colar)**
-```
-Cautelosa, baseada em evidências.
-```
-
-**Exemplo de pedido**
-> “Temos cláusula de multa em contrato; quais riscos devemos revisar?”
-
----
-
-### 17.6 Fiscal
-**Namespace:** `fiscal`  
-**Agente:** `Fiscal`  
-**Modo Agentic recomendado:** `erpReadEnabled`, `erpWriteEnabled`, `webEnabled`  
-**Temperatura:** 0.2 | **maxTokens:** 1000
-
-**Instruções do agente (copiar e colar)**
-```
-Você é o agente Fiscal.
-Regras: não inventar alíquotas, prazos ou números. Sempre pedir base legal/documento.
-Antes de qualquer ação no ERP, pedir confirmação explícita.
-Formato: entendimento -> obrigações envolvidas -> dados necessários -> ação sugerida -> confirmação.
-```
-
-**Personalidade do agente (copiar e colar)**
-```
-Rigorosa, objetiva e baseada em evidências.
-```
-
-**Exemplo de pedido**
-> “Preciso apurar impostos do mês e listar obrigações acessórias pendentes.”
-
----
-
-### 17.7 Secretaria(o)
-**Namespace:** `secretaria`  
-**Agente:** `Secretaria`  
-**Modo Agentic recomendado:** `webEnabled` (agenda, informações públicas)  
-**Temperatura:** 0.5 | **maxTokens:** 800
-
-**Instruções do agente (copiar e colar)**
-```
-Você é o agente Secretaria.
-Regras: organizar tarefas, resumir, lembrar prazos e pedir dados faltantes.
-Não assumir informações não confirmadas.
-Formato: checklist do que precisa + próximos passos + confirmação.
-```
-
-**Personalidade do agente (copiar e colar)**
-```
-Organizada, objetiva e previsível.
-```
-
-**Exemplo de pedido**
-> “Organize as tarefas da reunião de amanhã e liste pendências.”
-
----
-
-### 17.8 Backoffice
-**Namespace:** `backoffice`  
-**Agente:** `Backoffice`  
-**Modo Agentic recomendado:** `erpReadEnabled`, `erpWriteEnabled`, `webEnabled`  
-**Temperatura:** 0.3 | **maxTokens:** 1000
-
-**Instruções do agente (copiar e colar)**
-```
-Você é o agente Backoffice.
-Regras: padronizar processos internos e evitar ações críticas sem aprovação.
-Sempre registrar o que será alterado no ERPNext antes de executar.
-Formato: entendimento -> dados necessários -> ação sugerida -> confirmação.
-```
-
-**Personalidade do agente (copiar e colar)**
-```
-Metodica, padronizada e orientada a processos.
-```
-
-**Exemplo de pedido**
-> “Preciso padronizar cadastro de clientes e revisar dados incompletos.”
-
----
-
-## 18) Configuração completa por pilar (end‑to‑end)
-
-> Objetivo: deixar **cada pilar 100% pronto** para operação e treinamento.  
-> Use estes exemplos como “copiar e colar”.
-
-### 18.1 Atendimento (Customer Support)
-**Alice Core (trecho recomendado)**
-```
-Você é Alice, assistente enterprise.
-Priorize atendimento empático, respostas claras e confirmação de dados sensíveis.
-Nunca invente políticas; quando houver dúvida, peça mais informações.
-```
-
-**Namespace (configuração completa)**
-- Nome: `Atendimento`
-- Slug: `atendimento`
-- Descrição: `Suporte ao cliente, prazos, reembolsos, dúvidas gerais e acompanhamento`
-- Cor: `#10B981`
-- Objetivo do namespace: centralizar documentos de FAQ, políticas e scripts de atendimento.
-
-**Exemplo pronto (copiar e colar)**
-```http
-POST /api/namespaces
-Content-Type: application/json
-
-{
-  "nome": "Atendimento",
-  "slug": "atendimento",
-  "descricao": "Suporte ao cliente, prazos, reembolsos, dúvidas gerais e acompanhamento",
-  "cor": "#10B981"
-}
-```
-
-**Agente (configuração completa)**
-- Nome: `Atendimento`
-- Slug: `atendimento`
-- Status: `active`
-- Descrição: `Atendimento ao cliente com tom empático e objetivo`
-- Capacidades: `["rag","web"]`
-- Instruções do agente (copiar e colar): **use a seção 17.1**
-- Personalidade do agente (copiar e colar): **use a seção 17.1**
-
-**Exemplo pronto (copiar e colar)**
-```http
-POST /api/agents
-Content-Type: application/json
-
-{
-  "nome": "Atendimento",
-  "slug": "atendimento",
-  "status": "active",
-  "namespaceId": "UUID_DO_NAMESPACE_ATENDIMENTO",
-  "descricao": "Atendimento ao cliente com tom empático e objetivo",
-  "instrucoes": "Use Instruções do agente da seção 17.1.",
-  "personalidade": "Use Personalidade do agente da seção 17.1.",
-  "capacidades": ["rag", "web"]
-}
-```
-
-**Modo Agentic**
-- `webEnabled: true`
-- `financialApprovalRequired: true`
-
-**Treinamento (exemplo de descrição)**
-```
-Treino Atendimento: respostas claras e empáticas, com perguntas objetivas e sem inventar políticas.
-```
-
----
-
-### 18.2 Trading
-**Alice Core (trecho recomendado)**
-```
-Você é Alice, assistente enterprise focada em finanças e trading.
-Para trading, sempre exigir confirmação explícita antes de executar qualquer ordem.
-Nunca prometer lucro. Priorizar gestão de risco.
-```
-
-**Namespace (configuração completa)**
-- Nome: `Trading`
-- Slug: `trading`
-- Descrição: `Operações BTC Futures, sinais, riscos, posições e histórico`
-- Cor: `#3B82F6`
-- Objetivo do namespace: guardar políticas de risco, playbooks e regras de execução.
-
-**Exemplo pronto (copiar e colar)**
-```http
-POST /api/namespaces
-Content-Type: application/json
-
-{
-  "nome": "Trading",
-  "slug": "trading",
-  "descricao": "Operações BTC Futures, sinais, riscos, posições e histórico",
-  "cor": "#3B82F6"
-}
-```
-
-**Agente (configuração completa)**
-- Nome: `Trading`
-- Slug: `trading`
-- Status: `active`
-- Descrição: `Especialista em KuCoin Futures com foco em risco`
-- Capacidades: `["trading","rag","web"]`
-- Instruções do agente (copiar e colar): **use a seção 17.2**
-- Personalidade do agente (copiar e colar): **use a seção 17.2**
-
-**Exemplo pronto (copiar e colar)**
-```http
-POST /api/agents
-Content-Type: application/json
-
-{
-  "nome": "Trading",
-  "slug": "trading",
-  "status": "active",
-  "namespaceId": "UUID_DO_NAMESPACE_TRADING",
-  "descricao": "Especialista em KuCoin Futures com foco em risco",
-  "instrucoes": "Use Instruções do agente da seção 17.2.",
-  "personalidade": "Use Personalidade do agente da seção 17.2.",
-  "capacidades": ["trading", "rag", "web"]
-}
-```
-
-**Modo Agentic**
-- `tradingEnabled: true`
-- `webEnabled: true`
-- `financialApprovalRequired: true`
-
-**Treinamento (exemplo de descrição)**
-```
-Treino Trading: sinais objetivos + confirmação explícita antes de execução.
-```
-
----
-
-### 18.3 Contabilidade
-**Alice Core (trecho recomendado)**
-```
-Você é Alice, assistente enterprise.
-Para contabilidade, nunca inventar números. Sempre pedir fonte/registro.
-```
-
-**Namespace (configuração completa)**
-- Nome: `Contabilidade`
-- Slug: `contabilidade`
-- Descrição: `Lançamentos contábeis, conciliações, validações e fechamento`
-- Cor: `#6366F1`
-- Objetivo do namespace: centralizar regras contábeis e evidências.
-
-**Exemplo pronto (copiar e colar)**
-```http
-POST /api/namespaces
-Content-Type: application/json
-
-{
-  "nome": "Contabilidade",
-  "slug": "contabilidade",
-  "descricao": "Lançamentos contábeis, conciliações, validações e fechamento",
-  "cor": "#6366F1"
-}
-```
-
-**Agente (configuração completa)**
-- Nome: `Contabilidade`
-- Slug: `contabilidade`
-- Status: `active`
-- Descrição: `Agente contábil integrado ao ERPNext`
-- Capacidades: `["erp","rag"]`
-- Instruções do agente (copiar e colar): **use a seção 17.3**
-- Personalidade do agente (copiar e colar): **use a seção 17.3**
-
-**Exemplo pronto (copiar e colar)**
-```http
-POST /api/agents
-Content-Type: application/json
-
-{
-  "nome": "Contabilidade",
-  "slug": "contabilidade",
-  "status": "active",
-  "namespaceId": "UUID_DO_NAMESPACE_CONTABILIDADE",
-  "descricao": "Agente contábil integrado ao ERPNext",
-  "instrucoes": "Use Instruções do agente da seção 17.3.",
-  "personalidade": "Use Personalidade do agente da seção 17.3.",
-  "capacidades": ["erp", "rag"]
-}
-```
-
-**Modo Agentic**
-- `erpReadEnabled: true`
-- `erpWriteEnabled: true`
-- `financialApprovalRequired: true`
-
-**Treinamento (exemplo de descrição)**
-```
-Treino Contabilidade: checklist de dados obrigatórios e confirmação explícita.
-```
-
----
-
-### 18.4 Financeiro
-**Alice Core (trecho recomendado)**
-```
-Você é Alice, assistente enterprise.
-Para financeiro, pagamentos só com aprovação explícita e dados completos.
-```
-
-**Namespace (configuração completa)**
-- Nome: `Financeiro`
-- Slug: `financeiro`
-- Descrição: `Pagamentos, contas a pagar/receber, fluxo de caixa e conciliações`
-- Cor: `#F59E0B`
-- Objetivo do namespace: padronizar pagamentos e checklist financeiro.
-
-**Exemplo pronto (copiar e colar)**
-```http
-POST /api/namespaces
-Content-Type: application/json
-
-{
-  "nome": "Financeiro",
-  "slug": "financeiro",
-  "descricao": "Pagamentos, contas a pagar/receber, fluxo de caixa e conciliações",
-  "cor": "#F59E0B"
-}
-```
-
-**Agente (configuração completa)**
-- Nome: `Financeiro`
-- Slug: `financeiro`
-- Status: `active`
-- Descrição: `Agente financeiro integrado ao ERPNext e Wise/Stripe`
-- Capacidades: `["erp","payments","rag"]`
-- Instruções do agente (copiar e colar): **use a seção 17.4**
-- Personalidade do agente (copiar e colar): **use a seção 17.4**
-
-**Exemplo pronto (copiar e colar)**
-```http
-POST /api/agents
-Content-Type: application/json
-
-{
-  "nome": "Financeiro",
-  "slug": "financeiro",
-  "status": "active",
-  "namespaceId": "UUID_DO_NAMESPACE_FINANCEIRO",
-  "descricao": "Agente financeiro integrado ao ERPNext e Wise/Stripe",
-  "instrucoes": "Use Instruções do agente da seção 17.4.",
-  "personalidade": "Use Personalidade do agente da seção 17.4.",
-  "capacidades": ["erp", "payments", "rag"]
-}
-```
-
-**Modo Agentic**
-- `erpReadEnabled: true`
-- `erpWriteEnabled: true`
-- `paymentsEnabled: true`
-- `financialApprovalRequired: true`
-
-**Treinamento (exemplo de descrição)**
-```
-Treino Financeiro: dados mínimos para pagamentos e confirmação antes de executar.
-```
-
----
-
-### 18.5 Jurídico/Compliance
-**Alice Core (trecho recomendado)**
-```
-Você é Alice, assistente enterprise.
-Jurídico/Compliance nunca emite parecer definitivo e sempre recomenda validação humana.
-```
-
-**Namespace (configuração completa)**
-- Nome: `Jurídico/Compliance`
-- Slug: `juridico-compliance`
-- Descrição: `Risco regulatório, políticas internas, contratos e conformidade`
-- Cor: `#EF4444`
-- Objetivo do namespace: centralizar políticas e documentos oficiais.
-
-**Exemplo pronto (copiar e colar)**
-```http
-POST /api/namespaces
-Content-Type: application/json
-
-{
-  "nome": "Jurídico/Compliance",
-  "slug": "juridico-compliance",
-  "descricao": "Risco regulatório, políticas internas, contratos e conformidade",
-  "cor": "#EF4444"
-}
-```
-
-**Agente (configuração completa)**
-- Nome: `Jurídico e Compliance`
-- Slug: `juridico-compliance`
-- Status: `active`
-- Descrição: `Agente jurídico com foco em risco e conformidade`
-- Capacidades: `["web","rag"]`
-- Instruções do agente (copiar e colar): **use a seção 17.5**
-- Personalidade do agente (copiar e colar): **use a seção 17.5**
-
-**Exemplo pronto (copiar e colar)**
-```http
-POST /api/agents
-Content-Type: application/json
-
-{
-  "nome": "Jurídico e Compliance",
-  "slug": "juridico-compliance",
-  "status": "active",
-  "namespaceId": "UUID_DO_NAMESPACE_JURIDICO",
-  "descricao": "Agente jurídico com foco em risco e conformidade",
-  "instrucoes": "Use Instruções do agente da seção 17.5.",
-  "personalidade": "Use Personalidade do agente da seção 17.5.",
-  "capacidades": ["web", "rag"]
-}
-```
-
-**Modo Agentic**
-- `webEnabled: true`
-- `financialApprovalRequired: true`
-
-**Treinamento (exemplo de descrição)**
-```
-Treino Jurídico/Compliance: checklist de documentos e recomendação de validação humana.
-```
-
----
-
-### 18.6 Fiscal
-**Alice Core (trecho recomendado)**
-```
-Você é Alice, assistente enterprise.
-Fiscal exige base legal, prazos e documentos comprobatórios antes de qualquer ação.
-```
-
-**Namespace (configuração completa)**
-- Nome: `Fiscal`
-- Slug: `fiscal`
-- Descrição: `Impostos, apurações, obrigações acessórias e calendário fiscal`
-- Cor: `#0EA5E9`
-- Objetivo do namespace: concentrar obrigações fiscais e documentos de apuração.
-
-**Exemplo pronto (copiar e colar)**
-```http
-POST /api/namespaces
-Content-Type: application/json
-
-{
-  "nome": "Fiscal",
-  "slug": "fiscal",
-  "descricao": "Impostos, apurações, obrigações acessórias e calendário fiscal",
-  "cor": "#0EA5E9"
-}
-```
-
-**Agente (configuração completa)**
-- Nome: `Fiscal`
-- Slug: `fiscal`
-- Status: `active`
-- Descrição: `Agente fiscal com foco em obrigações e prazos`
-- Capacidades: `["erp","web","rag"]`
-- Instruções do agente (copiar e colar): **use a seção 17.6**
-- Personalidade do agente (copiar e colar): **use a seção 17.6**
-
-**Exemplo pronto (copiar e colar)**
-```http
-POST /api/agents
-Content-Type: application/json
-
-{
-  "nome": "Fiscal",
-  "slug": "fiscal",
-  "status": "active",
-  "namespaceId": "UUID_DO_NAMESPACE_FISCAL",
-  "descricao": "Agente fiscal com foco em obrigações e prazos",
-  "instrucoes": "Use Instruções do agente da seção 17.6.",
-  "personalidade": "Use Personalidade do agente da seção 17.6.",
-  "capacidades": ["erp", "web", "rag"]
-}
-```
-
-**Modo Agentic**
-- `erpReadEnabled: true`
-- `erpWriteEnabled: true`
-- `webEnabled: true`
-- `financialApprovalRequired: true`
-
-**Treinamento (exemplo de descrição)**
-```
-Treino Fiscal: apurações com base legal, checklist de obrigações e confirmação explícita.
-```
-
----
-
-### 18.7 Secretaria(o)
-**Alice Core (trecho recomendado)**
-```
-Você é Alice, assistente enterprise.
-Secretaria(o) organiza tarefas e pede dados faltantes sem assumir informações.
-```
-
-**Namespace (configuração completa)**
-- Nome: `Secretaria`
-- Slug: `secretaria`
-- Descrição: `Organização de tarefas, prazos, reuniões e suporte interno`
-- Cor: `#22C55E`
-- Objetivo do namespace: concentrar checklists e rotinas internas.
-
-**Exemplo pronto (copiar e colar)**
-```http
-POST /api/namespaces
-Content-Type: application/json
-
-{
-  "nome": "Secretaria",
-  "slug": "secretaria",
-  "descricao": "Organização de tarefas, prazos, reuniões e suporte interno",
-  "cor": "#22C55E"
-}
-```
-
-**Agente (configuração completa)**
-- Nome: `Secretaria`
-- Slug: `secretaria`
-- Status: `active`
-- Descrição: `Agente de organização e produtividade`
-- Capacidades: `["web","rag"]`
-- Instruções do agente (copiar e colar): **use a seção 17.7**
-- Personalidade do agente (copiar e colar): **use a seção 17.7**
-
-**Exemplo pronto (copiar e colar)**
-```http
-POST /api/agents
-Content-Type: application/json
-
-{
-  "nome": "Secretaria",
-  "slug": "secretaria",
-  "status": "active",
-  "namespaceId": "UUID_DO_NAMESPACE_SECRETARIA",
-  "descricao": "Agente de organização e produtividade",
-  "instrucoes": "Use Instruções do agente da seção 17.7.",
-  "personalidade": "Use Personalidade do agente da seção 17.7.",
-  "capacidades": ["web", "rag"]
-}
-```
-
-**Modo Agentic**
-- `webEnabled: true`
-
-**Treinamento (exemplo de descrição)**
-```
-Treino Secretaria: checklist de tarefas, prazos e confirmações simples.
-```
-
----
-
-### 18.8 Backoffice
-**Alice Core (trecho recomendado)**
-```
-Você é Alice, assistente enterprise.
-Backoffice padroniza processos e exige confirmação antes de alterações no ERP.
-```
-
-**Namespace (configuração completa)**
-- Nome: `Backoffice`
-- Slug: `backoffice`
-- Descrição: `Operações internas, padronização e revisão de cadastros`
-- Cor: `#8B5CF6`
-- Objetivo do namespace: processos internos e melhorias operacionais.
-
-**Exemplo pronto (copiar e colar)**
-```http
-POST /api/namespaces
-Content-Type: application/json
-
-{
-  "nome": "Backoffice",
-  "slug": "backoffice",
-  "descricao": "Operações internas, padronização e revisão de cadastros",
-  "cor": "#8B5CF6"
-}
-```
-
-**Agente (configuração completa)**
-- Nome: `Backoffice`
-- Slug: `backoffice`
-- Status: `active`
-- Descrição: `Agente operacional para processos internos`
-- Capacidades: `["erp","web","rag"]`
-- Instruções do agente (copiar e colar): **use a seção 17.8**
-- Personalidade do agente (copiar e colar): **use a seção 17.8**
-
-**Exemplo pronto (copiar e colar)**
-```http
-POST /api/agents
-Content-Type: application/json
-
-{
-  "nome": "Backoffice",
-  "slug": "backoffice",
-  "status": "active",
-  "namespaceId": "UUID_DO_NAMESPACE_BACKOFFICE",
-  "descricao": "Agente operacional para processos internos",
-  "instrucoes": "Use Instruções do agente da seção 17.8.",
-  "personalidade": "Use Personalidade do agente da seção 17.8.",
-  "capacidades": ["erp", "web", "rag"]
-}
-```
-
-**Modo Agentic**
-- `erpReadEnabled: true`
-- `erpWriteEnabled: true`
-- `webEnabled: true`
-- `financialApprovalRequired: true`
-
-**Treinamento (exemplo de descrição)**
-```
-Treino Backoffice: padronização de processos e confirmações antes de alterar dados.
-```
 
 ---
 
@@ -1357,9 +1437,12 @@ Content-Type: application/json
   "status": "active",
   "namespaceId": "uuid",
   "descricao": "Especialista em scalping BTC",
-  "instrucoes": "Use Instruções do agente da seção 17.2.",
-  "personalidade": "Use Personalidade do agente da seção 17.2.",
-  "capacidades": ["trading", "rag"]
+  "avatar": "https://cdn.seudominio.com/avatars/trader-alpha.png",
+  "instrucoes": "Use Instruções do agente da seção 6.2.",
+  "personalidade": "Use Personalidade do agente da seção 6.2.",
+  "temperaturaModelo": 0.3,
+  "maxTokens": 1200,
+  "capacidades": ["chat", "rag", "trading", "analytics"]
 }
 ```
 
