@@ -274,7 +274,7 @@ Retenção Arquivo:   30 dias
 - Docs: `GUIA-CONFIGURACAO-INICIAL.md` expandido com passo a passo e exemplos para Agents, Agentic, Namespaces, System Prompt e Training.
 - Docs: seção didática sobre funcionamento dos agentes no chat (roteamento, WhatsApp, handover) + prompts completos dos 7 pilares.
 - Docs: configuração end-to-end por pilar (namespaces, agentes, toggles e treino) com exemplos prontos.
-- Docs: exemplos completos de namespace + agente (payloads) para os 7 pilares.
+- Docs: exemplos completos de namespace + agente (payloads) para 8 pilares (inclui Fiscal).
 - Prompt: instruções PT-BR para idioma, capacidades e SERVER_TIME.
 - DB: nova tabela action_requests + enums para auditoria de ações.
 

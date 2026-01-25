@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 25 de Janeiro de 2026  
-**Versão:** 1.4.0  
+**Versão:** 1.5.0  
 
 ---
 
@@ -10,7 +10,7 @@
 
 Este manual é focado em **operações pedidas no chat** e em **como usar agentes** para executar tarefas com qualidade e gerar dados de treino. Inclui apenas o essencial de configuração para operar:
 - Configuração mínima (Core, Agentic, Namespaces e Agentes).
-- Playbooks de operação no chat por domínio (Trading, Financeiro/ERPNext, Atendimento, Jurídico, Fiscal, Compliance).
+- Playbooks de operação no chat por domínio (Trading, Financeiro/ERPNext, Atendimento, Jurídico/Compliance, Fiscal, Backoffice).
 - Ciclo **chat → aprovação → treino**.
 
 > **Importante:** Este guia é prático e didático. Para aprofundamento técnico, consulte os SSOTs: `docs/SISTEMA-APRENDIZADO.md`, `docs/TRAINING.md`, `docs/ARQUITETURA.md`, `docs/SECRETS.md` e `docs/PERMISSIONS.md`.
@@ -132,6 +132,16 @@ Crie **1 namespace por domínio** que será operado no chat.
 - `slug` deve ser curto e sem espaços (ex.: `financeiro`).
 - Use cores distintas para facilitar o uso operacional.
 
+**Exemplos completos (8 pilares)**
+- **Atendimento** → slug `atendimento` → descrição: `Suporte ao cliente, prazos, reembolsos, dúvidas gerais e acompanhamento` → cor `#10B981`
+- **Trading** → slug `trading` → descrição: `Operações BTC Futures, sinais, riscos, posições e histórico` → cor `#3B82F6`
+- **Contabilidade** → slug `contabilidade` → descrição: `Lançamentos contábeis, conciliações, validações e fechamento` → cor `#6366F1`
+- **Financeiro** → slug `financeiro` → descrição: `Pagamentos, contas a pagar/receber, fluxo de caixa e conciliações` → cor `#F59E0B`
+- **Jurídico/Compliance** → slug `juridico-compliance` → descrição: `Risco regulatório, políticas internas, contratos e conformidade` → cor `#EF4444`
+- **Fiscal** → slug `fiscal` → descrição: `Impostos, apurações, obrigações acessórias e calendário fiscal` → cor `#0EA5E9`
+- **Secretaria(o)** → slug `secretaria` → descrição: `Organização de tarefas, prazos, reuniões e suporte interno` → cor `#22C55E`
+- **Backoffice** → slug `backoffice` → descrição: `Operações internas, padronização e revisão de cadastros` → cor `#8B5CF6`
+
 ---
 
 ## 5) Agentes IA (identidade, prompt e modelo)
@@ -173,6 +183,9 @@ Você é um agente de trading especializado em KuCoin Futures.
 Regras: nunca executar ordens sem confirmação; sempre respeitar risk config.
 Formato: contexto → sinal → entrada/SL/TP → confirmação explícita.
 ```
+
+**Exemplos completos dos 8 agentes**
+> Veja os prompts completos na seção **17) Templates de prompts por domínio**.
 
 ---
 
@@ -487,7 +500,26 @@ Formato: entendimento → riscos → documentos necessários → recomendação 
 
 ---
 
-### 17.6 Secretaria(o)
+### 17.6 Fiscal
+**Namespace:** `fiscal`  
+**Agente:** `Fiscal`  
+**Modo Agentic recomendado:** `erpReadEnabled`, `erpWriteEnabled`, `webEnabled`  
+**Temperatura:** 0.2 | **maxTokens:** 1000
+
+**Prompt (copiar e colar)**
+```
+Você é um agente Fiscal enterprise.
+Regras: não inventar alíquotas, prazos ou números. Sempre pedir base legal/documento.
+Antes de qualquer ação no ERP, pedir confirmação explícita.
+Formato: entendimento → obrigações envolvidas → dados necessários → ação sugerida → confirmação.
+```
+
+**Exemplo de pedido**
+> “Preciso apurar impostos do mês e listar obrigações acessórias pendentes.”
+
+---
+
+### 17.7 Secretaria(o)
 **Namespace:** `secretaria`  
 **Agente:** `Secretaria`  
 **Modo Agentic recomendado:** `webEnabled` (agenda, informações públicas)  
@@ -506,7 +538,7 @@ Formato: checklist do que precisa + próximos passos + confirmação.
 
 ---
 
-### 17.7 Backoffice
+### 17.8 Backoffice
 **Namespace:** `backoffice`  
 **Agente:** `Backoffice`  
 **Modo Agentic recomendado:** `erpReadEnabled`, `erpWriteEnabled`, `webEnabled`  
@@ -846,7 +878,71 @@ Treino Jurídico/Compliance: checklist de documentos e recomendação de valida�
 
 ---
 
-### 18.6 Secretaria(o)
+### 18.6 Fiscal
+**Alice Core (trecho recomendado)**
+```
+Fiscal exige base legal, prazos e documentos comprobatórios antes de qualquer ação.
+```
+
+**Namespace (configuração completa)**
+- Nome: `Fiscal`
+- Slug: `fiscal`
+- Descrição: `Impostos, apurações, obrigações acessórias e calendário fiscal`
+- Cor: `#0EA5E9`
+- Objetivo do namespace: concentrar obrigações fiscais e documentos de apuração.
+
+**Exemplo pronto (copiar e colar)**
+```http
+POST /api/namespaces
+Content-Type: application/json
+
+{
+  "nome": "Fiscal",
+  "slug": "fiscal",
+  "descricao": "Impostos, apurações, obrigações acessórias e calendário fiscal",
+  "cor": "#0EA5E9"
+}
+```
+
+**Agente (configuração completa)**
+- Nome: `Fiscal`
+- Slug: `fiscal`
+- Status: `active`
+- Descrição: `Agente fiscal com foco em obrigações e prazos`
+- Capacidades: `["erp","web","rag"]`
+- System Prompt (copiar e colar): **use o prompt do item 17.6**
+
+**Exemplo pronto (copiar e colar)**
+```http
+POST /api/agents
+Content-Type: application/json
+
+{
+  "nome": "Fiscal",
+  "slug": "fiscal",
+  "status": "active",
+  "namespaceId": "UUID_DO_NAMESPACE_FISCAL",
+  "descricao": "Agente fiscal com foco em obrigações e prazos",
+  "instrucoes": "Use o prompt de Fiscal do guia.",
+  "personalidade": "Rigorosa, objetiva e baseada em evidências",
+  "capacidades": ["erp", "web", "rag"]
+}
+```
+
+**Modo Agentic**
+- `erpReadEnabled: true`
+- `erpWriteEnabled: true`
+- `webEnabled: true`
+- `financialApprovalRequired: true`
+
+**Treinamento (exemplo de descrição)**
+```
+Treino Fiscal: apurações com base legal, checklist de obrigações e confirmação explícita.
+```
+
+---
+
+### 18.7 Secretaria(o)
 **Alice Core (trecho recomendado)**
 ```
 Secretaria(o) organiza tarefas e pede dados faltantes sem assumir informações.
@@ -878,7 +974,7 @@ Content-Type: application/json
 - Status: `active`
 - Descrição: `Agente de organização e produtividade`
 - Capacidades: `["web","rag"]`
-- System Prompt (copiar e colar): **use o prompt do item 17.6**
+- System Prompt (copiar e colar): **use o prompt do item 17.7**
 
 **Exemplo pronto (copiar e colar)**
 ```http
@@ -907,7 +1003,7 @@ Treino Secretaria: checklist de tarefas, prazos e confirmações simples.
 
 ---
 
-### 18.7 Backoffice
+### 18.8 Backoffice
 **Alice Core (trecho recomendado)**
 ```
 Backoffice padroniza processos e exige confirmação antes de alterações no ERP.
@@ -939,7 +1035,7 @@ Content-Type: application/json
 - Status: `active`
 - Descrição: `Agente operacional para processos internos`
 - Capacidades: `["erp","web","rag"]`
-- System Prompt (copiar e colar): **use o prompt do item 17.7**
+- System Prompt (copiar e colar): **use o prompt do item 17.8**
 
 **Exemplo pronto (copiar e colar)**
 ```http
