@@ -103,18 +103,13 @@ engines:
         - socks5h://alice-tor:9050
     timeout: 15.0
   
-  # Engine torch (.onion) - REMOVIDO 23/12/2025
-  # BUG FIX: torch.py não existe na imagem searxng/searxng:latest
-  # Erro: "FileNotFoundError: [Errno 2] No such file or directory: '/usr/local/searxng/searx/engines/torch.py'"
-  # Mantido apenas ahmia que funciona corretamente
-  # - name: torch
-  #   engine: torch
-  #   shortcut: tor
-  #   disabled: false
-  #   proxies:
-  #     all://:
-  #       - socks5h://alice-tor:9050
-  #   timeout: 15.0
+  # Engine torch (.onion) - DESABILITADO explicitamente
+  # use_default_settings=true ainda tenta carregar engines padrão.
+  # Torch falha porque o engine não existe na imagem atual.
+  - name: torch
+    engine: torch
+    shortcut: tor
+    disabled: true
 
 # Bot detection (acesso interno via alice-network)
 # CORREÇÃO 23/12/2025: Configura trusted proxies para eliminar warning

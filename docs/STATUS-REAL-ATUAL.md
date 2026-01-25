@@ -1,7 +1,7 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 **Autor:** Fillipe Guerra  
-**Data:** 24 de Janeiro de 2026  
+**Data:** 25 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
 **Versão:** 8.9 - Detectores Agentic configuráveis + ASR/Vision alinhados
 
@@ -269,6 +269,8 @@ Retenção Arquivo:   30 dias
 - Chat mídia: limpeza de blob URL após upload concluído (media_uploaded).
 - RAG: timeout configurável por env (RAG_REQUEST_TIMEOUT_MS).
 - Agentic web: busca web forçada quando o usuário pedir explicitamente (sem aprovação).
+- Web/Deepweb: SearXNG com Tor via Ahmia habilitado; engine Torch desabilitado explicitamente para evitar falha na imagem atual.
+- Web: cliente de busca agora envia `X-Forwarded-For`/`X-Real-IP` internos para evitar bloqueio do SearXNG (bot detection).
 - Prompt: instruções PT-BR para idioma, capacidades e SERVER_TIME.
 - DB: nova tabela action_requests + enums para auditoria de ações.
 

@@ -79,6 +79,30 @@ export function createWebSearchClient({
   timeoutMs = 8000,
 }: CreateClientParams): WebSearchClient {
   const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+  const hasApiKey = Boolean(apiKey && apiKey.trim().length > 0);
+  let warnedMissingApiKey = false;
+
+  const logMissingApiKeyIfNeeded = () => {
+    if (hasApiKey || warnedMissingApiKey) return;
+    warnedMissingApiKey = true;
+    logger.warn('SEARXNG_SECRET_KEY não configurada - busca web seguirá sem autenticação');
+  };
+
+  const buildHeaders = () => {
+    const baseHeaders: Record<string, string> = {
+      Accept: 'application/json',
+      'X-Forwarded-For': '127.0.0.1',
+      'X-Real-IP': '127.0.0.1',
+    };
+    if (!hasApiKey) {
+      return baseHeaders;
+    }
+    return {
+      ...baseHeaders,
+      Authorization: `Bearer ${apiKey}`,
+      'X-API-KEY': apiKey as string,
+    };
+  };
 
   async function webSearchInternal(
     query: string,
@@ -86,10 +110,7 @@ export function createWebSearchClient({
     options: WebSearchOptions = {}
   ): Promise<WebSearchResult[]> {
     const normalizedCount = count ?? defaultCount;
-    if (!apiKey) {
-      logger.warn('SEARXNG_SECRET_KEY não configurada - busca web desabilitada');
-      return [];
-    }
+    logMissingApiKeyIfNeeded();
 
     const enginesParam = options.engines && options.engines.length > 0
       ? options.engines.join(',')
@@ -114,17 +135,15 @@ export function createWebSearchClient({
       // URL normalizada para garantir /search correto
       const response = await fetch(`${normalizedBaseUrl}search?${params.toString()}`, {
         method: 'GET',
-        headers: {
-          Accept: 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-          'X-API-KEY': apiKey,
-        },
+        headers: buildHeaders(),
         signal: controller.signal,
       });
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Falha na busca web (SearXNG): ${response.status} - ${errorText}`);
+        const error = new Error(`Falha na busca web (SearXNG): ${response.status} - ${errorText}`);
+        (error as Error & { status?: number }).status = response.status;
+        throw error;
       }
 
       const data = (await response.json()) as SearxngResponse;
@@ -150,10 +169,7 @@ export function createWebSearchClient({
     options: WebSearchOptions = {}
   ): Promise<WebImageSearchResult[]> {
     const normalizedCount = count ?? defaultCount;
-    if (!apiKey) {
-      logger.warn('SEARXNG_SECRET_KEY não configurada - busca web desabilitada');
-      return [];
-    }
+    logMissingApiKeyIfNeeded();
 
     const enginesParam = options.engines && options.engines.length > 0
       ? options.engines.join(',')
@@ -177,17 +193,15 @@ export function createWebSearchClient({
     try {
       const response = await fetch(`${normalizedBaseUrl}search?${params.toString()}`, {
         method: 'GET',
-        headers: {
-          Accept: 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-          'X-API-KEY': apiKey,
-        },
+        headers: buildHeaders(),
         signal: controller.signal,
       });
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Falha na busca web (SearXNG imagens): ${response.status} - ${errorText}`);
+        const error = new Error(`Falha na busca web (SearXNG imagens): ${response.status} - ${errorText}`);
+        (error as Error & { status?: number }).status = response.status;
+        throw error;
       }
 
       const data = (await response.json()) as SearxngResponse;
@@ -230,9 +244,9 @@ export function createWebSearchClient({
   instrumentCircuitBreaker(metrics, 'searxng-web-image-search', imageBreaker as unknown);
 
   return {
-    isEnabled: () => Boolean(apiKey),
+    isEnabled: () => isValidHttpUrl(normalizedBaseUrl),
     async search(query: string, count?: number, options?: WebSearchOptions): Promise<WebSearchResult[]> {
-      if (!apiKey) return [];
+      logMissingApiKeyIfNeeded();
       try {
         const normalizedCount = count ?? defaultCount;
         return (await breaker.fire(query, normalizedCount, options ?? {})) as WebSearchResult[];
@@ -241,12 +255,19 @@ export function createWebSearchClient({
           logger.warn('Circuit breaker aberto - Busca web temporariamente indisponível');
           return [];
         }
-        logger.error({ error, query }, 'Erro na busca web (SearXNG)');
+        logger.error(
+          {
+            err: error instanceof Error ? error : undefined,
+            errorMessage: error instanceof Error ? error.message : String(error),
+            query,
+          },
+          'Erro na busca web (SearXNG)'
+        );
         return [];
       }
     },
     async searchImages(query: string, count?: number, options?: WebSearchOptions): Promise<WebImageSearchResult[]> {
-      if (!apiKey) return [];
+      logMissingApiKeyIfNeeded();
       try {
         const normalizedCount = count ?? defaultCount;
         return (await imageBreaker.fire(query, normalizedCount, options ?? {})) as WebImageSearchResult[];
@@ -255,7 +276,14 @@ export function createWebSearchClient({
           logger.warn('Circuit breaker aberto - Busca de imagens web temporariamente indisponível');
           return [];
         }
-        logger.error({ error, query }, 'Erro na busca de imagens web (SearXNG)');
+        logger.error(
+          {
+            err: error instanceof Error ? error : undefined,
+            errorMessage: error instanceof Error ? error.message : String(error),
+            query,
+          },
+          'Erro na busca de imagens web (SearXNG)'
+        );
         return [];
       }
     },
