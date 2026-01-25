@@ -1167,6 +1167,10 @@ Use RAG apenas se o agente precisar de **documentos internos** para responder no
 - Se existir seletor de agente, use-o antes de enviar a mensagem.
 - Se não existir, escreva claramente o domínio: “Use o agente Financeiro”.
 
+**Ações rápidas no topo do chat (⋯)**
+- **Enviar p/ Treino**: abre a janela para aprovar e enviar a conversa.
+- **Excluir conversa**: remove a conversa atual e todas as mensagens.
+
 ### 10.2 O que acontece se o pedido não for do domínio do agente?
 - A Alice **não troca de agente automaticamente dentro da mesma conversa**.
 - Se o assunto mudar de domínio, o recomendado é:

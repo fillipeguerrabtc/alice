@@ -37,6 +37,7 @@ import {
   Sparkles,
   Menu,
   FileCheck,
+  MoreHorizontal,
   Info,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -70,6 +71,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Label } from '@/components/ui/label';
 import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
 import { apiRequest } from '@/lib/queryClient';
@@ -1903,16 +1910,31 @@ export default function Chat() {
               </div>
             )}
             {conversationId && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="hidden md:flex"
-                onClick={() => setShowTrainingDialog(true)}
-                data-testid="button-send-to-training"
-              >
-                <FileCheck className="h-4 w-4 mr-2" />
-                {t('chat.training.send')}
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="hidden md:flex h-8 w-8"
+                    data-testid="button-chat-actions"
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => setShowTrainingDialog(true)}>
+                    <FileCheck className="h-4 w-4 mr-2" />
+                    {t('chat.training.send')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => setDeleteTargetId(conversationId)}
+                    className="text-destructive focus:text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Excluir conversa
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
             {/* Mobile: Badge compacto */}
             {isMobile && (
@@ -1939,15 +1961,31 @@ export default function Chat() {
                   </Select>
                 )}
                 {conversationId && (
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="h-6 w-6"
-                    onClick={() => setShowTrainingDialog(true)}
-                    data-testid="button-send-to-training-mobile"
-                  >
-                    <FileCheck className="h-3 w-3" />
-                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        data-testid="button-chat-actions-mobile"
+                      >
+                        <MoreHorizontal className="h-3 w-3" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => setShowTrainingDialog(true)}>
+                        <FileCheck className="h-4 w-4 mr-2" />
+                        {t('chat.training.send')}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => setDeleteTargetId(conversationId)}
+                        className="text-destructive focus:text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Excluir conversa
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 )}
               </>
             )}
