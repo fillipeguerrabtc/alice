@@ -1345,6 +1345,9 @@ Resposta (exemplo):
 }
 ```
 
+Observação:
+- O parser ignora automaticamente sufixos como `ano 2025` ou `em 2025` no nome do cliente.
+
 ### 20.18 ERPNext — Nota sobre Sales Order e Payment Entry
 No `integrations-service`, **não há endpoints públicos** para `sales-order` e `payment-entry`.
 Esses registros são criados **internamente** no fluxo ERPNext (Customer → Sales Order → Sales Invoice → Payment Entry)

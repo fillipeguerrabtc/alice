@@ -1504,11 +1504,20 @@ function extractInlineField(message: string, label: string): string | null {
   return match?.[1]?.trim() ?? null;
 }
 
+function normalizeCustomerName(raw: string | null): string | null {
+  if (!raw) return null;
+  let cleaned = raw.trim();
+  cleaned = cleaned.replace(/\s+(ano|year)\s+\d{4}\b.*$/i, '').trim();
+  cleaned = cleaned.replace(/\s+em\s+\d{4}\b.*$/i, '').trim();
+  return cleaned.length > 0 ? cleaned : null;
+}
+
 function extractCustomerName(message: string): string | null {
-  return extractField(message, 'cliente')
+  const candidate = extractField(message, 'cliente')
     ?? extractInlineField(message, 'cliente')
     ?? extractField(message, 'customer')
     ?? extractInlineField(message, 'customer');
+  return normalizeCustomerName(candidate);
 }
 
 function extractYearFromMessage(message: string): number | null {
