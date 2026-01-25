@@ -271,6 +271,7 @@ Retenção Arquivo:   30 dias
 - Agentic web: busca web forçada quando o usuário pedir explicitamente (sem aprovação).
 - Web/Deepweb: SearXNG com Tor via Ahmia habilitado; engine Torch desabilitado explicitamente para evitar falha na imagem atual.
 - Web: cliente de busca agora envia `X-Forwarded-For`/`X-Real-IP` internos para evitar bloqueio do SearXNG (bot detection).
+- Docs: `GUIA-CONFIGURACAO-INICIAL.md` expandido com passo a passo e exemplos para Agents, Agentic, Namespaces, System Prompt e Training.
 - Prompt: instruções PT-BR para idioma, capacidades e SERVER_TIME.
 - DB: nova tabela action_requests + enums para auditoria de ações.
 

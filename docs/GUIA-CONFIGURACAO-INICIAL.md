@@ -1,8 +1,8 @@
 # Guia Operacional da Alice (Chat → Execução → Treino)
 
 **Autor:** Fillipe Guerra  
-**Data:** 23 de Janeiro de 2026  
-**Versão:** 1.0.0  
+**Data:** 25 de Janeiro de 2026  
+**Versão:** 1.1.0  
 
 ---
 
@@ -44,16 +44,72 @@ Este manual é focado em **operações pedidas no chat** e em **como usar agente
 
 ---
 
-## 3) Configuração mínima para operar no chat
+## 3) Configuração mínima para operar no chat (passo a passo)
 
-### 3.1 Core Prompt (Admin)
+### 3.1 Core Prompt (Admin) — Configuração da Alice
 - Página: `/alice-config`
 - Permissão: `admin:alice_core:write` (admin/super_admin).
-- Preencha: **System Prompt Core**, políticas e regras de governança.
+- Objetivo: definir **a identidade global da Alice**, regras de governança, segurança e limites.
+
+**Passo a passo**
+1. Acesse `/alice-config`.
+2. Preencha **Creator Name** e **Creator Rule** (autoridade e regra máxima).
+3. Preencha as políticas: **Ethics**, **Moral**, **Legal**, **Safety Guardrails**, **NSFW**.
+4. Defina o **System Prompt Core** (o “cérebro global”).
+5. Salve e valide com um teste simples no chat.
+
+**O que cada campo faz**
+- **Creator Name**: referência institucional do sistema (ex.: CTO/Compliance Lead).
+- **Creator Rule**: regra suprema que a Alice nunca pode violar.
+- **Ethics/Moral/Legal**: limites explícitos de conduta e conformidade.
+- **Safety Guardrails**: regras para evitar ações perigosas ou não auditadas.
+- **NSFW Policy**: política de conteúdo sensível.
+- **System Prompt Core**: o prompt global que orienta **todas** as respostas.
+
+**Exemplo de System Prompt Core (resumo)**
+```
+Você é Alice, assistente enterprise focada em finanças, trading e gestão.
+Regras: nunca executar ações críticas sem confirmação; priorizar precisão, compliance e rastreabilidade.
+Sempre responder em PT-BR, com linguagem profissional e objetiva.
+Se faltar dado, pedir explicitamente.
+```
+
+**Dicas**
+- Mantenha o Core **curto e direto**. Detalhes específicos devem ir para os agentes.
+- Regras críticas devem estar no **Core** e também nos **Agent Prompts**.
 
 ### 3.2 Modo Agentic (habilitar capacidades)
 - Página: `/agentic-config`
-- Ative apenas o que será usado no chat: `tradingEnabled`, `erpReadEnabled`, `erpWriteEnabled`, `paymentsEnabled`, `financialApprovalRequired`.
+- Objetivo: ligar/desligar **capabilities reais** do sistema (Web, ERP, Payments, Stack Ops, Trading).
+
+**Passo a passo**
+1. Acesse `/agentic-config`.
+2. Ative somente o que será usado no chat.
+3. Revise as seções de detectores (keywords/patterns) por domínio.
+4. Salve e valide com um comando simples no chat.
+
+**O que cada toggle faz**
+- **webEnabled**: permite busca web (SearXNG) no fluxo agentic.
+- **erpReadEnabled**: leitura no ERPNext (consultas e listagens).
+- **erpWriteEnabled**: escrita no ERPNext (criar/alterar registros).
+- **tradingEnabled**: habilita comandos reais de trading (KuCoin).
+- **paymentsEnabled**: habilita pagamentos via Wise/Stripe.
+- **stackOpsEnabled**: permite ações operacionais (deploy/rollback via GitHub Actions).
+- **financialApprovalRequired**: força aprovação explícita em ações financeiras.
+
+**Dicas**
+- Em produção, **ative somente o necessário** (menor superfície de risco).
+- `financialApprovalRequired` deve ficar **ativo** para compliance.
+
+**Detectores (keywords e patterns)**
+- Cada seção (`web`, `erp`, `payments`, `stackOps`, `trading`, `agenticTask`) possui **keywords** e **patterns**.
+- **Keywords**: termos simples (ex.: “fatura”, “invoice”, “pagamento”).
+- **Patterns**: regex para identificar pedidos específicos (ex.: `\bcriar\s+invoice\b`).
+
+**Exemplo de configuração (keywords)**
+- `erp.baseKeywords`: `cliente`, `item`, `invoice`, `fatura`
+- `payments.wiseKeywords`: `wise`, `transferência internacional`
+- `stackOps.deployKeywords`: `deploy`, `release`, `versão`
 
 > Sem Core Prompt e Agentic corretamente configurados, as operações no chat ficam inconsistentes.
 
@@ -66,6 +122,16 @@ Crie **1 namespace por domínio** que será operado no chat.
 - Exemplo: `Trading`, `Financeiro`, `Atendimento`, `Jurídico`, `Fiscal`, `Compliance`.
 - Regra: **todo agente deve apontar para um namespace**.
 
+**Passo a passo**
+1. Acesse `/namespaces`.
+2. Clique em **Novo Namespace**.
+3. Defina: `nome`, `slug`, `descrição` e `cor`.
+4. Salve e valide no card (contagem de agentes/documentos).
+
+**Dicas**
+- `slug` deve ser curto e sem espaços (ex.: `financeiro`).
+- Use cores distintas para facilitar o uso operacional.
+
 ---
 
 ## 5) Agentes IA (identidade, prompt e modelo)
@@ -74,6 +140,39 @@ Crie **um agente por domínio** com prompt claro e limites definidos.
 - Página: `/agents`
 - Obrigatório: `namespaceId`, **System Prompt**, **capacidades**.
 - Recomendado: `temperature` moderada e `maxTokens` coerente com o domínio.
+
+**Passo a passo**
+1. Acesse `/agents`.
+2. Clique em **Novo Agente**.
+3. Defina nome, slug, status e namespace.
+4. Preencha **System Prompt do agente**.
+5. Ajuste **modelo**, **temperature** e **maxTokens**.
+6. Defina **capacidades** (ex.: `trading`, `rag`, `payments`).
+7. Salve e valide com um pedido simples no chat.
+
+**Diferença entre System Prompt Core e Agent Prompt**
+- **Core Prompt**: regras globais da Alice (sempre ativo).
+- **Agent Prompt**: regras específicas do domínio (reforça limites e estilo).
+
+**Dicas de configuração**
+- `temperature` baixa (0.2–0.5) para tarefas críticas.
+- `maxTokens` menor para respostas objetivas e auditáveis.
+- Agente financeiro deve ser **conservador e verificável**.
+
+**Exemplo de Agent Prompt (Financeiro)**
+```
+Você é um agente financeiro enterprise integrado ao ERPNext.
+Regras: não criar nem pagar sem aprovação explícita. Nunca inventar números.
+Se faltar dado, pergunte de forma objetiva.
+Formato: (1) entendimento (2) dados necessários (3) ação sugerida (4) confirmação.
+```
+
+**Exemplo de Agent Prompt (Trading)**
+```
+Você é um agente de trading especializado em KuCoin Futures.
+Regras: nunca executar ordens sem confirmação; sempre respeitar risk config.
+Formato: contexto → sinal → entrada/SL/TP → confirmação explícita.
+```
 
 ---
 
@@ -91,6 +190,10 @@ Resumo operacional:
 Use RAG apenas se o agente precisar de **documentos internos** para responder no chat.
 - Upload rápido: `/documents` (texto) e `/training` (multimodal).
 - O agente consulta esses documentos durante a operação no chat.
+
+**Dicas**
+- Mantenha documentos por domínio/namespace.
+- Evite PDFs gigantes sem necessidade (aumenta ruído).
 
 ---
 
@@ -135,7 +238,7 @@ No chat, use **“Enviar p/ Treino”** para enviar conversa ao namespace corret
 
 ---
 
-## 9) Datasets e treinamento (QLoRA)
+## 9) Datasets e treinamento (QLoRA) — Página Training
 
 Página: `/training`
 
@@ -145,6 +248,22 @@ Página: `/training`
 3. Dispare **Treinamento on-demand** quando houver volume.
 
 > O auto‑learning roda por padrão (incremental semanal / completo quinzenal).
+
+**O que cada área faz**
+- **Training Data**: lista conversas e aprovações pendentes.
+- **Filtros por Namespace**: separa por domínio.
+- **Aprovação em lote**: acelera a curadoria.
+- **Run Training**: dispara fine‑tuning on‑demand.
+
+**Dicas**
+- Não treine com poucos exemplos; prefira volume consistente.
+- Treinos por domínio produzem modelos mais estáveis.
+
+**Exemplo de prompt de treino (descrição)**
+```
+Treino incremental após conversas de ERPNext com aprovação explícita.
+Objetivo: reduzir perguntas repetidas e melhorar checklist de dados.
+```
 
 ---
 
