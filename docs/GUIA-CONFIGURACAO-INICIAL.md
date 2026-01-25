@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 25 de Janeiro de 2026  
-**Versão:** 1.1.0  
+**Versão:** 1.2.0  
 
 ---
 
@@ -197,7 +197,47 @@ Use RAG apenas se o agente precisar de **documentos internos** para responder no
 
 ---
 
-## 8) Coleta de dados do Chat → Aprendizado
+## 8) Como os agentes funcionam no chat (roteamento, canais e handover)
+
+### 8.1 Roteamento automático por domínio
+- Ao iniciar uma **nova conversa**, a Alice analisa o pedido e seleciona o **agente do domínio**.
+- Essa decisão usa **texto do pedido**, **namespace** e **detectores do Modo Agentic**.
+- A conversa fica associada a **um único agente** até o fim.
+
+**Dica para usuários leigos**
+- Se existir seletor de agente, use-o antes de enviar a mensagem.
+- Se não existir, escreva claramente o domínio: “Use o agente Financeiro”.
+
+### 8.2 O que acontece se o pedido não for do domínio do agente?
+- A Alice **não troca de agente automaticamente dentro da mesma conversa**.
+- Se o assunto mudar de domínio, o recomendado é:
+  1. **Encerrar a conversa atual**.
+  2. **Abrir nova conversa** e selecionar o agente correto.
+
+**Exemplo de resposta correta do agente**
+> “Esse assunto não é do meu domínio. Para prosseguir, abra uma nova conversa e selecione o agente Jurídico/Compliance.”
+
+### 8.3 Handover (escalação para humano)
+- Para casos sensíveis ou quando o usuário pede atendimento humano, a conversa pode entrar em **modo humano**.
+- Nesse modo, a Alice **pausa a automação** e um operador assume.
+
+### 8.4 WhatsApp (Twilio) — como o canal funciona
+- O WhatsApp usa o **Twilio** como provedor oficial.
+- Mensagens recebidas entram pelo webhook:
+  - `POST /api/integrations/twilio/webhook/whatsapp`
+- O sistema:
+  1. Cria (ou reutiliza) o usuário pelo telefone.
+  2. Cria (ou reutiliza) a conversa.
+  3. Envia a mensagem ao chat‑service com `channel: 'whatsapp'`.
+  4. Retorna a resposta ao cliente via Twilio.
+
+**Pré‑requisitos WhatsApp**
+- Secrets obrigatórios: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_NUMBER`.
+- Webhook do Twilio apontando para a URL acima.
+
+---
+
+## 9) Coleta de dados do Chat → Aprendizado
 
 ### Operações no chat (modo ideal de uso de agentes)
 Para obter melhores resultados e gerar dados de treino úteis, use o chat com estrutura clara.
@@ -238,7 +278,7 @@ No chat, use **“Enviar p/ Treino”** para enviar conversa ao namespace corret
 
 ---
 
-## 9) Datasets e treinamento (QLoRA) — Página Training
+## 10) Datasets e treinamento (QLoRA) — Página Training
 
 Página: `/training`
 
@@ -267,7 +307,7 @@ Objetivo: reduzir perguntas repetidas e melhorar checklist de dados.
 
 ---
 
-## 10) Especialização para Trading (KuCoin)
+## 11) Especialização para Trading (KuCoin)
 
 Foco em **pedidos no chat** + **confirmação explícita**.
 
@@ -286,7 +326,7 @@ Foco em **pedidos no chat** + **confirmação explícita**.
 
 ---
 
-## 11) Especialização para Finanças/ERPNext
+## 12) Especialização para Finanças/ERPNext
 
 Foco em **tarefas financeiras pedidas no chat** com confirmação.
 
@@ -305,7 +345,7 @@ Foco em **tarefas financeiras pedidas no chat** com confirmação.
 
 ---
 
-## 12) Permissões e RBAC essenciais
+## 13) Permissões e RBAC essenciais
 
 | Módulo | Permissões chave | Uso |
 |-------|------------------|-----|
@@ -322,7 +362,7 @@ Foco em **tarefas financeiras pedidas no chat** com confirmação.
 
 ---
 
-## 13) Observabilidade e validação
+## 14) Observabilidade e validação
 
 Validação mínima pós-operação:
 - **Grafana** (Trading/GPU/ERPNext) e `/health`.
@@ -330,7 +370,7 @@ Validação mínima pós-operação:
 
 ---
 
-## 14) Troubleshooting rápido
+## 15) Troubleshooting rápido
 
 - **Agente não responde**: verifique GPU Manager e containers GPU.
 - **Treino não inicia**: valide se há dados aprovados.
@@ -338,7 +378,7 @@ Validação mínima pós-operação:
 
 ---
 
-## 15) Próximos passos recomendados
+## 16) Próximos passos recomendados
 
 1. Começar com **1 agente por domínio** (Trading, Financeiro, Atendimento).
 2. Operar no chat com pedidos estruturados e confirmação explícita.
@@ -346,122 +386,151 @@ Validação mínima pós-operação:
 
 ---
 
-## 16) Templates de prompts por domínio (exemplos reais)
+## 17) Templates de prompts por domínio (exemplos reais)
 
 > **Uso recomendado:** cole no campo **System Prompt** do agente (aba Prompt em `/agents`).  
 > Ajuste linguagem, limites e regras conforme o seu compliance.
 
-### 16.1 Trading (KuCoin Futures)
+### 17.1 Atendimento (Customer Support)
+**Namespace:** `atendimento`  
+**Agente:** `Atendimento`  
+**Modo Agentic recomendado:** `webEnabled` (consultas públicas)  
+**Temperatura:** 0.4 | **maxTokens:** 900
+
+**Prompt (copiar e colar)**
 ```
-Você é um agente especialista em BTC Futures (KuCoin Perpetuals).
-Objetivo: gerar análises objetivas, sinais claros e ordens somente com autorização explícita.
-
-Regras obrigatórias:
-- Nunca execute ordens sem confirmação do usuário.
-- Sempre respeite limites de risco do tenant (risk config).
-- Se houver conflito ou incerteza, peça confirmação.
-- Use linguagem objetiva, sem promessas de lucro.
-- Priorize precisão e gestão de risco.
-
-Formato de resposta:
-1) Contexto de mercado (curto)
-2) Sinal (LONG/SHORT/NEUTRAL) + justificativa
-3) Parâmetros sugeridos (entrada/SL/TP) com cautela
-4) Pergunta de confirmação antes de qualquer execução
+Você é um agente de Atendimento enterprise.
+Objetivo: responder clientes com clareza, empatia e precisão.
+Regras: não inventar políticas; se faltar dado, fazer perguntas objetivas.
+Se o tema for financeiro/jurídico/trading, instruir a abrir conversa com o agente correto.
+Formato: resposta direta + próximos passos + pergunta final (se necessário).
 ```
 
-### 16.2 Financeiro / ERPNext
-```
-Você é um agente financeiro e contábil integrado ao ERPNext.
-Objetivo: apoiar lançamentos, conciliações e pagamentos com aprovação explícita.
-
-Regras obrigatórias:
-- Nunca aprovar pagamentos sem confirmação humana.
-- Não inventar números: sempre pedir a fonte/registro.
-- Seguir regras fiscais e políticas internas do tenant.
-- Registrar claramente o que será criado/alterado no ERP.
-
-Formato de resposta:
-1) Entendimento da solicitação
-2) Dados necessários (lista objetiva)
-3) Ação sugerida (ex.: criar invoice, payment entry)
-4) Solicitar aprovação explícita
-```
-
-### 16.3 Atendimento/Customer Support
-```
-Você é um agente de atendimento enterprise.
-Objetivo: resolver dúvidas com precisão e escalar quando necessário.
-
-Regras obrigatórias:
-- Se não souber, diga que irá consultar.
-- Nunca inventar políticas.
-- Use linguagem empática e direta.
-- Em casos críticos, escalar imediatamente.
-```
-
-### 16.4 Jurídico
-```
-Você é um agente jurídico enterprise.
-Objetivo: apoiar análises legais e revisão de riscos, sem substituir parecer jurídico humano.
-
-Regras obrigatórias:
-- Não emitir parecer definitivo; sempre recomendar validação humana.
-- Não inventar leis, números ou cláusulas.
-- Indicar claramente limites e incertezas.
-- Solicitar documentos oficiais quando necessário.
-
-Formato de resposta:
-1) Entendimento do caso
-2) Riscos e pontos críticos
-3) Dados/documentos necessários
-4) Recomendação de validação humana
-```
-
-### 16.5 Fiscal
-```
-Você é um agente fiscal e tributário.
-Objetivo: orientar rotinas fiscais com base em documentos oficiais.
-
-Regras obrigatórias:
-- Não inventar alíquotas ou obrigações.
-- Solicitar UF/município e regime tributário.
-- Sempre referenciar a fonte (quando disponível).
-- Se houver dúvida, indicar consulta ao contador.
-
-Formato de resposta:
-1) Dados fiscais necessários
-2) Orientação preliminar
-3) Pontos de atenção e compliance
-4) Solicitar validação do responsável fiscal
-```
-
-### 16.6 Compliance
-```
-Você é um agente de compliance e governança.
-Objetivo: garantir conformidade com políticas internas e regulações aplicáveis.
-
-Regras obrigatórias:
-- Nunca aprovar exceções sem autorização formal.
-- Sempre exigir evidências e registros.
-- Classificar risco (baixo/médio/alto) e justificar.
-- Recomendar auditoria quando necessário.
-
-Formato de resposta:
-1) Enquadramento do caso
-2) Risco e impacto
-3) Evidências necessárias
-4) Próximos passos com aprovação
-```
+**Exemplo de pedido**
+> “Preciso do status do meu pedido #1234 e prazo de entrega.”
 
 ---
 
-## 17) Checklist de secrets por ambiente (resumo)
+### 17.2 Trading (KuCoin Futures)
+**Namespace:** `trading`  
+**Agente:** `Trading`  
+**Modo Agentic recomendado:** `tradingEnabled`, `webEnabled`  
+**Temperatura:** 0.3 | **maxTokens:** 1200
+
+**Prompt (copiar e colar)**
+```
+Você é um agente especialista em BTC Futures (KuCoin).
+Regras: nunca executar ordens sem confirmação explícita.
+Sempre respeitar risk config do tenant. Nada de promessas de lucro.
+Formato: contexto curto → sinal (LONG/SHORT/NEUTRAL) → entrada/SL/TP → confirmação.
+```
+
+**Exemplo de pedido**
+> “Analise XBTUSDTM 5m e sugira entrada/SL/TP com risco 2%.”
+
+---
+
+### 17.3 Contabilidade
+**Namespace:** `contabilidade`  
+**Agente:** `Contabilidade`  
+**Modo Agentic recomendado:** `erpReadEnabled`, `erpWriteEnabled`  
+**Temperatura:** 0.2 | **maxTokens:** 900
+
+**Prompt (copiar e colar)**
+```
+Você é um agente de Contabilidade.
+Regras: não inventar números; pedir fonte/registro sempre.
+Antes de criar/alterar registros, pedir confirmação explícita.
+Formato: entendimento → dados necessários → ação sugerida → confirmação.
+```
+
+**Exemplo de pedido**
+> “Quero lançar uma fatura para ACME LTDA com vencimento 15/02.”
+
+---
+
+### 17.4 Financeiro
+**Namespace:** `financeiro`  
+**Agente:** `Financeiro`  
+**Modo Agentic recomendado:** `erpReadEnabled`, `erpWriteEnabled`, `paymentsEnabled`  
+**Temperatura:** 0.3 | **maxTokens:** 1000
+
+**Prompt (copiar e colar)**
+```
+Você é um agente Financeiro integrado ao ERPNext.
+Regras: nunca efetuar pagamentos sem aprovação explícita.
+Sempre listar dados mínimos e explicar o que será criado.
+Formato: entendimento → dados necessários → ação sugerida → confirmação.
+```
+
+**Exemplo de pedido**
+> “Preciso pagar fornecedor X via Wise. Qual valor e dados faltam?”
+
+---
+
+### 17.5 Jurídico/Compliance
+**Namespace:** `juridico-compliance`  
+**Agente:** `Jurídico e Compliance`  
+**Modo Agentic recomendado:** `webEnabled` (consulta de legislação pública)  
+**Temperatura:** 0.2 | **maxTokens:** 1100
+
+**Prompt (copiar e colar)**
+```
+Você é um agente Jurídico/Compliance.
+Regras: nunca emitir parecer definitivo; sempre recomendar validação humana.
+Não inventar leis, cláusulas ou números. Indicar limites e incertezas.
+Formato: entendimento → riscos → documentos necessários → recomendação de validação.
+```
+
+**Exemplo de pedido**
+> “Temos cláusula de multa em contrato; quais riscos devemos revisar?”
+
+---
+
+### 17.6 Secretaria(o)
+**Namespace:** `secretaria`  
+**Agente:** `Secretaria`  
+**Modo Agentic recomendado:** `webEnabled` (agenda, informações públicas)  
+**Temperatura:** 0.5 | **maxTokens:** 800
+
+**Prompt (copiar e colar)**
+```
+Você é um agente de Secretaria(o) corporativo.
+Regras: organizar tarefas, resumir, lembrar prazos e pedir dados faltantes.
+Não assumir informações não confirmadas.
+Formato: checklist do que precisa + próximos passos + confirmação.
+```
+
+**Exemplo de pedido**
+> “Organize as tarefas da reunião de amanhã e liste pendências.”
+
+---
+
+### 17.7 Backoffice
+**Namespace:** `backoffice`  
+**Agente:** `Backoffice`  
+**Modo Agentic recomendado:** `erpReadEnabled`, `erpWriteEnabled`, `webEnabled`  
+**Temperatura:** 0.3 | **maxTokens:** 1000
+
+**Prompt (copiar e colar)**
+```
+Você é um agente de Backoffice.
+Regras: padronizar processos internos e evitar ações críticas sem aprovação.
+Sempre registrar o que será alterado no ERPNext antes de executar.
+Formato: entendimento → dados necessários → ação sugerida → confirmação.
+```
+
+**Exemplo de pedido**
+> “Preciso padronizar cadastro de clientes e revisar dados incompletos.”
+
+---
+
+## 18) Checklist de secrets por ambiente (resumo)
 
 > **SSOT obrigatório:** a lista exata e atual está em `docs/SECRETS.md`.  
 > Este checklist é um **resumo didático** para onboarding rápido.
 
-### 17.1 Desenvolvimento (local)
+### 18.1 Desenvolvimento (local)
 Obrigatórios para rodar o core:
 - `ADMIN_USER`, `ADMIN_PWD`
 - `SESSION_SECRET`, `INTERNAL_API_SECRET`
@@ -473,7 +542,7 @@ Se usar recursos avançados:
 - **Vision/ASR**: `OPENAI_API_KEY`
 - **Email**: `GMAIL_USER`, `GMAIL_APP_PASSWORD`
 
-### 17.2 Produção (Hetzner)
+### 18.2 Produção (Hetzner)
 Obrigatórios (core + compliance):
 - Admins: `ADMIN_USER`, `ADMIN_PWD`, `GRAFANA_ADMIN_USER`, `GRAFANA_ADMIN_PASSWORD`, `ERPNEXT_ADMIN_PASSWORD`
 - Segurança: `SESSION_SECRET`, `INTERNAL_API_SECRET`
@@ -489,9 +558,9 @@ Integrações opcionais (quando habilitadas):
 
 ---
 
-## 18) Apêndice — Payloads API detalhados (exemplos)
+## 19) Apêndice — Payloads API detalhados (exemplos)
 
-### 18.1 Namespaces
+### 19.1 Namespaces
 ```http
 POST /api/namespaces
 Content-Type: application/json
@@ -504,7 +573,7 @@ Content-Type: application/json
 }
 ```
 
-### 18.2 Agentes
+### 19.2 Agentes
 ```http
 POST /api/agents
 Content-Type: application/json
@@ -521,7 +590,7 @@ Content-Type: application/json
 }
 ```
 
-### 18.3 Core Settings
+### 19.3 Core Settings
 ```http
 PATCH /api/assistant-settings
 Content-Type: application/json
@@ -538,7 +607,7 @@ Content-Type: application/json
 }
 ```
 
-### 18.4 Coleta de dados de treinamento
+### 19.4 Coleta de dados de treinamento
 ```http
 POST /api/training/data
 Content-Type: application/json
@@ -555,7 +624,7 @@ Content-Type: application/json
 }
 ```
 
-### 18.5 Aprovação em lote
+### 19.5 Aprovação em lote
 ```http
 POST /api/training/data/approve-batch
 Content-Type: application/json
@@ -566,7 +635,7 @@ Content-Type: application/json
 }
 ```
 
-### 18.6 Treinamento on‑demand
+### 19.6 Treinamento on‑demand
 ```http
 POST /api/training/run/start
 Content-Type: application/json
@@ -580,7 +649,7 @@ Content-Type: application/json
 }
 ```
 
-### 18.7 Treinamento Trading
+### 19.7 Treinamento Trading
 ```http
 POST /api/training/jobs/trading
 Content-Type: application/json
@@ -591,7 +660,7 @@ Content-Type: application/json
 }
 ```
 
-### 18.8 RAG Search (texto)
+### 19.8 RAG Search (texto)
 ```http
 POST /api/rag/search
 Content-Type: application/json
@@ -603,7 +672,7 @@ Content-Type: application/json
 }
 ```
 
-### 18.9 Configuração Agentic
+### 19.9 Configuração Agentic
 ```http
 PATCH /api/agentic/settings
 Content-Type: application/json
@@ -622,7 +691,7 @@ Content-Type: application/json
 }
 ```
 
-### 18.10 Trading — Criar ordem (KuCoin)
+### 19.10 Trading — Criar ordem (KuCoin)
 ```http
 POST /api/integrations/trading/orders
 Content-Type: application/json
@@ -637,7 +706,7 @@ Content-Type: application/json
 }
 ```
 
-### 18.11 Trading — Criar stop order (TP/SL)
+### 19.11 Trading — Criar stop order (TP/SL)
 ```http
 POST /api/integrations/trading/stop-orders
 Content-Type: application/json
@@ -653,19 +722,19 @@ Content-Type: application/json
 }
 ```
 
-### 18.12 Trading — Sincronizar ordens (KuCoin)
+### 19.12 Trading — Sincronizar ordens (KuCoin)
 ```http
 POST /api/integrations/trading/orders/sync
 Content-Type: application/json
 ```
 
-### 18.13 Trading — Cancelar stop order
+### 19.13 Trading — Cancelar stop order
 ```http
 DELETE /api/integrations/trading/stop-orders/ORDER_ID
 Content-Type: application/json
 ```
 
-### 18.14 Trading — Risk Config (GET/PUT)
+### 19.14 Trading — Risk Config (GET/PUT)
 ```http
 GET /api/integrations/trading/risk-config
 ```
@@ -689,7 +758,7 @@ Content-Type: application/json
 }
 ```
 
-### 18.15 ERPNext — Criar cliente
+### 19.15 ERPNext — Criar cliente
 ```http
 POST /api/integrations/erpnext/customers
 Content-Type: application/json
@@ -704,7 +773,7 @@ Content-Type: application/json
 }
 ```
 
-### 18.16 ERPNext — Criar invoice
+### 19.16 ERPNext — Criar invoice
 ```http
 POST /api/integrations/erpnext/invoices
 Content-Type: application/json
@@ -718,7 +787,7 @@ Content-Type: application/json
 }
 ```
 
-### 18.17 ERPNext — Nota sobre Sales Order e Payment Entry
+### 19.17 ERPNext — Nota sobre Sales Order e Payment Entry
 No `integrations-service`, **não há endpoints públicos** para `sales-order` e `payment-entry`.
 Esses registros são criados **internamente** no fluxo ERPNext (Customer → Sales Order → Sales Invoice → Payment Entry)
 usando as APIs oficiais do ERPNext:
