@@ -37,8 +37,9 @@ server:
   secret_key: ""
   # Formato de log JSON para parsing por Loki
   limiter: false
-  # Limiter desabilitado - rate limiting feito no Traefik
-  public_instance: false
+  # Limiter desabilitado - rate limiting feito na borda
+  # Instância interna (não exposta publicamente pelo Caddy)
+  public_instance: true
   # Resultado de imagens em formato JSON
   image_proxy: true
 

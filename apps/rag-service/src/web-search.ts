@@ -93,6 +93,10 @@ export function createWebSearchClient({
       Accept: 'application/json',
       'X-Forwarded-For': '127.0.0.1',
       'X-Real-IP': '127.0.0.1',
+      'X-Forwarded-Proto': 'http',
+      'X-Forwarded-Host': 'alice-searxng:8080',
+      'X-Forwarded-Port': '8080',
+      'User-Agent': 'Alice-Internal/1.0',
     };
     if (!hasApiKey) {
       return baseHeaders;
