@@ -276,6 +276,7 @@ Retenção Arquivo:   30 dias
 - Docs: configuração end-to-end por pilar (namespaces, agentes, toggles e treino) com exemplos prontos.
 - Docs: exemplos completos de namespace + agente (payloads) para 8 pilares (inclui Fiscal).
 - Web Search: headers de encaminhamento e user-agent interno no rag-service; SearXNG mantido como instância interna (public_instance=false) para evitar Valkey/limiter obrigatório.
+- ASR: streaming OpenAI desabilitado por padrão e logging enriquecido para erros de transcrição.
 - Prompt: instruções PT-BR para idioma, capacidades e SERVER_TIME.
 - DB: nova tabela action_requests + enums para auditoria de ações.
 

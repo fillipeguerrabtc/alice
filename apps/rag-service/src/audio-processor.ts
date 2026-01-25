@@ -48,7 +48,7 @@ const EMBEDDING_TIMEOUT_MS = 30000; // 30s para embeddings
 const OPENAI_ASR_MODEL = process.env.OPENAI_ASR_MODEL?.trim() || 'gpt-4o-transcribe';
 const OPENAI_ASR_STREAM = process.env.OPENAI_ASR_STREAM
   ? process.env.OPENAI_ASR_STREAM.toLowerCase() === 'true'
-  : true;
+  : false;
 
 const AUDIO_EXTENSION_BY_MIME: Record<string, string> = {
   'audio/mpeg': 'mp3',
@@ -296,7 +296,13 @@ class AudioProcessorService {
         }
         logger.info({ durationSeconds, processingTimeMs: result.processing_time_ms }, 'Transcrição OpenAI concluída');
       } catch (error) {
-        logger.error({ error }, 'Erro na transcrição OpenAI ASR');
+        logger.error(
+          {
+            err: error instanceof Error ? error : undefined,
+            errorMessage: error instanceof Error ? error.message : String(error),
+          },
+          'Erro na transcrição OpenAI ASR'
+        );
         transcription = '[Transcrição não disponível - erro no processamento]';
       }
     } else {
