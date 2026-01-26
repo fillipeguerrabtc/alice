@@ -53,6 +53,8 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
+import { useAuth } from '@/hooks/use-auth';
+import { formatDateTime, formatNumber } from '@/lib/utils';
 
 // ============================================================================
 // TIPOS
@@ -127,12 +129,16 @@ function SignalCard({
   onReject,
   isApproving,
   isRejecting,
+  locale,
+  timeZone,
 }: {
   signal: TradingSignal;
   onApprove: (signalId: string, reason: string) => void;
   onReject: (signalId: string, reason: string) => void;
   isApproving: boolean;
   isRejecting: boolean;
+  locale: string;
+  timeZone: string;
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [showApproveDialog, setShowApproveDialog] = useState(false);
@@ -203,7 +209,7 @@ function SignalCard({
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">
-                    {new Date(signal.criadoEm).toLocaleString('pt-BR')}
+                    {formatDateTime(signal.criadoEm, { locale, timeZone })}
                   </p>
                 </div>
               </div>
@@ -279,25 +285,35 @@ function SignalCard({
                     {signal.suggestedPrice && (
                       <div className="bg-muted p-2 rounded-lg">
                         <p className="text-xs text-muted-foreground">Preço Sugerido</p>
-                        <p className="font-mono font-bold">${signal.suggestedPrice.toLocaleString()}</p>
+                        <p className="font-mono font-bold">${formatNumber(signal.suggestedPrice, locale)}</p>
                       </div>
                     )}
                     {signal.suggestedStopLoss && (
                       <div className="bg-red-50 p-2 rounded-lg">
                         <p className="text-xs text-muted-foreground">Stop Loss</p>
-                        <p className="font-mono font-bold text-red-600">${signal.suggestedStopLoss.toLocaleString()}</p>
+                        <p className="font-mono font-bold text-red-600">
+                          ${formatNumber(signal.suggestedStopLoss, locale)}
+                        </p>
                       </div>
                     )}
                     {signal.suggestedTakeProfit && (
                       <div className="bg-green-50 p-2 rounded-lg">
                         <p className="text-xs text-muted-foreground">Take Profit</p>
-                        <p className="font-mono font-bold text-green-600">${signal.suggestedTakeProfit.toLocaleString()}</p>
+                        <p className="font-mono font-bold text-green-600">
+                          ${formatNumber(signal.suggestedTakeProfit, locale)}
+                        </p>
                       </div>
                     )}
                     {signal.suggestedSize && (
                       <div className="bg-muted p-2 rounded-lg">
                         <p className="text-xs text-muted-foreground">Tamanho (%)</p>
-                        <p className="font-mono font-bold">{(signal.suggestedSize * 100).toFixed(1)}%</p>
+                        <p className="font-mono font-bold">
+                          {formatNumber(signal.suggestedSize * 100, locale, {
+                            minimumFractionDigits: 1,
+                            maximumFractionDigits: 1,
+                          })}
+                          %
+                        </p>
                       </div>
                     )}
                   </div>
@@ -427,7 +443,10 @@ export function SignalApprovalPanel({
   minConfidenceToExecute,
 }: SignalApprovalPanelProps) {
   const { toast } = useToast();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
+  const locale = user?.idioma ?? 'pt-BR';
+  const timeZone = user?.timezone ?? 'UTC';
   const [approvingSignalId, setApprovingSignalId] = useState<string | null>(null);
   const [rejectingSignalId, setRejectingSignalId] = useState<string | null>(null);
 
@@ -562,7 +581,13 @@ export function SignalApprovalPanel({
               <p className="text-xs text-muted-foreground">Falhas</p>
             </div>
             <div className="text-center">
-              <p className="text-2xl font-bold">{stats.accuracyRate.toFixed(1)}%</p>
+              <p className="text-2xl font-bold">
+                {formatNumber(stats.accuracyRate, locale, {
+                  minimumFractionDigits: 1,
+                  maximumFractionDigits: 1,
+                })}
+                %
+              </p>
               <p className="text-xs text-muted-foreground">Taxa de Acerto</p>
             </div>
           </div>
@@ -593,6 +618,8 @@ export function SignalApprovalPanel({
                     onReject={(signalId, reason) => rejectMutation.mutate({ signalId, reason })}
                     isApproving={approvingSignalId === signal.id}
                     isRejecting={rejectingSignalId === signal.id}
+                    locale={locale}
+                    timeZone={timeZone}
                   />
                 ))}
               </div>

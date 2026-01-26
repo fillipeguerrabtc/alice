@@ -25,7 +25,7 @@ import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
+import { cn, formatNumber } from '@/lib/utils';
 import {
   Layers,
   ArrowUp,
@@ -57,6 +57,7 @@ export interface OrderBookVizProps {
   isLoading?: boolean;
   depth?: number;
   precision?: number;
+  locale?: string;
 }
 
 interface ProcessedLevel {
@@ -90,8 +91,8 @@ const COLORS = {
 /**
  * Formata preço para exibição
  */
-function formatPrice(value: number, precision: number = 2): string {
-  return value.toLocaleString('en-US', {
+function formatPrice(value: number, precision: number, locale: string): string {
+  return formatNumber(value, locale, {
     minimumFractionDigits: precision,
     maximumFractionDigits: precision,
   });
@@ -100,11 +101,17 @@ function formatPrice(value: number, precision: number = 2): string {
 /**
  * Formata tamanho para exibição
  */
-function formatSize(value: number): string {
+function formatSize(value: number, locale: string): string {
   if (value >= 1000) {
-    return `${(value / 1000).toFixed(2)}K`;
+    return `${formatNumber(value / 1000, locale, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}K`;
   }
-  return value.toFixed(4);
+  return formatNumber(value, locale, {
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4,
+  });
 }
 
 /**
@@ -140,9 +147,10 @@ interface LevelRowProps {
   type: 'bid' | 'ask';
   precision: number;
   isHighlighted?: boolean;
+  locale: string;
 }
 
-function LevelRow({ level, type, precision, isHighlighted }: LevelRowProps) {
+function LevelRow({ level, type, precision, isHighlighted, locale }: LevelRowProps) {
   const colors = COLORS[type];
   
   return (
@@ -165,13 +173,13 @@ function LevelRow({ level, type, precision, isHighlighted }: LevelRowProps) {
       {/* Content */}
       <div className="relative z-10 flex items-center justify-between w-full">
         <span className={cn('tabular-nums', colors.text)}>
-          {formatPrice(level.price, precision)}
+          {formatPrice(level.price, precision, locale)}
         </span>
         <span className="text-muted-foreground tabular-nums">
-          {formatSize(level.size)}
+          {formatSize(level.size, locale)}
         </span>
         <span className="text-muted-foreground tabular-nums">
-          {formatSize(level.total)}
+          {formatSize(level.total, locale)}
         </span>
       </div>
     </div>
@@ -189,8 +197,10 @@ export function OrderBookViz({
   isLoading = false,
   depth = 15,
   precision = 2,
+  locale,
 }: OrderBookVizProps) {
   const { t } = useTranslation();
+  const resolvedLocale = locale?.trim() || 'pt-BR';
   
   // Processar dados do order book
   // CORREÇÃO 19/12/2025: Remover maxTotal não utilizado (no-unused-vars)
@@ -296,6 +306,7 @@ export function OrderBookViz({
               level={level}
               type="ask"
               precision={precision}
+              locale={resolvedLocale}
             />
           ))}
         </div>
@@ -311,7 +322,7 @@ export function OrderBookViz({
                   <ArrowDown className="h-4 w-4 text-red-500" />
                 )}
                 <span className="text-lg font-bold font-mono">
-                  ${formatPrice(currentPrice, precision)}
+                  ${formatPrice(currentPrice, precision, resolvedLocale)}
                 </span>
               </>
             )}
@@ -319,9 +330,13 @@ export function OrderBookViz({
           
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span>{t('trading.orderbook.spread')}:</span>
-            <span className="font-mono">${formatPrice(spread, precision)}</span>
+            <span className="font-mono">${formatPrice(spread, precision, resolvedLocale)}</span>
             <Badge variant="secondary" className="text-xs">
-              {spreadPercentage.toFixed(3)}%
+              {formatNumber(spreadPercentage, resolvedLocale, {
+                minimumFractionDigits: 3,
+                maximumFractionDigits: 3,
+              })}
+              %
             </Badge>
           </div>
         </div>
@@ -334,6 +349,7 @@ export function OrderBookViz({
               level={level}
               type="bid"
               precision={precision}
+              locale={resolvedLocale}
             />
           ))}
         </div>
@@ -343,13 +359,13 @@ export function OrderBookViz({
           <div className="flex items-center gap-2">
             <span className="text-muted-foreground">{t('trading.orderbook.bidTotal')}:</span>
             <span className="font-mono text-green-500">
-              {formatSize(bids[bids.length - 1]?.total || 0)}
+              {formatSize(bids[bids.length - 1]?.total || 0, resolvedLocale)}
             </span>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-muted-foreground">{t('trading.orderbook.askTotal')}:</span>
             <span className="font-mono text-red-500">
-              {formatSize(asks[asks.length - 1]?.total || 0)}
+              {formatSize(asks[asks.length - 1]?.total || 0, resolvedLocale)}
             </span>
           </div>
         </div>

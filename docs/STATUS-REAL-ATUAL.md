@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 26 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 9.0 - SearXNG JSON habilitado para Agentic
+**Versão:** 9.1 - Formatação numérica por locale do usuário
 
 ---
 
@@ -221,6 +221,8 @@ Retenção Arquivo:   30 dias
 - Chat: efeito de digitação agora avança 1 caractere por tick e suporta até 400ms.
 - Frontend: correção de build (variável não utilizada em AliceConfig).
 - Chat: UX de digitação incremental com "Pensando..." i18n e velocidade configurável imediata.
+- Frontend: formatação numérica e monetária agora respeita o locale do usuário em cards e tabelas.
+- Trading: preços/volume/ordens usam locale do usuário (OrderBook e Candles incluídos).
 - Auth: novos usuários OAuth/SAML/registro local agora entram como `guest` (Convidado).
 - Users Admin: criação de usuário via dashboard (admin-only) com dados obrigatórios e roles iniciais.
 - Users Admin: edição completa com preferências, roles, grupos e validação obrigatória de perfil.
@@ -267,6 +269,8 @@ Retenção Arquivo:   30 dias
 - Chat UI: remoção dos cartões de sugestão no “Novo Chat”.
 - Chat mídia: preview imediato preserva blob URL até upload confirmar.
 - Chat mídia: limpeza de blob URL após upload concluído (media_uploaded).
+- Configurações regionais: timezone, idioma da Alice e local (país/cidade) configuráveis no dashboard e persistidos em PostgreSQL.
+- Frontend: datas e horários agora respeitam idioma/timezone do usuário em listas e cards.
 - RAG: timeout configurável por env (RAG_REQUEST_TIMEOUT_MS).
 - Agentic web: busca web forçada quando o usuário pedir explicitamente (sem aprovação).
 - Web/Deepweb: SearXNG com Tor via Ahmia habilitado; engine Torch desabilitado explicitamente para evitar falha na imagem atual.

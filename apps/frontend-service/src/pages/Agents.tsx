@@ -89,6 +89,7 @@ import {
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { formatNumber } from "@/lib/utils";
 
 // ============================================================================
 // TIPOS E INTERFACES
@@ -282,6 +283,7 @@ function CapabilityBadge({ capability, onRemove }: { capability: string; onRemov
 export default function Agents() {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const locale = user?.idioma ?? 'pt-BR';
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -649,17 +651,27 @@ export default function Agents() {
                   <div className="mt-4 grid grid-cols-3 gap-2">
                     <div className="bg-muted/50 rounded-lg p-2 text-center">
                       <Thermometer className="h-4 w-4 mx-auto mb-1 text-muted-foreground" />
-                      <span className="text-xs font-medium">{agent.temperaturaModelo?.toFixed(1) ?? '0.7'}</span>
+                      <span className="text-xs font-medium">
+                        {formatNumber(agent.temperaturaModelo ?? 0.7, locale, {
+                          minimumFractionDigits: 1,
+                          maximumFractionDigits: 1,
+                        })}
+                      </span>
                     </div>
                     <div className="bg-muted/50 rounded-lg p-2 text-center">
                       <Hash className="h-4 w-4 mx-auto mb-1 text-muted-foreground" />
                       <span className="text-xs font-medium">
-                        {agent.maxTokens?.toLocaleString() ?? modelOptions?.defaults?.maxTokens?.toLocaleString() ?? '—'}
+                        {formatNumber(
+                          agent.maxTokens ?? modelOptions?.defaults?.maxTokens ?? 0,
+                          locale
+                        ) || '—'}
                       </span>
                     </div>
                     <div className="bg-muted/50 rounded-lg p-2 text-center">
                       <Zap className="h-4 w-4 mx-auto mb-1 text-muted-foreground" />
-                      <span className="text-xs font-medium">{agent.capacidades?.length ?? 0}</span>
+                      <span className="text-xs font-medium">
+                        {formatNumber(agent.capacidades?.length ?? 0, locale)}
+                      </span>
                     </div>
                   </div>
 
@@ -1145,7 +1157,7 @@ export default function Agents() {
                                       const unique = Array.from(new Set(candidates)).sort((a, b) => a - b);
                                       return unique.map((val) => (
                                         <SelectItem key={val} value={String(val)}>
-                                          {val.toLocaleString()}
+                                          {formatNumber(val, locale)}
                                         </SelectItem>
                                       ));
                                     })()}

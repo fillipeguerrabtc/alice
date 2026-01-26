@@ -44,6 +44,8 @@ import {
 } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { queryClient } from '@/lib/queryClient';
+import { useAuth } from '@/hooks/use-auth';
+import { formatDateTime } from '@/lib/utils';
 
 interface ServiceStatus {
   name: string;
@@ -138,7 +140,19 @@ function ServiceIcon({ name }: { name: string }) {
   return <Server className="h-5 w-5" />;
 }
 
-function StackStatusCard({ health, isLoading, isError }: { health?: StackHealth; isLoading: boolean; isError?: boolean }) {
+function StackStatusCard({
+  health,
+  isLoading,
+  isError,
+  locale,
+  timeZone,
+}: {
+  health?: StackHealth;
+  isLoading: boolean;
+  isError?: boolean;
+  locale: string;
+  timeZone: string;
+}) {
   const { t } = useTranslation();
   
   if (isLoading) {
@@ -223,7 +237,7 @@ function StackStatusCard({ health, isLoading, isError }: { health?: StackHealth;
               {t('observability.uptime')}: {formatUptime(health?.uptimeSeconds || 0)}
             </span>
             <span data-testid="text-last-check">
-              {t('observability.lastCheck')}: {health?.timestamp ? new Date(health.timestamp).toLocaleTimeString() : '-'}
+              {t('observability.lastCheck')}: {health?.timestamp ? formatDateTime(health.timestamp, { locale, timeZone }) : '-'}
             </span>
           </div>
         </CardContent>
@@ -444,6 +458,9 @@ function MetricsOverview() {
 
 export default function Observability() {
   const { t } = useTranslation();
+  const { user } = useAuth();
+  const locale = user?.idioma ?? 'pt-BR';
+  const timeZone = user?.timezone ?? 'UTC';
 
   const { data: healthData, isLoading: healthLoading, isError: healthError, refetch } = useQuery<StackHealth>({
     queryKey: ['/api/observability/health'],
@@ -526,7 +543,13 @@ export default function Observability() {
         )}
 
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          <StackStatusCard health={healthData} isLoading={healthLoading} isError={healthError} />
+          <StackStatusCard
+            health={healthData}
+            isLoading={healthLoading}
+            isError={healthError}
+            locale={locale}
+            timeZone={timeZone}
+          />
           <QuickLinks urls={urlsData} />
           <MetricsOverview />
         </div>

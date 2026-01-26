@@ -45,6 +45,8 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/use-auth';
+import { formatCurrency, formatNumber } from '@/lib/utils';
 
 interface HealthResponse {
   status: string;
@@ -206,7 +208,15 @@ function IntegrationCard({
   );
 }
 
-function StripeSection({ configured, t }: { configured: boolean; t: (key: string, options?: Record<string, unknown>) => string }) {
+function StripeSection({
+  configured,
+  t,
+  locale,
+}: {
+  configured: boolean;
+  t: (key: string, options?: Record<string, unknown>) => string;
+  locale: string;
+}) {
   const { data, isLoading } = useQuery<StripeProductsResponse>({
     queryKey: ['/api/integrations/stripe/products'],
     enabled: configured,
@@ -245,9 +255,15 @@ function StripeSection({ configured, t }: { configured: boolean; t: (key: string
           </div>
           {product.prices.length > 0 && (
             <div className="text-muted-foreground mt-1">
-              {product.prices.map(p => 
-                `${(p.unit_amount / 100).toFixed(2)} ${p.currency.toUpperCase()}${p.recurring ? `/${p.recurring.interval}` : ''}`
-              ).join(', ')}
+              {product.prices
+                .map(
+                  (p) =>
+                    `${formatNumber(p.unit_amount / 100, locale, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })} ${p.currency.toUpperCase()}${p.recurring ? `/${p.recurring.interval}` : ''}`
+                )
+                .join(', ')}
             </div>
           )}
         </div>
@@ -259,7 +275,15 @@ function StripeSection({ configured, t }: { configured: boolean; t: (key: string
   );
 }
 
-function WiseSection({ configured, t }: { configured: boolean; t: (key: string) => string }) {
+function WiseSection({
+  configured,
+  t,
+  locale,
+}: {
+  configured: boolean;
+  t: (key: string) => string;
+  locale: string;
+}) {
   const { data: status } = useQuery<WiseStatusResponse>({
     queryKey: ['/api/integrations/wise/status'],
     enabled: configured,
@@ -309,10 +333,7 @@ function WiseSection({ configured, t }: { configured: boolean; t: (key: string) 
             <div key={balance.id} className="p-2 bg-muted/50 rounded text-xs">
               <div className="text-muted-foreground">{balance.currency}</div>
               <div className="font-medium">
-                {balance.amount.value.toLocaleString('pt-PT', { 
-                  style: 'currency', 
-                  currency: balance.currency 
-                })}
+                {formatCurrency(balance.amount.value, balance.currency, locale)}
               </div>
             </div>
           ))}
@@ -324,6 +345,8 @@ function WiseSection({ configured, t }: { configured: boolean; t: (key: string) 
 
 export default function Integrations() {
   const { t } = useTranslation();
+  const { user } = useAuth();
+  const locale = user?.idioma ?? 'pt-BR';
   
   const [testingIntegration, setTestingIntegration] = useState<string | null>(null);
   const [showConfigDialog, setShowConfigDialog] = useState<string | null>(null);
@@ -492,7 +515,7 @@ export default function Integrations() {
                 onConfigure={() => setShowConfigDialog('stripe')}
                 t={t}
               >
-                <StripeSection configured={services.stripe.configured} t={t} />
+                <StripeSection configured={services.stripe.configured} t={t} locale={locale} />
               </IntegrationCard>
 
               <IntegrationCard
@@ -503,7 +526,7 @@ export default function Integrations() {
                 onConfigure={() => setShowConfigDialog('wise')}
                 t={t}
               >
-                <WiseSection configured={services.wise.configured} t={t} />
+                <WiseSection configured={services.wise.configured} t={t} locale={locale} />
               </IntegrationCard>
             </motion.div>
           </TabsContent>

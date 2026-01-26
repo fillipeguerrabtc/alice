@@ -2368,10 +2368,54 @@ function applyAssistantSettings(prompt: string, settings?: AssistantSettings | n
  * do DEFAULT_SYSTEM_PROMPT. O parâmetro userMessage está reservado para
  * implementação futura de detecção de idioma programática se necessário.
  */
+type UserLocationContext = {
+  countryCode?: string | null;
+  countryName?: string | null;
+  region?: string | null;
+  city?: string | null;
+};
+
+type UserLocaleContext = {
+  locale?: string | null;
+  timezone?: string | null;
+  location?: UserLocationContext | null;
+};
+
+const resolveLocale = (locale?: string | null) => locale?.trim() || 'pt-BR';
+
+const resolveTimeZone = (timezone?: string | null) => {
+  if (timezone) {
+    try {
+      new Intl.DateTimeFormat('pt-BR', { timeZone: timezone }).format(new Date());
+      return timezone;
+    } catch {
+      // Fallback para timezone padrão caso inválido
+    }
+  }
+  return 'UTC';
+};
+
+const formatLocalDateTime = (date: Date, locale: string, timeZone: string) => {
+  try {
+    return new Intl.DateTimeFormat(locale, { dateStyle: 'full', timeStyle: 'short', timeZone }).format(date);
+  } catch {
+    return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'full', timeStyle: 'short', timeZone: 'UTC' }).format(date);
+  }
+};
+
+const buildLocationLabel = (location?: UserLocationContext | null) => {
+  if (!location) return null;
+  const parts = [location.city, location.region, location.countryName || location.countryCode]
+    .map((value) => (typeof value === 'string' ? value.trim() : ''))
+    .filter((value) => value.length > 0);
+  return parts.length > 0 ? parts.join(' - ') : null;
+};
+
 function buildSystemPrompt(
   agent?: AgentConfig | null,
   assistantSettings?: AssistantSettings | null,
-  userMessage?: string
+  userMessage?: string,
+  userContext?: UserLocaleContext
 ): string {
   let prompt = DEFAULT_SYSTEM_PROMPT;
   const { core: coreSettings, missing } = resolveCoreSettings(assistantSettings);
@@ -2403,9 +2447,18 @@ function buildSystemPrompt(
     prompt += `\n\n${CORE_CAPABILITIES_PROMPT}`;
   }
 
+  const resolvedLocale = resolveLocale(userContext?.locale);
+  const resolvedTimeZone = resolveTimeZone(userContext?.timezone);
+  const locationLabel = buildLocationLabel(userContext?.location);
+
+  if (locationLabel && !prompt.toLowerCase().includes('localização')) {
+    prompt += `\n\nLOCALIZAÇÃO ATUAL:\n- ${locationLabel}`;
+  }
+
   if (userMessage && /(?:data|dia)\s+(?:de\s+)?hoje|que\s+dia\s+é\s+hoje|hoje\s+é|qual\s+a\s+data/i.test(userMessage)) {
     const now = new Date();
-    prompt += `\n\nSERVER_TIME:\n- ISO: ${now.toISOString()}\n- Local: ${now.toLocaleString('pt-BR')}`;
+    const localTime = formatLocalDateTime(now, resolvedLocale, resolvedTimeZone);
+    prompt += `\n\nSERVER_TIME:\n- ISO: ${now.toISOString()}\n- Local: ${localTime}\n- Timezone: ${resolvedTimeZone}`;
   }
 
   // Adicionar instrução de idioma se não estiver presente
@@ -6161,6 +6214,21 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
 
     const agent = conversation.agent as AgentConfig | null;
     const assistantSettings = await getAssistantSettingsForTenant(req.tenantId);
+    const userProfile = await db.query.users.findFirst({
+      where: eq(schema.users.id, userId),
+      columns: {
+        idioma: true,
+        timezone: true,
+        preferencias: true,
+      },
+    });
+    const userLocaleContext: UserLocaleContext | undefined = userProfile
+      ? {
+          locale: userProfile.idioma ?? null,
+          timezone: userProfile.timezone ?? null,
+          location: (userProfile.preferencias as { location?: UserLocationContext } | null | undefined)?.location ?? null,
+        }
+      : undefined;
     const baseNameContext = await resolveUserNameContext(userId, tenantId);
     const nameContext = await handleUserNameUpdate({
       userId,
@@ -6179,7 +6247,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       conversationCreated: false,
     });
 
-    let systemPrompt = buildSystemPrompt(agent, assistantSettings, body.conteudo);
+    let systemPrompt = buildSystemPrompt(agent, assistantSettings, body.conteudo, userLocaleContext);
     systemPrompt = appendUserNamePolicy(systemPrompt, nameContext, nameUsageContext);
     systemPrompt = appendNameConfirmationInstruction(systemPrompt, nameContext);
     if (nameContext.shouldAskConfirmation) {
@@ -6356,6 +6424,22 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
   }
 
   try {
+    const userProfile = await db.query.users.findFirst({
+      where: eq(schema.users.id, userId),
+      columns: {
+        idioma: true,
+        timezone: true,
+        preferencias: true,
+      },
+    });
+    const userLocaleContext: UserLocaleContext | undefined = userProfile
+      ? {
+          locale: userProfile.idioma ?? null,
+          timezone: userProfile.timezone ?? null,
+          location: (userProfile.preferencias as { location?: UserLocationContext } | null | undefined)?.location ?? null,
+        }
+      : undefined;
+
     const agenticSettings = await getOrCreateAgenticSettings(tenantId);
     const agenticDetectors = normalizeAgenticDetectors(agenticSettings.detectors);
     const hasMediaAttachments = Array.isArray(mediaAttachments) && mediaAttachments.length > 0;
@@ -6733,7 +6817,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
       const agent = conversation?.agent as AgentConfig | null;
       const assistantSettings = await getAssistantSettingsForTenant(tenantId);
-      let systemPrompt = buildSystemPrompt(agent, assistantSettings, userMessageContent);
+      let systemPrompt = buildSystemPrompt(agent, assistantSettings, userMessageContent, userLocaleContext);
       systemPrompt = appendUserNamePolicy(systemPrompt, nameContext, nameUsageContext);
       systemPrompt = appendNameConfirmationInstruction(systemPrompt, nameContext);
       let userContent = userMessageContent;

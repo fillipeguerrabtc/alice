@@ -37,6 +37,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
+import { formatNumber } from '@/lib/utils';
 import {
   BarChart3,
   TrendingUp,
@@ -70,6 +71,8 @@ export interface CandleChartProps {
   showVolume?: boolean;
   showSMA?: boolean;
   smaLength?: number;
+  locale?: string;
+  timeZone?: string;
 }
 
 interface ChartDataPoint {
@@ -136,23 +139,39 @@ function calculateSMA(data: number[], period: number): (number | undefined)[] {
 /**
  * Formata timestamp para exibição
  */
-function formatTime(timestamp: number, interval: string): string {
+function resolveLocale(locale?: string): string {
+  return locale?.trim() || 'pt-BR';
+}
+
+function resolveTimeZone(timeZone?: string): string {
+  if (!timeZone) return 'UTC';
+  try {
+    new Intl.DateTimeFormat('pt-BR', { timeZone }).format(new Date());
+    return timeZone;
+  } catch {
+    return 'UTC';
+  }
+}
+
+function formatTime(timestamp: number, interval: string, locale?: string, timeZone?: string): string {
   const date = new Date(timestamp);
   const intervalNum = parseInt(interval);
+  const resolvedLocale = resolveLocale(locale);
+  const resolvedTimeZone = resolveTimeZone(timeZone);
   
   if (intervalNum >= 1440) {
-    return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+    return date.toLocaleDateString(resolvedLocale, { day: '2-digit', month: '2-digit', timeZone: resolvedTimeZone });
   } else if (intervalNum >= 60) {
-    return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    return date.toLocaleTimeString(resolvedLocale, { hour: '2-digit', minute: '2-digit', timeZone: resolvedTimeZone });
   }
-  return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  return date.toLocaleTimeString(resolvedLocale, { hour: '2-digit', minute: '2-digit', timeZone: resolvedTimeZone });
 }
 
 /**
  * Formata valor monetário
  */
-function formatPrice(value: number): string {
-  return value.toLocaleString('en-US', {
+function formatPrice(value: number, locale: string): string {
+  return formatNumber(value, locale, {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
@@ -161,14 +180,20 @@ function formatPrice(value: number): string {
 /**
  * Formata volume
  */
-function formatVolume(value: number): string {
+function formatVolume(value: number, locale: string): string {
   if (value >= 1_000_000) {
-    return `${(value / 1_000_000).toFixed(1)}M`;
+    return `${formatNumber(value / 1_000_000, locale, {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+    })}M`;
   }
   if (value >= 1_000) {
-    return `${(value / 1_000).toFixed(1)}K`;
+    return `${formatNumber(value / 1_000, locale, {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+    })}K`;
   }
-  return value.toFixed(0);
+  return formatNumber(value, locale, { maximumFractionDigits: 0 });
 }
 
 // ============================================================================
@@ -182,9 +207,11 @@ interface TooltipPayload {
 function CustomTooltip({ 
   active, 
   payload,
+  locale,
 }: { 
   active?: boolean; 
   payload?: TooltipPayload[];
+  locale: string;
 }) {
   if (!active || !payload || !payload[0]) return null;
   
@@ -196,17 +223,17 @@ function CustomTooltip({
       <p className="text-xs text-muted-foreground mb-2">{data.time}</p>
       <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
         <span className="text-muted-foreground">Open:</span>
-        <span className="font-mono">${formatPrice(data.open)}</span>
+        <span className="font-mono">${formatPrice(data.open, locale)}</span>
         <span className="text-muted-foreground">High:</span>
-        <span className="font-mono text-green-500">${formatPrice(data.high)}</span>
+        <span className="font-mono text-green-500">${formatPrice(data.high, locale)}</span>
         <span className="text-muted-foreground">Low:</span>
-        <span className="font-mono text-red-500">${formatPrice(data.low)}</span>
+        <span className="font-mono text-red-500">${formatPrice(data.low, locale)}</span>
         <span className="text-muted-foreground">Close:</span>
         <span className={`font-mono ${isUp ? 'text-green-500' : 'text-red-500'}`}>
-          ${formatPrice(data.close)}
+          ${formatPrice(data.close, locale)}
         </span>
         <span className="text-muted-foreground">Volume:</span>
-        <span className="font-mono">{formatVolume(data.volume)}</span>
+        <span className="font-mono">{formatVolume(data.volume, locale)}</span>
       </div>
     </div>
   );
@@ -228,9 +255,12 @@ export function CandleChart({
   showVolume = true,
   showSMA = false,
   smaLength = 20,
+  locale,
+  timeZone,
 }: CandleChartProps) {
   const { t } = useTranslation();
   const [selectedInterval, setSelectedInterval] = useState(interval);
+  const resolvedLocale = resolveLocale(locale);
   
   // BUG FIX 17/12/2025: Sincronizar selectedInterval quando prop interval mudar externamente
   // Cenário: pai muda interval via prop mas selectedInterval local ficava dessincronizado
@@ -257,7 +287,7 @@ export function CandleChart({
       const isUp = close >= open;
       
       return {
-        time: formatTime(kline.time, selectedInterval),
+        time: formatTime(kline.time, selectedInterval, locale, timeZone),
         timestamp: kline.time,
         open,
         high,
@@ -272,7 +302,7 @@ export function CandleChart({
         sma: smaValues[index],
       } as ChartDataPoint;
     });
-  }, [data, selectedInterval, showSMA, smaLength]);
+  }, [data, selectedInterval, showSMA, smaLength, locale, timeZone]);
   
   // Calcular domínio do eixo Y
   const yDomain = useMemo(() => {
@@ -347,7 +377,7 @@ export function CandleChart({
             {currentPrice && (
               <div className="flex items-center gap-2">
                 <span className="text-2xl font-bold font-mono">
-                  ${formatPrice(currentPrice)}
+                  ${formatPrice(currentPrice, resolvedLocale)}
                 </span>
                 <Badge 
                   variant={priceChange.percent >= 0 ? 'default' : 'destructive'}
@@ -417,7 +447,7 @@ export function CandleChart({
                 tick={{ fill: COLORS.text, fontSize: 11 }}
                 tickLine={{ stroke: COLORS.grid }}
                 axisLine={{ stroke: COLORS.grid }}
-                tickFormatter={(value) => `$${formatPrice(value)}`}
+                tickFormatter={(value) => `$${formatPrice(value, resolvedLocale)}`}
                 orientation="right"
                 width={80}
               />
@@ -429,12 +459,12 @@ export function CandleChart({
                   tick={{ fill: COLORS.text, fontSize: 11 }}
                   tickLine={{ stroke: COLORS.grid }}
                   axisLine={{ stroke: COLORS.grid }}
-                  tickFormatter={formatVolume}
+                  tickFormatter={(value) => formatVolume(value, resolvedLocale)}
                   width={50}
                 />
               )}
               
-              <Tooltip content={<CustomTooltip />} />
+              <Tooltip content={<CustomTooltip locale={resolvedLocale} />} />
               
               {/* Current price reference line */}
               {currentPrice && (

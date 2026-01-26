@@ -50,6 +50,8 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient } from '@/lib/queryClient';
+import { useAuth } from '@/hooks/use-auth';
+import { formatCurrency, formatDate, formatNumber } from '@/lib/utils';
 
 interface WiseBalance {
   id: number;
@@ -169,7 +171,10 @@ function getStatusBadge(status: string) {
 
 export default function WisePayments() {
   const { t } = useTranslation();
+  const { user } = useAuth();
   const { toast } = useToast();
+  const locale = user?.idioma ?? 'pt-BR';
+  const timeZone = user?.timezone ?? 'UTC';
   const [activeTab, setActiveTab] = useState('balances');
   const [quoteForm, setQuoteForm] = useState({
     sourceCurrency: 'EUR',
@@ -386,17 +391,12 @@ export default function WisePayments() {
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold">
-                      {balance.amount.value.toLocaleString('pt-PT', {
-                        style: 'currency',
-                        currency: balance.currency,
-                      })}
+                      {formatCurrency(balance.amount.value, balance.currency, locale)}
                     </div>
                     {balance.reservedAmount && balance.reservedAmount.value > 0 && (
                       <p className="text-sm text-muted-foreground mt-1">
-                        {t('wise.balances.reserved')}: {balance.reservedAmount.value.toLocaleString('pt-PT', {
-                          style: 'currency',
-                          currency: balance.currency,
-                        })}
+                        {t('wise.balances.reserved')}:{' '}
+                        {formatCurrency(balance.reservedAmount.value, balance.currency, locale)}
                       </p>
                     )}
                   </CardContent>
@@ -443,23 +443,17 @@ export default function WisePayments() {
                       <TableCell className="font-mono">{transfer.id}</TableCell>
                       <TableCell>
                         <div className="font-medium">
-                          {transfer.sourceValue.toLocaleString('pt-PT', {
-                            style: 'currency',
-                            currency: transfer.sourceCurrency,
-                          })}
+                          {formatCurrency(transfer.sourceValue, transfer.sourceCurrency, locale)}
                         </div>
                         <div className="text-sm text-muted-foreground">
-                          → {transfer.targetValue.toLocaleString('pt-PT', {
-                            style: 'currency',
-                            currency: transfer.targetCurrency,
-                          })}
+                          → {formatCurrency(transfer.targetValue, transfer.targetCurrency, locale)}
                         </div>
                       </TableCell>
                       <TableCell>{transfer.targetAccount}</TableCell>
                       <TableCell>{transfer.reference || '-'}</TableCell>
                       <TableCell>{getStatusBadge(transfer.status)}</TableCell>
                       <TableCell className="text-muted-foreground">
-                        {new Date(transfer.created).toLocaleDateString('pt-PT')}
+                        {formatDate(transfer.created, { locale, timeZone })}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -647,31 +641,36 @@ export default function WisePayments() {
                       <div>
                         <p className="text-sm text-muted-foreground">{t('wise.quotes.rate')}</p>
                         <p className="text-lg font-medium">
-                          {(createQuoteMutation.data as { quote: WiseQuote }).quote.rate.toFixed(4)}
+                          {formatNumber((createQuoteMutation.data as { quote: WiseQuote }).quote.rate, locale, {
+                            minimumFractionDigits: 4,
+                            maximumFractionDigits: 4,
+                          })}
                         </p>
                       </div>
                       <div>
                         <p className="text-sm text-muted-foreground">{t('wise.quotes.fee')}</p>
                         <p className="text-lg font-medium">
-                          {(createQuoteMutation.data as { quote: WiseQuote }).quote.fee.toLocaleString('pt-PT', {
-                            style: 'currency',
-                            currency: quoteForm.sourceCurrency,
-                          })}
+                          {formatCurrency(
+                            (createQuoteMutation.data as { quote: WiseQuote }).quote.fee,
+                            quoteForm.sourceCurrency,
+                            locale
+                          )}
                         </p>
                       </div>
                       <div>
                         <p className="text-sm text-muted-foreground">{t('wise.quotes.receive')}</p>
                         <p className="text-lg font-medium text-green-600">
-                          {(createQuoteMutation.data as { quote: WiseQuote }).quote.targetAmount.toLocaleString('pt-PT', {
-                            style: 'currency',
-                            currency: quoteForm.targetCurrency,
-                          })}
+                          {formatCurrency(
+                            (createQuoteMutation.data as { quote: WiseQuote }).quote.targetAmount,
+                            quoteForm.targetCurrency,
+                            locale
+                          )}
                         </p>
                       </div>
                       <div>
                         <p className="text-sm text-muted-foreground">{t('wise.quotes.delivery')}</p>
                         <p className="text-lg font-medium">
-                          {new Date((createQuoteMutation.data as { quote: WiseQuote }).quote.deliveryEstimate).toLocaleDateString('pt-PT')}
+                          {formatDate((createQuoteMutation.data as { quote: WiseQuote }).quote.deliveryEstimate, { locale, timeZone })}
                         </p>
                       </div>
                     </div>
@@ -722,7 +721,7 @@ export default function WisePayments() {
                         <Badge variant="outline">{batch.sourceCurrency}</Badge>
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {new Date(batch.created).toLocaleDateString('pt-PT')}
+                        {formatDate(batch.created, { locale, timeZone })}
                       </TableCell>
                     </TableRow>
                   ))}

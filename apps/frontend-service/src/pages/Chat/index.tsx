@@ -320,6 +320,23 @@ async function mediaAttachmentToBase64(media: MediaAttachment): Promise<string> 
   if (media.file) {
     return fileToBase64(media.file);
   }
+  if (media.uploadId) {
+    const uploadResponse = await apiRequest('GET', `/api/media/uploads/${media.uploadId}`);
+    if (!uploadResponse.ok) {
+      throw new Error('Falha ao obter informações do upload de mídia');
+    }
+    const data = await uploadResponse.json() as { upload?: { fileUrl?: string | null } };
+    const resolvedUrl = data.upload?.fileUrl;
+    if (resolvedUrl) {
+      const fileResponse = await fetch(resolvedUrl, { credentials: 'include' });
+      if (!fileResponse.ok) {
+        throw new Error('Falha ao baixar arquivo de mídia');
+      }
+      const blob = await fileResponse.blob();
+      const file = new File([blob], media.fileName, { type: media.mimeType });
+      return fileToBase64(file);
+    }
+  }
   if (media.url) {
     const response = await fetch(media.url, { credentials: 'include' });
     if (!response.ok) {
@@ -329,7 +346,7 @@ async function mediaAttachmentToBase64(media: MediaAttachment): Promise<string> 
     const file = new File([blob], media.fileName, { type: media.mimeType });
     return fileToBase64(file);
   }
-  throw new Error('Arquivo de mídia indisponível para upload');
+    throw new Error('Arquivo de mídia indisponível para upload');
 }
 
 const containerVariants = {
@@ -535,6 +552,7 @@ export default function Chat() {
   const [isTranscribingRecording, setIsTranscribingRecording] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingStreamRef = useRef<MediaStream | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
@@ -1026,10 +1044,27 @@ export default function Chat() {
     isStreaming,
   ]);
 
+  const scrollToBottom = useCallback((behavior: ScrollBehavior) => {
+    messagesEndRef.current?.scrollIntoView({ behavior });
+  }, []);
+
   useEffect(() => {
     if (!autoScrollRef.current) return;
-    messagesEndRef.current?.scrollIntoView({ behavior: isStreaming ? 'auto' : 'smooth' });
-  }, [messages, isStreaming]);
+    scrollToBottom(isStreaming ? 'auto' : 'smooth');
+  }, [messages, isStreaming, scrollToBottom]);
+
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container || typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver(() => {
+      if (!autoScrollRef.current) return;
+      scrollToBottom('auto');
+    });
+
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [scrollToBottom]);
 
   const STREAM_NO_CHUNK_TIMEOUT_MS = 60000;
   const resolveStreamStatus = useCallback((stage?: string) => {
@@ -1141,7 +1176,7 @@ export default function Chat() {
       const mediaPayload: StreamMediaAttachmentPayload[] | undefined = mediaAttachments?.length
         ? await Promise.all(
           mediaAttachments.map(async (media) => {
-            if (media.uploadId) {
+            if (media.type === 'audio' && media.uploadId) {
               return {
                 id: media.id,
                 filename: media.fileName,
@@ -1995,33 +2030,35 @@ export default function Chat() {
         <div className="flex-1 flex min-h-0">
           {/* Área de mensagens - responsiva */}
           <ScrollArea ref={scrollAreaRef} className="flex-1 p-2 md:p-4">
-            <AnimatePresence mode="popLayout">
-              {messages.length === 0 ? (
-                <WelcomeScreen />
-              ) : (
-                <motion.div
-                  variants={containerVariants}
-                  initial="hidden"
-                  animate="visible"
-                  className="space-y-3 md:space-y-4 max-w-4xl mx-auto"
-                >
-                  {messages.map((message, index) => (
-                    <MessageBubble
-                      key={message.id}
-                      message={message}
-                      isStreaming={isStreaming}
-                      isLast={index === messages.length - 1}
-                      streamEvents={isStreaming && index === messages.length - 1 ? streamEvents : null}
-                      typingSpeedMs={typingSpeedMs}
-                      onRateImage={handleRateImage}
-                      onFeedback={handleFeedback}
-                      onRegenerate={handleRegenerate}
-                    />
-                  ))}
-                </motion.div>
-              )}
-            </AnimatePresence>
-            <div ref={messagesEndRef} />
+            <div ref={messagesContainerRef} className="min-h-full">
+              <AnimatePresence mode="popLayout">
+                {messages.length === 0 ? (
+                  <WelcomeScreen />
+                ) : (
+                  <motion.div
+                    variants={containerVariants}
+                    initial="hidden"
+                    animate="visible"
+                    className="space-y-3 md:space-y-4 max-w-4xl mx-auto"
+                  >
+                    {messages.map((message, index) => (
+                      <MessageBubble
+                        key={message.id}
+                        message={message}
+                        isStreaming={isStreaming}
+                        isLast={index === messages.length - 1}
+                        streamEvents={isStreaming && index === messages.length - 1 ? streamEvents : null}
+                        typingSpeedMs={typingSpeedMs}
+                        onRateImage={handleRateImage}
+                        onFeedback={handleFeedback}
+                        onRegenerate={handleRegenerate}
+                      />
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+              <div ref={messagesEndRef} />
+            </div>
           </ScrollArea>
 
         </div>

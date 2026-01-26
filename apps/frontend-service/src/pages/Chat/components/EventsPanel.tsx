@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ChevronDown, ChevronUp, Filter, Search } from 'lucide-react';
+import { useAuth } from '@/hooks/use-auth';
+import { formatDateTime } from '@/lib/utils';
 import type { AgentEvent } from './types';
 
 interface EventsPanelProps {
@@ -28,9 +30,12 @@ const STATUS_VARIANTS: Record<AgentEvent['status'], string> = {
 };
 
 export function EventsPanel({ events, isStreaming, onClear }: EventsPanelProps) {
+  const { user } = useAuth();
   const [query, setQuery] = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [phaseFilter, setPhaseFilter] = useState<'all' | AgentEvent['phase']>('all');
+  const locale = user?.idioma ?? 'pt-BR';
+  const timeZone = user?.timezone ?? 'UTC';
 
   const toggleExpanded = (id: string) => {
     setExpanded((prev) => {
@@ -119,7 +124,7 @@ export function EventsPanel({ events, isStreaming, onClear }: EventsPanelProps) 
                       <span className="font-medium">{event.message || event.action}</span>
                     </div>
                     <div className="text-[10px] text-muted-foreground">
-                      {new Date(event.ts).toLocaleTimeString()} • {event.action}
+                      {formatDateTime(event.ts, { locale, timeZone })} • {event.action}
                       {typeof event.durationMs === 'number' ? ` • ${event.durationMs}ms` : ''}
                     </div>
                   </div>

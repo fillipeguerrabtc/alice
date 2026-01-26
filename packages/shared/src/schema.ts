@@ -110,6 +110,12 @@ export const UserPreferenciasSchema = z.object({
   dashboardLayout: z.enum(["compact", "comfortable", "spacious"]).optional(),
   sidebarCollapsed: z.boolean().optional(),
   defaultNamespace: z.string().uuid().optional(),
+  location: z.object({
+    countryCode: z.string().length(2).regex(/^[A-Z]{2}$/).optional(),
+    countryName: z.string().max(80).optional(),
+    region: z.string().max(80).optional(),
+    city: z.string().max(80).optional(),
+  }).optional(),
 }).passthrough();
 export type UserPreferencias = z.infer<typeof UserPreferenciasSchema>;
 

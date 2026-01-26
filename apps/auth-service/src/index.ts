@@ -56,6 +56,7 @@ import {
 import { eq, or, and, inArray, sql } from '@alice/database';
 import type { AuthContext } from '@alice/shared-utils';
 import { z } from 'zod';
+import { UserPreferenciasSchema } from '@alice/shared';
 import { 
   getDatabase, 
   getPool, 
@@ -3342,6 +3343,26 @@ app.delete('/api/auth/groups/:id/users/:userId', requireAuth(), requirePermissio
 // ============================================================================
 
 // Zod schemas para validação de entrada (OWASP API3 - Input Validation)
+const isValidTimeZone = (timezone: string) => {
+  try {
+    new Intl.DateTimeFormat('pt-BR', { timeZone: timezone }).format(new Date());
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const userLocationSchema = z.object({
+  countryCode: z.string().length(2).regex(/^[A-Z]{2}$/).optional(),
+  countryName: z.string().max(80).optional(),
+  region: z.string().max(80).optional(),
+  city: z.string().max(80).optional(),
+}).strict();
+
+const userPreferenciasUpdateSchema = UserPreferenciasSchema.extend({
+  location: userLocationSchema.optional(),
+}).partial();
+
 const updateUserProfileSchema = z.object({
   firstName: z.string().min(1).max(100).optional(),
   lastName: z.string().max(100).optional(),
@@ -3351,8 +3372,9 @@ const updateUserProfileSchema = z.object({
   departamento: z.string().max(100).optional(),
   telefone: z.string().max(20).optional(),
   idioma: z.enum(['pt-BR', 'en-US', 'es-ES']).optional(),
-  timezone: z.string().max(50).optional(),
+  timezone: z.string().max(50).refine(isValidTimeZone, { message: 'Timezone IANA inválido' }).optional(),
   profileImageUrl: z.string().url().max(2048).optional().nullable(),
+  preferencias: userPreferenciasUpdateSchema.optional(),
 });
 
 const updateUserPasswordSchema = z.object({
@@ -3676,12 +3698,24 @@ app.patch('/api/users/:id', requireAuth(), asyncHandler(async (req: Request, res
     }
   }
   
+  const hasPreferencesUpdate = Object.prototype.hasOwnProperty.call(parseResult.data, 'preferencias');
+  const mergedPreferences = hasPreferencesUpdate
+    ? {
+        ...(currentUser.preferencias ?? {}),
+        ...(parseResult.data.preferencias ?? {}),
+      }
+    : undefined;
+  const updatePayload: Partial<typeof schema.users.$inferInsert> = {
+    ...parseResult.data,
+    updatedAt: new Date(),
+    ...(hasPreferencesUpdate
+      ? { preferencias: mergedPreferences as typeof schema.users.$inferInsert['preferencias'] }
+      : {}),
+  };
+
   // Atualizar usuário
   const [updatedUser] = await db.update(schema.users)
-    .set({
-      ...parseResult.data,
-      updatedAt: new Date(),
-    })
+    .set(updatePayload)
     .where(eq(schema.users.id, userId))
     .returning();
 

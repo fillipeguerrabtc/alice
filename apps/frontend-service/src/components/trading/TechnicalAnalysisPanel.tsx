@@ -50,6 +50,8 @@ import {
 } from '@/components/ui/select';
 // NOTA: Tooltip removido - não utilizado neste componente (21/12/2025)
 import { apiRequest } from '@/lib/queryClient';
+import { useAuth } from '@/hooks/use-auth';
+import { formatCurrency, formatDateTime, formatNumber } from '@/lib/utils';
 
 // ============================================================================
 // TIPOS
@@ -220,8 +222,8 @@ const getTrendBadge = (trend: 'bullish' | 'bearish' | 'sideways') => {
   }
 };
 
-const formatPrice = (price: number) => {
-  return price.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' });
+const formatPrice = (price: number, locale: string) => {
+  return formatCurrency(price, 'USD', locale);
 };
 
 // ============================================================================
@@ -232,7 +234,10 @@ export function TechnicalAnalysisPanel({
   symbol,
   defaultInterval = '5m',
 }: TechnicalAnalysisPanelProps) {
+  const { user } = useAuth();
   const [interval, setInterval] = useState(defaultInterval);
+  const locale = user?.idioma ?? 'pt-BR';
+  const timeZone = user?.timezone ?? 'UTC';
 
   // Buscar análise técnica
   const {
@@ -356,7 +361,12 @@ export function TechnicalAnalysisPanel({
                 </div>
                 <div className="text-right">
                   <p className="text-sm opacity-80">Confiança</p>
-                  <p className="text-3xl font-bold">{Math.round(analysis.confidence * 100)}%</p>
+                  <p className="text-3xl font-bold">
+                    {formatNumber(analysis.confidence * 100, locale, {
+                      maximumFractionDigits: 0,
+                    })}
+                    %
+                  </p>
                 </div>
               </div>
               <div className="mt-4">
@@ -366,8 +376,8 @@ export function TechnicalAnalysisPanel({
                 />
               </div>
               <div className="mt-4 flex justify-between text-sm opacity-80">
-                <span>Preço: {formatPrice(analysis.currentPrice)}</span>
-                <span>Última atualização: {new Date(analysis.timestamp).toLocaleTimeString('pt-BR')}</span>
+                <span>Preço: {formatPrice(analysis.currentPrice, locale)}</span>
+                <span>Última atualização: {formatDateTime(analysis.timestamp, { locale, timeZone })}</span>
               </div>
             </div>
 
@@ -383,7 +393,12 @@ export function TechnicalAnalysisPanel({
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center justify-between">
-                    <span className="text-2xl font-bold">{analysis.rsi.value.toFixed(2)}</span>
+                    <span className="text-2xl font-bold">
+                      {formatNumber(analysis.rsi.value, locale, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </span>
                     {getInterpretationBadge(analysis.rsi.interpretation)}
                   </div>
                   <Progress value={analysis.rsi.value} className="mt-2 h-2" />
@@ -408,16 +423,29 @@ export function TechnicalAnalysisPanel({
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-muted-foreground">MACD</span>
-                      <span className="font-mono">{analysis.macd.macd.toFixed(2)}</span>
+                      <span className="font-mono">
+                        {formatNumber(analysis.macd.macd, locale, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-muted-foreground">Signal</span>
-                      <span className="font-mono">{analysis.macd.signal.toFixed(2)}</span>
+                      <span className="font-mono">
+                        {formatNumber(analysis.macd.signal, locale, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-muted-foreground">Histograma</span>
                       <span className={`font-mono ${analysis.macd.histogram > 0 ? 'text-green-500' : 'text-red-500'}`}>
-                        {analysis.macd.histogram.toFixed(2)}
+                        {formatNumber(analysis.macd.histogram, locale, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
                       </span>
                     </div>
                     {analysis.macd.crossover !== 'none' && (
@@ -443,15 +471,15 @@ export function TechnicalAnalysisPanel({
                   <div className="space-y-1">
                     <div className="flex justify-between">
                       <span className="text-xs text-muted-foreground">EMA 9</span>
-                      <span className="font-mono text-sm">{formatPrice(analysis.movingAverages.ema9)}</span>
+                      <span className="font-mono text-sm">{formatPrice(analysis.movingAverages.ema9, locale)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-xs text-muted-foreground">EMA 21</span>
-                      <span className="font-mono text-sm">{formatPrice(analysis.movingAverages.ema21)}</span>
+                      <span className="font-mono text-sm">{formatPrice(analysis.movingAverages.ema21, locale)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-xs text-muted-foreground">EMA 200</span>
-                      <span className="font-mono text-sm">{formatPrice(analysis.movingAverages.ema200)}</span>
+                      <span className="font-mono text-sm">{formatPrice(analysis.movingAverages.ema200, locale)}</span>
                     </div>
                     <Separator className="my-2" />
                     <div className="flex justify-center">
@@ -473,19 +501,25 @@ export function TechnicalAnalysisPanel({
                   <div className="space-y-1">
                     <div className="flex justify-between">
                       <span className="text-xs text-muted-foreground">Superior</span>
-                      <span className="font-mono text-sm">{formatPrice(analysis.bollinger.upper)}</span>
+                      <span className="font-mono text-sm">{formatPrice(analysis.bollinger.upper, locale)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-xs text-muted-foreground">Média</span>
-                      <span className="font-mono text-sm">{formatPrice(analysis.bollinger.middle)}</span>
+                      <span className="font-mono text-sm">{formatPrice(analysis.bollinger.middle, locale)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-xs text-muted-foreground">Inferior</span>
-                      <span className="font-mono text-sm">{formatPrice(analysis.bollinger.lower)}</span>
+                      <span className="font-mono text-sm">{formatPrice(analysis.bollinger.lower, locale)}</span>
                     </div>
                     <Separator className="my-2" />
                     <div className="flex justify-between items-center">
-                      <span className="text-xs">%B: {(analysis.bollinger.percentB * 100).toFixed(0)}%</span>
+                      <span className="text-xs">
+                        %B:{' '}
+                        {formatNumber(analysis.bollinger.percentB * 100, locale, {
+                          maximumFractionDigits: 0,
+                        })}
+                        %
+                      </span>
                       {getInterpretationBadge(analysis.bollinger.interpretation)}
                     </div>
                   </div>
@@ -504,11 +538,21 @@ export function TechnicalAnalysisPanel({
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-muted-foreground">%K</span>
-                      <span className="font-mono">{analysis.stochastic.k.toFixed(2)}</span>
+                      <span className="font-mono">
+                        {formatNumber(analysis.stochastic.k, locale, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-muted-foreground">%D</span>
-                      <span className="font-mono">{analysis.stochastic.d.toFixed(2)}</span>
+                      <span className="font-mono">
+                        {formatNumber(analysis.stochastic.d, locale, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </span>
                     </div>
                     <Progress value={analysis.stochastic.k} className="h-2" />
                     <div className="flex justify-center">
@@ -529,7 +573,12 @@ export function TechnicalAnalysisPanel({
                 <CardContent>
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">
-                      <span className="text-2xl font-bold">{analysis.adx.adx.toFixed(2)}</span>
+                      <span className="text-2xl font-bold">
+                        {formatNumber(analysis.adx.adx, locale, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </span>
                       <Badge
                         variant={analysis.adx.trendStrength === 'strong' || analysis.adx.trendStrength === 'very_strong'
                           ? 'default' : 'secondary'}
@@ -541,8 +590,20 @@ export function TechnicalAnalysisPanel({
                       </Badge>
                     </div>
                     <div className="flex gap-4 text-sm">
-                      <span className="text-green-500">+DI: {analysis.adx.plusDI.toFixed(2)}</span>
-                      <span className="text-red-500">-DI: {analysis.adx.minusDI.toFixed(2)}</span>
+                      <span className="text-green-500">
+                        +DI:{' '}
+                        {formatNumber(analysis.adx.plusDI, locale, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </span>
+                      <span className="text-red-500">
+                        -DI:{' '}
+                        {formatNumber(analysis.adx.minusDI, locale, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </span>
                     </div>
                   </div>
                 </CardContent>
@@ -561,31 +622,45 @@ export function TechnicalAnalysisPanel({
                 <div className="grid grid-cols-7 gap-2 text-center text-sm">
                   <div>
                     <p className="text-muted-foreground text-xs">S3</p>
-                    <p className="font-mono text-green-600">{formatPrice(analysis.supportResistance.support3)}</p>
+                    <p className="font-mono text-green-600">
+                      {formatPrice(analysis.supportResistance.support3, locale)}
+                    </p>
                   </div>
                   <div>
                     <p className="text-muted-foreground text-xs">S2</p>
-                    <p className="font-mono text-green-500">{formatPrice(analysis.supportResistance.support2)}</p>
+                    <p className="font-mono text-green-500">
+                      {formatPrice(analysis.supportResistance.support2, locale)}
+                    </p>
                   </div>
                   <div>
                     <p className="text-muted-foreground text-xs">S1</p>
-                    <p className="font-mono text-green-400">{formatPrice(analysis.supportResistance.support1)}</p>
+                    <p className="font-mono text-green-400">
+                      {formatPrice(analysis.supportResistance.support1, locale)}
+                    </p>
                   </div>
                   <div className="bg-muted rounded-lg p-2">
                     <p className="text-muted-foreground text-xs">Pivot</p>
-                    <p className="font-mono font-bold">{formatPrice(analysis.supportResistance.pivot)}</p>
+                    <p className="font-mono font-bold">
+                      {formatPrice(analysis.supportResistance.pivot, locale)}
+                    </p>
                   </div>
                   <div>
                     <p className="text-muted-foreground text-xs">R1</p>
-                    <p className="font-mono text-red-400">{formatPrice(analysis.supportResistance.resistance1)}</p>
+                    <p className="font-mono text-red-400">
+                      {formatPrice(analysis.supportResistance.resistance1, locale)}
+                    </p>
                   </div>
                   <div>
                     <p className="text-muted-foreground text-xs">R2</p>
-                    <p className="font-mono text-red-500">{formatPrice(analysis.supportResistance.resistance2)}</p>
+                    <p className="font-mono text-red-500">
+                      {formatPrice(analysis.supportResistance.resistance2, locale)}
+                    </p>
                   </div>
                   <div>
                     <p className="text-muted-foreground text-xs">R3</p>
-                    <p className="font-mono text-red-600">{formatPrice(analysis.supportResistance.resistance3)}</p>
+                    <p className="font-mono text-red-600">
+                      {formatPrice(analysis.supportResistance.resistance3, locale)}
+                    </p>
                   </div>
                 </div>
               </CardContent>
@@ -605,11 +680,15 @@ export function TechnicalAnalysisPanel({
                   <div className="space-y-2">
                     <div className="flex justify-between">
                       <span className="text-sm text-muted-foreground">Volume Atual</span>
-                      <span className="font-mono">{analysis.volume.currentVolume.toLocaleString()}</span>
+                      <span className="font-mono">
+                        {formatNumber(analysis.volume.currentVolume, locale)}
+                      </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-sm text-muted-foreground">Média (20)</span>
-                      <span className="font-mono">{analysis.volume.averageVolume.toLocaleString()}</span>
+                      <span className="font-mono">
+                        {formatNumber(analysis.volume.averageVolume, locale)}
+                      </span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-muted-foreground">Ratio</span>
@@ -617,7 +696,11 @@ export function TechnicalAnalysisPanel({
                         variant={analysis.volume.interpretation === 'high' || analysis.volume.interpretation === 'very_high'
                           ? 'default' : 'secondary'}
                       >
-                        {analysis.volume.volumeRatio.toFixed(2)}x
+                        {formatNumber(analysis.volume.volumeRatio, locale, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                        x
                       </Badge>
                     </div>
                   </div>
@@ -635,7 +718,7 @@ export function TechnicalAnalysisPanel({
                 <CardContent>
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">
-                      <span className="text-2xl font-bold">{formatPrice(analysis.atr.value)}</span>
+                      <span className="text-2xl font-bold">{formatPrice(analysis.atr.value, locale)}</span>
                       <Badge
                         variant={analysis.atr.volatility === 'high' ? 'destructive' : 'secondary'}
                       >
@@ -645,7 +728,11 @@ export function TechnicalAnalysisPanel({
                       </Badge>
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      {analysis.atr.percentage.toFixed(2)}% do preço atual
+                      {formatNumber(analysis.atr.percentage, locale, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                      % do preço atual
                     </p>
                   </div>
                 </CardContent>

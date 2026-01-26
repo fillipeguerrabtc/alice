@@ -11,6 +11,7 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { formatDateTime, formatNumber } from "@/lib/utils";
 import { 
   Image, 
   Star, 
@@ -218,11 +219,15 @@ function ImageCard({
 function ImageDetailModal({ 
   image, 
   open, 
-  onClose 
+  onClose,
+  locale,
+  timeZone,
 }: { 
   image: GeneratedImage | null; 
   open: boolean; 
   onClose: () => void;
+  locale: string;
+  timeZone: string;
 }) {
   const { toast } = useToast();
   const [rating, setRating] = useState<number | null>(null);
@@ -279,7 +284,7 @@ function ImageDetailModal({
             Detalhes da Imagem
           </DialogTitle>
           <DialogDescription>
-            Gerada em {new Date(image.criadoEm).toLocaleString('pt-BR')}
+            Gerada em {formatDateTime(image.criadoEm, { locale, timeZone })}
           </DialogDescription>
         </DialogHeader>
         
@@ -433,7 +438,7 @@ function ImageDetailModal({
   );
 }
 
-function StatsCards({ stats }: { stats: StatsResponse | undefined }) {
+function StatsCards({ stats, locale }: { stats: StatsResponse | undefined; locale: string }) {
   if (!stats) return null;
   
   return (
@@ -444,7 +449,9 @@ function StatsCards({ stats }: { stats: StatsResponse | undefined }) {
             <Image className="h-4 w-4" />
             <span className="text-sm">Total</span>
           </div>
-          <p className="text-2xl font-bold" data-testid="text-stat-total">{stats.total}</p>
+          <p className="text-2xl font-bold" data-testid="text-stat-total">
+            {formatNumber(stats.total, locale)}
+          </p>
         </CardContent>
       </Card>
       
@@ -454,7 +461,9 @@ function StatsCards({ stats }: { stats: StatsResponse | undefined }) {
             <CheckCircle2 className="h-4 w-4 text-green-500" />
             <span className="text-sm">Aprovadas</span>
           </div>
-          <p className="text-2xl font-bold" data-testid="text-stat-approved">{stats.approvedForTraining}</p>
+          <p className="text-2xl font-bold" data-testid="text-stat-approved">
+            {formatNumber(stats.approvedForTraining, locale)}
+          </p>
         </CardContent>
       </Card>
       
@@ -464,7 +473,9 @@ function StatsCards({ stats }: { stats: StatsResponse | undefined }) {
             <Zap className="h-4 w-4 text-yellow-500" />
             <span className="text-sm">Em Fine-tuning</span>
           </div>
-          <p className="text-2xl font-bold" data-testid="text-stat-finetuning">{stats.usedInFineTuning}</p>
+          <p className="text-2xl font-bold" data-testid="text-stat-finetuning">
+            {formatNumber(stats.usedInFineTuning, locale)}
+          </p>
         </CardContent>
       </Card>
       
@@ -475,7 +486,11 @@ function StatsCards({ stats }: { stats: StatsResponse | undefined }) {
             <span className="text-sm">Tempo Médio</span>
           </div>
           <p className="text-2xl font-bold" data-testid="text-stat-avgtime">
-            {(stats.averageGenerationTimeMs / 1000).toFixed(1)}s
+            {formatNumber(stats.averageGenerationTimeMs / 1000, locale, {
+              minimumFractionDigits: 1,
+              maximumFractionDigits: 1,
+            })}
+            s
           </p>
         </CardContent>
       </Card>
@@ -485,6 +500,8 @@ function StatsCards({ stats }: { stats: StatsResponse | undefined }) {
 
 export default function ImageGalleryPage() {
   const { user } = useAuth();
+  const locale = user?.idioma ?? "pt-BR";
+  const timeZone = user?.timezone ?? "UTC";
   const [selectedImage, setSelectedImage] = useState<GeneratedImage | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterApproved, setFilterApproved] = useState<string>("all");
@@ -532,7 +549,7 @@ export default function ImageGalleryPage() {
         </div>
       </div>
       
-      <StatsCards stats={statsData} />
+      <StatsCards stats={statsData} locale={locale} />
       
       <Card className="mb-6">
         <CardHeader>
@@ -637,6 +654,8 @@ export default function ImageGalleryPage() {
         image={selectedImage}
         open={!!selectedImage}
         onClose={() => setSelectedImage(null)}
+        locale={locale}
+        timeZone={timeZone}
       />
     </div>
   );

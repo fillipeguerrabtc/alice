@@ -77,6 +77,8 @@ import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { useAuth } from '@/hooks/use-auth';
+import { formatDateTime, formatNumber } from '@/lib/utils';
 import {
   Select,
   SelectContent,
@@ -311,18 +313,38 @@ const itemVariants = {
 // COMPONENTES AUXILIARES
 // ============================================================================
 
-function PriceDisplay({ price, change, changePercent }: { price: number; change: number; changePercent: number }) {
+function PriceDisplay({
+  price,
+  change,
+  changePercent,
+  locale,
+}: {
+  price: number;
+  change: number;
+  changePercent: number;
+  locale: string;
+}) {
   const isPositive = change >= 0;
   
   return (
     <div className="flex items-baseline gap-2">
       <span className="text-3xl font-bold tabular-nums">
-        ${price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        ${formatNumber(price, locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
       </span>
       <div className={`flex items-center gap-1 text-sm ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
         {isPositive ? <ArrowUpRight className="h-4 w-4" /> : <ArrowDownRight className="h-4 w-4" />}
-        <span>{isPositive ? '+' : ''}{change.toFixed(2)}</span>
-        <span>({isPositive ? '+' : ''}{(changePercent * 100).toFixed(2)}%)</span>
+        <span>
+          {isPositive ? '+' : ''}
+          {formatNumber(change, locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </span>
+        <span>
+          ({isPositive ? '+' : ''}
+          {formatNumber(changePercent * 100, locale, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}
+          %)
+        </span>
       </div>
     </div>
   );
@@ -429,6 +451,9 @@ function CircuitBreakerStatus({ state, failures }: { state: string; failures: nu
 
 export default function Trading() {
   const { t } = useTranslation();
+  const { user } = useAuth();
+  const locale = user?.idioma ?? 'pt-BR';
+  const timeZone = user?.timezone ?? 'UTC';
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState('overview');
   const [selectedSymbol, setSelectedSymbol] = useState('XBTUSDTM');
@@ -1133,21 +1158,28 @@ export default function Trading() {
                 <PriceDisplay 
                   price={currentPrice} 
                   change={priceChange} 
-                  changePercent={priceChangePercent} 
+                  changePercent={priceChangePercent}
+                  locale={locale}
                 />
               )}
               <div className="grid grid-cols-3 gap-4 mt-4 text-sm">
                 <div>
                   <p className="text-muted-foreground">{t('trading.market.high24h')}</p>
-                  <p className="font-medium">${market?.contract?.highPrice?.toLocaleString() || '-'}</p>
+                  <p className="font-medium">
+                    ${market?.contract?.highPrice ? formatNumber(market.contract.highPrice, locale) : '-'}
+                  </p>
                 </div>
                 <div>
                   <p className="text-muted-foreground">{t('trading.market.low24h')}</p>
-                  <p className="font-medium">${market?.contract?.lowPrice?.toLocaleString() || '-'}</p>
+                  <p className="font-medium">
+                    ${market?.contract?.lowPrice ? formatNumber(market.contract.lowPrice, locale) : '-'}
+                  </p>
                 </div>
                 <div>
                   <p className="text-muted-foreground">{t('trading.market.volume24h')}</p>
-                  <p className="font-medium">{market?.contract?.volumeOf24h?.toLocaleString() || '-'}</p>
+                  <p className="font-medium">
+                    {market?.contract?.volumeOf24h ? formatNumber(market.contract.volumeOf24h, locale) : '-'}
+                  </p>
                 </div>
               </div>
             </CardContent>
@@ -1156,7 +1188,14 @@ export default function Trading() {
           {/* Saldo Disponível */}
           <StatCard
             title={t('trading.account.availableBalance')}
-            value={isLoadingAccount ? '-' : `$${account?.availableBalance?.toLocaleString() || '0'}`}
+          value={
+            isLoadingAccount
+              ? '-'
+              : `$${formatNumber(account?.availableBalance ?? 0, locale, {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}`
+          }
             subtitle={account?.currency}
             icon={DollarSign}
             isLoading={isLoadingAccount}
@@ -1168,7 +1207,14 @@ export default function Trading() {
           {/* Agora: usa nullish coalescing (??) para tratar undefined/null como 0 */}
           <StatCard
             title={t('trading.account.unrealisedPnl')}
-            value={isLoadingAccount ? '-' : `$${account?.unrealisedPNL?.toFixed(2) ?? '0.00'}`}
+          value={
+            isLoadingAccount
+              ? '-'
+              : `$${formatNumber(account?.unrealisedPNL ?? 0, locale, {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}`
+          }
             subtitle={t('trading.account.allPositions')}
             icon={(account?.unrealisedPNL ?? 0) >= 0 ? TrendingUp : TrendingDown}
             trend={(account?.unrealisedPNL ?? 0) >= 0 ? 'up' : 'down'}
@@ -1182,27 +1228,30 @@ export default function Trading() {
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
           <StatCard
             title={t('trading.stats.activeSignals')}
-            value={status.activeSignals}
+          value={formatNumber(status.activeSignals, locale)}
             icon={Zap}
           />
           <StatCard
             title={t('trading.stats.pendingOrders')}
-            value={status.pendingOrders}
+          value={formatNumber(status.pendingOrders, locale)}
             icon={Clock}
           />
           <StatCard
             title={t('trading.stats.openPositions')}
-            value={positions.filter(p => p.isOpen).length}
+          value={formatNumber(positions.filter(p => p.isOpen).length, locale)}
             icon={Activity}
           />
           <StatCard
             title={t('trading.stats.fundingRate')}
-            value={`${((market?.contract?.fundingFeeRate || 0) * 100).toFixed(4)}%`}
+          value={`${formatNumber((market?.contract?.fundingFeeRate || 0) * 100, locale, {
+            minimumFractionDigits: 4,
+            maximumFractionDigits: 4,
+          })}%`}
             icon={Percent}
           />
           <StatCard
             title={t('trading.stats.maxLeverage')}
-            value={`${riskConfig?.maxLeverage || 20}x`}
+          value={`${formatNumber(riskConfig?.maxLeverage || 20, locale)}x`}
             icon={Target}
           />
           <Card>
@@ -1324,7 +1373,12 @@ export default function Trading() {
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">{t('trading.quickTrade.spread')}</span>
                       <span className="font-mono">
-                        ${(parseFloat(market?.ticker?.bestAskPrice || '0') - parseFloat(market?.ticker?.bestBidPrice || '0')).toFixed(2)}
+                        ${formatNumber(
+                          parseFloat(market?.ticker?.bestAskPrice || '0') -
+                            parseFloat(market?.ticker?.bestBidPrice || '0'),
+                          locale,
+                          { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+                        )}
                       </span>
                     </div>
                   </div>
@@ -1351,24 +1405,34 @@ export default function Trading() {
                     <div className="space-y-3">
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">{t('trading.account.equity')}</span>
-                        <span className="font-medium">${account?.accountEquity?.toLocaleString() || '0'}</span>
+                        <span className="font-medium">
+                          ${formatNumber(account?.accountEquity ?? 0, locale)}
+                        </span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">{t('trading.account.marginBalance')}</span>
-                        <span className="font-medium">${account?.marginBalance?.toLocaleString() || '0'}</span>
+                        <span className="font-medium">
+                          ${formatNumber(account?.marginBalance ?? 0, locale)}
+                        </span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">{t('trading.account.positionMargin')}</span>
-                        <span className="font-medium">${account?.positionMargin?.toLocaleString() || '0'}</span>
+                        <span className="font-medium">
+                          ${formatNumber(account?.positionMargin ?? 0, locale)}
+                        </span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">{t('trading.account.orderMargin')}</span>
-                        <span className="font-medium">${account?.orderMargin?.toLocaleString() || '0'}</span>
+                        <span className="font-medium">
+                          ${formatNumber(account?.orderMargin ?? 0, locale)}
+                        </span>
                       </div>
                       <Separator />
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">{t('trading.account.frozenFunds')}</span>
-                        <span className="font-medium">${account?.frozenFunds?.toLocaleString() || '0'}</span>
+                        <span className="font-medium">
+                          ${formatNumber(account?.frozenFunds ?? 0, locale)}
+                        </span>
                       </div>
                     </div>
                   )}
@@ -1609,13 +1673,13 @@ export default function Trading() {
                         </TableCell>
                         <TableCell className="capitalize">{order.orderType}</TableCell>
                         <TableCell>{order.size}</TableCell>
-                        <TableCell>${parseFloat(order.price).toLocaleString()}</TableCell>
+                        <TableCell>${formatNumber(parseFloat(order.price), locale)}</TableCell>
                         <TableCell>
                           {order.filledSize || '0'} / {order.size}
                         </TableCell>
                         <TableCell><OrderStatusBadge status={order.status} /></TableCell>
                         <TableCell className="text-muted-foreground text-sm">
-                          {new Date(order.criadoEm).toLocaleString('pt-BR')}
+                          {formatDateTime(order.criadoEm, { locale, timeZone })}
                         </TableCell>
                         <TableCell>
                           {(order.status === 'pending' || order.status === 'open') && (
@@ -1693,15 +1757,17 @@ export default function Trading() {
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                         <div>
                           <p className="text-muted-foreground">{t('trading.positions.entryPrice')}</p>
-                          <p className="font-medium">${position.avgEntryPrice.toLocaleString()}</p>
+                          <p className="font-medium">${formatNumber(position.avgEntryPrice, locale)}</p>
                         </div>
                         <div>
                           <p className="text-muted-foreground">{t('trading.positions.markPrice')}</p>
-                          <p className="font-medium">${position.markPrice.toLocaleString()}</p>
+                          <p className="font-medium">${formatNumber(position.markPrice, locale)}</p>
                         </div>
                         <div>
                           <p className="text-muted-foreground">{t('trading.positions.liquidationPrice')}</p>
-                          <p className="font-medium text-red-500">${position.liquidationPrice.toLocaleString()}</p>
+                          <p className="font-medium text-red-500">
+                            ${formatNumber(position.liquidationPrice, locale)}
+                          </p>
                         </div>
                         <div>
                           <p className="text-muted-foreground">{t('trading.positions.margin')}</p>
@@ -1780,7 +1846,7 @@ export default function Trading() {
                           </Tooltip>
                         </TableCell>
                         <TableCell className="text-muted-foreground text-sm">
-                          {new Date(signal.criadoEm).toLocaleString('pt-BR')}
+                          {formatDateTime(signal.criadoEm, { locale, timeZone })}
                         </TableCell>
                         <TableCell>
                           <Button
@@ -1844,7 +1910,7 @@ export default function Trading() {
                         .map((order) => (
                           <TableRow key={order.id}>
                             <TableCell className="text-muted-foreground">
-                              {new Date(order.criadoEm).toLocaleString('pt-BR')}
+                              {formatDateTime(order.criadoEm, { locale, timeZone })}
                             </TableCell>
                             <TableCell className="capitalize">{order.orderType}</TableCell>
                             <TableCell>{order.symbol}</TableCell>
@@ -1857,7 +1923,9 @@ export default function Trading() {
                               </Badge>
                             </TableCell>
                             <TableCell>{order.filledSize || order.size}</TableCell>
-                            <TableCell>${parseFloat(order.avgFilledPrice || order.price).toLocaleString()}</TableCell>
+                            <TableCell>
+                              ${formatNumber(parseFloat(order.avgFilledPrice || order.price), locale)}
+                            </TableCell>
                             <TableCell><OrderStatusBadge status={order.status} /></TableCell>
                           </TableRow>
                         ))}
@@ -1880,6 +1948,8 @@ export default function Trading() {
               onRefresh={() => refetchKlines()}
               height={500}
               showVolume={true}
+              locale={locale}
+              timeZone={timeZone}
             />
           </TabsContent>
 
@@ -1892,6 +1962,7 @@ export default function Trading() {
               isLoading={isLoadingOrderBook}
               depth={20}
               precision={2}
+              locale={locale}
             />
           </TabsContent>
 

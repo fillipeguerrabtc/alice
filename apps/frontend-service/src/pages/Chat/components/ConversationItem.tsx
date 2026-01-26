@@ -6,7 +6,8 @@
 
 import { motion } from 'framer-motion';
 import { MessageSquare, Trash2 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, formatDateTime } from '@/lib/utils';
+import { useAuth } from '@/hooks/use-auth';
 import { Conversation } from './types';
 
 const itemVariants = {
@@ -33,6 +34,10 @@ export function ConversationItem({
   onToggleSelect,
   onDelete,
 }: ConversationItemProps) {
+  const { user } = useAuth();
+  const locale = user?.idioma ?? 'pt-BR';
+  const timeZone = user?.timezone ?? 'UTC';
+
   return (
     <motion.button
       variants={itemVariants}
@@ -64,12 +69,7 @@ export function ConversationItem({
       </div>
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">
-          {new Date(conversation.criadoEm).toLocaleDateString('pt-BR', {
-            day: '2-digit',
-            month: 'short',
-            hour: '2-digit',
-            minute: '2-digit',
-          })}
+          {formatDateTime(conversation.criadoEm, { locale, timeZone })}
         </p>
         <button
           type="button"

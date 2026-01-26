@@ -7,6 +7,16 @@ interface User {
   firstName?: string;
   lastName?: string;
   preferredName?: string | null;
+  idioma?: string | null;
+  timezone?: string | null;
+  preferencias?: {
+    location?: {
+      countryCode?: string | null;
+      countryName?: string | null;
+      region?: string | null;
+      city?: string | null;
+    } | null;
+  } | null;
   role: string;
   roles?: string[];
   tenantId?: string;

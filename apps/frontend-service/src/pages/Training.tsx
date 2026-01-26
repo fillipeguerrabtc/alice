@@ -86,7 +86,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { apiRequest } from '@/lib/queryClient';
-import { cn } from '@/lib/utils';
+import { cn, formatDate, formatDateTime } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { frontendLogger } from '@/lib/logger';
 
@@ -246,13 +246,15 @@ function getJobStatusBadge(status: FineTuningJob['status'], t: (key: string) => 
   }
 }
 
-function TrainingDataCard({ data, namespaceName, onApprove, onReject, isPending, t }: { 
+function TrainingDataCard({ data, namespaceName, onApprove, onReject, isPending, t, locale, timeZone }: { 
   data: TrainingData; 
   namespaceName?: string | null;
   onApprove: () => void;
   onReject: () => void;
   isPending: boolean;
   t: (key: string, options?: Record<string, unknown>) => string;
+  locale: string;
+  timeZone: string;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -273,13 +275,7 @@ function TrainingDataCard({ data, namespaceName, onApprove, onReject, isPending,
             {getStatusBadge(data.status, t)}
           </div>
           <CardDescription className="text-xs">
-            {new Date(data.criadoEm).toLocaleDateString('pt-BR', {
-              day: '2-digit',
-              month: 'short',
-              year: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit',
-            })}
+            {formatDateTime(data.criadoEm, { locale, timeZone })}
             {data.isDuplicate && (
               <Badge variant="secondary" className="ml-2 text-xs">
                 {t('training.data.duplicate', { percent: Math.round((data.similarityScore || 0) * 100) })}
@@ -405,9 +401,9 @@ function JobCard({ job, t }: { job: FineTuningJob; t: (key: string, options?: Re
 
         <CardFooter className="pt-2 text-xs text-muted-foreground">
           <div className="flex justify-between w-full">
-            <span>{t('training.job.created', { date: new Date(job.criadoEm).toLocaleDateString('pt-BR') })}</span>
+            <span>{t('training.job.created', { date: formatDate(job.criadoEm, { locale, timeZone }) })}</span>
             {job.finalizadoEm && (
-              <span>{t('training.job.finished', { date: new Date(job.finalizadoEm).toLocaleDateString('pt-BR') })}</span>
+              <span>{t('training.job.finished', { date: formatDate(job.finalizadoEm, { locale, timeZone }) })}</span>
             )}
           </div>
         </CardFooter>
@@ -1540,6 +1536,9 @@ function BulkImportTab({ t }: { t: (key: string, options?: Record<string, unknow
 
 export default function Training() {
   const { t } = useTranslation();
+  const { user } = useAuth();
+  const locale = user?.idioma ?? 'pt-BR';
+  const timeZone = user?.timezone ?? 'UTC';
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const tenantId = user?.tenantId;
@@ -2007,6 +2006,8 @@ export default function Training() {
                     onApprove={() => updateStatus.mutate({ id: data.id, status: 'approved' })}
                     onReject={() => updateStatus.mutate({ id: data.id, status: 'rejected' })}
                     t={t}
+                    locale={locale}
+                    timeZone={timeZone}
                   />
                 ))}
               </motion.div>
@@ -2143,7 +2144,7 @@ export default function Training() {
                                 ? t('training.autoLearning.incremental')
                                 : t('training.autoLearning.complete')}
                             </span>
-                            <span>{new Date(s.scheduledFor).toLocaleString()}</span>
+                            <span>{formatDateTime(s.scheduledFor, { locale, timeZone })}</span>
                           </div>
                         ))}
                       </div>

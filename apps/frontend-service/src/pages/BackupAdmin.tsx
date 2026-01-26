@@ -83,6 +83,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { queryClient, apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/use-auth';
+import { formatDateTime } from '@/lib/utils';
 
 interface ComponentStatus {
   status: 'completed' | 'failed' | 'skipped';
@@ -212,14 +214,8 @@ function formatDuration(seconds: number): string {
   return `${hours}h ${mins}m`;
 }
 
-function formatDate(dateString: string): string {
-  return new Date(dateString).toLocaleString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+function formatDate(dateString: string, locale: string, timeZone: string): string {
+  return formatDateTime(dateString, { locale, timeZone });
 }
 
 function StatusIcon({ status }: { status: string }) {
@@ -254,7 +250,10 @@ function ComponentIcon({ component }: { component: string }) {
 
 export default function BackupAdmin() {
   useTranslation();
+  const { user } = useAuth();
   const { toast } = useToast();
+  const locale = user?.idioma ?? 'pt-BR';
+  const timeZone = user?.timezone ?? 'UTC';
   const [backupType, setBackupType] = useState<'full' | 'incremental'>('full');
   const [showRestoreDialog, setShowRestoreDialog] = useState(false);
   const [showConfirmRestore, setShowConfirmRestore] = useState(false);
@@ -612,7 +611,7 @@ export default function BackupAdmin() {
                     <div className="text-sm text-muted-foreground space-y-1">
                       <p className="flex items-center gap-2">
                         <Clock className="h-3 w-3" />
-                        {formatDate(history.lastSuccessful.startedAt)}
+                        {formatDate(history.lastSuccessful.startedAt, locale, timeZone)}
                       </p>
                       {history.lastSuccessful.durationSeconds && (
                         <p>
@@ -701,7 +700,7 @@ export default function BackupAdmin() {
                         <div>
                           <p className="font-medium text-sm">{manifest.id}</p>
                           <p className="text-xs text-muted-foreground">
-                            {formatDate(manifest.startedAt)} | {manifest.type.toUpperCase()}
+                            {formatDate(manifest.startedAt, locale, timeZone)} | {manifest.type.toUpperCase()}
                             {manifest.durationSeconds && ` | ${formatDuration(manifest.durationSeconds)}`}
                             {manifest.totalSize && ` | ${manifest.totalSize}`}
                           </p>
@@ -905,7 +904,7 @@ export default function BackupAdmin() {
                     .filter(m => m.status === 'completed' || m.status === 'partial')
                     .map((manifest) => (
                       <SelectItem key={manifest.id} value={manifest.id}>
-                        {manifest.id} ({formatDate(manifest.startedAt)})
+                        {manifest.id} ({formatDate(manifest.startedAt, locale, timeZone)})
                       </SelectItem>
                     ))}
                 </SelectContent>

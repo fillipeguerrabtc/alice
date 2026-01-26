@@ -7,7 +7,7 @@
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { User, Building, Bell, Shield, Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -18,16 +18,41 @@ import { Switch } from '@/components/ui/switch';
 import { useAuth } from '@/hooks/use-auth';
 import { LanguageSwitch } from '@/components/language-switch';
 import { apiRequest } from '@/lib/queryClient';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+
+type UpdateUserPayload = {
+  firstName?: string;
+  lastName?: string;
+  preferredName?: string;
+  idioma?: string;
+  timezone?: string;
+  preferencias?: {
+    location?: {
+      countryCode?: string;
+      countryName?: string;
+      region?: string;
+      city?: string;
+    } | null;
+  };
+};
 
 export default function Settings() {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('profile');
+  const queryClient = useQueryClient();
   const [profileForm, setProfileForm] = useState({
     firstName: user?.firstName || '',
     lastName: user?.lastName || '',
     preferredName: user?.preferredName || '',
+  });
+  const [regionalForm, setRegionalForm] = useState({
+    idioma: user?.idioma || i18n.language || 'pt-BR',
+    timezone: user?.timezone || 'Europe/Lisbon',
+    countryName: user?.preferencias?.location?.countryName || '',
+    countryCode: user?.preferencias?.location?.countryCode || '',
+    region: user?.preferencias?.location?.region || '',
+    city: user?.preferencias?.location?.city || '',
   });
 
   useEffect(() => {
@@ -36,18 +61,67 @@ export default function Settings() {
       lastName: user?.lastName || '',
       preferredName: user?.preferredName || '',
     });
-  }, [user]);
+    setRegionalForm({
+      idioma: user?.idioma || i18n.language || 'pt-BR',
+      timezone: user?.timezone || 'Europe/Lisbon',
+      countryName: user?.preferencias?.location?.countryName || '',
+      countryCode: user?.preferencias?.location?.countryCode || '',
+      region: user?.preferencias?.location?.region || '',
+      city: user?.preferencias?.location?.city || '',
+    });
+  }, [user, i18n.language]);
 
   const updateProfile = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (payload: UpdateUserPayload) => {
       if (!user?.id) throw new Error('Usuário inválido');
-      await apiRequest('PATCH', `/api/users/${user.id}`, {
-        firstName: profileForm.firstName || undefined,
-        lastName: profileForm.lastName || undefined,
-        preferredName: profileForm.preferredName || undefined,
-      });
+      await apiRequest('PATCH', `/api/users/${user.id}`, payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
     },
   });
+
+  const timezoneOptions = useMemo(() => {
+    const fallback = [user?.timezone, 'America/Sao_Paulo', 'Europe/Lisbon', 'UTC'].filter(Boolean) as string[];
+    const uniqueFallback = Array.from(new Set(fallback));
+    const supportedValuesOf = (Intl as typeof Intl & { supportedValuesOf?: (key: 'timeZone') => string[] }).supportedValuesOf;
+    if (typeof supportedValuesOf !== 'function') {
+      return uniqueFallback;
+    }
+    const supported = supportedValuesOf('timeZone');
+    return supported.length > 0 ? supported : uniqueFallback;
+  }, [user?.timezone]);
+
+  const handleSaveProfile = () => {
+    updateProfile.mutate({
+      firstName: profileForm.firstName.trim() || undefined,
+      lastName: profileForm.lastName.trim() || undefined,
+      preferredName: profileForm.preferredName.trim() || undefined,
+    });
+  };
+
+  const handleSaveRegional = () => {
+    const countryName = regionalForm.countryName.trim();
+    const countryCode = regionalForm.countryCode.trim().toUpperCase();
+    const region = regionalForm.region.trim();
+    const city = regionalForm.city.trim();
+    const hasLocation = Boolean(countryName || countryCode || region || city);
+
+    updateProfile.mutate({
+      idioma: regionalForm.idioma || undefined,
+      timezone: regionalForm.timezone || undefined,
+      preferencias: hasLocation
+        ? {
+            location: {
+              countryName: countryName || undefined,
+              countryCode: countryCode || undefined,
+              region: region || undefined,
+              city: city || undefined,
+            },
+          }
+        : undefined,
+    });
+  };
 
   const tabs = [
     { id: 'profile', labelKey: 'auth.profile', icon: User },
@@ -144,7 +218,7 @@ export default function Settings() {
                 </div>
                 <Button
                   data-testid="button-save-profile"
-                  onClick={() => updateProfile.mutate()}
+                  onClick={handleSaveProfile}
                   disabled={updateProfile.isPending}
                 >
                   {t('common.save')}
@@ -276,7 +350,106 @@ export default function Settings() {
                     </SelectContent>
                   </Select>
                 </div>
-                <Button data-testid="button-save-language">
+                <div className="pt-4 border-t space-y-3">
+                  <div>
+                    <label className="text-sm font-medium">{t('settings.aliceLanguageLabel')}</label>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {t('settings.aliceLanguageDesc')}
+                    </p>
+                    <Select
+                      value={regionalForm.idioma}
+                      onValueChange={(value) => setRegionalForm((prev) => ({ ...prev, idioma: value }))}
+                    >
+                      <SelectTrigger className="mt-2" data-testid="select-alice-language">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="pt-BR">Português (Brasil)</SelectItem>
+                        <SelectItem value="en-US">English (US)</SelectItem>
+                        <SelectItem value="es-ES">Español</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">{t('settings.timezoneLabel')}</label>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {t('settings.timezoneDesc')}
+                    </p>
+                    <Select
+                      value={regionalForm.timezone}
+                      onValueChange={(value) => setRegionalForm((prev) => ({ ...prev, timezone: value }))}
+                    >
+                      <SelectTrigger className="mt-2" data-testid="select-timezone">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-64">
+                        {timezoneOptions.map((timezone) => (
+                          <SelectItem key={timezone} value={timezone}>
+                            {timezone}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="pt-4 border-t space-y-3">
+                  <div>
+                    <label className="text-sm font-medium">{t('settings.locationLabel')}</label>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {t('settings.locationDesc')}
+                    </p>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <label className="text-sm font-medium">{t('settings.countryLabel')}</label>
+                      <Input
+                        type="text"
+                        value={regionalForm.countryName}
+                        onChange={(event) => setRegionalForm((prev) => ({ ...prev, countryName: event.target.value }))}
+                        className="mt-1"
+                        data-testid="input-country-name"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium">{t('settings.countryCodeLabel')}</label>
+                      <Input
+                        type="text"
+                        value={regionalForm.countryCode}
+                        onChange={(event) => setRegionalForm((prev) => ({ ...prev, countryCode: event.target.value.toUpperCase() }))}
+                        className="mt-1"
+                        maxLength={2}
+                        data-testid="input-country-code"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <label className="text-sm font-medium">{t('settings.regionLabel')}</label>
+                      <Input
+                        type="text"
+                        value={regionalForm.region}
+                        onChange={(event) => setRegionalForm((prev) => ({ ...prev, region: event.target.value }))}
+                        className="mt-1"
+                        data-testid="input-region"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium">{t('settings.cityLabel')}</label>
+                      <Input
+                        type="text"
+                        value={regionalForm.city}
+                        onChange={(event) => setRegionalForm((prev) => ({ ...prev, city: event.target.value }))}
+                        className="mt-1"
+                        data-testid="input-city"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <Button
+                  data-testid="button-save-language"
+                  onClick={handleSaveRegional}
+                  disabled={updateProfile.isPending}
+                >
                   {t('common.save')}
                 </Button>
               </CardContent>

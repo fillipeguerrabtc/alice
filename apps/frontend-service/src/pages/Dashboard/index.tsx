@@ -47,6 +47,8 @@ import {
   Pie,
   Cell,
 } from 'recharts';
+import { useAuth } from '@/hooks/use-auth';
+import { formatCurrency, formatNumber } from '@/lib/utils';
 
 import {
   DashboardStats,
@@ -109,6 +111,8 @@ function normalizeImageStats(stats?: ImageStatsApi | null): ImageGenerationStats
 
 export default function Dashboard() {
   const { t } = useTranslation();
+  const { user } = useAuth();
+  const locale = user?.idioma ?? 'pt-BR';
 
   const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
     queryKey: ['/api/chat/stats'],
@@ -275,7 +279,14 @@ export default function Dashboard() {
         />
         <StatCard
           title={t('dashboard.stats.tokensUsed')}
-          value={displayStats.tokensUsed > 0 ? `${(displayStats.tokensUsed / 1000).toFixed(1)}K` : '0'}
+          value={
+            displayStats.tokensUsed > 0
+              ? `${formatNumber(displayStats.tokensUsed / 1000, locale, {
+                  minimumFractionDigits: 1,
+                  maximumFractionDigits: 1,
+                })}K`
+              : formatNumber(0, locale)
+          }
           description={t('dashboard.usage.tokens')}
           icon={Zap}
           trend={displayStats.trend?.tokensUsed}
@@ -294,16 +305,15 @@ export default function Dashboard() {
               <div className="flex justify-between items-center">
                 <span className="text-sm text-muted-foreground">Receita EUR</span>
                 <span className="font-semibold">
-                  {integrationStats?.stripe?.totalRevenue?.toLocaleString('pt-PT', { 
-                    style: 'currency', 
-                    currency: 'EUR' 
-                  }) || '€0,00'}
+                  {integrationStats?.stripe?.totalRevenue
+                    ? formatCurrency(integrationStats.stripe.totalRevenue, 'EUR', locale)
+                    : formatCurrency(0, 'EUR', locale)}
                 </span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-sm text-muted-foreground">Transações</span>
                 <span className="font-medium">
-                  {integrationStats?.stripe?.transactions || 0}
+                  {formatNumber(integrationStats?.stripe?.transactions ?? 0, locale)}
                 </span>
               </div>
             </div>

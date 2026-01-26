@@ -52,7 +52,8 @@ import {
   Clock,
   User,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, formatDateTime } from '@/lib/utils';
+import { useAuth } from '@/hooks/use-auth';
 
 // ============================================================================
 // TIPOS
@@ -117,7 +118,10 @@ export function HandoverPanel({
   onTradingToggle,
 }: HandoverPanelProps) {
   const { t } = useTranslation();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
+  const locale = user?.idioma ?? 'pt-BR';
+  const timeZone = user?.timezone ?? 'UTC';
   
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [pendingMode, setPendingMode] = useState<TradingControlMode | null>(null);
@@ -314,7 +318,7 @@ export function HandoverPanel({
                       
                       <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
                         <Clock className="h-3 w-3" />
-                        {new Date(entry.createdAt).toLocaleString('pt-BR')}
+                        {formatDateTime(entry.createdAt, { locale, timeZone })}
                         {entry.changedBy && (
                           <>
                             <User className="h-3 w-3 ml-2" />

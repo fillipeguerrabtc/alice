@@ -54,8 +54,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { apiRequest } from '@/lib/queryClient';
-import { cn } from '@/lib/utils';
+import { cn, formatDate, formatDateTime } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/use-auth';
 
 interface Document {
   id: string;
@@ -97,12 +98,16 @@ function DocumentCard({
   onDelete,
   viewMode,
   t,
+  locale,
+  timeZone,
 }: { 
   document: Document;
   onView: () => void;
   onDelete: () => void;
   viewMode: 'grid' | 'list';
   t: (key: string, options?: Record<string, unknown>) => string;
+  locale: string;
+  timeZone: string;
 }) {
   const getFileIcon = (tipo: string | null) => {
     if (!tipo) return FileText;
@@ -193,7 +198,7 @@ function DocumentCard({
           <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
             <span className="flex items-center gap-1">
               <Calendar className="h-3 w-3" />
-              {new Date(document.criadoEm).toLocaleDateString('pt-BR')}
+              {formatDate(document.criadoEm, { locale, timeZone })}
             </span>
             {document.tipo && (
               <span className="flex items-center gap-1">
@@ -287,14 +292,20 @@ function UploadZone({ onUpload, isUploading, t }: { onUpload: (file: File) => vo
   );
 }
 
-function DocumentViewer({ document, onClose, t }: { document: Document; onClose: () => void; t: (key: string, options?: Record<string, unknown>) => string }) {
-  const formattedDate = new Date(document.criadoEm).toLocaleDateString('pt-BR', { 
-    day: '2-digit', 
-    month: 'long', 
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+function DocumentViewer({
+  document,
+  onClose,
+  t,
+  locale,
+  timeZone,
+}: {
+  document: Document;
+  onClose: () => void;
+  t: (key: string, options?: Record<string, unknown>) => string;
+  locale: string;
+  timeZone: string;
+}) {
+  const formattedDate = formatDateTime(document.criadoEm, { locale, timeZone });
   
   return (
     <Dialog open onOpenChange={onClose}>
@@ -350,7 +361,10 @@ function DocumentViewer({ document, onClose, t }: { document: Document; onClose:
 
 export default function Documents() {
   const { t } = useTranslation();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
+  const locale = user?.idioma ?? 'pt-BR';
+  const timeZone = user?.timezone ?? 'UTC';
   
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -590,6 +604,8 @@ export default function Documents() {
                   onView={() => setSelectedDocument(doc)}
                   onDelete={() => setDeleteDocument(doc)}
                   t={t}
+                  locale={locale}
+                  timeZone={timeZone}
                 />
               ))}
             </AnimatePresence>
@@ -602,6 +618,8 @@ export default function Documents() {
           document={selectedDocument} 
           onClose={() => setSelectedDocument(null)}
           t={t}
+          locale={locale}
+          timeZone={timeZone}
         />
       )}
 
