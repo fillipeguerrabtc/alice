@@ -25,7 +25,7 @@ function resolveTimeZone(timeZone?: string | null): string {
   }
 }
 
-export function formatDate(date: Date | string, options?: LocaleOptions): string {
+export function formatDate(date: Date | string | number, options?: LocaleOptions): string {
   const locale = resolveLocale(options?.locale);
   const timeZone = resolveTimeZone(options?.timeZone);
   return new Date(date).toLocaleDateString(locale, {
@@ -36,7 +36,7 @@ export function formatDate(date: Date | string, options?: LocaleOptions): string
   });
 }
 
-export function formatDateTime(date: Date | string, options?: LocaleOptions): string {
+export function formatDateTime(date: Date | string | number, options?: LocaleOptions): string {
   const locale = resolveLocale(options?.locale);
   const timeZone = resolveTimeZone(options?.timeZone);
   return new Date(date).toLocaleString(locale, {

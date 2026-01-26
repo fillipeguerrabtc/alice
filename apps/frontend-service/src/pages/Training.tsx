@@ -1540,7 +1540,6 @@ export default function Training() {
   const locale = user?.idioma ?? 'pt-BR';
   const timeZone = user?.timezone ?? 'UTC';
   const queryClient = useQueryClient();
-  const { user } = useAuth();
   const tenantId = user?.tenantId;
   
   const [statusFilter, setStatusFilter] = useState<string>('all');
