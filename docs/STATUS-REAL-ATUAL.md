@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 **Autor:** Fillipe Guerra  
-**Data:** 25 de Janeiro de 2026  
+**Data:** 26 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 8.9 - Detectores Agentic configuráveis + ASR/Vision alinhados
+**Versão:** 9.0 - SearXNG JSON habilitado para Agentic
 
 ---
 
@@ -53,7 +53,7 @@
 - Qdrant (texto 1024 dim).
 - Caddy (API Gateway + SSL + HTTP/3).
 - MinIO (S3 interno para Langfuse).
-- SearXNG + Tor.
+- SearXNG + Tor (JSON habilitado para integração Agentic).
 
 ### Stack ALICE
 

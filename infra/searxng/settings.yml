@@ -2,7 +2,7 @@
 # SEARXNG SETTINGS - Configuração Enterprise Alice Platform
 # =============================================================================
 # Autor: Fillipe Guerra
-# Data: 23 de Dezembro de 2025
+# Data: 26 de Janeiro de 2026
 # Documentação: https://docs.searxng.org/admin/settings/index.html
 #
 # ENTERPRISE (23/12/2025):
@@ -82,6 +82,12 @@ search:
   autocomplete: "google"
   # Formato padrão HTML
   default_lang: "pt-BR"
+  # CORREÇÃO 26/01/2026: liberar JSON para integração agentic
+  # Sem essa lista, o SearXNG responde 403 para format=json.
+  # Docs: https://docs.searxng.org/dev/search_api.html
+  formats:
+    - html
+    - json
   # Máximo de resultados
   max_page: 0
   # Ban time para engines com falha
