@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 26 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 9.2 - Build fix frontend (locale/timezone + timestamp)
+**Versão:** 9.3 - Build fix frontend (JobCard locale/timezone)
 
 ---
 
@@ -224,6 +224,7 @@ Retenção Arquivo:   30 dias
 - Frontend: formatação numérica e monetária agora respeita o locale do usuário em cards e tabelas.
 - Trading: preços/volume/ordens usam locale do usuário (OrderBook e Candles incluídos).
 - Frontend: correção de build para timestamp numérico e escopo de locale/timezone no Training.
+- Frontend: JobCard recebe locale/timezone para evitar erro de build no Training.
 - Auth: novos usuários OAuth/SAML/registro local agora entram como `guest` (Convidado).
 - Users Admin: criação de usuário via dashboard (admin-only) com dados obrigatórios e roles iniciais.
 - Users Admin: edição completa com preferências, roles, grupos e validação obrigatória de perfil.

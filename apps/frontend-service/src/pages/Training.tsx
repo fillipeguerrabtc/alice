@@ -343,7 +343,17 @@ function TrainingDataCard({ data, namespaceName, onApprove, onReject, isPending,
   );
 }
 
-function JobCard({ job, t }: { job: FineTuningJob; t: (key: string, options?: Record<string, unknown>) => string }) {
+function JobCard({
+  job,
+  t,
+  locale,
+  timeZone,
+}: {
+  job: FineTuningJob;
+  t: (key: string, options?: Record<string, unknown>) => string;
+  locale: string;
+  timeZone: string;
+}) {
   const hyperparameters = job.hyperparameters || { epochs: 3, learningRate: 0.0001, batchSize: 4 };
   
   return (
@@ -2192,7 +2202,7 @@ export default function Training() {
                 className="grid gap-4 md:grid-cols-2"
               >
                 {allJobs.map((job) => (
-                  <JobCard key={job.id} job={job} t={t} />
+                  <JobCard key={job.id} job={job} t={t} locale={locale} timeZone={timeZone} />
                 ))}
               </motion.div>
             )}
