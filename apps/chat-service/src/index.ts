@@ -2416,6 +2416,32 @@ const buildLocationLabel = (location?: UserLocationContext | null) => {
   return parts.length > 0 ? parts.join(' - ') : null;
 };
 
+async function getUserLocaleContext(
+  userId?: string | null,
+  tenantId?: string | null
+): Promise<UserLocaleContext | undefined> {
+  if (!userId) return undefined;
+  const userProfile = await db.query.users.findFirst({
+    where: and(
+      eq(schema.users.id, userId),
+      tenantId ? eq(schema.users.tenantId, tenantId) : sql`1=1`
+    ),
+    columns: {
+      idioma: true,
+      timezone: true,
+      preferencias: true,
+    },
+  });
+  if (!userProfile) {
+    return undefined;
+  }
+  return {
+    locale: userProfile.idioma ?? null,
+    timezone: userProfile.timezone ?? null,
+    location: (userProfile.preferencias as { location?: UserLocationContext } | null | undefined)?.location ?? null,
+  };
+}
+
 function buildSystemPrompt(
   agent?: AgentConfig | null,
   assistantSettings?: AssistantSettings | null,
@@ -9428,7 +9454,8 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         });
       }
 
-      let systemPrompt = buildSystemPrompt(agent, assistantSettings, userMessageContent);
+      const userLocaleContext = await getUserLocaleContext(userId, tenantId);
+      let systemPrompt = buildSystemPrompt(agent, assistantSettings, userMessageContent, userLocaleContext);
       systemPrompt = appendUserNamePolicy(systemPrompt, nameContext, nameUsageContext);
       systemPrompt = appendNameConfirmationInstruction(systemPrompt, nameContext);
       let ragSources: Array<{ documentId: string; titulo: string; similarity: number }> = [];
@@ -11064,7 +11091,8 @@ wss.on('connection', (ws, req) => {
 
         const agent = conversation?.agent as AgentConfig | null;
         const assistantSettings = await getAssistantSettingsForTenant(safeTenantId);
-        let systemPrompt = buildSystemPrompt(agent, assistantSettings, messageContent);
+        const userLocaleContext = await getUserLocaleContext(userId, safeTenantId);
+        let systemPrompt = buildSystemPrompt(agent, assistantSettings, messageContent, userLocaleContext);
         systemPrompt = appendUserNamePolicy(systemPrompt, nameContext);
         systemPrompt = appendNameConfirmationInstruction(systemPrompt, nameContext);
 
@@ -11572,7 +11600,8 @@ wss.on('connection', (ws, req) => {
         // Não processa imagens diretamente - usar RAG + OpenAI Vision
         const agent = conversation.agent as AgentConfig | null;
         const assistantSettings = await getAssistantSettingsForTenant(tenantId);
-        let systemPrompt = buildSystemPrompt(agent, assistantSettings, mediaMessage.content);
+        const userLocaleContext = await getUserLocaleContext(userId, tenantId);
+        let systemPrompt = buildSystemPrompt(agent, assistantSettings, mediaMessage.content, userLocaleContext);
         systemPrompt = appendUserNamePolicy(systemPrompt, nameContext);
         systemPrompt = appendNameConfirmationInstruction(systemPrompt, nameContext);
         
@@ -14074,7 +14103,8 @@ app.post('/api/chat/message', asyncHandler(async (req: Request, res: Response) =
     if (userIdForName && nameContext.shouldAskConfirmation) {
       await markNamePromptPending(userIdForName, req.tenantId, nameContext);
     }
-    let systemPrompt = buildSystemPrompt(agent, assistantSettings, content);
+    const userLocaleContext = await getUserLocaleContext(req.user?.userId ?? null, req.tenantId ?? null);
+    let systemPrompt = buildSystemPrompt(agent, assistantSettings, content, userLocaleContext);
     systemPrompt = appendUserNamePolicy(systemPrompt, nameContext);
     systemPrompt = appendNameConfirmationInstruction(systemPrompt, nameContext);
     
