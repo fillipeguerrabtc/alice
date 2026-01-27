@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 27 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.3 - ERPNext configurator (assets + config sync)
+**Versão:** 10.4 - ERPNext assets build (bench build --production)
 
 ---
 
@@ -241,6 +241,7 @@ Retenção Arquivo:   30 dias
 - Deploy: healthchecks de OBSERVABILITY/ERPNEXT/BACKUP rodam quando stack é deployado.
 - Timezone: containers em UTC; UI/Chat usam timezone do usuário com default `America/Sao_Paulo`.
 - ERPNext: configurator sincroniza assets e configs sem remover mountpoints (evita exit 1).
+- ERPNext: criação de site agora executa `bench build --production` e valida `frappe/dist` (corrige 404 de CSS/JS).
 - ERPNext: comando "inventario" agora mapeia corretamente para listagem de itens.
 - Users Admin: atualização de roles/grupos agora é transacional (sem perda parcial).
 - Auth: buildAuthContext propaga customRoleId para headers internos.

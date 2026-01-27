@@ -1463,3 +1463,13 @@ git commit -a -m "test: adiciona testes unitários"
 ---
 *Autor: Fillipe Guerra*
 *Versão: 5.10 - 13 de Janeiro de 2026*
+
+---
+*Autor: Fillipe Guerra*
+*Versão: 5.13 - 27 de Janeiro de 2026*
+*Healthchecks Modular - Execução Garantida Pós-Deploy (27/01/2026): CORREÇÃO CIRÚRGICA no workflow modular para impedir healthchecks pulados após deploy bem-sucedido. CAUSA RAIZ: health-observability, health-erpnext e health-backup dependiam de `needs.validate.outputs.deploy_* == 'true'`, o que podia marcar o job como skipped mesmo com deploy concluído com sucesso. SOLUÇÃO ENTERPRISE: alinhado ao padrão funcional de INFRA e ALICE — healthchecks agora executam exclusivamente quando o deploy do stack termina com sucesso (`needs.deploy-*.result == 'success'`). Healthchecks continuam pulando apenas quando deploy falha ou é pulado. ARQUIVO MODIFICADO: .github/workflows/deploy-stack-modular.yml (3 condições). Implementação 100% enterprise-grade (Regras 6, 7, 9 - mudanças cirúrgicas, sem workarounds, validação contínua).*
+
+---
+*Autor: Fillipe Guerra*
+*Versão: 5.14 - 27 de Janeiro de 2026*
+*ERPNext Assets - Build Pós-Criação de Site (27/01/2026): CORREÇÃO CRÍTICA para 404 de CSS/JS no ERPNext (UI quebrada). CAUSA RAIZ: assets do Frappe/ERPNext não estavam sendo compilados no volume `sites/assets`, resultando em ausência de `frappe/dist/*`. SOLUÇÃO ENTERPRISE: `erpnext-create-site` agora executa `bench build --production` (com `setpriv` para UID 1000), valida presença de `sites/assets/frappe/dist/js` e `css`, e falha com log claro se build não gerar assets. A criação do site permanece idempotente; o build roda mesmo quando o site já existe. ARQUIVO MODIFICADO: infra/docker/stacks/docker-compose.erpnext.yml. Implementação 100% enterprise-grade (Regras 6, 7, 9 - causa raiz, sem workarounds, validação contínua).*
