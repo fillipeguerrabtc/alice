@@ -256,9 +256,6 @@ services:
     restart: "no"
     security_opt:
       - no-new-privileges:true
-    volumes:
-      - erpnext_sites:/home/frappe/frappe-bench/sites
-      - erpnext_logs:/home/frappe/frappe-bench/logs
     command:
       - bash
       - -c
@@ -270,6 +267,29 @@ services:
           echo "❌ ERRO: Diretório apps não existe em /home/frappe/frappe-bench"
           exit 1
         fi
+
+        IMAGE_SITES_DIR="/home/frappe/frappe-bench/sites"
+        VOLUME_SITES_DIR="/mnt/erpnext-sites"
+
+        if [ ! -d "$${VOLUME_SITES_DIR}" ]; then
+          echo "❌ ERRO: Volume ERPNext não montado em $${VOLUME_SITES_DIR}"
+          exit 1
+        fi
+
+        echo "📦 Sincronizando assets do ERPNext a partir da imagem..."
+        if [ ! -f "$${IMAGE_SITES_DIR}/assets/assets.json" ]; then
+          echo "❌ ERRO: assets.json não encontrado na imagem (sites/assets)"
+          exit 1
+        fi
+
+        mkdir -p "$${VOLUME_SITES_DIR}/assets"
+        cp -f "$${IMAGE_SITES_DIR}/assets/assets.json" "$${VOLUME_SITES_DIR}/assets/assets.json"
+        if [ -f "$${IMAGE_SITES_DIR}/assets/assets-rtl.json" ]; then
+          cp -f "$${IMAGE_SITES_DIR}/assets/assets-rtl.json" "$${VOLUME_SITES_DIR}/assets/assets-rtl.json"
+        fi
+
+        rm -rf "$${IMAGE_SITES_DIR}"
+        ln -s "$${VOLUME_SITES_DIR}" "$${IMAGE_SITES_DIR}"
         
         echo "📋 Criando apps.txt..."
         if ! ls -1 apps > sites/apps.txt 2>/dev/null; then
@@ -292,17 +312,6 @@ services:
         if [ ! -f "sites/common_site_config.json" ]; then
           echo "❌ ERRO: common_site_config.json não foi criado"
           exit 1
-        fi
-
-        echo "🏗️ Atualizando assets do ERPNext..."
-        bench build
-
-        if [ -d "sites/$${SITE_NAME}" ]; then
-          echo "🧹 Limpando cache do site $${SITE_NAME}..."
-          bench --site "$${SITE_NAME}" clear-cache
-          bench --site "$${SITE_NAME}" clear-website-cache
-        else
-          echo "ℹ️ Site $${SITE_NAME} ainda não existe. Cache será limpo após criação."
         fi
 
         echo "✅ ERPNext configurator concluído"
@@ -331,6 +340,9 @@ services:
         reservations:
           memory: 256M
           cpus: '0.25'
+    volumes:
+      - erpnext_sites:/mnt/erpnext-sites
+      - erpnext_logs:/home/frappe/frappe-bench/logs
 
   # ===========================================================================
   # ERPNEXT CREATE SITE - Init Container
