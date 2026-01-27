@@ -3215,10 +3215,14 @@ jobs:
               fi
             done
 
-            cd /opt/alice/app/infra/docker/stacks
-            docker compose -p alice-infra --env-file ../.env.prod \
-              -f docker-compose.base.yml \
-              -f docker-compose.infra.yml ps > "${LOG_DIR}/compose-ps.txt" 2>&1 || true
+            if [ -d /opt/alice/app/infra/docker/stacks ]; then
+              cd /opt/alice/app/infra/docker/stacks
+              docker compose -p alice-infra --env-file ../.env.prod \
+                -f docker-compose.base.yml \
+                -f docker-compose.infra.yml ps > "${LOG_DIR}/compose-ps.txt" 2>&1 || true
+            else
+              echo "Diretório /opt/alice/app/infra/docker/stacks não existe" > "${LOG_DIR}/compose-ps.txt"
+            fi
 
             tar -czf "$ARCHIVE_PATH" -C "$LOG_ROOT" infra
             chmod 644 "$ARCHIVE_PATH"
@@ -4069,10 +4073,14 @@ jobs:
               fi
             done
 
-            cd /opt/alice/app/infra/docker/stacks
-            docker compose -p alice-alice --env-file ../.env.prod \
-              -f docker-compose.base.yml \
-              -f docker-compose.alice.yml ps > "${LOG_DIR}/compose-ps.txt" 2>&1 || true
+            if [ -d /opt/alice/app/infra/docker/stacks ]; then
+              cd /opt/alice/app/infra/docker/stacks
+              docker compose -p alice-alice --env-file ../.env.prod \
+                -f docker-compose.base.yml \
+                -f docker-compose.alice.yml ps > "${LOG_DIR}/compose-ps.txt" 2>&1 || true
+            else
+              echo "Diretório /opt/alice/app/infra/docker/stacks não existe" > "${LOG_DIR}/compose-ps.txt"
+            fi
 
             tar -czf "$ARCHIVE_PATH" -C "$LOG_ROOT" alice
             chmod 644 "$ARCHIVE_PATH"
@@ -4672,10 +4680,14 @@ jobs:
               fi
             done
 
-            cd /opt/alice/app/infra/docker/stacks
-            docker compose -p alice-observability --env-file ../.env.prod \
-              -f docker-compose.base.yml \
-              -f docker-compose.observability.yml ps > "${LOG_DIR}/compose-ps.txt" 2>&1 || true
+            if [ -d /opt/alice/app/infra/docker/stacks ]; then
+              cd /opt/alice/app/infra/docker/stacks
+              docker compose -p alice-observability --env-file ../.env.prod \
+                -f docker-compose.base.yml \
+                -f docker-compose.observability.yml ps > "${LOG_DIR}/compose-ps.txt" 2>&1 || true
+            else
+              echo "Diretório /opt/alice/app/infra/docker/stacks não existe" > "${LOG_DIR}/compose-ps.txt"
+            fi
 
             tar -czf "$ARCHIVE_PATH" -C "$LOG_ROOT" observability
             chmod 644 "$ARCHIVE_PATH"
@@ -5240,10 +5252,14 @@ jobs:
             docker logs erpnext-create-site --tail 500 > "${LOG_DIR}/erpnext-create-site.log" 2>&1 || true
             docker inspect erpnext-create-site > "${LOG_DIR}/erpnext-create-site.inspect.json" 2>&1 || true
 
-            cd /opt/alice/app/infra/docker/stacks
-            docker compose -p alice-erpnext --env-file ../.env.prod \
-              -f docker-compose.base.yml \
-              -f docker-compose.erpnext.yml ps > "${LOG_DIR}/compose-ps.txt" 2>&1 || true
+            if [ -d /opt/alice/app/infra/docker/stacks ]; then
+              cd /opt/alice/app/infra/docker/stacks
+              docker compose -p alice-erpnext --env-file ../.env.prod \
+                -f docker-compose.base.yml \
+                -f docker-compose.erpnext.yml ps > "${LOG_DIR}/compose-ps.txt" 2>&1 || true
+            else
+              echo "Diretório /opt/alice/app/infra/docker/stacks não existe" > "${LOG_DIR}/compose-ps.txt"
+            fi
 
             tar -czf "$ARCHIVE_PATH" -C "$LOG_ROOT" erpnext
             chmod 644 "$ARCHIVE_PATH"
@@ -5741,10 +5757,14 @@ jobs:
               fi
             done
 
-            cd /opt/alice/app/infra/docker/stacks
-            docker compose -p alice-backup --env-file ../.env.prod \
-              -f docker-compose.base.yml \
-              -f docker-compose.backup.yml ps > "${LOG_DIR}/compose-ps.txt" 2>&1 || true
+            if [ -d /opt/alice/app/infra/docker/stacks ]; then
+              cd /opt/alice/app/infra/docker/stacks
+              docker compose -p alice-backup --env-file ../.env.prod \
+                -f docker-compose.base.yml \
+                -f docker-compose.backup.yml ps > "${LOG_DIR}/compose-ps.txt" 2>&1 || true
+            else
+              echo "Diretório /opt/alice/app/infra/docker/stacks não existe" > "${LOG_DIR}/compose-ps.txt"
+            fi
 
             tar -czf "$ARCHIVE_PATH" -C "$LOG_ROOT" backup
             chmod 644 "$ARCHIVE_PATH"
