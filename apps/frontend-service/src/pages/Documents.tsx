@@ -57,6 +57,7 @@ import { apiRequest } from '@/lib/queryClient';
 import { cn, formatDate, formatDateTime } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
+import { TIMEZONE } from '@/lib/i18n';
 
 interface Document {
   id: string;
@@ -364,7 +365,7 @@ export default function Documents() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const locale = user?.idioma ?? 'pt-BR';
-  const timeZone = user?.timezone ?? 'UTC';
+  const timeZone = user?.timezone ?? TIMEZONE;
   
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');

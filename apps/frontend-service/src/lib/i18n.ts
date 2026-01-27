@@ -2,7 +2,7 @@
 // Biblioteca: react-i18next + i18next (conforme CLAUDE.md REGRA 11 e 13)
 // Idioma principal: Português Brasileiro (pt-BR)
 // Idioma secundário: English (en)
-// Timezone: Europe/Lisbon (Portugal)
+// Timezone: America/Sao_Paulo (Brasil)
 
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
@@ -12,9 +12,9 @@ import LanguageDetector from "i18next-browser-languagedetector";
 import ptBR from "../locales/pt-BR.json";
 import en from "../locales/en.json";
 
-// Configuração de Timezone - Portugal (Europe/Lisbon)
-export const TIMEZONE = "Europe/Lisbon";
-export const TIMEZONE_OFFSET = "WET/WEST"; // Western European Time
+// Configuração de Timezone - Brasil (America/Sao_Paulo)
+export const TIMEZONE = "America/Sao_Paulo";
+export const TIMEZONE_OFFSET = "BRT"; // Horário de Brasília (UTC-3)
 
 // Recursos de tradução
 const resources = {

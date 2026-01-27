@@ -2,11 +2,17 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 27 de Janeiro de 2026  
-**Versão:** 11.1 - Diagnóstico rápido na tela + artifacts
+**Versão:** 11.2 - Timezone enterprise (UTC + UI Brasil)
 
 ## Visão geral
 
 Este guia descreve o deploy enterprise da plataforma Alice em produção (Hetzner GEX44), com pipeline CI/CD totalmente automatizado, rollback cirúrgico por stack e validações fail-fast.
+
+## Timezone (padrão enterprise)
+
+- **Host e containers:** UTC para consistência de logs, métricas e tracing.
+- **UI e Chat:** timezone do usuário (dashboard) com fallback em `America/Sao_Paulo`.
+- **Motivo:** UTC evita ambiguidades (DST/offsets) e facilita correlação entre stacks.
 
 ### Arquitetura multi-stack (SSOT)
 

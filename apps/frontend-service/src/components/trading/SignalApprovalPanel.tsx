@@ -54,6 +54,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import { useAuth } from '@/hooks/use-auth';
+import { TIMEZONE } from '@/lib/i18n';
 import { formatDateTime, formatNumber } from '@/lib/utils';
 
 // ============================================================================
@@ -446,7 +447,7 @@ export function SignalApprovalPanel({
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const locale = user?.idioma ?? 'pt-BR';
-  const timeZone = user?.timezone ?? 'UTC';
+  const timeZone = user?.timezone ?? TIMEZONE;
   const [approvingSignalId, setApprovingSignalId] = useState<string | null>(null);
   const [rejectingSignalId, setRejectingSignalId] = useState<string | null>(null);
 

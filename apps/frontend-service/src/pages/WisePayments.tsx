@@ -51,6 +51,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useAuth } from '@/hooks/use-auth';
+import { TIMEZONE } from '@/lib/i18n';
 import { formatCurrency, formatDate, formatNumber } from '@/lib/utils';
 
 interface WiseBalance {
@@ -174,7 +175,7 @@ export default function WisePayments() {
   const { user } = useAuth();
   const { toast } = useToast();
   const locale = user?.idioma ?? 'pt-BR';
-  const timeZone = user?.timezone ?? 'UTC';
+  const timeZone = user?.timezone ?? TIMEZONE;
   const [activeTab, setActiveTab] = useState('balances');
   const [quoteForm, setQuoteForm] = useState({
     sourceCurrency: 'EUR',

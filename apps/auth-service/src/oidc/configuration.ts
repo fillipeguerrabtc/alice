@@ -87,7 +87,7 @@ async function findAccountById(id: string) {
           baseClaims.family_name = user.lastName || undefined;
           baseClaims.picture = user.profileImageUrl || undefined;
           baseClaims.locale = user.idioma || 'pt-BR';
-          baseClaims.zoneinfo = user.timezone || 'Europe/Lisbon';
+          baseClaims.zoneinfo = user.timezone || 'America/Sao_Paulo';
           baseClaims.updated_at = user.updatedAt ? Math.floor(user.updatedAt.getTime() / 1000) : undefined;
         }
 

@@ -577,7 +577,7 @@ export const users = pgTable(
     departamento: varchar("departamento", { length: 100 }),
     telefone: varchar("telefone", { length: 20 }),
     idioma: varchar("idioma", { length: 10 }).default("pt-BR"),
-    timezone: varchar("timezone", { length: 50 }).default("Europe/Lisbon"),
+    timezone: varchar("timezone", { length: 50 }).default("America/Sao_Paulo"),
     preferencias: jsonb("preferencias").$type<UserPreferencias>().default({}),
     ultimoAcesso: timestamp("ultimo_acesso"),
     ativo: boolean("ativo").default(true),

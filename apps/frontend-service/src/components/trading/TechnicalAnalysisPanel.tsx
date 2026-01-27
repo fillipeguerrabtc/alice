@@ -51,6 +51,7 @@ import {
 // NOTA: Tooltip removido - não utilizado neste componente (21/12/2025)
 import { apiRequest } from '@/lib/queryClient';
 import { useAuth } from '@/hooks/use-auth';
+import { TIMEZONE } from '@/lib/i18n';
 import { formatCurrency, formatDateTime, formatNumber } from '@/lib/utils';
 
 // ============================================================================
@@ -237,7 +238,7 @@ export function TechnicalAnalysisPanel({
   const { user } = useAuth();
   const [interval, setInterval] = useState(defaultInterval);
   const locale = user?.idioma ?? 'pt-BR';
-  const timeZone = user?.timezone ?? 'UTC';
+  const timeZone = user?.timezone ?? TIMEZONE;
 
   // Buscar análise técnica
   const {

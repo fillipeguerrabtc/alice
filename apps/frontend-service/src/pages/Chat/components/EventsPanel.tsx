@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ChevronDown, ChevronUp, Filter, Search } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
+import { TIMEZONE } from '@/lib/i18n';
 import { formatDateTime } from '@/lib/utils';
 import type { AgentEvent } from './types';
 
@@ -35,7 +36,7 @@ export function EventsPanel({ events, isStreaming, onClear }: EventsPanelProps) 
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [phaseFilter, setPhaseFilter] = useState<'all' | AgentEvent['phase']>('all');
   const locale = user?.idioma ?? 'pt-BR';
-  const timeZone = user?.timezone ?? 'UTC';
+  const timeZone = user?.timezone ?? TIMEZONE;
 
   const toggleExpanded = (id: string) => {
     setExpanded((prev) => {

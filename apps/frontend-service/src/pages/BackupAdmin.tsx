@@ -84,6 +84,7 @@ import { Label } from '@/components/ui/label';
 import { queryClient, apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
+import { TIMEZONE } from '@/lib/i18n';
 import { formatDateTime } from '@/lib/utils';
 
 interface ComponentStatus {
@@ -253,7 +254,7 @@ export default function BackupAdmin() {
   const { user } = useAuth();
   const { toast } = useToast();
   const locale = user?.idioma ?? 'pt-BR';
-  const timeZone = user?.timezone ?? 'UTC';
+  const timeZone = user?.timezone ?? TIMEZONE;
   const [backupType, setBackupType] = useState<'full' | 'incremental'>('full');
   const [showRestoreDialog, setShowRestoreDialog] = useState(false);
   const [showConfirmRestore, setShowConfirmRestore] = useState(false);

@@ -45,6 +45,7 @@ import {
 import { Progress } from '@/components/ui/progress';
 import { queryClient } from '@/lib/queryClient';
 import { useAuth } from '@/hooks/use-auth';
+import { TIMEZONE } from '@/lib/i18n';
 import { formatDateTime } from '@/lib/utils';
 
 interface ServiceStatus {
@@ -460,7 +461,7 @@ export default function Observability() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const locale = user?.idioma ?? 'pt-BR';
-  const timeZone = user?.timezone ?? 'UTC';
+  const timeZone = user?.timezone ?? TIMEZONE;
 
   const { data: healthData, isLoading: healthLoading, isError: healthError, refetch } = useQuery<StackHealth>({
     queryKey: ['/api/observability/health'],

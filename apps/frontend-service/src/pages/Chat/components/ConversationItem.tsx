@@ -8,6 +8,7 @@ import { motion } from 'framer-motion';
 import { MessageSquare, Trash2 } from 'lucide-react';
 import { cn, formatDateTime } from '@/lib/utils';
 import { useAuth } from '@/hooks/use-auth';
+import { TIMEZONE } from '@/lib/i18n';
 import { Conversation } from './types';
 
 const itemVariants = {
@@ -36,7 +37,7 @@ export function ConversationItem({
 }: ConversationItemProps) {
   const { user } = useAuth();
   const locale = user?.idioma ?? 'pt-BR';
-  const timeZone = user?.timezone ?? 'UTC';
+  const timeZone = user?.timezone ?? TIMEZONE;
 
   return (
     <motion.button

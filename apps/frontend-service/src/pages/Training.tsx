@@ -28,6 +28,7 @@ import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
 import { z } from 'zod';
 import { useAuth } from '@/hooks/use-auth';
+import { TIMEZONE } from '@/lib/i18n';
 import {
   Brain,
   Play,
@@ -1548,7 +1549,7 @@ export default function Training() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const locale = user?.idioma ?? 'pt-BR';
-  const timeZone = user?.timezone ?? 'UTC';
+  const timeZone = user?.timezone ?? TIMEZONE;
   const queryClient = useQueryClient();
   const tenantId = user?.tenantId;
   

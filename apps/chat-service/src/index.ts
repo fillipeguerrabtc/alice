@@ -2381,6 +2381,7 @@ type UserLocaleContext = {
   location?: UserLocationContext | null;
 };
 
+const DEFAULT_TIMEZONE = 'America/Sao_Paulo';
 const resolveLocale = (locale?: string | null) => locale?.trim() || 'pt-BR';
 
 const resolveTimeZone = (timezone?: string | null) => {
@@ -2392,14 +2393,14 @@ const resolveTimeZone = (timezone?: string | null) => {
       // Fallback para timezone padrão caso inválido
     }
   }
-  return 'UTC';
+  return DEFAULT_TIMEZONE;
 };
 
 const formatLocalDateTime = (date: Date, locale: string, timeZone: string) => {
   try {
     return new Intl.DateTimeFormat(locale, { dateStyle: 'full', timeStyle: 'short', timeZone }).format(date);
   } catch {
-    return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'full', timeStyle: 'short', timeZone: 'UTC' }).format(date);
+    return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'full', timeStyle: 'short', timeZone: DEFAULT_TIMEZONE }).format(date);
   }
 };
 

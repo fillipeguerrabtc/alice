@@ -11,6 +11,7 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { TIMEZONE } from "@/lib/i18n";
 import { formatDateTime, formatNumber } from "@/lib/utils";
 import { 
   Image, 
@@ -501,7 +502,7 @@ function StatsCards({ stats, locale }: { stats: StatsResponse | undefined; local
 export default function ImageGalleryPage() {
   const { user } = useAuth();
   const locale = user?.idioma ?? "pt-BR";
-  const timeZone = user?.timezone ?? "UTC";
+  const timeZone = user?.timezone ?? TIMEZONE;
   const [selectedImage, setSelectedImage] = useState<GeneratedImage | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterApproved, setFilterApproved] = useState<string>("all");

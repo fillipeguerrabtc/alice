@@ -1344,7 +1344,7 @@ if (googleClientId && googleClientSecret) {
               emailVerified: true,
               role: 'guest',
               idioma: 'pt-BR',
-              timezone: 'Europe/Lisbon',
+              timezone: 'America/Sao_Paulo',
               tenantId: defaultTenant.id, // BUG FIX 13/01/2026: SEMPRE associar a um tenant
             }).returning();
           });
@@ -1492,7 +1492,7 @@ if (githubClientId && githubClientSecret) {
               emailVerified: true,
               role: 'guest',
               idioma: 'pt-BR',
-              timezone: 'Europe/Lisbon',
+              timezone: 'America/Sao_Paulo',
               tenantId: defaultTenant.id, // BUG FIX 13/01/2026: SEMPRE associar a um tenant
             }).returning();
           });
@@ -1651,7 +1651,7 @@ if (samlEntryPoint && samlIssuer && samlCert) {
               emailVerified: true,
               role: 'guest',
               idioma: 'pt-BR',
-              timezone: 'Europe/Lisbon',
+              timezone: 'America/Sao_Paulo',
               tenantId: defaultTenant.id, // BUG FIX 13/01/2026: SEMPRE associar a um tenant
             }).returning();
           });
@@ -1966,7 +1966,7 @@ app.post('/api/auth/register', requireAuth(), requireRole('admin'), asyncHandler
     emailVerified: false,
     role: 'guest',
     idioma: 'pt-BR',
-    timezone: 'Europe/Lisbon',
+    timezone: 'America/Sao_Paulo',
     tenantId: defaultTenant.id, // BUG FIX 13/01/2026: SEMPRE associar a um tenant
   }).returning();
 

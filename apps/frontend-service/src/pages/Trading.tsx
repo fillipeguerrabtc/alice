@@ -78,6 +78,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { useAuth } from '@/hooks/use-auth';
+import { TIMEZONE } from '@/lib/i18n';
 import { formatDateTime, formatNumber } from '@/lib/utils';
 import {
   Select,
@@ -453,7 +454,7 @@ export default function Trading() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const locale = user?.idioma ?? 'pt-BR';
-  const timeZone = user?.timezone ?? 'UTC';
+  const timeZone = user?.timezone ?? TIMEZONE;
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState('overview');
   const [selectedSymbol, setSelectedSymbol] = useState('XBTUSDTM');

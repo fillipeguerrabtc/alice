@@ -54,6 +54,7 @@ import {
 } from 'lucide-react';
 import { cn, formatDateTime } from '@/lib/utils';
 import { useAuth } from '@/hooks/use-auth';
+import { TIMEZONE } from '@/lib/i18n';
 
 // ============================================================================
 // TIPOS
@@ -121,7 +122,7 @@ export function HandoverPanel({
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const locale = user?.idioma ?? 'pt-BR';
-  const timeZone = user?.timezone ?? 'UTC';
+  const timeZone = user?.timezone ?? TIMEZONE;
   
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [pendingMode, setPendingMode] = useState<TradingControlMode | null>(null);

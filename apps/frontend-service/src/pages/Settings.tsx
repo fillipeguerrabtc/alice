@@ -19,6 +19,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { toast } from '@/hooks/use-toast';
 import { LanguageSwitch } from '@/components/language-switch';
 import { apiRequest } from '@/lib/queryClient';
+import { TIMEZONE } from '@/lib/i18n';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 type UpdateUserPayload = {
@@ -49,7 +50,7 @@ export default function Settings() {
   });
   const [regionalForm, setRegionalForm] = useState({
     idioma: user?.idioma || i18n.language || 'pt-BR',
-    timezone: user?.timezone || 'Europe/Lisbon',
+    timezone: user?.timezone || TIMEZONE,
     countryName: user?.preferencias?.location?.countryName || '',
     countryCode: user?.preferencias?.location?.countryCode || '',
     region: user?.preferencias?.location?.region || '',
@@ -64,7 +65,7 @@ export default function Settings() {
     });
     setRegionalForm({
       idioma: user?.idioma || i18n.language || 'pt-BR',
-      timezone: user?.timezone || 'Europe/Lisbon',
+      timezone: user?.timezone || TIMEZONE,
       countryName: user?.preferencias?.location?.countryName || '',
       countryCode: user?.preferencias?.location?.countryCode || '',
       region: user?.preferencias?.location?.region || '',
@@ -83,7 +84,7 @@ export default function Settings() {
   });
 
   const timezoneOptions = useMemo(() => {
-    const fallback = [user?.timezone, 'America/Sao_Paulo', 'Europe/Lisbon', 'UTC'].filter(Boolean) as string[];
+    const fallback = [user?.timezone, TIMEZONE, 'UTC'].filter(Boolean) as string[];
     const uniqueFallback = Array.from(new Set(fallback));
     const supportedValuesOf = (Intl as typeof Intl & { supportedValuesOf?: (key: 'timeZone') => string[] }).supportedValuesOf;
     if (typeof supportedValuesOf !== 'function') {
