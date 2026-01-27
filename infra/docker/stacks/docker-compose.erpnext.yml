@@ -274,7 +274,8 @@ services:
         LOGS_DIR="/home/frappe/frappe-bench/logs"
         FRAPPE_UID="1000"
         FRAPPE_GID="1000"
-        PRIV_CMD="setpriv --reuid $${FRAPPE_UID} --regid $${FRAPPE_GID} --clear-groups"
+        # setpriv com no-new-privileges não permite clear-groups (setgroups)
+        PRIV_CMD="setpriv --reuid $${FRAPPE_UID} --regid $${FRAPPE_GID} --keep-groups"
 
         if [ ! -d "$${VOLUME_SITES_DIR}" ]; then
           echo "❌ ERRO: Volume ERPNext não montado em $${VOLUME_SITES_DIR}"
