@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 27 de Janeiro de 2026  
-**Versão:** 10.8 - ERPNext init com setpriv (keep-groups) e assets sync
+**Versão:** 10.9 - Logs de falha ERPNext como artifact
 
 ## Visão geral
 
@@ -187,6 +187,13 @@ docker logs alice-minio-init --tail 50
 **Sintoma:** páginas abrem com HTML sem estilos/scripts e `/assets/*` retorna 404.  
 **Causa raiz:** `assets.json` desatualizado em relação aos bundles reais.  
 **Correção aplicada:** `erpnext-configurator` sincroniza `assets.json` da imagem oficial para o volume `erpnext_sites` (sem depender de Node), ajusta permissões do volume e executa `bench` com `setpriv --keep-groups` (necessário com `no-new-privileges` para evitar erro de `setgroups`).
+
+### Logs de falha do ERPNext (rollback imediato)
+
+**Sintoma:** rollback executa logo após falha e os containers init somem.  
+**Correção aplicada:** logs do `erpnext-configurator` e `erpnext-create-site` são compactados no servidor e enviados como artifact do GitHub Actions quando o deploy falha.
+
+**Onde encontrar:** Artifact `erpnext-deploy-logs-<run_id>-<run_attempt>` no job de deploy.
 
 ### Docker Hub rate limit
 

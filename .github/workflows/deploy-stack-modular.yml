@@ -4414,7 +4414,7 @@ jobs:
     name: Health Check OBSERVABILITY
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, deploy-observability]
-    if: needs.deploy-observability.result == 'success'
+    if: needs.validate.outputs.deploy_observability == 'true' && (needs.deploy-observability.result == 'success' || needs.deploy-observability.result == 'skipped')
     # CORREÇÃO PR#104: Reduzir para 7 min (máx 15 tentativas × 20s = 5 min)
     timeout-minutes: 7
     
@@ -4878,11 +4878,89 @@ jobs:
             echo "   ⏱️  Tempo total: ${DEPLOY_DURATION}s"
             echo "══════════════════════════════════════════════════════════════════"
 
+      - name: Capturar logs de falha ERPNext (servidor)
+        if: failure()
+        uses: appleboy/ssh-action@v1.2.2
+        env:
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          command_timeout: 5m
+          envs: RUN_ID,RUN_ATTEMPT
+          script: |
+            set -euo pipefail
+            LOG_ROOT="/tmp/deploy-logs"
+            LOG_DIR="${LOG_ROOT}/erpnext"
+            RUN_ID="${RUN_ID:-unknown}"
+            RUN_ATTEMPT="${RUN_ATTEMPT:-0}"
+            ARCHIVE_NAME="erpnext-deploy-${RUN_ID}-${RUN_ATTEMPT}.tar.gz"
+            ARCHIVE_PATH="${LOG_ROOT}/${ARCHIVE_NAME}"
+
+            mkdir -p "$LOG_DIR"
+
+            {
+              echo "timestamp: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+              echo "stack: erpnext"
+              echo "version: ${{ needs.validate.outputs.version }}"
+            } > "${LOG_DIR}/meta.txt"
+
+            docker ps -a --filter "name=erpnext-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" > "${LOG_DIR}/containers.txt" 2>&1 || true
+
+            docker logs erpnext-configurator --tail 500 > "${LOG_DIR}/erpnext-configurator.log" 2>&1 || true
+            docker inspect erpnext-configurator > "${LOG_DIR}/erpnext-configurator.inspect.json" 2>&1 || true
+            docker logs erpnext-create-site --tail 500 > "${LOG_DIR}/erpnext-create-site.log" 2>&1 || true
+            docker inspect erpnext-create-site > "${LOG_DIR}/erpnext-create-site.inspect.json" 2>&1 || true
+
+            cd /opt/alice/app/infra/docker/stacks
+            docker compose -p alice-erpnext --env-file ../.env.prod \
+              -f docker-compose.base.yml \
+              -f docker-compose.erpnext.yml ps > "${LOG_DIR}/compose-ps.txt" 2>&1 || true
+
+            tar -czf "$ARCHIVE_PATH" -C "$LOG_ROOT" erpnext
+            chmod 644 "$ARCHIVE_PATH"
+            echo "$ARCHIVE_PATH" > "${LOG_ROOT}/erpnext-latest.path"
+
+      - name: Baixar logs de falha ERPNext (SCP)
+        if: failure()
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          SSH_HOST: ${{ env.HETZNER_HOST }}
+          SSH_USER: ${{ env.HETZNER_USER }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+          mkdir -p ./artifacts/erpnext
+          ARCHIVE_NAME="erpnext-deploy-${RUN_ID}-${RUN_ATTEMPT}.tar.gz"
+          scp -o StrictHostKeyChecking=no -o ConnectTimeout=30 \
+            "$SSH_USER@$SSH_HOST:/tmp/deploy-logs/$ARCHIVE_NAME" \
+            "./artifacts/erpnext/$ARCHIVE_NAME" 2>/dev/null || echo "Falha ao baixar logs ERPNext"
+
+          rm -f ~/.ssh/id_rsa
+
+      - name: Upload logs de falha ERPNext
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: erpnext-deploy-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ./artifacts/erpnext/*.tar.gz
+          if-no-files-found: warn
+          retention-days: 30
+
   health-erpnext:
     name: Health Check ERPNEXT
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, deploy-erpnext]
-    if: needs.deploy-erpnext.result == 'success'
+    if: needs.validate.outputs.deploy_erpnext == 'true' && (needs.deploy-erpnext.result == 'success' || needs.deploy-erpnext.result == 'skipped')
     timeout-minutes: 7
     
     steps:
@@ -5284,7 +5362,7 @@ jobs:
     name: Health Check BACKUP
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, deploy-backup]
-    if: needs.deploy-backup.result == 'success'
+    if: needs.validate.outputs.deploy_backup == 'true' && (needs.deploy-backup.result == 'success' || needs.deploy-backup.result == 'skipped')
     # CORREÇÃO PR#100: Alinhar com Docker healthcheck (start_period: 120s + 3 retries × 60s = 300s)
     timeout-minutes: 7
     
