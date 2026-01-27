@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 27 de Janeiro de 2026  
-**Versão:** 10.5 - ERPNext sync de assets via imagem
+**Versão:** 10.6 - ERPNext init com permissões e assets sync
 
 ## Visão geral
 
@@ -186,7 +186,7 @@ docker logs alice-minio-init --tail 50
 
 **Sintoma:** páginas abrem com HTML sem estilos/scripts e `/assets/*` retorna 404.  
 **Causa raiz:** `assets.json` desatualizado em relação aos bundles reais.  
-**Correção aplicada:** `erpnext-configurator` sincroniza `assets.json` da imagem oficial para o volume `erpnext_sites` (sem depender de Node).
+**Correção aplicada:** `erpnext-configurator` sincroniza `assets.json` da imagem oficial para o volume `erpnext_sites` (sem depender de Node) e ajusta permissões do volume antes do `bench set-config`.
 
 ### Docker Hub rate limit
 

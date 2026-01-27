@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 27 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 9.5 - ERPNext assets sync + timezone aplicado em chat
+**Versão:** 9.6 - ERPNext init permissions + assets sync
 
 ---
 
@@ -274,7 +274,7 @@ Retenção Arquivo:   30 dias
 - Configurações regionais: timezone, idioma da Alice e local (país/cidade) configuráveis no dashboard e persistidos em PostgreSQL.
 - Chat: SERVER_TIME agora usa timezone do usuário em todos os fluxos (REST, stream e WebSocket).
 - Frontend: datas e horários agora respeitam idioma/timezone do usuário em listas e cards.
-- ERPNext: sync automático de `assets.json` da imagem no init container (evita 404 de CSS/JS).
+- ERPNext: init ajusta permissões do volume + sync de `assets.json` da imagem (evita 404 de CSS/JS).
 - RAG: timeout configurável por env (RAG_REQUEST_TIMEOUT_MS).
 - Agentic web: busca web forçada quando o usuário pedir explicitamente (sem aprovação).
 - Web/Deepweb: SearXNG com Tor via Ahmia habilitado; engine Torch desabilitado explicitamente para evitar falha na imagem atual.
