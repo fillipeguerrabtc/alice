@@ -274,14 +274,15 @@ services:
         LOGS_DIR="/home/frappe/frappe-bench/logs"
         FRAPPE_UID="1000"
         FRAPPE_GID="1000"
+        PRIV_CMD="setpriv --reuid $${FRAPPE_UID} --regid $${FRAPPE_GID} --clear-groups"
 
         if [ ! -d "$${VOLUME_SITES_DIR}" ]; then
           echo "❌ ERRO: Volume ERPNext não montado em $${VOLUME_SITES_DIR}"
           exit 1
         fi
 
-        if ! command -v su >/dev/null 2>&1; then
-          echo "❌ ERRO: comando su não disponível para trocar usuário"
+        if ! command -v setpriv >/dev/null 2>&1; then
+          echo "❌ ERRO: comando setpriv não disponível para trocar usuário"
           exit 1
         fi
 
@@ -305,22 +306,22 @@ services:
         ln -s "$${VOLUME_SITES_DIR}" "$${IMAGE_SITES_DIR}"
 
         echo "📋 Criando apps.txt..."
-        if ! su frappe -c "bash -lc 'cd /home/frappe/frappe-bench && ls -1 apps > sites/apps.txt'"; then
+        if ! $${PRIV_CMD} bash -lc "cd /home/frappe/frappe-bench && ls -1 apps > sites/apps.txt"; then
           echo "❌ ERRO: Falha ao listar apps"
           exit 1
         fi
-        su frappe -c "bash -lc 'cd /home/frappe/frappe-bench && cat sites/apps.txt'" || echo "(apps.txt vazio)"
+        $${PRIV_CMD} bash -lc "cd /home/frappe/frappe-bench && cat sites/apps.txt" || echo "(apps.txt vazio)"
         
         CACHE_URL="redis://:$${REDIS_CACHE_PASSWORD}@erpnext-redis-cache:6379"
         QUEUE_URL="redis://:$${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379"
         
         echo "⚙️ Configurando bench..."
-        su frappe -c "bash -lc 'cd /home/frappe/frappe-bench && bench set-config -g db_host erpnext-mariadb'"
-        su frappe -c "bash -lc 'cd /home/frappe/frappe-bench && bench set-config -g db_port 3306'"
-        su frappe -c "bash -lc 'cd /home/frappe/frappe-bench && bench set-config -g redis_cache \"$${CACHE_URL}\"'"
-        su frappe -c "bash -lc 'cd /home/frappe/frappe-bench && bench set-config -g redis_queue \"$${QUEUE_URL}\"'"
-        su frappe -c "bash -lc 'cd /home/frappe/frappe-bench && bench set-config -g redis_socketio \"$${QUEUE_URL}\"'"
-        su frappe -c "bash -lc 'cd /home/frappe/frappe-bench && bench set-config -g socketio_port 9000'"
+        $${PRIV_CMD} bash -lc "cd /home/frappe/frappe-bench && bench set-config -g db_host erpnext-mariadb"
+        $${PRIV_CMD} bash -lc "cd /home/frappe/frappe-bench && bench set-config -g db_port 3306"
+        $${PRIV_CMD} bash -lc "cd /home/frappe/frappe-bench && bench set-config -g redis_cache \"$${CACHE_URL}\""
+        $${PRIV_CMD} bash -lc "cd /home/frappe/frappe-bench && bench set-config -g redis_queue \"$${QUEUE_URL}\""
+        $${PRIV_CMD} bash -lc "cd /home/frappe/frappe-bench && bench set-config -g redis_socketio \"$${QUEUE_URL}\""
+        $${PRIV_CMD} bash -lc "cd /home/frappe/frappe-bench && bench set-config -g socketio_port 9000"
         
         if [ ! -f "sites/common_site_config.json" ]; then
           echo "❌ ERRO: common_site_config.json não foi criado"
