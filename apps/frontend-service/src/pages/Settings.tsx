@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { useAuth } from '@/hooks/use-auth';
+import { toast } from '@/hooks/use-toast';
 import { LanguageSwitch } from '@/components/language-switch';
 import { apiRequest } from '@/lib/queryClient';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -97,6 +98,20 @@ export default function Settings() {
       firstName: profileForm.firstName.trim() || undefined,
       lastName: profileForm.lastName.trim() || undefined,
       preferredName: profileForm.preferredName.trim() || undefined,
+    }, {
+      onSuccess: () => {
+        toast({
+          title: 'Perfil atualizado',
+          description: 'As informações foram salvas com sucesso.',
+        });
+      },
+      onError: () => {
+        toast({
+          title: 'Falha ao salvar perfil',
+          description: 'Não foi possível salvar as informações. Tente novamente.',
+          variant: 'destructive',
+        });
+      },
     });
   };
 
@@ -120,6 +135,20 @@ export default function Settings() {
             },
           }
         : undefined,
+    }, {
+      onSuccess: () => {
+        toast({
+          title: 'Configurações regionais atualizadas',
+          description: 'Idioma, fuso horário e localização foram salvos.',
+        });
+      },
+      onError: () => {
+        toast({
+          title: 'Falha ao salvar configurações regionais',
+          description: 'Não foi possível salvar. Tente novamente.',
+          variant: 'destructive',
+        });
+      },
     });
   };
 

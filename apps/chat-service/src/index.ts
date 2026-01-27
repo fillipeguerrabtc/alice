@@ -2403,6 +2403,11 @@ const formatLocalDateTime = (date: Date, locale: string, timeZone: string) => {
   }
 };
 
+const dateQuestionPattern = /(?:data|dia)\s+(?:de\s+)?hoje|que\s+dia\s+é\s+hoje|hoje\s+é|qual\s+a\s+data/i;
+const timeQuestionPattern = /\b(que\s+horas|hora\s+agora|hor[aá]rio|horas?|what\s+time|current\s+time|time\s+is\s+it|time\s+now|now\s+time)\b/i;
+
+const isTimeOrDateQuestion = (message: string) => dateQuestionPattern.test(message) || timeQuestionPattern.test(message);
+
 const buildLocationLabel = (location?: UserLocationContext | null) => {
   if (!location) return null;
   const parts = [location.city, location.region, location.countryName || location.countryCode]
@@ -2455,7 +2460,7 @@ function buildSystemPrompt(
     prompt += `\n\nLOCALIZAÇÃO ATUAL:\n- ${locationLabel}`;
   }
 
-  if (userMessage && /(?:data|dia)\s+(?:de\s+)?hoje|que\s+dia\s+é\s+hoje|hoje\s+é|qual\s+a\s+data/i.test(userMessage)) {
+  if (userMessage && isTimeOrDateQuestion(userMessage)) {
     const now = new Date();
     const localTime = formatLocalDateTime(now, resolvedLocale, resolvedTimeZone);
     prompt += `\n\nSERVER_TIME:\n- ISO: ${now.toISOString()}\n- Local: ${localTime}\n- Timezone: ${resolvedTimeZone}`;
