@@ -3155,6 +3155,85 @@ jobs:
             
             echo "✅ Init containers cleanup completed"
 
+      - name: Capturar logs de falha INFRA (servidor)
+        if: failure()
+        uses: appleboy/ssh-action@v1.2.2
+        env:
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          command_timeout: 5m
+          envs: RUN_ID,RUN_ATTEMPT
+          script: |
+            set -euo pipefail
+            LOG_ROOT="/tmp/deploy-logs"
+            LOG_DIR="${LOG_ROOT}/infra"
+            RUN_ID="${RUN_ID:-unknown}"
+            RUN_ATTEMPT="${RUN_ATTEMPT:-0}"
+            ARCHIVE_NAME="infra-deploy-${RUN_ID}-${RUN_ATTEMPT}.tar.gz"
+            ARCHIVE_PATH="${LOG_ROOT}/${ARCHIVE_NAME}"
+
+            mkdir -p "$LOG_DIR"
+
+            {
+              echo "timestamp: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+              echo "stack: infra"
+              echo "version: ${{ needs.validate.outputs.version }}"
+            } > "${LOG_DIR}/meta.txt"
+
+            docker ps -a --filter "name=alice-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" > "${LOG_DIR}/containers.txt" 2>&1 || true
+
+            for c in alice-postgres alice-pgbouncer alice-redis alice-qdrant alice-tor alice-searxng alice-caddy alice-minio alice-minio-init alice-pgbackrest-init alice-postgres-exporter alice-pgbouncer-exporter alice-redis-exporter; do
+              if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
+                docker logs "$c" --tail 500 > "${LOG_DIR}/${c}.log" 2>&1 || true
+              fi
+            done
+
+            cd /opt/alice/app/infra/docker/stacks
+            docker compose -p alice-infra --env-file ../.env.prod \
+              -f docker-compose.base.yml \
+              -f docker-compose.infra.yml ps > "${LOG_DIR}/compose-ps.txt" 2>&1 || true
+
+            tar -czf "$ARCHIVE_PATH" -C "$LOG_ROOT" infra
+            chmod 644 "$ARCHIVE_PATH"
+            echo "$ARCHIVE_PATH" > "${LOG_ROOT}/infra-latest.path"
+
+      - name: Baixar logs de falha INFRA (SCP)
+        if: failure()
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          SSH_HOST: ${{ env.HETZNER_HOST }}
+          SSH_USER: ${{ env.HETZNER_USER }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+          mkdir -p ./artifacts/infra
+          ARCHIVE_NAME="infra-deploy-${RUN_ID}-${RUN_ATTEMPT}.tar.gz"
+          scp -o StrictHostKeyChecking=no -o ConnectTimeout=30 \
+            "$SSH_USER@$SSH_HOST:/tmp/deploy-logs/$ARCHIVE_NAME" \
+            "./artifacts/infra/$ARCHIVE_NAME" 2>/dev/null || echo "Falha ao baixar logs INFRA"
+
+          rm -f ~/.ssh/id_rsa
+
+      - name: Upload logs de falha INFRA
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: infra-deploy-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ./artifacts/infra/*.tar.gz
+          if-no-files-found: warn
+          retention-days: 30
+
   health-infra:
     name: Health Check INFRA
     runs-on: [self-hosted, linux, deploy]
@@ -3908,6 +3987,85 @@ jobs:
             echo "   ⏱️  Tempo total: ${DEPLOY_DURATION}s"
             echo "══════════════════════════════════════════════════════════════════"
 
+      - name: Capturar logs de falha ALICE (servidor)
+        if: failure()
+        uses: appleboy/ssh-action@v1.2.2
+        env:
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          command_timeout: 5m
+          envs: RUN_ID,RUN_ATTEMPT
+          script: |
+            set -euo pipefail
+            LOG_ROOT="/tmp/deploy-logs"
+            LOG_DIR="${LOG_ROOT}/alice"
+            RUN_ID="${RUN_ID:-unknown}"
+            RUN_ATTEMPT="${RUN_ATTEMPT:-0}"
+            ARCHIVE_NAME="alice-deploy-${RUN_ID}-${RUN_ATTEMPT}.tar.gz"
+            ARCHIVE_PATH="${LOG_ROOT}/${ARCHIVE_NAME}"
+
+            mkdir -p "$LOG_DIR"
+
+            {
+              echo "timestamp: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+              echo "stack: alice"
+              echo "version: ${{ needs.validate.outputs.version }}"
+            } > "${LOG_DIR}/meta.txt"
+
+            docker ps -a --filter "name=alice-" --filter "name=gpu-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" > "${LOG_DIR}/containers.txt" 2>&1 || true
+
+            for c in alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager gpu-llm gpu-embeddings gpu-asr gpu-trainer; do
+              if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
+                docker logs "$c" --tail 500 > "${LOG_DIR}/${c}.log" 2>&1 || true
+              fi
+            done
+
+            cd /opt/alice/app/infra/docker/stacks
+            docker compose -p alice-alice --env-file ../.env.prod \
+              -f docker-compose.base.yml \
+              -f docker-compose.alice.yml ps > "${LOG_DIR}/compose-ps.txt" 2>&1 || true
+
+            tar -czf "$ARCHIVE_PATH" -C "$LOG_ROOT" alice
+            chmod 644 "$ARCHIVE_PATH"
+            echo "$ARCHIVE_PATH" > "${LOG_ROOT}/alice-latest.path"
+
+      - name: Baixar logs de falha ALICE (SCP)
+        if: failure()
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          SSH_HOST: ${{ env.HETZNER_HOST }}
+          SSH_USER: ${{ env.HETZNER_USER }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+          mkdir -p ./artifacts/alice
+          ARCHIVE_NAME="alice-deploy-${RUN_ID}-${RUN_ATTEMPT}.tar.gz"
+          scp -o StrictHostKeyChecking=no -o ConnectTimeout=30 \
+            "$SSH_USER@$SSH_HOST:/tmp/deploy-logs/$ARCHIVE_NAME" \
+            "./artifacts/alice/$ARCHIVE_NAME" 2>/dev/null || echo "Falha ao baixar logs ALICE"
+
+          rm -f ~/.ssh/id_rsa
+
+      - name: Upload logs de falha ALICE
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: alice-deploy-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ./artifacts/alice/*.tar.gz
+          if-no-files-found: warn
+          retention-days: 30
+
   health-alice:
     name: Health Check ALICE
     runs-on: [self-hosted, linux, deploy]
@@ -4409,6 +4567,85 @@ jobs:
             echo "✅ OBSERVABILITY STACK DEPLOYED"
             echo "   ⏱️  Tempo total: ${DEPLOY_DURATION}s"
             echo "══════════════════════════════════════════════════════════════════"
+
+      - name: Capturar logs de falha OBSERVABILITY (servidor)
+        if: failure()
+        uses: appleboy/ssh-action@v1.2.2
+        env:
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          command_timeout: 5m
+          envs: RUN_ID,RUN_ATTEMPT
+          script: |
+            set -euo pipefail
+            LOG_ROOT="/tmp/deploy-logs"
+            LOG_DIR="${LOG_ROOT}/observability"
+            RUN_ID="${RUN_ID:-unknown}"
+            RUN_ATTEMPT="${RUN_ATTEMPT:-0}"
+            ARCHIVE_NAME="observability-deploy-${RUN_ID}-${RUN_ATTEMPT}.tar.gz"
+            ARCHIVE_PATH="${LOG_ROOT}/${ARCHIVE_NAME}"
+
+            mkdir -p "$LOG_DIR"
+
+            {
+              echo "timestamp: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+              echo "stack: observability"
+              echo "version: ${{ needs.validate.outputs.version }}"
+            } > "${LOG_DIR}/meta.txt"
+
+            docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "prometheus|grafana|loki|promtail|jaeger|langfuse|clickhouse|vector|otel|cadvisor|node-exporter" > "${LOG_DIR}/containers.txt" 2>&1 || true
+
+            for c in prometheus grafana loki promtail jaeger langfuse langfuse-worker alice-langfuse-db alice-clickhouse alice-vector alice-otel-collector alice-cadvisor alice-node-exporter; do
+              if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
+                docker logs "$c" --tail 500 > "${LOG_DIR}/${c}.log" 2>&1 || true
+              fi
+            done
+
+            cd /opt/alice/app/infra/docker/stacks
+            docker compose -p alice-observability --env-file ../.env.prod \
+              -f docker-compose.base.yml \
+              -f docker-compose.observability.yml ps > "${LOG_DIR}/compose-ps.txt" 2>&1 || true
+
+            tar -czf "$ARCHIVE_PATH" -C "$LOG_ROOT" observability
+            chmod 644 "$ARCHIVE_PATH"
+            echo "$ARCHIVE_PATH" > "${LOG_ROOT}/observability-latest.path"
+
+      - name: Baixar logs de falha OBSERVABILITY (SCP)
+        if: failure()
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          SSH_HOST: ${{ env.HETZNER_HOST }}
+          SSH_USER: ${{ env.HETZNER_USER }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+          mkdir -p ./artifacts/observability
+          ARCHIVE_NAME="observability-deploy-${RUN_ID}-${RUN_ATTEMPT}.tar.gz"
+          scp -o StrictHostKeyChecking=no -o ConnectTimeout=30 \
+            "$SSH_USER@$SSH_HOST:/tmp/deploy-logs/$ARCHIVE_NAME" \
+            "./artifacts/observability/$ARCHIVE_NAME" 2>/dev/null || echo "Falha ao baixar logs OBSERVABILITY"
+
+          rm -f ~/.ssh/id_rsa
+
+      - name: Upload logs de falha OBSERVABILITY
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: observability-deploy-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ./artifacts/observability/*.tar.gz
+          if-no-files-found: warn
+          retention-days: 30
 
   health-observability:
     name: Health Check OBSERVABILITY
@@ -5357,6 +5594,85 @@ jobs:
             echo "✅ BACKUP STACK DEPLOYED"
             echo "   ⏱️  Tempo total: ${DEPLOY_DURATION}s"
             echo "══════════════════════════════════════════════════════════════════"
+
+      - name: Capturar logs de falha BACKUP (servidor)
+        if: failure()
+        uses: appleboy/ssh-action@v1.2.2
+        env:
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          command_timeout: 5m
+          envs: RUN_ID,RUN_ATTEMPT
+          script: |
+            set -euo pipefail
+            LOG_ROOT="/tmp/deploy-logs"
+            LOG_DIR="${LOG_ROOT}/backup"
+            RUN_ID="${RUN_ID:-unknown}"
+            RUN_ATTEMPT="${RUN_ATTEMPT:-0}"
+            ARCHIVE_NAME="backup-deploy-${RUN_ID}-${RUN_ATTEMPT}.tar.gz"
+            ARCHIVE_PATH="${LOG_ROOT}/${ARCHIVE_NAME}"
+
+            mkdir -p "$LOG_DIR"
+
+            {
+              echo "timestamp: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+              echo "stack: backup"
+              echo "version: ${{ needs.validate.outputs.version }}"
+            } > "${LOG_DIR}/meta.txt"
+
+            docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "pgbackrest" > "${LOG_DIR}/containers.txt" 2>&1 || true
+
+            for c in alice-pgbackrest; do
+              if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
+                docker logs "$c" --tail 500 > "${LOG_DIR}/${c}.log" 2>&1 || true
+              fi
+            done
+
+            cd /opt/alice/app/infra/docker/stacks
+            docker compose -p alice-backup --env-file ../.env.prod \
+              -f docker-compose.base.yml \
+              -f docker-compose.backup.yml ps > "${LOG_DIR}/compose-ps.txt" 2>&1 || true
+
+            tar -czf "$ARCHIVE_PATH" -C "$LOG_ROOT" backup
+            chmod 644 "$ARCHIVE_PATH"
+            echo "$ARCHIVE_PATH" > "${LOG_ROOT}/backup-latest.path"
+
+      - name: Baixar logs de falha BACKUP (SCP)
+        if: failure()
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          SSH_HOST: ${{ env.HETZNER_HOST }}
+          SSH_USER: ${{ env.HETZNER_USER }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+          mkdir -p ./artifacts/backup
+          ARCHIVE_NAME="backup-deploy-${RUN_ID}-${RUN_ATTEMPT}.tar.gz"
+          scp -o StrictHostKeyChecking=no -o ConnectTimeout=30 \
+            "$SSH_USER@$SSH_HOST:/tmp/deploy-logs/$ARCHIVE_NAME" \
+            "./artifacts/backup/$ARCHIVE_NAME" 2>/dev/null || echo "Falha ao baixar logs BACKUP"
+
+          rm -f ~/.ssh/id_rsa
+
+      - name: Upload logs de falha BACKUP
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backup-deploy-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ./artifacts/backup/*.tar.gz
+          if-no-files-found: warn
+          retention-days: 30
 
   health-backup:
     name: Health Check BACKUP

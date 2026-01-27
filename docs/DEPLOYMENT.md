@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 27 de Janeiro de 2026  
-**Versão:** 10.9 - Logs de falha ERPNext como artifact
+**Versão:** 11.0 - Logs de falha por stack como artifact
 
 ## Visão geral
 
@@ -188,12 +188,17 @@ docker logs alice-minio-init --tail 50
 **Causa raiz:** `assets.json` desatualizado em relação aos bundles reais.  
 **Correção aplicada:** `erpnext-configurator` sincroniza `assets.json` da imagem oficial para o volume `erpnext_sites` (sem depender de Node), ajusta permissões do volume e executa `bench` com `setpriv --keep-groups` (necessário com `no-new-privileges` para evitar erro de `setgroups`).
 
-### Logs de falha do ERPNext (rollback imediato)
+### Logs de falha por stack (rollback imediato)
 
-**Sintoma:** rollback executa logo após falha e os containers init somem.  
-**Correção aplicada:** logs do `erpnext-configurator` e `erpnext-create-site` são compactados no servidor e enviados como artifact do GitHub Actions quando o deploy falha.
+**Sintoma:** rollback executa logo após falha e os containers podem sumir.  
+**Correção aplicada:** logs são compactados no servidor e enviados como artifact do GitHub Actions quando o deploy falha.
 
-**Onde encontrar:** Artifact `erpnext-deploy-logs-<run_id>-<run_attempt>` no job de deploy.
+**Onde encontrar:** Artifacts por stack no job de deploy:
+- `infra-deploy-logs-<run_id>-<run_attempt>`
+- `alice-deploy-logs-<run_id>-<run_attempt>`
+- `observability-deploy-logs-<run_id>-<run_attempt>`
+- `erpnext-deploy-logs-<run_id>-<run_attempt>`
+- `backup-deploy-logs-<run_id>-<run_attempt>`
 
 ### Docker Hub rate limit
 
