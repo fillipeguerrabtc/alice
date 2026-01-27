@@ -5247,10 +5247,13 @@ jobs:
 
             docker ps -a --filter "name=erpnext-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" > "${LOG_DIR}/containers.txt" 2>&1 || true
 
-            docker logs erpnext-configurator --tail 500 > "${LOG_DIR}/erpnext-configurator.log" 2>&1 || true
-            docker inspect erpnext-configurator > "${LOG_DIR}/erpnext-configurator.inspect.json" 2>&1 || true
-            docker logs erpnext-create-site --tail 500 > "${LOG_DIR}/erpnext-create-site.log" 2>&1 || true
-            docker inspect erpnext-create-site > "${LOG_DIR}/erpnext-create-site.inspect.json" 2>&1 || true
+            ERP_CONTAINERS="erpnext-configurator erpnext-create-site erpnext-mariadb erpnext-redis-cache erpnext-redis-queue erpnext-backend erpnext-frontend erpnext-websocket erpnext-scheduler erpnext-worker-default erpnext-worker-short erpnext-worker-long"
+            for c in $ERP_CONTAINERS; do
+              if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
+                docker logs "$c" --tail 500 > "${LOG_DIR}/${c}.log" 2>&1 || true
+                docker inspect "$c" > "${LOG_DIR}/${c}.inspect.json" 2>&1 || true
+              fi
+            done
 
             if [ -d /opt/alice/app/infra/docker/stacks ]; then
               cd /opt/alice/app/infra/docker/stacks
