@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 18 de Janeiro de 2026  
-**Versão:** 10.3 - Cleanup INFRA remove volumes mesmo com outros stacks
+**Data:** 27 de Janeiro de 2026  
+**Versão:** 10.4 - ERPNext rebuild de assets no init container
 
 ## Visão geral
 
@@ -181,6 +181,12 @@ grep BACKUP_CIPHER_PASS /opt/alice/app/infra/docker/.env.prod | wc -c
 docker logs alice-minio --tail 100
 docker logs alice-minio-init --tail 50
 ```
+
+### ERPNext sem CSS/JS (assets 404)
+
+**Sintoma:** páginas abrem com HTML sem estilos/scripts e `/assets/*` retorna 404.  
+**Causa raiz:** `assets.json` desatualizado em relação aos bundles reais.  
+**Correção aplicada:** `erpnext-configurator` executa `bench build` e limpa cache quando o site existe.
 
 ### Docker Hub rate limit
 

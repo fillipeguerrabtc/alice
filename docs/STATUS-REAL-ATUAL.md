@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 **Autor:** Fillipe Guerra  
-**Data:** 26 de Janeiro de 2026  
+**Data:** 27 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 9.3 - Build fix frontend (JobCard locale/timezone)
+**Versão:** 9.4 - ERPNext assets rebuild + timezone aplicado em chat
 
 ---
 
@@ -272,7 +272,9 @@ Retenção Arquivo:   30 dias
 - Chat mídia: preview imediato preserva blob URL até upload confirmar.
 - Chat mídia: limpeza de blob URL após upload concluído (media_uploaded).
 - Configurações regionais: timezone, idioma da Alice e local (país/cidade) configuráveis no dashboard e persistidos em PostgreSQL.
+- Chat: SERVER_TIME agora usa timezone do usuário em todos os fluxos (REST, stream e WebSocket).
 - Frontend: datas e horários agora respeitam idioma/timezone do usuário em listas e cards.
+- ERPNext: assets rebuild automático no init container (evita 404 de CSS/JS).
 - RAG: timeout configurável por env (RAG_REQUEST_TIMEOUT_MS).
 - Agentic web: busca web forçada quando o usuário pedir explicitamente (sem aprovação).
 - Web/Deepweb: SearXNG com Tor via Ahmia habilitado; engine Torch desabilitado explicitamente para evitar falha na imagem atual.

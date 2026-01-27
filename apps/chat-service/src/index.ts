@@ -9454,7 +9454,6 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         });
       }
 
-      const userLocaleContext = await getUserLocaleContext(userId, tenantId);
       let systemPrompt = buildSystemPrompt(agent, assistantSettings, userMessageContent, userLocaleContext);
       systemPrompt = appendUserNamePolicy(systemPrompt, nameContext, nameUsageContext);
       systemPrompt = appendNameConfirmationInstruction(systemPrompt, nameContext);
