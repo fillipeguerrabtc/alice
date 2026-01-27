@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 27 de Janeiro de 2026  
-**Versão:** 11.2 - Timezone enterprise (UTC + UI Brasil)
+**Versão:** 11.3 - ERPNext configurator (assets + config sync)
 
 ## Visão geral
 
@@ -42,6 +42,14 @@ deploy-alice + deploy-observability + deploy-erpnext + deploy-backup (paralelo)
   ↓
 health-{stack} + rollback-{stack} (se necessário)
 ```
+
+## ERPNext - sincronização de assets e configs
+
+O `erpnext-configurator` sincroniza **assets completos** e arquivos de configuração para o volume `erpnext_sites` sem remover diretórios internos do container. Isso evita falhas por mountpoints gerados pelo próprio image (`VOLUME` em `/home/frappe/frappe-bench/sites` e `/home/frappe/frappe-bench/sites/assets`).
+
+- Origem dos assets: `/home/frappe/frappe-bench/sites/assets` (imagem).
+- Destino: `/mnt/erpnext-sites/assets` (volume persistente).
+- Configurações sincronizadas: `apps.txt` e `common_site_config.json`.
 
 ### Disparo manual (quando necessário)
 
@@ -200,6 +208,7 @@ docker logs alice-minio-init --tail 50
 **Correção aplicada:** um diagnóstico rápido (tail) é impresso na tela e os logs completos são compactados no servidor e enviados como artifact do GitHub Actions quando o deploy falha.
 
 **Onde encontrar:** Artifacts por stack no job de deploy:
+
 - `infra-deploy-logs-<run_id>-<run_attempt>`
 - `alice-deploy-logs-<run_id>-<run_attempt>`
 - `observability-deploy-logs-<run_id>-<run_attempt>`

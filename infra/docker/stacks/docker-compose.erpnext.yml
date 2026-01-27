@@ -298,13 +298,7 @@ services:
         fi
 
         mkdir -p "$${VOLUME_SITES_DIR}/assets"
-        cp -f "$${IMAGE_SITES_DIR}/assets/assets.json" "$${VOLUME_SITES_DIR}/assets/assets.json"
-        if [ -f "$${IMAGE_SITES_DIR}/assets/assets-rtl.json" ]; then
-          cp -f "$${IMAGE_SITES_DIR}/assets/assets-rtl.json" "$${VOLUME_SITES_DIR}/assets/assets-rtl.json"
-        fi
-
-        rm -rf "$${IMAGE_SITES_DIR}"
-        ln -s "$${VOLUME_SITES_DIR}" "$${IMAGE_SITES_DIR}"
+        cp -a "$${IMAGE_SITES_DIR}/assets/." "$${VOLUME_SITES_DIR}/assets/"
 
         echo "📋 Criando apps.txt..."
         if ! $${PRIV_CMD} bash -lc "cd /home/frappe/frappe-bench && ls -1 apps > sites/apps.txt"; then
@@ -328,6 +322,14 @@ services:
           echo "❌ ERRO: common_site_config.json não foi criado"
           exit 1
         fi
+
+        echo "🔁 Sincronizando arquivos de configuração para o volume..."
+        cp -f "sites/apps.txt" "$${VOLUME_SITES_DIR}/apps.txt"
+        cp -f "sites/common_site_config.json" "$${VOLUME_SITES_DIR}/common_site_config.json"
+        chown -R "$${FRAPPE_UID}:$${FRAPPE_GID}" \
+          "$${VOLUME_SITES_DIR}/assets" \
+          "$${VOLUME_SITES_DIR}/apps.txt" \
+          "$${VOLUME_SITES_DIR}/common_site_config.json"
 
         echo "✅ ERPNext configurator concluído"
     environment:
