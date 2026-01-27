@@ -3093,6 +3093,28 @@ jobs:
             echo "   ⏱️  Tempo total: ${DEPLOY_DURATION}s"
             echo "══════════════════════════════════════════════════════════════════"
 
+      - name: Diagnóstico rápido INFRA (na tela)
+        if: failure()
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          command_timeout: 3m
+          script: |
+            set +e
+            echo "🧭 DIAGNÓSTICO RÁPIDO - INFRA (tail na tela)"
+            echo "================================================"
+            docker ps -a --filter "name=alice-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "alice-(postgres|pgbouncer|redis|qdrant|caddy|minio|searxng|tor)" || true
+            for c in alice-postgres alice-pgbouncer alice-redis alice-qdrant alice-caddy alice-minio alice-searxng alice-tor; do
+              if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
+                echo ""
+                echo "── $c (tail 80) ──"
+                docker logs "$c" --tail 80 2>&1 || true
+              fi
+            done
+
       - name: Clean init containers (post-deploy)
         uses: appleboy/ssh-action@v1.2.2
         with:
@@ -3987,6 +4009,28 @@ jobs:
             echo "   ⏱️  Tempo total: ${DEPLOY_DURATION}s"
             echo "══════════════════════════════════════════════════════════════════"
 
+      - name: Diagnóstico rápido ALICE (na tela)
+        if: failure()
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          command_timeout: 3m
+          script: |
+            set +e
+            echo "🧭 DIAGNÓSTICO RÁPIDO - ALICE (tail na tela)"
+            echo "================================================"
+            docker ps -a --filter "name=alice-" --filter "name=gpu-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "alice-|gpu-" || true
+            for c in alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager gpu-llm gpu-embeddings gpu-asr gpu-trainer; do
+              if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
+                echo ""
+                echo "── $c (tail 80) ──"
+                docker logs "$c" --tail 80 2>&1 || true
+              fi
+            done
+
       - name: Capturar logs de falha ALICE (servidor)
         if: failure()
         uses: appleboy/ssh-action@v1.2.2
@@ -4568,6 +4612,28 @@ jobs:
             echo "   ⏱️  Tempo total: ${DEPLOY_DURATION}s"
             echo "══════════════════════════════════════════════════════════════════"
 
+      - name: Diagnóstico rápido OBSERVABILITY (na tela)
+        if: failure()
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          command_timeout: 3m
+          script: |
+            set +e
+            echo "🧭 DIAGNÓSTICO RÁPIDO - OBSERVABILITY (tail na tela)"
+            echo "========================================================"
+            docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "prometheus|grafana|loki|promtail|jaeger|langfuse|clickhouse|vector|otel|cadvisor|node-exporter" || true
+            for c in prometheus grafana loki promtail jaeger langfuse langfuse-worker alice-langfuse-db alice-clickhouse alice-vector alice-otel-collector alice-cadvisor alice-node-exporter; do
+              if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
+                echo ""
+                echo "── $c (tail 80) ──"
+                docker logs "$c" --tail 80 2>&1 || true
+              fi
+            done
+
       - name: Capturar logs de falha OBSERVABILITY (servidor)
         if: failure()
         uses: appleboy/ssh-action@v1.2.2
@@ -5115,6 +5181,28 @@ jobs:
             echo "   ⏱️  Tempo total: ${DEPLOY_DURATION}s"
             echo "══════════════════════════════════════════════════════════════════"
 
+      - name: Diagnóstico rápido ERPNEXT (na tela)
+        if: failure()
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          command_timeout: 3m
+          script: |
+            set +e
+            echo "🧭 DIAGNÓSTICO RÁPIDO - ERPNEXT (tail na tela)"
+            echo "================================================"
+            docker ps -a --filter "name=erpnext-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" || true
+            for c in erpnext-configurator erpnext-create-site erpnext-mariadb erpnext-redis-cache erpnext-redis-queue erpnext-backend erpnext-frontend erpnext-websocket erpnext-scheduler erpnext-worker-default erpnext-worker-short erpnext-worker-long; do
+              if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
+                echo ""
+                echo "── $c (tail 80) ──"
+                docker logs "$c" --tail 80 2>&1 || true
+              fi
+            done
+
       - name: Capturar logs de falha ERPNext (servidor)
         if: failure()
         uses: appleboy/ssh-action@v1.2.2
@@ -5594,6 +5682,26 @@ jobs:
             echo "✅ BACKUP STACK DEPLOYED"
             echo "   ⏱️  Tempo total: ${DEPLOY_DURATION}s"
             echo "══════════════════════════════════════════════════════════════════"
+
+      - name: Diagnóstico rápido BACKUP (na tela)
+        if: failure()
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          command_timeout: 3m
+          script: |
+            set +e
+            echo "🧭 DIAGNÓSTICO RÁPIDO - BACKUP (tail na tela)"
+            echo "==============================================="
+            docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "pgbackrest" || true
+            if docker ps -a --format '{{.Names}}' | grep -q "^alice-pgbackrest$"; then
+              echo ""
+              echo "── alice-pgbackrest (tail 80) ──"
+              docker logs "alice-pgbackrest" --tail 80 2>&1 || true
+            fi
 
       - name: Capturar logs de falha BACKUP (servidor)
         if: failure()

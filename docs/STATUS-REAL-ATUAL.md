@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 27 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.0 - Logs de deploy por stack
+**Versão:** 10.1 - Diagnóstico rápido na tela
 
 ---
 
@@ -237,6 +237,7 @@ Retenção Arquivo:   30 dias
 - ERPNext: configurator executa `bench` com `setpriv --keep-groups` (compatível com `no-new-privileges`).
 - Deploy: logs de falha do ERPNext agora persistem como artifact no GitHub Actions.
 - Deploy: logs de falha persistem para todos os stacks (infra, alice, observability, erpnext, backup).
+- Deploy: diagnóstico rápido (tail) é exibido na tela antes do artifact.
 - Deploy: healthchecks de OBSERVABILITY/ERPNEXT/BACKUP rodam quando stack é deployado.
 - ERPNext: comando "inventario" agora mapeia corretamente para listagem de itens.
 - Users Admin: atualização de roles/grupos agora é transacional (sem perda parcial).

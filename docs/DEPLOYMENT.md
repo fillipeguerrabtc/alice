@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 27 de Janeiro de 2026  
-**Versão:** 11.0 - Logs de falha por stack como artifact
+**Versão:** 11.1 - Diagnóstico rápido na tela + artifacts
 
 ## Visão geral
 
@@ -191,7 +191,7 @@ docker logs alice-minio-init --tail 50
 ### Logs de falha por stack (rollback imediato)
 
 **Sintoma:** rollback executa logo após falha e os containers podem sumir.  
-**Correção aplicada:** logs são compactados no servidor e enviados como artifact do GitHub Actions quando o deploy falha.
+**Correção aplicada:** um diagnóstico rápido (tail) é impresso na tela e os logs completos são compactados no servidor e enviados como artifact do GitHub Actions quando o deploy falha.
 
 **Onde encontrar:** Artifacts por stack no job de deploy:
 - `infra-deploy-logs-<run_id>-<run_attempt>`
