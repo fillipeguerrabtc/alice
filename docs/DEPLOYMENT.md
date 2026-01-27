@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 27 de Janeiro de 2026  
-**Versão:** 11.5 - Healthchecks condicionados a deploy executado
+**Versão:** 11.6 - Builds Docker sem warning de pnpm approve-builds
 
 ## Visão geral
 
@@ -46,6 +46,17 @@ health-{stack} + rollback-{stack} (se necessário)
 ### Healthchecks condicionados ao deploy executado
 
 Para evitar skips “inexplicáveis”, os jobs de health check só rodam quando o **deploy foi executado de fato** (flag `deploy_executed=true`). Isso elimina casos em que o job de deploy foi pulado (smart deploy) mas o healthcheck aparecia como skipped sem contexto.
+
+### Builds Docker e warning do pnpm (`approve-builds`)
+
+Durante o build das imagens, o `pnpm` pode emitir aviso de **scripts ignorados** se `NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS` não estiver definido no **build stage** do Dockerfile.  
+Para evitar esse warning e manter o build determinístico, todos os Dockerfiles Node.js devem exportar:
+
+```
+ENV NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS=true
+```
+
+Isso **não afeta o desenvolvimento local**, apenas o ambiente do build da imagem.
 
 ## ERPNext - sincronização de assets e configs
 

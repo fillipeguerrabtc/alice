@@ -6,6 +6,11 @@ FROM node:22-alpine3.21 AS builder
 
 WORKDIR /app
 
+# pnpm v10+: permitir execução automática de scripts de build de dependências
+# DURANTE o build da imagem (evita warning de `approve-builds` no Docker build).
+# Não afeta o desenvolvimento local (fora do container).
+ENV NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS=true
+
 # Habilitar corepack para pnpm (Best Practice 2025)
 # Usa packageManager field do package.json (pnpm@10.26.2)
 RUN npm config set update-notifier false && corepack enable
