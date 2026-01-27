@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 27 de Janeiro de 2026  
-**Versão:** 11.3 - ERPNext configurator (assets + config sync)
+**Versão:** 11.5 - Healthchecks condicionados a deploy executado
 
 ## Visão geral
 
@@ -43,6 +43,10 @@ deploy-alice + deploy-observability + deploy-erpnext + deploy-backup (paralelo)
 health-{stack} + rollback-{stack} (se necessário)
 ```
 
+### Healthchecks condicionados ao deploy executado
+
+Para evitar skips “inexplicáveis”, os jobs de health check só rodam quando o **deploy foi executado de fato** (flag `deploy_executed=true`). Isso elimina casos em que o job de deploy foi pulado (smart deploy) mas o healthcheck aparecia como skipped sem contexto.
+
 ## ERPNext - sincronização de assets e configs
 
 O `erpnext-configurator` sincroniza **assets completos** e arquivos de configuração para o volume `erpnext_sites` sem remover diretórios internos do container. Isso evita falhas por mountpoints gerados pelo próprio image (`VOLUME` em `/home/frappe/frappe-bench/sites` e `/home/frappe/frappe-bench/sites/assets`).
@@ -50,6 +54,14 @@ O `erpnext-configurator` sincroniza **assets completos** e arquivos de configura
 - Origem dos assets: `/home/frappe/frappe-bench/sites/assets` (imagem).
 - Destino: `/mnt/erpnext-sites/assets` (volume persistente).
 - Configurações sincronizadas: `apps.txt` e `common_site_config.json`.
+
+### ERPNext - build de assets com Node (NVM)
+
+O `erpnext-create-site` executa `bench build --production` para gerar bundles CSS/JS. A imagem oficial do ERPNext já inclui Node via **NVM**, mas **login shell** (`bash -l`) pode sobrescrever `PATH` e quebrar a detecção do `node`. Para evitar isso, o build roda com `bash -c` preservando o `PATH` do container e faz bootstrap do NVM quando necessário (sem instalação runtime).
+
+- **Causa raiz típica:** `node: not found` durante `bench build --production`.
+- **Correção aplicada:** validação explícita de `node` + `nvm use` quando necessário.
+- **Resultado:** assets gerados de forma determinística e sem dependência de login shell.
 
 ### Disparo manual (quando necessário)
 

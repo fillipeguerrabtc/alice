@@ -430,7 +430,20 @@ services:
         fi
 
         set +e
-        timeout 1800 $${PRIV_CMD} bash -lc "cd /home/frappe/frappe-bench && bench build --production" 2>&1 | tee /tmp/bench-build.log
+        timeout 1800 $${PRIV_CMD} bash -c 'set -euo pipefail; \
+          if ! command -v node >/dev/null 2>&1; then \
+            if [ -n "$${NVM_DIR:-}" ] && [ -s "$${NVM_DIR}/nvm.sh" ]; then \
+              # shellcheck disable=SC1090 \
+              . "$${NVM_DIR}/nvm.sh"; \
+              nvm use --silent >/dev/null 2>&1 || true; \
+            fi; \
+          fi; \
+          if ! command -v node >/dev/null 2>&1; then \
+            echo "❌ ERRO: Node.js não encontrado para gerar assets"; \
+            echo "    PATH atual: $${PATH}"; \
+            exit 1; \
+          fi; \
+          cd /home/frappe/frappe-bench && bench build --production' 2>&1 | tee /tmp/bench-build.log
         BUILD_EXIT_CODE=$${PIPESTATUS[0]:-$$?}
         set -e
 

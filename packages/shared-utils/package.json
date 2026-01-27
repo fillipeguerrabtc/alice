@@ -53,6 +53,10 @@
     "./openapi": {
       "types": "./dist/openapi.d.ts",
       "import": "./dist/openapi.js"
+    },
+    "./agentic-events": {
+      "types": "./dist/agentic-events.d.ts",
+      "import": "./dist/agentic-events.js"
     }
   },
   "scripts": {

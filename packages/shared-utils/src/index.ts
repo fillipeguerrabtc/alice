@@ -69,3 +69,11 @@ export {
   ROLE_DESCRIPTIONS,
 } from './rbac/types.js';
 export { permissionCache, PermissionCache } from './rbac/cache.js';
+
+export type {
+  AgentEvent,
+  AgentEventPhase,
+  AgentEventStatus,
+  RedactionOptions,
+} from './agentic-events.js';
+export { redactSensitivePayload } from './agentic-events.js';
