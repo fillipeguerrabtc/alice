@@ -2,12 +2,12 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 28 de Janeiro de 2026  
-**Versão:** 7.42 - Trading realtime + KuCoin orderbook env
+**Versão:** 7.43 - Grafana 12.3.2 validado no registry
 
 <div align="center">
 
 ![Alice Logo](https://img.shields.io/badge/Alice-IA%20Enterprise-blue?style=for-the-badge&logo=robot&logoColor=white)
-![Version](https://img.shields.io/badge/versão-7.42-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/versão-7.43-green?style=for-the-badge)
 ![License](https://img.shields.io/badge/licença-Proprietária-red?style=for-the-badge)
 ![LLM](https://img.shields.io/badge/LLM-Qwen2.5%207B-purple?style=for-the-badge)
 
@@ -402,7 +402,7 @@ alice/
 
 ### Observabilidade
 - Prometheus 3.8.1 (métricas)
-- Grafana OSS 12.3.1 (dashboards)
+- Grafana OSS 12.3.2 (dashboards)
 - Jaeger 2.13.0 (tracing distribuído)
 - Loki 3.6.3, Promtail 3.6.3 (logs)
 - OpenTelemetry Collector 0.142.0 (instrumentação)

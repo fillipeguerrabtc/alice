@@ -772,7 +772,7 @@ echo "📄 Gerando arquivo .env.prod..."
   printf '\n'
   printf '# OBSERVABILITY Stack\n'
   printf 'PROMETHEUS_VERSION=%s\n' "${PROMETHEUS_VERSION:-v3.8.1}"
-  printf 'GRAFANA_VERSION=%s\n' "${GRAFANA_VERSION:-12.3.1}"
+  printf 'GRAFANA_VERSION=%s\n' "${GRAFANA_VERSION:-12.3.2}"
   printf 'LOKI_VERSION=%s\n' "${LOKI_VERSION:-3.6.3}"
   printf 'PROMTAIL_VERSION=%s\n' "${PROMTAIL_VERSION:-3.6.3}"
   printf 'JAEGER_VERSION=%s\n' "${JAEGER_VERSION:-2.13.0}"

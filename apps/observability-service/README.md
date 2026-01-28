@@ -1,8 +1,8 @@
 # Observability Service - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 02 de Janeiro de 2026
-**Versão:** 3.2.0 - Critical Pipeline Fixes
+**Data:** 28 de Janeiro de 2026
+**Versão:** 3.2.1 - Grafana 12.3.2 validado
 
 Stack de observabilidade **SEPARADO e INDEPENDENTE** para garantir monitoramento mesmo se o sistema principal travar.
 
@@ -13,7 +13,7 @@ Stack de observabilidade **SEPARADO e INDEPENDENTE** para garantir monitoramento
 | Componente | Porta | Tecnologia | Licença | Função |
 |------------|-------|------------|---------|--------|
 | Prometheus | 9090 | Prometheus 3.8.1 | Apache 2.0 | Coleta de métricas |
-| Grafana | 3000 | Grafana OSS 12.3.1 | AGPL 3.0 | Dashboards e alertas |
+| Grafana | 3000 | Grafana OSS 12.3.2 | AGPL 3.0 | Dashboards e alertas |
 | Jaeger | 16686 | Jaeger 2.13.0 | Apache 2.0 | Distributed tracing |
 | OTel Collector | 4317/4318 | OpenTelemetry Collector 0.142.0 | Apache 2.0 | Instrumentação |
 | Langfuse Web | 3006 | Langfuse 3.140.0 | MIT | Métricas LLM (UI) |

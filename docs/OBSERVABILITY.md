@@ -1,6 +1,6 @@
 # Guia de Observabilidade - Alice Enterprise Platform
 
-**Versão:** 2.6.6  
+**Versão:** 2.6.7  
 **Data:** 28 de Janeiro de 2026  
 **Author:** Fillipe Guerra
 
@@ -43,7 +43,7 @@ A plataforma Alice implementa observabilidade **enterprise-grade** baseada em **
 **Stack de Observabilidade:**
 
 - **Prometheus 3.8.1** - Métricas (**17 jobs**; scrape 15-60s)
-- **Grafana OSS 12.3.1** - Dashboards + Alerting
+- **Grafana OSS 12.3.2** - Dashboards + Alerting
 - **Loki 3.6.3** - Logs centralizados
 - **Jaeger 2.13.0** - Distributed tracing (métricas via telemetry)
 - **Langfuse 3.89** - LLM observability

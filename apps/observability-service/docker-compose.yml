@@ -52,7 +52,7 @@ services:
   # URL única: https://observabilidade.yesyoudeserve.duckdns.org
   # ============================================================================
   grafana:
-    image: grafana/grafana-oss:12.3.1
+    image: grafana/grafana-oss:12.3.2
     container_name: alice-grafana
     restart: unless-stopped
     ports:
