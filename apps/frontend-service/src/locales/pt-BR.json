@@ -1462,6 +1462,7 @@
     },
     "errors": {
       "orderFailed": "Erro ao criar ordem",
+      "stopOrderRequiresSize": "Quantidade é obrigatória para criar ordens stop",
       "stopOrderFailed": "Erro ao criar stop order",
       "cancelFailed": "Erro ao cancelar ordem",
       "syncFailed": "Erro ao sincronizar ordens",

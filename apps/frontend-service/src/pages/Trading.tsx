@@ -958,7 +958,11 @@ export default function Trading() {
 
       if (data.stopLoss || data.takeProfit) {
         if (!hasSize) {
-          throw new Error('Quantidade é obrigatória para criar ordens stop.');
+          stopOrderError = t('trading.errors.stopOrderRequiresSize');
+          return {
+            ...payload,
+            stopOrderError,
+          };
         }
         const stopSide = data.side === 'buy' ? 'sell' : 'buy';
         const stopRes = await apiRequest('POST', '/api/integrations/trading/stop-orders', {
