@@ -233,15 +233,9 @@ CREATE POLICY llm_validations_delete_policy ON trading_llm_validations
     USING (tenant_id = current_setting('app.tenant_id', true)::uuid);
 
 -- =============================================================================
--- Índice para limpeza automática (dados antigos)
+-- Nota sobre limpeza automática (dados antigos)
 -- =============================================================================
-
--- Índice parcial para encontrar indicadores antigos para limpeza
-CREATE INDEX IF NOT EXISTS idx_trading_indicators_cleanup
-    ON trading_technical_indicators(calculated_at)
-    WHERE calculated_at < now() - interval '30 days';
-
--- Comentário sobre retenção
-COMMENT ON INDEX idx_trading_indicators_cleanup IS 
-'Índice para facilitar limpeza de indicadores com mais de 30 dias - job de manutenção deve usar este índice';
+-- IMPORTANTE: não usar índice parcial com now() porque a função não é IMMUTABLE.
+-- O índice idx_trading_indicators_calculated_at já existe e deve ser usado
+-- pelas rotinas de manutenção para filtrar por data.
 
