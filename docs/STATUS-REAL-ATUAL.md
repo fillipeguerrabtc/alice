@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 **Autor:** Fillipe Guerra  
-**Data:** 27 de Janeiro de 2026  
+**Data:** 28 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.4 - ERPNext assets build (bench build --production)
+**Versão:** 10.5 - Frontend Trading build fix (status/ticker/intervalos)
 
 ---
 
@@ -220,6 +220,7 @@ Retenção Arquivo:   30 dias
 - Observability: histogram_quantile protegido contra NaN (filtro de buckets) para evitar DatasourceNoData.
 - Chat: efeito de digitação agora avança 1 caractere por tick e suporta até 400ms.
 - Frontend: correção de build (variável não utilizada em AliceConfig).
+- Frontend Trading: correção de build (statusData antes de uso, ticker via market/ws, intervalOptions no painel técnico).
 - Chat: UX de digitação incremental com "Pensando..." i18n e velocidade configurável imediata.
 - Frontend: formatação numérica e monetária agora respeita o locale do usuário em cards e tabelas.
 - Trading: preços/volume/ordens usam locale do usuário (OrderBook e Candles incluídos).

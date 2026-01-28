@@ -598,6 +598,16 @@ export default function Trading() {
   });
 
   const {
+    data: statusData,
+    isLoading: isLoadingStatus,
+    error: statusError,
+    refetch: refetchStatus,
+  } = useQuery<{ success: boolean; data: TradingStatus }>({
+    queryKey: ['/api/integrations/trading/status'],
+    refetchInterval: 30000, // Atualizar a cada 30 segundos
+  });
+
+  const {
     data: intervalsData,
     error: intervalsError,
   } = useQuery<{
@@ -653,16 +663,6 @@ export default function Trading() {
   const ordersQuery = new URLSearchParams();
   ordersQuery.set('marketType', selectedMarketType);
   const ordersQueryString = ordersQuery.toString();
-
-  const {
-    data: statusData,
-    isLoading: isLoadingStatus,
-    error: statusError,
-    refetch: refetchStatus,
-  } = useQuery<{ success: boolean; data: TradingStatus }>({
-    queryKey: ['/api/integrations/trading/status'],
-    refetchInterval: 30000, // Atualizar a cada 30 segundos
-  });
 
   const {
     data: symbolsData,
@@ -1384,12 +1384,12 @@ export default function Trading() {
     const samplePrice =
       orderBookData?.bids?.[0]?.price ||
       orderBookData?.asks?.[0]?.price ||
-      tickerData?.price ||
-      marketData?.ticker?.price;
+      wsTicker?.price ||
+      market?.ticker?.price;
     if (!samplePrice) return null;
     const [, decimals = ''] = String(samplePrice).split('.');
     return decimals.length;
-  }, [orderBookData, tickerData, marketData]);
+  }, [orderBookData, wsTicker, market]);
   const controlHistory = controlHistoryData?.data || [];
   // `wsStatusData` já é o payload `{ success, data: KucoinWsStatus }`.
   // O accessor extra `.data` fazia `wsStatus` ficar sempre undefined e o badge nunca renderizar.

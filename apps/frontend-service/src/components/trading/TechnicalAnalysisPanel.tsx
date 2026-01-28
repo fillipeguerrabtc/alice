@@ -148,16 +148,22 @@ export interface TechnicalAnalysisResult {
   confidence: number;
 }
 
+export interface IntervalOption {
+  value: string;
+  label: string;
+}
+
 export interface TechnicalAnalysisPanelProps {
   symbol: string;
   defaultInterval?: string;
+  intervalOptions?: IntervalOption[];
 }
 
 // ============================================================================
 // HELPERS
 // ============================================================================
 
-const INTERVALS = [
+const INTERVALS: IntervalOption[] = [
   { value: '1m', label: '1 min' },
   { value: '3m', label: '3 min' },
   { value: '5m', label: '5 min' },
@@ -233,10 +239,13 @@ const formatPrice = (price: number, locale: string) => {
 
 export function TechnicalAnalysisPanel({
   symbol,
-  defaultInterval = '5m',
+  defaultInterval,
+  intervalOptions,
 }: TechnicalAnalysisPanelProps) {
   const { user } = useAuth();
-  const [interval, setInterval] = useState(defaultInterval);
+  const resolvedIntervalOptions = intervalOptions?.length ? intervalOptions : INTERVALS;
+  const resolvedDefaultInterval = defaultInterval ?? resolvedIntervalOptions[0]?.value ?? '5m';
+  const [interval, setInterval] = useState(resolvedDefaultInterval);
   const locale = user?.idioma ?? 'pt-BR';
   const timeZone = user?.timezone ?? TIMEZONE;
 
@@ -312,7 +321,7 @@ export function TechnicalAnalysisPanel({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {INTERVALS.map((i) => (
+                {resolvedIntervalOptions.map((i) => (
                   <SelectItem key={i.value} value={i.value}>
                     {i.label}
                   </SelectItem>
