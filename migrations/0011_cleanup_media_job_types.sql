@@ -13,8 +13,8 @@
 
 -- Passo 1: Deletar jobs com tipos obsoletos (se houver)
 -- Regra 6 CLAUDE.md: Sem workarounds - limpeza completa
-DELETE FROM media_jobs 
-WHERE job_type IN ('tts', 'talking_head', 'lip_sync', 'long_video');
+DELETE FROM media_jobs
+WHERE job_type::text IN ('tts', 'talking_head', 'lip_sync', 'long_video');
 
 -- Passo 2: Criar novo enum com apenas os tipos válidos
 CREATE TYPE media_job_type_new AS ENUM ('image_enhance', 'audio_clean');
