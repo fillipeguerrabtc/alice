@@ -62,6 +62,12 @@ import {
   isWebSocketConfigured as isKucoinWebSocketConfigured,
 } from './kucoinWebSocket.js';
 import { initializeBroadcast, getPublisher, closeBroadcast } from './tradingBroadcast.js';
+import {
+  normalizeTickerData,
+  normalizeOrderBookData,
+  normalizeKlineData,
+  normalizeTradeData,
+} from './tradingTypes.js';
 import { sendKucoinErrorResponse } from './kucoin-error-mapper.js';
 import * as technicalIndicators from './technical-indicators.js';
 
@@ -3841,25 +3847,29 @@ if (kucoinClient.isKucoinConfigured()) {
           const privateTenantId = await resolveKucoinTenantIdForPrivateWs();
 
           publicWs.on('ticker', (data) => {
-            void publisher.publishTicker(data.symbol, data).catch((error) => {
+            const normalized = normalizeTickerData(data);
+            void publisher.publishTicker(data.symbol, normalized).catch((error) => {
               logger.error({ error }, 'Falha ao publicar ticker de trading');
             });
           });
 
-          publicWs.on('orderbook', (data) => {
-            void publisher.publishOrderBook(data.symbol, data).catch((error) => {
+          publicWs.on('orderbook', (data, symbol) => {
+            const normalized = normalizeOrderBookData(data);
+            void publisher.publishOrderBook(data.symbol || symbol, normalized).catch((error) => {
               logger.error({ error }, 'Falha ao publicar orderbook de trading');
             });
           });
 
           publicWs.on('kline', (data) => {
-            void publisher.publishKlines(data.symbol, data).catch((error) => {
+            const normalized = normalizeKlineData(data);
+            void publisher.publishKlines(data.symbol, normalized).catch((error) => {
               logger.error({ error }, 'Falha ao publicar kline de trading');
             });
           });
 
           publicWs.on('trade', (data) => {
-            void publisher.publishTrades(data.symbol, data).catch((error) => {
+            const normalized = normalizeTradeData(data);
+            void publisher.publishTrades(data.symbol, normalized).catch((error) => {
               logger.error({ error }, 'Falha ao publicar trades de trading');
             });
           });
@@ -3927,6 +3937,12 @@ if (kucoinClient.isKucoinConfigured()) {
 
 function respondKucoinNotConfigured(res: Response): void {
   res.status(503).json({ error: 'API KuCoin não configurada' });
+}
+
+function isValidKucoinWsInterval(interval: string): boolean {
+  const normalized = interval.trim();
+  const granularity = kucoinClient.intervalToGranularity(normalized);
+  return kucoinClient.granularityToInterval(granularity) === normalized;
 }
 
 async function resolveTradingSymbolOrRespond(
@@ -4039,6 +4055,165 @@ app.get('/api/integrations/trading/ws/status', requirePermission('integrations:t
     if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao obter status do WebSocket KuCoin');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+const wsSubscriptionSchema = z.object({
+  channel: z.enum(['ticker', 'orderbook', 'klines', 'trades']),
+  symbol: z.string().min(1).max(20),
+  interval: z.string().max(10).optional(),
+  marketType: z.enum(['futures', 'spot', 'margin']),
+  marginMode: z.enum(['cross', 'isolated']).optional(),
+});
+
+// POST /api/integrations/trading/ws/subscribe - Registrar subscription no WS KuCoin
+app.post('/api/integrations/trading/ws/subscribe', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const parsed = wsSubscriptionSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Payload inválido', details: parsed.error.flatten() });
+      return;
+    }
+
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+
+    const { channel, symbol, interval, marketType, marginMode } = parsed.data;
+    if (marketType !== 'futures') {
+      res.status(501).json({ error: 'WebSocket disponível apenas para KuCoin Futures' });
+      return;
+    }
+
+    if (channel === 'klines') {
+      if (!interval) {
+        res.status(400).json({ error: 'Intervalo é obrigatório para klines' });
+        return;
+      }
+      if (!isValidKucoinWsInterval(interval)) {
+        res.status(400).json({ error: `Intervalo WS inválido: ${interval}` });
+        return;
+      }
+    }
+
+    const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
+    const resolvedSymbol = await resolveTradingSymbolOrRespond(res, tradingAuth, symbol, { required: true, marketType, marginMode });
+    if (!resolvedSymbol) return;
+
+    const publicWs = getPublicWebSocketClient();
+    if (!publicWs.isConnected()) {
+      await publicWs.connect(false);
+    }
+
+    if (channel === 'ticker') {
+      publicWs.subscribeTicker(resolvedSymbol);
+    } else if (channel === 'orderbook') {
+      publicWs.subscribeOrderBook(resolvedSymbol, 50);
+    } else if (channel === 'trades') {
+      publicWs.subscribeTrades(resolvedSymbol);
+    } else if (channel === 'klines' && interval) {
+      publicWs.subscribeKlines(resolvedSymbol, interval);
+    }
+
+    res.json({
+      success: true,
+      data: {
+        channel,
+        symbol: resolvedSymbol,
+        interval: channel === 'klines' ? interval : undefined,
+        marketType,
+        marginMode,
+        state: publicWs.getState(),
+      },
+    });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao registrar subscription WS KuCoin');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/ws/unsubscribe - Cancelar subscription no WS KuCoin
+app.post('/api/integrations/trading/ws/unsubscribe', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const parsed = wsSubscriptionSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Payload inválido', details: parsed.error.flatten() });
+      return;
+    }
+
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+
+    const { channel, symbol, interval, marketType, marginMode } = parsed.data;
+    if (marketType !== 'futures') {
+      res.status(501).json({ error: 'WebSocket disponível apenas para KuCoin Futures' });
+      return;
+    }
+
+    if (channel === 'klines') {
+      if (!interval) {
+        res.status(400).json({ error: 'Intervalo é obrigatório para klines' });
+        return;
+      }
+      if (!isValidKucoinWsInterval(interval)) {
+        res.status(400).json({ error: `Intervalo WS inválido: ${interval}` });
+        return;
+      }
+    }
+
+    const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
+    const resolvedSymbol = await resolveTradingSymbolOrRespond(res, tradingAuth, symbol, { required: true, marketType, marginMode });
+    if (!resolvedSymbol) return;
+
+    const publicWs = getPublicWebSocketClient();
+    if (!publicWs.isConnected()) {
+      res.status(409).json({ error: 'WebSocket KuCoin não está conectado' });
+      return;
+    }
+
+    if (channel === 'ticker') {
+      publicWs.unsubscribeTicker(resolvedSymbol);
+    } else if (channel === 'orderbook') {
+      publicWs.unsubscribeOrderBook(resolvedSymbol, 50);
+    } else if (channel === 'trades') {
+      publicWs.unsubscribeTrades(resolvedSymbol);
+    } else if (channel === 'klines' && interval) {
+      publicWs.unsubscribeKlines(resolvedSymbol, interval);
+    }
+
+    res.json({
+      success: true,
+      data: {
+        channel,
+        symbol: resolvedSymbol,
+        interval: channel === 'klines' ? interval : undefined,
+        marketType,
+        marginMode,
+        state: publicWs.getState(),
+      },
+    });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao cancelar subscription WS KuCoin');
     res.status(500).json({ error: errorMessage });
   }
 });

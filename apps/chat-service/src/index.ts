@@ -794,6 +794,7 @@ interface ExtendedWebSocket extends WebSocket {
   tenantId?: string;
   role?: Role;
   clientKey?: string;
+  customRoleId?: string;
   // Trading subscriptions (17/12/2025)
   tradingSubscriptions?: Set<string>;
   // Observability: evitar double-decrement de gauges
@@ -834,6 +835,8 @@ type TradingBroadcastMessageType =
 interface TradingBroadcastMessage {
   type: TradingBroadcastMessageType;
   symbol?: string;
+  marketType?: 'futures' | 'spot' | 'margin';
+  marginMode?: 'cross' | 'isolated';
   tenantId?: string;
   data: unknown;
   timestamp: number;
@@ -852,6 +855,55 @@ function extractTradingSymbol(message: TradingBroadcastMessage): string | null {
   return null;
 }
 
+function extractTradingInterval(message: TradingBroadcastMessage): string | null {
+  if (message.data && typeof message.data === 'object' && 'interval' in message.data) {
+    const value = (message.data as { interval?: unknown }).interval;
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
+function extractTradingMarketType(message: TradingBroadcastMessage): 'futures' | 'spot' | 'margin' | null {
+  if (message.marketType) return message.marketType;
+  if (message.data && typeof message.data === 'object' && 'marketType' in message.data) {
+    const value = (message.data as { marketType?: unknown }).marketType;
+    if (value === 'futures' || value === 'spot' || value === 'margin') {
+      return value;
+    }
+  }
+  return null;
+}
+
+function extractTradingMarginMode(message: TradingBroadcastMessage): 'cross' | 'isolated' | null {
+  if (message.marginMode) return message.marginMode;
+  if (message.data && typeof message.data === 'object' && 'marginMode' in message.data) {
+    const value = (message.data as { marginMode?: unknown }).marginMode;
+    if (value === 'cross' || value === 'isolated') {
+      return value;
+    }
+  }
+  return null;
+}
+
+function buildTradingSubscriptionKey(params: {
+  channel: TradingBroadcastMessageType;
+  symbol: string;
+  interval?: string | null;
+  marketType?: 'futures' | 'spot' | 'margin' | null;
+  marginMode?: 'cross' | 'isolated' | null;
+}): string {
+  const normalizedSymbol = params.symbol.toUpperCase();
+  const marketType = params.marketType ?? 'futures';
+  const marginMode = params.marginMode ?? 'cross';
+  if (params.channel === 'klines') {
+    const interval = params.interval ?? '';
+    return `${params.channel}:${marketType}:${marginMode}:${normalizedSymbol}:${interval}`;
+  }
+  return `${params.channel}:${marketType}:${marginMode}:${normalizedSymbol}`;
+}
+
 function shouldDeliverTradingMessage(
   extWs: ExtendedWebSocket,
   message: TradingBroadcastMessage,
@@ -866,14 +918,29 @@ function shouldDeliverTradingMessage(
   if (!symbol || !extWs.tradingSubscriptions || extWs.tradingSubscriptions.size === 0) {
     return false;
   }
-  return extWs.tradingSubscriptions.has(`${message.type}:${symbol}`);
+  const marketType = extractTradingMarketType(message) ?? 'futures';
+  const marginMode = extractTradingMarginMode(message) ?? 'cross';
+  if (message.type === 'klines') {
+    const interval = extractTradingInterval(message);
+    if (!interval) return false;
+    return extWs.tradingSubscriptions.has(
+      buildTradingSubscriptionKey({ channel: message.type, symbol, interval, marketType, marginMode })
+    );
+  }
+  return extWs.tradingSubscriptions.has(
+    buildTradingSubscriptionKey({ channel: message.type, symbol, marketType, marginMode })
+  );
 }
 
 function broadcastTradingMessage(message: TradingBroadcastMessage): void {
   const symbol = extractTradingSymbol(message);
+  const marketType = extractTradingMarketType(message);
+  const marginMode = extractTradingMarginMode(message);
   const payload = {
     type: `trading:${message.type}`,
     symbol: symbol ?? message.symbol,
+    marketType,
+    marginMode,
     data: message.data,
     timestamp: message.timestamp,
   };
@@ -6139,6 +6206,8 @@ const wsMessageSchema = z.object({
   channel: z.enum(['ticker', 'orderbook', 'klines', 'trades', 'orders', 'positions', 'balance', 'control']).optional(),
   symbol: z.string().max(20).optional(),
   interval: z.string().max(10).optional(),
+  marketType: z.enum(['spot', 'margin', 'futures']).optional(),
+  marginMode: z.enum(['cross', 'isolated']).optional(),
 });
 
 const _wsAgentMessageSchema = z.object({
@@ -10513,6 +10582,8 @@ wss.on('connection', (ws, req) => {
         channel?: string;
         symbol?: string;
         interval?: string;
+        marketType?: 'spot' | 'margin' | 'futures';
+        marginMode?: 'cross' | 'isolated';
       };
 
       // ========================================================================
@@ -10524,6 +10595,9 @@ wss.on('connection', (ws, req) => {
         // Registrar subscription de trading para este cliente
         const tradingChannel = message.channel || 'ticker';
         const symbol = message.symbol?.trim();
+        const interval = message.interval?.trim();
+        const marketType = message.marketType || 'futures';
+        const marginMode = message.marginMode;
         if (!symbol) {
           ws.send(JSON.stringify({
             type: 'trading:error',
@@ -10532,27 +10606,91 @@ wss.on('connection', (ws, req) => {
           }));
           return;
         }
+        if (tradingChannel === 'klines' && !interval) {
+          ws.send(JSON.stringify({
+            type: 'trading:error',
+            error: 'Intervalo é obrigatório para assinatura de klines',
+            channel: tradingChannel,
+            symbol,
+          }));
+          return;
+        }
         
         // Armazenar subscription no extWs para broadcast posterior
         if (!extWs.tradingSubscriptions) {
           extWs.tradingSubscriptions = new Set();
         }
-        extWs.tradingSubscriptions.add(`${tradingChannel}:${symbol}`);
+        const subscriptionKey = buildTradingSubscriptionKey({
+          channel: tradingChannel as TradingBroadcastMessageType,
+          symbol,
+          interval,
+          marketType,
+          marginMode,
+        });
+        extWs.tradingSubscriptions.add(subscriptionKey);
         
         ws.send(JSON.stringify({
           type: 'trading:subscribed',
           channel: tradingChannel,
           symbol,
+          interval,
+          marketType,
+          marginMode,
           timestamp: new Date().toISOString(),
         }));
+
+        if (['ticker', 'orderbook', 'klines', 'trades'].includes(tradingChannel)) {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), CROSS_SERVICE_TIMEOUT);
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          try {
+            if (isInternalAuthEnabled() && userId && tenantId) {
+              const internalHeaders = generateInternalAuthHeaders({
+                userId,
+                tenantId,
+                role: safeUserRole,
+                customRoleId: extWs.customRoleId ?? undefined,
+              });
+              headers['x-internal-signature'] = internalHeaders['x-internal-signature'];
+              headers['x-internal-timestamp'] = internalHeaders['x-internal-timestamp'];
+              headers['x-internal-user-id'] = internalHeaders['x-internal-user-id'];
+              headers['x-internal-role'] = internalHeaders['x-internal-role'];
+              if (internalHeaders['x-internal-tenant-id']) {
+                headers['x-internal-tenant-id'] = internalHeaders['x-internal-tenant-id'];
+              }
+              if (internalHeaders['x-internal-custom-role-id']) {
+                headers['x-internal-custom-role-id'] = internalHeaders['x-internal-custom-role-id'];
+              }
+            }
+            await fetch(`${INTEGRATIONS_SERVICE_URL_FINAL}/api/integrations/trading/ws/subscribe`, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({
+                channel: tradingChannel,
+                symbol,
+                interval,
+                marketType,
+                marginMode,
+              }),
+              signal: controller.signal,
+            });
+          } catch (error) {
+            logger.warn({ error, channel: tradingChannel, symbol }, 'Falha ao sincronizar subscription com integrations-service');
+          } finally {
+            clearTimeout(timeoutId);
+          }
+        }
         
-        logger.debug({ userId, tenantId, channel: tradingChannel, symbol }, 'Cliente inscrito em canal de trading');
+        logger.debug({ userId, tenantId, channel: tradingChannel, symbol, interval, marketType }, 'Cliente inscrito em canal de trading');
         return;
       }
       
       if (message.type === 'trading:unsubscribe') {
         const tradingChannel = message.channel || 'ticker';
         const symbol = message.symbol?.trim();
+        const interval = message.interval?.trim();
+        const marketType = message.marketType || 'futures';
+        const marginMode = message.marginMode;
         if (!symbol) {
           ws.send(JSON.stringify({
             type: 'trading:error',
@@ -10561,18 +10699,79 @@ wss.on('connection', (ws, req) => {
           }));
           return;
         }
+        if (tradingChannel === 'klines' && !interval) {
+          ws.send(JSON.stringify({
+            type: 'trading:error',
+            error: 'Intervalo é obrigatório para cancelar assinatura de klines',
+            channel: tradingChannel,
+            symbol,
+          }));
+          return;
+        }
         
         if (extWs.tradingSubscriptions) {
-          extWs.tradingSubscriptions.delete(`${tradingChannel}:${symbol}`);
+          const subscriptionKey = buildTradingSubscriptionKey({
+            channel: tradingChannel as TradingBroadcastMessageType,
+            symbol,
+            interval,
+            marketType,
+            marginMode,
+          });
+          extWs.tradingSubscriptions.delete(subscriptionKey);
         }
         
         ws.send(JSON.stringify({
           type: 'trading:unsubscribed',
           channel: tradingChannel,
           symbol,
+          interval,
+          marketType,
+          marginMode,
         }));
+
+        if (['ticker', 'orderbook', 'klines', 'trades'].includes(tradingChannel)) {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), CROSS_SERVICE_TIMEOUT);
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          try {
+            if (isInternalAuthEnabled() && userId && tenantId) {
+              const internalHeaders = generateInternalAuthHeaders({
+                userId,
+                tenantId,
+                role: safeUserRole,
+                customRoleId: extWs.customRoleId ?? undefined,
+              });
+              headers['x-internal-signature'] = internalHeaders['x-internal-signature'];
+              headers['x-internal-timestamp'] = internalHeaders['x-internal-timestamp'];
+              headers['x-internal-user-id'] = internalHeaders['x-internal-user-id'];
+              headers['x-internal-role'] = internalHeaders['x-internal-role'];
+              if (internalHeaders['x-internal-tenant-id']) {
+                headers['x-internal-tenant-id'] = internalHeaders['x-internal-tenant-id'];
+              }
+              if (internalHeaders['x-internal-custom-role-id']) {
+                headers['x-internal-custom-role-id'] = internalHeaders['x-internal-custom-role-id'];
+              }
+            }
+            await fetch(`${INTEGRATIONS_SERVICE_URL_FINAL}/api/integrations/trading/ws/unsubscribe`, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({
+                channel: tradingChannel,
+                symbol,
+                interval,
+                marketType,
+                marginMode,
+              }),
+              signal: controller.signal,
+            });
+          } catch (error) {
+            logger.warn({ error, channel: tradingChannel, symbol }, 'Falha ao sincronizar unsubscribe com integrations-service');
+          } finally {
+            clearTimeout(timeoutId);
+          }
+        }
         
-        logger.debug({ userId, tenantId, channel: tradingChannel, symbol }, 'Cliente desinscrito de canal de trading');
+        logger.debug({ userId, tenantId, channel: tradingChannel, symbol, interval, marketType }, 'Cliente desinscrito de canal de trading');
         return;
       }
       

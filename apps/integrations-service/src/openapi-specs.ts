@@ -134,6 +134,69 @@ export const integrationsServicePaths = {
       },
     },
   },
+  '/api/integrations/trading/ws/subscribe': {
+    post: {
+      summary: 'Registrar subscription no WebSocket KuCoin',
+      tags: ['Trading'],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                channel: { type: 'string', enum: ['ticker', 'orderbook', 'klines', 'trades'] },
+                symbol: { type: 'string' },
+                interval: { type: 'string' },
+                marketType: { type: 'string', enum: ['futures', 'spot', 'margin'] },
+                marginMode: { type: 'string', enum: ['cross', 'isolated'] },
+              },
+              required: ['channel', 'symbol', 'marketType'],
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Subscription registrada' },
+        400: { description: 'Payload inválido' },
+        401: { description: 'Não autenticado' },
+        501: { description: 'WebSocket disponível apenas para Futures' },
+        503: { description: 'KuCoin indisponível (breaker/credenciais)' },
+      },
+    },
+  },
+  '/api/integrations/trading/ws/unsubscribe': {
+    post: {
+      summary: 'Cancelar subscription no WebSocket KuCoin',
+      tags: ['Trading'],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                channel: { type: 'string', enum: ['ticker', 'orderbook', 'klines', 'trades'] },
+                symbol: { type: 'string' },
+                interval: { type: 'string' },
+                marketType: { type: 'string', enum: ['futures', 'spot', 'margin'] },
+                marginMode: { type: 'string', enum: ['cross', 'isolated'] },
+              },
+              required: ['channel', 'symbol', 'marketType'],
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Subscription cancelada' },
+        400: { description: 'Payload inválido' },
+        401: { description: 'Não autenticado' },
+        409: { description: 'WebSocket KuCoin não conectado' },
+        501: { description: 'WebSocket disponível apenas para Futures' },
+        503: { description: 'KuCoin indisponível (breaker/credenciais)' },
+      },
+    },
+  },
   '/api/integrations/trading/symbols': {
     get: {
       summary: 'Lista símbolos disponíveis para trading',

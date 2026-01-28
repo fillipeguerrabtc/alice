@@ -46,6 +46,7 @@ export interface OrderBookData {
 
 export interface KlineData {
   symbol: string;
+  interval?: string;
   time: number;
   open: string;
   close: string;
@@ -81,6 +82,9 @@ export interface TradingCommandResult {
   hint?: string;
 }
 
+type MarketType = 'futures' | 'spot' | 'margin';
+type MarginMode = 'cross' | 'isolated';
+
 export interface WebSocketState {
   connected: boolean;
   connecting: boolean;
@@ -92,6 +96,8 @@ export interface UseKucoinWebSocketOptions {
   symbol?: string;
   channels?: ('ticker' | 'orderbook' | 'klines' | 'trades' | 'balance')[];
   interval?: string;
+  marketType?: MarketType;
+  marginMode?: MarginMode;
   autoConnect?: boolean;
   onTicker?: (data: TickerData) => void;
   onOrderBook?: (data: OrderBookData) => void;
@@ -135,6 +141,8 @@ export function useKucoinWebSocket(
     symbol = '',
     channels = ['ticker'],
     interval = '1',
+    marketType = 'futures',
+    marginMode = 'cross',
     autoConnect = true,
     onTicker,
     onOrderBook,
@@ -178,6 +186,22 @@ export function useKucoinWebSocket(
   // O WebSocket órfão continua recebendo dados via handleMessage, corrompendo estado
   const connectionIdRef = useRef(0);
 
+  const buildSubscriptionKey = useCallback((data: {
+    channel: string;
+    symbol: string;
+    interval?: string;
+    marketType?: MarketType;
+    marginMode?: MarginMode;
+  }): string => {
+    const normalizedSymbol = data.symbol.toUpperCase();
+    const resolvedMarketType = data.marketType ?? 'futures';
+    const resolvedMarginMode = data.marginMode ?? 'cross';
+    if (data.channel === 'klines') {
+      return `${data.channel}:${resolvedMarketType}:${resolvedMarginMode}:${normalizedSymbol}:${data.interval ?? ''}`;
+    }
+    return `${data.channel}:${resolvedMarketType}:${resolvedMarginMode}:${normalizedSymbol}`;
+  }, []);
+
   // Get WebSocket URL
   const getWsUrl = useCallback(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -211,42 +235,67 @@ export function useKucoinWebSocket(
           setState(prev => ({ ...prev, lastPing: Date.now() }));
           break;
 
-        case 'trading:subscribed':
-          subscriptionsRef.current.add(`${data.channel}:${data.symbol}`);
+        case 'trading:subscribed': {
+          const key = buildSubscriptionKey({
+            channel: data.channel,
+            symbol: data.symbol,
+            interval: data.interval,
+            marketType: data.marketType,
+            marginMode: data.marginMode,
+          });
+          subscriptionsRef.current.add(key);
           break;
+        }
 
-        case 'trading:unsubscribed':
-          subscriptionsRef.current.delete(`${data.channel}:${data.symbol}`);
+        case 'trading:unsubscribed': {
+          const key = buildSubscriptionKey({
+            channel: data.channel,
+            symbol: data.symbol,
+            interval: data.interval,
+            marketType: data.marketType,
+            marginMode: data.marginMode,
+          });
+          subscriptionsRef.current.delete(key);
           break;
+        }
 
         case 'trading:ticker':
+          if (data.marketType && data.marketType !== marketType) break;
           setTicker(data.data);
           onTicker?.(data.data);
           break;
 
         case 'trading:orderbook':
+          if (data.marketType && data.marketType !== marketType) break;
           setOrderBook(data.data);
           onOrderBook?.(data.data);
           break;
 
-        case 'trading:kline':
+        case 'trading:klines': {
+          if (data.marketType && data.marketType !== marketType) break;
+          if (data.data?.interval && interval && data.data.interval !== interval) {
+            break;
+          }
           setKlines(prev => {
-            const newKlines = [...prev, data.data];
+            const newKlines = [...prev, data.data as KlineData];
             // Manter apenas os últimos MAX_KLINES_CACHE
             if (newKlines.length > MAX_KLINES_CACHE) {
               return newKlines.slice(-MAX_KLINES_CACHE);
             }
             return newKlines;
           });
-          onKline?.(data.data);
+          onKline?.(data.data as KlineData);
           break;
+        }
 
         case 'trading:trades':
+          if (data.marketType && data.marketType !== marketType) break;
           setLastTrade(data.data);
           onTrade?.(data.data);
           break;
 
         case 'trading:balance':
+          if (data.marketType && data.marketType !== marketType) break;
           setBalance(data.data);
           onBalance?.(data.data);
           break;
@@ -266,7 +315,7 @@ export function useKucoinWebSocket(
       // CORREÇÃO AUDITORIA 17/12/2025: Usar frontendLogger ao invés de console.error (Regra 8)
       frontendLogger.error('Erro ao processar mensagem WebSocket', { error: err instanceof Error ? err.message : String(err) });
     }
-  }, [onTicker, onOrderBook, onKline, onTrade, onBalance, onCommandResult, onError]);
+  }, [buildSubscriptionKey, interval, marketType, onTicker, onOrderBook, onKline, onTrade, onBalance, onCommandResult, onError]);
 
   // Connect to WebSocket
   const connect = useCallback(() => {
@@ -325,6 +374,8 @@ export function useKucoinWebSocket(
               channel,
               symbol,
               interval: channel === 'klines' ? interval : undefined,
+              marketType,
+              marginMode,
             }));
           });
         }
@@ -396,7 +447,7 @@ export function useKucoinWebSocket(
         lastPing: null,
       });
     }
-  }, [getWsUrl, handleMessage, clearReconnect, clearPing, channels, symbol, interval, autoConnect]);
+  }, [getWsUrl, handleMessage, clearReconnect, clearPing, channels, symbol, interval, marketType, marginMode, autoConnect]);
 
   // Disconnect from WebSocket
   const disconnect = useCallback(() => {
@@ -425,34 +476,55 @@ export function useKucoinWebSocket(
   }, [clearReconnect, clearPing]);
 
   // Subscribe to a channel
-  const subscribe = useCallback((channel: string, channelSymbol?: string, channelInterval?: string) => {
+  const subscribe = useCallback((
+    channel: string,
+    channelSymbol?: string,
+    channelInterval?: string,
+    channelMarketType?: MarketType,
+    channelMarginMode?: MarginMode
+  ) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       const targetSymbol = channelSymbol || symbol;
       if (!targetSymbol) {
         frontendLogger.warn('Assinatura ignorada - símbolo não definido', { channel });
         return;
       }
+      const resolvedMarketType = channelMarketType ?? marketType;
+      const resolvedMarginMode = channelMarginMode ?? marginMode;
       wsRef.current.send(JSON.stringify({
         type: 'trading:subscribe',
         channel,
         symbol: targetSymbol,
         interval: channelInterval || interval,
+        marketType: resolvedMarketType,
+        marginMode: resolvedMarginMode,
       }));
     }
-  }, [symbol, interval]);
+  }, [symbol, interval, marketType, marginMode]);
 
   // Unsubscribe from a channel
-  const unsubscribe = useCallback((channel: string, channelSymbol?: string) => {
+  const unsubscribe = useCallback((
+    channel: string,
+    channelSymbol?: string,
+    channelInterval?: string,
+    channelMarketType?: MarketType,
+    channelMarginMode?: MarginMode
+  ) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       const targetSymbol = channelSymbol || symbol;
       if (!targetSymbol) return;
+      const resolvedMarketType = channelMarketType ?? marketType;
+      const resolvedMarginMode = channelMarginMode ?? marginMode;
       wsRef.current.send(JSON.stringify({
         type: 'trading:unsubscribe',
         channel,
         symbol: targetSymbol,
+        interval: channelInterval || interval,
+        marketType: resolvedMarketType,
+        marginMode: resolvedMarginMode,
       }));
     }
-  }, [symbol]);
+  }, [symbol, interval, marketType, marginMode]);
 
   // Send trading command
   const sendCommand = useCallback((content: string) => {
@@ -496,19 +568,22 @@ export function useKucoinWebSocket(
       // CORREÇÃO 17/12/2025: Extrair oldSymbol da subscription para enviar unsubscribe correto
       // Bug anterior: unsubscribe(channel) usava o novo símbolo via closure, deixando subscriptions órfãs
       subscriptionsRef.current.forEach(sub => {
-        const [channel, oldSymbol] = sub.split(':');
-        unsubscribe(channel, oldSymbol);
+        const [channel, oldMarketType, oldMarginMode, oldSymbol, oldInterval] = sub.split(':');
+        const intervalValue = channel === 'klines' ? oldInterval : undefined;
+        const marketTypeValue = (oldMarketType as MarketType | undefined) ?? marketType;
+        const marginModeValue = (oldMarginMode as MarginMode | undefined) ?? marginMode;
+        unsubscribe(channel, oldSymbol, intervalValue, marketTypeValue, marginModeValue);
       });
 
       // Subscribe to new channels
       channels.forEach(channel => {
-        subscribe(channel, symbol, channel === 'klines' ? interval : undefined);
+        subscribe(channel, symbol, channel === 'klines' ? interval : undefined, marketType, marginMode);
       });
 
       // Atualizar referência do símbolo
       previousSymbolRef.current = symbol;
     }
-  }, [symbol, state.connected, channels, interval, subscribe, unsubscribe]);
+  }, [symbol, state.connected, channels, interval, marketType, marginMode, subscribe, unsubscribe]);
 
   return {
     state,

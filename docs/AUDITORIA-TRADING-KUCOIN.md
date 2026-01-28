@@ -1,6 +1,6 @@
 # Auditoria Trading KuCoin — Gaps e Mudanças Necessárias
-**Autor:** Fillipe Guerra  
-**Data:** 27 de Janeiro de 2026
+**Author:** Fillipe Guerra  
+**Data:** 28 de Janeiro de 2026
 
 ## Objetivo
 Consolidar gaps e inconsistências entre a documentação oficial da KuCoin (Spot/Futures/Margin/WebSocket) e a implementação atual (backend, agentic e UI), além de listar mudanças necessárias de forma enterprise-grade.
@@ -27,6 +27,7 @@ Consolidar gaps e inconsistências entre a documentação oficial da KuCoin (Spo
 - **Ticker/Orderbook/Trades**: ✅ (`kucoinWebSocket.ts`)
 - **Klines**: ✅ (`kucoinWebSocket.ts`) — **UI ainda usa REST para klines**
 - **Orders/Positions/Balance privados**: ✅ (`kucoinWebSocket.ts`)
+- **Endpoints WS subscribe/unsubscribe**: ✅ (`/api/integrations/trading/ws/subscribe`, `/api/integrations/trading/ws/unsubscribe`)
 - **UI realtime via WS**: ⚠️ **Parcial** (Ticker/Orderbook/Trades via WS; klines permanecem REST; fallback ativo)
 
 ### KuCoin Spot (REST/WS)

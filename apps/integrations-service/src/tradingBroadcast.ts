@@ -23,15 +23,15 @@
 import { createClient, RedisClientType } from 'redis';
 import { createLogger } from '@alice/logger';
 import { TRADING_CHANNELS } from '@alice/shared-utils';
-import {
-  type TickerData,
-  type OrderBookData,
-  type KlineData,
-  type TradeData,
-  type OrderUpdateData,
-  type PositionUpdateData,
-  type BalanceUpdateData,
-} from './kucoinWebSocket.js';
+import type { OrderUpdateData, PositionUpdateData, BalanceUpdateData } from './kucoinWebSocket.js';
+import type {
+  TradingMarketType,
+  TradingMarginMode,
+  NormalizedTickerData,
+  NormalizedOrderBookData,
+  NormalizedKlineData,
+  NormalizedTradeData,
+} from './tradingTypes.js';
 
 const logger = createLogger('trading-broadcast');
 
@@ -63,6 +63,8 @@ export type BroadcastMessageType =
 export interface BroadcastMessage<T = unknown> {
   type: BroadcastMessageType;
   symbol?: string;
+  marketType?: TradingMarketType;
+  marginMode?: TradingMarginMode;
   tenantId?: string;
   data: T;
   timestamp: number;
@@ -163,10 +165,17 @@ class TradingBroadcastPublisher {
   /**
    * Publica update de ticker
    */
-  async publishTicker(symbol: string, data: TickerData): Promise<void> {
+  async publishTicker(
+    symbol: string,
+    data: NormalizedTickerData,
+    marketType?: TradingMarketType,
+    marginMode?: TradingMarginMode
+  ): Promise<void> {
     await this.publish(CHANNELS.TICKER, {
       type: 'ticker',
       symbol,
+      marketType,
+      marginMode,
       data,
       timestamp: Date.now(),
     });
@@ -175,10 +184,17 @@ class TradingBroadcastPublisher {
   /**
    * Publica update de order book
    */
-  async publishOrderBook(symbol: string, data: OrderBookData): Promise<void> {
+  async publishOrderBook(
+    symbol: string,
+    data: NormalizedOrderBookData,
+    marketType?: TradingMarketType,
+    marginMode?: TradingMarginMode
+  ): Promise<void> {
     await this.publish(CHANNELS.ORDERBOOK, {
       type: 'orderbook',
       symbol,
+      marketType,
+      marginMode,
       data,
       timestamp: Date.now(),
     });
@@ -187,10 +203,17 @@ class TradingBroadcastPublisher {
   /**
    * Publica update de klines
    */
-  async publishKlines(symbol: string, data: KlineData): Promise<void> {
+  async publishKlines(
+    symbol: string,
+    data: NormalizedKlineData,
+    marketType?: TradingMarketType,
+    marginMode?: TradingMarginMode
+  ): Promise<void> {
     await this.publish(CHANNELS.KLINES, {
       type: 'klines',
       symbol,
+      marketType,
+      marginMode,
       data,
       timestamp: Date.now(),
     });
@@ -199,10 +222,17 @@ class TradingBroadcastPublisher {
   /**
    * Publica update de trades
    */
-  async publishTrades(symbol: string, data: TradeData): Promise<void> {
+  async publishTrades(
+    symbol: string,
+    data: NormalizedTradeData,
+    marketType?: TradingMarketType,
+    marginMode?: TradingMarginMode
+  ): Promise<void> {
     await this.publish(CHANNELS.TRADES, {
       type: 'trades',
       symbol,
+      marketType,
+      marginMode,
       data,
       timestamp: Date.now(),
     });
@@ -366,28 +396,28 @@ class TradingBroadcastSubscriber {
   /**
    * Atalho para inscrever em ticker
    */
-  async subscribeTicker(callback: MessageCallback<TickerData>): Promise<void> {
+  async subscribeTicker(callback: MessageCallback<NormalizedTickerData>): Promise<void> {
     await this.subscribe(CHANNELS.TICKER, callback);
   }
 
   /**
    * Atalho para inscrever em order book
    */
-  async subscribeOrderBook(callback: MessageCallback<OrderBookData>): Promise<void> {
+  async subscribeOrderBook(callback: MessageCallback<NormalizedOrderBookData>): Promise<void> {
     await this.subscribe(CHANNELS.ORDERBOOK, callback);
   }
 
   /**
    * Atalho para inscrever em klines
    */
-  async subscribeKlines(callback: MessageCallback<KlineData>): Promise<void> {
+  async subscribeKlines(callback: MessageCallback<NormalizedKlineData>): Promise<void> {
     await this.subscribe(CHANNELS.KLINES, callback);
   }
 
   /**
    * Atalho para inscrever em trades
    */
-  async subscribeTrades(callback: MessageCallback<TradeData>): Promise<void> {
+  async subscribeTrades(callback: MessageCallback<NormalizedTradeData>): Promise<void> {
     await this.subscribe(CHANNELS.TRADES, callback);
   }
 

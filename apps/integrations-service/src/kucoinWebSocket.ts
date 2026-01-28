@@ -170,6 +170,7 @@ interface RawOrderBookData {
 /** Dados de candle/kline */
 export interface KlineData {
   symbol: string;
+  interval?: string;
   candles: [
     number,  // timestamp
     string,  // open
@@ -553,7 +554,15 @@ export class KucoinWebSocketClient extends EventEmitter {
 
     // Kline: /contractMarket/limitCandle:{symbol}_{interval}
     if (topic.startsWith('/contractMarket/limitCandle:')) {
-      this.emit('kline', data as KlineData);
+      const rawTopic = topic.split(':')[1] || '';
+      const [symbolFromTopic, intervalFromTopic] = rawTopic.split('_');
+      const payload = data as KlineData;
+      const enriched: KlineData = {
+        ...payload,
+        symbol: payload.symbol || symbolFromTopic,
+        interval: payload.interval || intervalFromTopic,
+      };
+      this.emit('kline', enriched);
       return;
     }
 
@@ -870,6 +879,13 @@ export class KucoinWebSocketClient extends EventEmitter {
    */
   unsubscribeKlines(symbol: string, interval: string): void {
     this.sendUnsubscribe(`/contractMarket/limitCandle:${symbol}_${interval}`);
+  }
+
+  /**
+   * Cancela subscription de trades
+   */
+  unsubscribeTrades(symbol: string): void {
+    this.sendUnsubscribe(`/contractMarket/execution:${symbol}`);
   }
 
   /**
