@@ -16,20 +16,32 @@ BEGIN
     END IF;
 END $$;
 
-ALTER TABLE trading_signals
-    ADD COLUMN IF NOT EXISTS market_type trading_market_type NOT NULL DEFAULT 'futures';
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'trading_signals') THEN
+        ALTER TABLE trading_signals
+            ADD COLUMN IF NOT EXISTS market_type trading_market_type NOT NULL DEFAULT 'futures';
+        CREATE INDEX IF NOT EXISTS idx_trading_signals_market_type
+            ON trading_signals(market_type);
+    END IF;
+END $$;
 
-ALTER TABLE trading_orders
-    ADD COLUMN IF NOT EXISTS market_type trading_market_type NOT NULL DEFAULT 'futures';
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'trading_orders') THEN
+        ALTER TABLE trading_orders
+            ADD COLUMN IF NOT EXISTS market_type trading_market_type NOT NULL DEFAULT 'futures';
+        CREATE INDEX IF NOT EXISTS idx_trading_orders_market_type
+            ON trading_orders(market_type);
+    END IF;
+END $$;
 
-ALTER TABLE trading_positions
-    ADD COLUMN IF NOT EXISTS market_type trading_market_type NOT NULL DEFAULT 'futures';
-
-CREATE INDEX IF NOT EXISTS idx_trading_signals_market_type
-    ON trading_signals(market_type);
-
-CREATE INDEX IF NOT EXISTS idx_trading_orders_market_type
-    ON trading_orders(market_type);
-
-CREATE INDEX IF NOT EXISTS idx_trading_positions_market_type
-    ON trading_positions(market_type);
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'trading_positions') THEN
+        ALTER TABLE trading_positions
+            ADD COLUMN IF NOT EXISTS market_type trading_market_type NOT NULL DEFAULT 'futures';
+        CREATE INDEX IF NOT EXISTS idx_trading_positions_market_type
+            ON trading_positions(market_type);
+    END IF;
+END $$;

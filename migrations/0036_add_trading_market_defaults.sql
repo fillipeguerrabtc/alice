@@ -8,6 +8,11 @@ BEGIN
   END IF;
 END $$;
 
-ALTER TABLE trading_risk_config
-  ADD COLUMN IF NOT EXISTS default_market_type trading_market_type DEFAULT 'futures' NOT NULL,
-  ADD COLUMN IF NOT EXISTS margin_mode trading_margin_mode DEFAULT 'cross' NOT NULL;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'trading_risk_config') THEN
+    ALTER TABLE trading_risk_config
+      ADD COLUMN IF NOT EXISTS default_market_type trading_market_type DEFAULT 'futures' NOT NULL,
+      ADD COLUMN IF NOT EXISTS margin_mode trading_margin_mode DEFAULT 'cross' NOT NULL;
+  END IF;
+END $$;
