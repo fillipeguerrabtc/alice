@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 28 de Janeiro de 2026  
-**Versão:** 11.8 - Healthchecks dos stacks alinhados ao padrão INFRA/ALICE
+**Versão:** 11.9 - Healthchecks condicionados a deploy_executed
 
 ## Visão geral
 
@@ -45,7 +45,7 @@ health-{stack} + rollback-{stack} (se necessário)
 
 ### Healthchecks condicionados ao deploy bem-sucedido
 
-Os jobs de health check rodam **apenas quando o deploy do stack terminou com sucesso** (`needs.deploy-<stack>.result == 'success'`). Isso mantém o comportamento consistente com INFRA/ALICE e evita execução quando o deploy foi pulado.
+Os jobs de health check rodam **apenas quando o deploy do stack foi realmente executado e concluiu com sucesso** (`needs.deploy-<stack>.outputs.deploy_executed == 'true'`). Isso evita falsos “skipped” quando o deploy terminou OK, e também garante pular healthchecks quando o deploy foi pulado.
 
 ### Builds Docker e warning do pnpm (`approve-builds`)
 

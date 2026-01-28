@@ -4472,7 +4472,7 @@ jobs:
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare, deploy-infra, health-infra, drizzle-push, deploy-alice, health-alice, rollback-alice]
     outputs:
-      deploy_executed: ${{ steps.deploy-executed.outputs.deploy_executed }}
+      deploy_executed: ${{ steps.deploy_executed.outputs.deploy_executed }}
     # ORDEM SEQUENCIAL: Espera ALICE terminar (deploy/health/rollback)
     # DEPENDÊNCIA REAL: Apenas health-infra precisa ser success
     # always() permite rodar mesmo se ALICE falhou
@@ -4676,7 +4676,7 @@ jobs:
             echo "══════════════════════════════════════════════════════════════════"
 
       - name: Marcar deploy executado (OBSERVABILITY)
-        id: deploy-executed
+        id: deploy_executed
         if: success()
         shell: bash
         run: |
@@ -5108,7 +5108,7 @@ jobs:
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare, deploy-infra, health-infra, drizzle-push, deploy-observability, health-observability, rollback-observability]
     outputs:
-      deploy_executed: ${{ steps.deploy-executed.outputs.deploy_executed }}
+      deploy_executed: ${{ steps.deploy_executed.outputs.deploy_executed }}
     # ORDEM SEQUENCIAL: Espera OBSERVABILITY terminar (deploy/health/rollback)
     # DEPENDÊNCIA REAL: Apenas health-infra precisa ser success
     # always() permite rodar mesmo se OBSERVABILITY falhou
@@ -5258,7 +5258,7 @@ jobs:
             echo "══════════════════════════════════════════════════════════════════"
 
       - name: Marcar deploy executado (ERPNEXT)
-        id: deploy-executed
+        id: deploy_executed
         if: success()
         shell: bash
         run: |
@@ -5638,7 +5638,7 @@ jobs:
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, prepare, deploy-infra, health-infra, drizzle-push, deploy-erpnext, health-erpnext, rollback-erpnext]
     outputs:
-      deploy_executed: ${{ steps.deploy-executed.outputs.deploy_executed }}
+      deploy_executed: ${{ steps.deploy_executed.outputs.deploy_executed }}
     # ORDEM SEQUENCIAL: Espera ERPNEXT terminar (deploy/health/rollback)
     # DEPENDÊNCIA REAL: Apenas health-infra precisa ser success
     # always() permite rodar mesmo se ERPNEXT falhou
@@ -5776,7 +5776,7 @@ jobs:
             echo "══════════════════════════════════════════════════════════════════"
 
       - name: Marcar deploy executado (BACKUP)
-        id: deploy-executed
+        id: deploy_executed
         if: success()
         shell: bash
         run: |
