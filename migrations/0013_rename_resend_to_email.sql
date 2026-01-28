@@ -28,7 +28,7 @@ WHERE key = 'resend_enabled'
   AND EXISTS (SELECT 1 FROM feature_flags WHERE key = 'email_enabled');
 
 -- Inserir o novo flag se não existir nenhum dos dois (primeiro deploy)
-INSERT INTO feature_flags (key, enabled, description, created_at)
+INSERT INTO feature_flags (key, enabled, description, criado_em)
 SELECT 'email_enabled', false, 'Integração Gmail SMTP (requer configuração)', NOW()
 WHERE NOT EXISTS (SELECT 1 FROM feature_flags WHERE key = 'email_enabled')
   AND NOT EXISTS (SELECT 1 FROM feature_flags WHERE key = 'resend_enabled');
