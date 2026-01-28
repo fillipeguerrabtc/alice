@@ -15,14 +15,14 @@
 -- ============================================================================
 
 -- messages: Query frequente por conversação ordenada por data
--- Otimiza: SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at DESC
+-- Otimiza: SELECT * FROM messages WHERE conversation_id = ? ORDER BY criado_em DESC
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_messages_conversation_created
-ON messages (conversation_id, created_at DESC);
+ON messages (conversation_id, criado_em DESC);
 
 -- conversations: Query frequente por tenant ordenada por último acesso
--- Otimiza: SELECT * FROM conversations WHERE tenant_id = ? ORDER BY updated_at DESC
+-- Otimiza: SELECT * FROM conversations WHERE tenant_id = ? ORDER BY atualizado_em DESC
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_conversations_tenant_updated
-ON conversations (tenant_id, updated_at DESC);
+ON conversations (tenant_id, atualizado_em DESC);
 
 -- ============================================================================
 -- ÍNDICES PARCIAIS PARA FILTROS COMUNS (Trading)
@@ -42,18 +42,18 @@ ON trading_positions (tenant_id, symbol)
 WHERE status = 'open';
 
 -- trading_signals: Índice para sinais recentes por símbolo
--- Otimiza: SELECT * FROM trading_signals WHERE symbol = ? ORDER BY created_at DESC
+-- Otimiza: SELECT * FROM trading_signals WHERE symbol = ? ORDER BY criado_em DESC
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_trading_signals_symbol_created
-ON trading_signals (symbol, created_at DESC);
+ON trading_signals (symbol, criado_em DESC);
 
 -- ============================================================================
 -- ÍNDICES PARA RAG E DOCUMENTOS
 -- ============================================================================
 
 -- documents: Por namespace e data de processamento
--- Otimiza: SELECT * FROM documents WHERE namespace_id = ? AND processado = true ORDER BY updated_at DESC
+-- Otimiza: SELECT * FROM documents WHERE namespace_id = ? AND processado = true ORDER BY atualizado_em DESC
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_documents_namespace_processed
-ON documents (namespace_id, processado, updated_at DESC)
+ON documents (namespace_id, processado, atualizado_em DESC)
 WHERE processado = true;
 
 -- document_chunks: Por documento pai
@@ -66,9 +66,9 @@ ON document_chunks (document_id, chunk_index);
 -- ============================================================================
 
 -- audit_logs: Por tenant e data (queries de compliance)
--- Otimiza: SELECT * FROM audit_logs WHERE tenant_id = ? ORDER BY timestamp DESC
+-- Otimiza: SELECT * FROM audit_logs WHERE tenant_id = ? ORDER BY criado_em DESC
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_audit_logs_tenant_timestamp
-ON audit_logs (tenant_id, timestamp DESC);
+ON audit_logs (tenant_id, criado_em DESC);
 
 -- ============================================================================
 -- COMENTÁRIOS DE DOCUMENTAÇÃO
