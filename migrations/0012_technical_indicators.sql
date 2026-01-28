@@ -144,22 +144,23 @@ COMMENT ON COLUMN trading_technical_indicators.signal_confidence IS
 
 ALTER TABLE trading_technical_indicators ENABLE ROW LEVEL SECURITY;
 
--- Policy para SELECT
+-- Policies (idempotentes)
+DROP POLICY IF EXISTS trading_indicators_select_policy ON trading_technical_indicators;
 CREATE POLICY trading_indicators_select_policy ON trading_technical_indicators
     FOR SELECT
     USING (tenant_id = current_setting('app.tenant_id', true)::uuid);
 
--- Policy para INSERT
+DROP POLICY IF EXISTS trading_indicators_insert_policy ON trading_technical_indicators;
 CREATE POLICY trading_indicators_insert_policy ON trading_technical_indicators
     FOR INSERT
     WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);
 
--- Policy para UPDATE
+DROP POLICY IF EXISTS trading_indicators_update_policy ON trading_technical_indicators;
 CREATE POLICY trading_indicators_update_policy ON trading_technical_indicators
     FOR UPDATE
     USING (tenant_id = current_setting('app.tenant_id', true)::uuid);
 
--- Policy para DELETE
+DROP POLICY IF EXISTS trading_indicators_delete_policy ON trading_technical_indicators;
 CREATE POLICY trading_indicators_delete_policy ON trading_technical_indicators
     FOR DELETE
     USING (tenant_id = current_setting('app.tenant_id', true)::uuid);
@@ -216,18 +217,22 @@ COMMENT ON TABLE trading_llm_validations IS
 -- RLS
 ALTER TABLE trading_llm_validations ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS llm_validations_select_policy ON trading_llm_validations;
 CREATE POLICY llm_validations_select_policy ON trading_llm_validations
     FOR SELECT
     USING (tenant_id = current_setting('app.tenant_id', true)::uuid);
 
+DROP POLICY IF EXISTS llm_validations_insert_policy ON trading_llm_validations;
 CREATE POLICY llm_validations_insert_policy ON trading_llm_validations
     FOR INSERT
     WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);
 
+DROP POLICY IF EXISTS llm_validations_update_policy ON trading_llm_validations;
 CREATE POLICY llm_validations_update_policy ON trading_llm_validations
     FOR UPDATE
     USING (tenant_id = current_setting('app.tenant_id', true)::uuid);
 
+DROP POLICY IF EXISTS llm_validations_delete_policy ON trading_llm_validations;
 CREATE POLICY llm_validations_delete_policy ON trading_llm_validations
     FOR DELETE
     USING (tenant_id = current_setting('app.tenant_id', true)::uuid);
