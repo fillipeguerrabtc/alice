@@ -51,6 +51,8 @@ import { wiseService } from './wiseService.js';
 import { isWiseConfigured, getSandboxStatus, getProfileIdSafe, getWiseCircuitBreakerStatus, validateWiseWebhook, initWiseMetrics } from './wiseClient.js';
 import { initWiseSyncService } from './wiseSyncService.js';
 import * as kucoinClient from './kucoinClient.js';
+import * as kucoinSpotClient from './kucoinSpotClient.js';
+import * as kucoinMarginClient from './kucoinMarginClient.js';
 import * as kucoinService from './kucoinService.js';
 import {
   closeWebSocketClients as closeKucoinWebSocketClients,
@@ -313,7 +315,7 @@ async function refreshTradingMetrics(): Promise<void> {
     tradingPnlUnrealizedUsd.set(Number(unrealizedPnl?.value ?? 0));
     tradingOrdersActive.set(Number(ordersActive?.value ?? 0));
 
-    const symbols = kucoinClient.getAllowedSymbols();
+    const symbols = await kucoinClient.getAllowedSymbols();
     for (const symbol of symbols) {
       const latest = await db.query.tradingTechnicalIndicators.findFirst({
         where: eq(schema.tradingTechnicalIndicators.symbol, symbol),
@@ -392,10 +394,42 @@ const kucoinWsErrorsTotal = new PromCounter({
 });
 
 // Tenant alvo para eventos privados de KuCoin via WS (ordens/posição/balance).
-// Evita vazamento multi-tenant quando há apenas uma integração configurada.
-const KUCOIN_TENANT_ID = process.env.KUCOIN_TENANT_ID?.trim()
-  || process.env.TRADING_TENANT_ID?.trim()
-  || null;
+// Resolução dinâmica via banco para evitar hardcoded e manter multi-tenancy auditável.
+async function resolveKucoinTenantIdForPrivateWs(): Promise<string | null> {
+  const db = getDatabase();
+  const integrations = await db
+    .select()
+    .from(schema.integrations)
+    .where(
+      and(
+        eq(schema.integrations.tipo, 'kucoin'),
+        eq(schema.integrations.ativo, true)
+      )
+    );
+
+  if (integrations.length === 0) {
+    logger.warn('Nenhuma integração KuCoin ativa encontrada para WS privado');
+    return null;
+  }
+
+  if (integrations.length === 1) {
+    return integrations[0]?.tenantId ?? null;
+  }
+
+  const apiKey = process.env.KUCOIN_PRO_API_KEY?.trim();
+  if (apiKey) {
+    const matched = integrations.find((integration) => integration.credenciais?.apiKey === apiKey);
+    if (matched?.tenantId) {
+      return matched.tenantId;
+    }
+  }
+
+  logger.warn(
+    { total: integrations.length },
+    'Múltiplas integrações KuCoin ativas - tenant para WS privado não resolvido'
+  );
+  return null;
+}
 
 function mapKucoinWsStateToNumber(state: KucoinWsState): number {
   switch (state) {
@@ -3775,6 +3809,8 @@ app.get('/api/integrations/twilio/status', (_req: Request, res: Response) => {
 
 // Inicializar métricas do circuit breaker KuCoin
 kucoinClient.initKucoinMetrics(metrics);
+kucoinSpotClient.initKucoinSpotMetrics(metrics);
+kucoinMarginClient.initKucoinMarginMetrics(metrics);
 initWiseMetrics(metrics);
 
 // ============================================================================
@@ -3793,16 +3829,16 @@ initWiseMetrics(metrics);
 // ============================================================================
 if (kucoinClient.isKucoinConfigured()) {
   initializeKucoinWebSocketClients()
-    .then(() => {
+    .then(async () => {
       initializeBroadcast()
-        .then((status) => {
+        .then(async (status) => {
           if (!status.publisher) {
             logger.warn('Broadcast de trading iniciado sem publisher (Redis indisponível)');
           }
           const publisher = getPublisher();
           const publicWs = getPublicWebSocketClient();
           const privateWs = isKucoinWebSocketConfigured() ? getPrivateWebSocketClient() : null;
-          const privateTenantId = KUCOIN_TENANT_ID;
+          const privateTenantId = await resolveKucoinTenantIdForPrivateWs();
 
           publicWs.on('ticker', (data) => {
             void publisher.publishTicker(data.symbol, data).catch((error) => {
@@ -3830,7 +3866,7 @@ if (kucoinClient.isKucoinConfigured()) {
 
           if (privateWs) {
             if (!privateTenantId) {
-              logger.warn('KUCOIN_TENANT_ID/TRADING_TENANT_ID não definido - eventos privados não serão publicados');
+              logger.warn('Tenant KuCoin não resolvido - eventos privados não serão publicados');
             } else {
               privateWs.on('order', (data) => {
                 void publisher.publishOrderUpdate(privateTenantId, data).catch((error) => {
@@ -3858,7 +3894,7 @@ if (kucoinClient.isKucoinConfigured()) {
         });
 
       // Subscrições mínimas (reduz custo/cardi nalidade): default symbol
-      const symbol = kucoinClient.getDefaultSymbol();
+      const symbol = await kucoinClient.getDefaultSymbol();
       const publicWs = getPublicWebSocketClient();
       publicWs.subscribeTicker(symbol);
       publicWs.subscribeOrderBook(symbol, 50);
@@ -3889,22 +3925,30 @@ if (kucoinClient.isKucoinConfigured()) {
     });
 }
 
-function getAllowedKucoinSymbolsMessage(): string {
-  return kucoinClient.getAllowedSymbols().join(', ');
-}
-
 function respondKucoinNotConfigured(res: Response): void {
   res.status(503).json({ error: 'API KuCoin não configurada' });
 }
 
-function assertValidTradingSymbol(res: Response, symbol: string): boolean {
-  if (!kucoinClient.isValidSymbol(symbol)) {
-    res.status(400).json({
-      error: `Símbolo inválido: ${symbol}. Valores permitidos: ${getAllowedKucoinSymbolsMessage()}.`,
-    });
-    return false;
+async function resolveTradingSymbolOrRespond(
+  res: Response,
+  authContext: { tenantId: string; userId: string },
+  symbol?: string,
+  options: { required?: boolean; marketType?: 'futures' | 'spot' | 'margin'; marginMode?: 'cross' | 'isolated' } = {}
+): Promise<string | undefined> {
+  if (options.required && !symbol) {
+    res.status(400).json({ error: 'Símbolo é obrigatório para esta operação.' });
+    return undefined;
   }
-  return true;
+
+  try {
+    return options.required
+      ? await kucoinService.resolveTradingSymbolStrict(authContext, symbol, options.marketType, options.marginMode)
+      : await kucoinService.resolveTradingSymbol(authContext, symbol, options.marketType, options.marginMode);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Símbolo inválido';
+    res.status(400).json({ error: errorMessage });
+    return undefined;
+  }
 }
 
 const KUCOIN_ALLOWED_GRANULARITIES_MINUTES = [
@@ -3920,7 +3964,6 @@ app.get('/api/integrations/trading/status', requirePermission('integrations:trad
     // Trading pode estar configurado (secrets existem) mas usuário não tem tenant associado
     // UI precisa saber se KuCoin está configurado para mostrar mensagem correta
     const isConfigured = kucoinClient.isKucoinConfigured();
-    const isSandbox = kucoinClient.getKucoinSandboxStatus();
     const circuitBreakerStatus = kucoinClient.getKucoinCircuitBreakerStatus();
     
     // Se não tem tenantId, retornar apenas status de configuração (sem dados do tenant)
@@ -3929,7 +3972,6 @@ app.get('/api/integrations/trading/status', requirePermission('integrations:trad
         success: true,
         data: {
           isConfigured,
-          isSandbox,
           circuitBreaker: circuitBreakerStatus,
           riskConfig: null,
           activeSignals: 0,
@@ -3958,49 +4000,149 @@ app.get('/api/integrations/trading/status', requirePermission('integrations:trad
 });
 
 // GET /api/integrations/trading/ws/status - Status do WebSocket KuCoin (public/private)
-app.get('/api/integrations/trading/ws/status', requirePermission('integrations:trading:read'), (_req: Request, res: Response) => {
-  const configured = kucoinClient.isKucoinConfigured();
-  if (!configured) {
+app.get('/api/integrations/trading/ws/status', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const configured = kucoinClient.isKucoinConfigured();
+    if (!configured) {
+      res.json({
+        success: true,
+        data: {
+          configured: false,
+          public: { state: 'disconnected' },
+          private: { enabled: false, state: 'disconnected' },
+        },
+      });
+      return;
+    }
+
+    const publicWs = getPublicWebSocketClient();
+    const privateEnabled = isKucoinWebSocketConfigured();
+    const privateWs = privateEnabled ? getPrivateWebSocketClient() : null;
+
+    const authContext = extractAuthContext(req);
+    const allowedSymbols = await kucoinClient.getAllowedSymbols();
+    const defaultSymbol = authContext?.tenantId && authContext?.userId
+      ? await kucoinService.resolveTradingSymbol({ tenantId: authContext.tenantId, userId: authContext.userId })
+      : await kucoinClient.getDefaultSymbol();
+
     res.json({
       success: true,
       data: {
-        configured: false,
-        public: { state: 'disconnected' },
-        private: { enabled: false, state: 'disconnected' },
+        configured: true,
+        allowedSymbols,
+        defaultSymbol,
+        public: { state: publicWs.getState() },
+        private: { enabled: privateEnabled, state: privateWs?.getState() ?? 'disconnected' },
       },
     });
-    return;
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter status do WebSocket KuCoin');
+    res.status(500).json({ error: errorMessage });
   }
+});
 
-  const publicWs = getPublicWebSocketClient();
-  const privateEnabled = isKucoinWebSocketConfigured();
-  const privateWs = privateEnabled ? getPrivateWebSocketClient() : null;
+// GET /api/integrations/trading/symbols - Lista símbolos disponíveis na KuCoin
+app.get('/api/integrations/trading/symbols', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+    const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
+    const querySchema = z.object({
+      marketType: z.enum(['futures', 'spot', 'margin']).optional(),
+      marginMode: z.enum(['cross', 'isolated']).optional(),
+    });
+    const queryResult = querySchema.safeParse(req.query);
+    if (!queryResult.success) {
+      res.status(400).json({ error: 'Query inválida', details: queryResult.error.flatten() });
+      return;
+    }
 
-  res.json({
-    success: true,
-    data: {
-      configured: true,
-      allowedSymbols: kucoinClient.getAllowedSymbols(),
-      defaultSymbol: kucoinClient.getDefaultSymbol(),
-      public: { state: publicWs.getState() },
-      private: { enabled: privateEnabled, state: privateWs?.getState() ?? 'disconnected' },
-    },
-  });
+    const { marketType, marginMode } = queryResult.data;
+    if (marketType === 'spot' && !kucoinSpotClient.isSpotConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    if (marketType === 'margin' && !kucoinMarginClient.isMarginConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    if (!marketType || marketType === 'futures') {
+      if (!kucoinClient.isKucoinConfigured()) {
+        respondKucoinNotConfigured(res);
+        return;
+      }
+    }
+    const { symbols } = await kucoinService.getTradingSymbols(tradingAuth, marketType, marginMode);
+    const defaultSymbol = await kucoinService.resolveTradingSymbol(
+      tradingAuth,
+      undefined,
+      marketType,
+      marginMode
+    );
+
+    res.json({
+      success: true,
+      data: {
+        symbols,
+        defaultSymbol,
+      },
+    });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao listar símbolos de trading');
+    res.status(500).json({ error: errorMessage });
+  }
 });
 
 // GET /api/integrations/trading/market/:symbol - Dados de mercado
 app.get('/api/integrations/trading/market/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
-    const { symbol } = req.params;
-    
-    if (!kucoinClient.isKucoinConfigured()) {
-      respondKucoinNotConfigured(res);
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
       return;
     }
+    const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
 
-    if (!assertValidTradingSymbol(res, symbol)) return;
+    const { symbol } = req.params;
+    
+    const querySchema = z.object({
+      marketType: z.enum(['futures', 'spot', 'margin']).optional(),
+      marginMode: z.enum(['cross', 'isolated']).optional(),
+    });
+    const queryResult = querySchema.safeParse(req.query);
+    if (!queryResult.success) {
+      res.status(400).json({ error: 'Query inválida', details: queryResult.error.flatten() });
+      return;
+    }
+    const { marketType, marginMode } = queryResult.data;
 
-    const marketData = await kucoinService.getMarketData(symbol);
+    if (marketType && marketType !== 'futures') {
+      res.status(400).json({ error: 'Posições estão disponíveis apenas para mercado Futures.' });
+      return;
+    }
+    if (!marketType || marketType === 'futures') {
+      if (!kucoinClient.isKucoinConfigured()) {
+        respondKucoinNotConfigured(res);
+        return;
+      }
+    }
+
+    const resolvedSymbol = await resolveTradingSymbolOrRespond(
+      res,
+      tradingAuth,
+      symbol,
+      { required: true, marketType, marginMode }
+    );
+    if (!resolvedSymbol) return;
+
+    const marketData = await kucoinService.getMarketData(tradingAuth, resolvedSymbol, marketType, marginMode);
     
     res.json({
       success: true,
@@ -4015,14 +4157,35 @@ app.get('/api/integrations/trading/market/:symbol', requirePermission('integrati
 });
 
 // GET /api/integrations/trading/account - Visão geral da conta KuCoin
-app.get('/api/integrations/trading/account', requirePermission('integrations:trading:read'), async (_req: Request, res: Response) => {
+app.get('/api/integrations/trading/account', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
-    if (!kucoinClient.isKucoinConfigured()) {
+    const querySchema = z.object({
+      marketType: z.enum(['futures', 'spot', 'margin']).optional(),
+      marginMode: z.enum(['cross', 'isolated']).optional(),
+    });
+    const queryResult = querySchema.safeParse(req.query);
+    if (!queryResult.success) {
+      res.status(400).json({ error: 'Query inválida', details: queryResult.error.flatten() });
+      return;
+    }
+    const { marketType, marginMode } = queryResult.data;
+
+    if (marketType === 'spot' && !kucoinSpotClient.isSpotConfigured()) {
       respondKucoinNotConfigured(res);
       return;
     }
+    if (marketType === 'margin' && !kucoinMarginClient.isMarginConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    if (!marketType || marketType === 'futures') {
+      if (!kucoinClient.isKucoinConfigured()) {
+        respondKucoinNotConfigured(res);
+        return;
+      }
+    }
 
-    const account = await kucoinService.getAccountOverview();
+    const account = await kucoinService.getAccountOverview(marketType, marginMode);
     
     res.json({
       success: true,
@@ -4037,14 +4200,42 @@ app.get('/api/integrations/trading/account', requirePermission('integrations:tra
 });
 
 // GET /api/integrations/trading/positions - Posições abertas na KuCoin
-app.get('/api/integrations/trading/positions', requirePermission('integrations:trading:read'), async (_req: Request, res: Response) => {
+app.get('/api/integrations/trading/positions', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
-    if (!kucoinClient.isKucoinConfigured()) {
+    const querySchema = z.object({
+      marketType: z.enum(['futures', 'spot', 'margin']).optional(),
+      marginMode: z.enum(['cross', 'isolated']).optional(),
+    });
+    const queryResult = querySchema.safeParse(req.query);
+    if (!queryResult.success) {
+      res.status(400).json({ error: 'Query inválida', details: queryResult.error.flatten() });
+      return;
+    }
+    const { marketType, marginMode } = queryResult.data;
+
+    if (marketType === 'spot' && !kucoinSpotClient.isSpotConfigured()) {
       respondKucoinNotConfigured(res);
       return;
     }
+    if (marketType === 'margin' && !kucoinMarginClient.isMarginConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    if (!marketType || marketType === 'futures') {
+      if (!kucoinClient.isKucoinConfigured()) {
+        respondKucoinNotConfigured(res);
+        return;
+      }
+    }
 
-    const positions = await kucoinService.getKucoinPositions();
+    if (marketType === 'spot' || marketType === 'margin') {
+      res.status(400).json({
+        error: 'Posições são suportadas apenas para o mercado Futures. Use /account para saldos.',
+      });
+      return;
+    }
+
+    const positions = await kucoinService.getKucoinPositions(marketType, marginMode);
     
     res.json({
       success: true,
@@ -4054,6 +4245,59 @@ app.get('/api/integrations/trading/positions', requirePermission('integrations:t
     if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao obter posições');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// DELETE /api/integrations/trading/positions - Fechar posição (por símbolo ou todas)
+app.delete('/api/integrations/trading/positions', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const closeSchema = z.object({
+      symbol: z.string().optional(),
+      marketType: z.enum(['futures', 'spot', 'margin']).optional(),
+      marginMode: z.enum(['cross', 'isolated']).optional(),
+    }).strict();
+
+    const parsed = closeSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
+      return;
+    }
+
+    const marketType = parsed.data.marketType ?? 'futures';
+    if (marketType !== 'futures') {
+      res.status(400).json({ error: 'Fechamento de posições é suportado apenas em Futures.' });
+      return;
+    }
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+
+    const result = await kucoinService.closePositions(
+      { tenantId: authContext.tenantId, userId: authContext.userId },
+      parsed.data.symbol
+    );
+
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+
+    res.json({
+      success: true,
+      data: result.data,
+    });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao fechar posições');
     res.status(500).json({ error: errorMessage });
   }
 });
@@ -4092,6 +4336,7 @@ app.put('/api/integrations/trading/risk-config', requirePermission('integrations
       res.status(401).json({ error: 'Autenticação necessária' });
       return;
     }
+    const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
 
     // CORREÇÃO 17/12/2025: Schema Zod alinhado com colunas reais do banco
     // Bug: maxDailyOrders e allowedSymbols não existiam no tradingRiskConfig
@@ -4107,6 +4352,9 @@ app.put('/api/integrations/trading/risk-config', requirePermission('integrations
       defaultLeverage: z.number().optional(),
       defaultStopLoss: z.string().optional(),
       defaultTakeProfit: z.string().optional(),
+      defaultSymbol: z.string().optional(),
+      defaultMarketType: z.enum(['futures', 'spot', 'margin']).optional(),
+      marginMode: z.enum(['cross', 'isolated']).optional(),
       // Controles
       tradingEnabled: z.boolean().optional(),
       autoExecuteSignals: z.boolean().optional(),
@@ -4120,6 +4368,16 @@ app.put('/api/integrations/trading/risk-config', requirePermission('integrations
     }
     const validated = validatedResult.data;
 
+    const defaultSymbolParam = validated.defaultSymbol;
+    const resolvedDefaultSymbol = defaultSymbolParam
+      ? await resolveTradingSymbolOrRespond(res, tradingAuth, defaultSymbolParam, {
+          required: true,
+          marketType: validated.defaultMarketType,
+          marginMode: validated.marginMode,
+        })
+      : undefined;
+    if (defaultSymbolParam && !resolvedDefaultSymbol) return;
+
     // CORREÇÃO 18/12/2025: Converter strings para numbers onde necessário
     // Schema Zod usa string para precisão decimal, mas DB usa number
     const configForDb = {
@@ -4129,17 +4387,17 @@ app.put('/api/integrations/trading/risk-config', requirePermission('integrations
       maxLeverage: validated.maxLeverage,
       maxOpenPositions: validated.maxOpenPositions,
       defaultLeverage: validated.defaultLeverage,
+      defaultSymbol: resolvedDefaultSymbol,
       defaultStopLoss: validated.defaultStopLoss ? Number(validated.defaultStopLoss) : undefined,
       defaultTakeProfit: validated.defaultTakeProfit ? Number(validated.defaultTakeProfit) : undefined,
+      defaultMarketType: validated.defaultMarketType,
+      marginMode: validated.marginMode,
       tradingEnabled: validated.tradingEnabled,
       autoExecuteSignals: validated.autoExecuteSignals,
       minConfidenceToExecute: validated.minConfidenceToExecute ? Number(validated.minConfidenceToExecute) : undefined,
     };
 
-    const result = await kucoinService.upsertRiskConfig(
-      { tenantId: authContext.tenantId, userId: authContext.userId },
-      configForDb
-    );
+    const result = await kucoinService.upsertRiskConfig(tradingAuth, configForDb);
 
     if (!result.success) {
       res.status(400).json({ error: result.error });
@@ -4166,7 +4424,7 @@ app.get('/api/integrations/trading/signals', requirePermission('integrations:tra
       res.status(401).json({ error: 'Autenticação necessária' });
       return;
     }
-
+    const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
     const querySchema = z.object({
       limit: z.coerce.number().int().min(1).max(200).optional(),
     });
@@ -4177,10 +4435,7 @@ app.get('/api/integrations/trading/signals', requirePermission('integrations:tra
     }
 
     const limit = queryResult.data.limit ?? 10;
-    const signals = await kucoinService.getActiveSignals(
-      { tenantId: authContext.tenantId, userId: authContext.userId },
-      limit
-    );
+    const signals = await kucoinService.getActiveSignals(tradingAuth, limit);
 
     res.json({
       success: true,
@@ -4202,6 +4457,7 @@ app.post('/api/integrations/trading/signals', requirePermission('integrations:tr
       res.status(401).json({ error: 'Autenticação necessária' });
       return;
     }
+    const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
 
     // CORREÇÃO 18/12/2025: signalType alinhado com enum do banco de dados
     const signalSchema = z.object({
@@ -4219,10 +4475,15 @@ app.post('/api/integrations/trading/signals', requirePermission('integrations:tr
       return;
     }
     const validated = validatedResult.data;
+    const symbolParam = validated.symbol;
+    const resolvedSymbol = symbolParam
+      ? await resolveTradingSymbolOrRespond(res, tradingAuth, symbolParam, { required: true })
+      : undefined;
+    if (symbolParam && !resolvedSymbol) return;
 
     const result = await kucoinService.createSignal(
-      { tenantId: authContext.tenantId, userId: authContext.userId },
-      validated
+      tradingAuth,
+      { ...validated, symbol: resolvedSymbol }
     );
 
     if (!result.success) {
@@ -4295,10 +4556,10 @@ app.get('/api/integrations/trading/orders', requirePermission('integrations:trad
       res.status(401).json({ error: 'Autenticação necessária' });
       return;
     }
-
     const querySchema = z.object({
       status: z.enum(['pending', 'open', 'filled', 'cancelled', 'rejected', 'expired']).optional(),
       limit: z.coerce.number().int().min(1).max(200).optional(),
+      marketType: z.enum(['futures', 'spot', 'margin']).optional(),
     });
     const queryResult = querySchema.safeParse(req.query);
     if (!queryResult.success) {
@@ -4308,10 +4569,11 @@ app.get('/api/integrations/trading/orders', requirePermission('integrations:trad
 
     const status = queryResult.data.status;
     const limit = queryResult.data.limit ?? 50;
+    const marketType = queryResult.data.marketType;
 
     const orders = await kucoinService.getOrders(
       { tenantId: authContext.tenantId, userId: authContext.userId },
-      { status, limit }
+      { status, limit, marketType }
     );
 
     res.json({
@@ -4334,6 +4596,7 @@ app.post('/api/integrations/trading/orders', requirePermission('integrations:tra
       res.status(401).json({ error: 'Autenticação necessária' });
       return;
     }
+    const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
 
     if (!kucoinClient.isKucoinConfigured()) {
       respondKucoinNotConfigured(res);
@@ -4344,9 +4607,12 @@ app.post('/api/integrations/trading/orders', requirePermission('integrations:tra
       symbol: z.string().optional(),
       side: z.enum(['buy', 'sell']),
       orderType: z.enum(['limit', 'market']),
-      size: z.number().int().positive(),
+      size: z.number().positive().optional(),
+      funds: z.number().positive().optional(),
       price: z.number().positive().optional(),
       leverage: z.number().min(1).max(100).optional(),
+      marketType: z.enum(['futures', 'spot', 'margin']).optional(),
+      marginMode: z.enum(['cross', 'isolated']).optional(),
     }).strict();
 
     const orderFromSignalSchema = baseOrderSchema
@@ -4359,6 +4625,35 @@ app.post('/api/integrations/trading/orders', requirePermission('integrations:tra
             path: ['price'],
           });
         }
+        const marketType = data.marketType ?? 'futures';
+        if (marketType === 'futures' && (!data.size || !Number.isInteger(data.size))) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'Quantidade deve ser inteira (contratos) para Futures.',
+            path: ['size'],
+          });
+        }
+        if (marketType !== 'futures' && data.orderType === 'market' && data.side === 'buy' && !data.size && !data.funds) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'Informe size ou funds para ordens market de compra.',
+            path: ['size'],
+          });
+        }
+        if (marketType !== 'futures' && data.orderType === 'limit' && !data.size) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'Quantidade é obrigatória para ordens limit em Spot/Margin.',
+            path: ['size'],
+          });
+        }
+        if (marketType !== 'futures' && data.orderType === 'market' && data.side !== 'buy' && !data.size) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'Quantidade é obrigatória para ordens market de venda em Spot/Margin.',
+            path: ['size'],
+          });
+        }
       });
 
     const manualOrderSchema = baseOrderSchema.superRefine((data, ctx) => {
@@ -4369,6 +4664,35 @@ app.post('/api/integrations/trading/orders', requirePermission('integrations:tra
           path: ['price'],
         });
       }
+      const marketType = data.marketType ?? 'futures';
+      if (marketType === 'futures' && (!data.size || !Number.isInteger(data.size))) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Quantidade deve ser inteira (contratos) para Futures.',
+          path: ['size'],
+        });
+      }
+      if (marketType !== 'futures' && data.orderType === 'market' && data.side === 'buy' && !data.size && !data.funds) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Informe size ou funds para ordens market de compra.',
+          path: ['size'],
+        });
+      }
+      if (marketType !== 'futures' && data.orderType === 'limit' && !data.size) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Quantidade é obrigatória para ordens limit em Spot/Margin.',
+          path: ['size'],
+        });
+      }
+      if (marketType !== 'futures' && data.orderType === 'market' && data.side !== 'buy' && !data.size) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Quantidade é obrigatória para ordens market de venda em Spot/Margin.',
+          path: ['size'],
+        });
+      }
     });
 
     const parsed = z.union([orderFromSignalSchema, manualOrderSchema]).safeParse(req.body);
@@ -4377,16 +4701,18 @@ app.post('/api/integrations/trading/orders', requirePermission('integrations:tra
       return;
     }
 
+    const symbolParam = parsed.data.symbol;
+    const marketType = parsed.data.marketType;
+    const marginMode = parsed.data.marginMode;
+    const resolvedSymbol = symbolParam
+      ? await resolveTradingSymbolOrRespond(res, tradingAuth, symbolParam, { required: true, marketType, marginMode })
+      : undefined;
+    if (symbolParam && !resolvedSymbol) return;
+
     const result =
       'signalId' in parsed.data
-        ? await kucoinService.createOrderFromSignal(
-            { tenantId: authContext.tenantId, userId: authContext.userId },
-            parsed.data
-          )
-        : await kucoinService.createManualOrder(
-            { tenantId: authContext.tenantId, userId: authContext.userId },
-            parsed.data
-          );
+        ? await kucoinService.createOrderFromSignal(tradingAuth, { ...parsed.data, symbol: resolvedSymbol })
+        : await kucoinService.createManualOrder(tradingAuth, { ...parsed.data, symbol: resolvedSymbol });
 
     if (!result.success) {
       res.status(400).json({ error: result.error });
@@ -4495,27 +4821,26 @@ app.post('/api/integrations/trading/stop-orders', requirePermission('integration
       res.status(401).json({ error: 'Autenticação necessária' });
       return;
     }
-
-    if (!kucoinClient.isKucoinConfigured()) {
-      respondKucoinNotConfigured(res);
-      return;
-    }
+    const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
 
     const stopOrderSchema = z.object({
       symbol: z.string().optional(),
       side: z.enum(['buy', 'sell']),
-      size: z.number().int().positive(),
+      size: z.number().positive(),
       stopLoss: z.number().positive().optional(),
       takeProfit: z.number().positive().optional(),
       leverage: z.number().int().min(1).max(100).optional(),
       orderType: z.enum(['limit', 'market']).optional(),
       price: z.number().positive().optional(),
       stopPriceType: z.enum(['TP', 'MP']).optional(),
+      marketType: z.enum(['futures', 'spot', 'margin']).optional(),
+      marginMode: z.enum(['cross', 'isolated']).optional(),
     })
       .refine((data) => data.stopLoss || data.takeProfit, {
         message: 'Pelo menos stopLoss ou takeProfit deve ser definido',
       })
       .superRefine((data, ctx) => {
+        const marketType = data.marketType ?? 'futures';
         if (data.orderType === 'limit' && data.price === undefined) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
@@ -4530,6 +4855,13 @@ app.post('/api/integrations/trading/stop-orders', requirePermission('integration
             path: ['stopPriceType'],
           });
         }
+        if (marketType === 'futures' && !Number.isInteger(data.size)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'Quantidade deve ser inteira (contratos) para Futures.',
+            path: ['size'],
+          });
+        }
       });
 
     const parsed = stopOrderSchema.safeParse(req.body);
@@ -4538,12 +4870,29 @@ app.post('/api/integrations/trading/stop-orders', requirePermission('integration
       return;
     }
 
-    if (parsed.data.symbol && !assertValidTradingSymbol(res, parsed.data.symbol)) return;
+    const marketType = parsed.data.marketType;
+    const marginMode = parsed.data.marginMode;
+    if (marketType === 'spot' && !kucoinSpotClient.isSpotConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    if (marketType === 'margin' && !kucoinMarginClient.isMarginConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    if (!marketType || marketType === 'futures') {
+      if (!kucoinClient.isKucoinConfigured()) {
+        respondKucoinNotConfigured(res);
+        return;
+      }
+    }
 
-    const result = await kucoinService.createStopOrder(
-      { tenantId: authContext.tenantId, userId: authContext.userId },
-      parsed.data
-    );
+    const resolvedSymbol = parsed.data.symbol
+      ? await resolveTradingSymbolOrRespond(res, tradingAuth, parsed.data.symbol, { required: true, marketType, marginMode })
+      : await kucoinService.resolveTradingSymbol(tradingAuth, undefined, marketType, marginMode);
+    if (!resolvedSymbol) return;
+
+    const result = await kucoinService.createStopOrder(tradingAuth, { ...parsed.data, symbol: resolvedSymbol });
 
     if (!result.success) {
       res.status(400).json({ error: result.error });
@@ -4570,19 +4919,41 @@ app.get('/api/integrations/trading/stop-orders', requirePermission('integrations
       res.status(401).json({ error: 'Autenticação necessária' });
       return;
     }
+    const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
 
-    if (!kucoinClient.isKucoinConfigured()) {
-      respondKucoinNotConfigured(res);
+    const querySchema = z.object({
+      symbol: z.string().optional(),
+      marketType: z.enum(['futures', 'spot', 'margin']).optional(),
+      marginMode: z.enum(['cross', 'isolated']).optional(),
+    });
+    const queryResult = querySchema.safeParse(req.query);
+    if (!queryResult.success) {
+      res.status(400).json({ error: 'Query inválida', details: queryResult.error.flatten() });
       return;
     }
 
-    const symbol = req.query.symbol as string | undefined;
-    if (symbol && !assertValidTradingSymbol(res, symbol)) return;
+    const { symbol: symbolParam, marketType, marginMode } = queryResult.data;
+    if (marketType === 'spot' && !kucoinSpotClient.isSpotConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    if (marketType === 'margin' && !kucoinMarginClient.isMarginConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    if (!marketType || marketType === 'futures') {
+      if (!kucoinClient.isKucoinConfigured()) {
+        respondKucoinNotConfigured(res);
+        return;
+      }
+    }
 
-    const result = await kucoinService.getOpenStopOrders(
-      { tenantId: authContext.tenantId, userId: authContext.userId },
-      symbol
-    );
+    const resolvedSymbol = symbolParam
+      ? await resolveTradingSymbolOrRespond(res, tradingAuth, symbolParam, { required: true, marketType, marginMode })
+      : await kucoinService.resolveTradingSymbol(tradingAuth, undefined, marketType, marginMode);
+    if (!resolvedSymbol) return;
+
+    const result = await kucoinService.getOpenStopOrders(tradingAuth, resolvedSymbol, marketType, marginMode);
 
     if (!result.success) {
       res.status(400).json({ error: result.error });
@@ -4610,11 +4981,6 @@ app.delete('/api/integrations/trading/stop-orders/:id', requirePermission('integ
       return;
     }
 
-    if (!kucoinClient.isKucoinConfigured()) {
-      respondKucoinNotConfigured(res);
-      return;
-    }
-
     const orderIdSchema = z.object({ id: z.string().min(1) });
     const paramResult = orderIdSchema.safeParse(req.params);
     if (!paramResult.success) {
@@ -4622,9 +4988,36 @@ app.delete('/api/integrations/trading/stop-orders/:id', requirePermission('integ
       return;
     }
 
+    const querySchema = z.object({
+      marketType: z.enum(['futures', 'spot', 'margin']).optional(),
+      marginMode: z.enum(['cross', 'isolated']).optional(),
+    });
+    const queryResult = querySchema.safeParse(req.query);
+    if (!queryResult.success) {
+      res.status(400).json({ error: 'Query inválida', details: queryResult.error.flatten() });
+      return;
+    }
+    const { marketType, marginMode } = queryResult.data;
+    if (marketType === 'spot' && !kucoinSpotClient.isSpotConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    if (marketType === 'margin' && !kucoinMarginClient.isMarginConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    if (!marketType || marketType === 'futures') {
+      if (!kucoinClient.isKucoinConfigured()) {
+        respondKucoinNotConfigured(res);
+        return;
+      }
+    }
+
     const result = await kucoinService.cancelStopOrder(
       { tenantId: authContext.tenantId, userId: authContext.userId },
-      paramResult.data.id
+      paramResult.data.id,
+      marketType,
+      marginMode
     );
 
     if (!result.success) {
@@ -4652,19 +5045,21 @@ app.delete('/api/integrations/trading/stop-orders/:id', requirePermission('integ
 // GET /api/integrations/trading/klines/:symbol - Dados de candles
 app.get('/api/integrations/trading/klines/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
-    const { symbol } = req.params;
-
-    if (!kucoinClient.isKucoinConfigured()) {
-      respondKucoinNotConfigured(res);
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
       return;
     }
+    const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
 
-    if (!assertValidTradingSymbol(res, symbol)) return;
+    const { symbol } = req.params;
 
     const querySchema = z.object({
       granularity: z.coerce.number().int().optional(),
       from: z.coerce.number().int().optional(),
       to: z.coerce.number().int().optional(),
+      marketType: z.enum(['futures', 'spot', 'margin']).optional(),
+      marginMode: z.enum(['cross', 'isolated']).optional(),
     }).superRefine((data, ctx) => {
       const granularity = data.granularity ?? 5;
       if (!KUCOIN_ALLOWED_GRANULARITIES_MINUTES.includes(granularity as (typeof KUCOIN_ALLOWED_GRANULARITIES_MINUTES)[number])) {
@@ -4703,13 +5098,40 @@ app.get('/api/integrations/trading/klines/:symbol', requirePermission('integrati
     const granularity = queryResult.data.granularity ?? 5;
     const from = queryResult.data.from;
     const to = queryResult.data.to;
+    const marketType = queryResult.data.marketType;
+    const marginMode = queryResult.data.marginMode;
 
-    const klines = await kucoinClient.getKlines(symbol, granularity, from, to);
+    if (marketType === 'spot' && !kucoinSpotClient.isSpotConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    if (marketType === 'margin' && !kucoinMarginClient.isMarginConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    if (!marketType || marketType === 'futures') {
+      if (!kucoinClient.isKucoinConfigured()) {
+        respondKucoinNotConfigured(res);
+        return;
+      }
+    }
+
+    const resolvedSymbol = await resolveTradingSymbolOrRespond(res, tradingAuth, symbol, { required: true, marketType, marginMode });
+    if (!resolvedSymbol) return;
+
+    const klines = marketType === 'spot' || marketType === 'margin'
+      ? await kucoinSpotClient.getSpotKlines(
+          resolvedSymbol,
+          `${granularity}min`,
+          from ? Math.floor(from / 1000) : undefined,
+          to ? Math.floor(to / 1000) : undefined
+        )
+      : await kucoinClient.getKlines(resolvedSymbol, granularity, from, to);
 
     res.json({
       success: true,
       data: klines,
-      symbol,
+      symbol: resolvedSymbol,
       granularity,
       interval: kucoinClient.granularityToInterval(granularity),
     });
@@ -4724,17 +5146,19 @@ app.get('/api/integrations/trading/klines/:symbol', requirePermission('integrati
 // GET /api/integrations/trading/orderbook/:symbol - Order Book
 app.get('/api/integrations/trading/orderbook/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
-    const { symbol } = req.params;
-
-    if (!kucoinClient.isKucoinConfigured()) {
-      respondKucoinNotConfigured(res);
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
       return;
     }
+    const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
 
-    if (!assertValidTradingSymbol(res, symbol)) return;
+    const { symbol } = req.params;
 
     const querySchema = z.object({
       depth: z.coerce.number().int().optional(),
+      marketType: z.enum(['futures', 'spot', 'margin']).optional(),
+      marginMode: z.enum(['cross', 'isolated']).optional(),
     }).superRefine((data, ctx) => {
       const depth = data.depth ?? 20;
       if (depth !== 20 && depth !== 100) {
@@ -4753,12 +5177,35 @@ app.get('/api/integrations/trading/orderbook/:symbol', requirePermission('integr
     }
 
     const depth = (queryResult.data.depth ?? 20) as 20 | 100;
-    const orderbook = await kucoinClient.getOrderBook(symbol, depth);
+    const marketType = queryResult.data.marketType;
+    const marginMode = queryResult.data.marginMode;
+
+    if (marketType === 'spot' && !kucoinSpotClient.isSpotConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    if (marketType === 'margin' && !kucoinMarginClient.isMarginConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    if (!marketType || marketType === 'futures') {
+      if (!kucoinClient.isKucoinConfigured()) {
+        respondKucoinNotConfigured(res);
+        return;
+      }
+    }
+
+    const resolvedSymbol = await resolveTradingSymbolOrRespond(res, tradingAuth, symbol, { required: true, marketType, marginMode });
+    if (!resolvedSymbol) return;
+
+    const orderbook = marketType === 'spot' || marketType === 'margin'
+      ? await kucoinSpotClient.getSpotOrderBook(resolvedSymbol)
+      : await kucoinClient.getOrderBook(resolvedSymbol, depth);
 
     res.json({
       success: true,
       data: orderbook,
-      symbol,
+      symbol: resolvedSymbol,
       depth,
     });
   } catch (error) {
@@ -4772,6 +5219,13 @@ app.get('/api/integrations/trading/orderbook/:symbol', requirePermission('integr
 // GET /api/integrations/trading/funding-rate/:symbol - Funding Rate
 app.get('/api/integrations/trading/funding-rate/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+    const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
+
     const { symbol } = req.params;
 
     if (!kucoinClient.isKucoinConfigured()) {
@@ -4779,9 +5233,10 @@ app.get('/api/integrations/trading/funding-rate/:symbol', requirePermission('int
       return;
     }
 
-    if (!assertValidTradingSymbol(res, symbol)) return;
+    const resolvedSymbol = await resolveTradingSymbolOrRespond(res, tradingAuth, symbol, { required: true });
+    if (!resolvedSymbol) return;
 
-    const fundingRate = await kucoinClient.getCurrentFundingRate(symbol);
+    const fundingRate = await kucoinClient.getCurrentFundingRate(resolvedSymbol);
 
     res.json({
       success: true,
@@ -4798,6 +5253,13 @@ app.get('/api/integrations/trading/funding-rate/:symbol', requirePermission('int
 // GET /api/integrations/trading/mark-price/:symbol - Mark Price
 app.get('/api/integrations/trading/mark-price/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+    const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
+
     const { symbol } = req.params;
 
     if (!kucoinClient.isKucoinConfigured()) {
@@ -4805,9 +5267,10 @@ app.get('/api/integrations/trading/mark-price/:symbol', requirePermission('integ
       return;
     }
 
-    if (!assertValidTradingSymbol(res, symbol)) return;
+    const resolvedSymbol = await resolveTradingSymbolOrRespond(res, tradingAuth, symbol, { required: true });
+    if (!resolvedSymbol) return;
 
-    const markPrice = await kucoinClient.getMarkPrice(symbol);
+    const markPrice = await kucoinClient.getMarkPrice(resolvedSymbol);
 
     res.json({
       success: true,
@@ -4824,6 +5287,13 @@ app.get('/api/integrations/trading/mark-price/:symbol', requirePermission('integ
 // GET /api/integrations/trading/trades/:symbol - Histórico de Trades
 app.get('/api/integrations/trading/trades/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+    const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
+
     const { symbol } = req.params;
 
     if (!kucoinClient.isKucoinConfigured()) {
@@ -4831,14 +5301,15 @@ app.get('/api/integrations/trading/trades/:symbol', requirePermission('integrati
       return;
     }
 
-    if (!assertValidTradingSymbol(res, symbol)) return;
+    const resolvedSymbol = await resolveTradingSymbolOrRespond(res, tradingAuth, symbol, { required: true });
+    if (!resolvedSymbol) return;
 
-    const trades = await kucoinClient.getTradeHistory(symbol);
+    const trades = await kucoinClient.getTradeHistory(resolvedSymbol);
 
     res.json({
       success: true,
       data: trades,
-      symbol,
+      symbol: resolvedSymbol,
     });
   } catch (error) {
     if (sendKucoinErrorResponse(res, error)) return;
@@ -4851,6 +5322,13 @@ app.get('/api/integrations/trading/trades/:symbol', requirePermission('integrati
 // GET /api/integrations/trading/orders/history - Histórico de Ordens
 app.get('/api/integrations/trading/orders/history', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+    const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
+
     if (!kucoinClient.isKucoinConfigured()) {
       respondKucoinNotConfigured(res);
       return;
@@ -4867,13 +5345,16 @@ app.get('/api/integrations/trading/orders/history', requirePermission('integrati
       return;
     }
 
-    const symbol = queryResult.data.symbol;
-    if (symbol && !assertValidTradingSymbol(res, symbol)) return;
+    const symbolParam = queryResult.data.symbol;
+    const resolvedSymbol = symbolParam
+      ? await resolveTradingSymbolOrRespond(res, tradingAuth, symbolParam, { required: true })
+      : undefined;
+    if (symbolParam && !resolvedSymbol) return;
 
     const pageSize = queryResult.data.pageSize ?? 50;
     const currentPage = queryResult.data.currentPage ?? 1;
 
-    const history = await kucoinClient.getOrderHistory(symbol, pageSize, currentPage);
+    const history = await kucoinClient.getOrderHistory(resolvedSymbol, pageSize, currentPage);
 
     res.json({
       success: true,
@@ -4955,9 +5436,29 @@ app.post('/api/integrations/trading/control', requirePermission('integrations:tr
 
     // Validar body da requisição
     const controlSchema = z.object({
-      mode: z.enum(['alice', 'manual']),
+      mode: z.enum(['alice', 'manual']).optional(),
+      action: z.enum(['takeover', 'handback']).optional(),
       reason: z.string().max(500).optional(),
       source: z.string().max(50).optional(),
+    }).superRefine((data, ctx) => {
+      if (!data.mode && !data.action) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'mode ou action é obrigatório',
+          path: ['mode'],
+        });
+        return;
+      }
+      if (data.mode && data.action) {
+        const expectedMode = data.action === 'takeover' ? 'manual' : 'alice';
+        if (data.mode !== expectedMode) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `mode e action conflitantes. Para action=${data.action}, mode deve ser ${expectedMode}.`,
+            path: ['action'],
+          });
+        }
+      }
     });
 
     const parsed = controlSchema.safeParse(req.body);
@@ -4969,7 +5470,11 @@ app.post('/api/integrations/trading/control', requirePermission('integrations:tr
       return;
     }
 
-    const { mode, reason, source } = parsed.data;
+    const requestedMode = parsed.data.mode
+      ?? (parsed.data.action === 'takeover' ? 'manual' : 'alice');
+    const action = parsed.data.action
+      ?? (requestedMode === 'manual' ? 'takeover' : 'handback');
+    const { reason, source } = parsed.data;
     const db = getDatabase();
 
     // Buscar configuração atual de risco para determinar modo anterior
@@ -4988,13 +5493,14 @@ app.post('/api/integrations/trading/control', requirePermission('integrations:tr
     const previousMode = currentConfig.autoExecuteSignals ? 'alice' : 'manual';
 
     // Se já está no modo solicitado, retornar sem alteração
-    if (previousMode === mode) {
+    if (previousMode === requestedMode) {
       res.json({
         success: true,
         data: {
           previousMode,
-          newMode: mode,
-          message: `Trading já está em modo ${mode}`,
+          newMode: requestedMode,
+          action,
+          message: `Trading já está em modo ${requestedMode}`,
           changed: false,
         },
       });
@@ -5005,7 +5511,7 @@ app.post('/api/integrations/trading/control', requirePermission('integrations:tr
     await db
       .update(schema.tradingRiskConfig)
       .set({
-        autoExecuteSignals: mode === 'alice',
+        autoExecuteSignals: requestedMode === 'alice',
         atualizadoEm: new Date(),
       })
       .where(eq(schema.tradingRiskConfig.tenantId, authContext.tenantId));
@@ -5016,9 +5522,9 @@ app.post('/api/integrations/trading/control', requirePermission('integrations:tr
       .values({
         tenantId: authContext.tenantId,
         previousMode,
-        newMode: mode,
+        newMode: requestedMode,
         changedBy: authContext.userId,
-        reason: reason || (mode === 'alice' ? 'Controle devolvido para Alice' : 'Takeover manual solicitado'),
+        reason: reason || (requestedMode === 'alice' ? 'Controle devolvido para Alice' : 'Takeover manual solicitado'),
         metadata: {
           source: source || 'api',
           timestamp: new Date().toISOString(),
@@ -5032,17 +5538,39 @@ app.post('/api/integrations/trading/control', requirePermission('integrations:tr
       tenantId: authContext.tenantId,
       userId: authContext.userId,
       previousMode,
-      newMode: mode,
+      newMode: requestedMode,
       reason,
       historyId: historyEntry?.id,
     }, 'Modo de controle de trading alterado');
+
+    try {
+      const publisher = getPublisher();
+      if (publisher.isPublisherConnected()) {
+        await publisher.publishControlChange({
+          action,
+          tenantId: authContext.tenantId,
+          userId: authContext.userId,
+          previousMode,
+          newMode: requestedMode,
+          reason,
+        });
+      } else {
+        logger.warn('Redis publisher não conectado - broadcast de controle não enviado');
+      }
+    } catch (broadcastError) {
+      logger.warn(
+        { error: broadcastError instanceof Error ? broadcastError.message : 'Erro desconhecido' },
+        'Falha ao publicar broadcast de controle'
+      );
+    }
 
     res.json({
       success: true,
       data: {
         previousMode,
-        newMode: mode,
-        message: mode === 'alice' 
+        newMode: requestedMode,
+        action,
+        message: requestedMode === 'alice' 
           ? 'Controle devolvido para Alice com sucesso'
           : 'Controle manual assumido com sucesso',
         changed: true,
@@ -5066,10 +5594,11 @@ app.post('/api/integrations/trading/control', requirePermission('integrations:tr
 app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
     const authContext = extractAuthContext(req);
-    if (!authContext?.tenantId) {
+    if (!authContext?.tenantId || !authContext?.userId) {
       res.status(401).json({ error: 'Autenticação necessária' });
       return;
     }
+    const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
 
     const { symbol } = req.params;
     const interval = (req.query.interval as string) || '5m';
@@ -5079,7 +5608,8 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
       return;
     }
 
-    if (!assertValidTradingSymbol(res, symbol)) return;
+    const resolvedSymbol = await resolveTradingSymbolOrRespond(res, tradingAuth, symbol, { required: true });
+    if (!resolvedSymbol) return;
     
     // Mapear intervalo para granularity (minutos)
     const intervalToGranularity: Record<string, number> = {
@@ -5100,7 +5630,7 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
     // Obter 250 candles para ter dados suficientes para todos os indicadores
     const now = Date.now();
     const from = now - (granularity * 60 * 1000 * 250);
-    const klinesRaw = await kucoinClient.getKlines(symbol, granularity, from, now);
+    const klinesRaw = await kucoinClient.getKlines(resolvedSymbol, granularity, from, now);
 
     if (klinesRaw.length < 200) {
       res.status(400).json({ 
@@ -5121,7 +5651,7 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
     }));
 
     // Calcular análise técnica completa
-    const analysis = technicalIndicators.calculateFullAnalysis(candles, symbol, interval);
+    const analysis = technicalIndicators.calculateFullAnalysis(candles, resolvedSymbol, interval);
 
     // Persistir análise no banco de dados
     const db = getDatabase();
@@ -5129,7 +5659,7 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
       .insert(schema.tradingTechnicalIndicators)
       .values({
         tenantId: authContext.tenantId,
-        symbol,
+        symbol: resolvedSymbol,
         // BUG FIX 21/12/2025: Corrigido typo 'as string' e adicionada validação de tipo
         interval: validatedInterval,
         candleTimestamp: new Date(candles[candles.length - 1].timestamp),
@@ -5213,7 +5743,7 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
 
     logger.info({
       tenantId: authContext.tenantId,
-      symbol,
+      symbol: resolvedSymbol,
       interval,
       overallSignal: analysis.overallSignal,
       confidence: analysis.confidence,
@@ -5238,12 +5768,17 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
 app.get('/api/integrations/trading/analysis/history', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
     const authContext = extractAuthContext(req);
-    if (!authContext?.tenantId) {
+    if (!authContext?.tenantId || !authContext?.userId) {
       res.status(401).json({ error: 'Autenticação necessária' });
       return;
     }
+    const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
 
-    const symbol = req.query.symbol as string || 'XBTUSDTM';
+    const symbolParam = req.query.symbol as string | undefined;
+    const resolvedSymbol = symbolParam
+      ? await resolveTradingSymbolOrRespond(res, tradingAuth, symbolParam, { required: true })
+      : await kucoinService.resolveTradingSymbol(tradingAuth);
+    if (!resolvedSymbol) return;
     const intervalParam = req.query.interval as string || '5m';
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
 
@@ -5265,7 +5800,7 @@ app.get('/api/integrations/trading/analysis/history', requirePermission('integra
       .where(
         and(
           eq(schema.tradingTechnicalIndicators.tenantId, authContext.tenantId),
-          eq(schema.tradingTechnicalIndicators.symbol, symbol),
+          eq(schema.tradingTechnicalIndicators.symbol, resolvedSymbol),
           eq(schema.tradingTechnicalIndicators.interval, interval)
         )
       )
@@ -5276,6 +5811,7 @@ app.get('/api/integrations/trading/analysis/history', requirePermission('integra
       success: true,
       data: history,
       count: history.length,
+      symbol: resolvedSymbol,
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';

@@ -1246,8 +1246,8 @@
     "apiUnavailableDesc": "Status data is not available. Use the quick access links to access the tools directly."
   },
   "trading": {
-    "title": "Trading BTC Futures",
-    "subtitle": "Control signals, risk, and automated execution on BTC Perpetuals with oversight.",
+    "title": "KuCoin Trading",
+    "subtitle": "Control signals, risk, and automated execution on Spot, Margin, and Futures with oversight.",
     "notConfigured": "KuCoin not configured",
     "notConfiguredDesc": "Configure the KuCoin API credentials to enable trading. Add the secrets on GitHub:",
     "status": {
@@ -1267,9 +1267,18 @@
       "low24h": "24h Low",
       "volume24h": "24h Volume"
     },
+    "marketType": {
+      "futures": "Futures",
+      "spot": "Spot",
+      "margin": "Margin"
+    },
+    "marginMode": {
+      "cross": "Cross",
+      "isolated": "Isolated"
+    },
     "account": {
       "title": "KuCoin Account",
-      "subtitle": "Balance and margins of your futures account",
+      "subtitle": "Balances and positions from your KuCoin account",
       "availableBalance": "Available Balance",
       "unrealisedPnl": "Unrealised PnL",
       "allPositions": "All positions",
@@ -1277,7 +1286,12 @@
       "marginBalance": "Margin Balance",
       "positionMargin": "Position Margin",
       "orderMargin": "Order Margin",
-      "frozenFunds": "Frozen Funds"
+      "frozenFunds": "Frozen Funds",
+      "totalBalance": "Total Balance",
+      "assetsWithBalance": "Assets with balance",
+      "totalAsset": "Total Assets",
+      "totalLiability": "Total Liabilities",
+      "debtRatio": "Debt Ratio"
     },
     "stats": {
       "activeSignals": "Active Signals",
@@ -1317,6 +1331,7 @@
       "buying": "Buying",
       "selling": "Selling",
       "contracts": "contract(s)",
+      "amount": "amount",
       "table": {
         "id": "ID",
         "symbol": "Pair",
@@ -1330,14 +1345,19 @@
       },
       "newDialog": {
         "title": "New Order",
-        "subtitle": "Create manual order on KuCoin Futures"
+        "subtitle": "Create manual order on KuCoin"
       },
       "form": {
         "orderType": "Order Type",
         "market": "Market",
         "limit": "Limit",
         "size": "Size (contracts)",
-        "sizeHint": "1 contract = 0.001 BTC for XBTUSDTM",
+        "sizeContracts": "Size (contracts)",
+        "sizeAmount": "Amount",
+        "sizeHint": "1 contract = 0.001 BTC for {{symbol}}",
+        "sizeSpotHint": "Enter asset amount for Spot/Margin",
+        "funds": "Funds amount",
+        "fundsHint": "Use funds for market buy without size",
         "price": "Price",
         "leverage": "Leverage",
         "stopLoss": "Stop Loss",
@@ -1353,7 +1373,13 @@
     "positions": {
       "subtitle": "Monitor your open positions in real-time",
       "noPositions": "No open positions",
+      "noSpotBalance": "No balance available in Spot account",
       "contracts": "contracts",
+      "asset": "Asset",
+      "balance": "Balance",
+      "available": "Available",
+      "hold": "On hold",
+      "liability": "Liability",
       "entryPrice": "Entry Price",
       "markPrice": "Mark Price",
       "liquidationPrice": "Liquidation Price",
@@ -1416,7 +1442,11 @@
       "maxOpenPositions": "Max Open Positions",
       "minConfidence": "Min Confidence for Auto-execution",
       "defaults": "Default Settings",
-      "defaultLeverage": "Default Leverage"
+      "defaultLeverage": "Default Leverage",
+      "defaultSymbol": "Default Symbol",
+      "defaultMarketType": "Default Market",
+      "marginMode": "Margin Mode",
+      "defaultSymbolPlaceholder": "Select a symbol"
     },
     "success": {
       "orderCreated": "Order created",
@@ -1430,6 +1460,7 @@
     },
     "errors": {
       "orderFailed": "Error creating order",
+      "stopOrderFailed": "Error creating stop order",
       "cancelFailed": "Error cancelling order",
       "syncFailed": "Error syncing orders",
       "riskConfigFailed": "Error updating settings",

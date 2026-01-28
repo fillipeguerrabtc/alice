@@ -14,7 +14,7 @@
 | --- | ---------- | --------- | ---------- | -------- |
 | 1 | Prometheus NÃO coletava GPU Manager (3010) + GPU Services (8000-8001) | ZERO visibilidade de VRAM, filas, circuit breakers GPU | Adicionados 3 targets Prometheus | ✅ CORRIGIDO |
 | 2 | Dashboards acoplados a nomes de modelos | Mudança de modelos (WS3) quebrava painéis/legendas | Dashboards revisados para **modelo-agnóstico (WS3-ready)** | ✅ CORRIGIDO |
-| 3 | ZERO dashboard Trading (KuCoin BTC Futures) | Impossível monitorar P&L, ordens, posições | Criado alice-trading.json (8 painéis) | ✅ CORRIGIDO |
+| 3 | ZERO dashboard Trading (KuCoin Spot/Margin/Futures) | Impossível monitorar P&L, ordens, posições | Criado alice-trading.json (8 painéis) | ✅ CORRIGIDO |
 | 4 | Dashboard LLM incompleto | Impossível medir Response Cache (Greetings Gate) | Adicionados 8 painéis (cache, WebSocket, streaming) | ✅ CORRIGIDO |
 | 5 | ZERO dashboard ERPNext | Impossível debugar workers, jobs, MariaDB | Criado alice-erpnext.json (13 painéis) | ✅ CORRIGIDO |
 | 6 | Infra sem visibilidade de DB/Cache | Impossível monitorar Postgres/PgBouncer/Redis/Qdrant | Adicionados exporters (Postgres/PgBouncer/Redis) + scrape Qdrant `/metrics` | ✅ CORRIGIDO |

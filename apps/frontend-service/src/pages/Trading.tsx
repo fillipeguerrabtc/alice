@@ -1,8 +1,8 @@
 /**
- * Trading - Página de Trading BTC Futures KuCoin
+ * Trading - Página de Trading KuCoin (Futures, Spot e Margin)
  * 
- * Dashboard enterprise-grade para trading automatizado de BTC perpetuals
- * na KuCoin Futures. Integrado com Alice IA (Gate 2) para sinais
+ * Dashboard enterprise-grade para trading automatizado na KuCoin
+ * (Futures, Spot e Margin). Integrado com Alice IA (Gate 2) para sinais
  * autônomos e execução automática de ordens.
  * 
  * Gate 2 (LLM separado + Vision via OpenAI):
@@ -27,7 +27,7 @@
  * Data: 16 de Janeiro de 2026
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
@@ -111,7 +111,9 @@ import {
 } from '@/components/ui/tooltip';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
+import { useKucoinWebSocket } from '@/hooks/useKucoinWebSocket';
 import { apiRequest, ApiError, queryClient } from '@/lib/queryClient';
+import { frontendLogger } from '@/lib/logger';
 import { 
   CandleChart, 
   OrderBookViz, 
@@ -127,7 +129,6 @@ import type { KlineData, OrderBookData, TradingControlMode, ControlHistoryEntry 
 
 interface TradingStatus {
   isConfigured: boolean;
-  isSandbox: boolean;
   circuitBreaker: {
     state: string;
     failures: number;
@@ -137,6 +138,7 @@ interface TradingStatus {
   activeSignals: number;
   pendingOrders: number;
   requiresTenant?: boolean;
+  defaultSymbol?: string;
 }
 
 interface KucoinWsStatus {
@@ -145,6 +147,11 @@ interface KucoinWsStatus {
   defaultSymbol?: string;
   public: { state: 'disconnected' | 'connecting' | 'connected' | 'reconnecting' };
   private: { enabled: boolean; state: 'disconnected' | 'connecting' | 'connected' | 'reconnecting' };
+}
+
+interface TradingSymbolsResponse {
+  symbols: string[];
+  defaultSymbol: string;
 }
 
 interface RiskConfig {
@@ -156,6 +163,9 @@ interface RiskConfig {
   maxLeverage: number;
   maxOpenPositions: number;
   defaultLeverage: number;
+  defaultSymbol: string | null;
+  defaultMarketType: 'futures' | 'spot' | 'margin';
+  marginMode: 'cross' | 'isolated';
   defaultStopLoss: string | null;
   defaultTakeProfit: string | null;
   tradingEnabled: boolean;
@@ -196,7 +206,7 @@ interface MarketData {
   };
 }
 
-interface AccountOverview {
+interface FuturesAccountOverview {
   accountEquity: number;
   unrealisedPNL: number;
   marginBalance: number;
@@ -205,6 +215,90 @@ interface AccountOverview {
   frozenFunds: number;
   availableBalance: number;
   currency: string;
+}
+
+interface SpotAccount {
+  id: string;
+  currency: string;
+  type: string;
+  balance: string;
+  available: string;
+  holds: string;
+}
+
+interface MarginCrossAccountEntry {
+  currency: string;
+  total: string;
+  available: string;
+  hold: string;
+  liability: string;
+  liabilityPrincipal: string;
+  liabilityInterest: string;
+  maxBorrowSize: string;
+  borrowEnabled: boolean;
+  transferInEnabled: boolean;
+}
+
+interface MarginCrossAccount {
+  totalAssetOfQuoteCurrency: string;
+  totalLiabilityOfQuoteCurrency: string;
+  debtRatio: string;
+  status: string;
+  accounts: MarginCrossAccountEntry[];
+}
+
+interface MarginIsolatedAssetDetail {
+  currency: string;
+  borrowEnabled: boolean;
+  transferInEnabled: boolean;
+  liability: string;
+  liabilityPrincipal: string;
+  liabilityInterest: string;
+  total: string;
+  available: string;
+  hold: string;
+  maxBorrowSize: string;
+}
+
+interface MarginIsolatedAsset {
+  symbol: string;
+  status: string;
+  debtRatio: string;
+  baseAsset: MarginIsolatedAssetDetail;
+  quoteAsset: MarginIsolatedAssetDetail;
+}
+
+interface MarginIsolatedAccount {
+  totalAssetOfQuoteCurrency: string;
+  totalLiabilityOfQuoteCurrency: string;
+  timestamp: number;
+  assets: MarginIsolatedAsset[];
+}
+
+type AccountOverview = FuturesAccountOverview | SpotAccount[] | MarginCrossAccount | MarginIsolatedAccount | null;
+
+type PositionsResponse = Position[] | SpotAccount[] | MarginCrossAccount | MarginIsolatedAccount;
+
+function getQuoteCurrencyFromSymbol(symbol: string): string | null {
+  if (!symbol) return null;
+  const parts = symbol.split('-');
+  if (parts.length < 2) return null;
+  return parts[1] ?? null;
+}
+
+function getBaseCurrencyFromSymbol(symbol: string): string | null {
+  if (!symbol) return null;
+  const parts = symbol.split('-');
+  if (parts.length < 2) return null;
+  return parts[0] ?? null;
+}
+
+function isMarginCrossAccount(value: PositionsResponse | null | undefined): value is MarginCrossAccount {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value) && Array.isArray((value as MarginCrossAccount).accounts));
+}
+
+function isMarginIsolatedAccount(value: PositionsResponse | null | undefined): value is MarginIsolatedAccount {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value) && Array.isArray((value as MarginIsolatedAccount).assets));
 }
 
 interface Position {
@@ -267,11 +361,6 @@ interface TradingOrder {
 // ============================================================================
 // CONSTANTES
 // ============================================================================
-
-const SYMBOLS = [
-  { value: 'XBTUSDTM', label: 'BTC/USDT Perpetual' },
-  { value: 'XBTUSDM', label: 'BTC/USD Perpetual' },
-];
 
 const SIGNAL_TYPES = [
   { value: 'entry_long', label: 'Entrada Long', icon: TrendingUp, color: 'text-green-500' },
@@ -457,7 +546,10 @@ export default function Trading() {
   const timeZone = user?.timezone ?? TIMEZONE;
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState('overview');
-  const [selectedSymbol, setSelectedSymbol] = useState('XBTUSDTM');
+  const [selectedMarketType, setSelectedMarketType] = useState<'futures' | 'spot' | 'margin'>('futures');
+  const [selectedMarginMode, setSelectedMarginMode] = useState<'cross' | 'isolated'>('cross');
+  const [marketDefaultsInitialized, setMarketDefaultsInitialized] = useState(false);
+  const [selectedSymbol, setSelectedSymbol] = useState('');
   const [selectedInterval, setSelectedInterval] = useState('5');
   const [controlMode, setControlMode] = useState<TradingControlMode>('alice');
   const [showNewOrderDialog, setShowNewOrderDialog] = useState(false);
@@ -470,6 +562,7 @@ export default function Trading() {
     orderType: 'market' as 'limit' | 'market',
     size: '',
     price: '',
+    funds: '',
     leverage: '10',
     stopLoss: '',
     takeProfit: '',
@@ -483,6 +576,9 @@ export default function Trading() {
     maxLeverage: 20,
     maxOpenPositions: 3,
     defaultLeverage: 10,
+    defaultSymbol: '',
+    defaultMarketType: 'futures' as 'futures' | 'spot' | 'margin',
+    marginMode: 'cross' as 'cross' | 'isolated',
     tradingEnabled: false,
     autoExecuteSignals: false,
     minConfidenceToExecute: '0.8',
@@ -495,9 +591,38 @@ export default function Trading() {
     reasoning: '',
   });
 
+  const wsInterval = useMemo(() => {
+    const intervalMap: Record<string, string> = {
+      '1': '1min',
+      '3': '3min',
+      '5': '5min',
+      '15': '15min',
+      '30': '30min',
+      '60': '1hour',
+      '120': '2hour',
+      '240': '4hour',
+      '480': '8hour',
+      '720': '12hour',
+      '1440': '1day',
+      '10080': '1week',
+    };
+    return intervalMap[selectedInterval] ?? '1min';
+  }, [selectedInterval]);
+
   // ============================================================================
   // QUERIES
   // ============================================================================
+
+  const marketQuery = new URLSearchParams();
+  marketQuery.set('marketType', selectedMarketType);
+  if (selectedMarketType === 'margin') {
+    marketQuery.set('marginMode', selectedMarginMode);
+  }
+  const marketQueryString = marketQuery.toString();
+
+  const ordersQuery = new URLSearchParams();
+  ordersQuery.set('marketType', selectedMarketType);
+  const ordersQueryString = ordersQuery.toString();
 
   const {
     data: statusData,
@@ -507,6 +632,25 @@ export default function Trading() {
   } = useQuery<{ success: boolean; data: TradingStatus }>({
     queryKey: ['/api/integrations/trading/status'],
     refetchInterval: 30000, // Atualizar a cada 30 segundos
+  });
+
+  const {
+    data: symbolsData,
+    isLoading: isLoadingSymbols,
+    error: symbolsError,
+  } = useQuery<{ success: boolean; data: TradingSymbolsResponse }>({
+    queryKey: ['/api/integrations/trading/symbols', selectedMarketType, selectedMarginMode],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.set('marketType', selectedMarketType);
+      if (selectedMarketType === 'margin') {
+        params.set('marginMode', selectedMarginMode);
+      }
+      const res = await apiRequest('GET', `/api/integrations/trading/symbols?${params.toString()}`);
+      return res.json();
+    },
+    refetchInterval: 600000, // Atualizar a cada 10 minutos
+    enabled: statusData?.data?.isConfigured && !statusData?.data?.requiresTenant,
   });
 
   const { data: wsStatusData } = useQuery<{ success: boolean; data: KucoinWsStatus }>({
@@ -521,13 +665,13 @@ export default function Trading() {
     error: marketError,
     refetch: refetchMarket,
   } = useQuery<{ success: boolean; data: MarketData }>({
-    queryKey: ['/api/integrations/trading/market', selectedSymbol],
+    queryKey: ['/api/integrations/trading/market', selectedSymbol, selectedMarketType, selectedMarginMode],
     queryFn: async () => {
-      const res = await apiRequest('GET', `/api/integrations/trading/market/${selectedSymbol}`);
+      const res = await apiRequest('GET', `/api/integrations/trading/market/${selectedSymbol}?${marketQueryString}`);
       return res.json();
     },
     refetchInterval: 5000, // Atualizar a cada 5 segundos
-    enabled: statusData?.data?.isConfigured,
+    enabled: statusData?.data?.isConfigured && !!selectedSymbol,
   });
 
   const {
@@ -536,9 +680,13 @@ export default function Trading() {
     error: accountError,
     refetch: refetchAccount,
   } = useQuery<{ success: boolean; data: AccountOverview }>({
-    queryKey: ['/api/integrations/trading/account'],
+    queryKey: ['/api/integrations/trading/account', selectedMarketType, selectedMarginMode],
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/integrations/trading/account?${marketQueryString}`);
+      return res.json();
+    },
     refetchInterval: 10000,
-    enabled: statusData?.data?.isConfigured,
+    enabled: statusData?.data?.isConfigured && !!selectedSymbol,
   });
 
   const {
@@ -546,10 +694,14 @@ export default function Trading() {
     isLoading: isLoadingPositions,
     error: positionsError,
     refetch: refetchPositions,
-  } = useQuery<{ success: boolean; data: Position[] }>({
-    queryKey: ['/api/integrations/trading/positions'],
+  } = useQuery<{ success: boolean; data: PositionsResponse }>({
+    queryKey: ['/api/integrations/trading/positions', selectedMarketType, selectedMarginMode],
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/integrations/trading/positions?${marketQueryString}`);
+      return res.json();
+    },
     refetchInterval: 10000,
-    enabled: statusData?.data?.isConfigured,
+    enabled: statusData?.data?.isConfigured && !!selectedSymbol,
   });
 
   const {
@@ -569,7 +721,11 @@ export default function Trading() {
     error: ordersError,
     refetch: refetchOrders,
   } = useQuery<{ success: boolean; data: TradingOrder[] }>({
-    queryKey: ['/api/integrations/trading/orders'],
+    queryKey: ['/api/integrations/trading/orders', selectedMarketType],
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/integrations/trading/orders?${ordersQueryString}`);
+      return res.json();
+    },
     refetchInterval: 10000,
     enabled: statusData?.data?.isConfigured && !statusData?.data?.requiresTenant,
   });
@@ -583,6 +739,37 @@ export default function Trading() {
     enabled: statusData?.data?.isConfigured && !statusData?.data?.requiresTenant,
   });
 
+  useEffect(() => {
+    const symbols = symbolsData?.data?.symbols ?? [];
+    if (symbols.length === 0) return;
+
+    const preferred = symbolsData?.data?.defaultSymbol || statusData?.data?.defaultSymbol || symbols[0];
+    if (!selectedSymbol || !symbols.includes(selectedSymbol)) {
+      setSelectedSymbol(preferred);
+    }
+  }, [symbolsData, statusData, selectedSymbol]);
+
+  const isFuturesMarket = selectedMarketType === 'futures';
+
+  const wsEnabled = isFuturesMarket
+    && !!selectedSymbol
+    && !!statusData?.data?.isConfigured
+    && !statusData?.data?.requiresTenant;
+
+  const {
+    ticker: wsTicker,
+    orderBook: wsOrderBook,
+    klines: wsKlines,
+  } = useKucoinWebSocket({
+    symbol: wsEnabled ? selectedSymbol : '',
+    channels: wsEnabled ? ['ticker', 'orderbook', 'trades'] : [],
+    interval: wsInterval,
+    autoConnect: wsEnabled,
+    onError: (error) => {
+      frontendLogger.warn('WebSocket KuCoin indisponível - fallback REST ativo', { error });
+    },
+  });
+
   // Query para Klines (gráfico de candlesticks)
   const {
     data: klinesData,
@@ -590,9 +777,11 @@ export default function Trading() {
     error: klinesError,
     refetch: refetchKlines,
   } = useQuery<{ success: boolean; data: KlineData[] }>({
-    queryKey: ['/api/integrations/trading/klines', selectedSymbol, selectedInterval],
+    queryKey: ['/api/integrations/trading/klines', selectedSymbol, selectedInterval, selectedMarketType, selectedMarginMode],
     queryFn: async () => {
-      const res = await apiRequest('GET', `/api/integrations/trading/klines/${selectedSymbol}?granularity=${selectedInterval}`);
+      const params = new URLSearchParams(marketQuery);
+      params.set('granularity', selectedInterval);
+      const res = await apiRequest('GET', `/api/integrations/trading/klines/${selectedSymbol}?${params.toString()}`);
       return res.json();
     },
     refetchInterval: 60000, // Atualizar a cada 1 minuto
@@ -605,9 +794,9 @@ export default function Trading() {
     isLoading: isLoadingOrderBook,
     error: orderBookError,
   } = useQuery<{ success: boolean; data: OrderBookData }>({
-    queryKey: ['/api/integrations/trading/orderbook', selectedSymbol],
+    queryKey: ['/api/integrations/trading/orderbook', selectedSymbol, selectedMarketType, selectedMarginMode],
     queryFn: async () => {
-      const res = await apiRequest('GET', `/api/integrations/trading/orderbook/${selectedSymbol}`);
+      const res = await apiRequest('GET', `/api/integrations/trading/orderbook/${selectedSymbol}?${marketQueryString}`);
       return res.json();
     },
     refetchInterval: 5000, // Atualizar a cada 5 segundos
@@ -640,6 +829,9 @@ export default function Trading() {
         maxLeverage: config.maxLeverage ?? 20,
         maxOpenPositions: config.maxOpenPositions ?? 3,
         defaultLeverage: config.defaultLeverage ?? 10,
+        defaultSymbol: config.defaultSymbol ?? '',
+        defaultMarketType: config.defaultMarketType ?? 'futures',
+        marginMode: config.marginMode ?? 'cross',
         tradingEnabled: config.tradingEnabled ?? false,
         autoExecuteSignals: config.autoExecuteSignals ?? false,
         minConfidenceToExecute: config.minConfidenceToExecute ?? '0.8',
@@ -648,8 +840,14 @@ export default function Trading() {
       // Bug: controlMode era inicializado como 'alice' e nunca atualizado, fazendo HandoverPanel
       // mostrar modo incorreto se servidor estivesse em modo manual (autoExecuteSignals=false)
       setControlMode(config.autoExecuteSignals ? 'alice' : 'manual');
+
+      if (!marketDefaultsInitialized) {
+        setSelectedMarketType(config.defaultMarketType ?? 'futures');
+        setSelectedMarginMode(config.marginMode ?? 'cross');
+        setMarketDefaultsInitialized(true);
+      }
     }
-  }, [riskConfigData]);
+  }, [riskConfigData, marketDefaultsInitialized]);
 
   // ============================================================================
   // MUTATIONS
@@ -657,29 +855,96 @@ export default function Trading() {
 
   const createOrderMutation = useMutation({
     mutationFn: async (data: typeof orderForm) => {
+      const isFuturesOrder = selectedMarketType === 'futures';
+      const sizeValue = data.size ? Number(data.size) : NaN;
+      const fundsValue = data.funds ? Number(data.funds) : NaN;
+      const hasSize = Number.isFinite(sizeValue) && sizeValue > 0;
+      const hasFunds = Number.isFinite(fundsValue) && fundsValue > 0;
+      const isMarketBuy = data.orderType === 'market' && data.side === 'buy';
+
+      if (isFuturesOrder) {
+        if (!hasSize) {
+          throw new Error('Quantidade inválida. Use um número positivo.');
+        }
+        if (!Number.isInteger(sizeValue)) {
+          throw new Error('Quantidade deve ser um número inteiro de contratos.');
+        }
+      } else if (isMarketBuy) {
+        if (!hasSize && !hasFunds) {
+          throw new Error('Informe quantidade ou funds para ordem a mercado.');
+        }
+      } else if (!hasSize) {
+        throw new Error('Quantidade inválida. Use um número positivo.');
+      }
+
+      let leverageValue: number | undefined;
+      if (isFuturesOrder) {
+        leverageValue = Number(data.leverage);
+        if (!Number.isFinite(leverageValue) || leverageValue <= 0) {
+          throw new Error('Alavancagem inválida.');
+        }
+      }
+
       const res = await apiRequest('POST', '/api/integrations/trading/orders', {
-        symbol: selectedSymbol,
+        symbol: selectedSymbol || undefined,
         side: data.side,
         orderType: data.orderType,
-        size: parseFloat(data.size),
+        size: hasSize ? sizeValue : undefined,
+        funds: hasFunds ? fundsValue : undefined,
         price: data.orderType === 'limit' ? parseFloat(data.price) : undefined,
-        leverage: parseInt(data.leverage),
-        stopLoss: data.stopLoss ? parseFloat(data.stopLoss) : undefined,
-        takeProfit: data.takeProfit ? parseFloat(data.takeProfit) : undefined,
+        leverage: leverageValue,
+        marketType: selectedMarketType,
+        marginMode: selectedMarketType === 'margin' ? selectedMarginMode : undefined,
       });
-      return res.json();
+      const payload = await res.json();
+      let stopOrderError: string | null = null;
+
+      if (data.stopLoss || data.takeProfit) {
+        if (!hasSize) {
+          throw new Error('Quantidade é obrigatória para criar ordens stop.');
+        }
+        const stopSide = data.side === 'buy' ? 'sell' : 'buy';
+        const stopRes = await apiRequest('POST', '/api/integrations/trading/stop-orders', {
+          symbol: selectedSymbol || undefined,
+          side: stopSide,
+          size: sizeValue,
+          stopLoss: data.stopLoss ? parseFloat(data.stopLoss) : undefined,
+          takeProfit: data.takeProfit ? parseFloat(data.takeProfit) : undefined,
+          leverage: leverageValue,
+          orderType: 'market',
+          stopPriceType: 'MP',
+          marketType: selectedMarketType,
+          marginMode: selectedMarketType === 'margin' ? selectedMarginMode : undefined,
+        });
+        if (!stopRes.ok) {
+          stopOrderError = await stopRes.text();
+        }
+      }
+
+      return {
+        ...payload,
+        stopOrderError,
+      };
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast({
         title: t('trading.success.orderCreated'),
         description: t('trading.success.orderCreatedDesc'),
       });
+      if (data?.stopOrderError) {
+        toast({
+          title: t('trading.errors.stopOrderFailed'),
+          description: data.stopOrderError,
+          variant: 'destructive',
+        });
+      }
       setShowNewOrderDialog(false);
       setOrderForm({
         side: 'buy',
         orderType: 'market',
         size: '',
         price: '',
+        funds: '',
         leverage: '10',
         stopLoss: '',
         takeProfit: '',
@@ -749,6 +1014,9 @@ export default function Trading() {
         maxLeverage: data.maxLeverage,
         maxOpenPositions: data.maxOpenPositions,
         defaultLeverage: data.defaultLeverage,
+        defaultSymbol: data.defaultSymbol || undefined,
+        defaultMarketType: data.defaultMarketType,
+        marginMode: data.marginMode,
         tradingEnabled: data.tradingEnabled,
         autoExecuteSignals: data.autoExecuteSignals,
         minConfidenceToExecute: data.minConfidenceToExecute,
@@ -779,7 +1047,7 @@ export default function Trading() {
     mutationFn: async (data: typeof signalForm) => {
       const res = await apiRequest('POST', '/api/integrations/trading/signals', {
         signalType: data.signalType,
-        symbol: selectedSymbol,
+        symbol: selectedSymbol || undefined,
         confidence: parseFloat(data.confidence),
         reasoning: data.reasoning || undefined,
         sourceModel: 'manual-admin',
@@ -967,20 +1235,95 @@ export default function Trading() {
   // ============================================================================
 
   const status = statusData.data;
+  const availableSymbols = symbolsData?.data?.symbols ?? [];
+  const defaultSymbol = symbolsData?.data?.defaultSymbol || status.defaultSymbol || '';
   const market = marketData?.data;
   const account = accountData?.data;
-  const positions = positionsData?.data || [];
+  const isSpotMarket = selectedMarketType === 'spot';
+  const isMarginMarket = selectedMarketType === 'margin';
+  const baseCurrency = getBaseCurrencyFromSymbol(selectedSymbol);
+  const quoteCurrency = getQuoteCurrencyFromSymbol(selectedSymbol);
+  const spotAccounts = isSpotMarket && Array.isArray(account)
+    ? account.filter((entry) => entry.type === 'trade')
+    : [];
+  const spotBaseAccount = spotAccounts.find((entry) => entry.currency === (baseCurrency ?? entry.currency));
+  const spotQuoteAccount = spotAccounts.find((entry) => entry.currency === (quoteCurrency ?? entry.currency));
+  const marginCrossAccount = isMarginMarket && account && !Array.isArray(account) && Array.isArray((account as MarginCrossAccount).accounts)
+    ? (account as MarginCrossAccount)
+    : null;
+  const marginIsolatedAccount = isMarginMarket && account && !Array.isArray(account) && Array.isArray((account as MarginIsolatedAccount).assets)
+    ? (account as MarginIsolatedAccount)
+    : null;
+  const marginIsolatedAsset = marginIsolatedAccount?.assets.find((asset) => asset.symbol === selectedSymbol)
+    ?? marginIsolatedAccount?.assets[0];
+  const positionsPayload = positionsData?.data ?? null;
+  const futuresPositions = selectedMarketType === 'futures' && Array.isArray(positionsPayload)
+    ? (positionsPayload as Position[])
+    : [];
+  const marginCrossPositions = selectedMarketType === 'margin' && isMarginCrossAccount(positionsPayload)
+    ? positionsPayload
+    : null;
+  const marginIsolatedPositions = selectedMarketType === 'margin' && isMarginIsolatedAccount(positionsPayload)
+    ? positionsPayload
+    : null;
+  const spotPositions = selectedMarketType === 'spot' && Array.isArray(positionsPayload)
+    ? (positionsPayload as SpotAccount[])
+    : [];
+  const openPositionsCount = isFuturesMarket
+    ? futuresPositions.filter((position) => position.isOpen).length
+    : isSpotMarket
+      ? spotPositions.filter((entry) => Number(entry.balance) > 0).length
+      : isMarginMarket
+        ? marginCrossPositions
+          ? marginCrossPositions.accounts.filter((entry) => Number(entry.total) > 0).length
+          : marginIsolatedPositions
+            ? marginIsolatedPositions.assets.length
+            : 0
+        : 0;
+
+  const orderSizeValue = orderForm.size ? Number(orderForm.size) : NaN;
+  const orderFundsValue = orderForm.funds ? Number(orderForm.funds) : NaN;
+  const hasOrderSize = Number.isFinite(orderSizeValue) && orderSizeValue > 0;
+  const hasOrderFunds = Number.isFinite(orderFundsValue) && orderFundsValue > 0;
+  const isOrderMarketBuy = orderForm.orderType === 'market' && orderForm.side === 'buy';
+  const canSubmitOrder = isFuturesMarket
+    ? hasOrderSize
+    : isOrderMarketBuy
+      ? hasOrderSize || hasOrderFunds
+      : hasOrderSize;
   const signals = signalsData?.data || [];
   const orders = ordersData?.data || [];
   const riskConfig = riskConfigData?.data;
-  const klines = klinesData?.data || [];
-  const orderBookData = orderBookResponse?.data || null;
+  const normalizedSymbol = selectedSymbol.toUpperCase();
+  const wsTickerPrice = wsEnabled && wsTicker?.symbol?.toUpperCase() === normalizedSymbol
+    ? Number(wsTicker.price)
+    : NaN;
+  const wsOrderBookData = wsEnabled && wsOrderBook?.symbol?.toUpperCase() === normalizedSymbol
+    ? wsOrderBook
+    : null;
+  const wsKlinesForChart = wsEnabled
+    ? wsKlines
+        .filter((kline) => kline.symbol?.toUpperCase() === normalizedSymbol)
+        .map(({ time, open, close, high, low, volume, turnover }) => ({
+          time,
+          open,
+          close,
+          high,
+          low,
+          volume,
+          turnover,
+        }))
+    : [];
+
+  const klines = wsKlinesForChart.length > 0 ? wsKlinesForChart : (klinesData?.data || []);
+  const orderBookData = wsOrderBookData ?? orderBookResponse?.data ?? null;
   const controlHistory = controlHistoryData?.data || [];
   // `wsStatusData` já é o payload `{ success, data: KucoinWsStatus }`.
   // O accessor extra `.data` fazia `wsStatus` ficar sempre undefined e o badge nunca renderizar.
   const wsStatus = wsStatusData?.data;
   const apiErrors = [
     statusError,
+    symbolsError,
     marketError,
     accountError,
     positionsError,
@@ -993,7 +1336,11 @@ export default function Trading() {
   ].filter((e): e is ApiError => e instanceof ApiError);
   const criticalApiError = apiErrors[0] ?? null;
 
-  const currentPrice = market?.contract?.lastTradePrice || 0;
+  const fallbackPrice = isFuturesMarket
+    ? market?.contract?.lastTradePrice
+    : (market?.ticker?.price ? Number(market.ticker.price) : undefined);
+  const fallbackPriceValue = Number.isFinite(fallbackPrice ?? NaN) ? Number(fallbackPrice) : 0;
+  const currentPrice = Number.isFinite(wsTickerPrice) ? wsTickerPrice : fallbackPriceValue;
   const priceChange = market?.contract?.priceChg || 0;
   const priceChangePercent = market?.contract?.priceChgPct || 0;
 
@@ -1044,13 +1391,6 @@ export default function Trading() {
           
           <div className="flex items-center gap-2 flex-wrap">
             {/* Status Badges */}
-            {status.isSandbox && (
-              <Badge variant="outline" className="text-yellow-600 border-yellow-600">
-                <AlertTriangle className="h-3 w-3 mr-1" />
-                Sandbox
-              </Badge>
-            )}
-            
             {riskConfig?.tradingEnabled ? (
               <Badge variant="default" className="bg-green-500">
                 <Play className="h-3 w-3 mr-1" />
@@ -1070,15 +1410,47 @@ export default function Trading() {
               </Badge>
             )}
 
+            {/* Market Type Selector */}
+            <Select
+              value={selectedMarketType}
+              onValueChange={(value: 'futures' | 'spot' | 'margin') => setSelectedMarketType(value)}
+              data-testid="select-market-type"
+            >
+              <SelectTrigger className="w-[160px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="futures">{t('trading.marketType.futures')}</SelectItem>
+                <SelectItem value="spot">{t('trading.marketType.spot')}</SelectItem>
+                <SelectItem value="margin">{t('trading.marketType.margin')}</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {selectedMarketType === 'margin' && (
+              <Select
+                value={selectedMarginMode}
+                onValueChange={(value: 'cross' | 'isolated') => setSelectedMarginMode(value)}
+                data-testid="select-margin-mode"
+              >
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cross">{t('trading.marginMode.cross')}</SelectItem>
+                  <SelectItem value="isolated">{t('trading.marginMode.isolated')}</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+
             {/* Symbol Selector */}
-            <Select value={selectedSymbol} onValueChange={setSelectedSymbol}>
+            <Select value={selectedSymbol} onValueChange={setSelectedSymbol} disabled={isLoadingSymbols || availableSymbols.length === 0}>
               <SelectTrigger className="w-[180px]" data-testid="select-symbol">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {SYMBOLS.map((s) => (
-                  <SelectItem key={s.value} value={s.value}>
-                    {s.label}
+                {availableSymbols.map((symbol) => (
+                  <SelectItem key={symbol} value={symbol}>
+                    {symbol}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -1186,41 +1558,84 @@ export default function Trading() {
             </CardContent>
           </Card>
 
-          {/* Saldo Disponível */}
+          {/* Saldo Disponível / Total */}
           <StatCard
-            title={t('trading.account.availableBalance')}
-          value={
-            isLoadingAccount
-              ? '-'
-              : `$${formatNumber(account?.availableBalance ?? 0, locale, {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}`
-          }
-            subtitle={account?.currency}
+            title={isMarginMarket ? t('trading.account.totalAsset') : t('trading.account.availableBalance')}
+            value={
+              isLoadingAccount
+                ? '-'
+                : `$${formatNumber(
+                    isFuturesMarket
+                      ? (account as FuturesAccountOverview | null)?.availableBalance ?? 0
+                      : isSpotMarket
+                        ? Number(spotQuoteAccount?.available ?? 0)
+                        : Number(
+                            marginCrossAccount?.totalAssetOfQuoteCurrency ??
+                              marginIsolatedAccount?.totalAssetOfQuoteCurrency ??
+                              0
+                          ),
+                    locale,
+                    { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+                  )}`
+            }
+            subtitle={isFuturesMarket ? (account as FuturesAccountOverview | null)?.currency : (quoteCurrency ?? t('trading.account.multiCurrency'))}
             icon={DollarSign}
             isLoading={isLoadingAccount}
           />
 
-          {/* PnL Não Realizado */}
-          {/* BUG FIX 17/12/2025: Corrigido tratamento de PNL = 0 (falsy em JS) */}
-          {/* Antes: account?.unrealisedPNL && >= 0 falhava quando PNL era exatamente 0 */}
-          {/* Agora: usa nullish coalescing (??) para tratar undefined/null como 0 */}
-          <StatCard
-            title={t('trading.account.unrealisedPnl')}
-          value={
-            isLoadingAccount
-              ? '-'
-              : `$${formatNumber(account?.unrealisedPNL ?? 0, locale, {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}`
-          }
-            subtitle={t('trading.account.allPositions')}
-            icon={(account?.unrealisedPNL ?? 0) >= 0 ? TrendingUp : TrendingDown}
-            trend={(account?.unrealisedPNL ?? 0) >= 0 ? 'up' : 'down'}
-            isLoading={isLoadingAccount}
-          />
+          {/* PnL Não Realizado (Futures) / Resumo (Spot/Margin) */}
+          {isFuturesMarket ? (
+            <StatCard
+              title={t('trading.account.unrealisedPnl')}
+              value={
+                isLoadingAccount
+                  ? '-'
+                  : `$${formatNumber((account as FuturesAccountOverview | null)?.unrealisedPNL ?? 0, locale, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}`
+              }
+              subtitle={t('trading.account.allPositions')}
+              icon={((account as FuturesAccountOverview | null)?.unrealisedPNL ?? 0) >= 0 ? TrendingUp : TrendingDown}
+              trend={((account as FuturesAccountOverview | null)?.unrealisedPNL ?? 0) >= 0 ? 'up' : 'down'}
+              isLoading={isLoadingAccount}
+            />
+          ) : isSpotMarket ? (
+            <StatCard
+              title={t('trading.account.assetsWithBalance')}
+              value={
+                isLoadingAccount
+                  ? '-'
+                  : formatNumber(
+                      (Array.isArray(account) ? account : []).filter((entry) => Number(entry.balance) > 0).length,
+                      locale
+                    )
+              }
+              subtitle={t('trading.account.assetsSubtitle')}
+              icon={Layers}
+              isLoading={isLoadingAccount}
+            />
+          ) : (
+            <StatCard
+              title={t('trading.account.totalLiability')}
+              value={
+                isLoadingAccount
+                  ? '-'
+                  : `$${formatNumber(
+                      Number(
+                        marginCrossAccount?.totalLiabilityOfQuoteCurrency ??
+                          marginIsolatedAccount?.totalLiabilityOfQuoteCurrency ??
+                          0
+                      ),
+                      locale,
+                      { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+                    )}`
+              }
+              subtitle={quoteCurrency ?? t('trading.account.multiCurrency')}
+              icon={AlertTriangle}
+              isLoading={isLoadingAccount}
+            />
+          )}
         </div>
       </motion.div>
 
@@ -1239,20 +1654,22 @@ export default function Trading() {
           />
           <StatCard
             title={t('trading.stats.openPositions')}
-          value={formatNumber(positions.filter(p => p.isOpen).length, locale)}
+          value={formatNumber(openPositionsCount, locale)}
             icon={Activity}
           />
           <StatCard
             title={t('trading.stats.fundingRate')}
-          value={`${formatNumber((market?.contract?.fundingFeeRate || 0) * 100, locale, {
-            minimumFractionDigits: 4,
-            maximumFractionDigits: 4,
-          })}%`}
+          value={isFuturesMarket
+            ? `${formatNumber((market?.contract?.fundingFeeRate || 0) * 100, locale, {
+                minimumFractionDigits: 4,
+                maximumFractionDigits: 4,
+              })}%`
+            : '-'}
             icon={Percent}
           />
           <StatCard
             title={t('trading.stats.maxLeverage')}
-          value={`${formatNumber(riskConfig?.maxLeverage || 20, locale)}x`}
+          value={isFuturesMarket ? `${formatNumber(riskConfig?.maxLeverage || 20, locale)}x` : '-'}
             icon={Target}
           />
           <Card>
@@ -1402,37 +1819,124 @@ export default function Trading() {
                       <Skeleton className="h-6 w-full" />
                       <Skeleton className="h-6 w-full" />
                     </div>
-                  ) : (
+                  ) : isFuturesMarket ? (
                     <div className="space-y-3">
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">{t('trading.account.equity')}</span>
                         <span className="font-medium">
-                          ${formatNumber(account?.accountEquity ?? 0, locale)}
+                          ${formatNumber((account as FuturesAccountOverview | null)?.accountEquity ?? 0, locale)}
                         </span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">{t('trading.account.marginBalance')}</span>
                         <span className="font-medium">
-                          ${formatNumber(account?.marginBalance ?? 0, locale)}
+                          ${formatNumber((account as FuturesAccountOverview | null)?.marginBalance ?? 0, locale)}
                         </span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">{t('trading.account.positionMargin')}</span>
                         <span className="font-medium">
-                          ${formatNumber(account?.positionMargin ?? 0, locale)}
+                          ${formatNumber((account as FuturesAccountOverview | null)?.positionMargin ?? 0, locale)}
                         </span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">{t('trading.account.orderMargin')}</span>
                         <span className="font-medium">
-                          ${formatNumber(account?.orderMargin ?? 0, locale)}
+                          ${formatNumber((account as FuturesAccountOverview | null)?.orderMargin ?? 0, locale)}
                         </span>
                       </div>
                       <Separator />
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">{t('trading.account.frozenFunds')}</span>
                         <span className="font-medium">
-                          ${formatNumber(account?.frozenFunds ?? 0, locale)}
+                          ${formatNumber((account as FuturesAccountOverview | null)?.frozenFunds ?? 0, locale)}
+                        </span>
+                      </div>
+                    </div>
+                  ) : isSpotMarket ? (
+                    <div className="space-y-3">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">
+                          {t('trading.account.availableBalance')} {spotBaseAccount?.currency ?? baseCurrency ?? ''}
+                        </span>
+                        <span className="font-medium">
+                          {formatNumber(Number(spotBaseAccount?.available ?? 0), locale)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">
+                          {t('trading.account.totalBalance')} {spotBaseAccount?.currency ?? baseCurrency ?? ''}
+                        </span>
+                        <span className="font-medium">
+                          {formatNumber(Number(spotBaseAccount?.balance ?? 0), locale)}
+                        </span>
+                      </div>
+                      <Separator />
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">
+                          {t('trading.account.availableBalance')} {spotQuoteAccount?.currency ?? quoteCurrency ?? ''}
+                        </span>
+                        <span className="font-medium">
+                          {formatNumber(Number(spotQuoteAccount?.available ?? 0), locale)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">
+                          {t('trading.account.totalBalance')} {spotQuoteAccount?.currency ?? quoteCurrency ?? ''}
+                        </span>
+                        <span className="font-medium">
+                          {formatNumber(Number(spotQuoteAccount?.balance ?? 0), locale)}
+                        </span>
+                      </div>
+                      <Separator />
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">{t('trading.account.assetsWithBalance')}</span>
+                        <span className="font-medium">
+                          {formatNumber(spotAccounts.filter((entry) => Number(entry.balance) > 0).length, locale)}
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">{t('trading.account.totalAsset')}</span>
+                        <span className="font-medium">
+                          ${formatNumber(
+                            Number(
+                              marginCrossAccount?.totalAssetOfQuoteCurrency ??
+                                marginIsolatedAccount?.totalAssetOfQuoteCurrency ??
+                                0
+                            ),
+                            locale
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">{t('trading.account.totalLiability')}</span>
+                        <span className="font-medium">
+                          ${formatNumber(
+                            Number(
+                              marginCrossAccount?.totalLiabilityOfQuoteCurrency ??
+                                marginIsolatedAccount?.totalLiabilityOfQuoteCurrency ??
+                                0
+                            ),
+                            locale
+                          )}
+                        </span>
+                      </div>
+                      <Separator />
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">{t('trading.account.debtRatio')}</span>
+                        <span className="font-medium">
+                          {formatNumber(
+                            Number(
+                              marginCrossAccount?.debtRatio ??
+                                marginIsolatedAsset?.debtRatio ??
+                                0
+                            ) * 100,
+                            locale,
+                            { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+                          )}%
                         </span>
                       </div>
                     </div>
@@ -1718,67 +2222,147 @@ export default function Trading() {
 
             {isLoadingPositions ? (
               <Skeleton className="h-64" />
-            ) : positions.filter(p => p.isOpen).length === 0 ? (
+            ) : isFuturesMarket ? (
+              futuresPositions.filter(p => p.isOpen).length === 0 ? (
+                <Card>
+                  <CardContent className="flex flex-col items-center justify-center py-12">
+                    <Target className="h-12 w-12 text-muted-foreground mb-4" />
+                    <p className="text-muted-foreground">{t('trading.positions.noPositions')}</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="grid gap-4">
+                  {futuresPositions.filter(p => p.isOpen).map((position) => (
+                    <Card key={position.id} data-testid={`card-position-${position.id}`}>
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-3">
+                            <Badge
+                              variant="outline"
+                              className={position.currentQty > 0 ? 'text-green-500 border-green-500' : 'text-red-500 border-red-500'}
+                            >
+                              {position.currentQty > 0 ? 'LONG' : 'SHORT'}
+                            </Badge>
+                            <div>
+                              <p className="font-medium">{position.symbol}</p>
+                              <p className="text-sm text-muted-foreground">
+                                {Math.abs(position.currentQty)} {t('trading.positions.contracts')} @ {position.realLeverage.toFixed(1)}x
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className={`text-lg font-bold ${position.unrealisedPnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                              {position.unrealisedPnl >= 0 ? '+' : ''}${position.unrealisedPnl.toFixed(2)}
+                            </p>
+                            <p className={`text-sm ${position.unrealisedPnlPcnt >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                              {position.unrealisedPnlPcnt >= 0 ? '+' : ''}{(position.unrealisedPnlPcnt * 100).toFixed(2)}%
+                            </p>
+                          </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                          <div>
+                            <p className="text-muted-foreground">{t('trading.positions.entryPrice')}</p>
+                            <p className="font-medium">${formatNumber(position.avgEntryPrice, locale)}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">{t('trading.positions.markPrice')}</p>
+                            <p className="font-medium">${formatNumber(position.markPrice, locale)}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">{t('trading.positions.liquidationPrice')}</p>
+                            <p className="font-medium text-red-500">
+                              ${formatNumber(position.liquidationPrice, locale)}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">{t('trading.positions.margin')}</p>
+                            <p className="font-medium">${position.posMargin.toFixed(2)}</p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )
+            ) : isSpotMarket ? (
+              spotPositions.filter((entry) => Number(entry.balance) > 0).length === 0 ? (
+                <Card>
+                  <CardContent className="flex flex-col items-center justify-center py-12">
+                    <Layers className="h-12 w-12 text-muted-foreground mb-4" />
+                    <p className="text-muted-foreground">{t('trading.positions.noSpotBalance')}</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{t('trading.positions.asset')}</TableHead>
+                        <TableHead>{t('trading.positions.balance')}</TableHead>
+                        <TableHead>{t('trading.positions.available')}</TableHead>
+                        <TableHead>{t('trading.positions.hold')}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {spotPositions
+                        .filter((entry) => Number(entry.balance) > 0)
+                        .map((entry) => (
+                          <TableRow key={entry.id}>
+                            <TableCell className="font-medium">{entry.currency}</TableCell>
+                            <TableCell>{formatNumber(Number(entry.balance), locale)}</TableCell>
+                            <TableCell>{formatNumber(Number(entry.available), locale)}</TableCell>
+                            <TableCell>{formatNumber(Number(entry.holds), locale)}</TableCell>
+                          </TableRow>
+                        ))}
+                    </TableBody>
+                  </Table>
+                </Card>
+              )
+            ) : marginCrossPositions || marginIsolatedPositions ? (
+              <Card>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t('trading.positions.asset')}</TableHead>
+                      <TableHead>{t('trading.positions.balance')}</TableHead>
+                      <TableHead>{t('trading.positions.available')}</TableHead>
+                      <TableHead>{t('trading.positions.liability')}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {marginCrossPositions?.accounts.map((entry) => (
+                      <TableRow key={entry.currency}>
+                        <TableCell className="font-medium">{entry.currency}</TableCell>
+                        <TableCell>{formatNumber(Number(entry.total), locale)}</TableCell>
+                        <TableCell>{formatNumber(Number(entry.available), locale)}</TableCell>
+                        <TableCell>{formatNumber(Number(entry.liability), locale)}</TableCell>
+                      </TableRow>
+                    ))}
+                    {marginIsolatedPositions?.assets.map((asset) => (
+                      <TableRow key={asset.symbol}>
+                        <TableCell className="font-medium">{asset.symbol}</TableCell>
+                        <TableCell>
+                          {formatNumber(Number(asset.baseAsset.total), locale)} {asset.baseAsset.currency} / {formatNumber(Number(asset.quoteAsset.total), locale)} {asset.quoteAsset.currency}
+                        </TableCell>
+                        <TableCell>
+                          {formatNumber(Number(asset.baseAsset.available), locale)} {asset.baseAsset.currency} / {formatNumber(Number(asset.quoteAsset.available), locale)} {asset.quoteAsset.currency}
+                        </TableCell>
+                        <TableCell>
+                          {formatNumber(Number(asset.baseAsset.liability), locale)} {asset.baseAsset.currency} / {formatNumber(Number(asset.quoteAsset.liability), locale)} {asset.quoteAsset.currency}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </Card>
+            ) : (
               <Card>
                 <CardContent className="flex flex-col items-center justify-center py-12">
                   <Target className="h-12 w-12 text-muted-foreground mb-4" />
                   <p className="text-muted-foreground">{t('trading.positions.noPositions')}</p>
                 </CardContent>
               </Card>
-            ) : (
-              <div className="grid gap-4">
-                {positions.filter(p => p.isOpen).map((position) => (
-                  <Card key={position.id} data-testid={`card-position-${position.id}`}>
-                    <CardContent className="p-4">
-                      <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-3">
-                          <Badge
-                            variant="outline"
-                            className={position.currentQty > 0 ? 'text-green-500 border-green-500' : 'text-red-500 border-red-500'}
-                          >
-                            {position.currentQty > 0 ? 'LONG' : 'SHORT'}
-                          </Badge>
-                          <div>
-                            <p className="font-medium">{position.symbol}</p>
-                            <p className="text-sm text-muted-foreground">
-                              {Math.abs(position.currentQty)} {t('trading.positions.contracts')} @ {position.realLeverage.toFixed(1)}x
-                            </p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className={`text-lg font-bold ${position.unrealisedPnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                            {position.unrealisedPnl >= 0 ? '+' : ''}${position.unrealisedPnl.toFixed(2)}
-                          </p>
-                          <p className={`text-sm ${position.unrealisedPnlPcnt >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                            {position.unrealisedPnlPcnt >= 0 ? '+' : ''}{(position.unrealisedPnlPcnt * 100).toFixed(2)}%
-                          </p>
-                        </div>
-                      </div>
-                      
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                        <div>
-                          <p className="text-muted-foreground">{t('trading.positions.entryPrice')}</p>
-                          <p className="font-medium">${formatNumber(position.avgEntryPrice, locale)}</p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground">{t('trading.positions.markPrice')}</p>
-                          <p className="font-medium">${formatNumber(position.markPrice, locale)}</p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground">{t('trading.positions.liquidationPrice')}</p>
-                          <p className="font-medium text-red-500">
-                            ${formatNumber(position.liquidationPrice, locale)}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground">{t('trading.positions.margin')}</p>
-                          <p className="font-medium">${position.posMargin.toFixed(2)}</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
             )}
           </TabsContent>
 
@@ -2041,7 +2625,11 @@ export default function Trading() {
 
             {/* Size */}
             <div className="space-y-2">
-              <Label>{t('trading.orders.form.size')}</Label>
+              <Label>
+                {isFuturesMarket
+                  ? t('trading.orders.form.sizeContracts')
+                  : t('trading.orders.form.sizeAmount')}
+              </Label>
               <Input
                 type="number"
                 placeholder="1"
@@ -2050,9 +2638,28 @@ export default function Trading() {
                 data-testid="input-order-size"
               />
               <p className="text-xs text-muted-foreground">
-                {t('trading.orders.form.sizeHint')}
+                {isFuturesMarket
+                  ? t('trading.orders.form.sizeHint', { symbol: selectedSymbol || defaultSymbol })
+                  : t('trading.orders.form.sizeSpotHint')}
               </p>
             </div>
+
+            {/* Funds (somente Spot/Margin e ordem a mercado de compra) */}
+            {!isFuturesMarket && orderForm.orderType === 'market' && orderForm.side === 'buy' && (
+              <div className="space-y-2">
+                <Label>{t('trading.orders.form.funds')}</Label>
+                <Input
+                  type="number"
+                  placeholder="100"
+                  value={orderForm.funds}
+                  onChange={(e) => setOrderForm({ ...orderForm, funds: e.target.value })}
+                  data-testid="input-order-funds"
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t('trading.orders.form.fundsHint')}
+                </p>
+              </div>
+            )}
 
             {/* Price (only for limit) */}
             {orderForm.orderType === 'limit' && (
@@ -2068,25 +2675,27 @@ export default function Trading() {
               </div>
             )}
 
-            {/* Leverage */}
-            <div className="space-y-2">
-              <Label>{t('trading.orders.form.leverage')}</Label>
-              <Select
-                value={orderForm.leverage}
-                onValueChange={(value) => setOrderForm({ ...orderForm, leverage: value })}
-              >
-                <SelectTrigger data-testid="select-leverage">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {[1, 2, 3, 5, 10, 20, 50, 100].map((lev) => (
-                    <SelectItem key={lev} value={lev.toString()} disabled={lev > (riskConfig?.maxLeverage || 20)}>
-                      {lev}x
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {/* Leverage (apenas Futures) */}
+            {isFuturesMarket && (
+              <div className="space-y-2">
+                <Label>{t('trading.orders.form.leverage')}</Label>
+                <Select
+                  value={orderForm.leverage}
+                  onValueChange={(value) => setOrderForm({ ...orderForm, leverage: value })}
+                >
+                  <SelectTrigger data-testid="select-leverage">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[1, 2, 3, 5, 10, 20, 50, 100].map((lev) => (
+                      <SelectItem key={lev} value={lev.toString()} disabled={lev > (riskConfig?.maxLeverage || 20)}>
+                        {lev}x
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             {/* Stop Loss & Take Profit */}
             <div className="grid grid-cols-2 gap-4">
@@ -2113,14 +2722,27 @@ export default function Trading() {
             </div>
 
             {/* Order Summary */}
-            {orderForm.size && (
+            {(orderForm.size || orderForm.funds) && (
               <Card className="bg-muted/50">
                 <CardContent className="p-3 text-sm">
                   <p className="font-medium mb-2">{t('trading.orders.form.summary')}</p>
                   <div className="space-y-1 text-muted-foreground">
-                    <p>{orderForm.side === 'buy' ? t('trading.orders.buying') : t('trading.orders.selling')} {orderForm.size} {t('trading.orders.contracts')}</p>
+                    {orderForm.size && (
+                      <p>
+                        {orderForm.side === 'buy' ? t('trading.orders.buying') : t('trading.orders.selling')}{' '}
+                        {orderForm.size}{' '}
+                        {isFuturesMarket ? t('trading.orders.contracts') : t('trading.orders.amount')}
+                      </p>
+                    )}
+                    {!isFuturesMarket && orderForm.funds && (
+                      <p>
+                        {t('trading.orders.form.funds')}: {orderForm.funds}
+                      </p>
+                    )}
                     <p>{t('trading.orders.form.at')} {orderForm.orderType === 'market' ? t('trading.orders.form.marketPrice') : `$${orderForm.price || currentPrice}`}</p>
-                    <p>{t('trading.orders.form.withLeverage')} {orderForm.leverage}x</p>
+                    {isFuturesMarket && (
+                      <p>{t('trading.orders.form.withLeverage')} {orderForm.leverage}x</p>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -2136,7 +2758,7 @@ export default function Trading() {
             </Button>
             <Button
               onClick={() => createOrderMutation.mutate(orderForm)}
-              disabled={!orderForm.size || createOrderMutation.isPending}
+              disabled={!canSubmitOrder || createOrderMutation.isPending}
               className={orderForm.side === 'buy' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}
             >
               {createOrderMutation.isPending ? (
@@ -2318,6 +2940,62 @@ export default function Trading() {
                           {lev}x
                         </SelectItem>
                       ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('trading.riskConfig.defaultSymbol')}</Label>
+                  <Select
+                    value={riskForm.defaultSymbol}
+                    onValueChange={(value) => setRiskForm({ ...riskForm, defaultSymbol: value })}
+                    disabled={availableSymbols.length === 0}
+                  >
+                    <SelectTrigger data-testid="select-default-symbol">
+                      <SelectValue placeholder={t('trading.riskConfig.defaultSymbolPlaceholder')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableSymbols.map((symbol) => (
+                        <SelectItem key={symbol} value={symbol}>
+                          {symbol}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>{t('trading.riskConfig.defaultMarketType')}</Label>
+                  <Select
+                    value={riskForm.defaultMarketType}
+                    onValueChange={(value: 'futures' | 'spot' | 'margin') =>
+                      setRiskForm({ ...riskForm, defaultMarketType: value })
+                    }
+                  >
+                    <SelectTrigger data-testid="select-default-market-type">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="futures">{t('trading.marketType.futures')}</SelectItem>
+                      <SelectItem value="spot">{t('trading.marketType.spot')}</SelectItem>
+                      <SelectItem value="margin">{t('trading.marketType.margin')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('trading.riskConfig.marginMode')}</Label>
+                  <Select
+                    value={riskForm.marginMode}
+                    onValueChange={(value: 'cross' | 'isolated') => setRiskForm({ ...riskForm, marginMode: value })}
+                    disabled={riskForm.defaultMarketType !== 'margin'}
+                  >
+                    <SelectTrigger data-testid="select-default-margin-mode">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="cross">{t('trading.marginMode.cross')}</SelectItem>
+                      <SelectItem value="isolated">{t('trading.marginMode.isolated')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

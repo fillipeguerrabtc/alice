@@ -59,6 +59,8 @@ export interface ParsedTradingCommand {
   leverage?: number;
   stopLoss?: number;
   takeProfit?: number;
+  marketType?: 'spot' | 'margin' | 'futures';
+  marginMode?: 'cross' | 'isolated';
   /**
    * Direção da ordem (buy/sell)
    * CORREÇÃO AUDITORIA 17/12/2025: Campo adicionado para stop orders
@@ -99,14 +101,14 @@ const COMMAND_PATTERNS: CommandPattern[] = [
   {
     type: 'buy',
     patterns: [
-      /\b(compre?|comprar|buy|long)\s+(\d+(?:\.\d+)?)\s*(btc|bitcoin|xbt|contratos?)?\b/i,
+      /\b(compre?|comprar|buy|long)\s+(\d+(?:\.\d+)?)\s*([a-z0-9]{2,15}(?:[-_/][a-z0-9]{2,15})?|contratos?)?\b/i,
       /\b(abrir?|abra|open)\s+(long|compra)\s+(\d+(?:\.\d+)?)\b/i,
       /\b(quero|gostaria\s+de)\s+comprar\s+(\d+(?:\.\d+)?)\b/i,
-      /\bcompra\s+(\d+(?:\.\d+)?)\s*(btc|bitcoin)?\b/i,
+      /\bcompra\s+(\d+(?:\.\d+)?)\s*([a-z0-9]{2,15}(?:[-_/][a-z0-9]{2,15})?)?\b/i,
     ],
     extractors: {
       amount: /(\d+(?:\.\d+)?)/,
-      symbol: /(btc|bitcoin|xbt|xbtusdtm)/i,
+      symbol: /([a-z0-9]{2,15}(?:[-_/][a-z0-9]{2,15})?)/i,
     },
   },
 
@@ -114,14 +116,14 @@ const COMMAND_PATTERNS: CommandPattern[] = [
   {
     type: 'sell',
     patterns: [
-      /\b(venda|vender|sell|short)\s+(\d+(?:\.\d+)?)\s*(btc|bitcoin|xbt|contratos?)?\b/i,
+      /\b(venda|vender|sell|short)\s+(\d+(?:\.\d+)?)\s*([a-z0-9]{2,15}(?:[-_/][a-z0-9]{2,15})?|contratos?)?\b/i,
       /\b(abrir?|abra|open)\s+(short|venda)\s+(\d+(?:\.\d+)?)\b/i,
       /\b(quero|gostaria\s+de)\s+vender\s+(\d+(?:\.\d+)?)\b/i,
-      /\bvende\s+(\d+(?:\.\d+)?)\s*(btc|bitcoin)?\b/i,
+      /\bvende\s+(\d+(?:\.\d+)?)\s*([a-z0-9]{2,15}(?:[-_/][a-z0-9]{2,15})?)?\b/i,
     ],
     extractors: {
       amount: /(\d+(?:\.\d+)?)/,
-      symbol: /(btc|bitcoin|xbt|xbtusdtm)/i,
+      symbol: /([a-z0-9]{2,15}(?:[-_/][a-z0-9]{2,15})?)/i,
     },
   },
 
@@ -257,7 +259,7 @@ const COMMAND_PATTERNS: CommandPattern[] = [
 // ============================================================================
 
 const TRADING_CONTEXT_KEYWORDS = [
-  'btc', 'bitcoin', 'trading', 'trade', 'ordem', 'order',
+  'trading', 'trade', 'ordem', 'order',
   'posição', 'position', 'compra', 'venda', 'buy', 'sell',
   'long', 'short', 'futures', 'perpetual', 'alavancagem',
   'leverage', 'stop', 'profit', 'loss', 'mercado', 'market',
@@ -294,16 +296,48 @@ export { _extractNumber as extractNumber };
 /**
  * Extrai símbolo do texto
  */
-function extractSymbol(text: string): string {
-  const match = text.match(/(xbtusdtm|xbtusdm|btc|bitcoin)/i);
-  if (match) {
-    const symbol = match[1].toLowerCase();
-    if (symbol === 'btc' || symbol === 'bitcoin') {
-      return 'XBTUSDTM'; // Default para BTC perpetual
-    }
-    return symbol.toUpperCase();
+function extractSymbol(text: string): string | undefined {
+  const match = text.match(/\b([a-z]{2,10}[-_/][a-z]{2,10}|[a-z]{6,12})\b/i);
+  if (!match) return undefined;
+
+  const raw = match[1].trim();
+  // Evitar capturar tokens curtos como "btc" sem par explícito
+  if (!raw.includes('-') && !raw.includes('/') && raw.length < 6) {
+    return undefined;
   }
-  return 'XBTUSDTM'; // Default
+
+  return raw.replace('/', '-').toUpperCase();
+}
+
+function detectMarketType(text: string, symbol?: string): { marketType?: 'spot' | 'margin' | 'futures'; marginMode?: 'cross' | 'isolated' } {
+  const lower = text.toLowerCase();
+  const isSpot = /\bspot\b|\bà vista\b|\bavista\b|\bmercado spot\b/.test(lower);
+  const isMargin = /\bmargem\b|\bmargin\b/.test(lower);
+  const isFutures = /\bfuture\b|\bfutures\b|\bperp\b|\bperpetual\b|\bperpétuo\b|\bperpetuo\b/.test(lower);
+  const isIsolated = /\bisolad[ao]\b|\bisolated\b/.test(lower);
+  const isCross = /\bcross\b|\bcruzad[ao]\b/.test(lower);
+
+  let marketType: 'spot' | 'margin' | 'futures' | undefined;
+  if (isMargin) {
+    marketType = 'margin';
+  } else if (isSpot) {
+    marketType = 'spot';
+  } else if (isFutures) {
+    marketType = 'futures';
+  }
+
+  if (!marketType && symbol && /USDTM$/i.test(symbol)) {
+    marketType = 'futures';
+  }
+
+  let marginMode: 'cross' | 'isolated' | undefined;
+  if (isIsolated) {
+    marginMode = 'isolated';
+  } else if (isCross) {
+    marginMode = 'cross';
+  }
+
+  return { marketType, marginMode };
 }
 
 /**
@@ -380,6 +414,9 @@ export function parseTradingCommand(text: string): ParsedTradingCommand {
           // CORREÇÃO: Extrair amount dos grupos capturados, NÃO do texto inteiro
           result.amount = extractAmountFromMatch(match);
           result.symbol = extractSymbol(text);
+          const marketSelection = detectMarketType(text, result.symbol);
+          result.marketType = marketSelection.marketType;
+          result.marginMode = marketSelection.marginMode;
           
           // Verificar alavancagem mencionada (buscar padrão Nx onde N é número seguido de 'x')
           // CORREÇÃO 17/12/2025: Removida verificação incorreta `leverageValue !== result.amount`
@@ -439,7 +476,16 @@ export function parseTradingCommand(text: string): ParsedTradingCommand {
             result.positionType = 'short';
             result.side = 'buy'; // Fechar short = comprar
           }
+          const marketSelection = detectMarketType(text, result.symbol);
+          result.marketType = marketSelection.marketType;
+          result.marginMode = marketSelection.marginMode;
           // Se ambos ou nenhum, side permanece undefined e será inferido da posição atual
+        }
+
+        if (!result.marketType || !result.marginMode) {
+          const marketSelection = detectMarketType(text, result.symbol);
+          result.marketType = result.marketType ?? marketSelection.marketType;
+          result.marginMode = result.marginMode ?? marketSelection.marginMode;
         }
 
         logger.debug({

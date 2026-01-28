@@ -33,13 +33,11 @@ const logger = createLogger('kucoin-websocket');
 // ============================================================================
 
 const KUCOIN_FUTURES_BASE_URL = process.env.KUCOIN_PRO_BASE_URL || 'https://api-futures.kucoin.com';
-const KUCOIN_API_KEY = process.env.KUCOIN_PRO_API_KEY;
-const KUCOIN_API_SECRET = process.env.KUCOIN_PRO_API_SECRET;
-const KUCOIN_API_PASSPHRASE = process.env.KUCOIN_PRO_API_PASSPHRASE;
-const KUCOIN_API_KEY_VERSION = (process.env.KUCOIN_PRO_API_KEY_VERSION || process.env.KUCOIN_API_KEY_VERSION || '2').trim();
+const KUCOIN_PRO_API_KEY = process.env.KUCOIN_PRO_API_KEY;
+const KUCOIN_PRO_API_SECRET = process.env.KUCOIN_PRO_API_SECRET;
+const KUCOIN_PRO_API_PASSPHRASE = process.env.KUCOIN_PRO_API_PASSPHRASE;
+const KUCOIN_PRO_API_KEY_VERSION = (process.env.KUCOIN_PRO_API_KEY_VERSION || '2').trim();
 const KUCOIN_TIME_SYNC_INTERVAL_MS = Number(process.env.KUCOIN_TIME_SYNC_INTERVAL_MS || 300_000);
-const KUCOIN_SANDBOX_MODE = process.env.KUCOIN_SANDBOX_MODE === 'true';
-const KUCOIN_SANDBOX_URL = 'https://api-sandbox-futures.kucoin.com';
 
 // ============================================================================
 // TIME SYNC (conforme documentação oficial)
@@ -289,46 +287,46 @@ export interface KucoinWSEvents {
  * Gera assinatura HMAC-SHA256 para autenticação
  */
 function generateSignature(timestamp: string, method: string, endpoint: string, body: string = ''): string {
-  if (!KUCOIN_API_SECRET) {
-    throw new Error('KUCOIN_API_SECRET não configurada');
+  if (!KUCOIN_PRO_API_SECRET) {
+    throw new Error('KUCOIN_PRO_API_SECRET não configurada');
   }
   const prehashString = timestamp + method.toUpperCase() + endpoint + body;
-  return crypto.createHmac('sha256', KUCOIN_API_SECRET).update(prehashString).digest('base64');
+  return crypto.createHmac('sha256', KUCOIN_PRO_API_SECRET).update(prehashString).digest('base64');
 }
 
 /**
  * Gera passphrase criptografada (requerido pela API v2)
  */
 function generatePassphraseSignature(): string {
-  if (!KUCOIN_API_SECRET || !KUCOIN_API_PASSPHRASE) {
-    throw new Error('KUCOIN_API_SECRET ou KUCOIN_API_PASSPHRASE não configurada');
+  if (!KUCOIN_PRO_API_SECRET || !KUCOIN_PRO_API_PASSPHRASE) {
+    throw new Error('KUCOIN_PRO_API_SECRET ou KUCOIN_PRO_API_PASSPHRASE não configurada');
   }
-  if (KUCOIN_API_KEY_VERSION === '1') {
-    return KUCOIN_API_PASSPHRASE;
+  if (KUCOIN_PRO_API_KEY_VERSION === '1') {
+    return KUCOIN_PRO_API_PASSPHRASE;
   }
-  return crypto.createHmac('sha256', KUCOIN_API_SECRET).update(KUCOIN_API_PASSPHRASE).digest('base64');
+  return crypto.createHmac('sha256', KUCOIN_PRO_API_SECRET).update(KUCOIN_PRO_API_PASSPHRASE).digest('base64');
 }
 
 /**
  * Gera headers de autenticação
  */
 function generateAuthHeaders(method: string, endpoint: string, body: string = ''): Record<string, string> {
-  if (!KUCOIN_API_KEY) {
-    throw new Error('KUCOIN_API_KEY não configurada');
+  if (!KUCOIN_PRO_API_KEY) {
+    throw new Error('KUCOIN_PRO_API_KEY não configurada');
   }
-  if (!['1', '2', '3'].includes(KUCOIN_API_KEY_VERSION)) {
-    throw new Error(`KUCOIN_PRO_API_KEY_VERSION inválida: ${KUCOIN_API_KEY_VERSION}`);
+  if (!['1', '2', '3'].includes(KUCOIN_PRO_API_KEY_VERSION)) {
+    throw new Error(`KUCOIN_PRO_API_KEY_VERSION inválida: ${KUCOIN_PRO_API_KEY_VERSION}`);
   }
   const timestamp = (Date.now() + kucoinTimeOffsetMs).toString();
   const signature = generateSignature(timestamp, method, endpoint, body);
   const passphrase = generatePassphraseSignature();
 
   return {
-    'KC-API-KEY': KUCOIN_API_KEY,
+    'KC-API-KEY': KUCOIN_PRO_API_KEY,
     'KC-API-SIGN': signature,
     'KC-API-TIMESTAMP': timestamp,
     'KC-API-PASSPHRASE': passphrase,
-    'KC-API-KEY-VERSION': KUCOIN_API_KEY_VERSION,
+    'KC-API-KEY-VERSION': KUCOIN_PRO_API_KEY_VERSION,
     'Content-Type': 'application/json',
   };
 }
@@ -363,7 +361,7 @@ export class KucoinWebSocketClient extends EventEmitter {
    * @param isPrivate - Se true, obtém token para canais privados (requer auth)
    */
   private async getToken(isPrivate: boolean): Promise<BulletResponse> {
-    const baseUrl = KUCOIN_SANDBOX_MODE ? KUCOIN_SANDBOX_URL : KUCOIN_FUTURES_BASE_URL;
+    const baseUrl = KUCOIN_FUTURES_BASE_URL;
     const endpoint = isPrivate ? '/api/v1/bullet-private' : '/api/v1/bullet-public';
     const url = `${baseUrl}${endpoint}`;
 
@@ -375,7 +373,7 @@ export class KucoinWebSocketClient extends EventEmitter {
       ? generateAuthHeaders('POST', endpoint)
       : { 'Content-Type': 'application/json' };
 
-    logger.debug({ isPrivate, endpoint, isSandbox: KUCOIN_SANDBOX_MODE }, 'Obtendo token WebSocket');
+    logger.debug({ isPrivate, endpoint }, 'Obtendo token WebSocket');
 
     // CORREÇÃO AUDITORIA 17/12/2025: Adicionar timeout de 30s conforme best practices
     // Bug: fetch sem timeout pode travar indefinidamente se servidor não responder
@@ -786,7 +784,7 @@ export class KucoinWebSocketClient extends EventEmitter {
 
   /**
    * Subscreve ao order book de um símbolo
-   * @param symbol - Símbolo (ex: XBTUSDTM)
+   * @param symbol - Símbolo (ex: SYMBOL)
    * @param depth - Profundidade (5 ou 50)
    */
   subscribeOrderBook(symbol: string, depth: 5 | 50 = 50): void {
@@ -795,7 +793,7 @@ export class KucoinWebSocketClient extends EventEmitter {
 
   /**
    * Subscreve a candles/klines de um símbolo
-   * @param symbol - Símbolo (ex: XBTUSDTM)
+   * @param symbol - Símbolo (ex: SYMBOL)
    * @param interval - Intervalo (1min, 3min, 5min, 15min, 30min, 1hour, 2hour, 4hour, 8hour, 12hour, 1day, 1week)
    */
   subscribeKlines(symbol: string, interval: string): void {
@@ -961,7 +959,7 @@ export function getPrivateWebSocketClient(): KucoinWebSocketClient {
  * Verifica se WebSocket está configurado (credenciais disponíveis)
  */
 export function isWebSocketConfigured(): boolean {
-  return !!(KUCOIN_API_KEY && KUCOIN_API_SECRET && KUCOIN_API_PASSPHRASE);
+  return !!(KUCOIN_PRO_API_KEY && KUCOIN_PRO_API_SECRET && KUCOIN_PRO_API_PASSPHRASE);
 }
 
 /**

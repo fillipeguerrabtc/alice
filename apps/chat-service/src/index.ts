@@ -4759,6 +4759,8 @@ interface ParsedTradingCommand {
   leverage?: number;
   stopLoss?: number;
   takeProfit?: number;
+  marketType?: 'spot' | 'margin' | 'futures';
+  marginMode?: 'cross' | 'isolated';
   /** Direção da ordem (buy/sell) - CORREÇÃO 18/12/2025: Campo adicionado para stop orders */
   side?: 'buy' | 'sell';
   /** Tipo de posição (long/short) */
@@ -4915,6 +4917,104 @@ async function executeTradingCommand(
       }
     }
 
+    const resolveDefaultSymbol = async (
+      marketType?: string,
+      marginMode?: string
+    ): Promise<string | null> => {
+      try {
+        const params = new URLSearchParams();
+        if (marketType) params.set('marketType', marketType);
+        if (marginMode) params.set('marginMode', marginMode);
+        const symbolsUrl = `${INTEGRATIONS_SERVICE_URL_FINAL}/api/integrations/trading/symbols${params.toString() ? `?${params}` : ''}`;
+        const response = await fetch(symbolsUrl, {
+          method: 'GET',
+          headers,
+          signal: controller.signal,
+        });
+        if (!response.ok) return null;
+        const data = await response.json() as { success?: boolean; data?: { defaultSymbol?: string } };
+        return data?.data?.defaultSymbol ?? null;
+      } catch (error) {
+        logger.warn(
+          { error: error instanceof Error ? error.message : 'Erro desconhecido' },
+          'Falha ao resolver símbolo default do trading'
+        );
+        return null;
+      }
+    };
+
+    const resolveMarketDefaults = async (): Promise<{ marketType?: string; marginMode?: string } | null> => {
+      try {
+        const response = await fetch(`${INTEGRATIONS_SERVICE_URL_FINAL}/api/integrations/trading/risk-config`, {
+          method: 'GET',
+          headers,
+          signal: controller.signal,
+        });
+        if (!response.ok) return null;
+        const data = await response.json() as { success?: boolean; data?: { defaultMarketType?: string; marginMode?: string } };
+        if (!data?.data) return null;
+        return {
+          marketType: data.data.defaultMarketType,
+          marginMode: data.data.marginMode,
+        };
+      } catch (error) {
+        logger.warn(
+          { error: error instanceof Error ? error.message : 'Erro desconhecido' },
+          'Falha ao resolver mercado padrão do trading'
+        );
+        return null;
+      }
+    };
+
+    const resolveContractsSize = async (
+      symbol: string,
+      amount: number,
+      marketType?: string,
+      marginMode?: string
+    ): Promise<number> => {
+      const params = new URLSearchParams();
+      if (marketType) params.set('marketType', marketType);
+      if (marginMode) params.set('marginMode', marginMode);
+      const marketUrl = `${INTEGRATIONS_SERVICE_URL_FINAL}/api/integrations/trading/market/${symbol}${params.toString() ? `?${params}` : ''}`;
+      const response = await fetch(marketUrl, {
+        method: 'GET',
+        headers,
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        throw new Error('Não foi possível obter dados de contrato para converter quantidade em contratos.');
+      }
+      const marketData = await response.json() as { success?: boolean; data?: { contract?: { multiplier?: number } } };
+      const multiplier = marketData?.data?.contract?.multiplier;
+      if (!Number.isFinite(amount) || amount <= 0) {
+        throw new Error('Quantidade inválida para a ordem.');
+      }
+      if (!Number.isFinite(multiplier) || !multiplier || multiplier <= 0) {
+        if (marketType === 'futures') {
+          throw new Error('Multiplicador de contrato inválido para conversão de contratos.');
+        }
+        return amount;
+      }
+
+      const rawContracts = amount / multiplier;
+      const rounded = Math.round(rawContracts);
+      const delta = Math.abs(rawContracts - rounded);
+      if (delta > 1e-6) {
+        throw new Error(
+          `Quantidade informada (${amount}) não é múltiplo do contrato (${multiplier}). ` +
+          'Informe a quantidade em contratos inteiros ou ajuste o valor.'
+        );
+      }
+      if (!Number.isInteger(rounded) || rounded <= 0) {
+        throw new Error('Quantidade em contratos inválida após conversão.');
+      }
+      return rounded;
+    };
+
+    const marketDefaults = await resolveMarketDefaults();
+    const effectiveMarketType = command.marketType ?? marketDefaults?.marketType;
+    const effectiveMarginMode = command.marginMode ?? marketDefaults?.marginMode;
+
     // Mapear comando para endpoint e payload do Integrations Service
     let endpoint = '';
     let method = 'GET';
@@ -4925,21 +5025,36 @@ async function executeTradingCommand(
       case 'sell':
         endpoint = '/api/integrations/trading/orders';
         method = 'POST';
-        body = {
-          side: command.type,
-          orderType: 'market',
-          size: command.amount || 0.001, // Mínimo BTC
-          symbol: command.symbol || 'XBTUSDTM',
-          leverage: command.leverage,
-          stopLoss: command.stopLoss,
-          takeProfit: command.takeProfit,
-        };
+        {
+          const resolvedSymbol = command.symbol || await resolveDefaultSymbol(effectiveMarketType, effectiveMarginMode);
+          if (!resolvedSymbol) {
+            return { success: false, error: 'Símbolo não definido para executar a ordem.' };
+          }
+          if (!command.amount || command.amount <= 0) {
+            return { success: false, error: 'Quantidade inválida para a ordem.' };
+          }
+          const sizeInContracts = await resolveContractsSize(resolvedSymbol, command.amount, effectiveMarketType, effectiveMarginMode);
+          body = {
+            symbol: resolvedSymbol,
+            side: command.type,
+            orderType: 'market',
+            size: sizeInContracts,
+            leverage: effectiveMarketType === 'futures' ? command.leverage : undefined,
+            marketType: effectiveMarketType,
+            marginMode: effectiveMarginMode,
+          };
+        }
         break;
 
       case 'close_position':
+        if (effectiveMarketType && effectiveMarketType !== 'futures') {
+          return { success: false, error: 'Fechamento de posição é suportado apenas em Futures.' };
+        }
         endpoint = '/api/integrations/trading/positions';
         method = 'DELETE';
-        body = { symbol: command.symbol || 'XBTUSDTM' };
+        body = command.symbol
+          ? { symbol: command.symbol, marketType: effectiveMarketType, marginMode: effectiveMarginMode }
+          : { marketType: effectiveMarketType, marginMode: effectiveMarginMode };
         break;
 
       case 'cancel_order':
@@ -4974,10 +5089,16 @@ async function executeTradingCommand(
           let determinedSide: 'buy' | 'sell' = command.side || 'sell';
           
           // Se side não foi especificado no comando, tentar inferir da posição atual
-          if (!command.side) {
+          let resolvedSymbol: string | null = command.symbol || null;
+          let sizeFromPosition: number | null = null;
+
+          if (!command.side && (effectiveMarketType ?? 'futures') === 'futures') {
             try {
               // Buscar posições atuais para determinar o side correto
-              const positionsUrl = `${INTEGRATIONS_SERVICE_URL_FINAL}/api/integrations/trading/positions`;
+              const positionsParams = new URLSearchParams();
+              if (effectiveMarketType) positionsParams.set('marketType', effectiveMarketType);
+              if (effectiveMarginMode) positionsParams.set('marginMode', effectiveMarginMode);
+              const positionsUrl = `${INTEGRATIONS_SERVICE_URL_FINAL}/api/integrations/trading/positions${positionsParams.toString() ? `?${positionsParams}` : ''}`;
               const positionsResponse = await fetch(positionsUrl, {
                 method: 'GET',
                 headers,
@@ -4987,18 +5108,23 @@ async function executeTradingCommand(
               if (positionsResponse.ok) {
                 const positionsData = await positionsResponse.json() as { success: boolean; data: Array<{ symbol: string; currentQty: number }> };
                 if (positionsData.success && positionsData.data) {
-                  const symbol = command.symbol || 'XBTUSDTM';
-                  const position = positionsData.data.find(p => p.symbol === symbol);
+                  resolvedSymbol = resolvedSymbol || await resolveDefaultSymbol(effectiveMarketType, effectiveMarginMode);
+                  if (!resolvedSymbol) {
+                    logger.warn('Símbolo não definido para inferência de posição - fallback de side será usado');
+                  } else {
+                    const position = positionsData.data.find(p => p.symbol === resolvedSymbol);
                   
-                  if (position && position.currentQty !== 0) {
-                    // currentQty > 0 = LONG position → fechar com SELL
-                    // currentQty < 0 = SHORT position → fechar com BUY
-                    determinedSide = position.currentQty > 0 ? 'sell' : 'buy';
-                    logger.debug({
-                      symbol,
-                      currentQty: position.currentQty,
-                      determinedSide,
-                    }, 'Side inferido da posição atual para stop order');
+                    if (position && position.currentQty !== 0) {
+                      // currentQty > 0 = LONG position → fechar com SELL
+                      // currentQty < 0 = SHORT position → fechar com BUY
+                      determinedSide = position.currentQty > 0 ? 'sell' : 'buy';
+                      sizeFromPosition = Math.abs(position.currentQty);
+                      logger.debug({
+                        symbol: resolvedSymbol,
+                        currentQty: position.currentQty,
+                        determinedSide,
+                      }, 'Side inferido da posição atual para stop order');
+                    }
                   }
                 }
               }
@@ -5012,13 +5138,38 @@ async function executeTradingCommand(
             }
           }
           
+          resolvedSymbol = resolvedSymbol || await resolveDefaultSymbol(effectiveMarketType, effectiveMarginMode);
+          if (!resolvedSymbol) {
+            return { success: false, error: 'Símbolo não definido para criar stop order.' };
+          }
+
+          let resolvedSize: number | null = null;
+          if (sizeFromPosition && Number.isInteger(sizeFromPosition) && sizeFromPosition > 0) {
+            resolvedSize = sizeFromPosition;
+          } else if (command.amount && command.amount > 0) {
+            resolvedSize = await resolveContractsSize(
+              resolvedSymbol,
+              command.amount,
+              effectiveMarketType,
+              effectiveMarginMode
+            );
+          }
+
+          if (!resolvedSize) {
+            return {
+              success: false,
+              error: 'Não foi possível determinar o tamanho da posição para o stop. Informe a quantidade.'
+            };
+          }
+
           body = {
-            symbol: command.symbol || 'XBTUSDTM',
+            symbol: resolvedSymbol,
             side: determinedSide,
-            size: command.amount || 1,
+            size: resolvedSize,
             stopLoss: command.stopLoss,
             takeProfit: command.takeProfit,
             leverage: command.leverage,
+            stopPriceType: 'MP',
           };
         }
         break;
@@ -5042,7 +5193,19 @@ async function executeTradingCommand(
         };
     }
 
-    const url = `${INTEGRATIONS_SERVICE_URL_FINAL}${endpoint}`;
+    let url = `${INTEGRATIONS_SERVICE_URL_FINAL}${endpoint}`;
+    if (
+      method === 'GET' &&
+      (endpoint.startsWith('/api/integrations/trading/positions') || endpoint.startsWith('/api/integrations/trading/orders'))
+    ) {
+      const query = new URLSearchParams();
+      if (effectiveMarketType) query.set('marketType', effectiveMarketType);
+      if (effectiveMarginMode) query.set('marginMode', effectiveMarginMode);
+      const queryString = query.toString();
+      if (queryString) {
+        url = `${url}?${queryString}`;
+      }
+    }
     
     const fetchOptions: RequestInit = {
       method,
@@ -5077,6 +5240,63 @@ async function executeTradingCommand(
     }
 
     const data = await response.json() as Record<string, unknown>;
+
+    if ((command.type === 'buy' || command.type === 'sell') && (command.stopLoss || command.takeProfit)) {
+      try {
+        const orderPayload = data?.data as { symbol?: string; size?: number };
+                const stopSymbol = command.symbol
+                  ?? (orderPayload?.symbol && typeof orderPayload.symbol === 'string' ? orderPayload.symbol : null)
+                  ?? await resolveDefaultSymbol(effectiveMarketType, effectiveMarginMode);
+        const stopSize = command.amount ?? (orderPayload?.size && Number.isFinite(orderPayload.size) ? orderPayload.size : null);
+
+        if (!stopSymbol || !stopSize) {
+          logger.warn(
+            { stopSymbol, stopSize },
+            'Stop order não enviado: símbolo ou size não resolvidos'
+          );
+        } else if (effectiveMarketType === 'futures' && !Number.isInteger(stopSize)) {
+          logger.warn(
+            { stopSize },
+            'Stop order não enviado: size precisa ser inteiro (contratos)'
+          );
+        } else {
+          const stopSide = command.type === 'buy' ? 'sell' : 'buy';
+                  const stopOrderResponse = await fetch(
+            `${INTEGRATIONS_SERVICE_URL_FINAL}/api/integrations/trading/stop-orders`,
+            {
+              method: 'POST',
+              headers,
+              signal: controller.signal,
+              body: JSON.stringify({
+                symbol: stopSymbol,
+                side: stopSide,
+                size: stopSize,
+                stopLoss: command.stopLoss,
+                takeProfit: command.takeProfit,
+                leverage: effectiveMarketType === 'futures' ? command.leverage : undefined,
+                orderType: 'market',
+                stopPriceType: 'MP',
+                        marketType: effectiveMarketType,
+                        marginMode: effectiveMarginMode,
+              }),
+            }
+          );
+
+          if (!stopOrderResponse.ok) {
+            const stopErrorText = await stopOrderResponse.text();
+            logger.warn(
+              { error: stopErrorText },
+              'Falha ao criar stop order após ordem principal'
+            );
+          }
+        }
+      } catch (stopError) {
+        logger.warn(
+          { error: stopError instanceof Error ? stopError.message : 'Erro desconhecido' },
+          'Falha ao processar stop order após ordem principal'
+        );
+      }
+    }
     
     return {
       success: true,
@@ -10303,7 +10523,15 @@ wss.on('connection', (ws, req) => {
       if (message.type === 'trading:subscribe') {
         // Registrar subscription de trading para este cliente
         const tradingChannel = message.channel || 'ticker';
-        const symbol = message.symbol || 'XBTUSDTM';
+        const symbol = message.symbol?.trim();
+        if (!symbol) {
+          ws.send(JSON.stringify({
+            type: 'trading:error',
+            error: 'Símbolo é obrigatório para assinatura de trading',
+            channel: tradingChannel,
+          }));
+          return;
+        }
         
         // Armazenar subscription no extWs para broadcast posterior
         if (!extWs.tradingSubscriptions) {
@@ -10324,7 +10552,15 @@ wss.on('connection', (ws, req) => {
       
       if (message.type === 'trading:unsubscribe') {
         const tradingChannel = message.channel || 'ticker';
-        const symbol = message.symbol || 'XBTUSDTM';
+        const symbol = message.symbol?.trim();
+        if (!symbol) {
+          ws.send(JSON.stringify({
+            type: 'trading:error',
+            error: 'Símbolo é obrigatório para cancelar assinatura de trading',
+            channel: tradingChannel,
+          }));
+          return;
+        }
         
         if (extWs.tradingSubscriptions) {
           extWs.tradingSubscriptions.delete(`${tradingChannel}:${symbol}`);

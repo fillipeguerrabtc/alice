@@ -134,6 +134,17 @@ export const integrationsServicePaths = {
       },
     },
   },
+  '/api/integrations/trading/symbols': {
+    get: {
+      summary: 'Lista símbolos disponíveis para trading',
+      tags: ['Trading'],
+      responses: {
+        200: { description: 'Lista de símbolos e símbolo default' },
+        401: { description: 'Não autenticado' },
+        503: { description: 'KuCoin indisponível (breaker/credenciais)' },
+      },
+    },
+  },
   '/api/integrations/stats': {
     get: {
       summary: 'Estatísticas das integrações',

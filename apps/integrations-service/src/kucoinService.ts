@@ -28,12 +28,12 @@ import {
   type InsertTradingAuditLog,
 } from '@alice/shared';
 import * as kucoinClient from './kucoinClient.js';
+import * as kucoinSpotClient from './kucoinSpotClient.js';
+import * as kucoinMarginClient from './kucoinMarginClient.js';
 
 const logger = createLogger('kucoin-service');
 
-// Símbolo padrão para trading BTC Futures (configurável via env no kucoinClient)
-// Fonte de verdade: kucoinClient.getDefaultSymbol()
-const DEFAULT_SYMBOL = kucoinClient.getDefaultSymbol();
+// Símbolo default é resolvido dinamicamente via API KuCoin (sem hardcoded).
 
 // ============================================================================
 // TIPOS ESPECÍFICOS DO SERVIÇO
@@ -45,6 +45,9 @@ export interface TradingAuthContext {
   userId: string;
   sessionId?: string;
 }
+
+type TradingMarketType = 'futures' | 'spot' | 'margin';
+type TradingMarginMode = 'cross' | 'isolated';
 
 /** Parâmetros para criar um sinal de trading */
 export interface CreateSignalParams {
@@ -63,9 +66,12 @@ export interface CreateOrderFromSignalParams {
   symbol?: string;
   side: 'buy' | 'sell';
   orderType: 'limit' | 'market';
-  size: number;
+  size?: number;
   price?: number;
   leverage?: number;
+  marketType?: TradingMarketType;
+  marginMode?: TradingMarginMode;
+  funds?: number;
 }
 
 /** Parâmetros para ordem manual */
@@ -73,9 +79,12 @@ export interface ManualOrderParams {
   symbol?: string;
   side: 'buy' | 'sell';
   orderType: 'limit' | 'market';
-  size: number;
+  size?: number;
   price?: number;
   leverage?: number;
+  marketType?: TradingMarketType;
+  marginMode?: TradingMarginMode;
+  funds?: number;
 }
 
 /** Resultado de operação de trading */
@@ -84,6 +93,229 @@ export interface TradingOperationResult<T> {
   data?: T;
   error?: string;
   auditLogId?: string;
+}
+
+// ============================================================================
+// SÍMBOLOS (dinâmicos via KuCoin API)
+// ============================================================================
+
+function normalizeSymbolInput(input: string): string {
+  return input.trim().toUpperCase();
+}
+
+function normalizeSymbolKey(input: string): string {
+  return normalizeSymbolInput(input).replace(/[^A-Z0-9]/g, '');
+}
+
+async function resolveMarketType(
+  authContext: TradingAuthContext,
+  marketType?: TradingMarketType
+): Promise<TradingMarketType> {
+  if (marketType) return marketType;
+  const config = await getRiskConfig(authContext);
+  return (config?.defaultMarketType as TradingMarketType | undefined) ?? 'futures';
+}
+
+async function resolveMarginMode(
+  authContext: TradingAuthContext,
+  marginMode?: TradingMarginMode
+): Promise<TradingMarginMode> {
+  if (marginMode) return marginMode;
+  const config = await getRiskConfig(authContext);
+  return (config?.marginMode as TradingMarginMode | undefined) ?? 'cross';
+}
+
+async function getAllowedSymbolsByMarketType(
+  authContext: TradingAuthContext,
+  marketType: TradingMarketType,
+  marginMode: TradingMarginMode
+): Promise<string[]> {
+  if (marketType === 'spot') {
+    const symbols = await kucoinSpotClient.getSpotSymbols();
+    return symbols.map((item) => item.symbol).filter((symbol): symbol is string => Boolean(symbol));
+  }
+  if (marketType === 'margin') {
+    const symbols = marginMode === 'isolated'
+      ? await kucoinMarginClient.getIsolatedMarginSymbols()
+      : await kucoinMarginClient.getCrossMarginSymbols();
+    return symbols.map((item) => item.symbol).filter((symbol): symbol is string => Boolean(symbol));
+  }
+  return kucoinClient.getAllowedSymbols();
+}
+
+function resolveNormalizedSymbolInList(input: string, allowed: string[]): string | null {
+  const raw = normalizeSymbolInput(input);
+  if (allowed.includes(raw)) return raw;
+  const normalizedInput = normalizeSymbolKey(raw);
+  const match = allowed.find((symbol) => normalizeSymbolKey(symbol) === normalizedInput);
+  return match ?? null;
+}
+
+async function resolveDefaultSymbolByMarket(
+  authContext: TradingAuthContext,
+  marketType: TradingMarketType,
+  marginMode: TradingMarginMode
+): Promise<string> {
+  if (marketType === 'futures') {
+    return kucoinClient.getDefaultSymbol();
+  }
+  const allowed = await getAllowedSymbolsByMarketType(authContext, marketType, marginMode);
+  if (allowed.length === 0) {
+    throw new Error('KuCoin não retornou símbolos ativos para o mercado selecionado.');
+  }
+  return allowed[0];
+}
+
+export async function getTradingSymbols(
+  authContext: TradingAuthContext,
+  marketType?: TradingMarketType,
+  marginMode?: TradingMarginMode
+): Promise<{ symbols: string[]; contracts?: kucoinClient.KucoinContract[] }> {
+  const resolvedMarket = await resolveMarketType(authContext, marketType);
+  const resolvedMargin = await resolveMarginMode(authContext, marginMode);
+
+  if (resolvedMarket === 'futures') {
+    const contracts = await kucoinClient.getActiveContracts();
+    const symbols = contracts
+      .map((contract) => contract.symbol?.trim())
+      .filter((symbol): symbol is string => Boolean(symbol));
+
+    const uniqueSymbols = Array.from(new Set(symbols));
+    if (uniqueSymbols.length === 0) {
+      throw new Error('KuCoin não retornou símbolos ativos (contracts/active vazio).');
+    }
+    return { symbols: uniqueSymbols, contracts };
+  }
+
+  const allowed = await getAllowedSymbolsByMarketType(authContext, resolvedMarket, resolvedMargin);
+  if (allowed.length === 0) {
+    throw new Error('KuCoin não retornou símbolos ativos para o mercado selecionado.');
+  }
+  return { symbols: Array.from(new Set(allowed)) };
+}
+
+export async function resolveTradingSymbol(
+  authContext: TradingAuthContext,
+  input?: string,
+  marketType?: TradingMarketType,
+  marginMode?: TradingMarginMode
+): Promise<string> {
+  if (marketType || marginMode) {
+    const resolvedMarket = await resolveMarketType(authContext, marketType);
+    const resolvedMargin = await resolveMarginMode(authContext, marginMode);
+    if (input) {
+      const allowed = await getAllowedSymbolsByMarketType(authContext, resolvedMarket, resolvedMargin);
+      const resolved = resolveNormalizedSymbolInList(input, allowed);
+      if (resolved) return resolved;
+    }
+
+    const config = await getRiskConfig(authContext);
+    if (config?.defaultSymbol) {
+      const allowed = await getAllowedSymbolsByMarketType(authContext, resolvedMarket, resolvedMargin);
+      const normalizedDefault = resolveNormalizedSymbolInList(config.defaultSymbol, allowed);
+      if (normalizedDefault) return normalizedDefault;
+      logger.warn(
+        { tenantId: authContext.tenantId, defaultSymbol: config.defaultSymbol },
+        'Símbolo default configurado no tenant não é válido na KuCoin'
+      );
+    }
+
+    const fallback = await resolveDefaultSymbolByMarket(authContext, resolvedMarket, resolvedMargin);
+    if (config) {
+      await getDatabase()
+        .update(schema.tradingRiskConfig)
+        .set({ defaultSymbol: fallback, atualizadoEm: new Date() })
+        .where(eq(schema.tradingRiskConfig.tenantId, authContext.tenantId));
+
+      await logTradingAction(
+        authContext,
+        'UPDATE_DEFAULT_SYMBOL',
+        'risk_config',
+        config.id,
+        { defaultSymbol: fallback },
+        config as unknown as Record<string, unknown>,
+        { ...config, defaultSymbol: fallback } as unknown as Record<string, unknown>
+      );
+    }
+
+    return fallback;
+  }
+
+  const resolved = await resolveNormalizedSymbol(input);
+  if (resolved) return resolved;
+
+  const config = await getRiskConfig(authContext);
+  if (config?.defaultSymbol) {
+    const normalizedDefault = await resolveNormalizedSymbol(config.defaultSymbol);
+    if (normalizedDefault) return normalizedDefault;
+    logger.warn(
+      { tenantId: authContext.tenantId, defaultSymbol: config.defaultSymbol },
+      'Símbolo default configurado no tenant não é válido na KuCoin'
+    );
+  }
+
+  const fallback = await kucoinClient.getDefaultSymbol();
+
+  if (config) {
+    await getDatabase()
+      .update(schema.tradingRiskConfig)
+      .set({ defaultSymbol: fallback, atualizadoEm: new Date() })
+      .where(eq(schema.tradingRiskConfig.tenantId, authContext.tenantId));
+
+    await logTradingAction(
+      authContext,
+      'UPDATE_DEFAULT_SYMBOL',
+      'risk_config',
+      config.id,
+      { defaultSymbol: fallback },
+      config as unknown as Record<string, unknown>,
+      { ...config, defaultSymbol: fallback } as unknown as Record<string, unknown>
+    );
+  }
+
+  return fallback;
+}
+
+export async function resolveTradingSymbolStrict(
+  authContext: TradingAuthContext,
+  input?: string,
+  marketType?: TradingMarketType,
+  marginMode?: TradingMarginMode
+): Promise<string> {
+  if (marketType || marginMode) {
+    if (!input) {
+      return resolveTradingSymbol(authContext, input, marketType, marginMode);
+    }
+    const resolvedMarket = await resolveMarketType(authContext, marketType);
+    const resolvedMargin = await resolveMarginMode(authContext, marginMode);
+    const allowed = await getAllowedSymbolsByMarketType(authContext, resolvedMarket, resolvedMargin);
+    const resolved = resolveNormalizedSymbolInList(input, allowed);
+    if (!resolved) {
+      throw new Error(`Símbolo inválido: ${input}. Valores permitidos: ${allowed.join(', ')}`);
+    }
+    return resolved;
+  }
+  if (input) {
+    const resolved = await resolveNormalizedSymbol(input);
+    if (!resolved) {
+      const allowed = await kucoinClient.getAllowedSymbols();
+      throw new Error(`Símbolo inválido: ${input}. Valores permitidos: ${allowed.join(', ')}`);
+    }
+    return resolved;
+  }
+
+  return resolveTradingSymbol(authContext);
+}
+async function resolveNormalizedSymbol(input?: string): Promise<string | null> {
+  if (!input) return null;
+  const raw = normalizeSymbolInput(input);
+  const allowed = await kucoinClient.getAllowedSymbols();
+
+  if (allowed.includes(raw)) return raw;
+
+  const normalizedInput = normalizeSymbolKey(raw);
+  const match = allowed.find((symbol) => normalizeSymbolKey(symbol) === normalizedInput);
+  return match ?? null;
 }
 
 // ============================================================================
@@ -304,11 +536,12 @@ export async function createSignal(
   const db = getDatabase();
   
   try {
-    const symbol = params.symbol ?? DEFAULT_SYMBOL;
-    if (!kucoinClient.isValidSymbol(symbol)) {
+    const symbol = await resolveTradingSymbol(authContext, params.symbol);
+    if (!(await kucoinClient.isValidSymbol(symbol))) {
+      const allowed = await kucoinClient.getAllowedSymbols();
       return {
         success: false,
-        error: `Símbolo inválido: ${symbol}. Valores permitidos: ${kucoinClient.getAllowedSymbols().join(', ')}.`,
+        error: `Símbolo inválido: ${symbol}. Valores permitidos: ${allowed.join(', ')}.`,
       };
     }
 
@@ -443,27 +676,49 @@ export async function createOrderFromSignal(
   const db = getDatabase();
   
   try {
+    const marketType = await resolveMarketType(authContext, params.marketType);
+    const marginMode = await resolveMarginMode(authContext, params.marginMode);
+
     // Verificar se KuCoin está configurada
-    if (!kucoinClient.isKucoinConfigured()) {
-      return { success: false, error: 'API KuCoin não configurada.' };
+    if (marketType === 'futures' && !kucoinClient.isKucoinConfigured()) {
+      return { success: false, error: 'API KuCoin (Futures) não configurada.' };
+    }
+    if (marketType === 'spot' && !kucoinSpotClient.isSpotConfigured()) {
+      return { success: false, error: 'API KuCoin (Spot) não configurada.' };
+    }
+    if (marketType === 'margin' && !kucoinMarginClient.isMarginConfigured()) {
+      return { success: false, error: 'API KuCoin (Margin) não configurada.' };
     }
 
-    const symbol = params.symbol ?? DEFAULT_SYMBOL;
+    const symbol = await resolveTradingSymbol(authContext, params.symbol, marketType, marginMode);
 
-    // Validar símbolo
-    if (!kucoinClient.isValidSymbol(symbol)) {
-      return {
-        success: false,
-        error: `Símbolo inválido: ${symbol}. Valores permitidos: ${kucoinClient.getAllowedSymbols().join(', ')}.`,
-      };
+    let currentPrice = 0;
+    let rawPrice = '';
+    let contractInfo: kucoinClient.KucoinContract | null = null;
+
+    if (marketType === 'futures') {
+      // Validar símbolo
+      if (!(await kucoinClient.isValidSymbol(symbol))) {
+        const allowed = await kucoinClient.getAllowedSymbols();
+        return {
+          success: false,
+          error: `Símbolo inválido: ${symbol}. Valores permitidos: ${allowed.join(', ')}.`,
+        };
+      }
+
+      // Obter preço atual e informações do contrato para validação
+      const [ticker, contract] = await Promise.all([
+        kucoinClient.getTicker(symbol),
+        kucoinClient.getContractInfo(symbol),
+      ]);
+      rawPrice = ticker.price;
+      currentPrice = parseFloat(ticker.price);
+      contractInfo = contract;
+    } else {
+      const spotTicker = await kucoinSpotClient.getSpotTicker(symbol);
+      rawPrice = spotTicker.price;
+      currentPrice = parseFloat(spotTicker.price);
     }
-
-    // Obter preço atual e informações do contrato para validação
-    const [ticker, contractInfo] = await Promise.all([
-      kucoinClient.getTicker(symbol),
-      kucoinClient.getContractInfo(symbol),
-    ]);
-    const currentPrice = parseFloat(ticker.price);
     
     // CORREÇÃO 17/12/2025: Validar que currentPrice é um número válido
     // Bug CRÍTICO: Se ticker.price for inválido (vazio, não-numérico), parseFloat retorna NaN
@@ -472,26 +727,50 @@ export async function createOrderFromSignal(
     if (!Number.isFinite(currentPrice) || currentPrice <= 0) {
       return { 
         success: false, 
-        error: `Preço de mercado inválido recebido da API KuCoin: "${ticker.price}". Tente novamente.` 
+        error: `Preço de mercado inválido recebido da API KuCoin: "${rawPrice}". Tente novamente.` 
       };
     }
     
-    // CORREÇÃO 17/12/2025: Validar que multiplier do contrato é válido
-    if (!Number.isFinite(contractInfo.multiplier) || contractInfo.multiplier <= 0) {
-      return { 
-        success: false, 
-        error: `Multiplicador do contrato inválido para ${symbol}: ${contractInfo.multiplier}. Contate suporte.` 
-      };
-    }
-    
-    // CORREÇÃO 17/12/2025: Usar multiplier do contrato no cálculo de orderValue
-    // Bug CRÍTICO: size está em contratos, não em BTC!
-    // Para XBTUSDTM, cada contrato = 0.001 BTC (multiplier = 0.001)
-    // Cálculo ERRADO: 100 contratos × $100,000 = $10,000,000
-    // Cálculo CERTO: 100 contratos × 0.001 BTC × $100,000 = $10,000
-    // Isso causava rejeição de ordens legítimas por exceder maxOrderValue
+    let orderValue = 0;
+    let orderSizeForRisk = 0;
     const priceForValidation = params.price !== undefined ? params.price : currentPrice;
-    const orderValue = params.size * contractInfo.multiplier * priceForValidation;
+    const sizeValue = params.size;
+    const fundsValue = params.funds;
+    const hasSize = Number.isFinite(sizeValue) && (sizeValue ?? 0) > 0;
+    const hasFunds = Number.isFinite(fundsValue) && (fundsValue ?? 0) > 0;
+    const isMarketBuy = params.orderType === 'market' && params.side === 'buy';
+
+    if (marketType === 'futures') {
+      if (!contractInfo) {
+        return { success: false, error: 'Contrato não encontrado para validação.' };
+      }
+      // CORREÇÃO 17/12/2025: Validar que multiplier do contrato é válido
+      if (!Number.isFinite(contractInfo.multiplier) || contractInfo.multiplier <= 0) {
+        return { 
+          success: false, 
+          error: `Multiplicador do contrato inválido para ${symbol}: ${contractInfo.multiplier}. Contate suporte.` 
+        };
+      }
+      if (!hasSize || !Number.isInteger(sizeValue)) {
+        return { success: false, error: `Quantidade inválida para Futures: ${sizeValue}. Deve ser um número inteiro.` };
+      }
+      // CORREÇÃO 17/12/2025: Usar multiplier do contrato no cálculo de orderValue
+      orderValue = (sizeValue as number) * contractInfo.multiplier * priceForValidation;
+      orderSizeForRisk = sizeValue as number;
+    } else {
+      if (isMarketBuy && !hasSize && !hasFunds) {
+        return { success: false, error: 'Informe size ou funds para ordem a mercado de compra.' };
+      }
+      if (!isMarketBuy && !hasSize) {
+        return { success: false, error: `Quantidade inválida para ${marketType}: ${sizeValue}.` };
+      }
+      orderValue = hasSize
+        ? (sizeValue as number) * priceForValidation
+        : (fundsValue as number);
+      orderSizeForRisk = hasSize
+        ? (sizeValue as number)
+        : (fundsValue as number) / priceForValidation;
+    }
     
     // CORREÇÃO 17/12/2025: Validar que orderValue é um número válido
     // Proteção adicional contra NaN/Infinity propagados de params.size ou params.price
@@ -502,8 +781,10 @@ export async function createOrderFromSignal(
       };
     }
 
+    const sizeForOrder = orderSizeForRisk;
+
     // Validar limites de risco
-    const riskCheck = await validateTradingAllowed(authContext, params.size, orderValue);
+    const riskCheck = await validateTradingAllowed(authContext, orderSizeForRisk, orderValue);
     if (!riskCheck.allowed) {
       return { success: false, error: riskCheck.reason };
     }
@@ -523,20 +804,44 @@ export async function createOrderFromSignal(
     // Criar ordem na KuCoin
     let kucoinOrderId: string;
     try {
-      const kucoinOrder = await kucoinClient.createOrder({
-        clientOid,
-        symbol,
-        side: params.side,
-        type: params.orderType,
-        size: params.size,
-        price: params.price?.toString(),
-        leverage: params.leverage,
-      });
-      kucoinOrderId = kucoinOrder.orderId;
+      if (marketType === 'futures') {
+        const kucoinOrder = await kucoinClient.createOrder({
+          clientOid,
+          symbol,
+          side: params.side,
+          type: params.orderType,
+          size: sizeForOrder,
+          price: params.price?.toString(),
+          leverage: params.leverage,
+        });
+        kucoinOrderId = kucoinOrder.orderId;
+      } else if (marketType === 'spot') {
+        const kucoinOrder = await kucoinSpotClient.createSpotOrder({
+          clientOid,
+          symbol,
+          side: params.side,
+          type: params.orderType,
+          price: params.price?.toString(),
+          size: hasSize ? String(params.size) : undefined,
+          funds: hasFunds ? params.funds?.toString() : undefined,
+        });
+        kucoinOrderId = kucoinOrder.orderId;
+      } else {
+        const isIsolated = marginMode === 'isolated';
+        const kucoinOrder = await kucoinMarginClient.createMarginOrder({
+          clientOid,
+          symbol,
+          side: params.side,
+          type: params.orderType,
+          price: params.price?.toString(),
+          size: hasSize ? String(params.size) : undefined,
+          funds: hasFunds ? params.funds?.toString() : undefined,
+          isIsolated,
+        });
+        kucoinOrderId = kucoinOrder.orderId;
+      }
     } catch (err) {
-      // Garantia enterprise: evitar estado incerto em caso de timeout/network no POST.
-      // Como usamos clientOid, tentamos confirmar se a ordem foi criada antes de falhar.
-      if (kucoinClient.isKucoinTransientError(err)) {
+      if (marketType === 'futures' && kucoinClient.isKucoinTransientError(err)) {
         try {
           const existingOrder = await kucoinClient.getOrderByClientOid(clientOid);
           kucoinOrderId = existingOrder.id;
@@ -562,6 +867,7 @@ export async function createOrderFromSignal(
     const orderData: InsertTradingOrder = {
       tenantId: authContext.tenantId,
       signalId: validSignalId,
+      marketType,
       kucoinOrderId: kucoinOrderId,
       clientOid,
       symbol,
@@ -569,7 +875,7 @@ export async function createOrderFromSignal(
       orderType: params.orderType,
       status: 'pending',
       price: params.price ?? currentPrice,
-      size: params.size,
+      size: sizeForOrder,
       leverage: params.leverage ?? 1,
       // CORREÇÃO 18/12/2025: stopLoss/takeProfit não existem em TradingOrderMetadata
       // Esses valores são gerenciados via stop orders separadas na KuCoin API
@@ -654,6 +960,8 @@ export interface CreateStopOrderParams {
   orderType?: 'limit' | 'market';
   price?: number;           // Preço limite (se orderType = limit)
   stopPriceType?: 'TP' | 'MP'; // Tipo de preço para trigger
+  marketType?: TradingMarketType;
+  marginMode?: TradingMarginMode;
 }
 
 /**
@@ -679,7 +987,9 @@ export async function createStopOrder(
   }
 
   try {
-    const symbol = params.symbol || DEFAULT_SYMBOL;
+    const marketType = await resolveMarketType(authContext, params.marketType);
+    const marginMode = await resolveMarginMode(authContext, params.marginMode);
+    const symbol = await resolveTradingSymbol(authContext, params.symbol, marketType, marginMode);
     
     // Verificar configuração de risco
     const [riskConfig] = await db
@@ -695,8 +1005,14 @@ export async function createStopOrder(
     }
 
     // Verificar se KuCoin está configurada
-    if (!kucoinClient.isKucoinConfigured()) {
-      return { success: false, error: 'API KuCoin não configurada.' };
+    if (marketType === 'futures' && !kucoinClient.isKucoinConfigured()) {
+      return { success: false, error: 'API KuCoin (Futures) não configurada.' };
+    }
+    if (marketType === 'spot' && !kucoinSpotClient.isSpotConfigured()) {
+      return { success: false, error: 'API KuCoin (Spot) não configurada.' };
+    }
+    if (marketType === 'margin' && !kucoinMarginClient.isMarginConfigured()) {
+      return { success: false, error: 'API KuCoin (Margin) não configurada.' };
     }
 
     const clientOid = kucoinClient.generateClientOid();
@@ -704,23 +1020,55 @@ export async function createStopOrder(
     // Criar ordem stop na KuCoin
     let kucoinStopOrderId: string;
     try {
-      const kucoinResponse = await kucoinClient.createStopOrder({
-        clientOid,
-        symbol,
-        side: params.side,
-        type: params.orderType || 'market',
-        leverage: params.leverage || riskConfig.defaultLeverage || 1,
-        size: params.size,
-        price: params.price?.toString(),
-        triggerStopUpPrice: params.takeProfit?.toString(),
-        triggerStopDownPrice: params.stopLoss?.toString(),
-        stopPriceType: params.stopPriceType ?? 'TP', // Trade Price por padrão
-        reduceOnly: true, // Stop orders geralmente são para reduzir posição
-      });
-      kucoinStopOrderId = kucoinResponse.orderId;
+      if (marketType === 'futures') {
+        const kucoinResponse = await kucoinClient.createStopOrder({
+          clientOid,
+          symbol,
+          side: params.side,
+          type: params.orderType || 'market',
+          leverage: params.leverage || riskConfig.defaultLeverage || 1,
+          size: params.size,
+          price: params.price?.toString(),
+          triggerStopUpPrice: params.takeProfit?.toString(),
+          triggerStopDownPrice: params.stopLoss?.toString(),
+          stopPriceType: params.stopPriceType ?? 'TP',
+          reduceOnly: true,
+        });
+        kucoinStopOrderId = kucoinResponse.orderId;
+      } else if (marketType === 'spot') {
+        const stopPrice = params.stopLoss ?? params.takeProfit;
+        if (!stopPrice) {
+          return { success: false, error: 'stopLoss ou takeProfit é obrigatório para Spot.' };
+        }
+        const kucoinResponse = await kucoinSpotClient.createSpotStopOrder({
+          clientOid,
+          symbol,
+          side: params.side,
+          type: params.orderType || 'market',
+          stopPrice: stopPrice.toString(),
+          price: params.price?.toString(),
+          size: params.size.toString(),
+        });
+        kucoinStopOrderId = kucoinResponse.orderId;
+      } else {
+        const stopPrice = params.stopLoss ?? params.takeProfit;
+        if (!stopPrice) {
+          return { success: false, error: 'stopLoss ou takeProfit é obrigatório para Margin.' };
+        }
+        const kucoinResponse = await kucoinMarginClient.createMarginStopOrder({
+          clientOid,
+          symbol,
+          side: params.side,
+          type: params.orderType || 'market',
+          stopPrice: stopPrice.toString(),
+          price: params.price?.toString(),
+          size: params.size.toString(),
+          isIsolated: marginMode === 'isolated',
+        });
+        kucoinStopOrderId = kucoinResponse.orderId;
+      }
     } catch (err) {
-      // Garantia enterprise: confirmar criação por clientOid em caso de erro transitório.
-      if (kucoinClient.isKucoinTransientError(err)) {
+      if (marketType === 'futures' && kucoinClient.isKucoinTransientError(err)) {
         try {
           const openStops = await kucoinClient.getOpenStopOrders(symbol);
           const matched = openStops.items.find((o) => o.clientOid === clientOid);
@@ -787,11 +1135,48 @@ export async function createStopOrder(
  */
 export async function cancelStopOrder(
   authContext: TradingAuthContext,
-  orderId: string
+  orderId: string,
+  marketType?: TradingMarketType,
+  marginMode?: TradingMarginMode
 ): Promise<TradingOperationResult<{ cancelledOrderIds: string[] }>> {
   try {
+    const resolvedMarket = await resolveMarketType(authContext, marketType);
+    const resolvedMargin = await resolveMarginMode(authContext, marginMode);
+
+    if (resolvedMarket === 'spot') {
+      if (!kucoinSpotClient.isSpotConfigured()) {
+        return { success: false, error: 'API KuCoin (Spot) não configurada.' };
+      }
+      const result = await kucoinSpotClient.cancelSpotStopOrder(orderId);
+      await logTradingAction(
+        authContext,
+        'CANCEL_STOP_ORDER',
+        'stop_order',
+        orderId,
+        { cancelledOrderIds: result.cancelledOrderIds, marketType: resolvedMarket }
+      );
+      logger.info({ orderId }, 'Stop order Spot cancelada');
+      return { success: true, data: result };
+    }
+
+    if (resolvedMarket === 'margin') {
+      if (!kucoinMarginClient.isMarginConfigured()) {
+        return { success: false, error: 'API KuCoin (Margin) não configurada.' };
+      }
+      const result = await kucoinMarginClient.cancelMarginStopOrder(orderId);
+      await logTradingAction(
+        authContext,
+        'CANCEL_STOP_ORDER',
+        'stop_order',
+        orderId,
+        { cancelledOrderIds: result.cancelledOrderIds, marketType: resolvedMarket, marginMode: resolvedMargin }
+      );
+      logger.info({ orderId }, 'Stop order Margin cancelada');
+      return { success: true, data: result };
+    }
+
     if (!kucoinClient.isKucoinConfigured()) {
-      return { success: false, error: 'API KuCoin não configurada.' };
+      return { success: false, error: 'API KuCoin (Futures) não configurada.' };
     }
 
     const result = await kucoinClient.cancelStopOrder(orderId);
@@ -801,7 +1186,7 @@ export async function cancelStopOrder(
       'CANCEL_STOP_ORDER',
       'stop_order',
       orderId,
-      { cancelledOrderIds: result.cancelledOrderIds }
+      { cancelledOrderIds: result.cancelledOrderIds, marketType: 'futures' }
     );
 
     logger.info({ orderId }, 'Ordem stop cancelada');
@@ -822,15 +1207,36 @@ export async function cancelStopOrder(
  */
 export async function getOpenStopOrders(
   authContext: TradingAuthContext,
-  symbol?: string
-): Promise<TradingOperationResult<kucoinClient.KucoinOrder[]>> {
+  symbol?: string,
+  marketType?: TradingMarketType,
+  marginMode?: TradingMarginMode
+): Promise<TradingOperationResult<kucoinClient.KucoinOrder[] | kucoinSpotClient.SpotOrder[] | kucoinMarginClient.MarginOrder[]>> {
   try {
-    if (!kucoinClient.isKucoinConfigured()) {
-      return { success: false, error: 'API KuCoin não configurada.' };
+    const resolvedMarket = await resolveMarketType(authContext, marketType);
+    const resolvedMargin = await resolveMarginMode(authContext, marginMode);
+    const resolvedSymbol = await resolveTradingSymbol(authContext, symbol, resolvedMarket, resolvedMargin);
+
+    if (resolvedMarket === 'spot') {
+      if (!kucoinSpotClient.isSpotConfigured()) {
+        return { success: false, error: 'API KuCoin (Spot) não configurada.' };
+      }
+      const result = await kucoinSpotClient.getSpotStopOrders(resolvedSymbol);
+      return { success: true, data: result };
     }
 
-    const result = await kucoinClient.getOpenStopOrders(symbol || DEFAULT_SYMBOL);
+    if (resolvedMarket === 'margin') {
+      if (!kucoinMarginClient.isMarginConfigured()) {
+        return { success: false, error: 'API KuCoin (Margin) não configurada.' };
+      }
+      const result = await kucoinMarginClient.getMarginStopOrders();
+      return { success: true, data: result };
+    }
 
+    if (!kucoinClient.isKucoinConfigured()) {
+      return { success: false, error: 'API KuCoin (Futures) não configurada.' };
+    }
+
+    const result = await kucoinClient.getOpenStopOrders(resolvedSymbol);
     return { success: true, data: result.items };
   } catch (error) {
     if (kucoinClient.isKucoinRequestError(error)) {
@@ -873,8 +1279,18 @@ export async function cancelOrder(
     }
 
     // Cancelar na KuCoin
-    if (existing.kucoinOrderId && kucoinClient.isKucoinConfigured()) {
-      await kucoinClient.cancelOrder(existing.kucoinOrderId);
+    if (existing.kucoinOrderId) {
+      if (existing.marketType === 'spot') {
+        if (kucoinSpotClient.isSpotConfigured()) {
+          await kucoinSpotClient.cancelSpotOrder(existing.kucoinOrderId);
+        }
+      } else if (existing.marketType === 'margin') {
+        if (kucoinMarginClient.isMarginConfigured()) {
+          await kucoinMarginClient.cancelMarginOrder(existing.kucoinOrderId);
+        }
+      } else if (kucoinClient.isKucoinConfigured()) {
+        await kucoinClient.cancelOrder(existing.kucoinOrderId);
+      }
     }
 
     // CORREÇÃO 18/12/2025: cancelledAt é campo direto da tabela, não metadata
@@ -916,23 +1332,27 @@ export async function cancelOrder(
  */
 export async function getOrders(
   authContext: TradingAuthContext,
-  options?: { status?: string; limit?: number }
+  options?: { status?: string; limit?: number; marketType?: TradingMarketType }
 ): Promise<TradingOrder[]> {
   const db = getDatabase();
   
   // CORREÇÃO 18/12/2025: Drizzle não permite encadear .where() múltiplas vezes
   // Construir condição completa de uma vez usando and()
-  const conditions = options?.status
-    ? and(
-        eq(schema.tradingOrders.tenantId, authContext.tenantId),
-        eq(schema.tradingOrders.status, options.status as 'pending' | 'open' | 'filled' | 'cancelled' | 'rejected' | 'expired')
-      )
-    : eq(schema.tradingOrders.tenantId, authContext.tenantId);
+  const baseCondition = eq(schema.tradingOrders.tenantId, authContext.tenantId);
+  const conditions = [baseCondition];
+  if (options?.status) {
+    conditions.push(
+      eq(schema.tradingOrders.status, options.status as 'pending' | 'open' | 'filled' | 'cancelled' | 'rejected' | 'expired')
+    );
+  }
+  if (options?.marketType) {
+    conditions.push(eq(schema.tradingOrders.marketType, options.marketType));
+  }
 
   const orders = await db
     .select()
     .from(schema.tradingOrders)
-    .where(conditions)
+    .where(and(...conditions))
     .orderBy(desc(schema.tradingOrders.criadoEm))
     .limit(options?.limit ?? 50);
 
@@ -949,11 +1369,6 @@ export async function syncOrdersStatus(
   let synced = 0;
   let errors = 0;
   
-  if (!kucoinClient.isKucoinConfigured()) {
-    logger.warn('KuCoin não configurada, sincronização ignorada');
-    return { synced: 0, errors: 0 };
-  }
-
   // Buscar ordens pendentes ou abertas
   const pendingOrders = await db
     .select()
@@ -968,30 +1383,90 @@ export async function syncOrdersStatus(
   for (const order of pendingOrders) {
     try {
       if (!order.kucoinOrderId) continue;
-
-      const kucoinOrder = await kucoinClient.getOrder(order.kucoinOrderId);
-      
-      // Mapear status da KuCoin para nosso schema
-      // CORREÇÃO 17/12/2025: KuCoin Futures API retorna 'active' para ordens na order book, não 'open'
-      // Referência: https://www.kucoin.com/docs/rest/futures-trading/orders/get-order-list
       let newStatus: 'pending' | 'open' | 'filled' | 'cancelled' | 'rejected' | 'expired' = 'pending';
-      if (kucoinOrder.status === 'done') {
-        if (kucoinOrder.filledSize === kucoinOrder.size) {
-          // Ordem completamente preenchida
-          newStatus = 'filled';
+      let filledSize: number | null = null;
+      let avgFilledPrice: number | null = null;
+
+      if (order.marketType === 'spot') {
+        if (!kucoinSpotClient.isSpotConfigured()) {
+          continue;
+        }
+        const kucoinOrder = await kucoinSpotClient.getSpotOrder(order.kucoinOrderId);
+        const totalSize = Number(kucoinOrder.size || 0);
+        const executedSize = Number(kucoinOrder.dealSize || 0);
+
+        if (kucoinOrder.isActive) {
+          newStatus = 'open';
         } else if (kucoinOrder.cancelExist) {
-          // CORREÇÃO 17/12/2025: Usar cancelExist para distinguir cancelamento explícito
-          // cancelExist=true: cancelamento foi solicitado explicitamente
           newStatus = 'cancelled';
+        } else if (totalSize > 0 && executedSize >= totalSize) {
+          newStatus = 'filled';
         } else {
-          // CORREÇÃO 17/12/2025: cancelExist=false significa que a ordem expirou
-          // por time-in-force (IOC, FOK) ou outra razão, não foi cancelamento explícito
-          // Isso melhora a precisão de auditoria e relatórios de histórico de ordens
           newStatus = 'expired';
         }
-      } else if (kucoinOrder.status === 'active') {
-        // KuCoin retorna 'active' para ordens ativas na order book
-        newStatus = 'open';
+
+        filledSize = Number.isFinite(executedSize) ? executedSize : null;
+        const filledValue = Number(kucoinOrder.dealFunds || 0);
+        avgFilledPrice = filledSize && filledSize > 0 && Number.isFinite(filledValue) && filledValue > 0
+          ? filledValue / filledSize
+          : null;
+      } else if (order.marketType === 'margin') {
+        if (!kucoinMarginClient.isMarginConfigured()) {
+          continue;
+        }
+        const kucoinOrder = await kucoinMarginClient.getMarginOrder(order.kucoinOrderId);
+        const totalSize = Number(kucoinOrder.size || 0);
+        const executedSize = Number(kucoinOrder.dealSize || 0);
+
+        if (kucoinOrder.isActive) {
+          newStatus = 'open';
+        } else if (kucoinOrder.cancelExist) {
+          newStatus = 'cancelled';
+        } else if (totalSize > 0 && executedSize >= totalSize) {
+          newStatus = 'filled';
+        } else {
+          newStatus = 'expired';
+        }
+
+        filledSize = Number.isFinite(executedSize) ? executedSize : null;
+        const filledValue = Number(kucoinOrder.dealFunds || 0);
+        avgFilledPrice = filledSize && filledSize > 0 && Number.isFinite(filledValue) && filledValue > 0
+          ? filledValue / filledSize
+          : null;
+      } else {
+        if (!kucoinClient.isKucoinConfigured()) {
+          continue;
+        }
+        const kucoinOrder = await kucoinClient.getOrder(order.kucoinOrderId);
+        
+        // Mapear status da KuCoin para nosso schema
+        if (kucoinOrder.status === 'done') {
+          if (kucoinOrder.filledSize === kucoinOrder.size) {
+            newStatus = 'filled';
+          } else if (kucoinOrder.cancelExist) {
+            newStatus = 'cancelled';
+          } else {
+            newStatus = 'expired';
+          }
+        } else if (kucoinOrder.status === 'active') {
+          newStatus = 'open';
+        } else if (kucoinOrder.status === 'canceled') {
+          newStatus = 'cancelled';
+        } else if (kucoinOrder.status === 'fail') {
+          newStatus = 'rejected';
+        }
+
+        filledSize = kucoinOrder.filledSize ?? null;
+        avgFilledPrice = (() => {
+          if (!kucoinOrder.filledValue || !kucoinOrder.filledSize || kucoinOrder.filledSize <= 0) {
+            return null;
+          }
+          const parsedValue = parseFloat(kucoinOrder.filledValue);
+          if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
+            return null;
+          }
+          return parsedValue / kucoinOrder.filledSize;
+        })();
       }
 
       if (newStatus !== order.status) {
@@ -1001,20 +1476,8 @@ export async function syncOrdersStatus(
           .update(schema.tradingOrders)
           .set({
             status: newStatus,
-            filledSize: kucoinOrder.filledSize ?? null,
-            // Bug fix: Campo correto é avgFilledPrice (não filledPrice) - conforme schema.ts linha 1521
-            // Bug fix: Verificar filledSize > 0 antes de dividir para evitar Infinity/NaN
-            // CORREÇÃO AUDITORIA 17/12/2025: Validar parseFloat para evitar salvar NaN no banco
-            avgFilledPrice: (() => {
-              if (!kucoinOrder.filledValue || !kucoinOrder.filledSize || kucoinOrder.filledSize <= 0) {
-                return null;
-              }
-              const parsedValue = parseFloat(kucoinOrder.filledValue);
-              if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
-                return null; // Evita salvar NaN ou Infinity no banco
-              }
-              return parsedValue / kucoinOrder.filledSize; // Retorna number, não string
-            })(),
+            filledSize,
+            avgFilledPrice,
             atualizadoEm: new Date(),
             metadata: {
               ...order.metadata,
@@ -1043,22 +1506,63 @@ export async function syncOrdersStatus(
 /**
  * Obtém dados de mercado (preço atual, volume, etc.)
  */
-export async function getMarketData(symbol: string = DEFAULT_SYMBOL): Promise<{
-  ticker: kucoinClient.KucoinTicker;
-  contract: kucoinClient.KucoinContract;
+export async function getMarketData(
+  authContext: TradingAuthContext,
+  symbol?: string,
+  marketType?: TradingMarketType,
+  marginMode?: TradingMarginMode
+): Promise<{
+  ticker: kucoinClient.KucoinTicker | kucoinSpotClient.SpotTicker;
+  contract?: kucoinClient.KucoinContract | null;
 }> {
-  const [ticker, contract] = await Promise.all([
-    kucoinClient.getTicker(symbol),
-    kucoinClient.getContractInfo(symbol),
-  ]);
+  const resolvedMarket = await resolveMarketType(authContext, marketType);
+  const resolvedSymbol = await resolveTradingSymbol(authContext, symbol, resolvedMarket, marginMode);
 
-  return { ticker, contract };
+  if (resolvedMarket === 'futures') {
+    const [ticker, contract] = await Promise.all([
+      kucoinClient.getTicker(resolvedSymbol),
+      kucoinClient.getContractInfo(resolvedSymbol),
+    ]);
+    return { ticker, contract };
+  }
+
+  const spotTicker = await kucoinSpotClient.getSpotTicker(resolvedSymbol);
+  return { ticker: spotTicker, contract: null };
 }
 
 /**
  * Obtém visão geral da conta na KuCoin
  */
-export async function getAccountOverview(): Promise<kucoinClient.KucoinAccountOverview | null> {
+export async function getAccountOverview(
+  marketType?: TradingMarketType,
+  marginMode?: TradingMarginMode
+): Promise<
+  | kucoinClient.KucoinAccountOverview
+  | kucoinSpotClient.SpotAccount[]
+  | kucoinMarginClient.MarginCrossAccount
+  | kucoinMarginClient.MarginIsolatedAccount
+  | null
+> {
+  const resolvedMarket = marketType ?? 'futures';
+  const resolvedMargin = marginMode ?? 'cross';
+
+  if (resolvedMarket === 'spot') {
+    if (!kucoinSpotClient.isSpotConfigured()) {
+      return null;
+    }
+    return kucoinSpotClient.getSpotAccounts('trade');
+  }
+
+  if (resolvedMarket === 'margin') {
+    if (!kucoinMarginClient.isMarginConfigured()) {
+      return null;
+    }
+    if (resolvedMargin === 'isolated') {
+      return kucoinMarginClient.getIsolatedMarginAccount();
+    }
+    return kucoinMarginClient.getCrossMarginAccount();
+  }
+
   if (!kucoinClient.isKucoinConfigured()) {
     return null;
   }
@@ -1069,12 +1573,172 @@ export async function getAccountOverview(): Promise<kucoinClient.KucoinAccountOv
 /**
  * Obtém posições abertas na KuCoin
  */
-export async function getKucoinPositions(): Promise<kucoinClient.KucoinPosition[]> {
+export async function getKucoinPositions(
+  marketType?: TradingMarketType,
+  marginMode?: TradingMarginMode
+): Promise<
+  | kucoinClient.KucoinPosition[]
+  | kucoinSpotClient.SpotAccount[]
+  | kucoinMarginClient.MarginCrossAccount
+  | kucoinMarginClient.MarginIsolatedAccount
+> {
+  const resolvedMarket = marketType ?? 'futures';
+  const resolvedMargin = marginMode ?? 'cross';
+
+  if (resolvedMarket === 'spot') {
+    if (!kucoinSpotClient.isSpotConfigured()) {
+      return [];
+    }
+    return kucoinSpotClient.getSpotAccounts('trade');
+  }
+
+  if (resolvedMarket === 'margin') {
+    if (!kucoinMarginClient.isMarginConfigured()) {
+      throw new Error('API KuCoin (Margin) não configurada.');
+    }
+    if (resolvedMargin === 'isolated') {
+      return kucoinMarginClient.getIsolatedMarginAccount();
+    }
+    return kucoinMarginClient.getCrossMarginAccount();
+  }
+
   if (!kucoinClient.isKucoinConfigured()) {
     return [];
   }
-  
+
   return kucoinClient.getAllPositions();
+}
+
+// ============================================================================
+// FECHAMENTO DE POSIÇÕES (P0)
+// ============================================================================
+
+/**
+ * Fecha posição(ões) abertas na KuCoin (Futures).
+ * Se symbol não for informado, fecha todas as posições abertas.
+ * Regra 6: operação real, com auditoria e persistência.
+ */
+export async function closePositions(
+  authContext: TradingAuthContext,
+  symbol?: string
+): Promise<TradingOperationResult<{
+  closedCount: number;
+  kucoinOrderIds: string[];
+  orders: TradingOrder[];
+}>> {
+  const db = getDatabase();
+
+  try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      return { success: false, error: 'API KuCoin não configurada.' };
+    }
+
+    const resolvedSymbol = symbol
+      ? await resolveTradingSymbolStrict(authContext, symbol)
+      : null;
+
+    const positions = await kucoinClient.getAllPositions();
+    const activePositions = positions.filter((position) => {
+      if (!Number.isFinite(position.currentQty) || position.currentQty === 0) {
+        return false;
+      }
+      if (resolvedSymbol) {
+        return position.symbol === resolvedSymbol;
+      }
+      return true;
+    });
+
+    if (activePositions.length === 0) {
+      return { success: true, data: { closedCount: 0, kucoinOrderIds: [], orders: [] } };
+    }
+
+    const ordersPlan = activePositions.map((position) => {
+      const rawSize = Math.abs(position.currentQty);
+      if (!Number.isFinite(rawSize) || rawSize <= 0 || !Number.isInteger(rawSize)) {
+        throw new Error(
+          `Quantidade inválida para fechamento da posição ${position.symbol}: ${position.currentQty}. ` +
+          'A KuCoin Futures exige size inteiro (contratos).'
+        );
+      }
+
+      const side: 'buy' | 'sell' = position.currentQty > 0 ? 'sell' : 'buy';
+      const leverage = Number.isFinite(position.realLeverage) && position.realLeverage > 0
+        ? Math.round(position.realLeverage)
+        : 1;
+
+      return {
+        position,
+        side,
+        size: rawSize,
+        leverage,
+      };
+    });
+
+    const createdOrders: TradingOrder[] = [];
+    const kucoinOrderIds: string[] = [];
+
+    for (const orderPlan of ordersPlan) {
+      const clientOid = kucoinClient.generateClientOid();
+      const kucoinOrder = await kucoinClient.createOrder({
+        clientOid,
+        symbol: orderPlan.position.symbol,
+        side: orderPlan.side,
+        type: 'market',
+        size: orderPlan.size,
+        reduceOnly: true,
+      });
+
+      const orderData: InsertTradingOrder = {
+        tenantId: authContext.tenantId,
+        signalId: null,
+        marketType: 'futures',
+        symbol: orderPlan.position.symbol,
+        side: orderPlan.side,
+        orderType: 'market',
+        status: 'pending',
+        price: Number.isFinite(orderPlan.position.markPrice) && orderPlan.position.markPrice > 0
+          ? orderPlan.position.markPrice
+          : null,
+        size: orderPlan.size,
+        leverage: orderPlan.leverage,
+        kucoinOrderId: kucoinOrder.orderId,
+        clientOid,
+        metadata: {
+          closePosition: true,
+        },
+      };
+
+      const [order] = await db.insert(schema.tradingOrders).values(orderData).returning();
+      createdOrders.push(order);
+      kucoinOrderIds.push(kucoinOrder.orderId);
+
+      await logTradingAction(
+        authContext,
+        'CLOSE_POSITION',
+        'order',
+        order.id,
+        { symbol: orderPlan.position.symbol, kucoinOrderId: kucoinOrder.orderId },
+        undefined,
+        order as unknown as Record<string, unknown>
+      );
+    }
+
+    return {
+      success: true,
+      data: {
+        closedCount: createdOrders.length,
+        kucoinOrderIds,
+        orders: createdOrders,
+      },
+    };
+  } catch (error) {
+    if (kucoinClient.isKucoinRequestError(error)) {
+      throw error;
+    }
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage, symbol }, 'Erro ao fechar posições');
+    return { success: false, error: errorMessage };
+  }
 }
 
 // ============================================================================
@@ -1086,15 +1750,15 @@ export async function getKucoinPositions(): Promise<kucoinClient.KucoinPosition[
  */
 export async function getTradingServiceStatus(authContext: TradingAuthContext): Promise<{
   isConfigured: boolean;
-  isSandbox: boolean;
   circuitBreaker: ReturnType<typeof kucoinClient.getKucoinCircuitBreakerStatus>;
   riskConfig: TradingRiskConfig | null;
   activeSignals: number;
   pendingOrders: number;
+  defaultSymbol: string;
 }> {
   const db = getDatabase();
   
-  const [riskConfig, activeSignalsResult, pendingOrdersResult] = await Promise.all([
+  const [riskConfig, activeSignalsResult, pendingOrdersResult, defaultSymbol] = await Promise.all([
     getRiskConfig(authContext),
     db
       .select({ count: sql<number>`count(*)` })
@@ -1114,15 +1778,16 @@ export async function getTradingServiceStatus(authContext: TradingAuthContext): 
           sql`${schema.tradingOrders.status} IN ('pending', 'open')`
         )
       ),
+    resolveTradingSymbol(authContext),
   ]);
 
   return {
     isConfigured: kucoinClient.isKucoinConfigured(),
-    isSandbox: kucoinClient.getKucoinSandboxStatus(),
     circuitBreaker: kucoinClient.getKucoinCircuitBreakerStatus(),
     riskConfig,
     activeSignals: Number(activeSignalsResult[0]?.count ?? 0),
     pendingOrders: Number(pendingOrdersResult[0]?.count ?? 0),
+    defaultSymbol,
   };
 }
 
@@ -1152,8 +1817,10 @@ export default {
   
   // Market Data
   getMarketData,
+  getTradingSymbols,
   getAccountOverview,
   getKucoinPositions,
+  closePositions,
   
   // Status
   getTradingServiceStatus,

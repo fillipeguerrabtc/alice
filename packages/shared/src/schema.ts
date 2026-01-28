@@ -1630,7 +1630,7 @@ export const stripeErpnextMapping = pgTable(
 // TRADING - KuCoin Futures BTC Perpetuals (Gate 2)
 // Sistema de trading automatizado com OMS/EMS e auditoria completa.
 // Exchange: KuCoin Futures (https://www.kucoin.com/futures/trade)
-// Par: XBTUSDTM (BTC/USDT Perpetual)
+// Par: símbolo do contrato KuCoin (dinâmico, sem hardcoded)
 // ============================================================================
 
 // Enums para Trading
@@ -1674,6 +1674,18 @@ export const tradingSignalTypeEnum = pgEnum("trading_signal_type", [
   "neutral",      // Sem sinal (esperar)
 ]);
 
+// Market type para Trading (Futures/Spot/Margin)
+export const tradingMarketTypeEnum = pgEnum("trading_market_type", [
+  "futures",
+  "spot",
+  "margin",
+]);
+
+export const tradingMarginModeEnum = pgEnum("trading_margin_mode", [
+  "cross",
+  "isolated",
+]);
+
 // Zod schema para metadados de trading (JSONB)
 export const TradingSignalMetadataSchema = z.object({
   confidence: z.number().min(0).max(1).optional(),  // Confiança do modelo (0-1)
@@ -1694,6 +1706,7 @@ export const TradingOrderMetadataSchema = z.object({
   fees: z.number().optional(),                       // Taxas pagas
   slippage: z.number().optional(),                   // Slippage em %
   responseTime: z.number().optional(),               // Tempo de resposta da exchange (ms)
+  closePosition: z.boolean().optional(),             // Ordem criada para fechar posição
 });
 export type TradingOrderMetadata = z.infer<typeof TradingOrderMetadataSchema>;
 
@@ -1717,7 +1730,8 @@ export const tradingSignals = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
     signalType: tradingSignalTypeEnum("signal_type").notNull(),
-    symbol: varchar("symbol", { length: 50 }).notNull().default("XBTUSDTM"), // Par de trading
+    marketType: tradingMarketTypeEnum("market_type").notNull().default("futures"),
+    symbol: varchar("symbol", { length: 50 }).notNull(), // Par de trading
     suggestedPrice: real("suggested_price"),           // Preço sugerido para entrada
     suggestedStopLoss: real("suggested_stop_loss"),    // Stop loss sugerido
     suggestedTakeProfit: real("suggested_take_profit"), // Take profit sugerido
@@ -1733,6 +1747,7 @@ export const tradingSignals = pgTable(
   (table) => ({
     idxSignalsTenant: index("idx_trading_signals_tenant").on(table.tenantId),
     idxSignalsType: index("idx_trading_signals_type").on(table.signalType),
+    idxSignalsMarketType: index("idx_trading_signals_market_type").on(table.marketType),
     idxSignalsActive: index("idx_trading_signals_active").on(table.isActive),
     idxSignalsCreated: index("idx_trading_signals_created").on(table.criadoEm),
     idxSignalsSymbol: index("idx_trading_signals_symbol").on(table.symbol),
@@ -1747,7 +1762,8 @@ export const tradingOrders = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
     signalId: uuid("signal_id").references(() => tradingSignals.id), // Sinal que gerou a ordem (opcional)
-    symbol: varchar("symbol", { length: 50 }).notNull().default("XBTUSDTM"),
+    marketType: tradingMarketTypeEnum("market_type").notNull().default("futures"),
+    symbol: varchar("symbol", { length: 50 }).notNull(),
     side: tradingOrderSideEnum("side").notNull(),
     orderType: tradingOrderTypeEnum("order_type").notNull(),
     status: tradingOrderStatusEnum("status").default("pending"),
@@ -1771,6 +1787,7 @@ export const tradingOrders = pgTable(
   (table) => ({
     idxOrdersTenant: index("idx_trading_orders_tenant").on(table.tenantId),
     idxOrdersStatus: index("idx_trading_orders_status").on(table.status),
+    idxOrdersMarketType: index("idx_trading_orders_market_type").on(table.marketType),
     idxOrdersKucoin: index("idx_trading_orders_kucoin").on(table.kucoinOrderId),
     idxOrdersClientOid: index("idx_trading_orders_client_oid").on(table.clientOid),
     idxOrdersSymbol: index("idx_trading_orders_symbol").on(table.symbol),
@@ -1785,7 +1802,8 @@ export const tradingPositions = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
-    symbol: varchar("symbol", { length: 50 }).notNull().default("XBTUSDTM"),
+    marketType: tradingMarketTypeEnum("market_type").notNull().default("futures"),
+    symbol: varchar("symbol", { length: 50 }).notNull(),
     side: tradingOrderSideEnum("side").notNull(),      // long ou short
     status: tradingPositionStatusEnum("status").default("open"),
     entryPrice: real("entry_price").notNull(),         // Preço médio de entrada
@@ -1808,6 +1826,7 @@ export const tradingPositions = pgTable(
   (table) => ({
     idxPositionsTenant: index("idx_trading_positions_tenant").on(table.tenantId),
     idxPositionsStatus: index("idx_trading_positions_status").on(table.status),
+    idxPositionsMarketType: index("idx_trading_positions_market_type").on(table.marketType),
     idxPositionsSymbol: index("idx_trading_positions_symbol").on(table.symbol),
     idxPositionsOpened: index("idx_trading_positions_opened").on(table.openedAt),
   })
@@ -1830,6 +1849,9 @@ export const tradingRiskConfig = pgTable(
     defaultLeverage: integer("default_leverage").default(5),     // Alavancagem padrão
     defaultStopLoss: real("default_stop_loss").default(0.02),    // Stop loss padrão (2%)
     defaultTakeProfit: real("default_take_profit").default(0.04), // Take profit padrão (4%)
+    defaultSymbol: varchar("default_symbol", { length: 50 }),    // Símbolo default (dinâmico)
+    defaultMarketType: tradingMarketTypeEnum("default_market_type").notNull().default("futures"),
+    marginMode: tradingMarginModeEnum("margin_mode").notNull().default("cross"),
     // Controles
     tradingEnabled: boolean("trading_enabled").default(false),   // Se trading está habilitado
     autoExecuteSignals: boolean("auto_execute_signals").default(false), // Execução automática
@@ -1838,7 +1860,6 @@ export const tradingRiskConfig = pgTable(
     kucoinApiKey: text("kucoin_api_key"),             // Criptografado
     kucoinApiSecret: text("kucoin_api_secret"),       // Criptografado  
     kucoinPassphrase: text("kucoin_passphrase"),      // Criptografado
-    kucoinSandbox: boolean("kucoin_sandbox").default(true), // Usar sandbox por padrão
     // Métricas diárias (reset meia-noite UTC)
     dailyPnl: real("daily_pnl").default(0),
     dailyTradeCount: integer("daily_trade_count").default(0),
@@ -2045,7 +2066,7 @@ export const tradingTechnicalIndicators = pgTable(
     tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
     
     // Identificação temporal
-    symbol: varchar("symbol", { length: 50 }).notNull().default("XBTUSDTM"),
+    symbol: varchar("symbol", { length: 50 }).notNull(),
     interval: tradingIntervalEnum("interval").notNull(),
     calculatedAt: timestamp("calculated_at").defaultNow(),
     candleTimestamp: timestamp("candle_timestamp").notNull(),
@@ -2295,7 +2316,7 @@ export const tradingMarketData = pgTable(
   "trading_market_data",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    symbol: varchar("symbol", { length: 50 }).notNull().default("XBTUSDTM"),
+    symbol: varchar("symbol", { length: 50 }).notNull(),
     dataType: tradingMarketDataTypeEnum("data_type").notNull(),
     timestamp: timestamp("timestamp").notNull(),
     data: jsonb("data").$type<TradingCandleData | Record<string, unknown>>().notNull(),

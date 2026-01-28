@@ -134,6 +134,20 @@ export const CIRCUIT_BREAKER_PRESETS = {
     resetTimeout: 15000, // Recuperação rápida
     volumeThreshold: 3, // Abre circuit com poucos erros
   },
+  /** KuCoin Spot API - Trading spot (timeout moderado) */
+  kucoinSpot: {
+    timeout: 7000,
+    errorThresholdPercentage: 35,
+    resetTimeout: 20000,
+    volumeThreshold: 3,
+  },
+  /** KuCoin Margin API - Trading margin (timeout moderado, validações extras) */
+  kucoinMargin: {
+    timeout: 8000,
+    errorThresholdPercentage: 35,
+    resetTimeout: 20000,
+    volumeThreshold: 3,
+  },
   /** Embeddings GPU - Qwen3 (1024 dim) */
   embeddingsGPU: {
     timeout: 60000, // GPU pode precisar warm-up

@@ -875,7 +875,6 @@ echo "📄 Gerando arquivo .env.prod..."
   printf 'KUCOIN_PRO_API_SECRET=%s\n' "${KUCOIN_PRO_API_SECRET:-}"
   printf 'KUCOIN_PRO_API_PASSPHRASE=%s\n' "${KUCOIN_PRO_API_PASSPHRASE:-}"
   printf 'KUCOIN_PRO_BASE_URL=%s\n' "${KUCOIN_PRO_BASE_URL:-}"
-  printf 'KUCOIN_SANDBOX_MODE=false\n'
   printf '\n'
   printf '# ERPNext Database\n'
   printf 'ERPNEXT_SITE_NAME=erp.yesyoudeserve.duckdns.org\n'

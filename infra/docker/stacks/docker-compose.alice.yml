@@ -376,7 +376,6 @@ services:
       KUCOIN_PRO_API_SECRET: ${KUCOIN_PRO_API_SECRET:-}
       KUCOIN_PRO_API_PASSPHRASE: ${KUCOIN_PRO_API_PASSPHRASE:-}
       KUCOIN_PRO_BASE_URL: ${KUCOIN_PRO_BASE_URL:-https://api-futures.kucoin.com}
-      KUCOIN_SANDBOX_MODE: ${KUCOIN_SANDBOX_MODE:-false}
       GH_PAT: ${GH_PAT:-}
       GH_REPO: ${GH_REPO:-}
       GH_API_URL: ${GH_API_URL:-https://api.github.com}

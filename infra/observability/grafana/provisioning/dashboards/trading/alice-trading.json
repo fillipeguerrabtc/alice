@@ -273,7 +273,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "alice_trading_rsi{symbol=\"XBTUSDTM\"}",
+          "expr": "alice_trading_rsi{symbol=\"$symbol\"}",
           "legendFormat": "RSI",
           "refId": "A"
         }
@@ -333,25 +333,25 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "alice_trading_bollinger_upper{symbol=\"XBTUSDTM\"}",
+          "expr": "alice_trading_bollinger_upper{symbol=\"$symbol\"}",
           "legendFormat": "Upper Band",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "alice_trading_bollinger_middle{symbol=\"XBTUSDTM\"}",
+          "expr": "alice_trading_bollinger_middle{symbol=\"$symbol\"}",
           "legendFormat": "Middle (SMA)",
           "refId": "B"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "alice_trading_bollinger_lower{symbol=\"XBTUSDTM\"}",
+          "expr": "alice_trading_bollinger_lower{symbol=\"$symbol\"}",
           "legendFormat": "Lower Band",
           "refId": "C"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "alice_trading_price_usd{symbol=\"XBTUSDTM\"}",
+          "expr": "alice_trading_price_usd{symbol=\"$symbol\"}",
           "legendFormat": "Current Price",
           "refId": "D"
         }
@@ -652,7 +652,24 @@
   "schemaVersion": 38,
   "tags": ["alice", "trading", "kucoin", "btc", "futures"],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "current": { "text": "auto", "value": "" },
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(alice_trading_price_usd, symbol)",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Símbolo",
+        "multi": false,
+        "name": "symbol",
+        "options": [],
+        "query": "label_values(alice_trading_price_usd, symbol)",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "query"
+      }
+    ]
   },
   "time": {
     "from": "now-6h",

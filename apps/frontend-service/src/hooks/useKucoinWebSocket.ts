@@ -132,7 +132,7 @@ export function useKucoinWebSocket(
   options: UseKucoinWebSocketOptions = {}
 ): UseKucoinWebSocketReturn {
   const {
-    symbol = 'XBTUSDTM',
+    symbol = '',
     channels = ['ticker'],
     interval = '1',
     autoConnect = true,
@@ -316,14 +316,18 @@ export function useKucoinWebSocket(
         }, PING_INTERVAL);
 
         // Auto-subscribe aos canais configurados
-        channels.forEach(channel => {
-          ws.send(JSON.stringify({
-            type: 'trading:subscribe',
-            channel,
-            symbol,
-            interval: channel === 'klines' ? interval : undefined,
-          }));
-        });
+        if (!symbol) {
+          frontendLogger.warn('Auto-subscribe ignorado - símbolo não definido');
+        } else {
+          channels.forEach(channel => {
+            ws.send(JSON.stringify({
+              type: 'trading:subscribe',
+              channel,
+              symbol,
+              interval: channel === 'klines' ? interval : undefined,
+            }));
+          });
+        }
 
         // CORREÇÃO 17/12/2025: Marcar que subscriptions iniciais foram enviadas
         // Isso evita que o useEffect[state.connected] envie subscriptions duplicadas
@@ -423,10 +427,15 @@ export function useKucoinWebSocket(
   // Subscribe to a channel
   const subscribe = useCallback((channel: string, channelSymbol?: string, channelInterval?: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
+      const targetSymbol = channelSymbol || symbol;
+      if (!targetSymbol) {
+        frontendLogger.warn('Assinatura ignorada - símbolo não definido', { channel });
+        return;
+      }
       wsRef.current.send(JSON.stringify({
         type: 'trading:subscribe',
         channel,
-        symbol: channelSymbol || symbol,
+        symbol: targetSymbol,
         interval: channelInterval || interval,
       }));
     }
@@ -435,10 +444,12 @@ export function useKucoinWebSocket(
   // Unsubscribe from a channel
   const unsubscribe = useCallback((channel: string, channelSymbol?: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
+      const targetSymbol = channelSymbol || symbol;
+      if (!targetSymbol) return;
       wsRef.current.send(JSON.stringify({
         type: 'trading:unsubscribe',
         channel,
-        symbol: channelSymbol || symbol,
+        symbol: targetSymbol,
       }));
     }
   }, [symbol]);
@@ -466,7 +477,7 @@ export function useKucoinWebSocket(
 
   // Resubscribe when symbol changes
   useEffect(() => {
-    if (state.connected) {
+    if (state.connected && symbol) {
       // CORREÇÃO 17/12/2025: Evitar subscriptions duplicadas na conexão inicial
       // Bug: onopen já envia subscriptions, mas este useEffect dispara novamente quando
       // state.connected muda para true, enviando subscriptions duplicadas

@@ -389,7 +389,7 @@ Objetiva, conservadora e focada em risco.
 ```
 
 **Exemplo de pedido**
-> “Analise XBTUSDTM 5m e sugira entrada/SL/TP com risco 2%.”
+> “Analise <SYMBOL> 5m e sugira entrada/SL/TP com risco 2%.”
 
 ---
 
@@ -1213,7 +1213,7 @@ Para obter melhores resultados e gerar dados de treino úteis, use o chat com es
 5. **Saída esperada** (ex.: "resumo + proposta + pedido de confirmação").
 
 **Exemplo (Trading)**
-> Use o agente Trading. Avalie XBTUSDTM no timeframe 5m com risco max 2% e sem auto execução.  
+> Use o agente Trading. Avalie <SYMBOL> no timeframe 5m com risco max 2% e sem auto execução.  
 > Quero: contexto rápido, sinal (LONG/SHORT/NEUTRAL), entrada/SL/TP e confirmação explícita.
 
 **Exemplo (Financeiro/ERPNext)**
@@ -1313,7 +1313,7 @@ Foco em **pedidos no chat** + **confirmação explícita**.
 3. **Registre SL/TP** e limites de risco na conversa.
 
 ### Exemplo de pedido (Trading)
-> Use o agente Trading. Quero sinal para XBTUSDTM (5m), risco máx 2% e sem execução automática.  
+> Use o agente Trading. Quero sinal para <SYMBOL> (5m), risco máx 2% e sem execução automática.  
 > Entregue contexto, sinal, entrada/SL/TP e peça minha confirmação.
 
 ### Treino a partir do chat
@@ -1557,7 +1557,7 @@ POST /api/integrations/trading/orders
 Content-Type: application/json
 
 {
-  "symbol": "XBTUSDTM",
+  "symbol": "<SYMBOL>",
   "side": "buy",
   "orderType": "limit",
   "size": 1,
@@ -1572,7 +1572,7 @@ POST /api/integrations/trading/stop-orders
 Content-Type: application/json
 
 {
-  "symbol": "XBTUSDTM",
+  "symbol": "<SYMBOL>",
   "side": "sell",
   "size": 1,
   "stopLoss": 49500,

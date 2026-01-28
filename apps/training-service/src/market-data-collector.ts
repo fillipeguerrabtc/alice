@@ -26,10 +26,8 @@ const logger = createLogger('market-data-collector');
 // ============================================================================
 
 // URL base da API KuCoin Futures
-const KUCOIN_FUTURES_API = process.env.KUCOIN_FUTURES_BASE_URL || 'https://api-futures.kucoin.com';
+const KUCOIN_FUTURES_API = process.env.KUCOIN_PRO_BASE_URL || 'https://api-futures.kucoin.com';
 
-// Símbolo padrão (BTC/USDT Perpetual)
-const DEFAULT_SYMBOL = 'XBTUSDTM';
 
 // Intervalos de candles suportados pela KuCoin Futures API
 // Granularidade em minutos - mínimo 1 minuto (API não suporta 30 segundos)
@@ -350,7 +348,7 @@ async function saveOpenInterest(
  * Coleta candles de um intervalo específico
  */
 export async function collectCandles(
-  symbol: string = DEFAULT_SYMBOL,
+  symbol: string,
   interval: CandleInterval = '1hour',
   hoursBack: number = 24
 ): Promise<CollectionResult> {
@@ -381,7 +379,7 @@ export async function collectCandles(
  * Coleta todos os dados de mercado para um símbolo
  */
 export async function collectAllMarketData(
-  symbol: string = DEFAULT_SYMBOL
+  symbol: string
 ): Promise<{
   candles: Record<string, CollectionResult>;
   fundingRate: boolean;
@@ -461,7 +459,7 @@ export async function collectAllMarketData(
  * Ideal para rodar a cada 1-5 minutos via scheduler
  */
 export async function collectScalpingData(
-  symbol: string = DEFAULT_SYMBOL
+  symbol: string
 ): Promise<{
   candles: Record<string, CollectionResult>;
   ticker: boolean;
@@ -541,7 +539,7 @@ export async function collectScalpingData(
 /**
  * Obtém estatísticas do banco de dados de market data
  */
-export async function getMarketDataStats(symbol: string = DEFAULT_SYMBOL): Promise<{
+export async function getMarketDataStats(symbol: string): Promise<{
   totalRecords: number;
   byType: Record<string, number>;
   oldestRecord: Date | null;

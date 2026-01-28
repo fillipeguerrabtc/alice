@@ -1246,8 +1246,8 @@
     "apiUnavailableDesc": "Os dados de status não estão disponíveis. Use os links de acesso rápido para acessar as ferramentas diretamente."
   },
   "trading": {
-    "title": "Trading BTC Futures",
-    "subtitle": "Controle sinais, risco e execução automática em BTC Perpetuals com supervisão.",
+    "title": "Trading KuCoin",
+    "subtitle": "Controle sinais, risco e execução automática em Spot, Margin e Futures com supervisão.",
     "notConfigured": "KuCoin não configurada",
     "notConfiguredDesc": "Configure as credenciais da API KuCoin para ativar o trading. Adicione os secrets no GitHub:",
     "status": {
@@ -1267,9 +1267,18 @@
       "low24h": "Mínima 24h",
       "volume24h": "Volume 24h"
     },
+    "marketType": {
+      "futures": "Futures",
+      "spot": "Spot",
+      "margin": "Margin"
+    },
+    "marginMode": {
+      "cross": "Cross",
+      "isolated": "Isolado"
+    },
     "account": {
       "title": "Conta KuCoin",
-      "subtitle": "Saldo e margens da sua conta de futuros",
+      "subtitle": "Saldo e posições da sua conta KuCoin",
       "availableBalance": "Saldo Disponível",
       "unrealisedPnl": "PnL Não Realizado",
       "allPositions": "Todas as posições",
@@ -1277,7 +1286,12 @@
       "marginBalance": "Saldo de Margem",
       "positionMargin": "Margem de Posição",
       "orderMargin": "Margem de Ordem",
-      "frozenFunds": "Fundos Congelados"
+      "frozenFunds": "Fundos Congelados",
+      "totalBalance": "Saldo Total",
+      "assetsWithBalance": "Ativos com saldo",
+      "totalAsset": "Total em Ativos",
+      "totalLiability": "Total em Dívidas",
+      "debtRatio": "Debt Ratio"
     },
     "stats": {
       "activeSignals": "Sinais Ativos",
@@ -1317,6 +1331,7 @@
       "buying": "Comprando",
       "selling": "Vendendo",
       "contracts": "contrato(s)",
+      "amount": "quantidade",
       "table": {
         "id": "ID",
         "symbol": "Par",
@@ -1330,14 +1345,19 @@
       },
       "newDialog": {
         "title": "Nova Ordem",
-        "subtitle": "Criar ordem manual na KuCoin Futures"
+        "subtitle": "Criar ordem manual na KuCoin"
       },
       "form": {
         "orderType": "Tipo de Ordem",
         "market": "Mercado",
         "limit": "Limite",
         "size": "Quantidade (contratos)",
-        "sizeHint": "1 contrato = 0.001 BTC para XBTUSDTM",
+        "sizeContracts": "Quantidade (contratos)",
+        "sizeAmount": "Quantidade",
+        "sizeHint": "1 contrato = 0.001 BTC para {{symbol}}",
+        "sizeSpotHint": "Informe a quantidade do ativo para Spot/Margin",
+        "funds": "Valor (funds)",
+        "fundsHint": "Use funds para compra a mercado sem informar quantidade",
         "price": "Preço",
         "leverage": "Alavancagem",
         "stopLoss": "Stop Loss",
@@ -1353,7 +1373,13 @@
     "positions": {
       "subtitle": "Monitore suas posições abertas em tempo real",
       "noPositions": "Nenhuma posição aberta",
+      "noSpotBalance": "Nenhum saldo disponível na conta Spot",
       "contracts": "contratos",
+      "asset": "Ativo",
+      "balance": "Saldo",
+      "available": "Disponível",
+      "hold": "Em reserva",
+      "liability": "Dívida",
       "entryPrice": "Preço de Entrada",
       "markPrice": "Preço Mark",
       "liquidationPrice": "Preço de Liquidação",
@@ -1416,7 +1442,11 @@
       "maxOpenPositions": "Máx. Posições Abertas",
       "minConfidence": "Confiança Mínima para Auto-execução",
       "defaults": "Configurações Padrão",
-      "defaultLeverage": "Alavancagem Padrão"
+      "defaultLeverage": "Alavancagem Padrão",
+      "defaultSymbol": "Símbolo Padrão",
+      "defaultMarketType": "Mercado Padrão",
+      "marginMode": "Modo Margin",
+      "defaultSymbolPlaceholder": "Selecione um símbolo"
     },
     "success": {
       "orderCreated": "Ordem criada",
@@ -1430,6 +1460,7 @@
     },
     "errors": {
       "orderFailed": "Erro ao criar ordem",
+      "stopOrderFailed": "Erro ao criar stop order",
       "cancelFailed": "Erro ao cancelar ordem",
       "syncFailed": "Erro ao sincronizar ordens",
       "riskConfigFailed": "Erro ao atualizar configurações",

@@ -11,6 +11,8 @@ import { describe, it, expect } from 'vitest';
 import { KucoinRequestError } from '../../../apps/integrations-service/src/kucoinClient.js';
 import { mapKucoinErrorToHttpResponse } from '../../../apps/integrations-service/src/kucoin-error-mapper.js';
 
+const TEST_SYMBOL = 'SYMBOL_TEST';
+
 describe('Integrations Service - KuCoin Error Mapper', () => {
   it('deve retornar null para erro não-KuCoin', () => {
     const mapped = mapKucoinErrorToHttpResponse(new Error('x'), { isProduction: true });
@@ -21,7 +23,7 @@ describe('Integrations Service - KuCoin Error Mapper', () => {
     const err = new KucoinRequestError({
       kind: 'breaker_open',
       method: 'GET',
-      endpoint: '/api/v1/ticker?symbol=XBTUSDTM',
+      endpoint: `/api/v1/ticker?symbol=${TEST_SYMBOL}`,
       message: 'Circuit breaker aberto',
     });
     const mapped = mapKucoinErrorToHttpResponse(err, { isProduction: true });
@@ -32,7 +34,7 @@ describe('Integrations Service - KuCoin Error Mapper', () => {
     const err = new KucoinRequestError({
       kind: 'timeout',
       method: 'GET',
-      endpoint: '/api/v1/ticker?symbol=XBTUSDTM',
+      endpoint: `/api/v1/ticker?symbol=${TEST_SYMBOL}`,
       message: 'timeout',
     });
     const mapped = mapKucoinErrorToHttpResponse(err, { isProduction: true });
@@ -43,7 +45,7 @@ describe('Integrations Service - KuCoin Error Mapper', () => {
     const err = new KucoinRequestError({
       kind: 'http',
       method: 'GET',
-      endpoint: '/api/v1/ticker?symbol=XBTUSDTM',
+      endpoint: `/api/v1/ticker?symbol=${TEST_SYMBOL}`,
       status: 429,
       retryAfterMs: 4500,
       message: 'KuCoin HTTP 429',
@@ -76,7 +78,7 @@ describe('Integrations Service - KuCoin Error Mapper', () => {
     const err = new KucoinRequestError({
       kind: 'http',
       method: 'GET',
-      endpoint: '/api/v1/ticker?symbol=XBTUSDTM',
+      endpoint: `/api/v1/ticker?symbol=${TEST_SYMBOL}`,
       status: 503,
       message: 'KuCoin HTTP 503',
     });
@@ -90,7 +92,7 @@ describe('Integrations Service - KuCoin Error Mapper', () => {
       const err = new KucoinRequestError({
         kind,
         method: 'GET',
-        endpoint: '/api/v1/ticker?symbol=XBTUSDTM',
+        endpoint: `/api/v1/ticker?symbol=${TEST_SYMBOL}`,
         message: 'x',
       });
       expect(mapKucoinErrorToHttpResponse(err, { isProduction: true })?.status).toBe(502);
@@ -101,7 +103,7 @@ describe('Integrations Service - KuCoin Error Mapper', () => {
     const err = new KucoinRequestError({
       kind: 'http',
       method: 'GET',
-      endpoint: '/api/v1/ticker?symbol=XBTUSDTM',
+      endpoint: `/api/v1/ticker?symbol=${TEST_SYMBOL}`,
       status: 429,
       retryAfterMs: 1000,
       message: 'KuCoin HTTP 429',
@@ -114,7 +116,7 @@ describe('Integrations Service - KuCoin Error Mapper', () => {
     const err = new KucoinRequestError({
       kind: 'http',
       method: 'GET',
-      endpoint: '/api/v1/ticker?symbol=XBTUSDTM',
+      endpoint: `/api/v1/ticker?symbol=${TEST_SYMBOL}`,
       status: 429,
       retryAfterMs: 1000,
       message: 'KuCoin HTTP 429',
