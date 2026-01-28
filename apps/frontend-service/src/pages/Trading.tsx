@@ -557,6 +557,7 @@ export default function Trading() {
   const [selectedMarginMode, setSelectedMarginMode] = useState<'cross' | 'isolated'>('cross');
   const [marketDefaultsInitialized, setMarketDefaultsInitialized] = useState(false);
   const [selectedSymbol, setSelectedSymbol] = useState('');
+  const sanitizedSymbol = selectedSymbol.trim();
   const [selectedInterval, setSelectedInterval] = useState('');
   const [controlMode, setControlMode] = useState<TradingControlMode>('alice');
   const [showNewOrderDialog, setShowNewOrderDialog] = useState(false);
@@ -698,11 +699,11 @@ export default function Trading() {
   } = useQuery<{ success: boolean; data: MarketData }>({
     queryKey: ['/api/integrations/trading/market', selectedSymbol, selectedMarketType, selectedMarginMode],
     queryFn: async () => {
-      const res = await apiRequest('GET', `/api/integrations/trading/market/${selectedSymbol}?${marketQueryString}`);
+      const res = await apiRequest('GET', `/api/integrations/trading/market/${sanitizedSymbol}?${marketQueryString}`);
       return res.json();
     },
     refetchInterval: 5000, // Atualizar a cada 5 segundos
-    enabled: statusData?.data?.isConfigured && !!selectedSymbol,
+    enabled: statusData?.data?.isConfigured && !!sanitizedSymbol,
   });
 
   const {
@@ -717,7 +718,7 @@ export default function Trading() {
       return res.json();
     },
     refetchInterval: 10000,
-    enabled: statusData?.data?.isConfigured && !!selectedSymbol,
+    enabled: statusData?.data?.isConfigured && !!sanitizedSymbol,
   });
 
   const {
@@ -732,7 +733,7 @@ export default function Trading() {
       return res.json();
     },
     refetchInterval: 10000,
-    enabled: statusData?.data?.isConfigured && !!selectedSymbol,
+    enabled: statusData?.data?.isConfigured && !!sanitizedSymbol,
   });
 
   const {
@@ -775,10 +776,11 @@ export default function Trading() {
     if (symbols.length === 0) return;
 
     const preferred = symbolsData?.data?.defaultSymbol || statusData?.data?.defaultSymbol || symbols[0];
-    if (!selectedSymbol || !symbols.includes(selectedSymbol)) {
+    if (!preferred) return;
+    if (!sanitizedSymbol || !symbols.includes(sanitizedSymbol)) {
       setSelectedSymbol(preferred);
     }
-  }, [symbolsData, statusData, selectedSymbol]);
+  }, [symbolsData, statusData, sanitizedSymbol]);
 
   useEffect(() => {
     const intervals = intervalsData?.data?.intervals ?? [];
@@ -792,7 +794,7 @@ export default function Trading() {
   const isFuturesMarket = selectedMarketType === 'futures';
 
   const wsEnabled = isFuturesMarket
-    && !!selectedSymbol
+    && !!sanitizedSymbol
     && !!statusData?.data?.isConfigured
     && !statusData?.data?.requiresTenant;
 
@@ -810,7 +812,7 @@ export default function Trading() {
     orderBook: wsOrderBook,
     klines: wsKlines,
   } = useKucoinWebSocket({
-    symbol: wsEnabled ? selectedSymbol : '',
+    symbol: wsEnabled ? sanitizedSymbol : '',
     channels: wsChannels,
     interval: wsInterval,
     autoConnect: wsEnabled,
@@ -835,11 +837,11 @@ export default function Trading() {
         throw new Error('Intervalo inválido para klines');
       }
       params.set('granularity', String(granularityValue));
-      const res = await apiRequest('GET', `/api/integrations/trading/klines/${selectedSymbol}?${params.toString()}`);
+      const res = await apiRequest('GET', `/api/integrations/trading/klines/${sanitizedSymbol}?${params.toString()}`);
       return res.json();
     },
     refetchInterval: 60000, // Atualizar a cada 1 minuto
-    enabled: statusData?.data?.isConfigured && !!granularityValue,
+    enabled: statusData?.data?.isConfigured && !!granularityValue && !!sanitizedSymbol,
   });
 
   // Query para Order Book
@@ -854,11 +856,11 @@ export default function Trading() {
       if (restOrderBookDepth) {
         params.set('depth', String(restOrderBookDepth));
       }
-      const res = await apiRequest('GET', `/api/integrations/trading/orderbook/${selectedSymbol}?${params.toString()}`);
+      const res = await apiRequest('GET', `/api/integrations/trading/orderbook/${sanitizedSymbol}?${params.toString()}`);
       return res.json();
     },
     refetchInterval: 5000, // Atualizar a cada 5 segundos
-    enabled: statusData?.data?.isConfigured && !!restOrderBookDepth,
+    enabled: statusData?.data?.isConfigured && !!restOrderBookDepth && !!sanitizedSymbol,
   });
 
   // Query para histórico de controle (handover/takeover)

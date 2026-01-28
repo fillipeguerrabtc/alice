@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 28 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.6 - Healthchecks e KuCoin orderbook env
+**Versão:** 10.7 - Trading UI resiliente a símbolo vazio
 
 ---
 
@@ -15,6 +15,7 @@
 - Observabilidade completa com Prometheus, Grafana, Loki, Jaeger e Langfuse.
 - Segurança enterprise com hardening de containers, RLS no PostgreSQL e validação Zod em APIs.
 - Integração KuCoin auditada e corrigida conforme docs oficiais (auth HMAC v2/v3, time sync, stop orders, WS broadcast via Redis).
+- Trading UI: chamadas REST bloqueadas quando símbolo não está definido (evita 404 e tela “Algo deu errado”).
 
 ---
 
