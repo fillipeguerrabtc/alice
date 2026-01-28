@@ -5121,9 +5121,13 @@ async function executeTradingCommand(
         }
         endpoint = '/api/integrations/trading/positions';
         method = 'DELETE';
-        body = command.symbol
-          ? { symbol: command.symbol, marketType: effectiveMarketType, marginMode: effectiveMarginMode }
-          : { marketType: effectiveMarketType, marginMode: effectiveMarginMode };
+        {
+          const resolvedSymbol = command.symbol || await resolveDefaultSymbol(effectiveMarketType, effectiveMarginMode);
+          if (!resolvedSymbol) {
+            return { success: false, error: 'Símbolo não definido para fechar posição.' };
+          }
+          body = { symbol: resolvedSymbol, marketType: effectiveMarketType, marginMode: effectiveMarginMode };
+        }
         break;
 
       case 'cancel_order':
