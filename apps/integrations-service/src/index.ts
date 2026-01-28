@@ -4085,7 +4085,7 @@ app.get('/api/integrations/trading/status', requirePermission('integrations:trad
     // BUG FIX 13/01/2026: Retornar isConfigured mesmo sem tenantId para mostrar status correto na UI
     // Trading pode estar configurado (secrets existem) mas usuário não tem tenant associado
     // UI precisa saber se KuCoin está configurado para mostrar mensagem correta
-    const isConfigured = kucoinClient.isKucoinConfigured();
+    const configStatus = kucoinClient.getKucoinConfigStatus();
     const circuitBreakerStatus = kucoinClient.getKucoinCircuitBreakerStatus();
     
     // Se não tem tenantId, retornar apenas status de configuração (sem dados do tenant)
@@ -4093,7 +4093,8 @@ app.get('/api/integrations/trading/status', requirePermission('integrations:trad
       res.json({
         success: true,
         data: {
-          isConfigured,
+          isConfigured: configStatus.isConfigured,
+          missingKeys: configStatus.missingKeys,
           circuitBreaker: circuitBreakerStatus,
           riskConfig: null,
           activeSignals: 0,

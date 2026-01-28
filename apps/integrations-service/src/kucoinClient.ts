@@ -56,6 +56,14 @@ const KUCOIN_PRO_API_KEY = process.env.KUCOIN_PRO_API_KEY;
 const KUCOIN_PRO_API_SECRET = process.env.KUCOIN_PRO_API_SECRET;
 const KUCOIN_PRO_API_PASSPHRASE = process.env.KUCOIN_PRO_API_PASSPHRASE;
 
+export function getKucoinConfigStatus(): { isConfigured: boolean; missingKeys: string[] } {
+  const missingKeys: string[] = [];
+  if (!KUCOIN_PRO_API_KEY?.trim()) missingKeys.push('KUCOIN_PRO_API_KEY');
+  if (!KUCOIN_PRO_API_SECRET?.trim()) missingKeys.push('KUCOIN_PRO_API_SECRET');
+  if (!KUCOIN_PRO_API_PASSPHRASE?.trim()) missingKeys.push('KUCOIN_PRO_API_PASSPHRASE');
+  return { isConfigured: missingKeys.length === 0, missingKeys };
+}
+
 
 // ============================================================================
 // SÍMBOLOS (dinâmicos via API KuCoin - sem hardcoded)

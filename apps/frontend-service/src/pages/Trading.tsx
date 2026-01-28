@@ -129,6 +129,7 @@ import type { KlineData, OrderBookData, TradingControlMode, ControlHistoryEntry 
 
 interface TradingStatus {
   isConfigured: boolean;
+  missingKeys?: string[];
   circuitBreaker: {
     state: string;
     failures: number;
@@ -1247,10 +1248,62 @@ export default function Trading() {
   }
 
   // ============================================================================
+  // RENDER - Erro ao carregar status
+  // ============================================================================
+
+  if (statusError) {
+    const errorMessage = statusError instanceof ApiError
+      ? statusError.message
+      : statusError instanceof Error
+        ? statusError.message
+        : 'Erro desconhecido';
+
+    return (
+      <div className="p-6">
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12 text-center space-y-4">
+            <AlertTriangle className="h-12 w-12 text-yellow-500" />
+            <div>
+              <h3 className="text-lg font-medium">Falha ao carregar o status do Trading</h3>
+              <p className="text-muted-foreground mt-2 max-w-md">
+                {errorMessage}
+              </p>
+            </div>
+            <Button onClick={() => refetchStatus()}>Recarregar status</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!statusData?.data) {
+    return (
+      <div className="p-6">
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12 text-center space-y-4">
+            <AlertTriangle className="h-12 w-12 text-yellow-500" />
+            <div>
+              <h3 className="text-lg font-medium">Status do Trading indisponível</h3>
+              <p className="text-muted-foreground mt-2 max-w-md">
+                Não foi possível obter o status do serviço. Tente novamente em alguns instantes.
+              </p>
+            </div>
+            <Button onClick={() => refetchStatus()}>Recarregar status</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // ============================================================================
   // RENDER - Not Configured State
   // ============================================================================
 
   if (!statusData?.data?.isConfigured) {
+    const missingKeys = statusData.data.missingKeys?.length
+      ? statusData.data.missingKeys
+      : ['KUCOIN_PRO_API_KEY', 'KUCOIN_PRO_API_SECRET', 'KUCOIN_PRO_API_PASSPHRASE'];
+
     return (
       <div className="p-6">
         <Card>
@@ -1261,9 +1314,9 @@ export default function Trading() {
               {t('trading.notConfiguredDesc')}
             </p>
             <div className="p-4 bg-muted rounded-lg text-sm font-mono space-y-1">
-              <p>KUCOIN_PRO_API_KEY</p>
-              <p>KUCOIN_PRO_API_SECRET</p>
-              <p>KUCOIN_PRO_API_PASSPHRASE</p>
+              {missingKeys.map((key) => (
+                <p key={key}>{key}</p>
+              ))}
             </div>
           </CardContent>
         </Card>

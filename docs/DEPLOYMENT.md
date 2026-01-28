@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 27 de Janeiro de 2026  
-**Versão:** 11.6 - Builds Docker sem warning de pnpm approve-builds
+**Data:** 28 de Janeiro de 2026  
+**Versão:** 11.7 - Healthchecks por stack alinhados ao deploy bem-sucedido
 
 ## Visão geral
 
@@ -43,9 +43,9 @@ deploy-alice + deploy-observability + deploy-erpnext + deploy-backup (paralelo)
 health-{stack} + rollback-{stack} (se necessário)
 ```
 
-### Healthchecks condicionados ao deploy executado
+### Healthchecks condicionados ao deploy bem-sucedido
 
-Para evitar skips “inexplicáveis”, os jobs de health check só rodam quando o **deploy foi executado de fato** (flag `deploy_executed=true`). Isso elimina casos em que o job de deploy foi pulado (smart deploy) mas o healthcheck aparecia como skipped sem contexto.
+Os jobs de health check rodam **apenas quando o deploy do stack terminou com sucesso** (`needs.deploy-<stack>.result == 'success'`). Isso mantém o comportamento consistente com INFRA/ALICE e evita execução quando o deploy foi pulado.
 
 ### Builds Docker e warning do pnpm (`approve-builds`)
 

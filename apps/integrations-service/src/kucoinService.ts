@@ -1750,6 +1750,7 @@ export async function closePositions(
  */
 export async function getTradingServiceStatus(authContext: TradingAuthContext): Promise<{
   isConfigured: boolean;
+  missingKeys: string[];
   circuitBreaker: ReturnType<typeof kucoinClient.getKucoinCircuitBreakerStatus>;
   riskConfig: TradingRiskConfig | null;
   activeSignals: number;
@@ -1757,6 +1758,7 @@ export async function getTradingServiceStatus(authContext: TradingAuthContext): 
   defaultSymbol: string;
 }> {
   const db = getDatabase();
+  const configStatus = kucoinClient.getKucoinConfigStatus();
   
   const [riskConfig, activeSignalsResult, pendingOrdersResult, defaultSymbol] = await Promise.all([
     getRiskConfig(authContext),
@@ -1782,7 +1784,8 @@ export async function getTradingServiceStatus(authContext: TradingAuthContext): 
   ]);
 
   return {
-    isConfigured: kucoinClient.isKucoinConfigured(),
+    isConfigured: configStatus.isConfigured,
+    missingKeys: configStatus.missingKeys,
     circuitBreaker: kucoinClient.getKucoinCircuitBreakerStatus(),
     riskConfig,
     activeSignals: Number(activeSignalsResult[0]?.count ?? 0),
