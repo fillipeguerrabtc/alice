@@ -3791,6 +3791,7 @@ jobs:
               -e DATABASE_URL="$DATABASE_URL" \
               node:22-alpine sh -c "
                 npm install -g pnpm
+                export NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS=true
                 pnpm install --no-frozen-lockfile
                 pnpm drizzle-kit push --verbose
               " 2>&1 | tee "$DRIZZLE_LOG"; then

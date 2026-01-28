@@ -57,9 +57,9 @@ ON documents (namespace_id, processado, atualizado_em DESC)
 WHERE processado = true;
 
 -- document_chunks: Por documento pai
--- Otimiza: SELECT * FROM document_chunks WHERE document_id = ? ORDER BY chunk_index
+-- Otimiza: SELECT * FROM document_chunks WHERE document_id = ? ORDER BY posicao
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_document_chunks_document_order
-ON document_chunks (document_id, chunk_index);
+ON document_chunks (document_id, posicao);
 
 -- ============================================================================
 -- ÍNDICES PARA AUDITORIA E LOGS
@@ -93,7 +93,7 @@ COMMENT ON INDEX idx_documents_namespace_processed IS
   'Índice parcial para documentos processados por namespace';
 
 COMMENT ON INDEX idx_document_chunks_document_order IS 
-  'Índice composto para chunks ordenados por índice dentro do documento';
+  'Índice composto para chunks ordenados por posição dentro do documento';
 
 COMMENT ON INDEX idx_audit_logs_tenant_timestamp IS 
   'Índice composto para consultas de auditoria por tenant e período';
