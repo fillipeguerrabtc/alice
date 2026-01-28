@@ -30,7 +30,7 @@ CREATE INDEX IF NOT EXISTS idx_user_custom_roles_user ON user_custom_roles(user_
 
 -- Backfill: roles base (users.role) -> user_roles
 INSERT INTO user_roles (user_id, role)
-SELECT id, role::text
+SELECT id, role::user_role
 FROM users
 WHERE role IS NOT NULL
 ON CONFLICT DO NOTHING;
