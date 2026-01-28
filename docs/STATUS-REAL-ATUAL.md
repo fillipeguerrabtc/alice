@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 28 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.5 - Frontend Trading build fix (status/ticker/intervalos)
+**Versão:** 10.6 - Healthchecks e KuCoin orderbook env
 
 ---
 
@@ -239,7 +239,8 @@ Retenção Arquivo:   30 dias
 - Deploy: logs de falha do ERPNext agora persistem como artifact no GitHub Actions.
 - Deploy: logs de falha persistem para todos os stacks (infra, alice, observability, erpnext, backup).
 - Deploy: diagnóstico rápido (tail) é exibido na tela antes do artifact.
-- Deploy: healthchecks de OBSERVABILITY/ERPNEXT/BACKUP rodam quando stack é deployado.
+- Deploy: healthchecks de OBSERVABILITY/ERPNEXT/BACKUP rodam após deploy bem-sucedido.
+- Integrations: variáveis KuCoin orderbook (WS/REST) exigidas quando KuCoin ativo.
 - Timezone: containers em UTC; UI/Chat usam timezone do usuário com default `America/Sao_Paulo`.
 - ERPNext: configurator sincroniza assets e configs sem remover mountpoints (evita exit 1).
 - ERPNext: criação de site agora executa `bench build --production` e valida `frappe/dist` (corrige 404 de CSS/JS).

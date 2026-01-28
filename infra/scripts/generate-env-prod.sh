@@ -870,11 +870,40 @@ echo "📄 Gerando arquivo .env.prod..."
   printf 'WISE_WEBHOOK_SECRET=%s\n' "${WISE_WEBHOOK_SECRET}"
   printf 'WISE_SANDBOX=%s\n' "${WISE_SANDBOX}"
   printf '\n'
+
+  # =================================================================
+  # KuCoin Futures - Validação obrigatória (quando KuCoin ativo)
+  # =================================================================
+  KUCOIN_WS_ORDERBOOK_DEPTH="${KUCOIN_WS_ORDERBOOK_DEPTH:-}"
+  KUCOIN_REST_ORDERBOOK_DEPTH="${KUCOIN_REST_ORDERBOOK_DEPTH:-}"
+
+  if [ -n "${KUCOIN_PRO_API_KEY:-}" ]; then
+    if [ -z "${KUCOIN_WS_ORDERBOOK_DEPTH}" ]; then
+      echo "::error::KUCOIN_WS_ORDERBOOK_DEPTH não configurado. Use 5 ou 50." >&2
+      exit 1
+    fi
+    if [ -z "${KUCOIN_REST_ORDERBOOK_DEPTH}" ]; then
+      echo "::error::KUCOIN_REST_ORDERBOOK_DEPTH não configurado. Use 20 ou 100." >&2
+      exit 1
+    fi
+
+    if ! echo "${KUCOIN_WS_ORDERBOOK_DEPTH}" | grep -qE '^(5|50)$'; then
+      echo "::error::KUCOIN_WS_ORDERBOOK_DEPTH inválido: ${KUCOIN_WS_ORDERBOOK_DEPTH}. Use 5 ou 50." >&2
+      exit 1
+    fi
+    if ! echo "${KUCOIN_REST_ORDERBOOK_DEPTH}" | grep -qE '^(20|100)$'; then
+      echo "::error::KUCOIN_REST_ORDERBOOK_DEPTH inválido: ${KUCOIN_REST_ORDERBOOK_DEPTH}. Use 20 ou 100." >&2
+      exit 1
+    fi
+  fi
+
   printf '# KuCoin Futures\n'
   printf 'KUCOIN_PRO_API_KEY=%s\n' "${KUCOIN_PRO_API_KEY:-}"
   printf 'KUCOIN_PRO_API_SECRET=%s\n' "${KUCOIN_PRO_API_SECRET:-}"
   printf 'KUCOIN_PRO_API_PASSPHRASE=%s\n' "${KUCOIN_PRO_API_PASSPHRASE:-}"
   printf 'KUCOIN_PRO_BASE_URL=%s\n' "${KUCOIN_PRO_BASE_URL:-}"
+  printf 'KUCOIN_WS_ORDERBOOK_DEPTH=%s\n' "${KUCOIN_WS_ORDERBOOK_DEPTH}"
+  printf 'KUCOIN_REST_ORDERBOOK_DEPTH=%s\n' "${KUCOIN_REST_ORDERBOOK_DEPTH}"
   printf '\n'
   printf '# ERPNext Database\n'
   printf 'ERPNEXT_SITE_NAME=erp.yesyoudeserve.duckdns.org\n'

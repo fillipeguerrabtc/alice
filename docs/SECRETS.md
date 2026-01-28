@@ -2,7 +2,7 @@
 
 **Author:** Fillipe Guerra  
 **Data:** 28 de Janeiro de 2026  
-**Versão:** 7.13 - Stack Ops GitHub Actions
+**Versão:** 7.14 - KuCoin orderbook depths obrigatórias
 
 ## Visão geral
 
@@ -87,8 +87,11 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `KUCOIN_PRO_API_PASSPHRASE` | KuCoin API Passphrase | ✅ |
 | `KUCOIN_PRO_API_KEY_VERSION` | Versão da API Key KuCoin (1/2/3) | ⚠️ |
 | `KUCOIN_PRO_BASE_URL` | Base URL KuCoin | ✅ |
+| `KUCOIN_WS_ORDERBOOK_DEPTH` | Profundidade WS KuCoin (5 ou 50) | ✅ (se KuCoin ativo) |
+| `KUCOIN_REST_ORDERBOOK_DEPTH` | Profundidade REST KuCoin (20 ou 100) | ✅ (se KuCoin ativo) |
 
 > **Nota (27/01/2026):** `KUCOIN_TENANT_ID` foi removido. O tenant para eventos privados do KuCoin WS é resolvido dinamicamente no banco (`integrations`).
+> **Nota (28/01/2026):** Se `KUCOIN_PRO_API_KEY` estiver configurada, `KUCOIN_WS_ORDERBOOK_DEPTH` e `KUCOIN_REST_ORDERBOOK_DEPTH` são obrigatórias para evitar crashloop do `integrations-service`.
 
 ## GitHub Actions (Stack Ops)
 
@@ -149,8 +152,6 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `ACME_DNS_PRECHECK_RESOLVERS` | Lista de resolvers DoH (separada por espaço) |
 | `ACME_DNS_PRECHECK_REQUIRE_ALL_RESOLVERS` | `true` exige sucesso em todos os resolvers DoH |
 | `ACME_DNS_PRECHECK_HOSTS` | Lista de hosts para checagem (override do Caddyfile) |
-| `KUCOIN_WS_ORDERBOOK_DEPTH` | Profundidade WS KuCoin (5 ou 50, obrigatório para orderbook WS) |
-| `KUCOIN_REST_ORDERBOOK_DEPTH` | Profundidade REST KuCoin (20 ou 100, obrigatório para orderbook REST) |
 
 ## Geração recomendada
 
