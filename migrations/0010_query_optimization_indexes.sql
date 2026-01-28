@@ -29,11 +29,11 @@ ON conversations (tenant_id, atualizado_em DESC);
 -- ============================================================================
 
 -- trading_orders: Índice parcial para ordens ativas
--- Otimiza: SELECT * FROM trading_orders WHERE tenant_id = ? AND status IN ('open', 'active', 'pending')
+-- Otimiza: SELECT * FROM trading_orders WHERE tenant_id = ? AND status IN ('open', 'pending')
 -- Reduz tamanho do índice ignorando ordens canceladas/preenchidas (maioria)
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_trading_orders_active
 ON trading_orders (tenant_id, status)
-WHERE status IN ('open', 'active', 'pending');
+WHERE status IN ('open', 'pending');
 
 -- trading_positions: Índice parcial para posições abertas
 -- Otimiza: SELECT * FROM trading_positions WHERE tenant_id = ? AND status = 'open'
