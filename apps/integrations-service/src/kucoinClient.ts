@@ -690,7 +690,7 @@ export async function getKlines(
  * @param symbol - Símbolo do contrato
  * @param depth - Profundidade (20 ou 100)
  */
-export async function getOrderBook(symbol: string, depth: 20 | 100 = 20): Promise<KucoinOrderBook> {
+export async function getOrderBook(symbol: string, depth: 20 | 100): Promise<KucoinOrderBook> {
   const response = await executeRequest<KucoinOrderBook>(
     'GET',
     `/api/v1/level2/depth${depth}?symbol=${symbol}`,

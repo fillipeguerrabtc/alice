@@ -140,7 +140,7 @@ export function useKucoinWebSocket(
   const {
     symbol = '',
     channels = ['ticker'],
-    interval = '1',
+    interval = '',
     marketType = 'futures',
     marginMode = 'cross',
     autoConnect = true,
@@ -546,6 +546,10 @@ export function useKucoinWebSocket(
       disconnect();
     };
   }, [autoConnect, connect, disconnect]);
+
+  useEffect(() => {
+    setKlines([]);
+  }, [symbol, interval, marketType, marginMode]);
 
   // Resubscribe when symbol changes
   useEffect(() => {

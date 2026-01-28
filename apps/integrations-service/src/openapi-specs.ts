@@ -134,6 +134,16 @@ export const integrationsServicePaths = {
       },
     },
   },
+  '/api/integrations/trading/intervals': {
+    get: {
+      summary: 'Intervalos suportados (REST + WS)',
+      tags: ['Trading'],
+      responses: {
+        200: { description: 'Intervalos suportados para klines' },
+        401: { description: 'Não autenticado' },
+      },
+    },
+  },
   '/api/integrations/trading/ws/subscribe': {
     post: {
       summary: 'Registrar subscription no WebSocket KuCoin',
@@ -148,6 +158,7 @@ export const integrationsServicePaths = {
                 channel: { type: 'string', enum: ['ticker', 'orderbook', 'klines', 'trades'] },
                 symbol: { type: 'string' },
                 interval: { type: 'string' },
+                depth: { type: 'integer', enum: [5, 50] },
                 marketType: { type: 'string', enum: ['futures', 'spot', 'margin'] },
                 marginMode: { type: 'string', enum: ['cross', 'isolated'] },
               },
@@ -179,6 +190,7 @@ export const integrationsServicePaths = {
                 channel: { type: 'string', enum: ['ticker', 'orderbook', 'klines', 'trades'] },
                 symbol: { type: 'string' },
                 interval: { type: 'string' },
+                depth: { type: 'integer', enum: [5, 50] },
                 marketType: { type: 'string', enum: ['futures', 'spot', 'margin'] },
                 marginMode: { type: 'string', enum: ['cross', 'isolated'] },
               },

@@ -5083,6 +5083,7 @@ async function executeTradingCommand(
     const effectiveMarginMode = command.marginMode ?? marketDefaults?.marginMode;
 
     // Mapear comando para endpoint e payload do Integrations Service
+    let lastOrderSizeInContracts: number | null = null;
     let endpoint = '';
     let method = 'GET';
     let body: Record<string, unknown> | undefined;
@@ -5101,6 +5102,7 @@ async function executeTradingCommand(
             return { success: false, error: 'Quantidade inválida para a ordem.' };
           }
           const sizeInContracts = await resolveContractsSize(resolvedSymbol, command.amount, effectiveMarketType, effectiveMarginMode);
+          lastOrderSizeInContracts = sizeInContracts;
           body = {
             symbol: resolvedSymbol,
             side: command.type,
@@ -5314,7 +5316,11 @@ async function executeTradingCommand(
                 const stopSymbol = command.symbol
                   ?? (orderPayload?.symbol && typeof orderPayload.symbol === 'string' ? orderPayload.symbol : null)
                   ?? await resolveDefaultSymbol(effectiveMarketType, effectiveMarginMode);
-        const stopSize = command.amount ?? (orderPayload?.size && Number.isFinite(orderPayload.size) ? orderPayload.size : null);
+        const payloadSize = orderPayload?.size;
+        const resolvedPayloadSize = typeof payloadSize === 'number' && Number.isFinite(payloadSize) ? payloadSize : null;
+        const stopSize = effectiveMarketType === 'futures'
+          ? (lastOrderSizeInContracts ?? resolvedPayloadSize ?? null)
+          : (resolvedPayloadSize ?? command.amount ?? null);
 
         if (!stopSymbol || !stopSize) {
           logger.warn(

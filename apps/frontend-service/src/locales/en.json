@@ -1279,6 +1279,8 @@
     "account": {
       "title": "KuCoin Account",
       "subtitle": "Balances and positions from your KuCoin account",
+      "assetsSubtitle": "Summary of available assets for Spot/Margin",
+      "multiCurrency": "Multi-currency (balance per asset)",
       "availableBalance": "Available Balance",
       "unrealisedPnl": "Unrealised PnL",
       "allPositions": "All positions",
@@ -1479,9 +1481,14 @@
         "3m": "3 minutes",
         "5m": "5 minutes",
         "15m": "15 minutes",
+        "30m": "30 minutes",
         "1h": "1 hour",
+        "2h": "2 hours",
         "4h": "4 hours",
-        "1d": "1 day"
+        "8h": "8 hours",
+        "12h": "12 hours",
+        "1d": "1 day",
+        "1w": "1 week"
       }
     },
     "orderbook": {

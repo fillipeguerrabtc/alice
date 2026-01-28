@@ -796,7 +796,7 @@ export class KucoinWebSocketClient extends EventEmitter {
    * @param symbol - Símbolo (ex: SYMBOL)
    * @param depth - Profundidade (5 ou 50)
    */
-  subscribeOrderBook(symbol: string, depth: 5 | 50 = 50): void {
+  subscribeOrderBook(symbol: string, depth: 5 | 50): void {
     this.sendSubscribe(`/contractMarket/level2Depth${depth}:${symbol}`);
   }
 
@@ -870,7 +870,7 @@ export class KucoinWebSocketClient extends EventEmitter {
   /**
    * Cancela subscription de order book
    */
-  unsubscribeOrderBook(symbol: string, depth: 5 | 50 = 50): void {
+  unsubscribeOrderBook(symbol: string, depth: 5 | 50): void {
     this.sendUnsubscribe(`/contractMarket/level2Depth${depth}:${symbol}`);
   }
 

@@ -46,6 +46,7 @@ import { integrationsServicePaths, integrationsServiceSchemas } from './openapi-
 import { loadConfig, integrationsServiceConfigSchema } from '@alice/config';
 import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, getPool } from '@alice/database';
 import { eq, desc, sql, and, inArray, not, isNull } from '@alice/database';
+import { tradingIntervalEnum } from '@alice/shared';
 import { z } from 'zod';
 import { wiseService } from './wiseService.js';
 import { isWiseConfigured, getSandboxStatus, getProfileIdSafe, getWiseCircuitBreakerStatus, validateWiseWebhook, initWiseMetrics } from './wiseClient.js';
@@ -396,6 +397,13 @@ const kucoinWsErrorsTotal = new PromCounter({
   name: 'alice_kucoin_ws_errors_total',
   help: 'Total de erros emitidos pelo KuCoin WebSocket',
   labelNames: ['channel'] as const,
+  registers: [metrics.registry],
+});
+
+const kucoinWsSubscriptionsTotal = new PromCounter({
+  name: 'alice_kucoin_ws_subscriptions_total',
+  help: 'Total de subscriptions KuCoin WS (subscribe/unsubscribe)',
+  labelNames: ['action', 'channel', 'status'] as const,
   registers: [metrics.registry],
 });
 
@@ -3834,6 +3842,21 @@ initWiseMetrics(metrics);
 // - Expor status para o dashboard/UI e logs estruturados
 // ============================================================================
 if (kucoinClient.isKucoinConfigured()) {
+  let wsOrderBookDepth: 5 | 50;
+  try {
+    wsOrderBookDepth = resolveKucoinWsOrderBookDepth();
+    resolveKucoinRestOrderBookDepth();
+  } catch (error) {
+    logger.fatal(
+      { error: error instanceof Error ? error.message : String(error) },
+      'Configuração inválida do KuCoin (orderbook depth REST/WS)'
+    );
+    if (process.env.NODE_ENV === 'production') {
+      process.exit(1);
+    }
+    throw error;
+  }
+
   initializeKucoinWebSocketClients()
     .then(async () => {
       initializeBroadcast()
@@ -3907,7 +3930,7 @@ if (kucoinClient.isKucoinConfigured()) {
       const symbol = await kucoinClient.getDefaultSymbol();
       const publicWs = getPublicWebSocketClient();
       publicWs.subscribeTicker(symbol);
-      publicWs.subscribeOrderBook(symbol, 50);
+      publicWs.subscribeOrderBook(symbol, wsOrderBookDepth);
 
       if (isKucoinWebSocketConfigured()) {
         // Canais privados úteis para auditoria/operacional (ordens/posição/wallet)
@@ -3939,6 +3962,90 @@ function respondKucoinNotConfigured(res: Response): void {
   res.status(503).json({ error: 'API KuCoin não configurada' });
 }
 
+function parseTradingIntervalToMinutes(interval: string): number | null {
+  const normalized = interval.trim().toLowerCase();
+  const match = /^(\d+)(m|h|d|w)$/.exec(normalized);
+  if (!match) return null;
+  const value = Number(match[1]);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  const unit = match[2];
+  if (unit === 'm') return value;
+  if (unit === 'h') return value * 60;
+  if (unit === 'd') return value * 1440;
+  if (unit === 'w') return value * 10080;
+  return null;
+}
+
+const KUCOIN_REST_ORDERBOOK_DEPTHS = [20, 100] as const;
+const KUCOIN_WS_ORDERBOOK_DEPTHS = [5, 50] as const;
+
+function resolveKucoinRestOrderBookDepth(): 20 | 100 {
+  const raw = process.env.KUCOIN_REST_ORDERBOOK_DEPTH;
+  if (!raw) {
+    throw new Error('KUCOIN_REST_ORDERBOOK_DEPTH não configurado');
+  }
+  const parsed = Number(raw);
+  if (!KUCOIN_REST_ORDERBOOK_DEPTHS.includes(parsed as (typeof KUCOIN_REST_ORDERBOOK_DEPTHS)[number])) {
+    throw new Error(`KUCOIN_REST_ORDERBOOK_DEPTH inválido: ${raw}. Use 20 ou 100.`);
+  }
+  return parsed as 20 | 100;
+}
+
+function resolveTradingIntervals(): {
+  intervals: string[];
+  granularityMap: Record<string, number>;
+  wsIntervalMap: Record<string, string>;
+  defaultInterval: string;
+  restOrderBookDepth: 20 | 100;
+  restOrderBookDepths: number[];
+  wsOrderBookDepth: 5 | 50;
+  wsOrderBookDepths: number[];
+} {
+  const intervals = tradingIntervalEnum.enumValues;
+  if (!intervals.length) {
+    throw new Error('Enum de intervalos de trading vazio');
+  }
+  const granularityMap: Record<string, number> = {};
+  const wsIntervalMap: Record<string, string> = {};
+  for (const interval of intervals) {
+    const minutes = parseTradingIntervalToMinutes(interval);
+    if (!minutes) {
+      throw new Error(`Intervalo de trading inválido no schema: ${interval}`);
+    }
+    granularityMap[interval] = minutes;
+    wsIntervalMap[interval] = kucoinClient.granularityToInterval(minutes);
+  }
+  return {
+    intervals: [...intervals],
+    granularityMap,
+    wsIntervalMap,
+    defaultInterval: intervals[0]!,
+    restOrderBookDepth: resolveKucoinRestOrderBookDepth(),
+    restOrderBookDepths: [...KUCOIN_REST_ORDERBOOK_DEPTHS],
+    wsOrderBookDepth: resolveKucoinWsOrderBookDepth(),
+    wsOrderBookDepths: [...KUCOIN_WS_ORDERBOOK_DEPTHS],
+  };
+}
+
+function getAllowedGranularitiesMinutes(): number[] {
+  const minutes = tradingIntervalEnum.enumValues
+    .map((interval) => parseTradingIntervalToMinutes(interval))
+    .filter((value): value is number => value !== null);
+  return minutes.sort((a, b) => a - b);
+}
+
+function resolveKucoinWsOrderBookDepth(): 5 | 50 {
+  const raw = process.env.KUCOIN_WS_ORDERBOOK_DEPTH;
+  if (!raw) {
+    throw new Error('KUCOIN_WS_ORDERBOOK_DEPTH não configurado');
+  }
+  const parsed = Number(raw);
+  if (!KUCOIN_WS_ORDERBOOK_DEPTHS.includes(parsed as (typeof KUCOIN_WS_ORDERBOOK_DEPTHS)[number])) {
+    throw new Error(`KUCOIN_WS_ORDERBOOK_DEPTH inválido: ${raw}. Use 5 ou 50.`);
+  }
+  return parsed as 5 | 50;
+}
+
 function isValidKucoinWsInterval(interval: string): boolean {
   const normalized = interval.trim();
   const granularity = kucoinClient.intervalToGranularity(normalized);
@@ -3966,10 +4073,6 @@ async function resolveTradingSymbolOrRespond(
     return undefined;
   }
 }
-
-const KUCOIN_ALLOWED_GRANULARITIES_MINUTES = [
-  1, 3, 5, 15, 30, 60, 120, 240, 480, 720, 1440, 10080,
-] as const;
 
 // GET /api/integrations/trading/status - Status do serviço de trading
 app.get('/api/integrations/trading/status', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
@@ -4059,10 +4162,26 @@ app.get('/api/integrations/trading/ws/status', requirePermission('integrations:t
   }
 });
 
+// GET /api/integrations/trading/intervals - Intervalos suportados (REST + WS)
+app.get('/api/integrations/trading/intervals', requirePermission('integrations:trading:read'), async (_req: Request, res: Response) => {
+  try {
+    const intervals = resolveTradingIntervals();
+    res.json({
+      success: true,
+      data: intervals,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao resolver intervalos de trading');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
 const wsSubscriptionSchema = z.object({
   channel: z.enum(['ticker', 'orderbook', 'klines', 'trades']),
   symbol: z.string().min(1).max(20),
   interval: z.string().max(10).optional(),
+  depth: z.coerce.number().int().optional(),
   marketType: z.enum(['futures', 'spot', 'margin']),
   marginMode: z.enum(['cross', 'isolated']).optional(),
 });
@@ -4078,6 +4197,7 @@ app.post('/api/integrations/trading/ws/subscribe', requirePermission('integratio
 
     const parsed = wsSubscriptionSchema.safeParse(req.body);
     if (!parsed.success) {
+      kucoinWsSubscriptionsTotal.inc({ action: 'subscribe', channel: 'unknown', status: 'validation_error' }, 1);
       res.status(400).json({ error: 'Payload inválido', details: parsed.error.flatten() });
       return;
     }
@@ -4087,19 +4207,29 @@ app.post('/api/integrations/trading/ws/subscribe', requirePermission('integratio
       return;
     }
 
-    const { channel, symbol, interval, marketType, marginMode } = parsed.data;
+    const { channel, symbol, interval, depth, marketType, marginMode } = parsed.data;
     if (marketType !== 'futures') {
+      kucoinWsSubscriptionsTotal.inc({ action: 'subscribe', channel, status: 'unsupported_market' }, 1);
       res.status(501).json({ error: 'WebSocket disponível apenas para KuCoin Futures' });
       return;
     }
 
     if (channel === 'klines') {
       if (!interval) {
+        kucoinWsSubscriptionsTotal.inc({ action: 'subscribe', channel, status: 'interval_required' }, 1);
         res.status(400).json({ error: 'Intervalo é obrigatório para klines' });
         return;
       }
       if (!isValidKucoinWsInterval(interval)) {
+        kucoinWsSubscriptionsTotal.inc({ action: 'subscribe', channel, status: 'interval_invalid' }, 1);
         res.status(400).json({ error: `Intervalo WS inválido: ${interval}` });
+        return;
+      }
+    }
+    if (channel === 'orderbook' && depth !== undefined) {
+      if (!KUCOIN_WS_ORDERBOOK_DEPTHS.includes(depth as (typeof KUCOIN_WS_ORDERBOOK_DEPTHS)[number])) {
+        kucoinWsSubscriptionsTotal.inc({ action: 'subscribe', channel, status: 'depth_invalid' }, 1);
+        res.status(400).json({ error: 'depth inválido. Valores permitidos: 5, 50.' });
         return;
       }
     }
@@ -4113,15 +4243,18 @@ app.post('/api/integrations/trading/ws/subscribe', requirePermission('integratio
       await publicWs.connect(false);
     }
 
+    const orderBookDepth = (depth ?? resolveKucoinWsOrderBookDepth()) as 5 | 50;
     if (channel === 'ticker') {
       publicWs.subscribeTicker(resolvedSymbol);
     } else if (channel === 'orderbook') {
-      publicWs.subscribeOrderBook(resolvedSymbol, 50);
+      publicWs.subscribeOrderBook(resolvedSymbol, orderBookDepth);
     } else if (channel === 'trades') {
       publicWs.subscribeTrades(resolvedSymbol);
     } else if (channel === 'klines' && interval) {
       publicWs.subscribeKlines(resolvedSymbol, interval);
     }
+
+    kucoinWsSubscriptionsTotal.inc({ action: 'subscribe', channel, status: 'success' }, 1);
 
     res.json({
       success: true,
@@ -4129,12 +4262,15 @@ app.post('/api/integrations/trading/ws/subscribe', requirePermission('integratio
         channel,
         symbol: resolvedSymbol,
         interval: channel === 'klines' ? interval : undefined,
+        depth: channel === 'orderbook' ? orderBookDepth : undefined,
         marketType,
         marginMode,
         state: publicWs.getState(),
       },
     });
   } catch (error) {
+    const failureChannel = typeof req.body?.channel === 'string' ? req.body.channel : 'unknown';
+    kucoinWsSubscriptionsTotal.inc({ action: 'subscribe', channel: failureChannel, status: 'error' }, 1);
     if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao registrar subscription WS KuCoin');
@@ -4153,6 +4289,7 @@ app.post('/api/integrations/trading/ws/unsubscribe', requirePermission('integrat
 
     const parsed = wsSubscriptionSchema.safeParse(req.body);
     if (!parsed.success) {
+      kucoinWsSubscriptionsTotal.inc({ action: 'unsubscribe', channel: 'unknown', status: 'validation_error' }, 1);
       res.status(400).json({ error: 'Payload inválido', details: parsed.error.flatten() });
       return;
     }
@@ -4162,19 +4299,29 @@ app.post('/api/integrations/trading/ws/unsubscribe', requirePermission('integrat
       return;
     }
 
-    const { channel, symbol, interval, marketType, marginMode } = parsed.data;
+    const { channel, symbol, interval, depth, marketType, marginMode } = parsed.data;
     if (marketType !== 'futures') {
+      kucoinWsSubscriptionsTotal.inc({ action: 'unsubscribe', channel, status: 'unsupported_market' }, 1);
       res.status(501).json({ error: 'WebSocket disponível apenas para KuCoin Futures' });
       return;
     }
 
     if (channel === 'klines') {
       if (!interval) {
+        kucoinWsSubscriptionsTotal.inc({ action: 'unsubscribe', channel, status: 'interval_required' }, 1);
         res.status(400).json({ error: 'Intervalo é obrigatório para klines' });
         return;
       }
       if (!isValidKucoinWsInterval(interval)) {
+        kucoinWsSubscriptionsTotal.inc({ action: 'unsubscribe', channel, status: 'interval_invalid' }, 1);
         res.status(400).json({ error: `Intervalo WS inválido: ${interval}` });
+        return;
+      }
+    }
+    if (channel === 'orderbook' && depth !== undefined) {
+      if (!KUCOIN_WS_ORDERBOOK_DEPTHS.includes(depth as (typeof KUCOIN_WS_ORDERBOOK_DEPTHS)[number])) {
+        kucoinWsSubscriptionsTotal.inc({ action: 'unsubscribe', channel, status: 'depth_invalid' }, 1);
+        res.status(400).json({ error: 'depth inválido. Valores permitidos: 5, 50.' });
         return;
       }
     }
@@ -4185,19 +4332,23 @@ app.post('/api/integrations/trading/ws/unsubscribe', requirePermission('integrat
 
     const publicWs = getPublicWebSocketClient();
     if (!publicWs.isConnected()) {
+      kucoinWsSubscriptionsTotal.inc({ action: 'unsubscribe', channel, status: 'ws_disconnected' }, 1);
       res.status(409).json({ error: 'WebSocket KuCoin não está conectado' });
       return;
     }
 
+    const orderBookDepth = (depth ?? resolveKucoinWsOrderBookDepth()) as 5 | 50;
     if (channel === 'ticker') {
       publicWs.unsubscribeTicker(resolvedSymbol);
     } else if (channel === 'orderbook') {
-      publicWs.unsubscribeOrderBook(resolvedSymbol, 50);
+      publicWs.unsubscribeOrderBook(resolvedSymbol, orderBookDepth);
     } else if (channel === 'trades') {
       publicWs.unsubscribeTrades(resolvedSymbol);
     } else if (channel === 'klines' && interval) {
       publicWs.unsubscribeKlines(resolvedSymbol, interval);
     }
+
+    kucoinWsSubscriptionsTotal.inc({ action: 'unsubscribe', channel, status: 'success' }, 1);
 
     res.json({
       success: true,
@@ -4205,12 +4356,15 @@ app.post('/api/integrations/trading/ws/unsubscribe', requirePermission('integrat
         channel,
         symbol: resolvedSymbol,
         interval: channel === 'klines' ? interval : undefined,
+        depth: channel === 'orderbook' ? orderBookDepth : undefined,
         marketType,
         marginMode,
         state: publicWs.getState(),
       },
     });
   } catch (error) {
+    const failureChannel = typeof req.body?.channel === 'string' ? req.body.channel : 'unknown';
+    kucoinWsSubscriptionsTotal.inc({ action: 'unsubscribe', channel: failureChannel, status: 'error' }, 1);
     if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao cancelar subscription WS KuCoin');
@@ -5229,6 +5383,13 @@ app.get('/api/integrations/trading/klines/:symbol', requirePermission('integrati
 
     const { symbol } = req.params;
 
+    const defaultInterval = tradingIntervalEnum.enumValues[0];
+    const defaultGranularity = defaultInterval ? parseTradingIntervalToMinutes(defaultInterval) : null;
+    const allowedGranularities = getAllowedGranularitiesMinutes();
+    if (!defaultGranularity) {
+      throw new Error('Intervalo padrão inválido para klines');
+    }
+
     const querySchema = z.object({
       granularity: z.coerce.number().int().optional(),
       from: z.coerce.number().int().optional(),
@@ -5236,11 +5397,11 @@ app.get('/api/integrations/trading/klines/:symbol', requirePermission('integrati
       marketType: z.enum(['futures', 'spot', 'margin']).optional(),
       marginMode: z.enum(['cross', 'isolated']).optional(),
     }).superRefine((data, ctx) => {
-      const granularity = data.granularity ?? 5;
-      if (!KUCOIN_ALLOWED_GRANULARITIES_MINUTES.includes(granularity as (typeof KUCOIN_ALLOWED_GRANULARITIES_MINUTES)[number])) {
+      const granularity = data.granularity ?? defaultGranularity;
+      if (!allowedGranularities.includes(granularity)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: `granularity inválido. Valores permitidos (minutos): ${KUCOIN_ALLOWED_GRANULARITIES_MINUTES.join(', ')}`,
+          message: `granularity inválido. Valores permitidos (minutos): ${allowedGranularities.join(', ')}`,
           path: ['granularity'],
         });
       }
@@ -5270,7 +5431,7 @@ app.get('/api/integrations/trading/klines/:symbol', requirePermission('integrati
       return;
     }
 
-    const granularity = queryResult.data.granularity ?? 5;
+    const granularity = queryResult.data.granularity ?? defaultGranularity;
     const from = queryResult.data.from;
     const to = queryResult.data.to;
     const marketType = queryResult.data.marketType;
@@ -5330,13 +5491,14 @@ app.get('/api/integrations/trading/orderbook/:symbol', requirePermission('integr
 
     const { symbol } = req.params;
 
+    const defaultDepth = resolveKucoinRestOrderBookDepth();
     const querySchema = z.object({
       depth: z.coerce.number().int().optional(),
       marketType: z.enum(['futures', 'spot', 'margin']).optional(),
       marginMode: z.enum(['cross', 'isolated']).optional(),
     }).superRefine((data, ctx) => {
-      const depth = data.depth ?? 20;
-      if (depth !== 20 && depth !== 100) {
+      const depth = data.depth ?? defaultDepth;
+      if (!KUCOIN_REST_ORDERBOOK_DEPTHS.includes(depth as (typeof KUCOIN_REST_ORDERBOOK_DEPTHS)[number])) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: 'depth inválido. Valores permitidos: 20, 100.',
@@ -5351,7 +5513,7 @@ app.get('/api/integrations/trading/orderbook/:symbol', requirePermission('integr
       return;
     }
 
-    const depth = (queryResult.data.depth ?? 20) as 20 | 100;
+    const depth = (queryResult.data.depth ?? defaultDepth) as 20 | 100;
     const marketType = queryResult.data.marketType;
     const marginMode = queryResult.data.marginMode;
 

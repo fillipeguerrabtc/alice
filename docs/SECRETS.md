@@ -1,7 +1,7 @@
 # Guia Completo de Secrets - Alice Enterprise Platform
 
-**Autor:** Fillipe Guerra  
-**Data:** 23 de Janeiro de 2026  
+**Author:** Fillipe Guerra  
+**Data:** 28 de Janeiro de 2026  
 **Versão:** 7.13 - Stack Ops GitHub Actions
 
 ## Visão geral
@@ -149,6 +149,8 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `ACME_DNS_PRECHECK_RESOLVERS` | Lista de resolvers DoH (separada por espaço) |
 | `ACME_DNS_PRECHECK_REQUIRE_ALL_RESOLVERS` | `true` exige sucesso em todos os resolvers DoH |
 | `ACME_DNS_PRECHECK_HOSTS` | Lista de hosts para checagem (override do Caddyfile) |
+| `KUCOIN_WS_ORDERBOOK_DEPTH` | Profundidade WS KuCoin (5 ou 50, obrigatório para orderbook WS) |
+| `KUCOIN_REST_ORDERBOOK_DEPTH` | Profundidade REST KuCoin (20 ou 100, obrigatório para orderbook REST) |
 
 ## Geração recomendada
 

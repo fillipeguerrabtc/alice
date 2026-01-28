@@ -1,8 +1,8 @@
 # Guia de Observabilidade - Alice Enterprise Platform
 
 **Versão:** 2.6.6  
-**Data:** 24 de Janeiro de 2026  
-**Autor:** Fillipe Guerra
+**Data:** 28 de Janeiro de 2026  
+**Author:** Fillipe Guerra
 
 ---
 
@@ -172,6 +172,7 @@ A plataforma Alice implementa observabilidade **enterprise-grade** baseada em **
 - **Circuit Breaker KuCoin:** `alice_circuit_breaker_state{name="kucoin_futures"}`
 - **WS Conectado:** `alice_kucoin_ws_connected`
 - **Reconexões/Erros:** `alice_kucoin_ws_reconnects_total` e `alice_kucoin_ws_errors_total`
+- **Subscriptions WS:** `alice_kucoin_ws_subscriptions_total{action,channel,status}`
 - **Latência API P95:** `histogram_quantile(0.95, sum(rate(alice_integration_call_duration_seconds_bucket{integration="kucoin"}[5m])) by (le))`
 
 **Painéis:**

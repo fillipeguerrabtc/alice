@@ -8,7 +8,7 @@
  * - Webhooks (assinatura e validação)
  * 
  * Author: Fillipe Guerra
- * Data: 15/01/2026
+ * Data: 28/01/2026
  * 
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
@@ -60,6 +60,18 @@ describe('Integrations Service - Stripe', () => {
 describe('Integrations Service - OpenAPI (contratos críticos)', () => {
   it('deve expor o endpoint GET /api/integrations/trading/ws/status', () => {
     expect(Object.keys(integrationsServicePaths)).toContain('/api/integrations/trading/ws/status');
+  });
+
+  it('deve expor o endpoint POST /api/integrations/trading/ws/subscribe', () => {
+    expect(Object.keys(integrationsServicePaths)).toContain('/api/integrations/trading/ws/subscribe');
+  });
+
+  it('deve expor o endpoint POST /api/integrations/trading/ws/unsubscribe', () => {
+    expect(Object.keys(integrationsServicePaths)).toContain('/api/integrations/trading/ws/unsubscribe');
+  });
+
+  it('deve expor o endpoint GET /api/integrations/trading/intervals', () => {
+    expect(Object.keys(integrationsServicePaths)).toContain('/api/integrations/trading/intervals');
   });
 });
 

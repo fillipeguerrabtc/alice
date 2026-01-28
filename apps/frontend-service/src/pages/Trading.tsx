@@ -154,6 +154,12 @@ interface TradingSymbolsResponse {
   defaultSymbol: string;
 }
 
+interface OrderBookResponse {
+  success: boolean;
+  data: OrderBookData;
+  depth: number;
+}
+
 interface RiskConfig {
   id: string;
   tenantId: string;
@@ -550,7 +556,7 @@ export default function Trading() {
   const [selectedMarginMode, setSelectedMarginMode] = useState<'cross' | 'isolated'>('cross');
   const [marketDefaultsInitialized, setMarketDefaultsInitialized] = useState(false);
   const [selectedSymbol, setSelectedSymbol] = useState('');
-  const [selectedInterval, setSelectedInterval] = useState('5');
+  const [selectedInterval, setSelectedInterval] = useState('');
   const [controlMode, setControlMode] = useState<TradingControlMode>('alice');
   const [showNewOrderDialog, setShowNewOrderDialog] = useState(false);
   const [showRiskConfigDialog, setShowRiskConfigDialog] = useState(false);
@@ -591,23 +597,47 @@ export default function Trading() {
     reasoning: '',
   });
 
-  const wsInterval = useMemo(() => {
-    const intervalMap: Record<string, string> = {
-      '1': '1min',
-      '3': '3min',
-      '5': '5min',
-      '15': '15min',
-      '30': '30min',
-      '60': '1hour',
-      '120': '2hour',
-      '240': '4hour',
-      '480': '8hour',
-      '720': '12hour',
-      '1440': '1day',
-      '10080': '1week',
+  const {
+    data: intervalsData,
+    error: intervalsError,
+  } = useQuery<{
+    success: boolean;
+    data: {
+      intervals: string[];
+      granularityMap: Record<string, number>;
+      wsIntervalMap: Record<string, string>;
+      defaultInterval: string;
+      restOrderBookDepth: number;
+      restOrderBookDepths: number[];
+      wsOrderBookDepth: number;
+      wsOrderBookDepths: number[];
     };
-    return intervalMap[selectedInterval] ?? '1min';
-  }, [selectedInterval]);
+  }>({
+    queryKey: ['/api/integrations/trading/intervals'],
+    enabled: statusData?.data?.isConfigured && !statusData?.data?.requiresTenant,
+  });
+
+  const intervalOptions = useMemo(() => {
+    const intervals = intervalsData?.data?.intervals ?? [];
+    return intervals.map((interval) => ({
+      value: interval,
+      label: t(`trading.chart.timeframes.${interval}`, { defaultValue: interval }),
+    }));
+  }, [intervalsData, t]);
+
+  const wsInterval = useMemo(() => {
+    if (!selectedInterval) return '';
+    return intervalsData?.data?.wsIntervalMap?.[selectedInterval] ?? '';
+  }, [intervalsData, selectedInterval]);
+
+  const granularityValue = useMemo(() => {
+    if (!selectedInterval) return null;
+    return intervalsData?.data?.granularityMap?.[selectedInterval] ?? null;
+  }, [intervalsData, selectedInterval]);
+
+  const restOrderBookDepth = useMemo(() => {
+    return intervalsData?.data?.restOrderBookDepth ?? null;
+  }, [intervalsData]);
 
   // ============================================================================
   // QUERIES
@@ -749,6 +779,15 @@ export default function Trading() {
     }
   }, [symbolsData, statusData, selectedSymbol]);
 
+  useEffect(() => {
+    const intervals = intervalsData?.data?.intervals ?? [];
+    if (intervals.length === 0) return;
+    if (!selectedInterval || !intervals.includes(selectedInterval)) {
+      const fallback = intervalsData?.data?.defaultInterval || intervals[0];
+      setSelectedInterval(fallback);
+    }
+  }, [intervalsData, selectedInterval]);
+
   const isFuturesMarket = selectedMarketType === 'futures';
 
   const wsEnabled = isFuturesMarket
@@ -756,15 +795,26 @@ export default function Trading() {
     && !!statusData?.data?.isConfigured
     && !statusData?.data?.requiresTenant;
 
+  const wsChannels = useMemo(() => {
+    if (!wsEnabled) return [];
+    const baseChannels: Array<'ticker' | 'orderbook' | 'klines' | 'trades'> = ['ticker', 'orderbook', 'trades'];
+    if (wsInterval) {
+      baseChannels.push('klines');
+    }
+    return baseChannels;
+  }, [wsEnabled, wsInterval]);
+
   const {
     ticker: wsTicker,
     orderBook: wsOrderBook,
     klines: wsKlines,
   } = useKucoinWebSocket({
     symbol: wsEnabled ? selectedSymbol : '',
-    channels: wsEnabled ? ['ticker', 'orderbook', 'trades'] : [],
+    channels: wsChannels,
     interval: wsInterval,
     autoConnect: wsEnabled,
+    marketType: selectedMarketType,
+    marginMode: selectedMarginMode,
     onError: (error) => {
       frontendLogger.warn('WebSocket KuCoin indisponível - fallback REST ativo', { error });
     },
@@ -780,12 +830,15 @@ export default function Trading() {
     queryKey: ['/api/integrations/trading/klines', selectedSymbol, selectedInterval, selectedMarketType, selectedMarginMode],
     queryFn: async () => {
       const params = new URLSearchParams(marketQuery);
-      params.set('granularity', selectedInterval);
+      if (!granularityValue) {
+        throw new Error('Intervalo inválido para klines');
+      }
+      params.set('granularity', String(granularityValue));
       const res = await apiRequest('GET', `/api/integrations/trading/klines/${selectedSymbol}?${params.toString()}`);
       return res.json();
     },
     refetchInterval: 60000, // Atualizar a cada 1 minuto
-    enabled: statusData?.data?.isConfigured,
+    enabled: statusData?.data?.isConfigured && !!granularityValue,
   });
 
   // Query para Order Book
@@ -793,14 +846,18 @@ export default function Trading() {
     data: orderBookResponse,
     isLoading: isLoadingOrderBook,
     error: orderBookError,
-  } = useQuery<{ success: boolean; data: OrderBookData }>({
-    queryKey: ['/api/integrations/trading/orderbook', selectedSymbol, selectedMarketType, selectedMarginMode],
+  } = useQuery<OrderBookResponse>({
+    queryKey: ['/api/integrations/trading/orderbook', selectedSymbol, selectedMarketType, selectedMarginMode, restOrderBookDepth],
     queryFn: async () => {
-      const res = await apiRequest('GET', `/api/integrations/trading/orderbook/${selectedSymbol}?${marketQueryString}`);
+      const params = new URLSearchParams(marketQuery);
+      if (restOrderBookDepth) {
+        params.set('depth', String(restOrderBookDepth));
+      }
+      const res = await apiRequest('GET', `/api/integrations/trading/orderbook/${selectedSymbol}?${params.toString()}`);
       return res.json();
     },
     refetchInterval: 5000, // Atualizar a cada 5 segundos
-    enabled: statusData?.data?.isConfigured,
+    enabled: statusData?.data?.isConfigured && !!restOrderBookDepth,
   });
 
   // Query para histórico de controle (handover/takeover)
@@ -1304,6 +1361,7 @@ export default function Trading() {
   const wsKlinesForChart = wsEnabled
     ? wsKlines
         .filter((kline) => kline.symbol?.toUpperCase() === normalizedSymbol)
+        .filter((kline) => !wsInterval || kline.interval === wsInterval)
         .map(({ time, open, close, high, low, volume, turnover }) => ({
           time,
           open,
@@ -1317,6 +1375,17 @@ export default function Trading() {
 
   const klines = wsKlinesForChart.length > 0 ? wsKlinesForChart : (klinesData?.data || []);
   const orderBookData = wsOrderBookData ?? orderBookResponse?.data ?? null;
+  const orderBookDepth = orderBookResponse?.depth ?? restOrderBookDepth ?? null;
+  const orderBookPrecision = useMemo(() => {
+    const samplePrice =
+      orderBookData?.bids?.[0]?.price ||
+      orderBookData?.asks?.[0]?.price ||
+      tickerData?.price ||
+      marketData?.ticker?.price;
+    if (!samplePrice) return null;
+    const [, decimals = ''] = String(samplePrice).split('.');
+    return decimals.length;
+  }, [orderBookData, tickerData, marketData]);
   const controlHistory = controlHistoryData?.data || [];
   // `wsStatusData` já é o payload `{ success, data: KucoinWsStatus }`.
   // O accessor extra `.data` fazia `wsStatus` ficar sempre undefined e o badge nunca renderizar.
@@ -1330,6 +1399,7 @@ export default function Trading() {
     signalsError,
     ordersError,
     riskConfigError,
+    intervalsError,
     klinesError,
     orderBookError,
     controlHistoryError,
@@ -2463,6 +2533,7 @@ export default function Trading() {
             <TechnicalAnalysisPanel
               symbol={selectedSymbol}
               defaultInterval={selectedInterval}
+              intervalOptions={intervalOptions}
             />
           </TabsContent>
 
@@ -2527,6 +2598,7 @@ export default function Trading() {
               data={klines}
               symbol={selectedSymbol}
               interval={selectedInterval}
+              intervalOptions={intervalOptions}
               currentPrice={currentPrice}
               isLoading={isLoadingKlines}
               onIntervalChange={handleIntervalChange}
@@ -2545,8 +2617,8 @@ export default function Trading() {
               symbol={selectedSymbol}
               currentPrice={currentPrice}
               isLoading={isLoadingOrderBook}
-              depth={20}
-              precision={2}
+              depth={orderBookDepth ?? undefined}
+              precision={orderBookPrecision ?? undefined}
               locale={locale}
             />
           </TabsContent>

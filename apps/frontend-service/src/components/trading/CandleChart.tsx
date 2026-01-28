@@ -63,6 +63,7 @@ export interface CandleChartProps {
   data: KlineData[];
   symbol: string;
   interval: string;
+  intervalOptions?: Array<{ value: string; label: string }>;
   currentPrice?: number;
   isLoading?: boolean;
   onIntervalChange?: (interval: string) => void;
@@ -93,17 +94,6 @@ interface ChartDataPoint {
 // ============================================================================
 // CONSTANTES
 // ============================================================================
-
-const INTERVALS = [
-  { value: '1', label: '1m' },
-  { value: '3', label: '3m' },
-  { value: '5', label: '5m' },
-  { value: '15', label: '15m' },
-  { value: '30', label: '30m' },
-  { value: '60', label: '1h' },
-  { value: '240', label: '4h' },
-  { value: '1440', label: '1D' },
-];
 
 const COLORS = {
   bullish: '#22c55e',  // Verde para alta
@@ -153,9 +143,23 @@ function resolveTimeZone(timeZone?: string): string {
   }
 }
 
+function parseIntervalToMinutes(interval: string): number | null {
+  const normalized = interval.trim().toLowerCase();
+  const match = /^(\d+)(m|h|d|w)$/.exec(normalized);
+  if (!match) return null;
+  const value = Number(match[1]);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  const unit = match[2];
+  if (unit === 'm') return value;
+  if (unit === 'h') return value * 60;
+  if (unit === 'd') return value * 1440;
+  if (unit === 'w') return value * 10080;
+  return null;
+}
+
 function formatTime(timestamp: number, interval: string, locale?: string, timeZone?: string): string {
   const date = new Date(timestamp);
-  const intervalNum = parseInt(interval);
+  const intervalNum = parseIntervalToMinutes(interval) ?? 0;
   const resolvedLocale = resolveLocale(locale);
   const resolvedTimeZone = resolveTimeZone(timeZone);
   
@@ -247,6 +251,7 @@ export function CandleChart({
   data,
   symbol,
   interval,
+  intervalOptions = [],
   currentPrice,
   isLoading = false,
   onIntervalChange,
@@ -397,15 +402,15 @@ export function CandleChart({
           <div className="flex items-center gap-2 flex-wrap">
             {/* Interval selector */}
             <div className="flex gap-1">
-              {INTERVALS.map((int) => (
+              {intervalOptions.map((option) => (
                 <Button
-                  key={int.value}
-                  variant={selectedInterval === int.value ? 'default' : 'outline'}
+                  key={option.value}
+                  variant={selectedInterval === option.value ? 'default' : 'outline'}
                   size="sm"
                   className="h-7 px-2 text-xs"
-                  onClick={() => handleIntervalChange(int.value)}
+                  onClick={() => handleIntervalChange(option.value)}
                 >
-                  {int.label}
+                  {option.label}
                 </Button>
               ))}
             </div>

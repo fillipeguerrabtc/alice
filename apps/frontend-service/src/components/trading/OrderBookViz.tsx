@@ -195,12 +195,17 @@ export function OrderBookViz({
   symbol,
   currentPrice,
   isLoading = false,
-  depth = 15,
+  depth,
   precision = 2,
   locale,
 }: OrderBookVizProps) {
   const { t } = useTranslation();
   const resolvedLocale = locale?.trim() || 'pt-BR';
+  const resolvedDepth = useMemo(() => {
+    if (typeof depth === 'number' && depth > 0) return depth;
+    if (!data) return 0;
+    return Math.min(data.bids.length, data.asks.length);
+  }, [data, depth]);
   
   // Processar dados do order book
   // CORREÇÃO 19/12/2025: Remover maxTotal não utilizado (no-unused-vars)
@@ -217,17 +222,17 @@ export function OrderBookViz({
     
     // Calcular totais acumulados
     const bidTotals = data.bids
-      .slice(0, depth)
+      .slice(0, resolvedDepth)
       .reduce((acc, b) => acc + parseFloat(b.size), 0);
     const askTotals = data.asks
-      .slice(0, depth)
+      .slice(0, resolvedDepth)
       .reduce((acc, a) => acc + parseFloat(a.size), 0);
     
     const maxTotal = Math.max(bidTotals, askTotals);
     
     // Processar níveis
-    const processedBids = processLevels(data.bids, maxTotal, depth);
-    const processedAsks = processLevels(data.asks, maxTotal, depth);
+    const processedBids = processLevels(data.bids, maxTotal, resolvedDepth);
+    const processedAsks = processLevels(data.asks, maxTotal, resolvedDepth);
     
     // Calcular spread
     const bestBid = processedBids[0]?.price || 0;
@@ -242,7 +247,7 @@ export function OrderBookViz({
       spreadPercentage: spreadPct,
       maxTotal,
     };
-  }, [data, depth]);
+  }, [data, resolvedDepth]);
   
   // Loading state
   if (isLoading) {

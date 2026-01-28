@@ -25,10 +25,10 @@ Consolidar gaps e inconsistências entre a documentação oficial da KuCoin (Spo
 
 ### KuCoin Futures (WebSocket)
 - **Ticker/Orderbook/Trades**: ✅ (`kucoinWebSocket.ts`)
-- **Klines**: ✅ (`kucoinWebSocket.ts`) — **UI ainda usa REST para klines**
+- **Klines**: ✅ (`kucoinWebSocket.ts`) — **UI usa WS com fallback REST**
 - **Orders/Positions/Balance privados**: ✅ (`kucoinWebSocket.ts`)
 - **Endpoints WS subscribe/unsubscribe**: ✅ (`/api/integrations/trading/ws/subscribe`, `/api/integrations/trading/ws/unsubscribe`)
-- **UI realtime via WS**: ⚠️ **Parcial** (Ticker/Orderbook/Trades via WS; klines permanecem REST; fallback ativo)
+- **UI realtime via WS**: ✅ (Ticker/Orderbook/Trades/Klines via WS + fallback REST)
 
 ### KuCoin Spot (REST/WS)
 - **Conta, ordens, stop orders, trades**: ✅ (REST implementado)
@@ -52,7 +52,7 @@ Consolidar gaps e inconsistências entre a documentação oficial da KuCoin (Spo
 ### P1 — Inconsistências de domínio e UX (Status)
 5. **Tamanho de ordem (size) não alinhado ao conceito de contratos**: ✅ Corrigido  
 6. **Símbolos hardcoded na UI**: ✅ Corrigido (símbolos via API)  
-7. **Realtime no Trading UI não utilizado**: ⚠️ Parcial (WS ativo para ticker/orderbook/trades; klines seguem REST)
+7. **Realtime no Trading UI**: ✅ (WS ativo para ticker/orderbook/trades/klines + fallback REST)
 
 ### P2 — Cobertura incompleta de módulos KuCoin (Status)
 8. **Spot/Margin ausentes**: ✅ Corrigido (REST + UI para Spot/Margin)  
@@ -80,7 +80,7 @@ Consolidar gaps e inconsistências entre a documentação oficial da KuCoin (Spo
   - UI: carregar símbolos da API, remover hardcoded.
 - **WS no Trading UI**  
   - Integrar `useKucoinWebSocket` para ticker/orderbook/klines;  
-  - Manter fallback via REST quando WS indisponível.
+  - Manter fallback via REST quando WS indisponível. ✅
 
 ### P2 (baixo / roadmap)
 - **Credenciais por tenant**  
@@ -96,4 +96,4 @@ Consolidar gaps e inconsistências entre a documentação oficial da KuCoin (Spo
 - **Observability**: logs e métricas de controle, ordens e posições.
 
 ## Observações finais
-Atualmente a implementação cobre **Futures + Spot + Margin (REST/UI)** e utiliza **WS para ticker/orderbook/trades em Futures** com fallback REST. Permanecem pendentes: **WS completo para klines**, **credenciais por tenant** (se multi-tenant real) e módulos adicionais da KuCoin (Transfers/Sub-accounts/Fees/Deposits/Withdrawals). As correções P0 e a maior parte das P1/P2 já foram implementadas e estabilizadas.
+Atualmente a implementação cobre **Futures + Spot + Margin (REST/UI)** e utiliza **WS para ticker/orderbook/trades/klines em Futures** com fallback REST. Permanecem pendentes: **credenciais por tenant** (se multi-tenant real) e módulos adicionais da KuCoin (Transfers/Sub-accounts/Fees/Deposits/Withdrawals). As correções P0 e a maior parte das P1/P2 já foram implementadas e estabilizadas.
