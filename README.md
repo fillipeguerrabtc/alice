@@ -1,13 +1,13 @@
 # Alice - Plataforma Enterprise de IA Autônoma
 
 **Autor:** Fillipe Guerra  
-**Data:** 23 de Janeiro de 2026  
-**Versão:** 7.41 - Admin-only Users + Guest Default
+**Data:** 28 de Janeiro de 2026  
+**Versão:** 7.42 - Trading realtime + KuCoin orderbook env
 
 <div align="center">
 
 ![Alice Logo](https://img.shields.io/badge/Alice-IA%20Enterprise-blue?style=for-the-badge&logo=robot&logoColor=white)
-![Version](https://img.shields.io/badge/versão-7.41-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/versão-7.42-green?style=for-the-badge)
 ![License](https://img.shields.io/badge/licença-Proprietária-red?style=for-the-badge)
 ![LLM](https://img.shields.io/badge/LLM-Qwen2.5%207B-purple?style=for-the-badge)
 
@@ -40,6 +40,7 @@
 | **Governança do Core** | Permissão `admin:alice_core:write` para editar prompts centrais |
 | **Observabilidade LLM** | Prometheus, Grafana, Jaeger, Langfuse para métricas específicas |
 | **Auto-aprendizado** | QLoRA semanal (domingo 3:00 AM) com dados aprovados |
+| **Trading BTC Futures** | KuCoin Perpetuals com realtime WS (ticker/orderbook/klines), indicadores técnicos determinísticos e validação anti-alucinação |
 
 ### Diferenciais
 
@@ -343,14 +344,15 @@ alice/
 │   ├── chat-service/               # LLM Proxy + WebSocket
 │   ├── rag-service/                # Embeddings + pgvector
 │   ├── training-service/           # SemHash + Fine-tuning
-│   ├── integrations-service/       # Stripe, ERPNext, Twilio
+│   ├── integrations-service/       # Stripe, ERPNext, Twilio, KuCoin Trading
 │   └── observability-service/      # Prometheus, Grafana, Jaeger, Langfuse
 │
 ├── packages/                       # Código compartilhado
 │   ├── shared/                     # Schema Drizzle ORM
 │   ├── database/                   # PostgreSQL + pgvector
 │   ├── shared-utils/               # Logger singleton, ShutdownManager, Express hardening
-│   └── config/                     # Validação Zod
+│   ├── config/                     # Validação Zod
+│   └── logger/                     # Pino singleton
 │
 ├── infra/                          # Infraestrutura
 │   ├── docker/                     # Docker Compose
@@ -368,14 +370,6 @@ alice/
 │       ├── ci.yml                  # Validação de código (dispara release.yml)
 │       ├── release.yml             # Build imagens + Tag + GitHub Release
 │       └── deploy-stack-modular.yml # Deploy modular (5 stacks independentes)
-│
-├── client/                         # Frontend React
-│   └── src/
-│       ├── pages/
-│       │   ├── Chat.tsx            # Interface do chat (/chat)
-│       │   └── Dashboard.tsx       # Dashboard admin (/dashboard)
-│       └── hooks/
-│           └── use-websocket-chat.ts  # Hook WebSocket
 │
 └── server/
     └── index-dev.ts                # Gateway de desenvolvimento (integrações reais - sem preview/mocks)
@@ -400,9 +394,9 @@ alice/
 - HTTP Compression (gzip level 6)
 
 ### Infraestrutura
-- Docker, **Caddy 2.8.4** (SSL automático + HTTP/3 nativo)
-- **Google Distroless** (6 serviços Node.js)
-- nginx:1.27-alpine (frontend)
+- Docker, **Caddy 2.10.0** (SSL automático + HTTP/3 nativo)
+- **Node.js 22 Alpine 3.21** (microserviços)
+- nginx:1.27-alpine3.21 (frontend)
 - GitHub Actions CI/CD (95%+ SHA pinning, composite actions reutilizáveis)
 - Hetzner Cloud (Nuremberg)
 
@@ -412,7 +406,7 @@ alice/
 - Jaeger 2.13.0 (tracing distribuído)
 - Loki 3.6.3, Promtail 3.6.3 (logs)
 - OpenTelemetry Collector 0.142.0 (instrumentação)
-- Langfuse 3.140.0 (métricas LLM)
+- Langfuse 3.85.0 (métricas LLM)
 
 ---
 
@@ -452,7 +446,7 @@ Proprietário - Todos os direitos reservados.
 *PostgreSQL: HNSW indexes + 10 índices compostos + 12 tabelas Trading com RLS*
 *Storage: Servidor GEX44 1.92TB interno (/opt/alice) - SEM S3 externo*
 *ARQUITETURA ENTERPRISE: Texto 1024 dim Qwen3-Embedding-0.6B (Qdrant) | Imagem: OpenAI Vision → descrição textual (sem embeddings de imagem)*
-*Trading BTC Futures: KuCoin Perpetuals + Indicadores Técnicos Determinísticos + Validação Cruzada Anti-Alucinação*
+*Trading BTC Futures: KuCoin Perpetuals + WS realtime (ticker/orderbook/klines) + Indicadores Técnicos Determinísticos + Validação Cruzada Anti-Alucinação*
 *LLM: Qwen2.5 7B (vLLM AWQ) via Hetzner GPU Server GEX44 (RTX 4000 Ada 20GB) - Texto*
 *GPU Services (Gate 2): LLM (Qwen2.5 7B) e Embeddings Qwen3-Embedding-0.6B INT8 (1024 dim) gerenciados pelo GPU Manager Service; Training sob demanda. ASR/Vision via OpenAI.*
 *Pipeline Enterprise (06/01/2026): Release (`release.yml`) → Deploy Modular (`deploy-stack-modular.yml` - 5 stacks independentes ~10min)*
