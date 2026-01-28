@@ -45,13 +45,13 @@ roles AS (
   SELECT unnest(ARRAY['super_admin', 'admin'])::text AS role
 )
 INSERT INTO role_permissions (role, permission_id)
-SELECT roles.role, perm_ids.id
+SELECT roles.role::user_role, perm_ids.id
 FROM roles
 CROSS JOIN perm_ids
 WHERE NOT EXISTS (
   SELECT 1
   FROM role_permissions rp
-  WHERE rp.role = roles.role AND rp.permission_id = perm_ids.id
+  WHERE rp.role = roles.role::user_role AND rp.permission_id = perm_ids.id
 );
 
 -- ============================================================================
