@@ -3807,6 +3807,41 @@ jobs:
             else
               echo "✅ Schema aplicado com sucesso!"
             fi
+
+            # =================================================================
+            # APLICAR MIGRATIONS SQL (idempotentes) - CRÍTICO para colunas de trading
+            # =================================================================
+            MIGRATIONS_DIR="/opt/alice/app/migrations"
+            if [ ! -d "$MIGRATIONS_DIR" ]; then
+              echo "❌ ERRO CRÍTICO: Diretório de migrations SQL não encontrado: $MIGRATIONS_DIR"
+              rm -f "$DRIZZLE_LOG"
+              rm -rf /tmp/drizzle-app
+              exit 1
+            fi
+
+            SQL_FILES=$(ls -1 "$MIGRATIONS_DIR"/*.sql 2>/dev/null | sort || true)
+            if [ -z "$SQL_FILES" ]; then
+              echo "❌ ERRO CRÍTICO: Nenhuma migration SQL encontrada em $MIGRATIONS_DIR"
+              rm -f "$DRIZZLE_LOG"
+              rm -rf /tmp/drizzle-app
+              exit 1
+            fi
+
+            echo "🧩 Aplicando migrations SQL (ordem lexicográfica)..."
+            for file in $SQL_FILES; do
+              filename=$(basename "$file")
+              echo "➡️  $filename"
+              if ! cat "$file" | docker exec -i \
+                -e PGPASSWORD="$POSTGRES_PASSWORD" \
+                alice-postgres \
+                psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -f /dev/stdin; then
+                echo "❌ ERRO CRÍTICO: Falha ao aplicar migration $filename"
+                rm -f "$DRIZZLE_LOG"
+                rm -rf /tmp/drizzle-app
+                exit 1
+              fi
+            done
+            echo "✅ Migrations SQL aplicadas com sucesso"
             
             rm -f "$DRIZZLE_LOG"
             rm -rf /tmp/drizzle-app
@@ -4755,7 +4790,7 @@ jobs:
     name: Health Check OBSERVABILITY
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, deploy-observability]
-    if: needs.deploy-observability.result == 'success'
+    if: needs.validate.outputs.is_rollback == 'false' && needs.deploy-observability.result == 'success'
     # CORREÇÃO PR#104: Reduzir para 7 min (máx 15 tentativas × 20s = 5 min)
     timeout-minutes: 7
     
@@ -5339,7 +5374,7 @@ jobs:
     name: Health Check ERPNEXT
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, deploy-erpnext]
-    if: needs.deploy-erpnext.result == 'success'
+    if: needs.validate.outputs.is_rollback == 'false' && needs.deploy-erpnext.result == 'success'
     timeout-minutes: 7
     
     steps:
@@ -5853,7 +5888,7 @@ jobs:
     name: Health Check BACKUP
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, deploy-backup]
-    if: needs.deploy-backup.result == 'success'
+    if: needs.validate.outputs.is_rollback == 'false' && needs.deploy-backup.result == 'success'
     # CORREÇÃO PR#100: Alinhar com Docker healthcheck (start_period: 120s + 3 retries × 60s = 300s)
     timeout-minutes: 7
     
