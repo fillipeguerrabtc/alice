@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 28 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.8 - Grafana 12.3.2 validado no registry
+**Versão:** 10.9 - Prepare Infrastructure com networks unificadas
 
 ---
 
@@ -13,6 +13,7 @@
 - GPU local dedicada ao LLM, embeddings e training; ASR e Vision via OpenAI.
 - CI/CD 100% automático (Push → CI → Release → Deploy) com versionamento e cache enterprise.
 - Observabilidade completa com Prometheus, Grafana, Loki, Jaeger e Langfuse.
+- Prepare Infrastructure: criação de networks consolidada no passo base (menos conexões SSH).
 - Segurança enterprise com hardening de containers, RLS no PostgreSQL e validação Zod em APIs.
 - Integração KuCoin auditada e corrigida conforme docs oficiais (auth HMAC v2/v3, time sync, stop orders, WS broadcast via Redis).
 - Trading UI: chamadas REST bloqueadas quando símbolo não está definido (evita 404 e tela “Algo deu errado”).

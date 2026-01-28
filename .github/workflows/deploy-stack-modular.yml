@@ -2348,44 +2348,6 @@ jobs:
             echo "   ✅ Volume nomeado: OK (verificado)"
             echo ""
 
-      - name: Criar networks Docker
-        uses: appleboy/ssh-action@v1.2.2
-        with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
-          command_timeout: 2m
-          script: |
-            set -euo pipefail
-            
-            echo ""
-            echo "============================================="
-            echo "🌐 CRIANDO NETWORKS DOCKER"
-            echo "============================================="
-            echo ""
-            
-            # alice-network (principal - todos os stacks Alice)
-            if ! docker network inspect alice-network >/dev/null 2>&1; then
-              echo "📝 Criando alice-network..."
-              docker network create --driver bridge --subnet 172.28.0.0/16 alice-network
-              echo "   ✅ alice-network criada"
-            else
-              echo "   ✅ alice-network já existe"
-            fi
-            
-            # erpnext-network (isolado - apenas stack ERPNext)
-            if ! docker network inspect erpnext-network >/dev/null 2>&1; then
-              echo "📝 Criando erpnext-network..."
-              docker network create --driver bridge erpnext-network
-              echo "   ✅ erpnext-network criada"
-            else
-              echo "   ✅ erpnext-network já existe"
-            fi
-            
-            echo ""
-            echo "✅ Networks Docker criadas/verificadas"
-
       - name: Validar estado final (fail-fast)
         uses: appleboy/ssh-action@v1.2.2
         with:

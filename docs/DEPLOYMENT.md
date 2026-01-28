@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 28 de Janeiro de 2026  
-**Versão:** 11.9 - Healthchecks condicionados a deploy_executed
+**Versão:** 11.10 - Networks unificadas no prepare-infrastructure
 
 ## Visão geral
 
@@ -120,7 +120,7 @@ O workflow executa o script idempotente `infra/scripts/prepare-production-server
 - Valida IP/GPU/Docker
 - Cria estrutura `/opt/alice`
 - Configura permissões via SSOT
-- Cria networks externas
+- Cria networks externas no job `prepare-infrastructure` (sem passo SSH separado)
 - Valida permissões do PostgreSQL (fail-fast)
 
 **Execução manual (opcional):**
