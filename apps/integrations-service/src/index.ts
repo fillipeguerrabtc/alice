@@ -3817,6 +3817,99 @@ app.get('/api/integrations/twilio/status', (_req: Request, res: Response) => {
 });
 
 // ============================================================================
+// KuCoin Trading - Configurações e validações (definido ANTES do bootstrap)
+// ============================================================================
+const KUCOIN_REST_ORDERBOOK_DEPTHS = [20, 100] as const;
+const KUCOIN_WS_ORDERBOOK_DEPTHS = [5, 50] as const;
+
+function parseTradingIntervalToMinutes(interval: string): number | null {
+  const normalized = interval.trim().toLowerCase();
+  const match = /^(\d+)(m|h|d|w)$/.exec(normalized);
+  if (!match) return null;
+  const value = Number(match[1]);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  const unit = match[2];
+  if (unit === 'm') return value;
+  if (unit === 'h') return value * 60;
+  if (unit === 'd') return value * 1440;
+  if (unit === 'w') return value * 10080;
+  return null;
+}
+
+function resolveKucoinRestOrderBookDepth(): 20 | 100 {
+  const raw = process.env.KUCOIN_REST_ORDERBOOK_DEPTH;
+  if (!raw) {
+    throw new Error('KUCOIN_REST_ORDERBOOK_DEPTH não configurado');
+  }
+  const parsed = Number(raw);
+  if (!KUCOIN_REST_ORDERBOOK_DEPTHS.includes(parsed as (typeof KUCOIN_REST_ORDERBOOK_DEPTHS)[number])) {
+    throw new Error(`KUCOIN_REST_ORDERBOOK_DEPTH inválido: ${raw}. Use 20 ou 100.`);
+  }
+  return parsed as 20 | 100;
+}
+
+function resolveTradingIntervals(): {
+  intervals: string[];
+  granularityMap: Record<string, number>;
+  wsIntervalMap: Record<string, string>;
+  defaultInterval: string;
+  restOrderBookDepth: 20 | 100;
+  restOrderBookDepths: number[];
+  wsOrderBookDepth: 5 | 50;
+  wsOrderBookDepths: number[];
+} {
+  const intervals = tradingIntervalEnum.enumValues;
+  if (!intervals.length) {
+    throw new Error('Enum de intervalos de trading vazio');
+  }
+  const granularityMap: Record<string, number> = {};
+  const wsIntervalMap: Record<string, string> = {};
+  for (const interval of intervals) {
+    const minutes = parseTradingIntervalToMinutes(interval);
+    if (!minutes) {
+      throw new Error(`Intervalo de trading inválido no schema: ${interval}`);
+    }
+    granularityMap[interval] = minutes;
+    wsIntervalMap[interval] = kucoinClient.granularityToInterval(minutes);
+  }
+  return {
+    intervals: [...intervals],
+    granularityMap,
+    wsIntervalMap,
+    defaultInterval: intervals[0]!,
+    restOrderBookDepth: resolveKucoinRestOrderBookDepth(),
+    restOrderBookDepths: [...KUCOIN_REST_ORDERBOOK_DEPTHS],
+    wsOrderBookDepth: resolveKucoinWsOrderBookDepth(),
+    wsOrderBookDepths: [...KUCOIN_WS_ORDERBOOK_DEPTHS],
+  };
+}
+
+function getAllowedGranularitiesMinutes(): number[] {
+  const minutes = tradingIntervalEnum.enumValues
+    .map((interval) => parseTradingIntervalToMinutes(interval))
+    .filter((value): value is number => value !== null);
+  return minutes.sort((a, b) => a - b);
+}
+
+function resolveKucoinWsOrderBookDepth(): 5 | 50 {
+  const raw = process.env.KUCOIN_WS_ORDERBOOK_DEPTH;
+  if (!raw) {
+    throw new Error('KUCOIN_WS_ORDERBOOK_DEPTH não configurado');
+  }
+  const parsed = Number(raw);
+  if (!KUCOIN_WS_ORDERBOOK_DEPTHS.includes(parsed as (typeof KUCOIN_WS_ORDERBOOK_DEPTHS)[number])) {
+    throw new Error(`KUCOIN_WS_ORDERBOOK_DEPTH inválido: ${raw}. Use 5 ou 50.`);
+  }
+  return parsed as 5 | 50;
+}
+
+function isValidKucoinWsInterval(interval: string): boolean {
+  const normalized = interval.trim();
+  const granularity = kucoinClient.intervalToGranularity(normalized);
+  return kucoinClient.granularityToInterval(granularity) === normalized;
+}
+
+// ============================================================================
 // TRADING: KuCoin Futures BTC Perpetuals
 // Sistema enterprise-grade para trading automatizado (modelo LLM é agnóstico).
 // ============================================================================
@@ -3960,96 +4053,6 @@ if (kucoinClient.isKucoinConfigured()) {
 
 function respondKucoinNotConfigured(res: Response): void {
   res.status(503).json({ error: 'API KuCoin não configurada' });
-}
-
-function parseTradingIntervalToMinutes(interval: string): number | null {
-  const normalized = interval.trim().toLowerCase();
-  const match = /^(\d+)(m|h|d|w)$/.exec(normalized);
-  if (!match) return null;
-  const value = Number(match[1]);
-  if (!Number.isFinite(value) || value <= 0) return null;
-  const unit = match[2];
-  if (unit === 'm') return value;
-  if (unit === 'h') return value * 60;
-  if (unit === 'd') return value * 1440;
-  if (unit === 'w') return value * 10080;
-  return null;
-}
-
-const KUCOIN_REST_ORDERBOOK_DEPTHS = [20, 100] as const;
-const KUCOIN_WS_ORDERBOOK_DEPTHS = [5, 50] as const;
-
-function resolveKucoinRestOrderBookDepth(): 20 | 100 {
-  const raw = process.env.KUCOIN_REST_ORDERBOOK_DEPTH;
-  if (!raw) {
-    throw new Error('KUCOIN_REST_ORDERBOOK_DEPTH não configurado');
-  }
-  const parsed = Number(raw);
-  if (!KUCOIN_REST_ORDERBOOK_DEPTHS.includes(parsed as (typeof KUCOIN_REST_ORDERBOOK_DEPTHS)[number])) {
-    throw new Error(`KUCOIN_REST_ORDERBOOK_DEPTH inválido: ${raw}. Use 20 ou 100.`);
-  }
-  return parsed as 20 | 100;
-}
-
-function resolveTradingIntervals(): {
-  intervals: string[];
-  granularityMap: Record<string, number>;
-  wsIntervalMap: Record<string, string>;
-  defaultInterval: string;
-  restOrderBookDepth: 20 | 100;
-  restOrderBookDepths: number[];
-  wsOrderBookDepth: 5 | 50;
-  wsOrderBookDepths: number[];
-} {
-  const intervals = tradingIntervalEnum.enumValues;
-  if (!intervals.length) {
-    throw new Error('Enum de intervalos de trading vazio');
-  }
-  const granularityMap: Record<string, number> = {};
-  const wsIntervalMap: Record<string, string> = {};
-  for (const interval of intervals) {
-    const minutes = parseTradingIntervalToMinutes(interval);
-    if (!minutes) {
-      throw new Error(`Intervalo de trading inválido no schema: ${interval}`);
-    }
-    granularityMap[interval] = minutes;
-    wsIntervalMap[interval] = kucoinClient.granularityToInterval(minutes);
-  }
-  return {
-    intervals: [...intervals],
-    granularityMap,
-    wsIntervalMap,
-    defaultInterval: intervals[0]!,
-    restOrderBookDepth: resolveKucoinRestOrderBookDepth(),
-    restOrderBookDepths: [...KUCOIN_REST_ORDERBOOK_DEPTHS],
-    wsOrderBookDepth: resolveKucoinWsOrderBookDepth(),
-    wsOrderBookDepths: [...KUCOIN_WS_ORDERBOOK_DEPTHS],
-  };
-}
-
-function getAllowedGranularitiesMinutes(): number[] {
-  const minutes = tradingIntervalEnum.enumValues
-    .map((interval) => parseTradingIntervalToMinutes(interval))
-    .filter((value): value is number => value !== null);
-  return minutes.sort((a, b) => a - b);
-}
-
-function resolveKucoinWsOrderBookDepth(): 5 | 50 {
-  const raw = process.env.KUCOIN_WS_ORDERBOOK_DEPTH;
-  if (!raw) {
-    throw new Error('KUCOIN_WS_ORDERBOOK_DEPTH não configurado');
-  }
-  const parsed = Number(raw);
-  if (!KUCOIN_WS_ORDERBOOK_DEPTHS.includes(parsed as (typeof KUCOIN_WS_ORDERBOOK_DEPTHS)[number])) {
-    throw new Error(`KUCOIN_WS_ORDERBOOK_DEPTH inválido: ${raw}. Use 5 ou 50.`);
-  }
-  return parsed as 5 | 50;
-}
-
-function isValidKucoinWsInterval(interval: string): boolean {
-  const normalized = interval.trim();
-  const granularity = kucoinClient.intervalToGranularity(normalized);
-  return kucoinClient.granularityToInterval(granularity) === normalized;
 }
 
 async function resolveTradingSymbolOrRespond(
