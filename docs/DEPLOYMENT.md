@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 28 de Janeiro de 2026  
-**Versão:** 11.7 - Healthchecks por stack alinhados ao deploy bem-sucedido
+**Versão:** 11.8 - Healthchecks dos stacks alinhados ao padrão INFRA/ALICE
 
 ## Visão geral
 
