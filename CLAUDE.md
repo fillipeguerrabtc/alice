@@ -1491,3 +1491,8 @@ git commit -a -m "test: adiciona testes unitários"
 *Autor: Fillipe Guerra*
 *Versão: 5.17 - 29 de Janeiro de 2026*
 *Trading - Loop de Atualização (React error #185) (29/01/2026): CORREÇÃO ENTERPRISE para evitar “Maximum update depth exceeded”. CAUSA RAIZ: efeito de auto-connect do `useKucoinWebSocket` dependia de callbacks instáveis e podia reexecutar em loop sob re-renderizações rápidas, disparando atualizações de estado em cascata. SOLUÇÃO: uso de refs para callbacks `connect`/`disconnect` e efeito de auto-connect dependente apenas de `autoConnect`, garantindo conexão inicial estável e cleanup correto sem loops. ARQUIVO MODIFICADO: apps/frontend-service/src/hooks/useKucoinWebSocket.ts. Implementação 100% enterprise-grade (Regras 6, 7, 9 - mudanças cirúrgicas, sem workarounds, validação contínua).*
+
+---
+*Autor: Fillipe Guerra*
+*Versão: 5.18 - 29 de Janeiro de 2026*
+*Trading - Modal de Risco com Scroll (29/01/2026): CORREÇÃO ENTERPRISE para permitir visualização e scroll das opções inferiores no modal de Configurações de Risco. CAUSA RAIZ: container flex sem `min-h-0` bloqueava o scroll interno do `ScrollArea` quando o conteúdo excedia a altura máxima. SOLUÇÃO: adicionar `min-h-0` no `DialogContent` e no `ScrollArea`, mantendo o layout flex e habilitando overflow interno. ARQUIVO MODIFICADO: apps/frontend-service/src/pages/Trading.tsx. Implementação 100% enterprise-grade (Regras 6, 7, 9 - mudanças cirúrgicas, sem workarounds, validação contínua).*
