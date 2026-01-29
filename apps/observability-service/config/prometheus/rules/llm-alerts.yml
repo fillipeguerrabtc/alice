@@ -13,7 +13,7 @@ groups:
       # LATÊNCIA
       # ========================================================================
       - alert: LLMHighLatency
-        expr: histogram_quantile(0.95, sum(rate(alice_llm_inference_duration_seconds_bucket[5m])) by (le)) > 30
+        expr: histogram_quantile(0.95, sum(rate(alice_llm_inference_duration_seconds_bucket[5m])) by (le)) > 30 and on() (sum(rate(alice_llm_inference_duration_seconds_count[5m])) > 1)
         for: 5m
         labels:
           severity: warning
@@ -23,7 +23,7 @@ groups:
           description: "P95 de latência está acima de 30s por mais de 5 minutos."
 
       - alert: LLMCriticalLatency
-        expr: histogram_quantile(0.99, sum(rate(alice_llm_inference_duration_seconds_bucket[5m])) by (le)) > 60
+        expr: histogram_quantile(0.99, sum(rate(alice_llm_inference_duration_seconds_bucket[5m])) by (le)) > 60 and on() (sum(rate(alice_llm_inference_duration_seconds_count[5m])) > 1)
         for: 2m
         labels:
           severity: critical
@@ -36,7 +36,7 @@ groups:
       # TIME TO FIRST TOKEN (TTFT)
       # ========================================================================
       - alert: LLMHighTTFT
-        expr: histogram_quantile(0.95, sum(rate(alice_llm_ttft_seconds_bucket[5m])) by (le)) > 5
+        expr: histogram_quantile(0.95, sum(rate(alice_llm_ttft_seconds_bucket[5m])) by (le)) > 5 and on() (sum(rate(alice_llm_ttft_seconds_count[5m])) > 1)
         for: 5m
         labels:
           severity: warning
