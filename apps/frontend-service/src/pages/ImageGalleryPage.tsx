@@ -169,7 +169,7 @@ function ImageCard({
   image: GeneratedImage; 
   onSelect: (image: GeneratedImage) => void;
 }) {
-  const previewUrl = image.imageUrl ?? image.thumbnailPath ?? image.imagePath ?? null;
+  const previewUrl = image.imageUrl || image.thumbnailPath || image.imagePath || null;
   return (
     <Card 
       className="hover-elevate cursor-pointer overflow-visible"
