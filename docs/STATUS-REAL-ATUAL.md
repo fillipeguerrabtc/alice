@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 29 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.17 - Trading modal com scroll corrigido
+**Versão:** 10.18 - SLA metrics estáveis no dashboard
 
 ---
 
@@ -208,6 +208,7 @@ Retenção Arquivo:   30 dias
 
 ## Atualizações recentes (resumo)
 
+- Dashboard: SLA metrics resilientes a timestamps retornados como string.
 - Trading: modal de Configurações de Risco com scroll funcional em toda a altura.
 - Conversas: nova página `/conversations` com filtros por período e seleção em lote.
 - Conversas: envio para treino por conversa inteira ou por mensagens selecionadas.

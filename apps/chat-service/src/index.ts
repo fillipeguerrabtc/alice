@@ -13411,6 +13411,13 @@ app.get('/api/chat/sla-metrics', requireAuth(), requireSameTenant(getTenantIdFro
   }
 
   try {
+    const toValidDate = (value: Date | string | null | undefined): Date | null => {
+      if (!value) return null;
+      const parsed = value instanceof Date ? value : new Date(value);
+      if (Number.isNaN(parsed.getTime())) return null;
+      return parsed;
+    };
+
     const now = new Date();
     const urgentThreshold = new Date();
     urgentThreshold.setMinutes(urgentThreshold.getMinutes() + SLA_URGENT_THRESHOLD_MINUTES);
@@ -13482,8 +13489,10 @@ app.get('/api/chat/sla-metrics', requireAuth(), requireSameTenant(getTenantIdFro
     let responseSum = 0;
     let responseCount = 0;
     for (const row of responseTimes) {
-      if (!row.firstCustomer || !row.firstAgent) continue;
-      const deltaSeconds = (row.firstAgent.getTime() - row.firstCustomer.getTime()) / 1000;
+      const firstCustomer = toValidDate(row.firstCustomer);
+      const firstAgent = toValidDate(row.firstAgent);
+      if (!firstCustomer || !firstAgent) continue;
+      const deltaSeconds = (firstAgent.getTime() - firstCustomer.getTime()) / 1000;
       if (deltaSeconds >= 0) {
         responseSum += deltaSeconds;
         responseCount += 1;
@@ -13510,8 +13519,10 @@ app.get('/api/chat/sla-metrics', requireAuth(), requireSameTenant(getTenantIdFro
     let resolutionSum = 0;
     let resolutionCount = 0;
     for (const row of resolutionTimes) {
-      if (!row.resolvedAt || !row.createdAt) continue;
-      const deltaSeconds = (row.resolvedAt.getTime() - row.createdAt.getTime()) / 1000;
+      const createdAt = toValidDate(row.createdAt);
+      const resolvedAt = toValidDate(row.resolvedAt);
+      if (!resolvedAt || !createdAt) continue;
+      const deltaSeconds = (resolvedAt.getTime() - createdAt.getTime()) / 1000;
       if (deltaSeconds >= 0) {
         resolutionSum += deltaSeconds;
         resolutionCount += 1;
@@ -13527,7 +13538,7 @@ app.get('/api/chat/sla-metrics', requireAuth(), requireSameTenant(getTenantIdFro
       avgResolutionTime,
     });
   } catch (error) {
-    logger.error({ error, tenantId }, 'Erro ao calcular sla-metrics');
+    logger.error({ err: error, tenantId }, 'Erro ao calcular sla-metrics');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
