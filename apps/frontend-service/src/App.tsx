@@ -196,12 +196,14 @@ function AppContent() {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
-          <img
-            src="/logo-round.png"
-            alt="Alice"
-            className="h-16 w-16 rounded-xl animate-pulse"
-            data-testid="img-loading-logo"
-          />
+          <div className="h-16 w-16 rounded-full overflow-hidden bg-muted/40 animate-pulse">
+            <img
+              src="/logo-round.png"
+              alt="Alice"
+              className="h-full w-full object-contain"
+              data-testid="img-loading-logo"
+            />
+          </div>
           <p className="text-muted-foreground text-sm">Carregando...</p>
         </div>
       </div>

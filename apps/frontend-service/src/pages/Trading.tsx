@@ -878,6 +878,23 @@ export default function Trading() {
     enabled: statusData?.data?.isConfigured,
   });
 
+  const market = marketData?.data;
+  const normalizedSymbol = selectedSymbol.toUpperCase();
+  const wsOrderBookData = wsEnabled && wsOrderBook?.symbol?.toUpperCase() === normalizedSymbol
+    ? wsOrderBook
+    : null;
+  const orderBookData = wsOrderBookData ?? orderBookResponse?.data ?? null;
+  const orderBookPrecision = useMemo(() => {
+    const samplePrice =
+      orderBookData?.bids?.[0]?.price ||
+      orderBookData?.asks?.[0]?.price ||
+      wsTicker?.price ||
+      market?.ticker?.price;
+    if (!samplePrice) return null;
+    const [, decimals = ''] = String(samplePrice).split('.');
+    return decimals.length;
+  }, [orderBookData, wsTicker, market]);
+
   // Atualizar form de risco quando dados carregarem
   useEffect(() => {
     if (riskConfigData?.data) {
@@ -1353,7 +1370,6 @@ export default function Trading() {
   const status = statusData.data;
   const availableSymbols = symbolsData?.data?.symbols ?? [];
   const defaultSymbol = symbolsData?.data?.defaultSymbol || status.defaultSymbol || '';
-  const market = marketData?.data;
   const account = accountData?.data;
   const isSpotMarket = selectedMarketType === 'spot';
   const isMarginMarket = selectedMarketType === 'margin';
@@ -1410,13 +1426,9 @@ export default function Trading() {
   const signals = signalsData?.data || [];
   const orders = ordersData?.data || [];
   const riskConfig = riskConfigData?.data;
-  const normalizedSymbol = selectedSymbol.toUpperCase();
   const wsTickerPrice = wsEnabled && wsTicker?.symbol?.toUpperCase() === normalizedSymbol
     ? Number(wsTicker.price)
     : NaN;
-  const wsOrderBookData = wsEnabled && wsOrderBook?.symbol?.toUpperCase() === normalizedSymbol
-    ? wsOrderBook
-    : null;
   const wsKlinesForChart = wsEnabled
     ? wsKlines
         .filter((kline) => kline.symbol?.toUpperCase() === normalizedSymbol)
@@ -1433,18 +1445,7 @@ export default function Trading() {
     : [];
 
   const klines = wsKlinesForChart.length > 0 ? wsKlinesForChart : (klinesData?.data || []);
-  const orderBookData = wsOrderBookData ?? orderBookResponse?.data ?? null;
   const orderBookDepth = orderBookResponse?.depth ?? restOrderBookDepth ?? null;
-  const orderBookPrecision = useMemo(() => {
-    const samplePrice =
-      orderBookData?.bids?.[0]?.price ||
-      orderBookData?.asks?.[0]?.price ||
-      wsTicker?.price ||
-      market?.ticker?.price;
-    if (!samplePrice) return null;
-    const [, decimals = ''] = String(samplePrice).split('.');
-    return decimals.length;
-  }, [orderBookData, wsTicker, market]);
   const controlHistory = controlHistoryData?.data || [];
   // `wsStatusData` já é o payload `{ success, data: KucoinWsStatus }`.
   // O accessor extra `.data` fazia `wsStatus` ficar sempre undefined e o badge nunca renderizar.
