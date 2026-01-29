@@ -4077,6 +4077,22 @@ async function resolveTradingSymbolOrRespond(
   }
 }
 
+function resolveMarketTypeParam(params: {
+  marketType?: 'futures' | 'spot' | 'margin';
+  type?: 'futures' | 'spot' | 'margin';
+}): 'futures' | 'spot' | 'margin' | undefined {
+  return params.marketType ?? params.type;
+}
+
+function resolveSymbolFromQueryOrRespond(req: Request, res: Response): string | undefined {
+  const symbol = typeof req.query.symbol === 'string' ? req.query.symbol.trim() : undefined;
+  if (!symbol) {
+    res.status(400).json({ error: 'Símbolo é obrigatório para esta operação.' });
+    return undefined;
+  }
+  return symbol;
+}
+
 // GET /api/integrations/trading/status - Status do serviço de trading
 app.get('/api/integrations/trading/status', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
@@ -4433,8 +4449,7 @@ app.get('/api/integrations/trading/symbols', requirePermission('integrations:tra
   }
 });
 
-// GET /api/integrations/trading/market/:symbol - Dados de mercado
-app.get('/api/integrations/trading/market/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+async function handleTradingMarketRequest(req: Request, res: Response, symbol: string): Promise<void> {
   try {
     const authContext = extractAuthContext(req);
     if (!authContext?.tenantId || !authContext?.userId) {
@@ -4442,11 +4457,10 @@ app.get('/api/integrations/trading/market/:symbol', requirePermission('integrati
       return;
     }
     const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
-
-    const { symbol } = req.params;
     
     const querySchema = z.object({
       marketType: z.enum(['futures', 'spot', 'margin']).optional(),
+      type: z.enum(['futures', 'spot', 'margin']).optional(),
       marginMode: z.enum(['cross', 'isolated']).optional(),
     });
     const queryResult = querySchema.safeParse(req.query);
@@ -4454,7 +4468,8 @@ app.get('/api/integrations/trading/market/:symbol', requirePermission('integrati
       res.status(400).json({ error: 'Query inválida', details: queryResult.error.flatten() });
       return;
     }
-    const { marketType, marginMode } = queryResult.data;
+    const marketType = resolveMarketTypeParam(queryResult.data);
+    const marginMode = queryResult.data.marginMode;
 
     if (marketType && marketType !== 'futures') {
       res.status(400).json({ error: 'Posições estão disponíveis apenas para mercado Futures.' });
@@ -4487,6 +4502,18 @@ app.get('/api/integrations/trading/market/:symbol', requirePermission('integrati
     logger.error({ error: errorMessage }, 'Erro ao obter dados de mercado');
     res.status(500).json({ error: errorMessage });
   }
+}
+
+// GET /api/integrations/trading/market/:symbol - Dados de mercado
+app.get('/api/integrations/trading/market/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  await handleTradingMarketRequest(req, res, req.params.symbol);
+});
+
+// GET /api/integrations/trading/market?symbol= - Compatibilidade com frontend legado
+app.get('/api/integrations/trading/market', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  const symbol = resolveSymbolFromQueryOrRespond(req, res);
+  if (!symbol) return;
+  await handleTradingMarketRequest(req, res, symbol);
 });
 
 // GET /api/integrations/trading/account - Visão geral da conta KuCoin
@@ -5375,8 +5402,7 @@ app.delete('/api/integrations/trading/stop-orders/:id', requirePermission('integ
 // Klines, Order Book, Funding Rate, Mark Price, Trade History
 // ============================================================================
 
-// GET /api/integrations/trading/klines/:symbol - Dados de candles
-app.get('/api/integrations/trading/klines/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+async function handleTradingKlinesRequest(req: Request, res: Response, symbol: string): Promise<void> {
   try {
     const authContext = extractAuthContext(req);
     if (!authContext?.tenantId || !authContext?.userId) {
@@ -5384,8 +5410,6 @@ app.get('/api/integrations/trading/klines/:symbol', requirePermission('integrati
       return;
     }
     const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
-
-    const { symbol } = req.params;
 
     const defaultInterval = tradingIntervalEnum.enumValues[0];
     const defaultGranularity = defaultInterval ? parseTradingIntervalToMinutes(defaultInterval) : null;
@@ -5399,6 +5423,7 @@ app.get('/api/integrations/trading/klines/:symbol', requirePermission('integrati
       from: z.coerce.number().int().optional(),
       to: z.coerce.number().int().optional(),
       marketType: z.enum(['futures', 'spot', 'margin']).optional(),
+      type: z.enum(['futures', 'spot', 'margin']).optional(),
       marginMode: z.enum(['cross', 'isolated']).optional(),
     }).superRefine((data, ctx) => {
       const granularity = data.granularity ?? defaultGranularity;
@@ -5438,7 +5463,7 @@ app.get('/api/integrations/trading/klines/:symbol', requirePermission('integrati
     const granularity = queryResult.data.granularity ?? defaultGranularity;
     const from = queryResult.data.from;
     const to = queryResult.data.to;
-    const marketType = queryResult.data.marketType;
+    const marketType = resolveMarketTypeParam(queryResult.data);
     const marginMode = queryResult.data.marginMode;
 
     if (marketType === 'spot' && !kucoinSpotClient.isSpotConfigured()) {
@@ -5481,10 +5506,21 @@ app.get('/api/integrations/trading/klines/:symbol', requirePermission('integrati
     logger.error({ error: errorMessage }, 'Erro ao obter klines');
     res.status(500).json({ error: errorMessage });
   }
+}
+
+// GET /api/integrations/trading/klines/:symbol - Dados de candles
+app.get('/api/integrations/trading/klines/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  await handleTradingKlinesRequest(req, res, req.params.symbol);
 });
 
-// GET /api/integrations/trading/orderbook/:symbol - Order Book
-app.get('/api/integrations/trading/orderbook/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+// GET /api/integrations/trading/klines?symbol= - Compatibilidade com frontend legado
+app.get('/api/integrations/trading/klines', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  const symbol = resolveSymbolFromQueryOrRespond(req, res);
+  if (!symbol) return;
+  await handleTradingKlinesRequest(req, res, symbol);
+});
+
+async function handleTradingOrderBookRequest(req: Request, res: Response, symbol: string): Promise<void> {
   try {
     const authContext = extractAuthContext(req);
     if (!authContext?.tenantId || !authContext?.userId) {
@@ -5493,12 +5529,11 @@ app.get('/api/integrations/trading/orderbook/:symbol', requirePermission('integr
     }
     const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
 
-    const { symbol } = req.params;
-
     const defaultDepth = resolveKucoinRestOrderBookDepth();
     const querySchema = z.object({
       depth: z.coerce.number().int().optional(),
       marketType: z.enum(['futures', 'spot', 'margin']).optional(),
+      type: z.enum(['futures', 'spot', 'margin']).optional(),
       marginMode: z.enum(['cross', 'isolated']).optional(),
     }).superRefine((data, ctx) => {
       const depth = data.depth ?? defaultDepth;
@@ -5518,7 +5553,7 @@ app.get('/api/integrations/trading/orderbook/:symbol', requirePermission('integr
     }
 
     const depth = (queryResult.data.depth ?? defaultDepth) as 20 | 100;
-    const marketType = queryResult.data.marketType;
+    const marketType = resolveMarketTypeParam(queryResult.data);
     const marginMode = queryResult.data.marginMode;
 
     if (marketType === 'spot' && !kucoinSpotClient.isSpotConfigured()) {
@@ -5555,6 +5590,18 @@ app.get('/api/integrations/trading/orderbook/:symbol', requirePermission('integr
     logger.error({ error: errorMessage }, 'Erro ao obter order book');
     res.status(500).json({ error: errorMessage });
   }
+}
+
+// GET /api/integrations/trading/orderbook/:symbol - Order Book
+app.get('/api/integrations/trading/orderbook/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  await handleTradingOrderBookRequest(req, res, req.params.symbol);
+});
+
+// GET /api/integrations/trading/orderbook?symbol= - Compatibilidade com frontend legado
+app.get('/api/integrations/trading/orderbook', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  const symbol = resolveSymbolFromQueryOrRespond(req, res);
+  if (!symbol) return;
+  await handleTradingOrderBookRequest(req, res, symbol);
 });
 
 // GET /api/integrations/trading/funding-rate/:symbol - Funding Rate

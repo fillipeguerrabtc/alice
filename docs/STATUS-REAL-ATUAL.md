@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 28 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.10 - Preparação SSOT em sessão SSH única
+**Versão:** 10.11 - Trading API compatível com frontend legado
 
 ---
 
@@ -14,6 +14,7 @@
 - CI/CD 100% automático (Push → CI → Release → Deploy) com versionamento e cache enterprise.
 - Observabilidade completa com Prometheus, Grafana, Loki, Jaeger e Langfuse.
 - Prepare Infrastructure: preparação SSOT consolidada em sessão SSH única (menos conexões e menos timeouts).
+- Trading API: endpoints `/market`, `/klines` e `/orderbook` aceitam `symbol` via query para compatibilidade com frontend legado.
 - Segurança enterprise com hardening de containers, RLS no PostgreSQL e validação Zod em APIs.
 - Integração KuCoin auditada e corrigida conforme docs oficiais (auth HMAC v2/v3, time sync, stop orders, WS broadcast via Redis).
 - Trading UI: chamadas REST bloqueadas quando símbolo não está definido (evita 404 e tela “Algo deu errado”).
