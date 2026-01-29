@@ -475,6 +475,14 @@ export function useKucoinWebSocket(
     initialSubscriptionSentRef.current = false;
   }, [clearReconnect, clearPing]);
 
+  const connectRef = useRef(connect);
+  const disconnectRef = useRef(disconnect);
+
+  useEffect(() => {
+    connectRef.current = connect;
+    disconnectRef.current = disconnect;
+  }, [connect, disconnect]);
+
   // Subscribe to a channel
   const subscribe = useCallback((
     channel: string,
@@ -539,13 +547,13 @@ export function useKucoinWebSocket(
   // Auto-connect on mount
   useEffect(() => {
     if (autoConnect) {
-      connect();
+      connectRef.current();
     }
 
     return () => {
-      disconnect();
+      disconnectRef.current();
     };
-  }, [autoConnect, connect, disconnect]);
+  }, [autoConnect]);
 
   useEffect(() => {
     setKlines([]);

@@ -1486,3 +1486,8 @@ git commit -a -m "test: adiciona testes unitários"
 *Autor: Fillipe Guerra*
 *Versão: 5.16 - 29 de Janeiro de 2026*
 *Frontend - Loader Logo + Trading Hook Order (29/01/2026): CORREÇÃO ENTERPRISE de dois problemas críticos de UX/estabilidade. (1) Logo do carregamento distorcido: aplicado wrapper circular com overflow hidden e `object-contain` para preservar proporção e manter logo redondo durante o loading. (2) Página de Trading em erro: `useMemo` estava após returns condicionais, violando a ordem de hooks e causando crash (React error #310). `orderBookPrecision` e dependências foram movidos antes dos returns para garantir ordem consistente. Documentação SSH atualizada com o caminho das chaves em Windows (`C:\Users\filli\.ssh`). ARQUIVOS MODIFICADOS: apps/frontend-service/src/App.tsx, apps/frontend-service/src/pages/Trading.tsx, CLAUDE.md. Implementação 100% enterprise-grade (Regras 6, 7, 8, 9 - mudanças cirúrgicas, sem workarounds, TypeScript strict, validação contínua).*
+
+---
+*Autor: Fillipe Guerra*
+*Versão: 5.17 - 29 de Janeiro de 2026*
+*Trading - Loop de Atualização (React error #185) (29/01/2026): CORREÇÃO ENTERPRISE para evitar “Maximum update depth exceeded”. CAUSA RAIZ: efeito de auto-connect do `useKucoinWebSocket` dependia de callbacks instáveis e podia reexecutar em loop sob re-renderizações rápidas, disparando atualizações de estado em cascata. SOLUÇÃO: uso de refs para callbacks `connect`/`disconnect` e efeito de auto-connect dependente apenas de `autoConnect`, garantindo conexão inicial estável e cleanup correto sem loops. ARQUIVO MODIFICADO: apps/frontend-service/src/hooks/useKucoinWebSocket.ts. Implementação 100% enterprise-grade (Regras 6, 7, 9 - mudanças cirúrgicas, sem workarounds, validação contínua).*
