@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 28 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.12 - Trading API com fallback de símbolo padrão
+**Versão:** 10.13 - Grafana com UID/GID fixo no compose
 
 ---
 
@@ -15,6 +15,7 @@
 - Observabilidade completa com Prometheus, Grafana, Loki, Jaeger e Langfuse.
 - Prepare Infrastructure: preparação SSOT consolidada em sessão SSH única (menos conexões e menos timeouts).
 - Trading API: endpoints `/market`, `/klines` e `/orderbook` aceitam `symbol` via query e usam fallback de símbolo padrão quando ausente.
+- Grafana: execução com `user: 472:472` para manter ownership correto em `/opt/alice/data/grafana`.
 - Segurança enterprise com hardening de containers, RLS no PostgreSQL e validação Zod em APIs.
 - Integração KuCoin auditada e corrigida conforme docs oficiais (auth HMAC v2/v3, time sync, stop orders, WS broadcast via Redis).
 - Trading UI: chamadas REST bloqueadas quando símbolo não está definido (evita 404 e tela “Algo deu errado”).

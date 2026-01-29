@@ -21,6 +21,7 @@ services:
     image: grafana/grafana-oss:12.3.2
     container_name: alice-grafana
     restart: unless-stopped
+    user: "472:472"
     networks:
       - alice-network
     ports:
