@@ -16,6 +16,8 @@ echo "Model: ${MODEL_NAME}"
 echo "Quantization: ${QUANTIZATION}"
 echo "Max Model Length: ${MAX_MODEL_LEN}"
 echo "GPU Memory Utilization: ${GPU_MEMORY_UTILIZATION}"
+echo "Max Batched Tokens: ${MAX_NUM_BATCHED_TOKENS:-auto}"
+echo "Max Num Seqs: ${MAX_NUM_SEQS:-auto}"
 echo "vLLM Version: 0.12.0"
 echo ""
 
@@ -34,6 +36,8 @@ exec python3 -m vllm.entrypoints.openai.api_server \
   --dtype float16 \
   --max-model-len "${MAX_MODEL_LEN}" \
   --gpu-memory-utilization "${GPU_MEMORY_UTILIZATION}" \
+  --max-num-batched-tokens "${MAX_NUM_BATCHED_TOKENS:-2048}" \
+  --max-num-seqs "${MAX_NUM_SEQS:-16}" \
   --tensor-parallel-size "${TENSOR_PARALLEL_SIZE}" \
   --host "${HOST}" \
   --port "${PORT}"

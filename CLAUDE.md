@@ -1496,3 +1496,8 @@ git commit -a -m "test: adiciona testes unitários"
 *Autor: Fillipe Guerra*
 *Versão: 5.18 - 29 de Janeiro de 2026*
 *Trading - Modal de Risco com Scroll (29/01/2026): CORREÇÃO ENTERPRISE para permitir visualização e scroll das opções inferiores no modal de Configurações de Risco. CAUSA RAIZ: container flex sem `min-h-0` bloqueava o scroll interno do `ScrollArea` quando o conteúdo excedia a altura máxima. SOLUÇÃO: adicionar `min-h-0` no `DialogContent` e no `ScrollArea`, mantendo o layout flex e habilitando overflow interno. ARQUIVO MODIFICADO: apps/frontend-service/src/pages/Trading.tsx. Implementação 100% enterprise-grade (Regras 6, 7, 9 - mudanças cirúrgicas, sem workarounds, validação contínua).*
+
+---
+*Autor: Fillipe Guerra*
+*Versão: 5.19 - 29 de Janeiro de 2026*
+*LLM Tuning - Latência e TTFT (29/01/2026): AJUSTE ENTERPRISE para reduzir TTFT e picos de P99 no LLM. CAUSA RAIZ: `MAX_MODEL_LEN=8192` e `GPU_MEMORY_UTILIZATION=0.50` aumentavam prefill e pressão no KV cache. SOLUÇÃO: reduzir `MAX_MODEL_LEN` para 4096, `GPU_MEMORY_UTILIZATION` para 0.40 e definir `MAX_NUM_BATCHED_TOKENS=2048` e `MAX_NUM_SEQS=16` (melhor balanceamento latência/throughput). ARQUIVOS MODIFICADOS: docker/gpu/llm-qwen25/Dockerfile, docker/gpu/llm-qwen25/entrypoint.sh, infra/docker/stacks/docker-compose.alice.yml. Implementação 100% enterprise-grade (Regras 6, 7, 9 - mudanças cirúrgicas, sem workarounds, validação contínua).*

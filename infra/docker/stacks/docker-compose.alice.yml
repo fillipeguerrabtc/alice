@@ -550,10 +550,12 @@ services:
       - CUDA_VISIBLE_DEVICES=0
       - MODEL_NAME=${LLM_MODEL_NAME:-Qwen/Qwen2.5-7B-Instruct-AWQ}
       - QUANTIZATION=awq
-      - MAX_MODEL_LEN=${LLM_MAX_MODEL_LEN:-8192}
+      - MAX_MODEL_LEN=${LLM_MAX_MODEL_LEN:-4096}
       # Budget ajustado para 20GB após remoção de embeddings de imagem (mais folga de VRAM).
       # Nota: fonte de verdade é o consumo real via métricas/nvidia-smi.
-      - GPU_MEMORY_UTILIZATION=${LLM_GPU_MEMORY_UTILIZATION:-0.50}
+      - GPU_MEMORY_UTILIZATION=${LLM_GPU_MEMORY_UTILIZATION:-0.40}
+      - MAX_NUM_BATCHED_TOKENS=${LLM_MAX_NUM_BATCHED_TOKENS:-2048}
+      - MAX_NUM_SEQS=${LLM_MAX_NUM_SEQS:-16}
       - TENSOR_PARALLEL_SIZE=1
       - HOST=0.0.0.0
       - PORT=8000
