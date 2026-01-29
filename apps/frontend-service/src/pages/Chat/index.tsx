@@ -39,6 +39,7 @@ import {
   FileCheck,
   MoreHorizontal,
   Info,
+  Send,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -560,15 +561,19 @@ export default function Chat() {
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [pendingMedia, setPendingMedia] = useState<MediaAttachment[]>([]);
   const [showTrainingDialog, setShowTrainingDialog] = useState(false);
+  const [trainingDialogMode, setTrainingDialogMode] = useState<'conversation' | 'messages' | null>(null);
   const [trainingNamespaceId, setTrainingNamespaceId] = useState<string>('');
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedConversationIds, setSelectedConversationIds] = useState<Set<string>>(new Set());
+  const [messageSelectionMode, setMessageSelectionMode] = useState(false);
+  const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [deleteSelectedOpen, setDeleteSelectedOpen] = useState(false);
   const [deleteAllOpen, setDeleteAllOpen] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isRecordingStarting, setIsRecordingStarting] = useState(false);
   const [isTranscribingRecording, setIsTranscribingRecording] = useState(false);
+  const lastSelectedMessageIndex = useRef<number | null>(null);
 
   const conversationFilter = useMemo(() => {
     const search = location.includes('?') ? location.split('?')[1] ?? '' : '';
@@ -641,6 +646,12 @@ export default function Chat() {
       setMobileDrawerOpen(false);
     }
   }, [conversationId, isMobile]);
+
+  useEffect(() => {
+    setSelectedMessageIds(new Set());
+    setMessageSelectionMode(false);
+    lastSelectedMessageIndex.current = null;
+  }, [conversationId]);
 
   useEffect(() => {
     pendingMediaRef.current = pendingMedia;
@@ -924,6 +935,28 @@ export default function Chat() {
     const res = await apiRequest('GET', `/api/chat/conversations/${conversationId}/messages`);
     return res.json() as Promise<{ messages: Message[] }>;
   }, [conversationId]);
+
+  const toggleMessageSelection = useCallback((messageId: string, index: number, shiftKey: boolean) => {
+    setSelectedMessageIds((prev) => {
+      const next = new Set(prev);
+      if (shiftKey && lastSelectedMessageIndex.current !== null) {
+        const start = Math.min(lastSelectedMessageIndex.current, index);
+        const end = Math.max(lastSelectedMessageIndex.current, index);
+        for (let i = start; i <= end; i += 1) {
+          const target = messages[i];
+          if (target?.id && target.role !== 'system') {
+            next.add(target.id);
+          }
+        }
+      } else if (next.has(messageId)) {
+        next.delete(messageId);
+      } else {
+        next.add(messageId);
+      }
+      lastSelectedMessageIndex.current = index;
+      return next;
+    });
+  }, [messages]);
 
   const {
     data: conversationMessages,
@@ -1678,12 +1711,63 @@ export default function Chat() {
     },
     onSuccess: () => {
       setShowTrainingDialog(false);
+      setTrainingDialogMode(null);
       toast({ title: t('chat.training.sent') });
     },
     onError: () => {
       toast({ title: t('chat.training.error'), variant: 'destructive' });
     },
   });
+
+  const sendSelectedMessagesToTraining = useMutation({
+    mutationFn: async () => {
+      if (!conversationId) {
+        throw new Error('Conversa não identificada');
+      }
+      if (selectedMessageIds.size === 0) {
+        throw new Error('Mensagens não selecionadas');
+      }
+      const payload = {
+        namespaceId: trainingNamespaceId || undefined,
+        items: [
+          {
+            conversationId,
+            messageIds: Array.from(selectedMessageIds),
+          },
+        ],
+      };
+      const res = await apiRequest('POST', '/api/chat/training/collect-batch', payload);
+      return res.json() as Promise<{ success: boolean; processed: number; failures: Array<{ conversationId: string; error: string }> }>;
+    },
+    onSuccess: (result) => {
+      setShowTrainingDialog(false);
+      setTrainingDialogMode(null);
+      if (result.failures?.length) {
+        toast({ title: t('chat.training.partial'), variant: 'destructive' });
+      } else {
+        toast({ title: t('chat.training.sent') });
+      }
+      setSelectedMessageIds(new Set());
+      setMessageSelectionMode(false);
+    },
+    onError: () => {
+      toast({ title: t('chat.training.error'), variant: 'destructive' });
+    },
+  });
+
+  const openConversationTrainingDialog = useCallback(() => {
+    setTrainingDialogMode('conversation');
+    setShowTrainingDialog(true);
+  }, []);
+
+  const openMessageTrainingDialog = useCallback(() => {
+    if (selectedMessageIds.size === 0) {
+      toast({ title: t('chat.selection.empty'), variant: 'destructive' });
+      return;
+    }
+    setTrainingDialogMode('messages');
+    setShowTrainingDialog(true);
+  }, [selectedMessageIds, t, toast]);
 
   const rateImage = useMutation({
     mutationFn: async ({ imageId, score }: { imageId: string; score: number }) => {
@@ -2014,9 +2098,20 @@ export default function Chat() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => setShowTrainingDialog(true)}>
+                  <DropdownMenuItem onClick={openConversationTrainingDialog}>
                     <FileCheck className="h-4 w-4 mr-2" />
                     {t('chat.training.send')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setMessageSelectionMode((prev) => !prev)}>
+                    <CheckSquare className="h-4 w-4 mr-2" />
+                    {messageSelectionMode ? t('chat.selection.cancelSelection') : t('chat.selection.selectMessages')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={openMessageTrainingDialog}
+                    disabled={selectedMessageIds.size === 0}
+                  >
+                    <Send className="h-4 w-4 mr-2" />
+                    {t('chat.selection.sendSelected')}
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={() => setDeleteTargetId(conversationId)}
@@ -2065,9 +2160,20 @@ export default function Chat() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => setShowTrainingDialog(true)}>
+                      <DropdownMenuItem onClick={openConversationTrainingDialog}>
                         <FileCheck className="h-4 w-4 mr-2" />
                         {t('chat.training.send')}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setMessageSelectionMode((prev) => !prev)}>
+                        <CheckSquare className="h-4 w-4 mr-2" />
+                        {messageSelectionMode ? t('chat.selection.cancelSelection') : t('chat.selection.selectMessages')}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={openMessageTrainingDialog}
+                        disabled={selectedMessageIds.size === 0}
+                      >
+                        <Send className="h-4 w-4 mr-2" />
+                        {t('chat.selection.sendSelected')}
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={() => setDeleteTargetId(conversationId)}
@@ -2109,6 +2215,9 @@ export default function Chat() {
                         onRateImage={handleRateImage}
                         onFeedback={handleFeedback}
                         onRegenerate={handleRegenerate}
+                        selectionMode={messageSelectionMode}
+                        isSelected={selectedMessageIds.has(message.id)}
+                        onToggleSelect={(shiftKey) => toggleMessageSelection(message.id, index, shiftKey)}
                       />
                     ))}
                   </motion.div>
@@ -2147,11 +2256,23 @@ export default function Chat() {
           />
         </motion.form>
 
-        <Dialog open={showTrainingDialog} onOpenChange={setShowTrainingDialog}>
+        <Dialog
+          open={showTrainingDialog}
+          onOpenChange={(open) => {
+            setShowTrainingDialog(open);
+            if (!open) {
+              setTrainingDialogMode(null);
+            }
+          }}
+        >
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>{t('chat.training.title')}</DialogTitle>
-              <DialogDescription>{t('chat.training.desc')}</DialogDescription>
+              <DialogDescription>
+                {trainingDialogMode === 'messages'
+                  ? t('chat.training.descMessages', { count: selectedMessageIds.size })
+                  : t('chat.training.desc')}
+              </DialogDescription>
             </DialogHeader>
 
             <div className="grid gap-4 py-2">
@@ -2185,10 +2306,22 @@ export default function Chat() {
                 {t('chat.training.cancel')}
               </Button>
               <Button
-                onClick={() => sendConversationToTraining.mutate()}
-                disabled={sendConversationToTraining.isPending}
+                onClick={() => {
+                  if (trainingDialogMode === 'messages') {
+                    sendSelectedMessagesToTraining.mutate();
+                  } else {
+                    sendConversationToTraining.mutate();
+                  }
+                }}
+                disabled={
+                  trainingDialogMode === 'messages'
+                    ? sendSelectedMessagesToTraining.isPending
+                    : sendConversationToTraining.isPending
+                }
               >
-                {sendConversationToTraining.isPending ? (
+                {(trainingDialogMode === 'messages'
+                  ? sendSelectedMessagesToTraining.isPending
+                  : sendConversationToTraining.isPending) ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                     {t('chat.training.sending')}
@@ -2196,7 +2329,9 @@ export default function Chat() {
                 ) : (
                   <>
                     <FileCheck className="h-4 w-4 mr-2" />
-                    {t('chat.training.confirm')}
+                    {trainingDialogMode === 'messages'
+                      ? t('chat.selection.sendSelected')
+                      : t('chat.training.confirm')}
                   </>
                 )}
               </Button>

@@ -50,6 +50,7 @@ function getReturnUrl(): string {
 // Reduz bundle inicial e carrega páginas sob demanda
 const Dashboard = lazy(() => import('@/pages/Dashboard'));
 const Chat = lazy(() => import('@/pages/Chat'));
+const Conversations = lazy(() => import('@/pages/Conversations'));
 const Documents = lazy(() => import('@/pages/Documents'));
 const Training = lazy(() => import('@/pages/Training'));
 const Integrations = lazy(() => import('@/pages/Integrations'));
@@ -136,6 +137,7 @@ function Router() {
       <Route path="/" component={Dashboard} />
       <Route path="/chat" component={Chat} />
       <Route path="/chat/:conversationId" component={Chat} />
+      <Route path="/conversations" component={Conversations} />
       <Route path="/agents" component={Agents} />
       <Route path="/takeover" component={TakeoverPanel} />
       <Route path="/images" component={ImageGalleryPage} />

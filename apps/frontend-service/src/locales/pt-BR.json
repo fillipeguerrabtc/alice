@@ -225,6 +225,52 @@
       "halfOpen": "Semi-Aberto"
     }
   },
+  "conversations": {
+    "title": "Conversas",
+    "description": "Selecione conversas ou mensagens para envio ao treinamento.",
+    "filters": {
+      "from": "De",
+      "to": "Até",
+      "apply": "Aplicar",
+      "clear": "Limpar",
+      "active": "Filtro ativo"
+    },
+    "list": {
+      "title": "Lista de Conversas",
+      "description": "Seleção em lote por conversa",
+      "selected": "{{count}} selecionadas",
+      "selectConversation": "Selecionar conversa",
+      "untitled": "Nova Conversa",
+      "loadMore": "Carregar mais"
+    },
+    "messages": {
+      "title": "Mensagens",
+      "description": "Seleção granular por mensagens",
+      "selected": "{{count}} mensagens selecionadas",
+      "select": "Selecionar mensagens",
+      "cancel": "Cancelar seleção",
+      "selectMessage": "Selecionar mensagem",
+      "empty": "Selecione uma conversa para visualizar mensagens.",
+      "user": "Usuário",
+      "assistant": "Assistente"
+    },
+    "training": {
+      "title": "Enviar para treinamento",
+      "desc": "Os dados serão enviados como pendentes para aprovação no Training.",
+      "namespace": "Namespace",
+      "selectNamespace": "Selecione um namespace",
+      "namespaceOptional": "Se vazio, usa o namespace da conversa.",
+      "summaryConversations": "Conversas selecionadas: {{count}}",
+      "summaryMessages": "Mensagens selecionadas: {{count}}",
+      "sendConversations": "Enviar conversas",
+      "sendMessages": "Enviar mensagens",
+      "confirm": "Enviar agora",
+      "sending": "Enviando...",
+      "sent": "Envio para treinamento concluído",
+      "partial": "Envio parcial: alguns itens falharam",
+      "error": "Falha ao enviar para treinamento"
+    }
+  },
   "takeover": {
     "title": "Painel de Atendimento",
     "noMessages": "Sem mensagens",
@@ -381,6 +427,7 @@
       "send": "Enviar p/ Treino",
       "title": "Enviar conversa para treinamento",
       "desc": "A conversa será enviada como dado pendente para aprovação no Training.",
+      "descMessages": "Mensagens selecionadas ({{count}}) serão enviadas para aprovação no Training.",
       "namespace": "Namespace",
       "selectNamespace": "Selecione um namespace",
       "namespaceOptional": "Se vazio, usa o namespace da conversa.",
@@ -390,7 +437,15 @@
       "sending": "Enviando...",
       "cancel": "Cancelar",
       "sent": "Conversa enviada para aprovação",
+      "partial": "Envio parcial: alguns itens falharam",
       "error": "Falha ao enviar conversa para treinamento"
+    },
+    "selection": {
+      "selectMessages": "Selecionar mensagens",
+      "cancelSelection": "Cancelar seleção",
+      "sendSelected": "Enviar mensagens selecionadas",
+      "empty": "Selecione mensagens para enviar ao treinamento",
+      "selectMessage": "Selecionar mensagem"
     }
   },
   "agents": {

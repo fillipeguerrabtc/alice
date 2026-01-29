@@ -2917,7 +2917,7 @@ export default function Trading() {
             </DialogDescription>
           </DialogHeader>
 
-          <ScrollArea className="flex-1 min-h-0 h-full -mx-1 px-1">
+          <ScrollArea className="flex-1 min-h-0 -mx-1 px-1">
             <div className="space-y-6 py-4">
             {/* Trading Controls */}
             <div className="space-y-4">

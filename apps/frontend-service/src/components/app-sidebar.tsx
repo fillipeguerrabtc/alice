@@ -41,6 +41,7 @@ import { useAuth } from '@/hooks/use-auth';
 const menuItems = [
   { title: 'Dashboard', url: '/', icon: LayoutDashboard },
   { title: 'Chat', url: '/chat', icon: MessageSquare },
+  { title: 'Conversas', url: '/conversations', icon: MessageSquare },
   { title: 'Documentos', url: '/documents', icon: FileText },
   { title: 'Training', url: '/training', icon: Brain },
   { title: 'Integrações', url: '/integrations', icon: Plug },

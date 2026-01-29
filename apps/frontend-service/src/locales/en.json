@@ -225,6 +225,52 @@
       "halfOpen": "Half-Open"
     }
   },
+  "conversations": {
+    "title": "Conversations",
+    "description": "Select conversations or messages for training.",
+    "filters": {
+      "from": "From",
+      "to": "To",
+      "apply": "Apply",
+      "clear": "Clear",
+      "active": "Active filter"
+    },
+    "list": {
+      "title": "Conversation List",
+      "description": "Batch selection by conversation",
+      "selected": "{{count}} selected",
+      "selectConversation": "Select conversation",
+      "untitled": "New Conversation",
+      "loadMore": "Load more"
+    },
+    "messages": {
+      "title": "Messages",
+      "description": "Granular selection by messages",
+      "selected": "{{count}} messages selected",
+      "select": "Select messages",
+      "cancel": "Cancel selection",
+      "selectMessage": "Select message",
+      "empty": "Select a conversation to view messages.",
+      "user": "User",
+      "assistant": "Assistant"
+    },
+    "training": {
+      "title": "Send to training",
+      "desc": "Data will be sent as pending for approval in Training.",
+      "namespace": "Namespace",
+      "selectNamespace": "Select a namespace",
+      "namespaceOptional": "If empty, use the conversation namespace.",
+      "summaryConversations": "Selected conversations: {{count}}",
+      "summaryMessages": "Selected messages: {{count}}",
+      "sendConversations": "Send conversations",
+      "sendMessages": "Send messages",
+      "confirm": "Send now",
+      "sending": "Sending...",
+      "sent": "Training send completed",
+      "partial": "Partial send: some items failed",
+      "error": "Failed to send to training"
+    }
+  },
   "takeover": {
     "title": "Service Panel",
     "noMessages": "No messages",
@@ -356,6 +402,7 @@
       "send": "Send to Training",
       "title": "Send conversation to training",
       "desc": "This conversation will be submitted as pending data for approval in Training.",
+      "descMessages": "Selected messages ({{count}}) will be sent for approval in Training.",
       "namespace": "Namespace",
       "selectNamespace": "Select a namespace",
       "namespaceOptional": "If empty, use the conversation namespace.",
@@ -365,7 +412,15 @@
       "sending": "Sending...",
       "cancel": "Cancel",
       "sent": "Conversation sent for approval",
+      "partial": "Partial send: some items failed",
       "error": "Failed to send conversation to training"
+    },
+    "selection": {
+      "selectMessages": "Select messages",
+      "cancelSelection": "Cancel selection",
+      "sendSelected": "Send selected messages",
+      "empty": "Select messages to send to training",
+      "selectMessage": "Select message"
     }
   },
   "agents": {

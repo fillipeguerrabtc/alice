@@ -3916,6 +3916,23 @@ async function collectTrainingSample(params: {
   }
 }
 
+function buildTrainingMessagesFromStored(
+  messages: Array<{ isFromUser: boolean | null; conteudo: string | null }>
+): { messages: Array<{ role: 'user' | 'assistant'; content: string }>; error?: string } {
+  const trainingMessages = messages
+    .filter((msg) => msg.conteudo && msg.conteudo.trim().length > 0)
+    .map((msg) => ({
+      role: (msg.isFromUser ? 'user' : 'assistant') as 'user' | 'assistant',
+      content: msg.conteudo as string,
+    }));
+
+  if (trainingMessages.length < 2) {
+    return { messages: [], error: 'Conversa não possui conteúdo válido para treinamento' };
+  }
+
+  return { messages: trainingMessages };
+}
+
 function shouldAutoCollectTraining(params: {
   profile: LlmContextProfile;
   namespaceId?: string | null;
@@ -6494,7 +6511,7 @@ app.post('/api/chat/conversations/:id/training/collect', requireAuth(), requireS
     if (!effectiveTenantId) {
       return res.status(403).json({ error: 'Acesso negado: conversa sem tenant associado' });
     }
-    if (userRole !== 'super_admin' && conversation.tenantId !== requestTenantId) {
+    if (userRole !== 'super_admin' && effectiveTenantId !== requestTenantId) {
       return res.status(404).json({ error: 'Conversa não encontrada' });
     }
 
@@ -6521,15 +6538,9 @@ app.post('/api/chat/conversations/:id/training/collect', requireAuth(), requireS
       return res.status(400).json({ error: 'Conversa não possui mensagens suficientes' });
     }
 
-    const trainingMessages = ordered
-      .filter((msg) => msg.conteudo && msg.conteudo.trim().length > 0)
-      .map((msg) => ({
-        role: (msg.isFromUser ? 'user' : 'assistant') as 'user' | 'assistant',
-        content: msg.conteudo as string,
-      }));
-
-    if (trainingMessages.length < 2) {
-      return res.status(400).json({ error: 'Conversa não possui conteúdo válido para treinamento' });
+    const trainingPayload = buildTrainingMessagesFromStored(ordered);
+    if (trainingPayload.error) {
+      return res.status(400).json({ error: trainingPayload.error });
     }
 
     await collectTrainingSample({
@@ -6537,16 +6548,124 @@ app.post('/api/chat/conversations/:id/training/collect', requireAuth(), requireS
       namespaceId,
       conversationId: id,
       source: 'chat-curated',
-      messages: trainingMessages,
+      messages: trainingPayload.messages,
       userId,
       role: userRole,
     });
 
-    res.json({ success: true, messages: trainingMessages.length, namespaceId });
+    res.json({ success: true, messages: trainingPayload.messages.length, namespaceId });
   } catch (error) {
     logger.error({ error, conversationId: id }, 'Falha ao coletar treinamento da conversa');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
+});
+
+app.post('/api/chat/training/collect-batch', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('training:training_data:write'), async (req: Request, res: Response) => {
+  const bodyResult = collectTrainingBatchSchema.safeParse(req.body);
+  if (!bodyResult.success) {
+    return res.status(400).json({ error: 'Input inválido', details: bodyResult.error.format() });
+  }
+
+  const requestTenantId = req.tenantId;
+  const userId = req.user?.userId;
+  const userRole = req.user?.role as Role | undefined;
+  if (!userId || !userRole) {
+    return res.status(401).json({ error: 'Autenticação necessária' });
+  }
+
+  const { namespaceId: batchNamespaceId, items } = bodyResult.data;
+  const results: Array<{ conversationId: string; messages: number; namespaceId: string }> = [];
+  const failures: Array<{ conversationId: string; error: string }> = [];
+
+  for (const item of items) {
+    try {
+      const conversation = await db.query.conversations.findFirst({
+        where: eq(schema.conversations.id, item.conversationId),
+        with: { agent: true },
+      });
+
+      if (!conversation) {
+        failures.push({ conversationId: item.conversationId, error: 'Conversa não encontrada' });
+        continue;
+      }
+
+      const effectiveTenantId = conversation.tenantId ?? requestTenantId;
+      if (!effectiveTenantId) {
+        failures.push({ conversationId: item.conversationId, error: 'Acesso negado: conversa sem tenant associado' });
+        continue;
+      }
+      if (userRole !== 'super_admin' && effectiveTenantId !== requestTenantId) {
+        failures.push({ conversationId: item.conversationId, error: 'Conversa não encontrada' });
+        continue;
+      }
+
+      const resolvedNamespaceId = batchNamespaceId || conversation.namespaceId || conversation.agent?.namespaceId;
+      if (!resolvedNamespaceId) {
+        failures.push({ conversationId: item.conversationId, error: 'Namespace obrigatório para coleta de treinamento' });
+        continue;
+      }
+
+      const namespace = await db.query.namespaces.findFirst({
+        where: eq(schema.namespaces.id, resolvedNamespaceId),
+      });
+      if (!namespace || namespace.tenantId !== effectiveTenantId) {
+        failures.push({ conversationId: item.conversationId, error: 'Namespace inválido para o tenant' });
+        continue;
+      }
+
+      let storedMessages: Array<{ isFromUser: boolean | null; conteudo: string | null }> = [];
+      if (item.messageIds?.length) {
+        storedMessages = await db.query.messages.findMany({
+          where: and(
+            eq(schema.messages.conversationId, item.conversationId),
+            inArray(schema.messages.id, item.messageIds)
+          ),
+          orderBy: [asc(schema.messages.criadoEm)],
+        });
+      } else {
+        const limit = item.maxMessages ?? TRAINING_CONVERSATION_MAX_MESSAGES;
+        const recentMessages = await db.query.messages.findMany({
+          where: eq(schema.messages.conversationId, item.conversationId),
+          orderBy: [desc(schema.messages.criadoEm)],
+          limit,
+        });
+        storedMessages = [...recentMessages].reverse();
+      }
+
+      const trainingPayload = buildTrainingMessagesFromStored(storedMessages);
+      if (trainingPayload.error) {
+        failures.push({ conversationId: item.conversationId, error: trainingPayload.error });
+        continue;
+      }
+
+      await collectTrainingSample({
+        tenantId: effectiveTenantId,
+        namespaceId: resolvedNamespaceId,
+        conversationId: item.conversationId,
+        source: item.messageIds?.length ? 'chat-curated-messages' : 'chat-curated-batch',
+        messages: trainingPayload.messages,
+        userId,
+        role: userRole,
+      });
+
+      results.push({
+        conversationId: item.conversationId,
+        messages: trainingPayload.messages.length,
+        namespaceId: resolvedNamespaceId,
+      });
+    } catch (error) {
+      logger.error({ error, conversationId: item.conversationId }, 'Falha ao coletar treinamento em lote');
+      failures.push({ conversationId: item.conversationId, error: 'Erro interno ao coletar treinamento' });
+    }
+  }
+
+  res.json({
+    success: failures.length === 0,
+    total: items.length,
+    processed: results.length,
+    results,
+    failures,
+  });
 });
 
 const sendMessageSchema = z.object({
@@ -6564,6 +6683,17 @@ const sendMessageSchema = z.object({
 const collectConversationTrainingSchema = z.object({
   namespaceId: z.string().uuid().optional(),
   maxMessages: z.number().int().min(2).max(100).optional(),
+});
+
+const collectTrainingBatchItemSchema = z.object({
+  conversationId: z.string().uuid(),
+  messageIds: z.array(z.string().uuid()).min(1).max(200).optional(),
+  maxMessages: z.number().int().min(2).max(100).optional(),
+});
+
+const collectTrainingBatchSchema = z.object({
+  namespaceId: z.string().uuid().optional(),
+  items: z.array(collectTrainingBatchItemSchema).min(1).max(200),
 });
 
 const streamMediaAttachmentSchema = z.object({

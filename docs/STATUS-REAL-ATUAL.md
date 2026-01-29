@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 29 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.15 - Tokens e conversas admin no dashboard
+**Versão:** 10.17 - Trading modal com scroll corrigido
 
 ---
 
@@ -208,6 +208,11 @@ Retenção Arquivo:   30 dias
 
 ## Atualizações recentes (resumo)
 
+- Trading: modal de Configurações de Risco com scroll funcional em toda a altura.
+- Conversas: nova página `/conversations` com filtros por período e seleção em lote.
+- Conversas: envio para treino por conversa inteira ou por mensagens selecionadas.
+- Chat: seleção de mensagens com envio em lote via training batch.
+- Dashboard: clique no gráfico semanal redireciona para `/conversations` filtrado por dia.
 - Dashboard: tokens de LLM agora persistidos em mensagens (stats/usage com valores reais).
 - Dashboard: clique no gráfico semanal abre chat filtrado por data.
 - Chat: admins veem conversas de todos os usuários do tenant; super_admin global liberado.

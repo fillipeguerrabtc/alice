@@ -226,7 +226,7 @@ export default function Dashboard() {
     const params = new URLSearchParams();
     params.set('from', date);
     params.set('to', date);
-    navigate(`/chat?${params.toString()}`);
+    navigate(`/conversations?${params.toString()}`);
   }, [navigate]);
 
   return (

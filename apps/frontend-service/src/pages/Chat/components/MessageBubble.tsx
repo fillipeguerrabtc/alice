@@ -12,6 +12,7 @@ import { Copy, Check } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -42,6 +43,9 @@ interface MessageBubbleProps {
   onRateImage?: (imageId: string, score: number) => void;
   onFeedback?: (messageId: string, isPositive: boolean) => void;
   onRegenerate?: () => void;
+  selectionMode?: boolean;
+  isSelected?: boolean;
+  onToggleSelect?: (shiftKey: boolean) => void;
 }
 
 export function MessageBubble({ 
@@ -53,6 +57,9 @@ export function MessageBubble({
   onRateImage,
   onFeedback,
   onRegenerate,
+  selectionMode = false,
+  isSelected = false,
+  onToggleSelect,
 }: MessageBubbleProps) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
@@ -60,6 +67,7 @@ export function MessageBubble({
   const latestTargetRef = useRef(message.content ?? '');
   const displayedContentRef = useRef(displayedContent);
   const isUser = message.role === 'user';
+  const canSelect = selectionMode && message.role !== 'system';
   const hasMediaAttachments = Boolean(message.mediaAttachments && message.mediaAttachments.length > 0);
   const hasTextContent = Boolean(message.content && message.content.trim().length > 0);
   const hasGeneratedImage = Boolean(message.generatedImage);
@@ -161,6 +169,19 @@ export function MessageBubble({
         isUser ? 'justify-end' : 'justify-start'
       )}
     >
+      {canSelect && (
+        <div className={cn('flex items-start pt-2', isUser ? 'order-2' : 'order-none')}>
+          <Checkbox
+            checked={isSelected}
+            onCheckedChange={() => undefined}
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleSelect?.(event.shiftKey);
+            }}
+            aria-label={t('chat.selection.selectMessage')}
+          />
+        </div>
+      )}
       {!isUser && (
         <div className="flex flex-col items-center gap-1">
           <Avatar className="h-12 w-12 shadow-sm">
