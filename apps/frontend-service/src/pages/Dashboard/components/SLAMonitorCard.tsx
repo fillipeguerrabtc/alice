@@ -4,6 +4,7 @@
  * @module Dashboard/components/SLAMonitorCard
  */
 
+import type { KeyboardEvent } from 'react';
 import { motion } from 'framer-motion';
 import { Clock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -21,9 +22,10 @@ import { SLAMetrics, ConversationBreakdown, itemVariants } from './types';
 interface SLAMonitorCardProps {
   metrics: SLAMetrics;
   isLoading: boolean;
+  onClick?: () => void;
 }
 
-export function SLAMonitorCard({ metrics, isLoading }: SLAMonitorCardProps) {
+export function SLAMonitorCard({ metrics, isLoading, onClick }: SLAMonitorCardProps) {
   const { t } = useTranslation();
 
   if (isLoading) {
@@ -46,9 +48,23 @@ export function SLAMonitorCard({ metrics, isLoading }: SLAMonitorCardProps) {
     { name: t('dashboard.sla.breached'), value: metrics.breachedCount, color: '#ef4444' },
   ].filter(d => d.value > 0);
 
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!onClick) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onClick();
+    }
+  };
+
   return (
     <motion.div variants={itemVariants}>
-      <Card className="hover-elevate">
+      <Card
+        className={`hover-elevate ${onClick ? 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60' : ''}`}
+        role={onClick ? 'button' : undefined}
+        tabIndex={onClick ? 0 : undefined}
+        onClick={onClick}
+        onKeyDown={handleKeyDown}
+      >
         <CardHeader className="flex flex-row items-center gap-2 pb-2">
           <div className="p-2 rounded-md bg-blue-500/10">
             <Clock className="h-4 w-4 text-blue-500" />

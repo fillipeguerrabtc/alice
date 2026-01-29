@@ -240,12 +240,14 @@
       "description": "Seleção em lote por conversa",
       "selected": "{{count}} selecionadas",
       "selectConversation": "Selecionar conversa",
+      "active": "Aberta",
       "untitled": "Nova Conversa",
       "loadMore": "Carregar mais"
     },
     "messages": {
       "title": "Mensagens",
       "description": "Seleção granular por mensagens",
+      "active": "Conversa ativa",
       "selected": "{{count}} mensagens selecionadas",
       "select": "Selecionar mensagens",
       "cancel": "Cancelar seleção",

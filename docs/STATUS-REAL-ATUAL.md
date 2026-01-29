@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 29 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.18 - SLA metrics estáveis no dashboard
+**Versão:** 10.19 - Conversas destacadas, cards clicáveis e galeria ajustada
 
 ---
 
@@ -208,6 +208,9 @@ Retenção Arquivo:   30 dias
 
 ## Atualizações recentes (resumo)
 
+- Conversas: conversa ativa destacada e mensagens normalizadas na página `/conversations`.
+- Dashboard: cards clicáveis para navegação direta às páginas relacionadas.
+- Imagens: galeria com fallback de preview e tratamento de erro de listagem.
 - Dashboard: SLA metrics resilientes a timestamps retornados como string.
 - Trading: modal de Configurações de Risco com scroll funcional em toda a altura.
 - Conversas: nova página `/conversations` com filtros por período e seleção em lote.

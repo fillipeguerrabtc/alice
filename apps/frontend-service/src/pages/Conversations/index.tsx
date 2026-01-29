@@ -24,6 +24,7 @@ import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import { TIMEZONE } from '@/lib/i18n';
 import { formatDateTime } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
 import type { Conversation, Message } from '@/pages/Chat/components/types';
 
 type ConversationsResponse = {
@@ -32,7 +33,13 @@ type ConversationsResponse = {
   hasMore?: boolean;
 };
 
-type MessagesResponse = { messages: Message[] };
+type ServerMessage = Message & {
+  conteudo?: string | null;
+  criadoEm?: string | null;
+  isFromUser?: boolean | null;
+};
+
+type MessagesResponse = { messages: ServerMessage[] };
 
 type BatchItem = {
   conversationId: string;
@@ -137,7 +144,24 @@ export default function ConversationsPage() {
     enabled: Boolean(activeConversationId),
   });
 
-  const messages = messagesData?.messages ?? [];
+  const rawMessages = messagesData?.messages ?? [];
+  const activeConversation = useMemo(
+    () => conversations.find((conv) => conv.id === activeConversationId) ?? null,
+    [activeConversationId, conversations]
+  );
+  const messages = useMemo(() => {
+    return rawMessages.map((message) => {
+      const role = message.role ?? (message.isFromUser ? 'user' : 'assistant');
+      const content = (message.content ?? message.conteudo ?? '').toString();
+      const createdAt = message.createdAt ?? message.criadoEm ?? '';
+      return {
+        ...message,
+        role,
+        content,
+        createdAt,
+      } as Message;
+    });
+  }, [rawMessages]);
 
   const selectedMessagesCount = useMemo(() => {
     let total = 0;
@@ -311,7 +335,12 @@ export default function ConversationsPage() {
                       key={conv.id}
                       type="button"
                       onClick={() => setActiveConversationId(conv.id)}
-                      className={`w-full rounded-md border p-2 text-left transition ${activeConversationId === conv.id ? 'border-primary' : 'border-border hover:border-muted-foreground'}`}
+                      className={`w-full rounded-md border p-2 text-left transition ${
+                        activeConversationId === conv.id
+                          ? 'border-primary bg-muted/40'
+                          : 'border-border hover:border-muted-foreground'
+                      }`}
+                      aria-current={activeConversationId === conv.id ? 'true' : undefined}
                     >
                       <div className="flex items-start gap-2">
                         <Checkbox
@@ -321,7 +350,12 @@ export default function ConversationsPage() {
                           aria-label={t('conversations.list.selectConversation')}
                         />
                         <div className="flex-1">
-                          <div className="text-sm font-medium truncate">{conv.titulo || t('conversations.list.untitled')}</div>
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-sm font-medium truncate">{conv.titulo || t('conversations.list.untitled')}</div>
+                            {activeConversationId === conv.id && (
+                              <Badge variant="secondary">{t('conversations.list.active')}</Badge>
+                            )}
+                          </div>
                           <div className="text-xs text-muted-foreground">
                             {formatDateTime(conv.atualizadoEm ?? conv.criadoEm, { locale, timeZone })}
                           </div>
@@ -348,7 +382,11 @@ export default function ConversationsPage() {
         <Card className="h-[640px]">
           <CardHeader>
             <CardTitle>{t('conversations.messages.title')}</CardTitle>
-            <CardDescription>{t('conversations.messages.description')}</CardDescription>
+            <CardDescription>
+              {activeConversation
+                ? `${t('conversations.messages.active')}: ${activeConversation.titulo || t('conversations.list.untitled')}`
+                : t('conversations.messages.description')}
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex items-center justify-between text-xs text-muted-foreground">

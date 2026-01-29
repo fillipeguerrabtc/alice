@@ -240,12 +240,14 @@
       "description": "Batch selection by conversation",
       "selected": "{{count}} selected",
       "selectConversation": "Select conversation",
+      "active": "Active",
       "untitled": "New Conversation",
       "loadMore": "Load more"
     },
     "messages": {
       "title": "Messages",
       "description": "Granular selection by messages",
+      "active": "Active conversation",
       "selected": "{{count}} messages selected",
       "select": "Select messages",
       "cancel": "Cancel selection",

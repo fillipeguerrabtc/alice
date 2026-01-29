@@ -4,6 +4,7 @@
  * @module Dashboard/components/TakeoverStatsCard
  */
 
+import type { KeyboardEvent } from 'react';
 import { motion } from 'framer-motion';
 import { Headphones, PhoneCall, AlertTriangle, Bot, UserCheck, Timer } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -14,9 +15,10 @@ import { TakeoverStats, itemVariants } from './types';
 interface TakeoverStatsCardProps {
   stats: TakeoverStats;
   isLoading: boolean;
+  onClick?: () => void;
 }
 
-export function TakeoverStatsCard({ stats, isLoading }: TakeoverStatsCardProps) {
+export function TakeoverStatsCard({ stats, isLoading, onClick }: TakeoverStatsCardProps) {
   const { t } = useTranslation();
 
   if (isLoading) {
@@ -41,9 +43,23 @@ export function TakeoverStatsCard({ stats, isLoading }: TakeoverStatsCardProps) 
     success: 'text-green-500 bg-green-500/10',
   };
 
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!onClick) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onClick();
+    }
+  };
+
   return (
     <motion.div variants={itemVariants}>
-      <Card className="hover-elevate">
+      <Card
+        className={`hover-elevate ${onClick ? 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60' : ''}`}
+        role={onClick ? 'button' : undefined}
+        tabIndex={onClick ? 0 : undefined}
+        onClick={onClick}
+        onKeyDown={handleKeyDown}
+      >
         <CardHeader className="flex flex-row items-center gap-2 pb-2">
           <div className={`p-2 rounded-md ${urgencyColors[urgencyLevel]}`}>
             <Headphones className="h-4 w-4" />

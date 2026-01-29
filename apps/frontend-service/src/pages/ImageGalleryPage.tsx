@@ -169,6 +169,7 @@ function ImageCard({
   image: GeneratedImage; 
   onSelect: (image: GeneratedImage) => void;
 }) {
+  const previewUrl = image.imageUrl ?? image.thumbnailPath ?? image.imagePath ?? null;
   return (
     <Card 
       className="hover-elevate cursor-pointer overflow-visible"
@@ -176,9 +177,9 @@ function ImageCard({
       data-testid={`card-image-${image.id}`}
     >
       <div className="relative aspect-square bg-muted rounded-t-md overflow-hidden">
-        {image.status === "completed" && image.imageUrl ? (
+        {image.status === "completed" && previewUrl ? (
           <img
-            src={image.imageUrl}
+            src={previewUrl}
             alt={image.prompt.substring(0, 100)}
             className="w-full h-full object-cover"
             data-testid={`img-generated-${image.id}`}
@@ -518,7 +519,7 @@ export default function ImageGalleryPage() {
     return params.toString();
   };
   
-  const { data: imagesData, isLoading } = useQuery<ImagesResponse>({
+  const { data: imagesData, isLoading, error: imagesError, refetch: refetchImages } = useQuery<ImagesResponse>({
     queryKey: ["/api/chat/images", filterStatus, filterApproved, page],
     queryFn: async () => {
       const queryString = buildQueryParams();
@@ -535,6 +536,7 @@ export default function ImageGalleryPage() {
   
   const images = imagesData?.images ?? [];
   const totalPages = Math.ceil((imagesData?.total ?? 0) / pageSize);
+  const hasImagesButNoneLoaded = !isLoading && !imagesError && (imagesData?.total ?? 0) > 0 && images.length === 0;
   
   return (
     <div className="p-6">
@@ -604,6 +606,30 @@ export default function ImageGalleryPage() {
             </Card>
           ))}
         </div>
+      ) : imagesError ? (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center gap-2 py-12 text-center">
+            <AlertCircle className="h-10 w-10 text-destructive" />
+            <p className="text-sm text-muted-foreground">
+              Não foi possível carregar a galeria agora.
+            </p>
+            <Button variant="outline" onClick={() => refetchImages()}>
+              Tentar novamente
+            </Button>
+          </CardContent>
+        </Card>
+      ) : hasImagesButNoneLoaded ? (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center gap-2 py-12 text-center">
+            <AlertCircle className="h-10 w-10 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">
+              Existem imagens registradas, mas nenhuma foi exibida nesta listagem.
+            </p>
+            <Button variant="outline" onClick={() => refetchImages()}>
+              Recarregar galeria
+            </Button>
+          </CardContent>
+        </Card>
       ) : images.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">

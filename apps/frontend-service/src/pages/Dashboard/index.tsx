@@ -117,6 +117,14 @@ export default function Dashboard() {
   const [, navigate] = useLocation();
   const locale = user?.idioma ?? 'pt-BR';
 
+  const navigateTo = useCallback((path: string) => {
+    navigate(path);
+  }, [navigate]);
+
+  const openExternal = useCallback((url: string) => {
+    window.open(url, '_blank', 'noopener');
+  }, []);
+
   const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
     queryKey: ['/api/chat/stats'],
     staleTime: 1000 * 60 * 5,
@@ -267,6 +275,7 @@ export default function Dashboard() {
           trend={displayStats.trend?.conversations}
           isLoading={statsLoading}
           accent="default"
+          onClick={() => navigateTo('/conversations')}
         />
         <StatCard
           title={t('dashboard.stats.ragDocuments')}
@@ -276,6 +285,7 @@ export default function Dashboard() {
           trend={displayStats.trend?.documents}
           isLoading={statsLoading}
           accent="success"
+          onClick={() => navigateTo('/documents')}
         />
         <StatCard
           title={t('nav.training')}
@@ -285,6 +295,7 @@ export default function Dashboard() {
           trend={displayStats.trend?.trainingData}
           isLoading={statsLoading}
           accent="warning"
+          onClick={() => navigateTo('/training')}
         />
         <StatCard
           title={t('dashboard.stats.tokensUsed')}
@@ -301,6 +312,7 @@ export default function Dashboard() {
           trend={displayStats.trend?.tokensUsed}
           isLoading={statsLoading}
           accent="default"
+          onClick={() => navigateTo('/chat')}
         />
       </div>
 
@@ -309,6 +321,7 @@ export default function Dashboard() {
           title="Stripe Portugal"
           icon={CreditCard}
           isLoading={integrationsLoading}
+          onClick={() => navigateTo('/integrations')}
           stats={
             <div className="space-y-2">
               <div className="flex justify-between items-center">
@@ -332,6 +345,7 @@ export default function Dashboard() {
           title="Wise Transfers"
           icon={Wallet}
           isLoading={integrationsLoading}
+          onClick={() => navigateTo('/wise')}
           stats={
             <div className="space-y-2">
               <div className="flex justify-between items-center">
@@ -353,6 +367,7 @@ export default function Dashboard() {
           title="ERPNext CRM"
           icon={Building2}
           isLoading={integrationsLoading}
+          onClick={() => openExternal('https://erp.yesyoudeserve.duckdns.org')}
           stats={
             <div className="space-y-2">
               <div className="flex justify-between items-center">
@@ -388,18 +403,22 @@ export default function Dashboard() {
               <TakeoverStatsCard 
                 stats={displayTakeoverStats} 
                 isLoading={takeoverLoading} 
+                onClick={() => navigateTo('/takeover')}
               />
               <ImageGenerationCard 
                 stats={displayImageStats} 
                 isLoading={imageStatsLoading} 
+                onClick={() => navigateTo('/images')}
               />
               <SLAMonitorCard 
                 metrics={displaySLAMetrics} 
                 isLoading={slaLoading} 
+                onClick={() => navigateTo('/observability')}
               />
               <CircuitBreakerCard 
                 breakers={displayCircuitBreakers} 
                 isLoading={circuitBreakerLoading} 
+                onClick={() => navigateTo('/observability')}
               />
             </div>
             <div className="mt-4">

@@ -4,6 +4,7 @@
  * @module Dashboard/components/CircuitBreakerCard
  */
 
+import type { KeyboardEvent } from 'react';
 import { motion } from 'framer-motion';
 import { Shield } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -15,9 +16,10 @@ import { CircuitBreakerStatus, itemVariants } from './types';
 interface CircuitBreakerCardProps {
   breakers: CircuitBreakerStatus[];
   isLoading: boolean;
+  onClick?: () => void;
 }
 
-export function CircuitBreakerCard({ breakers, isLoading }: CircuitBreakerCardProps) {
+export function CircuitBreakerCard({ breakers, isLoading, onClick }: CircuitBreakerCardProps) {
   const { t } = useTranslation();
 
   if (isLoading) {
@@ -47,9 +49,23 @@ export function CircuitBreakerCard({ breakers, isLoading }: CircuitBreakerCardPr
     'half-open': t('dashboard.circuitBreaker.halfOpen'),
   };
 
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!onClick) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onClick();
+    }
+  };
+
   return (
     <motion.div variants={itemVariants}>
-      <Card className="hover-elevate">
+      <Card
+        className={`hover-elevate ${onClick ? 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60' : ''}`}
+        role={onClick ? 'button' : undefined}
+        tabIndex={onClick ? 0 : undefined}
+        onClick={onClick}
+        onKeyDown={handleKeyDown}
+      >
         <CardHeader className="flex flex-row items-center gap-2 pb-2">
           <div className="p-2 rounded-md bg-orange-500/10">
             <Shield className="h-4 w-4 text-orange-500" />

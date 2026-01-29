@@ -4,6 +4,7 @@
  * @module Dashboard/components/StatCard
  */
 
+import type { KeyboardEvent } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowUpRight, ArrowDownRight, type LucideIcon } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,6 +19,7 @@ interface StatCardProps {
   trend?: number;
   isLoading?: boolean;
   accent?: 'default' | 'success' | 'warning' | 'danger';
+  onClick?: () => void;
 }
 
 export function StatCard({ 
@@ -28,6 +30,7 @@ export function StatCard({
   trend, 
   isLoading,
   accent = 'default',
+  onClick,
 }: StatCardProps) {
   if (isLoading) {
     return (
@@ -51,9 +54,23 @@ export function StatCard({
     danger: 'text-red-500 dark:text-red-400',
   };
 
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!onClick) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onClick();
+    }
+  };
+
   return (
     <motion.div variants={itemVariants}>
-      <Card className="hover-elevate transition-all duration-200">
+      <Card
+        className={`hover-elevate transition-all duration-200 ${onClick ? 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60' : ''}`}
+        role={onClick ? 'button' : undefined}
+        tabIndex={onClick ? 0 : undefined}
+        onClick={onClick}
+        onKeyDown={handleKeyDown}
+      >
         <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
           <CardTitle className="text-sm font-medium">{title}</CardTitle>
           <div className={`p-2 rounded-md bg-muted ${accentColors[accent]}`}>

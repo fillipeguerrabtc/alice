@@ -4,6 +4,7 @@
  * @module Dashboard/components/ImageGenerationCard
  */
 
+import type { KeyboardEvent } from 'react';
 import { motion } from 'framer-motion';
 import { Image, Star } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -16,9 +17,10 @@ import { ImageGenerationStats, itemVariants } from './types';
 interface ImageGenerationCardProps {
   stats: ImageGenerationStats;
   isLoading: boolean;
+  onClick?: () => void;
 }
 
-export function ImageGenerationCard({ stats, isLoading }: ImageGenerationCardProps) {
+export function ImageGenerationCard({ stats, isLoading, onClick }: ImageGenerationCardProps) {
   const { t } = useTranslation();
 
   if (isLoading) {
@@ -40,9 +42,23 @@ export function ImageGenerationCard({ stats, isLoading }: ImageGenerationCardPro
     ? Math.round((stats.approved / stats.totalGenerated) * 100) 
     : 0;
 
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!onClick) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onClick();
+    }
+  };
+
   return (
     <motion.div variants={itemVariants}>
-      <Card className="hover-elevate">
+      <Card
+        className={`hover-elevate ${onClick ? 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60' : ''}`}
+        role={onClick ? 'button' : undefined}
+        tabIndex={onClick ? 0 : undefined}
+        onClick={onClick}
+        onKeyDown={handleKeyDown}
+      >
         <CardHeader className="flex flex-row items-center gap-2 pb-2">
           <div className="p-2 rounded-md bg-purple-500/10">
             <Image className="h-4 w-4 text-purple-500" />
