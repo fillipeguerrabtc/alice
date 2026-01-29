@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 28 de Janeiro de 2026  
-**Versão:** 11.10 - Networks unificadas no prepare-infrastructure
+**Versão:** 11.11 - Preparação SSOT em sessão SSH única
 
 ## Visão geral
 
@@ -52,7 +52,7 @@ Os jobs de health check rodam **apenas quando o deploy do stack foi realmente ex
 Durante o build das imagens, o `pnpm` pode emitir aviso de **scripts ignorados** se `NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS` não estiver definido no **build stage** do Dockerfile.  
 Para evitar esse warning e manter o build determinístico, todos os Dockerfiles Node.js devem exportar:
 
-```
+```bash
 ENV NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS=true
 ```
 
@@ -113,7 +113,7 @@ gh workflow run deploy-stack-modular.yml -f stack=erpnext -f version=v1.0.0 -f r
 
 ### Preparação automática do servidor
 
-O workflow executa o script idempotente `infra/scripts/prepare-production-server.sh` no job `prepare`.
+O workflow executa o script idempotente `infra/scripts/prepare-production-server.sh` no job `prepare`, **na mesma sessão SSH** usada para extrair os scripts SSOT (reduz conexões e evita timeouts).
 
 **O que o script faz:**
 

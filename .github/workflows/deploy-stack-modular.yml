@@ -1106,49 +1106,6 @@ jobs:
             echo "   ✓ $f"
           done
 
-      - name: Limpar diretórios incorretos no servidor (PRÉ-SCP)
-        uses: appleboy/ssh-action@v1.2.2
-        with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
-          script: |
-            set -euo pipefail
-            # =================================================================
-            # CORREÇÃO CRÍTICA: Limpar ANTES do SCP (não depois)
-            # =================================================================
-            # PROBLEMA: SCP pode falhar se destino já é diretório
-            # SOLUÇÃO: Limpar diretórios incorretos ANTES de copiar (fail-safe)
-            # REF: CLAUDE.md Regra 9 (Validação contínua), Regra 16 (Idempotência)
-            # DATA: 08/01/2026
-            # =================================================================
-            echo "🧹 Limpando diretórios incorretos no servidor (PRÉ-SCP)..."
-            
-            # Lista de caminhos que DEVEM ser arquivos (não diretórios)
-            CRITICAL_PATHS=(
-              "/opt/alice/app/infra/observability/otel-collector/config.yaml"
-              "/opt/alice/app/infra/docker/Caddyfile"
-              "/opt/alice/app/infra/docker/vector.toml"
-              "/opt/alice/app/infra/observability/grafana/provisioning/datasources/datasources.yml"
-              "/opt/alice/app/infra/observability/prometheus.yml"
-            )
-            
-            REMOVED_COUNT=0
-            for path in "${CRITICAL_PATHS[@]}"; do
-              if [ -d "$path" ]; then
-                echo "   🗑️  REMOVENDO diretório incorreto: $path"
-                rm -rf "$path"
-                REMOVED_COUNT=$((REMOVED_COUNT + 1))
-              fi
-            done
-            
-            if [ $REMOVED_COUNT -gt 0 ]; then
-              echo "✅ Removidos $REMOVED_COUNT diretório(s) incorreto(s)"
-            else
-              echo "✅ Nenhum diretório incorreto encontrado (servidor limpo)"
-            fi
-
       # =======================================================================
       # CORREÇÃO ENTERPRISE (09/01/2026): Transferir scripts via TARBALL
       # =======================================================================
@@ -1208,162 +1165,105 @@ jobs:
           echo "✅ Tarball transferido com sucesso"
           echo ""
           
-          # Extrair no servidor
-          echo "📦 Extraindo scripts no servidor..."
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+          # Extrair no servidor + limpeza pré-rsync + preparação base (SSOT)
+          echo "📦 Extraindo scripts no servidor + preparação base..."
+          CLEANUP_SERVER="${{ github.event.inputs.cleanup_server }}"
+          printf '%s\n' \
+            'set -euo pipefail' \
+            '' \
+            '# =================================================================' \
+            '# Extrair scripts SSOT' \
+            '# =================================================================' \
+            'cd /tmp' \
+            'rm -rf /tmp/scripts 2>/dev/null || true' \
+            'tar xzf alice-scripts.tar.gz' \
+            'chmod +x scripts/*.sh' \
+            'echo "Scripts extraídos:"' \
+            'ls -lh scripts/*.sh' \
+            '' \
+            '# =================================================================' \
+            '# Limpeza pré-rsync (diretórios incorretos)' \
+            '# =================================================================' \
+            'echo "🧹 Limpando diretórios incorretos no servidor (PRÉ-RSYNC)..."' \
+            'CRITICAL_PATHS=(' \
+            '  "/opt/alice/app/infra/observability/otel-collector/config.yaml"' \
+            '  "/opt/alice/app/infra/docker/Caddyfile"' \
+            '  "/opt/alice/app/infra/docker/vector.toml"' \
+            '  "/opt/alice/app/infra/observability/grafana/provisioning/datasources/datasources.yml"' \
+            '  "/opt/alice/app/infra/observability/prometheus.yml"' \
+            ')' \
+            '' \
+            'REMOVED_COUNT=0' \
+            'for path in "${CRITICAL_PATHS[@]}"; do' \
+            '  if [ -d "$path" ]; then' \
+            '    echo "   🗑️  REMOVENDO diretório incorreto: $path"' \
+            '    rm -rf "$path"' \
+            '    REMOVED_COUNT=$((REMOVED_COUNT + 1))' \
+            '  fi' \
+            'done' \
+            '' \
+            'if [ $REMOVED_COUNT -gt 0 ]; then' \
+            '  echo "✅ Removidos $REMOVED_COUNT diretório(s) incorreto(s)"' \
+            'else' \
+            '  echo "✅ Nenhum diretório incorreto encontrado (servidor limpo)"' \
+            'fi' \
+            '' \
+            '# =================================================================' \
+            '# CLEANUP (opcional): Limpeza completa do servidor' \
+            '# =================================================================' \
+            'if [ "${CLEANUP_SERVER}" = "true" ]; then' \
+            '  echo "🧹 LIMPEZA COMPLETA DO SERVIDOR SOLICITADA..."' \
+            '  echo ""' \
+            '' \
+            '  if [ "$(docker ps -q | wc -l)" -gt 0 ]; then' \
+            '    echo "🛑 Parando todos os containers..."' \
+            '    docker stop $(docker ps -q) 2>/dev/null || true' \
+            '  fi' \
+            '' \
+            '  if [ "$(docker ps -aq | wc -l)" -gt 0 ]; then' \
+            '    echo "🗑️  Removendo todos os containers..."' \
+            '    docker rm -f $(docker ps -aq) 2>/dev/null || true' \
+            '  fi' \
+            '' \
+            '  if [ "$(docker volume ls -q | wc -l)" -gt 0 ]; then' \
+            '    echo "📦 Removendo todos os volumes Docker..."' \
+            '    docker volume rm $(docker volume ls -q) 2>/dev/null || true' \
+            '  fi' \
+            '' \
+            '  echo "🌐 Removendo redes customizadas..."' \
+            '  docker network rm alice-network 2>/dev/null || true' \
+            '  docker network rm erpnext-network 2>/dev/null || true' \
+            '' \
+            '  echo "🧹 Limpeza geral do Docker..."' \
+            '  docker system prune -af --volumes 2>/dev/null || true' \
+            '' \
+            '  echo "🧹 Limpando diretórios críticos..."' \
+            '  rm -rf /opt/alice/app 2>/dev/null || true' \
+            '  rm -rf /opt/alice/data 2>/dev/null || true' \
+            '  rm -rf /opt/alice/logs 2>/dev/null || true' \
+            '  rm -rf /opt/alice/uploads 2>/dev/null || true' \
+            '  rm -rf /opt/alice/backups 2>/dev/null || true' \
+            '  rm -rf /opt/alice/versions 2>/dev/null || true' \
+            '' \
+            '  echo "✅ Limpeza completa finalizada"' \
+            '  echo ""' \
+            'fi' \
+            '' \
+            '# =================================================================' \
+            '# Preparar servidor via SSOT' \
+            '# =================================================================' \
+            'echo "🚀 Preparando servidor de produção (SSOT)..."' \
+            'sudo bash /tmp/scripts/prepare-production-server.sh' \
+            'echo "✅ Servidor preparado com sucesso (SSOT)"' \
+          | ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
             "${{ env.HETZNER_USER }}@${{ env.HETZNER_HOST }}" \
-            "cd /tmp && \
-             rm -rf /tmp/scripts 2>/dev/null || true && \
-             tar xzf alice-scripts.tar.gz && \
-             chmod +x scripts/*.sh && \
-             echo 'Scripts extraídos:' && \
-             ls -lh scripts/*.sh"
+            "CLEANUP_SERVER=${CLEANUP_SERVER} bash -s"
           
           echo ""
           echo "✅ Scripts SSOT sincronizados para /tmp/scripts/"
           
           # Cleanup local
           rm -f ~/.ssh/deploy_key /tmp/alice-scripts.tar.gz
-
-      - name: Preparar servidor de produção (ANTES do SCP)
-        uses: appleboy/ssh-action@v1.2.2
-        with:
-          host: ${{ env.HETZNER_HOST }}
-          username: ${{ env.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          port: 22
-          command_timeout: 5m
-          script: |
-            set -euo pipefail
-            # =================================================================
-            # CORREÇÃO ENTERPRISE (09/01/2026): Usar scripts do tarball
-            # =================================================================
-            # Scripts foram transferidos para /tmp/scripts/ via tarball atômico
-            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 16 (Idempotência)
-            # =================================================================
-            
-            # =================================================================
-            # CLEANUP (opcional): Limpeza completa do servidor
-            # =================================================================
-            CLEANUP_SERVER="${{ github.event.inputs.cleanup_server }}"
-            if [ "$CLEANUP_SERVER" = "true" ]; then
-              echo "🧹 LIMPEZA COMPLETA DO SERVIDOR SOLICITADA..."
-              echo ""
-              
-              # Parar todos os containers
-              if [ "$(docker ps -q | wc -l)" -gt 0 ]; then
-                echo "🛑 Parando todos os containers..."
-                docker stop $(docker ps -q) 2>/dev/null || true
-              fi
-              
-              # Remover todos os containers
-              if [ "$(docker ps -aq | wc -l)" -gt 0 ]; then
-                echo "🗑️  Removendo todos os containers..."
-                docker rm -f $(docker ps -aq) 2>/dev/null || true
-              fi
-              
-              # Remover todos os volumes
-              if [ "$(docker volume ls -q | wc -l)" -gt 0 ]; then
-                echo "📦 Removendo todos os volumes Docker..."
-                docker volume rm $(docker volume ls -q) 2>/dev/null || true
-              fi
-              
-              # Remover redes customizadas
-              echo "🌐 Removendo redes customizadas..."
-              docker network rm alice-network 2>/dev/null || true
-              docker network rm erpnext-network 2>/dev/null || true
-              
-              # Limpeza Docker system
-              echo "🧹 Limpeza geral do Docker..."
-              docker system prune -af --volumes 2>/dev/null || true
-              
-              # Limpar dados
-              echo "💾 Limpando dados em /opt/alice/data..."
-              for dir in postgres redis qdrant minio caddy grafana prometheus loki clickhouse langfuse-db mariadb jaeger; do
-                rm -rf /opt/alice/data/$dir/* 2>/dev/null || true
-              done
-              
-              # Limpar logs
-              echo "📝 Limpando logs..."
-              rm -rf /opt/alice/logs/* 2>/dev/null || true
-              
-              # Limpar versões
-              echo "📋 Removendo arquivos de versão..."
-              rm -f /opt/alice/versions/*.current 2>/dev/null || true
-              rm -f /opt/alice/versions/*.previous 2>/dev/null || true
-              
-              echo ""
-              echo "✅ Limpeza completa finalizada!"
-              echo "   Containers: $(docker ps -aq | wc -l)"
-              echo "   Volumes: $(docker volume ls -q | wc -l)"
-              echo ""
-            fi
-            
-            echo "🚀 Preparando servidor de produção..."
-            echo "============================================="
-            echo ""
-            
-            # Verificar que tarball foi extraído corretamente
-            if [[ ! -d "/tmp/scripts" ]]; then
-              echo "❌ ERRO: Diretório /tmp/scripts não encontrado!"
-              echo "   O step anterior de transferência pode ter falhado."
-              exit 1
-            fi
-            
-            # Validar que TODOS os scripts necessários existem
-            echo "🔍 Validando presença de scripts SSOT..."
-            
-            REQUIRED_SCRIPTS=(
-              "/tmp/scripts/prepare-production-server.sh"
-              "/tmp/scripts/fix-production-permissions.sh"
-              "/tmp/scripts/permissions-config.sh"
-            )
-            
-            for script in "${REQUIRED_SCRIPTS[@]}"; do
-              if [[ ! -f "$script" ]]; then
-                echo "❌ ERRO: Script SSOT ausente: $script"
-                exit 1
-              fi
-              echo "   ✅ Encontrado: $(basename $script)"
-            done
-            
-            echo ""
-            echo "✅ Todos os scripts SSOT presentes"
-            echo ""
-            
-            # Executar script principal do diretório correto
-            cd /tmp/scripts
-            
-            echo "📝 Executando prepare-production-server.sh..."
-            echo ""
-            
-            # =================================================================
-            # CORREÇÃO (09/01/2026): Capturar exit code explicitamente
-            # =================================================================
-            # PROBLEMA: Com set -euo pipefail, se o comando falhar o script
-            #           sai imediatamente ANTES de EXIT_CODE=$? executar.
-            #           Isso tornava o bloco else código morto (unreachable).
-            # SOLUÇÃO: Desativar set -e temporariamente para capturar o exit
-            #          code e prover mensagens de log claras para diagnóstico.
-            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 9 (Validação)
-            # =================================================================
-            set +e  # Desativar exit on error temporariamente
-            sudo bash prepare-production-server.sh
-            EXIT_CODE=$?
-            set -e  # Reativar exit on error
-            
-            if [[ $EXIT_CODE -eq 0 ]]; then
-              echo ""
-              echo "============================================="
-              echo "✅ Servidor preparado com sucesso (ANTES do SCP)"
-              echo "============================================="
-            else
-              echo ""
-              echo "============================================="
-              echo "❌ Preparação do servidor FALHOU (exit: $EXIT_CODE)"
-              echo "============================================="
-              exit $EXIT_CODE
-            fi
 
       # =======================================================================
       # CORREÇÃO 09/01/2026: appleboy/scp-action@v0.1.7 tem bug conhecido
