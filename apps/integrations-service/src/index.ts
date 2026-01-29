@@ -4084,13 +4084,9 @@ function resolveMarketTypeParam(params: {
   return params.marketType ?? params.type;
 }
 
-function resolveSymbolFromQueryOrRespond(req: Request, res: Response): string | undefined {
+function resolveSymbolFromQuery(req: Request): string | undefined {
   const symbol = typeof req.query.symbol === 'string' ? req.query.symbol.trim() : undefined;
-  if (!symbol) {
-    res.status(400).json({ error: 'Símbolo é obrigatório para esta operação.' });
-    return undefined;
-  }
-  return symbol;
+  return symbol || undefined;
 }
 
 // GET /api/integrations/trading/status - Status do serviço de trading
@@ -4449,7 +4445,12 @@ app.get('/api/integrations/trading/symbols', requirePermission('integrations:tra
   }
 });
 
-async function handleTradingMarketRequest(req: Request, res: Response, symbol: string): Promise<void> {
+async function handleTradingMarketRequest(
+  req: Request,
+  res: Response,
+  symbol: string | undefined,
+  required = true
+): Promise<void> {
   try {
     const authContext = extractAuthContext(req);
     if (!authContext?.tenantId || !authContext?.userId) {
@@ -4486,7 +4487,7 @@ async function handleTradingMarketRequest(req: Request, res: Response, symbol: s
       res,
       tradingAuth,
       symbol,
-      { required: true, marketType, marginMode }
+      { required, marketType, marginMode }
     );
     if (!resolvedSymbol) return;
 
@@ -4506,14 +4507,13 @@ async function handleTradingMarketRequest(req: Request, res: Response, symbol: s
 
 // GET /api/integrations/trading/market/:symbol - Dados de mercado
 app.get('/api/integrations/trading/market/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
-  await handleTradingMarketRequest(req, res, req.params.symbol);
+  await handleTradingMarketRequest(req, res, req.params.symbol, true);
 });
 
 // GET /api/integrations/trading/market?symbol= - Compatibilidade com frontend legado
 app.get('/api/integrations/trading/market', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
-  const symbol = resolveSymbolFromQueryOrRespond(req, res);
-  if (!symbol) return;
-  await handleTradingMarketRequest(req, res, symbol);
+  const symbol = resolveSymbolFromQuery(req);
+  await handleTradingMarketRequest(req, res, symbol, false);
 });
 
 // GET /api/integrations/trading/account - Visão geral da conta KuCoin
@@ -5402,7 +5402,12 @@ app.delete('/api/integrations/trading/stop-orders/:id', requirePermission('integ
 // Klines, Order Book, Funding Rate, Mark Price, Trade History
 // ============================================================================
 
-async function handleTradingKlinesRequest(req: Request, res: Response, symbol: string): Promise<void> {
+async function handleTradingKlinesRequest(
+  req: Request,
+  res: Response,
+  symbol: string | undefined,
+  required = true
+): Promise<void> {
   try {
     const authContext = extractAuthContext(req);
     if (!authContext?.tenantId || !authContext?.userId) {
@@ -5481,7 +5486,7 @@ async function handleTradingKlinesRequest(req: Request, res: Response, symbol: s
       }
     }
 
-    const resolvedSymbol = await resolveTradingSymbolOrRespond(res, tradingAuth, symbol, { required: true, marketType, marginMode });
+    const resolvedSymbol = await resolveTradingSymbolOrRespond(res, tradingAuth, symbol, { required, marketType, marginMode });
     if (!resolvedSymbol) return;
 
     const klines = marketType === 'spot' || marketType === 'margin'
@@ -5510,17 +5515,21 @@ async function handleTradingKlinesRequest(req: Request, res: Response, symbol: s
 
 // GET /api/integrations/trading/klines/:symbol - Dados de candles
 app.get('/api/integrations/trading/klines/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
-  await handleTradingKlinesRequest(req, res, req.params.symbol);
+  await handleTradingKlinesRequest(req, res, req.params.symbol, true);
 });
 
 // GET /api/integrations/trading/klines?symbol= - Compatibilidade com frontend legado
 app.get('/api/integrations/trading/klines', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
-  const symbol = resolveSymbolFromQueryOrRespond(req, res);
-  if (!symbol) return;
-  await handleTradingKlinesRequest(req, res, symbol);
+  const symbol = resolveSymbolFromQuery(req);
+  await handleTradingKlinesRequest(req, res, symbol, false);
 });
 
-async function handleTradingOrderBookRequest(req: Request, res: Response, symbol: string): Promise<void> {
+async function handleTradingOrderBookRequest(
+  req: Request,
+  res: Response,
+  symbol: string | undefined,
+  required = true
+): Promise<void> {
   try {
     const authContext = extractAuthContext(req);
     if (!authContext?.tenantId || !authContext?.userId) {
@@ -5571,7 +5580,7 @@ async function handleTradingOrderBookRequest(req: Request, res: Response, symbol
       }
     }
 
-    const resolvedSymbol = await resolveTradingSymbolOrRespond(res, tradingAuth, symbol, { required: true, marketType, marginMode });
+    const resolvedSymbol = await resolveTradingSymbolOrRespond(res, tradingAuth, symbol, { required, marketType, marginMode });
     if (!resolvedSymbol) return;
 
     const orderbook = marketType === 'spot' || marketType === 'margin'
@@ -5594,14 +5603,13 @@ async function handleTradingOrderBookRequest(req: Request, res: Response, symbol
 
 // GET /api/integrations/trading/orderbook/:symbol - Order Book
 app.get('/api/integrations/trading/orderbook/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
-  await handleTradingOrderBookRequest(req, res, req.params.symbol);
+  await handleTradingOrderBookRequest(req, res, req.params.symbol, true);
 });
 
 // GET /api/integrations/trading/orderbook?symbol= - Compatibilidade com frontend legado
 app.get('/api/integrations/trading/orderbook', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
-  const symbol = resolveSymbolFromQueryOrRespond(req, res);
-  if (!symbol) return;
-  await handleTradingOrderBookRequest(req, res, symbol);
+  const symbol = resolveSymbolFromQuery(req);
+  await handleTradingOrderBookRequest(req, res, symbol, false);
 });
 
 // GET /api/integrations/trading/funding-rate/:symbol - Funding Rate
