@@ -2906,7 +2906,7 @@ export default function Trading() {
 
       {/* Risk Config Dialog */}
       <Dialog open={showRiskConfigDialog} onOpenChange={setShowRiskConfigDialog}>
-        <DialogContent className="sm:max-w-[600px] max-h-[85vh] overflow-hidden flex flex-col min-h-0">
+        <DialogContent className="sm:max-w-[600px] h-[85vh] max-h-[85vh] overflow-hidden flex flex-col min-h-0">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Shield className="h-5 w-5" />
@@ -2917,7 +2917,7 @@ export default function Trading() {
             </DialogDescription>
           </DialogHeader>
 
-          <ScrollArea className="flex-1 min-h-0 -mx-1 px-1">
+          <ScrollArea className="flex-1 min-h-0 h-full -mx-1 px-1">
             <div className="space-y-6 py-4">
             {/* Trading Controls */}
             <div className="space-y-4">
