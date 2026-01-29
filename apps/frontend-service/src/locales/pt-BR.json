@@ -198,6 +198,31 @@
       "resolvedByAI": "Resolvidas por IA",
       "resolvedByHuman": "Resolvidas por Humano",
       "avgResponseTime": "Tempo Médio Resposta"
+    },
+    "imageGen": {
+      "title": "Análise de Imagens",
+      "description": "OpenAI Vision (gpt-4.1) + OpenAI Images (gpt-image-1)",
+      "totalGenerated": "Total Geradas",
+      "approvalRate": "Taxa Aprovação",
+      "avgRating": "Rating Médio",
+      "inTraining": "Em Training"
+    },
+    "sla": {
+      "title": "SLA Monitoring",
+      "description": "Acordos de nível de serviço",
+      "onTrack": "No Prazo",
+      "atRisk": "Em Risco",
+      "breached": "Violado",
+      "firstResponse": "1ª Resposta",
+      "resolution": "Resolução",
+      "noData": "Sem dados de SLA"
+    },
+    "circuitBreaker": {
+      "title": "Circuit Breakers",
+      "description": "Proteção contra falhas em cascata",
+      "closed": "Fechado",
+      "open": "Aberto",
+      "halfOpen": "Semi-Aberto"
     }
   },
   "takeover": {
@@ -250,6 +275,13 @@
     "newConversation": "Nova Conversa",
     "welcome": "Bem-vindo a Alice",
     "welcomeMessage": "Sou sua assistente de IA enterprise. Como posso ajudar?",
+    "filters": {
+      "activeLabel": "Filtro ativo",
+      "dateRange": "Período {{from}} até {{to}}",
+      "fromOnly": "A partir de {{from}}",
+      "toOnly": "Até {{to}}",
+      "clear": "Limpar filtro"
+    },
     "placeholder": "Digite sua mensagem...",
     "placeholderWithMedia": "Adicione uma mensagem (opcional)...",
     "typeMessage": "Digite sua mensagem...",
@@ -351,6 +383,7 @@
       "desc": "A conversa será enviada como dado pendente para aprovação no Training.",
       "namespace": "Namespace",
       "selectNamespace": "Selecione um namespace",
+      "namespaceOptional": "Se vazio, usa o namespace da conversa.",
       "noticeTitle": "Aprovação obrigatória",
       "noticeDesc": "Os dados enviados precisam ser aprovados antes de iniciar o treinamento.",
       "confirm": "Enviar agora",

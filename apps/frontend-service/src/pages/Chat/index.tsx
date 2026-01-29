@@ -21,7 +21,7 @@
  * @date 12 de Janeiro de 2026
  */
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { useParams, useLocation } from 'wouter';
 import { useTranslation } from 'react-i18next';
@@ -390,6 +390,8 @@ interface ConversationsListProps {
   onDeleteConversation: (id: string) => void;
   onDeleteSelected: () => void;
   onDeleteAll: () => void;
+  filterLabel?: string;
+  onClearFilter?: () => void;
   onCloseSidebar?: () => void;
 }
 
@@ -409,6 +411,8 @@ function ConversationsList({
   onDeleteConversation,
   onDeleteSelected,
   onDeleteAll,
+  filterLabel,
+  onClearFilter,
   onCloseSidebar,
 }: ConversationsListProps) {
   const { t } = useTranslation();
@@ -469,6 +473,21 @@ function ConversationsList({
             Excluir selecionadas ({selectedIds.size})
           </Button>
         )}
+        {filterLabel && onClearFilter && (
+          <div className="flex items-center justify-between gap-2 rounded-md border p-2 text-xs">
+            <span className="text-muted-foreground">
+              {t('chat.filters.activeLabel')}: {filterLabel}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onClearFilter}
+              data-testid="button-clear-conversation-filter"
+            >
+              {t('chat.filters.clear')}
+            </Button>
+          </div>
+        )}
       </div>
       
       <ScrollArea className="flex-1 p-2">
@@ -524,7 +543,7 @@ export default function Chat() {
   const { t } = useTranslation();
   const { user: currentUser } = useAuth();
   const { conversationId } = useParams<{ conversationId?: string }>();
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
   const queryClientRef = useQueryClient();
   const { toast } = useToast();
   const isMobile = useIsMobile();
@@ -550,6 +569,38 @@ export default function Chat() {
   const [isRecording, setIsRecording] = useState(false);
   const [isRecordingStarting, setIsRecordingStarting] = useState(false);
   const [isTranscribingRecording, setIsTranscribingRecording] = useState(false);
+
+  const conversationFilter = useMemo(() => {
+    const search = location.includes('?') ? location.split('?')[1] ?? '' : '';
+    const params = new URLSearchParams(search);
+    const from = params.get('from') || undefined;
+    const to = params.get('to') || undefined;
+    return {
+      from,
+      to,
+      isActive: Boolean(from || to),
+    };
+  }, [location]);
+
+  const conversationFilterLabel = useMemo(() => {
+    if (!conversationFilter.isActive) {
+      return undefined;
+    }
+    if (conversationFilter.from && conversationFilter.to) {
+      return t('chat.filters.dateRange', {
+        from: conversationFilter.from,
+        to: conversationFilter.to,
+      });
+    }
+    if (conversationFilter.from) {
+      return t('chat.filters.fromOnly', { from: conversationFilter.from });
+    }
+    return t('chat.filters.toOnly', { to: conversationFilter.to });
+  }, [conversationFilter, t]);
+
+  const clearConversationFilter = useCallback(() => {
+    navigate('/chat');
+  }, [navigate]);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -837,9 +888,15 @@ export default function Chat() {
       params.set('cursorUpdatedAt', pageParam.updatedAt);
       params.set('cursorId', pageParam.id);
     }
+    if (conversationFilter.from) {
+      params.set('from', conversationFilter.from);
+    }
+    if (conversationFilter.to) {
+      params.set('to', conversationFilter.to);
+    }
     const res = await apiRequest('GET', `/api/chat/conversations?${params.toString()}`);
     return res.json() as Promise<ConversationsResponse>;
-  }, []);
+  }, [conversationFilter]);
 
   const {
     data: conversationsData,
@@ -848,7 +905,7 @@ export default function Chat() {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['/api/chat/conversations'],
+    queryKey: ['/api/chat/conversations', conversationFilter.from ?? null, conversationFilter.to ?? null],
     queryFn: fetchConversations,
     initialPageParam: undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
@@ -1615,12 +1672,8 @@ export default function Chat() {
       if (!conversationId) {
         throw new Error('Conversa não identificada');
       }
-      if (!trainingNamespaceId) {
-        throw new Error('Namespace obrigatório');
-      }
-      const res = await apiRequest('POST', `/api/chat/conversations/${conversationId}/training/collect`, {
-        namespaceId: trainingNamespaceId,
-      });
+      const payload = trainingNamespaceId ? { namespaceId: trainingNamespaceId } : {};
+      const res = await apiRequest('POST', `/api/chat/conversations/${conversationId}/training/collect`, payload);
       return res.json() as Promise<{ success: boolean; messages: number }>;
     },
     onSuccess: () => {
@@ -1842,6 +1895,8 @@ export default function Chat() {
                 onDeleteConversation={(id) => setDeleteTargetId(id)}
                 onDeleteSelected={() => setDeleteSelectedOpen(true)}
                 onDeleteAll={() => setDeleteAllOpen(true)}
+                filterLabel={conversationFilterLabel}
+                onClearFilter={conversationFilter.isActive ? clearConversationFilter : undefined}
                 onCloseSidebar={handleCloseConversationsSidebar}
               />
             </div>
@@ -1876,6 +1931,8 @@ export default function Chat() {
                 onDeleteConversation={(id) => setDeleteTargetId(id)}
                 onDeleteSelected={() => setDeleteSelectedOpen(true)}
                 onDeleteAll={() => setDeleteAllOpen(true)}
+                filterLabel={conversationFilterLabel}
+                onClearFilter={conversationFilter.isActive ? clearConversationFilter : undefined}
                 onCloseSidebar={handleCloseConversationsSidebar}
               />
             </motion.div>
@@ -2112,6 +2169,9 @@ export default function Chat() {
                     ))}
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground">
+                  {t('chat.training.namespaceOptional')}
+                </p>
               </div>
               <Alert>
                 <Info className="h-4 w-4" />
@@ -2126,7 +2186,7 @@ export default function Chat() {
               </Button>
               <Button
                 onClick={() => sendConversationToTraining.mutate()}
-                disabled={!trainingNamespaceId || sendConversationToTraining.isPending}
+                disabled={sendConversationToTraining.isPending}
               >
                 {sendConversationToTraining.isPending ? (
                   <>

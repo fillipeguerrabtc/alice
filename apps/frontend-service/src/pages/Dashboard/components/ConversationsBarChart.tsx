@@ -22,12 +22,23 @@ import {
 import { itemVariants } from './types';
 
 interface ConversationsBarChartProps {
-  data: { name: string; ai: number; human: number }[];
+  data: { date: string; name: string; ai: number; human: number }[];
   isLoading: boolean;
+  onSelectDate?: (date: string) => void;
 }
 
-export function ConversationsBarChart({ data, isLoading }: ConversationsBarChartProps) {
+export function ConversationsBarChart({ data, isLoading, onSelectDate }: ConversationsBarChartProps) {
   const { t } = useTranslation();
+  const handleBarClick = (payload: unknown) => {
+    if (!onSelectDate || !payload || typeof payload !== 'object') {
+      return;
+    }
+    const dataPayload = payload as { payload?: { date?: string } };
+    const date = dataPayload.payload?.date;
+    if (date) {
+      onSelectDate(date);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -79,8 +90,22 @@ export function ConversationsBarChart({ data, isLoading }: ConversationsBarChart
                   <Legend 
                     formatter={(value: string) => <span className="text-xs">{value}</span>}
                   />
-                  <Bar dataKey="ai" name={t('dashboard.conversations.ai')} fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="human" name={t('dashboard.conversations.human')} fill="#10b981" radius={[4, 4, 0, 0]} />
+                  <Bar
+                    dataKey="ai"
+                    name={t('dashboard.conversations.ai')}
+                    fill="#3b82f6"
+                    radius={[4, 4, 0, 0]}
+                    className="cursor-pointer"
+                    onClick={handleBarClick}
+                  />
+                  <Bar
+                    dataKey="human"
+                    name={t('dashboard.conversations.human')}
+                    fill="#10b981"
+                    radius={[4, 4, 0, 0]}
+                    className="cursor-pointer"
+                    onClick={handleBarClick}
+                  />
                 </BarChart>
               </ResponsiveContainer>
             ) : (

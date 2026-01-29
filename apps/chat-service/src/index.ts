@@ -69,7 +69,7 @@ import {
 } from '@alice/shared-utils';
 import type { AuthContext } from '@alice/shared-utils';
 import type { Role } from '@alice/shared-utils';
-import { eq, desc, inArray, and, or, lt, sql, not, asc } from '@alice/database';
+import { eq, desc, inArray, and, or, lt, gte, lte, sql, not, asc } from '@alice/database';
 import { z } from 'zod';
 import { ProxyAgent } from 'undici';
 import { createClient } from 'redis';
@@ -3503,6 +3503,13 @@ function estimateTokensFromMessages(messages: LLMMessage[]): number {
   return messages.reduce((sum, msg) => sum + estimateTokensFromText(msg.content || ''), 0);
 }
 
+function calculateTokensUsed(params: { promptMessages?: LLMMessage[]; responseText?: string }): number | null {
+  const promptTokens = params.promptMessages ? estimateTokensFromMessages(params.promptMessages) : 0;
+  const responseTokens = params.responseText ? estimateTokensFromText(params.responseText) : 0;
+  const totalTokens = promptTokens + responseTokens;
+  return totalTokens > 0 ? totalTokens : null;
+}
+
 function recordLlmTokenUsage(params: { model: string; promptTokens: number; generatedTokens?: number }): void {
   const { model, promptTokens, generatedTokens } = params;
   if (promptTokens > 0) {
@@ -5796,7 +5803,19 @@ app.get('/ready', async (_req: Request, res: Response) => {
 app.get('/api/chat/stats', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:stats:read'), async (req: Request, res: Response) => {
   try {
     // SEGURANÇA: Usar req.tenantId populado pelo middleware requireAuth/requireSameTenant
-    const tenantId = req.tenantId;
+    const tenantQueryResult = tenantScopeQuerySchema.safeParse(req.query);
+    if (!tenantQueryResult.success) {
+      return res.status(400).json({ error: 'Parâmetros inválidos', details: tenantQueryResult.error.format() });
+    }
+    const userRole = req.user?.role as Role | undefined;
+    const tenantId = resolveTenantScope({
+      requestTenantId: req.tenantId,
+      role: userRole,
+      queryTenantId: tenantQueryResult.data.tenantId,
+    });
+    if (!tenantId && userRole !== 'super_admin') {
+      return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
+    }
     const now = new Date();
     const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const twoWeeksAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
@@ -5805,20 +5824,22 @@ app.get('/api/chat/stats', requireAuth(), requireSameTenant(getTenantIdFromReque
     const allConversations = await db.query.conversations.findMany({
       with: { agent: { with: { namespace: true } } },
     });
-    const tenantConversations = allConversations.filter(c => 
-      c.agent?.namespace?.tenantId === tenantId
-    );
+    const tenantConversations = tenantId
+      ? allConversations.filter(c =>
+          c.tenantId === tenantId || c.agent?.namespace?.tenantId === tenantId
+        )
+      : allConversations;
     
     const allDocuments = await db.query.documents.findMany({
       with: { namespace: true },
     });
-    const tenantDocuments = allDocuments.filter(d => 
-      d.namespace?.tenantId === tenantId
-    );
+    const tenantDocuments = tenantId
+      ? allDocuments.filter(d => d.namespace?.tenantId === tenantId)
+      : allDocuments;
     
     // NOTA: trainingData tem tenantId diretamente (não precisa de join com namespace)
     const allTraining = await db.query.trainingData.findMany();
-    const tenantTraining = allTraining.filter(t => t.tenantId === tenantId);
+    const tenantTraining = tenantId ? allTraining.filter(t => t.tenantId === tenantId) : allTraining;
     
     // Obter mensagens das conversas do tenant
     const conversationIds = tenantConversations.map(c => c.id);
@@ -5883,7 +5904,19 @@ app.get('/api/chat/stats', requireAuth(), requireSameTenant(getTenantIdFromReque
 app.get('/api/chat/usage', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:stats:read'), async (req: Request, res: Response) => {
   try {
     // SEGURANÇA: Usar req.tenantId populado pelo middleware requireAuth/requireSameTenant
-    const tenantId = req.tenantId;
+    const tenantQueryResult = tenantScopeQuerySchema.safeParse(req.query);
+    if (!tenantQueryResult.success) {
+      return res.status(400).json({ error: 'Parâmetros inválidos', details: tenantQueryResult.error.format() });
+    }
+    const userRole = req.user?.role as Role | undefined;
+    const tenantId = resolveTenantScope({
+      requestTenantId: req.tenantId,
+      role: userRole,
+      queryTenantId: tenantQueryResult.data.tenantId,
+    });
+    if (!tenantId && userRole !== 'super_admin') {
+      return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
+    }
     const today = new Date();
     const usageData = [];
 
@@ -5891,9 +5924,11 @@ app.get('/api/chat/usage', requireAuth(), requireSameTenant(getTenantIdFromReque
     const allConversationsRaw = await db.query.conversations.findMany({
       with: { agent: { with: { namespace: true } } },
     });
-    const tenantConversations = allConversationsRaw.filter(c => 
-      c.agent?.namespace?.tenantId === tenantId
-    );
+    const tenantConversations = tenantId
+      ? allConversationsRaw.filter(c =>
+          c.tenantId === tenantId || c.agent?.namespace?.tenantId === tenantId
+        )
+      : allConversationsRaw;
     
     // Obter mensagens das conversas do tenant
     const conversationIds = tenantConversations.map(c => c.id);
@@ -5933,11 +5968,33 @@ app.get('/api/chat/usage', requireAuth(), requireSameTenant(getTenantIdFromReque
   }
 });
 
+const conversationListDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Data deve estar no formato YYYY-MM-DD');
+
 const conversationListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
   cursorUpdatedAt: z.string().optional(),
   cursorId: z.string().uuid().optional(),
+  from: conversationListDateSchema.optional(),
+  to: conversationListDateSchema.optional(),
+  tenantId: z.string().uuid().optional(),
 });
+
+const tenantScopeQuerySchema = z.object({
+  tenantId: z.string().uuid().optional(),
+});
+
+function resolveTenantScope(params: {
+  requestTenantId?: string;
+  role?: Role;
+  queryTenantId?: string;
+}): string | undefined {
+  if (params.role === 'super_admin') {
+    return params.queryTenantId ?? undefined;
+  }
+  return params.requestTenantId;
+}
 
 const approvalPolicySchema = z.enum(['always_confirm', 'confirm_risky', 'never_confirm']);
 const approvalPolicyUpdateSchema = z.object({
@@ -5962,6 +6019,7 @@ app.get('/api/chat/conversations', requireAuth(), requireSameTenant(getTenantIdF
   }
 
   const userId = auth.userId;
+  const userRole = auth.role as Role | undefined;
 
   try {
     const queryResult = conversationListQuerySchema.safeParse(req.query);
@@ -5973,14 +6031,38 @@ app.get('/api/chat/conversations', requireAuth(), requireSameTenant(getTenantIdF
     const cursorUpdatedAtRaw = queryResult.data.cursorUpdatedAt;
     const cursorId = queryResult.data.cursorId;
     const cursorUpdatedAt = cursorUpdatedAtRaw ? new Date(cursorUpdatedAtRaw) : null;
+    const fromRaw = queryResult.data.from;
+    const toRaw = queryResult.data.to;
+    const fromDate = fromRaw ? new Date(`${fromRaw}T00:00:00.000Z`) : null;
+    const toDate = toRaw ? new Date(`${toRaw}T23:59:59.999Z`) : null;
+    const scopedTenantId = resolveTenantScope({
+      requestTenantId: tenantId,
+      role: userRole,
+      queryTenantId: queryResult.data.tenantId,
+    });
 
     if (cursorUpdatedAtRaw && Number.isNaN(cursorUpdatedAt?.getTime())) {
       return res.status(400).json({ error: 'cursorUpdatedAt inválido' });
     }
+    if (fromDate && Number.isNaN(fromDate.getTime())) {
+      return res.status(400).json({ error: 'from inválido' });
+    }
+    if (toDate && Number.isNaN(toDate.getTime())) {
+      return res.status(400).json({ error: 'to inválido' });
+    }
+    if (fromDate && toDate && fromDate.getTime() > toDate.getTime()) {
+      return res.status(400).json({ error: 'Intervalo inválido: from maior que to' });
+    }
+    if (!scopedTenantId && userRole !== 'super_admin') {
+      return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
+    }
 
+    const canViewAllUsers = userRole === 'super_admin' || userRole === 'admin' || userRole === 'manager';
     const baseFilters = [
-      eq(schema.conversations.userId, userId),
-      tenantId ? eq(schema.conversations.tenantId, tenantId) : undefined,
+      canViewAllUsers ? undefined : eq(schema.conversations.userId, userId),
+      scopedTenantId ? eq(schema.conversations.tenantId, scopedTenantId) : undefined,
+      fromDate ? gte(schema.conversations.criadoEm, fromDate) : undefined,
+      toDate ? lte(schema.conversations.criadoEm, toDate) : undefined,
       not(eq(schema.conversations.status, 'deleted')),
     ].filter(Boolean);
 
@@ -6273,13 +6355,35 @@ app.get('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenant
     return res.status(400).json({ error: 'ID de conversa inválido', details: paramsResult.error.format() });
   }
   const { id } = paramsResult.data;
-  const tenantId = req.tenantId;
+  const auth = req.user;
+  const userRole = auth?.role as Role | undefined;
+  const requestTenantId = req.tenantId;
 
-  if (!tenantId) {
+  if (!auth?.userId || !userRole) {
     return res.status(401).json({ error: 'Autenticação necessária' });
   }
 
   try {
+    const conversation = await db.query.conversations.findFirst({
+      where: eq(schema.conversations.id, id),
+      columns: {
+        id: true,
+        tenantId: true,
+      },
+    });
+
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversa não encontrada' });
+    }
+
+    const effectiveTenantId = conversation.tenantId ?? requestTenantId;
+    if (!effectiveTenantId) {
+      return res.status(403).json({ error: 'Acesso negado: conversa sem tenant associado' });
+    }
+    if (userRole !== 'super_admin' && effectiveTenantId !== requestTenantId) {
+      return res.status(403).json({ error: 'Acesso negado: conversa de outro tenant' });
+    }
+
     const messages = await db.query.messages.findMany({
       where: eq(schema.messages.conversationId, id),
       orderBy: [schema.messages.criadoEm],
@@ -6316,7 +6420,7 @@ app.get('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenant
     const generatedImages = uniqueGeneratedImageIds.length > 0
       ? await db.query.generatedImages.findMany({
           where: and(
-            eq(schema.generatedImages.tenantId, tenantId),
+            eq(schema.generatedImages.tenantId, effectiveTenantId),
             inArray(schema.generatedImages.id, uniqueGeneratedImageIds)
           ),
         })
@@ -6365,10 +6469,10 @@ app.post('/api/chat/conversations/:id/training/collect', requireAuth(), requireS
     return res.status(400).json({ error: 'Input inválido', details: bodyResult.error.format() });
   }
 
-  const tenantId = req.tenantId;
+  const requestTenantId = req.tenantId;
   const userId = req.user?.userId;
   const userRole = req.user?.role as Role | undefined;
-  if (!tenantId || !userId || !userRole) {
+  if (!userId || !userRole) {
     return res.status(401).json({ error: 'Autenticação necessária' });
   }
 
@@ -6382,7 +6486,15 @@ app.post('/api/chat/conversations/:id/training/collect', requireAuth(), requireS
       with: { agent: true },
     });
 
-    if (!conversation || conversation.tenantId !== tenantId) {
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversa não encontrada' });
+    }
+
+    const effectiveTenantId = conversation.tenantId ?? requestTenantId;
+    if (!effectiveTenantId) {
+      return res.status(403).json({ error: 'Acesso negado: conversa sem tenant associado' });
+    }
+    if (userRole !== 'super_admin' && conversation.tenantId !== requestTenantId) {
       return res.status(404).json({ error: 'Conversa não encontrada' });
     }
 
@@ -6394,7 +6506,7 @@ app.post('/api/chat/conversations/:id/training/collect', requireAuth(), requireS
     const namespace = await db.query.namespaces.findFirst({
       where: eq(schema.namespaces.id, namespaceId),
     });
-    if (!namespace || namespace.tenantId !== tenantId) {
+    if (!namespace || namespace.tenantId !== effectiveTenantId) {
       return res.status(403).json({ error: 'Namespace inválido para o tenant' });
     }
 
@@ -6421,7 +6533,7 @@ app.post('/api/chat/conversations/:id/training/collect', requireAuth(), requireS
     }
 
     await collectTrainingSample({
-      tenantId,
+      tenantId: effectiveTenantId,
       namespaceId,
       conversationId: id,
       source: 'chat-curated',
@@ -6650,6 +6762,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
     const llmLatency = Date.now() - llmStartTime;
     const totalLatency = Date.now() - ragStartTime;
 
+    const tokensUsed = calculateTokensUsed({ promptMessages: llmMessages, responseText: response as string });
     const [assistantMessage] = await db.insert(schema.messages).values({
       conversationId: id,
       agentId: conversation.agentId,
@@ -6657,6 +6770,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       tipo: 'text',
       isFromUser: false,
       latenciaMs: totalLatency,
+      tokensUsados: tokensUsed ?? undefined,
     }).returning();
 
     await db.update(schema.conversations)
@@ -7327,12 +7441,14 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                   message: 'Persistindo resposta',
                   correlationId: conversationId ?? undefined,
                 });
+                const tokensUsed = calculateTokensUsed({ promptMessages: mediaMessages, responseText: assistantResponse });
                 const [assistantMessage] = await db.insert(schema.messages).values({
                   conversationId,
                   agentId: conversation?.agentId,
                   conteudo: assistantResponse,
                   tipo: 'text',
                   isFromUser: false,
+                  tokensUsados: tokensUsed ?? undefined,
                 }).returning();
 
                 await db.update(schema.conversations)
@@ -10066,12 +10182,14 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                 message: 'Persistindo resposta',
                 correlationId: conversationId ?? undefined,
               });
+              const tokensUsed = calculateTokensUsed({ promptMessages: llmMessages, responseText: assistantResponse });
               const [assistantMessage] = await db.insert(schema.messages).values({
                 conversationId,
                 agentId: conversation?.agentId,
                 conteudo: assistantResponse,
                 tipo: 'text',
                 isFromUser: false,
+                tokensUsados: tokensUsed ?? undefined,
               }).returning();
 
               await db.update(schema.conversations)
@@ -11680,6 +11798,7 @@ wss.on('connection', (ws, req) => {
               const llmLatency = Date.now() - llmStartTime;
               const totalLatency = Date.now() - ragStartTime;
               
+              const tokensUsed = calculateTokensUsed({ promptMessages: llmMessages, responseText });
               const inserted = await db.insert(schema.messages).values({
                 conversationId,
                 agentId: conversation?.agentId,
@@ -11687,6 +11806,7 @@ wss.on('connection', (ws, req) => {
                 tipo: 'text',
                 isFromUser: false,
                 latenciaMs: totalLatency,
+                tokensUsados: tokensUsed ?? undefined,
               }).returning();
               
               // BUG FIX 25/12/2025: Verificação defensiva - .returning() deve retornar pelo menos um elemento
@@ -12151,6 +12271,7 @@ wss.on('connection', (ws, req) => {
               // Salvar resposta do assistente APÓS o stream completo
               const llmLatency = Date.now() - llmStartTime;
               
+              const tokensUsed = calculateTokensUsed({ promptMessages: llmMessages, responseText });
               const inserted = await db.insert(schema.messages).values({
                 conversationId: mediaMessage.conversationId,
                 agentId: conversation.agentId,
@@ -12158,6 +12279,7 @@ wss.on('connection', (ws, req) => {
                 tipo: 'text',
                 isFromUser: false,
                 latenciaMs: llmLatency,
+                tokensUsados: tokensUsed ?? undefined,
               }).returning();
               
               // BUG FIX 25/12/2025: Verificação defensiva - .returning() deve retornar pelo menos um elemento
@@ -13330,8 +13452,17 @@ app.get('/api/chat/circuit-breakers', requireAuth(), requireSameTenant(getTenant
 });
 
 app.get('/api/chat/conversations/weekly', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:stats:read'), async (req: Request, res: Response) => {
-  const tenantId = req.tenantId;
-  if (!tenantId) {
+  const tenantQueryResult = tenantScopeQuerySchema.safeParse(req.query);
+  if (!tenantQueryResult.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: tenantQueryResult.error.format() });
+  }
+  const userRole = req.user?.role as Role | undefined;
+  const tenantId = resolveTenantScope({
+    requestTenantId: req.tenantId,
+    role: userRole,
+    queryTenantId: tenantQueryResult.data.tenantId,
+  });
+  if (!tenantId && userRole !== 'super_admin') {
     logger.warn({ userId: req.user?.userId }, 'Tentativa de acesso a conversations/weekly sem tenantId');
     return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
   }
@@ -13342,16 +13473,18 @@ app.get('/api/chat/conversations/weekly', requireAuth(), requireSameTenant(getTe
     const startDate = new Date(today);
     startDate.setDate(startDate.getDate() - (WEEKLY_LOOKBACK_DAYS - 1));
 
+    const weeklyFilters = [
+      tenantId ? eq(schema.conversations.tenantId, tenantId) : undefined,
+      sql`${schema.conversations.criadoEm} >= ${startDate}`,
+    ].filter(Boolean);
+
     const conversations = await db
       .select({
         id: schema.conversations.id,
         criadoEm: schema.conversations.criadoEm,
       })
       .from(schema.conversations)
-      .where(and(
-        eq(schema.conversations.tenantId, tenantId),
-        sql`${schema.conversations.criadoEm} >= ${startDate}`
-      ));
+      .where(and(...weeklyFilters));
 
     const conversationIds = conversations.map((conversation) => conversation.id);
     const states = conversationIds.length > 0
@@ -13367,12 +13500,13 @@ app.get('/api/chat/conversations/weekly', requireAuth(), requireSameTenant(getTe
 
     const stateMap = new Map(states.map((state) => [state.conversationId, state]));
 
-    const dailyBuckets = new Map<string, { name: string; ai: number; human: number }>();
+    const dailyBuckets = new Map<string, { date: string; name: string; ai: number; human: number }>();
     for (let i = 0; i < WEEKLY_LOOKBACK_DAYS; i += 1) {
       const current = new Date(startDate);
       current.setDate(startDate.getDate() + i);
       const key = formatDateKey(current);
       dailyBuckets.set(key, {
+        date: key,
         name: getWeekdayLabel(current),
         ai: 0,
         human: 0,

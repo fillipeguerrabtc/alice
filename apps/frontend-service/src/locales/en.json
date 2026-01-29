@@ -250,6 +250,13 @@
     "newConversation": "New Conversation",
     "welcome": "Welcome to Alice",
     "welcomeMessage": "I am your enterprise AI assistant. How can I help you?",
+    "filters": {
+      "activeLabel": "Active filter",
+      "dateRange": "Period {{from}} to {{to}}",
+      "fromOnly": "From {{from}}",
+      "toOnly": "Until {{to}}",
+      "clear": "Clear filter"
+    },
     "placeholder": "Type your message...",
     "placeholderWithMedia": "Add a message (optional)...",
     "typeMessage": "Type your message...",
@@ -351,6 +358,7 @@
       "desc": "This conversation will be submitted as pending data for approval in Training.",
       "namespace": "Namespace",
       "selectNamespace": "Select a namespace",
+      "namespaceOptional": "If empty, use the conversation namespace.",
       "noticeTitle": "Approval required",
       "noticeDesc": "Submitted data must be approved before training starts.",
       "confirm": "Send now",

@@ -10,9 +10,11 @@
  * Regra 13 - Internacionalização i18next
  */
 
+import { useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
+import { useLocation } from 'wouter';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -112,6 +114,7 @@ function normalizeImageStats(stats?: ImageStatsApi | null): ImageGenerationStats
 export default function Dashboard() {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const [, navigate] = useLocation();
   const locale = user?.idioma ?? 'pt-BR';
 
   const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
@@ -164,7 +167,7 @@ export default function Dashboard() {
     staleTime: 1000 * 60,
   });
 
-  const { data: weeklyConversations, isLoading: weeklyLoading } = useQuery<{ data: { name: string; ai: number; human: number }[] }>({
+  const { data: weeklyConversations, isLoading: weeklyLoading } = useQuery<{ data: { date: string; name: string; ai: number; human: number }[] }>({
     queryKey: ['/api/chat/conversations/weekly'],
     staleTime: 1000 * 60 * 5,
   });
@@ -219,6 +222,12 @@ export default function Dashboard() {
   const displayCircuitBreakers: CircuitBreakerStatus[] = circuitBreakerData?.breakers || [];
 
   const conversationsBarData = weeklyConversations?.data || [];
+  const handleConversationDaySelect = useCallback((date: string) => {
+    const params = new URLSearchParams();
+    params.set('from', date);
+    params.set('to', date);
+    navigate(`/chat?${params.toString()}`);
+  }, [navigate]);
 
   return (
     <motion.div
@@ -396,7 +405,8 @@ export default function Dashboard() {
             <div className="mt-4">
               <ConversationsBarChart 
                 data={conversationsBarData} 
-                isLoading={weeklyLoading} 
+                isLoading={weeklyLoading}
+                onSelectDate={handleConversationDaySelect}
               />
             </div>
           </CardContent>

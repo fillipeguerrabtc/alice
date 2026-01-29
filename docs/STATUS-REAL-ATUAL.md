@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 29 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.14 - Trading modal com scroll funcional
+**Versão:** 10.15 - Tokens e conversas admin no dashboard
 
 ---
 
@@ -208,6 +208,10 @@ Retenção Arquivo:   30 dias
 
 ## Atualizações recentes (resumo)
 
+- Dashboard: tokens de LLM agora persistidos em mensagens (stats/usage com valores reais).
+- Dashboard: clique no gráfico semanal abre chat filtrado por data.
+- Chat: admins veem conversas de todos os usuários do tenant; super_admin global liberado.
+- Chat: envio para training aceita namespace da conversa quando não selecionado.
 - Agentic: detectores configuráveis por tenant (keywords/regex) no Modo Agentic.
 - ASR: normalização de MIME para evitar erro `unsupported_format` em `audio/webm;codecs=opus`.
 - ASR: gravação converte áudio para WAV quando formato não é aceito pelo OpenAI.
