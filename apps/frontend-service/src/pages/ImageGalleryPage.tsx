@@ -30,17 +30,18 @@ import {
 
 interface GeneratedImage {
   id: string;
+  source: "generated" | "upload";
   tenantId: string | null;
   conversationId: string | null;
   messageId: string | null;
   createdBy: string | null;
   prompt: string;
   negativePrompt: string | null;
-  model: string;
-  steps: number;
+  model: string | null;
+  steps: number | null;
   seed: number | null;
-  width: number;
-  height: number;
+  width: number | null;
+  height: number | null;
   guidanceScale: number | null;
   status: "pending" | "generating" | "completed" | "failed";
   imagePath: string | null;
@@ -169,6 +170,7 @@ function ImageCard({
   image: GeneratedImage; 
   onSelect: (image: GeneratedImage) => void;
 }) {
+  const isGenerated = image.source === "generated";
   const previewUrl = image.imageUrl || image.thumbnailPath || image.imagePath || null;
   return (
     <Card 
@@ -204,11 +206,11 @@ function ImageCard({
         </p>
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <StatusBadge status={image.status} />
-          {image.status === "completed" && (
+          {image.status === "completed" && isGenerated && (
             <ApprovalBadge approved={image.approvedForTraining} />
           )}
         </div>
-        {image.feedbackScore && (
+        {image.feedbackScore && isGenerated && (
           <div className="mt-2">
             <StarRating value={image.feedbackScore} readonly />
           </div>
@@ -233,6 +235,7 @@ function ImageDetailModal({
 }) {
   const { toast } = useToast();
   const [rating, setRating] = useState<number | null>(null);
+  const canManageTraining = image?.source === "generated";
   
   const rateMutation = useMutation({
     mutationFn: async (score: number) => {
@@ -279,7 +282,7 @@ function ImageDetailModal({
   
   return (
     <Dialog open={open} onOpenChange={(o: boolean) => !o && onClose()}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col min-h-0">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Image className="h-5 w-5" />
@@ -306,7 +309,7 @@ function ImageDetailModal({
             )}
           </div>
           
-          <ScrollArea className="h-[400px] pr-4">
+          <ScrollArea className="h-[400px] pr-4 min-h-0">
             <div className="space-y-4">
               <div>
                 <h4 className="font-medium mb-1">Prompt</h4>
@@ -329,7 +332,7 @@ function ImageDetailModal({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <h4 className="text-sm font-medium mb-1">Modelo</h4>
-                  <Badge variant="outline">{image.model}</Badge>
+                  <Badge variant="outline">{image.model ?? "Não informado"}</Badge>
                 </div>
                 <div>
                   <h4 className="text-sm font-medium mb-1">Status</h4>
@@ -337,11 +340,13 @@ function ImageDetailModal({
                 </div>
                 <div>
                   <h4 className="text-sm font-medium mb-1">Dimensões</h4>
-                  <p className="text-sm text-muted-foreground">{image.width}x{image.height}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {image.width ?? "N/D"}x{image.height ?? "N/D"}
+                  </p>
                 </div>
                 <div>
                   <h4 className="text-sm font-medium mb-1">Steps</h4>
-                  <p className="text-sm text-muted-foreground">{image.steps}</p>
+                  <p className="text-sm text-muted-foreground">{image.steps ?? "N/D"}</p>
                 </div>
                 <div>
                   <h4 className="text-sm font-medium mb-1">Seed</h4>
@@ -372,7 +377,7 @@ function ImageDetailModal({
                 </>
               )}
               
-              {image.status === "completed" && (
+              {image.status === "completed" && canManageTraining && (
                 <>
                   <Separator />
                   
@@ -413,7 +418,7 @@ function ImageDetailModal({
             </Button>
           )}
           
-          {image.status === "completed" && !image.usedInFineTuning && (
+          {image.status === "completed" && canManageTraining && !image.usedInFineTuning && (
             <>
               <Button
                 variant="destructive"

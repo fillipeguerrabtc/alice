@@ -84,7 +84,8 @@ export default function Settings() {
   });
 
   const timezoneOptions = useMemo(() => {
-    const fallback = [user?.timezone, TIMEZONE, 'UTC'].filter(Boolean) as string[];
+    const fallback = [regionalForm.timezone, user?.timezone, TIMEZONE, 'UTC']
+      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
     const uniqueFallback = Array.from(new Set(fallback));
     const supportedValuesOf = (Intl as typeof Intl & { supportedValuesOf?: (key: 'timeZone') => string[] }).supportedValuesOf;
     if (typeof supportedValuesOf !== 'function') {
@@ -92,7 +93,7 @@ export default function Settings() {
     }
     const supported = supportedValuesOf('timeZone');
     return supported.length > 0 ? supported : uniqueFallback;
-  }, [user?.timezone]);
+  }, [regionalForm.timezone, user?.timezone]);
 
   const handleSaveProfile = () => {
     updateProfile.mutate({

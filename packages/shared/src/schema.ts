@@ -3223,6 +3223,44 @@ export const messagesRelations = relations(messages, ({ one }) => ({
   }),
 }));
 
+export const generatedImagesRelations = relations(generatedImages, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [generatedImages.tenantId],
+    references: [tenants.id],
+  }),
+  conversation: one(conversations, {
+    fields: [generatedImages.conversationId],
+    references: [conversations.id],
+  }),
+  message: one(messages, {
+    fields: [generatedImages.messageId],
+    references: [messages.id],
+  }),
+  createdByUser: one(users, {
+    fields: [generatedImages.createdBy],
+    references: [users.id],
+  }),
+}));
+
+export const mediaUploadsRelations = relations(mediaUploads, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [mediaUploads.tenantId],
+    references: [tenants.id],
+  }),
+  conversation: one(conversations, {
+    fields: [mediaUploads.conversationId],
+    references: [conversations.id],
+  }),
+  message: one(messages, {
+    fields: [mediaUploads.messageId],
+    references: [messages.id],
+  }),
+  user: one(users, {
+    fields: [mediaUploads.userId],
+    references: [users.id],
+  }),
+}));
+
 export const assistantSettingsRelations = relations(assistantSettings, ({ one }) => ({
   tenant: one(tenants, {
     fields: [assistantSettings.tenantId],

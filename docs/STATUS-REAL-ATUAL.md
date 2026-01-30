@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 **Autor:** Fillipe Guerra  
-**Data:** 29 de Janeiro de 2026  
+**Data:** 30 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.19 - Conversas destacadas, cards clicáveis e galeria ajustada
+**Versão:** 10.21 - Persistência de fuso horário e scroll em diálogos
 
 ---
 
@@ -208,6 +208,11 @@ Retenção Arquivo:   30 dias
 
 ## Atualizações recentes (resumo)
 
+- Galeria de Imagens: listagem unificada inclui imagens geradas e uploads (inclui web search).
+- Conversas: mensagens com imagens/anexos não aparecem na página de histórico/seleção.
+- Chat Service: endpoint `/api/chat/images` agora consolida geração + uploads de imagem.
+- Configurações: fuso horário persistido aparece corretamente no seletor.
+- UI: diálogos com altura máxima e scroll consistente em todas as páginas.
 - Conversas: conversa ativa destacada e mensagens normalizadas na página `/conversations`.
 - Dashboard: cards clicáveis para navegação direta às páginas relacionadas.
 - Imagens: galeria com fallback de preview e tratamento de erro de listagem.

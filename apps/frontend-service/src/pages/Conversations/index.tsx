@@ -145,12 +145,21 @@ export default function ConversationsPage() {
   });
 
   const rawMessages = messagesData?.messages ?? [];
+  const shouldHideMessage = useCallback((message: ServerMessage) => {
+    const metadata = message.metadata as { generatedImages?: string[]; webImageSearch?: unknown } | null | undefined;
+    const hasGeneratedImage = Boolean(message.generatedImage) || Boolean(metadata?.generatedImages?.length);
+    const hasAttachments = Array.isArray(message.anexos) && message.anexos.length > 0;
+    const hasMediaAttachments = Array.isArray(message.mediaAttachments) && message.mediaAttachments.length > 0;
+    const hasWebImageSearch = metadata?.webImageSearch !== undefined;
+    const isImageType = message.tipo === 'image' || message.tipo === 'mixed';
+    return hasGeneratedImage || hasAttachments || hasMediaAttachments || hasWebImageSearch || isImageType;
+  }, []);
   const activeConversation = useMemo(
     () => conversations.find((conv) => conv.id === activeConversationId) ?? null,
     [activeConversationId, conversations]
   );
   const messages = useMemo(() => {
-    return rawMessages.map((message) => {
+    return rawMessages.filter((message) => !shouldHideMessage(message)).map((message) => {
       const role = message.role ?? (message.isFromUser ? 'user' : 'assistant');
       const content = (message.content ?? message.conteudo ?? '').toString();
       const createdAt = message.createdAt ?? message.criadoEm ?? '';
@@ -161,7 +170,7 @@ export default function ConversationsPage() {
         createdAt,
       } as Message;
     });
-  }, [rawMessages]);
+  }, [rawMessages, shouldHideMessage]);
 
   const selectedMessagesCount = useMemo(() => {
     let total = 0;

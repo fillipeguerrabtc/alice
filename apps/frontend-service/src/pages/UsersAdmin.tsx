@@ -2090,7 +2090,7 @@ export default function UsersAdmin() {
           }
         }}
       >
-        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
+        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col overflow-hidden min-h-0">
           <DialogHeader>
             <DialogTitle>
               {userDialogMode === 'create' ? t('usersAdmin.users.newTitle') : t('usersAdmin.users.editTitle')}
@@ -2099,7 +2099,7 @@ export default function UsersAdmin() {
               {userDialogMode === 'create' ? t('usersAdmin.users.newDescription') : t('usersAdmin.users.editDescription')}
             </DialogDescription>
           </DialogHeader>
-          <ScrollArea className="flex-1 pr-4">
+          <ScrollArea className="flex-1 pr-4 min-h-0">
             <div className="space-y-6">
             <div className="space-y-3">
               <h4 className="text-sm font-semibold">{t('usersAdmin.users.sections.profile')}</h4>

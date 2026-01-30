@@ -13230,6 +13230,156 @@ const generatedImagesQuerySchema = z.object({
     .refine(n => n >= 0, 'offset deve ser >= 0'),
 });
 
+type GalleryImageSource = 'generated' | 'upload';
+
+type GalleryImage = {
+  id: string;
+  source: GalleryImageSource;
+  tenantId: string | null;
+  conversationId: string | null;
+  messageId: string | null;
+  createdBy: string | null;
+  prompt: string;
+  negativePrompt: string | null;
+  model: string | null;
+  steps: number | null;
+  seed: number | null;
+  width: number | null;
+  height: number | null;
+  guidanceScale: number | null;
+  status: 'pending' | 'generating' | 'completed' | 'failed';
+  imagePath: string | null;
+  thumbnailPath: string | null;
+  imageUrl: string | null;
+  feedbackScore: number | null;
+  approvedForTraining: boolean | null;
+  usedInFineTuning: boolean | null;
+  generationTimeMs: number | null;
+  errorMessage: string | null;
+  metadata: Record<string, unknown> | null;
+  criadoEm: Date | string | null;
+};
+
+function mapUploadStatus(status: string | null | undefined): GalleryImage['status'] {
+  switch (status) {
+    case 'processing':
+      return 'generating';
+    case 'completed':
+      return 'completed';
+    case 'failed':
+      return 'failed';
+    case 'pending':
+    default:
+      return 'pending';
+  }
+}
+
+function resolveUploadMetadata(upload: typeof schema.mediaUploads.$inferSelect) {
+  return (upload.extractedMetadata as Record<string, unknown> | null) ?? null;
+}
+
+function resolveUploadPrompt(upload: typeof schema.mediaUploads.$inferSelect): string {
+  const metadata = resolveUploadMetadata(upload);
+  const description = metadata?.description;
+  if (typeof description === 'string' && description.trim().length > 0) {
+    return description.trim();
+  }
+  if (upload.llmDescription && upload.llmDescription.trim().length > 0) {
+    return upload.llmDescription.trim();
+  }
+  return upload.originalFilename;
+}
+
+function resolveUploadThumbnail(upload: typeof schema.mediaUploads.$inferSelect): string | null {
+  const metadata = resolveUploadMetadata(upload);
+  const thumbnailUrl = metadata?.thumbnailUrl;
+  if (typeof thumbnailUrl === 'string' && thumbnailUrl.trim().length > 0) {
+    return thumbnailUrl;
+  }
+  const thumbnailPath = metadata?.thumbnailPath;
+  if (typeof thumbnailPath === 'string' && thumbnailPath.trim().length > 0) {
+    return thumbnailPath;
+  }
+  return upload.thumbnailPath ?? null;
+}
+
+function normalizeGeneratedImage(image: typeof schema.generatedImages.$inferSelect): GalleryImage {
+  return {
+    id: image.id,
+    source: 'generated',
+    tenantId: image.tenantId ?? null,
+    conversationId: image.conversationId ?? null,
+    messageId: image.messageId ?? null,
+    createdBy: image.createdBy ?? null,
+    prompt: image.prompt,
+    negativePrompt: image.negativePrompt ?? null,
+    model: image.model ?? null,
+    steps: image.steps ?? null,
+    seed: image.seed ?? null,
+    width: image.width ?? null,
+    height: image.height ?? null,
+    guidanceScale: image.guidanceScale ?? null,
+    status: image.status ?? 'pending',
+    imagePath: image.imagePath ?? null,
+    thumbnailPath: image.thumbnailPath ?? null,
+    imageUrl: image.imageUrl ?? null,
+    feedbackScore: image.feedbackScore ?? null,
+    approvedForTraining: image.approvedForTraining ?? null,
+    usedInFineTuning: image.usedInFineTuning ?? null,
+    generationTimeMs: image.generationTimeMs ?? null,
+    errorMessage: image.errorMessage ?? null,
+    metadata: (image.metadata as Record<string, unknown> | null) ?? null,
+    criadoEm: image.criadoEm ?? null,
+  };
+}
+
+function normalizeUploadImage(upload: typeof schema.mediaUploads.$inferSelect): GalleryImage {
+  const metadata = resolveUploadMetadata(upload);
+  const model = metadata?.visionModel;
+  return {
+    id: upload.id,
+    source: 'upload',
+    tenantId: upload.tenantId ?? null,
+    conversationId: upload.conversationId ?? null,
+    messageId: upload.messageId ?? null,
+    createdBy: upload.userId ?? null,
+    prompt: resolveUploadPrompt(upload),
+    negativePrompt: null,
+    model: typeof model === 'string' && model.trim().length > 0 ? model.trim() : null,
+    steps: null,
+    seed: null,
+    width: upload.width ?? null,
+    height: upload.height ?? null,
+    guidanceScale: null,
+    status: mapUploadStatus(upload.processingStatus ?? null),
+    imagePath: upload.filePath ?? null,
+    thumbnailPath: resolveUploadThumbnail(upload),
+    imageUrl: upload.fileUrl ?? null,
+    feedbackScore: null,
+    approvedForTraining: null,
+    usedInFineTuning: upload.usedInFineTuning ?? null,
+    generationTimeMs: upload.processingTimeMs ?? null,
+    errorMessage: upload.processingError ?? null,
+    metadata,
+    criadoEm: upload.criadoEm ?? null,
+  };
+}
+
+function applyGalleryFilters(images: GalleryImage[], query: z.infer<typeof generatedImagesQuerySchema>) {
+  let filtered = images;
+  if (query.status && query.status !== 'all') {
+    filtered = filtered.filter((image) => image.status === query.status);
+  }
+  if (query.approved === 'true') {
+    filtered = filtered.filter((image) => image.approvedForTraining === true);
+  } else if (query.approved === 'false') {
+    filtered = filtered.filter((image) => image.approvedForTraining === false);
+  } else if (query.approved === 'pending') {
+    filtered = filtered.filter((image) => image.approvedForTraining === null);
+  }
+  return filtered;
+}
+
 // OWASP API3: Schema para validação de parâmetros de rota (req.params)
 // Previne injection e garante formato UUID válido
 const uuidParamSchema = z.object({
@@ -15173,40 +15323,57 @@ app.get('/api/chat/images/stats', requireAuth(), requireSameTenant(getTenantIdFr
     if (!tenantId) {
       return res.status(401).json({ error: 'Autenticação necessária' });
     }
+    const [generatedImages, mediaUploads] = await Promise.all([
+      db.query.generatedImages.findMany({
+        where: eq(schema.generatedImages.tenantId, tenantId),
+      }),
+      db.query.mediaUploads.findMany({
+        where: and(
+          eq(schema.mediaUploads.tenantId, tenantId),
+          eq(schema.mediaUploads.mediaType, 'image')
+        ),
+      }),
+    ]);
 
-    type GeneratedImage = typeof schema.generatedImages.$inferSelect;
-    const images = await db.query.generatedImages.findMany({
-      where: eq(schema.generatedImages.tenantId, tenantId),
-    }) as GeneratedImage[];
-    
-    const completed = images.filter((img: GeneratedImage) => img.status === 'completed');
-    const ratedImages = images.filter(
-      (img: GeneratedImage) => typeof img.feedbackScore === 'number' && (img.feedbackScore ?? 0) > 0
+    const galleryImages = [
+      ...generatedImages.map(normalizeGeneratedImage),
+      ...mediaUploads.map(normalizeUploadImage),
+    ];
+
+    const completed = galleryImages.filter((img) => img.status === 'completed');
+    const pending = galleryImages.filter((img) => img.status === 'pending' || img.status === 'generating');
+    const failed = galleryImages.filter((img) => img.status === 'failed');
+    const approvedCount = galleryImages.filter((img) => img.approvedForTraining === true).length;
+    const usedInFineTuning = galleryImages.filter((img) => img.usedInFineTuning === true).length;
+
+    const ratedImages = galleryImages.filter(
+      (img) => typeof img.feedbackScore === 'number' && (img.feedbackScore ?? 0) > 0
     );
-    const avgGenerationTime = completed.length > 0
-      ? completed.reduce((sum: number, img: GeneratedImage) => sum + (img.generationTimeMs || 0), 0) / completed.length
-      : 0;
     const avgRating = ratedImages.length > 0
-      ? ratedImages.reduce((sum: number, img: GeneratedImage) => sum + (img.feedbackScore || 0), 0) / ratedImages.length
+      ? ratedImages.reduce((sum, img) => sum + (img.feedbackScore ?? 0), 0) / ratedImages.length
       : 0;
-    
-    const stats = {
-      totalGenerated: images.length,
-      approved: images.filter((img: GeneratedImage) => img.approvedForTraining).length,
-      pending: images.filter((img: GeneratedImage) => img.status === 'pending' || img.status === 'generating').length,
-      inTraining: images.filter((img: GeneratedImage) => img.usedInFineTuning).length,
+
+    const durationSamples = completed
+      .map((img) => img.generationTimeMs)
+      .filter((value): value is number => typeof value === 'number' && value > 0);
+    const avgGenerationTime = durationSamples.length > 0
+      ? durationSamples.reduce((sum, value) => sum + value, 0) / durationSamples.length
+      : 0;
+
+    res.json({
+      totalGenerated: generatedImages.length,
+      approved: approvedCount,
+      pending: pending.length,
+      inTraining: usedInFineTuning,
       avgRating: Number(avgRating.toFixed(1)),
-      total: images.length,
+      total: galleryImages.length,
       completed: completed.length,
-      failed: images.filter((img: GeneratedImage) => img.status === 'failed').length,
-      approvedForTraining: images.filter((img: GeneratedImage) => img.approvedForTraining).length,
-      usedInFineTuning: images.filter((img: GeneratedImage) => img.usedInFineTuning).length,
+      failed: failed.length,
+      approvedForTraining: approvedCount,
+      usedInFineTuning,
       averageGenerationTimeMs: Math.round(avgGenerationTime),
-      // ARQUITETURA v4.0.0: Circuit breaker removido (geração de imagens não disponível)
-      note: 'Geração de imagens via OpenAI (gpt-image-1) e análise via OpenAI Vision (gpt-4.1)',
-    };
-    
-    res.json(stats);
+      note: 'Geração via OpenAI (gpt-image-1) e uploads multimodais com Vision',
+    });
   } catch (error) {
     logger.error({ error }, 'Erro ao buscar estatísticas de imagens');
     res.status(500).json({ error: 'Erro interno do servidor' });
@@ -15228,33 +15395,43 @@ app.get('/api/chat/images', requireAuth(), requireSameTenant(getTenantIdFromRequ
     return res.status(400).json({ error: 'Parâmetros inválidos', details: queryResult.error.format() });
   }
   
-  const { status, approved, limit: pageLimit, offset: pageOffset } = queryResult.data;
+  const { limit: pageLimit, offset: pageOffset } = queryResult.data;
   
   try {
-    let images = await db.query.generatedImages.findMany({
-      where: eq(schema.generatedImages.tenantId, tenantId),
-      orderBy: [desc(schema.generatedImages.criadoEm)],
-      with: {
-        conversation: true,
-      },
+    const [generatedImages, mediaUploads] = await Promise.all([
+      db.query.generatedImages.findMany({
+        where: eq(schema.generatedImages.tenantId, tenantId),
+        orderBy: [desc(schema.generatedImages.criadoEm)],
+        with: {
+          conversation: true,
+        },
+      }),
+      db.query.mediaUploads.findMany({
+        where: and(
+          eq(schema.mediaUploads.tenantId, tenantId),
+          eq(schema.mediaUploads.mediaType, 'image')
+        ),
+        orderBy: [desc(schema.mediaUploads.criadoEm)],
+      }),
+    ]);
+
+    const normalizedGenerated = generatedImages.map(normalizeGeneratedImage);
+    const normalizedUploads = mediaUploads.map(normalizeUploadImage);
+
+    const filteredImages = applyGalleryFilters(
+      [...normalizedGenerated, ...normalizedUploads],
+      queryResult.data
+    );
+
+    const sorted = filteredImages.sort((a, b) => {
+      const aTime = a.criadoEm ? new Date(a.criadoEm).getTime() : 0;
+      const bTime = b.criadoEm ? new Date(b.criadoEm).getTime() : 0;
+      return bTime - aTime;
     });
-    
-    if (status && status !== 'all') {
-      images = images.filter(img => img.status === status);
-    }
-    
-    if (approved === 'true') {
-      images = images.filter(img => img.approvedForTraining === true);
-    } else if (approved === 'false') {
-      images = images.filter(img => img.approvedForTraining === false);
-    } else if (approved === 'pending') {
-      images = images.filter(img => img.approvedForTraining === null);
-    }
-    
-    const total = images.length;
-    
-    images = images.slice(pageOffset, pageOffset + pageLimit);
-    
+
+    const total = sorted.length;
+    const images = sorted.slice(pageOffset, pageOffset + pageLimit);
+
     res.json({
       images,
       total,
