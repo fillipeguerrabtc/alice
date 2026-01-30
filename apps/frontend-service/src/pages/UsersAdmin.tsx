@@ -830,39 +830,39 @@ function GroupMembersDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px]">
+      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-hidden flex flex-col min-h-0">
         <DialogHeader>
           <DialogTitle>{t('usersAdmin.groups.manageMembersTitle')}</DialogTitle>
           <DialogDescription>{group?.nome}</DialogDescription>
         </DialogHeader>
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label>{t('usersAdmin.groups.addMember')}</Label>
-            <div className="flex gap-2">
-              <Select value={selectedUserId} onValueChange={setSelectedUserId}>
-                <SelectTrigger>
-                  <SelectValue placeholder={t('usersAdmin.groups.selectUser')} />
-                </SelectTrigger>
-                <SelectContent>
-                  {users.map((user) => (
-                    <SelectItem key={user.id} value={user.id} disabled={memberIds.has(user.id)}>
-                      {formatUserName(user)} ({user.email})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button
-                disabled={!selectedUserId || addMemberMutation.isPending}
-                onClick={() => addMemberMutation.mutate(selectedUserId)}
-              >
-                {addMemberMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {t('common.add')}
-              </Button>
+        <ScrollArea className="flex-1 min-h-0 pr-1">
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>{t('usersAdmin.groups.addMember')}</Label>
+              <div className="flex gap-2">
+                <Select value={selectedUserId} onValueChange={setSelectedUserId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={t('usersAdmin.groups.selectUser')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {users.map((user) => (
+                      <SelectItem key={user.id} value={user.id} disabled={memberIds.has(user.id)}>
+                        {formatUserName(user)} ({user.email})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  disabled={!selectedUserId || addMemberMutation.isPending}
+                  onClick={() => addMemberMutation.mutate(selectedUserId)}
+                >
+                  {addMemberMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {t('common.add')}
+                </Button>
+              </div>
             </div>
-          </div>
-          <div className="space-y-2">
-            <Label>{t('usersAdmin.groups.currentMembers')}</Label>
-            <ScrollArea className="h-[220px]">
+            <div className="space-y-2">
+              <Label>{t('usersAdmin.groups.currentMembers')}</Label>
               <div className="space-y-2">
                 {isLoading ? (
                   <div className="flex items-center gap-2 text-muted-foreground">
@@ -892,9 +892,9 @@ function GroupMembersDialog({
                   <p className="text-sm text-muted-foreground">{t('usersAdmin.groups.noMembers')}</p>
                 )}
               </div>
-            </ScrollArea>
+            </div>
           </div>
-        </div>
+        </ScrollArea>
       </DialogContent>
     </Dialog>
   );

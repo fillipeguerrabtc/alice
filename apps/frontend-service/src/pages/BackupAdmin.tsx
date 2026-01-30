@@ -953,7 +953,7 @@ export default function BackupAdmin() {
         </AlertDialog>
 
         <Dialog open={showManifestDialog} onOpenChange={setShowManifestDialog}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col min-h-0">
             <DialogHeader>
               <DialogTitle>Manifesto do Backup</DialogTitle>
               <DialogDescription>
@@ -961,7 +961,7 @@ export default function BackupAdmin() {
               </DialogDescription>
             </DialogHeader>
             {selectedManifest && (
-              <ScrollArea className="max-h-96">
+              <ScrollArea className="flex-1 min-h-0">
                 <pre className="text-xs bg-muted p-4 rounded-lg overflow-x-auto">
                   {JSON.stringify(selectedManifest, null, 2)}
                 </pre>
@@ -976,7 +976,7 @@ export default function BackupAdmin() {
         </Dialog>
 
         <Dialog open={showScheduleDialog} onOpenChange={setShowScheduleDialog}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col min-h-0">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Settings className="h-5 w-5" />
@@ -987,7 +987,7 @@ export default function BackupAdmin() {
               </DialogDescription>
             </DialogHeader>
             
-            <ScrollArea className="max-h-[60vh]">
+            <ScrollArea className="flex-1 min-h-0">
               <div className="space-y-6 pr-4">
                 <div className="flex items-center justify-between">
                   <div>

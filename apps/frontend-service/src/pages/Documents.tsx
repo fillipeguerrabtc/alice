@@ -310,7 +310,7 @@ function DocumentViewer({
   
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl max-h-[80vh]">
+      <DialogContent className="max-w-3xl max-h-[80vh] overflow-hidden flex flex-col min-h-0">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5 text-primary" />
@@ -346,7 +346,7 @@ function DocumentViewer({
           )}
         </div>
 
-        <ScrollArea className="h-[400px] border rounded-lg p-4 bg-muted/30">
+        <ScrollArea className="flex-1 min-h-0 border rounded-lg p-4 bg-muted/30">
           <pre className="whitespace-pre-wrap text-sm font-mono">{document.conteudo}</pre>
         </ScrollArea>
 
