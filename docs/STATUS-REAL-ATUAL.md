@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 30 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.25 - Integrações SSOT + OpenAI Vision + Módulos removidos
+**Versão:** 10.26 - Integrações UI i18n + Build Frontend
 
 ---
 
@@ -22,6 +22,7 @@
 - Segurança enterprise com hardening de containers, RLS no PostgreSQL e validação Zod em APIs.
 - Integração KuCoin auditada e corrigida conforme docs oficiais (auth HMAC v2/v3, time sync, stop orders, WS broadcast via Redis).
 - Trading UI: chamadas REST bloqueadas quando símbolo não está definido (evita 404 e tela “Algo deu errado”).
+- Integrações UI: tipagem i18n alinhada para interpolação (build frontend sem erro TS2554).
 
 ---
 

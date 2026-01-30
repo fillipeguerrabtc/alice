@@ -12,6 +12,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { motion } from 'framer-motion';
 import {
   CreditCard,
@@ -131,7 +132,7 @@ interface IntegrationCardProps {
   onTest?: () => void;
   testLoading?: boolean;
   children?: React.ReactNode;
-  t: (key: string) => string;
+  t: TFunction;
 }
 
 function IntegrationCard({ 
@@ -221,7 +222,7 @@ function StripeSection({
   locale,
 }: {
   status: { configured: boolean; operational: boolean };
-  t: (key: string, options?: Record<string, unknown>) => string;
+  t: TFunction;
   locale: string;
 }) {
   const { data, isLoading } = useQuery<StripeProductsResponse>({
@@ -296,7 +297,7 @@ function WiseSection({
   locale,
 }: {
   status: { configured: boolean; operational: boolean };
-  t: (key: string) => string;
+  t: TFunction;
   locale: string;
 }) {
   const { data: status } = useQuery<WiseStatusResponse>({
