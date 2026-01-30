@@ -51,7 +51,7 @@ import { loadConfig, integrationsServiceConfigSchema } from '@alice/config';
 import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, getPool } from '@alice/database';
 import { eq, desc, sql, and, inArray, not, isNull, lte } from '@alice/database';
 import { tradingIntervalEnum } from '@alice/shared';
-import type { TradingSignalMetadata } from '@alice/shared';
+import type { TradingSignalMetadata, TradingIndicatorKey, TradingProfileConsensus, TradingProfileDataSources, TradingProfileModelConfig, TradingCandleData } from '@alice/shared';
 import { z } from 'zod';
 import { wiseService } from './wiseService.js';
 import { isWiseConfigured, getSandboxStatus, getProfileIdSafe, getWiseCircuitBreakerStatus, validateWiseWebhook, initWiseMetrics } from './wiseClient.js';
@@ -77,6 +77,54 @@ import {
 import { sendKucoinErrorResponse } from './kucoin-error-mapper.js';
 import * as technicalIndicators from './technical-indicators.js';
 import { validateAndPersist } from './llm-validation.js';
+
+// ============================================================================
+// GRAFANA API (Observability) - Integração enterprise
+// ============================================================================
+
+const grafanaBaseUrl = config.GRAFANA_URL ? config.GRAFANA_URL.replace(/\/+$/, '') : '';
+
+function ensureGrafanaConfigured(): void {
+  if (!grafanaBaseUrl) {
+    throw new Error('Grafana não configurado (GRAFANA_URL ausente).');
+  }
+  if (!config.GRAFANA_API_KEY && !(config.GRAFANA_ADMIN_USER && config.GRAFANA_ADMIN_PASSWORD)) {
+    throw new Error('Credenciais Grafana ausentes (GRAFANA_API_KEY ou GRAFANA_ADMIN_USER/PASSWORD).');
+  }
+}
+
+function buildGrafanaHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (config.GRAFANA_API_KEY) {
+    headers.Authorization = `Bearer ${config.GRAFANA_API_KEY}`;
+    return headers;
+  }
+  const raw = `${config.GRAFANA_ADMIN_USER}:${config.GRAFANA_ADMIN_PASSWORD}`;
+  headers.Authorization = `Basic ${Buffer.from(raw).toString('base64')}`;
+  return headers;
+}
+
+async function executeGrafanaRequest<T>(
+  method: 'GET' | 'POST',
+  path: string,
+  body?: Record<string, unknown>
+): Promise<T> {
+  ensureGrafanaConfigured();
+  const url = `${grafanaBaseUrl}${path}`;
+  const response = await withTimeout(fetch(url, {
+    method,
+    headers: buildGrafanaHeaders(),
+    body: body ? JSON.stringify(body) : undefined,
+  }), EXTERNAL_API_TIMEOUT_MS, 'Grafana');
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Grafana HTTP ${response.status}: ${errorText}`);
+  }
+  return response.json() as Promise<T>;
+}
 
 const logger = createLogger('integrations-service');
 const config = loadConfig(integrationsServiceConfigSchema);
@@ -107,6 +155,397 @@ const TRADING_INTERVAL_GRANULARITY = {
 const TRADING_INTERVALS = Object.keys(TRADING_INTERVAL_GRANULARITY) as TradingIntervalValue[];
 const TRADING_INTERVAL_VALUES = TRADING_INTERVALS as [TradingIntervalValue, ...TradingIntervalValue[]];
 const TRADING_INTERVAL_ZOD = z.enum(TRADING_INTERVAL_VALUES);
+const TRADING_INDICATOR_KEYS = [
+  'rsi',
+  'macd',
+  'moving_averages',
+  'bollinger',
+  'atr',
+  'stochastic',
+  'adx',
+  'support_resistance',
+  'volume',
+] as const;
+const TRADING_INDICATOR_ZOD = z.enum(TRADING_INDICATOR_KEYS);
+
+type TradingProfileKind = 'analysis' | 'signal';
+
+function parseListParam(input?: string | string[]): string[] {
+  if (!input) return [];
+  const rawList = Array.isArray(input) ? input : input.split(',');
+  return rawList.map((item) => item.trim()).filter(Boolean);
+}
+
+function parseTimeframesParam(input?: string | string[]): TradingIntervalValue[] {
+  const list = parseListParam(input);
+  if (list.length === 0) return [];
+  return list.map((value) => TRADING_INTERVAL_ZOD.parse(value));
+}
+
+function parseIndicatorsParam(input?: string | string[]): TradingIndicatorKey[] {
+  const list = parseListParam(input);
+  if (list.length === 0) return [];
+  return list.map((value) => TRADING_INDICATOR_ZOD.parse(value)) as TradingIndicatorKey[];
+}
+
+function normalizeTradingProfile(row?: schema.TradingAnalysisProfile | null): {
+  timeframes: TradingIntervalValue[];
+  indicators: TradingIndicatorKey[];
+  dataSources: TradingProfileDataSources;
+  modelConfig: TradingProfileModelConfig;
+  consensus: TradingProfileConsensus;
+} {
+  const timeframes = row?.timeframes?.length ? row.timeframes : ['5m'];
+  const indicators = Array.isArray(row?.indicators) && row?.indicators.length > 0
+    ? row.indicators as TradingIndicatorKey[]
+    : [...TRADING_INDICATOR_KEYS];
+  const dataSourcesRaw = row?.dataSources ?? {};
+  const dataSources: TradingProfileDataSources = {
+    orderBook: Boolean(dataSourcesRaw?.orderBook),
+    news: Boolean(dataSourcesRaw?.news),
+    trainingData: Boolean(dataSourcesRaw?.trainingData),
+  };
+  const modelConfigRaw = row?.modelConfig ?? {};
+  const modelConfig: TradingProfileModelConfig = {
+    temperature: modelConfigRaw?.temperature,
+    maxTokens: modelConfigRaw?.maxTokens,
+  };
+  const consensusRaw = row?.consensus ?? {};
+  const consensus: TradingProfileConsensus = {
+    rule: (consensusRaw?.rule === 'majority' ? 'majority' : 'majority'),
+    minAgree: consensusRaw?.minAgree,
+  };
+
+  return { timeframes, indicators, dataSources, modelConfig, consensus };
+}
+
+type AnalysisMatrixEntry = {
+  interval: TradingIntervalValue;
+  analysis: technicalIndicators.TechnicalAnalysisResult;
+  indicatorId: string;
+  resolvedSymbol?: string;
+};
+
+function buildMajorityConsensus(
+  matrix: AnalysisMatrixEntry[],
+  consensusConfig?: TradingProfileConsensus
+): {
+  overallSignal: technicalIndicators.TechnicalAnalysisResult['overallSignal'];
+  confidence: number;
+  alignedTimeframes: TradingIntervalValue[];
+  misalignedTimeframes: TradingIntervalValue[];
+  agreementRatio: number;
+  requiredAgree: number;
+  totalTimeframes: number;
+  isMajorityReached: boolean;
+} {
+  const total = matrix.length;
+  const requiredAgree = consensusConfig?.minAgree ?? Math.floor(total / 2) + 1;
+  const counts = new Map<technicalIndicators.TechnicalAnalysisResult['overallSignal'], number>();
+  const signalsByFrame = new Map<TradingIntervalValue, technicalIndicators.TechnicalAnalysisResult['overallSignal']>();
+
+  for (const entry of matrix) {
+    const signal = entry.analysis.overallSignal;
+    counts.set(signal, (counts.get(signal) ?? 0) + 1);
+    signalsByFrame.set(entry.interval, signal);
+  }
+
+  let maxCount = 0;
+  let winners: technicalIndicators.TechnicalAnalysisResult['overallSignal'][] = [];
+  for (const [signal, count] of counts.entries()) {
+    if (count > maxCount) {
+      maxCount = count;
+      winners = [signal];
+    } else if (count === maxCount) {
+      winners.push(signal);
+    }
+  }
+
+  const isMajorityReached = maxCount >= requiredAgree && winners.length === 1;
+  const consensusSignal = isMajorityReached ? winners[0] : 'neutral';
+
+  const alignedTimeframes = Array.from(signalsByFrame.entries())
+    .filter(([, signal]) => signal === consensusSignal)
+    .map(([interval]) => interval);
+  const misalignedTimeframes = Array.from(signalsByFrame.entries())
+    .filter(([, signal]) => signal !== consensusSignal)
+    .map(([interval]) => interval);
+
+  const alignedEntries = matrix.filter((entry) => alignedTimeframes.includes(entry.interval));
+  const confidence = alignedEntries.length > 0
+    ? alignedEntries.reduce((sum, entry) => sum + entry.analysis.confidence, 0) / alignedEntries.length
+    : 0;
+  const agreementRatio = total > 0 ? maxCount / total : 0;
+
+  return {
+    overallSignal: consensusSignal,
+    confidence: Math.round(confidence * 100) / 100,
+    alignedTimeframes,
+    misalignedTimeframes,
+    agreementRatio: Math.round(agreementRatio * 100) / 100,
+    requiredAgree,
+    totalTimeframes: total,
+    isMajorityReached,
+  };
+}
+
+async function getOrderBookSnapshot(
+  auth: { tenantId: string; userId: string },
+  symbol: string,
+  marketType?: TradingMarketType,
+  marginMode?: TradingMarginMode
+): Promise<{
+  symbol: string;
+  bestBid: number | null;
+  bestAsk: number | null;
+  spreadAbs: number | null;
+  spreadPct: number | null;
+  depth: number;
+}> {
+  const resolvedSymbol = await kucoinService.resolveTradingSymbolStrict(auth, symbol, marketType, marginMode);
+  const depth = 20;
+  const orderbook = marketType === 'spot' || marketType === 'margin'
+    ? await kucoinSpotClient.getSpotOrderBook(resolvedSymbol)
+    : await kucoinClient.getOrderBook(resolvedSymbol, depth);
+
+  const bestBid = orderbook?.bids?.[0]?.[0] ? Number(orderbook.bids[0][0]) : null;
+  const bestAsk = orderbook?.asks?.[0]?.[0] ? Number(orderbook.asks[0][0]) : null;
+  const spreadAbs = bestBid !== null && bestAsk !== null ? Math.abs(bestAsk - bestBid) : null;
+  const spreadPct = spreadAbs !== null && bestAsk !== null && bestAsk !== 0
+    ? Math.round((spreadAbs / bestAsk) * 10000) / 100
+    : null;
+
+  return {
+    symbol: resolvedSymbol,
+    bestBid,
+    bestAsk,
+    spreadAbs,
+    spreadPct,
+    depth,
+  };
+}
+
+async function fetchNewsSummary(
+  auth: { tenantId: string; userId: string },
+  symbol: string,
+  marketType?: TradingMarketType
+): Promise<{ query: string; results: Array<{ title: string; url: string; score?: number }> }> {
+  const query = `${symbol} ${marketType ?? 'futures'} news`;
+  const internalHeaders = generateInternalAuthHeaders({
+    userId: auth.userId,
+    tenantId: auth.tenantId,
+    role: 'operator',
+  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  const response = await fetch(`${RAG_SERVICE_URL_FINAL}/api/rag/web-search`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Internal-Signature': internalHeaders['x-internal-signature'],
+      'X-Internal-Timestamp': internalHeaders['x-internal-timestamp'],
+      'X-Tenant-Id': auth.tenantId,
+      'X-User-Id': auth.userId,
+    },
+    body: JSON.stringify({ query, limit: 5 }),
+    signal: controller.signal,
+  });
+  clearTimeout(timeout);
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Falha ao buscar notícias: ${response.status} - ${errorText}`);
+  }
+
+  const data = await response.json() as { results?: Array<{ title?: string; url?: string; score?: number }> };
+  return {
+    query,
+    results: (data.results ?? [])
+      .filter((item) => item?.title && item?.url)
+      .map((item) => ({ title: item.title as string, url: item.url as string, score: item.score })),
+  };
+}
+
+function truncateText(input: string, maxLength: number): string {
+  if (input.length <= maxLength) return input;
+  return `${input.slice(0, maxLength)}…`;
+}
+
+async function fetchTradingDatasetSummary(tenantId: string): Promise<{
+  totalApproved: number;
+  samples: Array<{ prompt: string; response: string; actionType: string; createdAt: string }>;
+}> {
+  const db = getDatabase();
+  const [total] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(schema.tradingDataset)
+    .where(and(
+      eq(schema.tradingDataset.tenantId, tenantId),
+      eq(schema.tradingDataset.status, 'approved')
+    ));
+
+  const samples = await db.query.tradingDataset.findMany({
+    where: and(
+      eq(schema.tradingDataset.tenantId, tenantId),
+      eq(schema.tradingDataset.status, 'approved')
+    ),
+    orderBy: [desc(schema.tradingDataset.criadoEm)],
+    limit: 3,
+  });
+
+  return {
+    totalApproved: Number(total?.count ?? 0),
+    samples: samples.map((item) => ({
+      prompt: truncateText(item.prompt, 400),
+      response: truncateText(item.response, 400),
+      actionType: item.actionType,
+      createdAt: item.criadoEm?.toISOString?.() ?? new Date().toISOString(),
+    })),
+  };
+}
+
+async function fetchRecentCandles(
+  auth: { tenantId: string; userId: string },
+  symbol: string,
+  interval: TradingIntervalValue,
+  marketType?: TradingMarketType,
+  marginMode?: TradingMarginMode
+): Promise<TradingCandleData[]> {
+  const resolvedSymbol = await kucoinService.resolveTradingSymbolStrict(auth, symbol, marketType, marginMode);
+  const granularity = resolveTradingIntervalGranularity(interval);
+  if (!granularity) {
+    throw new Error(`Intervalo inválido para candles: ${interval}`);
+  }
+  const now = Math.floor(Date.now() / 1000);
+  const from = now - granularity * 200;
+  const klinesRaw = marketType === 'spot' || marketType === 'margin'
+    ? await kucoinSpotClient.getSpotKlines(resolvedSymbol, granularity, from, now)
+    : await kucoinClient.getKlines(resolvedSymbol, granularity, from, now);
+
+  return klinesRaw.map((k) => ({
+    timestamp: k.time,
+    open: parseFloat(k.open),
+    high: parseFloat(k.high),
+    low: parseFloat(k.low),
+    close: parseFloat(k.close),
+    volume: parseFloat(k.volume),
+  }));
+}
+
+function buildIndicatorSnapshot(analysis?: technicalIndicators.TechnicalAnalysisResult): Record<string, number> | undefined {
+  if (!analysis) return undefined;
+  const indicators: Record<string, number> = {};
+  if (analysis.rsi?.value !== undefined) indicators.rsi = analysis.rsi.value;
+  if (analysis.macd?.macd !== undefined) indicators.macd = analysis.macd.macd;
+  if (analysis.macd?.signal !== undefined) indicators.macdSignal = analysis.macd.signal;
+  if (analysis.bollinger?.percentB !== undefined) indicators.bollingerPercentB = analysis.bollinger.percentB;
+  if (analysis.atr?.value !== undefined) indicators.atr = analysis.atr.value;
+  if (analysis.stochastic?.k !== undefined) indicators.stochasticK = analysis.stochastic.k;
+  if (analysis.adx?.adx !== undefined) indicators.adx = analysis.adx.adx;
+  if (analysis.supportResistance?.pivot !== undefined) indicators.pivot = analysis.supportResistance.pivot;
+  if (analysis.volume?.volumeRatio !== undefined) indicators.volumeRatio = analysis.volume.volumeRatio;
+  return Object.keys(indicators).length > 0 ? indicators : undefined;
+}
+
+async function buildMarketContextFromSignal(params: {
+  auth: { tenantId: string; userId: string };
+  symbol: string;
+  interval: TradingIntervalValue;
+  marketType: TradingMarketType;
+  marginMode?: TradingMarginMode;
+  analysis?: technicalIndicators.TechnicalAnalysisResult;
+}): Promise<schema.TradingDataset['marketContext']> {
+  const { ticker, contract } = await kucoinService.getMarketData(params.auth, params.symbol, params.marketType, params.marginMode);
+  const recentCandles = await fetchRecentCandles(params.auth, params.symbol, params.interval, params.marketType, params.marginMode);
+  const latestPrice = parseFloat((ticker as { price: string }).price);
+  const oldestClose = recentCandles[0]?.close ?? latestPrice;
+  const changePercent = oldestClose !== 0 ? ((latestPrice - oldestClose) / oldestClose) * 100 : 0;
+  const volumeSum = recentCandles.reduce((sum, candle) => sum + candle.volume, 0);
+
+  return {
+    symbol: params.symbol,
+    timestamp: new Date().toISOString(),
+    price: latestPrice,
+    change24h: changePercent,
+    volume24h: contract?.volumeOf24h ?? volumeSum,
+    // Spot não possui funding/open interest - usar 0 como valor não aplicável
+    fundingRate: contract?.fundingFeeRate ?? 0,
+    openInterest: contract?.openInterest ? Number(contract.openInterest) : 0,
+    recentCandles,
+    indicators: buildIndicatorSnapshot(params.analysis),
+  };
+}
+
+function buildMultiTimeframePrompt(params: {
+  matrix: AnalysisMatrixEntry[];
+  consensus: ReturnType<typeof buildMajorityConsensus>;
+  indicators: TradingIndicatorKey[];
+  dataSources: TradingProfileDataSources;
+  orderBook: Awaited<ReturnType<typeof getOrderBookSnapshot>> | null;
+  news: Awaited<ReturnType<typeof fetchNewsSummary>> | null;
+  trainingData: Awaited<ReturnType<typeof fetchTradingDatasetSummary>> | null;
+}): string {
+  const blocks = params.matrix.map((entry) => {
+    const analysisBlock = technicalIndicators.formatAnalysisForLLM(entry.analysis);
+    return `### TIMEFRAME ${entry.interval}\n${analysisBlock}`;
+  });
+
+  const sources: string[] = [];
+  if (params.orderBook) {
+    sources.push(`Order Book:
+- Best Bid: ${params.orderBook.bestBid ?? 'N/A'}
+- Best Ask: ${params.orderBook.bestAsk ?? 'N/A'}
+- Spread: ${params.orderBook.spreadAbs ?? 'N/A'} (${params.orderBook.spreadPct ?? 'N/A'}%)`);
+  }
+  if (params.news) {
+    const newsLines = params.news.results.map((item) => `- ${item.title} (${item.url})`).join('\n');
+    sources.push(`Notícias (SearXNG):
+Consulta: ${params.news.query}
+${newsLines || '- Nenhum resultado relevante'}`);
+  }
+  if (params.trainingData) {
+    const samples = params.trainingData.samples.map((sample) => `- ${sample.actionType}: ${sample.prompt} → ${sample.response}`).join('\n');
+    sources.push(`Dataset aprovado:
+Total: ${params.trainingData.totalApproved}
+Exemplos:
+${samples || '- Nenhum exemplo disponível'}`);
+  }
+
+  return `
+## CONTEXTO MULTI-TIMEFRAME
+Indicadores habilitados: ${params.indicators.join(', ')}
+
+Consenso (maioria simples):
+- Sinal: ${params.consensus.overallSignal.toUpperCase()}
+- Acordo: ${(params.consensus.agreementRatio * 100).toFixed(0)}%
+- Timeframes alinhados: ${params.consensus.alignedTimeframes.join(', ') || 'Nenhum'}
+- Timeframes divergentes: ${params.consensus.misalignedTimeframes.join(', ') || 'Nenhum'}
+
+${blocks.join('\n\n')}
+
+${sources.length > 0 ? `### FONTES EXTRAS\n${sources.join('\n\n')}` : ''}
+`.trim();
+}
+
+async function getOrCreateTradingProfile(tenantId: string, kind: TradingProfileKind): Promise<schema.TradingAnalysisProfile> {
+  const db = getDatabase();
+  const existing = await db.query.tradingAnalysisProfiles.findFirst({
+    where: and(
+      eq(schema.tradingAnalysisProfiles.tenantId, tenantId),
+      eq(schema.tradingAnalysisProfiles.kind, kind)
+    ),
+  });
+  if (existing) return existing;
+
+  const [created] = await db
+    .insert(schema.tradingAnalysisProfiles)
+    .values({ tenantId, kind })
+    .returning();
+  if (!created) {
+    throw new Error('Falha ao criar perfil de análise/sinal');
+  }
+  return created;
+}
 
 const TRADING_LLM_SIGNAL_SCHEMA = z.object({
   signalType: z.enum(['entry_long', 'entry_short', 'exit', 'adjust_sl', 'adjust_tp', 'hold', 'neutral']),
@@ -475,6 +914,9 @@ async function runDueSignalSchedulers(): Promise<void> {
         throw new Error('Scheduler sem símbolos configurados.');
       }
 
+      const profileRow = await getOrCreateTradingProfile(scheduler.tenantId, 'signal');
+      const profile = normalizeTradingProfile(profileRow);
+
       const maxSignals = Math.max(1, scheduler.maxSignalsPerRun ?? 1);
       const selectedSymbols = symbols.slice(0, maxSignals);
       let lastSignalId: string | null = null;
@@ -491,6 +933,11 @@ async function runDueSignalSchedulers(): Promise<void> {
           source: 'scheduler',
           agentId: scheduler.agentId ?? undefined,
           schedulerId: scheduler.id,
+          timeframes: profile.timeframes,
+          indicators: profile.indicators,
+          dataSources: profile.dataSources,
+          modelConfig: profile.modelConfig,
+          consensus: profile.consensus,
         });
         lastSignalId = result.signal.id;
       }
@@ -2602,6 +3049,104 @@ app.post('/api/integrations/erpnext/invoices', requirePermission('integrations:e
     res.status(500).json({ error: 'Failed to create invoice' });
   } finally {
     clearTimeout(timeoutId);
+  }
+});
+
+// ============================================================================
+// GRAFANA API (Dashboards) - Read/Write via Integrations Service
+// ============================================================================
+
+app.get('/api/integrations/grafana/health', requirePermission('integrations:grafana:read'), async (_req: Request, res: Response) => {
+  try {
+    const data = await executeGrafanaRequest<{ database?: string; version?: string }>('GET', '/api/health');
+    res.json({ success: true, data });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Falha ao consultar health do Grafana');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+app.get('/api/integrations/grafana/dashboards', requirePermission('integrations:grafana:read'), async (req: Request, res: Response) => {
+  try {
+    const querySchema = z.object({
+      query: z.string().optional(),
+      tag: z.string().optional(),
+      folderId: z.coerce.number().optional(),
+      limit: z.coerce.number().int().min(1).max(200).optional(),
+    });
+    const parsed = querySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Query inválida', details: parsed.error.flatten() });
+      return;
+    }
+    const params = new URLSearchParams();
+    params.set('type', 'dash-db');
+    if (parsed.data.query) params.set('query', parsed.data.query);
+    if (parsed.data.tag) params.set('tag', parsed.data.tag);
+    if (parsed.data.folderId !== undefined) params.set('folderIds', parsed.data.folderId.toString());
+    if (parsed.data.limit !== undefined) params.set('limit', parsed.data.limit.toString());
+
+    const data = await executeGrafanaRequest<Array<{ id: number; uid: string; title: string; url: string }>>(
+      'GET',
+      `/api/search?${params.toString()}`
+    );
+    res.json({ success: true, data });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Falha ao listar dashboards do Grafana');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+app.get('/api/integrations/grafana/dashboards/:uid', requirePermission('integrations:grafana:read'), async (req: Request, res: Response) => {
+  try {
+    const uid = req.params.uid;
+    if (!uid) {
+      res.status(400).json({ error: 'UID inválido' });
+      return;
+    }
+    const data = await executeGrafanaRequest<{ dashboard: Record<string, unknown> }>('GET', `/api/dashboards/uid/${uid}`);
+    res.json({ success: true, data });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Falha ao obter dashboard do Grafana');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+app.post('/api/integrations/grafana/dashboards', requirePermission('integrations:grafana:write'), async (req: Request, res: Response) => {
+  try {
+    const bodySchema = z.object({
+      dashboard: z.record(z.unknown()),
+      folderId: z.number().int().optional(),
+      folderUid: z.string().optional(),
+      message: z.string().optional(),
+      overwrite: z.boolean().optional(),
+    });
+    const parsed = bodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
+      return;
+    }
+    if (!parsed.data.dashboard || Object.keys(parsed.data.dashboard).length === 0) {
+      res.status(400).json({ error: 'Dashboard inválido (vazio).' });
+      return;
+    }
+    const payload = {
+      dashboard: parsed.data.dashboard,
+      folderId: parsed.data.folderId,
+      folderUid: parsed.data.folderUid,
+      message: parsed.data.message ?? 'Atualizado via Alice Chat',
+      overwrite: parsed.data.overwrite ?? true,
+    };
+    const data = await executeGrafanaRequest<Record<string, unknown>>('POST', '/api/dashboards/db', payload);
+    logger.info({ dashboard: (parsed.data.dashboard as { title?: string }).title ?? 'unknown' }, 'Dashboard Grafana atualizado');
+    res.json({ success: true, data });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Falha ao atualizar dashboard do Grafana');
+    res.status(500).json({ error: errorMessage });
   }
 });
 
@@ -5269,6 +5814,117 @@ app.get('/api/integrations/trading/positions', requirePermission('integrations:t
   }
 });
 
+// POST /api/integrations/trading/positions/:symbol/close - Fechar posição (Futures)
+app.post('/api/integrations/trading/positions/:symbol/close', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+    const paramSchema = z.object({
+      symbol: z.string().min(1),
+    });
+    const paramResult = paramSchema.safeParse(req.params);
+    if (!paramResult.success) {
+      res.status(400).json({ error: 'Símbolo inválido', details: paramResult.error.flatten() });
+      return;
+    }
+    const querySchema = z.object({
+      marketType: z.enum(['futures', 'spot', 'margin']).optional(),
+    });
+    const queryResult = querySchema.safeParse(req.query);
+    if (!queryResult.success) {
+      res.status(400).json({ error: 'Query inválida', details: queryResult.error.flatten() });
+      return;
+    }
+    if (queryResult.data.marketType && queryResult.data.marketType !== 'futures') {
+      res.status(400).json({ error: 'Fechamento de posição via API disponível apenas para Futures.' });
+      return;
+    }
+    const result = await kucoinService.closePositions(
+      { tenantId: authContext.tenantId, userId: authContext.userId },
+      paramResult.data.symbol
+    );
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({
+      success: true,
+      data: result.data,
+    });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao fechar posição');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/positions/:symbol/stop - Ajustar SL/TP
+app.post('/api/integrations/trading/positions/:symbol/stop', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+    const paramSchema = z.object({
+      symbol: z.string().min(1),
+    });
+    const paramResult = paramSchema.safeParse(req.params);
+    if (!paramResult.success) {
+      res.status(400).json({ error: 'Símbolo inválido', details: paramResult.error.flatten() });
+      return;
+    }
+    const bodySchema = z.object({
+      side: z.enum(['buy', 'sell']),
+      size: z.number().positive(),
+      stopLoss: z.number().positive().optional(),
+      takeProfit: z.number().positive().optional(),
+      orderType: z.enum(['limit', 'market']).optional(),
+      price: z.number().positive().optional(),
+      stopPriceType: z.enum(['TP', 'MP']).optional(),
+      marketType: z.enum(['futures', 'spot', 'margin']).optional(),
+      marginMode: z.enum(['cross', 'isolated']).optional(),
+    });
+    const bodyResult = bodySchema.safeParse(req.body ?? {});
+    if (!bodyResult.success) {
+      res.status(400).json({ error: 'Dados inválidos', details: bodyResult.error.flatten() });
+      return;
+    }
+    const result = await kucoinService.createStopOrder(
+      { tenantId: authContext.tenantId, userId: authContext.userId },
+      {
+        symbol: paramResult.data.symbol,
+        side: bodyResult.data.side,
+        size: bodyResult.data.size,
+        stopLoss: bodyResult.data.stopLoss,
+        takeProfit: bodyResult.data.takeProfit,
+        orderType: bodyResult.data.orderType,
+        price: bodyResult.data.price,
+        stopPriceType: bodyResult.data.stopPriceType,
+        marketType: bodyResult.data.marketType,
+        marginMode: bodyResult.data.marginMode,
+      }
+    );
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({
+      success: true,
+      data: result.data,
+    });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao criar ordem stop');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
 // DELETE /api/integrations/trading/positions - Fechar posição (por símbolo ou todas)
 app.delete('/api/integrations/trading/positions', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
   try {
@@ -5377,8 +6033,6 @@ app.put('/api/integrations/trading/risk-config', requirePermission('integrations
       marginMode: z.enum(['cross', 'isolated']).optional(),
       // Controles
       tradingEnabled: z.boolean().optional(),
-      autoExecuteSignals: z.boolean().optional(),
-      minConfidenceToExecute: z.string().optional(),
     });
 
     const validatedResult = configSchema.safeParse(req.body);
@@ -5413,8 +6067,8 @@ app.put('/api/integrations/trading/risk-config', requirePermission('integrations
       defaultMarketType: validated.defaultMarketType,
       marginMode: validated.marginMode,
       tradingEnabled: validated.tradingEnabled,
-      autoExecuteSignals: validated.autoExecuteSignals,
-      minConfidenceToExecute: validated.minConfidenceToExecute ? Number(validated.minConfidenceToExecute) : undefined,
+      autoExecuteSignals: false,
+      minConfidenceToExecute: undefined,
     };
 
     const result = await kucoinService.upsertRiskConfig(tradingAuth, configForDb);
@@ -5447,6 +6101,11 @@ async function generateTradingSignalFromLlm(params: {
   source: TradingSignalGenerationSource;
   agentId?: string;
   schedulerId?: string;
+  timeframes?: TradingIntervalValue[];
+  indicators?: TradingIndicatorKey[];
+  dataSources?: TradingProfileDataSources;
+  modelConfig?: TradingProfileModelConfig;
+  consensus?: TradingProfileConsensus;
 }): Promise<{
   signal: schema.TradingSignal;
   validationId: string;
@@ -5462,14 +6121,35 @@ async function generateTradingSignalFromLlm(params: {
     agentId: params.agentId,
   });
 
-  const analysisResult = await calculateAndPersistTechnicalAnalysis({
-    tenantId: params.tenantId,
-    userId: params.userId,
-    symbol: params.symbol,
-    interval: params.interval as TradingIntervalValue,
-    marketType: params.marketType,
-    marginMode: params.marginMode,
-  });
+  const profileRow = await getOrCreateTradingProfile(params.tenantId, 'signal');
+  const profile = normalizeTradingProfile(profileRow);
+  const timeframes = params.timeframes?.length ? params.timeframes : profile.timeframes;
+  const indicators = params.indicators?.length ? params.indicators : profile.indicators;
+  const dataSources = params.dataSources ?? profile.dataSources;
+  const consensusConfig = params.consensus ?? profile.consensus;
+
+  const analysisMatrix = await Promise.all(
+    timeframes.map(async (frame) => {
+      const result = await calculateAndPersistTechnicalAnalysis({
+        tenantId: params.tenantId,
+        userId: params.userId,
+        symbol: params.symbol,
+        interval: frame,
+        marketType: params.marketType,
+        marginMode: params.marginMode,
+        enabledIndicators: indicators,
+      });
+      return {
+        interval: frame,
+        analysis: result.analysis,
+        indicatorId: result.indicatorId,
+        resolvedSymbol: result.resolvedSymbol,
+      };
+    })
+  );
+
+  const consensus = buildMajorityConsensus(analysisMatrix, consensusConfig);
+  const primaryAnalysis = analysisMatrix[0];
 
   const systemPrompt = buildTradingSignalSystemPrompt({
     marketType: params.marketType ?? 'futures',
@@ -5477,7 +6157,21 @@ async function generateTradingSignalFromLlm(params: {
     agent: agentContext.agent,
     namespace: agentContext.namespace,
   });
-  const analysisPrompt = technicalIndicators.formatAnalysisForLLM(analysisResult.analysis);
+  const analysisPrompt = buildMultiTimeframePrompt({
+    matrix: analysisMatrix,
+    consensus,
+    indicators,
+    dataSources,
+    orderBook: dataSources.orderBook
+      ? await getOrderBookSnapshot({ tenantId: params.tenantId, userId: params.userId }, params.symbol, params.marketType, params.marginMode)
+      : null,
+    news: dataSources.news
+      ? await fetchNewsSummary({ tenantId: params.tenantId, userId: params.userId }, params.symbol, params.marketType)
+      : null,
+    trainingData: dataSources.trainingData
+      ? await fetchTradingDatasetSummary(params.tenantId)
+      : null,
+  });
 
   const messages: LLMMessage[] = [
     { role: 'system', content: systemPrompt },
@@ -5492,8 +6186,8 @@ async function generateTradingSignalFromLlm(params: {
     body: {
       model: agentContext.llmConfig.model,
       messages,
-      max_tokens: agentContext.llmConfig.maxTokens ?? 2048,
-      temperature: agentContext.llmConfig.temperature ?? 0.7,
+      max_tokens: params.modelConfig?.maxTokens ?? agentContext.llmConfig.maxTokens ?? 2048,
+      temperature: params.modelConfig?.temperature ?? agentContext.llmConfig.temperature ?? 0.7,
       stream: false,
     },
   });
@@ -5514,7 +6208,7 @@ async function generateTradingSignalFromLlm(params: {
     { tenantId: params.tenantId, userId: params.userId },
     {
       signalType: llmSignal.signalType,
-      symbol: analysisResult.resolvedSymbol,
+      symbol: primaryAnalysis.resolvedSymbol,
       marketType: params.marketType,
       marginMode: params.marginMode,
       confidence: llmSignal.confidence,
@@ -5535,6 +6229,22 @@ async function generateTradingSignalFromLlm(params: {
         generationSource: params.source,
         schedulerId: params.schedulerId,
         validationStatus: 'pending',
+        timeframes,
+        enabledIndicators: indicators,
+        dataSources,
+        consensus: {
+          rule: consensusConfig.rule ?? 'majority',
+          overallSignal: consensus.overallSignal,
+          requiredAgree: consensus.requiredAgree,
+          agreementRatio: consensus.agreementRatio,
+          alignedTimeframes: consensus.alignedTimeframes,
+          misalignedTimeframes: consensus.misalignedTimeframes,
+          isMajorityReached: consensus.isMajorityReached,
+        },
+        analysisMatrix: analysisMatrix.map((entry) => ({
+          interval: entry.interval,
+          analysis: entry.analysis,
+        })),
       },
     }
   );
@@ -5543,11 +6253,12 @@ async function generateTradingSignalFromLlm(params: {
     throw new Error(createResult.error || 'Falha ao persistir sinal LLM.');
   }
 
+  const validationSnapshot = analysisMatrix.find((entry) => consensus.alignedTimeframes.includes(entry.interval)) ?? primaryAnalysis;
   const validation = await validateAndPersist({
     tenantId: params.tenantId,
     llmResponse: llmSignal.reasoning,
-    indicatorSnapshot: analysisResult.analysis,
-    indicatorSnapshotId: analysisResult.indicatorId,
+    indicatorSnapshot: validationSnapshot.analysis,
+    indicatorSnapshotId: validationSnapshot.indicatorId,
     signalId: createResult.data.id,
     maxAllowedDeviation: 0.01,
   });
@@ -5731,6 +6442,105 @@ app.delete('/api/integrations/trading/signals/:id', requirePermission('integrati
   }
 });
 
+// POST /api/integrations/trading/signals/:id/approve - Aprovar sinal (cria ordem pendente)
+app.post('/api/integrations/trading/signals/:id/approve', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+    const paramResult = tradingUuidParamSchema.safeParse(req.params);
+    if (!paramResult.success) {
+      res.status(400).json({ error: 'ID inválido', details: paramResult.error.format() });
+      return;
+    }
+    const bodySchema = z.object({
+      reason: z.string().min(3).max(500).optional(),
+      overrides: z.object({
+        orderType: z.enum(['limit', 'market', 'stop_limit', 'stop_market', 'take_profit']).optional(),
+        size: z.number().positive().optional(),
+        price: z.number().positive().optional(),
+        leverage: z.number().min(1).max(100).optional(),
+        stopLoss: z.number().positive().optional(),
+        takeProfit: z.number().positive().optional(),
+      }).optional(),
+    });
+    const bodyResult = bodySchema.safeParse(req.body ?? {});
+    if (!bodyResult.success) {
+      res.status(400).json({ error: 'Dados inválidos', details: bodyResult.error.flatten() });
+      return;
+    }
+
+    const result = await kucoinService.createPendingOrderFromSignal(
+      { tenantId: authContext.tenantId, userId: authContext.userId },
+      paramResult.data.id,
+      bodyResult.data.reason,
+      bodyResult.data.overrides
+    );
+
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+
+    res.status(201).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao aprovar sinal');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/signals/:id/reject - Rejeitar sinal
+app.post('/api/integrations/trading/signals/:id/reject', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+    const paramResult = tradingUuidParamSchema.safeParse(req.params);
+    if (!paramResult.success) {
+      res.status(400).json({ error: 'ID inválido', details: paramResult.error.format() });
+      return;
+    }
+    const bodySchema = z.object({
+      reason: z.string().min(3).max(500).optional(),
+    });
+    const bodyResult = bodySchema.safeParse(req.body ?? {});
+    if (!bodyResult.success) {
+      res.status(400).json({ error: 'Dados inválidos', details: bodyResult.error.flatten() });
+      return;
+    }
+
+    const result = await kucoinService.rejectSignal(
+      { tenantId: authContext.tenantId, userId: authContext.userId },
+      paramResult.data.id,
+      bodyResult.data.reason
+    );
+
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+
+    res.json({
+      success: true,
+      data: result.data,
+    });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao rejeitar sinal');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
 // GET /api/integrations/trading/orders - Lista ordens
 app.get('/api/integrations/trading/orders', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
@@ -5740,7 +6550,18 @@ app.get('/api/integrations/trading/orders', requirePermission('integrations:trad
       return;
     }
     const querySchema = z.object({
-      status: z.enum(['pending', 'open', 'filled', 'cancelled', 'rejected', 'expired']).optional(),
+      status: z.enum([
+        'pending_review',
+        'review_rejected',
+        'pending',
+        'submitted',
+        'open',
+        'filled',
+        'cancelled',
+        'rejected',
+        'expired',
+        'error',
+      ]).optional(),
       limit: z.coerce.number().int().min(1).max(200).optional(),
       marketType: z.enum(['futures', 'spot', 'margin']).optional(),
     });
@@ -5767,6 +6588,137 @@ app.get('/api/integrations/trading/orders', requirePermission('integrations:trad
     if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao obter ordens');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// PATCH /api/integrations/trading/orders/:id/review - Atualizar ordem pendente
+app.patch('/api/integrations/trading/orders/:id/review', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+    const paramResult = tradingUuidParamSchema.safeParse(req.params);
+    if (!paramResult.success) {
+      res.status(400).json({ error: 'ID inválido', details: paramResult.error.format() });
+      return;
+    }
+    const updateSchema = z.object({
+      price: z.number().positive().optional(),
+      size: z.number().positive().optional(),
+      leverage: z.number().min(1).max(100).optional(),
+      orderType: z.enum(['limit', 'market', 'stop_limit', 'stop_market', 'take_profit']).optional(),
+      stopLoss: z.number().positive().optional(),
+      takeProfit: z.number().positive().optional(),
+    });
+    const parsed = updateSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
+      return;
+    }
+
+    const result = await kucoinService.updatePendingOrder(
+      { tenantId: authContext.tenantId, userId: authContext.userId },
+      paramResult.data.id,
+      parsed.data
+    );
+
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+
+    res.json({
+      success: true,
+      data: result.data,
+    });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao atualizar ordem pendente');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/orders/:id/approve - Aprovar ordem pendente
+app.post('/api/integrations/trading/orders/:id/approve', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+    const paramResult = tradingUuidParamSchema.safeParse(req.params);
+    if (!paramResult.success) {
+      res.status(400).json({ error: 'ID inválido', details: paramResult.error.format() });
+      return;
+    }
+
+    const result = await kucoinService.approvePendingOrder(
+      { tenantId: authContext.tenantId, userId: authContext.userId },
+      paramResult.data.id
+    );
+
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+
+    res.json({
+      success: true,
+      data: result.data,
+    });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao aprovar ordem pendente');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/orders/:id/reject - Rejeitar ordem pendente
+app.post('/api/integrations/trading/orders/:id/reject', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+    const paramResult = tradingUuidParamSchema.safeParse(req.params);
+    if (!paramResult.success) {
+      res.status(400).json({ error: 'ID inválido', details: paramResult.error.format() });
+      return;
+    }
+    const bodySchema = z.object({
+      reason: z.string().min(3).max(500).optional(),
+    });
+    const bodyResult = bodySchema.safeParse(req.body ?? {});
+    if (!bodyResult.success) {
+      res.status(400).json({ error: 'Dados inválidos', details: bodyResult.error.flatten() });
+      return;
+    }
+
+    const result = await kucoinService.rejectPendingOrder(
+      { tenantId: authContext.tenantId, userId: authContext.userId },
+      paramResult.data.id,
+      bodyResult.data.reason
+    );
+
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+
+    res.json({
+      success: true,
+      data: result.data,
+    });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao rejeitar ordem pendente');
     res.status(500).json({ error: errorMessage });
   }
 });
@@ -6105,7 +7057,22 @@ app.post('/api/integrations/trading/signals/generate', requirePermission('integr
 
     const generateSchema = z.object({
       symbol: z.string().optional(),
-      interval: TRADING_INTERVAL_ZOD.optional().default('5m'),
+      interval: TRADING_INTERVAL_ZOD.optional(),
+      timeframes: z.array(TRADING_INTERVAL_ZOD).min(1).optional(),
+      indicators: z.array(TRADING_INDICATOR_ZOD).min(1).optional(),
+      dataSources: z.object({
+        orderBook: z.boolean().optional(),
+        news: z.boolean().optional(),
+        trainingData: z.boolean().optional(),
+      }).optional(),
+      modelConfig: z.object({
+        temperature: z.number().min(0).max(2).optional(),
+        maxTokens: z.number().min(256).max(8192).optional(),
+      }).optional(),
+      consensus: z.object({
+        rule: z.literal('majority').optional(),
+        minAgree: z.number().min(1).optional(),
+      }).optional(),
       marketType: z.enum(['futures', 'spot', 'margin']).optional(),
       marginMode: z.enum(['cross', 'isolated']).optional(),
       agentId: z.string().uuid().optional(),
@@ -6147,11 +7114,16 @@ app.post('/api/integrations/trading/signals/generate', requirePermission('integr
       tenantId: authContext.tenantId,
       userId: authContext.userId,
       symbol: resolvedSymbol,
-      interval: parsed.data.interval,
+      interval: parsed.data.interval ?? '5m',
       marketType,
       marginMode,
       source: 'on_demand',
       agentId: parsed.data.agentId,
+      timeframes: parsed.data.timeframes,
+      indicators: parsed.data.indicators as TradingIndicatorKey[] | undefined,
+      dataSources: parsed.data.dataSources,
+      modelConfig: parsed.data.modelConfig,
+      consensus: parsed.data.consensus,
     });
 
     res.status(201).json({
@@ -6164,6 +7136,210 @@ app.post('/api/integrations/trading/signals/generate', requirePermission('integr
     if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao gerar sinal LLM');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/datasets - Lista datasets de trading
+app.get('/api/integrations/trading/datasets', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const querySchema = z.object({
+      status: z.enum(['pending', 'approved', 'rejected', 'used']).optional(),
+      limit: z.coerce.number().int().min(1).max(200).optional(),
+      offset: z.coerce.number().int().min(0).optional(),
+    });
+    const parsed = querySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Query inválida', details: parsed.error.flatten() });
+      return;
+    }
+
+    const limit = parsed.data.limit ?? 50;
+    const offset = parsed.data.offset ?? 0;
+    const whereClause = and(
+      eq(schema.tradingDataset.tenantId, authContext.tenantId),
+      parsed.data.status ? eq(schema.tradingDataset.status, parsed.data.status) : sql`1=1`
+    );
+
+    const db = getDatabase();
+    const total = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(schema.tradingDataset)
+      .where(whereClause);
+
+    const rows = await db.query.tradingDataset.findMany({
+      where: whereClause,
+      orderBy: [desc(schema.tradingDataset.criadoEm)],
+      limit,
+      offset,
+    });
+
+    res.json({
+      success: true,
+      data: rows,
+      total: Number(total[0]?.count ?? 0),
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao listar datasets de trading');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/datasets/from-signal - Criar dataset a partir de sinal
+app.post('/api/integrations/trading/datasets/from-signal', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const bodySchema = z.object({
+      signalId: z.string().uuid(),
+      reviewNotes: z.string().optional(),
+    });
+    const parsed = bodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
+      return;
+    }
+
+    const db = getDatabase();
+    const signal = await db.query.tradingSignals.findFirst({
+      where: and(
+        eq(schema.tradingSignals.id, parsed.data.signalId),
+        eq(schema.tradingSignals.tenantId, authContext.tenantId)
+      ),
+    });
+    if (!signal) {
+      res.status(404).json({ error: 'Sinal não encontrado' });
+      return;
+    }
+
+    const metadata = (signal.metadata ?? {}) as Record<string, unknown>;
+    const analysisMatrixRaw = Array.isArray(metadata.analysisMatrix) ? metadata.analysisMatrix : [];
+    const matrix = analysisMatrixRaw
+      .map((entry) => ({
+        interval: TRADING_INTERVAL_ZOD.safeParse((entry as { interval?: string }).interval).success
+          ? TRADING_INTERVAL_ZOD.parse((entry as { interval?: string }).interval)
+          : '5m',
+        analysis: (entry as { analysis?: technicalIndicators.TechnicalAnalysisResult }).analysis,
+      }))
+      .filter((entry) => Boolean(entry.analysis));
+
+    const analysis = matrix[0]?.analysis;
+    const interval = matrix[0]?.interval ?? '5m';
+
+    const marketContext = await buildMarketContextFromSignal({
+      auth: { tenantId: authContext.tenantId, userId: authContext.userId },
+      symbol: signal.symbol,
+      interval,
+      marketType: signal.marketType,
+      marginMode: undefined,
+      analysis,
+    });
+
+    const prompt = matrix.length > 0
+      ? buildMultiTimeframePrompt({
+        matrix: matrix.map((entry) => ({
+          interval: entry.interval,
+          analysis: entry.analysis,
+          indicatorId: '',
+        })),
+        consensus: buildMajorityConsensus(matrix.map((entry) => ({
+          interval: entry.interval,
+          analysis: entry.analysis,
+          indicatorId: '',
+        }))),
+        indicators: Array.isArray(metadata.enabledIndicators) ? (metadata.enabledIndicators as TradingIndicatorKey[]) : [],
+        dataSources: (metadata.dataSources as TradingProfileDataSources) ?? { orderBook: false, news: false, trainingData: false },
+        orderBook: null,
+        news: null,
+        trainingData: null,
+      })
+      : (signal.metadata as TradingSignalMetadata)?.reasoning ?? 'Sinal gerado sem contexto detalhado.';
+
+    const responsePayload = {
+      actionType: signal.signalType,
+      suggestedPrice: signal.suggestedPrice,
+      suggestedStopLoss: signal.suggestedStopLoss,
+      suggestedTakeProfit: signal.suggestedTakeProfit,
+      suggestedSize: signal.suggestedSize,
+      confidence: signal.confidence,
+      reasoning: (signal.metadata as TradingSignalMetadata)?.reasoning ?? null,
+    };
+
+    const [created] = await db.insert(schema.tradingDataset).values({
+      tenantId: authContext.tenantId,
+      marketContext,
+      prompt,
+      response: JSON.stringify(responsePayload),
+      actionType: signal.signalType,
+      status: 'pending',
+      reviewNotes: parsed.data.reviewNotes ?? null,
+      signalId: signal.id,
+      orderId: signal.executedOrderId ?? null,
+      criadoEm: new Date(),
+      atualizadoEm: new Date(),
+    }).returning();
+
+    res.json({ success: true, data: created });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao criar dataset de trading');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// PATCH /api/integrations/trading/datasets/:id/review - Aprovar/rejeitar dataset
+app.patch('/api/integrations/trading/datasets/:id/review', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const bodySchema = z.object({
+      status: z.enum(['approved', 'rejected']),
+      reviewNotes: z.string().optional(),
+    });
+    const parsed = bodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
+      return;
+    }
+
+    const db = getDatabase();
+    const [updated] = await db.update(schema.tradingDataset)
+      .set({
+        status: parsed.data.status,
+        reviewNotes: parsed.data.reviewNotes ?? null,
+        reviewedBy: authContext.userId,
+        atualizadoEm: new Date(),
+      })
+      .where(and(
+        eq(schema.tradingDataset.id, req.params.id),
+        eq(schema.tradingDataset.tenantId, authContext.tenantId)
+      ))
+      .returning();
+
+    if (!updated) {
+      res.status(404).json({ error: 'Dataset não encontrado' });
+      return;
+    }
+
+    res.json({ success: true, data: updated });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao revisar dataset de trading');
     res.status(500).json({ error: errorMessage });
   }
 });
@@ -6225,6 +7401,119 @@ app.get('/api/integrations/trading/signal-scheduler', requirePermission('integra
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao buscar scheduler de sinais');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/analysis-profile - Perfil multi-timeframe
+app.get('/api/integrations/trading/analysis-profile', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const querySchema = z.object({
+      kind: z.enum(['analysis', 'signal']).optional().default('analysis'),
+    });
+    const parsedQuery = querySchema.safeParse(req.query);
+    if (!parsedQuery.success) {
+      res.status(400).json({ error: 'Query inválida', details: parsedQuery.error.flatten() });
+      return;
+    }
+
+    const profileRow = await getOrCreateTradingProfile(authContext.tenantId, parsedQuery.data.kind);
+    const profile = normalizeTradingProfile(profileRow);
+
+    res.json({
+      success: true,
+      data: {
+        id: profileRow.id,
+        kind: profileRow.kind,
+        name: profileRow.name,
+        timeframes: profile.timeframes,
+        indicators: profile.indicators,
+        dataSources: profile.dataSources,
+        modelConfig: profile.modelConfig,
+        consensus: profile.consensus,
+      },
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter perfil de análise/sinal');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// PUT /api/integrations/trading/analysis-profile - Atualizar perfil multi-timeframe
+app.put('/api/integrations/trading/analysis-profile', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const bodySchema = z.object({
+      kind: z.enum(['analysis', 'signal']).optional().default('analysis'),
+      name: z.string().min(1).max(100).optional(),
+      timeframes: z.array(TRADING_INTERVAL_ZOD).min(1).optional(),
+      indicators: z.array(TRADING_INDICATOR_ZOD).min(1).optional(),
+      dataSources: z.object({
+        orderBook: z.boolean().optional(),
+        news: z.boolean().optional(),
+        trainingData: z.boolean().optional(),
+      }).optional(),
+      modelConfig: z.object({
+        temperature: z.number().min(0).max(2).optional(),
+        maxTokens: z.number().min(256).max(8192).optional(),
+      }).optional(),
+      consensus: z.object({
+        rule: z.literal('majority').optional(),
+        minAgree: z.number().min(1).optional(),
+      }).optional(),
+    });
+    const parsedBody = bodySchema.safeParse(req.body);
+    if (!parsedBody.success) {
+      res.status(400).json({ error: 'Dados inválidos', details: parsedBody.error.flatten() });
+      return;
+    }
+
+    const profileRow = await getOrCreateTradingProfile(authContext.tenantId, parsedBody.data.kind);
+    const updated = await getDatabase()
+      .update(schema.tradingAnalysisProfiles)
+      .set({
+        name: parsedBody.data.name ?? profileRow.name,
+        timeframes: parsedBody.data.timeframes ?? profileRow.timeframes,
+        indicators: parsedBody.data.indicators ?? profileRow.indicators,
+        dataSources: parsedBody.data.dataSources ?? profileRow.dataSources,
+        modelConfig: parsedBody.data.modelConfig ?? profileRow.modelConfig,
+        consensus: parsedBody.data.consensus ?? profileRow.consensus,
+        atualizadoEm: new Date(),
+      })
+      .where(eq(schema.tradingAnalysisProfiles.id, profileRow.id))
+      .returning();
+
+    const updatedRow = updated[0] ?? profileRow;
+    const profile = normalizeTradingProfile(updatedRow);
+
+    res.json({
+      success: true,
+      data: {
+        id: updatedRow.id,
+        kind: updatedRow.kind,
+        name: updatedRow.name,
+        timeframes: profile.timeframes,
+        indicators: profile.indicators,
+        dataSources: profile.dataSources,
+        modelConfig: profile.modelConfig,
+        consensus: profile.consensus,
+      },
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao atualizar perfil de análise/sinal');
     res.status(500).json({ error: errorMessage });
   }
 });
@@ -7102,6 +8391,10 @@ app.post('/api/integrations/trading/control', requirePermission('integrations:tr
 
     const requestedMode = parsed.data.mode
       ?? (parsed.data.action === 'takeover' ? 'manual' : 'alice');
+    if (requestedMode === 'alice') {
+      res.status(400).json({ error: 'Auto-execução de sinais está desativada para este tenant.' });
+      return;
+    }
     const action = parsed.data.action
       ?? (requestedMode === 'manual' ? 'takeover' : 'handback');
     const { reason, source } = parsed.data;
@@ -7227,12 +8520,13 @@ async function calculateAndPersistTechnicalAnalysis(params: {
   interval: string;
   marketType?: TradingMarketType;
   marginMode?: TradingMarginMode;
+  enabledIndicators?: TradingIndicatorKey[];
 }): Promise<{
   analysis: technicalIndicators.TechnicalAnalysisResult;
   indicatorId: string;
   resolvedSymbol: string;
 }> {
-  const { tenantId, userId, symbol, interval, marketType, marginMode } = params;
+  const { tenantId, userId, symbol, interval, marketType, marginMode, enabledIndicators } = params;
   const tradingAuth = { tenantId, userId };
 
   const granularity = resolveTradingIntervalGranularity(interval);
@@ -7262,7 +8556,7 @@ async function calculateAndPersistTechnicalAnalysis(params: {
     volume: parseFloat(k.volume),
   }));
 
-  const analysis = technicalIndicators.calculateFullAnalysis(candles, resolvedSymbol, interval);
+  const analysis = technicalIndicators.calculateFullAnalysis(candles, resolvedSymbol, interval, enabledIndicators);
 
   const validatedInterval = interval as TradingIntervalValue;
   const db = getDatabase();
@@ -7275,68 +8569,68 @@ async function calculateAndPersistTechnicalAnalysis(params: {
       candleTimestamp: new Date(candles[candles.length - 1].timestamp),
       currentPrice: analysis.currentPrice,
       // RSI
-      rsiValue: analysis.rsi.value,
-      rsiInterpretation: analysis.rsi.interpretation,
-      rsiPeriod: analysis.rsi.period,
+      rsiValue: analysis.rsi?.value,
+      rsiInterpretation: analysis.rsi?.interpretation,
+      rsiPeriod: analysis.rsi?.period ?? 14,
 
       // MACD
-      macdLine: analysis.macd.macd,
-      macdSignal: analysis.macd.signal,
-      macdHistogram: analysis.macd.histogram,
-      macdInterpretation: analysis.macd.interpretation as 'bullish' | 'bearish' | 'sideways',
-      macdCrossover: analysis.macd.crossover,
+      macdLine: analysis.macd?.macd,
+      macdSignal: analysis.macd?.signal,
+      macdHistogram: analysis.macd?.histogram,
+      macdInterpretation: analysis.macd?.interpretation as 'bullish' | 'bearish' | 'sideways' | undefined,
+      macdCrossover: analysis.macd?.crossover,
 
       // EMAs
-      ema9: analysis.movingAverages.ema9,
-      ema21: analysis.movingAverages.ema21,
-      ema50: analysis.movingAverages.ema50,
-      ema200: analysis.movingAverages.ema200,
+      ema9: analysis.movingAverages?.ema9,
+      ema21: analysis.movingAverages?.ema21,
+      ema50: analysis.movingAverages?.ema50,
+      ema200: analysis.movingAverages?.ema200,
 
       // SMAs
-      sma20: analysis.movingAverages.sma20,
-      sma50: analysis.movingAverages.sma50,
-      sma200: analysis.movingAverages.sma200,
-      maTrend: analysis.movingAverages.trend,
+      sma20: analysis.movingAverages?.sma20,
+      sma50: analysis.movingAverages?.sma50,
+      sma200: analysis.movingAverages?.sma200,
+      maTrend: analysis.movingAverages?.trend,
 
       // Bollinger
-      bollingerUpper: analysis.bollinger.upper,
-      bollingerMiddle: analysis.bollinger.middle,
-      bollingerLower: analysis.bollinger.lower,
-      bollingerWidth: analysis.bollinger.width,
-      bollingerPercentB: analysis.bollinger.percentB,
-      bollingerInterpretation: analysis.bollinger.interpretation,
+      bollingerUpper: analysis.bollinger?.upper,
+      bollingerMiddle: analysis.bollinger?.middle,
+      bollingerLower: analysis.bollinger?.lower,
+      bollingerWidth: analysis.bollinger?.width,
+      bollingerPercentB: analysis.bollinger?.percentB,
+      bollingerInterpretation: analysis.bollinger?.interpretation,
 
       // ATR
-      atrValue: analysis.atr.value,
-      atrPercentage: analysis.atr.percentage,
-      atrVolatility: analysis.atr.volatility,
+      atrValue: analysis.atr?.value,
+      atrPercentage: analysis.atr?.percentage,
+      atrVolatility: analysis.atr?.volatility,
 
       // Stochastic
-      stochasticK: analysis.stochastic.k,
-      stochasticD: analysis.stochastic.d,
-      stochasticInterpretation: analysis.stochastic.interpretation,
+      stochasticK: analysis.stochastic?.k,
+      stochasticD: analysis.stochastic?.d,
+      stochasticInterpretation: analysis.stochastic?.interpretation,
 
       // ADX
-      adxValue: analysis.adx.adx,
-      adxPlusDI: analysis.adx.plusDI,
-      adxMinusDI: analysis.adx.minusDI,
-      adxTrendStrength: analysis.adx.trendStrength,
+      adxValue: analysis.adx?.adx,
+      adxPlusDI: analysis.adx?.plusDI,
+      adxMinusDI: analysis.adx?.minusDI,
+      adxTrendStrength: analysis.adx?.trendStrength,
 
       // Suporte/Resistência
-      pivotPoint: analysis.supportResistance.pivot,
-      resistance1: analysis.supportResistance.resistance1,
-      resistance2: analysis.supportResistance.resistance2,
-      resistance3: analysis.supportResistance.resistance3,
-      support1: analysis.supportResistance.support1,
-      support2: analysis.supportResistance.support2,
-      support3: analysis.supportResistance.support3,
+      pivotPoint: analysis.supportResistance?.pivot,
+      resistance1: analysis.supportResistance?.resistance1,
+      resistance2: analysis.supportResistance?.resistance2,
+      resistance3: analysis.supportResistance?.resistance3,
+      support1: analysis.supportResistance?.support1,
+      support2: analysis.supportResistance?.support2,
+      support3: analysis.supportResistance?.support3,
 
       // Volume
-      currentVolume: analysis.volume.currentVolume,
-      averageVolume: analysis.volume.averageVolume,
-      volumeRatio: analysis.volume.volumeRatio,
-      obv: analysis.volume.obv,
-      volumeInterpretation: analysis.volume.interpretation,
+      currentVolume: analysis.volume?.currentVolume,
+      averageVolume: analysis.volume?.averageVolume,
+      volumeRatio: analysis.volume?.volumeRatio,
+      obv: analysis.volume?.obv,
+      volumeInterpretation: analysis.volume?.interpretation,
 
       // Sinal geral
       overallSignal: analysis.overallSignal,
@@ -7367,7 +8661,12 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
     }
     const { symbol } = req.params;
     const querySchema = z.object({
-      interval: z.string().optional().default('5m'),
+      interval: z.string().optional(),
+      timeframes: z.union([z.string(), z.array(z.string())]).optional(),
+      indicators: z.union([z.string(), z.array(z.string())]).optional(),
+      orderBook: z.union([z.string(), z.boolean()]).optional(),
+      news: z.union([z.string(), z.boolean()]).optional(),
+      trainingData: z.union([z.string(), z.boolean()]).optional(),
       marketType: z.enum(['futures', 'spot', 'margin']).optional(),
       type: z.enum(['futures', 'spot', 'margin']).optional(),
       marginMode: z.enum(['cross', 'isolated']).optional(),
@@ -7381,6 +8680,31 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
 
     const marketType = resolveMarketTypeParam(parsedQuery.data);
     const marginMode = parsedQuery.data.marginMode;
+    const profileRow = await getOrCreateTradingProfile(authContext.tenantId, 'analysis');
+    const profile = normalizeTradingProfile(profileRow);
+    const requestedTimeframes = parseTimeframesParam(parsedQuery.data.timeframes);
+    const requestedIndicators = parseIndicatorsParam(parsedQuery.data.indicators);
+    const timeframes = parsedQuery.data.interval
+      ? [TRADING_INTERVAL_ZOD.parse(parsedQuery.data.interval)]
+      : (requestedTimeframes.length > 0 ? requestedTimeframes : profile.timeframes);
+    const indicators = requestedIndicators.length > 0 ? requestedIndicators : profile.indicators;
+    const dataSources: TradingProfileDataSources = {
+      orderBook: typeof parsedQuery.data.orderBook === 'boolean'
+        ? parsedQuery.data.orderBook
+        : parsedQuery.data.orderBook === 'true'
+          ? true
+          : profile.dataSources.orderBook,
+      news: typeof parsedQuery.data.news === 'boolean'
+        ? parsedQuery.data.news
+        : parsedQuery.data.news === 'true'
+          ? true
+          : profile.dataSources.news,
+      trainingData: typeof parsedQuery.data.trainingData === 'boolean'
+        ? parsedQuery.data.trainingData
+        : parsedQuery.data.trainingData === 'true'
+          ? true
+          : profile.dataSources.trainingData,
+    };
 
     if (marketType === 'spot' && !kucoinSpotClient.isSpotConfigured()) {
       respondKucoinNotConfigured(res);
@@ -7397,29 +8721,69 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
       }
     }
 
-    const result = await calculateAndPersistTechnicalAnalysis({
-      tenantId: authContext.tenantId,
-      userId: authContext.userId,
-      symbol,
-      interval: parsedQuery.data.interval,
-      marketType,
-      marginMode,
-    });
+    const analysisResults = await Promise.all(
+      timeframes.map(async (frame) => {
+        const result = await calculateAndPersistTechnicalAnalysis({
+          tenantId: authContext.tenantId,
+          userId: authContext.userId,
+          symbol,
+          interval: frame,
+          marketType,
+          marginMode,
+          enabledIndicators: indicators,
+        });
+        return {
+          interval: frame,
+          analysis: result.analysis,
+          indicatorId: result.indicatorId,
+          resolvedSymbol: result.resolvedSymbol,
+        };
+      })
+    );
+
+    const primaryResult = analysisResults[0];
+    const consensus = buildMajorityConsensus(analysisResults, profile.consensus);
+    const orderBook = dataSources.orderBook
+      ? await getOrderBookSnapshot({ tenantId: authContext.tenantId, userId: authContext.userId }, symbol, marketType, marginMode)
+      : null;
+    const news = dataSources.news
+      ? await fetchNewsSummary({ tenantId: authContext.tenantId, userId: authContext.userId }, symbol, marketType)
+      : null;
+    const trainingData = dataSources.trainingData
+      ? await fetchTradingDatasetSummary(authContext.tenantId)
+      : null;
 
     logger.info({
       tenantId: authContext.tenantId,
-      symbol: result.resolvedSymbol,
-      interval: parsedQuery.data.interval,
-      overallSignal: result.analysis.overallSignal,
-      confidence: result.analysis.confidence,
-      indicatorId: result.indicatorId,
+      symbol: primaryResult.resolvedSymbol,
+      interval: primaryResult.interval,
+      overallSignal: consensus.overallSignal,
+      confidence: consensus.confidence,
+      indicatorId: primaryResult.indicatorId,
     }, 'Análise técnica calculada e persistida');
 
     res.json({
       success: true,
-      data: result.analysis,
-      indicatorId: result.indicatorId,
-      llmPrompt: technicalIndicators.formatAnalysisForLLM(result.analysis),
+      data: primaryResult.analysis,
+      indicatorId: primaryResult.indicatorId,
+      llmPrompt: technicalIndicators.formatAnalysisForLLM(primaryResult.analysis),
+      matrix: analysisResults.map((item) => ({
+        interval: item.interval,
+        analysis: item.analysis,
+        indicatorId: item.indicatorId,
+      })),
+      consensus,
+      profile: {
+        kind: profileRow.kind,
+        timeframes,
+        indicators,
+        dataSources,
+      },
+      sources: {
+        orderBook,
+        news,
+        trainingData,
+      },
     });
   } catch (error) {
     if (sendKucoinErrorResponse(res, error)) return;

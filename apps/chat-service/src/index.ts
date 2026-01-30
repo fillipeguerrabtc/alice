@@ -300,14 +300,14 @@ const slaAvgResolutionGauge = new PromGauge({
   registers: [metrics.registry],
 });
 
-type AgenticActionLabel = 'trading' | 'payments' | 'stack_ops' | 'agentic_task' | 'erp';
+type AgenticActionLabel = 'trading' | 'payments' | 'stack_ops' | 'agentic_task' | 'erp' | 'grafana';
 type AgenticDecisionLabel = 'approve' | 'reject';
 type AgenticStatusLabel = 'pending' | 'executed' | 'rejected' | 'failed';
 
 const resolveAgenticActionLabel = (params: {
   pendingCommand?: ParsedTradingCommand;
   pendingTask?: { taskType?: AgenticTaskType };
-  pendingIntegration?: { action?: 'payments' | 'stack_ops' | 'erp' };
+  pendingIntegration?: { action?: 'payments' | 'stack_ops' | 'erp' | 'grafana' };
   fallback?: AgenticActionLabel;
 }): AgenticActionLabel => {
   if (params.pendingCommand) {
@@ -321,6 +321,9 @@ const resolveAgenticActionLabel = (params: {
   }
   if (params.pendingIntegration?.action === 'erp') {
     return 'erp';
+  }
+  if (params.pendingIntegration?.action === 'grafana') {
+    return 'grafana';
   }
   if (params.pendingTask) {
     return 'agentic_task';
@@ -1254,6 +1257,12 @@ const DEFAULT_AGENTIC_DETECTORS: AgenticDetectors = {
     keywords: ['btc', 'bitcoin', 'trading', 'trade', 'ordem', 'order', 'posição', 'position', 'compra', 'venda', 'buy', 'sell', 'long', 'short', 'futures', 'perpetual', 'alavancagem', 'leverage', 'stop', 'profit', 'loss', 'mercado', 'market', 'kucoin', 'exchange', 'crypto', 'cripto', 'dólar', 'dollar'],
     patterns: [],
   },
+  grafana: {
+    baseKeywords: ['grafana', 'dashboard', 'painel', 'observability', 'observabilidade', 'monitoramento', 'metrics', 'métricas'],
+    listDashboardsKeywords: ['listar dashboards', 'listar painéis', 'dashboards', 'painéis', 'dashboard list', 'list dashboards'],
+    updateDashboardKeywords: ['atualizar dashboard', 'editar dashboard', 'update dashboard', 'edit dashboard'],
+    getDashboardKeywords: ['abrir dashboard', 'detalhar dashboard', 'ver dashboard', 'get dashboard'],
+  },
   agenticTask: {
     createKeywords: AGENTIC_TASK_CREATE_KEYWORDS,
     updateKeywords: AGENTIC_TASK_UPDATE_KEYWORDS,
@@ -1329,6 +1338,12 @@ function normalizeAgenticDetectors(detectors: Partial<AgenticDetectors> | null |
     webImageSearch: normalizeDetectorGroup(safe.webImageSearch, DEFAULT_AGENTIC_DETECTORS.webImageSearch),
     imageGeneration: normalizeDetectorGroup(safe.imageGeneration, DEFAULT_AGENTIC_DETECTORS.imageGeneration),
     trading: normalizeDetectorGroup(safe.trading, DEFAULT_AGENTIC_DETECTORS.trading),
+    grafana: {
+      baseKeywords: normalizeDetectorList(safe.grafana?.baseKeywords ?? DEFAULT_AGENTIC_DETECTORS.grafana.baseKeywords),
+      listDashboardsKeywords: normalizeDetectorList(safe.grafana?.listDashboardsKeywords ?? DEFAULT_AGENTIC_DETECTORS.grafana.listDashboardsKeywords),
+      updateDashboardKeywords: normalizeDetectorList(safe.grafana?.updateDashboardKeywords ?? DEFAULT_AGENTIC_DETECTORS.grafana.updateDashboardKeywords),
+      getDashboardKeywords: normalizeDetectorList(safe.grafana?.getDashboardKeywords ?? DEFAULT_AGENTIC_DETECTORS.grafana.getDashboardKeywords),
+    },
     agenticTask: {
       createKeywords: normalizeDetectorList(safe.agenticTask?.createKeywords ?? DEFAULT_AGENTIC_DETECTORS.agenticTask.createKeywords),
       updateKeywords: normalizeDetectorList(safe.agenticTask?.updateKeywords ?? DEFAULT_AGENTIC_DETECTORS.agenticTask.updateKeywords),
@@ -1597,6 +1612,11 @@ type StackCommand =
   | { type: 'deploy'; stack: 'infra' | 'alice' | 'observability' | 'erpnext' | 'backup' | 'all'; version?: string; dryRun?: boolean; smartDeploy?: boolean }
   | { type: 'rollback'; stack: 'infra' | 'alice' | 'observability' | 'erpnext' | 'backup' | 'all'; version: string; rollbackVersion?: string };
 
+type GrafanaCommand =
+  | { type: 'list_dashboards'; payload?: { query?: string } }
+  | { type: 'get_dashboard'; payload: { uid: string }; missing?: string[] }
+  | { type: 'update_dashboard'; payload: { dashboard: Record<string, unknown>; folderUid?: string; message?: string; overwrite?: boolean }; missing?: string[] };
+
 function extractField(message: string, label: string): string | null {
   const regex = new RegExp(`${label}\\s*[:=]\\s*([^\\n]+)`, 'i');
   const match = message.match(regex);
@@ -1723,6 +1743,52 @@ function detectErpCommand(message: string, detectors: AgenticDetectors): ErpComm
         customer: customer ?? '',
         items,
         dueDate,
+      },
+      missing: missing.length ? missing : undefined,
+    };
+  }
+
+  return null;
+}
+
+function detectGrafanaCommand(message: string, detectors: AgenticDetectors): GrafanaCommand | null {
+  const normalized = normalizeForAgenticDetection(message);
+  if (!normalized) return null;
+
+  const grafanaDetectors = detectors.grafana;
+  const hasGrafanaContext = grafanaDetectors.baseKeywords.some((keyword) => normalized.includes(keyword));
+
+  if (!hasGrafanaContext) {
+    return null;
+  }
+
+  if (grafanaDetectors.listDashboardsKeywords.some((keyword) => normalized.includes(keyword))) {
+    const query = extractField(message, 'query') ?? extractField(message, 'busca') ?? undefined;
+    return { type: 'list_dashboards', payload: query ? { query } : undefined };
+  }
+
+  if (grafanaDetectors.getDashboardKeywords.some((keyword) => normalized.includes(keyword))) {
+    const uid = extractField(message, 'uid') ?? extractInlineField(message, 'uid');
+    const missing = [!uid ? 'uid' : null].filter(Boolean) as string[];
+    return {
+      type: 'get_dashboard',
+      payload: { uid: uid ?? '' },
+      missing: missing.length ? missing : undefined,
+    };
+  }
+
+  if (grafanaDetectors.updateDashboardKeywords.some((keyword) => normalized.includes(keyword))) {
+    const dashboard = extractJsonField(message, 'dashboard') ?? extractJsonField(message, 'payload');
+    const folderUid = extractField(message, 'folderUid') ?? extractField(message, 'pastaUid') ?? undefined;
+    const messageNote = extractField(message, 'mensagem') ?? extractField(message, 'message') ?? undefined;
+    const missing = [!dashboard ? 'dashboard' : null].filter(Boolean) as string[];
+    return {
+      type: 'update_dashboard',
+      payload: {
+        dashboard: (dashboard as Record<string, unknown>) ?? {},
+        folderUid: folderUid ?? undefined,
+        message: messageNote ?? undefined,
+        overwrite: true,
       },
       missing: missing.length ? missing : undefined,
     };
@@ -1875,6 +1941,71 @@ async function executeErpCommand(params: {
       auth,
     });
     responseContent = `Fatura criada no ERPNext para ${command.payload.customer}.`;
+    integrationResult = result;
+  }
+
+  return { responseContent, integrationResult };
+}
+
+function isGrafanaWriteCommand(command: GrafanaCommand): command is Extract<GrafanaCommand, { type: 'update_dashboard' }> {
+  return command.type === 'update_dashboard';
+}
+
+function buildGrafanaCommandSummary(command: GrafanaCommand): string {
+  if (command.type === 'list_dashboards') {
+    return 'Grafana: listar dashboards';
+  }
+  if (command.type === 'get_dashboard') {
+    return `Grafana: obter dashboard (${command.payload.uid || 'uid'})`;
+  }
+  return 'Grafana: atualizar dashboard';
+}
+
+async function executeGrafanaCommand(params: {
+  command: GrafanaCommand;
+  auth: AuthContext;
+}): Promise<{ responseContent: string; integrationResult: unknown }> {
+  const { command, auth } = params;
+  let responseContent = 'Ação Grafana concluída.';
+  let integrationResult: unknown = null;
+
+  if (command.type === 'list_dashboards') {
+    const query = command.payload?.query ? `?query=${encodeURIComponent(command.payload.query)}` : '';
+    const result = await callIntegrationsService<{ data: Array<{ title: string; uid: string; url: string }> }>({
+      endpoint: `/api/integrations/grafana/dashboards${query}`,
+      method: 'GET',
+      auth,
+    });
+    const dashboards = result.data.slice(0, 10).map((item) => `- ${item.title} (${item.uid})`);
+    responseContent = dashboards.length
+      ? `Dashboards Grafana (top 10):\n${dashboards.join('\n')}`
+      : 'Nenhum dashboard encontrado no Grafana.';
+    integrationResult = result;
+  }
+
+  if (command.type === 'get_dashboard') {
+    const result = await callIntegrationsService<{ data: { dashboard: Record<string, unknown> } }>({
+      endpoint: `/api/integrations/grafana/dashboards/${command.payload.uid}`,
+      method: 'GET',
+      auth,
+    });
+    responseContent = `Dashboard obtido: ${command.payload.uid}.`;
+    integrationResult = result;
+  }
+
+  if (command.type === 'update_dashboard') {
+    const result = await callIntegrationsService<{ data: Record<string, unknown> }>({
+      endpoint: '/api/integrations/grafana/dashboards',
+      method: 'POST',
+      body: {
+        dashboard: command.payload.dashboard,
+        folderUid: command.payload.folderUid,
+        message: command.payload.message,
+        overwrite: command.payload.overwrite ?? true,
+      },
+      auth,
+    });
+    responseContent = 'Dashboard Grafana atualizado com sucesso.';
     integrationResult = result;
   }
 
@@ -4843,6 +4974,11 @@ type TradingCommandType =
   | 'sell'
   | 'close_position'
   | 'cancel_order'
+  | 'approve_signal'
+  | 'reject_signal'
+  | 'approve_order'
+  | 'reject_order'
+  | 'update_review_order'
   | 'generate_signal'
   | 'status'
   | 'positions'
@@ -4862,9 +4998,12 @@ interface ParsedTradingCommand {
   type: TradingCommandType;
   isTrading: boolean;
   amount?: number;
+  size?: number;
   symbol?: string;
   orderId?: string;
+  signalId?: string;
   price?: number;
+  orderType?: 'limit' | 'market' | 'stop_limit' | 'stop_market' | 'take_profit';
   leverage?: number;
   stopLoss?: number;
   takeProfit?: number;
@@ -4895,6 +5034,11 @@ function getTradingCommandRisk(command: ParsedTradingCommand): TradingCommandRis
     case 'sell':
     case 'close_position':
     case 'cancel_order':
+    case 'approve_signal':
+    case 'reject_signal':
+    case 'approve_order':
+    case 'reject_order':
+    case 'update_review_order':
     case 'set_stop_loss':
     case 'set_take_profit':
     case 'unknown':
@@ -4960,6 +5104,40 @@ function getValidationHint(
       orderId: {
         pt: 'Especifique o ID da ordem. Ex: "cancele ordem abc12345-..."',
         en: 'Specify the order ID. Ex: "cancel order abc12345-..."',
+      },
+    },
+    approve_signal: {
+      signalId: {
+        pt: 'Informe o ID do sinal. Ex: "aprovar sinal abc12345-..."',
+        en: 'Provide the signal ID. Ex: "approve signal abc12345-..."',
+      },
+    },
+    reject_signal: {
+      signalId: {
+        pt: 'Informe o ID do sinal. Ex: "rejeitar sinal abc12345-..."',
+        en: 'Provide the signal ID. Ex: "reject signal abc12345-..."',
+      },
+    },
+    approve_order: {
+      orderId: {
+        pt: 'Informe o ID da ordem. Ex: "aprovar ordem abc12345-..."',
+        en: 'Provide the order ID. Ex: "approve order abc12345-..."',
+      },
+    },
+    reject_order: {
+      orderId: {
+        pt: 'Informe o ID da ordem. Ex: "rejeitar ordem abc12345-..."',
+        en: 'Provide the order ID. Ex: "reject order abc12345-..."',
+      },
+    },
+    update_review_order: {
+      orderId: {
+        pt: 'Informe o ID da ordem. Ex: "ajustar ordem abc12345-..."',
+        en: 'Provide the order ID. Ex: "update order abc12345-..."',
+      },
+      updates: {
+        pt: 'Informe ao menos um ajuste. Ex: "ajustar ordem ... preço 45000 tamanho 2 sl 43000 tp 48000"',
+        en: 'Provide at least one adjustment. Ex: "update order ... price 45000 size 2 sl 43000 tp 48000"',
       },
     },
     set_stop_loss: {
@@ -5196,6 +5374,52 @@ async function executeTradingCommand(
       case 'cancel_order':
         endpoint = `/api/integrations/trading/orders/${command.orderId || ''}`;
         method = 'DELETE';
+        break;
+
+      case 'approve_signal':
+        endpoint = `/api/integrations/trading/signals/${command.signalId || ''}/approve`;
+        method = 'POST';
+        body = {
+          reason: 'Aprovado via chat',
+          overrides: {
+            orderType: command.orderType,
+            size: command.size ?? command.amount,
+            price: command.price,
+            leverage: command.leverage,
+            stopLoss: command.stopLoss,
+            takeProfit: command.takeProfit,
+          },
+        };
+        break;
+
+      case 'reject_signal':
+        endpoint = `/api/integrations/trading/signals/${command.signalId || ''}/reject`;
+        method = 'POST';
+        body = { reason: 'Rejeitado via chat' };
+        break;
+
+      case 'approve_order':
+        endpoint = `/api/integrations/trading/orders/${command.orderId || ''}/approve`;
+        method = 'POST';
+        break;
+
+      case 'reject_order':
+        endpoint = `/api/integrations/trading/orders/${command.orderId || ''}/reject`;
+        method = 'POST';
+        body = { reason: 'Rejeitado via chat' };
+        break;
+
+      case 'update_review_order':
+        endpoint = `/api/integrations/trading/orders/${command.orderId || ''}/review`;
+        method = 'PATCH';
+        body = {
+          orderType: command.orderType,
+          size: command.size ?? command.amount,
+          price: command.price,
+          leverage: command.leverage,
+          stopLoss: command.stopLoss,
+          takeProfit: command.takeProfit,
+        };
         break;
 
       case 'status':
@@ -8571,6 +8795,23 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
               }
             }
 
+            if (pendingIntegration.action === 'grafana') {
+              if (pendingIntegration.operation === 'update_dashboard') {
+                const params = pendingIntegration.params as {
+                  dashboard: Record<string, unknown>;
+                  folderUid?: string;
+                  message?: string;
+                  overwrite?: boolean;
+                };
+                const grafanaResult = await executeGrafanaCommand({
+                  command: { type: 'update_dashboard', payload: params },
+                  auth: authContext,
+                });
+                responseContent = grafanaResult.responseContent;
+                integrationResult = grafanaResult.integrationResult;
+              }
+            }
+
             await db.update(schema.actionRequests)
               .set({
                 status: 'executed',
@@ -9095,7 +9336,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         let responseContent: string;
         if (result.success && parsedCommand.type === 'generate_signal') {
           const payload = result.data as {
-            data?: { signalType?: string; symbol?: string; confidence?: number };
+            data?: { id?: string; signalType?: string; symbol?: string; confidence?: number };
             validationStatus?: string;
           };
           const signal = payload?.data;
@@ -9103,9 +9344,10 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             ? `${(signal.confidence * 100).toFixed(0)}%`
             : 'N/A';
           const validationStatus = payload?.validationStatus || 'pending';
+          const signalId = signal?.id ? ` ID: ${signal.id}.` : '';
           responseContent = `Sinal gerado${signal?.symbol ? ` para ${signal.symbol}` : ''}: ` +
             `${signal?.signalType || 'indefinido'} com confiança ${confidence}. ` +
-            `Validação: ${validationStatus}.`;
+            `Validação: ${validationStatus}.${signalId}`;
         } else {
           responseContent = result.success
             ? `Comando de trading executado: ${description}.`
@@ -9181,6 +9423,148 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         isFromUser: false,
         metadata: {
           agenticLinks: true,
+        },
+      }).returning();
+
+      await db.update(schema.conversations)
+        .set({
+          totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+          ultimaMensagemEm: new Date(),
+          atualizadoEm: new Date(),
+        })
+        .where(eq(schema.conversations.id, conversationId));
+
+      res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+      res.write('data: [DONE]\n\n');
+      res.end();
+      return;
+    }
+
+    const grafanaCommand = detectGrafanaCommand(userMessageContent, agenticDetectors);
+    if (grafanaCommand) {
+      if ((grafanaCommand.type === 'list_dashboards' || grafanaCommand.type === 'get_dashboard') && !agenticSettings.observabilityReadEnabled) {
+        res.write(`data: ${JSON.stringify({ error: 'Grafana leitura está desativada nas configurações do tenant.' })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
+      if (grafanaCommand.type === 'update_dashboard' && !agenticSettings.observabilityWriteEnabled) {
+        res.write(`data: ${JSON.stringify({ error: 'Grafana escrita está desativada nas configurações do tenant.' })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
+
+      const permissionCheck = await checkPermission(
+        authContext,
+        grafanaCommand.type === 'update_dashboard'
+          ? 'integrations:grafana:write'
+          : 'integrations:grafana:read'
+      );
+      if (!permissionCheck.allowed) {
+        res.write(`data: ${JSON.stringify({ error: 'Você não possui permissão para operar o Grafana.' })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
+
+      if ('missing' in grafanaCommand && grafanaCommand.missing?.length) {
+        const responseContent = `Para executar a ação no Grafana, preciso dos campos: ${grafanaCommand.missing.join(', ')}.`;
+        const [assistantMessage] = await db.insert(schema.messages).values({
+          conversationId,
+          agentId: conversation?.agentId ?? undefined,
+          conteudo: responseContent,
+          tipo: 'text',
+          isFromUser: false,
+          metadata: {
+            grafanaCommand,
+            validationError: true,
+          },
+        }).returning();
+
+        await db.update(schema.conversations)
+          .set({
+            totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+            ultimaMensagemEm: new Date(),
+            atualizadoEm: new Date(),
+          })
+          .where(eq(schema.conversations.id, conversationId));
+
+        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
+
+      const grafanaSummary = buildGrafanaCommandSummary(grafanaCommand);
+
+      if (isGrafanaWriteCommand(grafanaCommand)) {
+        const [actionRequest] = await db.insert(schema.actionRequests).values({
+          tenantId,
+          conversationId,
+          userId,
+          agentId: conversation?.agentId ?? undefined,
+          type: 'integration',
+          status: 'pending',
+          payload: {
+            action: 'grafana',
+            summary: grafanaSummary,
+            integration: {
+              action: 'grafana',
+              operation: grafanaCommand.type,
+              params: grafanaCommand.payload,
+            },
+            sourceMessageId: userMessage.id,
+          },
+        }).returning();
+
+        recordAgenticMetrics({
+          action: 'grafana',
+          status: 'pending',
+        });
+
+        const responseContent = `Para executar a operação (${grafanaSummary}), preciso de confirmação explícita.\nResponda "confirmar" para executar ou "cancelar" para abortar.`;
+        const [assistantMessage] = await db.insert(schema.messages).values({
+          conversationId,
+          agentId: conversation?.agentId ?? undefined,
+          conteudo: responseContent,
+          tipo: 'text',
+          isFromUser: false,
+          metadata: {
+            actionRequestId: actionRequest?.id,
+            actionStatus: 'pending',
+            requiresConfirmation: true,
+            grafanaCommand,
+          },
+        }).returning();
+
+        await db.update(schema.conversations)
+          .set({
+            totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+            ultimaMensagemEm: new Date(),
+            atualizadoEm: new Date(),
+          })
+          .where(eq(schema.conversations.id, conversationId));
+
+        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+        res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
+
+      const { responseContent, integrationResult } = await executeGrafanaCommand({ command: grafanaCommand, auth: authContext });
+      const [assistantMessage] = await db.insert(schema.messages).values({
+        conversationId,
+        agentId: conversation?.agentId ?? undefined,
+        conteudo: responseContent,
+        tipo: 'text',
+        isFromUser: false,
+        metadata: {
+          grafanaCommand,
+          integrationResult,
         },
       }).returning();
 
@@ -14342,6 +14726,12 @@ const agenticDetectorsSchema = z.object({
   webImageSearch: detectorGroupSchema,
   imageGeneration: detectorGroupSchema,
   trading: detectorGroupSchema,
+  grafana: z.object({
+    baseKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+    listDashboardsKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+    updateDashboardKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+    getDashboardKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+  }),
   agenticTask: z.object({
     createKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
     updateKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
@@ -14383,6 +14773,8 @@ const agenticSettingsSchema = z.object({
   webEnabled: z.boolean(),
   erpReadEnabled: z.boolean(),
   erpWriteEnabled: z.boolean(),
+  observabilityReadEnabled: z.boolean(),
+  observabilityWriteEnabled: z.boolean(),
   tradingEnabled: z.boolean(),
   paymentsEnabled: z.boolean(),
   stackOpsEnabled: z.boolean(),
@@ -14395,6 +14787,8 @@ const DEFAULT_AGENTIC_SETTINGS = {
   webEnabled: true,
   erpReadEnabled: true,
   erpWriteEnabled: true,
+  observabilityReadEnabled: true,
+  observabilityWriteEnabled: true,
   tradingEnabled: true,
   paymentsEnabled: true,
   stackOpsEnabled: true,

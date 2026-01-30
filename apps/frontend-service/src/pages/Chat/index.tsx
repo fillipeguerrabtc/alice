@@ -2215,6 +2215,10 @@ export default function Chat() {
                         onRateImage={handleRateImage}
                         onFeedback={handleFeedback}
                         onRegenerate={handleRegenerate}
+                        onQuickReply={(content) => {
+                          if (isStreaming) return;
+                          sendMessage.mutate({ content });
+                        }}
                         selectionMode={messageSelectionMode}
                         isSelected={selectedMessageIds.has(message.id)}
                         onToggleSelect={(shiftKey) => toggleMessageSelection(message.id, index, shiftKey)}

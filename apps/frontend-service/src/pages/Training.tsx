@@ -344,6 +344,70 @@ function TrainingDataCard({ data, namespaceName, onApprove, onReject, isPending,
   );
 }
 
+function TradingDatasetCard({
+  data,
+  onApprove,
+  onReject,
+  isPending,
+  t,
+  locale,
+  timeZone,
+}: {
+  data: Record<string, unknown>;
+  onApprove: () => void;
+  onReject: () => void;
+  isPending: boolean;
+  t: (key: string, options?: Record<string, unknown>) => string;
+  locale: string;
+  timeZone: string;
+}) {
+  const status = (data.status as TrainingData['status']) ?? 'pending';
+  const marketContext = (data.marketContext as { symbol?: string }) ?? {};
+  return (
+    <motion.div variants={itemVariants}>
+      <Card className="hover-elevate">
+        <CardHeader className="pb-2">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-primary" />
+              <span className="text-sm font-medium">
+                {(data.actionType as string) ?? 'signal'}
+              </span>
+              <Badge variant="secondary" className="text-xs">
+                {marketContext.symbol ?? 'N/A'}
+              </Badge>
+            </div>
+            {getStatusBadge(status, t)}
+          </div>
+          <CardDescription className="text-xs">
+            {formatDateTime((data.criadoEm as string) ?? new Date().toISOString(), { locale, timeZone })}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <div className="text-xs text-muted-foreground bg-muted p-2 rounded">
+            {String(data.prompt ?? '').slice(0, 240)}
+          </div>
+          <div className="text-xs text-muted-foreground bg-muted p-2 rounded">
+            {String(data.response ?? '').slice(0, 240)}
+          </div>
+          {status === 'pending' && (
+            <div className="flex gap-2">
+              <Button size="sm" onClick={onApprove} disabled={isPending}>
+                <CheckCircle2 className="h-4 w-4 mr-1" />
+                {t('training.actions.approve')}
+              </Button>
+              <Button size="sm" variant="outline" onClick={onReject} disabled={isPending}>
+                <XCircle className="h-4 w-4 mr-1" />
+                {t('training.actions.reject')}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+}
+
 function JobCard({
   job,
   t,
@@ -1554,6 +1618,7 @@ export default function Training() {
   const tenantId = user?.tenantId;
   
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [tradingDatasetStatusFilter, setTradingDatasetStatusFilter] = useState<string>('pending');
   const [namespaceFilter, setNamespaceFilter] = useState<string>('all');
   const [sourceFilter, setSourceFilter] = useState<string>('all');
   const [showCreateJob, setShowCreateJob] = useState(false);
@@ -1753,6 +1818,24 @@ export default function Training() {
     refetchInterval: 1000 * 60,
   });
 
+  const { data: tradingDatasets, isLoading: tradingDatasetsLoading } = useQuery<{
+    success: boolean;
+    data: Array<Record<string, unknown>>;
+    total: number;
+  }>({
+    queryKey: ['/api/integrations/trading/datasets', tradingDatasetStatusFilter],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (tradingDatasetStatusFilter !== 'all') {
+        params.set('status', tradingDatasetStatusFilter);
+      }
+      const res = await apiRequest('GET', `/api/integrations/trading/datasets?${params.toString()}`);
+      return res.json();
+    },
+    staleTime: 1000 * 30,
+    refetchInterval: 1000 * 60,
+  });
+
   const { data: jobs, isLoading: jobsLoading } = useQuery<JobsResponse>({
     queryKey: ['/api/training/jobs'],
     staleTime: 1000 * 30,
@@ -1772,8 +1855,22 @@ export default function Training() {
     },
   });
 
+  const reviewTradingDataset = useMutation({
+    mutationFn: async ({ id, status, reviewNotes }: { id: string; status: 'approved' | 'rejected'; reviewNotes?: string }) => {
+      return apiRequest('PATCH', `/api/integrations/trading/datasets/${id}/review`, { status, reviewNotes });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/datasets'] });
+      toast({ title: t('training.tradingDataset.success.reviewed') });
+    },
+    onError: () => {
+      toast({ title: t('training.tradingDataset.errors.reviewFailed'), variant: 'destructive' });
+    },
+  });
+
   const allData = trainingData?.trainingData || [];
   const allJobs = jobs?.jobs || [];
+  const tradingDatasetRows = tradingDatasets?.data || [];
 
   const namespacesById = new Map((namespaces || []).map((ns) => [ns.id, ns.nome]));
   const sourceOptions = Array.from(new Set(allData.map((d) => d.source))).sort();
@@ -1798,6 +1895,14 @@ export default function Training() {
     running: allJobs.filter(j => j.status === 'running' || j.status === 'preparing').length,
     completed: allJobs.filter(j => j.status === 'completed').length,
     failed: allJobs.filter(j => j.status === 'failed').length,
+  };
+
+  const tradingDatasetStats = {
+    total: tradingDatasets?.total ?? tradingDatasetRows.length,
+    pending: tradingDatasetRows.filter((d) => (d as { status?: string }).status === 'pending').length,
+    approved: tradingDatasetRows.filter((d) => (d as { status?: string }).status === 'approved').length,
+    rejected: tradingDatasetRows.filter((d) => (d as { status?: string }).status === 'rejected').length,
+    used: tradingDatasetRows.filter((d) => (d as { status?: string }).status === 'used').length,
   };
 
   return (
@@ -1914,6 +2019,10 @@ export default function Training() {
               <Brain className="h-4 w-4 mr-2" />
               {t('training.tabs.jobs', { count: allJobs.length })}
             </TabsTrigger>
+            <TabsTrigger value="trading-datasets" data-testid="tab-trading-datasets">
+              <TrendingUp className="h-4 w-4 mr-2" />
+              {t('training.tabs.tradingDatasets', { count: tradingDatasetStats.total })}
+            </TabsTrigger>
             <TabsTrigger value="bulk-import" data-testid="tab-bulk-import">
               <Upload className="h-4 w-4 mr-2" />
               {t('training.bulkImport.title')}
@@ -2015,6 +2124,69 @@ export default function Training() {
                     isPending={updateStatus.isPending}
                     onApprove={() => updateStatus.mutate({ id: data.id, status: 'approved' })}
                     onReject={() => updateStatus.mutate({ id: data.id, status: 'rejected' })}
+                    t={t}
+                    locale={locale}
+                    timeZone={timeZone}
+                  />
+                ))}
+              </motion.div>
+            )}
+          </ScrollArea>
+        </TabsContent>
+
+        <TabsContent value="trading-datasets" className="flex-1 m-0">
+          <div className="p-4 border-b flex items-center gap-2 flex-wrap">
+            <Select value={tradingDatasetStatusFilter} onValueChange={setTradingDatasetStatusFilter}>
+              <SelectTrigger className="w-[200px]" data-testid="select-trading-dataset-status">
+                <Filter className="h-4 w-4 mr-2" />
+                <SelectValue placeholder={t('training.tradingDataset.filter')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t('training.filter.all')}</SelectItem>
+                <SelectItem value="pending">{t('training.filter.pending')}</SelectItem>
+                <SelectItem value="approved">{t('training.filter.approved')}</SelectItem>
+                <SelectItem value="rejected">{t('training.filter.rejected')}</SelectItem>
+                <SelectItem value="used">{t('training.filter.used')}</SelectItem>
+              </SelectContent>
+            </Select>
+            <span className="text-sm text-muted-foreground">
+              {t('training.tradingDataset.count', { count: tradingDatasetStats.total })}
+            </span>
+          </div>
+
+          <ScrollArea className="flex-1 p-4">
+            {tradingDatasetsLoading ? (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Skeleton key={i} className="h-48" />
+                ))}
+              </div>
+            ) : tradingDatasetRows.length === 0 ? (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="flex flex-col items-center justify-center h-64 text-center"
+              >
+                <Database className="h-12 w-12 text-muted-foreground/50 mb-4" />
+                <h3 className="font-medium mb-1">{t('training.tradingDataset.emptyTitle')}</h3>
+                <p className="text-sm text-muted-foreground max-w-md">
+                  {t('training.tradingDataset.emptyDesc')}
+                </p>
+              </motion.div>
+            ) : (
+              <motion.div
+                variants={containerVariants}
+                initial="hidden"
+                animate="visible"
+                className="grid gap-4 md:grid-cols-2 lg:grid-cols-3"
+              >
+                {tradingDatasetRows.map((data) => (
+                  <TradingDatasetCard
+                    key={String(data.id)}
+                    data={data}
+                    isPending={reviewTradingDataset.isPending}
+                    onApprove={() => reviewTradingDataset.mutate({ id: String(data.id), status: 'approved' })}
+                    onReject={() => reviewTradingDataset.mutate({ id: String(data.id), status: 'rejected' })}
                     t={t}
                     locale={locale}
                     timeZone={timeZone}

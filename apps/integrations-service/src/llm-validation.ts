@@ -220,37 +220,56 @@ export function extractValuesFromLLMResponse(text: string): ExtractedLLMValues {
  * Converte valores do snapshot de análise técnica para formato comparável
  */
 function snapshotToComparableValues(snapshot: TechnicalAnalysisResult): Record<string, number> {
-  return {
-    rsi: snapshot.rsi.value,
-    macdLine: snapshot.macd.macd,
-    macdSignal: snapshot.macd.signal,
-    macdHistogram: snapshot.macd.histogram,
-    ema9: snapshot.movingAverages.ema9,
-    ema21: snapshot.movingAverages.ema21,
-    ema50: snapshot.movingAverages.ema50,
-    ema200: snapshot.movingAverages.ema200,
-    sma20: snapshot.movingAverages.sma20,
-    sma50: snapshot.movingAverages.sma50,
-    sma200: snapshot.movingAverages.sma200,
-    bollingerUpper: snapshot.bollinger.upper,
-    bollingerMiddle: snapshot.bollinger.middle,
-    bollingerLower: snapshot.bollinger.lower,
-    bollingerPercentB: snapshot.bollinger.percentB,
-    atrValue: snapshot.atr.value,
-    atrPercentage: snapshot.atr.percentage,
-    stochasticK: snapshot.stochastic.k,
-    stochasticD: snapshot.stochastic.d,
-    adxValue: snapshot.adx.adx,
-    pivotPoint: snapshot.supportResistance.pivot,
-    resistance1: snapshot.supportResistance.resistance1,
-    resistance2: snapshot.supportResistance.resistance2,
-    resistance3: snapshot.supportResistance.resistance3,
-    support1: snapshot.supportResistance.support1,
-    support2: snapshot.supportResistance.support2,
-    support3: snapshot.supportResistance.support3,
-    volumeRatio: snapshot.volume.volumeRatio,
+  const values: Record<string, number> = {
     currentPrice: snapshot.currentPrice,
   };
+
+  if (snapshot.rsi) values.rsi = snapshot.rsi.value;
+  if (snapshot.macd) {
+    values.macdLine = snapshot.macd.macd;
+    values.macdSignal = snapshot.macd.signal;
+    values.macdHistogram = snapshot.macd.histogram;
+  }
+  if (snapshot.movingAverages) {
+    values.ema9 = snapshot.movingAverages.ema9;
+    values.ema21 = snapshot.movingAverages.ema21;
+    values.ema50 = snapshot.movingAverages.ema50;
+    values.ema200 = snapshot.movingAverages.ema200;
+    values.sma20 = snapshot.movingAverages.sma20;
+    values.sma50 = snapshot.movingAverages.sma50;
+    values.sma200 = snapshot.movingAverages.sma200;
+  }
+  if (snapshot.bollinger) {
+    values.bollingerUpper = snapshot.bollinger.upper;
+    values.bollingerMiddle = snapshot.bollinger.middle;
+    values.bollingerLower = snapshot.bollinger.lower;
+    values.bollingerPercentB = snapshot.bollinger.percentB;
+  }
+  if (snapshot.atr) {
+    values.atrValue = snapshot.atr.value;
+    values.atrPercentage = snapshot.atr.percentage;
+  }
+  if (snapshot.stochastic) {
+    values.stochasticK = snapshot.stochastic.k;
+    values.stochasticD = snapshot.stochastic.d;
+  }
+  if (snapshot.adx) {
+    values.adxValue = snapshot.adx.adx;
+  }
+  if (snapshot.supportResistance) {
+    values.pivotPoint = snapshot.supportResistance.pivot;
+    values.resistance1 = snapshot.supportResistance.resistance1;
+    values.resistance2 = snapshot.supportResistance.resistance2;
+    values.resistance3 = snapshot.supportResistance.resistance3;
+    values.support1 = snapshot.supportResistance.support1;
+    values.support2 = snapshot.supportResistance.support2;
+    values.support3 = snapshot.supportResistance.support3;
+  }
+  if (snapshot.volume) {
+    values.volumeRatio = snapshot.volume.volumeRatio;
+  }
+
+  return values;
 }
 
 // ============================================================================

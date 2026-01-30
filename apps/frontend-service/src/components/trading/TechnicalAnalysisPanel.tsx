@@ -140,15 +140,15 @@ export interface TechnicalAnalysisResult {
   symbol: string;
   interval: string;
   currentPrice: number;
-  rsi: RSIResult;
-  macd: MACDResult;
-  movingAverages: MovingAverageResult;
-  bollinger: BollingerResult;
-  atr: ATRResult;
-  stochastic: StochasticResult;
-  adx: ADXResult;
-  supportResistance: SupportResistanceResult;
-  volume: VolumeAnalysisResult;
+  rsi?: RSIResult;
+  macd?: MACDResult;
+  movingAverages?: MovingAverageResult;
+  bollinger?: BollingerResult;
+  atr?: ATRResult;
+  stochastic?: StochasticResult;
+  adx?: ADXResult;
+  supportResistance?: SupportResistanceResult;
+  volume?: VolumeAnalysisResult;
   overallSignal: 'strong_buy' | 'buy' | 'neutral' | 'sell' | 'strong_sell';
   confidence: number;
 }
@@ -156,6 +156,44 @@ export interface TechnicalAnalysisResult {
 export interface IntervalOption {
   value: string;
   label: string;
+}
+
+export interface AnalysisMatrixEntry {
+  interval: string;
+  analysis: TechnicalAnalysisResult;
+  indicatorId: string;
+}
+
+export interface AnalysisConsensus {
+  overallSignal: TechnicalAnalysisResult['overallSignal'];
+  confidence: number;
+  alignedTimeframes: string[];
+  misalignedTimeframes: string[];
+  agreementRatio: number;
+  requiredAgree: number;
+  totalTimeframes: number;
+  isMajorityReached: boolean;
+}
+
+export interface AnalysisProfileDataSources {
+  orderBook: boolean;
+  news: boolean;
+  trainingData: boolean;
+}
+
+export interface AnalysisProfile {
+  kind: 'analysis' | 'signal';
+  timeframes: string[];
+  indicators: string[];
+  dataSources: AnalysisProfileDataSources;
+  modelConfig?: {
+    temperature?: number;
+    maxTokens?: number;
+  };
+  consensus?: {
+    rule?: 'majority';
+    minAgree?: number;
+  };
 }
 
 export interface TechnicalAnalysisPanelProps {
@@ -180,6 +218,18 @@ const INTERVALS: IntervalOption[] = [
   { value: '4h', label: '4 horas' },
   { value: '1d', label: '1 dia' },
 ];
+
+const INDICATOR_OPTIONS = [
+  { key: 'rsi', label: 'RSI', description: 'Mede sobrecompra/sobrevenda com base no momentum.' },
+  { key: 'macd', label: 'MACD', description: 'Sinal de tendência via cruzamento de médias.' },
+  { key: 'moving_averages', label: 'Médias Móveis', description: 'Tendência geral e níveis dinâmicos.' },
+  { key: 'bollinger', label: 'Bollinger Bands', description: 'Volatilidade e afastamento do preço.' },
+  { key: 'atr', label: 'ATR', description: 'Volatilidade média e risco de variação.' },
+  { key: 'stochastic', label: 'Stochastic', description: 'Momentum e possíveis reversões.' },
+  { key: 'adx', label: 'ADX', description: 'Força da tendência atual.' },
+  { key: 'support_resistance', label: 'Suporte/Resistência', description: 'Níveis técnicos de reversão (pivot points).' },
+  { key: 'volume', label: 'Volume', description: 'Força do movimento via fluxo negociado.' },
+] as const;
 
 const getSignalColor = (signal: TechnicalAnalysisResult['overallSignal']) => {
   switch (signal) {
@@ -240,6 +290,65 @@ const formatPrice = (price: number, locale: string) => {
   return formatCurrency(price, 'USD', locale);
 };
 
+const buildIndicatorExplanation = (analysis: TechnicalAnalysisResult): Array<{ title: string; detail: string }> => {
+  const explanations: Array<{ title: string; detail: string }> = [];
+  if (analysis.rsi) {
+    explanations.push({
+      title: 'RSI',
+      detail: `RSI ${analysis.rsi.value} indica ${analysis.rsi.interpretation === 'oversold' ? 'sobrevenda' : analysis.rsi.interpretation === 'overbought' ? 'sobrecompra' : 'zona neutra'}.`,
+    });
+  }
+  if (analysis.macd) {
+    explanations.push({
+      title: 'MACD',
+      detail: `Histograma ${analysis.macd.histogram.toFixed(2)} e crossover ${analysis.macd.crossover} sugerem ${analysis.macd.interpretation}.`,
+    });
+  }
+  if (analysis.movingAverages) {
+    explanations.push({
+      title: 'Médias Móveis',
+      detail: `Tendência ${analysis.movingAverages.trend} com EMA 9/21/200 indicando direção dominante.`,
+    });
+  }
+  if (analysis.bollinger) {
+    explanations.push({
+      title: 'Bollinger Bands',
+      detail: `%B ${(analysis.bollinger.percentB * 100).toFixed(0)}% indica posição relativa do preço entre bandas.`,
+    });
+  }
+  if (analysis.atr) {
+    explanations.push({
+      title: 'ATR',
+      detail: `Volatilidade ${analysis.atr.volatility} com ATR ${analysis.atr.percentage.toFixed(2)}% do preço.`,
+    });
+  }
+  if (analysis.stochastic) {
+    explanations.push({
+      title: 'Stochastic',
+      detail: `%K ${analysis.stochastic.k.toFixed(2)} e %D ${analysis.stochastic.d.toFixed(2)} indicam ${analysis.stochastic.interpretation}.`,
+    });
+  }
+  if (analysis.adx) {
+    explanations.push({
+      title: 'ADX',
+      detail: `ADX ${analysis.adx.adx.toFixed(2)} aponta força ${analysis.adx.trendStrength}.`,
+    });
+  }
+  if (analysis.supportResistance) {
+    explanations.push({
+      title: 'Suporte/Resistência',
+      detail: `Pivot ${analysis.supportResistance.pivot.toFixed(2)} com níveis S1/S2/R1/R2 define zonas de reversão.`,
+    });
+  }
+  if (analysis.volume) {
+    explanations.push({
+      title: 'Volume',
+      detail: `Ratio ${analysis.volume.volumeRatio.toFixed(2)}x indica volume ${analysis.volume.interpretation}.`,
+    });
+  }
+  return explanations;
+};
+
 // ============================================================================
 // COMPONENTE
 // ============================================================================
@@ -257,6 +366,18 @@ export function TechnicalAnalysisPanel({
   const resolvedIntervalOptions = intervalOptions?.length ? intervalOptions : INTERVALS;
   const resolvedDefaultInterval = defaultInterval ?? resolvedIntervalOptions[0]?.value ?? '5m';
   const [interval, setInterval] = useState(resolvedDefaultInterval);
+  const [profileForm, setProfileForm] = useState<AnalysisProfile>({
+    kind: 'analysis',
+    timeframes: [resolvedDefaultInterval],
+    indicators: INDICATOR_OPTIONS.map((option) => option.key),
+    dataSources: {
+      orderBook: false,
+      news: false,
+      trainingData: false,
+    },
+    modelConfig: {},
+    consensus: { rule: 'majority' },
+  });
   const [analysisSchedulerForm, setAnalysisSchedulerForm] = useState({
     enabled: false,
     intervalMinutes: '15',
@@ -266,6 +387,55 @@ export function TechnicalAnalysisPanel({
   });
   const locale = user?.idioma ?? 'pt-BR';
   const timeZone = user?.timezone ?? TIMEZONE;
+
+  const toggleTimeframe = (value: string) => {
+    setProfileForm((prev) => {
+      const exists = prev.timeframes.includes(value);
+      const next = exists
+        ? prev.timeframes.filter((item) => item !== value)
+        : [...prev.timeframes, value];
+      return {
+        ...prev,
+        timeframes: next.length > 0 ? next : prev.timeframes,
+      };
+    });
+  };
+
+  const toggleIndicator = (value: string) => {
+    setProfileForm((prev) => {
+      const exists = prev.indicators.includes(value);
+      const next = exists
+        ? prev.indicators.filter((item) => item !== value)
+        : [...prev.indicators, value];
+      return {
+        ...prev,
+        indicators: next.length > 0 ? next : prev.indicators,
+      };
+    });
+  };
+
+  const {
+    data: profileResponse,
+    refetch: refetchProfile,
+  } = useQuery<{ success: boolean; data: AnalysisProfile }>({
+    queryKey: ['/api/integrations/trading/analysis-profile', marketType],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.set('kind', 'analysis');
+      const response = await apiRequest('GET', `/api/integrations/trading/analysis-profile?${params.toString()}`);
+      return response.json();
+    },
+    enabled: Boolean(symbol),
+  });
+
+  useEffect(() => {
+    if (profileResponse?.data) {
+      setProfileForm(profileResponse.data);
+      if (profileResponse.data.timeframes?.[0]) {
+        setInterval(profileResponse.data.timeframes[0]);
+      }
+    }
+  }, [profileResponse]);
 
   const {
     data: analysisSchedulerData,
@@ -325,11 +495,29 @@ export function TechnicalAnalysisPanel({
     data: TechnicalAnalysisResult;
     indicatorId: string;
     llmPrompt: string;
+    matrix: AnalysisMatrixEntry[];
+    consensus: AnalysisConsensus;
+    profile: AnalysisProfile;
+    sources: {
+      orderBook: { symbol: string; bestBid: number | null; bestAsk: number | null; spreadAbs: number | null; spreadPct: number | null; depth: number } | null;
+      news: { query: string; results: Array<{ title: string; url: string; score?: number }> } | null;
+      trainingData: { totalApproved: number; samples: Array<{ prompt: string; response: string; actionType: string; createdAt: string }> } | null;
+    };
   }>({
-    queryKey: ['trading-analysis', symbol, interval, marketType, marginMode],
+    queryKey: ['trading-analysis', symbol, profileForm.timeframes, profileForm.indicators, profileForm.dataSources, marketType, marginMode],
     queryFn: async () => {
       const params = new URLSearchParams();
-      params.set('interval', interval);
+      if (profileForm.timeframes?.length) {
+        params.set('timeframes', profileForm.timeframes.join(','));
+      } else {
+        params.set('interval', interval);
+      }
+      if (profileForm.indicators?.length) {
+        params.set('indicators', profileForm.indicators.join(','));
+      }
+      params.set('orderBook', String(profileForm.dataSources.orderBook));
+      params.set('news', String(profileForm.dataSources.news));
+      params.set('trainingData', String(profileForm.dataSources.trainingData));
       if (marketType) {
         params.set('marketType', marketType);
       }
@@ -388,6 +576,35 @@ export function TechnicalAnalysisPanel({
     },
   });
 
+  const updateProfileMutation = useMutation({
+    mutationFn: async () => {
+      const payload = {
+        kind: 'analysis',
+        timeframes: profileForm.timeframes,
+        indicators: profileForm.indicators,
+        dataSources: profileForm.dataSources,
+        consensus: profileForm.consensus,
+      };
+      const res = await apiRequest('PUT', '/api/integrations/trading/analysis-profile', payload);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      if (!data?.success) {
+        throw new Error(data?.error || t('trading.errors.profileUpdateFailed'));
+      }
+      setProfileForm(data.data as AnalysisProfile);
+      toast({ title: t('trading.success.profileUpdated') });
+      refetchProfile();
+    },
+    onError: (err: Error) => {
+      toast({
+        title: t('trading.errors.profileUpdateFailed'),
+        description: err.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
   const executeAnalysisNowMutation = useMutation({
     mutationFn: async () => {
       const normalizedSymbol = symbol.trim();
@@ -395,7 +612,17 @@ export function TechnicalAnalysisPanel({
         throw new Error(t('trading.analysis.scheduler.errors.symbolRequired'));
       }
       const params = new URLSearchParams();
-      params.set('interval', interval);
+      if (profileForm.timeframes?.length) {
+        params.set('timeframes', profileForm.timeframes.join(','));
+      } else {
+        params.set('interval', interval);
+      }
+      if (profileForm.indicators?.length) {
+        params.set('indicators', profileForm.indicators.join(','));
+      }
+      params.set('orderBook', String(profileForm.dataSources.orderBook));
+      params.set('news', String(profileForm.dataSources.news));
+      params.set('trainingData', String(profileForm.dataSources.trainingData));
       if (marketType) {
         params.set('marketType', marketType);
       }
@@ -445,6 +672,112 @@ export function TechnicalAnalysisPanel({
 
   return (
     <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('trading.analysis.profile.title')}</CardTitle>
+          <CardDescription>{t('trading.analysis.profile.subtitle')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="space-y-3">
+            <Label>{t('trading.analysis.profile.timeframes')}</Label>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {resolvedIntervalOptions.map((option) => (
+                <div key={option.value} className="flex items-center justify-between rounded-md border px-3 py-2">
+                  <span className="text-sm">{option.label}</span>
+                  <Switch
+                    checked={profileForm.timeframes.includes(option.value)}
+                    onCheckedChange={() => toggleTimeframe(option.value)}
+                  />
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">{t('trading.analysis.profile.timeframesHint')}</p>
+          </div>
+
+          <div className="space-y-3">
+            <Label>{t('trading.analysis.profile.indicators')}</Label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {INDICATOR_OPTIONS.map((option) => (
+                <div key={option.key} className="flex items-start justify-between rounded-md border px-3 py-2">
+                  <div>
+                    <p className="text-sm font-medium">{option.label}</p>
+                    <p className="text-xs text-muted-foreground">{option.description}</p>
+                  </div>
+                  <Switch
+                    checked={profileForm.indicators.includes(option.key)}
+                    onCheckedChange={() => toggleIndicator(option.key)}
+                  />
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">{t('trading.analysis.profile.indicatorsSupportHint')}</p>
+          </div>
+
+          <div className="space-y-3">
+            <Label>{t('trading.analysis.profile.sources')}</Label>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                <div>
+                  <p className="text-sm font-medium">{t('trading.analysis.profile.sourcesOrderBookTitle')}</p>
+                  <p className="text-xs text-muted-foreground">{t('trading.analysis.profile.sourcesOrderBookDesc')}</p>
+                </div>
+                <Switch
+                  checked={profileForm.dataSources.orderBook}
+                  onCheckedChange={(checked) => setProfileForm((prev) => ({
+                    ...prev,
+                    dataSources: { ...prev.dataSources, orderBook: checked },
+                  }))}
+                />
+              </div>
+              <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                <div>
+                  <p className="text-sm font-medium">{t('trading.analysis.profile.sourcesNewsTitle')}</p>
+                  <p className="text-xs text-muted-foreground">{t('trading.analysis.profile.sourcesNewsDesc')}</p>
+                </div>
+                <Switch
+                  checked={profileForm.dataSources.news}
+                  onCheckedChange={(checked) => setProfileForm((prev) => ({
+                    ...prev,
+                    dataSources: { ...prev.dataSources, news: checked },
+                  }))}
+                />
+              </div>
+              <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                <div>
+                  <p className="text-sm font-medium">{t('trading.analysis.profile.sourcesTrainingTitle')}</p>
+                  <p className="text-xs text-muted-foreground">{t('trading.analysis.profile.sourcesTrainingDesc')}</p>
+                </div>
+                <Switch
+                  checked={profileForm.dataSources.trainingData}
+                  onCheckedChange={(checked) => setProfileForm((prev) => ({
+                    ...prev,
+                    dataSources: { ...prev.dataSources, trainingData: checked },
+                  }))}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              onClick={() => updateProfileMutation.mutate()}
+              disabled={updateProfileMutation.isPending}
+            >
+              {updateProfileMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {t('trading.analysis.profile.save')}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => refetch()}
+              disabled={isFetching}
+            >
+              {isFetching && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {t('trading.analysis.profile.runNow')}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle>{t('trading.analysis.scheduler.title')}</CardTitle>
@@ -635,363 +968,487 @@ export function TechnicalAnalysisPanel({
               </div>
             </div>
 
+            {analysisResponse?.consensus && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>{t('trading.analysis.consensus.title')}</CardTitle>
+                  <CardDescription>{t('trading.analysis.consensus.subtitle')}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex flex-wrap gap-4">
+                    <Badge variant="outline">{t('trading.analysis.consensus.signalLabel')} {analysisResponse.consensus.overallSignal.toUpperCase()}</Badge>
+                    <Badge variant="outline">
+                      {t('trading.analysis.consensus.agreementLabel')} {formatNumber(analysisResponse.consensus.agreementRatio * 100, locale, { maximumFractionDigits: 0 })}%
+                    </Badge>
+                    <Badge variant="outline">{t('trading.analysis.consensus.requiredLabel')} {analysisResponse.consensus.requiredAgree}</Badge>
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    {t('trading.analysis.consensus.alignedLabel')} {analysisResponse.consensus.alignedTimeframes.join(', ') || t('trading.analysis.consensus.none')}
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    {t('trading.analysis.consensus.misalignedLabel')} {analysisResponse.consensus.misalignedTimeframes.join(', ') || t('trading.analysis.consensus.none')}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {analysisResponse?.matrix?.length ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>{t('trading.analysis.matrix.title')}</CardTitle>
+                  <CardDescription>{t('trading.analysis.matrix.subtitle')}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {analysisResponse.matrix.map((entry) => (
+                      <div key={entry.interval} className="border rounded-md p-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">{entry.interval}</span>
+                          <Badge variant="outline">{getSignalLabel(entry.analysis.overallSignal)}</Badge>
+                        </div>
+                        <div className="mt-2 text-xs text-muted-foreground">
+                          {t('trading.analysis.matrix.confidenceLabel')} {formatNumber(entry.analysis.confidence * 100, locale, { maximumFractionDigits: 0 })}%
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            ) : null}
+
+            {analysisResponse?.matrix?.length ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>{t('trading.analysis.explain.title')}</CardTitle>
+                  <CardDescription>{t('trading.analysis.explain.subtitle')}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {analysisResponse.matrix.map((entry) => (
+                    <div key={`explain-${entry.interval}`} className="border rounded-md p-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium">{entry.interval}</span>
+                        <Badge variant="outline">{getSignalLabel(entry.analysis.overallSignal)}</Badge>
+                      </div>
+                      <ul className="mt-2 text-sm text-muted-foreground list-disc pl-5 space-y-1">
+                        {buildIndicatorExplanation(entry.analysis).map((item) => (
+                          <li key={`${entry.interval}-${item.title}`}>
+                            <span className="font-medium text-foreground">{item.title}:</span> {item.detail}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            ) : null}
+
+            {analysisResponse?.sources && (analysisResponse.sources.orderBook || analysisResponse.sources.news || analysisResponse.sources.trainingData) && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>{t('trading.analysis.sources.title')}</CardTitle>
+                  <CardDescription>{t('trading.analysis.sources.subtitle')}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm text-muted-foreground">
+                  {analysisResponse.sources.orderBook && (
+                    <div>
+                      <p className="font-medium text-foreground">{t('trading.analysis.sources.orderBookTitle')}</p>
+                      <p>
+                        {t('trading.analysis.sources.orderBookLine', {
+                          bid: analysisResponse.sources.orderBook.bestBid ?? 'N/A',
+                          ask: analysisResponse.sources.orderBook.bestAsk ?? 'N/A',
+                          spreadAbs: analysisResponse.sources.orderBook.spreadAbs ?? 'N/A',
+                          spreadPct: analysisResponse.sources.orderBook.spreadPct ?? 'N/A',
+                        })}
+                      </p>
+                    </div>
+                  )}
+                  {analysisResponse.sources.news && (
+                    <div>
+                      <p className="font-medium text-foreground">{t('trading.analysis.sources.newsTitle')}</p>
+                      <ul className="list-disc pl-5">
+                        {analysisResponse.sources.news.results.map((item) => (
+                          <li key={item.url}>{item.title}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {analysisResponse.sources.trainingData && (
+                    <div>
+                      <p className="font-medium text-foreground">{t('trading.analysis.sources.trainingTitle')}</p>
+                      <p>{t('trading.analysis.sources.trainingTotal', { total: analysisResponse.sources.trainingData.totalApproved })}</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
             {/* Grid de Indicadores */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {/* RSI */}
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <Gauge className="h-4 w-4" />
-                    RSI ({analysis.rsi.period})
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center justify-between">
-                    <span className="text-2xl font-bold">
-                      {formatNumber(analysis.rsi.value, locale, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </span>
-                    {getInterpretationBadge(analysis.rsi.interpretation)}
-                  </div>
-                  <Progress value={analysis.rsi.value} className="mt-2 h-2" />
-                  <div className="flex justify-between text-xs text-muted-foreground mt-1">
-                    <span>0</span>
-                    <span>30</span>
-                    <span>70</span>
-                    <span>100</span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* MACD */}
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <LineChart className="h-4 w-4" />
-                    MACD
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-muted-foreground">MACD</span>
-                      <span className="font-mono">
-                        {formatNumber(analysis.macd.macd, locale, {
+              {analysis.rsi && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <Gauge className="h-4 w-4" />
+                      RSI ({analysis.rsi.period})
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center justify-between">
+                      <span className="text-2xl font-bold">
+                        {formatNumber(analysis.rsi.value, locale, {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
                         })}
                       </span>
+                      {getInterpretationBadge(analysis.rsi.interpretation)}
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-muted-foreground">Signal</span>
-                      <span className="font-mono">
-                        {formatNumber(analysis.macd.signal, locale, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </span>
+                    <Progress value={analysis.rsi.value} className="mt-2 h-2" />
+                    <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                      <span>0</span>
+                      <span>30</span>
+                      <span>70</span>
+                      <span>100</span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-muted-foreground">Histograma</span>
-                      <span className={`font-mono ${analysis.macd.histogram > 0 ? 'text-green-500' : 'text-red-500'}`}>
-                        {formatNumber(analysis.macd.histogram, locale, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </span>
-                    </div>
-                    {analysis.macd.crossover !== 'none' && (
-                      <Badge
-                        className={analysis.macd.crossover === 'bullish_cross' ? 'bg-green-500' : 'bg-red-500'}
-                      >
-                        {analysis.macd.crossover === 'bullish_cross' ? 'Cruzamento Alta' : 'Cruzamento Baixa'}
-                      </Badge>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              )}
 
-              {/* Médias Móveis */}
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <Activity className="h-4 w-4" />
-                    Médias Móveis
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-1">
-                    <div className="flex justify-between">
-                      <span className="text-xs text-muted-foreground">EMA 9</span>
-                      <span className="font-mono text-sm">{formatPrice(analysis.movingAverages.ema9, locale)}</span>
+              {analysis.macd && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <LineChart className="h-4 w-4" />
+                      MACD
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-muted-foreground">MACD</span>
+                        <span className="font-mono">
+                          {formatNumber(analysis.macd.macd, locale, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-muted-foreground">Signal</span>
+                        <span className="font-mono">
+                          {formatNumber(analysis.macd.signal, locale, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-muted-foreground">Histograma</span>
+                        <span className={`font-mono ${analysis.macd.histogram > 0 ? 'text-green-500' : 'text-red-500'}`}>
+                          {formatNumber(analysis.macd.histogram, locale, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </span>
+                      </div>
+                      {analysis.macd.crossover !== 'none' && (
+                        <Badge
+                          className={analysis.macd.crossover === 'bullish_cross' ? 'bg-green-500' : 'bg-red-500'}
+                        >
+                          {analysis.macd.crossover === 'bullish_cross' ? 'Cruzamento Alta' : 'Cruzamento Baixa'}
+                        </Badge>
+                      )}
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-xs text-muted-foreground">EMA 21</span>
-                      <span className="font-mono text-sm">{formatPrice(analysis.movingAverages.ema21, locale)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-xs text-muted-foreground">EMA 200</span>
-                      <span className="font-mono text-sm">{formatPrice(analysis.movingAverages.ema200, locale)}</span>
-                    </div>
-                    <Separator className="my-2" />
-                    <div className="flex justify-center">
-                      {getTrendBadge(analysis.movingAverages.trend)}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              )}
 
-              {/* Bollinger Bands */}
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <BarChart3 className="h-4 w-4" />
-                    Bollinger Bands
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-1">
-                    <div className="flex justify-between">
-                      <span className="text-xs text-muted-foreground">Superior</span>
-                      <span className="font-mono text-sm">{formatPrice(analysis.bollinger.upper, locale)}</span>
+              {analysis.movingAverages && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <Activity className="h-4 w-4" />
+                      Médias Móveis
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-1">
+                      <div className="flex justify-between">
+                        <span className="text-xs text-muted-foreground">EMA 9</span>
+                        <span className="font-mono text-sm">{formatPrice(analysis.movingAverages.ema9, locale)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-xs text-muted-foreground">EMA 21</span>
+                        <span className="font-mono text-sm">{formatPrice(analysis.movingAverages.ema21, locale)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-xs text-muted-foreground">EMA 200</span>
+                        <span className="font-mono text-sm">{formatPrice(analysis.movingAverages.ema200, locale)}</span>
+                      </div>
+                      <Separator className="my-2" />
+                      <div className="flex justify-center">
+                        {getTrendBadge(analysis.movingAverages.trend)}
+                      </div>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-xs text-muted-foreground">Média</span>
-                      <span className="font-mono text-sm">{formatPrice(analysis.bollinger.middle, locale)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-xs text-muted-foreground">Inferior</span>
-                      <span className="font-mono text-sm">{formatPrice(analysis.bollinger.lower, locale)}</span>
-                    </div>
-                    <Separator className="my-2" />
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs">
-                        %B:{' '}
-                        {formatNumber(analysis.bollinger.percentB * 100, locale, {
-                          maximumFractionDigits: 0,
-                        })}
-                        %
-                      </span>
-                      {getInterpretationBadge(analysis.bollinger.interpretation)}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              )}
 
-              {/* Stochastic */}
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <Gauge className="h-4 w-4" />
-                    Stochastic
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-muted-foreground">%K</span>
-                      <span className="font-mono">
-                        {formatNumber(analysis.stochastic.k, locale, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </span>
+              {analysis.bollinger && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <BarChart3 className="h-4 w-4" />
+                      Bollinger Bands
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-1">
+                      <div className="flex justify-between">
+                        <span className="text-xs text-muted-foreground">Superior</span>
+                        <span className="font-mono text-sm">{formatPrice(analysis.bollinger.upper, locale)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-xs text-muted-foreground">Média</span>
+                        <span className="font-mono text-sm">{formatPrice(analysis.bollinger.middle, locale)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-xs text-muted-foreground">Inferior</span>
+                        <span className="font-mono text-sm">{formatPrice(analysis.bollinger.lower, locale)}</span>
+                      </div>
+                      <Separator className="my-2" />
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs">
+                          %B:{' '}
+                          {formatNumber(analysis.bollinger.percentB * 100, locale, {
+                            maximumFractionDigits: 0,
+                          })}
+                          %
+                        </span>
+                        {getInterpretationBadge(analysis.bollinger.interpretation)}
+                      </div>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-muted-foreground">%D</span>
-                      <span className="font-mono">
-                        {formatNumber(analysis.stochastic.d, locale, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </span>
-                    </div>
-                    <Progress value={analysis.stochastic.k} className="h-2" />
-                    <div className="flex justify-center">
-                      {getInterpretationBadge(analysis.stochastic.interpretation)}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              )}
 
-              {/* ADX */}
+              {analysis.stochastic && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <Gauge className="h-4 w-4" />
+                      Stochastic
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-muted-foreground">%K</span>
+                        <span className="font-mono">
+                          {formatNumber(analysis.stochastic.k, locale, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-muted-foreground">%D</span>
+                        <span className="font-mono">
+                          {formatNumber(analysis.stochastic.d, locale, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </span>
+                      </div>
+                      <Progress value={analysis.stochastic.k} className="h-2" />
+                      <div className="flex justify-center">
+                        {getInterpretationBadge(analysis.stochastic.interpretation)}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {analysis.adx && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <Target className="h-4 w-4" />
+                      ADX (Força da Tendência)
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-2xl font-bold">
+                          {formatNumber(analysis.adx.adx, locale, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </span>
+                        <Badge
+                          variant={analysis.adx.trendStrength === 'strong' || analysis.adx.trendStrength === 'very_strong'
+                            ? 'default' : 'secondary'}
+                        >
+                          {analysis.adx.trendStrength === 'weak' && 'Fraca'}
+                          {analysis.adx.trendStrength === 'moderate' && 'Moderada'}
+                          {analysis.adx.trendStrength === 'strong' && 'Forte'}
+                          {analysis.adx.trendStrength === 'very_strong' && 'Muito Forte'}
+                        </Badge>
+                      </div>
+                      <div className="flex gap-4 text-sm">
+                        <span className="text-green-500">
+                          +DI:{' '}
+                          {formatNumber(analysis.adx.plusDI, locale, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </span>
+                        <span className="text-red-500">
+                          -DI:{' '}
+                          {formatNumber(analysis.adx.minusDI, locale, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+
+            {analysis.supportResistance && (
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm flex items-center gap-2">
                     <Target className="h-4 w-4" />
-                    ADX (Força da Tendência)
+                    Níveis de Suporte e Resistência (Pivot Points)
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span className="text-2xl font-bold">
-                        {formatNumber(analysis.adx.adx, locale, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </span>
-                      <Badge
-                        variant={analysis.adx.trendStrength === 'strong' || analysis.adx.trendStrength === 'very_strong'
-                          ? 'default' : 'secondary'}
-                      >
-                        {analysis.adx.trendStrength === 'weak' && 'Fraca'}
-                        {analysis.adx.trendStrength === 'moderate' && 'Moderada'}
-                        {analysis.adx.trendStrength === 'strong' && 'Forte'}
-                        {analysis.adx.trendStrength === 'very_strong' && 'Muito Forte'}
-                      </Badge>
+                  <div className="grid grid-cols-7 gap-2 text-center text-sm">
+                    <div>
+                      <p className="text-muted-foreground text-xs">S3</p>
+                      <p className="font-mono text-green-600">
+                        {formatPrice(analysis.supportResistance.support3, locale)}
+                      </p>
                     </div>
-                    <div className="flex gap-4 text-sm">
-                      <span className="text-green-500">
-                        +DI:{' '}
-                        {formatNumber(analysis.adx.plusDI, locale, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </span>
-                      <span className="text-red-500">
-                        -DI:{' '}
-                        {formatNumber(analysis.adx.minusDI, locale, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </span>
+                    <div>
+                      <p className="text-muted-foreground text-xs">S2</p>
+                      <p className="font-mono text-green-500">
+                        {formatPrice(analysis.supportResistance.support2, locale)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground text-xs">S1</p>
+                      <p className="font-mono text-green-400">
+                        {formatPrice(analysis.supportResistance.support1, locale)}
+                      </p>
+                    </div>
+                    <div className="bg-muted rounded-lg p-2">
+                      <p className="text-muted-foreground text-xs">Pivot</p>
+                      <p className="font-mono font-bold">
+                        {formatPrice(analysis.supportResistance.pivot, locale)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground text-xs">R1</p>
+                      <p className="font-mono text-red-400">
+                        {formatPrice(analysis.supportResistance.resistance1, locale)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground text-xs">R2</p>
+                      <p className="font-mono text-red-500">
+                        {formatPrice(analysis.supportResistance.resistance2, locale)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground text-xs">R3</p>
+                      <p className="font-mono text-red-600">
+                        {formatPrice(analysis.supportResistance.resistance3, locale)}
+                      </p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
-            </div>
+            )}
 
-            {/* Suporte e Resistência */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Target className="h-4 w-4" />
-                  Níveis de Suporte e Resistência (Pivot Points)
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-7 gap-2 text-center text-sm">
-                  <div>
-                    <p className="text-muted-foreground text-xs">S3</p>
-                    <p className="font-mono text-green-600">
-                      {formatPrice(analysis.supportResistance.support3, locale)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground text-xs">S2</p>
-                    <p className="font-mono text-green-500">
-                      {formatPrice(analysis.supportResistance.support2, locale)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground text-xs">S1</p>
-                    <p className="font-mono text-green-400">
-                      {formatPrice(analysis.supportResistance.support1, locale)}
-                    </p>
-                  </div>
-                  <div className="bg-muted rounded-lg p-2">
-                    <p className="text-muted-foreground text-xs">Pivot</p>
-                    <p className="font-mono font-bold">
-                      {formatPrice(analysis.supportResistance.pivot, locale)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground text-xs">R1</p>
-                    <p className="font-mono text-red-400">
-                      {formatPrice(analysis.supportResistance.resistance1, locale)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground text-xs">R2</p>
-                    <p className="font-mono text-red-500">
-                      {formatPrice(analysis.supportResistance.resistance2, locale)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground text-xs">R3</p>
-                    <p className="font-mono text-red-600">
-                      {formatPrice(analysis.supportResistance.resistance3, locale)}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            {(analysis.volume || analysis.atr) && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {analysis.volume && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <Volume2 className="h-4 w-4" />
+                        Análise de Volume
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        <div className="flex justify-between">
+                          <span className="text-sm text-muted-foreground">Volume Atual</span>
+                          <span className="font-mono">
+                            {formatNumber(analysis.volume.currentVolume, locale)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-muted-foreground">Média (20)</span>
+                          <span className="font-mono">
+                            {formatNumber(analysis.volume.averageVolume, locale)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-muted-foreground">Ratio</span>
+                          <Badge
+                            variant={analysis.volume.interpretation === 'high' || analysis.volume.interpretation === 'very_high'
+                              ? 'default' : 'secondary'}
+                          >
+                            {formatNumber(analysis.volume.volumeRatio, locale, {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                            x
+                          </Badge>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
 
-            {/* Volume e ATR */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Volume */}
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <Volume2 className="h-4 w-4" />
-                    Análise de Volume
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Volume Atual</span>
-                      <span className="font-mono">
-                        {formatNumber(analysis.volume.currentVolume, locale)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Média (20)</span>
-                      <span className="font-mono">
-                        {formatNumber(analysis.volume.averageVolume, locale)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-muted-foreground">Ratio</span>
-                      <Badge
-                        variant={analysis.volume.interpretation === 'high' || analysis.volume.interpretation === 'very_high'
-                          ? 'default' : 'secondary'}
-                      >
-                        {formatNumber(analysis.volume.volumeRatio, locale, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                        x
-                      </Badge>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* ATR */}
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <Activity className="h-4 w-4" />
-                    ATR (Volatilidade)
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span className="text-2xl font-bold">{formatPrice(analysis.atr.value, locale)}</span>
-                      <Badge
-                        variant={analysis.atr.volatility === 'high' ? 'destructive' : 'secondary'}
-                      >
-                        {analysis.atr.volatility === 'low' && 'Baixa'}
-                        {analysis.atr.volatility === 'medium' && 'Média'}
-                        {analysis.atr.volatility === 'high' && 'Alta'}
-                      </Badge>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {formatNumber(analysis.atr.percentage, locale, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                      % do preço atual
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+                {analysis.atr && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <Activity className="h-4 w-4" />
+                        ATR (Volatilidade)
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-2xl font-bold">{formatPrice(analysis.atr.value, locale)}</span>
+                          <Badge
+                            variant={analysis.atr.volatility === 'high' ? 'destructive' : 'secondary'}
+                          >
+                            {analysis.atr.volatility === 'low' && 'Baixa'}
+                            {analysis.atr.volatility === 'medium' && 'Média'}
+                            {analysis.atr.volatility === 'high' && 'Alta'}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          {formatNumber(analysis.atr.percentage, locale, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                          % do preço atual
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            )}
 
             {/* Nota sobre Determinismo */}
             <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 rounded-lg p-3">

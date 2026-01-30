@@ -43,6 +43,7 @@ interface MessageBubbleProps {
   onRateImage?: (imageId: string, score: number) => void;
   onFeedback?: (messageId: string, isPositive: boolean) => void;
   onRegenerate?: () => void;
+  onQuickReply?: (content: string) => void;
   selectionMode?: boolean;
   isSelected?: boolean;
   onToggleSelect?: (shiftKey: boolean) => void;
@@ -57,6 +58,7 @@ export function MessageBubble({
   onRateImage,
   onFeedback,
   onRegenerate,
+  onQuickReply,
   selectionMode = false,
   isSelected = false,
   onToggleSelect,
@@ -157,6 +159,7 @@ export function MessageBubble({
 
   const shouldShowTypingCursor = isLast && message.role === 'assistant' && (isStreaming || displayedContent.length < (message.content ?? '').length);
   const shouldShowThinking = shouldShowTypingCursor && displayedContent.trim().length === 0;
+  const requiresConfirmation = Boolean(message.metadata?.requiresConfirmation);
 
   return (
     <motion.div
@@ -231,6 +234,25 @@ export function MessageBubble({
             </div>
           )}
         </Card>
+
+        {!isUser && requiresConfirmation && (
+          <div className="mt-2 flex items-center gap-2">
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => onQuickReply?.('confirmar')}
+            >
+              Aprovar
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onQuickReply?.('cancelar')}
+            >
+              Rejeitar
+            </Button>
+          </div>
+        )}
         
         <div className={cn(
           'flex items-center gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity',

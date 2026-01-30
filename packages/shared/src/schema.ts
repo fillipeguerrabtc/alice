@@ -1649,11 +1649,13 @@ export const tradingOrderTypeEnum = pgEnum("trading_order_type", [
 
 export const tradingOrderStatusEnum = pgEnum("trading_order_status", [
   "pending",      // Aguardando envio para exchange
+  "pending_review", // Aguardando revisão manual antes de enviar para exchange
   "submitted",    // Enviada para exchange
   "open",         // Aberta (parcialmente executada)
   "filled",       // Totalmente executada
   "cancelled",    // Cancelada
   "rejected",     // Rejeitada pela exchange
+  "review_rejected", // Rejeitada na revisão manual (antes de envio)
   "expired",      // Expirada
   "error",        // Erro no processamento
 ]);
@@ -1696,10 +1698,28 @@ export const TradingSignalMetadataSchema = z.object({
   modelVersion: z.string().optional(),               // Versão do modelo usado
   validationStatus: z.enum(['pending', 'validated', 'failed']).optional(), // Status da validação LLM
   validationId: z.string().uuid().optional(),         // ID da validação LLM
+  approvalStatus: z.enum(['pending', 'approved', 'rejected']).optional(), // Status da aprovação humana
+  approvalReason: z.string().optional(),              // Motivo da aprovação/rejeição
   agentId: z.string().uuid().optional(),              // Agente que gerou o sinal
   namespaceId: z.string().uuid().optional(),          // Namespace do agente
   generationSource: z.enum(['on_demand', 'scheduler', 'chat']).optional(), // Origem do sinal
   schedulerId: z.string().uuid().optional(),          // Scheduler responsável
+  timeframes: z.array(z.string()).optional(),         // Timeframes usados na geração
+  enabledIndicators: z.array(z.string()).optional(),  // Indicadores habilitados no perfil
+  dataSources: TradingProfileDataSourcesSchema.optional(), // Fontes de dados habilitadas
+  consensus: z.object({
+    rule: z.string().optional(),
+    overallSignal: z.string().optional(),
+    requiredAgree: z.number().optional(),
+    agreementRatio: z.number().optional(),
+    alignedTimeframes: z.array(z.string()).optional(),
+    misalignedTimeframes: z.array(z.string()).optional(),
+    isMajorityReached: z.boolean().optional(),
+  }).optional(),
+  analysisMatrix: z.array(z.object({
+    interval: z.string(),
+    analysis: z.record(z.unknown()),
+  })).optional(),
 });
 export type TradingSignalMetadata = z.infer<typeof TradingSignalMetadataSchema>;
 
@@ -1713,7 +1733,57 @@ export const TradingOrderMetadataSchema = z.object({
   slippage: z.number().optional(),                   // Slippage em %
   responseTime: z.number().optional(),               // Tempo de resposta da exchange (ms)
   closePosition: z.boolean().optional(),             // Ordem criada para fechar posição
+  stopLoss: z.number().optional(),                   // Preço de stop loss (se aplicável)
+  takeProfit: z.number().optional(),                 // Preço de take profit (se aplicável)
+  stopOrderIds: z.array(z.string()).optional(),       // IDs de stop orders criadas na KuCoin
+  review: z.object({
+    reason: z.string().optional(),
+    source: z.enum(['signal', 'manual']).optional(),
+    sizeRule: z.string().optional(),
+    suggestedSize: z.number().optional(),
+  }).optional(),
 });
+
+// ============================================================================
+// PERFIS DE ANÁLISE/SINAIS (Multi-timeframe + Indicadores + Fontes)
+// ============================================================================
+
+export const tradingProfileKindEnum = pgEnum("trading_profile_kind", [
+  "analysis",
+  "signal",
+]);
+
+export const TradingIndicatorKeySchema = z.enum([
+  "rsi",
+  "macd",
+  "moving_averages",
+  "bollinger",
+  "atr",
+  "stochastic",
+  "adx",
+  "support_resistance",
+  "volume",
+]);
+export type TradingIndicatorKey = z.infer<typeof TradingIndicatorKeySchema>;
+
+export const TradingProfileDataSourcesSchema = z.object({
+  orderBook: z.boolean().optional(),
+  news: z.boolean().optional(),
+  trainingData: z.boolean().optional(),
+});
+export type TradingProfileDataSources = z.infer<typeof TradingProfileDataSourcesSchema>;
+
+export const TradingProfileModelConfigSchema = z.object({
+  temperature: z.number().min(0).max(2).optional(),
+  maxTokens: z.number().min(256).max(8192).optional(),
+});
+export type TradingProfileModelConfig = z.infer<typeof TradingProfileModelConfigSchema>;
+
+export const TradingProfileConsensusSchema = z.object({
+  rule: z.enum(["majority"]).default("majority"),
+  minAgree: z.number().min(1).optional(),
+});
+export type TradingProfileConsensus = z.infer<typeof TradingProfileConsensusSchema>;
 export type TradingOrderMetadata = z.infer<typeof TradingOrderMetadataSchema>;
 
 export const TradingPositionMetadataSchema = z.object({
@@ -1825,6 +1895,36 @@ export const tradingAnalysisSchedulers = pgTable(
     idxAnalysisSchedulerEnabled: index("idx_trading_analysis_scheduler_enabled").on(table.enabled),
     idxAnalysisSchedulerNextRun: index("idx_trading_analysis_scheduler_next_run").on(table.nextRunAt),
     idxAnalysisSchedulerTenantMarket: uniqueIndex("idx_trading_analysis_scheduler_tenant_market").on(table.tenantId, table.marketType),
+  })
+);
+
+// ============================================================================
+// PERFIS DE ANÁLISE/SINAIS (Multi-timeframe + Indicadores + Fontes)
+// ============================================================================
+export const tradingAnalysisProfiles = pgTable(
+  "trading_analysis_profiles",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
+    kind: tradingProfileKindEnum("kind").notNull(),
+    name: varchar("name", { length: 100 }).notNull().default("default"),
+    timeframes: tradingIntervalEnum("timeframes").array().notNull()
+      .default(sql`ARRAY['5m']::trading_interval[]`),
+    indicators: jsonb("indicators").$type<TradingIndicatorKey[]>().notNull()
+      .default(sql`'["rsi","macd","moving_averages","bollinger","atr","stochastic","adx","support_resistance","volume"]'::jsonb`),
+    dataSources: jsonb("data_sources").$type<TradingProfileDataSources>().notNull()
+      .default(sql`'{"orderBook": false, "news": false, "trainingData": false}'::jsonb`),
+    modelConfig: jsonb("model_config").$type<TradingProfileModelConfig>().notNull()
+      .default(sql`'{}'::jsonb`),
+    consensus: jsonb("consensus").$type<TradingProfileConsensus>().notNull()
+      .default(sql`'{"rule":"majority"}'::jsonb`),
+    criadoEm: timestamp("criado_em").defaultNow(),
+    atualizadoEm: timestamp("atualizado_em").defaultNow(),
+  },
+  (table) => ({
+    idxProfilesTenant: index("idx_trading_profiles_tenant").on(table.tenantId),
+    idxProfilesKind: index("idx_trading_profiles_kind").on(table.kind),
+    idxProfilesTenantKind: uniqueIndex("idx_trading_profiles_tenant_kind").on(table.tenantId, table.kind),
   })
 );
 
@@ -2983,6 +3083,12 @@ export interface AgenticDetectors {
   webImageSearch: AgenticDetectorGroup;
   imageGeneration: AgenticDetectorGroup;
   trading: AgenticDetectorGroup;
+  grafana: {
+    baseKeywords: string[];
+    listDashboardsKeywords: string[];
+    updateDashboardKeywords: string[];
+    getDashboardKeywords: string[];
+  };
   agenticTask: {
     createKeywords: string[];
     updateKeywords: string[];
@@ -3028,6 +3134,8 @@ export const agenticSettings = pgTable(
     webEnabled: boolean("web_enabled").notNull().default(true),
     erpReadEnabled: boolean("erp_read_enabled").notNull().default(true),
     erpWriteEnabled: boolean("erp_write_enabled").notNull().default(true),
+    observabilityReadEnabled: boolean("observability_read_enabled").notNull().default(true),
+    observabilityWriteEnabled: boolean("observability_write_enabled").notNull().default(true),
     tradingEnabled: boolean("trading_enabled").notNull().default(true),
     paymentsEnabled: boolean("payments_enabled").notNull().default(true),
     stackOpsEnabled: boolean("stack_ops_enabled").notNull().default(true),
@@ -3688,6 +3796,9 @@ export type InsertTradingSignalScheduler = typeof tradingSignalSchedulers.$infer
 export type TradingAnalysisScheduler = typeof tradingAnalysisSchedulers.$inferSelect;
 export type InsertTradingAnalysisScheduler = typeof tradingAnalysisSchedulers.$inferInsert;
 
+export type TradingAnalysisProfile = typeof tradingAnalysisProfiles.$inferSelect;
+export type InsertTradingAnalysisProfile = typeof tradingAnalysisProfiles.$inferInsert;
+
 export type TradingOrder = typeof tradingOrders.$inferSelect;
 export type InsertTradingOrder = typeof tradingOrders.$inferInsert;
 
@@ -3803,6 +3914,12 @@ export const insertTradingAnalysisSchedulerSchema: z.ZodType<unknown> = createIn
   lastSuccessAt: true,
   lastIndicatorId: true,
   lastDurationMs: true,
+});
+
+export const insertTradingAnalysisProfileSchema: z.ZodType<unknown> = createInsertSchema(tradingAnalysisProfiles).omit({
+  id: true,
+  criadoEm: true,
+  atualizadoEm: true,
 });
 
 export const insertTradingOrderSchema: z.ZodType<unknown> = createInsertSchema(tradingOrders).omit({

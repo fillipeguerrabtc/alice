@@ -1074,7 +1074,24 @@
       "data": "Dados",
       "autoLearning": "Auto-learning",
       "jobs": "Jobs",
+      "tradingDatasets": "Datasets Trading",
       "multimodal": "Upload Multimodal"
+    },
+    "actions": {
+      "approve": "Aprovar",
+      "reject": "Rejeitar"
+    },
+    "tradingDataset": {
+      "filter": "Status do dataset",
+      "count": "{{count}} itens",
+      "emptyTitle": "Nenhum dataset de trading",
+      "emptyDesc": "Envie sinais aprovados para treinamento e revise aqui antes de usar nos jobs.",
+      "success": {
+        "reviewed": "Dataset revisado com sucesso"
+      },
+      "errors": {
+        "reviewFailed": "Erro ao revisar dataset"
+      }
     },
     "autoLearning": {
       "tenantMissingTitle": "Tenant não identificado",
@@ -1499,6 +1516,21 @@
       "subtitle": "Sinais gerados pelo LLM (Qwen2.5 7B) para trading autônomo",
       "new": "Novo Sinal",
       "generateNow": "Gerar sinal agora",
+      "profile": {
+        "title": "Perfil de Sinais IA",
+        "subtitle": "Timeframes, indicadores e fontes usados na geração de sinais.",
+        "timeframes": "Timeframes",
+        "indicators": "Indicadores",
+        "indicatorsSupportHint": "Suporte/Resistência também é aplicado em cada timeframe quando habilitado.",
+        "sources": "Fontes adicionais",
+        "sourcesOrderBookTitle": "Order Book",
+        "sourcesOrderBookDesc": "Profundidade e spread em tempo real.",
+        "sourcesNewsTitle": "Notícias",
+        "sourcesNewsDesc": "Busca SearXNG para contexto externo.",
+        "sourcesTrainingTitle": "Dataset aprovado",
+        "sourcesTrainingDesc": "Resumo de dados de treinamento.",
+        "save": "Salvar perfil"
+      },
       "noSignals": "Nenhum sinal ativo",
       "confidence": "Confiança",
       "noReasoning": "Sem justificativa",
@@ -1558,6 +1590,51 @@
     },
     "analysis": {
       "executeNow": "Executar análise agora",
+      "profile": {
+        "title": "Perfil de Análise Multi‑Timeframe",
+        "subtitle": "Selecione timeframes, indicadores e fontes usadas na análise.",
+        "timeframes": "Timeframes",
+        "timeframesHint": "Use múltiplos timeframes para consenso por maioria simples.",
+        "indicators": "Indicadores",
+        "indicatorsSupportHint": "O toggle “Suporte/Resistência” controla o cálculo de pivot points em todos os timeframes.",
+        "sources": "Fontes adicionais",
+        "sourcesOrderBookTitle": "Order Book",
+        "sourcesOrderBookDesc": "Profundidade e spread em tempo real.",
+        "sourcesNewsTitle": "Notícias",
+        "sourcesNewsDesc": "Busca SearXNG para contexto externo.",
+        "sourcesTrainingTitle": "Dataset aprovado",
+        "sourcesTrainingDesc": "Resumo de dados de treinamento.",
+        "save": "Salvar perfil",
+        "runNow": "Reexecutar análise"
+      },
+      "consensus": {
+        "title": "Consenso Multi‑Timeframe",
+        "subtitle": "Maioria simples e alinhamento entre períodos.",
+        "signalLabel": "Sinal:",
+        "agreementLabel": "Acordo:",
+        "requiredLabel": "Mínimo necessário:",
+        "alignedLabel": "Alinhados:",
+        "misalignedLabel": "Divergentes:",
+        "none": "Nenhum"
+      },
+      "matrix": {
+        "title": "Resumo por Timeframe",
+        "subtitle": "Sinais e confiança calculados em cada período.",
+        "confidenceLabel": "Confiança:"
+      },
+      "explain": {
+        "title": "Explicação do raciocínio por timeframe",
+        "subtitle": "Indicadores usados e interpretação dos valores."
+      },
+      "sources": {
+        "title": "Fontes adicionais usadas",
+        "subtitle": "Contexto extra habilitado no perfil.",
+        "orderBookTitle": "Order Book",
+        "orderBookLine": "Bid: {{bid}} | Ask: {{ask}} | Spread: {{spreadAbs}} ({{spreadPct}}%)",
+        "newsTitle": "Notícias (SearXNG)",
+        "trainingTitle": "Dataset aprovado",
+        "trainingTotal": "Total: {{total}}"
+      },
       "scheduler": {
         "title": "Scheduler de Análise",
         "subtitle": "Configure a geração automática da análise determinística",
@@ -1635,7 +1712,8 @@
       "signalDeactivated": "Sinal desativado",
       "signalGenerated": "Sinal gerado",
       "signalGeneratedDesc": "O sinal foi criado a partir da análise do LLM",
-      "schedulerUpdated": "Scheduler atualizado"
+      "schedulerUpdated": "Scheduler atualizado",
+      "profileUpdated": "Perfil atualizado"
     },
     "errors": {
       "orderFailed": "Erro ao criar ordem",
@@ -1647,7 +1725,8 @@
       "signalFailed": "Erro ao criar sinal",
       "signalDeactivateFailed": "Erro ao desativar sinal",
       "signalGenerateFailed": "Erro ao gerar sinal",
-      "schedulerUpdateFailed": "Erro ao atualizar scheduler"
+      "schedulerUpdateFailed": "Erro ao atualizar scheduler",
+      "profileUpdateFailed": "Erro ao atualizar perfil"
     },
     "chart": {
       "title": "Gráfico de Preços",
@@ -2001,6 +2080,8 @@
     "webEnabled": "Busca na internet (SearXNG)",
     "erpReadEnabled": "ERPNext leitura",
     "erpWriteEnabled": "ERPNext escrita",
+    "observabilityReadEnabled": "Grafana leitura",
+    "observabilityWriteEnabled": "Grafana escrita",
     "tradingEnabled": "Trading KuCoin",
     "paymentsEnabled": "Pagamentos (Wise/Stripe)",
     "stackOpsEnabled": "Stack Ops (GitHub Actions)",
@@ -2019,6 +2100,7 @@
     "detectorsTitle": "Detectores e gatilhos",
     "detectorsDesc": "Personalize palavras-chave e padrões que ativam buscas e ações agentic.",
     "detectorsWebTitle": "Busca na web e deep web",
+    "detectorsWebDesc": "Defina palavras-chave e padrões regex que disparam buscas online. Adicione novos termos, um por linha.",
     "webKeywords": "Palavras-chave de busca web",
     "webKeywordsPlaceholder": "pesquisar\nbuscar\nconsultar\nsearch on the web",
     "webPatterns": "Padrões regex de busca web",
@@ -2028,6 +2110,7 @@
     "deepWebPatterns": "Padrões regex de deep web",
     "deepWebPatternsPlaceholder": "/\\bdeep\\s*web\\b/i",
     "detectorsImagesTitle": "Busca e geração de imagens",
+    "detectorsImagesDesc": "Configure gatilhos para pesquisa e geração de imagens. Inclua sinônimos e variações.",
     "webImageKeywords": "Palavras-chave de busca de imagens",
     "webImageKeywordsPlaceholder": "imagens na web\nfotos online\ngoogle imagens",
     "webImagePatterns": "Padrões regex de busca de imagens",
@@ -2037,6 +2120,7 @@
     "imageGenPatterns": "Padrões regex de geração de imagens",
     "imageGenPatternsPlaceholder": "/\\bcrie uma imagem\\b/i",
     "detectorsTasksTitle": "Tarefas Agentic",
+    "detectorsTasksDesc": "Controla criação/atualização de tarefas e tipos aceitos. Adicione novos termos conforme sua operação.",
     "taskCreateKeywords": "Gatilhos de criação",
     "taskCreateKeywordsPlaceholder": "criar\nredigir\nelaborar",
     "taskUpdateKeywords": "Gatilhos de atualização",
@@ -2049,7 +2133,16 @@
     "taskTypePlanning": "Tipos: Planejamento",
     "taskTypePlaceholder": "documento\nminuta\nreport",
     "detectorsErpTitle": "ERPNext",
+    "detectorsErpDesc": "Define quando a Alice pode consultar ou escrever no ERP. Inclua termos que aparecem nas solicitações.",
     "erpBaseKeywords": "Palavras-chave base ERP",
+    "detectorsGrafanaTitle": "Grafana (Observabilidade)",
+    "detectorsGrafanaDesc": "Gatilhos para listar, abrir e atualizar dashboards no Grafana. Adicione palavras-chave e termos operacionais.",
+    "grafanaBaseKeywords": "Palavras-chave base Grafana",
+    "grafanaBaseKeywordsPlaceholder": "grafana\ndashboard\nobservabilidade",
+    "grafanaListKeywords": "Listar dashboards",
+    "grafanaGetKeywords": "Abrir dashboard (UID)",
+    "grafanaUpdateKeywords": "Atualizar dashboard",
+    "grafanaKeywordsPlaceholder": "listar dashboards\nabrir dashboard\natualizar dashboard",
     "erpBaseKeywordsPlaceholder": "erp\nestoque\ninventário",
     "erpItemsKeywords": "Itens / estoque",
     "erpCustomersKeywords": "Clientes",
@@ -2059,6 +2152,7 @@
     "erpCreateInvoiceKeywords": "Criar fatura",
     "erpKeywordsPlaceholder": "clientes\ninvoices",
     "detectorsPaymentsTitle": "Pagamentos (Wise/Stripe)",
+    "detectorsPaymentsDesc": "Palavras-chave que habilitam operações financeiras. Adicione termos usados pela equipe.",
     "wiseKeywords": "Palavras-chave Wise",
     "wiseKeywordsPlaceholder": "wise\ntransferência",
     "wiseRecipientsKeywords": "Wise destinatários",
@@ -2067,6 +2161,7 @@
     "stripePaymentKeywords": "Stripe pagamentos",
     "paymentsKeywordsPlaceholder": "pagamento\npayment",
     "detectorsStackTitle": "Stack Ops",
+    "detectorsStackDesc": "Gatilhos para deploy/rollback via GitHub Actions. Inclua stacks e comandos comuns.",
     "stackBaseKeywords": "Palavras-chave base Stack Ops",
     "stackBaseKeywordsPlaceholder": "deploy\nrollback\nstack",
     "stackDeployKeywords": "Deploy",
@@ -2076,6 +2171,7 @@
     "stackKeywords": "Stacks",
     "stackKeywordsPlaceholder": "infra\nalice\nobservability",
     "detectorsTradingTitle": "Trading",
+    "detectorsTradingDesc": "Defina contexto de trading para ativar comandos. Inclua pares, termos e ações.",
     "tradingKeywords": "Palavras-chave de contexto",
     "tradingKeywordsPlaceholder": "btc\ntrading\nordem\nlong",
     "tradingPatterns": "Padrões regex de trading",

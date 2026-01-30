@@ -79,6 +79,60 @@ A plataforma Alice implementa observabilidade **enterprise-grade** baseada em **
 - **Protocolo**: eventos `agent_event` enviados via SSE/WS com payload redigido.
 - **Segurança**: redaction automática de tokens/secrets antes de renderizar no frontend.
 
+---
+
+## 🔗 Fluxo Chat ↔ Grafana (Enterprise)
+
+### Objetivo
+Permitir que o Chat consulte e **atualize dashboards** do Grafana com RBAC, auditoria e confirmação explícita para escrita.
+
+### Pré-requisitos
+- **Secrets/ENV**:
+  - `GRAFANA_URL` (ex: `http://alice-grafana:3000`)
+  - **OU** `GRAFANA_API_KEY`
+  - **OU** `GRAFANA_ADMIN_USER` + `GRAFANA_ADMIN_PASSWORD`
+- **RBAC**:
+  - Leitura: `integrations:grafana:read`
+  - Escrita: `integrations:grafana:write`
+- **Toggles (Modo Agentic)**:
+  - `Grafana leitura` habilita consultas
+  - `Grafana escrita` habilita atualizações (com confirmação)
+
+### Endpoints (Integrations Service)
+- **Health**: `GET /api/integrations/grafana/health`
+- **Listar dashboards**: `GET /api/integrations/grafana/dashboards?query=...`
+- **Obter dashboard**: `GET /api/integrations/grafana/dashboards/:uid`
+- **Atualizar dashboard**: `POST /api/integrations/grafana/dashboards`
+  - Body: `{ dashboard, folderUid?, message?, overwrite? }`
+
+### Fluxo no Chat
+1. **Detecção** (agentic detectors):
+   - Palavras-chave indicam intenção Grafana (listar, abrir, atualizar).
+2. **Validação**:
+   - Verifica toggles do tenant (`observabilityReadEnabled/WriteEnabled`).
+   - Verifica RBAC do usuário.
+3. **Execução**:
+   - **Leitura**: executa direto.
+   - **Escrita**: cria `actionRequest` pendente e exige confirmação.
+4. **Confirmação**:
+   - O Chat solicita confirmação explícita (“confirmar” / “cancelar”).
+   - A UI exibe botões de **Aprovar/Rejeitar** para o usuário.
+5. **Auditoria**:
+   - Resultado fica registrado nos logs do Chat e no `actionRequest`.
+
+### Exemplos de uso
+- **Listar dashboards**:  
+  “Liste dashboards do Grafana”
+- **Abrir dashboard**:  
+  “Abrir dashboard uid: llm-metrics”
+- **Atualizar dashboard** (exemplo com JSON):  
+  “Atualizar dashboard. dashboard: { ... } folderUid: alice message: Ajuste de painéis”
+
+### Observações
+- Escrita sempre exige confirmação do usuário.
+- Se `GRAFANA_API_KEY` estiver configurado, prioriza Bearer Token.
+- Sem credenciais, a chamada é bloqueada com erro claro no Chat.
+
 ### Portal Home (Single Pane of Glass)
 
 **UID:** `alice-home`  

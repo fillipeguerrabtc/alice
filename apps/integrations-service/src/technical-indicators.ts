@@ -28,6 +28,7 @@
  */
 
 import { createLogger } from '@alice/logger';
+import type { TradingIndicatorKey } from '@alice/shared';
 import {
   RSI,
   MACD,
@@ -143,15 +144,15 @@ export interface TechnicalAnalysisResult {
   symbol: string;
   interval: string;
   currentPrice: number;
-  rsi: RSIResult;
-  macd: MACDResult;
-  movingAverages: MovingAverageResult;
-  bollinger: BollingerResult;
-  atr: ATRResult;
-  stochastic: StochasticResult;
-  adx: ADXResult;
-  supportResistance: SupportResistanceResult;
-  volume: VolumeAnalysisResult;
+  rsi?: RSIResult;
+  macd?: MACDResult;
+  movingAverages?: MovingAverageResult;
+  bollinger?: BollingerResult;
+  atr?: ATRResult;
+  stochastic?: StochasticResult;
+  adx?: ADXResult;
+  supportResistance?: SupportResistanceResult;
+  volume?: VolumeAnalysisResult;
   overallSignal: 'strong_buy' | 'buy' | 'neutral' | 'sell' | 'strong_sell';
   confidence: number;
 }
@@ -523,7 +524,8 @@ export function calculateVolumeAnalysis(
 export function calculateFullAnalysis(
   candles: CandleData[],
   symbol: string,
-  interval: string
+  interval: string,
+  enabledIndicators?: TradingIndicatorKey[]
 ): TechnicalAnalysisResult {
   if (candles.length < 200) {
     throw new Error(`Análise completa requer pelo menos 200 candles, recebido: ${candles.length}`);
@@ -542,50 +544,84 @@ export function calculateFullAnalysis(
   const currentPrice = closes[closes.length - 1];
   const lastCandle = candles[candles.length - 1];
 
-  // Calcular todos os indicadores
-  const rsi = calculateRSI(closes);
-  const macd = calculateMACD(closes);
-  const movingAverages = calculateMovingAverages(closes);
-  const bollinger = calculateBollinger(closes);
-  const atr = calculateATR(highs, lows, closes);
-  const stochastic = calculateStochastic(highs, lows, closes);
-  const adx = calculateADX(highs, lows, closes);
-  const supportResistance = calculateSupportResistance(
-    lastCandle.high,
-    lastCandle.low,
-    lastCandle.close
-  );
-  const volume = calculateVolumeAnalysis(volumes, closes);
+  const enabled = new Set<TradingIndicatorKey>(enabledIndicators ?? [
+    'rsi',
+    'macd',
+    'moving_averages',
+    'bollinger',
+    'atr',
+    'stochastic',
+    'adx',
+    'support_resistance',
+    'volume',
+  ]);
+
+  // Calcular indicadores habilitados
+  const rsi = enabled.has('rsi') ? calculateRSI(closes) : undefined;
+  const macd = enabled.has('macd') ? calculateMACD(closes) : undefined;
+  const movingAverages = enabled.has('moving_averages') ? calculateMovingAverages(closes) : undefined;
+  const bollinger = enabled.has('bollinger') ? calculateBollinger(closes) : undefined;
+  const atr = enabled.has('atr') ? calculateATR(highs, lows, closes) : undefined;
+  const stochastic = enabled.has('stochastic') ? calculateStochastic(highs, lows, closes) : undefined;
+  const adx = enabled.has('adx') ? calculateADX(highs, lows, closes) : undefined;
+  const supportResistance = enabled.has('support_resistance')
+    ? calculateSupportResistance(
+        lastCandle.high,
+        lastCandle.low,
+        lastCandle.close
+      )
+    : undefined;
+  const volume = enabled.has('volume') ? calculateVolumeAnalysis(volumes, closes) : undefined;
 
   // Calcular sinal geral baseado em pontuação
   let score = 0;
 
+  let maxScore = 0;
+
   // RSI
-  if (rsi.interpretation === 'oversold') score += 2;
-  else if (rsi.interpretation === 'overbought') score -= 2;
+  if (rsi) {
+    maxScore += 2;
+    if (rsi.interpretation === 'oversold') score += 2;
+    else if (rsi.interpretation === 'overbought') score -= 2;
+  }
 
   // MACD
-  if (macd.crossover === 'bullish_cross') score += 3;
-  else if (macd.crossover === 'bearish_cross') score -= 3;
-  if (macd.interpretation === 'bullish') score += 1;
-  else if (macd.interpretation === 'bearish') score -= 1;
+  if (macd) {
+    maxScore += 4;
+    if (macd.crossover === 'bullish_cross') score += 3;
+    else if (macd.crossover === 'bearish_cross') score -= 3;
+    if (macd.interpretation === 'bullish') score += 1;
+    else if (macd.interpretation === 'bearish') score -= 1;
+  }
 
   // Tendência (médias móveis)
-  if (movingAverages.trend === 'bullish') score += 2;
-  else if (movingAverages.trend === 'bearish') score -= 2;
+  if (movingAverages) {
+    maxScore += 2;
+    if (movingAverages.trend === 'bullish') score += 2;
+    else if (movingAverages.trend === 'bearish') score -= 2;
+  }
 
   // Bollinger
-  if (bollinger.interpretation === 'oversold') score += 1;
-  else if (bollinger.interpretation === 'overbought') score -= 1;
+  if (bollinger) {
+    maxScore += 1;
+    if (bollinger.interpretation === 'oversold') score += 1;
+    else if (bollinger.interpretation === 'overbought') score -= 1;
+  }
 
   // Stochastic
-  if (stochastic.interpretation === 'oversold') score += 1;
-  else if (stochastic.interpretation === 'overbought') score -= 1;
+  if (stochastic) {
+    maxScore += 1;
+    if (stochastic.interpretation === 'oversold') score += 1;
+    else if (stochastic.interpretation === 'overbought') score -= 1;
+  }
 
   // ADX (força da tendência)
-  if (adx.trendStrength === 'strong' || adx.trendStrength === 'very_strong') {
-    if (adx.plusDI > adx.minusDI) score += 1;
-    else score -= 1;
+  if (adx) {
+    maxScore += 1;
+    if (adx.trendStrength === 'strong' || adx.trendStrength === 'very_strong') {
+      if (adx.plusDI > adx.minusDI) score += 1;
+      else score -= 1;
+    }
   }
 
   // Determinar sinal final
@@ -596,8 +632,7 @@ export function calculateFullAnalysis(
   else if (score <= -2) overallSignal = 'sell';
 
   // Calcular confiança (0-1)
-  const maxScore = 10;
-  const confidence = Math.min(Math.abs(score) / maxScore, 1);
+  const confidence = maxScore > 0 ? Math.min(Math.abs(score) / maxScore, 1) : 0;
 
   const result: TechnicalAnalysisResult = {
     timestamp: Date.now(),
@@ -623,9 +658,9 @@ export function calculateFullAnalysis(
     currentPrice: result.currentPrice,
     overallSignal: result.overallSignal,
     confidence: result.confidence,
-    rsi: result.rsi.value,
-    macdHistogram: result.macd.histogram,
-    trend: result.movingAverages.trend,
+    rsi: result.rsi?.value,
+    macdHistogram: result.macd?.histogram,
+    trend: result.movingAverages?.trend,
   }, 'Análise técnica completa finalizada');
 
   return result;
@@ -636,6 +671,60 @@ export function calculateFullAnalysis(
  * O LLM recebe APENAS os números já calculados e deve INTERPRETAR, não calcular
  */
 export function formatAnalysisForLLM(analysis: TechnicalAnalysisResult): string {
+  const rsiBlock = analysis.rsi
+    ? `**RSI (14):** ${analysis.rsi.value} [${analysis.rsi.interpretation}]`
+    : '';
+  const macdBlock = analysis.macd
+    ? `**MACD (12,26,9):**
+- MACD Line: ${analysis.macd.macd}
+- Signal Line: ${analysis.macd.signal}
+- Histograma: ${analysis.macd.histogram}
+- Crossover: ${analysis.macd.crossover}`
+    : '';
+  const movingAveragesBlock = analysis.movingAverages
+    ? `**Médias Móveis:**
+- EMA 9: $${analysis.movingAverages.ema9}
+- EMA 21: $${analysis.movingAverages.ema21}
+- EMA 50: $${analysis.movingAverages.ema50}
+- EMA 200: $${analysis.movingAverages.ema200}
+- SMA 20: $${analysis.movingAverages.sma20}
+- Tendência: ${analysis.movingAverages.trend}`
+    : '';
+  const bollingerBlock = analysis.bollinger
+    ? `**Bollinger Bands (20,2):**
+- Superior: $${analysis.bollinger.upper}
+- Média: $${analysis.bollinger.middle}
+- Inferior: $${analysis.bollinger.lower}
+- %B: ${analysis.bollinger.percentB}`
+    : '';
+  const atrBlock = analysis.atr
+    ? `**ATR (14):** $${analysis.atr.value} (${analysis.atr.percentage}%) [${analysis.atr.volatility}]`
+    : '';
+  const stochasticBlock = analysis.stochastic
+    ? `**Stochastic (14,3):** K=${analysis.stochastic.k} D=${analysis.stochastic.d} [${analysis.stochastic.interpretation}]`
+    : '';
+  const adxBlock = analysis.adx
+    ? `**ADX (14):** ${analysis.adx.adx} [${analysis.adx.trendStrength}]
+- +DI: ${analysis.adx.plusDI}
+- -DI: ${analysis.adx.minusDI}`
+    : '';
+  const supportResistanceBlock = analysis.supportResistance
+    ? `**Suporte/Resistência:**
+- R3: $${analysis.supportResistance.resistance3}
+- R2: $${analysis.supportResistance.resistance2}
+- R1: $${analysis.supportResistance.resistance1}
+- Pivot: $${analysis.supportResistance.pivot}
+- S1: $${analysis.supportResistance.support1}
+- S2: $${analysis.supportResistance.support2}
+- S3: $${analysis.supportResistance.support3}`
+    : '';
+  const volumeBlock = analysis.volume
+    ? `**Volume:**
+- Atual: ${analysis.volume.currentVolume}
+- Média: ${analysis.volume.averageVolume}
+- Ratio: ${analysis.volume.volumeRatio}x [${analysis.volume.interpretation}]`
+    : '';
+
   return `
 ## ANÁLISE TÉCNICA - ${analysis.symbol} (${analysis.interval}min)
 Timestamp: ${new Date(analysis.timestamp).toISOString()}
@@ -643,49 +732,15 @@ Preço Atual: $${analysis.currentPrice}
 
 ### INDICADORES CALCULADOS (VALORES EXATOS - NÃO ALTERAR):
 
-**RSI (14):** ${analysis.rsi.value} [${analysis.rsi.interpretation}]
-
-**MACD (12,26,9):**
-- MACD Line: ${analysis.macd.macd}
-- Signal Line: ${analysis.macd.signal}
-- Histograma: ${analysis.macd.histogram}
-- Crossover: ${analysis.macd.crossover}
-
-**Médias Móveis:**
-- EMA 9: $${analysis.movingAverages.ema9}
-- EMA 21: $${analysis.movingAverages.ema21}
-- EMA 50: $${analysis.movingAverages.ema50}
-- EMA 200: $${analysis.movingAverages.ema200}
-- SMA 20: $${analysis.movingAverages.sma20}
-- Tendência: ${analysis.movingAverages.trend}
-
-**Bollinger Bands (20,2):**
-- Superior: $${analysis.bollinger.upper}
-- Média: $${analysis.bollinger.middle}
-- Inferior: $${analysis.bollinger.lower}
-- %B: ${analysis.bollinger.percentB}
-
-**ATR (14):** $${analysis.atr.value} (${analysis.atr.percentage}%) [${analysis.atr.volatility}]
-
-**Stochastic (14,3):** K=${analysis.stochastic.k} D=${analysis.stochastic.d} [${analysis.stochastic.interpretation}]
-
-**ADX (14):** ${analysis.adx.adx} [${analysis.adx.trendStrength}]
-- +DI: ${analysis.adx.plusDI}
-- -DI: ${analysis.adx.minusDI}
-
-**Suporte/Resistência:**
-- R3: $${analysis.supportResistance.resistance3}
-- R2: $${analysis.supportResistance.resistance2}
-- R1: $${analysis.supportResistance.resistance1}
-- Pivot: $${analysis.supportResistance.pivot}
-- S1: $${analysis.supportResistance.support1}
-- S2: $${analysis.supportResistance.support2}
-- S3: $${analysis.supportResistance.support3}
-
-**Volume:**
-- Atual: ${analysis.volume.currentVolume}
-- Média: ${analysis.volume.averageVolume}
-- Ratio: ${analysis.volume.volumeRatio}x [${analysis.volume.interpretation}]
+${rsiBlock}
+${macdBlock}
+${movingAveragesBlock}
+${bollingerBlock}
+${atrBlock}
+${stochasticBlock}
+${adxBlock}
+${supportResistanceBlock}
+${volumeBlock}
 
 ### SINAL PRÉ-CALCULADO:
 Sinal: ${analysis.overallSignal.toUpperCase()}

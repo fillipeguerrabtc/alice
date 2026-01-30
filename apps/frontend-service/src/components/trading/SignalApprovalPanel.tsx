@@ -46,6 +46,15 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
@@ -90,11 +99,17 @@ interface ValidationStats {
 }
 
 export interface SignalApprovalPanelProps {
-  controlMode: 'manual' | 'alice';
-  minConfidenceToExecute: number;
   marketType?: 'futures' | 'spot' | 'margin';
-  onModeChange?: (mode: 'manual' | 'alice') => void;
 }
+
+type SignalApprovalOverrides = {
+  orderType?: 'limit' | 'market' | 'stop_limit' | 'stop_market' | 'take_profit';
+  size?: number;
+  price?: number;
+  leverage?: number;
+  stopLoss?: number;
+  takeProfit?: number;
+};
 
 // ============================================================================
 // HELPERS
@@ -121,6 +136,47 @@ const getSignalTypeInfo = (type: TradingSignal['signalType']) => {
   }
 };
 
+const buildIndicatorExplanation = (analysis: Record<string, unknown>): string[] => {
+  const items: string[] = [];
+  const rsi = analysis.rsi as { value?: number; interpretation?: string } | undefined;
+  if (rsi?.value !== undefined) {
+    items.push(`RSI ${rsi.value.toFixed(2)} (${rsi.interpretation ?? 'neutro'})`);
+  }
+  const macd = analysis.macd as { histogram?: number; interpretation?: string; crossover?: string } | undefined;
+  if (macd?.histogram !== undefined) {
+    items.push(`MACD hist ${macd.histogram.toFixed(2)} (${macd.interpretation ?? 'neutro'})`);
+  }
+  const moving = analysis.movingAverages as { trend?: string } | undefined;
+  if (moving?.trend) {
+    items.push(`Médias móveis: tendência ${moving.trend}`);
+  }
+  const bollinger = analysis.bollinger as { percentB?: number; interpretation?: string } | undefined;
+  if (bollinger?.percentB !== undefined) {
+    items.push(`Bollinger %B ${(bollinger.percentB * 100).toFixed(0)}% (${bollinger.interpretation ?? 'neutro'})`);
+  }
+  const atr = analysis.atr as { percentage?: number; volatility?: string } | undefined;
+  if (atr?.percentage !== undefined) {
+    items.push(`ATR ${(atr.percentage).toFixed(2)}% (${atr.volatility ?? 'média'})`);
+  }
+  const stochastic = analysis.stochastic as { k?: number; d?: number; interpretation?: string } | undefined;
+  if (stochastic?.k !== undefined) {
+    items.push(`Stochastic %K ${stochastic.k.toFixed(2)} / %D ${stochastic.d?.toFixed(2) ?? 'N/A'} (${stochastic.interpretation ?? 'neutro'})`);
+  }
+  const adx = analysis.adx as { adx?: number; trendStrength?: string } | undefined;
+  if (adx?.adx !== undefined) {
+    items.push(`ADX ${adx.adx.toFixed(2)} (${adx.trendStrength ?? 'moderada'})`);
+  }
+  const sr = analysis.supportResistance as { pivot?: number } | undefined;
+  if (sr?.pivot !== undefined) {
+    items.push(`Suporte/Resistência: pivot ${sr.pivot.toFixed(2)}`);
+  }
+  const volume = analysis.volume as { volumeRatio?: number; interpretation?: string } | undefined;
+  if (volume?.volumeRatio !== undefined) {
+    items.push(`Volume ratio ${volume.volumeRatio.toFixed(2)}x (${volume.interpretation ?? 'normal'})`);
+  }
+  return items;
+};
+
 // ============================================================================
 // COMPONENTE DE SINAL INDIVIDUAL
 // ============================================================================
@@ -129,16 +185,20 @@ function SignalCard({
   signal,
   onApprove,
   onReject,
+  onSendToTraining,
   isApproving,
   isRejecting,
+  isSendingToTraining,
   locale,
   timeZone,
 }: {
   signal: TradingSignal;
-  onApprove: (signalId: string, reason: string) => void;
+  onApprove: (signalId: string, reason: string, overrides?: SignalApprovalOverrides) => void;
   onReject: (signalId: string, reason: string) => void;
+  onSendToTraining: (signalId: string) => void;
   isApproving: boolean;
   isRejecting: boolean;
+  isSendingToTraining: boolean;
   locale: string;
   timeZone: string;
 }) {
@@ -146,6 +206,15 @@ function SignalCard({
   const [showApproveDialog, setShowApproveDialog] = useState(false);
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [reason, setReason] = useState('');
+  const metadata = (signal.metadata ?? {}) as Record<string, unknown>;
+  const [approveOverrides, setApproveOverrides] = useState({
+    orderType: signal.suggestedPrice ? 'limit' : 'market',
+    size: '',
+    price: signal.suggestedPrice ? String(signal.suggestedPrice) : '',
+    leverage: '',
+    stopLoss: signal.suggestedStopLoss ? String(signal.suggestedStopLoss) : '',
+    takeProfit: signal.suggestedTakeProfit ? String(signal.suggestedTakeProfit) : '',
+  });
 
   const typeInfo = getSignalTypeInfo(signal.signalType);
   const TypeIcon = typeInfo.icon;
@@ -282,6 +351,70 @@ function SignalCard({
                     </div>
                   )}
 
+                  {(metadata.timeframes || metadata.enabledIndicators || metadata.consensus) && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium">Contexto Multi‑Timeframe:</p>
+                      {Array.isArray(metadata.timeframes) && metadata.timeframes.length > 0 && (
+                        <p className="text-sm text-muted-foreground">
+                          Timeframes: {metadata.timeframes.join(', ')}
+                        </p>
+                      )}
+                      {Array.isArray(metadata.enabledIndicators) && metadata.enabledIndicators.length > 0 && (
+                        <p className="text-sm text-muted-foreground">
+                          Indicadores: {metadata.enabledIndicators.join(', ')}
+                        </p>
+                      )}
+                      {typeof metadata.consensus === 'object' && metadata.consensus !== null && (
+                        <div className="text-sm text-muted-foreground space-y-1">
+                          <p>Consenso: {(metadata.consensus as { overallSignal?: string }).overallSignal ?? 'N/A'}</p>
+                          <p>
+                            Acordo: {typeof (metadata.consensus as { agreementRatio?: number }).agreementRatio === 'number'
+                              ? `${Math.round(((metadata.consensus as { agreementRatio?: number }).agreementRatio ?? 0) * 100)}%`
+                              : 'N/A'}
+                          </p>
+                          {Array.isArray((metadata.consensus as { alignedTimeframes?: string[] }).alignedTimeframes) && (
+                            <p>
+                              Alinhados: {(metadata.consensus as { alignedTimeframes?: string[] }).alignedTimeframes?.join(', ') || 'Nenhum'}
+                            </p>
+                          )}
+                          {Array.isArray((metadata.consensus as { misalignedTimeframes?: string[] }).misalignedTimeframes) && (
+                            <p>
+                              Divergentes: {(metadata.consensus as { misalignedTimeframes?: string[] }).misalignedTimeframes?.join(', ') || 'Nenhum'}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      {typeof metadata.dataSources === 'object' && metadata.dataSources !== null && (
+                        <p className="text-sm text-muted-foreground">
+                          Fontes: {['orderBook', 'news', 'trainingData']
+                            .filter((key) => (metadata.dataSources as Record<string, boolean>)[key])
+                            .join(', ') || 'Nenhuma'}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {Array.isArray(metadata.analysisMatrix) && metadata.analysisMatrix.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium">Raciocínio por timeframe:</p>
+                      {metadata.analysisMatrix.map((entry) => {
+                        const interval = (entry as { interval?: string }).interval ?? 'N/A';
+                        const analysis = (entry as { analysis?: Record<string, unknown> }).analysis ?? {};
+                        const explanations = buildIndicatorExplanation(analysis);
+                        return (
+                          <div key={`signal-${signal.id}-${interval}`} className="border rounded-md p-2 text-sm text-muted-foreground">
+                            <p className="font-medium text-foreground">{interval}</p>
+                            <ul className="list-disc pl-5 space-y-1">
+                              {explanations.map((item) => (
+                                <li key={`${interval}-${item}`}>{item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
                   {/* Valores Sugeridos */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     {signal.suggestedPrice && (
@@ -320,6 +453,24 @@ function SignalCard({
                     )}
                   </div>
 
+                  <div className="flex justify-end">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onSendToTraining(signal.id)}
+                      disabled={isSendingToTraining}
+                    >
+                      {isSendingToTraining ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <>
+                          <FileCheck className="h-4 w-4 mr-2" />
+                          Enviar para Treinamento
+                        </>
+                      )}
+                    </Button>
+                  </div>
+
                   {/* Indicadores Técnicos */}
                   {signal.metadata?.technicalIndicators && Object.keys(signal.metadata.technicalIndicators).length > 0 && (
                     <div>
@@ -342,7 +493,19 @@ function SignalCard({
       </motion.div>
 
       {/* Dialog de Aprovação */}
-      <Dialog open={showApproveDialog} onOpenChange={setShowApproveDialog}>
+      <Dialog open={showApproveDialog} onOpenChange={(open) => {
+        setShowApproveDialog(open);
+        if (open) {
+          setApproveOverrides({
+            orderType: signal.suggestedPrice ? 'limit' : 'market',
+            size: '',
+            price: signal.suggestedPrice ? String(signal.suggestedPrice) : '',
+            leverage: '',
+            stopLoss: signal.suggestedStopLoss ? String(signal.suggestedStopLoss) : '',
+            takeProfit: signal.suggestedTakeProfit ? String(signal.suggestedTakeProfit) : '',
+          });
+        }
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-green-600">
@@ -350,7 +513,7 @@ function SignalCard({
               Aprovar Sinal de Trading
             </DialogTitle>
             <DialogDescription>
-              Confirme a aprovação deste sinal para execução. A ordem será enviada para a KuCoin.
+              Ajuste os parâmetros se necessário. A ordem ficará pendente para revisão final.
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
@@ -359,6 +522,72 @@ function SignalCard({
               <div>
                 <p className="font-bold">{typeInfo.label} - {signal.symbol}</p>
                 <p className="text-sm text-muted-foreground">Confiança: {confidencePercent}%</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div className="space-y-1">
+                <Label>Tipo</Label>
+                <Select
+                  value={approveOverrides.orderType}
+                  onValueChange={(value: SignalApprovalOverrides['orderType']) =>
+                    setApproveOverrides({ ...approveOverrides, orderType: value || 'market' })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="market">Market</SelectItem>
+                    <SelectItem value="limit">Limit</SelectItem>
+                    <SelectItem value="stop_market">Stop Market</SelectItem>
+                    <SelectItem value="stop_limit">Stop Limit</SelectItem>
+                    <SelectItem value="take_profit">Take Profit</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label>Quantidade</Label>
+                <Input
+                  type="number"
+                  value={approveOverrides.size}
+                  onChange={(e) => setApproveOverrides({ ...approveOverrides, size: e.target.value })}
+                  placeholder="Ex: 10"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Preço</Label>
+                <Input
+                  type="number"
+                  value={approveOverrides.price}
+                  onChange={(e) => setApproveOverrides({ ...approveOverrides, price: e.target.value })}
+                  placeholder="Mercado"
+                  disabled={approveOverrides.orderType === 'market' || approveOverrides.orderType === 'stop_market' || approveOverrides.orderType === 'take_profit'}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Alavancagem</Label>
+                <Input
+                  type="number"
+                  value={approveOverrides.leverage}
+                  onChange={(e) => setApproveOverrides({ ...approveOverrides, leverage: e.target.value })}
+                  placeholder="Ex: 10"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Stop Loss</Label>
+                <Input
+                  type="number"
+                  value={approveOverrides.stopLoss}
+                  onChange={(e) => setApproveOverrides({ ...approveOverrides, stopLoss: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Take Profit</Label>
+                <Input
+                  type="number"
+                  value={approveOverrides.takeProfit}
+                  onChange={(e) => setApproveOverrides({ ...approveOverrides, takeProfit: e.target.value })}
+                />
               </div>
             </div>
             <Textarea
@@ -375,7 +604,19 @@ function SignalCard({
             <Button
               className="bg-green-600 hover:bg-green-700"
               onClick={() => {
-                onApprove(signal.id, reason);
+                const overrides: SignalApprovalOverrides = {};
+                const sizeValue = Number(approveOverrides.size);
+                const priceValue = Number(approveOverrides.price);
+                const leverageValue = Number(approveOverrides.leverage);
+                const stopLossValue = Number(approveOverrides.stopLoss);
+                const takeProfitValue = Number(approveOverrides.takeProfit);
+                if (approveOverrides.orderType) overrides.orderType = approveOverrides.orderType;
+                if (Number.isFinite(sizeValue) && sizeValue > 0) overrides.size = sizeValue;
+                if (Number.isFinite(priceValue) && priceValue > 0) overrides.price = priceValue;
+                if (Number.isFinite(leverageValue) && leverageValue > 0) overrides.leverage = leverageValue;
+                if (Number.isFinite(stopLossValue) && stopLossValue > 0) overrides.stopLoss = stopLossValue;
+                if (Number.isFinite(takeProfitValue) && takeProfitValue > 0) overrides.takeProfit = takeProfitValue;
+                onApprove(signal.id, reason, Object.keys(overrides).length ? overrides : undefined);
                 setShowApproveDialog(false);
                 setReason('');
               }}
@@ -441,8 +682,6 @@ function SignalCard({
 // ============================================================================
 
 export function SignalApprovalPanel({
-  controlMode,
-  minConfidenceToExecute,
   marketType,
 }: SignalApprovalPanelProps) {
   const { toast } = useToast();
@@ -452,6 +691,7 @@ export function SignalApprovalPanel({
   const timeZone = user?.timezone ?? TIMEZONE;
   const [approvingSignalId, setApprovingSignalId] = useState<string | null>(null);
   const [rejectingSignalId, setRejectingSignalId] = useState<string | null>(null);
+  const [creatingDatasetSignalId, setCreatingDatasetSignalId] = useState<string | null>(null);
 
   // Buscar sinais pendentes
   const { data: signalsResponse, isLoading, refetch } = useQuery<{
@@ -486,10 +726,10 @@ export function SignalApprovalPanel({
 
   // Mutation para aprovar sinal
   const approveMutation = useMutation({
-    mutationFn: async ({ signalId, reason }: { signalId: string; reason: string }) => {
-      const response = await apiRequest('POST', `/api/integrations/trading/signals/${signalId}/execute`, {
+    mutationFn: async ({ signalId, reason, overrides }: { signalId: string; reason: string; overrides?: SignalApprovalOverrides }) => {
+      const response = await apiRequest('POST', `/api/integrations/trading/signals/${signalId}/approve`, {
         reason,
-        approved: true,
+        overrides,
       });
       return response.json();
     },
@@ -499,7 +739,7 @@ export function SignalApprovalPanel({
     onSuccess: () => {
       toast({
         title: 'Sinal Aprovado',
-        description: 'A ordem foi enviada para execução.',
+        description: 'Ordem criada para revisão e aprovação final.',
       });
       queryClient.invalidateQueries({ queryKey: ['trading-signals-pending'] });
       queryClient.invalidateQueries({ queryKey: ['trading-orders'] });
@@ -519,7 +759,7 @@ export function SignalApprovalPanel({
   // Mutation para rejeitar sinal
   const rejectMutation = useMutation({
     mutationFn: async ({ signalId, reason }: { signalId: string; reason: string }) => {
-      const response = await apiRequest('POST', `/api/integrations/trading/signals/${signalId}/deactivate`, {
+      const response = await apiRequest('POST', `/api/integrations/trading/signals/${signalId}/reject`, {
         reason,
       });
       return response.json();
@@ -546,6 +786,32 @@ export function SignalApprovalPanel({
     },
   });
 
+  const createDatasetMutation = useMutation({
+    mutationFn: async ({ signalId }: { signalId: string }) => {
+      const response = await apiRequest('POST', '/api/integrations/trading/datasets/from-signal', { signalId });
+      return response.json();
+    },
+    onMutate: ({ signalId }) => {
+      setCreatingDatasetSignalId(signalId);
+    },
+    onSuccess: () => {
+      toast({
+        title: 'Dataset criado',
+        description: 'Item enviado para aprovação na página de Treinamento.',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erro ao criar dataset',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+    onSettled: () => {
+      setCreatingDatasetSignalId(null);
+    },
+  });
+
   const signals = signalsResponse?.data || [];
   const stats = validationStats?.stats;
 
@@ -557,14 +823,10 @@ export function SignalApprovalPanel({
             <CardTitle className="flex items-center gap-2">
               <FileCheck className="h-5 w-5" />
               Aprovação de Sinais
-              <Badge variant={controlMode === 'manual' ? 'default' : 'secondary'}>
-                {controlMode === 'manual' ? 'MODO MANUAL' : 'MODO ALICE'}
-              </Badge>
+              <Badge variant="default">MODO MANUAL</Badge>
             </CardTitle>
             <CardDescription>
-              {controlMode === 'manual'
-                ? 'Todos os sinais precisam de aprovação humana antes da execução'
-                : `Sinais com confiança ≥ ${Math.round(minConfidenceToExecute * 100)}% são executados automaticamente`}
+              Todos os sinais precisam de aprovação humana antes da execução
             </CardDescription>
           </div>
           <Button variant="outline" size="sm" onClick={() => refetch()}>
@@ -622,10 +884,12 @@ export function SignalApprovalPanel({
                   <SignalCard
                     key={signal.id}
                     signal={signal}
-                    onApprove={(signalId, reason) => approveMutation.mutate({ signalId, reason })}
+                    onApprove={(signalId, reason, overrides) => approveMutation.mutate({ signalId, reason, overrides })}
                     onReject={(signalId, reason) => rejectMutation.mutate({ signalId, reason })}
+                    onSendToTraining={(signalId) => createDatasetMutation.mutate({ signalId })}
                     isApproving={approvingSignalId === signal.id}
                     isRejecting={rejectingSignalId === signal.id}
+                    isSendingToTraining={creatingDatasetSignalId === signal.id}
                     locale={locale}
                     timeZone={timeZone}
                   />
@@ -635,16 +899,12 @@ export function SignalApprovalPanel({
           </ScrollArea>
         )}
 
-        {/* Alerta de Modo */}
-        {controlMode === 'alice' && (
-          <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground bg-blue-50 border border-blue-200 rounded-lg p-3">
-            <Brain className="h-4 w-4 text-blue-500" />
-            <span>
-              <strong>Modo Alice ativo:</strong> Sinais com confiança ≥ {Math.round(minConfidenceToExecute * 100)}% 
-              são executados automaticamente. Sinais abaixo do threshold aparecem aqui para aprovação manual.
-            </span>
-          </div>
-        )}
+        <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground bg-blue-50 border border-blue-200 rounded-lg p-3">
+          <Brain className="h-4 w-4 text-blue-500" />
+          <span>
+            <strong>Revisão manual obrigatória:</strong> todo sinal precisa ser aprovado para gerar ordem em revisão.
+          </span>
+        </div>
       </CardContent>
     </Card>
   );

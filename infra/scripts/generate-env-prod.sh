@@ -264,6 +264,7 @@ echo "✅ Alice Auth: ${ADMIN_USER} (email válido, senha 8+ chars)"
 # -----------------------------------------------------------------------------
 GRAFANA_ADMIN_USER="${GRAFANA_ADMIN_USER_SECRET:-}"
 GRAFANA_ADMIN_PASSWORD="${GRAFANA_ADMIN_PASSWORD_SECRET:-}"
+GRAFANA_API_KEY="${GRAFANA_API_KEY_SECRET:-}"
 
 if [ -z "${GRAFANA_ADMIN_USER}" ]; then
   echo "::error::GRAFANA_ADMIN_USER não definido. Configure o secret GRAFANA_ADMIN_USER (ex: admin)." >&2
@@ -281,6 +282,9 @@ if [ ${#GRAFANA_ADMIN_PASSWORD} -lt 8 ]; then
 fi
 
 echo "✅ Grafana 12: ${GRAFANA_ADMIN_USER} (username customizável)"
+if [ -n "${GRAFANA_API_KEY}" ]; then
+  echo "✅ GRAFANA_API_KEY configurado (usado para integrações Grafana)"
+fi
 
 # -----------------------------------------------------------------------------
 # ERPNEXT 15 - Username fixo "Administrator" + ERPNEXT_ADMIN_PASSWORD (obrigatório)
@@ -939,6 +943,9 @@ echo "📄 Gerando arquivo .env.prod..."
   printf '# Grafana\n'
   printf 'GRAFANA_ADMIN_USER=%s\n' "${GRAFANA_ADMIN_USER}"
   printf 'GRAFANA_ADMIN_PASSWORD=%s\n' "${GRAFANA_ADMIN_PASSWORD}"
+  if [ -n "${GRAFANA_API_KEY}" ]; then
+    printf 'GRAFANA_API_KEY=%s\n' "${GRAFANA_API_KEY}"
+  fi
   printf 'GF_SECURITY_ADMIN_USER=%s\n' "${GRAFANA_ADMIN_USER}"
   printf 'GF_SECURITY_ADMIN_PASSWORD=%s\n' "${GRAFANA_ADMIN_PASSWORD}"
   printf '\n'

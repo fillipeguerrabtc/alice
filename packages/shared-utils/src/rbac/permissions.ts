@@ -153,6 +153,11 @@ export const PERMISSION_MAP: Record<string, Role[]> = {
   'integrations:erpnext:delete': ['super_admin', 'admin'],
   'integrations:erpnext:manage': ['super_admin', 'admin'],
   'integrations:erpnext:sync': ['super_admin', 'admin', 'manager'],
+
+  'integrations:grafana:read': ['super_admin', 'admin', 'manager', 'operator'],
+  'integrations:grafana:write': ['super_admin', 'admin', 'manager'],
+  'integrations:grafana:delete': ['super_admin', 'admin'],
+  'integrations:grafana:manage': ['super_admin', 'admin'],
   
   'integrations:twilio:read': ['super_admin', 'admin', 'manager'],
   'integrations:twilio:write': ['super_admin', 'admin'],

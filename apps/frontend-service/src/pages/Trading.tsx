@@ -57,7 +57,8 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Loader2,
-  // CORREÇÃO 19/12/2025: Remover Eye, Edit não utilizados (no-unused-vars)
+  Pencil,
+  // CORREÇÃO 19/12/2025: Remover Eye não utilizado (no-unused-vars)
   Trash2,
   Rocket,
   Brain,
@@ -176,8 +177,6 @@ interface RiskConfig {
   defaultStopLoss: string | null;
   defaultTakeProfit: string | null;
   tradingEnabled: boolean;
-  autoExecuteSignals: boolean;
-  minConfidenceToExecute: string;
   criadoEm: string;
   atualizadoEm: string;
 }
@@ -345,6 +344,8 @@ interface TradingSignal {
     agentId?: string;
     namespaceId?: string;
     modelVersion?: string;
+    approvalStatus?: 'pending' | 'approved' | 'rejected';
+    approvalReason?: string;
     [key: string]: unknown;
   };
   isActive: boolean;
@@ -360,8 +361,8 @@ interface TradingOrder {
   clientOid: string;
   symbol: string;
   side: 'buy' | 'sell';
-  orderType: 'limit' | 'market';
-  status: 'pending' | 'open' | 'filled' | 'cancelled' | 'rejected' | 'expired';
+  orderType: 'limit' | 'market' | 'stop_limit' | 'stop_market' | 'take_profit';
+  status: 'pending_review' | 'review_rejected' | 'pending' | 'submitted' | 'open' | 'filled' | 'cancelled' | 'rejected' | 'expired' | 'error';
   price: string;
   size: string;
   filledSize: string | null;
@@ -372,6 +373,25 @@ interface TradingOrder {
   metadata: Record<string, unknown>;
   criadoEm: string;
   atualizadoEm: string;
+}
+
+interface TradingProfileForm {
+  kind: 'analysis' | 'signal';
+  timeframes: string[];
+  indicators: string[];
+  dataSources: {
+    orderBook: boolean;
+    news: boolean;
+    trainingData: boolean;
+  };
+  modelConfig?: {
+    temperature?: number;
+    maxTokens?: number;
+  };
+  consensus?: {
+    rule?: 'majority';
+    minAgree?: number;
+  };
 }
 
 // ============================================================================
@@ -388,13 +408,29 @@ const SIGNAL_TYPES = [
   { value: 'neutral', label: 'Neutro', icon: Hand, color: 'text-muted-foreground' },
 ];
 
+const SIGNAL_INDICATOR_OPTIONS = [
+  { key: 'rsi', label: 'RSI', description: 'Mede sobrecompra/sobrevenda com base no momentum.' },
+  { key: 'macd', label: 'MACD', description: 'Sinal de tendência via cruzamento de médias.' },
+  { key: 'moving_averages', label: 'Médias Móveis', description: 'Tendência geral e níveis dinâmicos.' },
+  { key: 'bollinger', label: 'Bollinger Bands', description: 'Volatilidade e afastamento do preço.' },
+  { key: 'atr', label: 'ATR', description: 'Volatilidade média e risco de variação.' },
+  { key: 'stochastic', label: 'Stochastic', description: 'Momentum e possíveis reversões.' },
+  { key: 'adx', label: 'ADX', description: 'Força da tendência atual.' },
+  { key: 'support_resistance', label: 'Suporte/Resistência', description: 'Níveis técnicos de reversão (pivot points).' },
+  { key: 'volume', label: 'Volume', description: 'Força do movimento via fluxo negociado.' },
+] as const;
+
 const ORDER_STATUS_BADGES: Record<string, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; icon: typeof CheckCircle }> = {
   pending: { variant: 'secondary', icon: Clock },
+  pending_review: { variant: 'secondary', icon: Clock },
+  review_rejected: { variant: 'destructive', icon: XCircle },
+  submitted: { variant: 'outline', icon: Activity },
   open: { variant: 'outline', icon: Activity },
   filled: { variant: 'default', icon: CheckCircle },
   cancelled: { variant: 'destructive', icon: XCircle },
   rejected: { variant: 'destructive', icon: AlertCircle },
   expired: { variant: 'secondary', icon: Clock },
+  error: { variant: 'destructive', icon: AlertCircle },
 };
 
 // Animações Framer Motion
@@ -568,10 +604,20 @@ export default function Trading() {
   const [selectedSymbol, setSelectedSymbol] = useState('');
   const sanitizedSymbol = selectedSymbol.trim();
   const [selectedInterval, setSelectedInterval] = useState('');
-  const [controlMode, setControlMode] = useState<TradingControlMode>('alice');
+  const [controlMode, setControlMode] = useState<TradingControlMode>('manual');
   const [showNewOrderDialog, setShowNewOrderDialog] = useState(false);
   const [showRiskConfigDialog, setShowRiskConfigDialog] = useState(false);
   const [showNewSignalDialog, setShowNewSignalDialog] = useState(false);
+  const [showReviewOrderDialog, setShowReviewOrderDialog] = useState(false);
+  const [reviewOrderTarget, setReviewOrderTarget] = useState<TradingOrder | null>(null);
+  const [reviewOrderForm, setReviewOrderForm] = useState({
+    orderType: 'market' as 'limit' | 'market' | 'stop_limit' | 'stop_market' | 'take_profit',
+    size: '',
+    price: '',
+    leverage: '',
+    stopLoss: '',
+    takeProfit: '',
+  });
   const [schedulerForm, setSchedulerForm] = useState({
     enabled: false,
     intervalMinutes: '15',
@@ -604,8 +650,6 @@ export default function Trading() {
     defaultMarketType: 'futures' as 'futures' | 'spot' | 'margin',
     marginMode: 'cross' as 'cross' | 'isolated',
     tradingEnabled: false,
-    autoExecuteSignals: false,
-    minConfidenceToExecute: '0.8',
   });
 
   // Form state para novo sinal
@@ -614,6 +658,41 @@ export default function Trading() {
     confidence: '0.85',
     reasoning: '',
   });
+
+  const [signalProfileForm, setSignalProfileForm] = useState<TradingProfileForm>({
+    kind: 'signal',
+    timeframes: [selectedInterval || '5m'],
+    indicators: SIGNAL_INDICATOR_OPTIONS.map((option) => option.key),
+    dataSources: {
+      orderBook: false,
+      news: false,
+      trainingData: false,
+    },
+    modelConfig: {},
+    consensus: { rule: 'majority' },
+  });
+
+  const toggleSignalProfileTimeframe = (value: string) => {
+    setSignalProfileForm((prev) => {
+      const exists = prev.timeframes.includes(value);
+      const next = exists ? prev.timeframes.filter((item) => item !== value) : [...prev.timeframes, value];
+      return {
+        ...prev,
+        timeframes: next.length > 0 ? next : prev.timeframes,
+      };
+    });
+  };
+
+  const toggleSignalIndicator = (value: string) => {
+    setSignalProfileForm((prev) => {
+      const exists = prev.indicators.includes(value);
+      const next = exists ? prev.indicators.filter((item) => item !== value) : [...prev.indicators, value];
+      return {
+        ...prev,
+        indicators: next.length > 0 ? next : prev.indicators,
+      };
+    });
+  };
 
   const {
     data: statusData,
@@ -652,6 +731,26 @@ export default function Trading() {
       label: t(`trading.chart.timeframes.${interval}`, { defaultValue: interval }),
     }));
   }, [intervalsData, t]);
+
+  const {
+    data: signalProfileResponse,
+    refetch: refetchSignalProfile,
+  } = useQuery<{ success: boolean; data: TradingProfileForm }>({
+    queryKey: ['/api/integrations/trading/analysis-profile', selectedMarketType, 'signal'],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.set('kind', 'signal');
+      const response = await apiRequest('GET', `/api/integrations/trading/analysis-profile?${params.toString()}`);
+      return response.json();
+    },
+    enabled: Boolean(selectedSymbol),
+  });
+
+  useEffect(() => {
+    if (signalProfileResponse?.data) {
+      setSignalProfileForm(signalProfileResponse.data);
+    }
+  }, [signalProfileResponse]);
 
   const wsInterval = useMemo(() => {
     if (!selectedInterval) return '';
@@ -980,13 +1079,8 @@ export default function Trading() {
         defaultMarketType: config.defaultMarketType ?? 'futures',
         marginMode: config.marginMode ?? 'cross',
         tradingEnabled: config.tradingEnabled ?? false,
-        autoExecuteSignals: config.autoExecuteSignals ?? false,
-        minConfidenceToExecute: config.minConfidenceToExecute ?? '0.8',
       });
-      // CORREÇÃO AUDITORIA 17/12/2025: Sincronizar controlMode com autoExecuteSignals do servidor
-      // Bug: controlMode era inicializado como 'alice' e nunca atualizado, fazendo HandoverPanel
-      // mostrar modo incorreto se servidor estivesse em modo manual (autoExecuteSignals=false)
-      setControlMode(config.autoExecuteSignals ? 'alice' : 'manual');
+      setControlMode('manual');
 
       if (!marketDefaultsInitialized) {
         setSelectedMarketType(config.defaultMarketType ?? 'futures');
@@ -995,6 +1089,20 @@ export default function Trading() {
       }
     }
   }, [riskConfigData, marketDefaultsInitialized]);
+
+  const openReviewDialog = (order: TradingOrder) => {
+    const metadata = (order.metadata ?? {}) as { stopLoss?: number; takeProfit?: number };
+    setReviewOrderTarget(order);
+    setReviewOrderForm({
+      orderType: order.orderType,
+      size: String(order.size ?? ''),
+      price: order.price ? String(order.price) : '',
+      leverage: String(order.leverage ?? ''),
+      stopLoss: metadata.stopLoss ? String(metadata.stopLoss) : '',
+      takeProfit: metadata.takeProfit ? String(metadata.takeProfit) : '',
+    });
+    setShowReviewOrderDialog(true);
+  };
 
   // ============================================================================
   // MUTATIONS
@@ -1132,6 +1240,73 @@ export default function Trading() {
     },
   });
 
+  const approveReviewOrderMutation = useMutation({
+    mutationFn: async (orderId: string) => {
+      const res = await apiRequest('POST', `/api/integrations/trading/orders/${orderId}/approve`);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: 'Ordem aprovada', description: 'Ordem enviada para execução na KuCoin.' });
+      refetchOrders();
+      refetchPositions();
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Falha ao aprovar ordem',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const rejectReviewOrderMutation = useMutation({
+    mutationFn: async ({ orderId, reason }: { orderId: string; reason?: string }) => {
+      const res = await apiRequest('POST', `/api/integrations/trading/orders/${orderId}/reject`, { reason });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: 'Ordem rejeitada', description: 'Ordem marcada como rejeitada.' });
+      refetchOrders();
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Falha ao rejeitar ordem',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const updateReviewOrderMutation = useMutation({
+    mutationFn: async (payload: {
+      orderId: string;
+      updates: {
+        orderType?: TradingOrder['orderType'];
+        size?: number;
+        price?: number;
+        leverage?: number;
+        stopLoss?: number;
+        takeProfit?: number;
+      };
+    }) => {
+      const res = await apiRequest('PATCH', `/api/integrations/trading/orders/${payload.orderId}/review`, payload.updates);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: 'Ordem atualizada', description: 'Ajustes salvos com sucesso.' });
+      setShowReviewOrderDialog(false);
+      setReviewOrderTarget(null);
+      refetchOrders();
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Falha ao atualizar ordem',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
   const syncOrdersMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest('POST', '/api/integrations/trading/orders/sync');
@@ -1169,8 +1344,6 @@ export default function Trading() {
         defaultMarketType: data.defaultMarketType,
         marginMode: data.marginMode,
         tradingEnabled: data.tradingEnabled,
-        autoExecuteSignals: data.autoExecuteSignals,
-        minConfidenceToExecute: data.minConfidenceToExecute,
       });
       return res.json();
     },
@@ -1188,6 +1361,36 @@ export default function Trading() {
     onError: (error: Error) => {
       toast({
         title: t('trading.errors.riskConfigFailed'),
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const updateSignalProfileMutation = useMutation({
+    mutationFn: async () => {
+      const payload = {
+        kind: 'signal',
+        timeframes: signalProfileForm.timeframes,
+        indicators: signalProfileForm.indicators,
+        dataSources: signalProfileForm.dataSources,
+        modelConfig: signalProfileForm.modelConfig,
+        consensus: signalProfileForm.consensus,
+      };
+      const res = await apiRequest('PUT', '/api/integrations/trading/analysis-profile', payload);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      if (!data?.success) {
+        throw new Error(data?.error || t('trading.errors.profileUpdateFailed'));
+      }
+      setSignalProfileForm(data.data as TradingProfileForm);
+      toast({ title: t('trading.success.profileUpdated') });
+      refetchSignalProfile();
+    },
+    onError: (error: Error) => {
+      toast({
+        title: t('trading.errors.profileUpdateFailed'),
         description: error.message,
         variant: 'destructive',
       });
@@ -1233,6 +1436,11 @@ export default function Trading() {
       const res = await apiRequest('POST', '/api/integrations/trading/signals/generate', {
         symbol: selectedSymbol || undefined,
         interval: selectedInterval || '5m',
+        timeframes: signalProfileForm.timeframes,
+        indicators: signalProfileForm.indicators,
+        dataSources: signalProfileForm.dataSources,
+        modelConfig: signalProfileForm.modelConfig,
+        consensus: signalProfileForm.consensus,
         marketType: selectedMarketType,
         marginMode: selectedMarketType === 'margin' ? selectedMarginMode : undefined,
       });
@@ -1707,13 +1915,6 @@ export default function Trading() {
               </Badge>
             )}
 
-            {riskConfig?.autoExecuteSignals && (
-              <Badge variant="outline" className="text-blue-600 border-blue-600">
-                <Bot className="h-3 w-3 mr-1" />
-                {t('trading.status.autoExecute')}
-              </Badge>
-            )}
-
             {/* Market Type Selector */}
             <Select
               value={selectedMarketType}
@@ -1751,7 +1952,7 @@ export default function Trading() {
               <SelectTrigger className="w-[180px]" data-testid="select-symbol">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="max-h-60 overflow-y-auto">
                 {availableSymbols.map((symbol) => (
                   <SelectItem key={symbol} value={symbol}>
                     {symbol}
@@ -2387,12 +2588,42 @@ export default function Trading() {
                                 {order.side.toUpperCase()}
                               </Badge>
                               <div>
-                                <p className="text-sm font-medium">{order.size} @ ${order.price}</p>
+                                <p className="text-sm font-medium">
+                                  {order.size} @ {order.price ? `$${order.price}` : 'Mercado'}
+                                </p>
                                 <p className="text-xs text-muted-foreground">{order.symbol}</p>
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
                               <OrderStatusBadge status={order.status} />
+                              {order.status === 'pending_review' && (
+                                <>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6"
+                                    onClick={() => openReviewDialog(order)}
+                                  >
+                                    <Pencil className="h-3 w-3" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6 text-green-600"
+                                    onClick={() => approveReviewOrderMutation.mutate(order.id)}
+                                  >
+                                    <CheckCircle className="h-3 w-3" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6 text-destructive"
+                                    onClick={() => rejectReviewOrderMutation.mutate({ orderId: order.id })}
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </Button>
+                                </>
+                              )}
                               {(order.status === 'pending' || order.status === 'open') && (
                                 <Button
                                   variant="ghost"
@@ -2484,7 +2715,9 @@ export default function Trading() {
                         </TableCell>
                         <TableCell className="capitalize">{order.orderType}</TableCell>
                         <TableCell>{order.size}</TableCell>
-                        <TableCell>${formatNumber(parseFloat(order.price), locale)}</TableCell>
+                        <TableCell>
+                          {order.price ? `$${formatNumber(parseFloat(order.price), locale)}` : 'Mercado'}
+                        </TableCell>
                         <TableCell>
                           {order.filledSize || '0'} / {order.size}
                         </TableCell>
@@ -2493,6 +2726,34 @@ export default function Trading() {
                           {formatDateTime(order.criadoEm, { locale, timeZone })}
                         </TableCell>
                         <TableCell>
+                          {order.status === 'pending_review' && (
+                            <div className="flex items-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => openReviewDialog(order)}
+                                data-testid={`button-review-order-${order.id}`}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => approveReviewOrderMutation.mutate(order.id)}
+                                data-testid={`button-approve-order-${order.id}`}
+                              >
+                                <CheckCircle className="h-4 w-4 text-green-600" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => rejectReviewOrderMutation.mutate({ orderId: order.id })}
+                                data-testid={`button-reject-order-${order.id}`}
+                              >
+                                <X className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </div>
+                          )}
                           {(order.status === 'pending' || order.status === 'open') && (
                             <Button
                               variant="ghost"
@@ -2683,6 +2944,111 @@ export default function Trading() {
                 {t('trading.signals.new')}
               </Button>
             </div>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>{t('trading.signals.profile.title')}</CardTitle>
+                <CardDescription>{t('trading.signals.profile.subtitle')}</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="space-y-3">
+                  <Label>{t('trading.signals.profile.timeframes')}</Label>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {intervalOptions.map((option) => (
+                      <div key={option.value} className="flex items-center justify-between rounded-md border px-3 py-2">
+                        <span className="text-sm">{option.label}</span>
+                        <Switch
+                          checked={signalProfileForm.timeframes.includes(option.value)}
+                          onCheckedChange={() => toggleSignalProfileTimeframe(option.value)}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <Label>{t('trading.signals.profile.indicators')}</Label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {SIGNAL_INDICATOR_OPTIONS.map((option) => (
+                      <div key={option.key} className="flex items-start justify-between rounded-md border px-3 py-2">
+                        <div>
+                          <p className="text-sm font-medium">{option.label}</p>
+                          <p className="text-xs text-muted-foreground">{option.description}</p>
+                        </div>
+                        <Switch
+                          checked={signalProfileForm.indicators.includes(option.key)}
+                          onCheckedChange={() => toggleSignalIndicator(option.key)}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">{t('trading.signals.profile.indicatorsSupportHint')}</p>
+                </div>
+
+                <div className="space-y-3">
+                  <Label>{t('trading.signals.profile.sources')}</Label>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                      <div>
+                        <p className="text-sm font-medium">{t('trading.signals.profile.sourcesOrderBookTitle')}</p>
+                        <p className="text-xs text-muted-foreground">{t('trading.signals.profile.sourcesOrderBookDesc')}</p>
+                      </div>
+                      <Switch
+                        checked={signalProfileForm.dataSources.orderBook}
+                        onCheckedChange={(checked) => setSignalProfileForm((prev) => ({
+                          ...prev,
+                          dataSources: { ...prev.dataSources, orderBook: checked },
+                        }))}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                      <div>
+                        <p className="text-sm font-medium">{t('trading.signals.profile.sourcesNewsTitle')}</p>
+                        <p className="text-xs text-muted-foreground">{t('trading.signals.profile.sourcesNewsDesc')}</p>
+                      </div>
+                      <Switch
+                        checked={signalProfileForm.dataSources.news}
+                        onCheckedChange={(checked) => setSignalProfileForm((prev) => ({
+                          ...prev,
+                          dataSources: { ...prev.dataSources, news: checked },
+                        }))}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                      <div>
+                        <p className="text-sm font-medium">{t('trading.signals.profile.sourcesTrainingTitle')}</p>
+                        <p className="text-xs text-muted-foreground">{t('trading.signals.profile.sourcesTrainingDesc')}</p>
+                      </div>
+                      <Switch
+                        checked={signalProfileForm.dataSources.trainingData}
+                        onCheckedChange={(checked) => setSignalProfileForm((prev) => ({
+                          ...prev,
+                          dataSources: { ...prev.dataSources, trainingData: checked },
+                        }))}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    onClick={() => updateSignalProfileMutation.mutate()}
+                    disabled={updateSignalProfileMutation.isPending}
+                  >
+                    {updateSignalProfileMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    {t('trading.signals.profile.save')}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => generateSignalMutation.mutate()}
+                    disabled={generateSignalMutation.isPending}
+                  >
+                    {generateSignalMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    {t('trading.signals.generateNow')}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
 
             <Card>
               <CardHeader>
@@ -2881,8 +3247,6 @@ export default function Trading() {
             {/* Painel de Aprovação de Sinais (21/12/2025) */}
             {/* BUG FIX 21/12/2025: Usar ?? ao invés de || para preservar valor 0 válido */}
             <SignalApprovalPanel
-              controlMode={controlMode}
-              minConfidenceToExecute={parseFloat(String(riskConfig?.minConfidenceToExecute ?? 0.8))}
               marketType={selectedMarketType}
             />
           </TabsContent>
@@ -3205,6 +3569,129 @@ export default function Trading() {
         </DialogContent>
       </Dialog>
 
+      {/* Review Order Dialog */}
+      <Dialog open={showReviewOrderDialog} onOpenChange={setShowReviewOrderDialog}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileCheck className="h-5 w-5" />
+              Revisar Ordem
+            </DialogTitle>
+            <DialogDescription>
+              Ajuste os parâmetros antes da execução na KuCoin.
+            </DialogDescription>
+          </DialogHeader>
+
+          {reviewOrderTarget ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Tipo</Label>
+                  <Select
+                    value={reviewOrderForm.orderType}
+                    onValueChange={(value: TradingOrder['orderType']) =>
+                      setReviewOrderForm({ ...reviewOrderForm, orderType: value })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="market">Market</SelectItem>
+                      <SelectItem value="limit">Limit</SelectItem>
+                      <SelectItem value="stop_market">Stop Market</SelectItem>
+                      <SelectItem value="stop_limit">Stop Limit</SelectItem>
+                      <SelectItem value="take_profit">Take Profit</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Quantidade</Label>
+                  <Input
+                    type="number"
+                    value={reviewOrderForm.size}
+                    onChange={(e) => setReviewOrderForm({ ...reviewOrderForm, size: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Preço</Label>
+                  <Input
+                    type="number"
+                    value={reviewOrderForm.price}
+                    onChange={(e) => setReviewOrderForm({ ...reviewOrderForm, price: e.target.value })}
+                    placeholder="Mercado"
+                    disabled={reviewOrderForm.orderType === 'market' || reviewOrderForm.orderType === 'stop_market' || reviewOrderForm.orderType === 'take_profit'}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Alavancagem</Label>
+                  <Input
+                    type="number"
+                    value={reviewOrderForm.leverage}
+                    onChange={(e) => setReviewOrderForm({ ...reviewOrderForm, leverage: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Stop Loss</Label>
+                  <Input
+                    type="number"
+                    value={reviewOrderForm.stopLoss}
+                    onChange={(e) => setReviewOrderForm({ ...reviewOrderForm, stopLoss: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Take Profit</Label>
+                  <Input
+                    type="number"
+                    value={reviewOrderForm.takeProfit}
+                    onChange={(e) => setReviewOrderForm({ ...reviewOrderForm, takeProfit: e.target.value })}
+                  />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="text-sm text-muted-foreground">Nenhuma ordem selecionada.</div>
+          )}
+
+          <DialogFooter className="pt-4">
+            <Button
+              variant="outline"
+              onClick={() => setShowReviewOrderDialog(false)}
+            >
+              Cancelar
+            </Button>
+            {reviewOrderTarget && (
+              <>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    if (!reviewOrderTarget) return;
+                    const updates = {
+                      orderType: reviewOrderForm.orderType,
+                      size: reviewOrderForm.size ? Number(reviewOrderForm.size) : undefined,
+                      price: reviewOrderForm.price ? Number(reviewOrderForm.price) : undefined,
+                      leverage: reviewOrderForm.leverage ? Number(reviewOrderForm.leverage) : undefined,
+                      stopLoss: reviewOrderForm.stopLoss ? Number(reviewOrderForm.stopLoss) : undefined,
+                      takeProfit: reviewOrderForm.takeProfit ? Number(reviewOrderForm.takeProfit) : undefined,
+                    };
+                    updateReviewOrderMutation.mutate({ orderId: reviewOrderTarget.id, updates });
+                  }}
+                  disabled={updateReviewOrderMutation.isPending}
+                >
+                  Salvar ajustes
+                </Button>
+                <Button
+                  onClick={() => approveReviewOrderMutation.mutate(reviewOrderTarget.id)}
+                  disabled={approveReviewOrderMutation.isPending}
+                >
+                  Aprovar e Executar
+                </Button>
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Risk Config Dialog */}
       <Dialog open={showRiskConfigDialog} onOpenChange={setShowRiskConfigDialog}>
         <DialogContent className="sm:max-w-[600px] h-[85vh] max-h-[85vh] overflow-hidden flex flex-col min-h-0">
@@ -3238,19 +3725,6 @@ export default function Trading() {
                 />
               </div>
 
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label>{t('trading.riskConfig.autoExecute')}</Label>
-                  <p className="text-xs text-muted-foreground">
-                    {t('trading.riskConfig.autoExecuteDesc')}
-                  </p>
-                </div>
-                <Switch
-                  checked={riskForm.autoExecuteSignals}
-                  onCheckedChange={(checked) => setRiskForm({ ...riskForm, autoExecuteSignals: checked })}
-                  data-testid="switch-auto-execute"
-                />
-              </div>
             </div>
 
             <Separator />
@@ -3333,21 +3807,6 @@ export default function Trading() {
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label>{t('trading.riskConfig.minConfidence')}</Label>
-                  <div className="relative">
-                    <Input
-                      type="number"
-                      value={(parseFloat(riskForm.minConfidenceToExecute) * 100).toString()}
-                      onChange={(e) => setRiskForm({ ...riskForm, minConfidenceToExecute: (parseFloat(e.target.value) / 100).toString() })}
-                      min={50}
-                      max={100}
-                      className="pr-8"
-                      data-testid="input-min-confidence"
-                    />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">%</span>
-                  </div>
-                </div>
               </div>
             </div>
 
@@ -3386,7 +3845,7 @@ export default function Trading() {
                     <SelectTrigger data-testid="select-default-symbol">
                       <SelectValue placeholder={t('trading.riskConfig.defaultSymbolPlaceholder')} />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="max-h-60 overflow-y-auto">
                       {availableSymbols.map((symbol) => (
                         <SelectItem key={symbol} value={symbol}>
                           {symbol}

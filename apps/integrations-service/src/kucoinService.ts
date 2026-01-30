@@ -22,6 +22,7 @@ import { getDatabase, schema, eq, and, desc, sql } from '@alice/database';
 import {
   type TradingSignal,
   type TradingOrder,
+  type TradingOrderMetadata,
   type TradingRiskConfig,
   type InsertTradingSignal,
   type InsertTradingOrder,
@@ -78,6 +79,7 @@ export interface CreateOrderFromSignalParams {
   marketType?: TradingMarketType;
   marginMode?: TradingMarginMode;
   funds?: number;
+  reduceOnly?: boolean;
 }
 
 /** Parâmetros para ordem manual */
@@ -671,6 +673,730 @@ export async function deactivateSignal(
 }
 
 // ============================================================================
+// APROVAÇÃO MANUAL DE SINAIS/ORDENS (PENDING_REVIEW)
+// ============================================================================
+
+type PendingOrderUpdateInput = {
+  price?: number;
+  size?: number;
+  leverage?: number;
+  orderType?: 'limit' | 'market' | 'stop_limit' | 'stop_market' | 'take_profit';
+  stopLoss?: number;
+  takeProfit?: number;
+};
+
+function clampSuggestedSize(raw?: number): number | null {
+  if (!Number.isFinite(raw) || raw === undefined || raw === null) return null;
+  if (raw <= 0) return null;
+  return raw > 1 ? 1 : raw;
+}
+
+function resolveStopLossTakeProfit(params: {
+  side: 'buy' | 'sell';
+  currentPrice: number;
+  signalStopLoss?: number;
+  signalTakeProfit?: number;
+  defaultStopLoss?: number;
+  defaultTakeProfit?: number;
+}): { stopLoss?: number; takeProfit?: number } {
+  const stopLoss = Number.isFinite(params.signalStopLoss) ? params.signalStopLoss : undefined;
+  const takeProfit = Number.isFinite(params.signalTakeProfit) ? params.signalTakeProfit : undefined;
+  if (stopLoss !== undefined || takeProfit !== undefined) {
+    return { stopLoss, takeProfit };
+  }
+  if (!Number.isFinite(params.defaultStopLoss) && !Number.isFinite(params.defaultTakeProfit)) {
+    return {};
+  }
+  const isLong = params.side === 'buy';
+  const resolvedStopLoss = Number.isFinite(params.defaultStopLoss)
+    ? params.currentPrice * (isLong ? 1 - params.defaultStopLoss! : 1 + params.defaultStopLoss!)
+    : undefined;
+  const resolvedTakeProfit = Number.isFinite(params.defaultTakeProfit)
+    ? params.currentPrice * (isLong ? 1 + params.defaultTakeProfit! : 1 - params.defaultTakeProfit!)
+    : undefined;
+  return { stopLoss: resolvedStopLoss, takeProfit: resolvedTakeProfit };
+}
+
+function resolveHybridOrderSize(params: {
+  maxPositionSize: number;
+  maxOrderValue: number;
+  currentPrice: number;
+  contractMultiplier?: number;
+  suggestedSize?: number | null;
+  marketType: TradingMarketType;
+}): { size: number; sizeRule: string } {
+  const maxPositionSize = Number(params.maxPositionSize);
+  const maxOrderValue = Number(params.maxOrderValue);
+  const currentPrice = Number(params.currentPrice);
+  if (!Number.isFinite(maxPositionSize) || maxPositionSize <= 0) {
+    throw new Error('Configuração maxPositionSize inválida.');
+  }
+  if (!Number.isFinite(maxOrderValue) || maxOrderValue <= 0) {
+    throw new Error('Configuração maxOrderValue inválida.');
+  }
+  if (!Number.isFinite(currentPrice) || currentPrice <= 0) {
+    throw new Error('Preço atual inválido para cálculo de tamanho.');
+  }
+
+  const multiplier = params.marketType === 'futures'
+    ? Number(params.contractMultiplier ?? 1)
+    : 1;
+  if (params.marketType === 'futures' && (!Number.isFinite(multiplier) || multiplier <= 0)) {
+    throw new Error('Multiplicador do contrato inválido.');
+  }
+  const maxSizeByValue = maxOrderValue / (currentPrice * multiplier);
+  const maxAllowed = Math.min(maxPositionSize, maxSizeByValue);
+  if (!Number.isFinite(maxAllowed) || maxAllowed <= 0) {
+    throw new Error('Tamanho máximo calculado inválido.');
+  }
+
+  const suggested = clampSuggestedSize(params.suggestedSize);
+  const rawSize = suggested ? maxAllowed * suggested : maxAllowed;
+  const size = params.marketType === 'futures'
+    ? Math.max(1, Math.floor(rawSize))
+    : rawSize;
+  if (!Number.isFinite(size) || size <= 0) {
+    throw new Error('Tamanho calculado inválido.');
+  }
+  return { size, sizeRule: 'hybrid:min(maxPositionSize,maxOrderValue/currentPrice)' };
+}
+
+async function getMarketSnapshot(params: {
+  authContext: TradingAuthContext;
+  symbol: string;
+  marketType: TradingMarketType;
+  marginMode: TradingMarginMode;
+}): Promise<{
+  currentPrice: number;
+  contractMultiplier?: number;
+}> {
+  if (params.marketType === 'futures') {
+    const [ticker, contract] = await Promise.all([
+      kucoinClient.getTicker(params.symbol),
+      kucoinClient.getContractInfo(params.symbol),
+    ]);
+    const currentPrice = parseFloat(ticker.price);
+    if (!Number.isFinite(currentPrice) || currentPrice <= 0) {
+      throw new Error(`Preço de mercado inválido recebido da KuCoin: "${ticker.price}".`);
+    }
+    return {
+      currentPrice,
+      contractMultiplier: contract?.multiplier ?? undefined,
+    };
+  }
+  const spotTicker = await kucoinSpotClient.getSpotTicker(params.symbol);
+  const currentPrice = parseFloat(spotTicker.price);
+  if (!Number.isFinite(currentPrice) || currentPrice <= 0) {
+    throw new Error(`Preço de mercado inválido recebido da KuCoin: "${spotTicker.price}".`);
+  }
+  return { currentPrice };
+}
+
+async function resolveBaseCurrency(params: {
+  symbol: string;
+  marketType: TradingMarketType;
+  marginMode: TradingMarginMode;
+}): Promise<string> {
+  if (params.marketType === 'spot') {
+    const symbols = await kucoinSpotClient.getSpotSymbols();
+    const info = symbols.find((item) => item.symbol === params.symbol);
+    if (!info?.baseCurrency) {
+      throw new Error(`Não foi possível resolver moeda base do símbolo ${params.symbol}.`);
+    }
+    return info.baseCurrency;
+  }
+  if (params.marketType === 'margin') {
+    const symbols = params.marginMode === 'isolated'
+      ? await kucoinMarginClient.getIsolatedMarginSymbols()
+      : await kucoinMarginClient.getCrossMarginSymbols();
+    const info = symbols.find((item) => item.symbol === params.symbol);
+    if (!info?.baseCurrency) {
+      throw new Error(`Não foi possível resolver moeda base do símbolo ${params.symbol}.`);
+    }
+    return info.baseCurrency;
+  }
+  throw new Error('Moeda base não aplicável para Futures.');
+}
+
+async function resolveExitSize(params: {
+  symbol: string;
+  marketType: TradingMarketType;
+  marginMode: TradingMarginMode;
+}): Promise<number> {
+  if (params.marketType === 'spot') {
+    const baseCurrency = await resolveBaseCurrency(params);
+    const accounts = await kucoinSpotClient.getSpotAccounts('trade');
+    const account = accounts.find((entry) => entry.currency === baseCurrency);
+    const available = Number(account?.available ?? 0);
+    if (!Number.isFinite(available) || available <= 0) {
+      throw new Error(`Saldo disponível insuficiente para ${baseCurrency}.`);
+    }
+    return available;
+  }
+  if (params.marketType === 'margin') {
+    if (params.marginMode === 'isolated') {
+      const account = await kucoinMarginClient.getIsolatedMarginAccount();
+      const asset = account.assets.find((entry) => entry.symbol === params.symbol);
+      const available = Number(asset?.baseAsset.available ?? 0);
+      if (!Number.isFinite(available) || available <= 0) {
+        throw new Error(`Saldo disponível insuficiente para ${params.symbol} (isolated).`);
+      }
+      return available;
+    }
+    const baseCurrency = await resolveBaseCurrency(params);
+    const account = await kucoinMarginClient.getCrossMarginAccount();
+    const entry = account.accounts.find((item) => item.currency === baseCurrency);
+    const available = Number(entry?.available ?? 0);
+    if (!Number.isFinite(available) || available <= 0) {
+      throw new Error(`Saldo disponível insuficiente para ${baseCurrency} (cross).`);
+    }
+    return available;
+  }
+  throw new Error('Tamanho de saída não aplicável para Futures.');
+}
+
+type SignalApprovalOverrides = PendingOrderUpdateInput;
+
+export async function createPendingOrderFromSignal(
+  authContext: TradingAuthContext,
+  signalId: string,
+  reason?: string,
+  overrides?: SignalApprovalOverrides
+): Promise<TradingOperationResult<TradingOrder>> {
+  const db = getDatabase();
+  try {
+    const [signal] = await db
+      .select()
+      .from(schema.tradingSignals)
+      .where(and(eq(schema.tradingSignals.id, signalId), eq(schema.tradingSignals.tenantId, authContext.tenantId)))
+      .limit(1);
+
+    if (!signal) {
+      return { success: false, error: 'Sinal não encontrado.' };
+    }
+    if (!signal.isActive) {
+      return { success: false, error: 'Sinal não está mais ativo.' };
+    }
+
+    const riskConfig = await getRiskConfig(authContext);
+    if (!riskConfig?.tradingEnabled) {
+      return { success: false, error: 'Trading não está habilitado para este tenant.' };
+    }
+
+    const marketType = (signal.marketType as TradingMarketType | undefined) ?? riskConfig.defaultMarketType ?? 'futures';
+    const marginMode = (riskConfig.marginMode as TradingMarginMode | undefined) ?? 'cross';
+    const symbol = await resolveTradingSymbolStrict(authContext, signal.symbol, marketType, marginMode);
+
+    const { currentPrice, contractMultiplier } = await getMarketSnapshot({
+      authContext,
+      symbol,
+      marketType,
+      marginMode,
+    });
+
+    let side: 'buy' | 'sell';
+    let orderType: TradingOrder['orderType'] = overrides?.orderType ?? (signal.suggestedPrice ? 'limit' : 'market');
+    let closePosition = false;
+
+    let exitSize: number | null = null;
+    if (signal.signalType === 'entry_long') {
+      side = 'buy';
+    } else if (signal.signalType === 'entry_short') {
+      side = 'sell';
+    } else if (signal.signalType === 'exit') {
+      closePosition = true;
+      if (marketType === 'futures') {
+        const positions = await kucoinClient.getAllPositions();
+        const position = positions.find((item) => item.symbol === symbol && Number.isFinite(item.currentQty) && item.currentQty !== 0);
+        if (!position) {
+          return { success: false, error: 'Nenhuma posição aberta encontrada para este símbolo.' };
+        }
+        side = position.currentQty > 0 ? 'sell' : 'buy';
+        exitSize = Math.abs(position.currentQty);
+        if (!Number.isInteger(exitSize)) {
+          return { success: false, error: 'Quantidade inválida para fechamento em Futures (contratos inteiros obrigatórios).' };
+        }
+      } else {
+        side = 'sell';
+        exitSize = await resolveExitSize({ symbol, marketType, marginMode });
+      }
+      orderType = 'market';
+    } else if (signal.signalType === 'adjust_sl' || signal.signalType === 'adjust_tp') {
+      closePosition = true;
+      if (marketType !== 'futures') {
+        return { success: false, error: 'Ajuste de SL/TP disponível apenas para Futures.' };
+      }
+      const positions = await kucoinClient.getAllPositions();
+      const position = positions.find((item) => item.symbol === symbol && Number.isFinite(item.currentQty) && item.currentQty !== 0);
+      if (!position) {
+        return { success: false, error: 'Nenhuma posição aberta encontrada para ajuste de SL/TP.' };
+      }
+      side = position.currentQty > 0 ? 'sell' : 'buy';
+      exitSize = Math.abs(position.currentQty);
+      orderType = signal.signalType === 'adjust_tp' ? 'take_profit' : 'stop_market';
+    } else {
+      return { success: false, error: 'Sinal não gera ordem executável.' };
+    }
+
+    const suggestedSize = clampSuggestedSize(signal.suggestedSize ?? undefined);
+    const computedSize = exitSize !== null
+      ? { size: exitSize, sizeRule: 'exit:position_size' }
+      : resolveHybridOrderSize({
+          maxPositionSize: riskConfig.maxPositionSize ?? 0,
+          maxOrderValue: riskConfig.maxOrderValue ?? 0,
+          currentPrice,
+          contractMultiplier,
+          suggestedSize,
+          marketType,
+        });
+    const overrideSize = Number.isFinite(overrides?.size) ? Number(overrides?.size) : null;
+    if (overrideSize !== null && overrideSize <= 0) {
+      return { success: false, error: 'Quantidade inválida.' };
+    }
+    if (overrideSize !== null && exitSize !== null && overrideSize > computedSize.size) {
+      return { success: false, error: 'Quantidade de saída acima da posição disponível.' };
+    }
+    const size = overrideSize ?? computedSize.size;
+    if (marketType === 'futures' && !Number.isInteger(size)) {
+      return { success: false, error: 'Quantidade deve ser inteira para Futures.' };
+    }
+
+    const leverage = Number(overrides?.leverage ?? riskConfig.defaultLeverage ?? 1);
+    const { stopLoss, takeProfit } = resolveStopLossTakeProfit({
+      side,
+      currentPrice,
+      signalStopLoss: overrides?.stopLoss ?? signal.suggestedStopLoss ?? undefined,
+      signalTakeProfit: overrides?.takeProfit ?? signal.suggestedTakeProfit ?? undefined,
+      defaultStopLoss: riskConfig.defaultStopLoss ?? undefined,
+      defaultTakeProfit: riskConfig.defaultTakeProfit ?? undefined,
+    });
+    if ((orderType === 'stop_limit' || orderType === 'stop_market') && !stopLoss) {
+      return { success: false, error: 'Stop Loss obrigatório para ordem stop.' };
+    }
+    if (orderType === 'take_profit' && !takeProfit) {
+      return { success: false, error: 'Take Profit obrigatório para ordem take profit.' };
+    }
+
+    const price = orderType === 'market' || orderType === 'stop_market' || orderType === 'take_profit'
+      ? null
+      : (overrides?.price ?? signal.suggestedPrice ?? currentPrice);
+
+    if (!closePosition) {
+      const multiplier = marketType === 'futures' ? Number(contractMultiplier ?? 1) : 1;
+      const orderValue = marketType === 'futures'
+        ? size * multiplier * (price ?? currentPrice)
+        : size * (price ?? currentPrice);
+      const riskCheck = await validateTradingAllowed(authContext, size, orderValue);
+      if (!riskCheck.allowed) {
+        return { success: false, error: riskCheck.reason };
+      }
+    }
+
+    const orderData: InsertTradingOrder = {
+      tenantId: authContext.tenantId,
+      signalId: signal.id,
+      marketType,
+      symbol,
+      side,
+      orderType,
+      status: 'pending_review',
+      price,
+      size,
+      leverage: Number.isFinite(leverage) && leverage > 0 ? leverage : 1,
+      metadata: {
+        signalId: signal.id,
+        closePosition,
+        stopLoss,
+        takeProfit,
+        review: {
+          source: 'signal',
+          reason,
+          sizeRule: computedSize.sizeRule,
+          suggestedSize: suggestedSize ?? undefined,
+        },
+      },
+    };
+
+    const [order] = await db.insert(schema.tradingOrders).values(orderData).returning();
+
+    await db
+      .update(schema.tradingSignals)
+      .set({
+        isActive: false,
+        metadata: {
+          ...(signal.metadata as Record<string, unknown>),
+          approvalStatus: 'approved',
+          approvalReason: reason ?? null,
+        },
+      })
+      .where(eq(schema.tradingSignals.id, signal.id));
+
+    await logTradingAction(
+      authContext,
+      'APPROVE_SIGNAL',
+      'signal',
+      signal.id,
+      { reason, orderId: order.id },
+      signal as unknown as Record<string, unknown>,
+      order as unknown as Record<string, unknown>
+    );
+
+    return { success: true, data: order };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage, signalId }, 'Erro ao aprovar sinal (criar ordem pendente)');
+    return { success: false, error: errorMessage };
+  }
+}
+
+export async function rejectSignal(
+  authContext: TradingAuthContext,
+  signalId: string,
+  reason?: string
+): Promise<TradingOperationResult<TradingSignal>> {
+  const db = getDatabase();
+  try {
+    const [existing] = await db
+      .select()
+      .from(schema.tradingSignals)
+      .where(and(eq(schema.tradingSignals.id, signalId), eq(schema.tradingSignals.tenantId, authContext.tenantId)))
+      .limit(1);
+
+    if (!existing) {
+      return { success: false, error: 'Sinal não encontrado.' };
+    }
+
+    const [updated] = await db
+      .update(schema.tradingSignals)
+      .set({
+        isActive: false,
+        metadata: {
+          ...(existing.metadata as Record<string, unknown>),
+          approvalStatus: 'rejected',
+          approvalReason: reason ?? null,
+        },
+      })
+      .where(eq(schema.tradingSignals.id, signalId))
+      .returning();
+
+    await logTradingAction(
+      authContext,
+      'REJECT_SIGNAL',
+      'signal',
+      signalId,
+      { reason },
+      existing as unknown as Record<string, unknown>,
+      updated as unknown as Record<string, unknown>
+    );
+
+    return { success: true, data: updated };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage, signalId }, 'Erro ao rejeitar sinal');
+    return { success: false, error: errorMessage };
+  }
+}
+
+export async function updatePendingOrder(
+  authContext: TradingAuthContext,
+  orderId: string,
+  updates: PendingOrderUpdateInput
+): Promise<TradingOperationResult<TradingOrder>> {
+  const db = getDatabase();
+  try {
+    const [order] = await db
+      .select()
+      .from(schema.tradingOrders)
+      .where(and(eq(schema.tradingOrders.id, orderId), eq(schema.tradingOrders.tenantId, authContext.tenantId)))
+      .limit(1);
+
+    if (!order) {
+      return { success: false, error: 'Ordem não encontrada.' };
+    }
+    if (order.status !== 'pending_review') {
+      return { success: false, error: 'A ordem não está em revisão.' };
+    }
+
+    const riskConfig = await getRiskConfig(authContext);
+    if (!riskConfig?.tradingEnabled) {
+      return { success: false, error: 'Trading não está habilitado para este tenant.' };
+    }
+
+    const marketType = order.marketType as TradingMarketType;
+    const marginMode = (riskConfig.marginMode as TradingMarginMode | undefined) ?? 'cross';
+    const symbol = await resolveTradingSymbolStrict(authContext, order.symbol, marketType, marginMode);
+    const { currentPrice, contractMultiplier } = await getMarketSnapshot({
+      authContext,
+      symbol,
+      marketType,
+      marginMode,
+    });
+
+    const orderType = updates.orderType ?? order.orderType;
+    const priceForValidation = orderType === 'market'
+      ? currentPrice
+      : (updates.price ?? order.price ?? currentPrice);
+    const sizeValue = updates.size ?? order.size;
+    if (marketType === 'futures' && !Number.isInteger(sizeValue)) {
+      return { success: false, error: 'Quantidade deve ser inteira (contratos) para Futures.' };
+    }
+
+    const multiplier = marketType === 'futures'
+      ? Number(contractMultiplier ?? 1)
+      : 1;
+    const orderValue = marketType === 'futures'
+      ? sizeValue * multiplier * priceForValidation
+      : sizeValue * priceForValidation;
+
+    const riskCheck = await validateTradingAllowed(authContext, sizeValue, orderValue);
+    if (!riskCheck.allowed) {
+      return { success: false, error: riskCheck.reason };
+    }
+
+    const metadata = (order.metadata ?? {}) as TradingOrderMetadata;
+    const nextMetadata: TradingOrderMetadata = {
+      ...metadata,
+      stopLoss: updates.stopLoss ?? metadata.stopLoss,
+      takeProfit: updates.takeProfit ?? metadata.takeProfit,
+    };
+
+    const [updated] = await db
+      .update(schema.tradingOrders)
+      .set({
+        price: orderType === 'market' ? null : (updates.price ?? order.price),
+        size: sizeValue,
+        leverage: updates.leverage ?? order.leverage,
+        orderType,
+        metadata: nextMetadata,
+        atualizadoEm: new Date(),
+      })
+      .where(eq(schema.tradingOrders.id, order.id))
+      .returning();
+
+    await logTradingAction(
+      authContext,
+      'UPDATE_REVIEW_ORDER',
+      'order',
+      order.id,
+      { updates },
+      order as unknown as Record<string, unknown>,
+      updated as unknown as Record<string, unknown>
+    );
+
+    return { success: true, data: updated };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage, orderId }, 'Erro ao atualizar ordem pendente');
+    return { success: false, error: errorMessage };
+  }
+}
+
+export async function approvePendingOrder(
+  authContext: TradingAuthContext,
+  orderId: string
+): Promise<TradingOperationResult<TradingOrder>> {
+  const db = getDatabase();
+  try {
+    const [order] = await db
+      .select()
+      .from(schema.tradingOrders)
+      .where(and(eq(schema.tradingOrders.id, orderId), eq(schema.tradingOrders.tenantId, authContext.tenantId)))
+      .limit(1);
+
+    if (!order) {
+      return { success: false, error: 'Ordem não encontrada.' };
+    }
+    if (order.status !== 'pending_review') {
+      return { success: false, error: 'A ordem não está em revisão.' };
+    }
+
+    const riskConfig = await getRiskConfig(authContext);
+    if (!riskConfig?.tradingEnabled) {
+      return { success: false, error: 'Trading não está habilitado para este tenant.' };
+    }
+
+    const marketType = order.marketType as TradingMarketType;
+    const marginMode = (riskConfig.marginMode as TradingMarginMode | undefined) ?? 'cross';
+    const symbol = await resolveTradingSymbolStrict(authContext, order.symbol, marketType, marginMode);
+
+    const metadata = (order.metadata ?? {}) as TradingOrderMetadata;
+    const orderType = order.orderType;
+    const isStopOrder = orderType === 'stop_market' || orderType === 'stop_limit' || orderType === 'take_profit';
+
+    let kucoinOrderId = '';
+    let clientOid = '';
+
+    if (isStopOrder) {
+      const stopResult = await createStopOrder(authContext, {
+        symbol,
+        side: order.side,
+        size: order.size,
+        stopLoss: metadata.stopLoss,
+        takeProfit: metadata.takeProfit,
+        leverage: order.leverage ?? undefined,
+        orderType: orderType === 'stop_limit' ? 'limit' : 'market',
+        price: order.price ?? undefined,
+        marketType,
+        marginMode,
+      });
+      if (!stopResult.success || !stopResult.data) {
+        return { success: false, error: stopResult.error ?? 'Falha ao criar stop order.' };
+      }
+      kucoinOrderId = stopResult.data.orderId;
+      clientOid = stopResult.data.clientOid;
+    } else {
+      const multiplier = marketType === 'futures'
+        ? (await kucoinClient.getContractInfo(symbol)).multiplier
+        : 1;
+      const priceForValidation = order.orderType === 'market'
+        ? (await getMarketSnapshot({ authContext, symbol, marketType, marginMode })).currentPrice
+        : (order.price ?? 0);
+      const orderValue = marketType === 'futures'
+        ? order.size * multiplier * priceForValidation
+        : order.size * priceForValidation;
+      const riskCheck = await validateTradingAllowed(authContext, order.size, orderValue);
+      if (!riskCheck.allowed) {
+        return { success: false, error: riskCheck.reason };
+      }
+      clientOid = kucoinClient.generateClientOid();
+      if (marketType === 'futures') {
+        const kucoinOrder = await kucoinClient.createOrder({
+          clientOid,
+          symbol,
+          side: order.side,
+          type: order.orderType as 'limit' | 'market',
+          size: order.size,
+          price: order.price?.toString(),
+          leverage: order.leverage ?? undefined,
+          reduceOnly: metadata.closePosition ?? false,
+        });
+        kucoinOrderId = kucoinOrder.orderId;
+      } else if (marketType === 'spot') {
+        const kucoinOrder = await kucoinSpotClient.createSpotOrder({
+          clientOid,
+          symbol,
+          side: order.side,
+          type: order.orderType as 'limit' | 'market',
+          price: order.price?.toString(),
+          size: order.size.toString(),
+        });
+        kucoinOrderId = kucoinOrder.orderId;
+      } else {
+        const isIsolated = marginMode === 'isolated';
+        const kucoinOrder = await kucoinMarginClient.createMarginOrder({
+          clientOid,
+          symbol,
+          side: order.side,
+          type: order.orderType as 'limit' | 'market',
+          price: order.price?.toString(),
+          size: order.size.toString(),
+          isIsolated,
+        });
+        kucoinOrderId = kucoinOrder.orderId;
+      }
+    }
+
+    const [updated] = await db
+      .update(schema.tradingOrders)
+      .set({
+        status: 'submitted',
+        kucoinOrderId: kucoinOrderId,
+        clientOid,
+        submittedAt: new Date(),
+        metadata: {
+          ...metadata,
+          kucoinOrderId,
+          kucoinClientOid: clientOid,
+        },
+        atualizadoEm: new Date(),
+      })
+      .where(eq(schema.tradingOrders.id, order.id))
+      .returning();
+
+    if (order.signalId) {
+      await db
+        .update(schema.tradingSignals)
+        .set({
+          executedAt: new Date(),
+          executedOrderId: order.id,
+        })
+        .where(eq(schema.tradingSignals.id, order.signalId));
+    }
+
+    await logTradingAction(
+      authContext,
+      'APPROVE_REVIEW_ORDER',
+      'order',
+      order.id,
+      { kucoinOrderId },
+      order as unknown as Record<string, unknown>,
+      updated as unknown as Record<string, unknown>
+    );
+
+    return { success: true, data: updated };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage, orderId }, 'Erro ao aprovar ordem pendente');
+    return { success: false, error: errorMessage };
+  }
+}
+
+export async function rejectPendingOrder(
+  authContext: TradingAuthContext,
+  orderId: string,
+  reason?: string
+): Promise<TradingOperationResult<TradingOrder>> {
+  const db = getDatabase();
+  try {
+    const [order] = await db
+      .select()
+      .from(schema.tradingOrders)
+      .where(and(eq(schema.tradingOrders.id, orderId), eq(schema.tradingOrders.tenantId, authContext.tenantId)))
+      .limit(1);
+
+    if (!order) {
+      return { success: false, error: 'Ordem não encontrada.' };
+    }
+    if (order.status !== 'pending_review') {
+      return { success: false, error: 'A ordem não está em revisão.' };
+    }
+
+    const metadata = (order.metadata ?? {}) as TradingOrderMetadata;
+    const [updated] = await db
+      .update(schema.tradingOrders)
+      .set({
+        status: 'review_rejected',
+        metadata: {
+          ...metadata,
+          review: {
+            ...(metadata.review ?? {}),
+            reason,
+          },
+        },
+        atualizadoEm: new Date(),
+      })
+      .where(eq(schema.tradingOrders.id, order.id))
+      .returning();
+
+    await logTradingAction(
+      authContext,
+      'REJECT_REVIEW_ORDER',
+      'order',
+      order.id,
+      { reason },
+      order as unknown as Record<string, unknown>,
+      updated as unknown as Record<string, unknown>
+    );
+
+    return { success: true, data: updated };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage, orderId }, 'Erro ao rejeitar ordem pendente');
+    return { success: false, error: errorMessage };
+  }
+}
+
+// ============================================================================
 // ORDENS (OMS - Order Management System)
 // ============================================================================
 
@@ -821,6 +1547,7 @@ export async function createOrderFromSignal(
           size: sizeForOrder,
           price: params.price?.toString(),
           leverage: params.leverage,
+          reduceOnly: params.reduceOnly,
         });
         kucoinOrderId = kucoinOrder.orderId;
       } else if (marketType === 'spot') {

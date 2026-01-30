@@ -27,6 +27,8 @@ const agenticSettingsSchema = z.object({
   webEnabled: z.boolean(),
   erpReadEnabled: z.boolean(),
   erpWriteEnabled: z.boolean(),
+  observabilityReadEnabled: z.boolean(),
+  observabilityWriteEnabled: z.boolean(),
   tradingEnabled: z.boolean(),
   paymentsEnabled: z.boolean(),
   stackOpsEnabled: z.boolean(),
@@ -51,6 +53,12 @@ const agenticSettingsSchema = z.object({
     trading: z.object({
       keywords: z.array(z.string().min(1).max(160)).max(200),
       patterns: z.array(z.string().min(1).max(160)).max(200),
+    }),
+    grafana: z.object({
+      baseKeywords: z.array(z.string().min(1).max(160)).max(200),
+      listDashboardsKeywords: z.array(z.string().min(1).max(160)).max(200),
+      updateDashboardKeywords: z.array(z.string().min(1).max(160)).max(200),
+      getDashboardKeywords: z.array(z.string().min(1).max(160)).max(200),
     }),
     agenticTask: z.object({
       createKeywords: z.array(z.string().min(1).max(160)).max(200),
@@ -96,6 +104,7 @@ type AgenticTaskTypeKeyword = keyof AgenticSettingsForm['detectors']['agenticTas
 type ErpKeywordField = keyof AgenticSettingsForm['detectors']['erp'];
 type PaymentsKeywordField = keyof AgenticSettingsForm['detectors']['payments'];
 type StackOpsKeywordField = keyof AgenticSettingsForm['detectors']['stackOps'];
+type GrafanaKeywordField = keyof AgenticSettingsForm['detectors']['grafana'];
 
 type AgenticSettingsResponse = {
   settings: AgenticSettingsForm;
@@ -117,6 +126,12 @@ export default function AgenticConfig() {
     { name: 'annualBillingKeywords', label: t('agenticConfig.erpAnnualBillingKeywords') },
     { name: 'createCustomerKeywords', label: t('agenticConfig.erpCreateCustomerKeywords') },
     { name: 'createInvoiceKeywords', label: t('agenticConfig.erpCreateInvoiceKeywords') },
+  ];
+  const grafanaKeywordItems: Array<{ name: GrafanaKeywordField; label: string }> = [
+    { name: 'baseKeywords', label: t('agenticConfig.grafanaBaseKeywords') },
+    { name: 'listDashboardsKeywords', label: t('agenticConfig.grafanaListKeywords') },
+    { name: 'getDashboardKeywords', label: t('agenticConfig.grafanaGetKeywords') },
+    { name: 'updateDashboardKeywords', label: t('agenticConfig.grafanaUpdateKeywords') },
   ];
   const paymentsKeywordItems: Array<{ name: PaymentsKeywordField; label: string }> = [
     { name: 'wiseRecipientsKeywords', label: t('agenticConfig.wiseRecipientsKeywords') },
@@ -265,6 +280,8 @@ export default function AgenticConfig() {
                 { name: 'webEnabled', label: t('agenticConfig.webEnabled') },
                 { name: 'erpReadEnabled', label: t('agenticConfig.erpReadEnabled') },
                 { name: 'erpWriteEnabled', label: t('agenticConfig.erpWriteEnabled') },
+                { name: 'observabilityReadEnabled', label: t('agenticConfig.observabilityReadEnabled') },
+                { name: 'observabilityWriteEnabled', label: t('agenticConfig.observabilityWriteEnabled') },
                 { name: 'tradingEnabled', label: t('agenticConfig.tradingEnabled') },
                 { name: 'paymentsEnabled', label: t('agenticConfig.paymentsEnabled') },
                 { name: 'stackOpsEnabled', label: t('agenticConfig.stackOpsEnabled') },
@@ -405,6 +422,7 @@ export default function AgenticConfig() {
             <CardContent className="space-y-6">
               <div className="space-y-4">
                 <h3 className="text-sm font-semibold">{t('agenticConfig.detectorsWebTitle')}</h3>
+                <p className="text-xs text-muted-foreground">{t('agenticConfig.detectorsWebDesc')}</p>
                 <FormField
                   control={form.control}
                   name="detectors.webSearch.keywords"
@@ -483,6 +501,7 @@ export default function AgenticConfig() {
 
               <div className="space-y-4">
                 <h3 className="text-sm font-semibold">{t('agenticConfig.detectorsImagesTitle')}</h3>
+                <p className="text-xs text-muted-foreground">{t('agenticConfig.detectorsImagesDesc')}</p>
                 <FormField
                   control={form.control}
                   name="detectors.webImageSearch.keywords"
@@ -561,6 +580,7 @@ export default function AgenticConfig() {
 
               <div className="space-y-4">
                 <h3 className="text-sm font-semibold">{t('agenticConfig.detectorsTasksTitle')}</h3>
+                <p className="text-xs text-muted-foreground">{t('agenticConfig.detectorsTasksDesc')}</p>
                 <FormField
                   control={form.control}
                   name="detectors.agenticTask.createKeywords"
@@ -648,6 +668,7 @@ export default function AgenticConfig() {
 
               <div className="space-y-4">
                 <h3 className="text-sm font-semibold">{t('agenticConfig.detectorsErpTitle')}</h3>
+                <p className="text-xs text-muted-foreground">{t('agenticConfig.detectorsErpDesc')}</p>
                 <FormField
                   control={form.control}
                   name="detectors.erp.baseKeywords"
@@ -697,7 +718,59 @@ export default function AgenticConfig() {
               <Separator />
 
               <div className="space-y-4">
+                <h3 className="text-sm font-semibold">{t('agenticConfig.detectorsGrafanaTitle')}</h3>
+                <p className="text-xs text-muted-foreground">{t('agenticConfig.detectorsGrafanaDesc')}</p>
+                <FormField
+                  control={form.control}
+                  name="detectors.grafana.baseKeywords"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('agenticConfig.grafanaBaseKeywords')}</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          value={listToTextarea(field.value)}
+                          onChange={(event) => field.onChange(textareaToList(event.target.value))}
+                          placeholder={t('agenticConfig.grafanaBaseKeywordsPlaceholder')}
+                          rows={3}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <div className="grid gap-4 md:grid-cols-2">
+                  {grafanaKeywordItems.map((item) => {
+                    const fieldName: `detectors.grafana.${GrafanaKeywordField}` = `detectors.grafana.${item.name}`;
+                    return (
+                    <FormField
+                      key={item.name}
+                      control={form.control}
+                      name={fieldName}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{item.label}</FormLabel>
+                          <FormControl>
+                            <Textarea
+                              value={listToTextarea(field.value)}
+                              onChange={(event) => field.onChange(textareaToList(event.target.value))}
+                              placeholder={t('agenticConfig.grafanaKeywordsPlaceholder')}
+                              rows={3}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    );
+                  })}
+                </div>
+              </div>
+
+              <Separator />
+
+              <div className="space-y-4">
                 <h3 className="text-sm font-semibold">{t('agenticConfig.detectorsPaymentsTitle')}</h3>
+                <p className="text-xs text-muted-foreground">{t('agenticConfig.detectorsPaymentsDesc')}</p>
                 <FormField
                   control={form.control}
                   name="detectors.payments.wiseKeywords"
@@ -749,6 +822,7 @@ export default function AgenticConfig() {
 
               <div className="space-y-4">
                 <h3 className="text-sm font-semibold">{t('agenticConfig.detectorsStackTitle')}</h3>
+                <p className="text-xs text-muted-foreground">{t('agenticConfig.detectorsStackDesc')}</p>
                 <FormField
                   control={form.control}
                   name="detectors.stackOps.baseKeywords"
@@ -800,6 +874,7 @@ export default function AgenticConfig() {
 
               <div className="space-y-4">
                 <h3 className="text-sm font-semibold">{t('agenticConfig.detectorsTradingTitle')}</h3>
+                <p className="text-xs text-muted-foreground">{t('agenticConfig.detectorsTradingDesc')}</p>
                 <FormField
                   control={form.control}
                   name="detectors.trading.keywords"

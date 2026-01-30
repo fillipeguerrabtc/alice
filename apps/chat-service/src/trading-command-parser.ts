@@ -37,6 +37,11 @@ export type TradingCommandType =
   | 'sell'
   | 'close_position'
   | 'cancel_order'
+  | 'approve_signal'
+  | 'reject_signal'
+  | 'approve_order'
+  | 'reject_order'
+  | 'update_review_order'
   | 'generate_signal'
   | 'status'
   | 'positions'
@@ -54,9 +59,12 @@ export interface ParsedTradingCommand {
   type: TradingCommandType;
   isTrading: boolean;
   amount?: number;
+  size?: number;
   symbol?: string;
   orderId?: string;
+  signalId?: string;
   price?: number;
+  orderType?: 'limit' | 'market' | 'stop_limit' | 'stop_market' | 'take_profit';
   leverage?: number;
   stopLoss?: number;
   takeProfit?: number;
@@ -150,6 +158,47 @@ const COMMAND_PATTERNS: CommandPattern[] = [
     extractors: {
       orderId: /([a-f0-9]{8,}-[a-f0-9-]+)/i,
     },
+  },
+
+  // APROVAR/REJEITAR SINAL
+  {
+    type: 'approve_signal',
+    patterns: [
+      /\b(aprovar?|approve)\s+sinal\s*([a-f0-9-]+)\b/i,
+      /\b(aprovar?|approve)\s+signal\s*([a-f0-9-]+)\b/i,
+    ],
+  },
+  {
+    type: 'reject_signal',
+    patterns: [
+      /\b(rejeitar?|reject)\s+sinal\s*([a-f0-9-]+)\b/i,
+      /\b(rejeitar?|reject)\s+signal\s*([a-f0-9-]+)\b/i,
+    ],
+  },
+
+  // APROVAR/REJEITAR ORDEM
+  {
+    type: 'approve_order',
+    patterns: [
+      /\b(aprovar?|approve)\s+ordem\s*([a-f0-9-]+)\b/i,
+      /\b(aprovar?|approve)\s+order\s*([a-f0-9-]+)\b/i,
+    ],
+  },
+  {
+    type: 'reject_order',
+    patterns: [
+      /\b(rejeitar?|reject)\s+ordem\s*([a-f0-9-]+)\b/i,
+      /\b(rejeitar?|reject)\s+order\s*([a-f0-9-]+)\b/i,
+    ],
+  },
+
+  // AJUSTAR ORDEM PENDENTE
+  {
+    type: 'update_review_order',
+    patterns: [
+      /\b(ajustar|editar|atualizar)\s+ordem\s*([a-f0-9-]+)\b/i,
+      /\b(update|edit|adjust)\s+order\s*([a-f0-9-]+)\b/i,
+    ],
   },
 
   // STATUS
@@ -363,6 +412,29 @@ function extractOrderId(text: string): string | undefined {
   return match ? match[1] : undefined;
 }
 
+function extractNamedNumber(text: string, patterns: RegExp[]): number | undefined {
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match && match[1]) {
+      const value = parseFloat(match[1]);
+      if (Number.isFinite(value)) {
+        return value;
+      }
+    }
+  }
+  return undefined;
+}
+
+function extractOrderType(text: string): ParsedTradingCommand['orderType'] | undefined {
+  const normalized = text.toLowerCase();
+  if (/\b(stop\s*limit|limit\s+stop)\b/.test(normalized)) return 'stop_limit';
+  if (/\b(stop\s*market|market\s+stop)\b/.test(normalized)) return 'stop_market';
+  if (/\b(take\s*profit|tp)\b/.test(normalized)) return 'take_profit';
+  if (/\b(limit|limitada|limite)\b/.test(normalized)) return 'limit';
+  if (/\b(market|mercado)\b/.test(normalized)) return 'market';
+  return undefined;
+}
+
 /**
  * Extrai amount dos grupos capturados do regex match
  * 
@@ -455,6 +527,30 @@ export function parseTradingCommand(text: string): ParsedTradingCommand {
 
         if (pattern.type === 'cancel_order') {
           result.orderId = extractOrderId(text);
+        }
+
+        if (pattern.type === 'approve_signal' || pattern.type === 'reject_signal') {
+          result.signalId = extractOrderId(text);
+        }
+
+        if (pattern.type === 'approve_order' || pattern.type === 'reject_order' || pattern.type === 'update_review_order') {
+          result.orderId = extractOrderId(text);
+          result.orderType = extractOrderType(text) ?? result.orderType;
+          result.size = extractNamedNumber(text, [
+            /\b(?:tamanho|quantidade|size)\s*(?:=|:)?\s*(\d+(?:\.\d+)?)/i,
+          ]);
+          result.price = extractNamedNumber(text, [
+            /\b(?:pre[cç]o|price)\s*(?:=|:)?\s*(\d+(?:\.\d+)?)/i,
+          ]) ?? result.price;
+          result.leverage = extractNamedNumber(text, [
+            /\b(?:alavancagem|leverage)\s*(?:=|:)?\s*(\d+(?:\.\d+)?)/i,
+          ]) ?? result.leverage;
+          result.stopLoss = extractNamedNumber(text, [
+            /\b(?:stop\s*loss|stoploss|sl)\s*(?:=|:)?\s*(\d+(?:\.\d+)?)/i,
+          ]) ?? result.stopLoss;
+          result.takeProfit = extractNamedNumber(text, [
+            /\b(?:take\s*profit|takeprofit|tp)\s*(?:=|:)?\s*(\d+(?:\.\d+)?)/i,
+          ]) ?? result.takeProfit;
         }
 
         if (pattern.type === 'set_stop_loss' || pattern.type === 'set_take_profit') {
@@ -554,6 +650,26 @@ export function getCommandDescription(command: ParsedTradingCommand, language: '
       pt: `Cancelar ordem ${command.orderId || '(especifique o ID)'}`,
       en: `Cancel order ${command.orderId || '(specify ID)'}`,
     },
+    approve_signal: {
+      pt: `Aprovar sinal ${command.signalId || '(especifique o ID)'}`,
+      en: `Approve signal ${command.signalId || '(specify ID)'}`,
+    },
+    reject_signal: {
+      pt: `Rejeitar sinal ${command.signalId || '(especifique o ID)'}`,
+      en: `Reject signal ${command.signalId || '(specify ID)'}`,
+    },
+    approve_order: {
+      pt: `Aprovar ordem ${command.orderId || '(especifique o ID)'}`,
+      en: `Approve order ${command.orderId || '(specify ID)'}`,
+    },
+    reject_order: {
+      pt: `Rejeitar ordem ${command.orderId || '(especifique o ID)'}`,
+      en: `Reject order ${command.orderId || '(specify ID)'}`,
+    },
+    update_review_order: {
+      pt: `Atualizar ordem ${command.orderId || '(especifique o ID)'}`,
+      en: `Update order ${command.orderId || '(specify ID)'}`,
+    },
     status: {
       pt: 'Ver status do trading',
       en: 'View trading status',
@@ -621,6 +737,24 @@ export function validateCommand(command: ParsedTradingCommand): {
   if (command.type === 'cancel_order') {
     if (!command.orderId) {
       missingFields.push('orderId');
+    }
+  }
+
+  if (command.type === 'approve_signal' || command.type === 'reject_signal') {
+    if (!command.signalId) {
+      missingFields.push('signalId');
+    }
+  }
+
+  if (command.type === 'approve_order' || command.type === 'reject_order' || command.type === 'update_review_order') {
+    if (!command.orderId) {
+      missingFields.push('orderId');
+    }
+    if (command.type === 'update_review_order') {
+      const hasUpdates = command.size || command.price || command.leverage || command.stopLoss || command.takeProfit || command.orderType;
+      if (!hasUpdates) {
+        missingFields.push('updates');
+      }
     }
   }
 

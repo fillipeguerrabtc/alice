@@ -58,6 +58,8 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `CLICKHOUSE_PASSWORD` | Password ClickHouse | ✅ |
 | `GMAIL_USER` | SMTP Grafana (Gmail) | ✅ |
 | `GMAIL_APP_PASSWORD` | App Password Gmail | ✅ |
+| `GRAFANA_URL` | URL interna do Grafana (ex: `http://alice-grafana:3000`) | ✅ |
+| `GRAFANA_API_KEY` | API key Grafana (opcional, substitui Basic Auth) | ⚠️ |
 
 ## ZeroSSL (EAB) - como gerar
 

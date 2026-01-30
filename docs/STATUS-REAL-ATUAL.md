@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 30 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.26 - Integrações UI i18n + Build Frontend
+**Versão:** 10.27 - Multi‑timeframe Trading + Datasets aprováveis
 
 ---
 
@@ -23,6 +23,10 @@
 - Integração KuCoin auditada e corrigida conforme docs oficiais (auth HMAC v2/v3, time sync, stop orders, WS broadcast via Redis).
 - Trading UI: chamadas REST bloqueadas quando símbolo não está definido (evita 404 e tela “Algo deu errado”).
 - Integrações UI: tipagem i18n alinhada para interpolação (build frontend sem erro TS2554).
+- Trading multi‑timeframe: perfis persistidos (analysis/signal), consenso por maioria, seleção dinâmica de indicadores e fontes.
+- Suporte/Resistência explícito na UI com toggle e explicação detalhada por timeframe.
+- Sinais IA exibem contexto multi‑timeframe, consenso e explicações (inclui dataset pronto para aprovação).
+- Training: datasets de trading com aprovação dedicada e fluxo manual via sinal → dataset.
 
 ---
 

@@ -67,6 +67,13 @@ const observabilityConfigSchema = z.object({
   GRAFANA_LOKI_API_KEY: z.string().optional(),
 });
 
+const grafanaConfigSchema = z.object({
+  GRAFANA_URL: z.string().url().optional(),
+  GRAFANA_ADMIN_USER: z.string().optional(),
+  GRAFANA_ADMIN_PASSWORD: z.string().optional(),
+  GRAFANA_API_KEY: z.string().optional(),
+});
+
 export const authServiceConfigSchema = baseConfigSchema
   .merge(databaseConfigSchema)
   .merge(authConfigSchema);
@@ -86,7 +93,8 @@ export const integrationsServiceConfigSchema = baseConfigSchema
   .merge(databaseConfigSchema)
   .merge(stripeConfigSchema)
   .merge(erpNextConfigSchema)
-  .merge(githubActionsConfigSchema);
+  .merge(githubActionsConfigSchema)
+  .merge(grafanaConfigSchema);
 
 export const fullConfigSchema = baseConfigSchema
   .merge(databaseConfigSchema)
@@ -95,7 +103,8 @@ export const fullConfigSchema = baseConfigSchema
   .merge(stripeConfigSchema)
   .merge(erpNextConfigSchema)
   .merge(githubActionsConfigSchema)
-  .merge(observabilityConfigSchema);
+  .merge(observabilityConfigSchema)
+  .merge(grafanaConfigSchema);
 
 export type BaseConfig = z.infer<typeof baseConfigSchema>;
 export type DatabaseConfig = z.infer<typeof databaseConfigSchema>;
