@@ -2090,7 +2090,7 @@ export default function UsersAdmin() {
           }
         }}
       >
-        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col overflow-hidden min-h-0">
+        <DialogContent className="max-w-3xl h-[85vh] max-h-[85vh] flex flex-col overflow-hidden min-h-0">
           <DialogHeader>
             <DialogTitle>
               {userDialogMode === 'create' ? t('usersAdmin.users.newTitle') : t('usersAdmin.users.editTitle')}

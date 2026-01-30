@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 30 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.23 - Download com extensão correta na galeria
+**Versão:** 10.24 - Scroll do modal de usuários garantido
 
 ---
 
@@ -208,6 +208,7 @@ Retenção Arquivo:   30 dias
 
 ## Atualizações recentes (resumo)
 
+- Users Admin: modal de criação/edição com altura fixa e scroll interno garantido.
 - Galeria de Imagens: download usa extensão correta conforme MIME/URL da imagem.
 - UI: modais com conteúdo já rolável agora usam um único scroll interno (sem conflito entre áreas).
 - Galeria de Imagens: listagem unificada inclui imagens geradas e uploads (inclui web search).
