@@ -615,34 +615,6 @@ export default function Trading() {
     reasoning: '',
   });
 
-  const schedulerConfig = useMemo(() => {
-    const config = schedulerData?.data?.[0] as Record<string, unknown> | undefined;
-    if (!config) return null;
-    return {
-      enabled: Boolean(config.enabled),
-      intervalMinutes: Number(config.intervalMinutes ?? 15),
-      interval: String(config.interval ?? '5m'),
-      symbols: Array.isArray(config.symbols) ? (config.symbols as string[]) : [],
-      maxSignalsPerRun: Number(config.maxSignalsPerRun ?? 1),
-      nextRunAt: config.nextRunAt as string | null,
-      lastRunAt: config.lastRunAt as string | null,
-      lastSuccessAt: config.lastSuccessAt as string | null,
-      lastError: config.lastError as string | null,
-      lastDurationMs: config.lastDurationMs as number | null,
-    };
-  }, [schedulerData]);
-
-  useEffect(() => {
-    if (!schedulerConfig) return;
-    setSchedulerForm({
-      enabled: schedulerConfig.enabled,
-      intervalMinutes: String(schedulerConfig.intervalMinutes || 15),
-      interval: schedulerConfig.interval || '5m',
-      symbols: schedulerConfig.symbols.join(', '),
-      maxSignalsPerRun: String(schedulerConfig.maxSignalsPerRun || 1),
-    });
-  }, [schedulerConfig]);
-
   const {
     data: statusData,
     isLoading: isLoadingStatus,
@@ -816,6 +788,34 @@ export default function Trading() {
     },
     enabled: statusData?.data?.isConfigured && !statusData?.data?.requiresTenant,
   });
+
+  const schedulerConfig = useMemo(() => {
+    const config = schedulerData?.data?.[0] as Record<string, unknown> | undefined;
+    if (!config) return null;
+    return {
+      enabled: Boolean(config.enabled),
+      intervalMinutes: Number(config.intervalMinutes ?? 15),
+      interval: String(config.interval ?? '5m'),
+      symbols: Array.isArray(config.symbols) ? (config.symbols as string[]) : [],
+      maxSignalsPerRun: Number(config.maxSignalsPerRun ?? 1),
+      nextRunAt: config.nextRunAt as string | null,
+      lastRunAt: config.lastRunAt as string | null,
+      lastSuccessAt: config.lastSuccessAt as string | null,
+      lastError: config.lastError as string | null,
+      lastDurationMs: config.lastDurationMs as number | null,
+    };
+  }, [schedulerData]);
+
+  useEffect(() => {
+    if (!schedulerConfig) return;
+    setSchedulerForm({
+      enabled: schedulerConfig.enabled,
+      intervalMinutes: String(schedulerConfig.intervalMinutes || 15),
+      interval: schedulerConfig.interval || '5m',
+      symbols: schedulerConfig.symbols.join(', '),
+      maxSignalsPerRun: String(schedulerConfig.maxSignalsPerRun || 1),
+    });
+  }, [schedulerConfig]);
 
   const {
     data: ordersData,
