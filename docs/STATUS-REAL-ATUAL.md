@@ -424,6 +424,8 @@ Retenção Arquivo:   30 dias
 - Trading: toggle de habilitação sincroniza cache do risco em tempo real.
 - Trading: geração de sinais LLM on-demand + scheduler por marketType (futures/spot/margin) com validação determinística.
 - Trading: scheduler persistido em `trading_signal_schedulers` e worker automático no integrations-service.
+- Trading: scheduler determinístico da aba Análise (CPU) com configuração própria e timeframe selecionável.
+- Trading: análise não executa ao trocar o intervalo; roda apenas por botão "Executar análise agora" ou scheduler.
 - Jaeger: telemetry metrics com endpoint Prometheus compatível (0.0.0.0:8888).
 - Chat: gravação de áudio com fallback de MIME type ao enviar/transcrever.
 - Auth: BASE_URL definido para OAuth Google (evita redirect_uri_mismatch).

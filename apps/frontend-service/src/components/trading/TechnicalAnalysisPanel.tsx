@@ -16,8 +16,9 @@
  * Regra 8: TypeScript strict
  */
 
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useMemo, useState } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
 import {
   TrendingUp,
@@ -41,6 +42,9 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import {
   Select,
   SelectContent,
@@ -50,6 +54,7 @@ import {
 } from '@/components/ui/select';
 // NOTA: Tooltip removido - não utilizado neste componente (21/12/2025)
 import { apiRequest } from '@/lib/queryClient';
+import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { TIMEZONE } from '@/lib/i18n';
 import { formatCurrency, formatDateTime, formatNumber } from '@/lib/utils';
@@ -157,6 +162,8 @@ export interface TechnicalAnalysisPanelProps {
   symbol: string;
   defaultInterval?: string;
   intervalOptions?: IntervalOption[];
+  marketType?: 'futures' | 'spot' | 'margin';
+  marginMode?: 'cross' | 'isolated';
 }
 
 // ============================================================================
@@ -241,13 +248,70 @@ export function TechnicalAnalysisPanel({
   symbol,
   defaultInterval,
   intervalOptions,
+  marketType,
+  marginMode,
 }: TechnicalAnalysisPanelProps) {
+  const { t } = useTranslation();
   const { user } = useAuth();
+  const { toast } = useToast();
   const resolvedIntervalOptions = intervalOptions?.length ? intervalOptions : INTERVALS;
   const resolvedDefaultInterval = defaultInterval ?? resolvedIntervalOptions[0]?.value ?? '5m';
   const [interval, setInterval] = useState(resolvedDefaultInterval);
+  const [analysisSchedulerForm, setAnalysisSchedulerForm] = useState({
+    enabled: false,
+    intervalMinutes: '15',
+    interval: resolvedDefaultInterval,
+    symbols: '',
+    maxSymbolsPerRun: '1',
+  });
   const locale = user?.idioma ?? 'pt-BR';
   const timeZone = user?.timezone ?? TIMEZONE;
+
+  const {
+    data: analysisSchedulerData,
+    isLoading: isLoadingAnalysisScheduler,
+    error: analysisSchedulerError,
+    refetch: refetchAnalysisScheduler,
+  } = useQuery<{ success: boolean; data: Array<Record<string, unknown>> }>({
+    queryKey: ['/api/integrations/trading/analysis-scheduler', marketType],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (marketType) {
+        params.set('marketType', marketType);
+      }
+      const response = await apiRequest('GET', `/api/integrations/trading/analysis-scheduler${params.toString() ? `?${params}` : ''}`);
+      return response.json();
+    },
+    enabled: Boolean(symbol),
+  });
+
+  const analysisSchedulerConfig = useMemo(() => {
+    const config = analysisSchedulerData?.data?.[0] as Record<string, unknown> | undefined;
+    if (!config) return null;
+    return {
+      enabled: Boolean(config.enabled),
+      intervalMinutes: Number(config.intervalMinutes ?? 15),
+      interval: String(config.interval ?? '5m'),
+      symbols: Array.isArray(config.symbols) ? (config.symbols as string[]) : [],
+      maxSymbolsPerRun: Number(config.maxSymbolsPerRun ?? 1),
+      nextRunAt: config.nextRunAt as string | null,
+      lastRunAt: config.lastRunAt as string | null,
+      lastSuccessAt: config.lastSuccessAt as string | null,
+      lastError: config.lastError as string | null,
+      lastDurationMs: config.lastDurationMs as number | null,
+    };
+  }, [analysisSchedulerData]);
+
+  useEffect(() => {
+    if (!analysisSchedulerConfig) return;
+    setAnalysisSchedulerForm({
+      enabled: analysisSchedulerConfig.enabled,
+      intervalMinutes: String(analysisSchedulerConfig.intervalMinutes || 15),
+      interval: analysisSchedulerConfig.interval || '5m',
+      symbols: analysisSchedulerConfig.symbols.join(', '),
+      maxSymbolsPerRun: String(analysisSchedulerConfig.maxSymbolsPerRun || 1),
+    });
+  }, [analysisSchedulerConfig]);
 
   // Buscar análise técnica
   const {
@@ -262,45 +326,225 @@ export function TechnicalAnalysisPanel({
     indicatorId: string;
     llmPrompt: string;
   }>({
-    queryKey: ['trading-analysis', symbol, interval],
+    queryKey: ['trading-analysis', symbol, interval, marketType, marginMode],
     queryFn: async () => {
-      const response = await apiRequest(
-        'GET',
-        `/api/integrations/trading/analysis/${symbol}?interval=${interval}`
-      );
+      const params = new URLSearchParams();
+      params.set('interval', interval);
+      if (marketType) {
+        params.set('marketType', marketType);
+      }
+      if (marketType === 'margin' && marginMode) {
+        params.set('marginMode', marginMode);
+      }
+      const response = await apiRequest('GET', `/api/integrations/trading/analysis/${symbol}?${params.toString()}`);
       return response.json();
     },
-    refetchInterval: 30000, // Atualizar a cada 30 segundos
     retry: 2,
+    enabled: false,
   });
 
   const analysis = analysisResponse?.data;
   const SignalIcon = analysis ? getSignalIcon(analysis.overallSignal) : Activity;
 
-  if (error) {
-    return (
-      <Card className="border-red-200 bg-red-50">
-        <CardHeader>
-          <CardTitle className="text-red-700 flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5" />
-            Erro na Análise Técnica
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-red-600 text-sm">
-            {error instanceof Error ? error.message : 'Erro desconhecido'}
-          </p>
-          <Button onClick={() => refetch()} variant="outline" className="mt-4">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Tentar Novamente
-          </Button>
-        </CardContent>
-      </Card>
-    );
-  }
+  const updateAnalysisSchedulerMutation = useMutation({
+    mutationFn: async () => {
+      const intervalMinutes = Number.parseInt(analysisSchedulerForm.intervalMinutes, 10);
+      const maxSymbolsPerRun = Number.parseInt(analysisSchedulerForm.maxSymbolsPerRun, 10);
+      if (Number.isNaN(intervalMinutes) || Number.isNaN(maxSymbolsPerRun)) {
+        throw new Error(t('trading.analysis.scheduler.errors.updateFailed'));
+      }
+
+      const payload = {
+        marketType: marketType ?? 'futures',
+        marginMode: marketType === 'margin' ? marginMode : undefined,
+        intervalMinutes,
+        interval: analysisSchedulerForm.interval,
+        symbols: analysisSchedulerForm.symbols
+          .split(',')
+          .map((value) => value.trim())
+          .filter(Boolean),
+        enabled: analysisSchedulerForm.enabled,
+        maxSymbolsPerRun,
+      };
+
+      const res = await apiRequest('PUT', '/api/integrations/trading/analysis-scheduler', payload);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      if (!data?.success) {
+        throw new Error(data?.error || t('trading.analysis.scheduler.errors.updateFailed'));
+      }
+      toast({
+        title: t('trading.analysis.scheduler.success.updated'),
+      });
+      refetchAnalysisScheduler();
+    },
+    onError: (err: Error) => {
+      toast({
+        title: t('trading.analysis.scheduler.errors.updateFailed'),
+        description: err.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const executeAnalysisNowMutation = useMutation({
+    mutationFn: async () => {
+      const normalizedSymbol = symbol.trim();
+      if (!normalizedSymbol) {
+        throw new Error(t('trading.analysis.scheduler.errors.symbolRequired'));
+      }
+      const params = new URLSearchParams();
+      params.set('interval', interval);
+      if (marketType) {
+        params.set('marketType', marketType);
+      }
+      if (marketType === 'margin' && marginMode) {
+        params.set('marginMode', marginMode);
+      }
+      const response = await apiRequest('GET', `/api/integrations/trading/analysis/${normalizedSymbol}?${params.toString()}`);
+      return response.json();
+    },
+    onSuccess: (data) => {
+      if (!data?.success) {
+        throw new Error(data?.error || t('trading.analysis.scheduler.errors.executeFailed'));
+      }
+      toast({
+        title: t('trading.analysis.scheduler.success.executed'),
+      });
+      refetch();
+    },
+    onError: (err: Error) => {
+      toast({
+        title: t('trading.analysis.scheduler.errors.executeFailed'),
+        description: err.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const analysisErrorCard = (
+    <Card className="border-red-200 bg-red-50">
+      <CardHeader>
+        <CardTitle className="text-red-700 flex items-center gap-2">
+          <AlertTriangle className="h-5 w-5" />
+          Erro na Análise Técnica
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className="text-red-600 text-sm">
+          {error instanceof Error ? error.message : 'Erro desconhecido'}
+        </p>
+        <Button onClick={() => refetch()} variant="outline" className="mt-4">
+          <RefreshCw className="h-4 w-4 mr-2" />
+          Tentar Novamente
+        </Button>
+      </CardContent>
+    </Card>
+  );
 
   return (
-    <Card>
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('trading.analysis.scheduler.title')}</CardTitle>
+          <CardDescription>{t('trading.analysis.scheduler.subtitle')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label>{t('trading.analysis.scheduler.intervalMinutes')}</Label>
+              <Input
+                type="number"
+                min={1}
+                max={1440}
+                value={analysisSchedulerForm.intervalMinutes}
+                onChange={(event) => setAnalysisSchedulerForm({ ...analysisSchedulerForm, intervalMinutes: event.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>{t('trading.analysis.scheduler.analysisInterval')}</Label>
+              <Select
+                value={analysisSchedulerForm.interval}
+                onValueChange={(value) => setAnalysisSchedulerForm({ ...analysisSchedulerForm, interval: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={t('trading.analysis.scheduler.analysisIntervalPlaceholder')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {resolvedIntervalOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label>{t('trading.analysis.scheduler.symbols')}</Label>
+              <Input
+                value={analysisSchedulerForm.symbols}
+                onChange={(event) => setAnalysisSchedulerForm({ ...analysisSchedulerForm, symbols: event.target.value })}
+                placeholder={t('trading.analysis.scheduler.symbolsPlaceholder')}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>{t('trading.analysis.scheduler.maxSymbols')}</Label>
+              <Input
+                type="number"
+                min={1}
+                max={50}
+                value={analysisSchedulerForm.maxSymbolsPerRun}
+                onChange={(event) => setAnalysisSchedulerForm({ ...analysisSchedulerForm, maxSymbolsPerRun: event.target.value })}
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <Switch
+                checked={analysisSchedulerForm.enabled}
+                onCheckedChange={(checked) => setAnalysisSchedulerForm({ ...analysisSchedulerForm, enabled: checked })}
+              />
+              <span className="text-sm">{t('trading.analysis.scheduler.enabled')}</span>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              onClick={() => updateAnalysisSchedulerMutation.mutate()}
+              disabled={updateAnalysisSchedulerMutation.isPending}
+            >
+              {updateAnalysisSchedulerMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {t('trading.analysis.scheduler.save')}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => executeAnalysisNowMutation.mutate()}
+              disabled={executeAnalysisNowMutation.isPending || !symbol.trim()}
+            >
+              {executeAnalysisNowMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {t('trading.analysis.executeNow')}
+            </Button>
+          </div>
+
+          <div className="text-xs text-muted-foreground grid gap-1">
+            <span>{t('trading.analysis.scheduler.status.nextRun')}: {analysisSchedulerConfig?.nextRunAt ? formatDateTime(String(analysisSchedulerConfig.nextRunAt), { locale, timeZone }) : t('common.notAvailable')}</span>
+            <span>{t('trading.analysis.scheduler.status.lastRun')}: {analysisSchedulerConfig?.lastRunAt ? formatDateTime(String(analysisSchedulerConfig.lastRunAt), { locale, timeZone }) : t('common.notAvailable')}</span>
+            <span>{t('trading.analysis.scheduler.status.lastSuccess')}: {analysisSchedulerConfig?.lastSuccessAt ? formatDateTime(String(analysisSchedulerConfig.lastSuccessAt), { locale, timeZone }) : t('common.notAvailable')}</span>
+            <span>{t('trading.analysis.scheduler.status.lastDuration')}: {analysisSchedulerConfig?.lastDurationMs ? `${analysisSchedulerConfig.lastDurationMs}ms` : t('common.notAvailable')}</span>
+            {analysisSchedulerConfig?.lastError && (
+              <span className="text-destructive">{t('trading.analysis.scheduler.status.lastError')}: {analysisSchedulerConfig.lastError}</span>
+            )}
+            {analysisSchedulerError && (
+              <span className="text-destructive">{t('trading.analysis.scheduler.status.loadError')}</span>
+            )}
+            {isLoadingAnalysisScheduler && (
+              <span>{t('trading.analysis.scheduler.status.loading')}</span>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {error ? analysisErrorCard : (
+        <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
@@ -761,6 +1005,8 @@ export function TechnicalAnalysisPanel({
         ) : null}
       </CardContent>
     </Card>
+      )}
+    </div>
   );
 }
 

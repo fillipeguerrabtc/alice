@@ -1556,6 +1556,39 @@
         "submit": "Criar Sinal"
       }
     },
+    "analysis": {
+      "executeNow": "Executar análise agora",
+      "scheduler": {
+        "title": "Scheduler de Análise",
+        "subtitle": "Configure a geração automática da análise determinística",
+        "intervalMinutes": "Intervalo (minutos)",
+        "analysisInterval": "Intervalo de análise",
+        "analysisIntervalPlaceholder": "Selecione o intervalo",
+        "symbols": "Símbolos",
+        "symbolsPlaceholder": "Ex: BTCUSDTM, ETHUSDTM",
+        "maxSymbols": "Máx. símbolos por execução",
+        "enabled": "Ativar scheduler",
+        "save": "Salvar scheduler",
+        "status": {
+          "nextRun": "Próxima execução",
+          "lastRun": "Última execução",
+          "lastSuccess": "Último sucesso",
+          "lastDuration": "Duração",
+          "lastError": "Último erro",
+          "loadError": "Erro ao carregar scheduler",
+          "loading": "Carregando status do scheduler..."
+        },
+        "success": {
+          "updated": "Scheduler de análise atualizado",
+          "executed": "Análise executada"
+        },
+        "errors": {
+          "updateFailed": "Erro ao atualizar scheduler de análise",
+          "executeFailed": "Erro ao executar análise",
+          "symbolRequired": "Selecione um símbolo para executar a análise"
+        }
+      }
+    },
     "history": {
       "title": "Histórico de Operações",
       "subtitle": "Todas as operações executadas com auditoria completa",

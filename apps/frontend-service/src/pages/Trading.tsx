@@ -1258,6 +1258,37 @@ export default function Trading() {
     },
   });
 
+  const executeAnalysisNowMutation = useMutation({
+    mutationFn: async () => {
+      if (!sanitizedSymbol) {
+        throw new Error(t('trading.analysis.scheduler.errors.symbolRequired'));
+      }
+      const params = new URLSearchParams();
+      params.set('interval', schedulerForm.interval || selectedInterval || '5m');
+      params.set('marketType', selectedMarketType);
+      if (selectedMarketType === 'margin') {
+        params.set('marginMode', selectedMarginMode);
+      }
+      const res = await apiRequest('GET', `/api/integrations/trading/analysis/${sanitizedSymbol}?${params.toString()}`);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      if (!data?.success) {
+        throw new Error(data?.error || t('trading.analysis.scheduler.errors.executeFailed'));
+      }
+      toast({
+        title: t('trading.analysis.scheduler.success.executed'),
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: t('trading.analysis.scheduler.errors.executeFailed'),
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
   const updateSignalSchedulerMutation = useMutation({
     mutationFn: async () => {
       const intervalMinutes = Number.parseInt(schedulerForm.intervalMinutes, 10);
@@ -2725,6 +2756,14 @@ export default function Trading() {
                   </Button>
                   <Button
                     variant="outline"
+                    onClick={() => executeAnalysisNowMutation.mutate()}
+                    disabled={executeAnalysisNowMutation.isPending || !sanitizedSymbol}
+                  >
+                    {executeAnalysisNowMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    {t('trading.analysis.executeNow')}
+                  </Button>
+                  <Button
+                    variant="outline"
                     onClick={() => generateSignalMutation.mutate()}
                     disabled={generateSignalMutation.isPending}
                   >
@@ -2854,6 +2893,8 @@ export default function Trading() {
               symbol={selectedSymbol}
               defaultInterval={selectedInterval}
               intervalOptions={intervalOptions}
+              marketType={selectedMarketType}
+              marginMode={selectedMarginMode}
             />
           </TabsContent>
 

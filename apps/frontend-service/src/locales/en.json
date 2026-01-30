@@ -1531,6 +1531,39 @@
         "submit": "Create Signal"
       }
     },
+    "analysis": {
+      "executeNow": "Run analysis now",
+      "scheduler": {
+        "title": "Analysis Scheduler",
+        "subtitle": "Configure automatic deterministic analysis generation",
+        "intervalMinutes": "Interval (minutes)",
+        "analysisInterval": "Analysis interval",
+        "analysisIntervalPlaceholder": "Select interval",
+        "symbols": "Symbols",
+        "symbolsPlaceholder": "E.g.: BTCUSDTM, ETHUSDTM",
+        "maxSymbols": "Max symbols per run",
+        "enabled": "Enable scheduler",
+        "save": "Save scheduler",
+        "status": {
+          "nextRun": "Next run",
+          "lastRun": "Last run",
+          "lastSuccess": "Last success",
+          "lastDuration": "Duration",
+          "lastError": "Last error",
+          "loadError": "Failed to load scheduler",
+          "loading": "Loading scheduler status..."
+        },
+        "success": {
+          "updated": "Analysis scheduler updated",
+          "executed": "Analysis executed"
+        },
+        "errors": {
+          "updateFailed": "Error updating analysis scheduler",
+          "executeFailed": "Error executing analysis",
+          "symbolRequired": "Select a symbol to run the analysis"
+        }
+      }
+    },
     "history": {
       "title": "Operations History",
       "subtitle": "All executed operations with complete audit trail",

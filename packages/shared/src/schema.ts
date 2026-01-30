@@ -1795,6 +1795,39 @@ export const tradingSignalSchedulers = pgTable(
   })
 );
 
+// ============================================================================
+// SCHEDULER DE ANÁLISE (CPU/determinístico)
+// ============================================================================
+export const tradingAnalysisSchedulers = pgTable(
+  "trading_analysis_schedulers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
+    marketType: tradingMarketTypeEnum("market_type").notNull().default("futures"),
+    marginMode: tradingMarginModeEnum("margin_mode").default("cross"),
+    intervalMinutes: integer("interval_minutes").notNull().default(15),
+    interval: varchar("interval", { length: 10 }).notNull().default("5m"),
+    symbols: text("symbols").array().default([]),
+    maxSymbolsPerRun: integer("max_symbols_per_run").notNull().default(1),
+    enabled: boolean("enabled").notNull().default(false),
+    lastRunAt: timestamp("last_run_at"),
+    nextRunAt: timestamp("next_run_at"),
+    lastSuccessAt: timestamp("last_success_at"),
+    lastIndicatorId: uuid("last_indicator_id").references(() => tradingTechnicalIndicators.id),
+    lastDurationMs: integer("last_duration_ms"),
+    lastError: text("last_error"),
+    criadoEm: timestamp("criado_em").defaultNow(),
+    atualizadoEm: timestamp("atualizado_em").defaultNow(),
+  },
+  (table) => ({
+    idxAnalysisSchedulerTenant: index("idx_trading_analysis_scheduler_tenant").on(table.tenantId),
+    idxAnalysisSchedulerMarketType: index("idx_trading_analysis_scheduler_market").on(table.marketType),
+    idxAnalysisSchedulerEnabled: index("idx_trading_analysis_scheduler_enabled").on(table.enabled),
+    idxAnalysisSchedulerNextRun: index("idx_trading_analysis_scheduler_next_run").on(table.nextRunAt),
+    idxAnalysisSchedulerTenantMarket: uniqueIndex("idx_trading_analysis_scheduler_tenant_market").on(table.tenantId, table.marketType),
+  })
+);
+
 // ORDENS DE TRADING (OMS - Order Management System)
 // Registro completo de todas as ordens enviadas para a exchange
 export const tradingOrders = pgTable(
@@ -3652,6 +3685,9 @@ export type InsertTradingSignal = typeof tradingSignals.$inferInsert;
 export type TradingSignalScheduler = typeof tradingSignalSchedulers.$inferSelect;
 export type InsertTradingSignalScheduler = typeof tradingSignalSchedulers.$inferInsert;
 
+export type TradingAnalysisScheduler = typeof tradingAnalysisSchedulers.$inferSelect;
+export type InsertTradingAnalysisScheduler = typeof tradingAnalysisSchedulers.$inferInsert;
+
 export type TradingOrder = typeof tradingOrders.$inferSelect;
 export type InsertTradingOrder = typeof tradingOrders.$inferInsert;
 
@@ -3755,6 +3791,17 @@ export const insertTradingSignalSchedulerSchema: z.ZodType<unknown> = createInse
   nextRunAt: true,
   lastSuccessAt: true,
   lastSignalId: true,
+  lastDurationMs: true,
+});
+
+export const insertTradingAnalysisSchedulerSchema: z.ZodType<unknown> = createInsertSchema(tradingAnalysisSchedulers).omit({
+  id: true,
+  criadoEm: true,
+  atualizadoEm: true,
+  lastRunAt: true,
+  nextRunAt: true,
+  lastSuccessAt: true,
+  lastIndicatorId: true,
   lastDurationMs: true,
 });
 

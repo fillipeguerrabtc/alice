@@ -533,6 +533,112 @@ function startTradingSignalScheduler(): void {
 }
 
 // ============================================================================
+// SCHEDULER ANÁLISE DETERMINÍSTICA (CPU)
+// ============================================================================
+const ANALYSIS_SCHEDULER_POLL_INTERVAL_MS = 30000;
+let analysisSchedulerInterval: NodeJS.Timeout | null = null;
+
+async function runDueAnalysisSchedulers(): Promise<void> {
+  const db = getDatabase();
+  const now = new Date();
+
+  const schedulers = await db
+    .select()
+    .from(schema.tradingAnalysisSchedulers)
+    .where(
+      and(
+        eq(schema.tradingAnalysisSchedulers.enabled, true),
+        lte(schema.tradingAnalysisSchedulers.nextRunAt, now)
+      )
+    );
+
+  if (schedulers.length === 0) {
+    return;
+  }
+
+  for (const scheduler of schedulers) {
+    const locked = await db
+      .update(schema.tradingAnalysisSchedulers)
+      .set({
+        lastRunAt: now,
+        nextRunAt: new Date(now.getTime() + (scheduler.intervalMinutes ?? 15) * 60 * 1000),
+        atualizadoEm: now,
+        lastError: null,
+      })
+      .where(
+        and(
+          eq(schema.tradingAnalysisSchedulers.id, scheduler.id),
+          lte(schema.tradingAnalysisSchedulers.nextRunAt, now)
+        )
+      )
+      .returning();
+
+    if (locked.length === 0) {
+      continue;
+    }
+
+    const startTime = Date.now();
+    try {
+      const symbols = normalizeSignalSymbols((scheduler.symbols ?? []) as string[]);
+      if (symbols.length === 0) {
+        throw new Error('Scheduler de análise sem símbolos configurados.');
+      }
+
+      const maxSymbols = Math.max(1, scheduler.maxSymbolsPerRun ?? 1);
+      const selectedSymbols = symbols.slice(0, maxSymbols);
+      let lastIndicatorId: string | null = null;
+      const schedulerUserId = await resolveSchedulerUserId(scheduler.tenantId);
+
+      for (const symbol of selectedSymbols) {
+        const result = await calculateAndPersistTechnicalAnalysis({
+          tenantId: scheduler.tenantId,
+          userId: schedulerUserId,
+          symbol,
+          interval: scheduler.interval || '5m',
+          marketType: scheduler.marketType as TradingMarketType,
+          marginMode: (scheduler.marginMode ?? undefined) as TradingMarginMode | undefined,
+        });
+        lastIndicatorId = result.indicatorId;
+      }
+
+      const durationMs = Date.now() - startTime;
+      await db.update(schema.tradingAnalysisSchedulers)
+        .set({
+          lastSuccessAt: new Date(),
+          lastDurationMs: durationMs,
+          lastIndicatorId,
+          lastError: null,
+          atualizadoEm: new Date(),
+        })
+        .where(eq(schema.tradingAnalysisSchedulers.id, scheduler.id));
+    } catch (error) {
+      const durationMs = Date.now() - startTime;
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+      await db.update(schema.tradingAnalysisSchedulers)
+        .set({
+          lastError: errorMessage,
+          lastDurationMs: durationMs,
+          atualizadoEm: new Date(),
+        })
+        .where(eq(schema.tradingAnalysisSchedulers.id, scheduler.id));
+      logger.error({ error: errorMessage, schedulerId: scheduler.id }, 'Falha ao executar scheduler de análise');
+    }
+  }
+}
+
+function startTradingAnalysisScheduler(): void {
+  void runDueAnalysisSchedulers().catch((error) => {
+    logger.warn({ error }, 'Falha no scheduler de análise (startup)');
+  });
+  analysisSchedulerInterval = setInterval(() => {
+    void runDueAnalysisSchedulers().catch((error) => {
+      logger.warn({ error }, 'Falha no scheduler de análise');
+    });
+  }, ANALYSIS_SCHEDULER_POLL_INTERVAL_MS);
+  logger.info({ intervalMs: ANALYSIS_SCHEDULER_POLL_INTERVAL_MS }, 'Scheduler de análise determinística iniciado');
+}
+
+// ============================================================================
 // WS5: Métricas operacionais - KuCoin WebSocket
 // ============================================================================
 // Requisitos:
@@ -6241,6 +6347,164 @@ app.put('/api/integrations/trading/signal-scheduler', requirePermission('integra
   }
 });
 
+// GET /api/integrations/trading/analysis-scheduler - Configuração do scheduler da análise
+app.get('/api/integrations/trading/analysis-scheduler', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const querySchema = z.object({
+      marketType: z.enum(['futures', 'spot', 'margin']).optional(),
+      type: z.enum(['futures', 'spot', 'margin']).optional(),
+    });
+    const parsed = querySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Query inválida', details: parsed.error.flatten() });
+      return;
+    }
+
+    const marketType = resolveMarketTypeParam(parsed.data) ?? 'futures';
+    const db = getDatabase();
+    const whereClause = marketType
+      ? and(
+          eq(schema.tradingAnalysisSchedulers.tenantId, authContext.tenantId),
+          eq(schema.tradingAnalysisSchedulers.marketType, marketType)
+        )
+      : eq(schema.tradingAnalysisSchedulers.tenantId, authContext.tenantId);
+
+    const schedulers = await db
+      .select()
+      .from(schema.tradingAnalysisSchedulers)
+      .where(whereClause)
+      .orderBy(desc(schema.tradingAnalysisSchedulers.criadoEm));
+
+    const data = schedulers.length > 0
+      ? schedulers
+      : [{
+          tenantId: authContext.tenantId,
+          marketType,
+          marginMode: 'cross',
+          intervalMinutes: 15,
+          interval: '5m',
+          symbols: [],
+          maxSymbolsPerRun: 1,
+          enabled: false,
+          lastRunAt: null,
+          nextRunAt: null,
+          lastSuccessAt: null,
+          lastIndicatorId: null,
+          lastDurationMs: null,
+          lastError: null,
+        }];
+
+    res.json({ success: true, data });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar scheduler de análise');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// PUT /api/integrations/trading/analysis-scheduler - Atualizar configuração
+app.put('/api/integrations/trading/analysis-scheduler', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const schedulerSchema = z.object({
+      marketType: z.enum(['futures', 'spot', 'margin']),
+      marginMode: z.enum(['cross', 'isolated']).optional(),
+      intervalMinutes: z.number().int().min(1).max(1440),
+      interval: TRADING_INTERVAL_ZOD,
+      symbols: z.array(z.string().min(2).max(30)).max(50).optional(),
+      enabled: z.boolean(),
+      maxSymbolsPerRun: z.number().int().min(1).max(50).optional(),
+    });
+
+    const parsed = schedulerSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
+      return;
+    }
+
+    const normalizedSymbols = normalizeSignalSymbols(parsed.data.symbols ?? []);
+    if (parsed.data.enabled && normalizedSymbols.length === 0) {
+      res.status(400).json({ error: 'Informe ao menos um símbolo para habilitar o scheduler.' });
+      return;
+    }
+
+    if (parsed.data.marketType === 'spot' && !kucoinSpotClient.isSpotConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    if (parsed.data.marketType === 'margin' && !kucoinMarginClient.isMarginConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    if (parsed.data.marketType === 'futures' && !kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+
+    const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
+    for (const symbol of normalizedSymbols) {
+      await kucoinService.resolveTradingSymbolStrict(
+        tradingAuth,
+        symbol,
+        parsed.data.marketType,
+        parsed.data.marginMode
+      );
+    }
+
+    const now = new Date();
+    const nextRunAt = parsed.data.enabled
+      ? new Date(now.getTime() + parsed.data.intervalMinutes * 60 * 1000)
+      : null;
+
+    const db = getDatabase();
+    const [saved] = await db
+      .insert(schema.tradingAnalysisSchedulers)
+      .values({
+        tenantId: authContext.tenantId,
+        marketType: parsed.data.marketType,
+        marginMode: parsed.data.marginMode ?? null,
+        intervalMinutes: parsed.data.intervalMinutes,
+        interval: parsed.data.interval,
+        symbols: normalizedSymbols,
+        enabled: parsed.data.enabled,
+        maxSymbolsPerRun: parsed.data.maxSymbolsPerRun ?? 1,
+        nextRunAt,
+        atualizadoEm: now,
+      })
+      .onConflictDoUpdate({
+        target: [schema.tradingAnalysisSchedulers.tenantId, schema.tradingAnalysisSchedulers.marketType],
+        set: {
+          marginMode: parsed.data.marginMode ?? null,
+          intervalMinutes: parsed.data.intervalMinutes,
+          interval: parsed.data.interval,
+          symbols: normalizedSymbols,
+          enabled: parsed.data.enabled,
+          maxSymbolsPerRun: parsed.data.maxSymbolsPerRun ?? 1,
+          nextRunAt,
+          atualizadoEm: now,
+        },
+      })
+      .returning();
+
+    res.json({ success: true, data: saved });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao atualizar scheduler de análise');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
 // GET /api/integrations/trading/stop-orders - Listar ordens stop abertas
 app.get('/api/integrations/trading/stop-orders', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
@@ -7324,6 +7588,7 @@ initializeCaches().then(() => {
 
   startTradingMetricsScheduler();
   startTradingSignalScheduler();
+  startTradingAnalysisScheduler();
   refreshIntegrationHealthMetrics().catch((error) => {
     logger.warn({ error }, 'Falha ao atualizar métricas de integrações no startup');
   });
