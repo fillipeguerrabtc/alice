@@ -536,7 +536,7 @@ function startTradingSignalScheduler(): void {
 // SCHEDULER ANÁLISE DETERMINÍSTICA (CPU)
 // ============================================================================
 const ANALYSIS_SCHEDULER_POLL_INTERVAL_MS = 30000;
-let analysisSchedulerInterval: NodeJS.Timeout | null = null;
+let _analysisSchedulerInterval: NodeJS.Timeout | null = null;
 
 async function runDueAnalysisSchedulers(): Promise<void> {
   const db = getDatabase();
@@ -630,7 +630,7 @@ function startTradingAnalysisScheduler(): void {
   void runDueAnalysisSchedulers().catch((error) => {
     logger.warn({ error }, 'Falha no scheduler de análise (startup)');
   });
-  analysisSchedulerInterval = setInterval(() => {
+  _analysisSchedulerInterval = setInterval(() => {
     void runDueAnalysisSchedulers().catch((error) => {
       logger.warn({ error }, 'Falha no scheduler de análise');
     });

@@ -4659,7 +4659,7 @@ jobs:
     name: Health Check OBSERVABILITY
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, deploy-observability]
-    if: needs.deploy-observability.result == 'success' && needs.deploy-observability.outputs.deploy_executed == 'true'
+    if: needs.deploy-observability.result == 'success'
     # CORREÇÃO PR#104: Reduzir para 7 min (máx 15 tentativas × 20s = 5 min)
     timeout-minutes: 7
     
@@ -5243,7 +5243,7 @@ jobs:
     name: Health Check ERPNEXT
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, deploy-erpnext]
-    if: needs.deploy-erpnext.result == 'success' && needs.deploy-erpnext.outputs.deploy_executed == 'true'
+    if: needs.deploy-erpnext.result == 'success'
     timeout-minutes: 7
     
     steps:
@@ -5757,7 +5757,7 @@ jobs:
     name: Health Check BACKUP
     runs-on: [self-hosted, linux, deploy]
     needs: [validate, deploy-backup]
-    if: needs.deploy-backup.result == 'success' && needs.deploy-backup.outputs.deploy_executed == 'true'
+    if: needs.deploy-backup.result == 'success'
     # CORREÇÃO PR#100: Alinhar com Docker healthcheck (start_period: 120s + 3 retries × 60s = 300s)
     timeout-minutes: 7
     

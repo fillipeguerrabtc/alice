@@ -1506,3 +1506,8 @@ git commit -a -m "test: adiciona testes unitários"
 *Autor: Fillipe Guerra*
 *Versão: 5.20 - 29 de Janeiro de 2026*
 *Alertas LLM - Guard de Amostragem (29/01/2026): AJUSTE ENTERPRISE para evitar alertas falsos quando não há amostras suficientes (NaN em histogram_quantile). CAUSA RAIZ: métricas com `count=0` geravam NaN e podiam disparar alertas indevidos. SOLUÇÃO: adicionar guard `sum(rate(..._count[5m])) > 1` às regras de latência/TTFT tanto no Grafana Alerting quanto nas regras Prometheus. ARQUIVOS MODIFICADOS: infra/observability/grafana/provisioning/alerting/alert_rules.yml, apps/observability-service/config/prometheus/rules/llm-alerts.yml. Implementação 100% enterprise-grade (Regras 6, 7, 9 - mudanças cirúrgicas, sem workarounds, validação contínua).*
+
+---
+*Autor: Fillipe Guerra*
+*Versão: 5.21 - 30 de Janeiro de 2026*
+*Healthchecks Modular - Execução Consistente Pós-Deploy (30/01/2026): CORREÇÃO DEFINITIVA das condições de healthcheck em OBSERVABILITY, ERPNEXT e BACKUP. CAUSA RAIZ: os healthchecks dependiam de outputs `deploy_executed`, que podem ficar vazios mesmo com o job de deploy concluído com sucesso (outputs transitórios), levando a jobs “skipped”. SOLUÇÃO ENTERPRISE: alinhar ao padrão de INFRA/ALICE — executar healthchecks quando `needs.deploy-*.result == 'success'`, eliminando skips indevidos após deploy bem-sucedido. ARQUIVO MODIFICADO: .github/workflows/deploy-stack-modular.yml (3 condições). Implementação 100% enterprise-grade (Regras 6, 7, 9 - mudanças cirúrgicas, sem workarounds, validação contínua).*

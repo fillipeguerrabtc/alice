@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 28 de Janeiro de 2026  
-**Versão:** 11.11 - Preparação SSOT em sessão SSH única
+**Data:** 30 de Janeiro de 2026  
+**Versão:** 11.12 - Healthchecks alinhados ao status do deploy
 
 ## Visão geral
 
@@ -45,7 +45,7 @@ health-{stack} + rollback-{stack} (se necessário)
 
 ### Healthchecks condicionados ao deploy bem-sucedido
 
-Os jobs de health check rodam **apenas quando o deploy do stack foi realmente executado e concluiu com sucesso** (`needs.deploy-<stack>.outputs.deploy_executed == 'true'`). Isso evita falsos “skipped” quando o deploy terminou OK, e também garante pular healthchecks quando o deploy foi pulado.
+Os jobs de health check rodam **somente quando o job de deploy do stack termina com sucesso** (`needs.deploy-<stack>.result == 'success'`). Este é o mesmo padrão usado por INFRA e ALICE, evitando skips incorretos causados por outputs transitórios e garantindo execução consistente após deploy bem-sucedido.
 
 ### Builds Docker e warning do pnpm (`approve-builds`)
 

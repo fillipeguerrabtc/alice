@@ -35,7 +35,6 @@ import {
   GpuServiceType,
   GpuRequestPriority,
   ALLOWED_AGENT_LLM_MODEL_NAMES,
-  LEGACY_AGENT_LLM_MODEL_NAMES,
   resolveAgentLlmModel,
 } from '@alice/shared-utils';
 import { chatServicePaths, chatServiceSchemas } from './openapi-specs.js';
