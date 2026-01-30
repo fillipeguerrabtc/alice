@@ -22,8 +22,8 @@ import type {
 import { createAdapter } from './adapter.js';
 import { getJWKS } from './jwks.js';
 import { getDatabase } from '@alice/database';
-import { users, oauthClients, userModules, systemModules } from '@alice/shared/schema';
-import { eq, and } from '@alice/database';
+import { users, oauthClients } from '@alice/shared/schema';
+import { eq } from '@alice/database';
 import { createLogger } from '@alice/logger';
 
 const logger = createLogger('oidc-config');
@@ -58,20 +58,6 @@ async function findAccountById(id: string) {
       return undefined;
     }
 
-    // Buscar módulos do usuário
-    const userModulesData = await db.select({
-      moduleCode: systemModules.codigo,
-      moduleName: systemModules.nome,
-    })
-      .from(userModules)
-      .innerJoin(systemModules, eq(userModules.moduleId, systemModules.id))
-      .where(and(
-        eq(userModules.userId, id),
-        eq(userModules.permitido, true)
-      ));
-
-    const modules = userModulesData.map(m => m.moduleCode);
-
     return {
       accountId: id,
       async claims(use: string, scope: string) {
@@ -102,7 +88,6 @@ async function findAccountById(id: string) {
           baseClaims.role = user.role;
           baseClaims.tenant_id = user.tenantId;
           baseClaims.tenant_name = (user as { tenant?: { nome?: string } }).tenant?.nome;
-          baseClaims.modules = modules;
           baseClaims.auth_provider = user.authProvider;
         }
 
@@ -221,7 +206,7 @@ export async function createOIDCConfiguration(): Promise<Configuration> {
       openid: ['sub'],
       profile: ['name', 'given_name', 'family_name', 'picture', 'locale', 'zoneinfo', 'updated_at'],
       email: ['email', 'email_verified'],
-      alice: ['role', 'tenant_id', 'tenant_name', 'modules', 'auth_provider'],
+      alice: ['role', 'tenant_id', 'tenant_name', 'auth_provider'],
     },
 
     // =========================================================================

@@ -6,6 +6,17 @@
 export const integrationsServicePaths = {
   '/health': { get: { summary: 'Health check', tags: ['Health'], security: [], responses: { 200: { description: 'OK' } } } },
   '/ready': { get: { summary: 'Readiness check', tags: ['Health'], security: [], responses: { 200: { description: 'Ready' } } } },
+  '/api/integrations/health': {
+    get: {
+      summary: 'Status operacional das integrações',
+      tags: ['Health'],
+      security: [],
+      responses: {
+        200: { description: 'Status das integrações' },
+        500: { description: 'Falha ao verificar integrações' },
+      },
+    },
+  },
   '/api/integrations/stripe/checkout': {
     post: { summary: 'Criar checkout', tags: ['Stripe'], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['priceId'], properties: { priceId: { type: 'string' }, quantity: { type: 'integer', default: 1 }, successUrl: { type: 'string' }, cancelUrl: { type: 'string' } } } } } }, responses: { 200: { description: 'URL de checkout', content: { 'application/json': { schema: { type: 'object', properties: { url: { type: 'string', format: 'uri' } } } } } } } },
   },

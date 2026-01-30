@@ -141,14 +141,22 @@ export default function Dashboard() {
     staleTime: 1000 * 60,
   });
 
-  const { data: healthData, isLoading: healthLoading } = useQuery<{ services: ServiceHealth[] }>({
-    queryKey: ['/api/chat/health'],
+  const { data: healthData, isLoading: healthLoading } = useQuery<{
+    services: Array<{
+      name: string;
+      status: 'healthy' | 'unhealthy' | 'unknown';
+      uptime: number;
+      requestsPerMinute: number;
+      avgLatency: number;
+    }>;
+  }>({
+    queryKey: ['/api/observability/metrics/services'],
     staleTime: 1000 * 30,
     refetchInterval: 1000 * 30,
   });
 
-  const { data: integrationData } = useQuery<{ integrations: { stripe: boolean; wise: boolean; erpnext: boolean } }>({
-    queryKey: ['/api/integrations/health'],
+  const { data: integrationData } = useQuery<{ integrations: Array<{ name: string; configured: boolean; operational: boolean }> }>({
+    queryKey: ['/api/observability/metrics/integrations'],
     staleTime: 1000 * 60 * 5,
   });
 
@@ -165,13 +173,23 @@ export default function Dashboard() {
   });
 
   const { data: slaMetrics, isLoading: slaLoading } = useQuery<SLAMetrics>({
-    queryKey: ['/api/chat/sla-metrics'],
+    queryKey: ['/api/observability/metrics/sla', user?.tenantId],
+    enabled: Boolean(user?.tenantId),
     staleTime: 1000 * 30,
     refetchInterval: 1000 * 30,
+    queryFn: async () => {
+      const response = await fetch(`/api/observability/metrics/sla?tenantId=${user?.tenantId}`, {
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error('Falha ao carregar métricas SLA');
+      }
+      return response.json();
+    },
   });
 
   const { data: circuitBreakerData, isLoading: circuitBreakerLoading } = useQuery<{ breakers: CircuitBreakerStatus[] }>({
-    queryKey: ['/api/chat/circuit-breakers'],
+    queryKey: ['/api/observability/metrics/circuit-breakers'],
     staleTime: 1000 * 60,
   });
 
@@ -196,10 +214,15 @@ export default function Dashboard() {
     resolvedByHuman: 0,
   };
 
+  const integrationStatusMap = (integrationData?.integrations ?? []).reduce<Record<string, boolean>>((acc, integration) => {
+    acc[integration.name] = integration.operational;
+    return acc;
+  }, {});
+
   const integrationStats: IntegrationStats = integrationStatsData || {
     stripe: { totalRevenue: 0, transactions: 0, currency: 'EUR' },
     wise: { totalTransfers: 0, pendingAmount: 0, completedCount: 0 },
-    erpnext: { customers: 0, orders: 0, synced: integrationData?.integrations?.erpnext || false },
+    erpnext: { customers: 0, orders: 0, synced: integrationStatusMap.erpnext ?? false },
   };
 
   const displayStats: DashboardStats = stats || {
@@ -211,7 +234,12 @@ export default function Dashboard() {
 
   const displayUsage: UsageData[] = usageData || [];
   const displayActivity: RecentActivity[] = recentActivity || [];
-  const displayServices = healthData?.services || [];
+  const displayServices = (healthData?.services ?? []).map((service) => ({
+    service: service.name,
+    status: service.status === 'healthy' ? 'ok' : service.status === 'unknown' ? 'degraded' : 'down',
+    latency: service.avgLatency,
+    uptime: service.uptime,
+  })) satisfies ServiceHealth[];
 
   const distributionData = [
     { name: 'Conversas', value: displayStats.conversations, color: '#3b82f6' },

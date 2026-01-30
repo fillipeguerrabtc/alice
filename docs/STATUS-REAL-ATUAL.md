@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 30 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.24 - Scroll do modal de usuários garantido
+**Versão:** 10.25 - Integrações SSOT + OpenAI Vision + Módulos removidos
 
 ---
 
@@ -13,7 +13,10 @@
 - GPU local dedicada ao LLM, embeddings e training; ASR e Vision via OpenAI.
 - CI/CD 100% automático (Push → CI → Release → Deploy) com versionamento e cache enterprise.
 - Observabilidade completa com Prometheus, Grafana, Loki, Jaeger e Langfuse.
+- Status de Integrações no Dashboard/Integrações usa SSOT Prometheus via observability-service.
+- OpenAI Vision (Responses API) exibida com status operacional na página Integrações.
 - Prepare Infrastructure: preparação SSOT consolidada em sessão SSH única (menos conexões e menos timeouts).
+- Página Módulos removida (UI + rotas + claims OIDC).
 - Trading API: endpoints `/market`, `/klines` e `/orderbook` aceitam `symbol` via query e usam fallback de símbolo padrão quando ausente.
 - Grafana: execução com `user: 472:472` para manter ownership correto em `/opt/alice/data/grafana`.
 - Segurança enterprise com hardening de containers, RLS no PostgreSQL e validação Zod em APIs.
@@ -66,7 +69,7 @@
 - Chat Service (WebSocket + streaming LLM).
 - RAG Service (pgvector + embeddings).
 - Training Service (auto-learning + fine-tuning).
-- Integrations Service (Stripe, Wise, Twilio, Gmail SMTP, KuCoin).
+- Integrations Service (Stripe, Wise, Twilio, Gmail SMTP, KuCoin, OpenAI Vision status).
 - Observability Service (health + backups).
 - GPU Manager Service.
 
@@ -97,7 +100,7 @@
 - `chat-service`: WebSocket, streaming LLM, RAG client, takeover/handover, comandos de trading.
 - `rag-service`: upload multimodal, embeddings texto GPU, fila assíncrona, WebSocket de embeddings.
 - `training-service`: scheduler, fine-tuning QLoRA, SemHash.
-- `integrations-service`: Stripe/Wise/Twilio/ERPNext/KuCoin + circuit breakers.
+- `integrations-service`: Stripe/Wise/Twilio/ERPNext/KuCoin/OpenAI Vision + circuit breakers.
 - `observability-service`: health checker, backup orchestrator, métricas.
 - `api-gateway` Node.js: apenas dev local (Caddy em produção).
 

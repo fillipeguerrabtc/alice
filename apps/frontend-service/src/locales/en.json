@@ -705,6 +705,8 @@
     "connected": "Connected",
     "disconnected": "Disconnected",
     "pending": "Pending",
+    "unhealthy": "Unavailable",
+    "unhealthyHint": "{{name}} configured but unavailable at the moment.",
     "error": "Error",
     "stats": {
       "active": "Active",
@@ -714,6 +716,8 @@
     },
     "tabs": {
       "payments": "Payments",
+      "trading": "Trading",
+      "ai": "AI",
       "erp": "ERP",
       "communication": "Communication"
     },
@@ -747,6 +751,18 @@
       "description": "Transactional emails via Gmail",
       "configureHint": "Configure for transactional email sending via Gmail SMTP.",
       "smtpConfigured": "SMTP configured"
+    },
+    "trading": {
+      "title": "KuCoin Futures",
+      "description": "Automated BTC Futures trading with risk management",
+      "configureHint": "Configure KuCoin credentials to enable trading.",
+      "activeHint": "Open Trading dashboard"
+    },
+    "openaiVision": {
+      "title": "OpenAI Vision",
+      "description": "Image analysis via OpenAI (Responses API)",
+      "configureHint": "Configure OPENAI_API_KEY to enable image analysis.",
+      "activeHint": "Vision active for chat images"
     },
     "whatsapp": {
       "title": "WhatsApp Business",

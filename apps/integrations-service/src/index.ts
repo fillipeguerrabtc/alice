@@ -169,6 +169,20 @@ const { metrics, metricsRouter, httpMetricsMiddleware } = createAlicePrometheus(
   collectDefaultMetrics: true,
 });
 
+const integrationsConfiguredGauge = new PromGauge({
+  name: 'alice_integrations_configured',
+  help: 'Integrações configuradas (1=sim, 0=não)',
+  labelNames: ['integration'] as const,
+  registers: [metrics.registry],
+});
+
+const integrationsOperationalGauge = new PromGauge({
+  name: 'alice_integrations_operational',
+  help: 'Integrações operacionais (1=ok, 0=indisponível)',
+  labelNames: ['integration'] as const,
+  registers: [metrics.registry],
+});
+
 function classifyIntegrationError(error: unknown): string {
   if (error instanceof Error) {
     const message = error.message.toLowerCase();
@@ -180,6 +194,11 @@ function classifyIntegrationError(error: unknown): string {
     if (message.includes('http')) return 'http_error';
   }
   return 'error';
+}
+
+function updateIntegrationMetrics(integration: string, configured: boolean, operational: boolean): void {
+  integrationsConfiguredGauge.set({ integration }, configured ? 1 : 0);
+  integrationsOperationalGauge.set({ integration }, operational ? 1 : 0);
 }
 
 async function observeIntegrationCall<T>(params: {
@@ -544,6 +563,7 @@ const STRIPE_API_VERSION = '2024-12-18.acacia' as Stripe.LatestApiVersion;
 // =============================================================================
 const GMAIL_USER = process.env.GMAIL_USER;
 const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY?.trim();
 const isProduction = config.NODE_ENV === 'production';
 
 // Transporter do Nodemailer para Gmail SMTP
@@ -859,22 +879,235 @@ app.use(createSessionAuthMiddleware({
   ],
 }));
 
-app.get('/api/integrations/health', (_req: Request, res: Response) => {
-  const wiseConfigured = isWiseConfigured();
-  res.json({ 
-    status: 'ok', 
-    service: 'integrations-service', 
-    timestamp: new Date().toISOString(),
-    integrations: {
-      stripe: !!stripe,
-      erpnext: !!config.ERPNEXT_URL,
-      wise: wiseConfigured,
-    },
-    circuitBreakers: {
-      erpnext: erpNextBreaker.opened ? 'open' : 'closed',
-      wise: wiseConfigured ? getWiseCircuitBreakerStatus() : null,
-    },
+type IntegrationHealthStatus = {
+  configured: boolean;
+  operational: boolean;
+  error?: string;
+  details?: Record<string, unknown>;
+};
+
+function normalizeIntegrationError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return 'Erro desconhecido';
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timeoutId: NodeJS.Timeout | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(`${label} timeout`)), timeoutMs);
   });
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+async function checkStripeHealth(): Promise<IntegrationHealthStatus> {
+  if (!stripe) {
+    return { configured: false, operational: false };
+  }
+  try {
+    await withTimeout(stripe.accounts.retrieve(), EXTERNAL_API_TIMEOUT_MS, 'Stripe');
+    return { configured: true, operational: true };
+  } catch (error) {
+    return { configured: true, operational: false, error: normalizeIntegrationError(error) };
+  }
+}
+
+async function checkWiseHealth(): Promise<IntegrationHealthStatus> {
+  if (!isWiseConfigured()) {
+    return { configured: false, operational: false, details: { sandbox: getSandboxStatus() } };
+  }
+  try {
+    await withTimeout(wiseService.getProfiles(), EXTERNAL_API_TIMEOUT_MS, 'Wise');
+    return {
+      configured: true,
+      operational: true,
+      details: {
+        sandbox: getSandboxStatus(),
+        profileId: getProfileIdSafe(),
+      },
+    };
+  } catch (error) {
+    return {
+      configured: true,
+      operational: false,
+      error: normalizeIntegrationError(error),
+      details: {
+        sandbox: getSandboxStatus(),
+        profileId: getProfileIdSafe(),
+      },
+    };
+  }
+}
+
+async function checkErpnextHealth(): Promise<IntegrationHealthStatus> {
+  if (!config.ERPNEXT_URL || !config.ERPNEXT_API_KEY || !config.ERPNEXT_API_SECRET) {
+    return { configured: false, operational: false };
+  }
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${config.ERPNEXT_URL}/api/method/frappe.auth.get_logged_user`, {
+      headers: {
+        'Authorization': `token ${config.ERPNEXT_API_KEY}:${config.ERPNEXT_API_SECRET}`,
+      },
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`ERPNext HTTP ${response.status}`);
+    }
+    return { configured: true, operational: true };
+  } catch (error) {
+    return { configured: true, operational: false, error: normalizeIntegrationError(error) };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function checkTwilioHealth(): Promise<IntegrationHealthStatus> {
+  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_WHATSAPP_NUMBER) {
+    return { configured: false, operational: false };
+  }
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT_MS);
+  try {
+    const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}.json`, {
+      headers: {
+        'Authorization': `Basic ${Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64')}`,
+      },
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`Twilio HTTP ${response.status}`);
+    }
+    return { configured: true, operational: true };
+  } catch (error) {
+    return { configured: true, operational: false, error: normalizeIntegrationError(error) };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function checkEmailHealth(): Promise<IntegrationHealthStatus> {
+  if (!emailTransporter) {
+    return { configured: false, operational: false };
+  }
+  try {
+    await withTimeout(emailTransporter.verify(), EXTERNAL_API_TIMEOUT_MS, 'Gmail SMTP');
+    return { configured: true, operational: true };
+  } catch (error) {
+    return { configured: true, operational: false, error: normalizeIntegrationError(error) };
+  }
+}
+
+async function checkOpenAiVisionHealth(): Promise<IntegrationHealthStatus> {
+  if (!OPENAI_API_KEY) {
+    return { configured: false, operational: false };
+  }
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT_MS);
+  try {
+    const response = await fetch('https://api.openai.com/v1/models', {
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+      },
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`OpenAI HTTP ${response.status}`);
+    }
+    return { configured: true, operational: true };
+  } catch (error) {
+    return { configured: true, operational: false, error: normalizeIntegrationError(error) };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function checkTradingHealth(): IntegrationHealthStatus {
+  const configStatus = kucoinClient.getKucoinConfigStatus();
+  const circuitBreaker = kucoinClient.getKucoinCircuitBreakerStatus();
+  if (!configStatus.isConfigured) {
+    return {
+      configured: false,
+      operational: false,
+      details: { missingKeys: configStatus.missingKeys },
+    };
+  }
+  const operational = circuitBreaker.state !== 'open';
+  return {
+    configured: true,
+    operational,
+    details: {
+      missingKeys: configStatus.missingKeys,
+      circuitBreaker,
+    },
+  };
+}
+
+async function collectIntegrationHealthStatuses(): Promise<Record<string, IntegrationHealthStatus>> {
+  const [stripeHealth, wiseHealth, erpnextHealth, twilioHealth, emailHealth, openAiVisionHealth] = await Promise.all([
+    checkStripeHealth(),
+    checkWiseHealth(),
+    checkErpnextHealth(),
+    checkTwilioHealth(),
+    checkEmailHealth(),
+    checkOpenAiVisionHealth(),
+  ]);
+  const tradingHealth = checkTradingHealth();
+
+  return {
+    stripe: stripeHealth,
+    wise: wiseHealth,
+    erpnext: erpnextHealth,
+    twilio: twilioHealth,
+    email: emailHealth,
+    openai_vision: openAiVisionHealth,
+    trading: tradingHealth,
+  };
+}
+
+async function refreshIntegrationHealthMetrics(): Promise<Record<string, IntegrationHealthStatus>> {
+  const services = await collectIntegrationHealthStatuses();
+  Object.entries(services).forEach(([integration, status]) => {
+    updateIntegrationMetrics(integration, status.configured, status.operational);
+  });
+  return services;
+}
+
+app.get('/api/integrations/health', (_req: Request, res: Response) => {
+  refreshIntegrationHealthMetrics()
+    .then((services) => {
+      const tradingHealth = services.trading;
+      const wiseHealth = services.wise;
+      res.json({ 
+        status: 'ok', 
+        service: 'integrations-service', 
+        version: process.env.APP_VERSION ?? null,
+        timestamp: new Date().toISOString(),
+        services,
+        integrations: {
+          stripe: services.stripe.configured,
+          wise: services.wise.configured,
+          erpnext: services.erpnext.configured,
+          twilio: services.twilio.configured,
+          email: services.email.configured,
+          openaiVision: services.openai_vision.configured,
+          trading: services.trading.configured,
+        },
+        circuitBreakers: {
+          erpnext: erpNextBreaker.opened ? 'open' : (erpNextBreaker.halfOpen ? 'half-open' : 'closed'),
+          wise: wiseHealth.configured ? getWiseCircuitBreakerStatus() : null,
+          trading: tradingHealth.details?.circuitBreaker ?? null,
+        },
+      });
+    })
+    .catch((error) => {
+      logger.error({ error }, 'Falha ao calcular integrações/health');
+      res.status(500).json({ error: 'Falha ao verificar integrações' });
+    });
 });
 
 app.get('/api/integrations/stats', requirePermission('integrations:integrations:read'), async (req: Request, res: Response) => {
@@ -6284,6 +6517,7 @@ app.use(createErrorHandler({
 }));
 
 const PORT = config.PORT || 3005;
+const INTEGRATION_HEALTH_REFRESH_MS = 120000;
 
 // =============================================================================
 // INICIALIZAÇÃO: Redis Cache + Session Auth Cache
@@ -6317,6 +6551,14 @@ initializeCaches().then(() => {
   });
 
   startTradingMetricsScheduler();
+  refreshIntegrationHealthMetrics().catch((error) => {
+    logger.warn({ error }, 'Falha ao atualizar métricas de integrações no startup');
+  });
+  const integrationHealthInterval = setInterval(() => {
+    refreshIntegrationHealthMetrics().catch((error) => {
+      logger.warn({ error }, 'Falha ao atualizar métricas de integrações');
+    });
+  }, INTEGRATION_HEALTH_REFRESH_MS);
 
   // SEGURANÇA: Timeouts para prevenir conexões pendentes (Node.js 20 LTS Best Practices)
   server.timeout = 30000; // 30s timeout para requisições
@@ -6365,6 +6607,14 @@ initializeCaches().then(() => {
         clearInterval(tradingMetricsInterval);
         tradingMetricsInterval = null;
       }
+    },
+    { priority: ShutdownPriority.BACKGROUND_JOBS }
+  );
+
+  registerShutdownCallback(
+    'integrations-health-metrics',
+    async () => {
+      clearInterval(integrationHealthInterval);
     },
     { priority: ShutdownPriority.BACKGROUND_JOBS }
   );

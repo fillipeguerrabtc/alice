@@ -2,7 +2,7 @@
  * Integrations - Configuração e Status das Integrações
  * 
  * Página para visualizar status e configurar integrações:
- * Stripe, Wise, ERPNext, Twilio, Gmail SMTP
+ * Stripe, Wise, ERPNext, Twilio, Gmail SMTP, KuCoin Futures
  * 
  * Regra 6 - SEM MOCKS: Apenas dados reais da API
  * Regra 10 - Documentação PT-BR
@@ -29,6 +29,8 @@ import {
   Link,
   Globe,
   Shield,
+  LineChart,
+  Eye,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
@@ -48,16 +50,14 @@ import { toast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { formatCurrency, formatNumber } from '@/lib/utils';
 
-interface HealthResponse {
-  status: string;
-  version: string;
-  services: {
-    stripe: { configured: boolean };
-    wise: { configured: boolean };
-    erpnext: { configured: boolean };
-    twilio: { configured: boolean };
-    email: { configured: boolean }; // Gmail SMTP (substitui resend - 30/12/2025)
-  };
+interface IntegrationMetric {
+  name: string;
+  configured: boolean;
+  operational: boolean;
+}
+
+interface IntegrationMetricsResponse {
+  integrations: IntegrationMetric[];
   timestamp: string;
 }
 
@@ -126,7 +126,7 @@ interface IntegrationCardProps {
   name: string;
   description: string;
   icon: React.ElementType;
-  configured: boolean;
+  status: { configured: boolean; operational: boolean };
   onConfigure?: () => void;
   onTest?: () => void;
   testLoading?: boolean;
@@ -138,31 +138,38 @@ function IntegrationCard({
   name, 
   description, 
   icon: Icon, 
-  configured, 
+  status, 
   onConfigure, 
   onTest, 
   testLoading,
   children,
   t
 }: IntegrationCardProps) {
+  const isOperational = status.operational;
+  const isConfigured = status.configured;
   return (
     <motion.div variants={itemVariants}>
       <Card className="h-full">
         <CardHeader className="pb-3">
           <div className="flex items-start justify-between gap-2">
             <div className="flex items-center gap-3">
-              <div className={`p-2 rounded-lg ${configured ? 'bg-green-500/10' : 'bg-muted'}`}>
-                <Icon className={`h-6 w-6 ${configured ? 'text-green-600' : 'text-muted-foreground'}`} />
+              <div className={`p-2 rounded-lg ${isOperational ? 'bg-green-500/10' : 'bg-muted'}`}>
+                <Icon className={`h-6 w-6 ${isOperational ? 'text-green-600' : 'text-muted-foreground'}`} />
               </div>
               <div>
                 <CardTitle className="text-base">{name}</CardTitle>
                 <CardDescription className="text-xs mt-0.5">{description}</CardDescription>
               </div>
             </div>
-            {configured ? (
+            {isOperational ? (
               <Badge className="bg-green-500/10 text-green-600 shrink-0">
                 <CheckCircle2 className="h-3 w-3 mr-1" />
                 {t('common.active')}
+              </Badge>
+            ) : isConfigured ? (
+              <Badge variant="outline" className="shrink-0">
+                <AlertCircle className="h-3 w-3 mr-1" />
+                {t('integrations.unhealthy')}
               </Badge>
             ) : (
               <Badge variant="secondary" className="shrink-0">
@@ -191,7 +198,7 @@ function IntegrationCard({
               variant="outline" 
               size="sm" 
               onClick={onTest} 
-              disabled={!configured || testLoading}
+              disabled={!isConfigured || testLoading}
               data-testid={`button-test-${name.toLowerCase()}`}
             >
               {testLoading ? (
@@ -209,24 +216,32 @@ function IntegrationCard({
 }
 
 function StripeSection({
-  configured,
+  status,
   t,
   locale,
 }: {
-  configured: boolean;
+  status: { configured: boolean; operational: boolean };
   t: (key: string, options?: Record<string, unknown>) => string;
   locale: string;
 }) {
   const { data, isLoading } = useQuery<StripeProductsResponse>({
     queryKey: ['/api/integrations/stripe/products'],
-    enabled: configured,
+    enabled: status.operational,
     staleTime: 1000 * 60 * 5,
   });
 
-  if (!configured) {
+  if (!status.configured) {
     return (
       <div className="text-xs text-muted-foreground p-2 bg-muted/50 rounded">
         {t('integrations.stripe.configureHint')}
+      </div>
+    );
+  }
+
+  if (!status.operational) {
+    return (
+      <div className="text-xs text-muted-foreground p-2 bg-amber-500/10 rounded">
+        {t('integrations.unhealthyHint', { name: 'Stripe' })}
       </div>
     );
   }
@@ -276,30 +291,38 @@ function StripeSection({
 }
 
 function WiseSection({
-  configured,
+  status: integrationStatus,
   t,
   locale,
 }: {
-  configured: boolean;
+  status: { configured: boolean; operational: boolean };
   t: (key: string) => string;
   locale: string;
 }) {
   const { data: status } = useQuery<WiseStatusResponse>({
     queryKey: ['/api/integrations/wise/status'],
-    enabled: configured,
+    enabled: integrationStatus.operational,
     staleTime: 1000 * 30,
   });
 
   const { data: balances, isLoading } = useQuery<WiseBalancesResponse>({
     queryKey: ['/api/integrations/wise/balances'],
-    enabled: configured,
+    enabled: integrationStatus.operational,
     staleTime: 1000 * 60,
   });
 
-  if (!configured) {
+  if (!integrationStatus.configured) {
     return (
       <div className="text-xs text-muted-foreground p-2 bg-muted/50 rounded">
         {t('integrations.wise.configureHint')}
+      </div>
+    );
+  }
+
+  if (!integrationStatus.operational) {
+    return (
+      <div className="text-xs text-muted-foreground p-2 bg-amber-500/10 rounded">
+        {t('integrations.unhealthyHint', { name: 'Wise' })}
       </div>
     );
   }
@@ -351,8 +374,8 @@ export default function Integrations() {
   const [testingIntegration, setTestingIntegration] = useState<string | null>(null);
   const [showConfigDialog, setShowConfigDialog] = useState<string | null>(null);
 
-  const { data: health, isLoading } = useQuery<HealthResponse>({
-    queryKey: ['/api/integrations/health'],
+  const { data: integrationMetrics, isLoading } = useQuery<IntegrationMetricsResponse>({
+    queryKey: ['/api/observability/metrics/integrations'],
     staleTime: 1000 * 30,
     refetchInterval: 1000 * 60,
   });
@@ -380,16 +403,29 @@ export default function Integrations() {
     onSettled: () => setTestingIntegration(null),
   });
 
-  const services = health?.services || {
-    stripe: { configured: false },
-    wise: { configured: false },
-    erpnext: { configured: false },
-    twilio: { configured: false },
-    email: { configured: false }, // Gmail SMTP
+  const integrationIds = ['stripe', 'wise', 'erpnext', 'twilio', 'email', 'trading', 'openai_vision'] as const;
+  const integrationStatusMap = (integrationMetrics?.integrations ?? []).reduce<Record<string, IntegrationMetric>>((acc, integration) => {
+    acc[integration.name] = integration;
+    return acc;
+  }, {});
+
+  const getIntegrationStatus = (name: string) => {
+    const status = integrationStatusMap[name];
+    return status ? { configured: status.configured, operational: status.operational } : { configured: false, operational: false };
   };
 
-  const configuredCount = Object.values(services).filter(s => s.configured).length;
-  const totalCount = Object.keys(services).length;
+  const services = {
+    stripe: getIntegrationStatus('stripe'),
+    wise: getIntegrationStatus('wise'),
+    erpnext: getIntegrationStatus('erpnext'),
+    twilio: getIntegrationStatus('twilio'),
+    email: getIntegrationStatus('email'),
+    trading: getIntegrationStatus('trading'),
+    openaiVision: getIntegrationStatus('openai_vision'),
+  };
+
+  const activeCount = integrationIds.filter((name) => getIntegrationStatus(name).operational).length;
+  const totalCount = integrationIds.length;
 
   if (isLoading) {
     return (
@@ -424,7 +460,7 @@ export default function Integrations() {
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="text-sm">
               <Link className="h-3 w-3 mr-1" />
-              {t('integrations.activeCount', { count: configuredCount, total: totalCount })}
+              {t('integrations.activeCount', { count: activeCount, total: totalCount })}
             </Badge>
           </div>
         </div>
@@ -435,7 +471,7 @@ export default function Integrations() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-muted-foreground">{t('integrations.stats.active')}</p>
-                  <p className="text-2xl font-bold" data-testid="stat-active">{configuredCount}</p>
+                  <p className="text-2xl font-bold" data-testid="stat-active">{activeCount}</p>
                 </div>
                 <CheckCircle2 className="h-8 w-8 text-green-500/50" />
               </div>
@@ -447,7 +483,7 @@ export default function Integrations() {
                 <div>
                   <p className="text-xs text-muted-foreground">{t('integrations.stats.payments')}</p>
                   <p className="text-2xl font-bold" data-testid="stat-payments">
-                    {services.stripe.configured ? 'EUR' : '-'}
+                    {services.stripe.operational ? 'EUR' : '-'}
                   </p>
                 </div>
                 <CreditCard className="h-8 w-8 text-purple-500/50" />
@@ -460,7 +496,7 @@ export default function Integrations() {
                 <div>
                   <p className="text-xs text-muted-foreground">{t('integrations.stats.currencies')}</p>
                   <p className="text-2xl font-bold" data-testid="stat-transfers">
-                    {services.wise.configured ? '50+' : '-'}
+                    {services.wise.operational ? '50+' : '-'}
                   </p>
                 </div>
                 <Globe className="h-8 w-8 text-blue-500/50" />
@@ -473,7 +509,7 @@ export default function Integrations() {
                 <div>
                   <p className="text-xs text-muted-foreground">{t('integrations.stats.communication')}</p>
                   <p className="text-2xl font-bold" data-testid="stat-comms">
-                    {(services.twilio.configured || services.email.configured) ? 'OK' : '-'}
+                    {(services.twilio.operational || services.email.operational) ? 'OK' : '-'}
                   </p>
                 </div>
                 <MessageSquare className="h-8 w-8 text-green-500/50" />
@@ -489,6 +525,14 @@ export default function Integrations() {
             <TabsTrigger value="payments" data-testid="tab-payments">
               <CreditCard className="h-4 w-4 mr-2" />
               {t('integrations.tabs.payments')}
+            </TabsTrigger>
+            <TabsTrigger value="trading" data-testid="tab-trading">
+              <LineChart className="h-4 w-4 mr-2" />
+              {t('integrations.tabs.trading')}
+            </TabsTrigger>
+            <TabsTrigger value="ai" data-testid="tab-ai">
+              <Eye className="h-4 w-4 mr-2" />
+              {t('integrations.tabs.ai')}
             </TabsTrigger>
             <TabsTrigger value="erp" data-testid="tab-erp">
               <Building2 className="h-4 w-4 mr-2" />
@@ -511,22 +555,97 @@ export default function Integrations() {
                 name={t('integrations.stripe.title')}
                 description={t('integrations.stripe.description')}
                 icon={CreditCard}
-                configured={services.stripe.configured}
+                status={services.stripe}
                 onConfigure={() => setShowConfigDialog('stripe')}
                 t={t}
               >
-                <StripeSection configured={services.stripe.configured} t={t} locale={locale} />
+                <StripeSection status={services.stripe} t={t} locale={locale} />
               </IntegrationCard>
 
               <IntegrationCard
                 name={t('integrations.wise.title')}
                 description={t('integrations.wise.description')}
                 icon={Send}
-                configured={services.wise.configured}
+                status={services.wise}
                 onConfigure={() => setShowConfigDialog('wise')}
                 t={t}
               >
-                <WiseSection configured={services.wise.configured} t={t} locale={locale} />
+                <WiseSection status={services.wise} t={t} locale={locale} />
+              </IntegrationCard>
+            </motion.div>
+          </TabsContent>
+
+          <TabsContent value="trading">
+            <motion.div
+              variants={containerVariants}
+              initial="hidden"
+              animate="visible"
+              className="grid gap-4 md:grid-cols-2"
+            >
+              <IntegrationCard
+                name={t('integrations.trading.title')}
+                description={t('integrations.trading.description')}
+                icon={LineChart}
+                status={services.trading}
+                onConfigure={() => setShowConfigDialog('trading')}
+                t={t}
+              >
+                {services.trading.configured && services.trading.operational ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <ExternalLink className="h-3 w-3" />
+                      <a 
+                        href="/trading"
+                        className="hover:underline"
+                      >
+                        {t('integrations.trading.activeHint')}
+                      </a>
+                    </div>
+                  </div>
+                ) : services.trading.configured ? (
+                  <div className="text-xs text-muted-foreground p-2 bg-amber-500/10 rounded">
+                    {t('integrations.unhealthyHint', { name: 'KuCoin Futures' })}
+                  </div>
+                ) : (
+                  <div className="text-xs text-muted-foreground p-2 bg-muted/50 rounded">
+                    {t('integrations.trading.configureHint')}
+                  </div>
+                )}
+              </IntegrationCard>
+            </motion.div>
+          </TabsContent>
+
+          <TabsContent value="ai">
+            <motion.div
+              variants={containerVariants}
+              initial="hidden"
+              animate="visible"
+              className="grid gap-4 md:grid-cols-2"
+            >
+              <IntegrationCard
+                name={t('integrations.openaiVision.title')}
+                description={t('integrations.openaiVision.description')}
+                icon={Eye}
+                status={services.openaiVision}
+                onConfigure={() => setShowConfigDialog('openai')}
+                t={t}
+              >
+                {services.openaiVision.configured && services.openaiVision.operational ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Shield className="h-3 w-3" />
+                      <span>{t('integrations.openaiVision.activeHint')}</span>
+                    </div>
+                  </div>
+                ) : services.openaiVision.configured ? (
+                  <div className="text-xs text-muted-foreground p-2 bg-amber-500/10 rounded">
+                    {t('integrations.unhealthyHint', { name: 'OpenAI Vision' })}
+                  </div>
+                ) : (
+                  <div className="text-xs text-muted-foreground p-2 bg-muted/50 rounded">
+                    {t('integrations.openaiVision.configureHint')}
+                  </div>
+                )}
               </IntegrationCard>
             </motion.div>
           </TabsContent>
@@ -542,7 +661,7 @@ export default function Integrations() {
                 name={t('integrations.erpnext.title')}
                 description={t('integrations.erpnext.description')}
                 icon={Building2}
-                configured={services.erpnext.configured}
+                status={services.erpnext}
                 onConfigure={() => setShowConfigDialog('erpnext')}
                 onTest={() => {
                   setTestingIntegration('erpnext');
@@ -551,7 +670,7 @@ export default function Integrations() {
                 testLoading={testingIntegration === 'erpnext'}
                 t={t}
               >
-                {services.erpnext.configured ? (
+                {services.erpnext.configured && services.erpnext.operational ? (
                   <div className="space-y-2">
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <ExternalLink className="h-3 w-3" />
@@ -568,6 +687,10 @@ export default function Integrations() {
                       <div className="text-muted-foreground">{t('integrations.erpnext.sync')}</div>
                       <div className="font-medium">{t('integrations.erpnext.syncItems')}</div>
                     </div>
+                  </div>
+                ) : services.erpnext.configured ? (
+                  <div className="text-xs text-muted-foreground p-2 bg-amber-500/10 rounded">
+                    {t('integrations.unhealthyHint', { name: 'ERPNext' })}
                   </div>
                 ) : (
                   <div className="text-xs text-muted-foreground p-2 bg-muted/50 rounded">
@@ -589,16 +712,20 @@ export default function Integrations() {
                 name={t('integrations.twilio.title')}
                 description={t('integrations.twilio.description')}
                 icon={MessageSquare}
-                configured={services.twilio.configured}
+                status={services.twilio}
                 onConfigure={() => setShowConfigDialog('twilio')}
                 t={t}
               >
-                {services.twilio.configured ? (
+                {services.twilio.configured && services.twilio.operational ? (
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
                       <Badge variant="outline" className="text-xs">WhatsApp</Badge>
                       <Badge variant="outline" className="text-xs">SMS</Badge>
                     </div>
+                  </div>
+                ) : services.twilio.configured ? (
+                  <div className="text-xs text-muted-foreground p-2 bg-amber-500/10 rounded">
+                    {t('integrations.unhealthyHint', { name: 'Twilio' })}
                   </div>
                 ) : (
                   <div className="text-xs text-muted-foreground p-2 bg-muted/50 rounded">
@@ -611,16 +738,20 @@ export default function Integrations() {
                 name={t('integrations.email.title')}
                 description={t('integrations.email.description')}
                 icon={Mail}
-                configured={services.email.configured}
+                status={services.email}
                 onConfigure={() => setShowConfigDialog('email')}
                 t={t}
               >
-                {services.email.configured ? (
+                {services.email.configured && services.email.operational ? (
                   <div className="space-y-2">
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <Mail className="h-3 w-3" />
                       <span>{t('integrations.email.smtpConfigured')}</span>
                     </div>
+                  </div>
+                ) : services.email.configured ? (
+                  <div className="text-xs text-muted-foreground p-2 bg-amber-500/10 rounded">
+                    {t('integrations.unhealthyHint', { name: 'Gmail SMTP' })}
                   </div>
                 ) : (
                   <div className="text-xs text-muted-foreground p-2 bg-muted/50 rounded">
@@ -683,6 +814,18 @@ export default function Integrations() {
                   <>
                     <p>GMAIL_USER</p>
                     <p>GMAIL_APP_PASSWORD</p>
+                  </>
+                )}
+                {showConfigDialog === 'openai' && (
+                  <>
+                    <p>OPENAI_API_KEY</p>
+                  </>
+                )}
+                {showConfigDialog === 'trading' && (
+                  <>
+                    <p>KUCOIN_PRO_API_KEY</p>
+                    <p>KUCOIN_PRO_API_SECRET</p>
+                    <p>KUCOIN_PRO_API_PASSPHRASE</p>
                   </>
                 )}
               </div>

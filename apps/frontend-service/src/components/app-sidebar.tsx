@@ -17,7 +17,6 @@ import {
   FolderKanban,
   Shield,
   Users,
-  Boxes,
   LineChart,
   Settings2,
 } from 'lucide-react';
@@ -72,7 +71,6 @@ const adminItems = [
   { title: 'Observabilidade', url: '/observability', icon: Activity },
   { title: 'Namespaces', url: '/namespaces', icon: FolderKanban },
   { title: 'Usuários', url: '/users', icon: Users },
-  { title: 'Módulos', url: '/modules', icon: Boxes },
   { title: 'Configuração da Alice', url: '/alice-config', icon: Settings2 },
   { title: 'Modo Agentic', url: '/agentic-config', icon: Shield },
 ];

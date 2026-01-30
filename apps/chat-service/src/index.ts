@@ -66,6 +66,7 @@ import {
   PERMISSION_MAP,
   type AgentEvent,
   redactSensitivePayload,
+  Gauge as PromGauge,
 } from '@alice/shared-utils';
 import type { AuthContext } from '@alice/shared-utils';
 import type { Role } from '@alice/shared-utils';
@@ -261,6 +262,41 @@ const { metrics, metricsRouter, httpMetricsMiddleware } = createAlicePrometheus(
 // Inicializar métricas RBAC (Regra 16 - Observability Enterprise)
 initRbacPrometheusMetrics(metrics.rbac);
 logger.info('Métricas RBAC Prometheus inicializadas no chat-service');
+
+const slaBreachedGauge = new PromGauge({
+  name: 'alice_sla_breached_total',
+  help: 'Total de conversas com SLA expirado (handoff pendente)',
+  labelNames: ['tenant_id'] as const,
+  registers: [metrics.registry],
+});
+
+const slaAtRiskGauge = new PromGauge({
+  name: 'alice_sla_at_risk_total',
+  help: 'Total de conversas com SLA em risco (handoff pendente)',
+  labelNames: ['tenant_id'] as const,
+  registers: [metrics.registry],
+});
+
+const slaOnTrackGauge = new PromGauge({
+  name: 'alice_sla_on_track_total',
+  help: 'Total de conversas com SLA dentro do prazo (handoff pendente)',
+  labelNames: ['tenant_id'] as const,
+  registers: [metrics.registry],
+});
+
+const slaAvgFirstResponseGauge = new PromGauge({
+  name: 'alice_sla_avg_first_response_seconds',
+  help: 'Tempo médio da primeira resposta em segundos',
+  labelNames: ['tenant_id'] as const,
+  registers: [metrics.registry],
+});
+
+const slaAvgResolutionGauge = new PromGauge({
+  name: 'alice_sla_avg_resolution_seconds',
+  help: 'Tempo médio de resolução em segundos',
+  labelNames: ['tenant_id'] as const,
+  registers: [metrics.registry],
+});
 
 type AgenticActionLabel = 'trading' | 'payments' | 'stack_ops' | 'agentic_task' | 'erp';
 type AgenticDecisionLabel = 'approve' | 'reject';
@@ -13180,6 +13216,8 @@ const urgentConversationsQuerySchema = z.object({
 });
 
 const SLA_URGENT_THRESHOLD_MINUTES = 10;
+const SLA_METRICS_REFRESH_MS = 60000;
+let slaMetricsInterval: NodeJS.Timeout | null = null;
 const WEEKLY_LOOKBACK_DAYS = 7;
 
 function formatDateKey(date: Date): string {
@@ -13560,6 +13598,167 @@ app.get('/api/chat/takeover-stats', requireAuth(), requireSameTenant(getTenantId
   }
 });
 
+type SlaMetricsResult = {
+  breachedCount: number;
+  atRiskCount: number;
+  onTrackCount: number;
+  avgFirstResponseTime: number;
+  avgResolutionTime: number;
+};
+
+function updateSlaMetricsGauges(tenantId: string, metricsResult: SlaMetricsResult): void {
+  slaBreachedGauge.set({ tenant_id: tenantId }, metricsResult.breachedCount);
+  slaAtRiskGauge.set({ tenant_id: tenantId }, metricsResult.atRiskCount);
+  slaOnTrackGauge.set({ tenant_id: tenantId }, metricsResult.onTrackCount);
+  slaAvgFirstResponseGauge.set({ tenant_id: tenantId }, metricsResult.avgFirstResponseTime);
+  slaAvgResolutionGauge.set({ tenant_id: tenantId }, metricsResult.avgResolutionTime);
+}
+
+async function computeSlaMetricsForTenant(tenantId: string): Promise<SlaMetricsResult> {
+  const toValidDate = (value: Date | string | null | undefined): Date | null => {
+    if (!value) return null;
+    const parsed = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed;
+  };
+
+  const now = new Date();
+  const urgentThreshold = new Date();
+  urgentThreshold.setMinutes(urgentThreshold.getMinutes() + SLA_URGENT_THRESHOLD_MINUTES);
+
+  const [breachedRow] = await db
+    .select({ total: sql<number>`count(*)` })
+    .from(schema.conversationStates)
+    .innerJoin(
+      schema.conversations,
+      eq(schema.conversationStates.conversationId, schema.conversations.id)
+    )
+    .where(and(
+      eq(schema.conversationStates.controlMode, 'pending_handoff'),
+      eq(schema.conversationStates.slaBreached, true),
+      eq(schema.conversations.tenantId, tenantId)
+    ));
+
+  const [atRiskRow] = await db
+    .select({ total: sql<number>`count(*)` })
+    .from(schema.conversationStates)
+    .innerJoin(
+      schema.conversations,
+      eq(schema.conversationStates.conversationId, schema.conversations.id)
+    )
+    .where(and(
+      eq(schema.conversationStates.controlMode, 'pending_handoff'),
+      eq(schema.conversationStates.slaBreached, false),
+      eq(schema.conversations.tenantId, tenantId),
+      sql`${schema.conversationStates.slaDeadline} is not null`,
+      sql`${schema.conversationStates.slaDeadline} <= ${urgentThreshold}`,
+      sql`${schema.conversationStates.slaDeadline} >= ${now}`
+    ));
+
+  const [onTrackRow] = await db
+    .select({ total: sql<number>`count(*)` })
+    .from(schema.conversationStates)
+    .innerJoin(
+      schema.conversations,
+      eq(schema.conversationStates.conversationId, schema.conversations.id)
+    )
+    .where(and(
+      eq(schema.conversationStates.controlMode, 'pending_handoff'),
+      eq(schema.conversationStates.slaBreached, false),
+      eq(schema.conversations.tenantId, tenantId),
+      sql`${schema.conversationStates.slaDeadline} is not null`,
+      sql`${schema.conversationStates.slaDeadline} > ${urgentThreshold}`
+    ));
+
+  const responseWindowStart = new Date();
+  responseWindowStart.setDate(responseWindowStart.getDate() - WEEKLY_LOOKBACK_DAYS);
+
+  const responseTimes = await db
+    .select({
+      conversationId: schema.messages.conversationId,
+      firstCustomer: sql<Date | null>`min(case when ${schema.messages.isFromUser} = true then ${schema.messages.criadoEm} end)`,
+      firstAgent: sql<Date | null>`min(case when ${schema.messages.isFromUser} = false then ${schema.messages.criadoEm} end)`,
+    })
+    .from(schema.messages)
+    .innerJoin(
+      schema.conversations,
+      eq(schema.messages.conversationId, schema.conversations.id)
+    )
+    .where(and(
+      eq(schema.conversations.tenantId, tenantId),
+      sql`${schema.messages.criadoEm} >= ${responseWindowStart}`
+    ))
+    .groupBy(schema.messages.conversationId);
+
+  let responseSum = 0;
+  let responseCount = 0;
+  for (const row of responseTimes) {
+    const firstCustomer = toValidDate(row.firstCustomer);
+    const firstAgent = toValidDate(row.firstAgent);
+    if (!firstCustomer || !firstAgent) continue;
+    const deltaSeconds = (firstAgent.getTime() - firstCustomer.getTime()) / 1000;
+    if (deltaSeconds >= 0) {
+      responseSum += deltaSeconds;
+      responseCount += 1;
+    }
+  }
+  const avgFirstResponseTime = responseCount > 0 ? responseSum / responseCount : 0;
+
+  const resolutionTimes = await db
+    .select({
+      createdAt: schema.conversationEscalations.criadoEm,
+      resolvedAt: schema.conversationEscalations.resolvedAt,
+    })
+    .from(schema.conversationEscalations)
+    .innerJoin(
+      schema.conversations,
+      eq(schema.conversationEscalations.conversationId, schema.conversations.id)
+    )
+    .where(and(
+      eq(schema.conversations.tenantId, tenantId),
+      sql`${schema.conversationEscalations.resolvedAt} is not null`,
+      sql`${schema.conversationEscalations.criadoEm} >= ${responseWindowStart}`
+    ));
+
+  let resolutionSum = 0;
+  let resolutionCount = 0;
+  for (const row of resolutionTimes) {
+    const createdAt = toValidDate(row.createdAt);
+    const resolvedAt = toValidDate(row.resolvedAt);
+    if (!resolvedAt || !createdAt) continue;
+    const deltaSeconds = (resolvedAt.getTime() - createdAt.getTime()) / 1000;
+    if (deltaSeconds >= 0) {
+      resolutionSum += deltaSeconds;
+      resolutionCount += 1;
+    }
+  }
+  const avgResolutionTime = resolutionCount > 0 ? resolutionSum / resolutionCount : 0;
+
+  return {
+    breachedCount: Number(breachedRow?.total ?? 0),
+    atRiskCount: Number(atRiskRow?.total ?? 0),
+    onTrackCount: Number(onTrackRow?.total ?? 0),
+    avgFirstResponseTime,
+    avgResolutionTime,
+  };
+}
+
+async function refreshSlaMetricsForAllTenants(): Promise<void> {
+  const tenantRows = await db
+    .select({ id: schema.tenants.id })
+    .from(schema.tenants)
+    .where(eq(schema.tenants.ativo, true));
+
+  for (const tenant of tenantRows) {
+    try {
+      const metricsResult = await computeSlaMetricsForTenant(tenant.id);
+      updateSlaMetricsGauges(tenant.id, metricsResult);
+    } catch (error) {
+      logger.warn({ error, tenantId: tenant.id }, 'Falha ao atualizar métricas SLA do tenant');
+    }
+  }
+}
+
 app.get('/api/chat/sla-metrics', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:stats:read'), async (req: Request, res: Response) => {
   const tenantId = req.tenantId;
   if (!tenantId) {
@@ -13568,132 +13767,9 @@ app.get('/api/chat/sla-metrics', requireAuth(), requireSameTenant(getTenantIdFro
   }
 
   try {
-    const toValidDate = (value: Date | string | null | undefined): Date | null => {
-      if (!value) return null;
-      const parsed = value instanceof Date ? value : new Date(value);
-      if (Number.isNaN(parsed.getTime())) return null;
-      return parsed;
-    };
-
-    const now = new Date();
-    const urgentThreshold = new Date();
-    urgentThreshold.setMinutes(urgentThreshold.getMinutes() + SLA_URGENT_THRESHOLD_MINUTES);
-
-    const [breachedRow] = await db
-      .select({ total: sql<number>`count(*)` })
-      .from(schema.conversationStates)
-      .innerJoin(
-        schema.conversations,
-        eq(schema.conversationStates.conversationId, schema.conversations.id)
-      )
-      .where(and(
-        eq(schema.conversationStates.controlMode, 'pending_handoff'),
-        eq(schema.conversationStates.slaBreached, true),
-        eq(schema.conversations.tenantId, tenantId)
-      ));
-
-    const [atRiskRow] = await db
-      .select({ total: sql<number>`count(*)` })
-      .from(schema.conversationStates)
-      .innerJoin(
-        schema.conversations,
-        eq(schema.conversationStates.conversationId, schema.conversations.id)
-      )
-      .where(and(
-        eq(schema.conversationStates.controlMode, 'pending_handoff'),
-        eq(schema.conversationStates.slaBreached, false),
-        eq(schema.conversations.tenantId, tenantId),
-        sql`${schema.conversationStates.slaDeadline} is not null`,
-        sql`${schema.conversationStates.slaDeadline} <= ${urgentThreshold}`,
-        sql`${schema.conversationStates.slaDeadline} >= ${now}`
-      ));
-
-    const [onTrackRow] = await db
-      .select({ total: sql<number>`count(*)` })
-      .from(schema.conversationStates)
-      .innerJoin(
-        schema.conversations,
-        eq(schema.conversationStates.conversationId, schema.conversations.id)
-      )
-      .where(and(
-        eq(schema.conversationStates.controlMode, 'pending_handoff'),
-        eq(schema.conversationStates.slaBreached, false),
-        eq(schema.conversations.tenantId, tenantId),
-        sql`${schema.conversationStates.slaDeadline} is not null`,
-        sql`${schema.conversationStates.slaDeadline} > ${urgentThreshold}`
-      ));
-
-    const responseWindowStart = new Date();
-    responseWindowStart.setDate(responseWindowStart.getDate() - WEEKLY_LOOKBACK_DAYS);
-
-    const responseTimes = await db
-      .select({
-        conversationId: schema.messages.conversationId,
-        firstCustomer: sql<Date | null>`min(case when ${schema.messages.isFromUser} = true then ${schema.messages.criadoEm} end)`,
-        firstAgent: sql<Date | null>`min(case when ${schema.messages.isFromUser} = false then ${schema.messages.criadoEm} end)`,
-      })
-      .from(schema.messages)
-      .innerJoin(
-        schema.conversations,
-        eq(schema.messages.conversationId, schema.conversations.id)
-      )
-      .where(and(
-        eq(schema.conversations.tenantId, tenantId),
-        sql`${schema.messages.criadoEm} >= ${responseWindowStart}`
-      ))
-      .groupBy(schema.messages.conversationId);
-
-    let responseSum = 0;
-    let responseCount = 0;
-    for (const row of responseTimes) {
-      const firstCustomer = toValidDate(row.firstCustomer);
-      const firstAgent = toValidDate(row.firstAgent);
-      if (!firstCustomer || !firstAgent) continue;
-      const deltaSeconds = (firstAgent.getTime() - firstCustomer.getTime()) / 1000;
-      if (deltaSeconds >= 0) {
-        responseSum += deltaSeconds;
-        responseCount += 1;
-      }
-    }
-    const avgFirstResponseTime = responseCount > 0 ? responseSum / responseCount : 0;
-
-    const resolutionTimes = await db
-      .select({
-        createdAt: schema.conversationEscalations.criadoEm,
-        resolvedAt: schema.conversationEscalations.resolvedAt,
-      })
-      .from(schema.conversationEscalations)
-      .innerJoin(
-        schema.conversations,
-        eq(schema.conversationEscalations.conversationId, schema.conversations.id)
-      )
-      .where(and(
-        eq(schema.conversations.tenantId, tenantId),
-        sql`${schema.conversationEscalations.resolvedAt} is not null`,
-        sql`${schema.conversationEscalations.criadoEm} >= ${responseWindowStart}`
-      ));
-
-    let resolutionSum = 0;
-    let resolutionCount = 0;
-    for (const row of resolutionTimes) {
-      const createdAt = toValidDate(row.createdAt);
-      const resolvedAt = toValidDate(row.resolvedAt);
-      if (!resolvedAt || !createdAt) continue;
-      const deltaSeconds = (resolvedAt.getTime() - createdAt.getTime()) / 1000;
-      if (deltaSeconds >= 0) {
-        resolutionSum += deltaSeconds;
-        resolutionCount += 1;
-      }
-    }
-    const avgResolutionTime = resolutionCount > 0 ? resolutionSum / resolutionCount : 0;
-
-    res.json({
-      breachedCount: Number(breachedRow?.total ?? 0),
-      atRiskCount: Number(atRiskRow?.total ?? 0),
-      onTrackCount: Number(onTrackRow?.total ?? 0),
-      avgFirstResponseTime,
-      avgResolutionTime,
-    });
+    const metricsResult = await computeSlaMetricsForTenant(tenantId);
+    updateSlaMetricsGauges(tenantId, metricsResult);
+    res.json(metricsResult);
   } catch (error) {
     logger.error({ err: error, tenantId }, 'Erro ao calcular sla-metrics');
     res.status(500).json({ error: 'Erro interno do servidor' });
@@ -15725,6 +15801,14 @@ app.use(createErrorHandler({
         rbacCacheDistributed: permissionCache.getStats().distributed,
       }, 'Chat service iniciado com Circuit Breaker e caches distribuídos');
     });
+    refreshSlaMetricsForAllTenants().catch((error) => {
+      logger.warn({ error }, 'Falha ao atualizar métricas SLA no startup');
+    });
+    slaMetricsInterval = setInterval(() => {
+      refreshSlaMetricsForAllTenants().catch((error) => {
+        logger.warn({ error }, 'Falha ao atualizar métricas SLA');
+      });
+    }, SLA_METRICS_REFRESH_MS);
   } catch (error) {
     logger.fatal({ error: (error as Error).message }, 'Falha ao iniciar chat-service');
     process.exit(1);
@@ -15748,6 +15832,10 @@ registerShutdownCallback(
     logger.info('Limpando background intervals...');
     clearInterval(heartbeatInterval);
     clearInterval(rateLimitCleanupInterval);
+    if (slaMetricsInterval) {
+      clearInterval(slaMetricsInterval);
+      slaMetricsInterval = null;
+    }
     logger.info('Background intervals limpos');
   },
   { priority: ShutdownPriority.BACKGROUND_JOBS }

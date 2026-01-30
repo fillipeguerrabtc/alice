@@ -1,8 +1,8 @@
 # Guia Completo de Secrets - Alice Enterprise Platform
 
 **Author:** Fillipe Guerra  
-**Data:** 28 de Janeiro de 2026  
-**Versão:** 7.14 - KuCoin orderbook depths obrigatórias
+**Data:** 30 de Janeiro de 2026  
+**Versão:** 7.15 - Secrets Stripe/Wise opcionais documentados
 
 ## Visão geral
 
@@ -76,9 +76,11 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `STRIPE_SECRET_KEY` | Stripe API Key | ✅ |
 | `STRIPE_PUBLISHABLE_KEY` | Stripe Publishable | ✅ |
 | `STRIPE_WEBHOOK_SECRET` | Stripe Webhook | ✅ |
+| `STRIPE_WEBHOOK_BASE_URL` | Base URL para webhooks Stripe | ⚠️ |
 | `WISE_API_KEY` | Wise API | ✅ |
 | `WISE_PROFILE_ID` | Wise Profile ID | ✅ |
-| `WISE_WEBHOOK_SECRET` | Wise Webhook | ✅ |
+| `WISE_WEBHOOK_SECRET` | Wise Webhook | ⚠️ |
+| `WISE_SANDBOX` | Wise Sandbox (`true`/`false`) | ⚠️ |
 | `TWILIO_ACCOUNT_SID` | Twilio Account SID | ✅ |
 | `TWILIO_AUTH_TOKEN` | Twilio Auth Token | ✅ |
 | `TWILIO_WHATSAPP_NUMBER` | Twilio WhatsApp | ✅ |
