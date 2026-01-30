@@ -38,6 +38,7 @@ interface GeneratedImage {
   prompt: string;
   negativePrompt: string | null;
   model: string | null;
+  mimeType: string | null;
   steps: number | null;
   seed: number | null;
   width: number | null;
@@ -270,12 +271,37 @@ function ImageDetailModal({
   });
   
   if (!image) return null;
+
+  const resolveDownloadExtension = (mimeType: string | null, imageUrl: string | null, source: GeneratedImage["source"]) => {
+    const normalizedMimeType = mimeType?.trim().toLowerCase() ?? '';
+    if (normalizedMimeType) {
+      const [type, subtype] = normalizedMimeType.split('/');
+      if (type === 'image' && subtype) {
+        return subtype === 'jpeg' ? 'jpg' : subtype;
+      }
+    }
+
+    if (imageUrl) {
+      const cleanUrl = imageUrl.split('?')[0];
+      const lastSegment = cleanUrl.split('/').pop() ?? '';
+      const dotIndex = lastSegment.lastIndexOf('.');
+      if (dotIndex > -1 && dotIndex < lastSegment.length - 1) {
+        const extension = lastSegment.slice(dotIndex + 1).trim().toLowerCase();
+        if (extension.length > 0) {
+          return extension;
+        }
+      }
+    }
+
+    return source === "generated" ? "png" : "img";
+  };
   
   const handleDownload = () => {
     if (image.imageUrl) {
       const link = document.createElement('a');
       link.href = image.imageUrl;
-      link.download = `image-${image.id}.png`;
+      const extension = resolveDownloadExtension(image.mimeType, image.imageUrl, image.source);
+      link.download = `image-${image.id}.${extension}`;
       link.click();
     }
   };

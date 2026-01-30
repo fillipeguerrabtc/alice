@@ -13242,6 +13242,7 @@ type GalleryImage = {
   prompt: string;
   negativePrompt: string | null;
   model: string | null;
+  mimeType: string | null;
   steps: number | null;
   seed: number | null;
   width: number | null;
@@ -13304,6 +13305,8 @@ function resolveUploadThumbnail(upload: typeof schema.mediaUploads.$inferSelect)
 }
 
 function normalizeGeneratedImage(image: typeof schema.generatedImages.$inferSelect): GalleryImage {
+  const metadata = (image.metadata as Record<string, unknown> | null) ?? null;
+  const metadataMimeType = metadata?.mimeType;
   return {
     id: image.id,
     source: 'generated',
@@ -13314,6 +13317,9 @@ function normalizeGeneratedImage(image: typeof schema.generatedImages.$inferSele
     prompt: image.prompt,
     negativePrompt: image.negativePrompt ?? null,
     model: image.model ?? null,
+    mimeType: typeof metadataMimeType === 'string' && metadataMimeType.trim().length > 0
+      ? metadataMimeType.trim()
+      : null,
     steps: image.steps ?? null,
     seed: image.seed ?? null,
     width: image.width ?? null,
@@ -13328,7 +13334,7 @@ function normalizeGeneratedImage(image: typeof schema.generatedImages.$inferSele
     usedInFineTuning: image.usedInFineTuning ?? null,
     generationTimeMs: image.generationTimeMs ?? null,
     errorMessage: image.errorMessage ?? null,
-    metadata: (image.metadata as Record<string, unknown> | null) ?? null,
+    metadata,
     criadoEm: image.criadoEm ?? null,
   };
 }
@@ -13346,6 +13352,7 @@ function normalizeUploadImage(upload: typeof schema.mediaUploads.$inferSelect): 
     prompt: resolveUploadPrompt(upload),
     negativePrompt: null,
     model: typeof model === 'string' && model.trim().length > 0 ? model.trim() : null,
+    mimeType: upload.mimeType ?? null,
     steps: null,
     seed: null,
     width: upload.width ?? null,
