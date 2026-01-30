@@ -11104,14 +11104,6 @@ wss.on('connection', (ws, req) => {
         const agenticDetectors = normalizeAgenticDetectors(agenticSettings.detectors);
         const content = message.content || '';
         
-        if (!agenticSettings.tradingEnabled) {
-          ws.send(JSON.stringify({
-            type: 'trading:error',
-            error: 'Trading está desativado nas configurações do tenant.',
-          }));
-          return;
-        }
-
         if (!isTradingCommandWithDetectors(content, agenticDetectors)) {
           ws.send(JSON.stringify({
             type: 'trading:error',
@@ -11122,6 +11114,15 @@ wss.on('connection', (ws, req) => {
         }
         
         const parsed = parseTradingCommand(content);
+        const isSignalGeneration = parsed.type === 'generate_signal';
+
+        if (!agenticSettings.tradingEnabled && !isSignalGeneration) {
+          ws.send(JSON.stringify({
+            type: 'trading:error',
+            error: 'Trading está desativado nas configurações do tenant.',
+          }));
+          return;
+        }
         
         // CORREÇÃO 17/12/2025: Validar campos obrigatórios ANTES de executar
         // Bug: comandos sem dados obrigatórios (ex: "cancele a ordem" sem orderId)
@@ -11144,15 +11145,17 @@ wss.on('connection', (ws, req) => {
           return;
         }
         
-        const canExecute = await canExecuteTradingCommand(tenantId, 'user');
-        
-        if (!canExecute.canExecute) {
-          ws.send(JSON.stringify({
-            type: 'trading:blocked',
-            reason: canExecute.reason,
-            command: getCommandDescription(parsed, 'pt'),
-          }));
-          return;
+        if (!isSignalGeneration) {
+          const canExecute = await canExecuteTradingCommand(tenantId, 'user');
+          
+          if (!canExecute.canExecute) {
+            ws.send(JSON.stringify({
+              type: 'trading:blocked',
+              reason: canExecute.reason,
+              command: getCommandDescription(parsed, 'pt'),
+            }));
+            return;
+          }
         }
         
         // Encaminhar comando para integrations-service via HTTP
