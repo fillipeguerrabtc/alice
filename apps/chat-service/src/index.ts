@@ -9096,10 +9096,10 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         let responseContent: string;
         if (result.success && parsedCommand.type === 'generate_signal') {
           const payload = result.data as {
-            data?: { data?: { signalType?: string; symbol?: string; confidence?: number } };
+            data?: { signalType?: string; symbol?: string; confidence?: number };
             validationStatus?: string;
           };
-          const signal = payload?.data?.data;
+          const signal = payload?.data;
           const confidence = typeof signal?.confidence === 'number'
             ? `${(signal.confidence * 100).toFixed(0)}%`
             : 'N/A';
