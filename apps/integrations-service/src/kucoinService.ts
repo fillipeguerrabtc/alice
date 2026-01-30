@@ -54,9 +54,15 @@ export interface CreateSignalParams {
   /** Tipo do sinal - mapeado para enum do banco (entry_long, entry_short, exit, hold, neutral) */
   signalType: 'entry_long' | 'entry_short' | 'exit' | 'adjust_sl' | 'adjust_tp' | 'hold' | 'neutral';
   symbol?: string;
+  marketType?: TradingMarketType;
+  marginMode?: TradingMarginMode;
   confidence: number;
   reasoning?: string;
   sourceModel?: string;
+  suggestedPrice?: number;
+  suggestedStopLoss?: number;
+  suggestedTakeProfit?: number;
+  suggestedSize?: number;
   metadata?: Record<string, unknown>;
 }
 
@@ -536,21 +542,21 @@ export async function createSignal(
   const db = getDatabase();
   
   try {
-    const symbol = await resolveTradingSymbol(authContext, params.symbol);
-    if (!(await kucoinClient.isValidSymbol(symbol))) {
-      const allowed = await kucoinClient.getAllowedSymbols();
-      return {
-        success: false,
-        error: `Símbolo inválido: ${symbol}. Valores permitidos: ${allowed.join(', ')}.`,
-      };
-    }
+    const resolvedMarketType = await resolveMarketType(authContext, params.marketType);
+    const resolvedMarginMode = await resolveMarginMode(authContext, params.marginMode);
+    const symbol = await resolveTradingSymbolStrict(authContext, params.symbol, resolvedMarketType, resolvedMarginMode);
 
     // CORREÇÃO 18/12/2025: reasoning e sourceModel não existem como colunas
     // Esses campos vão no metadata (JSONB com TradingSignalMetadataSchema)
     const signalData: InsertTradingSignal = {
       tenantId: authContext.tenantId,
       signalType: params.signalType,
+      marketType: resolvedMarketType,
       symbol,
+      suggestedPrice: params.suggestedPrice,
+      suggestedStopLoss: params.suggestedStopLoss,
+      suggestedTakeProfit: params.suggestedTakeProfit,
+      suggestedSize: params.suggestedSize,
       confidence: params.confidence,
       metadata: {
         ...params.metadata,
@@ -593,7 +599,8 @@ export async function createSignal(
  */
 export async function getActiveSignals(
   authContext: TradingAuthContext,
-  limit: number = 10
+  limit: number = 10,
+  marketType?: TradingMarketType
 ): Promise<TradingSignal[]> {
   const db = getDatabase();
   
@@ -603,7 +610,8 @@ export async function getActiveSignals(
     .where(
       and(
         eq(schema.tradingSignals.tenantId, authContext.tenantId),
-        eq(schema.tradingSignals.isActive, true)
+        eq(schema.tradingSignals.isActive, true),
+        marketType ? eq(schema.tradingSignals.marketType, marketType) : undefined
       )
     )
     .orderBy(desc(schema.tradingSignals.criadoEm))

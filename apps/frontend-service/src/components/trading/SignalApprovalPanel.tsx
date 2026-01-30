@@ -68,7 +68,7 @@ interface TradingSignal {
   symbol: string;
   confidence: number;
   reasoning: string | null;
-  sourceModel: string;
+  sourceModel?: string | null;
   suggestedPrice?: number;
   suggestedStopLoss?: number;
   suggestedTakeProfit?: number;
@@ -92,6 +92,7 @@ interface ValidationStats {
 export interface SignalApprovalPanelProps {
   controlMode: 'manual' | 'alice';
   minConfidenceToExecute: number;
+  marketType?: 'futures' | 'spot' | 'margin';
   onModeChange?: (mode: 'manual' | 'alice') => void;
 }
 
@@ -169,7 +170,7 @@ function SignalCard({
                     <span className="font-bold">{typeInfo.label}</span>
                     <Badge variant="outline">{signal.symbol}</Badge>
                     <Badge variant="secondary" className="text-xs">
-                      {signal.sourceModel}
+                      {signal.sourceModel ?? 'N/A'}
                     </Badge>
                   </div>
                   <div className="flex items-center gap-4 mt-2">
@@ -442,6 +443,7 @@ function SignalCard({
 export function SignalApprovalPanel({
   controlMode,
   minConfidenceToExecute,
+  marketType,
 }: SignalApprovalPanelProps) {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -456,9 +458,14 @@ export function SignalApprovalPanel({
     success: boolean;
     data: TradingSignal[];
   }>({
-    queryKey: ['trading-signals-pending'],
+    queryKey: ['trading-signals-pending', marketType],
     queryFn: async () => {
-      const response = await apiRequest('GET', '/api/integrations/trading/signals?active=true');
+      const params = new URLSearchParams();
+      params.set('active', 'true');
+      if (marketType) {
+        params.set('marketType', marketType);
+      }
+      const response = await apiRequest('GET', `/api/integrations/trading/signals?${params.toString()}`);
       return response.json();
     },
     refetchInterval: 10000,

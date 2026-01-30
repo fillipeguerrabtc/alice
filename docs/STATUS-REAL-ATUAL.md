@@ -420,7 +420,10 @@ Retenção Arquivo:   30 dias
 - Chat: consulta web/deepweb habilitada para perguntas atuais (classificação agentic + contexto web).
 - Chat: deepweb via SearXNG engine `ahmia` com Tor (`socks5h://alice-tor:9050`).
 - Chat: comandos de trading executáveis via conversa (parser + execução direta).
+- Chat: comando "gerar sinal" aciona LLM do Agente Trading com validação cruzada (sem exigir trading habilitado).
 - Trading: toggle de habilitação sincroniza cache do risco em tempo real.
+- Trading: geração de sinais LLM on-demand + scheduler por marketType (futures/spot/margin) com validação determinística.
+- Trading: scheduler persistido em `trading_signal_schedulers` e worker automático no integrations-service.
 - Jaeger: telemetry metrics com endpoint Prometheus compatível (0.0.0.0:8888).
 - Chat: gravação de áudio com fallback de MIME type ao enviar/transcrever.
 - Auth: BASE_URL definido para OAuth Google (evita redirect_uri_mismatch).

@@ -34,6 +34,9 @@ import {
   requestGpu,
   GpuServiceType,
   GpuRequestPriority,
+  ALLOWED_AGENT_LLM_MODEL_NAMES,
+  LEGACY_AGENT_LLM_MODEL_NAMES,
+  resolveAgentLlmModel,
 } from '@alice/shared-utils';
 import { chatServicePaths, chatServiceSchemas } from './openapi-specs.js';
 import { createLogger } from '@alice/logger';
@@ -4120,22 +4123,6 @@ function buildGreetingResponse(baseResponse: string, seed: string, shouldAugment
   return `${baseResponse}\n\n${hint}`;
 }
 
-// ============================================================================
-// Gate 2: SSOT de modelos suportados para Agents (LLM texto)
-// ============================================================================
-const ALLOWED_AGENT_LLM_MODEL_NAMES = [
-  'Qwen2.5-7B-Instruct-AWQ',
-] as const;
-
-const LEGACY_AGENT_LLM_MODEL_NAMES = [
-  'Mistral-7B-Instruct',
-  'Mistral-7B-Instruct-AWQ',
-  'Qwen2.5-VL-7B',
-  'Qwen2.5-VL-7B-AWQ',
-  'Qwen2.5-VL-7B-Instruct-AWQ',
-  'Mixtral-8x7B',
-] as const;
-
 async function countAgentsWithUnsupportedLlmModel(): Promise<number> {
   const [row] = await db
     .select({ count: sql<number>`count(*)` })
@@ -4190,16 +4177,11 @@ function getAgentLLMConfig(agent?: AgentConfig | null): LLMConfig {
  */
 function mapModelNameToGpuModel(modelName: string): string {
   const normalized = modelName.trim();
-  const modelMap: Record<string, string> = {
-    // Texto (produção): Qwen2.5 7B Instruct (AWQ)
-    'Qwen2.5-7B-Instruct-AWQ': 'Qwen/Qwen2.5-7B-Instruct-AWQ',
-  };
-  
-  const mapped = modelMap[normalized];
-  if (mapped) return mapped;
+  const resolved = resolveAgentLlmModel(normalized);
+  if (resolved.model) return resolved.model;
 
   // Não é permitido aceitar modelos legados e fazer "swap" silencioso.
-  const isLegacy = (LEGACY_AGENT_LLM_MODEL_NAMES as readonly string[]).includes(normalized);
+  const isLegacy = resolved.isLegacy;
   logger.warn({ modelName: normalized }, 'modeloBase inválido para LLM (Gate 2)');
   throw new ClientInputError(
     isLegacy
@@ -4862,6 +4844,7 @@ type TradingCommandType =
   | 'sell'
   | 'close_position'
   | 'cancel_order'
+  | 'generate_signal'
   | 'status'
   | 'positions'
   | 'orders'
@@ -4902,6 +4885,7 @@ function getTradingCommandRisk(command: ParsedTradingCommand): TradingCommandRis
     case 'status':
     case 'positions':
     case 'orders':
+    case 'generate_signal':
       return 'low';
     case 'pause_trading':
     case 'resume_trading':
@@ -4927,6 +4911,9 @@ function shouldRequireTradingConfirmation(
   void getTradingCommandRisk(command);
   void policy;
   // Regra enterprise: qualquer operação de trading exige aprovação explícita.
+  if (command.type === 'generate_signal') {
+    return false;
+  }
   return true;
 }
 
@@ -5018,7 +5005,8 @@ function getValidationHint(
 async function executeTradingCommand(
   userId: string,
   tenantId: string,
-  command: ParsedTradingCommand
+  command: ParsedTradingCommand,
+  agentId?: string
 ): Promise<TradingCommandResult> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), CROSS_SERVICE_TIMEOUT);
@@ -5149,6 +5137,22 @@ async function executeTradingCommand(
     let body: Record<string, unknown> | undefined;
 
     switch (command.type) {
+      case 'generate_signal':
+        endpoint = '/api/integrations/trading/signals/generate';
+        method = 'POST';
+        {
+          const resolvedSymbol = command.symbol || await resolveDefaultSymbol(effectiveMarketType, effectiveMarginMode);
+          body = {
+            symbol: resolvedSymbol || undefined,
+            interval: '5m',
+            marketType: effectiveMarketType,
+            marginMode: effectiveMarginMode,
+          };
+          if (agentId) {
+            body.agentId = agentId;
+          }
+        }
+        break;
       case 'buy':
       case 'sell':
         endpoint = '/api/integrations/trading/orders';
@@ -8823,7 +8827,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             throw new Error('Comando de trading pendente não encontrado');
           }
           const tradingCommand = pendingCommand;
-          const result = await executeTradingCommand(userId, tenantId, tradingCommand);
+          const result = await executeTradingCommand(userId, tenantId, tradingCommand, conversation?.agentId ?? undefined);
           const description = getCommandDescription(tradingCommand, 'pt');
           const responseContent = result.success
             ? `Ação executada: ${description}.`
@@ -8936,7 +8940,10 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     }
 
     if (isTradingCommandWithDetectors(userMessageContent, agenticDetectors)) {
-      if (!agenticSettings.tradingEnabled) {
+      const parsedCommand = parseTradingCommand(userMessageContent);
+      const isSignalGeneration = parsedCommand.type === 'generate_signal';
+
+      if (!agenticSettings.tradingEnabled && !isSignalGeneration) {
         const responseContent = 'Trading está desativado nas configurações do tenant.';
         const [assistantMessage] = await db.insert(schema.messages).values({
           conversationId,
@@ -8965,7 +8972,6 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       }
       const conversationState = await getOrCreateConversationState(conversationId);
       const approvalPolicy = (conversationState.approvalPolicy ?? 'never_confirm') as ConversationApprovalPolicy;
-      const parsedCommand = parseTradingCommand(userMessageContent);
       const validation = validateCommand(parsedCommand);
 
       if (!validation.valid) {
@@ -8999,35 +9005,37 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         return;
       }
 
-      const canExecute = await canExecuteTradingCommand(tenantId, 'user');
-      if (!canExecute.canExecute) {
-        const responseContent = `Trading bloqueado: ${canExecute.reason || 'permite operação apenas após habilitar o trading e configurar risco.'}`;
-        const [assistantMessage] = await db.insert(schema.messages).values({
-          conversationId,
-          agentId: conversation?.agentId ?? undefined,
-          conteudo: responseContent,
-          tipo: 'text',
-          isFromUser: false,
-          metadata: {
-            tradingCommand: parsedCommand,
-            blocked: true,
-            reason: canExecute.reason ?? null,
-          },
-        }).returning();
+      if (parsedCommand.type !== 'generate_signal') {
+        const canExecute = await canExecuteTradingCommand(tenantId, 'user');
+        if (!canExecute.canExecute) {
+          const responseContent = `Trading bloqueado: ${canExecute.reason || 'permite operação apenas após habilitar o trading e configurar risco.'}`;
+          const [assistantMessage] = await db.insert(schema.messages).values({
+            conversationId,
+            agentId: conversation?.agentId ?? undefined,
+            conteudo: responseContent,
+            tipo: 'text',
+            isFromUser: false,
+            metadata: {
+              tradingCommand: parsedCommand,
+              blocked: true,
+              reason: canExecute.reason ?? null,
+            },
+          }).returning();
 
-        await db.update(schema.conversations)
-          .set({
-            totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
-            ultimaMensagemEm: new Date(),
-            atualizadoEm: new Date(),
-          })
-          .where(eq(schema.conversations.id, conversationId));
+          await db.update(schema.conversations)
+            .set({
+              totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+              ultimaMensagemEm: new Date(),
+              atualizadoEm: new Date(),
+            })
+            .where(eq(schema.conversations.id, conversationId));
 
-        res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
-        res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
-        res.write('data: [DONE]\n\n');
-        res.end();
-        return;
+          res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+          res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+          res.write('data: [DONE]\n\n');
+          res.end();
+          return;
+        }
       }
 
       if (shouldRequireTradingConfirmation(parsedCommand, approvalPolicy)) {
@@ -9083,11 +9091,27 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       }
 
       try {
-        const result = await executeTradingCommand(userId, tenantId, parsedCommand);
+        const result = await executeTradingCommand(userId, tenantId, parsedCommand, conversation?.agentId ?? undefined);
         const description = getCommandDescription(parsedCommand, 'pt');
-        const responseContent = result.success
-          ? `Comando de trading executado: ${description}.`
-          : `Falha ao executar comando de trading (${description}): ${result.error || 'erro desconhecido'}.`;
+        let responseContent: string;
+        if (result.success && parsedCommand.type === 'generate_signal') {
+          const payload = result.data as {
+            data?: { data?: { signalType?: string; symbol?: string; confidence?: number } };
+            validationStatus?: string;
+          };
+          const signal = payload?.data?.data;
+          const confidence = typeof signal?.confidence === 'number'
+            ? `${(signal.confidence * 100).toFixed(0)}%`
+            : 'N/A';
+          const validationStatus = payload?.validationStatus || 'pending';
+          responseContent = `Sinal gerado${signal?.symbol ? ` para ${signal.symbol}` : ''}: ` +
+            `${signal?.signalType || 'indefinido'} com confiança ${confidence}. ` +
+            `Validação: ${validationStatus}.`;
+        } else {
+          responseContent = result.success
+            ? `Comando de trading executado: ${description}.`
+            : `Falha ao executar comando de trading (${description}): ${result.error || 'erro desconhecido'}.`;
+        }
 
         const [assistantMessage] = await db.insert(schema.messages).values({
           conversationId,
@@ -11144,7 +11168,7 @@ wss.on('connection', (ws, req) => {
         
         // Executar comando de trading via integrations-service
         try {
-          const result = await executeTradingCommand(userId, tenantId, parsed);
+          const result = await executeTradingCommand(userId, tenantId, parsed, undefined);
           
           ws.send(JSON.stringify({
             type: 'trading:command_result',

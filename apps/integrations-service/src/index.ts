@@ -33,6 +33,10 @@ import {
   INTEGRATIONS_SERVICE_TAGS,
   setPermissionResolver,
   PERMISSION_MAP,
+  requestGpu,
+  GpuServiceType,
+  GpuRequestPriority,
+  resolveAgentLlmModel,
   // CORREÇÃO PR#107 (10/01/2026): Middleware de sessão HTTP para autenticação
   createSessionAuthMiddleware,
   initializeSessionAuthCache,
@@ -45,8 +49,9 @@ import type { AuthContext } from '@alice/shared-utils';
 import { integrationsServicePaths, integrationsServiceSchemas } from './openapi-specs.js';
 import { loadConfig, integrationsServiceConfigSchema } from '@alice/config';
 import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, getPool } from '@alice/database';
-import { eq, desc, sql, and, inArray, not, isNull } from '@alice/database';
+import { eq, desc, sql, and, inArray, not, isNull, lte } from '@alice/database';
 import { tradingIntervalEnum } from '@alice/shared';
+import type { TradingSignalMetadata } from '@alice/shared';
 import { z } from 'zod';
 import { wiseService } from './wiseService.js';
 import { isWiseConfigured, getSandboxStatus, getProfileIdSafe, getWiseCircuitBreakerStatus, validateWiseWebhook, initWiseMetrics } from './wiseClient.js';
@@ -71,6 +76,7 @@ import {
 } from './tradingTypes.js';
 import { sendKucoinErrorResponse } from './kucoin-error-mapper.js';
 import * as technicalIndicators from './technical-indicators.js';
+import { validateAndPersist } from './llm-validation.js';
 
 const logger = createLogger('integrations-service');
 const config = loadConfig(integrationsServiceConfigSchema);
@@ -78,6 +84,41 @@ const config = loadConfig(integrationsServiceConfigSchema);
 const GH_API_URL = config.GH_API_URL?.trim() || 'https://api.github.com';
 const GH_REPO = config.GH_REPO?.trim();
 const GH_PAT = config.GH_PAT?.trim();
+
+// ============================================================================
+// TRADING SINAIS LLM - TIPOS E CONSTANTES
+// ============================================================================
+type TradingSignalGenerationSource = 'on_demand' | 'scheduler' | 'chat';
+
+type TradingMarketType = 'futures' | 'spot' | 'margin';
+type TradingMarginMode = 'cross' | 'isolated';
+type TradingIntervalValue = keyof typeof TRADING_INTERVAL_GRANULARITY;
+
+type LLMMessage = { role: 'system' | 'user' | 'assistant'; content: string };
+type LLMResponse = {
+  choices?: Array<{ message?: { content?: string } }>;
+};
+
+const TRADING_INTERVAL_GRANULARITY = {
+  '1m': 1, '3m': 3, '5m': 5, '15m': 15, '30m': 30,
+  '1h': 60, '2h': 120, '4h': 240, '8h': 480, '12h': 720,
+  '1d': 1440, '1w': 10080,
+} as const;
+const TRADING_INTERVALS = Object.keys(TRADING_INTERVAL_GRANULARITY) as TradingIntervalValue[];
+const TRADING_INTERVAL_VALUES = TRADING_INTERVALS as [TradingIntervalValue, ...TradingIntervalValue[]];
+const TRADING_INTERVAL_ZOD = z.enum(TRADING_INTERVAL_VALUES);
+
+const TRADING_LLM_SIGNAL_SCHEMA = z.object({
+  signalType: z.enum(['entry_long', 'entry_short', 'exit', 'adjust_sl', 'adjust_tp', 'hold', 'neutral']),
+  confidence: z.number().min(0).max(1),
+  reasoning: z.string().min(10),
+  suggestedPrice: z.number().positive().optional(),
+  suggestedStopLoss: z.number().positive().optional(),
+  suggestedTakeProfit: z.number().positive().optional(),
+  suggestedSize: z.number().positive().optional(),
+  marketCondition: z.string().min(3).optional(),
+  riskScore: z.number().min(0).max(100).optional(),
+});
 
 const app = express();
 setPermissionResolver(async (auth: AuthContext) => {
@@ -380,6 +421,115 @@ function startTradingMetricsScheduler(): void {
     void refreshTradingMetrics();
   }, intervalMs);
   logger.info({ intervalMs }, 'Scheduler de métricas de trading iniciado');
+}
+
+// ============================================================================
+// SCHEDULER SINAIS LLM (runtime)
+// ============================================================================
+const SIGNAL_SCHEDULER_POLL_INTERVAL_MS = 30000;
+let signalSchedulerInterval: NodeJS.Timeout | null = null;
+
+async function runDueSignalSchedulers(): Promise<void> {
+  const db = getDatabase();
+  const now = new Date();
+
+  const schedulers = await db
+    .select()
+    .from(schema.tradingSignalSchedulers)
+    .where(
+      and(
+        eq(schema.tradingSignalSchedulers.enabled, true),
+        lte(schema.tradingSignalSchedulers.nextRunAt, now)
+      )
+    );
+
+  if (schedulers.length === 0) {
+    return;
+  }
+
+  for (const scheduler of schedulers) {
+    const locked = await db
+      .update(schema.tradingSignalSchedulers)
+      .set({
+        lastRunAt: now,
+        nextRunAt: new Date(now.getTime() + (scheduler.intervalMinutes ?? 15) * 60 * 1000),
+        atualizadoEm: now,
+        lastError: null,
+      })
+      .where(
+        and(
+          eq(schema.tradingSignalSchedulers.id, scheduler.id),
+          lte(schema.tradingSignalSchedulers.nextRunAt, now)
+        )
+      )
+      .returning();
+
+    if (locked.length === 0) {
+      continue;
+    }
+
+    const startTime = Date.now();
+    try {
+      const symbols = normalizeSignalSymbols((scheduler.symbols ?? []) as string[]);
+      if (symbols.length === 0) {
+        throw new Error('Scheduler sem símbolos configurados.');
+      }
+
+      const maxSignals = Math.max(1, scheduler.maxSignalsPerRun ?? 1);
+      const selectedSymbols = symbols.slice(0, maxSignals);
+      let lastSignalId: string | null = null;
+      const schedulerUserId = await resolveSchedulerUserId(scheduler.tenantId);
+
+      for (const symbol of selectedSymbols) {
+        const result = await generateTradingSignalFromLlm({
+          tenantId: scheduler.tenantId,
+          userId: schedulerUserId,
+          symbol,
+          interval: scheduler.interval || '5m',
+          marketType: scheduler.marketType as TradingMarketType,
+          marginMode: (scheduler.marginMode ?? undefined) as TradingMarginMode | undefined,
+          source: 'scheduler',
+          agentId: scheduler.agentId ?? undefined,
+          schedulerId: scheduler.id,
+        });
+        lastSignalId = result.signal.id;
+      }
+
+      const durationMs = Date.now() - startTime;
+      await db.update(schema.tradingSignalSchedulers)
+        .set({
+          lastSuccessAt: new Date(),
+          lastDurationMs: durationMs,
+          lastSignalId,
+          lastError: null,
+          atualizadoEm: new Date(),
+        })
+        .where(eq(schema.tradingSignalSchedulers.id, scheduler.id));
+    } catch (error) {
+      const durationMs = Date.now() - startTime;
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+      await db.update(schema.tradingSignalSchedulers)
+        .set({
+          lastError: errorMessage,
+          lastDurationMs: durationMs,
+          atualizadoEm: new Date(),
+        })
+        .where(eq(schema.tradingSignalSchedulers.id, scheduler.id));
+      logger.error({ error: errorMessage, schedulerId: scheduler.id }, 'Falha ao executar scheduler de sinais');
+    }
+  }
+}
+
+function startTradingSignalScheduler(): void {
+  void runDueSignalSchedulers().catch((error) => {
+    logger.warn({ error }, 'Falha no scheduler de sinais (startup)');
+  });
+  signalSchedulerInterval = setInterval(() => {
+    void runDueSignalSchedulers().catch((error) => {
+      logger.warn({ error }, 'Falha no scheduler de sinais');
+    });
+  }, SIGNAL_SCHEDULER_POLL_INTERVAL_MS);
+  logger.info({ intervalMs: SIGNAL_SCHEDULER_POLL_INTERVAL_MS }, 'Scheduler de sinais LLM iniciado');
 }
 
 // ============================================================================
@@ -4322,6 +4472,177 @@ function resolveSymbolFromQuery(req: Request): string | undefined {
   return symbol || undefined;
 }
 
+function resolveTradingIntervalGranularity(interval: string): number | null {
+  const key = interval as TradingIntervalValue;
+  if (key in TRADING_INTERVAL_GRANULARITY) {
+    return TRADING_INTERVAL_GRANULARITY[key];
+  }
+  return null;
+}
+
+function normalizeSignalSymbols(rawSymbols: string[]): string[] {
+  const normalized = rawSymbols
+    .map((symbol) => symbol.trim().toUpperCase())
+    .filter((symbol) => symbol.length > 0);
+  return Array.from(new Set(normalized));
+}
+
+function stripJsonCodeFence(content: string): string {
+  const trimmed = content.trim();
+  if (trimmed.startsWith('```')) {
+    return trimmed
+      .replace(/^```[a-z]*\s*/i, '')
+      .replace(/```$/, '')
+      .trim();
+  }
+  return trimmed;
+}
+
+function parseLlmSignalResponse(rawResponse: string) {
+  const cleaned = stripJsonCodeFence(rawResponse);
+  const parsed = JSON.parse(cleaned) as unknown;
+  const result = TRADING_LLM_SIGNAL_SCHEMA.safeParse(parsed);
+  if (!result.success) {
+    throw new Error(`Resposta LLM inválida: ${result.error.message}`);
+  }
+  return result.data;
+}
+
+async function getAgenticSettingsOrDefault(tenantId: string) {
+  const db = getDatabase();
+  const existing = await db.query.agenticSettings.findFirst({
+    where: eq(schema.agenticSettings.tenantId, tenantId),
+  });
+  if (existing) return existing;
+
+  const [created] = await db
+    .insert(schema.agenticSettings)
+    .values({
+      tenantId,
+      webEnabled: true,
+      erpReadEnabled: true,
+      erpWriteEnabled: true,
+      tradingEnabled: true,
+      paymentsEnabled: true,
+      stackOpsEnabled: true,
+      financialApprovalRequired: true,
+    })
+    .returning();
+
+  if (!created) {
+    throw new Error('Falha ao criar agentic_settings para o tenant.');
+  }
+  return created;
+}
+
+async function resolveTradingAgentContext(params: {
+  tenantId: string;
+  agentId?: string;
+}) {
+  const db = getDatabase();
+  const agent = params.agentId
+    ? await db.query.agents.findFirst({
+        where: and(
+          eq(schema.agents.id, params.agentId),
+          eq(schema.agents.tenantId, params.tenantId),
+          eq(schema.agents.status, 'active')
+        ),
+      })
+    : null;
+
+  let resolvedAgent = agent;
+  let namespace: Awaited<ReturnType<typeof db.query.namespaces.findFirst>> | null = null;
+
+  if (!resolvedAgent) {
+    const tradingNamespace = await db.query.namespaces.findFirst({
+      where: and(
+        eq(schema.namespaces.tenantId, params.tenantId),
+        eq(schema.namespaces.slug, 'trading'),
+        eq(schema.namespaces.ativo, true)
+      ),
+    });
+    if (!tradingNamespace) {
+      throw new Error('Namespace Trading não encontrado para o tenant.');
+    }
+    namespace = tradingNamespace;
+    resolvedAgent = await db.query.agents.findFirst({
+      where: and(
+        eq(schema.agents.namespaceId, tradingNamespace.id),
+        eq(schema.agents.status, 'active')
+      ),
+      orderBy: [desc(schema.agents.atualizadoEm)],
+    });
+  } else if (resolvedAgent.namespaceId) {
+    namespace = (await db.query.namespaces.findFirst({
+      where: eq(schema.namespaces.id, resolvedAgent.namespaceId),
+    })) ?? null;
+  }
+
+  if (!resolvedAgent) {
+    throw new Error('Agente Trading não encontrado ou inativo.');
+  }
+
+  const modelResolution = resolveAgentLlmModel(resolvedAgent.modeloBase || 'Qwen2.5-7B-Instruct-AWQ');
+  if (!modelResolution.model) {
+    throw new Error(`modeloBase '${resolvedAgent.modeloBase}' não suportado para LLM (Gate 2).`);
+  }
+
+  return {
+    agent: resolvedAgent,
+    namespace,
+    llmConfig: {
+      model: modelResolution.model,
+      temperature: resolvedAgent.temperaturaModelo ?? undefined,
+      maxTokens: resolvedAgent.maxTokens ?? undefined,
+    },
+  };
+}
+
+async function resolveSchedulerUserId(tenantId: string): Promise<string> {
+  const db = getDatabase();
+  const user = await db.query.users.findFirst({
+    where: eq(schema.users.tenantId, tenantId),
+    orderBy: [desc(schema.users.createdAt)],
+  });
+  if (!user?.id) {
+    throw new Error('Nenhum usuário disponível para executar o scheduler.');
+  }
+  return user.id;
+}
+
+function buildTradingSignalSystemPrompt(params: {
+  marketType: TradingMarketType;
+  marginMode?: TradingMarginMode;
+  agent: typeof schema.agents.$inferSelect;
+  namespace: typeof schema.namespaces.$inferSelect | null;
+}): string {
+  const context = params.namespace?.contextoSistema?.trim();
+  const instructions = params.agent.instrucoes?.trim();
+  const personality = params.agent.personalidade?.trim();
+
+  return [
+    'Você é o Agente Trading da Alice. Gere um sinal objetivo e auditável.',
+    context ? `Contexto do namespace: ${context}` : null,
+    instructions ? `Instruções do agente: ${instructions}` : null,
+    personality ? `Personalidade: ${personality}` : null,
+    `MarketType: ${params.marketType}`,
+    params.marginMode ? `MarginMode: ${params.marginMode}` : null,
+    'Responda SOMENTE com JSON válido (sem texto extra).',
+    'Schema:',
+    '{',
+    '  "signalType": "entry_long|entry_short|exit|adjust_sl|adjust_tp|hold|neutral",',
+    '  "confidence": 0.0-1.0,',
+    '  "reasoning": "Texto com valores citados exatamente",',
+    '  "suggestedPrice": number (opcional),',
+    '  "suggestedStopLoss": number (opcional),',
+    '  "suggestedTakeProfit": number (opcional),',
+    '  "suggestedSize": number (opcional),',
+    '  "marketCondition": "descrição curta" (opcional),',
+    '  "riskScore": 0-100 (opcional)',
+    '}',
+  ].filter(Boolean).join('\n');
+}
+
 // GET /api/integrations/trading/status - Status do serviço de trading
 app.get('/api/integrations/trading/status', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
@@ -5010,6 +5331,158 @@ app.put('/api/integrations/trading/risk-config', requirePermission('integrations
 });
 
 // GET /api/integrations/trading/signals - Lista sinais de trading ativos
+async function generateTradingSignalFromLlm(params: {
+  tenantId: string;
+  userId: string;
+  symbol: string;
+  interval: string;
+  marketType?: TradingMarketType;
+  marginMode?: TradingMarginMode;
+  source: TradingSignalGenerationSource;
+  agentId?: string;
+  schedulerId?: string;
+}): Promise<{
+  signal: schema.TradingSignal;
+  validationId: string;
+  validationStatus: 'pending' | 'validated' | 'failed';
+}> {
+  const agenticSettings = await getAgenticSettingsOrDefault(params.tenantId);
+  if (!agenticSettings.tradingEnabled) {
+    logger.warn({ tenantId: params.tenantId }, 'Agentic Trading desabilitado - gerando sinal sem execução automática');
+  }
+
+  const agentContext = await resolveTradingAgentContext({
+    tenantId: params.tenantId,
+    agentId: params.agentId,
+  });
+
+  const analysisResult = await calculateAndPersistTechnicalAnalysis({
+    tenantId: params.tenantId,
+    userId: params.userId,
+    symbol: params.symbol,
+    interval: params.interval as TradingIntervalValue,
+    marketType: params.marketType,
+    marginMode: params.marginMode,
+  });
+
+  const systemPrompt = buildTradingSignalSystemPrompt({
+    marketType: params.marketType ?? 'futures',
+    marginMode: params.marginMode,
+    agent: agentContext.agent,
+    namespace: agentContext.namespace,
+  });
+  const analysisPrompt = technicalIndicators.formatAnalysisForLLM(analysisResult.analysis);
+
+  const messages: LLMMessage[] = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: analysisPrompt },
+  ];
+
+  const gpuResponse = await requestGpu({
+    serviceType: GpuServiceType.LLM,
+    endpoint: '/v1/chat/completions',
+    method: 'POST',
+    priority: GpuRequestPriority.HIGH,
+    body: {
+      model: agentContext.llmConfig.model,
+      messages,
+      max_tokens: agentContext.llmConfig.maxTokens ?? 2048,
+      temperature: agentContext.llmConfig.temperature ?? 0.7,
+      stream: false,
+    },
+  });
+
+  if (!gpuResponse.success || !gpuResponse.data) {
+    throw new Error(gpuResponse.error || 'Falha na resposta do GPU Manager.');
+  }
+
+  const responseData = gpuResponse.data as LLMResponse;
+  const llmContent = responseData.choices?.[0]?.message?.content?.trim() || '';
+  if (!llmContent) {
+    throw new Error('Resposta do LLM vazia ou inválida.');
+  }
+
+  const llmSignal = parseLlmSignalResponse(llmContent);
+
+  const createResult = await kucoinService.createSignal(
+    { tenantId: params.tenantId, userId: params.userId },
+    {
+      signalType: llmSignal.signalType,
+      symbol: analysisResult.resolvedSymbol,
+      marketType: params.marketType,
+      marginMode: params.marginMode,
+      confidence: llmSignal.confidence,
+      reasoning: llmSignal.reasoning,
+      sourceModel: agentContext.agent.modeloBase ?? 'Qwen2.5-7B-Instruct-AWQ',
+      suggestedPrice: llmSignal.suggestedPrice,
+      suggestedStopLoss: llmSignal.suggestedStopLoss,
+      suggestedTakeProfit: llmSignal.suggestedTakeProfit,
+      suggestedSize: llmSignal.suggestedSize,
+      metadata: {
+        confidence: llmSignal.confidence,
+        reasoning: llmSignal.reasoning,
+        marketCondition: llmSignal.marketCondition,
+        riskScore: llmSignal.riskScore,
+        modelVersion: agentContext.llmConfig.model,
+        agentId: agentContext.agent.id,
+        namespaceId: agentContext.agent.namespaceId ?? agentContext.namespace?.id,
+        generationSource: params.source,
+        schedulerId: params.schedulerId,
+        validationStatus: 'pending',
+      },
+    }
+  );
+
+  if (!createResult.success || !createResult.data) {
+    throw new Error(createResult.error || 'Falha ao persistir sinal LLM.');
+  }
+
+  const validation = await validateAndPersist({
+    tenantId: params.tenantId,
+    llmResponse: llmSignal.reasoning,
+    indicatorSnapshot: analysisResult.analysis,
+    indicatorSnapshotId: analysisResult.indicatorId,
+    signalId: createResult.data.id,
+    maxAllowedDeviation: 0.01,
+  });
+
+  const validationStatus: TradingSignalMetadata['validationStatus'] = validation.actionTaken === 'approved'
+    ? 'validated'
+    : validation.actionTaken === 'rejected'
+      ? 'failed'
+      : 'pending';
+
+  const db = getDatabase();
+  const updatedMetadata: TradingSignalMetadata = {
+    ...(createResult.data.metadata as Record<string, unknown>),
+    validationStatus,
+    validationId: validation.validationId,
+  };
+
+  const [updatedSignal] = await db
+    .update(schema.tradingSignals)
+    .set({ metadata: updatedMetadata })
+    .where(eq(schema.tradingSignals.id, createResult.data.id))
+    .returning();
+
+  return {
+    signal: (updatedSignal ?? createResult.data) as schema.TradingSignal,
+    validationId: validation.validationId,
+    validationStatus,
+  };
+}
+
+function mapTradingSignalForApi(signal: schema.TradingSignal) {
+  const metadata = (signal.metadata ?? {}) as Record<string, unknown>;
+  return {
+    ...signal,
+    reasoning: typeof metadata.reasoning === 'string' ? metadata.reasoning : null,
+    sourceModel: typeof metadata.modelVersion === 'string' ? metadata.modelVersion : null,
+    metadata,
+  };
+}
+
+// GET /api/integrations/trading/signals - Lista sinais de trading ativos
 app.get('/api/integrations/trading/signals', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
     const authContext = extractAuthContext(req);
@@ -5020,6 +5493,8 @@ app.get('/api/integrations/trading/signals', requirePermission('integrations:tra
     const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
     const querySchema = z.object({
       limit: z.coerce.number().int().min(1).max(200).optional(),
+      marketType: z.enum(['futures', 'spot', 'margin']).optional(),
+      type: z.enum(['futures', 'spot', 'margin']).optional(),
     });
     const queryResult = querySchema.safeParse(req.query);
     if (!queryResult.success) {
@@ -5028,11 +5503,12 @@ app.get('/api/integrations/trading/signals', requirePermission('integrations:tra
     }
 
     const limit = queryResult.data.limit ?? 10;
-    const signals = await kucoinService.getActiveSignals(tradingAuth, limit);
+    const marketType = resolveMarketTypeParam(queryResult.data);
+    const signals = await kucoinService.getActiveSignals(tradingAuth, limit, marketType);
 
     res.json({
       success: true,
-      data: signals,
+      data: signals.map(mapTradingSignalForApi),
     });
   } catch (error) {
     if (sendKucoinErrorResponse(res, error)) return;
@@ -5056,9 +5532,15 @@ app.post('/api/integrations/trading/signals', requirePermission('integrations:tr
     const signalSchema = z.object({
       signalType: z.enum(['entry_long', 'entry_short', 'exit', 'adjust_sl', 'adjust_tp', 'hold', 'neutral']),
       symbol: z.string().optional(),
+      marketType: z.enum(['futures', 'spot', 'margin']).optional(),
+      marginMode: z.enum(['cross', 'isolated']).optional(),
       confidence: z.number().min(0).max(1),
       reasoning: z.string().optional(),
       sourceModel: z.string().optional(),
+      suggestedPrice: z.number().positive().optional(),
+      suggestedStopLoss: z.number().positive().optional(),
+      suggestedTakeProfit: z.number().positive().optional(),
+      suggestedSize: z.number().positive().optional(),
       metadata: z.record(z.unknown()).optional(),
     });
 
@@ -5069,14 +5551,16 @@ app.post('/api/integrations/trading/signals', requirePermission('integrations:tr
     }
     const validated = validatedResult.data;
     const symbolParam = validated.symbol;
+    const marketType = validated.marketType;
+    const marginMode = validated.marginMode;
     const resolvedSymbol = symbolParam
-      ? await resolveTradingSymbolOrRespond(res, tradingAuth, symbolParam, { required: true })
+      ? await resolveTradingSymbolOrRespond(res, tradingAuth, symbolParam, { required: true, marketType, marginMode })
       : undefined;
     if (symbolParam && !resolvedSymbol) return;
 
     const result = await kucoinService.createSignal(
       tradingAuth,
-      { ...validated, symbol: resolvedSymbol }
+      { ...validated, symbol: resolvedSymbol, marketType, marginMode }
     );
 
     if (!result.success) {
@@ -5500,6 +5984,259 @@ app.post('/api/integrations/trading/stop-orders', requirePermission('integration
     if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao criar ordem stop');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/signals/generate - Gerar sinal LLM on-demand
+app.post('/api/integrations/trading/signals/generate', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const generateSchema = z.object({
+      symbol: z.string().optional(),
+      interval: TRADING_INTERVAL_ZOD.optional().default('5m'),
+      marketType: z.enum(['futures', 'spot', 'margin']).optional(),
+      marginMode: z.enum(['cross', 'isolated']).optional(),
+      agentId: z.string().uuid().optional(),
+    });
+
+    const parsed = generateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
+      return;
+    }
+
+    const marketType = parsed.data.marketType;
+    const marginMode = parsed.data.marginMode;
+
+    if (marketType === 'spot' && !kucoinSpotClient.isSpotConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    if (marketType === 'margin' && !kucoinMarginClient.isMarginConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    if (!marketType || marketType === 'futures') {
+      if (!kucoinClient.isKucoinConfigured()) {
+        respondKucoinNotConfigured(res);
+        return;
+      }
+    }
+
+    const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
+    const resolvedSymbol = await resolveTradingSymbolOrRespond(res, tradingAuth, parsed.data.symbol, {
+      required: false,
+      marketType,
+      marginMode,
+    });
+    if (!resolvedSymbol) return;
+
+    const result = await generateTradingSignalFromLlm({
+      tenantId: authContext.tenantId,
+      userId: authContext.userId,
+      symbol: resolvedSymbol,
+      interval: parsed.data.interval,
+      marketType,
+      marginMode,
+      source: 'on_demand',
+      agentId: parsed.data.agentId,
+    });
+
+    res.status(201).json({
+      success: true,
+      data: mapTradingSignalForApi(result.signal),
+      validationId: result.validationId,
+      validationStatus: result.validationStatus,
+    });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao gerar sinal LLM');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/signal-scheduler - Configuração do scheduler
+app.get('/api/integrations/trading/signal-scheduler', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const querySchema = z.object({
+      marketType: z.enum(['futures', 'spot', 'margin']).optional(),
+      type: z.enum(['futures', 'spot', 'margin']).optional(),
+    });
+    const parsed = querySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Query inválida', details: parsed.error.flatten() });
+      return;
+    }
+
+    const marketType = resolveMarketTypeParam(parsed.data) ?? 'futures';
+    const db = getDatabase();
+    const whereClause = marketType
+      ? and(
+          eq(schema.tradingSignalSchedulers.tenantId, authContext.tenantId),
+          eq(schema.tradingSignalSchedulers.marketType, marketType)
+        )
+      : eq(schema.tradingSignalSchedulers.tenantId, authContext.tenantId);
+
+    const schedulers = await db
+      .select()
+      .from(schema.tradingSignalSchedulers)
+      .where(whereClause)
+      .orderBy(desc(schema.tradingSignalSchedulers.criadoEm));
+
+    const data = schedulers.length > 0
+      ? schedulers
+      : [{
+          tenantId: authContext.tenantId,
+          marketType,
+          marginMode: 'cross',
+          intervalMinutes: 15,
+          interval: '5m',
+          symbols: [],
+          maxSignalsPerRun: 1,
+          enabled: false,
+          lastRunAt: null,
+          nextRunAt: null,
+          lastSuccessAt: null,
+          lastSignalId: null,
+          lastDurationMs: null,
+          lastError: null,
+        }];
+
+    res.json({ success: true, data });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar scheduler de sinais');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// PUT /api/integrations/trading/signal-scheduler - Atualizar configuração
+app.put('/api/integrations/trading/signal-scheduler', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const schedulerSchema = z.object({
+      marketType: z.enum(['futures', 'spot', 'margin']),
+      marginMode: z.enum(['cross', 'isolated']).optional(),
+      intervalMinutes: z.number().int().min(1).max(1440),
+      interval: TRADING_INTERVAL_ZOD,
+      symbols: z.array(z.string().min(2).max(30)).max(50).optional(),
+      enabled: z.boolean(),
+      maxSignalsPerRun: z.number().int().min(1).max(20).optional(),
+      agentId: z.string().uuid().optional(),
+    });
+
+    const parsed = schedulerSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
+      return;
+    }
+
+    const normalizedSymbols = normalizeSignalSymbols(parsed.data.symbols ?? []);
+    if (parsed.data.enabled && normalizedSymbols.length === 0) {
+      res.status(400).json({ error: 'Informe ao menos um símbolo para habilitar o scheduler.' });
+      return;
+    }
+
+    if (parsed.data.marketType === 'spot' && !kucoinSpotClient.isSpotConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    if (parsed.data.marketType === 'margin' && !kucoinMarginClient.isMarginConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    if (parsed.data.marketType === 'futures' && !kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+
+    const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
+    for (const symbol of normalizedSymbols) {
+      await kucoinService.resolveTradingSymbolStrict(
+        tradingAuth,
+        symbol,
+        parsed.data.marketType,
+        parsed.data.marginMode
+      );
+    }
+
+    let namespaceId: string | null = null;
+    if (parsed.data.agentId) {
+      const agent = await getDatabase().query.agents.findFirst({
+        where: and(
+          eq(schema.agents.id, parsed.data.agentId),
+          eq(schema.agents.tenantId, authContext.tenantId),
+          eq(schema.agents.status, 'active')
+        ),
+      });
+      if (!agent) {
+        res.status(400).json({ error: 'Agente informado não encontrado ou inativo.' });
+        return;
+      }
+      namespaceId = agent.namespaceId ?? null;
+    }
+
+    const now = new Date();
+    const nextRunAt = parsed.data.enabled
+      ? new Date(now.getTime() + parsed.data.intervalMinutes * 60 * 1000)
+      : null;
+
+    const db = getDatabase();
+    const [saved] = await db
+      .insert(schema.tradingSignalSchedulers)
+      .values({
+        tenantId: authContext.tenantId,
+        agentId: parsed.data.agentId ?? null,
+        namespaceId,
+        marketType: parsed.data.marketType,
+        marginMode: parsed.data.marginMode ?? null,
+        intervalMinutes: parsed.data.intervalMinutes,
+        interval: parsed.data.interval,
+        symbols: normalizedSymbols,
+        enabled: parsed.data.enabled,
+        maxSignalsPerRun: parsed.data.maxSignalsPerRun ?? 1,
+        nextRunAt,
+        atualizadoEm: now,
+      })
+      .onConflictDoUpdate({
+        target: [schema.tradingSignalSchedulers.tenantId, schema.tradingSignalSchedulers.marketType],
+        set: {
+          agentId: parsed.data.agentId ?? null,
+          namespaceId,
+          marginMode: parsed.data.marginMode ?? null,
+          intervalMinutes: parsed.data.intervalMinutes,
+          interval: parsed.data.interval,
+          symbols: normalizedSymbols,
+          enabled: parsed.data.enabled,
+          maxSignalsPerRun: parsed.data.maxSignalsPerRun ?? 1,
+          nextRunAt,
+          atualizadoEm: now,
+        },
+      })
+      .returning();
+
+    res.json({ success: true, data: saved });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao atualizar scheduler de sinais');
     res.status(500).json({ error: errorMessage });
   }
 });
@@ -6219,6 +6956,143 @@ app.post('/api/integrations/trading/control', requirePermission('integrations:tr
 // Elimina alucinações do LLM ao fornecer dados reais calculados
 // ============================================================================
 
+async function calculateAndPersistTechnicalAnalysis(params: {
+  tenantId: string;
+  userId: string;
+  symbol: string;
+  interval: string;
+  marketType?: TradingMarketType;
+  marginMode?: TradingMarginMode;
+}): Promise<{
+  analysis: technicalIndicators.TechnicalAnalysisResult;
+  indicatorId: string;
+  resolvedSymbol: string;
+}> {
+  const { tenantId, userId, symbol, interval, marketType, marginMode } = params;
+  const tradingAuth = { tenantId, userId };
+
+  const granularity = resolveTradingIntervalGranularity(interval);
+  if (!granularity) {
+    throw new Error(`Intervalo inválido: ${interval}. Use: 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 8h, 12h, 1d, 1w`);
+  }
+
+  const resolvedSymbol = await kucoinService.resolveTradingSymbolStrict(tradingAuth, symbol, marketType, marginMode);
+  const resolvedMarketType = marketType ?? 'futures';
+
+  const now = Date.now();
+  const from = now - (granularity * 60 * 1000 * 250);
+  const klinesRaw = resolvedMarketType === 'spot' || resolvedMarketType === 'margin'
+    ? await kucoinSpotClient.getSpotKlines(resolvedSymbol, `${granularity}min`, Math.floor(from / 1000), Math.floor(now / 1000))
+    : await kucoinClient.getKlines(resolvedSymbol, granularity, from, now);
+
+  if (klinesRaw.length < 200) {
+    throw new Error(`Dados insuficientes: ${klinesRaw.length} candles. Mínimo: 200`);
+  }
+
+  const candles: technicalIndicators.CandleData[] = klinesRaw.map(k => ({
+    timestamp: k.time,
+    open: parseFloat(k.open),
+    high: parseFloat(k.high),
+    low: parseFloat(k.low),
+    close: parseFloat(k.close),
+    volume: parseFloat(k.volume),
+  }));
+
+  const analysis = technicalIndicators.calculateFullAnalysis(candles, resolvedSymbol, interval);
+
+  const validatedInterval = interval as TradingIntervalValue;
+  const db = getDatabase();
+  const [savedIndicator] = await db
+    .insert(schema.tradingTechnicalIndicators)
+    .values({
+      tenantId,
+      symbol: resolvedSymbol,
+      interval: validatedInterval,
+      candleTimestamp: new Date(candles[candles.length - 1].timestamp),
+      currentPrice: analysis.currentPrice,
+      // RSI
+      rsiValue: analysis.rsi.value,
+      rsiInterpretation: analysis.rsi.interpretation,
+      rsiPeriod: analysis.rsi.period,
+
+      // MACD
+      macdLine: analysis.macd.macd,
+      macdSignal: analysis.macd.signal,
+      macdHistogram: analysis.macd.histogram,
+      macdInterpretation: analysis.macd.interpretation as 'bullish' | 'bearish' | 'sideways',
+      macdCrossover: analysis.macd.crossover,
+
+      // EMAs
+      ema9: analysis.movingAverages.ema9,
+      ema21: analysis.movingAverages.ema21,
+      ema50: analysis.movingAverages.ema50,
+      ema200: analysis.movingAverages.ema200,
+
+      // SMAs
+      sma20: analysis.movingAverages.sma20,
+      sma50: analysis.movingAverages.sma50,
+      sma200: analysis.movingAverages.sma200,
+      maTrend: analysis.movingAverages.trend,
+
+      // Bollinger
+      bollingerUpper: analysis.bollinger.upper,
+      bollingerMiddle: analysis.bollinger.middle,
+      bollingerLower: analysis.bollinger.lower,
+      bollingerWidth: analysis.bollinger.width,
+      bollingerPercentB: analysis.bollinger.percentB,
+      bollingerInterpretation: analysis.bollinger.interpretation,
+
+      // ATR
+      atrValue: analysis.atr.value,
+      atrPercentage: analysis.atr.percentage,
+      atrVolatility: analysis.atr.volatility,
+
+      // Stochastic
+      stochasticK: analysis.stochastic.k,
+      stochasticD: analysis.stochastic.d,
+      stochasticInterpretation: analysis.stochastic.interpretation,
+
+      // ADX
+      adxValue: analysis.adx.adx,
+      adxPlusDI: analysis.adx.plusDI,
+      adxMinusDI: analysis.adx.minusDI,
+      adxTrendStrength: analysis.adx.trendStrength,
+
+      // Suporte/Resistência
+      pivotPoint: analysis.supportResistance.pivot,
+      resistance1: analysis.supportResistance.resistance1,
+      resistance2: analysis.supportResistance.resistance2,
+      resistance3: analysis.supportResistance.resistance3,
+      support1: analysis.supportResistance.support1,
+      support2: analysis.supportResistance.support2,
+      support3: analysis.supportResistance.support3,
+
+      // Volume
+      currentVolume: analysis.volume.currentVolume,
+      averageVolume: analysis.volume.averageVolume,
+      volumeRatio: analysis.volume.volumeRatio,
+      obv: analysis.volume.obv,
+      volumeInterpretation: analysis.volume.interpretation,
+
+      // Sinal geral
+      overallSignal: analysis.overallSignal,
+      signalConfidence: analysis.confidence,
+
+      metadata: {
+        calculationDurationMs: Date.now() - analysis.timestamp,
+        candleCount: candles.length,
+        lastCandleTime: new Date(candles[candles.length - 1].timestamp).toISOString(),
+      },
+    })
+    .returning({ id: schema.tradingTechnicalIndicators.id });
+
+  return {
+    analysis,
+    indicatorId: savedIndicator?.id ?? '',
+    resolvedSymbol,
+  };
+}
+
 // GET /api/integrations/trading/analysis/:symbol - Análise técnica completa
 app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
@@ -6227,163 +7101,61 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
       res.status(401).json({ error: 'Autenticação necessária' });
       return;
     }
-    const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
-
     const { symbol } = req.params;
-    const interval = (req.query.interval as string) || '5m';
+    const querySchema = z.object({
+      interval: z.string().optional().default('5m'),
+      marketType: z.enum(['futures', 'spot', 'margin']).optional(),
+      type: z.enum(['futures', 'spot', 'margin']).optional(),
+      marginMode: z.enum(['cross', 'isolated']).optional(),
+    });
 
-    if (!kucoinClient.isKucoinConfigured()) {
+    const parsedQuery = querySchema.safeParse(req.query);
+    if (!parsedQuery.success) {
+      res.status(400).json({ error: 'Query inválida', details: parsedQuery.error.flatten() });
+      return;
+    }
+
+    const marketType = resolveMarketTypeParam(parsedQuery.data);
+    const marginMode = parsedQuery.data.marginMode;
+
+    if (marketType === 'spot' && !kucoinSpotClient.isSpotConfigured()) {
       respondKucoinNotConfigured(res);
       return;
     }
-
-    const resolvedSymbol = await resolveTradingSymbolOrRespond(res, tradingAuth, symbol, { required: true });
-    if (!resolvedSymbol) return;
-    
-    // Mapear intervalo para granularity (minutos)
-    const intervalToGranularity: Record<string, number> = {
-      '1m': 1, '3m': 3, '5m': 5, '15m': 15, '30m': 30,
-      '1h': 60, '2h': 120, '4h': 240, '8h': 480, '12h': 720,
-      '1d': 1440, '1w': 10080
-    };
-    
-    const granularity = intervalToGranularity[interval];
-    if (!granularity) {
-      res.status(400).json({ error: `Intervalo inválido: ${interval}. Use: 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 8h, 12h, 1d, 1w` });
+    if (marketType === 'margin' && !kucoinMarginClient.isMarginConfigured()) {
+      respondKucoinNotConfigured(res);
       return;
     }
-    
-    // BUG FIX 21/12/2025: Type narrowing para TypeScript entender que interval é válido após validação
-    const validatedInterval = interval as '1m' | '3m' | '5m' | '15m' | '30m' | '1h' | '2h' | '4h' | '8h' | '12h' | '1d' | '1w';
-
-    // Obter 250 candles para ter dados suficientes para todos os indicadores
-    const now = Date.now();
-    const from = now - (granularity * 60 * 1000 * 250);
-    const klinesRaw = await kucoinClient.getKlines(resolvedSymbol, granularity, from, now);
-
-    if (klinesRaw.length < 200) {
-      res.status(400).json({ 
-        error: `Dados insuficientes: ${klinesRaw.length} candles. Mínimo: 200`,
-        suggestion: 'Tente um intervalo maior ou aguarde mais dados acumularem'
-      });
-      return;
+    if (!marketType || marketType === 'futures') {
+      if (!kucoinClient.isKucoinConfigured()) {
+        respondKucoinNotConfigured(res);
+        return;
+      }
     }
 
-    // Converter para formato do serviço de indicadores
-    const candles: technicalIndicators.CandleData[] = klinesRaw.map(k => ({
-      timestamp: k.time,
-      open: parseFloat(k.open),
-      high: parseFloat(k.high),
-      low: parseFloat(k.low),
-      close: parseFloat(k.close),
-      volume: parseFloat(k.volume),
-    }));
-
-    // Calcular análise técnica completa
-    const analysis = technicalIndicators.calculateFullAnalysis(candles, resolvedSymbol, interval);
-
-    // Persistir análise no banco de dados
-    const db = getDatabase();
-    const [savedIndicator] = await db
-      .insert(schema.tradingTechnicalIndicators)
-      .values({
-        tenantId: authContext.tenantId,
-        symbol: resolvedSymbol,
-        // BUG FIX 21/12/2025: Corrigido typo 'as string' e adicionada validação de tipo
-        interval: validatedInterval,
-        candleTimestamp: new Date(candles[candles.length - 1].timestamp),
-        currentPrice: analysis.currentPrice,
-        
-        // RSI
-        rsiValue: analysis.rsi.value,
-        rsiInterpretation: analysis.rsi.interpretation,
-        rsiPeriod: analysis.rsi.period,
-        
-        // MACD
-        macdLine: analysis.macd.macd,
-        macdSignal: analysis.macd.signal,
-        macdHistogram: analysis.macd.histogram,
-        macdInterpretation: analysis.macd.interpretation as 'bullish' | 'bearish' | 'sideways',
-        macdCrossover: analysis.macd.crossover,
-        
-        // EMAs
-        ema9: analysis.movingAverages.ema9,
-        ema21: analysis.movingAverages.ema21,
-        ema50: analysis.movingAverages.ema50,
-        ema200: analysis.movingAverages.ema200,
-        
-        // SMAs
-        sma20: analysis.movingAverages.sma20,
-        sma50: analysis.movingAverages.sma50,
-        sma200: analysis.movingAverages.sma200,
-        maTrend: analysis.movingAverages.trend,
-        
-        // Bollinger
-        bollingerUpper: analysis.bollinger.upper,
-        bollingerMiddle: analysis.bollinger.middle,
-        bollingerLower: analysis.bollinger.lower,
-        bollingerWidth: analysis.bollinger.width,
-        bollingerPercentB: analysis.bollinger.percentB,
-        bollingerInterpretation: analysis.bollinger.interpretation,
-        
-        // ATR
-        atrValue: analysis.atr.value,
-        atrPercentage: analysis.atr.percentage,
-        atrVolatility: analysis.atr.volatility,
-        
-        // Stochastic
-        stochasticK: analysis.stochastic.k,
-        stochasticD: analysis.stochastic.d,
-        stochasticInterpretation: analysis.stochastic.interpretation,
-        
-        // ADX
-        adxValue: analysis.adx.adx,
-        adxPlusDI: analysis.adx.plusDI,
-        adxMinusDI: analysis.adx.minusDI,
-        adxTrendStrength: analysis.adx.trendStrength,
-        
-        // Suporte/Resistência
-        pivotPoint: analysis.supportResistance.pivot,
-        resistance1: analysis.supportResistance.resistance1,
-        resistance2: analysis.supportResistance.resistance2,
-        resistance3: analysis.supportResistance.resistance3,
-        support1: analysis.supportResistance.support1,
-        support2: analysis.supportResistance.support2,
-        support3: analysis.supportResistance.support3,
-        
-        // Volume
-        currentVolume: analysis.volume.currentVolume,
-        averageVolume: analysis.volume.averageVolume,
-        volumeRatio: analysis.volume.volumeRatio,
-        obv: analysis.volume.obv,
-        volumeInterpretation: analysis.volume.interpretation,
-        
-        // Sinal geral
-        overallSignal: analysis.overallSignal,
-        signalConfidence: analysis.confidence,
-        
-        metadata: {
-          calculationDurationMs: Date.now() - analysis.timestamp,
-          candleCount: candles.length,
-          lastCandleTime: new Date(candles[candles.length - 1].timestamp).toISOString(),
-        },
-      })
-      .returning({ id: schema.tradingTechnicalIndicators.id });
+    const result = await calculateAndPersistTechnicalAnalysis({
+      tenantId: authContext.tenantId,
+      userId: authContext.userId,
+      symbol,
+      interval: parsedQuery.data.interval,
+      marketType,
+      marginMode,
+    });
 
     logger.info({
       tenantId: authContext.tenantId,
-      symbol: resolvedSymbol,
-      interval,
-      overallSignal: analysis.overallSignal,
-      confidence: analysis.confidence,
-      indicatorId: savedIndicator?.id,
+      symbol: result.resolvedSymbol,
+      interval: parsedQuery.data.interval,
+      overallSignal: result.analysis.overallSignal,
+      confidence: result.analysis.confidence,
+      indicatorId: result.indicatorId,
     }, 'Análise técnica calculada e persistida');
 
     res.json({
       success: true,
-      data: analysis,
-      indicatorId: savedIndicator?.id,
-      llmPrompt: technicalIndicators.formatAnalysisForLLM(analysis),
+      data: result.analysis,
+      indicatorId: result.indicatorId,
+      llmPrompt: technicalIndicators.formatAnalysisForLLM(result.analysis),
     });
   } catch (error) {
     if (sendKucoinErrorResponse(res, error)) return;
@@ -6551,6 +7323,7 @@ initializeCaches().then(() => {
   });
 
   startTradingMetricsScheduler();
+  startTradingSignalScheduler();
   refreshIntegrationHealthMetrics().catch((error) => {
     logger.warn({ error }, 'Falha ao atualizar métricas de integrações no startup');
   });
@@ -6606,6 +7379,17 @@ initializeCaches().then(() => {
       if (tradingMetricsInterval) {
         clearInterval(tradingMetricsInterval);
         tradingMetricsInterval = null;
+      }
+    },
+    { priority: ShutdownPriority.BACKGROUND_JOBS }
+  );
+
+  registerShutdownCallback(
+    'integrations-trading-signal-scheduler',
+    async () => {
+      if (signalSchedulerInterval) {
+        clearInterval(signalSchedulerInterval);
+        signalSchedulerInterval = null;
       }
     },
     { priority: ShutdownPriority.BACKGROUND_JOBS }

@@ -1694,6 +1694,12 @@ export const TradingSignalMetadataSchema = z.object({
   marketCondition: z.string().optional(),            // Condição de mercado identificada
   riskScore: z.number().min(0).max(100).optional(),  // Score de risco (0-100)
   modelVersion: z.string().optional(),               // Versão do modelo usado
+  validationStatus: z.enum(['pending', 'validated', 'failed']).optional(), // Status da validação LLM
+  validationId: z.string().uuid().optional(),         // ID da validação LLM
+  agentId: z.string().uuid().optional(),              // Agente que gerou o sinal
+  namespaceId: z.string().uuid().optional(),          // Namespace do agente
+  generationSource: z.enum(['on_demand', 'scheduler', 'chat']).optional(), // Origem do sinal
+  schedulerId: z.string().uuid().optional(),          // Scheduler responsável
 });
 export type TradingSignalMetadata = z.infer<typeof TradingSignalMetadataSchema>;
 
@@ -1751,6 +1757,41 @@ export const tradingSignals = pgTable(
     idxSignalsActive: index("idx_trading_signals_active").on(table.isActive),
     idxSignalsCreated: index("idx_trading_signals_created").on(table.criadoEm),
     idxSignalsSymbol: index("idx_trading_signals_symbol").on(table.symbol),
+  })
+);
+
+// ============================================================================
+// SCHEDULER DE SINAIS (LLM Runtime)
+// ============================================================================
+export const tradingSignalSchedulers = pgTable(
+  "trading_signal_schedulers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
+    agentId: uuid("agent_id").references(() => agents.id),
+    namespaceId: uuid("namespace_id").references(() => namespaces.id),
+    marketType: tradingMarketTypeEnum("market_type").notNull().default("futures"),
+    marginMode: tradingMarginModeEnum("margin_mode").default("cross"),
+    intervalMinutes: integer("interval_minutes").notNull().default(15),
+    interval: varchar("interval", { length: 10 }).notNull().default("5m"),
+    symbols: text("symbols").array().default([]),
+    maxSignalsPerRun: integer("max_signals_per_run").notNull().default(1),
+    enabled: boolean("enabled").notNull().default(false),
+    lastRunAt: timestamp("last_run_at"),
+    nextRunAt: timestamp("next_run_at"),
+    lastSuccessAt: timestamp("last_success_at"),
+    lastSignalId: uuid("last_signal_id").references(() => tradingSignals.id),
+    lastDurationMs: integer("last_duration_ms"),
+    lastError: text("last_error"),
+    criadoEm: timestamp("criado_em").defaultNow(),
+    atualizadoEm: timestamp("atualizado_em").defaultNow(),
+  },
+  (table) => ({
+    idxSignalSchedulerTenant: index("idx_trading_signal_scheduler_tenant").on(table.tenantId),
+    idxSignalSchedulerMarketType: index("idx_trading_signal_scheduler_market").on(table.marketType),
+    idxSignalSchedulerEnabled: index("idx_trading_signal_scheduler_enabled").on(table.enabled),
+    idxSignalSchedulerNextRun: index("idx_trading_signal_scheduler_next_run").on(table.nextRunAt),
+    idxSignalSchedulerTenantMarket: uniqueIndex("idx_trading_signal_scheduler_tenant_market").on(table.tenantId, table.marketType),
   })
 );
 
@@ -3608,6 +3649,9 @@ export type InsertStripeErpnextMapping = typeof stripeErpnextMapping.$inferInser
 export type TradingSignal = typeof tradingSignals.$inferSelect;
 export type InsertTradingSignal = typeof tradingSignals.$inferInsert;
 
+export type TradingSignalScheduler = typeof tradingSignalSchedulers.$inferSelect;
+export type InsertTradingSignalScheduler = typeof tradingSignalSchedulers.$inferInsert;
+
 export type TradingOrder = typeof tradingOrders.$inferSelect;
 export type InsertTradingOrder = typeof tradingOrders.$inferInsert;
 
@@ -3701,6 +3745,17 @@ export const insertTradingSignalSchema: z.ZodType<unknown> = createInsertSchema(
   criadoEm: true,
   executedAt: true,
   executedOrderId: true,
+});
+
+export const insertTradingSignalSchedulerSchema: z.ZodType<unknown> = createInsertSchema(tradingSignalSchedulers).omit({
+  id: true,
+  criadoEm: true,
+  atualizadoEm: true,
+  lastRunAt: true,
+  nextRunAt: true,
+  lastSuccessAt: true,
+  lastSignalId: true,
+  lastDurationMs: true,
 });
 
 export const insertTradingOrderSchema: z.ZodType<unknown> = createInsertSchema(tradingOrders).omit({

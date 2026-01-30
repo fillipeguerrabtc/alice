@@ -36,7 +36,8 @@
     "refresh": "Atualizar",
     "remove": "Remover",
     "add": "Adicionar",
-    "settings": "Configurações"
+    "settings": "Configurações",
+    "notAvailable": "Indisponível"
   },
   "auth": {
     "title": "Alice IA Enterprise",
@@ -1497,16 +1498,50 @@
       "recent": "Sinais Recentes",
       "subtitle": "Sinais gerados pelo LLM (Qwen2.5 7B) para trading autônomo",
       "new": "Novo Sinal",
+      "generateNow": "Gerar sinal agora",
       "noSignals": "Nenhum sinal ativo",
       "confidence": "Confiança",
       "noReasoning": "Sem justificativa",
       "table": {
         "type": "Tipo",
         "symbol": "Par",
+        "market": "Mercado",
         "confidence": "Confiança",
+        "validation": "Validação",
         "source": "Fonte",
         "reasoning": "Justificativa",
         "created": "Criado"
+      },
+      "validation": {
+        "pending": "Pendente",
+        "validated": "Validado",
+        "failed": "Falhou"
+      },
+      "source": {
+        "on_demand": "Sob demanda",
+        "scheduler": "Scheduler",
+        "chat": "Chat"
+      },
+      "scheduler": {
+        "title": "Scheduler de Sinais",
+        "subtitle": "Configure a geração automática de sinais por mercado",
+        "intervalMinutes": "Intervalo (minutos)",
+        "analysisInterval": "Intervalo de análise",
+        "analysisIntervalPlaceholder": "Selecione o intervalo",
+        "symbols": "Símbolos",
+        "symbolsPlaceholder": "Ex: BTCUSDTM, ETHUSDTM",
+        "maxSignals": "Máx. sinais por execução",
+        "enabled": "Ativar scheduler",
+        "save": "Salvar scheduler",
+        "status": {
+          "nextRun": "Próxima execução",
+          "lastRun": "Última execução",
+          "lastSuccess": "Último sucesso",
+          "lastDuration": "Duração",
+          "lastError": "Último erro",
+          "loadError": "Erro ao carregar scheduler",
+          "loading": "Carregando status do scheduler..."
+        }
       },
       "newDialog": {
         "title": "Novo Sinal Manual",
@@ -1564,7 +1599,10 @@
       "ordersSyncedDesc": "{{synced}} atualizadas, {{errors}} erros",
       "riskConfigUpdated": "Configurações de risco atualizadas",
       "signalCreated": "Sinal criado",
-      "signalDeactivated": "Sinal desativado"
+      "signalDeactivated": "Sinal desativado",
+      "signalGenerated": "Sinal gerado",
+      "signalGeneratedDesc": "O sinal foi criado a partir da análise do LLM",
+      "schedulerUpdated": "Scheduler atualizado"
     },
     "errors": {
       "orderFailed": "Erro ao criar ordem",
@@ -1574,7 +1612,9 @@
       "syncFailed": "Erro ao sincronizar ordens",
       "riskConfigFailed": "Erro ao atualizar configurações",
       "signalFailed": "Erro ao criar sinal",
-      "signalDeactivateFailed": "Erro ao desativar sinal"
+      "signalDeactivateFailed": "Erro ao desativar sinal",
+      "signalGenerateFailed": "Erro ao gerar sinal",
+      "schedulerUpdateFailed": "Erro ao atualizar scheduler"
     },
     "chart": {
       "title": "Gráfico de Preços",

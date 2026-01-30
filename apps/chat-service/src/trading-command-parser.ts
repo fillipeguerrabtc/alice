@@ -37,6 +37,7 @@ export type TradingCommandType =
   | 'sell'
   | 'close_position'
   | 'cancel_order'
+  | 'generate_signal'
   | 'status'
   | 'positions'
   | 'orders'
@@ -181,6 +182,20 @@ const COMMAND_PATTERNS: CommandPattern[] = [
       /\b(mostrar?|mostre|ver)\s+(as\s+)?ordens?\b/i,
       /\blistar?\s+ordens?\b/i,
     ],
+  },
+
+  // GERAR SINAL
+  {
+    type: 'generate_signal',
+    patterns: [
+      /\b(gerar?|gere|criar?|crie|fa[çc]a|fa[çc]a\s+um)\s+(sinal|sinais)\b/i,
+      /\b(sinal|sinais)\s+(agora|automatico|autom[áa]tico)\b/i,
+      /\b(generate|create|make)\s+(signal|signals)\b/i,
+      /\b(signal|signals)\s+(now|automatic|auto)\b/i,
+    ],
+    extractors: {
+      symbol: /([a-z0-9]{2,15}(?:[-_/][a-z0-9]{2,15})?)/i,
+    },
   },
 
   // PAUSAR TRADING
@@ -550,6 +565,10 @@ export function getCommandDescription(command: ParsedTradingCommand, language: '
     orders: {
       pt: 'Ver ordens ativas',
       en: 'View active orders',
+    },
+    generate_signal: {
+      pt: `Gerar sinal${command.symbol ? ` para ${command.symbol}` : ''}`,
+      en: `Generate signal${command.symbol ? ` for ${command.symbol}` : ''}`,
     },
     pause_trading: {
       pt: 'Pausar trading automático',

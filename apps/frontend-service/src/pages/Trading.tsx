@@ -334,10 +334,19 @@ interface TradingSignal {
   // entry_long, entry_short, exit, adjust_sl, adjust_tp, hold, neutral
   signalType: 'entry_long' | 'entry_short' | 'exit' | 'adjust_sl' | 'adjust_tp' | 'hold' | 'neutral';
   symbol: string;
-  confidence: string;
+  marketType: 'futures' | 'spot' | 'margin';
+  confidence: number;
   reasoning: string | null;
-  sourceModel: string;
-  metadata: Record<string, unknown>;
+  sourceModel: string | null;
+  metadata: {
+    validationStatus?: 'pending' | 'validated' | 'failed';
+    validationId?: string;
+    generationSource?: 'on_demand' | 'scheduler' | 'chat';
+    agentId?: string;
+    namespaceId?: string;
+    modelVersion?: string;
+    [key: string]: unknown;
+  };
   isActive: boolean;
   criadoEm: string;
   atualizadoEm: string;
@@ -563,6 +572,13 @@ export default function Trading() {
   const [showNewOrderDialog, setShowNewOrderDialog] = useState(false);
   const [showRiskConfigDialog, setShowRiskConfigDialog] = useState(false);
   const [showNewSignalDialog, setShowNewSignalDialog] = useState(false);
+  const [schedulerForm, setSchedulerForm] = useState({
+    enabled: false,
+    intervalMinutes: '15',
+    interval: '5m',
+    symbols: '',
+    maxSignalsPerRun: '1',
+  });
   
   // Form state para nova ordem
   const [orderForm, setOrderForm] = useState({
@@ -598,6 +614,34 @@ export default function Trading() {
     confidence: '0.85',
     reasoning: '',
   });
+
+  const schedulerConfig = useMemo(() => {
+    const config = schedulerData?.data?.[0] as Record<string, unknown> | undefined;
+    if (!config) return null;
+    return {
+      enabled: Boolean(config.enabled),
+      intervalMinutes: Number(config.intervalMinutes ?? 15),
+      interval: String(config.interval ?? '5m'),
+      symbols: Array.isArray(config.symbols) ? (config.symbols as string[]) : [],
+      maxSignalsPerRun: Number(config.maxSignalsPerRun ?? 1),
+      nextRunAt: config.nextRunAt as string | null,
+      lastRunAt: config.lastRunAt as string | null,
+      lastSuccessAt: config.lastSuccessAt as string | null,
+      lastError: config.lastError as string | null,
+      lastDurationMs: config.lastDurationMs as number | null,
+    };
+  }, [schedulerData]);
+
+  useEffect(() => {
+    if (!schedulerConfig) return;
+    setSchedulerForm({
+      enabled: schedulerConfig.enabled,
+      intervalMinutes: String(schedulerConfig.intervalMinutes || 15),
+      interval: schedulerConfig.interval || '5m',
+      symbols: schedulerConfig.symbols.join(', '),
+      maxSignalsPerRun: String(schedulerConfig.maxSignalsPerRun || 1),
+    });
+  }, [schedulerConfig]);
 
   const {
     data: statusData,
@@ -742,8 +786,34 @@ export default function Trading() {
     error: signalsError,
     refetch: refetchSignals,
   } = useQuery<{ success: boolean; data: TradingSignal[] }>({
-    queryKey: ['/api/integrations/trading/signals'],
+    queryKey: ['/api/integrations/trading/signals', selectedMarketType],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (selectedMarketType) {
+        params.set('marketType', selectedMarketType);
+      }
+      const response = await apiRequest('GET', `/api/integrations/trading/signals${params.toString() ? `?${params}` : ''}`);
+      return response.json();
+    },
     refetchInterval: 15000,
+    enabled: statusData?.data?.isConfigured && !statusData?.data?.requiresTenant,
+  });
+
+  const {
+    data: schedulerData,
+    isLoading: isLoadingScheduler,
+    error: schedulerError,
+    refetch: refetchScheduler,
+  } = useQuery<{ success: boolean; data: Array<Record<string, unknown>> }>({
+    queryKey: ['/api/integrations/trading/signal-scheduler', selectedMarketType],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (selectedMarketType) {
+        params.set('marketType', selectedMarketType);
+      }
+      const response = await apiRequest('GET', `/api/integrations/trading/signal-scheduler${params.toString() ? `?${params}` : ''}`);
+      return response.json();
+    },
     enabled: statusData?.data?.isConfigured && !statusData?.data?.requiresTenant,
   });
 
@@ -1129,6 +1199,8 @@ export default function Trading() {
       const res = await apiRequest('POST', '/api/integrations/trading/signals', {
         signalType: data.signalType,
         symbol: selectedSymbol || undefined,
+        marketType: selectedMarketType,
+        marginMode: selectedMarketType === 'margin' ? selectedMarginMode : undefined,
         confidence: parseFloat(data.confidence),
         reasoning: data.reasoning || undefined,
         sourceModel: 'manual-admin',
@@ -1150,6 +1222,77 @@ export default function Trading() {
     onError: (error: Error) => {
       toast({
         title: t('trading.errors.signalFailed'),
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const generateSignalMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest('POST', '/api/integrations/trading/signals/generate', {
+        symbol: selectedSymbol || undefined,
+        interval: selectedInterval || '5m',
+        marketType: selectedMarketType,
+        marginMode: selectedMarketType === 'margin' ? selectedMarginMode : undefined,
+      });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      if (!data?.success) {
+        throw new Error(data?.error || t('trading.errors.signalGenerateFailed'));
+      }
+      toast({
+        title: t('trading.success.signalGenerated'),
+        description: t('trading.success.signalGeneratedDesc'),
+      });
+      refetchSignals();
+      refetchScheduler();
+    },
+    onError: (error: Error) => {
+      toast({
+        title: t('trading.errors.signalGenerateFailed'),
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const updateSignalSchedulerMutation = useMutation({
+    mutationFn: async () => {
+      const intervalMinutes = Number.parseInt(schedulerForm.intervalMinutes, 10);
+      const maxSignalsPerRun = Number.parseInt(schedulerForm.maxSignalsPerRun, 10);
+      if (Number.isNaN(intervalMinutes) || Number.isNaN(maxSignalsPerRun)) {
+        throw new Error(t('trading.errors.schedulerUpdateFailed'));
+      }
+
+      const payload = {
+        marketType: selectedMarketType,
+        marginMode: selectedMarketType === 'margin' ? selectedMarginMode : undefined,
+        intervalMinutes,
+        interval: schedulerForm.interval,
+        symbols: schedulerForm.symbols
+          .split(',')
+          .map((symbol) => symbol.trim())
+          .filter(Boolean),
+        enabled: schedulerForm.enabled,
+        maxSignalsPerRun,
+      };
+      const res = await apiRequest('PUT', '/api/integrations/trading/signal-scheduler', payload);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      if (!data?.success) {
+        throw new Error(data?.error || t('trading.errors.schedulerUpdateFailed'));
+      }
+      toast({
+        title: t('trading.success.schedulerUpdated'),
+      });
+      refetchScheduler();
+    },
+    onError: (error: Error) => {
+      toast({
+        title: t('trading.errors.schedulerUpdateFailed'),
         description: error.message,
         variant: 'destructive',
       });
@@ -2121,13 +2264,15 @@ export default function Trading() {
                               <div>
                                 <p className="text-sm font-medium">{signal.symbol}</p>
                                 <p className="text-xs text-muted-foreground">
-                                  {t('trading.signals.confidence')}: {(parseFloat(signal.confidence) * 100).toFixed(0)}%
+                                  {t('trading.signals.confidence')}: {(Math.max(0, Math.min(1, signal.confidence)) * 100).toFixed(0)}%
                                 </p>
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
                               <Badge variant="outline" className="text-xs">
-                                {signal.sourceModel}
+                                {signal.metadata?.generationSource
+                                  ? t(`trading.signals.source.${signal.metadata.generationSource}`)
+                                  : (signal.sourceModel || t('common.notAvailable'))}
                               </Badge>
                               <Button
                                 variant="ghost"
@@ -2508,6 +2653,104 @@ export default function Trading() {
               </Button>
             </div>
 
+            <Card>
+              <CardHeader>
+                <CardTitle>{t('trading.signals.scheduler.title')}</CardTitle>
+                <CardDescription>{t('trading.signals.scheduler.subtitle')}</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>{t('trading.signals.scheduler.intervalMinutes')}</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={1440}
+                      value={schedulerForm.intervalMinutes}
+                      onChange={(e) => setSchedulerForm({ ...schedulerForm, intervalMinutes: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t('trading.signals.scheduler.analysisInterval')}</Label>
+                    <Select
+                      value={schedulerForm.interval}
+                      onValueChange={(value) => setSchedulerForm({ ...schedulerForm, interval: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder={t('trading.signals.scheduler.analysisIntervalPlaceholder')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {intervalOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label>{t('trading.signals.scheduler.symbols')}</Label>
+                    <Input
+                      value={schedulerForm.symbols}
+                      onChange={(e) => setSchedulerForm({ ...schedulerForm, symbols: e.target.value })}
+                      placeholder={t('trading.signals.scheduler.symbolsPlaceholder')}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t('trading.signals.scheduler.maxSignals')}</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={20}
+                      value={schedulerForm.maxSignalsPerRun}
+                      onChange={(e) => setSchedulerForm({ ...schedulerForm, maxSignalsPerRun: e.target.value })}
+                    />
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Switch
+                      checked={schedulerForm.enabled}
+                      onCheckedChange={(checked) => setSchedulerForm({ ...schedulerForm, enabled: checked })}
+                    />
+                    <span className="text-sm">{t('trading.signals.scheduler.enabled')}</span>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    onClick={() => updateSignalSchedulerMutation.mutate()}
+                    disabled={updateSignalSchedulerMutation.isPending}
+                  >
+                    {updateSignalSchedulerMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    {t('trading.signals.scheduler.save')}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => generateSignalMutation.mutate()}
+                    disabled={generateSignalMutation.isPending}
+                  >
+                    {generateSignalMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    {t('trading.signals.generateNow')}
+                  </Button>
+                </div>
+
+                <div className="text-xs text-muted-foreground grid gap-1">
+                  <span>{t('trading.signals.scheduler.status.nextRun')}: {schedulerConfig?.nextRunAt ? formatDateTime(String(schedulerConfig.nextRunAt), { locale, timeZone }) : t('common.notAvailable')}</span>
+                  <span>{t('trading.signals.scheduler.status.lastRun')}: {schedulerConfig?.lastRunAt ? formatDateTime(String(schedulerConfig.lastRunAt), { locale, timeZone }) : t('common.notAvailable')}</span>
+                  <span>{t('trading.signals.scheduler.status.lastSuccess')}: {schedulerConfig?.lastSuccessAt ? formatDateTime(String(schedulerConfig.lastSuccessAt), { locale, timeZone }) : t('common.notAvailable')}</span>
+                  <span>{t('trading.signals.scheduler.status.lastDuration')}: {schedulerConfig?.lastDurationMs ? `${schedulerConfig.lastDurationMs}ms` : t('common.notAvailable')}</span>
+                  {schedulerConfig?.lastError && (
+                    <span className="text-destructive">{t('trading.signals.scheduler.status.lastError')}: {schedulerConfig.lastError}</span>
+                  )}
+                  {schedulerError && (
+                    <span className="text-destructive">{t('trading.signals.scheduler.status.loadError')}</span>
+                  )}
+                  {isLoadingScheduler && (
+                    <span>{t('trading.signals.scheduler.status.loading')}</span>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
             {isLoadingSignals ? (
               <Skeleton className="h-64" />
             ) : signals.length === 0 ? (
@@ -2524,7 +2767,9 @@ export default function Trading() {
                     <TableRow>
                       <TableHead>{t('trading.signals.table.type')}</TableHead>
                       <TableHead>{t('trading.signals.table.symbol')}</TableHead>
+                      <TableHead>{t('trading.signals.table.market')}</TableHead>
                       <TableHead>{t('trading.signals.table.confidence')}</TableHead>
+                      <TableHead>{t('trading.signals.table.validation')}</TableHead>
                       <TableHead>{t('trading.signals.table.source')}</TableHead>
                       <TableHead>{t('trading.signals.table.reasoning')}</TableHead>
                       <TableHead>{t('trading.signals.table.created')}</TableHead>
@@ -2537,18 +2782,32 @@ export default function Trading() {
                         <TableCell><SignalTypeBadge type={signal.signalType} /></TableCell>
                         <TableCell>{signal.symbol}</TableCell>
                         <TableCell>
+                          <Badge variant="outline">{t(`trading.marketType.${signal.marketType}`)}</Badge>
+                        </TableCell>
+                        <TableCell>
                           <div className="flex items-center gap-2">
                             <div className="w-16 h-2 bg-muted rounded-full overflow-hidden">
                               <div 
                                 className="h-full bg-primary" 
-                                style={{ width: `${parseFloat(signal.confidence) * 100}%` }}
+                                style={{ width: `${Math.max(0, Math.min(1, signal.confidence)) * 100}%` }}
                               />
                             </div>
-                            <span className="text-sm">{(parseFloat(signal.confidence) * 100).toFixed(0)}%</span>
+                            <span className="text-sm">{(Math.max(0, Math.min(1, signal.confidence)) * 100).toFixed(0)}%</span>
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline">{signal.sourceModel}</Badge>
+                          <Badge variant="outline">
+                            {signal.metadata?.validationStatus
+                              ? t(`trading.signals.validation.${signal.metadata.validationStatus}`)
+                              : t('common.notAvailable')}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">
+                            {signal.metadata?.generationSource
+                              ? t(`trading.signals.source.${signal.metadata.generationSource}`)
+                              : (signal.sourceModel || t('common.notAvailable'))}
+                          </Badge>
                         </TableCell>
                         <TableCell className="max-w-[200px] truncate">
                           <Tooltip>
@@ -2585,6 +2844,7 @@ export default function Trading() {
             <SignalApprovalPanel
               controlMode={controlMode}
               minConfidenceToExecute={parseFloat(String(riskConfig?.minConfidenceToExecute ?? 0.8))}
+              marketType={selectedMarketType}
             />
           </TabsContent>
 
