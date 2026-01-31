@@ -128,7 +128,6 @@ export default function AgenticConfig() {
     { name: 'createInvoiceKeywords', label: t('agenticConfig.erpCreateInvoiceKeywords') },
   ];
   const grafanaKeywordItems: Array<{ name: GrafanaKeywordField; label: string }> = [
-    { name: 'baseKeywords', label: t('agenticConfig.grafanaBaseKeywords') },
     { name: 'listDashboardsKeywords', label: t('agenticConfig.grafanaListKeywords') },
     { name: 'getDashboardKeywords', label: t('agenticConfig.grafanaGetKeywords') },
     { name: 'updateDashboardKeywords', label: t('agenticConfig.grafanaUpdateKeywords') },
@@ -181,6 +180,12 @@ export default function AgenticConfig() {
           annualBillingKeywords: [],
           createCustomerKeywords: [],
           createInvoiceKeywords: [],
+        },
+        grafana: {
+          baseKeywords: [],
+          listDashboardsKeywords: [],
+          getDashboardKeywords: [],
+          updateDashboardKeywords: [],
         },
         payments: {
           wiseKeywords: [],
