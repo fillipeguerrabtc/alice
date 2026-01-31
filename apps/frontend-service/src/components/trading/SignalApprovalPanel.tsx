@@ -216,7 +216,7 @@ function SignalCard({
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [reason, setReason] = useState('');
   const metadata = (signal.metadata ?? {}) as Record<string, unknown>;
-  const reasoningText = signal.reasoning == null ? '' : String(signal.reasoning);
+  const reasoningText: string = signal.reasoning ?? '';
   const [approveOverrides, setApproveOverrides] = useState<ApproveOverridesForm>({
     orderType: signal.suggestedPrice ? 'limit' : 'market',
     size: '',

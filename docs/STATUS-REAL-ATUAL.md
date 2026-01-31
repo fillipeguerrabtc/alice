@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 30 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.31 - Fix build frontend (SignalApproval reasoning)
+**Versão:** 10.32 - Fix build frontend (SignalApproval reasoning typing)
 
 ---
 
@@ -29,7 +29,7 @@
 - Training: datasets de trading com aprovação dedicada e fluxo manual via sinal → dataset.
 - CI: reordenação de enums/schemas de trading evita uso antes da declaração.
 - Lint: remoção de import não usado na página Trading (zero warnings).
-- Frontend: correção de renderização do reasoning com tipagem segura.
+- Frontend: tipagem explícita do reasoning para evitar erro TS2322.
 
 ---
 
