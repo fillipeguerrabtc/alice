@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 31 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.44 - Trading multi-market + rate limit KuCoin
+**Versão:** 10.45 - Fix i18n Trading symbols
 
 ---
 
@@ -33,6 +33,7 @@
 - Trading multi‑market: favoritos/destaques por usuário, pares em destaque no seletor e troca de símbolo no gráfico.
 - KuCoin rate limit: retry/backoff respeita `Retry-After` e `gw-ratelimit-reset` (ms) conforme docs oficiais.
 - Deploy: migration `0043_trading_symbol_preferences.sql` deve ser aplicada no próximo deploy.
+- Trading i18n: chaves de `trading.symbols` alinhadas entre PT-BR e EN (labels corretos no seletor).
 
 ---
 
