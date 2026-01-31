@@ -155,6 +155,7 @@
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^5.1.2",
     "@vitest/coverage-v8": "^4.0.16",
+    "baseline-browser-mapping": "^2.9.19",
     "cross-env": "^10.1.0",
     "drizzle-kit": "^0.31.8",
     "esbuild": "0.27.2",

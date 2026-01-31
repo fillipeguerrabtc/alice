@@ -216,7 +216,10 @@ function SignalCard({
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [reason, setReason] = useState('');
   const metadata = (signal.metadata ?? {}) as Record<string, unknown>;
-  const reasoningText: string = signal.reasoning ?? '';
+  const hasMultiTimeframeContext = Boolean(
+    metadata.timeframes || metadata.enabledIndicators || metadata.consensus,
+  );
+  const hasReasoning: boolean = typeof signal.reasoning === 'string' && signal.reasoning.trim().length > 0;
   const [approveOverrides, setApproveOverrides] = useState<ApproveOverridesForm>({
     orderType: signal.suggestedPrice ? 'limit' : 'market',
     size: '',
@@ -352,16 +355,16 @@ function SignalCard({
                 <Separator className="my-3" />
                 <div className="space-y-3">
                   {/* Reasoning */}
-                  {reasoningText ? (
+                  {hasReasoning && (
                     <div>
                       <p className="text-sm font-medium mb-1">Raciocínio da IA:</p>
                       <p className="text-sm text-muted-foreground bg-muted p-3 rounded-lg">
-                        {reasoningText}
+                        {signal.reasoning}
                       </p>
                     </div>
-                  ) : null}
+                  )}
 
-                  {(metadata.timeframes || metadata.enabledIndicators || metadata.consensus) && (
+                  {hasMultiTimeframeContext && (
                     <div className="space-y-2">
                       <p className="text-sm font-medium">Contexto Multi‑Timeframe:</p>
                       {Array.isArray(metadata.timeframes) && metadata.timeframes.length > 0 && (
@@ -827,7 +830,7 @@ export function SignalApprovalPanel({
     },
   });
 
-  const signals = signalsResponse?.data || [];
+  const signals: TradingSignal[] = signalsResponse?.data ?? [];
   const stats = validationStats?.stats;
 
   return (
