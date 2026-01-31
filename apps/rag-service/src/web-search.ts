@@ -21,6 +21,7 @@ export interface WebSearchOptions {
   categories?: string;
   safesearch?: string;
   language?: string;
+  timeRange?: 'day' | 'week' | 'month' | 'year';
 }
 
 interface SearxngResultItem {
@@ -128,6 +129,9 @@ export function createWebSearchClient({
       categories: options.categories ?? 'general',
       results: normalizedCount.toString(),
     });
+    if (options.timeRange) {
+      params.set('time_range', options.timeRange);
+    }
     if (enginesParam) {
       params.set('engines', enginesParam);
     }

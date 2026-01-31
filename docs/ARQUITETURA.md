@@ -424,6 +424,8 @@ A configuração é persistida por tenant no perfil `trading_analysis_profiles.n
 - `categories`: categoria SearXNG (ex: `general`).
 - `language`: idioma (ex: `pt-BR`).
 - `safesearch`: nível de SafeSearch (`0`, `1`, `2`).
+- `timeRange`: janela temporal para engines que suportam filtro (day/week/month/year).
+- `dateFrom` / `dateTo`: datas opcionais (YYYY-MM-DD) para compor templates.
 - `queryTemplates`: templates com `{symbol}`, `{marketType}` e `{terms}`.
 - `extraTerms`: termos adicionais para enriquecer a consulta.
 - `maxResults`: limite de resultados retornados (1 a 10).

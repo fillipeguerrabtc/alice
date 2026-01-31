@@ -218,6 +218,7 @@ export const ragServicePaths = {
                 categories: { type: 'string' },
                 language: { type: 'string' },
                 safesearch: { type: 'string' },
+                timeRange: { type: 'string', enum: ['day', 'week', 'month', 'year'] },
               },
             },
           },

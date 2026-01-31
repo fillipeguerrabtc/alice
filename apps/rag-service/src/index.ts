@@ -2318,6 +2318,7 @@ const webSearchSchema = z.object({
   categories: z.string().min(1).optional(),
   language: z.string().min(2).optional(),
   safesearch: z.string().min(1).optional(),
+  timeRange: z.enum(['day', 'week', 'month', 'year']).optional(),
 });
 
 const webImageSearchSchema = z.object({
@@ -2327,7 +2328,7 @@ const webImageSearchSchema = z.object({
 
 app.post('/api/rag/web-search', requireAuth(), async (req: Request, res: Response) => {
   try {
-    const { query, limit, mode, engines, categories, language, safesearch } = webSearchSchema.parse(req.body);
+    const { query, limit, mode, engines, categories, language, safesearch, timeRange } = webSearchSchema.parse(req.body);
     
     if (!webSearchClient.isEnabled()) {
       return res.status(503).json({ 
@@ -2343,6 +2344,7 @@ app.post('/api/rag/web-search', requireAuth(), async (req: Request, res: Respons
         categories,
         language,
         safesearch,
+        timeRange,
       };
     const results = await webSearch(query, limit, options);
     

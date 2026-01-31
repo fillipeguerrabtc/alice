@@ -52,7 +52,7 @@ import type { AuthContext } from '@alice/shared-utils';
 import { integrationsServicePaths, integrationsServiceSchemas } from './openapi-specs.js';
 import { loadConfig, integrationsServiceConfigSchema } from '@alice/config';
 import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, getPool } from '@alice/database';
-import { eq, desc, sql, and, inArray, not, isNull, lte } from '@alice/database';
+import { eq, desc, asc, sql, and, inArray, not, isNull, lte } from '@alice/database';
 import { tradingIntervalEnum, TradingOperationTypeSchema } from '@alice/shared';
 import type { TradingSignalMetadata, TradingIndicatorKey, TradingProfileConsensus, TradingProfileDataSources, TradingProfileModelConfig, TradingProfileNewsConfig, TradingCandleData, TradingOperationType, TradingRiskConfig, TradingOrderMetadata } from '@alice/shared';
 import { z } from 'zod';
@@ -199,6 +199,9 @@ const DEFAULT_TRADING_NEWS_CONFIG: TradingNewsConfigResolved = {
   categories: 'general',
   language: 'pt-BR',
   safesearch: '1',
+  timeRange: 'last_24_hours',
+  dateFrom: undefined,
+  dateTo: undefined,
   queryTemplates: ['{symbol} {marketType} news {terms}'],
   extraTerms: [],
   maxResults: 5,
@@ -209,10 +212,15 @@ type TradingNewsConfigResolved = {
   categories: string;
   language: string;
   safesearch: string;
+  timeRange: 'last_hour' | 'last_24_hours' | 'custom' | 'day' | 'week' | 'month' | 'year';
+  dateFrom?: string;
+  dateTo?: string;
   queryTemplates: string[];
   extraTerms: string[];
   maxResults: number;
 };
+
+type WebSearchTimeRange = 'day' | 'week' | 'month' | 'year';
 
 function parseListParam(input?: string | string[]): string[] {
   if (!input) return [];
@@ -236,22 +244,69 @@ function normalizeTradingNewsConfig(raw?: TradingProfileNewsConfig | null): Trad
   const sanitizedEngines = Array.isArray(raw?.engines)
     ? raw.engines.map((engine) => engine.trim()).filter(Boolean)
     : [];
-  const queryTemplates = Array.isArray(raw?.queryTemplates) && raw?.queryTemplates?.length
+  const normalizedTemplates = Array.isArray(raw?.queryTemplates)
     ? raw.queryTemplates.map((template) => template.trim()).filter(Boolean)
+    : [];
+  const queryTemplates = normalizedTemplates.length > 0
+    ? normalizedTemplates
     : DEFAULT_TRADING_NEWS_CONFIG.queryTemplates;
   const extraTerms = Array.isArray(raw?.extraTerms)
     ? raw.extraTerms.map((term) => term.trim()).filter(Boolean)
     : [];
+  const timeRange = raw?.timeRange === 'last_hour'
+    || raw?.timeRange === 'last_24_hours'
+    || raw?.timeRange === 'custom'
+    || raw?.timeRange === 'day'
+    || raw?.timeRange === 'week'
+    || raw?.timeRange === 'month'
+    || raw?.timeRange === 'year'
+    ? raw.timeRange
+    : DEFAULT_TRADING_NEWS_CONFIG.timeRange;
+  const dateFrom = timeRange === 'custom' ? normalizeDateString(raw?.dateFrom) : undefined;
+  const dateTo = timeRange === 'custom' ? normalizeDateString(raw?.dateTo) : undefined;
 
   return {
     engines: sanitizedEngines,
     categories: raw?.categories?.trim() || DEFAULT_TRADING_NEWS_CONFIG.categories,
     language: raw?.language?.trim() || DEFAULT_TRADING_NEWS_CONFIG.language,
     safesearch: raw?.safesearch?.trim() || DEFAULT_TRADING_NEWS_CONFIG.safesearch,
+    timeRange,
+    dateFrom,
+    dateTo,
     queryTemplates,
     extraTerms,
     maxResults: raw?.maxResults && raw.maxResults > 0 ? Math.min(raw.maxResults, 10) : DEFAULT_TRADING_NEWS_CONFIG.maxResults,
   };
+}
+
+function normalizeDateString(input?: string | null): string | undefined {
+  if (!input) return undefined;
+  const trimmed = input.trim();
+  if (!/^\d{4}-\d{2}-\d{2}(T[\d:.+-Z]+)?$/.test(trimmed)) return undefined;
+  return trimmed;
+}
+
+function buildRelativeDateRange(timeRange: TradingNewsConfigResolved['timeRange']): { dateFrom?: string; dateTo?: string } {
+  const now = new Date();
+  if (timeRange === 'last_hour') {
+    const from = new Date(now.getTime() - 60 * 60 * 1000);
+    return { dateFrom: from.toISOString(), dateTo: now.toISOString() };
+  }
+  if (timeRange === 'last_24_hours') {
+    const from = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    return { dateFrom: from.toISOString(), dateTo: now.toISOString() };
+  }
+  return {};
+}
+
+function resolveTimeRangeParam(timeRange: TradingNewsConfigResolved['timeRange']): WebSearchTimeRange | undefined {
+  if (timeRange === 'day' || timeRange === 'week' || timeRange === 'month' || timeRange === 'year') {
+    return timeRange;
+  }
+  if (timeRange === 'last_24_hours') {
+    return 'day';
+  }
+  return undefined;
 }
 
 function normalizeTradingProfile(row?: schema.TradingAnalysisProfile | null): {
@@ -404,10 +459,14 @@ function buildNewsQuery(params: {
   const terms = params.newsConfig.extraTerms.length > 0
     ? params.newsConfig.extraTerms.join(' ')
     : '';
+  const dateFrom = params.newsConfig.dateFrom ?? '';
+  const dateTo = params.newsConfig.dateTo ?? '';
   const rendered = params.newsConfig.queryTemplates.map((template) => template
     .replace('{symbol}', params.symbol)
     .replace('{marketType}', marketType)
     .replace('{terms}', terms)
+    .replace('{dateFrom}', dateFrom)
+    .replace('{dateTo}', dateTo)
     .trim()
     .replace(/\s+/g, ' ')
   );
@@ -423,7 +482,18 @@ async function fetchNewsSummary(
   newsConfig?: TradingProfileNewsConfig
 ): Promise<{ query: string; results: Array<{ title: string; url: string; score?: number }> }> {
   const resolvedConfig = normalizeTradingNewsConfig(newsConfig ?? null);
-  const query = buildNewsQuery({ symbol, marketType, newsConfig: resolvedConfig });
+  const relativeRange = buildRelativeDateRange(resolvedConfig.timeRange);
+  const resolvedDateFrom = resolvedConfig.dateFrom ?? relativeRange.dateFrom;
+  const resolvedDateTo = resolvedConfig.dateTo ?? relativeRange.dateTo;
+  const query = buildNewsQuery({
+    symbol,
+    marketType,
+    newsConfig: {
+      ...resolvedConfig,
+      dateFrom: resolvedDateFrom,
+      dateTo: resolvedDateTo,
+    },
+  });
   const internalHeaders = generateInternalAuthHeaders({
     userId: auth.userId,
     tenantId: auth.tenantId,
@@ -444,6 +514,7 @@ async function fetchNewsSummary(
       categories: resolvedConfig.categories,
       language: resolvedConfig.language,
       safesearch: resolvedConfig.safesearch,
+      timeRange: resolveTimeRangeParam(resolvedConfig.timeRange),
     }),
     signal: controller.signal,
   });
@@ -8321,6 +8392,95 @@ app.get('/api/integrations/trading/signal-scheduler', requirePermission('integra
   }
 });
 
+// GET /api/integrations/trading/news-presets - Presets de notícias (SearXNG)
+app.get('/api/integrations/trading/news-presets', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const presets = await getDatabase().query.tradingNewsPresets.findMany({
+      where: eq(schema.tradingNewsPresets.tenantId, authContext.tenantId),
+      orderBy: [desc(schema.tradingNewsPresets.isDefault), asc(schema.tradingNewsPresets.name)],
+    });
+
+    res.json({ success: true, data: presets });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao listar presets de notícias');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/news-presets/apply - Aplicar preset em perfil
+app.post('/api/integrations/trading/news-presets/apply', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const bodySchema = z.object({
+      presetId: z.string().uuid(),
+      kind: z.enum(['analysis', 'signal']),
+    });
+    const parsed = bodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
+      return;
+    }
+
+    const preset = await getDatabase().query.tradingNewsPresets.findFirst({
+      where: and(
+        eq(schema.tradingNewsPresets.id, parsed.data.presetId),
+        eq(schema.tradingNewsPresets.tenantId, authContext.tenantId)
+      ),
+    });
+    if (!preset) {
+      res.status(404).json({ error: 'Preset não encontrado' });
+      return;
+    }
+
+    const profileRow = await getOrCreateTradingProfile(authContext.tenantId, parsed.data.kind);
+    const updated = await getDatabase()
+      .update(schema.tradingAnalysisProfiles)
+      .set({
+        newsConfig: preset.config,
+        atualizadoEm: new Date(),
+      })
+      .where(eq(schema.tradingAnalysisProfiles.id, profileRow.id))
+      .returning();
+
+    const updatedRow = updated[0] ?? profileRow;
+    const profile = normalizeTradingProfile(updatedRow);
+
+    res.json({
+      success: true,
+      data: {
+        preset,
+        profile: {
+          id: updatedRow.id,
+          kind: updatedRow.kind,
+          name: updatedRow.name,
+          timeframes: profile.timeframes,
+          indicators: profile.indicators,
+          dataSources: profile.dataSources,
+          modelConfig: profile.modelConfig,
+          newsConfig: profile.newsConfig,
+          consensus: profile.consensus,
+        },
+      },
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao aplicar preset de notícias');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
 // GET /api/integrations/trading/analysis-profile - Perfil multi-timeframe
 app.get('/api/integrations/trading/analysis-profile', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
@@ -8387,6 +8547,9 @@ app.put('/api/integrations/trading/analysis-profile', requirePermission('integra
         categories: z.string().min(1).optional(),
         language: z.string().min(2).optional(),
         safesearch: z.string().min(1).optional(),
+        timeRange: z.enum(['last_hour', 'last_24_hours', 'custom', 'day', 'week', 'month', 'year']).optional(),
+        dateFrom: z.string().min(10).optional(),
+        dateTo: z.string().min(10).optional(),
         queryTemplates: z.array(z.string().min(3)).optional(),
         extraTerms: z.array(z.string().min(1)).optional(),
         maxResults: z.number().int().min(1).max(10).optional(),

@@ -127,7 +127,7 @@ import {
   DEFAULT_TRADING_NEWS_CONFIG,
   normalizeTradingNewsConfigForm,
 } from '@/components/trading';
-import type { KlineData, OrderBookData, TradingControlMode, ControlHistoryEntry, TradingNewsConfigForm } from '@/components/trading';
+import type { KlineData, OrderBookData, TradingControlMode, ControlHistoryEntry, TradingNewsConfigForm, TradingNewsPresetOption } from '@/components/trading';
 
 // ============================================================================
 // TIPOS (TypeScript strict - Regra 8)
@@ -640,6 +640,7 @@ export default function Trading() {
   const [showNewSignalDialog, setShowNewSignalDialog] = useState(false);
   const [showReviewOrderDialog, setShowReviewOrderDialog] = useState(false);
   const [selectedSignalId, setSelectedSignalId] = useState<string | null>(null);
+  const [selectedSignalNewsPresetId, setSelectedSignalNewsPresetId] = useState<string | null>(null);
   const [reviewOrderTarget, setReviewOrderTarget] = useState<TradingOrder | null>(null);
   const [reviewOrderForm, setReviewOrderForm] = useState({
     orderType: 'market' as 'limit' | 'market' | 'stop_limit' | 'stop_market' | 'take_profit',
@@ -776,6 +777,17 @@ export default function Trading() {
     },
     enabled: Boolean(selectedSymbol),
   });
+
+  const {
+    data: newsPresetsResponse,
+  } = useQuery<{ success: boolean; data: TradingNewsPresetOption[] }>({
+    queryKey: ['/api/integrations/trading/news-presets'],
+    queryFn: async () => {
+      const response = await apiRequest('GET', '/api/integrations/trading/news-presets');
+      return response.json();
+    },
+  });
+  const newsPresets = newsPresetsResponse?.data ?? [];
 
   useEffect(() => {
     if (signalProfileResponse?.data) {
@@ -3230,6 +3242,15 @@ export default function Trading() {
                   }))}
                   title={t('trading.newsConfig.title')}
                   description={t('trading.newsConfig.subtitleSignals')}
+                  presets={newsPresets}
+                  selectedPresetId={selectedSignalNewsPresetId}
+                  onSelectPresetId={setSelectedSignalNewsPresetId}
+                  onApplyPreset={(preset) => {
+                    setSignalProfileForm((prev) => ({
+                      ...prev,
+                      newsConfig: normalizeTradingNewsConfigForm(preset.config),
+                    }));
+                  }}
                 />
 
                 <div className="flex flex-wrap gap-2">

@@ -1754,6 +1754,9 @@ export const TradingProfileNewsConfigSchema = z.object({
   categories: z.string().min(1).optional(),
   language: z.string().min(2).optional(),
   safesearch: z.string().min(1).optional(),
+  timeRange: z.enum(['last_hour', 'last_24_hours', 'custom', 'day', 'week', 'month', 'year']).optional(),
+  dateFrom: z.string().min(10).optional(),
+  dateTo: z.string().min(10).optional(),
   queryTemplates: z.array(z.string().min(3)).optional(),
   extraTerms: z.array(z.string().min(1)).optional(),
   maxResults: z.number().int().min(1).max(10).optional(),
@@ -1976,7 +1979,7 @@ export const tradingAnalysisProfiles = pgTable(
     modelConfig: jsonb("model_config").$type<TradingProfileModelConfig>().notNull()
       .default(sql`'{}'::jsonb`),
     newsConfig: jsonb("news_config").$type<TradingProfileNewsConfig>().notNull()
-      .default(sql`'{"engines":[],"categories":"general","language":"pt-BR","safesearch":"1","queryTemplates":["{symbol} {marketType} news {terms}"],"extraTerms":[],"maxResults":5}'::jsonb`),
+      .default(sql`'{"engines":[],"categories":"general","language":"pt-BR","safesearch":"1","timeRange":"last_24_hours","queryTemplates":["{symbol} {marketType} news {terms}"],"extraTerms":[],"maxResults":5}'::jsonb`),
     consensus: jsonb("consensus").$type<TradingProfileConsensus>().notNull()
       .default(sql`'{"rule":"majority"}'::jsonb`),
     criadoEm: timestamp("criado_em").defaultNow(),
@@ -1988,6 +1991,40 @@ export const tradingAnalysisProfiles = pgTable(
     idxProfilesTenantKind: uniqueIndex("idx_trading_profiles_tenant_kind").on(table.tenantId, table.kind),
   })
 );
+
+// ============================================================================
+// PRESETS DE NOTÍCIAS (SEARXNG) - Trading
+// ============================================================================
+export const tradingNewsPresets = pgTable(
+  "trading_news_presets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
+    name: varchar("name", { length: 120 }).notNull(),
+    description: text("description"),
+    config: jsonb("config").$type<TradingProfileNewsConfig>().notNull(),
+    isDefault: boolean("is_default").notNull().default(false),
+    createdBy: uuid("created_by").references(() => users.id),
+    criadoEm: timestamp("criado_em").defaultNow(),
+    atualizadoEm: timestamp("atualizado_em").defaultNow(),
+  },
+  (table) => ({
+    idxTradingNewsPresetsTenant: index("idx_trading_news_presets_tenant").on(table.tenantId),
+    idxTradingNewsPresetsName: index("idx_trading_news_presets_name").on(table.name),
+    idxTradingNewsPresetsDefault: index("idx_trading_news_presets_default").on(table.isDefault),
+    idxTradingNewsPresetsTenantName: uniqueIndex("idx_trading_news_presets_tenant_name").on(table.tenantId, table.name),
+  })
+);
+
+// RLS multi-tenant
+export const tradingNewsPresetsPolicies = sql`
+  ALTER TABLE trading_news_presets ENABLE ROW LEVEL SECURITY;
+  DROP POLICY IF EXISTS trading_news_presets_tenant_isolation ON trading_news_presets;
+  CREATE POLICY trading_news_presets_tenant_isolation ON trading_news_presets
+    FOR ALL
+    USING (is_super_admin() OR tenant_id IS NULL OR tenant_id = current_tenant_id())
+    WITH CHECK (is_super_admin() OR tenant_id IS NULL OR tenant_id = current_tenant_id());
+`;
 
 // ORDENS DE TRADING (OMS - Order Management System)
 // Registro completo de todas as ordens enviadas para a exchange
@@ -4056,6 +4093,12 @@ export const insertTradingRiskConfigSchema: z.ZodType<unknown> = createInsertSch
   dailyPnl: true,
   dailyTradeCount: true,
   lastResetDate: true,
+});
+
+export const insertTradingNewsPresetSchema: z.ZodType<unknown> = createInsertSchema(tradingNewsPresets).omit({
+  id: true,
+  criadoEm: true,
+  atualizadoEm: true,
 });
 
 export const insertTradingAuditLogSchema: z.ZodType<unknown> = createInsertSchema(tradingAuditLog).omit({

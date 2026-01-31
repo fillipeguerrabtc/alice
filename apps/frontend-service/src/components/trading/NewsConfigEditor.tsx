@@ -15,15 +15,28 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export interface TradingNewsConfigForm {
   engines: string[];
   categories: string;
   language: string;
   safesearch: string;
+  timeRange: 'last_hour' | 'last_24_hours' | 'custom' | 'day' | 'week' | 'month' | 'year';
+  dateFrom?: string;
+  dateTo?: string;
   queryTemplates: string[];
   extraTerms: string[];
   maxResults: number;
+}
+
+export interface TradingNewsPresetOption {
+  id: string;
+  name: string;
+  description?: string | null;
+  config: TradingNewsConfigForm;
+  isDefault?: boolean;
 }
 
 interface NewsConfigEditorProps {
@@ -31,6 +44,10 @@ interface NewsConfigEditorProps {
   onChange: (value: TradingNewsConfigForm) => void;
   title?: string;
   description?: string;
+  presets?: TradingNewsPresetOption[];
+  selectedPresetId?: string | null;
+  onSelectPresetId?: (id: string) => void;
+  onApplyPreset?: (preset: TradingNewsPresetOption) => void;
 }
 
 const DEFAULT_TEMPLATES = ['{symbol} {marketType} news {terms}'];
@@ -40,6 +57,7 @@ export const DEFAULT_TRADING_NEWS_CONFIG: TradingNewsConfigForm = {
   categories: 'general',
   language: 'pt-BR',
   safesearch: '1',
+  timeRange: 'last_24_hours',
   queryTemplates: DEFAULT_TEMPLATES,
   extraTerms: [],
   maxResults: 5,
@@ -54,6 +72,9 @@ export function normalizeTradingNewsConfigForm(input?: TradingNewsConfigForm): T
       ? input.queryTemplates
       : DEFAULT_TRADING_NEWS_CONFIG.queryTemplates,
     extraTerms: input?.extraTerms ?? DEFAULT_TRADING_NEWS_CONFIG.extraTerms,
+    timeRange: input?.timeRange ?? DEFAULT_TRADING_NEWS_CONFIG.timeRange,
+    dateFrom: input?.timeRange === 'custom' ? input?.dateFrom : undefined,
+    dateTo: input?.timeRange === 'custom' ? input?.dateTo : undefined,
   };
 }
 
@@ -84,11 +105,16 @@ export function NewsConfigEditor({
   onChange,
   title,
   description,
+  presets,
+  selectedPresetId,
+  onSelectPresetId,
+  onApplyPreset,
 }: NewsConfigEditorProps) {
   const { t } = useTranslation();
   const enginesLabel = value.engines.length > 0
     ? value.engines.join(', ')
     : t('trading.newsConfig.defaultEngines');
+  const selectedPreset = presets?.find((preset) => preset.id === selectedPresetId);
 
   const templatesText = useMemo(
     () => toLineList(value.queryTemplates.length > 0 ? value.queryTemplates : DEFAULT_TEMPLATES),
@@ -108,6 +134,40 @@ export function NewsConfigEditor({
           <span>{t('trading.newsConfig.enginesLabelInline')}</span>
           <Badge variant="outline">{enginesLabel}</Badge>
         </div>
+
+        {presets && presets.length > 0 && onApplyPreset && onSelectPresetId && (
+          <div className="grid gap-3 md:grid-cols-[1fr_auto] items-end">
+            <div className="space-y-2">
+              <Label>{t('trading.newsConfig.presets')}</Label>
+              <Select
+                value={selectedPresetId ?? ''}
+                onValueChange={(value) => onSelectPresetId(value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={t('trading.newsConfig.presetsPlaceholder')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {presets.map((preset) => (
+                    <SelectItem key={preset.id} value={preset.id}>
+                      {preset.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {selectedPreset?.description && (
+                <p className="text-xs text-muted-foreground">{selectedPreset.description}</p>
+              )}
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => selectedPreset && onApplyPreset(selectedPreset)}
+              disabled={!selectedPreset}
+            >
+              {t('trading.newsConfig.applyPreset')}
+            </Button>
+          </div>
+        )}
 
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
@@ -146,6 +206,31 @@ export function NewsConfigEditor({
             />
           </div>
           <div className="space-y-2">
+            <Label>{t('trading.newsConfig.timeRange')}</Label>
+            <Select
+              value={value.timeRange}
+              onValueChange={(range) => onChange({
+                ...value,
+                timeRange: range as TradingNewsConfigForm['timeRange'],
+                dateFrom: range === 'custom' ? value.dateFrom : undefined,
+                dateTo: range === 'custom' ? value.dateTo : undefined,
+              })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="last_hour">{t('trading.newsConfig.timeRangeLastHour')}</SelectItem>
+                <SelectItem value="last_24_hours">{t('trading.newsConfig.timeRangeLast24Hours')}</SelectItem>
+                <SelectItem value="custom">{t('trading.newsConfig.timeRangeCustom')}</SelectItem>
+                <SelectItem value="day">{t('trading.newsConfig.timeRangeDay')}</SelectItem>
+                <SelectItem value="week">{t('trading.newsConfig.timeRangeWeek')}</SelectItem>
+                <SelectItem value="month">{t('trading.newsConfig.timeRangeMonth')}</SelectItem>
+                <SelectItem value="year">{t('trading.newsConfig.timeRangeYear')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
             <Label>{t('trading.newsConfig.maxResults')}</Label>
             <Input
               type="number"
@@ -156,6 +241,30 @@ export function NewsConfigEditor({
                 ...value,
                 maxResults: Number(event.target.value || 1),
               })}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>{t('trading.newsConfig.dateFrom')}</Label>
+            <Input
+              type="date"
+              value={value.dateFrom ?? ''}
+              onChange={(event) => onChange({
+                ...value,
+                dateFrom: event.target.value || undefined,
+              })}
+              disabled={value.timeRange !== 'custom'}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>{t('trading.newsConfig.dateTo')}</Label>
+            <Input
+              type="date"
+              value={value.dateTo ?? ''}
+              onChange={(event) => onChange({
+                ...value,
+                dateTo: event.target.value || undefined,
+              })}
+              disabled={value.timeRange !== 'custom'}
             />
           </div>
           <div className="space-y-2">
@@ -184,6 +293,9 @@ export function NewsConfigEditor({
           />
           <p className="text-xs text-muted-foreground">
             {t('trading.newsConfig.queryTemplatesHint')}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {t('trading.newsConfig.dateHint')}
           </p>
         </div>
       </CardContent>

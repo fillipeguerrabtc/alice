@@ -231,6 +231,41 @@ export const integrationsServicePaths = {
       },
     },
   },
+  '/api/integrations/trading/news-presets': {
+    get: {
+      summary: 'Listar presets de notícias (SearXNG)',
+      tags: ['Trading'],
+      responses: {
+        200: { description: 'Lista de presets' },
+        401: { description: 'Não autenticado' },
+      },
+    },
+  },
+  '/api/integrations/trading/news-presets/apply': {
+    post: {
+      summary: 'Aplicar preset de notícias ao perfil',
+      tags: ['Trading'],
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['presetId', 'kind'],
+              properties: {
+                presetId: { type: 'string', format: 'uuid' },
+                kind: { type: 'string', enum: ['analysis', 'signal'] },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Preset aplicado' },
+        401: { description: 'Não autenticado' },
+        404: { description: 'Preset não encontrado' },
+      },
+    },
+  },
   '/api/integrations/stats': {
     get: {
       summary: 'Estatísticas das integrações',

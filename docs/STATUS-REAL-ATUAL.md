@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 31 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.51 - Notícias SearXNG configuráveis + orçamento seguro de tokens
+**Versão:** 10.55 - Correção normalização templates notícias
 
 ---
 
@@ -31,6 +31,10 @@
 - Geração de sinais com LLM usa orçamento seguro de tokens (prompt truncado e max_tokens ajustado ao contexto).
 - Notícias Trading: configuração de termos/engines do SearXNG persistida em perfil e editável na UI (Sinais + Análise).
 - RAG Web Search: suporte a engines, categorias, idioma e SafeSearch por requisição (integração SearXNG ajustável).
+- Presets de notícias: presets principais salvos no banco e aplicáveis no perfil de Sinais/Análise.
+- Notícias Trading: time range configurável (day/week/month/year) e datas opcionais em templates.
+- Notícias Trading: seleção rápida para última hora/24h e modo personalizado.
+- Notícias Trading: normalização de templates evita array vazio e crash em runtime.
 - Training: datasets de trading com aprovação dedicada e fluxo manual via sinal → dataset.
 - Trading: correção da ordem de hooks para evitar React error #310 na página de Trading.
 - Training: webhook com deduplicação semântica (semhash + cosine) e auditoria de duplicados.

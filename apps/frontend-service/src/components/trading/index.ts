@@ -35,4 +35,4 @@ export { SignalApprovalPanel } from './SignalApprovalPanel';
 export type { SignalApprovalPanelProps } from './SignalApprovalPanel';
 
 export { NewsConfigEditor, DEFAULT_TRADING_NEWS_CONFIG, normalizeTradingNewsConfigForm } from './NewsConfigEditor';
-export type { TradingNewsConfigForm } from './NewsConfigEditor';
+export type { TradingNewsConfigForm, TradingNewsPresetOption } from './NewsConfigEditor';

@@ -45,7 +45,7 @@ import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { NewsConfigEditor, DEFAULT_TRADING_NEWS_CONFIG, normalizeTradingNewsConfigForm, type TradingNewsConfigForm } from './NewsConfigEditor';
+import { NewsConfigEditor, DEFAULT_TRADING_NEWS_CONFIG, normalizeTradingNewsConfigForm, type TradingNewsConfigForm, type TradingNewsPresetOption } from './NewsConfigEditor';
 
 // NOTA: Tooltip removido - não utilizado neste componente (21/12/2025)
 import { apiRequest } from '@/lib/queryClient';
@@ -398,6 +398,7 @@ export function TechnicalAnalysisPanel({
     modelConfig: {},
     consensus: { rule: 'majority' },
   });
+  const [selectedNewsPresetId, setSelectedNewsPresetId] = useState<string | null>(null);
   const [analysisSchedulerForm, setAnalysisSchedulerForm] = useState({
     enabled: false,
     intervalMinutes: '15',
@@ -446,6 +447,17 @@ export function TechnicalAnalysisPanel({
     },
     enabled: Boolean(symbol),
   });
+
+  const {
+    data: newsPresetsResponse,
+  } = useQuery<{ success: boolean; data: TradingNewsPresetOption[] }>({
+    queryKey: ['/api/integrations/trading/news-presets'],
+    queryFn: async () => {
+      const response = await apiRequest('GET', '/api/integrations/trading/news-presets');
+      return response.json();
+    },
+  });
+  const newsPresets = newsPresetsResponse?.data ?? [];
 
   useEffect(() => {
     if (profileResponse?.data) {
@@ -789,6 +801,15 @@ export function TechnicalAnalysisPanel({
             }))}
             title={t('trading.newsConfig.title')}
             description={t('trading.newsConfig.subtitleAnalysis')}
+            presets={newsPresets}
+            selectedPresetId={selectedNewsPresetId}
+            onSelectPresetId={setSelectedNewsPresetId}
+            onApplyPreset={(preset) => {
+              setProfileForm((prev) => ({
+                ...prev,
+                newsConfig: normalizeTradingNewsConfigForm(preset.config),
+              }));
+            }}
           />
 
           <div className="flex flex-wrap gap-2">
