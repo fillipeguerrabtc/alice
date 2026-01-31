@@ -987,6 +987,24 @@ export default function Trading() {
     enabled: statusData?.data?.isConfigured && !statusData?.data?.requiresTenant,
   });
 
+  const signals = signalsData?.data || [];
+
+  useEffect(() => {
+    if (signals.length === 0) {
+      setSelectedSignalId(null);
+      return;
+    }
+    if (selectedSignalId && signals.some((signal) => signal.id === selectedSignalId)) {
+      return;
+    }
+    setSelectedSignalId(signals[0]?.id ?? null);
+  }, [signals, selectedSignalId]);
+
+  const selectedSignal = useMemo(
+    () => (selectedSignalId ? signals.find((signal) => signal.id === selectedSignalId) ?? null : null),
+    [signals, selectedSignalId]
+  );
+
   const {
     data: schedulerData,
     isLoading: isLoadingScheduler,
@@ -1911,7 +1929,6 @@ export default function Trading() {
     : isOrderMarketBuy
       ? hasOrderSize || hasOrderFunds
       : hasOrderSize;
-  const signals = signalsData?.data || [];
   const orders = ordersData?.data || [];
   const riskConfig = riskConfigData?.data;
   const wsTickerPrice = wsEnabled && wsTicker?.symbol?.toUpperCase() === normalizedSymbol
@@ -1938,22 +1955,6 @@ export default function Trading() {
   // `wsStatusData` já é o payload `{ success, data: KucoinWsStatus }`.
   // O accessor extra `.data` fazia `wsStatus` ficar sempre undefined e o badge nunca renderizar.
   const wsStatus = wsStatusData?.data;
-
-  useEffect(() => {
-    if (signals.length === 0) {
-      setSelectedSignalId(null);
-      return;
-    }
-    if (selectedSignalId && signals.some((signal) => signal.id === selectedSignalId)) {
-      return;
-    }
-    setSelectedSignalId(signals[0]?.id ?? null);
-  }, [signals, selectedSignalId]);
-
-  const selectedSignal = useMemo(
-    () => (selectedSignalId ? signals.find((signal) => signal.id === selectedSignalId) ?? null : null),
-    [signals, selectedSignalId]
-  );
   const apiErrors = [
     statusError,
     symbolsError,
