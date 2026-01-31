@@ -8549,7 +8549,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           summary?: string;
           sourceMessageId?: string;
           integration?: {
-            action?: 'payments' | 'stack_ops' | 'erp';
+            action?: 'payments' | 'stack_ops' | 'erp' | 'grafana';
             operation?: string;
             params?: Record<string, unknown>;
           };

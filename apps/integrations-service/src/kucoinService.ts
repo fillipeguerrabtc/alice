@@ -750,7 +750,7 @@ function resolveHybridOrderSize(params: {
     throw new Error('Tamanho máximo calculado inválido.');
   }
 
-  const suggested = clampSuggestedSize(params.suggestedSize);
+  const suggested = clampSuggestedSize(params.suggestedSize ?? undefined);
   const rawSize = suggested ? maxAllowed * suggested : maxAllowed;
   const size = params.marketType === 'futures'
     ? Math.max(1, Math.floor(rawSize))
@@ -1026,7 +1026,7 @@ export async function createPendingOrderFromSignal(
         metadata: {
           ...(signal.metadata as Record<string, unknown>),
           approvalStatus: 'approved',
-          approvalReason: reason ?? null,
+          approvalReason: reason ?? undefined,
         },
       })
       .where(eq(schema.tradingSignals.id, signal.id));
@@ -1073,7 +1073,7 @@ export async function rejectSignal(
         metadata: {
           ...(existing.metadata as Record<string, unknown>),
           approvalStatus: 'rejected',
-          approvalReason: reason ?? null,
+          approvalReason: reason ?? undefined,
         },
       })
       .where(eq(schema.tradingSignals.id, signalId))

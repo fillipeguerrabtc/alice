@@ -78,6 +78,9 @@ import { sendKucoinErrorResponse } from './kucoin-error-mapper.js';
 import * as technicalIndicators from './technical-indicators.js';
 import { validateAndPersist } from './llm-validation.js';
 
+const logger = createLogger('integrations-service');
+const config = loadConfig(integrationsServiceConfigSchema);
+
 // ============================================================================
 // GRAFANA API (Observability) - Integração enterprise
 // ============================================================================
@@ -125,9 +128,6 @@ async function executeGrafanaRequest<T>(
   }
   return response.json() as Promise<T>;
 }
-
-const logger = createLogger('integrations-service');
-const config = loadConfig(integrationsServiceConfigSchema);
 
 const GH_API_URL = config.GH_API_URL?.trim() || 'https://api.github.com';
 const GH_REPO = config.GH_REPO?.trim();
@@ -195,7 +195,9 @@ function normalizeTradingProfile(row?: schema.TradingAnalysisProfile | null): {
   modelConfig: TradingProfileModelConfig;
   consensus: TradingProfileConsensus;
 } {
-  const timeframes = row?.timeframes?.length ? row.timeframes : ['5m'];
+  const timeframes = row?.timeframes?.length
+    ? row.timeframes.map((value) => TRADING_INTERVAL_ZOD.parse(value))
+    : (['5m'] as TradingIntervalValue[]);
   const indicators = Array.isArray(row?.indicators) && row?.indicators.length > 0
     ? row.indicators as TradingIndicatorKey[]
     : [...TRADING_INDICATOR_KEYS];
@@ -210,9 +212,9 @@ function normalizeTradingProfile(row?: schema.TradingAnalysisProfile | null): {
     temperature: modelConfigRaw?.temperature,
     maxTokens: modelConfigRaw?.maxTokens,
   };
-  const consensusRaw = row?.consensus ?? {};
+  const consensusRaw = row?.consensus as Partial<TradingProfileConsensus> | undefined;
   const consensus: TradingProfileConsensus = {
-    rule: (consensusRaw?.rule === 'majority' ? 'majority' : 'majority'),
+    rule: consensusRaw?.rule === 'majority' ? 'majority' : 'majority',
     minAgree: consensusRaw?.minAgree,
   };
 
@@ -419,7 +421,7 @@ async function fetchRecentCandles(
   const now = Math.floor(Date.now() / 1000);
   const from = now - granularity * 200;
   const klinesRaw = marketType === 'spot' || marketType === 'margin'
-    ? await kucoinSpotClient.getSpotKlines(resolvedSymbol, granularity, from, now)
+    ? await kucoinSpotClient.getSpotKlines(resolvedSymbol, `${granularity}min`, from, now)
     : await kucoinClient.getKlines(resolvedSymbol, granularity, from, now);
 
   return klinesRaw.map((k) => ({
@@ -7109,6 +7111,9 @@ app.post('/api/integrations/trading/signals/generate', requirePermission('integr
       marginMode,
     });
     if (!resolvedSymbol) return;
+    const consensusOverride = parsed.data.consensus
+      ? { rule: 'majority' as const, minAgree: parsed.data.consensus.minAgree }
+      : undefined;
 
     const result = await generateTradingSignalFromLlm({
       tenantId: authContext.tenantId,
@@ -7123,7 +7128,7 @@ app.post('/api/integrations/trading/signals/generate', requirePermission('integr
       indicators: parsed.data.indicators as TradingIndicatorKey[] | undefined,
       dataSources: parsed.data.dataSources,
       modelConfig: parsed.data.modelConfig,
-      consensus: parsed.data.consensus,
+      consensus: consensusOverride,
     });
 
     res.status(201).json({
@@ -7232,7 +7237,9 @@ app.post('/api/integrations/trading/datasets/from-signal', requirePermission('in
           : '5m',
         analysis: (entry as { analysis?: technicalIndicators.TechnicalAnalysisResult }).analysis,
       }))
-      .filter((entry) => Boolean(entry.analysis));
+      .filter((entry): entry is { interval: TradingIntervalValue; analysis: technicalIndicators.TechnicalAnalysisResult } =>
+        Boolean(entry.analysis)
+      );
 
     const analysis = matrix[0]?.analysis;
     const interval = matrix[0]?.interval ?? '5m';
@@ -7481,6 +7488,9 @@ app.put('/api/integrations/trading/analysis-profile', requirePermission('integra
     }
 
     const profileRow = await getOrCreateTradingProfile(authContext.tenantId, parsedBody.data.kind);
+    const consensusUpdate = parsedBody.data.consensus
+      ? { rule: 'majority' as const, minAgree: parsedBody.data.consensus.minAgree }
+      : undefined;
     const updated = await getDatabase()
       .update(schema.tradingAnalysisProfiles)
       .set({
@@ -7489,7 +7499,7 @@ app.put('/api/integrations/trading/analysis-profile', requirePermission('integra
         indicators: parsedBody.data.indicators ?? profileRow.indicators,
         dataSources: parsedBody.data.dataSources ?? profileRow.dataSources,
         modelConfig: parsedBody.data.modelConfig ?? profileRow.modelConfig,
-        consensus: parsedBody.data.consensus ?? profileRow.consensus,
+        consensus: consensusUpdate ?? profileRow.consensus,
         atualizadoEm: new Date(),
       })
       .where(eq(schema.tradingAnalysisProfiles.id, profileRow.id))
@@ -8395,8 +8405,7 @@ app.post('/api/integrations/trading/control', requirePermission('integrations:tr
       res.status(400).json({ error: 'Auto-execução de sinais está desativada para este tenant.' });
       return;
     }
-    const action = parsed.data.action
-      ?? (requestedMode === 'manual' ? 'takeover' : 'handback');
+    const action = parsed.data.action ?? 'takeover';
     const { reason, source } = parsed.data;
     const db = getDatabase();
 
@@ -8434,7 +8443,7 @@ app.post('/api/integrations/trading/control', requirePermission('integrations:tr
     await db
       .update(schema.tradingRiskConfig)
       .set({
-        autoExecuteSignals: requestedMode === 'alice',
+        autoExecuteSignals: false,
         atualizadoEm: new Date(),
       })
       .where(eq(schema.tradingRiskConfig.tenantId, authContext.tenantId));
@@ -8447,7 +8456,7 @@ app.post('/api/integrations/trading/control', requirePermission('integrations:tr
         previousMode,
         newMode: requestedMode,
         changedBy: authContext.userId,
-        reason: reason || (requestedMode === 'alice' ? 'Controle devolvido para Alice' : 'Takeover manual solicitado'),
+        reason: reason || 'Takeover manual solicitado',
         metadata: {
           source: source || 'api',
           timestamp: new Date().toISOString(),
@@ -8493,9 +8502,7 @@ app.post('/api/integrations/trading/control', requirePermission('integrations:tr
         previousMode,
         newMode: requestedMode,
         action,
-        message: requestedMode === 'alice' 
-          ? 'Controle devolvido para Alice com sucesso'
-          : 'Controle manual assumido com sucesso',
+        message: 'Controle manual assumido com sucesso',
         changed: true,
         historyId: historyEntry?.id,
       },
@@ -8659,6 +8666,8 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
       res.status(401).json({ error: 'Autenticação necessária' });
       return;
     }
+    const tenantId = authContext.tenantId;
+    const userId = authContext.userId;
     const { symbol } = req.params;
     const querySchema = z.object({
       interval: z.string().optional(),
@@ -8680,7 +8689,7 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
 
     const marketType = resolveMarketTypeParam(parsedQuery.data);
     const marginMode = parsedQuery.data.marginMode;
-    const profileRow = await getOrCreateTradingProfile(authContext.tenantId, 'analysis');
+    const profileRow = await getOrCreateTradingProfile(tenantId, 'analysis');
     const profile = normalizeTradingProfile(profileRow);
     const requestedTimeframes = parseTimeframesParam(parsedQuery.data.timeframes);
     const requestedIndicators = parseIndicatorsParam(parsedQuery.data.indicators);
@@ -8724,8 +8733,8 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
     const analysisResults = await Promise.all(
       timeframes.map(async (frame) => {
         const result = await calculateAndPersistTechnicalAnalysis({
-          tenantId: authContext.tenantId,
-          userId: authContext.userId,
+          tenantId,
+          userId,
           symbol,
           interval: frame,
           marketType,
@@ -8744,17 +8753,17 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
     const primaryResult = analysisResults[0];
     const consensus = buildMajorityConsensus(analysisResults, profile.consensus);
     const orderBook = dataSources.orderBook
-      ? await getOrderBookSnapshot({ tenantId: authContext.tenantId, userId: authContext.userId }, symbol, marketType, marginMode)
+      ? await getOrderBookSnapshot({ tenantId, userId }, symbol, marketType, marginMode)
       : null;
     const news = dataSources.news
-      ? await fetchNewsSummary({ tenantId: authContext.tenantId, userId: authContext.userId }, symbol, marketType)
+      ? await fetchNewsSummary({ tenantId, userId }, symbol, marketType)
       : null;
     const trainingData = dataSources.trainingData
-      ? await fetchTradingDatasetSummary(authContext.tenantId)
+      ? await fetchTradingDatasetSummary(tenantId)
       : null;
 
     logger.info({
-      tenantId: authContext.tenantId,
+      tenantId,
       symbol: primaryResult.resolvedSymbol,
       interval: primaryResult.interval,
       overallSignal: consensus.overallSignal,

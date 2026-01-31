@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 30 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.27 - Multi‑timeframe Trading + Datasets aprováveis
+**Versão:** 10.28 - Fix CI schema ordering (Trading profiles)
 
 ---
 
@@ -27,6 +27,7 @@
 - Suporte/Resistência explícito na UI com toggle e explicação detalhada por timeframe.
 - Sinais IA exibem contexto multi‑timeframe, consenso e explicações (inclui dataset pronto para aprovação).
 - Training: datasets de trading com aprovação dedicada e fluxo manual via sinal → dataset.
+- CI: reordenação de enums/schemas de trading evita uso antes da declaração.
 
 ---
 

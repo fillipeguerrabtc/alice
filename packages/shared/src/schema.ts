@@ -1688,6 +1688,53 @@ export const tradingMarginModeEnum = pgEnum("trading_margin_mode", [
   "isolated",
 ]);
 
+// Enum para intervalos de candles
+export const tradingIntervalEnum = pgEnum("trading_interval", [
+  "1m", "3m", "5m", "15m", "30m",
+  "1h", "2h", "4h", "8h", "12h",
+  "1d", "1w"
+]);
+
+// ============================================================================
+// PERFIS DE ANÁLISE/SINAIS (Multi-timeframe + Indicadores + Fontes)
+// ============================================================================
+export const tradingProfileKindEnum = pgEnum("trading_profile_kind", [
+  "analysis",
+  "signal",
+]);
+
+export const TradingIndicatorKeySchema = z.enum([
+  "rsi",
+  "macd",
+  "moving_averages",
+  "bollinger",
+  "atr",
+  "stochastic",
+  "adx",
+  "support_resistance",
+  "volume",
+]);
+export type TradingIndicatorKey = z.infer<typeof TradingIndicatorKeySchema>;
+
+export const TradingProfileDataSourcesSchema = z.object({
+  orderBook: z.boolean().optional(),
+  news: z.boolean().optional(),
+  trainingData: z.boolean().optional(),
+});
+export type TradingProfileDataSources = z.infer<typeof TradingProfileDataSourcesSchema>;
+
+export const TradingProfileModelConfigSchema = z.object({
+  temperature: z.number().min(0).max(2).optional(),
+  maxTokens: z.number().min(256).max(8192).optional(),
+});
+export type TradingProfileModelConfig = z.infer<typeof TradingProfileModelConfigSchema>;
+
+export const TradingProfileConsensusSchema = z.object({
+  rule: z.enum(["majority"]).default("majority"),
+  minAgree: z.number().min(1).optional(),
+});
+export type TradingProfileConsensus = z.infer<typeof TradingProfileConsensusSchema>;
+
 // Zod schema para metadados de trading (JSONB)
 export const TradingSignalMetadataSchema = z.object({
   confidence: z.number().min(0).max(1).optional(),  // Confiança do modelo (0-1)
@@ -1744,46 +1791,6 @@ export const TradingOrderMetadataSchema = z.object({
   }).optional(),
 });
 
-// ============================================================================
-// PERFIS DE ANÁLISE/SINAIS (Multi-timeframe + Indicadores + Fontes)
-// ============================================================================
-
-export const tradingProfileKindEnum = pgEnum("trading_profile_kind", [
-  "analysis",
-  "signal",
-]);
-
-export const TradingIndicatorKeySchema = z.enum([
-  "rsi",
-  "macd",
-  "moving_averages",
-  "bollinger",
-  "atr",
-  "stochastic",
-  "adx",
-  "support_resistance",
-  "volume",
-]);
-export type TradingIndicatorKey = z.infer<typeof TradingIndicatorKeySchema>;
-
-export const TradingProfileDataSourcesSchema = z.object({
-  orderBook: z.boolean().optional(),
-  news: z.boolean().optional(),
-  trainingData: z.boolean().optional(),
-});
-export type TradingProfileDataSources = z.infer<typeof TradingProfileDataSourcesSchema>;
-
-export const TradingProfileModelConfigSchema = z.object({
-  temperature: z.number().min(0).max(2).optional(),
-  maxTokens: z.number().min(256).max(8192).optional(),
-});
-export type TradingProfileModelConfig = z.infer<typeof TradingProfileModelConfigSchema>;
-
-export const TradingProfileConsensusSchema = z.object({
-  rule: z.enum(["majority"]).default("majority"),
-  minAgree: z.number().min(1).optional(),
-});
-export type TradingProfileConsensus = z.infer<typeof TradingProfileConsensusSchema>;
 export type TradingOrderMetadata = z.infer<typeof TradingOrderMetadataSchema>;
 
 export const TradingPositionMetadataSchema = z.object({
@@ -2164,13 +2171,6 @@ export type InsertTradingControlHistory = typeof tradingControlHistory.$inferIns
 // Indicadores técnicos calculados por código (determinísticos)
 // Elimina alucinações do LLM ao fornecer dados reais calculados
 // ============================================================================
-
-// Enum para intervalos de candles
-export const tradingIntervalEnum = pgEnum("trading_interval", [
-  "1m", "3m", "5m", "15m", "30m",
-  "1h", "2h", "4h", "8h", "12h",
-  "1d", "1w"
-]);
 
 // Enum para interpretações de indicadores
 export const indicatorInterpretationEnum = pgEnum("indicator_interpretation", [
