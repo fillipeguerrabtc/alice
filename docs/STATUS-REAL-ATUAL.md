@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 31 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.47 - Trading risk config decimal normalization
+**Versão:** 10.48 - Agentic trading prompts + análise técnica no chat
 
 ---
 
@@ -35,6 +35,7 @@
 - Trading Chart: troca de intervalo força refetch de klines (REST/WS) para evitar gráfico vazio.
 - SearXNG News: integração corrigida com headers internos assinados (401 removido em Sinais IA e Análise).
 - Trading Risk Config: normalização de valores decimais (vírgula → ponto) e payload consistente para evitar erro "Dados inválidos" ao salvar.
+- Agentic Trading: prompts com exemplos e boas práticas no Modo Agentic; parser de chat agora reconhece análise técnica e sinais IA com timeframes e fontes de dados.
 - KuCoin rate limit: retry/backoff respeita `Retry-After` e `gw-ratelimit-reset` (ms) conforme docs oficiais.
 - Deploy: migration `0043_trading_symbol_preferences.sql` deve ser aplicada no próximo deploy.
 - Trading i18n: chaves de `trading.symbols` alinhadas entre PT-BR e EN (labels corretos no seletor).

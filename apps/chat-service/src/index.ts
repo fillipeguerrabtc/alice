@@ -1254,7 +1254,14 @@ const DEFAULT_AGENTIC_DETECTORS: AgenticDetectors = {
     patterns: IMAGE_GENERATION_PATTERNS.map((pattern) => pattern.toString()),
   },
   trading: {
-    keywords: ['btc', 'bitcoin', 'trading', 'trade', 'ordem', 'order', 'posição', 'position', 'compra', 'venda', 'buy', 'sell', 'long', 'short', 'futures', 'perpetual', 'alavancagem', 'leverage', 'stop', 'profit', 'loss', 'mercado', 'market', 'kucoin', 'exchange', 'crypto', 'cripto', 'dólar', 'dollar'],
+    keywords: [
+      'btc', 'bitcoin', 'trading', 'trade', 'ordem', 'order', 'posição', 'position',
+      'compra', 'venda', 'buy', 'sell', 'long', 'short', 'futures', 'perpetual',
+      'alavancagem', 'leverage', 'stop', 'profit', 'loss', 'mercado', 'market',
+      'kucoin', 'exchange', 'crypto', 'cripto', 'dólar', 'dollar',
+      'análise', 'analise', 'analysis', 'sinal', 'sinais', 'indicadores', 'indicator',
+      'operar', 'operação', 'operacao', 'analisar', 'executar',
+    ],
     patterns: [],
   },
   grafana: {
@@ -4980,6 +4987,7 @@ type TradingCommandType =
   | 'reject_order'
   | 'update_review_order'
   | 'generate_signal'
+  | 'analysis'
   | 'status'
   | 'positions'
   | 'orders'
@@ -5024,6 +5032,7 @@ function getTradingCommandRisk(command: ParsedTradingCommand): TradingCommandRis
     case 'positions':
     case 'orders':
     case 'generate_signal':
+    case 'analysis':
       return 'low';
     case 'pause_trading':
     case 'resume_trading':
@@ -5054,7 +5063,7 @@ function shouldRequireTradingConfirmation(
   void getTradingCommandRisk(command);
   void policy;
   // Regra enterprise: qualquer operação de trading exige aprovação explícita.
-  if (command.type === 'generate_signal') {
+  if (command.type === 'generate_signal' || command.type === 'analysis') {
     return false;
   }
   return true;
@@ -5169,6 +5178,64 @@ function getValidationHint(
   return generic[language];
 }
 
+const TRADING_INTERVAL_VALUES = [
+  '1m', '3m', '5m', '15m', '30m',
+  '1h', '2h', '4h', '8h', '12h',
+  '1d', '1w',
+] as const;
+
+type TradingIntervalValue = typeof TRADING_INTERVAL_VALUES[number];
+
+function parseTradingIntervalsFromText(text: string): TradingIntervalValue[] {
+  const normalized = text.toLowerCase();
+  const intervals = new Set<TradingIntervalValue>();
+  const regex = /\b(\d+)\s*(m|min|minuto|minutos|h|hora|horas|d|dia|dias|w|semana|semanas)\b/gi;
+  const allowed = new Set(TRADING_INTERVAL_VALUES);
+
+  for (const match of normalized.matchAll(regex)) {
+    const rawValue = Number(match[1]);
+    if (!Number.isFinite(rawValue) || rawValue <= 0) continue;
+    const unitRaw = match[2] ?? '';
+    const unit = unitRaw.startsWith('h')
+      ? 'h'
+      : unitRaw.startsWith('d')
+        ? 'd'
+        : unitRaw.startsWith('w')
+          ? 'w'
+          : 'm';
+    const candidate = `${rawValue}${unit}` as TradingIntervalValue;
+    if (allowed.has(candidate)) intervals.add(candidate);
+  }
+
+  return Array.from(intervals);
+}
+
+function parseTradingDataSourcesFromText(text: string): {
+  orderBook?: boolean;
+  news?: boolean;
+  trainingData?: boolean;
+} | undefined {
+  const normalized = text.toLowerCase();
+  const news = /\b(not[íi]cias?|news)\b/.test(normalized);
+  const orderBook = /\b(order\s*book|orderbook|profundidade|livro\s+de\s+ofertas)\b/.test(normalized);
+  const trainingData = /\b(treinamento|training\s+data|dataset|dados\s+de\s+treino)\b/.test(normalized);
+
+  if (!news && !orderBook && !trainingData) return undefined;
+
+  return {
+    news: news || undefined,
+    orderBook: orderBook || undefined,
+    trainingData: trainingData || undefined,
+  };
+}
+
+function resolveTradingCommandTimeoutMs(commandType: TradingCommandType): number {
+  if (commandType === 'analysis' || commandType === 'generate_signal') {
+    return 30000;
+  }
+  return CROSS_SERVICE_TIMEOUT;
+}
+
 /**
  * Executa comando de trading via Integrations Service
  * Regra 6 CLAUDE.md: Integração real enterprise (PROIBIDO stubs/mocks)
@@ -5186,7 +5253,7 @@ async function executeTradingCommand(
   agentId?: string
 ): Promise<TradingCommandResult> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), CROSS_SERVICE_TIMEOUT);
+  const timeoutId = setTimeout(() => controller.abort(), resolveTradingCommandTimeoutMs(command.type));
 
   try {
     // Gerar headers de autenticação service-to-service
@@ -5306,6 +5373,8 @@ async function executeTradingCommand(
     const marketDefaults = await resolveMarketDefaults();
     const effectiveMarketType = command.marketType ?? marketDefaults?.marketType;
     const effectiveMarginMode = command.marginMode ?? marketDefaults?.marginMode;
+    const requestedTimeframes = parseTradingIntervalsFromText(command.rawText);
+    const dataSources = parseTradingDataSourcesFromText(command.rawText);
 
     // Mapear comando para endpoint e payload do Integrations Service
     let lastOrderSizeInContracts: number | null = null;
@@ -5319,9 +5388,13 @@ async function executeTradingCommand(
         method = 'POST';
         {
           const resolvedSymbol = command.symbol || await resolveDefaultSymbol(effectiveMarketType, effectiveMarginMode);
+          const timeframes = requestedTimeframes.length > 1 ? requestedTimeframes : undefined;
+          const interval = requestedTimeframes.length === 1 ? requestedTimeframes[0] : undefined;
           body = {
             symbol: resolvedSymbol || undefined,
-            interval: '5m',
+            interval: interval ?? '5m',
+            timeframes,
+            dataSources,
             marketType: effectiveMarketType,
             marginMode: effectiveMarginMode,
           };
@@ -5330,6 +5403,26 @@ async function executeTradingCommand(
           }
         }
         break;
+      case 'analysis': {
+        const resolvedSymbol = command.symbol || await resolveDefaultSymbol(effectiveMarketType, effectiveMarginMode);
+        if (!resolvedSymbol) {
+          return { success: false, error: 'Símbolo não definido para executar análise.' };
+        }
+        const params = new URLSearchParams();
+        if (requestedTimeframes.length === 1) {
+          params.set('interval', requestedTimeframes[0]);
+        } else if (requestedTimeframes.length > 1) {
+          params.set('timeframes', requestedTimeframes.join(','));
+        }
+        if (dataSources?.news) params.set('news', 'true');
+        if (dataSources?.orderBook) params.set('orderBook', 'true');
+        if (dataSources?.trainingData) params.set('trainingData', 'true');
+        if (effectiveMarketType) params.set('marketType', effectiveMarketType);
+        if (effectiveMarginMode) params.set('marginMode', effectiveMarginMode);
+        endpoint = `/api/integrations/trading/analysis/${resolvedSymbol}${params.toString() ? `?${params}` : ''}`;
+        method = 'GET';
+        break;
+      }
       case 'buy':
       case 'sell':
         endpoint = '/api/integrations/trading/orders';
@@ -9181,9 +9274,15 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
     if (isTradingCommandWithDetectors(userMessageContent, agenticDetectors)) {
       const parsedCommand = parseTradingCommand(userMessageContent);
-      const isSignalGeneration = parsedCommand.type === 'generate_signal';
+      const isNonExecutingTrading = [
+        'generate_signal',
+        'analysis',
+        'status',
+        'positions',
+        'orders',
+      ].includes(parsedCommand.type);
 
-      if (!agenticSettings.tradingEnabled && !isSignalGeneration) {
+      if (!agenticSettings.tradingEnabled && !isNonExecutingTrading) {
         const responseContent = 'Trading está desativado nas configurações do tenant.';
         const [assistantMessage] = await db.insert(schema.messages).values({
           conversationId,
@@ -9245,7 +9344,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         return;
       }
 
-      if (parsedCommand.type !== 'generate_signal') {
+      if (!isNonExecutingTrading) {
         const canExecute = await canExecuteTradingCommand(tenantId, 'user');
         if (!canExecute.canExecute) {
           const responseContent = `Trading bloqueado: ${canExecute.reason || 'permite operação apenas após habilitar o trading e configurar risco.'}`;
@@ -11491,15 +11590,21 @@ wss.on('connection', (ws, req) => {
           ws.send(JSON.stringify({
             type: 'trading:error',
             error: 'Comando de trading não reconhecido',
-            hint: 'Tente: "compre 0.01 BTC", "venda 0.01 BTC", "status trading", "minhas posições"',
+            hint: 'Tente: "compre 0.01 BTC", "venda 0.01 BTC", "status trading", "minhas posições", "análise técnica BTCUSDTM 5m 15m 30m"',
           }));
           return;
         }
         
         const parsed = parseTradingCommand(content);
-        const isSignalGeneration = parsed.type === 'generate_signal';
+        const isNonExecutingTrading = [
+          'generate_signal',
+          'analysis',
+          'status',
+          'positions',
+          'orders',
+        ].includes(parsed.type);
 
-        if (!agenticSettings.tradingEnabled && !isSignalGeneration) {
+        if (!agenticSettings.tradingEnabled && !isNonExecutingTrading) {
           ws.send(JSON.stringify({
             type: 'trading:error',
             error: 'Trading está desativado nas configurações do tenant.',
@@ -11528,7 +11633,7 @@ wss.on('connection', (ws, req) => {
           return;
         }
         
-        if (!isSignalGeneration) {
+        if (!isNonExecutingTrading) {
           const canExecute = await canExecuteTradingCommand(tenantId, 'user');
           
           if (!canExecute.canExecute) {

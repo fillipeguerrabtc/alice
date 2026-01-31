@@ -138,6 +138,8 @@ export default function AgenticConfig() {
     { name: 'stripeKeywords', label: t('agenticConfig.stripeKeywords') },
     { name: 'stripePaymentKeywords', label: t('agenticConfig.stripePaymentKeywords') },
   ];
+  const tradingPromptExamples = t('agenticConfig.tradingPromptExamples', { returnObjects: true }) as string[];
+  const tradingPromptGuidelines = t('agenticConfig.tradingPromptGuidelines', { returnObjects: true }) as string[];
   const stackOpsKeywordItems: Array<{ name: StackOpsKeywordField; label: string }> = [
     { name: 'deployKeywords', label: t('agenticConfig.stackDeployKeywords') },
     { name: 'rollbackKeywords', label: t('agenticConfig.stackRollbackKeywords') },
@@ -275,6 +277,34 @@ export default function AgenticConfig() {
 
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>{t('agenticConfig.tradingPromptsTitle')}</CardTitle>
+              <CardDescription>{t('agenticConfig.tradingPromptsDesc')}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold">{t('agenticConfig.tradingPromptExamplesTitle')}</h3>
+                <div className="grid gap-2 md:grid-cols-2">
+                  {(Array.isArray(tradingPromptExamples) ? tradingPromptExamples : []).map((example) => (
+                    <div key={example} className="rounded-md border bg-muted/40 px-3 py-2 text-xs font-mono">
+                      {example}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <Separator />
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold">{t('agenticConfig.tradingPromptGuidelinesTitle')}</h3>
+                <ul className="space-y-1 text-sm text-muted-foreground">
+                  {(Array.isArray(tradingPromptGuidelines) ? tradingPromptGuidelines : []).map((item) => (
+                    <li key={item}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle>{t('agenticConfig.togglesTitle')}</CardTitle>

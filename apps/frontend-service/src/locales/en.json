@@ -2055,6 +2055,24 @@
   "agenticConfig": {
     "title": "Agentic Mode",
     "subtitle": "Define execution scope, approvals, and operational references for agentic.",
+    "tradingPromptsTitle": "Trading Agent prompt tips",
+    "tradingPromptsDesc": "Use clear commands to trigger technical analysis, AI signals, and KuCoin operations.",
+    "tradingPromptExamplesTitle": "Ready-to-use examples",
+    "tradingPromptGuidelinesTitle": "Best practices",
+    "tradingPromptExamples": [
+      "Technical analysis BTCUSDTM 5m 15m 30m with news",
+      "Generate AI signal for BTCUSDTM with timeframes 5m 15m 30m",
+      "Buy 0.01 BTCUSDTM 10x market",
+      "Sell 0.02 BTCUSDTM 5x and set stop loss at 42000",
+      "Trading status and open positions",
+      "Close position BTCUSDTM"
+    ],
+    "tradingPromptGuidelines": [
+      "Always provide the symbol (e.g., BTCUSDTM) and market (futures/spot/margin) when needed.",
+      "For operations, include direction and size (buy/sell + amount).",
+      "For analysis and signals, include timeframes and whether you want news or order book.",
+      "Confirm execution when the agent asks for explicit approval."
+    ],
     "togglesTitle": "Execution Scope",
     "togglesDesc": "Enable capabilities per tenant and require approval for critical actions.",
     "webEnabled": "Web search (SearXNG)",

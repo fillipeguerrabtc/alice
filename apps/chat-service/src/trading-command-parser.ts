@@ -43,6 +43,7 @@ export type TradingCommandType =
   | 'reject_order'
   | 'update_review_order'
   | 'generate_signal'
+  | 'analysis'
   | 'status'
   | 'positions'
   | 'orders'
@@ -239,12 +240,25 @@ const COMMAND_PATTERNS: CommandPattern[] = [
     patterns: [
       /\b(gerar?|gere|criar?|crie|fa[çc]a|fa[çc]a\s+um)\s+(sinal|sinais)\b/i,
       /\b(sinal|sinais)\s+(agora|automatico|autom[áa]tico)\b/i,
+      /\b(sinal|sinais)\s+(ia|ai)\b/i,
+      /\b(gerar?|gere|criar?|crie)\s+(sinal|sinais)\s+(ia|ai)\b/i,
       /\b(generate|create|make)\s+(signal|signals)\b/i,
       /\b(signal|signals)\s+(now|automatic|auto)\b/i,
     ],
     extractors: {
       symbol: /([a-z0-9]{2,15}(?:[-_/][a-z0-9]{2,15})?)/i,
     },
+  },
+
+  // ANÁLISE TÉCNICA / ANALYSIS
+  {
+    type: 'analysis',
+    patterns: [
+      /\b(an[aá]lisar?|an[aá]lise)\s+(t[eé]cnica|do|da|de)\b/i,
+      /\b(rodar|executar|fazer)\s+(an[aá]lise|analise)\b/i,
+      /\b(an[aá]lise|analise)\s+(t[eé]cnica|tecnica|do\s+mercado|de\s+trading|do\s+btc|do\s+bitcoin)\b/i,
+      /\b(technical\s+analysis|market\s+analysis|analy[sz]e)\b/i,
+    ],
   },
 
   // PAUSAR TRADING
@@ -328,6 +342,7 @@ const TRADING_CONTEXT_KEYWORDS = [
   'long', 'short', 'futures', 'perpetual', 'alavancagem',
   'leverage', 'stop', 'profit', 'loss', 'mercado', 'market',
   'kucoin', 'exchange', 'crypto', 'cripto', 'dólar', 'dollar',
+  'análise', 'analise', 'analysis', 'sinal', 'sinais', 'indicadores', 'indicator',
 ];
 
 // ============================================================================
@@ -525,6 +540,13 @@ export function parseTradingCommand(text: string): ParsedTradingCommand {
           }
         }
 
+        if (pattern.type === 'generate_signal' || pattern.type === 'analysis') {
+          result.symbol = extractSymbol(text);
+          const marketSelection = detectMarketType(text, result.symbol);
+          result.marketType = marketSelection.marketType;
+          result.marginMode = marketSelection.marginMode;
+        }
+
         if (pattern.type === 'cancel_order') {
           result.orderId = extractOrderId(text);
         }
@@ -685,6 +707,10 @@ export function getCommandDescription(command: ParsedTradingCommand, language: '
     generate_signal: {
       pt: `Gerar sinal${command.symbol ? ` para ${command.symbol}` : ''}`,
       en: `Generate signal${command.symbol ? ` for ${command.symbol}` : ''}`,
+    },
+    analysis: {
+      pt: `Executar análise técnica${command.symbol ? ` de ${command.symbol}` : ''}`,
+      en: `Run technical analysis${command.symbol ? ` for ${command.symbol}` : ''}`,
     },
     pause_trading: {
       pt: 'Pausar trading automático',

@@ -2080,6 +2080,24 @@
   "agenticConfig": {
     "title": "Modo Agentic",
     "subtitle": "Defina o escopo de execução, aprovações e referências operacionais do agentic.",
+    "tradingPromptsTitle": "Dicas de prompts para o Agente de Trading",
+    "tradingPromptsDesc": "Use comandos objetivos para acionar análise técnica, sinais IA e operações na KuCoin.",
+    "tradingPromptExamplesTitle": "Exemplos prontos",
+    "tradingPromptGuidelinesTitle": "Boas práticas",
+    "tradingPromptExamples": [
+      "Análise técnica BTCUSDTM 5m 15m 30m com notícias",
+      "Gerar sinal IA para BTCUSDTM com timeframes 5m 15m 30m",
+      "Compre 0.01 BTCUSDTM 10x market",
+      "Venda 0.02 BTCUSDTM 5x e defina stop loss em 42000",
+      "Status trading e posições abertas",
+      "Fechar posição BTCUSDTM"
+    ],
+    "tradingPromptGuidelines": [
+      "Sempre informe o símbolo (ex: BTCUSDTM) e o mercado (futures/spot/margin) quando necessário.",
+      "Para operações, informe direção e quantidade (buy/sell + valor).",
+      "Para análise e sinais, inclua os timeframes e se deseja notícias ou order book.",
+      "Confirme a execução quando o agente solicitar aprovação explícita."
+    ],
     "togglesTitle": "Escopo de Execução",
     "togglesDesc": "Habilite capacidades por tenant e exija aprovação para ações críticas.",
     "webEnabled": "Busca na internet (SearXNG)",
