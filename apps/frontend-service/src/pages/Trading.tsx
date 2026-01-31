@@ -1171,9 +1171,15 @@ export default function Trading() {
     if (riskConfigData?.data) {
       const config = riskConfigData.data;
       setRiskForm({
-        maxPositionSize: config.maxPositionSize ?? '10',
-        maxDailyLoss: config.maxDailyLoss ?? '5',
-        maxOrderValue: config.maxOrderValue ?? '10000',
+        maxPositionSize: config.maxPositionSize !== null && config.maxPositionSize !== undefined
+          ? String(config.maxPositionSize)
+          : '10',
+        maxDailyLoss: config.maxDailyLoss !== null && config.maxDailyLoss !== undefined
+          ? String(config.maxDailyLoss)
+          : '5',
+        maxOrderValue: config.maxOrderValue !== null && config.maxOrderValue !== undefined
+          ? String(config.maxOrderValue)
+          : '10000',
         maxLeverage: config.maxLeverage ?? 20,
         maxOpenPositions: config.maxOpenPositions ?? 3,
         defaultLeverage: config.defaultLeverage ?? 10,
@@ -1435,10 +1441,20 @@ export default function Trading() {
 
   const updateRiskConfigMutation = useMutation({
     mutationFn: async (data: typeof riskForm) => {
+      const normalizeDecimal = (value: string | number): string | undefined => {
+        const raw = String(value ?? '').trim();
+        if (!raw) return undefined;
+        const normalized = raw.replace(',', '.');
+        if (!Number.isFinite(Number(normalized))) {
+          throw new Error('Valor inválido. Use apenas números e separador decimal.');
+        }
+        return normalized;
+      };
+
       const res = await apiRequest('PUT', '/api/integrations/trading/risk-config', {
-        maxPositionSize: data.maxPositionSize,
-        maxDailyLoss: data.maxDailyLoss,
-        maxOrderValue: data.maxOrderValue,
+        maxPositionSize: normalizeDecimal(data.maxPositionSize),
+        maxDailyLoss: normalizeDecimal(data.maxDailyLoss),
+        maxOrderValue: normalizeDecimal(data.maxOrderValue),
         maxLeverage: data.maxLeverage,
         maxOpenPositions: data.maxOpenPositions,
         defaultLeverage: data.defaultLeverage,
