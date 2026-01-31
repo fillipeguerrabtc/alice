@@ -151,6 +151,12 @@ async function getAllowedSymbolsByMarketType(
   return kucoinClient.getAllowedSymbols();
 }
 
+function parseKucoinVolume(value?: string | number): number {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  return parsed;
+}
+
 function resolveNormalizedSymbolInList(input: string, allowed: string[]): string | null {
   const raw = normalizeSymbolInput(input);
   if (allowed.includes(raw)) return raw;
@@ -200,6 +206,38 @@ export async function getTradingSymbols(
     throw new Error('KuCoin não retornou símbolos ativos para o mercado selecionado.');
   }
   return { symbols: Array.from(new Set(allowed)) };
+}
+
+export async function getTopSymbolsByMarket(
+  authContext: TradingAuthContext,
+  marketType?: TradingMarketType,
+  marginMode?: TradingMarginMode,
+  limit: number = 8
+): Promise<string[]> {
+  const resolvedMarket = await resolveMarketType(authContext, marketType);
+  const resolvedMargin = await resolveMarginMode(authContext, marginMode);
+  const { symbols, contracts } = await getTradingSymbols(authContext, resolvedMarket, resolvedMargin);
+  if (symbols.length === 0) return [];
+
+  if (resolvedMarket === 'futures' && contracts) {
+    return contracts
+      .filter((contract) => contract.symbol && symbols.includes(contract.symbol))
+      .sort((a, b) => (b.turnoverOf24h ?? 0) - (a.turnoverOf24h ?? 0))
+      .map((contract) => contract.symbol)
+      .slice(0, limit);
+  }
+
+  const tickers = await kucoinSpotClient.getSpotAllTickers();
+  const allowedSet = new Set(symbols);
+  return tickers
+    .filter((ticker) => ticker.symbol && allowedSet.has(ticker.symbol))
+    .sort((a, b) => {
+      const volumeA = parseKucoinVolume(a.volValue ?? a.vol);
+      const volumeB = parseKucoinVolume(b.volValue ?? b.vol);
+      return volumeB - volumeA;
+    })
+    .map((ticker) => ticker.symbol)
+    .slice(0, limit);
 }
 
 export async function resolveTradingSymbol(

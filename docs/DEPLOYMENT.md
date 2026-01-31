@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 30 de Janeiro de 2026  
-**Versão:** 11.12 - Healthchecks alinhados ao status do deploy
+**Data:** 31 de Janeiro de 2026  
+**Versão:** 11.13 - Migração trading_symbol_preferences no próximo deploy
 
 ## Visão geral
 
@@ -42,6 +42,14 @@ deploy-alice + deploy-observability + deploy-erpnext + deploy-backup (paralelo)
   ↓
 health-{stack} + rollback-{stack} (se necessário)
 ```
+
+### Migrações obrigatórias (próximo deploy)
+
+No próximo deploy, **garantir** a aplicação da migration:
+
+- `migrations/0043_trading_symbol_preferences.sql`
+
+Esta migration cria a tabela de preferências de símbolos (favoritos/destaques) por usuário/mercado. O deploy modular já executa `drizzle-push` e migrations SQL quando há diff real; valide que o arquivo está presente e que o passo de migrations foi executado com sucesso no job de deploy.
 
 ### Healthchecks condicionados ao deploy bem-sucedido
 

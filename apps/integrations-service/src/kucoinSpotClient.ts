@@ -64,6 +64,20 @@ export interface SpotTicker {
   time: number;
 }
 
+export interface SpotTickerInfo {
+  symbol: string;
+  volValue?: string;
+  vol?: string;
+  last?: string;
+  buy?: string;
+  sell?: string;
+}
+
+interface SpotAllTickersResponse {
+  time: number;
+  ticker: SpotTickerInfo[];
+}
+
 export interface SpotOrderBook {
   sequence: string;
   time: number;
@@ -186,6 +200,20 @@ export async function getSpotTicker(symbol: string): Promise<SpotTicker> {
   const endpoint = buildEndpoint('/api/v1/market/orderbook/level1', { symbol });
   const response = await kucoinSpotRequester.executeRequest<SpotTicker>('GET', endpoint, undefined, false);
   return response.data;
+}
+
+/**
+ * Lista todos os tickers Spot (para ranking por volume)
+ * GET /api/v1/market/allTickers
+ */
+export async function getSpotAllTickers(): Promise<SpotTickerInfo[]> {
+  const response = await kucoinSpotRequester.executeRequest<SpotAllTickersResponse>(
+    'GET',
+    '/api/v1/market/allTickers',
+    undefined,
+    false
+  );
+  return response.data?.ticker ?? [];
 }
 
 /**
@@ -353,6 +381,7 @@ export function isSpotConfigured(): boolean {
 export default {
   getSpotSymbols,
   getSpotTicker,
+  getSpotAllTickers,
   getSpotOrderBook,
   getSpotKlines,
   getSpotTrades,

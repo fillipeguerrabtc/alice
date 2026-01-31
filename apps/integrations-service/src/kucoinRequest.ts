@@ -221,7 +221,14 @@ function parseRetryAfterMs(value: string | null): number | undefined {
   if (!value) return undefined;
   const seconds = Number(value);
   if (!Number.isFinite(seconds) || seconds <= 0) return undefined;
-  return Math.min(5_000, Math.floor(seconds * 1000));
+  return Math.min(60_000, Math.floor(seconds * 1000));
+}
+
+function parseRateLimitResetMs(value: string | null): number | undefined {
+  if (!value) return undefined;
+  const ms = Number(value);
+  if (!Number.isFinite(ms) || ms <= 0) return undefined;
+  return Math.min(60_000, Math.floor(ms));
 }
 
 function computeBackoffMs(attempt: number): number {
@@ -330,6 +337,8 @@ export function createKucoinRequester(params: {
 
         if (!response.ok) {
           const retryAfterMs = parseRetryAfterMs(response.headers.get('retry-after'));
+          const resetMs = parseRateLimitResetMs(response.headers.get('gw-ratelimit-reset'));
+          const effectiveRetryMs = Math.max(retryAfterMs ?? 0, resetMs ?? 0) || undefined;
           const errorBody = await response.text().catch(() => '');
           recordKucoinCall({ operation, status: 'error', durationSeconds });
           recordKucoinError({ operation, errorType: `http_${response.status}` });
@@ -339,13 +348,13 @@ export function createKucoinRequester(params: {
             method,
             endpoint,
             status: response.status,
-            retryAfterMs,
+            retryAfterMs: effectiveRetryMs,
             message: `KuCoin HTTP ${response.status} (${response.statusText})`,
           });
 
           const retryable = response.status === 429 || (response.status >= 500 && response.status <= 599);
           if (attempt < maxAttempts && retryable) {
-            const waitMs = retryAfterMs ?? computeBackoffMs(attempt);
+            const waitMs = effectiveRetryMs ?? computeBackoffMs(attempt);
             logger.warn(
               { method, endpoint, attempt, maxAttempts, status: response.status, waitMs, body: errorBody },
               'KuCoin request falhou (HTTP) — retry agendado'

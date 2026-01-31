@@ -5140,6 +5140,36 @@ function normalizeSignalSymbols(rawSymbols: string[]): string[] {
   return Array.from(new Set(normalized));
 }
 
+function normalizeSymbolList(rawSymbols: string[], allowedSymbols: string[]): string[] {
+  const normalized = rawSymbols
+    .map((symbol) => symbol.trim().toUpperCase())
+    .filter((symbol) => symbol.length > 0);
+  const unique = Array.from(new Set(normalized));
+  if (allowedSymbols.length === 0) return unique;
+  const allowedSet = new Set(allowedSymbols);
+  return unique.filter((symbol) => allowedSet.has(symbol));
+}
+
+async function fetchTradingSymbolPreferences(
+  tenantId: string,
+  userId: string,
+  marketType: 'futures' | 'spot' | 'margin',
+  marginMode: 'cross' | 'isolated'
+) {
+  const db = getDatabase();
+  const [row] = await db
+    .select()
+    .from(schema.tradingSymbolPreferences)
+    .where(and(
+      eq(schema.tradingSymbolPreferences.tenantId, tenantId),
+      eq(schema.tradingSymbolPreferences.userId, userId),
+      eq(schema.tradingSymbolPreferences.marketType, marketType),
+      eq(schema.tradingSymbolPreferences.marginMode, marginMode)
+    ))
+    .limit(1);
+  return row ?? null;
+}
+
 function stripJsonCodeFence(content: string): string {
   const trimmed = content.trim();
   if (trimmed.startsWith('```')) {
@@ -5350,6 +5380,7 @@ app.get('/api/integrations/trading/ws/status', requirePermission('integrations:t
         success: true,
         data: {
           configured: false,
+          supportedMarkets: ['futures'],
           public: { state: 'disconnected' },
           private: { enabled: false, state: 'disconnected' },
         },
@@ -5373,6 +5404,7 @@ app.get('/api/integrations/trading/ws/status', requirePermission('integrations:t
         configured: true,
         allowedSymbols,
         defaultSymbol,
+        supportedMarkets: ['futures'],
         public: { state: publicWs.getState() },
         private: { enabled: privateEnabled, state: privateWs?.getState() ?? 'disconnected' },
       },
@@ -5433,7 +5465,13 @@ app.post('/api/integrations/trading/ws/subscribe', requirePermission('integratio
     const { channel, symbol, interval, depth, marketType, marginMode } = parsed.data;
     if (marketType !== 'futures') {
       kucoinWsSubscriptionsTotal.inc({ action: 'subscribe', channel, status: 'unsupported_market' }, 1);
-      res.status(501).json({ error: 'WebSocket disponível apenas para KuCoin Futures' });
+      res.json({
+        success: true,
+        data: {
+          supported: false,
+          message: 'WebSocket KuCoin está disponível apenas para Futures; usando REST como fallback.',
+        },
+      });
       return;
     }
 
@@ -5525,7 +5563,13 @@ app.post('/api/integrations/trading/ws/unsubscribe', requirePermission('integrat
     const { channel, symbol, interval, depth, marketType, marginMode } = parsed.data;
     if (marketType !== 'futures') {
       kucoinWsSubscriptionsTotal.inc({ action: 'unsubscribe', channel, status: 'unsupported_market' }, 1);
-      res.status(501).json({ error: 'WebSocket disponível apenas para KuCoin Futures' });
+      res.json({
+        success: true,
+        data: {
+          supported: false,
+          message: 'WebSocket KuCoin está disponível apenas para Futures; cancelamento ignorado.',
+        },
+      });
       return;
     }
 
@@ -5630,24 +5674,156 @@ app.get('/api/integrations/trading/symbols', requirePermission('integrations:tra
       }
     }
     const { symbols } = await kucoinService.getTradingSymbols(tradingAuth, marketType, marginMode);
+    const sortedSymbols = [...symbols].sort((a, b) => a.localeCompare(b));
     const defaultSymbol = await kucoinService.resolveTradingSymbol(
       tradingAuth,
       undefined,
       marketType,
       marginMode
     );
+    const topSymbols = await kucoinService.getTopSymbolsByMarket(tradingAuth, marketType, marginMode, 12);
+    const preferences = await fetchTradingSymbolPreferences(
+      authContext.tenantId,
+      authContext.userId,
+      marketType ?? 'futures',
+      marketType === 'margin' ? marginMode ?? 'cross' : 'cross'
+    );
+    const favorites = normalizeSymbolList(preferences?.favorites ?? [], symbols);
+    const featured = normalizeSymbolList(preferences?.featured ?? [], symbols);
 
     res.json({
       success: true,
       data: {
-        symbols,
+        symbols: sortedSymbols,
         defaultSymbol,
+        favorites,
+        featured,
+        topSymbols,
       },
     });
   } catch (error) {
     if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao listar símbolos de trading');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/symbol-preferences - Favoritos/destaques por usuário
+app.get('/api/integrations/trading/symbol-preferences', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const querySchema = z.object({
+      marketType: z.enum(['futures', 'spot', 'margin']).optional().default('futures'),
+      marginMode: z.enum(['cross', 'isolated']).optional().default('cross'),
+    });
+    const parsedQuery = querySchema.safeParse(req.query);
+    if (!parsedQuery.success) {
+      res.status(400).json({ error: 'Query inválida', details: parsedQuery.error.flatten() });
+      return;
+    }
+
+    const { marketType, marginMode } = parsedQuery.data;
+    const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
+    const { symbols } = await kucoinService.getTradingSymbols(tradingAuth, marketType, marginMode);
+    const topSymbols = await kucoinService.getTopSymbolsByMarket(tradingAuth, marketType, marginMode, 12);
+    const preferences = await fetchTradingSymbolPreferences(authContext.tenantId, authContext.userId, marketType, marginMode);
+    const favorites = normalizeSymbolList(preferences?.favorites ?? [], symbols);
+    const featured = normalizeSymbolList(preferences?.featured ?? [], symbols);
+
+    res.json({
+      success: true,
+      data: {
+        marketType,
+        marginMode,
+        favorites,
+        featured,
+        topSymbols,
+      },
+    });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao carregar preferências de símbolos');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// PUT /api/integrations/trading/symbol-preferences - Atualizar favoritos/destaques
+app.put('/api/integrations/trading/symbol-preferences', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const bodySchema = z.object({
+      marketType: z.enum(['futures', 'spot', 'margin']).optional().default('futures'),
+      marginMode: z.enum(['cross', 'isolated']).optional().default('cross'),
+      favorites: z.array(z.string().min(1).max(20)).optional(),
+      featured: z.array(z.string().min(1).max(20)).optional(),
+    });
+    const parsedBody = bodySchema.safeParse(req.body);
+    if (!parsedBody.success) {
+      res.status(400).json({ error: 'Dados inválidos', details: parsedBody.error.flatten() });
+      return;
+    }
+
+    const { marketType, marginMode, favorites: favoritesRaw, featured: featuredRaw } = parsedBody.data;
+    const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
+    const { symbols } = await kucoinService.getTradingSymbols(tradingAuth, marketType, marginMode);
+    const favorites = favoritesRaw ? normalizeSymbolList(favoritesRaw, symbols) : undefined;
+    const featured = featuredRaw ? normalizeSymbolList(featuredRaw, symbols) : undefined;
+
+    const db = getDatabase();
+    const [existing] = await db
+      .select()
+      .from(schema.tradingSymbolPreferences)
+      .where(and(
+        eq(schema.tradingSymbolPreferences.tenantId, authContext.tenantId),
+        eq(schema.tradingSymbolPreferences.userId, authContext.userId),
+        eq(schema.tradingSymbolPreferences.marketType, marketType),
+        eq(schema.tradingSymbolPreferences.marginMode, marginMode)
+      ))
+      .limit(1);
+
+    if (existing) {
+      const [updated] = await db
+        .update(schema.tradingSymbolPreferences)
+        .set({
+          favorites: favorites ?? existing.favorites,
+          featured: featured ?? existing.featured,
+          atualizadoEm: new Date(),
+        })
+        .where(eq(schema.tradingSymbolPreferences.id, existing.id))
+        .returning();
+      res.json({ success: true, data: updated });
+      return;
+    }
+
+    const [created] = await db
+      .insert(schema.tradingSymbolPreferences)
+      .values({
+        tenantId: authContext.tenantId,
+        userId: authContext.userId,
+        marketType,
+        marginMode,
+        favorites: favorites ?? [],
+        featured: featured ?? [],
+      })
+      .returning();
+
+    res.json({ success: true, data: created });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao atualizar preferências de símbolos');
     res.status(500).json({ error: errorMessage });
   }
 });
@@ -5679,8 +5855,12 @@ async function handleTradingMarketRequest(
     const marketType = resolveMarketTypeParam(queryResult.data);
     const marginMode = queryResult.data.marginMode;
 
-    if (marketType && marketType !== 'futures') {
-      res.status(400).json({ error: 'Posições estão disponíveis apenas para mercado Futures.' });
+    if (marketType === 'spot' && !kucoinSpotClient.isSpotConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    if (marketType === 'margin' && !kucoinMarginClient.isMarginConfigured()) {
+      respondKucoinNotConfigured(res);
       return;
     }
     if (!marketType || marketType === 'futures') {
@@ -5796,8 +5976,12 @@ app.get('/api/integrations/trading/positions', requirePermission('integrations:t
     }
 
     if (marketType === 'spot' || marketType === 'margin') {
-      res.status(400).json({
-        error: 'Posições são suportadas apenas para o mercado Futures. Use /account para saldos.',
+      res.json({
+        success: true,
+        data: [],
+        marketType,
+        marginMode,
+        message: 'Posições são suportadas apenas para Futures. Use /account para saldos.',
       });
       return;
     }

@@ -50,6 +50,8 @@ import {
   Target,
   Zap,
   FileCheck,
+  Star,
+  Pin,
   CheckCircle,
   XCircle,
   Clock,
@@ -147,6 +149,7 @@ interface KucoinWsStatus {
   configured: boolean;
   allowedSymbols?: string[];
   defaultSymbol?: string;
+  supportedMarkets?: Array<'futures' | 'spot' | 'margin'>;
   public: { state: 'disconnected' | 'connecting' | 'connected' | 'reconnecting' };
   private: { enabled: boolean; state: 'disconnected' | 'connecting' | 'connected' | 'reconnecting' };
 }
@@ -154,6 +157,9 @@ interface KucoinWsStatus {
 interface TradingSymbolsResponse {
   symbols: string[];
   defaultSymbol: string;
+  favorites?: string[];
+  featured?: string[];
+  topSymbols?: string[];
 }
 
 interface OrderBookResponse {
@@ -766,6 +772,12 @@ export default function Trading() {
     return intervalsData?.data?.restOrderBookDepth ?? null;
   }, [intervalsData]);
 
+  const isFuturesMarket = selectedMarketType === 'futures';
+  const wsEnabled = isFuturesMarket
+    && !!sanitizedSymbol
+    && !!statusData?.data?.isConfigured
+    && !statusData?.data?.requiresTenant;
+
   // ============================================================================
   // QUERIES
   // ============================================================================
@@ -800,6 +812,91 @@ export default function Trading() {
     enabled: statusData?.data?.isConfigured && !statusData?.data?.requiresTenant,
   });
 
+  const availableSymbols = symbolsData?.data?.symbols ?? [];
+  const favoriteSymbols = symbolsData?.data?.favorites ?? [];
+  const featuredOverride = symbolsData?.data?.featured ?? [];
+  const topSymbols = symbolsData?.data?.topSymbols ?? [];
+  const featuredSymbols = featuredOverride.length > 0 ? featuredOverride : topSymbols;
+
+  const symbolOptions = useMemo(() => {
+    if (availableSymbols.length === 0) return [];
+    const alphabetic = [...availableSymbols].sort((a, b) => a.localeCompare(b));
+    const featuredSet = new Set(featuredSymbols);
+    const favoritesSet = new Set(favoriteSymbols);
+    const featuredList = featuredSymbols.filter((symbol) => featuredSet.has(symbol));
+    const favoritesList = favoriteSymbols.filter((symbol) => !featuredSet.has(symbol));
+    const remaining = alphabetic.filter((symbol) => !featuredSet.has(symbol) && !favoritesSet.has(symbol));
+    return [...featuredList, ...favoritesList, ...remaining];
+  }, [availableSymbols, favoriteSymbols, featuredSymbols]);
+
+  const symbolSelectItems = useMemo(() => {
+    const items: Array<{
+      kind: 'label' | 'symbol';
+      value: string;
+      label?: string;
+      isFeatured?: boolean;
+      isFavorite?: boolean;
+    }> = [];
+    const featuredSet = new Set(featuredSymbols);
+    const favoritesSet = new Set(favoriteSymbols);
+    const featuredList = featuredSymbols.filter((symbol) => featuredSet.has(symbol));
+    const favoritesList = favoriteSymbols.filter((symbol) => !featuredSet.has(symbol));
+    const remaining = symbolOptions.filter((symbol) => !featuredSet.has(symbol) && !favoritesSet.has(symbol));
+
+    if (featuredList.length > 0) {
+      items.push({ kind: 'label', value: '__featured', label: t('trading.symbols.featured') });
+      featuredList.forEach((symbol) => items.push({ kind: 'symbol', value: symbol, isFeatured: true }));
+    }
+    if (favoritesList.length > 0) {
+      items.push({ kind: 'label', value: '__favorites', label: t('trading.symbols.favorites') });
+      favoritesList.forEach((symbol) => items.push({ kind: 'symbol', value: symbol, isFavorite: true }));
+    }
+    if (remaining.length > 0) {
+      items.push({ kind: 'label', value: '__all', label: t('trading.symbols.all') });
+      remaining.forEach((symbol) => items.push({ kind: 'symbol', value: symbol }));
+    }
+    return items;
+  }, [featuredSymbols, favoriteSymbols, symbolOptions, t]);
+
+  const updateSymbolPrefsMutation = useMutation({
+    mutationFn: async (payload: {
+      marketType: 'futures' | 'spot' | 'margin';
+      marginMode?: 'cross' | 'isolated';
+      favorites?: string[];
+      featured?: string[];
+    }) => {
+      const response = await apiRequest('PUT', '/api/integrations/trading/symbol-preferences', payload);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/symbols'] });
+    },
+  });
+
+  const toggleFavorite = (symbol: string) => {
+    const next = favoriteSymbols.includes(symbol)
+      ? favoriteSymbols.filter((item) => item !== symbol)
+      : [...favoriteSymbols, symbol];
+    updateSymbolPrefsMutation.mutate({
+      marketType: selectedMarketType,
+      marginMode: selectedMarginMode,
+      favorites: next,
+      featured: featuredOverride,
+    });
+  };
+
+  const toggleFeatured = (symbol: string) => {
+    const next = featuredOverride.includes(symbol)
+      ? featuredOverride.filter((item) => item !== symbol)
+      : [...featuredOverride, symbol];
+    updateSymbolPrefsMutation.mutate({
+      marketType: selectedMarketType,
+      marginMode: selectedMarginMode,
+      favorites: favoriteSymbols,
+      featured: next,
+    });
+  };
+
   const { data: wsStatusData } = useQuery<{ success: boolean; data: KucoinWsStatus }>({
     queryKey: ['/api/integrations/trading/ws/status'],
     refetchInterval: 30000,
@@ -817,7 +914,7 @@ export default function Trading() {
       const res = await apiRequest('GET', `/api/integrations/trading/market/${sanitizedSymbol}?${marketQueryString}`);
       return res.json();
     },
-    refetchInterval: 5000, // Atualizar a cada 5 segundos
+    refetchInterval: wsEnabled ? 15000 : 5000,
     enabled: statusData?.data?.isConfigured && !!sanitizedSymbol,
   });
 
@@ -848,7 +945,7 @@ export default function Trading() {
       return res.json();
     },
     refetchInterval: 10000,
-    enabled: statusData?.data?.isConfigured && !!sanitizedSymbol,
+    enabled: statusData?.data?.isConfigured && !!sanitizedSymbol && selectedMarketType === 'futures',
   });
 
   const {
@@ -960,13 +1057,6 @@ export default function Trading() {
     }
   }, [intervalsData, selectedInterval]);
 
-  const isFuturesMarket = selectedMarketType === 'futures';
-
-  const wsEnabled = isFuturesMarket
-    && !!sanitizedSymbol
-    && !!statusData?.data?.isConfigured
-    && !statusData?.data?.requiresTenant;
-
   const wsChannels = useMemo(() => {
     if (!wsEnabled) return [];
     const baseChannels: Array<'ticker' | 'orderbook' | 'klines' | 'trades'> = ['ticker', 'orderbook', 'trades'];
@@ -1009,7 +1099,7 @@ export default function Trading() {
       const res = await apiRequest('GET', `/api/integrations/trading/klines/${sanitizedSymbol}?${params.toString()}`);
       return res.json();
     },
-    refetchInterval: 60000, // Atualizar a cada 1 minuto
+    refetchInterval: wsEnabled ? 120000 : 60000,
     enabled: statusData?.data?.isConfigured && !!granularityValue && !!sanitizedSymbol,
   });
 
@@ -1028,7 +1118,7 @@ export default function Trading() {
       const res = await apiRequest('GET', `/api/integrations/trading/orderbook/${sanitizedSymbol}?${params.toString()}`);
       return res.json();
     },
-    refetchInterval: 5000, // Atualizar a cada 5 segundos
+    refetchInterval: wsEnabled ? 20000 : 5000,
     enabled: statusData?.data?.isConfigured && !!restOrderBookDepth && !!sanitizedSymbol,
   });
 
@@ -1750,7 +1840,6 @@ export default function Trading() {
   // ============================================================================
 
   const status = statusData.data;
-  const availableSymbols = symbolsData?.data?.symbols ?? [];
   const defaultSymbol = symbolsData?.data?.defaultSymbol || status.defaultSymbol || '';
   const account = accountData?.data;
   const isSpotMarket = selectedMarketType === 'spot';
@@ -1948,18 +2037,62 @@ export default function Trading() {
             )}
 
             {/* Symbol Selector */}
-            <Select value={selectedSymbol} onValueChange={setSelectedSymbol} disabled={isLoadingSymbols || availableSymbols.length === 0}>
+            <Select value={selectedSymbol} onValueChange={setSelectedSymbol} disabled={isLoadingSymbols || symbolOptions.length === 0}>
               <SelectTrigger className="w-[180px]" data-testid="select-symbol">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent className="max-h-60 overflow-y-auto">
-                {availableSymbols.map((symbol) => (
-                  <SelectItem key={symbol} value={symbol}>
-                    {symbol}
-                  </SelectItem>
-                ))}
+                {symbolSelectItems.map((item) => {
+                  if (item.kind === 'label') {
+                    return (
+                      <SelectItem
+                        key={item.value}
+                        value={item.value}
+                        disabled
+                        className="text-xs uppercase text-muted-foreground"
+                      >
+                        {item.label}
+                      </SelectItem>
+                    );
+                  }
+                  return (
+                    <SelectItem key={item.value} value={item.value}>
+                      <span className="flex items-center gap-2">
+                        {item.isFeatured ? <Pin className="h-3 w-3 text-blue-400" /> : null}
+                        {item.isFavorite ? <Star className="h-3 w-3 text-yellow-400" /> : null}
+                        {item.value}
+                      </span>
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => toggleFavorite(selectedSymbol)}
+              disabled={!selectedSymbol || updateSymbolPrefsMutation.isPending}
+            >
+              {favoriteSymbols.includes(selectedSymbol) ? (
+                <Star className="h-4 w-4 text-yellow-400" />
+              ) : (
+                <Star className="h-4 w-4" />
+              )}
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => toggleFeatured(selectedSymbol)}
+              disabled={!selectedSymbol || updateSymbolPrefsMutation.isPending}
+            >
+              {featuredOverride.includes(selectedSymbol) ? (
+                <Pin className="h-4 w-4 text-blue-400" />
+              ) : (
+                <Pin className="h-4 w-4" />
+              )}
+            </Button>
 
             {/* Actions */}
             <Button
@@ -1982,6 +2115,22 @@ export default function Trading() {
               {t('trading.riskConfig.title')}
             </Button>
           </div>
+
+          {featuredSymbols.length > 0 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              {featuredSymbols.map((symbol) => (
+                <Button
+                  key={symbol}
+                  variant={symbol === selectedSymbol ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setSelectedSymbol(symbol)}
+                  className="h-7 px-2 text-xs"
+                >
+                  {symbol}
+                </Button>
+              ))}
+            </div>
+          )}
         </div>
       </motion.div>
 
@@ -3324,6 +3473,8 @@ export default function Trading() {
               symbol={selectedSymbol}
               interval={selectedInterval}
               intervalOptions={intervalOptions}
+              symbolOptions={symbolOptions}
+              onSymbolChange={setSelectedSymbol}
               currentPrice={currentPrice}
               isLoading={isLoadingKlines}
               onIntervalChange={handleIntervalChange}
@@ -3840,13 +3991,13 @@ export default function Trading() {
                   <Select
                     value={riskForm.defaultSymbol}
                     onValueChange={(value) => setRiskForm({ ...riskForm, defaultSymbol: value })}
-                    disabled={availableSymbols.length === 0}
+                    disabled={symbolOptions.length === 0}
                   >
                     <SelectTrigger data-testid="select-default-symbol">
                       <SelectValue placeholder={t('trading.riskConfig.defaultSymbolPlaceholder')} />
                     </SelectTrigger>
                     <SelectContent className="max-h-60 overflow-y-auto">
-                      {availableSymbols.map((symbol) => (
+                      {symbolOptions.map((symbol) => (
                         <SelectItem key={symbol} value={symbol}>
                           {symbol}
                         </SelectItem>

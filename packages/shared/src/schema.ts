@@ -2054,6 +2054,31 @@ export const tradingRiskConfig = pgTable(
   })
 );
 
+// ============================================================================
+// PREFERÊNCIAS DE SÍMBOLOS (Favoritos + Destaques por usuário/mercado)
+// ============================================================================
+export const tradingSymbolPreferences = pgTable(
+  "trading_symbol_preferences",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
+    userId: uuid("user_id").notNull().references(() => users.id),
+    marketType: tradingMarketTypeEnum("market_type").notNull().default("futures"),
+    marginMode: tradingMarginModeEnum("margin_mode").notNull().default("cross"),
+    favorites: text("favorites").array().notNull().default([]),
+    featured: text("featured").array().notNull().default([]),
+    criadoEm: timestamp("criado_em").defaultNow(),
+    atualizadoEm: timestamp("atualizado_em").defaultNow(),
+  },
+  (table) => ({
+    idxSymbolPrefsTenant: index("idx_trading_symbol_prefs_tenant").on(table.tenantId),
+    idxSymbolPrefsUser: index("idx_trading_symbol_prefs_user").on(table.userId),
+    idxSymbolPrefsMarket: index("idx_trading_symbol_prefs_market").on(table.marketType),
+    idxSymbolPrefsUserMarket: uniqueIndex("idx_trading_symbol_prefs_user_market")
+      .on(table.tenantId, table.userId, table.marketType, table.marginMode),
+  })
+);
+
 // AUDIT LOG DE TRADING (Auditoria completa para compliance)
 // Registro imutável de todas as ações de trading
 export const tradingAuditLog = pgTable(
@@ -2111,6 +2136,17 @@ export const tradingRiskConfigRelations = relations(tradingRiskConfig, ({ one })
   tenant: one(tenants, {
     fields: [tradingRiskConfig.tenantId],
     references: [tenants.id],
+  }),
+}));
+
+export const tradingSymbolPreferencesRelations = relations(tradingSymbolPreferences, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [tradingSymbolPreferences.tenantId],
+    references: [tenants.id],
+  }),
+  user: one(users, {
+    fields: [tradingSymbolPreferences.userId],
+    references: [users.id],
   }),
 }));
 
@@ -3807,6 +3843,9 @@ export type InsertTradingPosition = typeof tradingPositions.$inferInsert;
 
 export type TradingRiskConfig = typeof tradingRiskConfig.$inferSelect;
 export type InsertTradingRiskConfig = typeof tradingRiskConfig.$inferInsert;
+
+export type TradingSymbolPreferences = typeof tradingSymbolPreferences.$inferSelect;
+export type InsertTradingSymbolPreferences = typeof tradingSymbolPreferences.$inferInsert;
 
 export type TradingAuditLog = typeof tradingAuditLog.$inferSelect;
 export type InsertTradingAuditLog = typeof tradingAuditLog.$inferInsert;

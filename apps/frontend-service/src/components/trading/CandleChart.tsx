@@ -2,7 +2,7 @@
  * CandleChart - Gráfico de Candlestick para Trading
  * 
  * Componente enterprise-grade para visualização de preços em tempo real.
- * Usa recharts para renderização performática e responsiva.
+ * Usa lightweight-charts para renderização performática e profissional.
  * 
  * Features:
  * - Candlesticks com cores verde/vermelho
@@ -38,6 +38,13 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { formatNumber } from '@/lib/utils';
 import {
   BarChart3,
@@ -65,6 +72,8 @@ export interface CandleChartProps {
   symbol: string;
   interval: string;
   intervalOptions?: Array<{ value: string; label: string }>;
+  symbolOptions?: string[];
+  onSymbolChange?: (symbol: string) => void;
   currentPrice?: number;
   isLoading?: boolean;
   onIntervalChange?: (interval: string) => void;
@@ -138,6 +147,8 @@ export function CandleChart({
   symbol,
   interval,
   intervalOptions = [],
+  symbolOptions = [],
+  onSymbolChange,
   currentPrice,
   isLoading = false,
   onIntervalChange,
@@ -392,6 +403,21 @@ export function CandleChart({
               <BarChart3 className="h-5 w-5" />
               {symbol}
             </CardTitle>
+
+            {symbolOptions.length > 0 && onSymbolChange ? (
+              <Select value={symbol} onValueChange={onSymbolChange}>
+                <SelectTrigger className="h-8 w-[160px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="max-h-60 overflow-y-auto">
+                  {symbolOptions.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : null}
             
             {currentPrice && (
               <div className="flex items-center gap-2">

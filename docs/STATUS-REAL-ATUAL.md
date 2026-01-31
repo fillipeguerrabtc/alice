@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 **Autor:** Fillipe Guerra  
-**Data:** 30 de Janeiro de 2026  
+**Data:** 31 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.42 - Chart enterprise (lightweight-charts)
+**Versão:** 10.44 - Trading multi-market + rate limit KuCoin
 
 ---
 
@@ -30,6 +30,9 @@
 - CI: reordenação de enums/schemas de trading evita uso antes da declaração.
 - Lint: remoção de import não usado na página Trading (zero warnings).
 - Trading Chart: novo renderer com lightweight-charts (visual moderno e performance).
+- Trading multi‑market: favoritos/destaques por usuário, pares em destaque no seletor e troca de símbolo no gráfico.
+- KuCoin rate limit: retry/backoff respeita `Retry-After` e `gw-ratelimit-reset` (ms) conforme docs oficiais.
+- Deploy: migration `0043_trading_symbol_preferences.sql` deve ser aplicada no próximo deploy.
 
 ---
 

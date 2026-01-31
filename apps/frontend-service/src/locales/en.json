@@ -1722,8 +1722,13 @@
         "8h": "8 hours",
         "12h": "12 hours",
         "1d": "1 day",
-        "1w": "1 week"
+      "1w": "1 week"
       }
+    },
+    "symbols": {
+      "featured": "Featured pairs",
+      "favorites": "Favorites",
+      "all": "All pairs"
     },
     "orderbook": {
       "title": "Order Book",
