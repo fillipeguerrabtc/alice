@@ -20,19 +20,20 @@
  * Data: 17 de Dezembro de 2025
  */
 
-import { useState, useMemo, useEffect } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  ComposedChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  ReferenceLine,
-  Cell,
-} from 'recharts';
+  createChart,
+  CandlestickSeries,
+  CrosshairMode,
+  HistogramSeries,
+  type IChartApi,
+  type ISeriesApi,
+  type UTCTimestamp,
+  type HistogramData,
+  type CandlestickData,
+  type PriceLineOptions,
+} from 'lightweight-charts';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -70,25 +71,8 @@ export interface CandleChartProps {
   onRefresh?: () => void;
   height?: number;
   showVolume?: boolean;
-  showSMA?: boolean;
-  smaLength?: number;
   locale?: string;
   timeZone?: string;
-}
-
-interface ChartDataPoint {
-  time: string;
-  timestamp: number;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-  color: string;
-  // Para renderizar candlestick como bar chart
-  body: [number, number];
-  wick: [number, number];
-  sma?: number;
 }
 
 // ============================================================================
@@ -96,39 +80,21 @@ interface ChartDataPoint {
 // ============================================================================
 
 const COLORS = {
-  bullish: '#22c55e',  // Verde para alta
-  bearish: '#ef4444',  // Vermelho para baixa
-  volume: '#6b7280',   // Cinza para volume
-  grid: '#374151',     // Grid lines
-  text: '#9ca3af',     // Texto
-  sma: '#3b82f6',      // Azul para SMA
+  bullish: '#22c55e',
+  bearish: '#ef4444',
+  volumeUp: 'rgba(34, 197, 94, 0.35)',
+  volumeDown: 'rgba(239, 68, 68, 0.35)',
+  grid: '#1f2937',
+  text: '#9ca3af',
+  background: '#0b0f17',
+  border: '#273244',
+  currentPrice: '#3b82f6',
 };
 
 // ============================================================================
 // HELPERS
 // ============================================================================
 
-/**
- * Calcula SMA (Simple Moving Average)
- */
-function calculateSMA(data: number[], period: number): (number | undefined)[] {
-  const result: (number | undefined)[] = [];
-  
-  for (let i = 0; i < data.length; i++) {
-    if (i < period - 1) {
-      result.push(undefined);
-    } else {
-      const sum = data.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0);
-      result.push(sum / period);
-    }
-  }
-  
-  return result;
-}
-
-/**
- * Formata timestamp para exibição
- */
 function resolveLocale(locale?: string): string {
   return locale?.trim() || 'pt-BR';
 }
@@ -143,32 +109,11 @@ function resolveTimeZone(timeZone?: string): string {
   }
 }
 
-function parseIntervalToMinutes(interval: string): number | null {
-  const normalized = interval.trim().toLowerCase();
-  const match = /^(\d+)(m|h|d|w)$/.exec(normalized);
-  if (!match) return null;
-  const value = Number(match[1]);
-  if (!Number.isFinite(value) || value <= 0) return null;
-  const unit = match[2];
-  if (unit === 'm') return value;
-  if (unit === 'h') return value * 60;
-  if (unit === 'd') return value * 1440;
-  if (unit === 'w') return value * 10080;
-  return null;
-}
-
-function formatTime(timestamp: number, interval: string, locale?: string, timeZone?: string): string {
-  const date = new Date(timestamp);
-  const intervalNum = parseIntervalToMinutes(interval) ?? 0;
-  const resolvedLocale = resolveLocale(locale);
-  const resolvedTimeZone = resolveTimeZone(timeZone);
-  
-  if (intervalNum >= 1440) {
-    return date.toLocaleDateString(resolvedLocale, { day: '2-digit', month: '2-digit', timeZone: resolvedTimeZone });
-  } else if (intervalNum >= 60) {
-    return date.toLocaleTimeString(resolvedLocale, { hour: '2-digit', minute: '2-digit', timeZone: resolvedTimeZone });
+function resolveTimestamp(raw: number): UTCTimestamp {
+  if (raw > 10_000_000_000) {
+    return Math.floor(raw / 1000) as UTCTimestamp;
   }
-  return date.toLocaleTimeString(resolvedLocale, { hour: '2-digit', minute: '2-digit', timeZone: resolvedTimeZone });
+  return raw as UTCTimestamp;
 }
 
 /**
@@ -184,65 +129,6 @@ function formatPrice(value: number, locale: string): string {
 /**
  * Formata volume
  */
-function formatVolume(value: number, locale: string): string {
-  if (value >= 1_000_000) {
-    return `${formatNumber(value / 1_000_000, locale, {
-      minimumFractionDigits: 1,
-      maximumFractionDigits: 1,
-    })}M`;
-  }
-  if (value >= 1_000) {
-    return `${formatNumber(value / 1_000, locale, {
-      minimumFractionDigits: 1,
-      maximumFractionDigits: 1,
-    })}K`;
-  }
-  return formatNumber(value, locale, { maximumFractionDigits: 0 });
-}
-
-// ============================================================================
-// COMPONENTE CUSTOM TOOLTIP
-// ============================================================================
-
-interface TooltipPayload {
-  payload: ChartDataPoint;
-}
-
-function CustomTooltip({ 
-  active, 
-  payload,
-  locale,
-}: { 
-  active?: boolean; 
-  payload?: TooltipPayload[];
-  locale: string;
-}) {
-  if (!active || !payload || !payload[0]) return null;
-  
-  const data = payload[0].payload;
-  const isUp = data.close >= data.open;
-  
-  return (
-    <div className="bg-background/95 border border-border rounded-lg p-3 shadow-lg">
-      <p className="text-xs text-muted-foreground mb-2">{data.time}</p>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-        <span className="text-muted-foreground">Open:</span>
-        <span className="font-mono">${formatPrice(data.open, locale)}</span>
-        <span className="text-muted-foreground">High:</span>
-        <span className="font-mono text-green-500">${formatPrice(data.high, locale)}</span>
-        <span className="text-muted-foreground">Low:</span>
-        <span className="font-mono text-red-500">${formatPrice(data.low, locale)}</span>
-        <span className="text-muted-foreground">Close:</span>
-        <span className={`font-mono ${isUp ? 'text-green-500' : 'text-red-500'}`}>
-          ${formatPrice(data.close, locale)}
-        </span>
-        <span className="text-muted-foreground">Volume:</span>
-        <span className="font-mono">{formatVolume(data.volume, locale)}</span>
-      </div>
-    </div>
-  );
-}
-
 // ============================================================================
 // COMPONENTE PRINCIPAL
 // ============================================================================
@@ -258,14 +144,19 @@ export function CandleChart({
   onRefresh,
   height = 400,
   showVolume = true,
-  showSMA = false,
-  smaLength = 20,
   locale,
   timeZone,
 }: CandleChartProps) {
   const { t } = useTranslation();
   const [selectedInterval, setSelectedInterval] = useState(interval);
   const resolvedLocale = resolveLocale(locale);
+  const resolvedTimeZone = resolveTimeZone(timeZone);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const chartRef = useRef<IChartApi | null>(null);
+  const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+  const priceLineRef = useRef<ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']> | null>(null);
+  const tooltipRef = useRef<HTMLDivElement | null>(null);
   
   // BUG FIX 17/12/2025: Sincronizar selectedInterval quando prop interval mudar externamente
   // Cenário: pai muda interval via prop mas selectedInterval local ficava dessincronizado
@@ -274,69 +165,192 @@ export function CandleChart({
     setSelectedInterval(interval);
   }, [interval]);
   
-  // Processar dados para o gráfico
-  // BUG FIX 17/12/2025: Usar selectedInterval (sincronizado) ao invés de interval (prop)
-  // Garante que formatação de tempo e estado dos botões usem mesma fonte de verdade
-  const chartData = useMemo(() => {
+  const candleData = useMemo((): CandlestickData[] => {
     if (!data || data.length === 0) return [];
-    
-    const closes = data.map(d => parseFloat(d.close));
-    const smaValues = showSMA ? calculateSMA(closes, smaLength) : [];
-    
-    return data.map((kline, index) => {
+    const sorted = [...data].sort((a, b) => a.time - b.time);
+    return sorted.map((kline) => ({
+      time: resolveTimestamp(kline.time),
+      open: parseFloat(kline.open),
+      high: parseFloat(kline.high),
+      low: parseFloat(kline.low),
+      close: parseFloat(kline.close),
+    }));
+  }, [data]);
+
+  const volumeData = useMemo((): HistogramData[] => {
+    if (!data || data.length === 0) return [];
+    const sorted = [...data].sort((a, b) => a.time - b.time);
+    return sorted.map((kline) => {
       const open = parseFloat(kline.open);
       const close = parseFloat(kline.close);
-      const high = parseFloat(kline.high);
-      const low = parseFloat(kline.low);
-      const volume = parseFloat(kline.volume);
-      const isUp = close >= open;
-      
       return {
-        time: formatTime(kline.time, selectedInterval, locale, timeZone),
-        timestamp: kline.time,
-        open,
-        high,
-        low,
-        close,
-        volume,
-        color: isUp ? COLORS.bullish : COLORS.bearish,
-        // Body do candle (parte sólida)
-        body: isUp ? [open, close] : [close, open],
-        // Wick (sombras)
-        wick: [low, high],
-        sma: smaValues[index],
-      } as ChartDataPoint;
+        time: resolveTimestamp(kline.time),
+        value: parseFloat(kline.volume),
+        color: close >= open ? COLORS.volumeUp : COLORS.volumeDown,
+      };
     });
-  }, [data, selectedInterval, showSMA, smaLength, locale, timeZone]);
-  
-  // Calcular domínio do eixo Y
-  const yDomain = useMemo(() => {
-    if (chartData.length === 0) return [0, 100];
-    
-    const prices = chartData.flatMap(d => [d.high, d.low]);
-    const min = Math.min(...prices);
-    const max = Math.max(...prices);
-    const padding = (max - min) * 0.05;
-    
-    return [min - padding, max + padding];
-  }, [chartData]);
+  }, [data]);
   
   // Calcular mudança percentual
   const priceChange = useMemo(() => {
-    if (chartData.length < 2) return { value: 0, percent: 0 };
-    
-    const first = chartData[0].open;
-    const last = chartData[chartData.length - 1].close;
+    if (candleData.length < 2) return { value: 0, percent: 0 };
+    const first = candleData[0].open;
+    const last = candleData[candleData.length - 1].close;
     const change = last - first;
     const percent = (change / first) * 100;
     
     return { value: change, percent };
-  }, [chartData]);
+  }, [candleData]);
   
   const handleIntervalChange = (newInterval: string) => {
     setSelectedInterval(newInterval);
     onIntervalChange?.(newInterval);
   };
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const container = containerRef.current;
+    const chart = createChart(container, {
+      width: container.clientWidth,
+      height,
+      layout: {
+        background: { color: COLORS.background },
+        textColor: COLORS.text,
+        fontFamily: 'Inter, system-ui, sans-serif',
+      },
+      grid: {
+        vertLines: { color: COLORS.grid, style: 0 },
+        horzLines: { color: COLORS.grid, style: 0 },
+      },
+      crosshair: {
+        mode: CrosshairMode.Normal,
+      },
+      rightPriceScale: {
+        borderColor: COLORS.border,
+      },
+      timeScale: {
+        borderColor: COLORS.border,
+        timeVisible: true,
+        secondsVisible: false,
+        rightOffset: 4,
+        barSpacing: 10,
+        minBarSpacing: 4,
+      },
+      localization: {
+        locale: resolvedLocale,
+        priceFormatter: (value: number) => `$${formatPrice(value, resolvedLocale)}`,
+      },
+    });
+
+    const candleSeries = chart.addSeries(CandlestickSeries, {
+      upColor: COLORS.bullish,
+      downColor: COLORS.bearish,
+      borderVisible: false,
+      wickUpColor: COLORS.bullish,
+      wickDownColor: COLORS.bearish,
+    });
+
+    chartRef.current = chart;
+    candleSeriesRef.current = candleSeries;
+
+    if (showVolume) {
+      volumeSeriesRef.current = chart.addSeries(HistogramSeries, {
+        priceFormat: { type: 'volume' },
+        priceScaleId: 'volume',
+      });
+      chart.priceScale('volume').applyOptions({
+        scaleMargins: { top: 0.8, bottom: 0 },
+      });
+    }
+
+    const tooltip = document.createElement('div');
+    tooltip.className = 'pointer-events-none absolute z-10 rounded-lg border border-border bg-background/95 p-3 text-xs shadow-lg';
+    tooltip.style.display = 'none';
+    tooltip.style.left = '12px';
+    tooltip.style.top = '12px';
+    container.appendChild(tooltip);
+    tooltipRef.current = tooltip;
+
+    chart.subscribeCrosshairMove((param) => {
+      if (!tooltipRef.current || !param.time || !candleSeriesRef.current) {
+        if (tooltipRef.current) tooltipRef.current.style.display = 'none';
+        return;
+      }
+      const seriesData = param.seriesData.get(candleSeriesRef.current) as CandlestickData | undefined;
+      if (!seriesData) {
+        tooltipRef.current.style.display = 'none';
+        return;
+      }
+      const time = new Date(Number(seriesData.time) * 1000);
+      const timeLabel = time.toLocaleString(resolvedLocale, {
+        timeZone: resolvedTimeZone,
+        hour: '2-digit',
+        minute: '2-digit',
+        day: '2-digit',
+        month: '2-digit',
+      });
+      const isUp = seriesData.close >= seriesData.open;
+      tooltipRef.current.innerHTML = `
+        <div class="text-muted-foreground mb-2">${timeLabel}</div>
+        <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+          <span class="text-muted-foreground">Open:</span>
+          <span class="font-mono">$${formatPrice(seriesData.open, resolvedLocale)}</span>
+          <span class="text-muted-foreground">High:</span>
+          <span class="font-mono text-green-500">$${formatPrice(seriesData.high, resolvedLocale)}</span>
+          <span class="text-muted-foreground">Low:</span>
+          <span class="font-mono text-red-500">$${formatPrice(seriesData.low, resolvedLocale)}</span>
+          <span class="text-muted-foreground">Close:</span>
+          <span class="font-mono ${isUp ? 'text-green-500' : 'text-red-500'}">$${formatPrice(seriesData.close, resolvedLocale)}</span>
+        </div>
+      `;
+      tooltipRef.current.style.display = 'block';
+    });
+
+    const observer = new ResizeObserver(() => {
+      chart.applyOptions({ width: container.clientWidth, height });
+      chart.timeScale().fitContent();
+    });
+    observer.observe(container);
+
+    return () => {
+      observer.disconnect();
+      chart.remove();
+      chartRef.current = null;
+      candleSeriesRef.current = null;
+      volumeSeriesRef.current = null;
+    };
+  }, [height, resolvedLocale, resolvedTimeZone, showVolume]);
+
+  useEffect(() => {
+    if (!chartRef.current || !candleSeriesRef.current) return;
+    candleSeriesRef.current.setData(candleData);
+    if (showVolume && volumeSeriesRef.current) {
+      volumeSeriesRef.current.setData(volumeData);
+    }
+    chartRef.current.timeScale().fitContent();
+  }, [candleData, volumeData, showVolume]);
+
+  useEffect(() => {
+    if (!candleSeriesRef.current) return;
+    if (priceLineRef.current) {
+      candleSeriesRef.current.removePriceLine(priceLineRef.current);
+      priceLineRef.current = null;
+    }
+    if (currentPrice) {
+      const lineOptions: PriceLineOptions = {
+        price: currentPrice,
+        color: COLORS.currentPrice,
+        lineWidth: 1,
+        lineStyle: 2,
+        lineVisible: true,
+        axisLabelVisible: true,
+        axisLabelColor: COLORS.currentPrice,
+        axisLabelTextColor: '#0b0f17',
+        title: '',
+      };
+      priceLineRef.current = candleSeriesRef.current.createPriceLine(lineOptions);
+    }
+  }, [currentPrice]);
   
   // Loading state
   if (isLoading) {
@@ -353,7 +367,7 @@ export function CandleChart({
   }
   
   // Empty state
-  if (chartData.length === 0) {
+  if (candleData.length === 0) {
     return (
       <Card>
         <CardHeader>
@@ -425,97 +439,8 @@ export function CandleChart({
       </CardHeader>
       
       <CardContent>
-        <div style={{ height }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart
-              data={chartData}
-              margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
-            >
-              <CartesianGrid 
-                strokeDasharray="3 3" 
-                stroke={COLORS.grid}
-                opacity={0.3}
-              />
-              
-              <XAxis
-                dataKey="time"
-                tick={{ fill: COLORS.text, fontSize: 11 }}
-                tickLine={{ stroke: COLORS.grid }}
-                axisLine={{ stroke: COLORS.grid }}
-                interval="preserveStartEnd"
-                minTickGap={50}
-              />
-              
-              <YAxis
-                yAxisId="price"
-                domain={yDomain}
-                tick={{ fill: COLORS.text, fontSize: 11 }}
-                tickLine={{ stroke: COLORS.grid }}
-                axisLine={{ stroke: COLORS.grid }}
-                tickFormatter={(value) => `$${formatPrice(value, resolvedLocale)}`}
-                orientation="right"
-                width={80}
-              />
-              
-              {showVolume && (
-                <YAxis
-                  yAxisId="volume"
-                  orientation="left"
-                  tick={{ fill: COLORS.text, fontSize: 11 }}
-                  tickLine={{ stroke: COLORS.grid }}
-                  axisLine={{ stroke: COLORS.grid }}
-                  tickFormatter={(value) => formatVolume(value, resolvedLocale)}
-                  width={50}
-                />
-              )}
-              
-              <Tooltip content={<CustomTooltip locale={resolvedLocale} />} />
-              
-              {/* Current price reference line */}
-              {currentPrice && (
-                <ReferenceLine
-                  yAxisId="price"
-                  y={currentPrice}
-                  stroke="#3b82f6"
-                  strokeDasharray="5 5"
-                  strokeWidth={1}
-                />
-              )}
-              
-              {/* Volume bars */}
-              {showVolume && (
-                <Bar
-                  yAxisId="volume"
-                  dataKey="volume"
-                  fill={COLORS.volume}
-                  opacity={0.3}
-                  barSize={8}
-                />
-              )}
-              
-              {/* Candle wicks (sombras - linha fina mostrando high/low) */}
-              <Bar
-                yAxisId="price"
-                dataKey="wick"
-                barSize={1}
-              >
-                {chartData.map((entry, index) => (
-                  <Cell key={`wick-${index}`} fill={entry.color} />
-                ))}
-              </Bar>
-              
-              {/* Candle bodies (parte sólida open/close) */}
-              <Bar
-                yAxisId="price"
-                dataKey="body"
-                barSize={6}
-              >
-                {chartData.map((entry, index) => (
-                  <Cell key={`body-${index}`} fill={entry.color} />
-                ))}
-              </Bar>
-            </ComposedChart>
-          </ResponsiveContainer>
+        <div style={{ height }} className="relative">
+          <div ref={containerRef} className="h-full w-full" />
         </div>
         
         {/* Legend */}
@@ -530,7 +455,7 @@ export function CandleChart({
           </div>
           {showVolume && (
             <div className="flex items-center gap-1">
-              <div className="w-3 h-3 rounded" style={{ backgroundColor: COLORS.volume }} />
+              <div className="w-3 h-3 rounded" style={{ backgroundColor: COLORS.volumeUp }} />
               <span>{t('trading.chart.volume')}</span>
             </div>
           )}

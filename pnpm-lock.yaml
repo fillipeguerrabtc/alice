@@ -782,6 +782,9 @@ importers:
       i18next-browser-languagedetector:
         specifier: 8.2.0
         version: 8.2.0
+      lightweight-charts:
+        specifier: ^5.1.0
+        version: 5.1.0
       lucide-react:
         specifier: 0.562.0
         version: 0.562.0(react@19.2.3)
@@ -4227,6 +4230,9 @@ packages:
   ext@1.7.0:
     resolution: {integrity: sha512-6hxeJYaL110a9b5TEJSj0gojyHQAmA2ch5Os+ySCiA1QGdS697XWY1pzsrSjqA9LDEEgdB/KypIlR59RcLuHYw==}
 
+  fancy-canvas@2.1.0:
+    resolution: {integrity: sha512-nifxXJ95JNLFR2NgRV4/MxVP45G9909wJTEKz5fg/TZS20JJZA6hfgRVh/bC9bwl2zBtBNcYPjiBE4njQHVBwQ==}
+
   fast-copy@4.0.0:
     resolution: {integrity: sha512-/oA0gx1xyXE9R2YlV4FXwZJXngFdm9Du0zN8FhY38jnLkhp1u35h6bCyKgRhlsA6C9I+1vfXE4KISdt7xc6M9w==}
 
@@ -4697,6 +4703,9 @@ packages:
   lightningcss@1.30.2:
     resolution: {integrity: sha512-utfs7Pr5uJyyvDETitgsaqSyjCb2qNRAtuqUeWIAKztsOYdcACf2KtARYXg2pSvhkt+9NfoaNY7fxjl6nuMjIQ==}
     engines: {node: '>= 12.0.0'}
+
+  lightweight-charts@5.1.0:
+    resolution: {integrity: sha512-jEAYR4ODYeyNZcWUigsoLTl52rbPmgXnvd5FLIv/ZoA/2sSDw63YKnef8n4yhzum7W926yHeFwlm7ididKb7YQ==}
 
   listenercount@1.0.1:
     resolution: {integrity: sha512-3mk/Zag0+IJxeDrxSgaDPy4zZ3w05PRZeJNnlWhzFz5OkX49J4krc+A8X2d2M69vGMBEX0uyl8M+W+8gH+kBqQ==}
@@ -9324,6 +9333,8 @@ snapshots:
     dependencies:
       type: 2.7.3
 
+  fancy-canvas@2.1.0: {}
+
   fast-copy@4.0.0: {}
 
   fast-csv@4.3.6:
@@ -9766,6 +9777,10 @@ snapshots:
       lightningcss-linux-x64-musl: 1.30.2
       lightningcss-win32-arm64-msvc: 1.30.2
       lightningcss-win32-x64-msvc: 1.30.2
+
+  lightweight-charts@5.1.0:
+    dependencies:
+      fancy-canvas: 2.1.0
 
   listenercount@1.0.1: {}
 

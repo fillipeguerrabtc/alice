@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 30 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.41 - Fix build frontend (SignalApproval context guard)
+**Versão:** 10.42 - Chart enterprise (lightweight-charts)
 
 ---
 
@@ -29,7 +29,7 @@
 - Training: datasets de trading com aprovação dedicada e fluxo manual via sinal → dataset.
 - CI: reordenação de enums/schemas de trading evita uso antes da declaração.
 - Lint: remoção de import não usado na página Trading (zero warnings).
-- Frontend: guard boolean para contexto multi‑timeframe evita TS2322.
+- Trading Chart: novo renderer com lightweight-charts (visual moderno e performance).
 
 ---
 
