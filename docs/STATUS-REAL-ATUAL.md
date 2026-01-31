@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 31 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.45 - Fix i18n Trading symbols
+**Versão:** 10.46 - Trading chart responsivo + SearXNG news auth
 
 ---
 
@@ -31,6 +31,9 @@
 - Lint: remoção de import não usado na página Trading (zero warnings).
 - Trading Chart: novo renderer com lightweight-charts (visual moderno e performance).
 - Trading multi‑market: favoritos/destaques por usuário, pares em destaque no seletor e troca de símbolo no gráfico.
+- Trading Chart: timeframes responsivos sem overflow horizontal e gráfico com layout estável (sem distorção).
+- Trading Chart: troca de intervalo força refetch de klines (REST/WS) para evitar gráfico vazio.
+- SearXNG News: integração corrigida com headers internos assinados (401 removido em Sinais IA e Análise).
 - KuCoin rate limit: retry/backoff respeita `Retry-After` e `gw-ratelimit-reset` (ms) conforme docs oficiais.
 - Deploy: migration `0043_trading_symbol_preferences.sql` deve ser aplicada no próximo deploy.
 - Trading i18n: chaves de `trading.symbols` alinhadas entre PT-BR e EN (labels corretos no seletor).

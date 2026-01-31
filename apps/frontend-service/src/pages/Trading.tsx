@@ -1103,6 +1103,18 @@ export default function Trading() {
     enabled: statusData?.data?.isConfigured && !!granularityValue && !!sanitizedSymbol,
   });
 
+  useEffect(() => {
+    if (!statusData?.data?.isConfigured || !granularityValue || !sanitizedSymbol) return;
+    queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/klines'] });
+  }, [
+    granularityValue,
+    sanitizedSymbol,
+    selectedInterval,
+    selectedMarketType,
+    selectedMarginMode,
+    statusData?.data?.isConfigured,
+  ]);
+
   // Query para Order Book
   const {
     data: orderBookResponse,
@@ -2343,7 +2355,7 @@ export default function Trading() {
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           {/* MOBILE-FIRST 12/01/2026: Tabs com scroll horizontal para caber em mobile */}
           <div className="overflow-x-auto pb-2 -mx-2 px-2 md:overflow-visible md:mx-0 md:px-0">
-            <TabsList className="inline-flex w-max md:grid md:w-full md:grid-cols-9 min-w-full md:min-w-0">
+            <TabsList className="grid w-full grid-cols-3 gap-1 sm:grid-cols-5 lg:grid-cols-9">
               <TabsTrigger value="overview" data-testid="tab-overview" className="whitespace-nowrap">
                 <BarChart3 className="h-4 w-4 md:mr-2" />
                 <span className="hidden md:inline">{t('trading.tabs.overview')}</span>

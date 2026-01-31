@@ -344,10 +344,7 @@ async function fetchNewsSummary(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-Internal-Signature': internalHeaders['x-internal-signature'],
-      'X-Internal-Timestamp': internalHeaders['x-internal-timestamp'],
-      'X-Tenant-Id': auth.tenantId,
-      'X-User-Id': auth.userId,
+      ...internalHeaders,
     },
     body: JSON.stringify({ query, limit: 5 }),
     signal: controller.signal,

@@ -439,9 +439,9 @@ export function CandleChart({
             )}
           </div>
           
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap max-w-full">
             {/* Interval selector */}
-            <div className="flex gap-1">
+            <div className="flex flex-wrap gap-1 max-w-full">
               {intervalOptions.map((option) => (
                 <Button
                   key={option.value}
@@ -465,7 +465,7 @@ export function CandleChart({
       </CardHeader>
       
       <CardContent>
-        <div style={{ height }} className="relative">
+        <div style={{ height }} className="relative overflow-hidden">
           <div ref={containerRef} className="h-full w-full" />
         </div>
         
