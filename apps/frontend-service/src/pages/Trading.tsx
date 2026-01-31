@@ -49,7 +49,6 @@ import {
   BarChart3,
   Target,
   Zap,
-  Bot,
   CheckCircle,
   XCircle,
   Clock,
