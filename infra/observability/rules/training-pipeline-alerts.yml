@@ -1,0 +1,46 @@
+groups:
+  - name: training_pipeline_alerts
+    rules:
+      - alert: TrainingDataNoNewSamples
+        expr: sum(increase(alice_training_data_collected_total[6h])) < 1
+        for: 6h
+        labels:
+          severity: warning
+          service: training-service
+        annotations:
+          summary: "Sem novos dados de treinamento coletados"
+          description: "Nenhum dado novo foi coletado nas últimas 6 horas. Verifique pipelines de chat/RAG/trading."
+
+      - alert: TrainingSchedulerErrors
+        expr: sum(increase(alice_training_scheduler_runs_total{result="error"}[30m])) > 0
+        for: 15m
+        labels:
+          severity: warning
+          service: training-service
+        annotations:
+          summary: "Erros no scheduler de auto-learning"
+          description: "Falhas foram registradas no scheduler de auto-learning nos últimos 30 minutos."
+
+      - alert: TrainingDataHighAutoRejectRate
+        expr: |
+          (sum(increase(alice_training_data_rejected_total[1h])) / sum(increase(alice_training_data_collected_total[1h]))) > 0.6
+          and sum(increase(alice_training_data_collected_total[1h])) > 10
+        for: 30m
+        labels:
+          severity: warning
+          service: training-service
+        annotations:
+          summary: "Taxa alta de auto-rejeição de dados de training"
+          description: "Mais de 60% dos dados coletados foram auto-rejeitados na última hora. Verifique qualidade e deduplicação."
+
+      - alert: TradingDatasetHighAutoRejectRate
+        expr: |
+          (sum(increase(alice_trading_dataset_rejected_total[1h])) / sum(increase(alice_trading_dataset_created_total[1h]))) > 0.6
+          and sum(increase(alice_trading_dataset_created_total[1h])) > 10
+        for: 30m
+        labels:
+          severity: warning
+          service: integrations-service
+        annotations:
+          summary: "Taxa alta de auto-rejeição de datasets de trading"
+          description: "Mais de 60% dos datasets de trading foram auto-rejeitados na última hora. Verifique sinais e thresholds."

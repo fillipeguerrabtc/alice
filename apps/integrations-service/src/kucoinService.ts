@@ -2137,10 +2137,11 @@ export async function getOrders(
  */
 export async function syncOrdersStatus(
   authContext: TradingAuthContext
-): Promise<{ synced: number; errors: number }> {
+): Promise<{ synced: number; errors: number; filledOrders: schema.TradingOrder[] }> {
   const db = getDatabase();
   let synced = 0;
   let errors = 0;
+  const filledOrders: schema.TradingOrder[] = [];
   
   // Buscar ordens pendentes ou abertas
   const pendingOrders = await db
@@ -2245,19 +2246,25 @@ export async function syncOrdersStatus(
       if (newStatus !== order.status) {
         // CORREÇÃO 18/12/2025: filledSize e avgFilledPrice são real() (number), não string
         // Campos de metadata devem seguir TradingOrderMetadataSchema
-        await db
+        const [updated] = await db
           .update(schema.tradingOrders)
           .set({
             status: newStatus,
             filledSize,
             avgFilledPrice,
             atualizadoEm: new Date(),
+            filledAt: newStatus === 'filled' ? new Date() : order.filledAt,
             metadata: {
               ...order.metadata,
               responseTime: Date.now(), // Usar campo válido do schema
             },
           })
-          .where(eq(schema.tradingOrders.id, order.id));
+          .where(eq(schema.tradingOrders.id, order.id))
+          .returning();
+
+        if (updated && newStatus === 'filled') {
+          filledOrders.push(updated);
+        }
 
         synced++;
         logger.debug({ orderId: order.id, oldStatus: order.status, newStatus }, 'Ordem sincronizada');
@@ -2269,7 +2276,7 @@ export async function syncOrdersStatus(
   }
 
   logger.info({ synced, errors, total: pendingOrders.length }, 'Sincronização de ordens concluída');
-  return { synced, errors };
+  return { synced, errors, filledOrders };
 }
 
 // ============================================================================

@@ -4032,6 +4032,9 @@ async function collectTrainingSample(params: {
   namespaceId: string;
   conversationId?: string;
   source: string;
+  sourceType?: 'chat' | 'trading_signal' | 'trading_order' | 'document' | 'external' | 'manual' | 'system';
+  sourceId?: string;
+  sourceMetadata?: Record<string, unknown>;
   messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
   rating?: number;
   userId: string;
@@ -4063,6 +4066,9 @@ async function collectTrainingSample(params: {
         namespaceId: params.namespaceId,
         conversationId: params.conversationId,
         source: params.source,
+        sourceType: params.sourceType,
+        sourceId: params.sourceId,
+        sourceMetadata: params.sourceMetadata,
         messages: params.messages,
         rating: params.rating,
       }),
@@ -6904,6 +6910,12 @@ app.post('/api/chat/conversations/:id/training/collect', requireAuth(), requireS
       namespaceId,
       conversationId: id,
       source: 'chat-curated',
+      sourceType: 'chat',
+      sourceId: id,
+      sourceMetadata: {
+        mode: 'manual',
+        agentId: conversation.agentId ?? null,
+      },
       messages: trainingPayload.messages,
       userId,
       role: userRole,
@@ -6999,6 +7011,12 @@ app.post('/api/chat/training/collect-batch', requireAuth(), requireSameTenant(ge
         namespaceId: resolvedNamespaceId,
         conversationId: item.conversationId,
         source: item.messageIds?.length ? 'chat-curated-messages' : 'chat-curated-batch',
+        sourceType: 'chat',
+        sourceId: item.conversationId,
+        sourceMetadata: {
+          mode: 'batch',
+          messageIds: item.messageIds ?? null,
+        },
         messages: trainingPayload.messages,
         userId,
         role: userRole,
@@ -7288,6 +7306,12 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
         namespaceId: (conversation.namespaceId || conversation.agent?.namespaceId) as string,
         conversationId: id,
         source: 'chat-auto',
+        sourceType: 'chat',
+        sourceId: id,
+        sourceMetadata: {
+          mode: 'auto',
+          agentId: conversation.agentId ?? null,
+        },
         messages: [
           { role: 'user', content: body.conteudo },
           { role: 'assistant', content: response as string },
@@ -7967,6 +7991,13 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                     namespaceId: namespaceIdForMedia as string,
                     conversationId,
                     source: 'chat-auto',
+                    sourceType: 'chat',
+                    sourceId: conversationId,
+                    sourceMetadata: {
+                      mode: 'auto',
+                      media: true,
+                      agentId: conversation?.agentId ?? null,
+                    },
                     messages: [
                       { role: 'user', content: userContent },
                       { role: 'assistant', content: assistantResponse },
@@ -10895,6 +10926,12 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                   namespaceId: (conversation?.namespaceId || conversation?.agent?.namespaceId) as string,
                   conversationId,
                   source: 'chat-auto',
+                  sourceType: 'chat',
+                  sourceId: conversationId,
+                  sourceMetadata: {
+                    mode: 'auto',
+                    agentId: conversation?.agentId ?? null,
+                  },
                   messages: [
                     { role: 'user', content: userMessageContent },
                     { role: 'assistant', content: assistantResponse },
@@ -12521,6 +12558,12 @@ wss.on('connection', (ws, req) => {
                   namespaceId: (conversation?.namespaceId || conversation?.agent?.namespaceId) as string,
                   conversationId,
                   source: 'chat-auto',
+                  sourceType: 'chat',
+                  sourceId: conversationId,
+                  sourceMetadata: {
+                    mode: 'auto',
+                    agentId: conversation?.agentId ?? null,
+                  },
                   messages: [
                     { role: 'user', content: messageContent },
                     { role: 'assistant', content: responseText },

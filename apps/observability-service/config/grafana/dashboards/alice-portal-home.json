@@ -23,6 +23,18 @@
       "asDropdown": false,
       "icon": "external link",
       "includeVars": false,
+      "keepTime": false,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Training Pipeline",
+      "tooltip": "Coleta, deduplicação, qualidade e scheduler",
+      "type": "link",
+      "url": "/d/alice-training-pipeline/training-pipeline"
+    },
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": false,
       "keepTime": true,
       "tags": [],
       "targetBlank": false,

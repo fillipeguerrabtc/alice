@@ -868,3 +868,171 @@ groups:
         labels:
           severity: warning
           service: integrations-service
+
+  # ===========================================================================
+  # TRAINING PIPELINE ALERTS
+  # ===========================================================================
+  - orgId: 1
+    name: Training Pipeline Alerts
+    folder: Alice Enterprise
+    interval: 30s
+    rules:
+      - uid: training-no-new-samples
+        title: Training sem novos dados (Warning)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 21600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: sum(increase(alice_training_data_collected_total[6h]))
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: lt
+                    params: [1]
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 6h
+        annotations:
+          summary: "Sem novos dados de treinamento"
+          description: "Nenhum dado novo foi coletado nas últimas 6 horas. Verifique pipelines de chat/RAG/trading."
+        labels:
+          severity: warning
+          service: training-service
+
+      - uid: training-scheduler-errors
+        title: Erros no Scheduler de Auto-learning (Warning)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: sum(increase(alice_training_scheduler_runs_total{result="error"}[30m]))
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 15m
+        annotations:
+          summary: "Falhas no scheduler de auto-learning"
+          description: "O scheduler registrou falhas nos últimos 30 minutos."
+        labels:
+          severity: warning
+          service: training-service
+
+      - uid: training-high-auto-reject
+        title: Training Alta Taxa de Auto-rejeição (Warning)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: |
+                (sum(increase(alice_training_data_rejected_total[1h])) / sum(increase(alice_training_data_collected_total[1h]))) > 0.6
+                and sum(increase(alice_training_data_collected_total[1h])) > 10
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.5]
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 30m
+        annotations:
+          summary: "Alta taxa de auto-rejeição de dados de training"
+          description: "Mais de 60% dos dados coletados foram auto-rejeitados na última hora."
+        labels:
+          severity: warning
+          service: training-service
+
+      - uid: trading-high-auto-reject
+        title: Trading Alta Taxa de Auto-rejeição (Warning)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: |
+                (sum(increase(alice_trading_dataset_rejected_total[1h])) / sum(increase(alice_trading_dataset_created_total[1h]))) > 0.6
+                and sum(increase(alice_trading_dataset_created_total[1h])) > 10
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.5]
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 30m
+        annotations:
+          summary: "Alta taxa de auto-rejeição em datasets de trading"
+          description: "Mais de 60% dos datasets de trading foram auto-rejeitados na última hora."
+        labels:
+          severity: warning
+          service: integrations-service

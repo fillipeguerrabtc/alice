@@ -1147,11 +1147,30 @@
       "namespace": "Namespace",
       "allNamespaces": "Todos os namespaces",
       "source": "Fonte",
+      "sourceType": "Tipo de fonte",
       "allSources": "Todas as fontes"
+    },
+    "data": {
+      "duplicate": "Duplicado ({{percent}}%)",
+      "viewMore": "Ver mais ({{count}})",
+      "approve": "Aprovar",
+      "reject": "Rejeitar",
+      "quality": "Qualidade {{percent}}%",
+      "reviewedAt": "Revisado em {{date}}",
+      "reviewedBy": "por {{userId}}",
+      "reviewNotes": "Motivo: {{notes}}"
     },
     "approval": {
       "title": "Aprovação de dados coletados",
       "desc": "Dados coletados automaticamente do chat ficam em \"Pendente\". Revise e aprove antes de treinar."
+    },
+    "reviewDialog": {
+      "title": "Revisar dataset",
+      "desc": "Registre o motivo da aprovação ou rejeição para auditoria.",
+      "notes": "Motivo (opcional)",
+      "notesPlaceholder": "Descreva o motivo da revisão",
+      "confirm": "Confirmar",
+      "saving": "Salvando..."
     },
     "trading": {
       "button": "Pipeline Trading",

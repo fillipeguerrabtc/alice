@@ -1122,11 +1122,30 @@
       "namespace": "Namespace",
       "allNamespaces": "All namespaces",
       "source": "Source",
+      "sourceType": "Source type",
       "allSources": "All sources"
+    },
+    "data": {
+      "duplicate": "Duplicate ({{percent}}%)",
+      "viewMore": "View more ({{count}})",
+      "approve": "Approve",
+      "reject": "Reject",
+      "quality": "Quality {{percent}}%",
+      "reviewedAt": "Reviewed at {{date}}",
+      "reviewedBy": "by {{userId}}",
+      "reviewNotes": "Reason: {{notes}}"
     },
     "approval": {
       "title": "Collected data approval",
       "desc": "Automatically collected chat data stays as \"Pending\". Review and approve before training."
+    },
+    "reviewDialog": {
+      "title": "Review dataset",
+      "desc": "Record the approval or rejection reason for audit.",
+      "notes": "Reason (optional)",
+      "notesPlaceholder": "Describe the review reason",
+      "confirm": "Confirm",
+      "saving": "Saving..."
     },
     "trading": {
       "button": "Trading Pipeline",
@@ -1140,12 +1159,6 @@
       "starting": "Starting...",
       "success": "Trading pipeline started",
       "error": "Failed to start trading pipeline"
-    },
-    "data": {
-      "duplicate": "Duplicate ({{percent}}%)",
-      "viewMore": "View more ({{count}} messages)",
-      "approve": "Approve",
-      "reject": "Reject"
     },
     "job": {
       "baseModel": "Base model: {{model}} | {{count}} samples",

@@ -36,6 +36,8 @@ import {
   requestGpu,
   GpuServiceType,
   GpuRequestPriority,
+  computeSemHash,
+  cosineSimilarity,
   resolveAgentLlmModel,
   // CORREÇÃO PR#107 (10/01/2026): Middleware de sessão HTTP para autenticação
   createSessionAuthMiddleware,
@@ -43,6 +45,7 @@ import {
   initializeRedisCache,
   Gauge as PromGauge,
   Counter as PromCounter,
+  Histogram as PromHistogram,
   Role,
 } from '@alice/shared-utils';
 import type { AuthContext } from '@alice/shared-utils';
@@ -51,7 +54,7 @@ import { loadConfig, integrationsServiceConfigSchema } from '@alice/config';
 import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, getPool } from '@alice/database';
 import { eq, desc, sql, and, inArray, not, isNull, lte } from '@alice/database';
 import { tradingIntervalEnum, TradingOperationTypeSchema } from '@alice/shared';
-import type { TradingSignalMetadata, TradingIndicatorKey, TradingProfileConsensus, TradingProfileDataSources, TradingProfileModelConfig, TradingCandleData, TradingOperationType, TradingRiskConfig } from '@alice/shared';
+import type { TradingSignalMetadata, TradingIndicatorKey, TradingProfileConsensus, TradingProfileDataSources, TradingProfileModelConfig, TradingCandleData, TradingOperationType, TradingRiskConfig, TradingOrderMetadata } from '@alice/shared';
 import { z } from 'zod';
 import { wiseService } from './wiseService.js';
 import { isWiseConfigured, getSandboxStatus, getProfileIdSafe, getWiseCircuitBreakerStatus, validateWiseWebhook, initWiseMetrics } from './wiseClient.js';
@@ -80,6 +83,27 @@ import { validateAndPersist } from './llm-validation.js';
 
 const logger = createLogger('integrations-service');
 const config = loadConfig(integrationsServiceConfigSchema);
+
+function parseEnvFloat(envValue: string | undefined, defaultValue: number, varName: string): number {
+  const raw = (envValue ?? String(defaultValue)).trim().replace(',', '.');
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+    const errorMsg = `${varName} inválido: "${raw}". Deve ser número entre 0 e 1.`;
+    if (process.env.NODE_ENV === 'production') {
+      logger.error({ varName, rawValue: raw, parsed }, errorMsg);
+      throw new Error(errorMsg);
+    }
+    logger.warn({ varName, rawValue: raw, parsed, defaultValue }, `${errorMsg} Usando valor padrão.`);
+    return defaultValue;
+  }
+  return parsed;
+}
+
+const TRADING_DATASET_MIN_QUALITY = parseEnvFloat(
+  process.env.TRADING_DATASET_MIN_QUALITY,
+  0.35,
+  'TRADING_DATASET_MIN_QUALITY'
+);
 
 // ============================================================================
 // GRAFANA API (Observability) - Integração enterprise
@@ -475,6 +499,297 @@ async function buildMarketContextFromSignal(params: {
   };
 }
 
+const TRADING_DATASET_SIMILARITY_THRESHOLD = 0.85;
+
+async function generateTradingDatasetEmbedding(text: string): Promise<number[]> {
+  const gpuResponse = await requestGpu({
+    serviceType: GpuServiceType.EMBEDDINGS,
+    endpoint: '/embed/text',
+    method: 'POST',
+    priority: GpuRequestPriority.MEDIUM,
+    timeout: 30000,
+    body: { texts: [text] },
+  });
+
+  if (!gpuResponse.success || !gpuResponse.data) {
+    throw new Error(gpuResponse.error || 'Erro ao gerar embedding de trading');
+  }
+
+  const data = gpuResponse.data as { embedding?: number[]; embeddings?: number[][] };
+  const embedding = data.embedding ?? data.embeddings?.[0];
+  if (!embedding || embedding.length === 0) {
+    throw new Error('Embedding de trading retornou vazio');
+  }
+
+  return embedding;
+}
+
+async function detectTradingDatasetDuplicate(params: {
+  tenantId: string;
+  semhash: string;
+  embedding: number[];
+}): Promise<{ isDuplicate: boolean; duplicateOfId?: string; similarityScore?: number }> {
+  const db = getDatabase();
+  const existingData = await db.query.tradingDataset.findMany({
+    where: and(
+      eq(schema.tradingDataset.tenantId, params.tenantId),
+      inArray(schema.tradingDataset.status, ['pending', 'approved', 'used']),
+      not(isNull(schema.tradingDataset.embedding))
+    ),
+  });
+
+  let isDuplicate = false;
+  let duplicateOfId: string | undefined;
+  let highestSimilarity = 0;
+
+  for (const existing of existingData) {
+    if (existing.semhash === params.semhash) {
+      isDuplicate = true;
+      duplicateOfId = existing.id;
+      highestSimilarity = 1.0;
+      break;
+    }
+    if (existing.embedding) {
+      const similarity = cosineSimilarity(params.embedding, existing.embedding);
+      if (similarity > TRADING_DATASET_SIMILARITY_THRESHOLD && similarity > highestSimilarity) {
+        isDuplicate = true;
+        duplicateOfId = existing.id;
+        highestSimilarity = similarity;
+      }
+    }
+  }
+
+  return {
+    isDuplicate,
+    duplicateOfId,
+    similarityScore: highestSimilarity > 0 ? highestSimilarity : undefined,
+  };
+}
+
+function computeTradingDatasetQualityScore(params: {
+  confidence?: number | null;
+  prompt: string;
+  response: string;
+}): number {
+  const promptLength = params.prompt.trim().length;
+  const responseLength = params.response.trim().length;
+  if (promptLength < 80 || responseLength < 80) return 0.3;
+  const lengthScore = Math.min(1, (promptLength + responseLength) / 1200);
+  const confidenceScore = params.confidence ?? 0.6;
+  return Math.min(1, 0.4 + lengthScore * 0.4 + confidenceScore * 0.2);
+}
+
+async function buildTradingDatasetSeedFromSignal(params: {
+  authContext: { tenantId: string; userId: string };
+  signal: schema.TradingSignal;
+}): Promise<{
+  marketContext: schema.TradingDataset['marketContext'];
+  prompt: string;
+  responsePayload: Record<string, unknown>;
+  interval: TradingIntervalValue;
+  analysis: technicalIndicators.TechnicalAnalysisResult | undefined;
+}> {
+  const metadata = (params.signal.metadata ?? {}) as Record<string, unknown>;
+  const analysisMatrixRaw = Array.isArray(metadata.analysisMatrix) ? metadata.analysisMatrix : [];
+  const matrix = analysisMatrixRaw
+    .map((entry) => ({
+      interval: TRADING_INTERVAL_ZOD.safeParse((entry as { interval?: string }).interval).success
+        ? TRADING_INTERVAL_ZOD.parse((entry as { interval?: string }).interval)
+        : '5m',
+      analysis: (entry as { analysis?: technicalIndicators.TechnicalAnalysisResult }).analysis,
+    }))
+    .filter((entry): entry is { interval: TradingIntervalValue; analysis: technicalIndicators.TechnicalAnalysisResult } =>
+      Boolean(entry.analysis)
+    );
+
+  const analysis = matrix[0]?.analysis;
+  const interval = matrix[0]?.interval ?? '5m';
+
+  const marketContext = await buildMarketContextFromSignal({
+    auth: params.authContext,
+    symbol: params.signal.symbol,
+    interval,
+    marketType: params.signal.marketType as TradingMarketType,
+    marginMode: undefined,
+    analysis,
+  });
+
+  const prompt = matrix.length > 0
+    ? buildMultiTimeframePrompt({
+      matrix: matrix.map((entry) => ({
+        interval: entry.interval,
+        analysis: entry.analysis,
+        indicatorId: '',
+      })),
+      consensus: buildMajorityConsensus(matrix.map((entry) => ({
+        interval: entry.interval,
+        analysis: entry.analysis,
+        indicatorId: '',
+      }))),
+      indicators: Array.isArray(metadata.enabledIndicators) ? (metadata.enabledIndicators as TradingIndicatorKey[]) : [],
+      dataSources: (metadata.dataSources as TradingProfileDataSources) ?? { orderBook: false, news: false, trainingData: false },
+      orderBook: null,
+      news: null,
+      trainingData: null,
+    })
+    : (params.signal.metadata as TradingSignalMetadata)?.reasoning ?? 'Sinal gerado sem contexto detalhado.';
+
+  const responsePayload = {
+    actionType: params.signal.signalType,
+    suggestedPrice: params.signal.suggestedPrice,
+    suggestedStopLoss: params.signal.suggestedStopLoss,
+    suggestedTakeProfit: params.signal.suggestedTakeProfit,
+    suggestedSize: params.signal.suggestedSize,
+    confidence: params.signal.confidence,
+    reasoning: (params.signal.metadata as TradingSignalMetadata)?.reasoning ?? null,
+  };
+
+  return { marketContext, prompt, responsePayload, interval, analysis };
+}
+
+function resolveActionTypeFromOrder(order: schema.TradingOrder, signal?: schema.TradingSignal) {
+  if (signal?.signalType) return signal.signalType;
+  if ((order.metadata as TradingOrderMetadata | undefined)?.closePosition) {
+    return 'exit';
+  }
+  return order.side === 'buy' ? 'entry_long' : 'entry_short';
+}
+
+function buildOrderExecutionPrompt(params: {
+  marketContext: schema.TradingDataset['marketContext'];
+  order: schema.TradingOrder;
+  signal?: schema.TradingSignal;
+}): string {
+  const price = params.order.avgFilledPrice ?? params.order.price ?? params.marketContext.price;
+  const base = [
+    'Contexto de mercado:',
+    `- Symbol: ${params.marketContext.symbol}`,
+    `- Preço: ${params.marketContext.price}`,
+    `- Variação 24h: ${params.marketContext.change24h.toFixed(2)}%`,
+    `- Funding: ${params.marketContext.fundingRate}`,
+    `- Open Interest: ${params.marketContext.openInterest}`,
+    '',
+    'Ordem executada:',
+    `- Lado: ${params.order.side}`,
+    `- Tipo: ${params.order.orderType}`,
+    `- Tamanho: ${params.order.size}`,
+    `- Preço médio: ${price}`,
+    `- Alavancagem: ${params.order.leverage ?? 1}x`,
+  ];
+
+  if (params.signal?.confidence !== undefined) {
+    base.push(`- Confiança do sinal: ${params.signal.confidence}`);
+  }
+
+  return `${base.join('\n')}\n\nExplique a decisão e o racional do trade executado.`;
+}
+
+async function createTradingDatasetFromOrder(params: {
+  authContext: { tenantId: string; userId: string };
+  order: schema.TradingOrder;
+}): Promise<{ created?: schema.TradingDataset; skipped?: string }> {
+  const db = getDatabase();
+
+  const existing = await db.query.tradingDataset.findFirst({
+    where: and(
+      eq(schema.tradingDataset.tenantId, params.authContext.tenantId),
+      eq(schema.tradingDataset.orderId, params.order.id)
+    ),
+  });
+  if (existing) {
+    return { skipped: 'dataset já existe para a ordem' };
+  }
+
+  const signalId = params.order.signalId ?? (params.order.metadata as TradingOrderMetadata | undefined)?.signalId;
+  const signal = signalId
+    ? await db.query.tradingSignals.findFirst({
+      where: and(
+        eq(schema.tradingSignals.id, signalId),
+        eq(schema.tradingSignals.tenantId, params.authContext.tenantId)
+      ),
+    })
+    : null;
+
+  const marketContext = await buildMarketContextFromSignal({
+    auth: params.authContext,
+    symbol: params.order.symbol,
+    interval: '5m',
+    marketType: params.order.marketType as TradingMarketType,
+    marginMode: undefined,
+    analysis: undefined,
+  });
+
+  const prompt = buildOrderExecutionPrompt({ marketContext, order: params.order, signal: signal ?? undefined });
+  const actionType = resolveActionTypeFromOrder(params.order, signal ?? undefined);
+  const responsePayload = {
+    actionType,
+    executedPrice: params.order.avgFilledPrice ?? params.order.price ?? null,
+    executedSize: params.order.filledSize ?? params.order.size,
+    leverage: params.order.leverage ?? null,
+    stopLoss: (params.order.metadata as TradingOrderMetadata | undefined)?.stopLoss ?? null,
+    takeProfit: (params.order.metadata as TradingOrderMetadata | undefined)?.takeProfit ?? null,
+    signalId: signal?.id ?? null,
+  };
+
+  const responseText = JSON.stringify(responsePayload);
+  const semhash = computeSemHash(`${prompt}\n${responseText}`);
+  const embedding = await generateTradingDatasetEmbedding(`${prompt}\n${responseText}`);
+  const duplicateResult = await detectTradingDatasetDuplicate({
+    tenantId: params.authContext.tenantId,
+    semhash,
+    embedding,
+  });
+  const qualityScore = computeTradingDatasetQualityScore({
+    confidence: signal?.confidence ?? undefined,
+    prompt,
+    response: responseText,
+  });
+  const autoRejectedByQuality = qualityScore < TRADING_DATASET_MIN_QUALITY;
+  const status = duplicateResult.isDuplicate || autoRejectedByQuality ? 'rejected' : 'pending';
+  const reviewNotes = autoRejectedByQuality
+    ? `Auto-rejeitado: qualidade ${qualityScore.toFixed(2)} abaixo do mínimo (${TRADING_DATASET_MIN_QUALITY}).`
+    : null;
+
+  const [created] = await db.insert(schema.tradingDataset).values({
+    tenantId: params.authContext.tenantId,
+    marketContext,
+    prompt,
+    response: responseText,
+    actionType,
+    status,
+    reviewNotes,
+    signalId: signal?.id ?? null,
+    orderId: params.order.id,
+    sourceType: 'order',
+    sourceId: params.order.id,
+    sourceMetadata: {
+      orderId: params.order.id,
+      signalId: signal?.id ?? null,
+    },
+    qualityScore,
+    embedding,
+    semhash,
+    isDuplicate: duplicateResult.isDuplicate,
+    duplicateOfId: duplicateResult.duplicateOfId ?? null,
+    similarityScore: duplicateResult.similarityScore ?? null,
+    criadoEm: new Date(),
+    atualizadoEm: new Date(),
+  }).returning();
+
+  const sourceTypeMetric = 'order';
+  tradingDatasetMetrics.createdTotal.labels(sourceTypeMetric, status).inc();
+  tradingDatasetMetrics.qualityScore.observe(qualityScore);
+  if (duplicateResult.isDuplicate) {
+    tradingDatasetMetrics.duplicatesTotal.labels(sourceTypeMetric).inc();
+    tradingDatasetMetrics.rejectedTotal.labels('duplicate', sourceTypeMetric).inc();
+  }
+  if (autoRejectedByQuality) {
+    tradingDatasetMetrics.rejectedTotal.labels('quality', sourceTypeMetric).inc();
+  }
+
+  return { created };
+}
+
 const TRADING_LLM_MAX_CONTEXT_TOKENS = 4096;
 const TRADING_LLM_MIN_COMPLETION_TOKENS = 128;
 const TRADING_LLM_PROMPT_SAFETY_TOKENS = 128;
@@ -694,6 +1009,33 @@ const integrationsOperationalGauge = new PromGauge({
   labelNames: ['integration'] as const,
   registers: [metrics.registry],
 });
+
+const tradingDatasetMetrics = {
+  createdTotal: new PromCounter({
+    name: 'alice_trading_dataset_created_total',
+    help: 'Total de datasets de trading criados',
+    labelNames: ['source_type', 'status'] as const,
+    registers: [metrics.registry],
+  }),
+  rejectedTotal: new PromCounter({
+    name: 'alice_trading_dataset_rejected_total',
+    help: 'Total de datasets de trading rejeitados automaticamente',
+    labelNames: ['reason', 'source_type'] as const,
+    registers: [metrics.registry],
+  }),
+  duplicatesTotal: new PromCounter({
+    name: 'alice_trading_dataset_duplicates_total',
+    help: 'Total de datasets de trading detectados como duplicados',
+    labelNames: ['source_type'] as const,
+    registers: [metrics.registry],
+  }),
+  qualityScore: new PromHistogram({
+    name: 'alice_trading_dataset_quality_score',
+    help: 'Distribuição do score de qualidade dos datasets de trading',
+    buckets: [0, 0.25, 0.5, 0.75, 0.9, 0.95, 1],
+    registers: [metrics.registry],
+  }),
+};
 
 function classifyIntegrationError(error: unknown): string {
   if (error instanceof Error) {
@@ -7402,6 +7744,22 @@ app.post('/api/integrations/trading/orders/sync', requirePermission('integration
       userId: authContext.userId,
     });
 
+    if (result.filledOrders.length > 0) {
+      for (const order of result.filledOrders) {
+        try {
+          await createTradingDatasetFromOrder({
+            authContext: { tenantId: authContext.tenantId, userId: authContext.userId },
+            order,
+          });
+        } catch (datasetError) {
+          logger.warn({
+            orderId: order.id,
+            error: datasetError instanceof Error ? datasetError.message : String(datasetError),
+          }, 'Falha ao gerar dataset de trading a partir de ordem executada');
+        }
+      }
+    }
+
     res.json({
       success: true,
       data: result,
@@ -7698,74 +8056,68 @@ app.post('/api/integrations/trading/datasets/from-signal', requirePermission('in
       return;
     }
 
-    const metadata = (signal.metadata ?? {}) as Record<string, unknown>;
-    const analysisMatrixRaw = Array.isArray(metadata.analysisMatrix) ? metadata.analysisMatrix : [];
-    const matrix = analysisMatrixRaw
-      .map((entry) => ({
-        interval: TRADING_INTERVAL_ZOD.safeParse((entry as { interval?: string }).interval).success
-          ? TRADING_INTERVAL_ZOD.parse((entry as { interval?: string }).interval)
-          : '5m',
-        analysis: (entry as { analysis?: technicalIndicators.TechnicalAnalysisResult }).analysis,
-      }))
-      .filter((entry): entry is { interval: TradingIntervalValue; analysis: technicalIndicators.TechnicalAnalysisResult } =>
-        Boolean(entry.analysis)
-      );
-
-    const analysis = matrix[0]?.analysis;
-    const interval = matrix[0]?.interval ?? '5m';
-
-    const marketContext = await buildMarketContextFromSignal({
-      auth: { tenantId: authContext.tenantId, userId: authContext.userId },
-      symbol: signal.symbol,
-      interval,
-      marketType: signal.marketType,
-      marginMode: undefined,
-      analysis,
+    const seed = await buildTradingDatasetSeedFromSignal({
+      authContext: { tenantId: authContext.tenantId, userId: authContext.userId },
+      signal,
     });
 
-    const prompt = matrix.length > 0
-      ? buildMultiTimeframePrompt({
-        matrix: matrix.map((entry) => ({
-          interval: entry.interval,
-          analysis: entry.analysis,
-          indicatorId: '',
-        })),
-        consensus: buildMajorityConsensus(matrix.map((entry) => ({
-          interval: entry.interval,
-          analysis: entry.analysis,
-          indicatorId: '',
-        }))),
-        indicators: Array.isArray(metadata.enabledIndicators) ? (metadata.enabledIndicators as TradingIndicatorKey[]) : [],
-        dataSources: (metadata.dataSources as TradingProfileDataSources) ?? { orderBook: false, news: false, trainingData: false },
-        orderBook: null,
-        news: null,
-        trainingData: null,
-      })
-      : (signal.metadata as TradingSignalMetadata)?.reasoning ?? 'Sinal gerado sem contexto detalhado.';
-
-    const responsePayload = {
-      actionType: signal.signalType,
-      suggestedPrice: signal.suggestedPrice,
-      suggestedStopLoss: signal.suggestedStopLoss,
-      suggestedTakeProfit: signal.suggestedTakeProfit,
-      suggestedSize: signal.suggestedSize,
-      confidence: signal.confidence,
-      reasoning: (signal.metadata as TradingSignalMetadata)?.reasoning ?? null,
-    };
+    const responsePayload = seed.responsePayload;
+    const prompt = seed.prompt;
+    const responseText = JSON.stringify(responsePayload);
+    const semhash = computeSemHash(`${prompt}\n${responseText}`);
+    const embedding = await generateTradingDatasetEmbedding(`${prompt}\n${responseText}`);
+    const duplicateResult = await detectTradingDatasetDuplicate({
+      tenantId: authContext.tenantId,
+      semhash,
+      embedding,
+    });
+    const qualityScore = computeTradingDatasetQualityScore({
+      confidence: signal.confidence ?? undefined,
+      prompt,
+      response: responseText,
+    });
+    const autoRejectedByQuality = qualityScore < TRADING_DATASET_MIN_QUALITY;
+    const status = duplicateResult.isDuplicate || autoRejectedByQuality ? 'rejected' : 'pending';
+    const reviewNotes = autoRejectedByQuality
+      ? `Auto-rejeitado: qualidade ${qualityScore.toFixed(2)} abaixo do mínimo (${TRADING_DATASET_MIN_QUALITY}).`
+      : parsed.data.reviewNotes ?? null;
 
     const [created] = await db.insert(schema.tradingDataset).values({
       tenantId: authContext.tenantId,
-      marketContext,
+      marketContext: seed.marketContext,
       prompt,
-      response: JSON.stringify(responsePayload),
+      response: responseText,
       actionType: signal.signalType,
-      status: 'pending',
-      reviewNotes: parsed.data.reviewNotes ?? null,
+      status,
+      reviewNotes,
       signalId: signal.id,
       orderId: signal.executedOrderId ?? null,
+      sourceType: 'signal',
+      sourceId: signal.id,
+      sourceMetadata: {
+        interval: seed.interval,
+        marketType: signal.marketType,
+      },
+      qualityScore,
+      embedding,
+      semhash,
+      isDuplicate: duplicateResult.isDuplicate,
+      duplicateOfId: duplicateResult.duplicateOfId ?? null,
+      similarityScore: duplicateResult.similarityScore ?? null,
       criadoEm: new Date(),
       atualizadoEm: new Date(),
     }).returning();
+
+    const sourceTypeMetric = 'signal';
+    tradingDatasetMetrics.createdTotal.labels(sourceTypeMetric, status).inc();
+    tradingDatasetMetrics.qualityScore.observe(qualityScore);
+    if (duplicateResult.isDuplicate) {
+      tradingDatasetMetrics.duplicatesTotal.labels(sourceTypeMetric).inc();
+      tradingDatasetMetrics.rejectedTotal.labels('duplicate', sourceTypeMetric).inc();
+    }
+    if (autoRejectedByQuality) {
+      tradingDatasetMetrics.rejectedTotal.labels('quality', sourceTypeMetric).inc();
+    }
 
     res.json({ success: true, data: created });
   } catch (error) {
@@ -7800,6 +8152,7 @@ app.patch('/api/integrations/trading/datasets/:id/review', requirePermission('in
         status: parsed.data.status,
         reviewNotes: parsed.data.reviewNotes ?? null,
         reviewedBy: authContext.userId,
+        reviewedAt: new Date(),
         atualizadoEm: new Date(),
       })
       .where(and(

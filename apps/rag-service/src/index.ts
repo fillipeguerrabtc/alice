@@ -54,6 +54,8 @@ import {
   requestGpu,
   GpuServiceType,
   GpuRequestPriority,
+  generateInternalAuthHeaders,
+  Role,
 } from '@alice/shared-utils';
 import { ragServicePaths, ragServiceSchemas } from './openapi-specs.js';
 import { createLogger } from '@alice/logger';
@@ -109,6 +111,100 @@ type AuthUser = { id?: string; role?: 'super_admin' | string; tenantId?: string 
 function getAuthUser(req: Request): AuthUser {
   const typed = req as Request & { user?: AuthUser };
   return typed.user ?? {};
+}
+
+function selectTrainingChunks(chunks: Array<{ id: string; conteudo: string; posicao: number }>): Array<{ id: string; conteudo: string; posicao: number }> {
+  const eligible = chunks.filter((chunk) => chunk.conteudo.trim().length >= TRAINING_DOC_MIN_CHARS);
+  if (eligible.length <= TRAINING_DOC_MAX_SAMPLES) return eligible;
+
+  const step = Math.ceil(eligible.length / TRAINING_DOC_MAX_SAMPLES);
+  const selected: Array<{ id: string; conteudo: string; posicao: number }> = [];
+  for (let i = 0; i < eligible.length && selected.length < TRAINING_DOC_MAX_SAMPLES; i += step) {
+    selected.push(eligible[i]);
+  }
+  return selected;
+}
+
+async function collectTrainingFromDocumentChunks(params: {
+  tenantId: string;
+  namespaceId: string;
+  documentId: string;
+  titulo: string;
+  chunks: Array<{ id: string; conteudo: string; posicao: number }>;
+  userId?: string;
+  role?: string;
+}): Promise<void> {
+  if (!TRAINING_DOC_AUTO_COLLECT) return;
+  if (!TRAINING_SERVICE_URL) {
+    logger.warn({ documentId: params.documentId }, 'TRAINING_SERVICE_URL ausente - coleta de documentos para treinamento desabilitada');
+    return;
+  }
+
+  const selected = selectTrainingChunks(params.chunks);
+  if (selected.length === 0) return;
+
+  const headers = generateInternalAuthHeaders({
+    userId: params.userId ?? 'system',
+    tenantId: params.tenantId,
+    role: (params.role as Role) || 'operator',
+  });
+
+  for (const chunk of selected) {
+    const payload = {
+      tenantId: params.tenantId,
+      namespaceId: params.namespaceId,
+      source: 'document-ingest',
+      sourceType: 'document',
+      sourceId: params.documentId,
+      sourceMetadata: {
+        documentId: params.documentId,
+        chunkId: chunk.id,
+        posicao: chunk.posicao,
+        titulo: params.titulo,
+      },
+      messages: [
+        {
+          role: 'system',
+          content: 'Você é Alice, especialista em Trading e Finanças. Responda com precisão e linguagem profissional.',
+        },
+        {
+          role: 'user',
+          content: `Explique o trecho a seguir do material "${params.titulo}".`,
+        },
+        {
+          role: 'assistant',
+          content: chunk.conteudo,
+        },
+      ],
+    };
+
+    try {
+      const response = await fetch(`${TRAINING_SERVICE_URL}/api/training/data`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...headers,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        logger.warn({
+          documentId: params.documentId,
+          chunkId: chunk.id,
+          status: response.status,
+          error: errorText,
+        }, 'Falha ao enviar chunk para treinamento');
+      }
+    } catch (error) {
+      logger.warn({
+        documentId: params.documentId,
+        chunkId: chunk.id,
+        error: error instanceof Error ? error.message : String(error),
+      }, 'Erro ao enviar chunk para treinamento');
+    }
+  }
 }
 
 // ============================================================================
@@ -657,6 +753,23 @@ function parseEnvFloat(envValue: string | undefined, defaultValue: number, varNa
 const WORKER_POLL_MS = parseEnvInt(process.env.WORKER_POLL_MS, 3000, 'WORKER_POLL_MS');
 const WORKER_CONCURRENCY = parseEnvInt(process.env.WORKER_CONCURRENCY, 2, 'WORKER_CONCURRENCY');
 const WORKER_MAX_ATTEMPTS = parseEnvInt(process.env.WORKER_MAX_ATTEMPTS, 3, 'WORKER_MAX_ATTEMPTS');
+
+const TRAINING_SERVICE_URL = process.env.TRAINING_SERVICE_URL;
+const TRAINING_DOC_AUTO_COLLECT = parseEnvBool(
+  process.env.TRAINING_DOC_AUTO_COLLECT,
+  false,
+  'TRAINING_DOC_AUTO_COLLECT'
+);
+const TRAINING_DOC_MAX_SAMPLES = parseEnvInt(
+  process.env.TRAINING_DOC_MAX_SAMPLES,
+  20,
+  'TRAINING_DOC_MAX_SAMPLES'
+);
+const TRAINING_DOC_MIN_CHARS = parseEnvInt(
+  process.env.TRAINING_DOC_MIN_CHARS,
+  180,
+  'TRAINING_DOC_MIN_CHARS'
+);
 
 const RAG_ADAPTIVE_K_ENABLED = parseEnvBool(
   process.env.RAG_ADAPTIVE_K_ENABLED,
@@ -1594,6 +1707,7 @@ app.post('/api/rag/documents', requireAuth(), requirePermission('rag:documents:w
     // PostgreSQL: Persistência relacional e backup
     // Qdrant: Busca semântica vetorial (1024 dim - Qwen3-Embedding-0.6B)
     const qdrantPoints = [];
+    const createdChunks: Array<{ id: string; conteudo: string; posicao: number }> = [];
     
     for (let i = 0; i < chunks.length; i++) {
       const embedding = await generateEmbedding(chunks[i]);
@@ -1609,6 +1723,8 @@ app.post('/api/rag/documents', requireAuth(), requirePermission('rag:documents:w
         posicao: i,
         // embedding OMITIDO - texto usa Qdrant (SSOT)
       }).returning();
+
+      createdChunks.push({ id: chunk.id, conteudo: chunks[i], posicao: i });
       
       // Preparar ponto para Qdrant (busca vetorial - 1024 dim)
       qdrantPoints.push({
@@ -1638,6 +1754,22 @@ app.post('/api/rag/documents', requireAuth(), requirePermission('rag:documents:w
     await db.update(schema.documents)
       .set({ processado: true })
       .where(eq(schema.documents.id, document.id));
+
+    const resolvedNamespaceId = body.namespaceId ?? null;
+    if (resolvedNamespaceId) {
+      const user = getAuthUser(req);
+      await collectTrainingFromDocumentChunks({
+        tenantId,
+        namespaceId: resolvedNamespaceId,
+        documentId: document.id,
+        titulo: body.titulo,
+        chunks: createdChunks,
+        userId: user.id,
+        role: user.role,
+      });
+    } else {
+      logger.warn({ documentId: document.id }, 'Documento criado sem namespaceId - coleta de training ignorada');
+    }
 
     logger.info({ documentId: document.id, chunks: chunks.length }, 'Documento processado');
     res.json({ document, chunksCreated: chunks.length });
@@ -1768,6 +1900,9 @@ app.post('/api/rag/documents/upload', requireAuth(), requirePermission('rag:docu
     const content = req.file.buffer.toString('utf-8');
     const titulo = req.body.titulo || req.file.originalname;
     const namespaceId = req.body.namespaceId;
+    if (!namespaceId) {
+      return res.status(400).json({ error: 'Namespace obrigatório' });
+    }
     await assertNamespaceOwnership(namespaceId, req.tenantId as string);
 
     const hashConteudo = hashContent(content);
@@ -1816,6 +1951,7 @@ app.post('/api/rag/documents/upload', requireAuth(), requirePermission('rag:docu
     // PostgreSQL: Persistência relacional e backup
     // Qdrant: Busca semântica vetorial (1024 dim - Qwen3-Embedding-0.6B)
     const qdrantPoints = [];
+    const createdChunks: Array<{ id: string; conteudo: string; posicao: number }> = [];
     
     for (let i = 0; i < chunks.length; i++) {
       const embedding = await generateEmbedding(chunks[i]);
@@ -1831,6 +1967,8 @@ app.post('/api/rag/documents/upload', requireAuth(), requirePermission('rag:docu
         posicao: i,
         // embedding OMITIDO - texto usa Qdrant (SSOT)
       }).returning();
+
+      createdChunks.push({ id: chunk.id, conteudo: chunks[i], posicao: i });
       
       // Preparar ponto para Qdrant (busca vetorial - 1024 dim)
       qdrantPoints.push({
@@ -1866,6 +2004,17 @@ app.post('/api/rag/documents/upload', requireAuth(), requirePermission('rag:docu
     if (req.tenantId) {
       await invalidateRagCachesForTenant(req.tenantId);
     }
+
+    const user = getAuthUser(req);
+    await collectTrainingFromDocumentChunks({
+      tenantId: req.tenantId as string,
+      namespaceId,
+      documentId: document.id,
+      titulo,
+      chunks: createdChunks,
+      userId: user.id,
+      role: user.role,
+    });
 
     logger.info({ documentId: document.id, filename: req.file?.originalname }, 'Arquivo enviado e processado');
     res.json({ document, chunksCreated: chunks.length });

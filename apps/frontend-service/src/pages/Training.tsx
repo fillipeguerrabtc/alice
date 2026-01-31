@@ -94,12 +94,20 @@ import { frontendLogger } from '@/lib/logger';
 interface TrainingData {
   id: string;
   source: string;
+  sourceType?: string | null;
+  sourceId?: string | null;
+  sourceMetadata?: Record<string, unknown> | null;
   namespaceId?: string | null;
   messages: Array<{ role: string; content: string }>;
   rating: number | null;
+  qualityScore?: number | null;
   status: 'pending' | 'approved' | 'rejected' | 'used';
   isDuplicate: boolean;
   similarityScore: number | null;
+  createdBy?: string | null;
+  reviewedBy?: string | null;
+  reviewedAt?: string | null;
+  reviewNotes?: string | null;
   criadoEm: string;
 }
 
@@ -267,6 +275,11 @@ function TrainingDataCard({ data, namespaceName, onApprove, onReject, isPending,
             <div className="flex items-center gap-2">
               <MessageSquare className="h-4 w-4 text-primary" />
               <span className="text-sm font-medium">{data.source}</span>
+              {data.sourceType && (
+                <Badge variant="outline" className="text-xs">
+                  {data.sourceType}
+                </Badge>
+              )}
               {namespaceName && (
                 <Badge variant="secondary" className="text-xs">
                   {namespaceName}
@@ -277,6 +290,11 @@ function TrainingDataCard({ data, namespaceName, onApprove, onReject, isPending,
           </div>
           <CardDescription className="text-xs">
             {formatDateTime(data.criadoEm, { locale, timeZone })}
+            {data.qualityScore !== null && data.qualityScore !== undefined && (
+              <Badge variant="secondary" className="ml-2 text-xs">
+                {t('training.data.quality', { percent: Math.round(data.qualityScore * 100) })}
+              </Badge>
+            )}
             {data.isDuplicate && (
               <Badge variant="secondary" className="ml-2 text-xs">
                 {t('training.data.duplicate', { percent: Math.round((data.similarityScore || 0) * 100) })}
@@ -309,6 +327,17 @@ function TrainingDataCard({ data, namespaceName, onApprove, onReject, isPending,
                 {t('training.data.viewMore', { count: data.messages.length - 2 })}
                 <ChevronRight className="h-3 w-3 ml-1" />
               </Button>
+            )}
+            {data.reviewedAt && (
+              <div className="text-xs text-muted-foreground">
+                {t('training.data.reviewedAt', { date: formatDateTime(data.reviewedAt, { locale, timeZone }) })}
+                {data.reviewedBy && (
+                  <span className="ml-2">{t('training.data.reviewedBy', { userId: data.reviewedBy })}</span>
+                )}
+                {data.reviewNotes && (
+                  <span className="ml-2">{t('training.data.reviewNotes', { notes: data.reviewNotes })}</span>
+                )}
+              </div>
             )}
           </div>
         </CardContent>
@@ -363,6 +392,13 @@ function TradingDatasetCard({
 }) {
   const status = (data.status as TrainingData['status']) ?? 'pending';
   const marketContext = (data.marketContext as { symbol?: string }) ?? {};
+  const sourceType = (data.sourceType as string | undefined) ?? undefined;
+  const qualityScore = (data.qualityScore as number | null | undefined) ?? null;
+  const reviewedAt = (data.reviewedAt as string | null | undefined) ?? null;
+  const reviewedBy = (data.reviewedBy as string | null | undefined) ?? null;
+  const reviewNotes = (data.reviewNotes as string | null | undefined) ?? null;
+  const isDuplicate = (data.isDuplicate as boolean | undefined) ?? false;
+  const similarityScore = (data.similarityScore as number | null | undefined) ?? null;
   return (
     <motion.div variants={itemVariants}>
       <Card className="hover-elevate">
@@ -373,6 +409,11 @@ function TradingDatasetCard({
               <span className="text-sm font-medium">
                 {(data.actionType as string) ?? 'signal'}
               </span>
+              {sourceType && (
+                <Badge variant="outline" className="text-xs">
+                  {sourceType}
+                </Badge>
+              )}
               <Badge variant="secondary" className="text-xs">
                 {marketContext.symbol ?? 'N/A'}
               </Badge>
@@ -381,6 +422,16 @@ function TradingDatasetCard({
           </div>
           <CardDescription className="text-xs">
             {formatDateTime((data.criadoEm as string) ?? new Date().toISOString(), { locale, timeZone })}
+            {qualityScore !== null && (
+              <Badge variant="secondary" className="ml-2 text-xs">
+                {t('training.data.quality', { percent: Math.round(qualityScore * 100) })}
+              </Badge>
+            )}
+            {isDuplicate && (
+              <Badge variant="secondary" className="ml-2 text-xs">
+                {t('training.data.duplicate', { percent: Math.round((similarityScore || 0) * 100) })}
+              </Badge>
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
@@ -390,6 +441,13 @@ function TradingDatasetCard({
           <div className="text-xs text-muted-foreground bg-muted p-2 rounded">
             {String(data.response ?? '').slice(0, 240)}
           </div>
+          {reviewedAt && (
+            <div className="text-xs text-muted-foreground">
+              {t('training.data.reviewedAt', { date: formatDateTime(reviewedAt, { locale, timeZone }) })}
+              {reviewedBy && <span className="ml-2">{t('training.data.reviewedBy', { userId: reviewedBy })}</span>}
+              {reviewNotes && <span className="ml-2">{t('training.data.reviewNotes', { notes: reviewNotes })}</span>}
+            </div>
+          )}
           {status === 'pending' && (
             <div className="flex gap-2">
               <Button size="sm" onClick={onApprove} disabled={isPending}>
@@ -1621,10 +1679,14 @@ export default function Training() {
   const [tradingDatasetStatusFilter, setTradingDatasetStatusFilter] = useState<string>('pending');
   const [namespaceFilter, setNamespaceFilter] = useState<string>('all');
   const [sourceFilter, setSourceFilter] = useState<string>('all');
+  const [sourceTypeFilter, setSourceTypeFilter] = useState<string>('all');
   const [showCreateJob, setShowCreateJob] = useState(false);
   const [showTradingJob, setShowTradingJob] = useState(false);
   const [tradingNamespaceId, setTradingNamespaceId] = useState<string>('');
   const [showOnDemandRun, setShowOnDemandRun] = useState(false);
+  const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
+  const [reviewTarget, setReviewTarget] = useState<{ id: string; status: 'approved' | 'rejected' } | null>(null);
+  const [reviewNotes, setReviewNotes] = useState('');
 
   // Auto-learning (status + schedules) - Gate 2
   const autoLearningQueryKey = [
@@ -1843,8 +1905,8 @@ export default function Training() {
   });
 
   const updateStatus = useMutation({
-    mutationFn: async ({ id, status }: { id: string; status: string }) => {
-      return apiRequest('PATCH', `/api/training/data/${id}/status`, { status });
+    mutationFn: async ({ id, status, reviewNotes }: { id: string; status: string; reviewNotes?: string }) => {
+      return apiRequest('PATCH', `/api/training/data/${id}/status`, { status, reviewNotes });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/training/data'] });
@@ -1874,11 +1936,13 @@ export default function Training() {
 
   const namespacesById = new Map((namespaces || []).map((ns) => [ns.id, ns.nome]));
   const sourceOptions = Array.from(new Set(allData.map((d) => d.source))).sort();
+  const sourceTypeOptions = Array.from(new Set(allData.map((d) => d.sourceType).filter(Boolean) as string[])).sort();
 
   const filteredData = allData.filter((entry) => {
     if (statusFilter !== 'all' && entry.status !== statusFilter) return false;
     if (namespaceFilter !== 'all' && entry.namespaceId !== namespaceFilter) return false;
     if (sourceFilter !== 'all' && entry.source !== sourceFilter) return false;
+    if (sourceTypeFilter !== 'all' && entry.sourceType !== sourceTypeFilter) return false;
     return true;
   });
 
@@ -1904,6 +1968,22 @@ export default function Training() {
     rejected: tradingDatasetRows.filter((d) => (d as { status?: string }).status === 'rejected').length,
     used: tradingDatasetRows.filter((d) => (d as { status?: string }).status === 'used').length,
   };
+
+  const openReviewDialog = useCallback((id: string, status: 'approved' | 'rejected') => {
+    setReviewTarget({ id, status });
+    setReviewNotes('');
+    setReviewDialogOpen(true);
+  }, []);
+
+  const confirmReview = useCallback(() => {
+    if (!reviewTarget) return;
+    updateStatus.mutate({
+      id: reviewTarget.id,
+      status: reviewTarget.status,
+      reviewNotes: reviewNotes.trim().length > 0 ? reviewNotes.trim() : undefined,
+    });
+    setReviewDialogOpen(false);
+  }, [reviewNotes, reviewTarget, updateStatus]);
 
   return (
     <div className="flex flex-col h-full">
@@ -2077,6 +2157,20 @@ export default function Training() {
                 ))}
               </SelectContent>
             </Select>
+            <Select value={sourceTypeFilter} onValueChange={setSourceTypeFilter}>
+              <SelectTrigger className="w-[200px]" data-testid="select-source-type-filter">
+                <Filter className="h-4 w-4 mr-2" />
+                <SelectValue placeholder={t('training.filter.sourceType')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t('training.filter.allSources')}</SelectItem>
+                {sourceTypeOptions.map((sourceType) => (
+                  <SelectItem key={sourceType} value={sourceType}>
+                    {sourceType}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <span className="text-sm text-muted-foreground">
               {t('training.filter.results', { count: filteredData.length })}
             </span>
@@ -2122,8 +2216,8 @@ export default function Training() {
                     data={data}
                     namespaceName={data.namespaceId ? namespacesById.get(data.namespaceId) : null}
                     isPending={updateStatus.isPending}
-                    onApprove={() => updateStatus.mutate({ id: data.id, status: 'approved' })}
-                    onReject={() => updateStatus.mutate({ id: data.id, status: 'rejected' })}
+                    onApprove={() => openReviewDialog(data.id, 'approved')}
+                    onReject={() => openReviewDialog(data.id, 'rejected')}
                     t={t}
                     locale={locale}
                     timeZone={timeZone}
@@ -2516,6 +2610,39 @@ export default function Training() {
                   <Play className="h-4 w-4 mr-2" />
                   {t('training.autoLearning.startOnDemand')}
                 </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={reviewDialogOpen} onOpenChange={setReviewDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('training.reviewDialog.title')}</DialogTitle>
+            <DialogDescription>{t('training.reviewDialog.desc')}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2 py-2">
+            <Label htmlFor="review-notes">{t('training.reviewDialog.notes')}</Label>
+            <Input
+              id="review-notes"
+              value={reviewNotes}
+              onChange={(event) => setReviewNotes(event.target.value)}
+              placeholder={t('training.reviewDialog.notesPlaceholder')}
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setReviewDialogOpen(false)}>
+              {t('training.createJob.cancel')}
+            </Button>
+            <Button onClick={confirmReview} disabled={!reviewTarget || updateStatus.isPending}>
+              {updateStatus.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  {t('training.reviewDialog.saving')}
+                </>
+              ) : (
+                <>{t('training.reviewDialog.confirm')}</>
               )}
             </Button>
           </DialogFooter>

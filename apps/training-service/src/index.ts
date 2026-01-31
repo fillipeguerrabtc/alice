@@ -54,6 +54,10 @@ import {
   GpuRequestPriority,
   GPU_MANAGER_CONFIG,
   Gauge as PromGauge,
+  Counter as PromCounter,
+  Histogram as PromHistogram,
+  computeSemHash,
+  cosineSimilarity,
 } from '@alice/shared-utils';
 import { trainingServicePaths, trainingServiceSchemas } from './openapi-specs.js';
 import { eq, and, or, desc, sql, isNull, not, inArray } from '@alice/database';
@@ -172,6 +176,45 @@ const trainingDatasetsTotal = new PromGauge({
   help: 'Total de registros de training data (todas as categorias)',
   registers: [metrics.registry],
 });
+
+const trainingPipelineMetrics = {
+  dataCollectedTotal: new PromCounter({
+    name: 'alice_training_data_collected_total',
+    help: 'Total de dados de treinamento coletados',
+    labelNames: ['source_type', 'status'] as const,
+    registers: [metrics.registry],
+  }),
+  dataRejectedTotal: new PromCounter({
+    name: 'alice_training_data_rejected_total',
+    help: 'Total de dados de treinamento rejeitados automaticamente',
+    labelNames: ['reason', 'source_type'] as const,
+    registers: [metrics.registry],
+  }),
+  dataDuplicatesTotal: new PromCounter({
+    name: 'alice_training_data_duplicates_total',
+    help: 'Total de dados de treinamento detectados como duplicados',
+    labelNames: ['source_type'] as const,
+    registers: [metrics.registry],
+  }),
+  qualityScore: new PromHistogram({
+    name: 'alice_training_data_quality_score',
+    help: 'Distribuição de score de qualidade dos dados de treinamento',
+    buckets: [0, 0.25, 0.5, 0.75, 0.9, 0.95, 1],
+    registers: [metrics.registry],
+  }),
+  reviewTotal: new PromCounter({
+    name: 'alice_training_data_review_total',
+    help: 'Total de revisões manuais de dados de treinamento',
+    labelNames: ['decision'] as const,
+    registers: [metrics.registry],
+  }),
+  schedulerRunsTotal: new PromCounter({
+    name: 'alice_training_scheduler_runs_total',
+    help: 'Total de execuções do scheduler de auto-learning',
+    labelNames: ['result'] as const,
+    registers: [metrics.registry],
+  }),
+};
 
 const TRAINING_METRICS_INTERVAL_MS = parseEnvInt(
   process.env.TRAINING_METRICS_INTERVAL_MS,
@@ -368,28 +411,20 @@ app.use(createSessionAuthMiddleware({
 const SIMILARITY_THRESHOLD = 0.85;
 // BUG FIX 26/12/2025: JOB_POLLING_INTERVAL_MS removido - fine-tuning em migração para Hetzner GPU
 
-function computeSemHash(text: string): string {
-  const normalized = text.toLowerCase().trim().replace(/\s+/g, ' ');
-  return crypto.createHash('sha256').update(normalized).digest('hex').slice(0, 64);
-}
+function computeQualityScore(messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>): number {
+  if (messages.length < 2) return 0;
+  const totalLength = messages.reduce((sum, msg) => sum + msg.content.trim().length, 0);
+  if (totalLength < 80) return 0.2;
 
-function cosineSimilarity(a: number[], b: number[]): number {
-  if (a.length !== b.length || a.length === 0) return 0;
-  
-  let dotProduct = 0;
-  let normA = 0;
-  let normB = 0;
-  
-  for (let i = 0; i < a.length; i++) {
-    dotProduct += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
-  }
-  
-  const denominator = Math.sqrt(normA) * Math.sqrt(normB);
-  if (denominator === 0) return 0;
-  
-  return dotProduct / denominator;
+  const hasUser = messages.some((msg) => msg.role === 'user');
+  const hasAssistant = messages.some((msg) => msg.role === 'assistant');
+  if (!hasUser || !hasAssistant) return 0.3;
+
+  const averageLength = totalLength / messages.length;
+  const lengthScore = Math.min(1, averageLength / 400);
+  const balanceScore = hasUser && hasAssistant ? 0.5 : 0.2;
+
+  return Math.min(1, 0.4 + lengthScore * 0.4 + balanceScore);
 }
 
 app.get('/api/training/health', async (_req: Request, res: Response) => {
@@ -478,6 +513,16 @@ const messageSchema = z.object({
   content: z.string().min(1, 'Conteúdo da mensagem é obrigatório'),
 });
 
+const trainingSourceTypeSchema = z.enum([
+  'chat',
+  'trading_signal',
+  'trading_order',
+  'document',
+  'external',
+  'manual',
+  'system',
+]);
+
 const TRADING_MIN_DATA_REQUIRED = parseEnvInt(
   process.env.TRAINING_TRADING_MIN_DATA,
   30,
@@ -517,11 +562,26 @@ const TRADING_LEARNING_RATE = parseEnvFloat(
   'TRAINING_TRADING_LEARNING_RATE'
 );
 
+const TRAINING_DATA_MIN_QUALITY = parseEnvFloat(
+  process.env.TRAINING_DATA_MIN_QUALITY,
+  0.35,
+  'TRAINING_DATA_MIN_QUALITY'
+);
+
+const TRAINING_SCHEDULER_POLL_MS = parseEnvInt(
+  process.env.TRAINING_SCHEDULER_POLL_MS,
+  60000,
+  'TRAINING_SCHEDULER_POLL_MS'
+);
+
 const collectTrainingDataSchema = z.object({
   tenantId: z.string().uuid('Tenant ID deve ser UUID válido'),
   namespaceId: z.string().uuid('Namespace ID deve ser UUID válido'),
   conversationId: z.string().uuid('Conversation ID deve ser UUID válido').optional(),
   source: z.string().min(1, 'Fonte é obrigatória'),
+  sourceType: trainingSourceTypeSchema.optional(),
+  sourceId: z.string().min(1).max(255).optional(),
+  sourceMetadata: z.record(z.unknown()).optional(),
   messages: z.array(messageSchema).min(1, 'Pelo menos uma mensagem é obrigatória'),
   rating: z.number().min(1).max(5).optional(),
 });
@@ -529,14 +589,19 @@ const collectTrainingDataSchema = z.object({
 app.post('/api/training/data', requirePermission('training:training_data:write'), async (req: Request, res: Response) => {
   try {
     const body = collectTrainingDataSchema.parse(req.body);
+    const authContext = extractAuthContext(req);
+    const resolvedTenantId = authContext?.tenantId || body.tenantId;
+    const createdBy = authContext?.userId ?? undefined;
 
     const messagesText = body.messages.map(m => m.content).join('\n');
     const semhash = computeSemHash(messagesText);
     const embedding = await generateEmbedding(messagesText);
+    const qualityScore = computeQualityScore(body.messages);
 
     const existingData = await db.query.trainingData.findMany({
       where: and(
-        eq(schema.trainingData.status, 'pending'),
+        eq(schema.trainingData.tenantId, resolvedTenantId),
+        inArray(schema.trainingData.status, ['pending', 'approved', 'used']),
         not(isNull(schema.trainingData.embedding))
       ),
     });
@@ -563,20 +628,43 @@ app.post('/api/training/data', requirePermission('training:training_data:write')
       }
     }
 
+    const autoRejectedByQuality = !isDuplicate && qualityScore < TRAINING_DATA_MIN_QUALITY;
+    const status = isDuplicate || autoRejectedByQuality ? 'rejected' : 'pending';
+    const reviewNotes = autoRejectedByQuality
+      ? `Auto-rejeitado: qualidade ${qualityScore.toFixed(2)} abaixo do mínimo (${TRAINING_DATA_MIN_QUALITY}).`
+      : null;
+
     const [trainingData] = await db.insert(schema.trainingData).values({
-      tenantId: body.tenantId,
+      tenantId: resolvedTenantId,
       namespaceId: body.namespaceId,
       conversationId: body.conversationId,
       source: body.source,
+      sourceType: body.sourceType ?? 'manual',
+      sourceId: body.sourceId ?? null,
+      sourceMetadata: body.sourceMetadata ?? {},
       messages: body.messages,
       rating: body.rating,
+      qualityScore,
+      createdBy,
       semhash,
       embedding,
       isDuplicate,
       duplicateOfId,
       similarityScore: highestSimilarity > 0 ? highestSimilarity : null,
-      status: isDuplicate ? 'rejected' : 'pending',
+      status,
+      reviewNotes,
     }).returning();
+
+    const sourceTypeMetric = body.sourceType ?? 'manual';
+    trainingPipelineMetrics.dataCollectedTotal.labels(sourceTypeMetric, status).inc();
+    trainingPipelineMetrics.qualityScore.observe(qualityScore);
+    if (isDuplicate) {
+      trainingPipelineMetrics.dataDuplicatesTotal.labels(sourceTypeMetric).inc();
+      trainingPipelineMetrics.dataRejectedTotal.labels('duplicate', sourceTypeMetric).inc();
+    }
+    if (autoRejectedByQuality) {
+      trainingPipelineMetrics.dataRejectedTotal.labels('quality', sourceTypeMetric).inc();
+    }
 
     logger.info({ 
       trainingDataId: trainingData.id, 
@@ -602,12 +690,13 @@ app.get('/api/training/data', requirePermission('training:training_data:read'), 
   if (!queryResult.success) {
     return res.status(400).json({ error: 'Parâmetros inválidos', details: queryResult.error.format() });
   }
-  const { status, namespaceId } = queryResult.data;
+  const { status, namespaceId, sourceType } = queryResult.data;
 
   try {
     const conditions = [];
     if (status) conditions.push(eq(schema.trainingData.status, status as 'pending' | 'approved' | 'rejected' | 'used'));
     if (namespaceId) conditions.push(eq(schema.trainingData.namespaceId, namespaceId));
+    if (sourceType) conditions.push(eq(schema.trainingData.sourceType, sourceType));
 
     const trainingData = await db.query.trainingData.findMany({
       where: conditions.length > 0 ? and(...conditions) : undefined,
@@ -630,6 +719,7 @@ const uuidParamSchema = z.object({
 // OWASP API3 - Schema para validação de status
 const statusUpdateSchema = z.object({
   status: z.enum(['approved', 'rejected']),
+  reviewNotes: z.string().max(2000).optional(),
 });
 
 app.patch('/api/training/data/:id/status', requirePermission('training:training_data:manage'), async (req: Request, res: Response) => {
@@ -645,16 +735,23 @@ app.patch('/api/training/data/:id/status', requirePermission('training:training_
   if (!bodyResult.success) {
     return res.status(400).json({ error: 'Status inválido', details: bodyResult.error.format() });
   }
-  const { status } = bodyResult.data;
+  const { status, reviewNotes } = bodyResult.data;
+  const authContext = extractAuthContext(req);
+  const reviewedBy = authContext?.userId ?? undefined;
 
   try {
     const [updated] = await db.update(schema.trainingData)
       .set({ 
         status: status as 'approved' | 'rejected',
         processadoEm: new Date(),
+        reviewedBy,
+        reviewedAt: new Date(),
+        reviewNotes: reviewNotes ?? null,
       })
       .where(eq(schema.trainingData.id, id))
       .returning();
+
+    trainingPipelineMetrics.reviewTotal.labels(status).inc();
 
     logger.info({ trainingDataId: id, status }, 'Status de treinamento atualizado');
     res.json({ trainingData: updated });
@@ -714,7 +811,11 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
   try {
     const body = createJobSchema.parse(req.body);
 
-    const approvedConditions = [eq(schema.trainingData.status, 'approved')];
+    const approvedConditions = [
+      eq(schema.trainingData.status, 'approved'),
+      eq(schema.trainingData.isDuplicate, false),
+      isNull(schema.trainingData.usedInJobId),
+    ];
     if (body.tenantId) approvedConditions.push(eq(schema.trainingData.tenantId, body.tenantId));
     
     const approvedData = await db.query.trainingData.findMany({
@@ -781,6 +882,8 @@ app.post('/api/training/jobs/trading', requirePermission('training:fine_tuning_j
 
     const approvedConditions = [
       eq(schema.trainingData.status, 'approved'),
+      eq(schema.trainingData.isDuplicate, false),
+      isNull(schema.trainingData.usedInJobId),
       eq(schema.trainingData.namespaceId, body.namespaceId),
     ];
     if (tenantId) approvedConditions.push(eq(schema.trainingData.tenantId, tenantId));
@@ -853,7 +956,7 @@ function buildChatMlText(messages: Array<{ role: string; content: string }>): st
   return messages.map((m) => `${m.role}: ${m.content}`).join('\n');
 }
 
-async function prepareFineTuningDatasetFiles(jobId: string, tenantId: string): Promise<{ trainPath: string; evalPath: string; outputDir: string; trainCount: number; evalCount: number; }> {
+async function prepareFineTuningDatasetFiles(jobId: string, tenantId: string): Promise<{ trainPath: string; evalPath: string; outputDir: string; manifestPath: string; trainCount: number; evalCount: number; }> {
   const approved = await db.query.trainingData.findMany({
     where: and(
       eq(schema.trainingData.status, 'approved'),
@@ -881,9 +984,32 @@ async function prepareFineTuningDatasetFiles(jobId: string, tenantId: string): P
 
   const trainPath = path.join(jobDir, 'train.jsonl');
   const evalPath = path.join(jobDir, 'eval.jsonl');
+  const manifestPath = path.join(jobDir, 'manifest.json');
 
   await writeJsonl(trainPath, trainLines);
   await writeJsonl(evalPath, evalLines);
+
+  const sourceTypeCounts = approved.reduce<Record<string, number>>((acc, item) => {
+    const key = item.sourceType ?? 'unknown';
+    acc[key] = (acc[key] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  await fs.writeFile(
+    manifestPath,
+    JSON.stringify({
+      jobId,
+      tenantId,
+      createdAt: new Date().toISOString(),
+      total: approved.length,
+      trainCount: trainLines.length,
+      evalCount: evalLines.length,
+      trainIds: train.map((d) => d.id),
+      evalIds: evalData.map((d) => d.id),
+      sourceTypeCounts,
+    }, null, 2),
+    { encoding: 'utf-8' }
+  );
 
   // Marcar dados como usados (persistência enterprise)
   for (const row of approved) {
@@ -892,7 +1018,7 @@ async function prepareFineTuningDatasetFiles(jobId: string, tenantId: string): P
       .where(eq(schema.trainingData.id, row.id));
   }
 
-  return { trainPath, evalPath, outputDir, trainCount: trainLines.length, evalCount: evalLines.length };
+  return { trainPath, evalPath, outputDir, manifestPath, trainCount: trainLines.length, evalCount: evalLines.length };
 }
 
 function computeTargetSteps(trainCount: number, hyper: FineTuningJobHyperparams): number {
@@ -919,7 +1045,7 @@ async function processFineTuningJob(jobId: string, hyperparameters: FineTuningJo
     .set({ status: 'preparing', iniciadoEm: job.iniciadoEm ?? new Date() })
     .where(eq(schema.fineTuningJobs.id, jobId));
 
-  const { trainPath, evalPath, outputDir, trainCount, evalCount } = await prepareFineTuningDatasetFiles(jobId, job.tenantId);
+  const { trainPath, evalPath, outputDir, manifestPath, trainCount, evalCount } = await prepareFineTuningDatasetFiles(jobId, job.tenantId);
   const targetSteps = computeTargetSteps(trainCount, hyperparameters);
 
   await db.update(schema.fineTuningJobs)
@@ -929,7 +1055,7 @@ async function processFineTuningJob(jobId: string, hyperparameters: FineTuningJo
       validationDataCount: evalCount,
       progress: 0,
       metrics: {
-        dataset: { trainPath, evalPath, outputDir, trainCount, evalCount, targetSteps },
+        dataset: { trainPath, evalPath, outputDir, manifestPath, trainCount, evalCount, targetSteps },
         stepsCompleted: 0,
       },
     })
@@ -1176,10 +1302,13 @@ app.post('/api/training/bulk-import', requirePermission('training:training_data:
 
       try {
         embedding = await gpuManagerEmbeddingsBreaker.fire(text) as number[];
-        semhash = crypto.createHash('sha256').update(text.toLowerCase().trim()).digest('hex');
+        semhash = computeSemHash(text);
 
         const existingDuplicate = await db.query.trainingData.findFirst({
-          where: eq(schema.trainingData.semhash, semhash),
+          where: and(
+            eq(schema.trainingData.tenantId, tenantId),
+            eq(schema.trainingData.semhash, semhash)
+          ),
         });
 
         if (existingDuplicate) {
@@ -1190,12 +1319,25 @@ app.post('/api/training/bulk-import', requirePermission('training:training_data:
         logger.warn({ error: embError, index: i }, 'Erro ao gerar embedding - continuando sem deduplicação');
       }
 
+      const qualityScore = computeQualityScore(entry.messages);
+      const autoRejectedByQuality = qualityScore < TRAINING_DATA_MIN_QUALITY;
+      const status = autoRejectedByQuality
+        ? 'rejected'
+        : (autoApprove && (entry.rating || 0) >= 4 ? 'approved' : 'pending');
+      const reviewNotes = autoRejectedByQuality
+        ? `Auto-rejeitado: qualidade ${qualityScore.toFixed(2)} abaixo do mínimo (${TRAINING_DATA_MIN_QUALITY}).`
+        : null;
+
       const [inserted] = await db.insert(schema.trainingData).values({
         tenantId,
         source: `bulk_import:${source}`,
+        sourceType: 'external',
+        sourceMetadata: { bulkSource: source },
         messages: entry.messages,
         rating: entry.rating,
-        status: autoApprove && (entry.rating || 0) >= 4 ? 'approved' : 'pending',
+        qualityScore,
+        status,
+        reviewNotes,
         semhash,
         embedding,
         isDuplicate: false,
@@ -1247,6 +1389,7 @@ const webhookSchema = z.object({
 const batchApproveSchema = z.object({
   ids: z.array(z.string().uuid()).min(1).max(1000),
   action: z.enum(['approve', 'reject']),
+  reviewNotes: z.string().max(2000).optional(),
 });
 
 // ============================================================================
@@ -1256,8 +1399,9 @@ const batchApproveSchema = z.object({
 
 // Schema para query params de training data
 const trainingDataQuerySchema = z.object({
-  status: z.enum(['pending', 'approved', 'rejected', 'processed']).optional(),
+  status: z.enum(['pending', 'approved', 'rejected', 'used']).optional(),
   namespaceId: z.string().uuid().optional(),
+  sourceType: trainingSourceTypeSchema.optional(),
 });
 
 // Schema para query params de jobs
@@ -1332,17 +1476,27 @@ app.post('/api/training/webhook', async (req: Request, res: Response) => {
 
       try {
         embedding = await gpuManagerEmbeddingsBreaker.fire(text) as number[];
-        semhash = crypto.createHash('sha256').update(text.toLowerCase().trim()).digest('hex');
+        semhash = computeSemHash(text);
       } catch (embError) {
         logger.warn({ error: embError }, 'Erro ao gerar embedding no webhook');
       }
 
+      const qualityScore = computeQualityScore(payload.messages);
+      const autoRejectedByQuality = qualityScore < TRAINING_DATA_MIN_QUALITY;
+      const status = autoRejectedByQuality ? 'rejected' : 'pending';
+      const reviewNotes = autoRejectedByQuality
+        ? `Auto-rejeitado: qualidade ${qualityScore.toFixed(2)} abaixo do mínimo (${TRAINING_DATA_MIN_QUALITY}).`
+        : null;
       const [inserted] = await db.insert(schema.trainingData).values({
         tenantId,
         source: 'webhook',
+        sourceType: 'external',
+        sourceMetadata: { event },
         messages: payload.messages,
         rating: payload.rating,
-        status: 'pending',
+        qualityScore,
+        status,
+        reviewNotes,
         semhash,
         embedding,
       }).returning();
@@ -1375,7 +1529,9 @@ app.post('/api/training/data/approve-batch', requirePermission('training:trainin
   if (!parseResult.success) {
     return res.status(400).json({ error: 'Input inválido' });
   }
-  const { ids, action } = parseResult.data;
+  const { ids, action, reviewNotes } = parseResult.data;
+  const authContext = extractAuthContext(req);
+  const reviewedBy = authContext?.userId ?? undefined;
 
   try {
     const newStatus = action === 'approve' ? 'approved' : 'rejected';
@@ -1386,11 +1542,18 @@ app.post('/api/training/data/approve-batch', requirePermission('training:trainin
         .set({ 
           status: newStatus,
           processadoEm: new Date(),
+          reviewedBy,
+          reviewedAt: new Date(),
+          reviewNotes: reviewNotes ?? null,
         })
         .where(eq(schema.trainingData.id, id))
         .returning();
 
       if (updated) updatedCount++;
+    }
+
+    if (updatedCount > 0) {
+      trainingPipelineMetrics.reviewTotal.labels(newStatus).inc(updatedCount);
     }
 
     logger.info({ action, count: updatedCount }, 'Aprovação em lote concluída');
@@ -2032,6 +2195,7 @@ import {
   SCHEDULE_CONFIG, 
   evaluateDataQuality, 
   startProgressiveLoRA,
+  processScheduledJobs,
 } from './auto-learning-scheduler.js';
 
 // ============================================================================
@@ -2053,6 +2217,7 @@ app.use(createErrorHandler({
 import { connectWithRetry } from '@alice/database';
 
 let server: ReturnType<typeof app.listen>;
+let autoLearningInterval: NodeJS.Timeout | null = null;
 
 (async () => {
   try {
@@ -2081,6 +2246,18 @@ let server: ReturnType<typeof app.listen>;
 
       startTrainingMetricsScheduler();
       logger.info({ intervalMs: TRAINING_METRICS_INTERVAL_MS }, 'Scheduler de métricas de training iniciado');
+
+      autoLearningInterval = setInterval(() => {
+        processScheduledJobs()
+          .then(() => {
+            trainingPipelineMetrics.schedulerRunsTotal.labels('success').inc();
+          })
+          .catch((error: unknown) => {
+            trainingPipelineMetrics.schedulerRunsTotal.labels('error').inc();
+            logger.warn({ error }, 'Falha ao processar jobs agendados de auto-learning');
+          });
+      }, TRAINING_SCHEDULER_POLL_MS);
+      logger.info({ intervalMs: TRAINING_SCHEDULER_POLL_MS }, 'Scheduler de auto-learning iniciado');
 
       // Retomar jobs pendentes após restart (Regra 6: sem dependência de state em memória)
       resumePendingFineTuningJobs().catch((error: unknown) => {
@@ -2145,6 +2322,17 @@ let server: ReturnType<typeof app.listen>;
         if (trainingMetricsInterval) {
           clearInterval(trainingMetricsInterval);
           trainingMetricsInterval = null;
+        }
+      },
+      { priority: ShutdownPriority.BACKGROUND_JOBS }
+    );
+
+    registerShutdownCallback(
+      'training-auto-learning-scheduler',
+      async () => {
+        if (autoLearningInterval) {
+          clearInterval(autoLearningInterval);
+          autoLearningInterval = null;
         }
       },
       { priority: ShutdownPriority.BACKGROUND_JOBS }

@@ -162,7 +162,7 @@
 ## Observabilidade
 
 - Prometheus 3.8.1 e Grafana 12.3.2 com Grafana Alerting (Alertmanager removido).
-- Dashboards principais: Home, Services, LLM Metrics, RAG Metrics, Integrations, Infrastructure, Training, Backup.
+- Dashboards principais: Home, Services, LLM Metrics, RAG Metrics, Integrations, Infrastructure, Training, Training Pipeline, Backup.
 - Loki/Promtail 3.6.3 e Jaeger 2.13.0 (OTLP habilitado).
 - Langfuse v3 com worker e ClickHouse 25.12-alpine.
 

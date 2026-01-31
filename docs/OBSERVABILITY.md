@@ -1,7 +1,7 @@
 # Guia de Observabilidade - Alice Enterprise Platform
 
-**Versão:** 2.6.7  
-**Data:** 28 de Janeiro de 2026  
+**Versão:** 2.6.8  
+**Data:** 31 de Janeiro de 2026  
 **Author:** Fillipe Guerra
 
 ---
@@ -146,6 +146,7 @@ Permitir que o Chat consulte e **atualize dashboards** do Grafana com RBAC, audi
 - Infrastructure
 - RAG
 - Training
+- Training Pipeline
 - ERPNext
 - Traces (Jaeger)
 - Alertas
@@ -301,6 +302,58 @@ Permitir que o Chat consulte e **atualize dashboards** do Grafana com RBAC, audi
 - MariaDB slow queries > 10 por 1h
 
 ---
+
+### 6. Dashboard Training
+
+**UID:** `alice-training`  
+**Quando usar:** Monitorar jobs de fine-tuning, métricas de treinamento e uso de GPU.
+
+**Métricas principais:**
+
+- **Jobs ativos:** `alice_training_active_jobs`
+- **Jobs completados:** `alice_training_completed_jobs_total`
+- **Jobs falhos:** `alice_training_failed_jobs_total`
+- **Datasets totais:** `alice_training_datasets_total`
+
+**Painéis:**
+
+1. **KPIs Training:** jobs ativos, completados e falhos
+2. **Datasets:** volume total e evolução
+3. **GPU/VRAM:** utilização durante o treinamento
+
+**Alertas:**
+
+- Jobs falhos com aumento contínuo
+
+---
+
+### 7. Dashboard Training Pipeline
+
+**UID:** `alice-training-pipeline`  
+**Quando usar:** Acompanhar coleta, deduplicação, qualidade e scheduler do pipeline de training/trading.
+
+**Métricas principais:**
+
+- **Coletas:** `alice_training_data_collected_total{source_type,status}`
+- **Duplicados:** `alice_training_data_duplicates_total{source_type}`
+- **Auto-rejeições:** `alice_training_data_rejected_total{reason,source_type}`
+- **Qualidade (hist):** `alice_training_data_quality_score_bucket`
+- **Scheduler:** `alice_training_scheduler_runs_total{result}`
+- **Trading datasets:** `alice_trading_dataset_created_total`, `alice_trading_dataset_duplicates_total`, `alice_trading_dataset_quality_score_bucket`
+
+**Painéis:**
+
+1. **Coleta & Status:** volume por fonte/status
+2. **Deduplicação:** duplicados por fonte
+3. **Qualidade:** P50/P95 por janela
+4. **Scheduler:** execuções por resultado
+5. **Trading datasets:** criação, duplicados, qualidade
+
+**Alertas:**
+
+- Sem novos dados coletados por 6h
+- Erros no scheduler de auto-learning
+- Auto-rejeição alta (training/trading)
 
 ## 🔍 PROMETHEUS TARGETS
 

@@ -1449,6 +1449,16 @@ export const trainingDataStatusEnum = pgEnum("training_data_status", [
   "used",
 ]);
 
+export const trainingSourceTypeEnum = pgEnum("training_source_type", [
+  "chat",
+  "trading_signal",
+  "trading_order",
+  "document",
+  "external",
+  "manual",
+  "system",
+]);
+
 export const trainingData = pgTable(
   "training_data",
   {
@@ -1457,9 +1467,17 @@ export const trainingData = pgTable(
     namespaceId: uuid("namespace_id").references(() => namespaces.id),
     conversationId: uuid("conversation_id").references(() => conversations.id),
     source: varchar("source", { length: 50 }).notNull(),
+    sourceType: trainingSourceTypeEnum("source_type").notNull().default("manual"),
+    sourceId: varchar("source_id", { length: 255 }),
+    sourceMetadata: jsonb("source_metadata").$type<GenericMetadata>().default({}),
     messages: jsonb("messages").$type<TrainingMessages>().notNull(),
     rating: integer("rating"),
+    qualityScore: real("quality_score"),
     status: trainingDataStatusEnum("status").default("pending"),
+    createdBy: uuid("created_by").references(() => users.id),
+    reviewedBy: uuid("reviewed_by").references(() => users.id),
+    reviewedAt: timestamp("reviewed_at"),
+    reviewNotes: text("review_notes"),
     semhash: varchar("semhash", { length: 64 }),
     embedding: vector("embedding"),
     isDuplicate: boolean("is_duplicate").default(false),
@@ -1475,6 +1493,8 @@ export const trainingData = pgTable(
     idxTrainingStatus: index("idx_training_status").on(table.status),
     idxTrainingSemhash: index("idx_training_semhash").on(table.semhash),
     idxTrainingSource: index("idx_training_source").on(table.source),
+    idxTrainingSourceType: index("idx_training_source_type").on(table.sourceType),
+    idxTrainingSourceId: index("idx_training_source_id").on(table.sourceId),
   })
 );
 
@@ -2470,6 +2490,13 @@ export const tradingDatasetStatusEnum = pgEnum("trading_dataset_status", [
   "used",        // Já usado em um job de treinamento
 ]);
 
+export const tradingDatasetSourceTypeEnum = pgEnum("trading_dataset_source_type", [
+  "signal",
+  "order",
+  "manual",
+  "system",
+]);
+
 // Enum para tipo de dado de mercado
 // Intervalos baseados na API KuCoin Futures (min: 1min, max: 1month)
 // Para scalping: 1m, 3m, 5m são essenciais
@@ -2607,12 +2634,20 @@ export const tradingDataset = pgTable(
     qualityScore: real("quality_score"),    // 0-1, calculado automaticamente
     status: tradingDatasetStatusEnum("status").default("pending"),
     reviewedBy: uuid("reviewed_by").references(() => users.id),
+    reviewedAt: timestamp("reviewed_at"),
     reviewNotes: text("review_notes"),
     
     // Embedding do prompt para deduplicação
     embedding: vector("embedding"),
     semhash: varchar("semhash", { length: 64 }),
     isDuplicate: boolean("is_duplicate").default(false),
+    duplicateOfId: uuid("duplicate_of_id"),
+    similarityScore: real("similarity_score"),
+
+    // Origem e contexto
+    sourceType: tradingDatasetSourceTypeEnum("source_type").notNull().default("manual"),
+    sourceId: varchar("source_id", { length: 255 }),
+    sourceMetadata: jsonb("source_metadata").$type<GenericMetadata>().default({}),
     
     // Referências
     signalId: uuid("signal_id").references(() => tradingSignals.id),
@@ -2628,6 +2663,8 @@ export const tradingDataset = pgTable(
     idxDatasetAction: index("idx_trading_dataset_action").on(table.actionType),
     idxDatasetQuality: index("idx_trading_dataset_quality").on(table.qualityScore),
     idxDatasetSemhash: index("idx_trading_dataset_semhash").on(table.semhash),
+    idxDatasetSourceType: index("idx_trading_dataset_source_type").on(table.sourceType),
+    idxDatasetSourceId: index("idx_trading_dataset_source_id").on(table.sourceId),
   })
 );
 
