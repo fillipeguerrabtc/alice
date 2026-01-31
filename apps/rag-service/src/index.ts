@@ -2314,6 +2314,10 @@ const webSearchSchema = z.object({
   query: z.string().min(1),
   limit: z.coerce.number().min(1).max(20).default(5),
   mode: z.enum(['web', 'deepweb']).optional(),
+  engines: z.array(z.string().min(1)).optional(),
+  categories: z.string().min(1).optional(),
+  language: z.string().min(2).optional(),
+  safesearch: z.string().min(1).optional(),
 });
 
 const webImageSearchSchema = z.object({
@@ -2323,7 +2327,7 @@ const webImageSearchSchema = z.object({
 
 app.post('/api/rag/web-search', requireAuth(), async (req: Request, res: Response) => {
   try {
-    const { query, limit, mode } = webSearchSchema.parse(req.body);
+    const { query, limit, mode, engines, categories, language, safesearch } = webSearchSchema.parse(req.body);
     
     if (!webSearchClient.isEnabled()) {
       return res.status(503).json({ 
@@ -2334,7 +2338,12 @@ app.post('/api/rag/web-search', requireAuth(), async (req: Request, res: Respons
 
     const options: WebSearchOptions | undefined = mode === 'deepweb'
       ? { engines: ['ahmia'] }
-      : undefined;
+      : {
+        engines,
+        categories,
+        language,
+        safesearch,
+      };
     const results = await webSearch(query, limit, options);
     
     logger.info({ query, results: results.length }, 'Busca web concluída');

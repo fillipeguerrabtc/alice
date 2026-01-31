@@ -1749,6 +1749,17 @@ export const TradingProfileModelConfigSchema = z.object({
 });
 export type TradingProfileModelConfig = z.infer<typeof TradingProfileModelConfigSchema>;
 
+export const TradingProfileNewsConfigSchema = z.object({
+  engines: z.array(z.string().min(1)).optional(),
+  categories: z.string().min(1).optional(),
+  language: z.string().min(2).optional(),
+  safesearch: z.string().min(1).optional(),
+  queryTemplates: z.array(z.string().min(3)).optional(),
+  extraTerms: z.array(z.string().min(1)).optional(),
+  maxResults: z.number().int().min(1).max(10).optional(),
+});
+export type TradingProfileNewsConfig = z.infer<typeof TradingProfileNewsConfigSchema>;
+
 export const TradingProfileConsensusSchema = z.object({
   rule: z.enum(["majority"]).default("majority"),
   minAgree: z.number().min(1).optional(),
@@ -1964,6 +1975,8 @@ export const tradingAnalysisProfiles = pgTable(
       .default(sql`'{"orderBook": false, "news": false, "trainingData": false}'::jsonb`),
     modelConfig: jsonb("model_config").$type<TradingProfileModelConfig>().notNull()
       .default(sql`'{}'::jsonb`),
+    newsConfig: jsonb("news_config").$type<TradingProfileNewsConfig>().notNull()
+      .default(sql`'{"engines":[],"categories":"general","language":"pt-BR","safesearch":"1","queryTemplates":["{symbol} {marketType} news {terms}"],"extraTerms":[],"maxResults":5}'::jsonb`),
     consensus: jsonb("consensus").$type<TradingProfileConsensus>().notNull()
       .default(sql`'{"rule":"majority"}'::jsonb`),
     criadoEm: timestamp("criado_em").defaultNow(),

@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 31 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.50 - Sinais/Análise completos + orçamento seguro de tokens
+**Versão:** 10.51 - Notícias SearXNG configuráveis + orçamento seguro de tokens
 
 ---
 
@@ -29,6 +29,8 @@
 - Sinais IA agora exibem tipo de operação, duração, TP/SL, RR, motivadores e invalidações (resumo executivo no UI).
 - Análise técnica passa a retornar plano determinístico com operação, duração, TP/SL, RR e motivadores no painel.
 - Geração de sinais com LLM usa orçamento seguro de tokens (prompt truncado e max_tokens ajustado ao contexto).
+- Notícias Trading: configuração de termos/engines do SearXNG persistida em perfil e editável na UI (Sinais + Análise).
+- RAG Web Search: suporte a engines, categorias, idioma e SafeSearch por requisição (integração SearXNG ajustável).
 - Training: datasets de trading com aprovação dedicada e fluxo manual via sinal → dataset.
 - Trading: correção da ordem de hooks para evitar React error #310 na página de Trading.
 - Training: webhook com deduplicação semântica (semhash + cosine) e auditoria de duplicados.

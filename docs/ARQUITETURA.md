@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Arquitetura de Software
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 24 de Janeiro de 2026  
-> **Versão:** 3.4.3 - Detectores Agentic configuráveis + ASR/Vision alinhados  
+> **Data:** 31 de Janeiro de 2026  
+> **Versão:** 3.4.4 - Configuração de notícias SearXNG para Trading  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 > 
@@ -412,6 +412,25 @@ sequenceDiagram
         Orch-->>Chat: "Trading em modo manual"
         Chat-->>U: "Assuma controle via painel"
     end
+```
+
+#### 6.2.1 Notícias (SearXNG) em Sinais e Análises
+
+As notícias usadas nos **Sinais IA** e na **Análise Técnica** são coletadas via **SearXNG interno**.  
+A configuração é persistida por tenant no perfil `trading_analysis_profiles.news_config` e exposta na UI.
+
+**Configurações suportadas (perfil):**
+- `engines`: lista de engines (atalhos SearXNG). Vazio = engines padrão da instância.
+- `categories`: categoria SearXNG (ex: `general`).
+- `language`: idioma (ex: `pt-BR`).
+- `safesearch`: nível de SafeSearch (`0`, `1`, `2`).
+- `queryTemplates`: templates com `{symbol}`, `{marketType}` e `{terms}`.
+- `extraTerms`: termos adicionais para enriquecer a consulta.
+- `maxResults`: limite de resultados retornados (1 a 10).
+
+**Consulta padrão:**
+```
+{symbol} {marketType} news {terms}
 ```
 
 ### 6.3 Fluxo de Embeddings (GPU Dedicada 24/7)

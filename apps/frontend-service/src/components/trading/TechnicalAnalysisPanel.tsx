@@ -45,6 +45,7 @@ import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { NewsConfigEditor, DEFAULT_TRADING_NEWS_CONFIG, normalizeTradingNewsConfigForm, type TradingNewsConfigForm } from './NewsConfigEditor';
 
 // NOTA: Tooltip removido - não utilizado neste componente (21/12/2025)
 import { apiRequest } from '@/lib/queryClient';
@@ -198,6 +199,7 @@ export interface AnalysisProfile {
   timeframes: string[];
   indicators: string[];
   dataSources: AnalysisProfileDataSources;
+  newsConfig: TradingNewsConfigForm;
   modelConfig?: {
     temperature?: number;
     maxTokens?: number;
@@ -392,6 +394,7 @@ export function TechnicalAnalysisPanel({
       news: false,
       trainingData: false,
     },
+    newsConfig: DEFAULT_TRADING_NEWS_CONFIG,
     modelConfig: {},
     consensus: { rule: 'majority' },
   });
@@ -446,7 +449,10 @@ export function TechnicalAnalysisPanel({
 
   useEffect(() => {
     if (profileResponse?.data) {
-      setProfileForm(profileResponse.data);
+      setProfileForm({
+        ...profileResponse.data,
+        newsConfig: normalizeTradingNewsConfigForm(profileResponse.data.newsConfig),
+      });
       if (profileResponse.data.timeframes?.[0]) {
         setInterval(profileResponse.data.timeframes[0]);
       }
@@ -599,6 +605,7 @@ export function TechnicalAnalysisPanel({
         timeframes: profileForm.timeframes,
         indicators: profileForm.indicators,
         dataSources: profileForm.dataSources,
+        newsConfig: profileForm.newsConfig,
         consensus: profileForm.consensus,
       };
       const res = await apiRequest('PUT', '/api/integrations/trading/analysis-profile', payload);
@@ -773,6 +780,16 @@ export function TechnicalAnalysisPanel({
               </div>
             </div>
           </div>
+
+          <NewsConfigEditor
+            value={profileForm.newsConfig}
+            onChange={(next) => setProfileForm((prev) => ({
+              ...prev,
+              newsConfig: next,
+            }))}
+            title={t('trading.newsConfig.title')}
+            description={t('trading.newsConfig.subtitleAnalysis')}
+          />
 
           <div className="flex flex-wrap gap-2">
             <Button

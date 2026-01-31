@@ -1599,6 +1599,26 @@
         "submit": "Create Signal"
       }
     },
+    "newsConfig": {
+      "title": "News Configuration (SearXNG)",
+      "subtitle": "Control how Alice queries news to support signals and analysis.",
+      "subtitleSignals": "Settings used for AI signal generation.",
+      "subtitleAnalysis": "Settings used for technical analysis with external context.",
+      "sourceLabel": "Source:",
+      "enginesLabelInline": "Engines:",
+      "defaultEngines": "SearXNG defaults",
+      "engines": "Engines (shortcuts)",
+      "enginesPlaceholder": "E.g.: google, bing, duckduckgo (empty = SearXNG default)",
+      "categories": "Category",
+      "categoriesPlaceholder": "general",
+      "language": "Language",
+      "safeSearch": "SafeSearch",
+      "maxResults": "Max results",
+      "extraTerms": "Extra terms",
+      "extraTermsPlaceholder": "E.g.: CPI, FOMC, ETFs, macro",
+      "queryTemplates": "Query templates",
+      "queryTemplatesHint": "Use {symbol}, {marketType}, and {terms}. Each line becomes a query."
+    },
     "analysis": {
       "executeNow": "Run analysis now",
       "profile": {

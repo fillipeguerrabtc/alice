@@ -1630,6 +1630,26 @@
         "submit": "Criar Sinal"
       }
     },
+    "newsConfig": {
+      "title": "Configuração de Notícias (SearXNG)",
+      "subtitle": "Controle como a Alice consulta notícias para reforçar sinais e análises.",
+      "subtitleSignals": "Configurações usadas na geração de sinais IA.",
+      "subtitleAnalysis": "Configurações usadas na análise técnica com contexto externo.",
+      "sourceLabel": "Fonte:",
+      "enginesLabelInline": "Engines:",
+      "defaultEngines": "Padrão do SearXNG",
+      "engines": "Engines (atalhos)",
+      "enginesPlaceholder": "Ex: google, bing, duckduckgo (vazio = padrão SearXNG)",
+      "categories": "Categoria",
+      "categoriesPlaceholder": "general",
+      "language": "Idioma",
+      "safeSearch": "SafeSearch",
+      "maxResults": "Máx. resultados",
+      "extraTerms": "Termos adicionais",
+      "extraTermsPlaceholder": "Ex: CPI, FOMC, ETFs, macro",
+      "queryTemplates": "Templates de consulta",
+      "queryTemplatesHint": "Use {symbol}, {marketType} e {terms}. Cada linha gera uma consulta."
+    },
     "analysis": {
       "executeNow": "Executar análise agora",
       "profile": {

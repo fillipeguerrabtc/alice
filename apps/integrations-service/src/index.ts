@@ -54,7 +54,7 @@ import { loadConfig, integrationsServiceConfigSchema } from '@alice/config';
 import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, getPool } from '@alice/database';
 import { eq, desc, sql, and, inArray, not, isNull, lte } from '@alice/database';
 import { tradingIntervalEnum, TradingOperationTypeSchema } from '@alice/shared';
-import type { TradingSignalMetadata, TradingIndicatorKey, TradingProfileConsensus, TradingProfileDataSources, TradingProfileModelConfig, TradingCandleData, TradingOperationType, TradingRiskConfig, TradingOrderMetadata } from '@alice/shared';
+import type { TradingSignalMetadata, TradingIndicatorKey, TradingProfileConsensus, TradingProfileDataSources, TradingProfileModelConfig, TradingProfileNewsConfig, TradingCandleData, TradingOperationType, TradingRiskConfig, TradingOrderMetadata } from '@alice/shared';
 import { z } from 'zod';
 import { wiseService } from './wiseService.js';
 import { isWiseConfigured, getSandboxStatus, getProfileIdSafe, getWiseCircuitBreakerStatus, validateWiseWebhook, initWiseMetrics } from './wiseClient.js';
@@ -194,6 +194,26 @@ const TRADING_INDICATOR_ZOD = z.enum(TRADING_INDICATOR_KEYS);
 
 type TradingProfileKind = 'analysis' | 'signal';
 
+const DEFAULT_TRADING_NEWS_CONFIG: TradingNewsConfigResolved = {
+  engines: [],
+  categories: 'general',
+  language: 'pt-BR',
+  safesearch: '1',
+  queryTemplates: ['{symbol} {marketType} news {terms}'],
+  extraTerms: [],
+  maxResults: 5,
+};
+
+type TradingNewsConfigResolved = {
+  engines: string[];
+  categories: string;
+  language: string;
+  safesearch: string;
+  queryTemplates: string[];
+  extraTerms: string[];
+  maxResults: number;
+};
+
 function parseListParam(input?: string | string[]): string[] {
   if (!input) return [];
   const rawList = Array.isArray(input) ? input : input.split(',');
@@ -212,12 +232,35 @@ function parseIndicatorsParam(input?: string | string[]): TradingIndicatorKey[] 
   return list.map((value) => TRADING_INDICATOR_ZOD.parse(value)) as TradingIndicatorKey[];
 }
 
+function normalizeTradingNewsConfig(raw?: TradingProfileNewsConfig | null): TradingNewsConfigResolved {
+  const sanitizedEngines = Array.isArray(raw?.engines)
+    ? raw.engines.map((engine) => engine.trim()).filter(Boolean)
+    : [];
+  const queryTemplates = Array.isArray(raw?.queryTemplates) && raw?.queryTemplates?.length
+    ? raw.queryTemplates.map((template) => template.trim()).filter(Boolean)
+    : DEFAULT_TRADING_NEWS_CONFIG.queryTemplates;
+  const extraTerms = Array.isArray(raw?.extraTerms)
+    ? raw.extraTerms.map((term) => term.trim()).filter(Boolean)
+    : [];
+
+  return {
+    engines: sanitizedEngines,
+    categories: raw?.categories?.trim() || DEFAULT_TRADING_NEWS_CONFIG.categories,
+    language: raw?.language?.trim() || DEFAULT_TRADING_NEWS_CONFIG.language,
+    safesearch: raw?.safesearch?.trim() || DEFAULT_TRADING_NEWS_CONFIG.safesearch,
+    queryTemplates,
+    extraTerms,
+    maxResults: raw?.maxResults && raw.maxResults > 0 ? Math.min(raw.maxResults, 10) : DEFAULT_TRADING_NEWS_CONFIG.maxResults,
+  };
+}
+
 function normalizeTradingProfile(row?: schema.TradingAnalysisProfile | null): {
   timeframes: TradingIntervalValue[];
   indicators: TradingIndicatorKey[];
   dataSources: TradingProfileDataSources;
   modelConfig: TradingProfileModelConfig;
   consensus: TradingProfileConsensus;
+  newsConfig: TradingNewsConfigResolved;
 } {
   const timeframes = row?.timeframes?.length
     ? row.timeframes.map((value) => TRADING_INTERVAL_ZOD.parse(value))
@@ -236,13 +279,14 @@ function normalizeTradingProfile(row?: schema.TradingAnalysisProfile | null): {
     temperature: modelConfigRaw?.temperature,
     maxTokens: modelConfigRaw?.maxTokens,
   };
+  const newsConfig = normalizeTradingNewsConfig(row?.newsConfig ?? null);
   const consensusRaw = row?.consensus as Partial<TradingProfileConsensus> | undefined;
   const consensus: TradingProfileConsensus = {
     rule: consensusRaw?.rule === 'majority' ? 'majority' : 'majority',
     minAgree: consensusRaw?.minAgree,
   };
 
-  return { timeframes, indicators, dataSources, modelConfig, consensus };
+  return { timeframes, indicators, dataSources, modelConfig, consensus, newsConfig };
 }
 
 type AnalysisMatrixEntry = {
@@ -351,12 +395,35 @@ async function getOrderBookSnapshot(
   };
 }
 
+function buildNewsQuery(params: {
+  symbol: string;
+  marketType?: TradingMarketType;
+  newsConfig: TradingNewsConfigResolved;
+}): string {
+  const marketType = params.marketType ?? 'futures';
+  const terms = params.newsConfig.extraTerms.length > 0
+    ? params.newsConfig.extraTerms.join(' ')
+    : '';
+  const rendered = params.newsConfig.queryTemplates.map((template) => template
+    .replace('{symbol}', params.symbol)
+    .replace('{marketType}', marketType)
+    .replace('{terms}', terms)
+    .trim()
+    .replace(/\s+/g, ' ')
+  );
+
+  const joined = rendered.length > 1 ? rendered.join(' OR ') : rendered[0];
+  return truncateText(joined, TRADING_LLM_MAX_NEWS_QUERY_CHARS);
+}
+
 async function fetchNewsSummary(
   auth: { tenantId: string; userId: string },
   symbol: string,
-  marketType?: TradingMarketType
+  marketType?: TradingMarketType,
+  newsConfig?: TradingProfileNewsConfig
 ): Promise<{ query: string; results: Array<{ title: string; url: string; score?: number }> }> {
-  const query = `${symbol} ${marketType ?? 'futures'} news`;
+  const resolvedConfig = normalizeTradingNewsConfig(newsConfig ?? null);
+  const query = buildNewsQuery({ symbol, marketType, newsConfig: resolvedConfig });
   const internalHeaders = generateInternalAuthHeaders({
     userId: auth.userId,
     tenantId: auth.tenantId,
@@ -370,7 +437,14 @@ async function fetchNewsSummary(
       'Content-Type': 'application/json',
       ...internalHeaders,
     },
-    body: JSON.stringify({ query, limit: 5 }),
+    body: JSON.stringify({
+      query,
+      limit: resolvedConfig.maxResults,
+      engines: resolvedConfig.engines.length > 0 ? resolvedConfig.engines : undefined,
+      categories: resolvedConfig.categories,
+      language: resolvedConfig.language,
+      safesearch: resolvedConfig.safesearch,
+    }),
     signal: controller.signal,
   });
   clearTimeout(timeout);
@@ -794,14 +868,17 @@ const TRADING_LLM_MAX_CONTEXT_TOKENS = 4096;
 const TRADING_LLM_MIN_COMPLETION_TOKENS = 128;
 const TRADING_LLM_PROMPT_SAFETY_TOKENS = 128;
 const TRADING_LLM_MESSAGE_OVERHEAD_TOKENS = 8;
+const TRADING_LLM_TOKEN_HEADROOM_TOKENS = 256;
+const TRADING_LLM_CHARS_PER_TOKEN = 3;
 const TRADING_LLM_MAX_ANALYSIS_BLOCK_CHARS = 1200;
 const TRADING_LLM_MAX_NEWS_ITEMS = 5;
 const TRADING_LLM_MAX_TRAINING_SAMPLES = 3;
 const TRADING_LLM_MAX_SOURCE_LINE_CHARS = 220;
+const TRADING_LLM_MAX_NEWS_QUERY_CHARS = 200;
 
 function estimateTokensFromText(value: string): number {
   if (!value) return 0;
-  return Math.ceil(value.length / 4);
+  return Math.ceil(value.length / TRADING_LLM_CHARS_PER_TOKEN);
 }
 
 function buildMultiTimeframePrompt(params: {
@@ -5598,15 +5675,19 @@ function resolveMaxTokensForPrompt(params: {
 
   if (promptTokens > maxPromptTokens) {
     const availableAnalysisTokens = Math.max(0, maxPromptTokens - baseTokens);
-    const targetChars = Math.max(0, availableAnalysisTokens * 4);
+    const targetChars = Math.max(0, availableAnalysisTokens * TRADING_LLM_CHARS_PER_TOKEN);
     analysisPrompt = truncateText(analysisPrompt, targetChars);
     analysisTokens = estimateTokensFromText(analysisPrompt);
     promptTokens = baseTokens + analysisTokens;
   }
 
+  const conservativePromptTokens = Math.ceil(promptTokens * 1.2);
   const maxCompletionTokens = Math.max(
     TRADING_LLM_MIN_COMPLETION_TOKENS,
-    TRADING_LLM_MAX_CONTEXT_TOKENS - promptTokens - TRADING_LLM_PROMPT_SAFETY_TOKENS
+    TRADING_LLM_MAX_CONTEXT_TOKENS
+      - conservativePromptTokens
+      - TRADING_LLM_PROMPT_SAFETY_TOKENS
+      - TRADING_LLM_TOKEN_HEADROOM_TOKENS
   );
 
   return {
@@ -6951,7 +7032,12 @@ async function generateTradingSignalFromLlm(params: {
       ? await getOrderBookSnapshot({ tenantId: params.tenantId, userId: params.userId }, params.symbol, params.marketType, params.marginMode)
       : null,
     news: dataSources.news
-      ? await fetchNewsSummary({ tenantId: params.tenantId, userId: params.userId }, params.symbol, params.marketType)
+      ? await fetchNewsSummary(
+        { tenantId: params.tenantId, userId: params.userId },
+        params.symbol,
+        params.marketType,
+        profile.newsConfig
+      )
       : null,
     trainingData: dataSources.trainingData
       ? await fetchTradingDatasetSummary(params.tenantId)
@@ -8266,6 +8352,7 @@ app.get('/api/integrations/trading/analysis-profile', requirePermission('integra
         indicators: profile.indicators,
         dataSources: profile.dataSources,
         modelConfig: profile.modelConfig,
+        newsConfig: profile.newsConfig,
         consensus: profile.consensus,
       },
     });
@@ -8295,6 +8382,15 @@ app.put('/api/integrations/trading/analysis-profile', requirePermission('integra
         news: z.boolean().optional(),
         trainingData: z.boolean().optional(),
       }).optional(),
+      newsConfig: z.object({
+        engines: z.array(z.string().min(1)).optional(),
+        categories: z.string().min(1).optional(),
+        language: z.string().min(2).optional(),
+        safesearch: z.string().min(1).optional(),
+        queryTemplates: z.array(z.string().min(3)).optional(),
+        extraTerms: z.array(z.string().min(1)).optional(),
+        maxResults: z.number().int().min(1).max(10).optional(),
+      }).optional(),
       modelConfig: z.object({
         temperature: z.number().min(0).max(2).optional(),
         maxTokens: z.number().min(256).max(4096).optional(),
@@ -8322,6 +8418,7 @@ app.put('/api/integrations/trading/analysis-profile', requirePermission('integra
         indicators: parsedBody.data.indicators ?? profileRow.indicators,
         dataSources: parsedBody.data.dataSources ?? profileRow.dataSources,
         modelConfig: parsedBody.data.modelConfig ?? profileRow.modelConfig,
+        newsConfig: parsedBody.data.newsConfig ?? profileRow.newsConfig,
         consensus: consensusUpdate ?? profileRow.consensus,
         atualizadoEm: new Date(),
       })
@@ -8341,6 +8438,7 @@ app.put('/api/integrations/trading/analysis-profile', requirePermission('integra
         indicators: profile.indicators,
         dataSources: profile.dataSources,
         modelConfig: profile.modelConfig,
+        newsConfig: profile.newsConfig,
         consensus: profile.consensus,
       },
     });
@@ -9579,7 +9677,12 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
       ? await getOrderBookSnapshot({ tenantId, userId }, symbol, marketType, marginMode)
       : null;
     const news = dataSources.news
-      ? await fetchNewsSummary({ tenantId, userId }, symbol, marketType)
+      ? await fetchNewsSummary(
+        { tenantId, userId },
+        symbol,
+        marketType,
+        profile.newsConfig
+      )
       : null;
     const trainingData = dataSources.trainingData
       ? await fetchTradingDatasetSummary(tenantId)
@@ -9619,6 +9722,7 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
         timeframes,
         indicators,
         dataSources,
+        newsConfig: profile.newsConfig,
       },
       tradePlan,
       sources: {

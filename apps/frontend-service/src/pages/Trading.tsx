@@ -123,8 +123,11 @@ import {
   HandoverPanel, 
   TechnicalAnalysisPanel,
   SignalApprovalPanel,
+  NewsConfigEditor,
+  DEFAULT_TRADING_NEWS_CONFIG,
+  normalizeTradingNewsConfigForm,
 } from '@/components/trading';
-import type { KlineData, OrderBookData, TradingControlMode, ControlHistoryEntry } from '@/components/trading';
+import type { KlineData, OrderBookData, TradingControlMode, ControlHistoryEntry, TradingNewsConfigForm } from '@/components/trading';
 
 // ============================================================================
 // TIPOS (TypeScript strict - Regra 8)
@@ -402,6 +405,7 @@ interface TradingProfileForm {
     news: boolean;
     trainingData: boolean;
   };
+  newsConfig: TradingNewsConfigForm;
   modelConfig?: {
     temperature?: number;
     maxTokens?: number;
@@ -694,6 +698,7 @@ export default function Trading() {
       news: false,
       trainingData: false,
     },
+    newsConfig: DEFAULT_TRADING_NEWS_CONFIG,
     modelConfig: {},
     consensus: { rule: 'majority' },
   });
@@ -774,7 +779,10 @@ export default function Trading() {
 
   useEffect(() => {
     if (signalProfileResponse?.data) {
-      setSignalProfileForm(signalProfileResponse.data);
+      setSignalProfileForm({
+        ...signalProfileResponse.data,
+        newsConfig: normalizeTradingNewsConfigForm(signalProfileResponse.data.newsConfig),
+      });
     }
   }, [signalProfileResponse]);
 
@@ -1529,6 +1537,7 @@ export default function Trading() {
         timeframes: signalProfileForm.timeframes,
         indicators: signalProfileForm.indicators,
         dataSources: signalProfileForm.dataSources,
+        newsConfig: signalProfileForm.newsConfig,
         modelConfig: signalProfileForm.modelConfig,
         consensus: signalProfileForm.consensus,
       };
@@ -3212,6 +3221,16 @@ export default function Trading() {
                     </div>
                   </div>
                 </div>
+
+                <NewsConfigEditor
+                  value={signalProfileForm.newsConfig}
+                  onChange={(next) => setSignalProfileForm((prev) => ({
+                    ...prev,
+                    newsConfig: next,
+                  }))}
+                  title={t('trading.newsConfig.title')}
+                  description={t('trading.newsConfig.subtitleSignals')}
+                />
 
                 <div className="flex flex-wrap gap-2">
                   <Button
