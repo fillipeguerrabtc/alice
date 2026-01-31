@@ -49,6 +49,7 @@ import {
   BarChart3,
   Target,
   Zap,
+  FileCheck,
   CheckCircle,
   XCircle,
   Clock,

@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 30 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.29 - Fix lint no Trading (import unused)
+**Versão:** 10.30 - Fix build frontend (SignalApproval/Trading)
 
 ---
 
@@ -29,6 +29,7 @@
 - Training: datasets de trading com aprovação dedicada e fluxo manual via sinal → dataset.
 - CI: reordenação de enums/schemas de trading evita uso antes da declaração.
 - Lint: remoção de import não usado na página Trading (zero warnings).
+- Frontend: correção de tipos no SignalApprovalPanel e import do FileCheck.
 
 ---
 

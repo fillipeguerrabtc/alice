@@ -111,6 +111,15 @@ type SignalApprovalOverrides = {
   takeProfit?: number;
 };
 
+type ApproveOverridesForm = {
+  orderType?: SignalApprovalOverrides['orderType'];
+  size: string;
+  price: string;
+  leverage: string;
+  stopLoss: string;
+  takeProfit: string;
+};
+
 // ============================================================================
 // HELPERS
 // ============================================================================
@@ -207,7 +216,7 @@ function SignalCard({
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [reason, setReason] = useState('');
   const metadata = (signal.metadata ?? {}) as Record<string, unknown>;
-  const [approveOverrides, setApproveOverrides] = useState({
+  const [approveOverrides, setApproveOverrides] = useState<ApproveOverridesForm>({
     orderType: signal.suggestedPrice ? 'limit' : 'market',
     size: '',
     price: signal.suggestedPrice ? String(signal.suggestedPrice) : '',
@@ -346,7 +355,7 @@ function SignalCard({
                     <div>
                       <p className="text-sm font-medium mb-1">Raciocínio da IA:</p>
                       <p className="text-sm text-muted-foreground bg-muted p-3 rounded-lg">
-                        {signal.reasoning}
+                        {String(signal.reasoning)}
                       </p>
                     </div>
                   )}
@@ -528,9 +537,12 @@ function SignalCard({
               <div className="space-y-1">
                 <Label>Tipo</Label>
                 <Select
-                  value={approveOverrides.orderType}
-                  onValueChange={(value: SignalApprovalOverrides['orderType']) =>
-                    setApproveOverrides({ ...approveOverrides, orderType: value || 'market' })
+                  value={approveOverrides.orderType ?? ''}
+                  onValueChange={(value: string) =>
+                    setApproveOverrides({
+                      ...approveOverrides,
+                      orderType: (value || 'market') as SignalApprovalOverrides['orderType'],
+                    })
                   }
                 >
                   <SelectTrigger>
@@ -610,7 +622,9 @@ function SignalCard({
                 const leverageValue = Number(approveOverrides.leverage);
                 const stopLossValue = Number(approveOverrides.stopLoss);
                 const takeProfitValue = Number(approveOverrides.takeProfit);
-                if (approveOverrides.orderType) overrides.orderType = approveOverrides.orderType;
+                if (approveOverrides.orderType) {
+                  overrides.orderType = approveOverrides.orderType as SignalApprovalOverrides['orderType'];
+                }
                 if (Number.isFinite(sizeValue) && sizeValue > 0) overrides.size = sizeValue;
                 if (Number.isFinite(priceValue) && priceValue > 0) overrides.price = priceValue;
                 if (Number.isFinite(leverageValue) && leverageValue > 0) overrides.leverage = leverageValue;
