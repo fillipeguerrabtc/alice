@@ -1472,18 +1472,46 @@ app.post('/api/training/webhook', async (req: Request, res: Response) => {
     if (event === 'training_data' && payload.messages) {
       const text = payload.messages.map(m => m.content).join(' ');
       let embedding: number[] | null = null;
-      let semhash: string | null = null;
+      const semhash = computeSemHash(text);
 
       try {
         embedding = await gpuManagerEmbeddingsBreaker.fire(text) as number[];
-        semhash = computeSemHash(text);
       } catch (embError) {
         logger.warn({ error: embError }, 'Erro ao gerar embedding no webhook');
       }
 
+      const existingData = await db.query.trainingData.findMany({
+        where: and(
+          eq(schema.trainingData.tenantId, tenantId),
+          inArray(schema.trainingData.status, ['pending', 'approved', 'used'])
+        ),
+      });
+
+      let isDuplicate = false;
+      let duplicateOfId: string | undefined;
+      let highestSimilarity = 0;
+
+      for (const existing of existingData) {
+        if (existing.semhash === semhash) {
+          isDuplicate = true;
+          duplicateOfId = existing.id;
+          highestSimilarity = 1.0;
+          break;
+        }
+
+        if (embedding && existing.embedding) {
+          const similarity = cosineSimilarity(embedding, existing.embedding);
+          if (similarity > SIMILARITY_THRESHOLD && similarity > highestSimilarity) {
+            isDuplicate = true;
+            duplicateOfId = existing.id;
+            highestSimilarity = similarity;
+          }
+        }
+      }
+
       const qualityScore = computeQualityScore(payload.messages);
-      const autoRejectedByQuality = qualityScore < TRAINING_DATA_MIN_QUALITY;
-      const status = autoRejectedByQuality ? 'rejected' : 'pending';
+      const autoRejectedByQuality = !isDuplicate && qualityScore < TRAINING_DATA_MIN_QUALITY;
+      const status = isDuplicate || autoRejectedByQuality ? 'rejected' : 'pending';
       const reviewNotes = autoRejectedByQuality
         ? `Auto-rejeitado: qualidade ${qualityScore.toFixed(2)} abaixo do mínimo (${TRAINING_DATA_MIN_QUALITY}).`
         : null;
@@ -1499,7 +1527,20 @@ app.post('/api/training/webhook', async (req: Request, res: Response) => {
         reviewNotes,
         semhash,
         embedding,
+        isDuplicate,
+        duplicateOfId,
+        similarityScore: highestSimilarity > 0 ? highestSimilarity : null,
       }).returning();
+
+      trainingPipelineMetrics.dataCollectedTotal.labels('external', status).inc();
+      trainingPipelineMetrics.qualityScore.observe(qualityScore);
+      if (isDuplicate) {
+        trainingPipelineMetrics.dataDuplicatesTotal.labels('external').inc();
+        trainingPipelineMetrics.dataRejectedTotal.labels('duplicate', 'external').inc();
+      }
+      if (autoRejectedByQuality) {
+        trainingPipelineMetrics.dataRejectedTotal.labels('quality', 'external').inc();
+      }
 
       logger.info({ id: inserted.id, event }, 'Dados recebidos via webhook');
       res.status(201).json({ success: true, id: inserted.id });

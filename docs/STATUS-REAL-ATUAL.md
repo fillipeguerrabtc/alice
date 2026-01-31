@@ -30,6 +30,7 @@
 - Análise técnica passa a retornar plano determinístico com operação, duração, TP/SL, RR e motivadores no painel.
 - Geração de sinais com LLM usa orçamento seguro de tokens (prompt truncado e max_tokens ajustado ao contexto).
 - Training: datasets de trading com aprovação dedicada e fluxo manual via sinal → dataset.
+- Training: webhook com deduplicação semântica (semhash + cosine) e auditoria de duplicados.
 - CI: reordenação de enums/schemas de trading evita uso antes da declaração.
 - Lint: remoção de import não usado na página Trading (zero warnings).
 - Trading Chart: novo renderer com lightweight-charts (visual moderno e performance).
