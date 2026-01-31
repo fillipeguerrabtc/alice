@@ -1534,6 +1534,29 @@
       "noSignals": "Nenhum sinal ativo",
       "confidence": "Confiança",
       "noReasoning": "Sem justificativa",
+      "operationType": {
+        "scalping": "Scalping",
+        "swing": "Swing",
+        "position": "Position",
+        "cash_and_carry": "Cash and Carry",
+        "arbitrage": "Arbitragem",
+        "hedge": "Hedge",
+        "neutral": "Neutro"
+      },
+      "detail": {
+        "title": "Detalhes do Sinal",
+        "subtitle": "Sinal completo para {{symbol}}",
+        "empty": "Selecione um sinal para ver o plano completo.",
+        "operationType": "Tipo de operação",
+        "duration": "Duração esperada",
+        "entry": "Entrada sugerida",
+        "tp": "Take Profit",
+        "sl": "Stop Loss",
+        "rr": "Risco/Retorno",
+        "summary": "Resumo executivo",
+        "motivators": "Motivadores",
+        "invalidations": "Condições de invalidação"
+      },
       "table": {
         "type": "Tipo",
         "symbol": "Par",
@@ -1634,6 +1657,28 @@
         "newsTitle": "Notícias (SearXNG)",
         "trainingTitle": "Dataset aprovado",
         "trainingTotal": "Total: {{total}}"
+      },
+      "tradePlan": {
+        "title": "Plano de Operação",
+        "subtitle": "Sugestão determinística baseada nos indicadores calculados.",
+        "operationType": "Tipo de operação",
+        "duration": "Duração estimada",
+        "entry": "Entrada",
+        "tp": "Take Profit",
+        "sl": "Stop Loss",
+        "rr": "Risco/Retorno",
+        "summary": "Resumo executivo",
+        "motivators": "Motivadores",
+        "invalidations": "Condições de invalidação",
+        "operationTypeValues": {
+          "scalping": "Scalping",
+          "swing": "Swing",
+          "position": "Position",
+          "cash_and_carry": "Cash and Carry",
+          "arbitrage": "Arbitragem",
+          "hedge": "Hedge",
+          "neutral": "Neutro"
+        }
       },
       "scheduler": {
         "title": "Scheduler de Análise",

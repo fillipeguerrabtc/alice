@@ -332,6 +332,8 @@ interface Position {
   settleCurrency: string;
 }
 
+type TradingOperationType = 'scalping' | 'swing' | 'position' | 'cash_and_carry' | 'arbitrage' | 'hedge' | 'neutral';
+
 interface TradingSignal {
   id: string;
   tenantId: string;
@@ -352,6 +354,16 @@ interface TradingSignal {
     modelVersion?: string;
     approvalStatus?: 'pending' | 'approved' | 'rejected';
     approvalReason?: string;
+    operationType?: TradingOperationType;
+    expectedDurationMinutes?: number;
+    expectedDurationLabel?: string;
+    entryPrice?: number;
+    takeProfit?: number;
+    stopLoss?: number;
+    riskReward?: number;
+    motivators?: string[];
+    invalidationReasons?: string[];
+    tradeSummary?: string;
     [key: string]: unknown;
   };
   isActive: boolean;
@@ -413,6 +425,14 @@ const SIGNAL_TYPES = [
   { value: 'hold', label: 'Manter', icon: Pause, color: 'text-gray-500' },
   { value: 'neutral', label: 'Neutro', icon: Hand, color: 'text-muted-foreground' },
 ];
+
+function formatDurationMinutes(minutes?: number): string | null {
+  if (!minutes || !Number.isFinite(minutes) || minutes <= 0) return null;
+  if (minutes < 60) return `${Math.round(minutes)}m`;
+  if (minutes < 1440) return `${Math.round(minutes / 60)}h`;
+  if (minutes < 10080) return `${Math.round(minutes / 1440)}d`;
+  return `${Math.round(minutes / 10080)}w`;
+}
 
 const SIGNAL_INDICATOR_OPTIONS = [
   { key: 'rsi', label: 'RSI', description: 'Mede sobrecompra/sobrevenda com base no momentum.' },
@@ -615,6 +635,7 @@ export default function Trading() {
   const [showRiskConfigDialog, setShowRiskConfigDialog] = useState(false);
   const [showNewSignalDialog, setShowNewSignalDialog] = useState(false);
   const [showReviewOrderDialog, setShowReviewOrderDialog] = useState(false);
+  const [selectedSignalId, setSelectedSignalId] = useState<string | null>(null);
   const [reviewOrderTarget, setReviewOrderTarget] = useState<TradingOrder | null>(null);
   const [reviewOrderForm, setReviewOrderForm] = useState({
     orderType: 'market' as 'limit' | 'market' | 'stop_limit' | 'stop_market' | 'take_profit',
@@ -1917,6 +1938,22 @@ export default function Trading() {
   // `wsStatusData` já é o payload `{ success, data: KucoinWsStatus }`.
   // O accessor extra `.data` fazia `wsStatus` ficar sempre undefined e o badge nunca renderizar.
   const wsStatus = wsStatusData?.data;
+
+  useEffect(() => {
+    if (signals.length === 0) {
+      setSelectedSignalId(null);
+      return;
+    }
+    if (selectedSignalId && signals.some((signal) => signal.id === selectedSignalId)) {
+      return;
+    }
+    setSelectedSignalId(signals[0]?.id ?? null);
+  }, [signals, selectedSignalId]);
+
+  const selectedSignal = useMemo(
+    () => (selectedSignalId ? signals.find((signal) => signal.id === selectedSignalId) ?? null : null),
+    [signals, selectedSignalId]
+  );
   const apiErrors = [
     statusError,
     symbolsError,
@@ -3279,6 +3316,111 @@ export default function Trading() {
               </CardContent>
             </Card>
 
+            <Card>
+              <CardHeader>
+                <CardTitle>{t('trading.signals.detail.title')}</CardTitle>
+                <CardDescription>
+                  {selectedSignal
+                    ? t('trading.signals.detail.subtitle', { symbol: selectedSignal.symbol })
+                    : t('trading.signals.detail.empty')}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {selectedSignal ? (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <div className="text-xs text-muted-foreground">{t('trading.signals.detail.operationType')}</div>
+                        <div className="text-sm font-medium">
+                          {selectedSignal.metadata?.operationType
+                            ? t(`trading.signals.operationType.${selectedSignal.metadata.operationType}`)
+                            : t('common.notAvailable')}
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="text-xs text-muted-foreground">{t('trading.signals.detail.duration')}</div>
+                        <div className="text-sm font-medium">
+                          {selectedSignal.metadata?.expectedDurationLabel
+                            ?? formatDurationMinutes(selectedSignal.metadata?.expectedDurationMinutes)
+                            ?? t('common.notAvailable')}
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="text-xs text-muted-foreground">{t('trading.signals.detail.entry')}</div>
+                        <div className="text-sm font-medium">
+                          {Number.isFinite(selectedSignal.metadata?.entryPrice)
+                            ? `$${formatNumber(Number(selectedSignal.metadata?.entryPrice), locale)}`
+                            : t('common.notAvailable')}
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="text-xs text-muted-foreground">{t('trading.signals.detail.tp')}</div>
+                        <div className="text-sm font-medium">
+                          {Number.isFinite(selectedSignal.metadata?.takeProfit)
+                            ? `$${formatNumber(Number(selectedSignal.metadata?.takeProfit), locale)}`
+                            : t('common.notAvailable')}
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="text-xs text-muted-foreground">{t('trading.signals.detail.sl')}</div>
+                        <div className="text-sm font-medium">
+                          {Number.isFinite(selectedSignal.metadata?.stopLoss)
+                            ? `$${formatNumber(Number(selectedSignal.metadata?.stopLoss), locale)}`
+                            : t('common.notAvailable')}
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="text-xs text-muted-foreground">{t('trading.signals.detail.rr')}</div>
+                        <div className="text-sm font-medium">
+                          {Number.isFinite(selectedSignal.metadata?.riskReward)
+                            ? formatNumber(Number(selectedSignal.metadata?.riskReward), locale, { maximumFractionDigits: 2 })
+                            : t('common.notAvailable')}
+                        </div>
+                      </div>
+                    </div>
+
+                    <Separator />
+
+                    <div className="space-y-2">
+                      <div className="text-xs text-muted-foreground">{t('trading.signals.detail.summary')}</div>
+                      <div className="text-sm">
+                        {selectedSignal.metadata?.tradeSummary || selectedSignal.reasoning || t('trading.signals.noReasoning')}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <div className="text-xs text-muted-foreground mb-2">{t('trading.signals.detail.motivators')}</div>
+                        {(selectedSignal.metadata?.motivators?.length ?? 0) > 0 ? (
+                          <ul className="text-sm list-disc pl-5 space-y-1 text-muted-foreground">
+                            {selectedSignal.metadata?.motivators?.map((item, index) => (
+                              <li key={`${selectedSignal.id}-motivator-${index}`}>{item}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <div className="text-sm text-muted-foreground">{t('common.notAvailable')}</div>
+                        )}
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground mb-2">{t('trading.signals.detail.invalidations')}</div>
+                        {(selectedSignal.metadata?.invalidationReasons?.length ?? 0) > 0 ? (
+                          <ul className="text-sm list-disc pl-5 space-y-1 text-muted-foreground">
+                            {selectedSignal.metadata?.invalidationReasons?.map((item, index) => (
+                              <li key={`${selectedSignal.id}-invalidation-${index}`}>{item}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <div className="text-sm text-muted-foreground">{t('common.notAvailable')}</div>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-sm text-muted-foreground">{t('trading.signals.detail.empty')}</div>
+                )}
+              </CardContent>
+            </Card>
+
             {isLoadingSignals ? (
               <Skeleton className="h-64" />
             ) : signals.length === 0 ? (
@@ -3305,8 +3447,15 @@ export default function Trading() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {signals.map((signal) => (
-                      <TableRow key={signal.id} data-testid={`row-signal-${signal.id}`}>
+                    {signals.map((signal) => {
+                      const isSelected = signal.id === selectedSignalId;
+                      return (
+                      <TableRow
+                        key={signal.id}
+                        data-testid={`row-signal-${signal.id}`}
+                        className={isSelected ? 'bg-muted/50' : undefined}
+                        onClick={() => setSelectedSignalId(signal.id)}
+                      >
                         <TableCell><SignalTypeBadge type={signal.signalType} /></TableCell>
                         <TableCell>{signal.symbol}</TableCell>
                         <TableCell>
@@ -3354,14 +3503,18 @@ export default function Trading() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => deactivateSignalMutation.mutate(signal.id)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              deactivateSignalMutation.mutate(signal.id);
+                            }}
                             data-testid={`button-deactivate-signal-${signal.id}`}
                           >
                             <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>
                         </TableCell>
                       </TableRow>
-                    ))}
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </Card>

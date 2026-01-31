@@ -50,8 +50,8 @@ import { integrationsServicePaths, integrationsServiceSchemas } from './openapi-
 import { loadConfig, integrationsServiceConfigSchema } from '@alice/config';
 import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, getPool } from '@alice/database';
 import { eq, desc, sql, and, inArray, not, isNull, lte } from '@alice/database';
-import { tradingIntervalEnum } from '@alice/shared';
-import type { TradingSignalMetadata, TradingIndicatorKey, TradingProfileConsensus, TradingProfileDataSources, TradingProfileModelConfig, TradingCandleData } from '@alice/shared';
+import { tradingIntervalEnum, TradingOperationTypeSchema } from '@alice/shared';
+import type { TradingSignalMetadata, TradingIndicatorKey, TradingProfileConsensus, TradingProfileDataSources, TradingProfileModelConfig, TradingCandleData, TradingOperationType, TradingRiskConfig } from '@alice/shared';
 import { z } from 'zod';
 import { wiseService } from './wiseService.js';
 import { isWiseConfigured, getSandboxStatus, getProfileIdSafe, getWiseCircuitBreakerStatus, validateWiseWebhook, initWiseMetrics } from './wiseClient.js';
@@ -475,6 +475,20 @@ async function buildMarketContextFromSignal(params: {
   };
 }
 
+const TRADING_LLM_MAX_CONTEXT_TOKENS = 4096;
+const TRADING_LLM_MIN_COMPLETION_TOKENS = 128;
+const TRADING_LLM_PROMPT_SAFETY_TOKENS = 128;
+const TRADING_LLM_MESSAGE_OVERHEAD_TOKENS = 8;
+const TRADING_LLM_MAX_ANALYSIS_BLOCK_CHARS = 1200;
+const TRADING_LLM_MAX_NEWS_ITEMS = 5;
+const TRADING_LLM_MAX_TRAINING_SAMPLES = 3;
+const TRADING_LLM_MAX_SOURCE_LINE_CHARS = 220;
+
+function estimateTokensFromText(value: string): number {
+  if (!value) return 0;
+  return Math.ceil(value.length / 4);
+}
+
 function buildMultiTimeframePrompt(params: {
   matrix: AnalysisMatrixEntry[];
   consensus: ReturnType<typeof buildMajorityConsensus>;
@@ -485,7 +499,10 @@ function buildMultiTimeframePrompt(params: {
   trainingData: Awaited<ReturnType<typeof fetchTradingDatasetSummary>> | null;
 }): string {
   const blocks = params.matrix.map((entry) => {
-    const analysisBlock = technicalIndicators.formatAnalysisForLLM(entry.analysis);
+    const analysisBlock = truncateText(
+      technicalIndicators.formatAnalysisForLLM(entry.analysis),
+      TRADING_LLM_MAX_ANALYSIS_BLOCK_CHARS
+    );
     return `### TIMEFRAME ${entry.interval}\n${analysisBlock}`;
   });
 
@@ -497,13 +514,23 @@ function buildMultiTimeframePrompt(params: {
 - Spread: ${params.orderBook.spreadAbs ?? 'N/A'} (${params.orderBook.spreadPct ?? 'N/A'}%)`);
   }
   if (params.news) {
-    const newsLines = params.news.results.map((item) => `- ${item.title} (${item.url})`).join('\n');
+    const newsLines = params.news.results
+      .slice(0, TRADING_LLM_MAX_NEWS_ITEMS)
+      .map((item) => `- ${truncateText(item.title, TRADING_LLM_MAX_SOURCE_LINE_CHARS)} (${item.url})`)
+      .join('\n');
     sources.push(`Notícias (SearXNG):
 Consulta: ${params.news.query}
 ${newsLines || '- Nenhum resultado relevante'}`);
   }
   if (params.trainingData) {
-    const samples = params.trainingData.samples.map((sample) => `- ${sample.actionType}: ${sample.prompt} → ${sample.response}`).join('\n');
+    const samples = params.trainingData.samples
+      .slice(0, TRADING_LLM_MAX_TRAINING_SAMPLES)
+      .map((sample) => {
+        const prompt = truncateText(sample.prompt, TRADING_LLM_MAX_SOURCE_LINE_CHARS);
+        const response = truncateText(sample.response, TRADING_LLM_MAX_SOURCE_LINE_CHARS);
+        return `- ${sample.actionType}: ${prompt} → ${response}`;
+      })
+      .join('\n');
     sources.push(`Dataset aprovado:
 Total: ${params.trainingData.totalApproved}
 Exemplos:
@@ -548,12 +575,18 @@ async function getOrCreateTradingProfile(tenantId: string, kind: TradingProfileK
 
 const TRADING_LLM_SIGNAL_SCHEMA = z.object({
   signalType: z.enum(['entry_long', 'entry_short', 'exit', 'adjust_sl', 'adjust_tp', 'hold', 'neutral']),
+  operationType: TradingOperationTypeSchema,
+  expectedDurationMinutes: z.number().int().min(1).max(43200),
   confidence: z.number().min(0).max(1),
+  tradeSummary: z.string().min(20),
+  motivators: z.array(z.string().min(2)).min(1),
+  invalidationReasons: z.array(z.string().min(2)).min(1),
   reasoning: z.string().min(10),
   suggestedPrice: z.number().positive().optional(),
   suggestedStopLoss: z.number().positive().optional(),
   suggestedTakeProfit: z.number().positive().optional(),
   suggestedSize: z.number().positive().optional(),
+  riskReward: z.number().positive().optional(),
   marketCondition: z.string().min(3).optional(),
   riskScore: z.number().min(0).max(100).optional(),
 });
@@ -5198,6 +5231,217 @@ function parseLlmSignalResponse(rawResponse: string) {
   return result.data;
 }
 
+function formatDurationLabel(minutes: number): string {
+  if (!Number.isFinite(minutes) || minutes <= 0) return 'N/A';
+  if (minutes < 60) return `${Math.round(minutes)}m`;
+  if (minutes < 1440) return `${Math.round(minutes / 60)}h`;
+  if (minutes < 10080) return `${Math.round(minutes / 1440)}d`;
+  return `${Math.round(minutes / 10080)}w`;
+}
+
+function resolveMaxTokensForPrompt(params: {
+  systemPrompt: string;
+  analysisPrompt: string;
+  requestedMaxTokens: number;
+}) {
+  const systemTokens = estimateTokensFromText(params.systemPrompt);
+  const baseTokens = systemTokens + TRADING_LLM_MESSAGE_OVERHEAD_TOKENS;
+  let analysisPrompt = params.analysisPrompt;
+  let analysisTokens = estimateTokensFromText(analysisPrompt);
+  let promptTokens = baseTokens + analysisTokens;
+
+  const maxPromptTokens = TRADING_LLM_MAX_CONTEXT_TOKENS
+    - TRADING_LLM_PROMPT_SAFETY_TOKENS
+    - TRADING_LLM_MIN_COMPLETION_TOKENS;
+
+  if (promptTokens > maxPromptTokens) {
+    const availableAnalysisTokens = Math.max(0, maxPromptTokens - baseTokens);
+    const targetChars = Math.max(0, availableAnalysisTokens * 4);
+    analysisPrompt = truncateText(analysisPrompt, targetChars);
+    analysisTokens = estimateTokensFromText(analysisPrompt);
+    promptTokens = baseTokens + analysisTokens;
+  }
+
+  const maxCompletionTokens = Math.max(
+    TRADING_LLM_MIN_COMPLETION_TOKENS,
+    TRADING_LLM_MAX_CONTEXT_TOKENS - promptTokens - TRADING_LLM_PROMPT_SAFETY_TOKENS
+  );
+
+  return {
+    analysisPrompt,
+    promptTokens,
+    maxCompletionTokens: Math.min(params.requestedMaxTokens, maxCompletionTokens),
+  };
+}
+
+function resolveOperationTypeFromInterval(params: {
+  intervalMinutes: number | null;
+  overallSignal: technicalIndicators.TechnicalAnalysisResult['overallSignal'];
+}): TradingOperationType {
+  if (params.overallSignal === 'neutral') return 'neutral';
+  const minutes = params.intervalMinutes ?? 15;
+  if (minutes <= 5) return 'scalping';
+  if (minutes <= 30) return 'swing';
+  return 'position';
+}
+
+function resolveExpectedDurationMinutes(intervalMinutes: number | null, timeframes: string[]): number {
+  const baseMinutes = intervalMinutes ?? 15;
+  const multiplier = Math.max(3, timeframes.length);
+  return baseMinutes * multiplier;
+}
+
+function resolveStopLossTakeProfitFromAnalysis(params: {
+  analysis: technicalIndicators.TechnicalAnalysisResult;
+  direction: 'long' | 'short' | 'neutral';
+  riskConfig: TradingRiskConfig | null;
+}): { stopLoss: number | null; takeProfit: number | null } {
+  if (params.direction === 'neutral') {
+    return { stopLoss: null, takeProfit: null };
+  }
+
+  const entry = params.analysis.currentPrice;
+  let stopLoss: number | null = null;
+  let takeProfit: number | null = null;
+
+  const levels = params.analysis.supportResistance;
+  if (levels) {
+    if (params.direction === 'long') {
+      stopLoss = levels.support1 ?? levels.support2 ?? levels.support3 ?? null;
+      takeProfit = levels.resistance1 ?? levels.resistance2 ?? levels.resistance3 ?? null;
+    } else {
+      stopLoss = levels.resistance1 ?? levels.resistance2 ?? levels.resistance3 ?? null;
+      takeProfit = levels.support1 ?? levels.support2 ?? levels.support3 ?? null;
+    }
+  }
+
+  if (params.riskConfig) {
+    if (stopLoss === null && Number.isFinite(params.riskConfig.defaultStopLoss)) {
+      const ratio = Number(params.riskConfig.defaultStopLoss);
+      stopLoss = params.direction === 'long' ? entry * (1 - ratio) : entry * (1 + ratio);
+    }
+    if (takeProfit === null && Number.isFinite(params.riskConfig.defaultTakeProfit)) {
+      const ratio = Number(params.riskConfig.defaultTakeProfit);
+      takeProfit = params.direction === 'long' ? entry * (1 + ratio) : entry * (1 - ratio);
+    }
+  }
+
+  if (Number.isFinite(stopLoss)) {
+    if (params.direction === 'long' && (stopLoss as number) >= entry) stopLoss = null;
+    if (params.direction === 'short' && (stopLoss as number) <= entry) stopLoss = null;
+  }
+  if (Number.isFinite(takeProfit)) {
+    if (params.direction === 'long' && (takeProfit as number) <= entry) takeProfit = null;
+    if (params.direction === 'short' && (takeProfit as number) >= entry) takeProfit = null;
+  }
+
+  return { stopLoss, takeProfit };
+}
+
+function buildAnalysisMotivators(analysis: technicalIndicators.TechnicalAnalysisResult): string[] {
+  const motivators: string[] = [];
+  if (analysis.rsi) {
+    motivators.push(`RSI em ${analysis.rsi.value.toFixed(2)} indica ${analysis.rsi.interpretation}`);
+  }
+  if (analysis.macd) {
+    if (analysis.macd.crossover !== 'none') {
+      motivators.push(`MACD com ${analysis.macd.crossover.replace('_', ' ')} e histograma ${analysis.macd.histogram.toFixed(2)}`);
+    } else {
+      motivators.push(`MACD ${analysis.macd.interpretation} com histograma ${analysis.macd.histogram.toFixed(2)}`);
+    }
+  }
+  if (analysis.movingAverages) {
+    motivators.push(`Tendência ${analysis.movingAverages.trend} via médias móveis`);
+  }
+  if (analysis.adx) {
+    motivators.push(`ADX ${analysis.adx.adx.toFixed(2)} indica força ${analysis.adx.trendStrength}`);
+  }
+  if (analysis.bollinger) {
+    motivators.push(`Bollinger %B ${(analysis.bollinger.percentB * 100).toFixed(0)}% (${analysis.bollinger.interpretation})`);
+  }
+  if (analysis.volume) {
+    motivators.push(`Volume ${analysis.volume.interpretation} (${analysis.volume.volumeRatio.toFixed(2)}x)`);
+  }
+  if (motivators.length === 0) {
+    motivators.push(`Sinal ${analysis.overallSignal} com confiança ${(analysis.confidence * 100).toFixed(0)}%`);
+  }
+  return motivators;
+}
+
+function buildAnalysisInvalidationReasons(params: {
+  analysis: technicalIndicators.TechnicalAnalysisResult;
+  direction: 'long' | 'short' | 'neutral';
+}): string[] {
+  const reasons: string[] = [];
+  const levels = params.analysis.supportResistance;
+  if (levels) {
+    if (params.direction === 'long' && levels.support1 !== undefined) {
+      reasons.push(`Perda do suporte S1 (${levels.support1.toFixed(2)})`);
+    }
+    if (params.direction === 'short' && levels.resistance1 !== undefined) {
+      reasons.push(`Rompimento da resistência R1 (${levels.resistance1.toFixed(2)})`);
+    }
+  }
+  if (params.analysis.movingAverages?.trend === 'sideways') {
+    reasons.push('Tendência lateral reduz vantagem direcional');
+  }
+  if (params.analysis.overallSignal === 'neutral') {
+    reasons.push('Sinal neutro: aguardar confirmação adicional');
+  }
+  return reasons.length > 0 ? reasons : ['Condição de mercado sem confirmação suficiente'];
+}
+
+function buildTradePlanFromAnalysis(params: {
+  analysis: technicalIndicators.TechnicalAnalysisResult;
+  interval: string;
+  timeframes: string[];
+  marketType: TradingMarketType;
+  marginMode?: TradingMarginMode;
+  riskConfig: TradingRiskConfig | null;
+}) {
+  const intervalMinutes = parseTradingIntervalToMinutes(params.interval);
+  const direction = params.analysis.overallSignal === 'sell' || params.analysis.overallSignal === 'strong_sell'
+    ? 'short'
+    : params.analysis.overallSignal === 'buy' || params.analysis.overallSignal === 'strong_buy'
+      ? 'long'
+      : 'neutral';
+  const operationType = resolveOperationTypeFromInterval({
+    intervalMinutes,
+    overallSignal: params.analysis.overallSignal,
+  });
+  const expectedDurationMinutes = resolveExpectedDurationMinutes(intervalMinutes, params.timeframes);
+  const expectedDurationLabel = formatDurationLabel(expectedDurationMinutes);
+  const entryPrice = params.analysis.currentPrice;
+  const { stopLoss, takeProfit } = resolveStopLossTakeProfitFromAnalysis({
+    analysis: params.analysis,
+    direction,
+    riskConfig: params.riskConfig,
+  });
+  const riskReward = stopLoss && takeProfit
+    ? Math.abs((takeProfit - entryPrice) / (entryPrice - stopLoss))
+    : null;
+  const motivators = buildAnalysisMotivators(params.analysis);
+  const invalidationReasons = buildAnalysisInvalidationReasons({ analysis: params.analysis, direction });
+  const summary = `Sinal ${params.analysis.overallSignal.toUpperCase()} com ${(params.analysis.confidence * 100).toFixed(0)}% de confiança.`
+    + ` Operação ${operationType} estimada para ${expectedDurationLabel}.`;
+
+  return {
+    operationType,
+    expectedDurationMinutes,
+    expectedDurationLabel,
+    entryPrice,
+    stopLoss,
+    takeProfit,
+    riskReward,
+    motivators,
+    invalidationReasons,
+    tradeSummary: summary,
+    marketType: params.marketType,
+    marginMode: params.marginMode ?? null,
+    direction,
+  };
+}
+
 async function getAgenticSettingsOrDefault(tenantId: string) {
   const db = getDatabase();
   const existing = await db.query.agenticSettings.findFirst({
@@ -5321,12 +5565,18 @@ function buildTradingSignalSystemPrompt(params: {
     'Schema:',
     '{',
     '  "signalType": "entry_long|entry_short|exit|adjust_sl|adjust_tp|hold|neutral",',
+    '  "operationType": "scalping|swing|position|cash_and_carry|arbitrage|hedge|neutral",',
+    '  "expectedDurationMinutes": number (min 1),',
     '  "confidence": 0.0-1.0,',
+    '  "tradeSummary": "Resumo executivo do trade",',
+    '  "motivators": ["driver 1", "driver 2"],',
+    '  "invalidationReasons": ["condição 1", "condição 2"],',
     '  "reasoning": "Texto com valores citados exatamente",',
     '  "suggestedPrice": number (opcional),',
     '  "suggestedStopLoss": number (opcional),',
     '  "suggestedTakeProfit": number (opcional),',
     '  "suggestedSize": number (opcional),',
+    '  "riskReward": number (opcional),',
     '  "marketCondition": "descrição curta" (opcional),',
     '  "riskScore": 0-100 (opcional)',
     '}',
@@ -6350,7 +6600,7 @@ async function generateTradingSignalFromLlm(params: {
     agent: agentContext.agent,
     namespace: agentContext.namespace,
   });
-  const analysisPrompt = buildMultiTimeframePrompt({
+  const rawAnalysisPrompt = buildMultiTimeframePrompt({
     matrix: analysisMatrix,
     consensus,
     indicators,
@@ -6366,6 +6616,24 @@ async function generateTradingSignalFromLlm(params: {
       : null,
   });
 
+  const requestedMaxTokens = params.modelConfig?.maxTokens ?? agentContext.llmConfig.maxTokens ?? 2048;
+  const tokenBudget = resolveMaxTokensForPrompt({
+    systemPrompt,
+    analysisPrompt: rawAnalysisPrompt,
+    requestedMaxTokens,
+  });
+  const analysisPrompt = tokenBudget.analysisPrompt;
+
+  if (analysisPrompt !== rawAnalysisPrompt) {
+    logger.warn({
+      tenantId: params.tenantId,
+      symbol: params.symbol,
+      requestedMaxTokens,
+      promptTokens: tokenBudget.promptTokens,
+      maxCompletionTokens: tokenBudget.maxCompletionTokens,
+    }, 'Prompt de sinal LLM truncado para respeitar o limite de contexto.');
+  }
+
   const messages: LLMMessage[] = [
     { role: 'system', content: systemPrompt },
     { role: 'user', content: analysisPrompt },
@@ -6379,7 +6647,7 @@ async function generateTradingSignalFromLlm(params: {
     body: {
       model: agentContext.llmConfig.model,
       messages,
-      max_tokens: params.modelConfig?.maxTokens ?? agentContext.llmConfig.maxTokens ?? 2048,
+      max_tokens: tokenBudget.maxCompletionTokens,
       temperature: params.modelConfig?.temperature ?? agentContext.llmConfig.temperature ?? 0.7,
       stream: false,
     },
@@ -6396,6 +6664,7 @@ async function generateTradingSignalFromLlm(params: {
   }
 
   const llmSignal = parseLlmSignalResponse(llmContent);
+  const durationLabel = formatDurationLabel(llmSignal.expectedDurationMinutes);
 
   const createResult = await kucoinService.createSignal(
     { tenantId: params.tenantId, userId: params.userId },
@@ -6417,6 +6686,16 @@ async function generateTradingSignalFromLlm(params: {
         marketCondition: llmSignal.marketCondition,
         riskScore: llmSignal.riskScore,
         modelVersion: agentContext.llmConfig.model,
+        operationType: llmSignal.operationType,
+        expectedDurationMinutes: llmSignal.expectedDurationMinutes,
+        expectedDurationLabel: durationLabel,
+        entryPrice: llmSignal.suggestedPrice,
+        takeProfit: llmSignal.suggestedTakeProfit,
+        stopLoss: llmSignal.suggestedStopLoss,
+        riskReward: llmSignal.riskReward,
+        motivators: llmSignal.motivators,
+        invalidationReasons: llmSignal.invalidationReasons,
+        tradeSummary: llmSignal.tradeSummary,
         agentId: agentContext.agent.id,
         namespaceId: agentContext.agent.namespaceId ?? agentContext.namespace?.id,
         generationSource: params.source,
@@ -7260,7 +7539,7 @@ app.post('/api/integrations/trading/signals/generate', requirePermission('integr
       }).optional(),
       modelConfig: z.object({
         temperature: z.number().min(0).max(2).optional(),
-        maxTokens: z.number().min(256).max(8192).optional(),
+        maxTokens: z.number().min(256).max(4096).optional(),
       }).optional(),
       consensus: z.object({
         rule: z.literal('majority').optional(),
@@ -7665,7 +7944,7 @@ app.put('/api/integrations/trading/analysis-profile', requirePermission('integra
       }).optional(),
       modelConfig: z.object({
         temperature: z.number().min(0).max(2).optional(),
-        maxTokens: z.number().min(256).max(8192).optional(),
+        maxTokens: z.number().min(256).max(4096).optional(),
       }).optional(),
       consensus: z.object({
         rule: z.literal('majority').optional(),
@@ -8952,6 +9231,15 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
     const trainingData = dataSources.trainingData
       ? await fetchTradingDatasetSummary(tenantId)
       : null;
+    const riskConfig = await kucoinService.getRiskConfig({ tenantId, userId });
+    const tradePlan = buildTradePlanFromAnalysis({
+      analysis: primaryResult.analysis,
+      interval: primaryResult.interval,
+      timeframes,
+      marketType: marketType ?? 'futures',
+      marginMode,
+      riskConfig,
+    });
 
     logger.info({
       tenantId,
@@ -8979,6 +9267,7 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
         indicators,
         dataSources,
       },
+      tradePlan,
       sources: {
         orderBook,
         news,

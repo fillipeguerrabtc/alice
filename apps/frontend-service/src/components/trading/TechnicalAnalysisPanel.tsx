@@ -169,6 +169,24 @@ export interface AnalysisConsensus {
   isMajorityReached: boolean;
 }
 
+export type TradingOperationType = 'scalping' | 'swing' | 'position' | 'cash_and_carry' | 'arbitrage' | 'hedge' | 'neutral';
+
+export interface TradePlan {
+  operationType: TradingOperationType;
+  expectedDurationMinutes: number;
+  expectedDurationLabel: string;
+  entryPrice: number;
+  stopLoss: number | null;
+  takeProfit: number | null;
+  riskReward: number | null;
+  motivators: string[];
+  invalidationReasons: string[];
+  tradeSummary: string;
+  marketType: 'futures' | 'spot' | 'margin';
+  marginMode?: 'cross' | 'isolated' | null;
+  direction: 'long' | 'short' | 'neutral';
+}
+
 export interface AnalysisProfileDataSources {
   orderBook: boolean;
   news: boolean;
@@ -282,6 +300,11 @@ const getTrendBadge = (trend: 'bullish' | 'bearish' | 'sideways') => {
 
 const formatPrice = (price: number, locale: string) => {
   return formatCurrency(price, 'USD', locale);
+};
+
+const formatPlanPrice = (price: number | null, locale: string): string | null => {
+  if (!Number.isFinite(price)) return null;
+  return formatCurrency(Number(price), 'USD', locale);
 };
 
 const buildIndicatorExplanation = (analysis: TechnicalAnalysisResult): Array<{ title: string; detail: string }> => {
@@ -489,6 +512,7 @@ export function TechnicalAnalysisPanel({
     matrix: AnalysisMatrixEntry[];
     consensus: AnalysisConsensus;
     profile: AnalysisProfile;
+    tradePlan?: TradePlan;
     sources: {
       orderBook: { symbol: string; bestBid: number | null; bestAsk: number | null; spreadAbs: number | null; spreadPct: number | null; depth: number } | null;
       news: { query: string; results: Array<{ title: string; url: string; score?: number }> } | null;
@@ -921,6 +945,81 @@ export function TechnicalAnalysisPanel({
                 <span>Última atualização: {formatDateTime(analysis.timestamp, { locale, timeZone })}</span>
               </div>
             </div>
+
+            {analysisResponse?.tradePlan && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>{t('trading.analysis.tradePlan.title')}</CardTitle>
+                  <CardDescription>{t('trading.analysis.tradePlan.subtitle')}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <span className="text-xs text-muted-foreground">{t('trading.analysis.tradePlan.operationType')}</span>
+                      <div className="text-sm font-medium">
+                        {t(`trading.analysis.tradePlan.operationTypeValues.${analysisResponse.tradePlan.operationType}`)}
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-xs text-muted-foreground">{t('trading.analysis.tradePlan.duration')}</span>
+                      <div className="text-sm font-medium">{analysisResponse.tradePlan.expectedDurationLabel}</div>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-xs text-muted-foreground">{t('trading.analysis.tradePlan.entry')}</span>
+                      <div className="text-sm font-medium">
+                        {formatPlanPrice(analysisResponse.tradePlan.entryPrice, locale) ?? t('common.notAvailable')}
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-xs text-muted-foreground">{t('trading.analysis.tradePlan.tp')}</span>
+                      <div className="text-sm font-medium">
+                        {formatPlanPrice(analysisResponse.tradePlan.takeProfit, locale) ?? t('common.notAvailable')}
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-xs text-muted-foreground">{t('trading.analysis.tradePlan.sl')}</span>
+                      <div className="text-sm font-medium">
+                        {formatPlanPrice(analysisResponse.tradePlan.stopLoss, locale) ?? t('common.notAvailable')}
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-xs text-muted-foreground">{t('trading.analysis.tradePlan.rr')}</span>
+                      <div className="text-sm font-medium">
+                        {Number.isFinite(analysisResponse.tradePlan.riskReward)
+                          ? formatNumber(Number(analysisResponse.tradePlan.riskReward), locale, { maximumFractionDigits: 2 })
+                          : t('common.notAvailable')}
+                      </div>
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  <div className="space-y-2">
+                    <span className="text-xs text-muted-foreground">{t('trading.analysis.tradePlan.summary')}</span>
+                    <p className="text-sm">{analysisResponse.tradePlan.tradeSummary}</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <span className="text-xs text-muted-foreground">{t('trading.analysis.tradePlan.motivators')}</span>
+                      <ul className="mt-2 text-sm text-muted-foreground list-disc pl-5 space-y-1">
+                        {analysisResponse.tradePlan.motivators.map((item, index) => (
+                          <li key={`tradeplan-motivator-${index}`}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div>
+                      <span className="text-xs text-muted-foreground">{t('trading.analysis.tradePlan.invalidations')}</span>
+                      <ul className="mt-2 text-sm text-muted-foreground list-disc pl-5 space-y-1">
+                        {analysisResponse.tradePlan.invalidationReasons.map((item, index) => (
+                          <li key={`tradeplan-invalidation-${index}`}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             {analysisResponse?.consensus && (
               <Card>

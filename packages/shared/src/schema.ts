@@ -1725,7 +1725,7 @@ export type TradingProfileDataSources = z.infer<typeof TradingProfileDataSources
 
 export const TradingProfileModelConfigSchema = z.object({
   temperature: z.number().min(0).max(2).optional(),
-  maxTokens: z.number().min(256).max(8192).optional(),
+  maxTokens: z.number().min(256).max(4096).optional(),
 });
 export type TradingProfileModelConfig = z.infer<typeof TradingProfileModelConfigSchema>;
 
@@ -1735,6 +1735,17 @@ export const TradingProfileConsensusSchema = z.object({
 });
 export type TradingProfileConsensus = z.infer<typeof TradingProfileConsensusSchema>;
 
+export const TradingOperationTypeSchema = z.enum([
+  "scalping",
+  "swing",
+  "position",
+  "cash_and_carry",
+  "arbitrage",
+  "hedge",
+  "neutral",
+]);
+export type TradingOperationType = z.infer<typeof TradingOperationTypeSchema>;
+
 // Zod schema para metadados de trading (JSONB)
 export const TradingSignalMetadataSchema = z.object({
   confidence: z.number().min(0).max(1).optional(),  // Confiança do modelo (0-1)
@@ -1743,6 +1754,16 @@ export const TradingSignalMetadataSchema = z.object({
   marketCondition: z.string().optional(),            // Condição de mercado identificada
   riskScore: z.number().min(0).max(100).optional(),  // Score de risco (0-100)
   modelVersion: z.string().optional(),               // Versão do modelo usado
+  operationType: TradingOperationTypeSchema.optional(),
+  expectedDurationMinutes: z.number().int().min(1).max(43200).optional(),
+  expectedDurationLabel: z.string().optional(),
+  entryPrice: z.number().positive().optional(),
+  takeProfit: z.number().positive().optional(),
+  stopLoss: z.number().positive().optional(),
+  riskReward: z.number().positive().optional(),
+  motivators: z.array(z.string().min(2)).optional(),
+  invalidationReasons: z.array(z.string().min(2)).optional(),
+  tradeSummary: z.string().optional(),
   validationStatus: z.enum(['pending', 'validated', 'failed']).optional(), // Status da validação LLM
   validationId: z.string().uuid().optional(),         // ID da validação LLM
   approvalStatus: z.enum(['pending', 'approved', 'rejected']).optional(), // Status da aprovação humana

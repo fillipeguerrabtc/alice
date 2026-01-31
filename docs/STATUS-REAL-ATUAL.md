@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 31 de Janeiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.49 - Painéis unificados (Sinais IA/Análise) + scheduler multi-timeframe
+**Versão:** 10.50 - Sinais/Análise completos + orçamento seguro de tokens
 
 ---
 
@@ -26,6 +26,9 @@
 - Trading multi‑timeframe: perfis persistidos (analysis/signal), consenso por maioria, seleção dinâmica de indicadores e fontes.
 - Suporte/Resistência explícito na UI com toggle e explicação detalhada por timeframe.
 - Sinais IA exibem contexto multi‑timeframe, consenso e explicações (inclui dataset pronto para aprovação).
+- Sinais IA agora exibem tipo de operação, duração, TP/SL, RR, motivadores e invalidações (resumo executivo no UI).
+- Análise técnica passa a retornar plano determinístico com operação, duração, TP/SL, RR e motivadores no painel.
+- Geração de sinais com LLM usa orçamento seguro de tokens (prompt truncado e max_tokens ajustado ao contexto).
 - Training: datasets de trading com aprovação dedicada e fluxo manual via sinal → dataset.
 - CI: reordenação de enums/schemas de trading evita uso antes da declaração.
 - Lint: remoção de import não usado na página Trading (zero warnings).
