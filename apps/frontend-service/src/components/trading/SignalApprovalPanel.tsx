@@ -216,6 +216,7 @@ function SignalCard({
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [reason, setReason] = useState('');
   const metadata = (signal.metadata ?? {}) as Record<string, unknown>;
+  const reasoningText = signal.reasoning == null ? '' : String(signal.reasoning);
   const [approveOverrides, setApproveOverrides] = useState<ApproveOverridesForm>({
     orderType: signal.suggestedPrice ? 'limit' : 'market',
     size: '',
@@ -351,14 +352,14 @@ function SignalCard({
                 <Separator className="my-3" />
                 <div className="space-y-3">
                   {/* Reasoning */}
-                  {signal.reasoning && (
+                  {reasoningText ? (
                     <div>
                       <p className="text-sm font-medium mb-1">Raciocínio da IA:</p>
                       <p className="text-sm text-muted-foreground bg-muted p-3 rounded-lg">
-                        {String(signal.reasoning)}
+                        {reasoningText}
                       </p>
                     </div>
-                  )}
+                  ) : null}
 
                   {(metadata.timeframes || metadata.enabledIndicators || metadata.consensus) && (
                     <div className="space-y-2">
