@@ -45,13 +45,7 @@ import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+
 // NOTA: Tooltip removido - não utilizado neste componente (21/12/2025)
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
@@ -381,7 +375,6 @@ export function TechnicalAnalysisPanel({
   const [analysisSchedulerForm, setAnalysisSchedulerForm] = useState({
     enabled: false,
     intervalMinutes: '15',
-    interval: resolvedDefaultInterval,
     symbols: '',
     maxSymbolsPerRun: '1',
   });
@@ -477,7 +470,6 @@ export function TechnicalAnalysisPanel({
     setAnalysisSchedulerForm({
       enabled: analysisSchedulerConfig.enabled,
       intervalMinutes: String(analysisSchedulerConfig.intervalMinutes || 15),
-      interval: analysisSchedulerConfig.interval || '5m',
       symbols: analysisSchedulerConfig.symbols.join(', '),
       maxSymbolsPerRun: String(analysisSchedulerConfig.maxSymbolsPerRun || 1),
     });
@@ -487,7 +479,6 @@ export function TechnicalAnalysisPanel({
   const {
     data: analysisResponse,
     isLoading,
-    isFetching,
     refetch,
     error,
   } = useQuery<{
@@ -533,6 +524,7 @@ export function TechnicalAnalysisPanel({
 
   const analysis = analysisResponse?.data;
   const SignalIcon = analysis ? getSignalIcon(analysis.overallSignal) : Activity;
+  const primaryInterval = profileForm.timeframes?.[0] ?? interval;
 
   const updateAnalysisSchedulerMutation = useMutation({
     mutationFn: async () => {
@@ -546,7 +538,7 @@ export function TechnicalAnalysisPanel({
         marketType: marketType ?? 'futures',
         marginMode: marketType === 'margin' ? marginMode : undefined,
         intervalMinutes,
-        interval: analysisSchedulerForm.interval,
+        interval: primaryInterval,
         symbols: analysisSchedulerForm.symbols
           .split(',')
           .map((value) => value.trim())
@@ -768,88 +760,6 @@ export function TechnicalAnalysisPanel({
             </Button>
             <Button
               variant="outline"
-              onClick={() => refetch()}
-              disabled={isFetching}
-            >
-              {isFetching && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              {t('trading.analysis.profile.runNow')}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('trading.analysis.scheduler.title')}</CardTitle>
-          <CardDescription>{t('trading.analysis.scheduler.subtitle')}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label>{t('trading.analysis.scheduler.intervalMinutes')}</Label>
-              <Input
-                type="number"
-                min={1}
-                max={1440}
-                value={analysisSchedulerForm.intervalMinutes}
-                onChange={(event) => setAnalysisSchedulerForm({ ...analysisSchedulerForm, intervalMinutes: event.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>{t('trading.analysis.scheduler.analysisInterval')}</Label>
-              <Select
-                value={analysisSchedulerForm.interval}
-                onValueChange={(value) => setAnalysisSchedulerForm({ ...analysisSchedulerForm, interval: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={t('trading.analysis.scheduler.analysisIntervalPlaceholder')} />
-                </SelectTrigger>
-                <SelectContent>
-                  {resolvedIntervalOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label>{t('trading.analysis.scheduler.symbols')}</Label>
-              <Input
-                value={analysisSchedulerForm.symbols}
-                onChange={(event) => setAnalysisSchedulerForm({ ...analysisSchedulerForm, symbols: event.target.value })}
-                placeholder={t('trading.analysis.scheduler.symbolsPlaceholder')}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>{t('trading.analysis.scheduler.maxSymbols')}</Label>
-              <Input
-                type="number"
-                min={1}
-                max={50}
-                value={analysisSchedulerForm.maxSymbolsPerRun}
-                onChange={(event) => setAnalysisSchedulerForm({ ...analysisSchedulerForm, maxSymbolsPerRun: event.target.value })}
-              />
-            </div>
-            <div className="flex items-center gap-3">
-              <Switch
-                checked={analysisSchedulerForm.enabled}
-                onCheckedChange={(checked) => setAnalysisSchedulerForm({ ...analysisSchedulerForm, enabled: checked })}
-              />
-              <span className="text-sm">{t('trading.analysis.scheduler.enabled')}</span>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <Button
-              onClick={() => updateAnalysisSchedulerMutation.mutate()}
-              disabled={updateAnalysisSchedulerMutation.isPending}
-            >
-              {updateAnalysisSchedulerMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              {t('trading.analysis.scheduler.save')}
-            </Button>
-            <Button
-              variant="outline"
               onClick={() => executeAnalysisNowMutation.mutate()}
               disabled={executeAnalysisNowMutation.isPending || !symbol.trim()}
             >
@@ -858,20 +768,89 @@ export function TechnicalAnalysisPanel({
             </Button>
           </div>
 
-          <div className="text-xs text-muted-foreground grid gap-1">
-            <span>{t('trading.analysis.scheduler.status.nextRun')}: {analysisSchedulerConfig?.nextRunAt ? formatDateTime(String(analysisSchedulerConfig.nextRunAt), { locale, timeZone }) : t('common.notAvailable')}</span>
-            <span>{t('trading.analysis.scheduler.status.lastRun')}: {analysisSchedulerConfig?.lastRunAt ? formatDateTime(String(analysisSchedulerConfig.lastRunAt), { locale, timeZone }) : t('common.notAvailable')}</span>
-            <span>{t('trading.analysis.scheduler.status.lastSuccess')}: {analysisSchedulerConfig?.lastSuccessAt ? formatDateTime(String(analysisSchedulerConfig.lastSuccessAt), { locale, timeZone }) : t('common.notAvailable')}</span>
-            <span>{t('trading.analysis.scheduler.status.lastDuration')}: {analysisSchedulerConfig?.lastDurationMs ? `${analysisSchedulerConfig.lastDurationMs}ms` : t('common.notAvailable')}</span>
-            {analysisSchedulerConfig?.lastError && (
-              <span className="text-destructive">{t('trading.analysis.scheduler.status.lastError')}: {analysisSchedulerConfig.lastError}</span>
-            )}
-            {analysisSchedulerError && (
-              <span className="text-destructive">{t('trading.analysis.scheduler.status.loadError')}</span>
-            )}
-            {isLoadingAnalysisScheduler && (
-              <span>{t('trading.analysis.scheduler.status.loading')}</span>
-            )}
+          <Separator className="my-6" />
+
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-sm font-semibold">{t('trading.analysis.scheduler.title')}</h3>
+              <p className="text-xs text-muted-foreground">{t('trading.analysis.scheduler.subtitle')}</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>{t('trading.analysis.scheduler.timeframesLabel')}</Label>
+              <div className="flex flex-wrap gap-2">
+                {(profileForm.timeframes ?? []).map((frame) => (
+                  <Badge key={frame} variant="outline">
+                    {frame}
+                  </Badge>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">{t('trading.analysis.scheduler.timeframesHint')}</p>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>{t('trading.analysis.scheduler.intervalMinutes')}</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={1440}
+                  value={analysisSchedulerForm.intervalMinutes}
+                  onChange={(event) => setAnalysisSchedulerForm({ ...analysisSchedulerForm, intervalMinutes: event.target.value })}
+                />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label>{t('trading.analysis.scheduler.symbols')}</Label>
+                <Input
+                  value={analysisSchedulerForm.symbols}
+                  onChange={(event) => setAnalysisSchedulerForm({ ...analysisSchedulerForm, symbols: event.target.value })}
+                  placeholder={t('trading.analysis.scheduler.symbolsPlaceholder')}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>{t('trading.analysis.scheduler.maxSymbols')}</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={analysisSchedulerForm.maxSymbolsPerRun}
+                  onChange={(event) => setAnalysisSchedulerForm({ ...analysisSchedulerForm, maxSymbolsPerRun: event.target.value })}
+                />
+              </div>
+              <div className="flex items-center gap-3">
+                <Switch
+                  checked={analysisSchedulerForm.enabled}
+                  onCheckedChange={(checked) => setAnalysisSchedulerForm({ ...analysisSchedulerForm, enabled: checked })}
+                />
+                <span className="text-sm">{t('trading.analysis.scheduler.enabled')}</span>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                onClick={() => updateAnalysisSchedulerMutation.mutate()}
+                disabled={updateAnalysisSchedulerMutation.isPending}
+              >
+                {updateAnalysisSchedulerMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                {t('trading.analysis.scheduler.save')}
+              </Button>
+            </div>
+
+            <div className="text-xs text-muted-foreground grid gap-1">
+              <span>{t('trading.analysis.scheduler.status.nextRun')}: {analysisSchedulerConfig?.nextRunAt ? formatDateTime(String(analysisSchedulerConfig.nextRunAt), { locale, timeZone }) : t('common.notAvailable')}</span>
+              <span>{t('trading.analysis.scheduler.status.lastRun')}: {analysisSchedulerConfig?.lastRunAt ? formatDateTime(String(analysisSchedulerConfig.lastRunAt), { locale, timeZone }) : t('common.notAvailable')}</span>
+              <span>{t('trading.analysis.scheduler.status.lastSuccess')}: {analysisSchedulerConfig?.lastSuccessAt ? formatDateTime(String(analysisSchedulerConfig.lastSuccessAt), { locale, timeZone }) : t('common.notAvailable')}</span>
+              <span>{t('trading.analysis.scheduler.status.lastDuration')}: {analysisSchedulerConfig?.lastDurationMs ? `${analysisSchedulerConfig.lastDurationMs}ms` : t('common.notAvailable')}</span>
+              {analysisSchedulerConfig?.lastError && (
+                <span className="text-destructive">{t('trading.analysis.scheduler.status.lastError')}: {analysisSchedulerConfig.lastError}</span>
+              )}
+              {analysisSchedulerError && (
+                <span className="text-destructive">{t('trading.analysis.scheduler.status.loadError')}</span>
+              )}
+              {isLoadingAnalysisScheduler && (
+                <span>{t('trading.analysis.scheduler.status.loading')}</span>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -892,32 +871,7 @@ export function TechnicalAnalysisPanel({
               Indicadores calculados por código, não LLM - {symbol}
             </CardDescription>
           </div>
-          <div className="flex items-center gap-2">
-            <Select value={interval} onValueChange={setInterval}>
-              <SelectTrigger className="w-[100px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {resolvedIntervalOptions.map((i) => (
-                  <SelectItem key={i.value} value={i.value}>
-                    {i.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => refetch()}
-              disabled={isFetching}
-            >
-              {isFetching ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4" />
-              )}
-            </Button>
-          </div>
+          <div className="flex items-center gap-2" />
         </div>
       </CardHeader>
 

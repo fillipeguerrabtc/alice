@@ -5200,7 +5200,7 @@ function parseTradingIntervalsFromText(text: string): TradingIntervalValue[] {
       ? 'h'
       : unitRaw.startsWith('d')
         ? 'd'
-        : unitRaw.startsWith('w')
+        : (unitRaw.startsWith('w') || unitRaw.startsWith('s'))
           ? 'w'
           : 'm';
     const candidate = `${rawValue}${unit}` as TradingIntervalValue;

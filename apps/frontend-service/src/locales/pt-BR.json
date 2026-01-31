@@ -1557,9 +1557,9 @@
       "scheduler": {
         "title": "Scheduler de Sinais",
         "subtitle": "Configure a geração automática de sinais por mercado",
+        "timeframesLabel": "Timeframes do perfil",
+        "timeframesHint": "O scheduler usa os timeframes definidos no perfil acima.",
         "intervalMinutes": "Intervalo (minutos)",
-        "analysisInterval": "Intervalo de análise",
-        "analysisIntervalPlaceholder": "Selecione o intervalo",
         "symbols": "Símbolos",
         "symbolsPlaceholder": "Ex: BTCUSDTM, ETHUSDTM",
         "maxSignals": "Máx. sinais por execução",
@@ -1638,9 +1638,9 @@
       "scheduler": {
         "title": "Scheduler de Análise",
         "subtitle": "Configure a geração automática da análise determinística",
+        "timeframesLabel": "Timeframes do perfil",
+        "timeframesHint": "O scheduler usa os timeframes definidos no perfil acima.",
         "intervalMinutes": "Intervalo (minutos)",
-        "analysisInterval": "Intervalo de análise",
-        "analysisIntervalPlaceholder": "Selecione o intervalo",
         "symbols": "Símbolos",
         "symbolsPlaceholder": "Ex: BTCUSDTM, ETHUSDTM",
         "maxSymbols": "Máx. símbolos por execução",

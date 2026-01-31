@@ -1030,21 +1030,31 @@ async function runDueAnalysisSchedulers(): Promise<void> {
         throw new Error('Scheduler de análise sem símbolos configurados.');
       }
 
+      const profileRow = await getOrCreateTradingProfile(scheduler.tenantId, 'analysis');
+      const profile = normalizeTradingProfile(profileRow);
+      const timeframes = profile.timeframes?.length
+        ? profile.timeframes
+        : [scheduler.interval || '5m'];
+      const enabledIndicators = profile.indicators?.length ? profile.indicators : undefined;
+
       const maxSymbols = Math.max(1, scheduler.maxSymbolsPerRun ?? 1);
       const selectedSymbols = symbols.slice(0, maxSymbols);
       let lastIndicatorId: string | null = null;
       const schedulerUserId = await resolveSchedulerUserId(scheduler.tenantId);
 
       for (const symbol of selectedSymbols) {
-        const result = await calculateAndPersistTechnicalAnalysis({
-          tenantId: scheduler.tenantId,
-          userId: schedulerUserId,
-          symbol,
-          interval: scheduler.interval || '5m',
-          marketType: scheduler.marketType as TradingMarketType,
-          marginMode: (scheduler.marginMode ?? undefined) as TradingMarginMode | undefined,
-        });
-        lastIndicatorId = result.indicatorId;
+        for (const timeframe of timeframes) {
+          const result = await calculateAndPersistTechnicalAnalysis({
+            tenantId: scheduler.tenantId,
+            userId: schedulerUserId,
+            symbol,
+            interval: timeframe,
+            marketType: scheduler.marketType as TradingMarketType,
+            marginMode: (scheduler.marginMode ?? undefined) as TradingMarginMode | undefined,
+            enabledIndicators,
+          });
+          lastIndicatorId = result.indicatorId;
+        }
       }
 
       const durationMs = Date.now() - startTime;

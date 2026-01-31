@@ -627,7 +627,6 @@ export default function Trading() {
   const [schedulerForm, setSchedulerForm] = useState({
     enabled: false,
     intervalMinutes: '15',
-    interval: '5m',
     symbols: '',
     maxSignalsPerRun: '1',
   });
@@ -1007,7 +1006,6 @@ export default function Trading() {
     setSchedulerForm({
       enabled: schedulerConfig.enabled,
       intervalMinutes: String(schedulerConfig.intervalMinutes || 15),
-      interval: schedulerConfig.interval || '5m',
       symbols: schedulerConfig.symbols.join(', '),
       maxSignalsPerRun: String(schedulerConfig.maxSignalsPerRun || 1),
     });
@@ -1584,37 +1582,6 @@ export default function Trading() {
     },
   });
 
-  const executeAnalysisNowMutation = useMutation({
-    mutationFn: async () => {
-      if (!sanitizedSymbol) {
-        throw new Error(t('trading.analysis.scheduler.errors.symbolRequired'));
-      }
-      const params = new URLSearchParams();
-      params.set('interval', schedulerForm.interval || selectedInterval || '5m');
-      params.set('marketType', selectedMarketType);
-      if (selectedMarketType === 'margin') {
-        params.set('marginMode', selectedMarginMode);
-      }
-      const res = await apiRequest('GET', `/api/integrations/trading/analysis/${sanitizedSymbol}?${params.toString()}`);
-      return res.json();
-    },
-    onSuccess: (data) => {
-      if (!data?.success) {
-        throw new Error(data?.error || t('trading.analysis.scheduler.errors.executeFailed'));
-      }
-      toast({
-        title: t('trading.analysis.scheduler.success.executed'),
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: t('trading.analysis.scheduler.errors.executeFailed'),
-        description: error.message,
-        variant: 'destructive',
-      });
-    },
-  });
-
   const updateSignalSchedulerMutation = useMutation({
     mutationFn: async () => {
       const intervalMinutes = Number.parseInt(schedulerForm.intervalMinutes, 10);
@@ -1622,12 +1589,13 @@ export default function Trading() {
       if (Number.isNaN(intervalMinutes) || Number.isNaN(maxSignalsPerRun)) {
         throw new Error(t('trading.errors.schedulerUpdateFailed'));
       }
+      const primaryInterval = signalProfileForm.timeframes?.[0] ?? selectedInterval ?? '5m';
 
       const payload = {
         marketType: selectedMarketType,
         marginMode: selectedMarketType === 'margin' ? selectedMarginMode : undefined,
         intervalMinutes,
-        interval: schedulerForm.interval,
+        interval: primaryInterval,
         symbols: schedulerForm.symbols
           .split(',')
           .map((symbol) => symbol.trim())
@@ -3224,111 +3192,89 @@ export default function Trading() {
                     {t('trading.signals.generateNow')}
                   </Button>
                 </div>
-              </CardContent>
-            </Card>
+                <Separator className="my-6" />
 
-            <Card>
-              <CardHeader>
-                <CardTitle>{t('trading.signals.scheduler.title')}</CardTitle>
-                <CardDescription>{t('trading.signals.scheduler.subtitle')}</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label>{t('trading.signals.scheduler.intervalMinutes')}</Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={1440}
-                      value={schedulerForm.intervalMinutes}
-                      onChange={(e) => setSchedulerForm({ ...schedulerForm, intervalMinutes: e.target.value })}
-                    />
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-sm font-semibold">{t('trading.signals.scheduler.title')}</h3>
+                    <p className="text-xs text-muted-foreground">{t('trading.signals.scheduler.subtitle')}</p>
                   </div>
+
                   <div className="space-y-2">
-                    <Label>{t('trading.signals.scheduler.analysisInterval')}</Label>
-                    <Select
-                      value={schedulerForm.interval}
-                      onValueChange={(value) => setSchedulerForm({ ...schedulerForm, interval: value })}
+                    <Label>{t('trading.signals.scheduler.timeframesLabel')}</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {signalProfileForm.timeframes.map((frame) => (
+                        <Badge key={frame} variant="outline">
+                          {frame}
+                        </Badge>
+                      ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground">{t('trading.signals.scheduler.timeframesHint')}</p>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>{t('trading.signals.scheduler.intervalMinutes')}</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={1440}
+                        value={schedulerForm.intervalMinutes}
+                        onChange={(e) => setSchedulerForm({ ...schedulerForm, intervalMinutes: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <Label>{t('trading.signals.scheduler.symbols')}</Label>
+                      <Input
+                        value={schedulerForm.symbols}
+                        onChange={(e) => setSchedulerForm({ ...schedulerForm, symbols: e.target.value })}
+                        placeholder={t('trading.signals.scheduler.symbolsPlaceholder')}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t('trading.signals.scheduler.maxSignals')}</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={20}
+                        value={schedulerForm.maxSignalsPerRun}
+                        onChange={(e) => setSchedulerForm({ ...schedulerForm, maxSignalsPerRun: e.target.value })}
+                      />
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Switch
+                        checked={schedulerForm.enabled}
+                        onCheckedChange={(checked) => setSchedulerForm({ ...schedulerForm, enabled: checked })}
+                      />
+                      <span className="text-sm">{t('trading.signals.scheduler.enabled')}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      onClick={() => updateSignalSchedulerMutation.mutate()}
+                      disabled={updateSignalSchedulerMutation.isPending}
                     >
-                      <SelectTrigger>
-                        <SelectValue placeholder={t('trading.signals.scheduler.analysisIntervalPlaceholder')} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {intervalOptions.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      {updateSignalSchedulerMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                      {t('trading.signals.scheduler.save')}
+                    </Button>
                   </div>
-                  <div className="space-y-2 md:col-span-2">
-                    <Label>{t('trading.signals.scheduler.symbols')}</Label>
-                    <Input
-                      value={schedulerForm.symbols}
-                      onChange={(e) => setSchedulerForm({ ...schedulerForm, symbols: e.target.value })}
-                      placeholder={t('trading.signals.scheduler.symbolsPlaceholder')}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>{t('trading.signals.scheduler.maxSignals')}</Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={20}
-                      value={schedulerForm.maxSignalsPerRun}
-                      onChange={(e) => setSchedulerForm({ ...schedulerForm, maxSignalsPerRun: e.target.value })}
-                    />
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Switch
-                      checked={schedulerForm.enabled}
-                      onCheckedChange={(checked) => setSchedulerForm({ ...schedulerForm, enabled: checked })}
-                    />
-                    <span className="text-sm">{t('trading.signals.scheduler.enabled')}</span>
-                  </div>
-                </div>
 
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    onClick={() => updateSignalSchedulerMutation.mutate()}
-                    disabled={updateSignalSchedulerMutation.isPending}
-                  >
-                    {updateSignalSchedulerMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                    {t('trading.signals.scheduler.save')}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => executeAnalysisNowMutation.mutate()}
-                    disabled={executeAnalysisNowMutation.isPending || !sanitizedSymbol}
-                  >
-                    {executeAnalysisNowMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                    {t('trading.analysis.executeNow')}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => generateSignalMutation.mutate()}
-                    disabled={generateSignalMutation.isPending}
-                  >
-                    {generateSignalMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                    {t('trading.signals.generateNow')}
-                  </Button>
-                </div>
-
-                <div className="text-xs text-muted-foreground grid gap-1">
-                  <span>{t('trading.signals.scheduler.status.nextRun')}: {schedulerConfig?.nextRunAt ? formatDateTime(String(schedulerConfig.nextRunAt), { locale, timeZone }) : t('common.notAvailable')}</span>
-                  <span>{t('trading.signals.scheduler.status.lastRun')}: {schedulerConfig?.lastRunAt ? formatDateTime(String(schedulerConfig.lastRunAt), { locale, timeZone }) : t('common.notAvailable')}</span>
-                  <span>{t('trading.signals.scheduler.status.lastSuccess')}: {schedulerConfig?.lastSuccessAt ? formatDateTime(String(schedulerConfig.lastSuccessAt), { locale, timeZone }) : t('common.notAvailable')}</span>
-                  <span>{t('trading.signals.scheduler.status.lastDuration')}: {schedulerConfig?.lastDurationMs ? `${schedulerConfig.lastDurationMs}ms` : t('common.notAvailable')}</span>
-                  {schedulerConfig?.lastError && (
-                    <span className="text-destructive">{t('trading.signals.scheduler.status.lastError')}: {schedulerConfig.lastError}</span>
-                  )}
-                  {schedulerError && (
-                    <span className="text-destructive">{t('trading.signals.scheduler.status.loadError')}</span>
-                  )}
-                  {isLoadingScheduler && (
-                    <span>{t('trading.signals.scheduler.status.loading')}</span>
-                  )}
+                  <div className="text-xs text-muted-foreground grid gap-1">
+                    <span>{t('trading.signals.scheduler.status.nextRun')}: {schedulerConfig?.nextRunAt ? formatDateTime(String(schedulerConfig.nextRunAt), { locale, timeZone }) : t('common.notAvailable')}</span>
+                    <span>{t('trading.signals.scheduler.status.lastRun')}: {schedulerConfig?.lastRunAt ? formatDateTime(String(schedulerConfig.lastRunAt), { locale, timeZone }) : t('common.notAvailable')}</span>
+                    <span>{t('trading.signals.scheduler.status.lastSuccess')}: {schedulerConfig?.lastSuccessAt ? formatDateTime(String(schedulerConfig.lastSuccessAt), { locale, timeZone }) : t('common.notAvailable')}</span>
+                    <span>{t('trading.signals.scheduler.status.lastDuration')}: {schedulerConfig?.lastDurationMs ? `${schedulerConfig.lastDurationMs}ms` : t('common.notAvailable')}</span>
+                    {schedulerConfig?.lastError && (
+                      <span className="text-destructive">{t('trading.signals.scheduler.status.lastError')}: {schedulerConfig.lastError}</span>
+                    )}
+                    {schedulerError && (
+                      <span className="text-destructive">{t('trading.signals.scheduler.status.loadError')}</span>
+                    )}
+                    {isLoadingScheduler && (
+                      <span>{t('trading.signals.scheduler.status.loading')}</span>
+                    )}
+                  </div>
                 </div>
               </CardContent>
             </Card>
