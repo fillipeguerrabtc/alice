@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 01 de Fevereiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.61 - Roteamento WS envia mensagem do usuário
+**Versão:** 10.62 - Erros LLM pós-reparo sem duplicação
 
 ---
 
@@ -36,6 +36,7 @@
 - Roteamento stream: validação defensiva do insert do assistente evita messageId indefinido.
 - LLM Trading: erros de validação sem duplicação de prefixo (mensagem mais limpa).
 - Roteamento WS: comando manual aparece no chat sem refresh.
+- LLM Trading: mensagens pós-reparo sem duplicação de prefixo.
 - Notícias Trading: configuração de termos/engines do SearXNG persistida em perfil e editável na UI (Sinais + Análise).
 - RAG Web Search: suporte a engines, categorias, idioma e SafeSearch por requisição (integração SearXNG ajustável).
 - Presets de notícias: presets principais salvos no banco e aplicáveis no perfil de Sinais/Análise.
@@ -253,6 +254,7 @@ Retenção Arquivo:   30 dias
 - Agentic Routing (stream): validação do insert do assistente antes de atualizar contadores.
 - LLM Trading: mensagem de erro de schema sem duplicação de prefixo.
 - Agentic Routing (WS): envio da mensagem do usuário no fluxo command-only.
+- LLM Trading: erro pós-reparo sem duplicação de prefixo.
 - Users Admin: modal de criação/edição com altura fixa e scroll interno garantido.
 - Galeria de Imagens: download usa extensão correta conforme MIME/URL da imagem.
 - UI: modais com conteúdo já rolável agora usam um único scroll interno (sem conflito entre áreas).

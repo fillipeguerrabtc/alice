@@ -5844,6 +5844,9 @@ function parseLlmSignalResponse(rawResponse: string) {
         return result.data;
       } catch (repairError) {
         const message = repairError instanceof Error ? repairError.message : 'Erro desconhecido';
+        if (message.startsWith('Resposta LLM inválida após reparo:')) {
+          throw new Error(message);
+        }
         throw new Error(`Resposta LLM inválida após reparo: ${message}`);
       }
     }
