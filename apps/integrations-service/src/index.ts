@@ -5774,12 +5774,52 @@ function repairLlmJsonContent(content: string): { json: string; repaired: boolea
     output += char;
   }
 
-  const withoutTrailingCommas = output.replace(/,\s*([}\]])/g, '$1');
-  if (withoutTrailingCommas !== output) {
+  const trailingCommaResult = removeTrailingCommasOutsideStrings(output);
+  if (trailingCommaResult.removed) {
     repaired = true;
   }
 
-  return { json: withoutTrailingCommas, repaired };
+  return { json: trailingCommaResult.json, repaired };
+}
+
+function removeTrailingCommasOutsideStrings(content: string): { json: string; removed: boolean } {
+  let inString = false;
+  let escaping = false;
+  let removed = false;
+  let output = '';
+
+  for (let i = 0; i < content.length; i += 1) {
+    const char = content[i];
+    if (escaping) {
+      output += char;
+      escaping = false;
+      continue;
+    }
+    if (char === '\\') {
+      output += char;
+      if (inString) escaping = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      output += char;
+      continue;
+    }
+    if (!inString && char === ',') {
+      let j = i + 1;
+      while (j < content.length && /\s/.test(content[j])) {
+        j += 1;
+      }
+      const nextChar = content[j];
+      if (nextChar === '}' || nextChar === ']') {
+        removed = true;
+        continue;
+      }
+    }
+    output += char;
+  }
+
+  return { json: output, removed };
 }
 
 function parseLlmSignalResponse(rawResponse: string) {

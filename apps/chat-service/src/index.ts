@@ -7663,6 +7663,11 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
         isFromUser: false,
       }).returning();
 
+      if (!assistantMessage) {
+        logger.error({ conversationId: id, userId }, 'Falha ao salvar resposta de roteamento (sync) - resultado do banco inválido');
+        throw new Error('Falha ao salvar resposta de roteamento (sync)');
+      }
+
       await db.update(schema.conversations)
         .set({ 
           totalMensagens: (conversation.totalMensagens || 0) + 2,
