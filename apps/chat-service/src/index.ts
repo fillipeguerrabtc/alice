@@ -4170,13 +4170,18 @@ function matchAgentsFromTokens(agents: AgentRoutingRecord[], tokens: string[]) {
 function matchAgentsFromMessageText(agents: AgentRoutingRecord[], message: string): AgentRoutingRecord[] {
   const normalizedMessage = normalizeAgentToken(message);
   if (!normalizedMessage) return [];
+  const matchesToken = (token: string): boolean => {
+    if (!token) return false;
+    const pattern = new RegExp(`(?:^|\\s)${escapeRegex(token)}(?:\\s|$)`, 'i');
+    return pattern.test(normalizedMessage);
+  };
   const matched: AgentRoutingRecord[] = [];
   const seen = new Set<string>();
   for (const agent of agents) {
     const slugKey = agent.slug ? normalizeAgentToken(agent.slug) : '';
     const nameKey = normalizeAgentToken(agent.nome);
-    const matchesSlug = slugKey && normalizedMessage.includes(slugKey);
-    const matchesName = nameKey && normalizedMessage.includes(nameKey);
+    const matchesSlug = matchesToken(slugKey);
+    const matchesName = matchesToken(nameKey);
     if (!matchesSlug && !matchesName) continue;
     if (seen.has(agent.id)) continue;
     seen.add(agent.id);
