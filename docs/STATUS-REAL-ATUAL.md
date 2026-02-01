@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 01 de Fevereiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.56 - Orçamento de tokens conservador para sinais com notícias
+**Versão:** 10.58 - Roteamento agentic normalizado + WS com detectores consistentes
 
 ---
 
@@ -30,6 +30,9 @@
 - Análise técnica passa a retornar plano determinístico com operação, duração, TP/SL, RR e motivadores no painel.
 - Geração de sinais com LLM usa orçamento seguro de tokens (prompt truncado e max_tokens ajustado ao contexto).
 - Sinais com notícias: estimativa de tokens mais conservadora (regex + densidade) evita overflow de contexto.
+- Sinais IA: parsing robusto de JSON do LLM com reparo seguro e prompt de saída estrito.
+- Roteamento de agentes: gatilhos configuráveis no Modo Agentic (manual/auto) por tenant.
+- Roteamento agentic: normalização de comandos (acentos/@) e detecção consistente no WebSocket.
 - Notícias Trading: configuração de termos/engines do SearXNG persistida em perfil e editável na UI (Sinais + Análise).
 - RAG Web Search: suporte a engines, categorias, idioma e SafeSearch por requisição (integração SearXNG ajustável).
 - Presets de notícias: presets principais salvos no banco e aplicáveis no perfil de Sinais/Análise.
@@ -242,6 +245,8 @@ Retenção Arquivo:   30 dias
 ## Atualizações recentes (resumo)
 
 - Trading Sinais: orçamento de tokens mais conservador para prompts com notícias (evita erro 4096).
+- Trading Sinais: parsing robusto do JSON do LLM com reparo seguro de strings inválidas.
+- Agentic Routing: termos manual/auto configuráveis no Modo Agentic (`detectors.agentRouting.*`).
 - Users Admin: modal de criação/edição com altura fixa e scroll interno garantido.
 - Galeria de Imagens: download usa extensão correta conforme MIME/URL da imagem.
 - UI: modais com conteúdo já rolável agora usam um único scroll interno (sem conflito entre áreas).

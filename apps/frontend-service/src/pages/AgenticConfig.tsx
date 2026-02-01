@@ -54,6 +54,10 @@ const agenticSettingsSchema = z.object({
       keywords: z.array(z.string().min(1).max(160)).max(200),
       patterns: z.array(z.string().min(1).max(160)).max(200),
     }),
+    agentRouting: z.object({
+      manualKeywords: z.array(z.string().min(1).max(160)).max(200),
+      autoKeywords: z.array(z.string().min(1).max(160)).max(200),
+    }),
     grafana: z.object({
       baseKeywords: z.array(z.string().min(1).max(160)).max(200),
       listDashboardsKeywords: z.array(z.string().min(1).max(160)).max(200),
@@ -105,6 +109,7 @@ type ErpKeywordField = keyof AgenticSettingsForm['detectors']['erp'];
 type PaymentsKeywordField = keyof AgenticSettingsForm['detectors']['payments'];
 type StackOpsKeywordField = keyof AgenticSettingsForm['detectors']['stackOps'];
 type GrafanaKeywordField = keyof AgenticSettingsForm['detectors']['grafana'];
+type AgentRoutingKeywordField = keyof AgenticSettingsForm['detectors']['agentRouting'];
 
 type AgenticSettingsResponse = {
   settings: AgenticSettingsForm;
@@ -138,6 +143,10 @@ export default function AgenticConfig() {
     { name: 'stripeKeywords', label: t('agenticConfig.stripeKeywords') },
     { name: 'stripePaymentKeywords', label: t('agenticConfig.stripePaymentKeywords') },
   ];
+  const agentRoutingKeywordItems: Array<{ name: AgentRoutingKeywordField; label: string }> = [
+    { name: 'manualKeywords', label: t('agenticConfig.agentRoutingManualKeywords') },
+    { name: 'autoKeywords', label: t('agenticConfig.agentRoutingAutoKeywords') },
+  ];
   const tradingPromptExamples = t('agenticConfig.tradingPromptExamples', { returnObjects: true }) as string[];
   const tradingPromptGuidelines = t('agenticConfig.tradingPromptGuidelines', { returnObjects: true }) as string[];
   const stackOpsKeywordItems: Array<{ name: StackOpsKeywordField; label: string }> = [
@@ -163,6 +172,7 @@ export default function AgenticConfig() {
         webImageSearch: { keywords: [], patterns: [] },
         imageGeneration: { keywords: [], patterns: [] },
         trading: { keywords: [], patterns: [] },
+        agentRouting: { manualKeywords: [], autoKeywords: [] },
         agenticTask: {
           createKeywords: [],
           updateKeywords: [],
@@ -946,6 +956,40 @@ export default function AgenticConfig() {
                     </FormItem>
                   )}
                 />
+              </div>
+
+              <Separator />
+
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold">{t('agenticConfig.detectorsRoutingTitle')}</h3>
+                <p className="text-xs text-muted-foreground">{t('agenticConfig.detectorsRoutingDesc')}</p>
+                <div className="grid gap-4 md:grid-cols-2">
+                  {agentRoutingKeywordItems.map((item) => {
+                    const fieldName: `detectors.agentRouting.${AgentRoutingKeywordField}` =
+                      `detectors.agentRouting.${item.name}`;
+                    return (
+                      <FormField
+                        key={item.name}
+                        control={form.control}
+                        name={fieldName}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{item.label}</FormLabel>
+                            <FormControl>
+                              <Textarea
+                                value={listToTextarea(field.value)}
+                                onChange={(event) => field.onChange(textareaToList(event.target.value))}
+                                placeholder={t('agenticConfig.agentRoutingKeywordsPlaceholder')}
+                                rows={3}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    );
+                  })}
+                </div>
               </div>
             </CardContent>
           </Card>

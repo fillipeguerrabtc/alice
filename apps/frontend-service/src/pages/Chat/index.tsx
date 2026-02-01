@@ -1336,6 +1336,19 @@ export default function Chat() {
                   resetTimeout();
                 }
 
+                if (parsed.type === 'agent_route' && parsed.agent) {
+                  const normalizedAgent = parsed.agent as Message['agent'];
+                  setMessages((prev) => {
+                    const newMessages = [...prev];
+                    const lastIdx = newMessages.length - 1;
+                    if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
+                      newMessages[lastIdx] = { ...newMessages[lastIdx], agent: normalizedAgent };
+                    }
+                    return newMessages;
+                  });
+                  resetTimeout();
+                }
+
                 if (parsed.type === 'sources') {
                   resetTimeout();
                 }

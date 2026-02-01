@@ -3227,6 +3227,10 @@ export interface AgenticDetectors {
   webImageSearch: AgenticDetectorGroup;
   imageGeneration: AgenticDetectorGroup;
   trading: AgenticDetectorGroup;
+  agentRouting: {
+    manualKeywords: string[];
+    autoKeywords: string[];
+  };
   grafana: {
     baseKeywords: string[];
     listDashboardsKeywords: string[];

@@ -1,7 +1,7 @@
 # Guia Operacional da Alice (Chat → Execução → Treino)
 
 **Autor:** Fillipe Guerra  
-**Data:** 25 de Janeiro de 2026  
+**Data:** 01 de Fevereiro de 2026  
 **Versão:** 1.5.0  
 
 ---
@@ -181,6 +181,180 @@ Campos visíveis no print (Prompts por Agente):
 - `erp.baseKeywords`: `cliente`, `item`, `invoice`, `fatura`
 - `payments.wiseKeywords`: `wise`, `transferência internacional`
 - `stackOps.deployKeywords`: `deploy`, `release`, `versão`
+
+#### 3.2.1 Ações no chat por categoria (expansível)
+> Use estas categorias como **referência oficial** de comandos e exemplos.
+> Cada categoria indica **onde configurar** novos termos no `/agentic-config`.
+
+<details>
+<summary><strong>Roteamento de agentes (handoff + colaboração)</strong></summary>
+
+**O que faz**
+- Troca automática de agente conforme contexto.
+- Override manual com comandos explícitos.
+- Identificação do agente ativo abaixo do avatar.
+
+**Comandos e exemplos**
+- Manual: `usar agente @trading`
+- Manual: `colaborar com @trading e @financeiro`
+- Manual: `handoff para @contabilidade`
+- Auto: `voltar automático`
+- Auto: `cancelar override`
+- Menção direta: `@trading analise BTCUSDTM 5m 15m`
+
+**Configuração (detectors)**
+- `detectors.agentRouting.manualKeywords`
+- `detectors.agentRouting.autoKeywords`
+
+**Adicionar novos termos**
+- Inclua 1 termo por linha nas listas acima.
+- Evite termos genéricos (ex.: “usar”) para reduzir falsos positivos.
+</details>
+
+<details>
+<summary><strong>Web e Deep Web (SearXNG + Tor)</strong></summary>
+
+**Comandos e exemplos**
+- `pesquisar na web notícias sobre BTC`
+- `buscar na deep web menções de BTC`
+- `consultar na internet política de X`
+
+**Configuração (detectors)**
+- `detectors.webSearch.keywords` / `detectors.webSearch.patterns`
+- `detectors.deepWeb.keywords` / `detectors.deepWeb.patterns`
+
+**Adicionar novos termos**
+- Use keywords para sinônimos do seu time.
+- Use patterns para regex específicas (ex.: `/\bpesquise na web\b/i`).
+</details>
+
+<details>
+<summary><strong>Imagens (busca e geração)</strong></summary>
+
+**Comandos e exemplos**
+- `buscar imagens na web de candle chart BTC`
+- `gerar imagem de dashboard financeiro minimalista`
+- `criar logo para o projeto Alice`
+
+**Configuração (detectors)**
+- `detectors.webImageSearch.keywords` / `detectors.webImageSearch.patterns`
+- `detectors.imageGeneration.keywords` / `detectors.imageGeneration.patterns`
+
+**Adicionar novos termos**
+- Inclua sinônimos e variações (ex.: “arte”, “ilustração”, “banner”).
+</details>
+
+<details>
+<summary><strong>Trading (análise, sinais e operações)</strong></summary>
+
+**Comandos e exemplos**
+- `análise técnica BTCUSDTM 5m 15m 30m com notícias`
+- `gerar sinal IA BTCUSDTM com order book`
+- `compre 0.01 BTCUSDTM 10x market`
+- `venda 0.02 BTCUSDTM 5x e defina stop loss em 42000`
+- `status trading e posições abertas`
+
+**Configuração (detectors)**
+- `detectors.trading.keywords` / `detectors.trading.patterns`
+
+**Adicionar novos termos**
+- Inclua pares e gírias usadas internamente (ex.: “XBTUSDTM”, “perp”).
+</details>
+
+<details>
+<summary><strong>ERPNext (consulta e escrita)</strong></summary>
+
+**Comandos e exemplos**
+- `listar clientes do ERP`
+- `criar cliente ACME com email financeiro@acme.com`
+- `listar faturas em aberto`
+- `faturamento anual do tenant`
+
+**Configuração (detectors)**
+- `detectors.erp.baseKeywords`
+- `detectors.erp.listCustomersKeywords`
+- `detectors.erp.createCustomerKeywords`
+- `detectors.erp.listInvoicesKeywords`
+- `detectors.erp.annualBillingKeywords`
+
+**Adicionar novos termos**
+- Inclua termos do domínio (ex.: “nota fiscal”, “conta a receber”).
+</details>
+
+<details>
+<summary><strong>Pagamentos (Wise/Stripe)</strong></summary>
+
+**Comandos e exemplos**
+- `transferir via Wise 1000 USD para João`
+- `listar destinatários Wise`
+- `criar pagamento Stripe para invoice 123`
+
+**Configuração (detectors)**
+- `detectors.payments.wiseKeywords`
+- `detectors.payments.wiseTransferKeywords`
+- `detectors.payments.stripeKeywords`
+- `detectors.payments.stripePaymentKeywords`
+
+**Adicionar novos termos**
+- Use variações internas (ex.: “wire”, “pix internacional”).
+</details>
+
+<details>
+<summary><strong>Stack Ops (deploy/rollback)</strong></summary>
+
+**Comandos e exemplos**
+- `deploy stack alice v1.2.3`
+- `rollback stack infra para v1.2.2`
+- `dry run deploy all`
+- `smart deploy all`
+
+**Configuração (detectors)**
+- `detectors.stackOps.baseKeywords`
+- `detectors.stackOps.deployKeywords`
+- `detectors.stackOps.rollbackKeywords`
+- `detectors.stackOps.dryRunKeywords`
+- `detectors.stackOps.smartDeployKeywords`
+- `detectors.stackOps.stackKeywords`
+
+**Adicionar novos termos**
+- Inclua nomes internos de stacks e apelidos usados no time.
+</details>
+
+<details>
+<summary><strong>Grafana (observabilidade)</strong></summary>
+
+**Comandos e exemplos**
+- `listar dashboards do Grafana`
+- `abrir dashboard alice-trading`
+- `atualizar dashboard alice-gpu-manager`
+
+**Configuração (detectors)**
+- `detectors.grafana.baseKeywords`
+- `detectors.grafana.listDashboardsKeywords`
+- `detectors.grafana.getDashboardKeywords`
+- `detectors.grafana.updateDashboardKeywords`
+
+**Adicionar novos termos**
+- Inclua termos de operação (ex.: “painel”, “monitoramento”).
+</details>
+
+<details>
+<summary><strong>Tarefas Agentic (documentos e relatórios)</strong></summary>
+
+**Comandos e exemplos**
+- `criar relatório financeiro mensal`
+- `atualizar documento de políticas internas`
+- `preciso de um planejamento orçamentário`
+
+**Configuração (detectors)**
+- `detectors.agenticTask.createKeywords`
+- `detectors.agenticTask.updateKeywords`
+- `detectors.agenticTask.intentKeywords`
+- `detectors.agenticTask.typeKeywords.document|report|accounting|planning`
+
+**Adicionar novos termos**
+- Inclua tipos e sinônimos usados no seu domínio.
+</details>
 
 > Sem Core Prompt e Agentic corretamente configurados, as operações no chat ficam inconsistentes.
 

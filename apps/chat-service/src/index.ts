@@ -1264,6 +1264,29 @@ const DEFAULT_AGENTIC_DETECTORS: AgenticDetectors = {
     ],
     patterns: [],
   },
+  agentRouting: {
+    manualKeywords: [
+      'usar agente',
+      'usar agentes',
+      'fixar agente',
+      'fixar agentes',
+      'colaborar com',
+      'handoff para',
+      'transferir para',
+      'trocar para',
+      'assumir agente',
+      'assumir atendimento',
+    ],
+    autoKeywords: [
+      'modo automatico',
+      'modo automático',
+      'voltar automatico',
+      'voltar automático',
+      'cancelar override',
+      'liberar agentes',
+      'retomar auto',
+    ],
+  },
   grafana: {
     baseKeywords: ['grafana', 'dashboard', 'painel', 'observability', 'observabilidade', 'monitoramento', 'metrics', 'métricas'],
     listDashboardsKeywords: ['listar dashboards', 'listar painéis', 'dashboards', 'painéis', 'dashboard list', 'list dashboards'],
@@ -1345,6 +1368,10 @@ function normalizeAgenticDetectors(detectors: Partial<AgenticDetectors> | null |
     webImageSearch: normalizeDetectorGroup(safe.webImageSearch, DEFAULT_AGENTIC_DETECTORS.webImageSearch),
     imageGeneration: normalizeDetectorGroup(safe.imageGeneration, DEFAULT_AGENTIC_DETECTORS.imageGeneration),
     trading: normalizeDetectorGroup(safe.trading, DEFAULT_AGENTIC_DETECTORS.trading),
+    agentRouting: {
+      manualKeywords: normalizeDetectorList(safe.agentRouting?.manualKeywords ?? DEFAULT_AGENTIC_DETECTORS.agentRouting.manualKeywords),
+      autoKeywords: normalizeDetectorList(safe.agentRouting?.autoKeywords ?? DEFAULT_AGENTIC_DETECTORS.agentRouting.autoKeywords),
+    },
     grafana: {
       baseKeywords: normalizeDetectorList(safe.grafana?.baseKeywords ?? DEFAULT_AGENTIC_DETECTORS.grafana.baseKeywords),
       listDashboardsKeywords: normalizeDetectorList(safe.grafana?.listDashboardsKeywords ?? DEFAULT_AGENTIC_DETECTORS.grafana.listDashboardsKeywords),
@@ -2440,7 +2467,7 @@ interface AgentConfig {
 }
 
 type ConversationWithAgent = typeof schema.conversations.$inferSelect & {
-  agent?: AgentConfig | null;
+  agent?: typeof schema.agents.$inferSelect | null;
 };
 
 interface AssistantSettings {
@@ -4005,6 +4032,351 @@ async function resolveSemanticRoute(params: {
   return { score: 0, source: 'none', profile };
 }
 
+type AgentRoutingMode = 'auto' | 'manual';
+
+type AgentRoutingRecord = {
+  id: string;
+  nome: string;
+  slug?: string | null;
+  avatar?: string | null;
+  namespaceId?: string | null;
+  instrucoes?: string | null;
+  personalidade?: string | null;
+  modeloBase?: string | null;
+  temperaturaModelo?: number | null;
+  maxTokens?: number | null;
+};
+
+type AgentRoutingCommand = {
+  action: AgentRoutingMode | 'none';
+  tokens: string[];
+  isCommandOnly: boolean;
+};
+
+const AGENT_MENTION_REGEX = /@([a-z0-9][a-z0-9_-]{1,48})/gi;
+
+function normalizeAgentToken(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9_-]+/g, ' ')
+    .trim();
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function extractAgentMentions(message: string): string[] {
+  const tokens = new Set<string>();
+  for (const match of message.matchAll(AGENT_MENTION_REGEX)) {
+    const token = match[1];
+    if (token) tokens.add(token);
+  }
+  return Array.from(tokens);
+}
+
+function isRoutingOnlyCommand(message: string, routingDetectors: AgenticDetectors['agentRouting']): boolean {
+  const withoutMentionsRaw = message.replace(AGENT_MENTION_REGEX, ' ');
+  const normalized = normalizeAgentToken(withoutMentionsRaw);
+  if (!normalized) return true;
+  const keywordRegex = new RegExp(
+    [...routingDetectors.manualKeywords, ...routingDetectors.autoKeywords]
+      .map((keyword) => escapeRegex(normalizeAgentToken(keyword)))
+      .join('|'),
+    'gi'
+  );
+  const cleaned = normalized
+    .replace(keywordRegex, ' ')
+    .replace(/[^a-z0-9_-]+/g, ' ')
+    .trim();
+  return cleaned.length === 0;
+}
+
+function parseAgentRoutingCommand(
+  message: string,
+  routingDetectors: AgenticDetectors['agentRouting']
+): AgentRoutingCommand {
+  const normalized = normalizeAgentToken(message);
+  const tokens = extractAgentMentions(message);
+  const hasAutoKeyword = routingDetectors.autoKeywords.some((keyword) => normalized.includes(normalizeAgentToken(keyword)));
+  if (hasAutoKeyword) {
+    return { action: 'auto', tokens, isCommandOnly: isRoutingOnlyCommand(message, routingDetectors) };
+  }
+  const hasManualKeyword = routingDetectors.manualKeywords.some((keyword) => normalized.includes(normalizeAgentToken(keyword)));
+  if (hasManualKeyword) {
+    return { action: 'manual', tokens, isCommandOnly: isRoutingOnlyCommand(message, routingDetectors) };
+  }
+  return { action: 'none', tokens, isCommandOnly: false };
+}
+
+function buildAgentLookup(agents: AgentRoutingRecord[]) {
+  const slugMap = new Map<string, AgentRoutingRecord>();
+  const nameMap = new Map<string, AgentRoutingRecord>();
+  for (const agent of agents) {
+    if (agent.slug) {
+      slugMap.set(normalizeAgentToken(agent.slug), agent);
+    }
+    const nameKey = normalizeAgentToken(agent.nome);
+    if (nameKey) {
+      nameMap.set(nameKey, agent);
+    }
+  }
+  return { slugMap, nameMap };
+}
+
+function matchAgentsFromTokens(agents: AgentRoutingRecord[], tokens: string[]) {
+  const matched: AgentRoutingRecord[] = [];
+  const unknownTokens: string[] = [];
+  const { slugMap, nameMap } = buildAgentLookup(agents);
+  const seen = new Set<string>();
+  for (const token of tokens) {
+    const normalized = normalizeAgentToken(token);
+    const found = slugMap.get(normalized) ?? nameMap.get(normalized);
+    if (!found) {
+      unknownTokens.push(token);
+      continue;
+    }
+    if (seen.has(found.id)) continue;
+    seen.add(found.id);
+    matched.push(found);
+  }
+  return { matched, unknownTokens };
+}
+
+function matchAgentsFromMessageText(agents: AgentRoutingRecord[], message: string): AgentRoutingRecord[] {
+  const normalizedMessage = normalizeAgentToken(message);
+  if (!normalizedMessage) return [];
+  const matched: AgentRoutingRecord[] = [];
+  const seen = new Set<string>();
+  for (const agent of agents) {
+    const slugKey = agent.slug ? normalizeAgentToken(agent.slug) : '';
+    const nameKey = normalizeAgentToken(agent.nome);
+    const matchesSlug = slugKey && normalizedMessage.includes(slugKey);
+    const matchesName = nameKey && normalizedMessage.includes(nameKey);
+    if (!matchesSlug && !matchesName) continue;
+    if (seen.has(agent.id)) continue;
+    seen.add(agent.id);
+    matched.push(agent);
+  }
+  return matched;
+}
+
+function selectBestAgentFromPool(
+  agents: AgentRoutingRecord[],
+  userMessage: string,
+  profile: LlmContextProfile
+): { agent: AgentRoutingRecord | null; score: number } {
+  let best: { agent: AgentRoutingRecord; score: number } | null = null;
+  for (const agent of agents) {
+    const text = buildRoutingText([
+      agent.nome,
+      agent.slug,
+      agent.instrucoes,
+      agent.personalidade,
+    ]);
+    if (!text) continue;
+    const score = computeRoutingScore(text, userMessage, profile);
+    if (!best || score > best.score) {
+      best = { agent, score };
+    }
+  }
+  return best ? { agent: best.agent, score: best.score } : { agent: null, score: 0 };
+}
+
+function resolveRoutingStateFromMetadata(metadata: unknown): { mode: AgentRoutingMode; agentIds: string[] } {
+  if (!metadata || typeof metadata !== 'object') {
+    return { mode: 'auto', agentIds: [] };
+  }
+  const routing = (metadata as { agentRouting?: { mode?: AgentRoutingMode; agentIds?: string[] } }).agentRouting;
+  const mode = routing?.mode === 'manual' ? 'manual' : 'auto';
+  const agentIds = Array.isArray(routing?.agentIds) ? routing?.agentIds.filter((id) => typeof id === 'string') : [];
+  return { mode, agentIds };
+}
+
+function mergeConversationStateMetadata(
+  metadata: unknown,
+  updates: Record<string, unknown>
+): Record<string, unknown> {
+  const base = metadata && typeof metadata === 'object' ? metadata as Record<string, unknown> : {};
+  return {
+    ...base,
+    ...updates,
+  };
+}
+
+function mergeConversationMetadata(
+  metadata: unknown,
+  updates: Record<string, unknown>
+): Record<string, unknown> {
+  const base = metadata && typeof metadata === 'object' ? metadata as Record<string, unknown> : {};
+  return {
+    ...base,
+    ...updates,
+  };
+}
+
+async function updateAgentRoutingMetadata(params: {
+  conversationId: string;
+  metadata: unknown;
+  routing: { mode: AgentRoutingMode; agentIds: string[]; updatedAt: string; reason: string };
+}): Promise<void> {
+  const merged = mergeConversationStateMetadata(params.metadata, {
+    agentRouting: params.routing,
+  });
+  await db.update(schema.conversationStates)
+    .set({ metadata: merged, atualizadoEm: new Date() })
+    .where(eq(schema.conversationStates.conversationId, params.conversationId));
+}
+
+async function resolveAgentRoutingForMessage(params: {
+  tenantId: string;
+  conversationId: string;
+  userMessage: string;
+  conversation: ConversationWithAgent;
+  conversationState: Awaited<ReturnType<typeof getOrCreateConversationState>>;
+  agenticDetectors: AgenticDetectors;
+  requestedNamespaceId?: string | null;
+}): Promise<{
+  agent: AgentRoutingRecord | null;
+  namespaceId?: string | null;
+  mode: AgentRoutingMode;
+  source: 'auto' | 'manual' | 'mention' | 'none';
+  score: number;
+  profile: LlmContextProfile;
+  commandResponse?: string;
+  isCommandOnly: boolean;
+  error?: string;
+}> {
+  const agents = await db.query.agents.findMany({
+    where: and(
+      eq(schema.agents.tenantId, params.tenantId),
+      eq(schema.agents.status, 'active')
+    ),
+    columns: {
+      id: true,
+      nome: true,
+      slug: true,
+      avatar: true,
+      namespaceId: true,
+      instrucoes: true,
+      personalidade: true,
+      modeloBase: true,
+      temperaturaModelo: true,
+      maxTokens: true,
+    },
+  });
+
+  const command = parseAgentRoutingCommand(params.userMessage, params.agenticDetectors.agentRouting);
+  const profile = detectContextProfile(params.userMessage);
+  const stateRouting = resolveRoutingStateFromMetadata(params.conversationState.metadata);
+  let mode: AgentRoutingMode = stateRouting.mode;
+  let manualAgentIds = [...stateRouting.agentIds];
+  let source: 'auto' | 'manual' | 'mention' | 'none' = 'none';
+  let commandResponse: string | undefined;
+
+  if (command.action === 'auto') {
+    mode = 'auto';
+    manualAgentIds = [];
+    source = 'auto';
+    commandResponse = 'Roteamento automático de agentes reativado.';
+    await updateAgentRoutingMetadata({
+      conversationId: params.conversationId,
+      metadata: params.conversationState.metadata,
+      routing: {
+        mode,
+        agentIds: [],
+        updatedAt: new Date().toISOString(),
+        reason: 'manual_auto_reset',
+      },
+    });
+  }
+
+  if (command.action === 'manual') {
+    const { matched, unknownTokens } = matchAgentsFromTokens(agents, command.tokens);
+    const inferredAgents = matched.length > 0 ? matched : matchAgentsFromMessageText(agents, params.userMessage);
+    if (!inferredAgents.length) {
+      return {
+        agent: null,
+        namespaceId: params.requestedNamespaceId ?? params.conversation.namespaceId ?? null,
+        mode: stateRouting.mode,
+        source: 'manual',
+        score: 0,
+        profile,
+        isCommandOnly: command.isCommandOnly,
+        error: unknownTokens.length
+          ? `Agente(s) não encontrado(s): ${unknownTokens.join(', ')}. Use @slug do agente.`
+          : 'Nenhum agente encontrado para o comando informado.',
+      };
+    }
+    mode = 'manual';
+    manualAgentIds = inferredAgents.map((agent) => agent.id);
+    source = 'manual';
+    commandResponse = `Modo manual ativado. Agentes ativos: ${inferredAgents.map((agent) => agent.nome).join(', ')}.`;
+    await updateAgentRoutingMetadata({
+      conversationId: params.conversationId,
+      metadata: params.conversationState.metadata,
+      routing: {
+        mode,
+        agentIds: manualAgentIds,
+        updatedAt: new Date().toISOString(),
+        reason: 'manual_command',
+      },
+    });
+  }
+
+  let poolAgents: AgentRoutingRecord[] = [];
+  if (command.tokens.length > 0 && command.action === 'none') {
+    const { matched } = matchAgentsFromTokens(agents, command.tokens);
+    if (matched.length > 0) {
+      poolAgents = matched;
+      source = 'mention';
+    }
+  }
+
+  if (poolAgents.length === 0 && mode === 'manual' && manualAgentIds.length > 0) {
+    poolAgents = agents.filter((agent) => manualAgentIds.includes(agent.id));
+    source = 'manual';
+  }
+
+  if (poolAgents.length === 0) {
+    poolAgents = agents;
+  }
+
+  const selection = selectBestAgentFromPool(poolAgents, params.userMessage, profile);
+  let selectedAgent = selection.agent;
+  let score = selection.score;
+
+  const isAutoMode = mode === 'auto' && source !== 'mention';
+  if (isAutoMode) {
+    const threshold = getRoutingThreshold(profile);
+    if (!selectedAgent || score < threshold) {
+      selectedAgent = null;
+      score = 0;
+    }
+  } else if (!selectedAgent && poolAgents.length > 0) {
+    selectedAgent = poolAgents[0];
+    score = 1;
+  }
+
+  const namespaceId = selectedAgent?.namespaceId
+    ?? params.requestedNamespaceId
+    ?? params.conversation.namespaceId
+    ?? null;
+
+  return {
+    agent: selectedAgent,
+    namespaceId,
+    mode,
+    source,
+    score,
+    profile,
+    commandResponse,
+    isCommandOnly: command.isCommandOnly,
+  };
+}
+
 function buildInternalServiceHeaders(params: { userId: string; tenantId: string; role: Role; customRoleId?: string | null }): Record<string, string> {
   const internal = generateInternalAuthHeaders({
     userId: params.userId,
@@ -5235,9 +5607,12 @@ function parseTradingDataSourcesFromText(text: string): {
   };
 }
 
+const TRADING_COMMAND_TIMEOUT_MS = 90000;
+const TRADING_POSITION_LOOKUP_TIMEOUT_MS = 20000;
+
 function resolveTradingCommandTimeoutMs(commandType: TradingCommandType): number {
   if (commandType === 'analysis' || commandType === 'generate_signal') {
-    return 30000;
+    return TRADING_COMMAND_TIMEOUT_MS;
   }
   return CROSS_SERVICE_TIMEOUT;
 }
@@ -5561,7 +5936,7 @@ async function executeTradingCommand(
               const positionsResponse = await fetch(positionsUrl, {
                 method: 'GET',
                 headers,
-                signal: AbortSignal.timeout(10000), // 10s timeout para consulta
+                signal: AbortSignal.timeout(TRADING_POSITION_LOOKUP_TIMEOUT_MS),
               });
               
               if (positionsResponse.ok) {
@@ -7151,6 +7526,52 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       return res.status(404).json({ error: 'Conversa não encontrada' });
     }
 
+    const conversationState = await getOrCreateConversationState(id);
+    const agenticSettings = await getOrCreateAgenticSettings(tenantId);
+    const agenticDetectors = normalizeAgenticDetectors(agenticSettings.detectors);
+    const routingDecision = await resolveAgentRoutingForMessage({
+      tenantId,
+      conversationId: id,
+      userMessage: body.conteudo,
+      conversation,
+      conversationState,
+      agenticDetectors,
+    });
+
+    if (routingDecision.error) {
+      return res.status(400).json({ error: routingDecision.error });
+    }
+
+    const activeAgent = routingDecision.agent;
+    const activeAgentId = activeAgent?.id ?? conversation.agentId ?? undefined;
+    const activeNamespaceId = routingDecision.namespaceId ?? conversation.namespaceId ?? null;
+    const shouldUpdateConversation = Boolean(
+      (activeAgentId && activeAgentId !== conversation.agentId)
+      || (activeNamespaceId && activeNamespaceId !== conversation.namespaceId)
+      || routingDecision.source !== 'none'
+    );
+
+    if (shouldUpdateConversation) {
+      const updatedMetadata = mergeConversationMetadata(conversation.metadata, {
+        routing: {
+          mode: routingDecision.mode,
+          source: routingDecision.source,
+          score: routingDecision.score,
+          profile: routingDecision.profile,
+          selectedAgentId: activeAgentId ?? null,
+          updatedAt: new Date().toISOString(),
+        },
+      });
+      await db.update(schema.conversations)
+        .set({
+          agentId: activeAgentId ?? conversation.agentId ?? null,
+          namespaceId: activeNamespaceId ?? conversation.namespaceId ?? null,
+          metadata: updatedMetadata,
+          atualizadoEm: new Date(),
+        })
+        .where(eq(schema.conversations.id, id));
+    }
+
     const [userMessage] = await db.insert(schema.messages).values({
       conversationId: id,
       userId,
@@ -7159,7 +7580,16 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       isFromUser: true,
     }).returning();
 
-    const agent = conversation.agent as AgentConfig | null;
+    const agentConfig: AgentConfig | null = activeAgent
+      ? {
+          instrucoes: activeAgent.instrucoes,
+          personalidade: activeAgent.personalidade,
+          modeloBase: activeAgent.modeloBase,
+          temperaturaModelo: activeAgent.temperaturaModelo,
+          maxTokens: activeAgent.maxTokens,
+          namespaceId: activeAgent.namespaceId,
+        }
+      : (conversation.agent as AgentConfig | null);
     const assistantSettings = await getAssistantSettingsForTenant(req.tenantId);
     const userProfile = await db.query.users.findFirst({
       where: eq(schema.users.id, userId),
@@ -7194,18 +7624,59 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       conversationCreated: false,
     });
 
-    let systemPrompt = buildSystemPrompt(agent, assistantSettings, body.conteudo, userLocaleContext);
+    let systemPrompt = buildSystemPrompt(agentConfig, assistantSettings, body.conteudo, userLocaleContext);
     systemPrompt = appendUserNamePolicy(systemPrompt, nameContext, nameUsageContext);
     systemPrompt = appendNameConfirmationInstruction(systemPrompt, nameContext);
     if (nameContext.shouldAskConfirmation) {
       await markNamePromptPending(userId, tenantId, nameContext);
     }
 
+    if (routingDecision.commandResponse && routingDecision.isCommandOnly) {
+      const responseContent = routingDecision.commandResponse;
+      const [assistantMessage] = await db.insert(schema.messages).values({
+        conversationId: id,
+        agentId: activeAgentId,
+        conteudo: responseContent,
+        tipo: 'text',
+        isFromUser: false,
+      }).returning();
+
+      await db.update(schema.conversations)
+        .set({ 
+          totalMensagens: (conversation.totalMensagens || 0) + 2,
+          ultimaMensagemEm: new Date(),
+          atualizadoEm: new Date(),
+        })
+        .where(eq(schema.conversations.id, id));
+
+      const agentRecord = activeAgent
+        ? {
+            id: activeAgent.id,
+            nome: activeAgent.nome,
+            avatar: activeAgent.avatar,
+            slug: activeAgent.slug,
+          }
+        : conversation.agent
+          ? {
+              id: conversation.agent.id,
+              nome: conversation.agent.nome,
+              avatar: conversation.agent.avatar,
+              slug: conversation.agent.slug,
+            }
+          : null;
+
+      return res.json({
+        userMessage,
+        assistantMessage: { ...assistantMessage, agent: agentRecord },
+        ragSources: [],
+      });
+    }
+
     const ragStartTime = Date.now();
     const ragParams = getAdaptiveRagParams(body.conteudo, previousMessages.length);
     const ragResult = await buscarContextoRAG(
       body.conteudo,
-      conversation.namespaceId || undefined,
+      activeNamespaceId || undefined,
       ragParams.limit,
       ragParams.threshold,
       { userId, tenantId, role: userRole }
@@ -7251,7 +7722,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
     // BUG FIX 02/01/2026: Extrair configuração LLM do agente para uso nas chamadas
     const syncProfile = detectContextProfile(body.conteudo);
     const llmConfig = applyDynamicTokenBudget(
-      getAgentLLMConfig(agent),
+      getAgentLLMConfig(agentConfig),
       llmMessages,
       { conversationId: id, source: 'sync', profile: syncProfile }
     );
@@ -7269,7 +7740,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
     const tokensUsed = calculateTokensUsed({ promptMessages: llmMessages, responseText: response as string });
     const [assistantMessage] = await db.insert(schema.messages).values({
       conversationId: id,
-      agentId: conversation.agentId,
+      agentId: activeAgentId,
       conteudo: response as string,
       tipo: 'text',
       isFromUser: false,
@@ -7297,20 +7768,20 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
 
     if (shouldAutoCollectTraining({
       profile: syncProfile,
-      namespaceId: conversation.namespaceId || conversation.agent?.namespaceId,
+      namespaceId: activeNamespaceId || conversation.agent?.namespaceId,
       userMessage: body.conteudo,
       assistantResponse: response as string,
     })) {
       void collectTrainingSample({
         tenantId,
-        namespaceId: (conversation.namespaceId || conversation.agent?.namespaceId) as string,
+        namespaceId: (activeNamespaceId || conversation.agent?.namespaceId) as string,
         conversationId: id,
         source: 'chat-auto',
         sourceType: 'chat',
         sourceId: id,
         sourceMetadata: {
           mode: 'auto',
-          agentId: conversation.agentId ?? null,
+          agentId: activeAgentId ?? null,
         },
         messages: [
           { role: 'user', content: body.conteudo },
@@ -7340,14 +7811,21 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
         profileImageUrl: true,
       },
     });
-    const agentRecord = conversation.agent
+    const agentRecord = activeAgent
       ? {
-        id: conversation.agent.id,
-        nome: conversation.agent.nome,
-        avatar: conversation.agent.avatar,
-        slug: conversation.agent.slug,
-      }
-      : null;
+          id: activeAgent.id,
+          nome: activeAgent.nome,
+          avatar: activeAgent.avatar,
+          slug: activeAgent.slug,
+        }
+      : conversation.agent
+        ? {
+            id: conversation.agent.id,
+            nome: conversation.agent.nome,
+            avatar: conversation.agent.avatar,
+            slug: conversation.agent.slug,
+          }
+        : null;
 
     res.json({
       userMessage: { ...userMessage, user: userRecord },
@@ -7476,6 +7954,120 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       conversation = createdWithAgent ?? created;
       conversationId = created.id;
       conversationCreated = true;
+    }
+
+    const conversationState = await getOrCreateConversationState(conversationId);
+    const routingDecision = await resolveAgentRoutingForMessage({
+      tenantId,
+      conversationId,
+      userMessage: userMessageContent,
+      conversation,
+      conversationState,
+      agenticDetectors,
+      requestedNamespaceId: namespaceId ?? null,
+    });
+
+    if (routingDecision.error) {
+      res.write(`data: ${JSON.stringify({ error: routingDecision.error })}\n\n`);
+      res.write('data: [DONE]\n\n');
+      res.end();
+      return;
+    }
+
+    const activeAgent = routingDecision.agent;
+    const activeAgentId = activeAgent?.id ?? conversation?.agentId ?? undefined;
+    const activeNamespaceId = routingDecision.namespaceId ?? conversation?.namespaceId ?? null;
+    const shouldUpdateConversation = Boolean(
+      (activeAgentId && activeAgentId !== conversation?.agentId)
+      || (activeNamespaceId && activeNamespaceId !== conversation?.namespaceId)
+      || routingDecision.source !== 'none'
+    );
+
+    if (shouldUpdateConversation && conversationId) {
+      const updatedMetadata = mergeConversationMetadata(conversation?.metadata, {
+        routing: {
+          mode: routingDecision.mode,
+          source: routingDecision.source,
+          score: routingDecision.score,
+          profile: routingDecision.profile,
+          selectedAgentId: activeAgentId ?? null,
+          updatedAt: new Date().toISOString(),
+        },
+      });
+      await db.update(schema.conversations)
+        .set({
+          agentId: activeAgentId ?? conversation?.agentId ?? null,
+          namespaceId: activeNamespaceId ?? conversation?.namespaceId ?? null,
+          metadata: updatedMetadata,
+          atualizadoEm: new Date(),
+        })
+        .where(eq(schema.conversations.id, conversationId));
+    }
+
+    if (conversation) {
+      if (activeAgentId) {
+        conversation.agentId = activeAgentId;
+      }
+      if (activeNamespaceId) {
+        conversation.namespaceId = activeNamespaceId;
+      }
+    }
+
+    const agentPayload = activeAgent
+      ? {
+          id: activeAgent.id,
+          nome: activeAgent.nome,
+          avatar: activeAgent.avatar,
+          slug: activeAgent.slug,
+        }
+      : conversation?.agent
+        ? {
+            id: conversation.agent.id,
+            nome: conversation.agent.nome,
+            avatar: conversation.agent.avatar,
+            slug: conversation.agent.slug,
+          }
+        : null;
+
+    const agentConfigForPrompt: AgentConfig | null = activeAgent
+      ? {
+          instrucoes: activeAgent.instrucoes,
+          personalidade: activeAgent.personalidade,
+          modeloBase: activeAgent.modeloBase,
+          temperaturaModelo: activeAgent.temperaturaModelo,
+          maxTokens: activeAgent.maxTokens,
+          namespaceId: activeAgent.namespaceId,
+        }
+      : (conversation?.agent as AgentConfig | null);
+
+    if (agentPayload) {
+      res.write(`data: ${JSON.stringify({ type: 'agent_route', agent: agentPayload, mode: routingDecision.mode, source: routingDecision.source })}\n\n`);
+    }
+
+    if (routingDecision.commandResponse && routingDecision.isCommandOnly) {
+      const responseContent = routingDecision.commandResponse;
+      const [assistantMessage] = await db.insert(schema.messages).values({
+        conversationId,
+        agentId: activeAgentId,
+        conteudo: responseContent,
+        tipo: 'text',
+        isFromUser: false,
+        anexos: [],
+      }).returning();
+
+      await db.update(schema.conversations)
+        .set({
+          totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+          ultimaMensagemEm: new Date(),
+          atualizadoEm: new Date(),
+        })
+        .where(eq(schema.conversations.id, conversationId));
+
+      res.write(`data: ${JSON.stringify({ content: responseContent })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'message_saved', messageId: assistantMessage?.id })}\n\n`);
+      res.write('data: [DONE]\n\n');
+      res.end();
+      return;
     }
 
     const preparedMediaAttachments = hasMediaAttachments
@@ -7770,7 +8362,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         attachments: updatedAttachments,
       })}\n\n`);
 
-      const agent = conversation?.agent as AgentConfig | null;
+      const agent: AgentConfig | null = agentConfigForPrompt;
       const assistantSettings = await getAssistantSettingsForTenant(tenantId);
       let systemPrompt = buildSystemPrompt(agent, assistantSettings, userMessageContent, userLocaleContext);
       systemPrompt = appendUserNamePolicy(systemPrompt, nameContext, nameUsageContext);
@@ -7803,7 +8395,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         }
       }
 
-      const namespaceIdForMedia = namespaceId || conversation?.namespaceId || conversation?.agent?.namespaceId;
+      const namespaceIdForMedia = activeNamespaceId || conversation?.agent?.namespaceId || namespaceId;
       const ragQuery = visionSummaries.length > 0
         ? `${visionSummaries.join('\n\n')}\n\nPergunta do usuário:\n${userContent}`
         : userContent;
@@ -10507,7 +11099,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         return;
       }
 
-      const agent = conversation?.agent ?? null;
+      const agent = agentConfigForPrompt;
       const ragParams = getAdaptiveRagParams(userMessageContent, previousMessages.length);
       const explicitDeepWebRequest = isExplicitDeepWebRequest(userMessageContent, agenticDetectors);
       const explicitWebRequest = isExplicitWebRequest(userMessageContent, agenticDetectors) || explicitDeepWebRequest;
@@ -10526,12 +11118,12 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             payload: {
               limit: ragParams.limit,
               threshold: ragParams.threshold,
-              namespaceId: conversation?.namespaceId || namespaceId,
+              namespaceId: activeNamespaceId || namespaceId,
             },
           });
           return buscarContextoRAG(
             userMessageContent,
-            conversation?.namespaceId || namespaceId,
+            activeNamespaceId || namespaceId,
             ragParams.limit,
             ragParams.threshold,
             { userId, tenantId, role: req.user?.role as Role }
@@ -10695,7 +11287,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         });
         const agenticResult = await buscarContextoAgentic({
           query: userMessageContent,
-          namespaceId: conversation?.namespaceId || namespaceId,
+          namespaceId: activeNamespaceId || namespaceId,
           forceMode: explicitWebRequest || explicitDeepWebRequest ? 'web' : undefined,
           webMode: explicitDeepWebRequest ? 'deepweb' : (classificationWebMode === 'deepweb' ? 'deepweb' : undefined),
           limit: ragParams.limit,
@@ -11821,6 +12413,9 @@ wss.on('connection', (ws, req) => {
         
         // Usar tenantId derivado da conversa (SEMPRE da fonte confiável)
         const safeTenantId = conversationTenantId;
+
+        const agenticSettings = await getOrCreateAgenticSettings(safeTenantId);
+        const agenticDetectors = normalizeAgenticDetectors(agenticSettings.detectors);
         
         // Verificar estado da conversa ANTES de inserir mensagem
         const conversationState = await getOrCreateConversationState(conversationId);
@@ -11944,6 +12539,123 @@ wss.on('connection', (ws, req) => {
           
           return; // CRÍTICO: Parar aqui - não processar com LLM
         }
+
+        const routingDecision = await resolveAgentRoutingForMessage({
+          tenantId: safeTenantId,
+          conversationId,
+          userMessage: messageContent,
+          conversation,
+          conversationState,
+          agenticDetectors,
+          requestedNamespaceId: message.namespaceId ?? null,
+        });
+
+        if (routingDecision.error) {
+          ws.send(JSON.stringify({ type: 'error', error: routingDecision.error }));
+          return;
+        }
+
+        const activeAgent = routingDecision.agent;
+        const activeAgentId = activeAgent?.id ?? conversation?.agentId ?? undefined;
+        const activeNamespaceId = routingDecision.namespaceId ?? conversation?.namespaceId ?? null;
+        const shouldUpdateConversation = Boolean(
+          (activeAgentId && activeAgentId !== conversation?.agentId)
+          || (activeNamespaceId && activeNamespaceId !== conversation?.namespaceId)
+          || routingDecision.source !== 'none'
+        );
+
+        if (shouldUpdateConversation && conversationId) {
+          const updatedMetadata = mergeConversationMetadata(conversation?.metadata, {
+            routing: {
+              mode: routingDecision.mode,
+              source: routingDecision.source,
+              score: routingDecision.score,
+              profile: routingDecision.profile,
+              selectedAgentId: activeAgentId ?? null,
+              updatedAt: new Date().toISOString(),
+            },
+          });
+          await db.update(schema.conversations)
+            .set({
+              agentId: activeAgentId ?? conversation?.agentId ?? null,
+              namespaceId: activeNamespaceId ?? conversation?.namespaceId ?? null,
+              metadata: updatedMetadata,
+              atualizadoEm: new Date(),
+            })
+            .where(eq(schema.conversations.id, conversationId));
+        }
+
+        if (conversation) {
+          if (activeAgentId) {
+            conversation.agentId = activeAgentId;
+          }
+          if (activeNamespaceId) {
+            conversation.namespaceId = activeNamespaceId;
+          }
+        }
+
+        const agentPayload = activeAgent
+          ? {
+              id: activeAgent.id,
+              nome: activeAgent.nome,
+              avatar: activeAgent.avatar,
+              slug: activeAgent.slug,
+            }
+          : conversation?.agent
+            ? {
+                id: conversation.agent.id,
+                nome: conversation.agent.nome,
+                avatar: conversation.agent.avatar,
+                slug: conversation.agent.slug,
+              }
+            : null;
+
+        if (agentPayload) {
+          ws.send(JSON.stringify({ type: 'agent_route', agent: agentPayload, mode: routingDecision.mode, source: routingDecision.source }));
+        }
+
+        const enrichAssistantMessage = <T extends { [key: string]: unknown }>(messageValue: T): T => {
+          if (!agentPayload) return messageValue;
+          return { ...messageValue, agent: agentPayload } as T;
+        };
+
+        const agentConfigForPrompt: AgentConfig | null = activeAgent
+          ? {
+              instrucoes: activeAgent.instrucoes,
+              personalidade: activeAgent.personalidade,
+              modeloBase: activeAgent.modeloBase,
+              temperaturaModelo: activeAgent.temperaturaModelo,
+              maxTokens: activeAgent.maxTokens,
+              namespaceId: activeAgent.namespaceId,
+            }
+          : (conversation?.agent as AgentConfig | null);
+
+        if (routingDecision.commandResponse && routingDecision.isCommandOnly) {
+          const responseContent = routingDecision.commandResponse;
+          const [assistantMessage] = await db.insert(schema.messages).values({
+            conversationId,
+            agentId: activeAgentId,
+            conteudo: responseContent,
+            tipo: 'text',
+            isFromUser: false,
+            anexos: [],
+          }).returning();
+
+          if (!assistantMessage) {
+            throw new Error('Falha ao salvar resposta de roteamento de agente');
+          }
+
+          await db.update(schema.conversations)
+            .set({
+              totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
+              ultimaMensagemEm: new Date(),
+              atualizadoEm: new Date(),
+            })
+            .where(eq(schema.conversations.id, conversationId));
+
+          ws.send(JSON.stringify({ type: 'message', data: enrichAssistantMessage(assistantMessage) }));
+          return;
+        }
         
         // ========================================================================
         // FASE 2: FLUXO NORMAL (Bot responde via LLM)
@@ -11971,8 +12683,6 @@ wss.on('connection', (ws, req) => {
 
         ws.send(JSON.stringify({ type: 'message', data: userMsg }));
 
-        const agenticSettings = await getOrCreateAgenticSettings(safeTenantId);
-        const agenticDetectors = normalizeAgenticDetectors(agenticSettings.detectors);
         const imageSearchDetection = detectImageSearchRequest(messageContent, agenticDetectors);
         if (imageSearchDetection.isImageSearch && imageSearchDetection.query) {
           if (!agenticSettings.webEnabled) {
@@ -12035,7 +12745,7 @@ wss.on('connection', (ws, req) => {
                 assistantResponse: responseContent,
               });
 
-              ws.send(JSON.stringify({ type: 'message', data: assistantMessage }));
+              ws.send(JSON.stringify({ type: 'message', data: enrichAssistantMessage(assistantMessage) }));
               return;
             }
 
@@ -12124,7 +12834,7 @@ wss.on('connection', (ws, req) => {
                 assistantResponse: fallbackContent,
               });
 
-              ws.send(JSON.stringify({ type: 'message', data: { ...assistantMessage, conteudo: fallbackContent } }));
+              ws.send(JSON.stringify({ type: 'message', data: enrichAssistantMessage({ ...assistantMessage, conteudo: fallbackContent }) }));
               return;
             }
 
@@ -12146,7 +12856,7 @@ wss.on('connection', (ws, req) => {
               assistantResponse: responseContent,
             });
 
-            ws.send(JSON.stringify({ type: 'message', data: { ...assistantMessage, anexos: attachments } }));
+            ws.send(JSON.stringify({ type: 'message', data: enrichAssistantMessage({ ...assistantMessage, anexos: attachments }) }));
             return;
           } catch (error) {
             logger.error({ error }, 'Falha ao buscar imagens na web (websocket)');
@@ -12370,14 +13080,14 @@ wss.on('connection', (ws, req) => {
         // Se não tem resposta do cache (não é saudação), continuar para LLM
         // Métricas já foram registradas no bloco acima quando hasResponse=true
 
-        const agent = conversation?.agent as AgentConfig | null;
+        const agent = agentConfigForPrompt;
         const assistantSettings = await getAssistantSettingsForTenant(safeTenantId);
         const userLocaleContext = await getUserLocaleContext(userId, safeTenantId);
         let systemPrompt = buildSystemPrompt(agent, assistantSettings, messageContent, userLocaleContext);
         systemPrompt = appendUserNamePolicy(systemPrompt, nameContext);
         systemPrompt = appendNameConfirmationInstruction(systemPrompt, nameContext);
 
-        const namespaceId = message.namespaceId || conversation?.namespaceId || undefined;
+        const namespaceId = activeNamespaceId || message.namespaceId || undefined;
         // CORREÇÃO 17/12/2025: Usar messageContent (com fallback) ao invés de message.content (potencialmente undefined)
         const ragParams = getAdaptiveRagParams(messageContent, 0);
         const ragWsStart = Date.now();
@@ -14874,6 +15584,10 @@ const agenticDetectorsSchema = z.object({
   webImageSearch: detectorGroupSchema,
   imageGeneration: detectorGroupSchema,
   trading: detectorGroupSchema,
+  agentRouting: z.object({
+    manualKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+    autoKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+  }).optional().default(DEFAULT_AGENTIC_DETECTORS.agentRouting),
   grafana: z.object({
     baseKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
     listDashboardsKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),

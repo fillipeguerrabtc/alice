@@ -5720,14 +5720,96 @@ function stripJsonCodeFence(content: string): string {
   return trimmed;
 }
 
-function parseLlmSignalResponse(rawResponse: string) {
-  const cleaned = stripJsonCodeFence(rawResponse);
-  const parsed = JSON.parse(cleaned) as unknown;
-  const result = TRADING_LLM_SIGNAL_SCHEMA.safeParse(parsed);
-  if (!result.success) {
-    throw new Error(`Resposta LLM inválida: ${result.error.message}`);
+function extractJsonObjectCandidate(content: string): string {
+  const cleaned = stripJsonCodeFence(content).trim();
+  const firstBrace = cleaned.indexOf('{');
+  const lastBrace = cleaned.lastIndexOf('}');
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    return cleaned.slice(firstBrace, lastBrace + 1).trim();
   }
-  return result.data;
+  return cleaned;
+}
+
+function repairLlmJsonContent(content: string): { json: string; repaired: boolean } {
+  let repaired = false;
+  let inString = false;
+  let escaping = false;
+  let output = '';
+
+  for (let i = 0; i < content.length; i += 1) {
+    const char = content[i];
+    if (escaping) {
+      output += char;
+      escaping = false;
+      continue;
+    }
+    if (char === '\\') {
+      output += char;
+      if (inString) escaping = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      output += char;
+      continue;
+    }
+    if (inString) {
+      if (char === '\n' || char === '\r') {
+        output += '\\n';
+        repaired = true;
+        continue;
+      }
+      if (char === '\t') {
+        output += '\\t';
+        repaired = true;
+        continue;
+      }
+      const code = char.charCodeAt(0);
+      if (code < 0x20) {
+        output += `\\u${code.toString(16).padStart(4, '0')}`;
+        repaired = true;
+        continue;
+      }
+    }
+    output += char;
+  }
+
+  const withoutTrailingCommas = output.replace(/,\s*([}\]])/g, '$1');
+  if (withoutTrailingCommas !== output) {
+    repaired = true;
+  }
+
+  return { json: withoutTrailingCommas, repaired };
+}
+
+function parseLlmSignalResponse(rawResponse: string) {
+  const candidate = extractJsonObjectCandidate(rawResponse);
+  try {
+    const parsed = JSON.parse(candidate) as unknown;
+    const result = TRADING_LLM_SIGNAL_SCHEMA.safeParse(parsed);
+    if (!result.success) {
+      throw new Error(`Resposta LLM inválida: ${result.error.message}`);
+    }
+    return result.data;
+  } catch (error) {
+    const repair = repairLlmJsonContent(candidate);
+    if (repair.repaired) {
+      try {
+        logger.warn({ error: error instanceof Error ? error.message : error }, 'Resposta LLM inválida; aplicando reparo seguro do JSON.');
+        const parsed = JSON.parse(repair.json) as unknown;
+        const result = TRADING_LLM_SIGNAL_SCHEMA.safeParse(parsed);
+        if (!result.success) {
+          throw new Error(`Resposta LLM inválida após reparo: ${result.error.message}`);
+        }
+        return result.data;
+      } catch (repairError) {
+        const message = repairError instanceof Error ? repairError.message : 'Erro desconhecido';
+        throw new Error(`Resposta LLM inválida após reparo: ${message}`);
+      }
+    }
+    const message = error instanceof Error ? error.message : 'Erro desconhecido';
+    throw new Error(`Resposta LLM inválida: ${message}`);
+  }
 }
 
 function formatDurationLabel(minutes: number): string {
@@ -6076,6 +6158,10 @@ function buildTradingSignalSystemPrompt(params: {
     `MarketType: ${params.marketType}`,
     params.marginMode ? `MarginMode: ${params.marginMode}` : null,
     'Responda SOMENTE com JSON válido (sem texto extra).',
+    'Use aspas duplas para TODAS as chaves e strings.',
+    'Não use vírgulas finais (trailing commas).',
+    'Evite quebras de linha dentro de strings: use \\n quando necessário.',
+    'Retorne o JSON em UMA única linha, sem markdown.',
     'Schema:',
     '{',
     '  "signalType": "entry_long|entry_short|exit|adjust_sl|adjust_tp|hold|neutral",',
