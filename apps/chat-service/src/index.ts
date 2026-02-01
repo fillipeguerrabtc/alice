@@ -12690,6 +12690,8 @@ wss.on('connection', (ws, req) => {
             throw new Error('Falha ao salvar comando de roteamento (ws)');
           }
 
+          const userMsg = insertedUserMessages[0];
+
           const [assistantMessage] = await db.insert(schema.messages).values({
             conversationId,
             agentId: activeAgentId,
@@ -12711,6 +12713,7 @@ wss.on('connection', (ws, req) => {
             })
             .where(eq(schema.conversations.id, conversationId));
 
+          ws.send(JSON.stringify({ type: 'message', data: userMsg }));
           ws.send(JSON.stringify({ type: 'message', data: enrichAssistantMessage(assistantMessage) }));
           return;
         }

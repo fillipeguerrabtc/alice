@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 01 de Fevereiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.60 - Erros de validação LLM sem duplicação
+**Versão:** 10.61 - Roteamento WS envia mensagem do usuário
 
 ---
 
@@ -35,6 +35,7 @@
 - Roteamento agentic: normalização de comandos (acentos/@) e detecção consistente no WebSocket.
 - Roteamento stream: validação defensiva do insert do assistente evita messageId indefinido.
 - LLM Trading: erros de validação sem duplicação de prefixo (mensagem mais limpa).
+- Roteamento WS: comando manual aparece no chat sem refresh.
 - Notícias Trading: configuração de termos/engines do SearXNG persistida em perfil e editável na UI (Sinais + Análise).
 - RAG Web Search: suporte a engines, categorias, idioma e SafeSearch por requisição (integração SearXNG ajustável).
 - Presets de notícias: presets principais salvos no banco e aplicáveis no perfil de Sinais/Análise.
@@ -251,6 +252,7 @@ Retenção Arquivo:   30 dias
 - Agentic Routing: termos manual/auto configuráveis no Modo Agentic (`detectors.agentRouting.*`).
 - Agentic Routing (stream): validação do insert do assistente antes de atualizar contadores.
 - LLM Trading: mensagem de erro de schema sem duplicação de prefixo.
+- Agentic Routing (WS): envio da mensagem do usuário no fluxo command-only.
 - Users Admin: modal de criação/edição com altura fixa e scroll interno garantido.
 - Galeria de Imagens: download usa extensão correta conforme MIME/URL da imagem.
 - UI: modais com conteúdo já rolável agora usam um único scroll interno (sem conflito entre áreas).
