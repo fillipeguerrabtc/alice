@@ -459,8 +459,6 @@ MINIO_MC_VERSION=latest
 
 ## Conexão SSH ao Servidor
 ```bash
-# Usando alias (recomendado - configurar em ~/.ssh/config)
-ssh alice-hetzner
 
 # Chaves SSH locais (Windows)
 # Caminho: C:\Users\filli\.ssh (ex: alice-deploy)
