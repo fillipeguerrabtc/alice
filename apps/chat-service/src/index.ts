@@ -4064,6 +4064,25 @@ function normalizeAgentToken(value: string): string {
     .trim();
 }
 
+function normalizeRoutingKeyword(value: string): string | null {
+  const normalized = normalizeAgentToken(value);
+  return normalized.length > 0 ? normalized : null;
+}
+
+function normalizeRoutingKeywords(routingDetectors: AgenticDetectors['agentRouting']) {
+  const autoKeywords = routingDetectors.autoKeywords
+    .map(normalizeRoutingKeyword)
+    .filter((keyword): keyword is string => Boolean(keyword));
+  const manualKeywords = routingDetectors.manualKeywords
+    .map(normalizeRoutingKeyword)
+    .filter((keyword): keyword is string => Boolean(keyword));
+  return {
+    autoKeywords,
+    manualKeywords,
+    allKeywords: [...autoKeywords, ...manualKeywords],
+  };
+}
+
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -4081,10 +4100,12 @@ function isRoutingOnlyCommand(message: string, routingDetectors: AgenticDetector
   const withoutMentionsRaw = message.replace(AGENT_MENTION_REGEX, ' ');
   const normalized = normalizeAgentToken(withoutMentionsRaw);
   if (!normalized) return true;
+  const { allKeywords } = normalizeRoutingKeywords(routingDetectors);
+  if (allKeywords.length === 0) {
+    return false;
+  }
   const keywordRegex = new RegExp(
-    [...routingDetectors.manualKeywords, ...routingDetectors.autoKeywords]
-      .map((keyword) => escapeRegex(normalizeAgentToken(keyword)))
-      .join('|'),
+    allKeywords.map((keyword) => escapeRegex(keyword)).join('|'),
     'gi'
   );
   const cleaned = normalized
@@ -4100,11 +4121,12 @@ function parseAgentRoutingCommand(
 ): AgentRoutingCommand {
   const normalized = normalizeAgentToken(message);
   const tokens = extractAgentMentions(message);
-  const hasAutoKeyword = routingDetectors.autoKeywords.some((keyword) => normalized.includes(normalizeAgentToken(keyword)));
+  const { autoKeywords, manualKeywords } = normalizeRoutingKeywords(routingDetectors);
+  const hasAutoKeyword = autoKeywords.some((keyword) => normalized.includes(keyword));
   if (hasAutoKeyword) {
     return { action: 'auto', tokens, isCommandOnly: isRoutingOnlyCommand(message, routingDetectors) };
   }
-  const hasManualKeyword = routingDetectors.manualKeywords.some((keyword) => normalized.includes(normalizeAgentToken(keyword)));
+  const hasManualKeyword = manualKeywords.some((keyword) => normalized.includes(keyword));
   if (hasManualKeyword) {
     return { action: 'manual', tokens, isCommandOnly: isRoutingOnlyCommand(message, routingDetectors) };
   }
@@ -8046,6 +8068,19 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
 
     if (routingDecision.commandResponse && routingDecision.isCommandOnly) {
       const responseContent = routingDecision.commandResponse;
+      const insertedUserMessages = await db.insert(schema.messages).values({
+        conversationId,
+        userId,
+        conteudo: userMessageContent,
+        tipo: 'text',
+        isFromUser: true,
+      }).returning();
+
+      if (!insertedUserMessages || insertedUserMessages.length === 0 || !insertedUserMessages[0]) {
+        logger.error({ conversationId, userId }, 'Falha ao salvar comando de roteamento (stream) - resultado do banco inválido');
+        throw new Error('Falha ao salvar comando de roteamento (stream)');
+      }
+
       const [assistantMessage] = await db.insert(schema.messages).values({
         conversationId,
         agentId: activeAgentId,
@@ -12632,6 +12667,19 @@ wss.on('connection', (ws, req) => {
 
         if (routingDecision.commandResponse && routingDecision.isCommandOnly) {
           const responseContent = routingDecision.commandResponse;
+          const insertedUserMessages = await db.insert(schema.messages).values({
+            conversationId,
+            userId,
+            conteudo: messageContent,
+            tipo: 'text',
+            isFromUser: true,
+          }).returning();
+
+          if (!insertedUserMessages || insertedUserMessages.length === 0 || !insertedUserMessages[0]) {
+            logger.error({ conversationId, userId }, 'Falha ao salvar comando de roteamento (ws) - resultado do banco inválido');
+            throw new Error('Falha ao salvar comando de roteamento (ws)');
+          }
+
           const [assistantMessage] = await db.insert(schema.messages).values({
             conversationId,
             agentId: activeAgentId,
