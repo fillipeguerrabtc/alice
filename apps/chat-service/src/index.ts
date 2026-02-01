@@ -4138,7 +4138,10 @@ function buildAgentLookup(agents: AgentRoutingRecord[]) {
   const nameMap = new Map<string, AgentRoutingRecord>();
   for (const agent of agents) {
     if (agent.slug) {
-      slugMap.set(normalizeAgentToken(agent.slug), agent);
+      const slugKey = normalizeAgentToken(agent.slug);
+      if (slugKey) {
+        slugMap.set(slugKey, agent);
+      }
     }
     const nameKey = normalizeAgentToken(agent.nome);
     if (nameKey) {
