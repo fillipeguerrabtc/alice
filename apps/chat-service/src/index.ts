@@ -8095,6 +8095,11 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         anexos: [],
       }).returning();
 
+      if (!assistantMessage) {
+        logger.error({ conversationId, userId }, 'Falha ao salvar resposta de roteamento (stream) - resultado do banco inválido');
+        throw new Error('Falha ao salvar resposta de roteamento (stream)');
+      }
+
       await db.update(schema.conversations)
         .set({
           totalMensagens: sql`coalesce(${schema.conversations.totalMensagens}, 0) + 2`,
