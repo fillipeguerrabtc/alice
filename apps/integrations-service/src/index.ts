@@ -5848,6 +5848,9 @@ function parseLlmSignalResponse(rawResponse: string) {
       }
     }
     const message = error instanceof Error ? error.message : 'Erro desconhecido';
+    if (message.startsWith('Resposta LLM inválida:')) {
+      throw new Error(message);
+    }
     throw new Error(`Resposta LLM inválida: ${message}`);
   }
 }
