@@ -39,6 +39,7 @@ import {
   computeSemHash,
   cosineSimilarity,
   resolveAgentLlmModel,
+  RATE_LIMIT_CONFIG,
   // CORREÇÃO PR#107 (10/01/2026): Middleware de sessão HTTP para autenticação
   createSessionAuthMiddleware,
   initializeSessionAuthCache,
@@ -941,6 +942,7 @@ const TRADING_LLM_PROMPT_SAFETY_TOKENS = 128;
 const TRADING_LLM_MESSAGE_OVERHEAD_TOKENS = 8;
 const TRADING_LLM_TOKEN_HEADROOM_TOKENS = 256;
 const TRADING_LLM_CHARS_PER_TOKEN = 2.2;
+const TRADING_LLM_PROMPT_ESTIMATE_MULTIPLIER = 1.25;
 const TRADING_LLM_TOKEN_REGEX_SAFETY_MULTIPLIER = 1.15;
 const TRADING_LLM_TOKEN_REGEX_PATTERN = /[\p{L}\p{N}]+|[^\s\p{L}\p{N}]/gu;
 const TRADING_LLM_MAX_ANALYSIS_BLOCK_CHARS = 1200;
@@ -2081,14 +2083,6 @@ app.use(cors({
   credentials: CORS_ORIGINS.length > 0,
 }));
 
-// SEGURANÇA: Rate limiting multi-tenant (express-rate-limit 2025)
-app.use(createRateLimiter({
-  windowMs: 60 * 1000,
-  max: 60,
-  skipRoutes: ['/api/integrations/health', '/api/integrations/stripe/webhook', '/api/integrations/wise/webhook', '/api/integrations/twilio/webhook'],
-  serviceName: 'integrations-service',
-}));
-
 // REGRA 6: express.raw() DEVE ser registrado ANTES de express.json() global
 // Em Express, app.use() middleware executa na ordem de registro, não na ordem da rota
 // Se express.json() for registrado antes, ele converte body em objeto para TODAS as rotas
@@ -2121,6 +2115,31 @@ app.use(createSessionAuthMiddleware({
     '/api/integrations/wise/webhook',
     '/api/integrations/twilio/webhook',
   ],
+}));
+
+// SEGURANÇA: Rate limiting multi-tenant (express-rate-limit 2025)
+const rateLimitWindowMs = RATE_LIMIT_CONFIG.windowMs;
+const apiRateLimitMax = RATE_LIMIT_CONFIG.limits.api;
+const tradingRateLimitMax = RATE_LIMIT_CONFIG.limits.trading;
+
+// Trading tem polling de alta frequência + WS, precisa limite específico
+app.use('/api/integrations/trading', createRateLimiter({
+  windowMs: rateLimitWindowMs,
+  max: tradingRateLimitMax,
+  serviceName: 'integrations-service',
+}));
+
+app.use(createRateLimiter({
+  windowMs: rateLimitWindowMs,
+  max: apiRateLimitMax,
+  skipRoutes: [
+    '/api/integrations/health',
+    '/api/integrations/stripe/webhook',
+    '/api/integrations/wise/webhook',
+    '/api/integrations/twilio/webhook',
+    '/api/integrations/trading',
+  ],
+  serviceName: 'integrations-service',
 }));
 
 type IntegrationHealthStatus = {
@@ -5876,20 +5895,26 @@ function resolveMaxTokensForPrompt(params: {
   let analysisPrompt = params.analysisPrompt;
   let analysisTokens = estimateTokensFromText(analysisPrompt);
   let promptTokens = baseTokens + analysisTokens;
+  let bufferedPromptTokens = Math.ceil(promptTokens * TRADING_LLM_PROMPT_ESTIMATE_MULTIPLIER);
 
   const maxPromptTokens = TRADING_LLM_MAX_CONTEXT_TOKENS
     - TRADING_LLM_PROMPT_SAFETY_TOKENS
     - TRADING_LLM_MIN_COMPLETION_TOKENS;
+  const maxPromptTokensBuffered = Math.max(
+    0,
+    Math.floor(maxPromptTokens / TRADING_LLM_PROMPT_ESTIMATE_MULTIPLIER)
+  );
 
-  if (promptTokens > maxPromptTokens) {
-    const availableAnalysisTokens = Math.max(0, maxPromptTokens - baseTokens);
+  if (bufferedPromptTokens > maxPromptTokens) {
+    const availableAnalysisTokens = Math.max(0, maxPromptTokensBuffered - baseTokens);
     const targetChars = Math.max(0, availableAnalysisTokens * TRADING_LLM_CHARS_PER_TOKEN);
     analysisPrompt = truncateText(analysisPrompt, targetChars);
     analysisTokens = estimateTokensFromText(analysisPrompt);
     promptTokens = baseTokens + analysisTokens;
+    bufferedPromptTokens = Math.ceil(promptTokens * TRADING_LLM_PROMPT_ESTIMATE_MULTIPLIER);
   }
 
-  const conservativePromptTokens = Math.ceil(promptTokens * 1.2);
+  const conservativePromptTokens = Math.ceil(bufferedPromptTokens * 1.1);
   const conservativeMaxCompletionTokens = Math.max(
     TRADING_LLM_MIN_COMPLETION_TOKENS,
     TRADING_LLM_MAX_CONTEXT_TOKENS
@@ -5900,7 +5925,7 @@ function resolveMaxTokensForPrompt(params: {
   const strictMaxCompletionTokens = Math.max(
     TRADING_LLM_MIN_COMPLETION_TOKENS,
     TRADING_LLM_MAX_CONTEXT_TOKENS
-      - promptTokens
+      - bufferedPromptTokens
       - TRADING_LLM_PROMPT_SAFETY_TOKENS
   );
   const maxCompletionTokens = Math.min(

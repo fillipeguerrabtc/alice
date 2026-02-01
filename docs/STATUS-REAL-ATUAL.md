@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 01 de Fevereiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.64 - Slug de agente vazio ignorado
+**Versão:** 10.65 - Trading estável (rate limit + contexto) e WS alinhado
 
 ---
 
@@ -30,6 +30,9 @@
 - Análise técnica passa a retornar plano determinístico com operação, duração, TP/SL, RR e motivadores no painel.
 - Geração de sinais com LLM usa orçamento seguro de tokens (prompt truncado e max_tokens ajustado ao contexto).
 - Sinais com notícias: estimativa de tokens mais conservadora (regex + densidade) evita overflow de contexto.
+- Trading: rate limit dedicado para alta frequência de polling/WS evita 429 em produção.
+- Trading: budget de prompt com margem conservadora evita erro 400 por contexto > 4096 tokens.
+- Chat/Trading: WebSocket do frontend alinhado com `/ws/chat` (rota correta no chat-service).
 - Sinais IA: parsing robusto de JSON do LLM com reparo seguro e prompt de saída estrito.
 - Roteamento de agentes: gatilhos configuráveis no Modo Agentic (manual/auto) por tenant.
 - Roteamento agentic: normalização de comandos (acentos/@) e detecção consistente no WebSocket.

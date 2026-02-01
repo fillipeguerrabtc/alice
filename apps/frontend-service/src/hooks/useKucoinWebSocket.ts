@@ -206,7 +206,7 @@ export function useKucoinWebSocket(
   const getWsUrl = useCallback(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
-    return `${protocol}//${host}/ws`;
+    return `${protocol}//${host}/ws/chat`;
   }, []);
 
   // Clear reconnect timeout

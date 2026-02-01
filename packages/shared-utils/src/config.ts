@@ -309,6 +309,8 @@ export const RATE_LIMIT_CONFIG = {
     authenticated: 100,
     /** Endpoints de API (chat, RAG) */
     api: 60,
+    /** Endpoints de Trading (alta frequência de polling/WS) */
+    trading: 240,
     /** Endpoints administrativos */
     admin: 30,
     /** Uploads de arquivos */

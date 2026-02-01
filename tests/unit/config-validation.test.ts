@@ -386,6 +386,10 @@ describe('Config - Rate Limiting', () => {
       expect(RATE_LIMIT_CONFIG.limits.api).toBe(60);
     });
 
+    it('deve ter limite para endpoints de Trading', () => {
+      expect(RATE_LIMIT_CONFIG.limits.trading).toBe(240);
+    });
+
     it('deve ter limite para endpoints administrativos', () => {
       expect(RATE_LIMIT_CONFIG.limits.admin).toBe(30);
     });
