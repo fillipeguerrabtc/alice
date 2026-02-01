@@ -940,7 +940,9 @@ const TRADING_LLM_MIN_COMPLETION_TOKENS = 128;
 const TRADING_LLM_PROMPT_SAFETY_TOKENS = 128;
 const TRADING_LLM_MESSAGE_OVERHEAD_TOKENS = 8;
 const TRADING_LLM_TOKEN_HEADROOM_TOKENS = 256;
-const TRADING_LLM_CHARS_PER_TOKEN = 3;
+const TRADING_LLM_CHARS_PER_TOKEN = 2.2;
+const TRADING_LLM_TOKEN_REGEX_SAFETY_MULTIPLIER = 1.15;
+const TRADING_LLM_TOKEN_REGEX_PATTERN = /[\p{L}\p{N}]+|[^\s\p{L}\p{N}]/gu;
 const TRADING_LLM_MAX_ANALYSIS_BLOCK_CHARS = 1200;
 const TRADING_LLM_MAX_NEWS_ITEMS = 5;
 const TRADING_LLM_MAX_TRAINING_SAMPLES = 3;
@@ -949,7 +951,14 @@ const TRADING_LLM_MAX_NEWS_QUERY_CHARS = 200;
 
 function estimateTokensFromText(value: string): number {
   if (!value) return 0;
-  return Math.ceil(value.length / TRADING_LLM_CHARS_PER_TOKEN);
+  const normalized = value.trim();
+  if (!normalized) return 0;
+  const lengthEstimate = Math.ceil(normalized.length / TRADING_LLM_CHARS_PER_TOKEN);
+  const regexMatches = normalized.match(TRADING_LLM_TOKEN_REGEX_PATTERN);
+  const regexEstimate = regexMatches
+    ? Math.ceil(regexMatches.length * TRADING_LLM_TOKEN_REGEX_SAFETY_MULTIPLIER)
+    : 0;
+  return Math.max(lengthEstimate, regexEstimate);
 }
 
 function buildMultiTimeframePrompt(params: {
@@ -5753,18 +5762,29 @@ function resolveMaxTokensForPrompt(params: {
   }
 
   const conservativePromptTokens = Math.ceil(promptTokens * 1.2);
-  const maxCompletionTokens = Math.max(
+  const conservativeMaxCompletionTokens = Math.max(
     TRADING_LLM_MIN_COMPLETION_TOKENS,
     TRADING_LLM_MAX_CONTEXT_TOKENS
       - conservativePromptTokens
       - TRADING_LLM_PROMPT_SAFETY_TOKENS
       - TRADING_LLM_TOKEN_HEADROOM_TOKENS
   );
+  const strictMaxCompletionTokens = Math.max(
+    TRADING_LLM_MIN_COMPLETION_TOKENS,
+    TRADING_LLM_MAX_CONTEXT_TOKENS
+      - promptTokens
+      - TRADING_LLM_PROMPT_SAFETY_TOKENS
+  );
+  const maxCompletionTokens = Math.min(
+    params.requestedMaxTokens,
+    conservativeMaxCompletionTokens,
+    strictMaxCompletionTokens
+  );
 
   return {
     analysisPrompt,
     promptTokens,
-    maxCompletionTokens: Math.min(params.requestedMaxTokens, maxCompletionTokens),
+    maxCompletionTokens,
   };
 }
 

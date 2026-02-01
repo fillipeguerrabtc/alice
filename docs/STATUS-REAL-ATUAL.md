@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 **Autor:** Fillipe Guerra  
-**Data:** 31 de Janeiro de 2026  
+**Data:** 01 de Fevereiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.55 - Correção normalização templates notícias
+**Versão:** 10.56 - Orçamento de tokens conservador para sinais com notícias
 
 ---
 
@@ -29,6 +29,7 @@
 - Sinais IA agora exibem tipo de operação, duração, TP/SL, RR, motivadores e invalidações (resumo executivo no UI).
 - Análise técnica passa a retornar plano determinístico com operação, duração, TP/SL, RR e motivadores no painel.
 - Geração de sinais com LLM usa orçamento seguro de tokens (prompt truncado e max_tokens ajustado ao contexto).
+- Sinais com notícias: estimativa de tokens mais conservadora (regex + densidade) evita overflow de contexto.
 - Notícias Trading: configuração de termos/engines do SearXNG persistida em perfil e editável na UI (Sinais + Análise).
 - RAG Web Search: suporte a engines, categorias, idioma e SafeSearch por requisição (integração SearXNG ajustável).
 - Presets de notícias: presets principais salvos no banco e aplicáveis no perfil de Sinais/Análise.
@@ -240,6 +241,7 @@ Retenção Arquivo:   30 dias
 
 ## Atualizações recentes (resumo)
 
+- Trading Sinais: orçamento de tokens mais conservador para prompts com notícias (evita erro 4096).
 - Users Admin: modal de criação/edição com altura fixa e scroll interno garantido.
 - Galeria de Imagens: download usa extensão correta conforme MIME/URL da imagem.
 - UI: modais com conteúdo já rolável agora usam um único scroll interno (sem conflito entre áreas).
