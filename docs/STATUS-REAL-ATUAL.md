@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 02 de Fevereiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.68 - Chat stream estável + timeouts LLM no proxy
+**Versão:** 10.70 - Presets de notícias editáveis
 
 ---
 
@@ -37,8 +37,11 @@
 - Chat: correção do upgrade WS evita crash por double handleUpgrade.
 - Trading: extração de JSON balanceada evita truncamento por chaves em texto.
 - Trading: logging explícito de notícias confirma uso de SearXNG na análise.
+- Trading: presets de notícias com CRUD (criar, editar e excluir) direto nas abas Análise e Sinais IA.
 - Chat: headers SSE enviados antes de qualquer `res.write` (corrige ERR_HTTP_HEADERS_SENT no modo agentic).
 - Proxy (Caddy): timeouts dedicados para `/api/chat/stream` e `signals/generate` evitam 502 em LLM lento.
+- Trading: notícias usadas exibidas na Análise (consulta + links) quando habilitado.
+- Trading: detalhes do Sinal IA agora exibem notícias usadas na geração quando habilitado.
 - Sinais IA: parsing robusto de JSON do LLM com reparo seguro e prompt de saída estrito.
 - Roteamento de agentes: gatilhos configuráveis no Modo Agentic (manual/auto) por tenant.
 - Roteamento agentic: normalização de comandos (acentos/@) e detecção consistente no WebSocket.

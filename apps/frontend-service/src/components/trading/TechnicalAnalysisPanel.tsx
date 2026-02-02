@@ -48,7 +48,7 @@ import { Switch } from '@/components/ui/switch';
 import { NewsConfigEditor, DEFAULT_TRADING_NEWS_CONFIG, normalizeTradingNewsConfigForm, type TradingNewsConfigForm, type TradingNewsPresetOption } from './NewsConfigEditor';
 
 // NOTA: Tooltip removido - não utilizado neste componente (21/12/2025)
-import { apiRequest } from '@/lib/queryClient';
+import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { TIMEZONE } from '@/lib/i18n';
@@ -459,6 +459,43 @@ export function TechnicalAnalysisPanel({
   });
   const newsPresets = newsPresetsResponse?.data ?? [];
 
+  const createNewsPresetMutation = useMutation({
+    mutationFn: async (payload: { name: string; description?: string | null; config: TradingNewsConfigForm }) => {
+      const response = await apiRequest('POST', '/api/integrations/trading/news-presets', payload);
+      return response.json();
+    },
+    onSuccess: (response) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/news-presets'] });
+      if (response?.data?.id) {
+        setSelectedNewsPresetId(response.data.id);
+      }
+    },
+  });
+
+  const updateNewsPresetMutation = useMutation({
+    mutationFn: async (payload: { id: string; name: string; description?: string | null; config: TradingNewsConfigForm }) => {
+      const { id, ...body } = payload;
+      const response = await apiRequest('PUT', `/api/integrations/trading/news-presets/${id}`, body);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/news-presets'] });
+    },
+  });
+
+  const deleteNewsPresetMutation = useMutation({
+    mutationFn: async (presetId: string) => {
+      const response = await apiRequest('DELETE', `/api/integrations/trading/news-presets/${presetId}`);
+      return response.json();
+    },
+    onSuccess: (_response, presetId) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/news-presets'] });
+      if (selectedNewsPresetId === presetId) {
+        setSelectedNewsPresetId(null);
+      }
+    },
+  });
+
   useEffect(() => {
     if (profileResponse?.data) {
       setProfileForm({
@@ -810,6 +847,9 @@ export function TechnicalAnalysisPanel({
                 newsConfig: normalizeTradingNewsConfigForm(preset.config),
               }));
             }}
+            onCreatePreset={(payload) => createNewsPresetMutation.mutate(payload)}
+            onUpdatePreset={(payload) => updateNewsPresetMutation.mutate(payload)}
+            onDeletePreset={(presetId) => deleteNewsPresetMutation.mutate(presetId)}
           />
 
           <div className="flex flex-wrap gap-2">
@@ -1156,11 +1196,27 @@ export function TechnicalAnalysisPanel({
                   {analysisResponse.sources.news && (
                     <div>
                       <p className="font-medium text-foreground">{t('trading.analysis.sources.newsTitle')}</p>
-                      <ul className="list-disc pl-5">
-                        {analysisResponse.sources.news.results.map((item) => (
-                          <li key={item.url}>{item.title}</li>
-                        ))}
-                      </ul>
+                      <p className="text-sm text-muted-foreground">
+                        {t('trading.analysis.sources.newsQuery')}: {analysisResponse.sources.news.query}
+                      </p>
+                      {(analysisResponse.sources.news.results?.length ?? 0) > 0 ? (
+                        <ul className="list-disc pl-5">
+                          {analysisResponse.sources.news.results.map((item) => (
+                            <li key={item.url}>
+                              <a
+                                href={item.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-foreground hover:underline"
+                              >
+                                {item.title}
+                              </a>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">{t('trading.analysis.sources.newsEmpty')}</p>
+                      )}
                     </div>
                   )}
                   {analysisResponse.sources.trainingData && (

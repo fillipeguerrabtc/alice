@@ -54,7 +54,7 @@ import { integrationsServicePaths, integrationsServiceSchemas } from './openapi-
 import { loadConfig, integrationsServiceConfigSchema } from '@alice/config';
 import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, getPool } from '@alice/database';
 import { eq, desc, asc, sql, and, inArray, not, isNull, lte } from '@alice/database';
-import { tradingIntervalEnum, TradingOperationTypeSchema } from '@alice/shared';
+import { tradingIntervalEnum, TradingOperationTypeSchema, TradingProfileNewsConfigSchema } from '@alice/shared';
 import type { TradingSignalMetadata, TradingIndicatorKey, TradingProfileConsensus, TradingProfileDataSources, TradingProfileModelConfig, TradingProfileNewsConfig, TradingCandleData, TradingOperationType, TradingRiskConfig, TradingOrderMetadata } from '@alice/shared';
 import { z } from 'zod';
 import { wiseService } from './wiseService.js';
@@ -7347,25 +7347,28 @@ async function generateTradingSignalFromLlm(params: {
     agent: agentContext.agent,
     namespace: agentContext.namespace,
   });
+  const orderBookSnapshot = dataSources.orderBook
+    ? await getOrderBookSnapshot({ tenantId: params.tenantId, userId: params.userId }, params.symbol, params.marketType, params.marginMode)
+    : null;
+  const newsSummary = dataSources.news
+    ? await fetchNewsSummary(
+      { tenantId: params.tenantId, userId: params.userId },
+      params.symbol,
+      params.marketType,
+      profile.newsConfig
+    )
+    : null;
+  const trainingSummary = dataSources.trainingData
+    ? await fetchTradingDatasetSummary(params.tenantId)
+    : null;
   const rawAnalysisPrompt = buildMultiTimeframePrompt({
     matrix: analysisMatrix,
     consensus,
     indicators,
     dataSources,
-    orderBook: dataSources.orderBook
-      ? await getOrderBookSnapshot({ tenantId: params.tenantId, userId: params.userId }, params.symbol, params.marketType, params.marginMode)
-      : null,
-    news: dataSources.news
-      ? await fetchNewsSummary(
-        { tenantId: params.tenantId, userId: params.userId },
-        params.symbol,
-        params.marketType,
-        profile.newsConfig
-      )
-      : null,
-    trainingData: dataSources.trainingData
-      ? await fetchTradingDatasetSummary(params.tenantId)
-      : null,
+    orderBook: orderBookSnapshot,
+    news: newsSummary,
+    trainingData: trainingSummary,
   });
 
   const requestedMaxTokens = params.modelConfig?.maxTokens ?? agentContext.llmConfig.maxTokens ?? 2048;
@@ -7456,6 +7459,7 @@ async function generateTradingSignalFromLlm(params: {
         timeframes,
         enabledIndicators: indicators,
         dataSources,
+        news: newsSummary ?? undefined,
         consensus: {
           rule: consensusConfig.rule ?? 'majority',
           overallSignal: consensus.overallSignal,
@@ -8663,6 +8667,206 @@ app.get('/api/integrations/trading/news-presets', requirePermission('integration
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao listar presets de notícias');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/news-presets - Criar preset de notícias (SearXNG)
+app.post('/api/integrations/trading/news-presets', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const bodySchema = z.object({
+      name: z.string().min(2).max(120),
+      description: z.string().max(500).optional().nullable(),
+      config: TradingProfileNewsConfigSchema,
+      isDefault: z.boolean().optional(),
+    });
+    const parsed = bodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
+      return;
+    }
+
+    const name = parsed.data.name.trim();
+    if (!name) {
+      res.status(400).json({ error: 'Nome do preset é obrigatório' });
+      return;
+    }
+
+    const existing = await getDatabase().query.tradingNewsPresets.findFirst({
+      where: and(
+        eq(schema.tradingNewsPresets.tenantId, authContext.tenantId),
+        eq(schema.tradingNewsPresets.name, name)
+      ),
+    });
+    if (existing) {
+      res.status(409).json({ error: 'Já existe um preset com esse nome' });
+      return;
+    }
+
+    const normalizedConfig = normalizeTradingNewsConfig(parsed.data.config);
+    const createdRows = await getDatabase()
+      .insert(schema.tradingNewsPresets)
+      .values({
+        tenantId: authContext.tenantId,
+        name,
+        description: parsed.data.description?.trim() || null,
+        config: normalizedConfig,
+        isDefault: parsed.data.isDefault ?? false,
+        createdBy: authContext.userId,
+      })
+      .returning();
+    const created = createdRows[0];
+
+    if (created?.isDefault) {
+      await getDatabase()
+        .update(schema.tradingNewsPresets)
+        .set({ isDefault: false, atualizadoEm: new Date() })
+        .where(and(
+          eq(schema.tradingNewsPresets.tenantId, authContext.tenantId),
+          not(eq(schema.tradingNewsPresets.id, created.id))
+        ));
+    }
+
+    res.status(201).json({ success: true, data: created });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao criar preset de notícias');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// PUT /api/integrations/trading/news-presets/:id - Atualizar preset de notícias (SearXNG)
+app.put('/api/integrations/trading/news-presets/:id', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const bodySchema = z.object({
+      name: z.string().min(2).max(120).optional(),
+      description: z.string().max(500).optional().nullable(),
+      config: TradingProfileNewsConfigSchema.optional(),
+      isDefault: z.boolean().optional(),
+    }).refine((data) => Object.keys(data).length > 0, {
+      message: 'Nenhuma alteração enviada',
+    });
+
+    const parsed = bodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
+      return;
+    }
+
+    const preset = await getDatabase().query.tradingNewsPresets.findFirst({
+      where: and(
+        eq(schema.tradingNewsPresets.id, req.params.id),
+        eq(schema.tradingNewsPresets.tenantId, authContext.tenantId)
+      ),
+    });
+    if (!preset) {
+      res.status(404).json({ error: 'Preset não encontrado' });
+      return;
+    }
+
+    let name: string | undefined;
+    if (parsed.data.name !== undefined) {
+      name = parsed.data.name.trim();
+      if (!name) {
+        res.status(400).json({ error: 'Nome do preset é obrigatório' });
+        return;
+      }
+      if (name !== preset.name) {
+        const existing = await getDatabase().query.tradingNewsPresets.findFirst({
+          where: and(
+            eq(schema.tradingNewsPresets.tenantId, authContext.tenantId),
+            eq(schema.tradingNewsPresets.name, name),
+            not(eq(schema.tradingNewsPresets.id, preset.id))
+          ),
+        });
+        if (existing) {
+          res.status(409).json({ error: 'Já existe um preset com esse nome' });
+          return;
+        }
+      }
+    }
+
+    const updatePayload: Partial<typeof schema.tradingNewsPresets.$inferInsert> = {
+      atualizadoEm: new Date(),
+    };
+    if (name !== undefined) {
+      updatePayload.name = name;
+    }
+    if (parsed.data.description !== undefined) {
+      updatePayload.description = parsed.data.description?.trim() || null;
+    }
+    if (parsed.data.config !== undefined) {
+      updatePayload.config = normalizeTradingNewsConfig(parsed.data.config);
+    }
+    if (parsed.data.isDefault !== undefined) {
+      updatePayload.isDefault = parsed.data.isDefault;
+    }
+
+    const updatedRows = await getDatabase()
+      .update(schema.tradingNewsPresets)
+      .set(updatePayload)
+      .where(eq(schema.tradingNewsPresets.id, preset.id))
+      .returning();
+    const updated = updatedRows[0] ?? preset;
+
+    if (updated?.isDefault) {
+      await getDatabase()
+        .update(schema.tradingNewsPresets)
+        .set({ isDefault: false, atualizadoEm: new Date() })
+        .where(and(
+          eq(schema.tradingNewsPresets.tenantId, authContext.tenantId),
+          not(eq(schema.tradingNewsPresets.id, updated.id))
+        ));
+    }
+
+    res.json({ success: true, data: updated });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao atualizar preset de notícias');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// DELETE /api/integrations/trading/news-presets/:id - Remover preset de notícias (SearXNG)
+app.delete('/api/integrations/trading/news-presets/:id', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const preset = await getDatabase().query.tradingNewsPresets.findFirst({
+      where: and(
+        eq(schema.tradingNewsPresets.id, req.params.id),
+        eq(schema.tradingNewsPresets.tenantId, authContext.tenantId)
+      ),
+    });
+    if (!preset) {
+      res.status(404).json({ error: 'Preset não encontrado' });
+      return;
+    }
+
+    await getDatabase()
+      .delete(schema.tradingNewsPresets)
+      .where(eq(schema.tradingNewsPresets.id, preset.id));
+
+    res.json({ success: true });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao remover preset de notícias');
     res.status(500).json({ error: errorMessage });
   }
 });

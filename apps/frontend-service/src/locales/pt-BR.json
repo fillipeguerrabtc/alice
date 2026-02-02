@@ -1574,7 +1574,10 @@
         "rr": "Risco/Retorno",
         "summary": "Resumo executivo",
         "motivators": "Motivadores",
-        "invalidations": "Condições de invalidação"
+        "invalidations": "Condições de invalidação",
+        "newsTitle": "Notícias usadas",
+        "newsQuery": "Consulta",
+        "newsEmpty": "Notícias habilitadas, mas nenhum resultado relevante retornado."
       },
       "table": {
         "type": "Tipo",
@@ -1662,6 +1665,15 @@
       "presets": "Presets recomendados",
       "presetsPlaceholder": "Selecione um preset",
       "applyPreset": "Aplicar preset",
+      "manageTitle": "Gerenciar presets",
+      "manageHint": "Edite o preset selecionado ou crie um novo a partir da configuração atual.",
+      "presetName": "Nome do preset",
+      "presetNamePlaceholder": "Ex: Cripto Essencial (BTC)",
+      "presetDescription": "Descrição (opcional)",
+      "presetDescriptionPlaceholder": "Ex: Macro + ETFs + regulação BTC",
+      "createPreset": "Criar preset",
+      "updatePreset": "Salvar alterações",
+      "deletePreset": "Excluir preset",
       "dateHint": "Datas são opcionais e só funcionam se o template usar {dateFrom}/{dateTo}."
     },
     "analysis": {
@@ -1708,6 +1720,8 @@
         "orderBookTitle": "Order Book",
         "orderBookLine": "Bid: {{bid}} | Ask: {{ask}} | Spread: {{spreadAbs}} ({{spreadPct}}%)",
         "newsTitle": "Notícias (SearXNG)",
+        "newsQuery": "Consulta",
+        "newsEmpty": "Nenhuma notícia relevante retornada.",
         "trainingTitle": "Dataset aprovado",
         "trainingTotal": "Total: {{total}}"
       },

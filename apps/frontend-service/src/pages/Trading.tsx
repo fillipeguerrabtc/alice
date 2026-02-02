@@ -367,6 +367,10 @@ interface TradingSignal {
     motivators?: string[];
     invalidationReasons?: string[];
     tradeSummary?: string;
+    news?: {
+      query: string;
+      results: Array<{ title: string; url: string; score?: number }>;
+    };
     [key: string]: unknown;
   };
   isActive: boolean;
@@ -788,6 +792,43 @@ export default function Trading() {
     },
   });
   const newsPresets = newsPresetsResponse?.data ?? [];
+
+  const createNewsPresetMutation = useMutation({
+    mutationFn: async (payload: { name: string; description?: string | null; config: TradingNewsConfigForm }) => {
+      const response = await apiRequest('POST', '/api/integrations/trading/news-presets', payload);
+      return response.json();
+    },
+    onSuccess: (response) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/news-presets'] });
+      if (response?.data?.id) {
+        setSelectedSignalNewsPresetId(response.data.id);
+      }
+    },
+  });
+
+  const updateNewsPresetMutation = useMutation({
+    mutationFn: async (payload: { id: string; name: string; description?: string | null; config: TradingNewsConfigForm }) => {
+      const { id, ...body } = payload;
+      const response = await apiRequest('PUT', `/api/integrations/trading/news-presets/${id}`, body);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/news-presets'] });
+    },
+  });
+
+  const deleteNewsPresetMutation = useMutation({
+    mutationFn: async (presetId: string) => {
+      const response = await apiRequest('DELETE', `/api/integrations/trading/news-presets/${presetId}`);
+      return response.json();
+    },
+    onSuccess: (_response, presetId) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/news-presets'] });
+      if (selectedSignalNewsPresetId === presetId) {
+        setSelectedSignalNewsPresetId(null);
+      }
+    },
+  });
 
   useEffect(() => {
     if (signalProfileResponse?.data) {
@@ -3251,6 +3292,9 @@ export default function Trading() {
                       newsConfig: normalizeTradingNewsConfigForm(preset.config),
                     }));
                   }}
+                  onCreatePreset={(payload) => createNewsPresetMutation.mutate(payload)}
+                  onUpdatePreset={(payload) => updateNewsPresetMutation.mutate(payload)}
+                  onDeletePreset={(presetId) => deleteNewsPresetMutation.mutate(presetId)}
                 />
 
                 <div className="flex flex-wrap gap-2">
@@ -3455,6 +3499,35 @@ export default function Trading() {
                         )}
                       </div>
                     </div>
+
+                    {(selectedSignal.metadata?.news?.results?.length ?? 0) > 0 ? (
+                      <div className="space-y-2">
+                        <div className="text-xs text-muted-foreground">{t('trading.signals.detail.newsTitle')}</div>
+                        <div className="text-sm text-muted-foreground">
+                          {t('trading.signals.detail.newsQuery')}: {selectedSignal.metadata?.news?.query}
+                        </div>
+                        <ul className="text-sm list-disc pl-5 space-y-1 text-muted-foreground">
+                          {selectedSignal.metadata?.news?.results.map((item) => (
+                            <li key={`${selectedSignal.id}-news-${item.url}`}>
+                              <a
+                                href={item.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-foreground hover:underline"
+                              >
+                                {item.title}
+                              </a>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : (
+                      selectedSignal.metadata?.dataSources?.news ? (
+                        <div className="text-sm text-muted-foreground">
+                          {t('trading.signals.detail.newsEmpty')}
+                        </div>
+                      ) : null
+                    )}
                   </>
                 ) : (
                   <div className="text-sm text-muted-foreground">{t('trading.signals.detail.empty')}</div>

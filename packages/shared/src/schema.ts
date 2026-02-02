@@ -1763,6 +1763,17 @@ export const TradingProfileNewsConfigSchema = z.object({
 });
 export type TradingProfileNewsConfig = z.infer<typeof TradingProfileNewsConfigSchema>;
 
+// Resumo de notícias usado na análise/sinal (persistido no metadata)
+export const TradingNewsSummarySchema = z.object({
+  query: z.string().min(1),
+  results: z.array(z.object({
+    title: z.string().min(1),
+    url: z.string().min(1),
+    score: z.number().optional(),
+  })),
+});
+export type TradingNewsSummary = z.infer<typeof TradingNewsSummarySchema>;
+
 export const TradingProfileConsensusSchema = z.object({
   rule: z.enum(["majority"]).default("majority"),
   minAgree: z.number().min(1).optional(),
@@ -1809,6 +1820,7 @@ export const TradingSignalMetadataSchema = z.object({
   timeframes: z.array(z.string()).optional(),         // Timeframes usados na geração
   enabledIndicators: z.array(z.string()).optional(),  // Indicadores habilitados no perfil
   dataSources: TradingProfileDataSourcesSchema.optional(), // Fontes de dados habilitadas
+  news: TradingNewsSummarySchema.optional(),              // Notícias usadas na geração (quando habilitado)
   consensus: z.object({
     rule: z.string().optional(),
     overallSignal: z.string().optional(),

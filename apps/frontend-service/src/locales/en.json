@@ -1543,7 +1543,10 @@
         "rr": "Risk/Reward",
         "summary": "Executive summary",
         "motivators": "Drivers",
-        "invalidations": "Invalidation conditions"
+        "invalidations": "Invalidation conditions",
+        "newsTitle": "News used",
+        "newsQuery": "Query",
+        "newsEmpty": "News enabled, but no relevant results returned."
       },
       "table": {
         "type": "Type",
@@ -1631,6 +1634,15 @@
       "presets": "Recommended presets",
       "presetsPlaceholder": "Select a preset",
       "applyPreset": "Apply preset",
+      "manageTitle": "Manage presets",
+      "manageHint": "Edit the selected preset or create a new one from the current settings.",
+      "presetName": "Preset name",
+      "presetNamePlaceholder": "E.g.: Crypto Essentials (BTC)",
+      "presetDescription": "Description (optional)",
+      "presetDescriptionPlaceholder": "E.g.: Macro + ETFs + BTC regulation",
+      "createPreset": "Create preset",
+      "updatePreset": "Save changes",
+      "deletePreset": "Delete preset",
       "dateHint": "Dates are optional and only work if templates use {dateFrom}/{dateTo}."
     },
     "analysis": {
@@ -1677,6 +1689,8 @@
         "orderBookTitle": "Order Book",
         "orderBookLine": "Bid: {{bid}} | Ask: {{ask}} | Spread: {{spreadAbs}} ({{spreadPct}}%)",
         "newsTitle": "News (SearXNG)",
+        "newsQuery": "Query",
+        "newsEmpty": "No relevant news returned.",
         "trainingTitle": "Approved dataset",
         "trainingTotal": "Total: {{total}}"
       },

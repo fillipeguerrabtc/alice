@@ -240,6 +240,104 @@ export const integrationsServicePaths = {
         401: { description: 'Não autenticado' },
       },
     },
+    post: {
+      summary: 'Criar preset de notícias (SearXNG)',
+      tags: ['Trading'],
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['name', 'config'],
+              properties: {
+                name: { type: 'string', minLength: 2, maxLength: 120 },
+                description: { type: 'string', maxLength: 500, nullable: true },
+                isDefault: { type: 'boolean' },
+                config: {
+                  type: 'object',
+                  properties: {
+                    engines: { type: 'array', items: { type: 'string' } },
+                    categories: { type: 'string' },
+                    language: { type: 'string' },
+                    safesearch: { type: 'string' },
+                    timeRange: { type: 'string', enum: ['last_hour', 'last_24_hours', 'custom', 'day', 'week', 'month', 'year'] },
+                    dateFrom: { type: 'string' },
+                    dateTo: { type: 'string' },
+                    queryTemplates: { type: 'array', items: { type: 'string' } },
+                    extraTerms: { type: 'array', items: { type: 'string' } },
+                    maxResults: { type: 'integer', minimum: 1, maximum: 10 },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        201: { description: 'Preset criado' },
+        400: { description: 'Dados inválidos' },
+        401: { description: 'Não autenticado' },
+        409: { description: 'Nome já existe' },
+      },
+    },
+  },
+  '/api/integrations/trading/news-presets/{id}': {
+    put: {
+      summary: 'Atualizar preset de notícias (SearXNG)',
+      tags: ['Trading'],
+      parameters: [
+        { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+      ],
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                name: { type: 'string', minLength: 2, maxLength: 120 },
+                description: { type: 'string', maxLength: 500, nullable: true },
+                isDefault: { type: 'boolean' },
+                config: {
+                  type: 'object',
+                  properties: {
+                    engines: { type: 'array', items: { type: 'string' } },
+                    categories: { type: 'string' },
+                    language: { type: 'string' },
+                    safesearch: { type: 'string' },
+                    timeRange: { type: 'string', enum: ['last_hour', 'last_24_hours', 'custom', 'day', 'week', 'month', 'year'] },
+                    dateFrom: { type: 'string' },
+                    dateTo: { type: 'string' },
+                    queryTemplates: { type: 'array', items: { type: 'string' } },
+                    extraTerms: { type: 'array', items: { type: 'string' } },
+                    maxResults: { type: 'integer', minimum: 1, maximum: 10 },
+                  },
+                },
+              },
+              minProperties: 1,
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Preset atualizado' },
+        400: { description: 'Dados inválidos' },
+        401: { description: 'Não autenticado' },
+        404: { description: 'Preset não encontrado' },
+        409: { description: 'Nome já existe' },
+      },
+    },
+    delete: {
+      summary: 'Remover preset de notícias (SearXNG)',
+      tags: ['Trading'],
+      parameters: [
+        { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+      ],
+      responses: {
+        200: { description: 'Preset removido' },
+        401: { description: 'Não autenticado' },
+        404: { description: 'Preset não encontrado' },
+      },
+    },
   },
   '/api/integrations/trading/news-presets/apply': {
     post: {
