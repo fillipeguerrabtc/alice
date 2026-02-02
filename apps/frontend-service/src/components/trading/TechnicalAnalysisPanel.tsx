@@ -462,6 +462,8 @@ export function TechnicalAnalysisPanel({
     consensus: { rule: 'majority' },
   });
   const [selectedNewsPresetId, setSelectedNewsPresetId] = useState<string | null>(null);
+  const [newsPresetName, setNewsPresetName] = useState('');
+  const [newsPresetDescription, setNewsPresetDescription] = useState('');
   const [analysisSchedulerForm, setAnalysisSchedulerForm] = useState({
     enabled: false,
     intervalMinutes: '15',
@@ -564,6 +566,10 @@ export function TechnicalAnalysisPanel({
     },
   });
   const newsPresets = newsPresetsResponse?.data ?? [];
+  const selectedNewsPreset = newsPresets.find((preset) => preset.id === selectedNewsPresetId);
+  const normalizedNewsPresetName = newsPresetName.trim();
+  const canCreateNewsPreset = normalizedNewsPresetName.length >= 2;
+  const canUpdateNewsPreset = Boolean(selectedNewsPreset && normalizedNewsPresetName.length >= 2);
 
   const createNewsPresetMutation = useMutation({
     mutationFn: async (payload: { name: string; description?: string | null; config: TradingNewsConfigForm }) => {
@@ -1173,6 +1179,10 @@ export function TechnicalAnalysisPanel({
                 newsConfig: normalizeTradingNewsConfigForm(preset.config),
               }));
             }}
+            presetName={newsPresetName}
+            presetDescription={newsPresetDescription}
+            onPresetNameChange={setNewsPresetName}
+            onPresetDescriptionChange={setNewsPresetDescription}
             onCreatePreset={(payload) => createNewsPresetMutation.mutate(payload)}
             onUpdatePreset={(payload) => updateNewsPresetMutation.mutate(payload)}
             onDeletePreset={(presetId) => deleteNewsPresetMutation.mutate(presetId)}
@@ -1193,6 +1203,32 @@ export function TechnicalAnalysisPanel({
             >
               {executeAnalysisNowMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               {t('trading.analysis.executeNow')}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => selectedNewsPreset && updateNewsPresetMutation.mutate({
+                id: selectedNewsPreset.id,
+                name: normalizedNewsPresetName,
+                description: newsPresetDescription.trim() || null,
+                config: profileForm.newsConfig,
+              })}
+              disabled={!canUpdateNewsPreset || updateNewsPresetMutation.isPending}
+            >
+              {updateNewsPresetMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {t('trading.newsConfig.updatePreset')}
+            </Button>
+            <Button
+              type="button"
+              onClick={() => createNewsPresetMutation.mutate({
+                name: normalizedNewsPresetName,
+                description: newsPresetDescription.trim() || null,
+                config: profileForm.newsConfig,
+              })}
+              disabled={!canCreateNewsPreset || createNewsPresetMutation.isPending}
+            >
+              {createNewsPresetMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {t('trading.newsConfig.createPreset')}
             </Button>
           </div>
 

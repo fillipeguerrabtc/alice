@@ -693,6 +693,8 @@ export default function Trading() {
   const [showReviewOrderDialog, setShowReviewOrderDialog] = useState(false);
   const [selectedSignalId, setSelectedSignalId] = useState<string | null>(null);
   const [selectedSignalNewsPresetId, setSelectedSignalNewsPresetId] = useState<string | null>(null);
+  const [signalNewsPresetName, setSignalNewsPresetName] = useState('');
+  const [signalNewsPresetDescription, setSignalNewsPresetDescription] = useState('');
   const [reviewOrderTarget, setReviewOrderTarget] = useState<TradingOrder | null>(null);
   const [reviewOrderForm, setReviewOrderForm] = useState({
     orderType: 'market' as 'limit' | 'market' | 'stop_limit' | 'stop_market' | 'take_profit',
@@ -884,6 +886,10 @@ export default function Trading() {
     },
   });
   const newsPresets = newsPresetsResponse?.data ?? [];
+  const selectedSignalNewsPreset = newsPresets.find((preset) => preset.id === selectedSignalNewsPresetId);
+  const normalizedSignalNewsPresetName = signalNewsPresetName.trim();
+  const canCreateSignalNewsPreset = normalizedSignalNewsPresetName.length >= 2;
+  const canUpdateSignalNewsPreset = Boolean(selectedSignalNewsPreset && normalizedSignalNewsPresetName.length >= 2);
 
   const createNewsPresetMutation = useMutation({
     mutationFn: async (payload: { name: string; description?: string | null; config: TradingNewsConfigForm }) => {
@@ -3607,6 +3613,10 @@ export default function Trading() {
                       newsConfig: normalizeTradingNewsConfigForm(preset.config),
                     }));
                   }}
+                  presetName={signalNewsPresetName}
+                  presetDescription={signalNewsPresetDescription}
+                  onPresetNameChange={setSignalNewsPresetName}
+                  onPresetDescriptionChange={setSignalNewsPresetDescription}
                   onCreatePreset={(payload) => createNewsPresetMutation.mutate(payload)}
                   onUpdatePreset={(payload) => updateNewsPresetMutation.mutate(payload)}
                   onDeletePreset={(presetId) => deleteNewsPresetMutation.mutate(presetId)}
@@ -3627,6 +3637,32 @@ export default function Trading() {
                   >
                     {generateSignalMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                     {t('trading.signals.generateNow')}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => selectedSignalNewsPreset && updateNewsPresetMutation.mutate({
+                      id: selectedSignalNewsPreset.id,
+                      name: normalizedSignalNewsPresetName,
+                      description: signalNewsPresetDescription.trim() || null,
+                      config: signalProfileForm.newsConfig,
+                    })}
+                    disabled={!canUpdateSignalNewsPreset || updateNewsPresetMutation.isPending}
+                  >
+                    {updateNewsPresetMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    {t('trading.newsConfig.updatePreset')}
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => createNewsPresetMutation.mutate({
+                      name: normalizedSignalNewsPresetName,
+                      description: signalNewsPresetDescription.trim() || null,
+                      config: signalProfileForm.newsConfig,
+                    })}
+                    disabled={!canCreateSignalNewsPreset || createNewsPresetMutation.isPending}
+                  >
+                    {createNewsPresetMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    {t('trading.newsConfig.createPreset')}
                   </Button>
                 </div>
                 <Separator className="my-6" />

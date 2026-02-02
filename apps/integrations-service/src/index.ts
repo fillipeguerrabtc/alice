@@ -6203,6 +6203,115 @@ function extractJsonObjectCandidate(content: string): string {
   return output.trim() || cleaned;
 }
 
+const TRADING_LLM_SIGNAL_KEYS = new Set([
+  'signalType',
+  'operationType',
+  'expectedDurationMinutes',
+  'confidence',
+  'tradeSummary',
+  'motivators',
+  'invalidationReasons',
+  'reasoning',
+  'suggestedPrice',
+  'suggestedStopLoss',
+  'suggestedTakeProfit',
+  'suggestedSize',
+  'riskReward',
+  'marketCondition',
+  'riskScore',
+]);
+
+function normalizeLlmJsonKeys(content: string): { json: string; repaired: boolean } {
+  let repaired = false;
+  let inString = false;
+  let escaping = false;
+  let output = '';
+  let i = 0;
+
+  const isIdentifierStart = (char: string) => /[A-Za-z_]/.test(char);
+  const isIdentifierChar = (char: string) => /[A-Za-z0-9_]/.test(char);
+  const isWhitespace = (char: string) => /\s/.test(char);
+
+  while (i < content.length) {
+    const char = content[i];
+    if (escaping) {
+      output += char;
+      escaping = false;
+      i += 1;
+      continue;
+    }
+    if (char === '\\') {
+      output += char;
+      if (inString) escaping = true;
+      i += 1;
+      continue;
+    }
+    if (char === '"') {
+      output += char;
+      inString = !inString;
+      i += 1;
+      continue;
+    }
+    if (!inString && (char === '{' || char === ',')) {
+      output += char;
+      i += 1;
+      while (i < content.length && isWhitespace(content[i])) {
+        output += content[i];
+        i += 1;
+      }
+      if (i >= content.length) break;
+
+      if (content[i] === "'") {
+        const start = i + 1;
+        let end = start;
+        while (end < content.length && content[end] !== "'") {
+          end += 1;
+        }
+        if (end < content.length) {
+          const key = content.slice(start, end);
+          let cursor = end + 1;
+          while (cursor < content.length && isWhitespace(content[cursor])) cursor += 1;
+          if (content[cursor] === ':' && TRADING_LLM_SIGNAL_KEYS.has(key)) {
+            output += `"${key}"`;
+            output += content.slice(end + 1, cursor);
+            output += ':';
+            repaired = true;
+            i = cursor + 1;
+            continue;
+          }
+        }
+        output += content[i];
+        i += 1;
+        continue;
+      }
+
+      if (isIdentifierStart(content[i])) {
+        const start = i;
+        let end = start + 1;
+        while (end < content.length && isIdentifierChar(content[end])) {
+          end += 1;
+        }
+        const key = content.slice(start, end);
+        let cursor = end;
+        while (cursor < content.length && isWhitespace(content[cursor])) cursor += 1;
+        if (content[cursor] === ':' && TRADING_LLM_SIGNAL_KEYS.has(key)) {
+          output += `"${key}"`;
+          output += content.slice(end, cursor);
+          output += ':';
+          repaired = true;
+          i = cursor + 1;
+          continue;
+        }
+      }
+    }
+
+    output += char;
+    i += 1;
+  }
+
+  return { json: output, repaired };
+}
+
 function repairLlmJsonContent(content: string): { json: string; repaired: boolean } {
   let repaired = false;
   let inString = false;
@@ -6419,15 +6528,16 @@ function insertMissingCommasInArrays(content: string): { json: string; inserted:
 
 function parseLlmSignalResponse(rawResponse: string) {
   const candidate = extractJsonObjectCandidate(rawResponse);
+  const normalized = normalizeLlmJsonKeys(candidate);
   try {
-    const parsed = JSON.parse(candidate) as unknown;
+    const parsed = JSON.parse(normalized.json) as unknown;
     const result = TRADING_LLM_SIGNAL_SCHEMA.safeParse(parsed);
     if (!result.success) {
       throw new Error(`Resposta LLM inválida: ${result.error.message}`);
     }
     return result.data;
   } catch (error) {
-    const repair = repairLlmJsonContent(candidate);
+    const repair = repairLlmJsonContent(normalized.json);
     if (repair.repaired) {
       try {
         logger.warn({ error: error instanceof Error ? error.message : error }, 'Resposta LLM inválida; aplicando reparo seguro do JSON.');

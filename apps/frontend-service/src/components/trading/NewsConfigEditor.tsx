@@ -8,7 +8,7 @@
  * Data: 31 de Janeiro de 2026
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -48,6 +48,10 @@ interface NewsConfigEditorProps {
   selectedPresetId?: string | null;
   onSelectPresetId?: (id: string) => void;
   onApplyPreset?: (preset: TradingNewsPresetOption) => void;
+  presetName: string;
+  presetDescription: string;
+  onPresetNameChange: (value: string) => void;
+  onPresetDescriptionChange: (value: string) => void;
   onCreatePreset?: (payload: { name: string; description?: string | null; config: TradingNewsConfigForm }) => void;
   onUpdatePreset?: (payload: { id: string; name: string; description?: string | null; config: TradingNewsConfigForm }) => void;
   onDeletePreset?: (id: string) => void;
@@ -112,6 +116,10 @@ export function NewsConfigEditor({
   selectedPresetId,
   onSelectPresetId,
   onApplyPreset,
+  presetName,
+  presetDescription,
+  onPresetNameChange,
+  onPresetDescriptionChange,
   onCreatePreset,
   onUpdatePreset,
   onDeletePreset,
@@ -121,12 +129,7 @@ export function NewsConfigEditor({
     ? value.engines.join(', ')
     : t('trading.newsConfig.defaultEngines');
   const selectedPreset = presets?.find((preset) => preset.id === selectedPresetId);
-  const [presetName, setPresetName] = useState('');
-  const [presetDescription, setPresetDescription] = useState('');
   const canManagePresets = Boolean(onCreatePreset || onUpdatePreset || onDeletePreset);
-  const normalizedPresetName = presetName.trim();
-  const canCreatePreset = normalizedPresetName.length >= 2 && Boolean(onCreatePreset);
-  const canUpdatePreset = Boolean(selectedPreset && normalizedPresetName.length >= 2 && onUpdatePreset);
   const canDeletePreset = Boolean(selectedPreset && onDeletePreset);
 
   const templatesText = useMemo(
@@ -136,13 +139,13 @@ export function NewsConfigEditor({
 
   useEffect(() => {
     if (selectedPreset) {
-      setPresetName(selectedPreset.name);
-      setPresetDescription(selectedPreset.description ?? '');
+      onPresetNameChange(selectedPreset.name);
+      onPresetDescriptionChange(selectedPreset.description ?? '');
       return;
     }
-    setPresetName('');
-    setPresetDescription('');
-  }, [selectedPreset?.id]);
+    onPresetNameChange('');
+    onPresetDescriptionChange('');
+  }, [selectedPreset?.id, onPresetNameChange, onPresetDescriptionChange]);
 
   return (
     <Card>
@@ -204,7 +207,7 @@ export function NewsConfigEditor({
                 <Input
                   value={presetName}
                   placeholder={t('trading.newsConfig.presetNamePlaceholder')}
-                  onChange={(event) => setPresetName(event.target.value)}
+                  onChange={(event) => onPresetNameChange(event.target.value)}
                 />
               </div>
               <div className="space-y-2">
@@ -212,35 +215,11 @@ export function NewsConfigEditor({
                 <Input
                   value={presetDescription}
                   placeholder={t('trading.newsConfig.presetDescriptionPlaceholder')}
-                  onChange={(event) => setPresetDescription(event.target.value)}
+                  onChange={(event) => onPresetDescriptionChange(event.target.value)}
                 />
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                onClick={() => onCreatePreset?.({
-                  name: normalizedPresetName,
-                  description: presetDescription.trim() || null,
-                  config: value,
-                })}
-                disabled={!canCreatePreset}
-              >
-                {t('trading.newsConfig.createPreset')}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => selectedPreset && onUpdatePreset?.({
-                  id: selectedPreset.id,
-                  name: normalizedPresetName,
-                  description: presetDescription.trim() || null,
-                  config: value,
-                })}
-                disabled={!canUpdatePreset}
-              >
-                {t('trading.newsConfig.updatePreset')}
-              </Button>
               <Button
                 type="button"
                 variant="destructive"

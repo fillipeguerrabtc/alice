@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 02 de Fevereiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.72 - Histórico de ordens sem loop de retry
+**Versão:** 10.73 - Sinais IA JSON e presets completos
 
 ---
 
@@ -35,6 +35,9 @@
 - Trading: budget de prompt com margem conservadora evita erro 400 por contexto > 4096 tokens.
 - Chat/Trading: WebSocket do frontend alinhado com `/ws/chat` (rota correta no chat-service).
 - Trading: reparo de JSON mais robusto (aspas internas + string incompleta) evita falhas na geração de sinais.
+- Sinais IA: normalização de chaves JSON do LLM (sem aspas) reduz falhas de parse.
+- Análise: rota `/analysis/history` não conflita com `/analysis/:symbol` (sem “history” como símbolo).
+- Presets de notícias: edição completa e salvamento ao lado de Salvar/Gerar (Análise + Sinais IA).
 - Chat: correção do upgrade WS evita crash por double handleUpgrade.
 - Trading: extração de JSON balanceada evita truncamento por chaves em texto.
 - Trading: logging explícito de notícias confirma uso de SearXNG na análise.
