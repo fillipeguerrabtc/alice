@@ -6312,6 +6312,62 @@ function normalizeLlmJsonKeys(content: string): { json: string; repaired: boolea
   return { json: output, repaired };
 }
 
+function repairYamlLikeObject(content: string): { json: string; repaired: boolean } {
+  const trimmed = content.trim();
+  if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) {
+    return { json: content, repaired: false };
+  }
+
+  const lines = trimmed.split(/\r?\n/);
+  const props: string[] = [];
+  let repaired = false;
+  let insideObject = false;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (line.startsWith('{')) {
+      insideObject = true;
+      continue;
+    }
+    if (line.startsWith('}')) {
+      break;
+    }
+    if (!insideObject) continue;
+
+    let work = line.replace(/,+\s*$/, '');
+    if (work.startsWith('-')) {
+      work = work.replace(/^-\s*/, '');
+      repaired = true;
+    }
+    const singleQuotedKey = work.match(/^'([^']+)'\s*:/);
+    if (singleQuotedKey && TRADING_LLM_SIGNAL_KEYS.has(singleQuotedKey[1])) {
+      work = work.replace(/^'([^']+)'\s*:/, `"${singleQuotedKey[1]}":`);
+      repaired = true;
+    }
+    const bareKey = work.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*:/);
+    if (bareKey && TRADING_LLM_SIGNAL_KEYS.has(bareKey[1])) {
+      work = work.replace(/^([A-Za-z_][A-Za-z0-9_]*)\s*:/, `"${bareKey[1]}":`);
+      repaired = true;
+    }
+    props.push(work);
+  }
+
+  if (!repaired || props.length === 0) {
+    return { json: content, repaired: false };
+  }
+
+  const normalizedProps = props.map((item, index) => {
+    const sanitized = item.replace(/,+\s*$/, '');
+    return index < props.length - 1 ? `${sanitized},` : sanitized;
+  });
+
+  return {
+    json: `{\n${normalizedProps.join('\n')}\n}`,
+    repaired: true,
+  };
+}
+
 function repairLlmJsonContent(content: string): { json: string; repaired: boolean } {
   let repaired = false;
   let inString = false;
@@ -6537,6 +6593,26 @@ function parseLlmSignalResponse(rawResponse: string) {
     }
     return result.data;
   } catch (error) {
+    const yamlRepair = repairYamlLikeObject(normalized.json);
+    if (yamlRepair.repaired) {
+      try {
+        logger.warn({ error: error instanceof Error ? error.message : error }, 'Resposta LLM inválida; aplicando reparo YAML-like.');
+        const parsed = JSON.parse(yamlRepair.json) as unknown;
+        const result = TRADING_LLM_SIGNAL_SCHEMA.safeParse(parsed);
+        if (!result.success) {
+          throw new Error(`Resposta LLM inválida após reparo: ${result.error.message}`);
+        }
+        return result.data;
+      } catch (yamlError) {
+        const message = yamlError instanceof Error ? yamlError.message : 'Erro desconhecido';
+        logger.error({
+          error: message,
+          responseHash: computeSemHash(yamlRepair.json),
+          responseLength: yamlRepair.json.length,
+          candidateLength: candidate.length,
+        }, 'Resposta LLM inválida após reparo YAML-like (hash/len).');
+      }
+    }
     const repair = repairLlmJsonContent(normalized.json);
     if (repair.repaired) {
       try {
@@ -11341,6 +11417,10 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
     const tenantId = authContext.tenantId;
     const userId = authContext.userId;
     const { symbol } = req.params;
+    if (symbol === 'history') {
+      res.status(404).json({ error: 'Rota inválida' });
+      return;
+    }
     const querySchema = z.object({
       interval: z.string().optional(),
       timeframes: z.union([z.string(), z.array(z.string())]).optional(),

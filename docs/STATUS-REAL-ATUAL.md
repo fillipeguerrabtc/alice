@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 02 de Fevereiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.73 - Sinais IA JSON e presets completos
+**Versão:** 10.74 - Sinais IA YAML-like + análise history guard
 
 ---
 
@@ -36,7 +36,9 @@
 - Chat/Trading: WebSocket do frontend alinhado com `/ws/chat` (rota correta no chat-service).
 - Trading: reparo de JSON mais robusto (aspas internas + string incompleta) evita falhas na geração de sinais.
 - Sinais IA: normalização de chaves JSON do LLM (sem aspas) reduz falhas de parse.
+- Sinais IA: reparo adicional para respostas YAML-like (linhas com "- key:") evita erro de parse.
 - Análise: rota `/analysis/history` não conflita com `/analysis/:symbol` (sem “history” como símbolo).
+- Análise: guard explícito evita erro com “history” e bloqueia lista vermelha na UI.
 - Presets de notícias: edição completa e salvamento ao lado de Salvar/Gerar (Análise + Sinais IA).
 - Chat: correção do upgrade WS evita crash por double handleUpgrade.
 - Trading: extração de JSON balanceada evita truncamento por chaves em texto.
