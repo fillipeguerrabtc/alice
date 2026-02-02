@@ -49,7 +49,7 @@ export function MultiSelectDropdown({
       return match?.label ?? selectedValues[0];
     }
     return `${selectedValues.length} selecionados`;
-  }, [options, selectedValues]);
+  }, [options, placeholder, selectedValues]);
 
   const handleToggle = (value: string, checked: boolean) => {
     const next = new Set(selectedValues);
