@@ -27,7 +27,7 @@
  * Data: 16 de Janeiro de 2026
  */
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
@@ -726,6 +726,7 @@ export default function Trading() {
   const [orderHistoryHasMore, setOrderHistoryHasMore] = useState(false);
   const [orderHistoryLoading, setOrderHistoryLoading] = useState(false);
   const [orderHistorySelectedIds, setOrderHistorySelectedIds] = useState<Set<string>>(new Set());
+  const orderHistoryMarketRef = useRef<string | null>(null);
 
   // Form state para configuração de risco
   const [riskForm, setRiskForm] = useState({
@@ -1253,15 +1254,12 @@ export default function Trading() {
 
   useEffect(() => {
     if (activeTab !== 'history') return;
-    if (orderHistoryItems.length === 0) {
-      fetchOrderHistory({ reset: true });
-    }
-  }, [activeTab, fetchOrderHistory, orderHistoryItems.length]);
-
-  useEffect(() => {
-    if (activeTab !== 'history') return;
+    const marketChanged = orderHistoryMarketRef.current !== selectedMarketType;
+    const shouldReset = marketChanged || orderHistoryItems.length === 0;
+    if (!shouldReset) return;
+    orderHistoryMarketRef.current = selectedMarketType;
     fetchOrderHistory({ reset: true });
-  }, [activeTab, fetchOrderHistory, selectedMarketType]);
+  }, [activeTab, fetchOrderHistory, orderHistoryItems.length, selectedMarketType]);
 
   const wsChannels = useMemo(() => {
     if (!wsEnabled) return [];
