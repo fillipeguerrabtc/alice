@@ -814,6 +814,28 @@ export function TechnicalAnalysisPanel({
     },
   });
 
+  const purgeAnalysisHistoryMutation = useMutation({
+    mutationFn: async ({ ids, all, scope }: { ids?: string[]; all?: boolean; scope?: 'self' | 'tenant' }) => {
+      const response = await apiRequest('POST', '/api/integrations/trading/analysis/history/purge', {
+        ids,
+        all,
+        scope,
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || t('trading.analysis.historyPurgeFailed'));
+      }
+      return payload;
+    },
+    onSuccess: () => {
+      toast({ title: t('trading.analysis.historyPurged') });
+      fetchAnalysisHistory({ reset: true });
+    },
+    onError: (error: Error) => {
+      toast({ title: t('trading.analysis.historyPurgeFailed'), description: error.message, variant: 'destructive' });
+    },
+  });
+
   const toggleAnalysisHistorySelection = (analysisId: string, checked: boolean) => {
     setAnalysisHistorySelectedIds((prev) => {
       const updated = new Set(prev);
@@ -2056,13 +2078,29 @@ export function TechnicalAnalysisPanel({
               {t('trading.analysis.history.deleteAllMine')}
             </Button>
             {isAdminRole && (
-              <Button
-                variant="outline"
-                disabled={deleteAnalysisHistoryMutation.isPending}
-                onClick={() => deleteAnalysisHistoryMutation.mutate({ all: true, scope: 'tenant' })}
-              >
-                {t('trading.analysis.history.deleteAllTenant')}
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  disabled={deleteAnalysisHistoryMutation.isPending}
+                  onClick={() => deleteAnalysisHistoryMutation.mutate({ all: true, scope: 'tenant' })}
+                >
+                  {t('trading.analysis.history.deleteAllTenant')}
+                </Button>
+                <Button
+                  variant="destructive"
+                  disabled={!hasAnalysisHistorySelection || purgeAnalysisHistoryMutation.isPending}
+                  onClick={() => purgeAnalysisHistoryMutation.mutate({ ids: Array.from(analysisHistorySelectedIds), scope: 'tenant' })}
+                >
+                  {t('trading.analysis.history.purgeSelected')}
+                </Button>
+                <Button
+                  variant="destructive"
+                  disabled={purgeAnalysisHistoryMutation.isPending}
+                  onClick={() => purgeAnalysisHistoryMutation.mutate({ all: true, scope: 'tenant' })}
+                >
+                  {t('trading.analysis.history.purgeAllTenant')}
+                </Button>
+              </>
             )}
           </div>
 

@@ -989,6 +989,31 @@ export function SignalApprovalPanel({
     },
   });
 
+  const purgeHistoryMutation = useMutation({
+    mutationFn: async ({ ids, all, scope }: { ids?: string[]; all?: boolean; scope?: 'self' | 'tenant' }) => {
+      const response = await apiRequest('POST', '/api/integrations/trading/signals/history/purge', {
+        ids,
+        all,
+        scope,
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || t('trading.signals.history.purgeFailed'));
+      }
+      return data;
+    },
+    onSuccess: () => {
+      toast({ title: t('trading.signals.history.purgedTitle'), description: t('trading.signals.history.purgedDescription') });
+      refetchSignalHistoryStats();
+      if (historyFilter) {
+        fetchSignalHistory({ reset: true, filter: historyFilter });
+      }
+    },
+    onError: (error: Error) => {
+      toast({ title: t('trading.signals.history.purgeFailed'), description: error.message, variant: 'destructive' });
+    },
+  });
+
   const openHistoryDialog = (filter: { kind: 'approval' | 'validation'; status: string }) => {
     setHistoryFilter(filter);
     setHistoryDialogOpen(true);
@@ -1153,13 +1178,29 @@ export function SignalApprovalPanel({
               {t('trading.signals.history.deleteAllMine')}
             </Button>
             {isAdminRole && (
-              <Button
-                variant="outline"
-                disabled={deleteHistoryMutation.isPending}
-                onClick={() => deleteHistoryMutation.mutate({ all: true, scope: 'tenant' })}
-              >
-                {t('trading.signals.history.deleteAllTenant')}
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  disabled={deleteHistoryMutation.isPending}
+                  onClick={() => deleteHistoryMutation.mutate({ all: true, scope: 'tenant' })}
+                >
+                  {t('trading.signals.history.deleteAllTenant')}
+                </Button>
+                <Button
+                  variant="destructive"
+                  disabled={!hasHistorySelection || purgeHistoryMutation.isPending}
+                  onClick={() => purgeHistoryMutation.mutate({ ids: Array.from(selectedHistoryIds), scope: 'tenant' })}
+                >
+                  {t('trading.signals.history.purgeSelected')}
+                </Button>
+                <Button
+                  variant="destructive"
+                  disabled={purgeHistoryMutation.isPending}
+                  onClick={() => purgeHistoryMutation.mutate({ all: true, scope: 'tenant' })}
+                >
+                  {t('trading.signals.history.purgeAllTenant')}
+                </Button>
+              </>
             )}
           </div>
 

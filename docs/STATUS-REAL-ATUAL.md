@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 02 de Fevereiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.74 - Sinais IA YAML-like + análise history guard
+**Versão:** 10.75 - Trading timeouts + purge de histórico
 
 ---
 
@@ -37,7 +37,10 @@
 - Trading: reparo de JSON mais robusto (aspas internas + string incompleta) evita falhas na geração de sinais.
 - Sinais IA: normalização de chaves JSON do LLM (sem aspas) reduz falhas de parse.
 - Sinais IA: reparo adicional para respostas YAML-like (linhas com "- key:") evita erro de parse.
+- Sinais IA: reparo extra para YAML-like sem chaves (blocos key: value) garante JSON válido sem retry.
 - Análise: rota `/analysis/history` não conflita com `/analysis/:symbol` (sem “history” como símbolo).
+- Trading: timeout do integrations-service ajustado para 120s (reduz 502 por EOF em sinais longos).
+- Trading: histórico com purge definitivo admin (limpa sinais/análises + validações e desvincula ordens/schedulers).
 - Análise: guard explícito evita erro com “history” e bloqueia lista vermelha na UI.
 - Presets de notícias: edição completa e salvamento ao lado de Salvar/Gerar (Análise + Sinais IA).
 - Chat: correção do upgrade WS evita crash por double handleUpgrade.

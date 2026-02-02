@@ -6368,6 +6368,91 @@ function repairYamlLikeObject(content: string): { json: string; repaired: boolea
   };
 }
 
+function repairYamlLikeBlockWithoutBraces(content: string): { json: string; repaired: boolean } {
+  const trimmed = content.trim();
+  if (!trimmed || trimmed.startsWith('{') || trimmed.endsWith('}')) {
+    return { json: content, repaired: false };
+  }
+
+  const lines = trimmed.split(/\r?\n/);
+  const props: string[] = [];
+  let repaired = false;
+  let currentKey: string | null = null;
+  let currentArray: string[] = [];
+
+  const quoteStringValue = (value: string) => {
+    const normalized = value.replace(/\\+/g, '\\\\').replace(/"/g, '\\"');
+    return `"${normalized}"`;
+  };
+
+  const coerceJsonValue = (value: string) => {
+    const raw = value.trim().replace(/,+\s*$/, '');
+    if (!raw) return '""';
+    if (raw.startsWith('"') || raw.startsWith('[') || raw.startsWith('{')) {
+      return raw;
+    }
+    if (raw.startsWith("'") && raw.endsWith("'") && raw.length >= 2) {
+      return quoteStringValue(raw.slice(1, -1));
+    }
+    if (/^(true|false|null)$/i.test(raw)) {
+      return raw.toLowerCase();
+    }
+    if (/^-?\d+(\.\d+)?$/.test(raw)) {
+      return raw;
+    }
+    return quoteStringValue(raw);
+  };
+
+  const flushArray = () => {
+    if (!currentKey) return;
+    const items = currentArray.length > 0 ? currentArray.join(', ') : '';
+    props.push(`"${currentKey}": [${items}]`);
+    currentKey = null;
+    currentArray = [];
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (line.startsWith('-')) {
+      if (!currentKey) continue;
+      const item = line.replace(/^-\s*/, '');
+      currentArray.push(coerceJsonValue(item));
+      repaired = true;
+      continue;
+    }
+    if (currentKey) {
+      flushArray();
+    }
+    const match = line.match(/^['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?\s*:\s*(.*)$/);
+    if (!match) continue;
+    const key = match[1];
+    if (!TRADING_LLM_SIGNAL_KEYS.has(key)) continue;
+    const value = match[2] ?? '';
+    if (!value.trim()) {
+      currentKey = key;
+      currentArray = [];
+      repaired = true;
+      continue;
+    }
+    props.push(`"${key}": ${coerceJsonValue(value)}`);
+    repaired = true;
+  }
+
+  if (currentKey) {
+    flushArray();
+  }
+
+  if (!repaired || props.length === 0) {
+    return { json: content, repaired: false };
+  }
+
+  return {
+    json: `{\n${props.join(',\n')}\n}`,
+    repaired: true,
+  };
+}
+
 function repairLlmJsonContent(content: string): { json: string; repaired: boolean } {
   let repaired = false;
   let inString = false;
@@ -6593,6 +6678,26 @@ function parseLlmSignalResponse(rawResponse: string) {
     }
     return result.data;
   } catch (error) {
+    const blockRepair = repairYamlLikeBlockWithoutBraces(normalized.json);
+    if (blockRepair.repaired) {
+      try {
+        logger.warn({ error: error instanceof Error ? error.message : error }, 'Resposta LLM inválida; aplicando reparo YAML-like sem chaves.');
+        const parsed = JSON.parse(blockRepair.json) as unknown;
+        const result = TRADING_LLM_SIGNAL_SCHEMA.safeParse(parsed);
+        if (!result.success) {
+          throw new Error(`Resposta LLM inválida após reparo: ${result.error.message}`);
+        }
+        return result.data;
+      } catch (blockError) {
+        const message = blockError instanceof Error ? blockError.message : 'Erro desconhecido';
+        logger.error({
+          error: message,
+          responseHash: computeSemHash(blockRepair.json),
+          responseLength: blockRepair.json.length,
+          candidateLength: candidate.length,
+        }, 'Resposta LLM inválida após reparo YAML-like sem chaves (hash/len).');
+      }
+    }
     const yamlRepair = repairYamlLikeObject(normalized.json);
     if (yamlRepair.repaired) {
       try {
@@ -7005,11 +7110,13 @@ function buildTradingSignalSystemPrompt(params: {
     'Sinais DEVEM incluir preço de entrada e níveis de saída (TP/SL) quando aplicável.',
     'Para arbitragem, considere timeframes curtos e execução imediata.',
     'Responda SOMENTE com JSON válido (sem texto extra).',
+    'O JSON DEVE começar com { e terminar com }.',
     'Use aspas duplas para TODAS as chaves e strings.',
     'Não use aspas duplas dentro dos valores; se precisar citar algo, use aspas simples ou escape com \\".',
     'Não use vírgulas finais (trailing commas).',
     'Evite quebras de linha dentro de strings: use \\n quando necessário.',
     'Retorne o JSON em UMA única linha, sem markdown.',
+    'NÃO use YAML, listas com "-" ou comentários.',
     'Schema:',
     '{',
     '  "signalType": "entry_long|entry_short|exit|adjust_sl|adjust_tp|hold|neutral",',
@@ -8552,6 +8659,101 @@ app.post('/api/integrations/trading/signals/history/delete', requirePermission('
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao excluir histórico de sinais');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/signals/history/purge - Exclusão definitiva (admin)
+app.post('/api/integrations/trading/signals/history/purge', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+    const tenantId = authContext.tenantId;
+    const userId = authContext.userId;
+    const isAdmin = await isAdminUser(authContext);
+    if (!isAdmin) {
+      res.status(403).json({ error: 'Apenas administradores podem excluir definitivamente o histórico.' });
+      return;
+    }
+    const bodySchema = z.object({
+      ids: z.array(z.string().uuid()).optional(),
+      all: z.boolean().optional(),
+      scope: z.enum(['self', 'tenant']).optional(),
+    });
+    const bodyResult = bodySchema.safeParse(req.body ?? {});
+    if (!bodyResult.success) {
+      res.status(400).json({ error: 'Dados inválidos', details: bodyResult.error.flatten() });
+      return;
+    }
+    const { ids, all, scope } = bodyResult.data;
+    if (!ids?.length && !all) {
+      res.status(400).json({ error: 'Informe ids ou use all=true para excluir.' });
+      return;
+    }
+
+    const effectiveScope = scope === 'self' ? 'self' : 'tenant';
+    const baseConditions = [eq(schema.tradingSignals.tenantId, tenantId)];
+    if (effectiveScope === 'self') {
+      baseConditions.push(buildOwnerMetadataCondition(schema.tradingSignals.metadata, userId));
+    }
+    if (ids?.length) {
+      baseConditions.push(inArray(schema.tradingSignals.id, ids));
+    }
+
+    const db = getDatabase();
+    const signalIdsQuery = db
+      .select({ id: schema.tradingSignals.id })
+      .from(schema.tradingSignals)
+      .where(and(...baseConditions));
+
+    const result = await db.transaction(async (tx) => {
+      await tx
+        .update(schema.tradingSignalSchedulers)
+        .set({ lastSignalId: null })
+        .where(and(
+          eq(schema.tradingSignalSchedulers.tenantId, tenantId),
+          inArray(schema.tradingSignalSchedulers.lastSignalId, signalIdsQuery)
+        ));
+
+      await tx
+        .update(schema.tradingOrders)
+        .set({ signalId: null })
+        .where(and(
+          eq(schema.tradingOrders.tenantId, tenantId),
+          inArray(schema.tradingOrders.signalId, signalIdsQuery)
+        ));
+
+      const validationDelete = await tx
+        .delete(schema.tradingLlmValidations)
+        .where(and(
+          eq(schema.tradingLlmValidations.tenantId, tenantId),
+          inArray(schema.tradingLlmValidations.signalId, signalIdsQuery)
+        ));
+
+      const deleteResult = await tx
+        .delete(schema.tradingSignals)
+        .where(and(...baseConditions));
+
+      return {
+        deletedSignals: deleteResult.rowCount ?? 0,
+        deletedValidations: validationDelete.rowCount ?? 0,
+      };
+    });
+
+    res.json({
+      success: true,
+      data: {
+        scope: effectiveScope,
+        deletedSignals: result.deletedSignals,
+        deletedValidations: result.deletedValidations,
+      },
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao excluir definitivamente histórico de sinais');
     res.status(500).json({ error: errorMessage });
   }
 });
@@ -11406,6 +11608,71 @@ async function calculateAndPersistTechnicalAnalysis(params: {
   };
 }
 
+// GET /api/integrations/trading/analysis/history - Histórico de análises
+app.get('/api/integrations/trading/analysis/history', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+    const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
+
+    const symbolParam = req.query.symbol as string | undefined;
+    const resolvedSymbol = symbolParam
+      ? await resolveTradingSymbolOrRespond(res, tradingAuth, symbolParam, { required: true })
+      : await kucoinService.resolveTradingSymbol(tradingAuth);
+    if (!resolvedSymbol) return;
+    const intervalParam = req.query.interval as string || '5m';
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+    const cursorParam = req.query.cursor as string | undefined;
+    const cursorDate = cursorParam ? new Date(cursorParam) : null;
+
+    // BUG FIX 21/12/2025: Validação e type narrowing para TypeScript
+    const validIntervals = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d', '1w'] as const;
+    type ValidInterval = typeof validIntervals[number];
+    
+    if (!validIntervals.includes(intervalParam as ValidInterval)) {
+      res.status(400).json({ error: `Intervalo inválido: ${intervalParam}. Use: ${validIntervals.join(', ')}` });
+      return;
+    }
+    const interval = intervalParam as ValidInterval;
+
+    const db = getDatabase();
+    // BUG FIX 21/12/2025: interval agora é usado na query (antes era ignorado)
+    const conditions = [
+      eq(schema.tradingTechnicalIndicators.tenantId, authContext.tenantId),
+      eq(schema.tradingTechnicalIndicators.symbol, resolvedSymbol),
+      eq(schema.tradingTechnicalIndicators.interval, interval),
+      buildNotDeletedMetadataCondition(schema.tradingTechnicalIndicators.metadata),
+    ];
+    if (cursorDate && !Number.isNaN(cursorDate.getTime())) {
+      conditions.push(lt(schema.tradingTechnicalIndicators.calculatedAt, cursorDate));
+    }
+
+    const history = await db
+      .select()
+      .from(schema.tradingTechnicalIndicators)
+      .where(and(...conditions))
+      .orderBy(desc(schema.tradingTechnicalIndicators.calculatedAt))
+      .limit(limit);
+
+    res.json({
+      success: true,
+      data: history,
+      count: history.length,
+      symbol: resolvedSymbol,
+      nextCursor: history.length > 0
+        ? history[history.length - 1]?.calculatedAt?.toISOString() ?? null
+        : null,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter histórico de análises');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
 // GET /api/integrations/trading/analysis/:symbol - Análise técnica completa
 app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
@@ -11636,71 +11903,6 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
   }
 });
 
-// GET /api/integrations/trading/analysis/history - Histórico de análises
-app.get('/api/integrations/trading/analysis/history', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
-  try {
-    const authContext = extractAuthContext(req);
-    if (!authContext?.tenantId || !authContext?.userId) {
-      res.status(401).json({ error: 'Autenticação necessária' });
-      return;
-    }
-    const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
-
-    const symbolParam = req.query.symbol as string | undefined;
-    const resolvedSymbol = symbolParam
-      ? await resolveTradingSymbolOrRespond(res, tradingAuth, symbolParam, { required: true })
-      : await kucoinService.resolveTradingSymbol(tradingAuth);
-    if (!resolvedSymbol) return;
-    const intervalParam = req.query.interval as string || '5m';
-    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
-    const cursorParam = req.query.cursor as string | undefined;
-    const cursorDate = cursorParam ? new Date(cursorParam) : null;
-
-    // BUG FIX 21/12/2025: Validação e type narrowing para TypeScript
-    const validIntervals = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d', '1w'] as const;
-    type ValidInterval = typeof validIntervals[number];
-    
-    if (!validIntervals.includes(intervalParam as ValidInterval)) {
-      res.status(400).json({ error: `Intervalo inválido: ${intervalParam}. Use: ${validIntervals.join(', ')}` });
-      return;
-    }
-    const interval = intervalParam as ValidInterval;
-
-    const db = getDatabase();
-    // BUG FIX 21/12/2025: interval agora é usado na query (antes era ignorado)
-    const conditions = [
-      eq(schema.tradingTechnicalIndicators.tenantId, authContext.tenantId),
-      eq(schema.tradingTechnicalIndicators.symbol, resolvedSymbol),
-      eq(schema.tradingTechnicalIndicators.interval, interval),
-      buildNotDeletedMetadataCondition(schema.tradingTechnicalIndicators.metadata),
-    ];
-    if (cursorDate && !Number.isNaN(cursorDate.getTime())) {
-      conditions.push(lt(schema.tradingTechnicalIndicators.calculatedAt, cursorDate));
-    }
-
-    const history = await db
-      .select()
-      .from(schema.tradingTechnicalIndicators)
-      .where(and(...conditions))
-      .orderBy(desc(schema.tradingTechnicalIndicators.calculatedAt))
-      .limit(limit);
-
-    res.json({
-      success: true,
-      data: history,
-      count: history.length,
-      symbol: resolvedSymbol,
-      nextCursor: history.length > 0
-        ? history[history.length - 1]?.calculatedAt?.toISOString() ?? null
-        : null,
-    });
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-    logger.error({ error: errorMessage }, 'Erro ao obter histórico de análises');
-    res.status(500).json({ error: errorMessage });
-  }
-});
-
 // POST /api/integrations/trading/analysis/history/delete - Exclusão lógica de análises
 app.post('/api/integrations/trading/analysis/history/delete', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
   try {
@@ -11757,6 +11959,93 @@ app.post('/api/integrations/trading/analysis/history/delete', requirePermission(
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao excluir histórico de análises');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/analysis/history/purge - Exclusão definitiva (admin)
+app.post('/api/integrations/trading/analysis/history/purge', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+    const tenantId = authContext.tenantId;
+    const userId = authContext.userId;
+    const isAdmin = await isAdminUser(authContext);
+    if (!isAdmin) {
+      res.status(403).json({ error: 'Apenas administradores podem excluir definitivamente o histórico.' });
+      return;
+    }
+    const bodySchema = z.object({
+      ids: z.array(z.string().uuid()).optional(),
+      all: z.boolean().optional(),
+      scope: z.enum(['self', 'tenant']).optional(),
+    });
+    const bodyResult = bodySchema.safeParse(req.body ?? {});
+    if (!bodyResult.success) {
+      res.status(400).json({ error: 'Dados inválidos', details: bodyResult.error.flatten() });
+      return;
+    }
+    const { ids, all, scope } = bodyResult.data;
+    if (!ids?.length && !all) {
+      res.status(400).json({ error: 'Informe ids ou use all=true para excluir.' });
+      return;
+    }
+
+    const effectiveScope = scope === 'self' ? 'self' : 'tenant';
+    const baseConditions = [eq(schema.tradingTechnicalIndicators.tenantId, tenantId)];
+    if (effectiveScope === 'self') {
+      baseConditions.push(buildOwnerMetadataCondition(schema.tradingTechnicalIndicators.metadata, userId));
+    }
+    if (ids?.length) {
+      baseConditions.push(inArray(schema.tradingTechnicalIndicators.id, ids));
+    }
+
+    const db = getDatabase();
+    const indicatorIdsQuery = db
+      .select({ id: schema.tradingTechnicalIndicators.id })
+      .from(schema.tradingTechnicalIndicators)
+      .where(and(...baseConditions));
+
+    const result = await db.transaction(async (tx) => {
+      await tx
+        .update(schema.tradingAnalysisSchedulers)
+        .set({ lastIndicatorId: null })
+        .where(and(
+          eq(schema.tradingAnalysisSchedulers.tenantId, tenantId),
+          inArray(schema.tradingAnalysisSchedulers.lastIndicatorId, indicatorIdsQuery)
+        ));
+
+      const validationDelete = await tx
+        .delete(schema.tradingLlmValidations)
+        .where(and(
+          eq(schema.tradingLlmValidations.tenantId, tenantId),
+          inArray(schema.tradingLlmValidations.indicatorSnapshotId, indicatorIdsQuery)
+        ));
+
+      const deleteResult = await tx
+        .delete(schema.tradingTechnicalIndicators)
+        .where(and(...baseConditions));
+
+      return {
+        deletedIndicators: deleteResult.rowCount ?? 0,
+        deletedValidations: validationDelete.rowCount ?? 0,
+      };
+    });
+
+    res.json({
+      success: true,
+      data: {
+        scope: effectiveScope,
+        deletedIndicators: result.deletedIndicators,
+        deletedValidations: result.deletedValidations,
+      },
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao excluir definitivamente histórico de análises');
     res.status(500).json({ error: errorMessage });
   }
 });
@@ -11875,7 +12164,7 @@ initializeCaches().then(() => {
   }, INTEGRATION_HEALTH_REFRESH_MS);
 
   // SEGURANÇA: Timeouts para prevenir conexões pendentes (Node.js 20 LTS Best Practices)
-  server.timeout = 30000; // 30s timeout para requisições
+  server.timeout = 120000; // 120s para requisições longas (LLM/Trading)
   server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
   server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
 
