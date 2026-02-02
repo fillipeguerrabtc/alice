@@ -367,6 +367,11 @@ interface TradingSignal {
     motivators?: string[];
     invalidationReasons?: string[];
     tradeSummary?: string;
+    dataSources?: {
+      orderBook?: boolean;
+      news?: boolean;
+      trainingData?: boolean;
+    };
     news?: {
       query: string;
       results: Array<{ title: string; url: string; score?: number }>;

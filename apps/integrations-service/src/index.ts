@@ -8819,7 +8819,7 @@ app.put('/api/integrations/trading/news-presets/:id', requirePermission('integra
       .set(updatePayload)
       .where(eq(schema.tradingNewsPresets.id, preset.id))
       .returning();
-    let updated = updatedRows[0];
+    const updated = updatedRows[0];
     if (!updated) {
       const refreshed = await getDatabase().query.tradingNewsPresets.findFirst({
         where: and(
