@@ -1686,33 +1686,6 @@
         "newsQuery": "Consulta",
         "newsEmpty": "Notícias habilitadas, mas nenhum resultado relevante retornado."
       },
-      "history": {
-        "title": "Histórico de Sinais",
-        "approvalStatus": "Status de aprovação: {{status}}",
-        "validationStatus": "Status de validação: {{status}}",
-        "deleteSelected": "Excluir selecionados",
-        "deleteAllMine": "Excluir tudo (meus)",
-        "deleteAllTenant": "Excluir tudo (tenant)",
-        "purgeSelected": "Excluir definitivamente selecionados",
-        "purgeAllTenant": "Limpar definitivo (tenant)",
-        "loadMore": "Carregar mais",
-        "empty": "Nenhum item encontrado.",
-        "loadedCount": "{{count}} itens carregados",
-        "loadFailed": "Erro ao carregar histórico",
-        "deleteFailed": "Erro ao excluir histórico",
-        "deletedTitle": "Histórico atualizado",
-        "deletedDescription": "Itens removidos com sucesso.",
-        "purgeFailed": "Erro ao excluir definitivamente histórico",
-        "purgedTitle": "Histórico limpo definitivamente",
-        "purgedDescription": "Itens removidos de forma permanente.",
-        "table": {
-          "type": "Tipo",
-          "symbol": "Par",
-          "validation": "Validação",
-          "approval": "Aprovação",
-          "date": "Data"
-        }
-      },
       "table": {
         "type": "Tipo",
         "symbol": "Par",
