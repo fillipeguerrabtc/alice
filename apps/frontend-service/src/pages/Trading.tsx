@@ -1736,7 +1736,7 @@ export default function Trading() {
         newsConfig: signalProfileForm.newsConfig,
         techniques: signalProfileForm.techniques,
         ensembleConfig: signalProfileForm.ensembleConfig,
-        arbitrageConfig: signalProfileForm.arbitrageConfig,
+        arbitrageConfig: signalProfileForm.arbitrageConfig ?? undefined,
         modelConfig: signalProfileForm.modelConfig,
         consensus: signalProfileForm.consensus,
       };
