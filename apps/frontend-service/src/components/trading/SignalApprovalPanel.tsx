@@ -985,11 +985,11 @@ export function SignalApprovalPanel({
         throw new Error(payload.error || t('trading.signals.history.loadFailed'));
       }
       const newItems = payload.data as TradingSignal[];
+      const totalPages = Math.max(1, payload.totalPages ?? 1);
       setHistoryItems(newItems);
       const resolvedPage = Math.min(payload.page ?? nextPage, totalPages);
       setHistoryPage(resolvedPage);
       setHistoryPageSize(payload.pageSize ?? historyPageSize);
-      const totalPages = Math.max(1, payload.totalPages ?? 1);
       setHistoryTotal(payload.total ?? newItems.length);
       setHistoryTotalPages(totalPages);
       if (options.resetSelection) {
