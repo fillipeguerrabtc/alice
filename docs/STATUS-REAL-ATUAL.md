@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 01 de Fevereiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.65 - Trading estável (rate limit + contexto) e WS alinhado
+**Versão:** 10.66 - Trading JSON resiliente + WS chat sem crash
 
 ---
 
@@ -33,6 +33,8 @@
 - Trading: rate limit dedicado para alta frequência de polling/WS evita 429 em produção.
 - Trading: budget de prompt com margem conservadora evita erro 400 por contexto > 4096 tokens.
 - Chat/Trading: WebSocket do frontend alinhado com `/ws/chat` (rota correta no chat-service).
+- Trading: reparo de JSON mais robusto (aspas internas + string incompleta) evita falhas na geração de sinais.
+- Chat: correção do upgrade WS evita crash por double handleUpgrade.
 - Sinais IA: parsing robusto de JSON do LLM com reparo seguro e prompt de saída estrito.
 - Roteamento de agentes: gatilhos configuráveis no Modo Agentic (manual/auto) por tenant.
 - Roteamento agentic: normalização de comandos (acentos/@) e detecção consistente no WebSocket.

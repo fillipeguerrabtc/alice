@@ -5755,6 +5755,13 @@ function repairLlmJsonContent(content: string): { json: string; repaired: boolea
   let escaping = false;
   let output = '';
 
+  const peekNextNonWhitespace = (startIndex: number): string | null => {
+    for (let i = startIndex; i < content.length; i += 1) {
+      if (!/\s/.test(content[i])) return content[i];
+    }
+    return null;
+  };
+
   for (let i = 0; i < content.length; i += 1) {
     const char = content[i];
     if (escaping) {
@@ -5768,7 +5775,19 @@ function repairLlmJsonContent(content: string): { json: string; repaired: boolea
       continue;
     }
     if (char === '"') {
-      inString = !inString;
+      if (inString) {
+        const nextNonWhitespace = peekNextNonWhitespace(i + 1);
+        const isTerminator = nextNonWhitespace === ',' || nextNonWhitespace === '}' || nextNonWhitespace === ']' || nextNonWhitespace === ':';
+        if (!isTerminator) {
+          output += '\\"';
+          repaired = true;
+          continue;
+        }
+        inString = false;
+        output += char;
+        continue;
+      }
+      inString = true;
       output += char;
       continue;
     }
@@ -5791,6 +5810,11 @@ function repairLlmJsonContent(content: string): { json: string; repaired: boolea
       }
     }
     output += char;
+  }
+
+  if (inString) {
+    output += '"';
+    repaired = true;
   }
 
   const trailingCommaResult = removeTrailingCommasOutsideStrings(output);
@@ -6230,6 +6254,7 @@ function buildTradingSignalSystemPrompt(params: {
     params.marginMode ? `MarginMode: ${params.marginMode}` : null,
     'Responda SOMENTE com JSON válido (sem texto extra).',
     'Use aspas duplas para TODAS as chaves e strings.',
+    'Não use aspas duplas dentro dos valores; se precisar citar algo, use aspas simples ou escape com \\".',
     'Não use vírgulas finais (trailing commas).',
     'Evite quebras de linha dentro de strings: use \\n quando necessário.',
     'Retorne o JSON em UMA única linha, sem markdown.',

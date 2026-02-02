@@ -793,8 +793,7 @@ setInterval(() => {
 // SEGURANÇA: maxPayload e ping/pong heartbeat (ws v8.18.3)
 // Autenticação completa via sessão PostgreSQL (OWASP API2 2023)
 const wss = new WebSocketServer({ 
-  server, 
-  path: '/ws/chat',
+  noServer: true,
   maxPayload: 10 * 1024 * 1024, // 10MB max payload (OWASP WebSocket Security)
   verifyClient: async (info, callback) => {
     const origin = info.origin || info.req.headers.origin;
@@ -13886,11 +13885,13 @@ server.on('upgrade', (request, socket, head) => {
     agentWss.handleUpgrade(request, socket, head, (ws) => {
       agentWss.emit('connection', ws, request);
     });
-  } else {
+  } else if (pathname === '/ws/chat') {
     // Conexão de cliente normal (chat)
     wss.handleUpgrade(request, socket, head, (ws) => {
       wss.emit('connection', ws, request);
     });
+  } else {
+    socket.destroy();
   }
 });
 
