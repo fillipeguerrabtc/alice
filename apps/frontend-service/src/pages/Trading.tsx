@@ -1253,6 +1253,42 @@ export default function Trading() {
     }
   }, [intervalsData, selectedInterval]);
 
+  const fetchOrderHistory = useCallback(async (options: { reset?: boolean } = {}) => {
+    if (orderHistoryLoadingRef.current) return;
+    const reset = options.reset ?? false;
+    orderHistoryLoadingRef.current = true;
+    setOrderHistoryLoading(true);
+    const params = new URLSearchParams();
+    params.set('limit', '50');
+    if (!reset && orderHistoryCursor) {
+      params.set('cursor', orderHistoryCursor);
+    }
+    if (selectedMarketType) {
+      params.set('marketType', selectedMarketType);
+    }
+    try {
+      const res = await apiRequest('GET', `/api/integrations/trading/orders/history?${params.toString()}`);
+      const payload = await res.json();
+      if (!res.ok) {
+        throw new Error(payload.error || t('trading.errors.historyFailed'));
+      }
+      const nextCursor = payload.nextCursor as string | null;
+      const items = payload.data as TradingOrder[];
+      setOrderHistoryItems((prev) => (reset ? items : [...prev, ...items]));
+      setOrderHistoryCursor(nextCursor ?? null);
+      setOrderHistoryHasMore(Boolean(nextCursor));
+      if (reset) {
+        setOrderHistorySelectedIds(new Set());
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('common.error');
+      toast({ title: t('trading.errors.historyFailed'), description: message, variant: 'destructive' });
+    } finally {
+      setOrderHistoryLoading(false);
+      orderHistoryLoadingRef.current = false;
+    }
+  }, [orderHistoryCursor, selectedMarketType, t, toast]);
+
   useEffect(() => {
     if (activeTab !== 'history') return;
     const marketChanged = orderHistoryMarketRef.current !== selectedMarketType;
@@ -2111,42 +2147,6 @@ export default function Trading() {
   const allOrderHistorySelected = orderHistoryItems.length > 0 && orderHistorySelectedIds.size === orderHistoryItems.length;
   const hasOrderHistorySelection = orderHistorySelectedIds.size > 0;
   const hasSignalArbitrage = signalProfileForm.techniques.includes('arbitrage_triangular');
-
-  const fetchOrderHistory = useCallback(async (options: { reset?: boolean } = {}) => {
-    if (orderHistoryLoadingRef.current) return;
-    const reset = options.reset ?? false;
-    orderHistoryLoadingRef.current = true;
-    setOrderHistoryLoading(true);
-    const params = new URLSearchParams();
-    params.set('limit', '50');
-    if (!reset && orderHistoryCursor) {
-      params.set('cursor', orderHistoryCursor);
-    }
-    if (selectedMarketType) {
-      params.set('marketType', selectedMarketType);
-    }
-    try {
-      const res = await apiRequest('GET', `/api/integrations/trading/orders/history?${params.toString()}`);
-      const payload = await res.json();
-      if (!res.ok) {
-        throw new Error(payload.error || t('trading.errors.historyFailed'));
-      }
-      const nextCursor = payload.nextCursor as string | null;
-      const items = payload.data as TradingOrder[];
-      setOrderHistoryItems((prev) => (reset ? items : [...prev, ...items]));
-      setOrderHistoryCursor(nextCursor ?? null);
-      setOrderHistoryHasMore(Boolean(nextCursor));
-      if (reset) {
-        setOrderHistorySelectedIds(new Set());
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : t('common.error');
-      toast({ title: t('trading.errors.historyFailed'), description: message, variant: 'destructive' });
-    } finally {
-      setOrderHistoryLoading(false);
-      orderHistoryLoadingRef.current = false;
-    }
-  }, [orderHistoryCursor, selectedMarketType, t, toast]);
 
   const deleteOrderHistoryMutation = useMutation({
     mutationFn: async ({ ids, all, scope }: { ids?: string[]; all?: boolean; scope?: 'self' | 'tenant' }) => {
