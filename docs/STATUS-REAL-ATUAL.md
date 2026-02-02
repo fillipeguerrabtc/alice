@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 02 de Fevereiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.77 - Multi‑select em dropdown + histórico Sinais IA paginado
+**Versão:** 10.78 - Build frontend corrigido (sinais/análise)
 
 ---
 
@@ -43,6 +43,7 @@
 - Trading: UI de arbitragem com dropdown multi‑select (exchanges/ativos) + limite de 30 ativos.
 - Trading: seleções múltiplas (timeframes/indicadores/técnicas/fontes) agora usam dropdown com scroll nas abas Análise e Sinais IA.
 - Sinais IA: histórico inline com paginação, ordenação e filtros por data/tipo/status (validação/aprovação).
+- Build Frontend: correção de referências ausentes em Sinais IA e Arbitragem evita falha no release.
 - Trading: feePct é automático (maior entre exchanges) e aplicado em análise/sinal.
 - Proxy (Caddy): timeout dedicado para `/api/integrations/trading/analysis*` evita 502 em arbitragem pesada.
 - API Gateway (dev): timeouts long‑running para trading/LLM alinhados com Caddy e integrations-service.

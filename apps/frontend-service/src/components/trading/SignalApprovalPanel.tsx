@@ -192,6 +192,16 @@ const getSignalTypeInfo = (type: TradingSignal['signalType']) => {
   }
 };
 
+const SIGNAL_TYPE_OPTIONS: TradingSignal['signalType'][] = [
+  'entry_long',
+  'entry_short',
+  'exit',
+  'adjust_sl',
+  'adjust_tp',
+  'hold',
+  'neutral',
+];
+
 const buildIndicatorExplanation = (analysis: Record<string, unknown>): string[] => {
   const items: string[] = [];
   const rsi = analysis.rsi as { value?: number; interpretation?: string } | undefined;
@@ -1322,9 +1332,12 @@ export function SignalApprovalPanel({
                 onChange={(event) => setHistorySignalType(event.target.value)}
               >
                 <option value="">{t('trading.signals.history.filters.all')}</option>
-                {Object.keys(SIGNAL_TYPE_INFO).map((key) => (
-                  <option key={key} value={key}>{SIGNAL_TYPE_INFO[key as TradingSignal['signalType']].label}</option>
-                ))}
+                {SIGNAL_TYPE_OPTIONS.map((signalType) => {
+                  const info = getSignalTypeInfo(signalType);
+                  return (
+                    <option key={signalType} value={signalType}>{info.label}</option>
+                  );
+                })}
               </select>
             </div>
             <div className="space-y-1">

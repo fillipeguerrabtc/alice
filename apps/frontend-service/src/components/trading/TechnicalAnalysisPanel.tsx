@@ -591,16 +591,6 @@ export function TechnicalAnalysisPanel({
     });
   }, [profileForm.techniques]);
 
-  useEffect(() => {
-    const exchanges = profileForm.arbitrageConfig?.exchanges ?? [];
-    setSelectedArbitrageExchanges(new Set(exchanges));
-  }, [profileForm.arbitrageConfig?.exchanges]);
-
-  useEffect(() => {
-    const assets = profileForm.arbitrageConfig?.intermediateAssets ?? [];
-    setSelectedArbitrageAssets(new Set(assets));
-  }, [profileForm.arbitrageConfig?.intermediateAssets]);
-
   const {
     data: profileResponse,
     refetch: refetchProfile,
