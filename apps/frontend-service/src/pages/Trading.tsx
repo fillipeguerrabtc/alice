@@ -62,7 +62,6 @@ import {
   Loader2,
   Pencil,
   // CORREÇÃO 19/12/2025: Remover Eye não utilizado (no-unused-vars)
-  Trash2,
   Rocket,
   Brain,
   LineChart,

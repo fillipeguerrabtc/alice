@@ -14,6 +14,7 @@
  */
 
 import { useCallback, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -96,6 +97,8 @@ interface TradingSignal {
     technicalIndicators?: Record<string, number>;
     validationStatus?: 'pending' | 'validated' | 'failed';
     validationId?: string;
+    approvalStatus?: 'pending' | 'approved' | 'rejected';
+    approvalReason?: string;
     techniques?: string[];
     techniqueScores?: Array<{ technique: string; signal: string; confidence: number; rationale?: string }>;
     ensembleResult?: {
@@ -764,6 +767,7 @@ export function SignalApprovalPanel({
   marketType,
 }: SignalApprovalPanelProps) {
   const { toast } = useToast();
+  const { t } = useTranslation();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const locale = user?.idioma ?? 'pt-BR';
