@@ -8819,7 +8819,21 @@ app.put('/api/integrations/trading/news-presets/:id', requirePermission('integra
       .set(updatePayload)
       .where(eq(schema.tradingNewsPresets.id, preset.id))
       .returning();
-    const updated = updatedRows[0] ?? preset;
+    let updated = updatedRows[0];
+    if (!updated) {
+      const refreshed = await getDatabase().query.tradingNewsPresets.findFirst({
+        where: and(
+          eq(schema.tradingNewsPresets.id, preset.id),
+          eq(schema.tradingNewsPresets.tenantId, authContext.tenantId)
+        ),
+      });
+      if (!refreshed) {
+        res.status(404).json({ error: 'Preset não encontrado' });
+        return;
+      }
+      res.status(409).json({ error: 'Preset não pôde ser atualizado (conflito de concorrência)' });
+      return;
+    }
 
     if (updated?.isDefault) {
       await getDatabase()
