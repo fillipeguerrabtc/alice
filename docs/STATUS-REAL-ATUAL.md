@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 02 de Fevereiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.82 - Correções LLM e histórico multi-mercado
+**Versão:** 10.83 - Modo Agentic resiliente e bootstrap de integrações
 
 ---
 
@@ -85,6 +85,12 @@
 - Notícias Trading: normalização de templates evita array vazio e crash em runtime.
 - Training: datasets de trading com aprovação dedicada e fluxo manual via sinal → dataset.
 - Trading: correção da ordem de hooks para evitar React error #310 na página de Trading.
+- Modo Agentic: criação de `conversation_states` agora é UPSERT idempotente (elimina erro 23505).
+- Chat streaming: resposta de erro clara quando falha antes de enviar headers (evita 502 silencioso).
+- Agentic settings: detectores default persistidos quando `detectors` está vazio no banco.
+- Integrações: bootstrap automático de KuCoin e ERPNext por tenant quando secrets válidos existem.
+- LLM Trading: normalização de campos numéricos e arrays reduz falhas de parse e validação.
+- ERPNext: versão atualizada para v15.95.2 via SSOT.
 - Training: webhook com deduplicação semântica (semhash + cosine) e auditoria de duplicados.
 - CI: reordenação de enums/schemas de trading evita uso antes da declaração.
 - Lint: remoção de import não usado na página Trading (zero warnings).

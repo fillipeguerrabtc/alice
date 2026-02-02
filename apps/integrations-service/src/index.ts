@@ -6553,6 +6553,54 @@ const TRADING_LLM_SIGNAL_KEYS = new Set([
   'riskScore',
 ]);
 
+function coerceNumericField(value: unknown): number | undefined {
+  if (value === null || value === undefined) return undefined;
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : undefined;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+    const parsed = Number(trimmed.replace(',', '.'));
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function normalizeLlmSignalPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  const normalized = { ...payload };
+  const numericKeys = [
+    'expectedDurationMinutes',
+    'confidence',
+    'suggestedPrice',
+    'suggestedStopLoss',
+    'suggestedTakeProfit',
+    'suggestedSize',
+    'riskReward',
+    'riskScore',
+  ] as const;
+
+  for (const key of numericKeys) {
+    if (key in normalized) {
+      const coerced = coerceNumericField(normalized[key]);
+      if (coerced === undefined) {
+        delete normalized[key];
+      } else {
+        normalized[key] = coerced;
+      }
+    }
+  }
+
+  if (typeof normalized.motivators === 'string') {
+    normalized.motivators = [normalized.motivators].filter(Boolean);
+  }
+  if (typeof normalized.invalidationReasons === 'string') {
+    normalized.invalidationReasons = [normalized.invalidationReasons].filter(Boolean);
+  }
+
+  return normalized;
+}
+
 function normalizeLlmJsonKeys(content: string): { json: string; repaired: boolean } {
   let repaired = false;
   let inString = false;
@@ -7019,8 +7067,9 @@ function parseLlmSignalResponse(rawResponse: string) {
   const candidate = extractJsonObjectCandidate(rawResponse);
   const normalized = normalizeLlmJsonKeys(candidate);
   try {
-    const parsed = JSON.parse(normalized.json) as unknown;
-    const result = TRADING_LLM_SIGNAL_PARTIAL_SCHEMA.safeParse(parsed);
+    const parsed = JSON.parse(normalized.json) as Record<string, unknown>;
+    const normalizedPayload = normalizeLlmSignalPayload(parsed);
+    const result = TRADING_LLM_SIGNAL_PARTIAL_SCHEMA.safeParse(normalizedPayload);
     if (!result.success) {
       throw new Error(`Resposta LLM inválida: ${result.error.message}`);
     }
@@ -7030,8 +7079,9 @@ function parseLlmSignalResponse(rawResponse: string) {
     if (blockRepair.repaired) {
       try {
         logger.warn({ error: error instanceof Error ? error.message : error }, 'Resposta LLM inválida; aplicando reparo YAML-like sem chaves.');
-        const parsed = JSON.parse(blockRepair.json) as unknown;
-        const result = TRADING_LLM_SIGNAL_PARTIAL_SCHEMA.safeParse(parsed);
+        const parsed = JSON.parse(blockRepair.json) as Record<string, unknown>;
+        const normalizedPayload = normalizeLlmSignalPayload(parsed);
+        const result = TRADING_LLM_SIGNAL_PARTIAL_SCHEMA.safeParse(normalizedPayload);
         if (!result.success) {
           throw new Error(`Resposta LLM inválida após reparo: ${result.error.message}`);
         }
@@ -7050,8 +7100,9 @@ function parseLlmSignalResponse(rawResponse: string) {
     if (yamlRepair.repaired) {
       try {
         logger.warn({ error: error instanceof Error ? error.message : error }, 'Resposta LLM inválida; aplicando reparo YAML-like.');
-        const parsed = JSON.parse(yamlRepair.json) as unknown;
-        const result = TRADING_LLM_SIGNAL_PARTIAL_SCHEMA.safeParse(parsed);
+        const parsed = JSON.parse(yamlRepair.json) as Record<string, unknown>;
+        const normalizedPayload = normalizeLlmSignalPayload(parsed);
+        const result = TRADING_LLM_SIGNAL_PARTIAL_SCHEMA.safeParse(normalizedPayload);
         if (!result.success) {
           throw new Error(`Resposta LLM inválida após reparo: ${result.error.message}`);
         }
@@ -7070,8 +7121,9 @@ function parseLlmSignalResponse(rawResponse: string) {
     if (repair.repaired) {
       try {
         logger.warn({ error: error instanceof Error ? error.message : error }, 'Resposta LLM inválida; aplicando reparo seguro do JSON.');
-        const parsed = JSON.parse(repair.json) as unknown;
-        const result = TRADING_LLM_SIGNAL_PARTIAL_SCHEMA.safeParse(parsed);
+        const parsed = JSON.parse(repair.json) as Record<string, unknown>;
+        const normalizedPayload = normalizeLlmSignalPayload(parsed);
+        const result = TRADING_LLM_SIGNAL_PARTIAL_SCHEMA.safeParse(normalizedPayload);
         if (!result.success) {
           throw new Error(`Resposta LLM inválida após reparo: ${result.error.message}`);
         }
@@ -7114,9 +7166,18 @@ function resolveSignalTypeFromAnalysis(analysis: technicalIndicators.TechnicalAn
   return 'hold';
 }
 
-function normalizeNullableNumber(value?: number | null): number | undefined {
-  if (value === null || value === undefined || Number.isNaN(value)) return undefined;
-  return value;
+function normalizeNullableNumber(value?: number | string | null): number | undefined {
+  if (value === null || value === undefined) return undefined;
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : undefined;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+    const parsed = Number(trimmed.replace(',', '.'));
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
 }
 
 function buildLlmSignalFromPartial(params: {
@@ -7532,6 +7593,8 @@ function buildTradingSignalSystemPrompt(params: {
     'Não use aspas duplas dentro dos valores; se precisar citar algo, use aspas simples ou escape com \\".',
     'Não use vírgulas finais (trailing commas).',
     'Evite quebras de linha dentro de strings: use \\n quando necessário.',
+    'Campos numéricos devem ser números (sem aspas). Quando desconhecido, omita o campo (não use null).',
+    'Campos motivators e invalidationReasons DEVEM ter pelo menos 1 item cada.',
     'Retorne o JSON em UMA única linha, sem markdown.',
     'NÃO use YAML, listas com "-" ou comentários.',
     'Schema:',
@@ -12829,6 +12892,122 @@ app.use(createErrorHandler({
 const PORT = config.PORT || 3005;
 const INTEGRATION_HEALTH_REFRESH_MS = 120000;
 
+type IntegrationSeed = {
+  tipo: 'kucoin' | 'erpnext';
+  nome: string;
+  configuracao: IntegrationConfiguracao;
+  credenciais: Record<string, unknown>;
+};
+
+function buildIntegrationSeeds(): IntegrationSeed[] {
+  const seeds: IntegrationSeed[] = [];
+  const kucoinStatus = kucoinClient.getKucoinConfigStatus();
+  if (kucoinStatus.isConfigured) {
+    const baseUrl = process.env.KUCOIN_PRO_BASE_URL?.trim();
+    const configuracao: IntegrationConfiguracao = {};
+    if (baseUrl) {
+      configuracao.baseUrl = baseUrl;
+    }
+    seeds.push({
+      tipo: 'kucoin',
+      nome: 'KuCoin Futures',
+      configuracao,
+      credenciais: {
+        apiKey: process.env.KUCOIN_PRO_API_KEY?.trim(),
+        apiSecret: process.env.KUCOIN_PRO_API_SECRET?.trim(),
+        passphrase: process.env.KUCOIN_PRO_API_PASSPHRASE?.trim(),
+      },
+    });
+  } else {
+    logger.warn({ missing: kucoinStatus.missingKeys }, 'KuCoin não configurado - bootstrap ignorado');
+  }
+
+  if (config.ERPNEXT_URL && config.ERPNEXT_API_KEY && config.ERPNEXT_API_SECRET) {
+    seeds.push({
+      tipo: 'erpnext',
+      nome: 'ERPNext',
+      configuracao: {
+        baseUrl: config.ERPNEXT_URL,
+      },
+      credenciais: {
+        apiKey: config.ERPNEXT_API_KEY,
+        apiSecret: config.ERPNEXT_API_SECRET,
+      },
+    });
+  } else {
+    logger.warn('ERPNext não configurado - bootstrap ignorado');
+  }
+
+  return seeds;
+}
+
+async function ensureIntegrationSeeded(params: {
+  tenantId: string;
+  seed: IntegrationSeed;
+}): Promise<boolean> {
+  const db = getDatabase();
+  const existing = await db.query.integrations.findFirst({
+    where: and(
+      eq(schema.integrations.tenantId, params.tenantId),
+      eq(schema.integrations.tipo, params.seed.tipo)
+    ),
+  });
+
+  if (existing) {
+    return false;
+  }
+
+  const [created] = await db.insert(schema.integrations).values({
+    tenantId: params.tenantId,
+    tipo: params.seed.tipo,
+    nome: params.seed.nome,
+    configuracao: params.seed.configuracao,
+    credenciais: params.seed.credenciais,
+    ativo: true,
+  }).returning();
+
+  if (!created) {
+    throw new Error(`Falha ao criar integração ${params.seed.tipo} para o tenant ${params.tenantId}`);
+  }
+
+  logger.info({ tenantId: params.tenantId, tipo: params.seed.tipo }, 'Integração bootstrap criada');
+  return true;
+}
+
+async function bootstrapIntegrationsForTenants(): Promise<void> {
+  const db = getDatabase();
+  const tenants = await db.query.tenants.findMany({
+    columns: {
+      id: true,
+      nome: true,
+    },
+  });
+
+  if (tenants.length === 0) {
+    logger.warn('Nenhum tenant encontrado para bootstrap de integrações');
+    return;
+  }
+
+  const seeds = buildIntegrationSeeds();
+  if (seeds.length === 0) {
+    logger.warn('Nenhuma integração configurada para bootstrap');
+    return;
+  }
+
+  for (const tenant of tenants) {
+    for (const seed of seeds) {
+      try {
+        await ensureIntegrationSeeded({ tenantId: tenant.id, seed });
+      } catch (error) {
+        logger.error(
+          { error, tenantId: tenant.id, tipo: seed.tipo },
+          'Falha ao bootstrapar integração'
+        );
+      }
+    }
+  }
+}
+
 // =============================================================================
 // INICIALIZAÇÃO: Redis Cache + Session Auth Cache
 // =============================================================================
@@ -12855,6 +13034,9 @@ initializeCaches().then(() => {
   } catch (error) {
     logger.warn({ error }, 'WiseSyncService não inicializado (database não disponível)');
   }
+  bootstrapIntegrationsForTenants().catch((error) => {
+    logger.error({ error }, 'Falha no bootstrap de integrações');
+  });
 
   const server = app.listen(PORT, '0.0.0.0', () => {
     logger.info({ port: PORT }, 'Integrations service started');

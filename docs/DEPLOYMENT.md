@@ -1,12 +1,17 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 31 de Janeiro de 2026  
-**Versão:** 11.13 - Migração trading_symbol_preferences no próximo deploy
+**Data:** 02 de Fevereiro de 2026  
+**Versão:** 11.14 - ERPNext v15.95.2 e ajustes Agentic
 
 ## Visão geral
 
 Este guia descreve o deploy enterprise da plataforma Alice em produção (Hetzner GEX44), com pipeline CI/CD totalmente automatizado, rollback cirúrgico por stack e validações fail-fast.
+
+## Atualização ERPNext/Frappe
+
+- **ERPNext** atualizado para `v15.95.2` via SSOT (`infra/versions.env`).
+- **docker-compose.erpnext.yml** mantém fallback alinhado com a SSOT para evitar drift.
 
 ## Timezone (padrão enterprise)
 

@@ -249,18 +249,34 @@ export async function getOrCreateConversationState(conversationId: string) {
   let state = await db.query.conversationStates.findFirst({
     where: eq(schema.conversationStates.conversationId, conversationId),
   });
-  
+
   if (!state) {
-    const [newState] = await db.insert(schema.conversationStates).values({
-      conversationId,
-      controlMode: 'bot',
-      approvalPolicy: 'never_confirm',
-      fallbackCount: 0,
-    }).returning();
-    state = newState;
-    logger.info({ conversationId }, 'Estado de conversa criado');
+    const [inserted] = await db
+      .insert(schema.conversationStates)
+      .values({
+        conversationId,
+        controlMode: 'bot',
+        approvalPolicy: 'never_confirm',
+        fallbackCount: 0,
+      })
+      .onConflictDoNothing({ target: schema.conversationStates.conversationId })
+      .returning();
+
+    if (inserted) {
+      logger.info({ conversationId }, 'Estado de conversa criado');
+      return inserted;
+    }
+
+    state = await db.query.conversationStates.findFirst({
+      where: eq(schema.conversationStates.conversationId, conversationId),
+    });
   }
-  
+
+  if (!state) {
+    logger.error({ conversationId }, 'Estado de conversa não encontrado após UPSERT');
+    throw new Error('Falha ao obter estado da conversa');
+  }
+
   return state;
 }
 

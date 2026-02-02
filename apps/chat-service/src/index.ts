@@ -11694,6 +11694,9 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       return;
     }
     logger.error({ error }, 'Erro no streaming');
+    if (!res.headersSent) {
+      return res.status(500).json({ error: 'Erro ao processar mensagem' });
+    }
     // BUG FIX 25/12/2025: Verificar se resposta ainda não foi fechada antes de escrever
     // O onDone callback pode ter fechado a resposta com res.end() (linha 2069)
     // Tentar escrever em resposta já fechada causa erro
@@ -15756,10 +15759,22 @@ async function getOrCreateAgenticSettings(tenantId: string) {
     where: eq(schema.agenticSettings.tenantId, tenantId),
   });
   if (existing) {
+    const detectorsRaw = existing.detectors ?? {};
+    const detectorsEmpty = Object.keys(detectorsRaw).length === 0;
+    const normalizedDetectors = normalizeAgenticDetectors(detectorsRaw);
+    if (detectorsEmpty) {
+      await db.update(schema.agenticSettings)
+        .set({
+          detectors: normalizedDetectors,
+          atualizadoEm: new Date(),
+        })
+        .where(eq(schema.agenticSettings.tenantId, tenantId));
+      logger.warn({ tenantId }, 'Agentic detectors vazios - defaults persistidos');
+    }
     return {
       ...existing,
       platformLinks: normalizeAgenticLinks(existing.platformLinks ?? []),
-      detectors: normalizeAgenticDetectors(existing.detectors ?? {}),
+      detectors: normalizedDetectors,
     };
   }
   const [created] = await db.insert(schema.agenticSettings).values({

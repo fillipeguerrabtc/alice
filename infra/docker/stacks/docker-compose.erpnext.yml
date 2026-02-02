@@ -250,7 +250,7 @@ services:
   # ERPNEXT CONFIGURATOR - Init Container
   # ===========================================================================
   erpnext-configurator:
-    image: frappe/erpnext:${ERPNEXT_VERSION:-v15.91.3}
+    image: frappe/erpnext:${ERPNEXT_VERSION:-v15.95.2}
     platform: linux/amd64
     container_name: erpnext-configurator
     restart: "no"
@@ -365,7 +365,7 @@ services:
   # ERPNEXT CREATE SITE - Init Container
   # ===========================================================================
   erpnext-create-site:
-    image: frappe/erpnext:${ERPNEXT_VERSION:-v15.91.3}
+    image: frappe/erpnext:${ERPNEXT_VERSION:-v15.95.2}
     platform: linux/amd64
     container_name: erpnext-create-site
     restart: "no"
