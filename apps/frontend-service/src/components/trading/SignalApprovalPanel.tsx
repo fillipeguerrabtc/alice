@@ -13,7 +13,7 @@
  * Regra 6: Dados reais, sem mocks
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -779,6 +779,7 @@ export function SignalApprovalPanel({
   const [historyCursor, setHistoryCursor] = useState<string | null>(null);
   const [historyHasMore, setHistoryHasMore] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const historyLoadingRef = useRef(false);
   const [selectedHistoryIds, setSelectedHistoryIds] = useState<Set<string>>(new Set());
 
   // Buscar sinais pendentes
@@ -919,10 +920,11 @@ export function SignalApprovalPanel({
   });
 
   const fetchSignalHistory = useCallback(async (options: { reset?: boolean; filter?: { kind: 'approval' | 'validation'; status: string } } = {}) => {
-    if (historyLoading) return;
+    if (historyLoadingRef.current) return;
     const filter = options.filter ?? historyFilter;
     if (!filter) return;
     const reset = options.reset ?? false;
+    historyLoadingRef.current = true;
     setHistoryLoading(true);
     const params = new URLSearchParams();
     params.set('limit', '50');
@@ -954,8 +956,9 @@ export function SignalApprovalPanel({
       toast({ title: t('trading.signals.history.loadFailed'), description: message, variant: 'destructive' });
     } finally {
       setHistoryLoading(false);
+      historyLoadingRef.current = false;
     }
-  }, [historyCursor, historyFilter, historyLoading, marketType, t, toast]);
+  }, [historyCursor, historyFilter, marketType, t, toast]);
 
   const deleteHistoryMutation = useMutation({
     mutationFn: async ({ ids, all, scope }: { ids?: string[]; all?: boolean; scope?: 'self' | 'tenant' }) => {
