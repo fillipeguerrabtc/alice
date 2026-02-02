@@ -971,6 +971,12 @@ export function TechnicalAnalysisPanel({
     params.set('page', String(nextPage));
     params.set('pageSize', String(analysisHistoryPageSize));
     params.set('orderDirection', analysisHistoryOrder);
+    if (marketType) {
+      params.set('marketType', marketType);
+    }
+    if (marketType === 'margin' && marginMode) {
+      params.set('marginMode', marginMode);
+    }
     if (analysisHistoryDateFrom) params.set('dateFrom', analysisHistoryDateFrom);
     if (analysisHistoryDateTo) params.set('dateTo', analysisHistoryDateTo);
     if (analysisHistorySignalFilter) params.set('overallSignal', analysisHistorySignalFilter);

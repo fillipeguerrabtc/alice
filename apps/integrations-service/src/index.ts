@@ -1737,6 +1737,27 @@ const TRADING_LLM_SIGNAL_SCHEMA = z.object({
   riskScore: z.number().min(0).max(100).optional(),
 });
 
+const TRADING_LLM_SIGNAL_PARTIAL_SCHEMA = z.object({
+  signalType: z.enum(['entry_long', 'entry_short', 'exit', 'adjust_sl', 'adjust_tp', 'hold', 'neutral']).optional(),
+  operationType: TradingOperationTypeSchema.optional(),
+  expectedDurationMinutes: z.number().int().min(1).max(43200).optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  tradeSummary: z.string().min(10).optional(),
+  motivators: z.array(z.string().min(2)).optional(),
+  invalidationReasons: z.array(z.string().min(2)).optional(),
+  reasoning: z.string().min(5).optional(),
+  suggestedPrice: z.number().positive().nullable().optional(),
+  suggestedStopLoss: z.number().positive().nullable().optional(),
+  suggestedTakeProfit: z.number().positive().nullable().optional(),
+  suggestedSize: z.number().positive().nullable().optional(),
+  riskReward: z.number().positive().nullable().optional(),
+  marketCondition: z.string().min(3).optional(),
+  riskScore: z.number().min(0).max(100).nullable().optional(),
+});
+
+type TradingLlmSignal = z.infer<typeof TRADING_LLM_SIGNAL_SCHEMA>;
+type TradingLlmSignalPartial = z.infer<typeof TRADING_LLM_SIGNAL_PARTIAL_SCHEMA>;
+
 const app = express();
 setPermissionResolver(async (auth: AuthContext) => {
   const db = getDatabase();
@@ -6999,7 +7020,7 @@ function parseLlmSignalResponse(rawResponse: string) {
   const normalized = normalizeLlmJsonKeys(candidate);
   try {
     const parsed = JSON.parse(normalized.json) as unknown;
-    const result = TRADING_LLM_SIGNAL_SCHEMA.safeParse(parsed);
+    const result = TRADING_LLM_SIGNAL_PARTIAL_SCHEMA.safeParse(parsed);
     if (!result.success) {
       throw new Error(`Resposta LLM inválida: ${result.error.message}`);
     }
@@ -7010,7 +7031,7 @@ function parseLlmSignalResponse(rawResponse: string) {
       try {
         logger.warn({ error: error instanceof Error ? error.message : error }, 'Resposta LLM inválida; aplicando reparo YAML-like sem chaves.');
         const parsed = JSON.parse(blockRepair.json) as unknown;
-        const result = TRADING_LLM_SIGNAL_SCHEMA.safeParse(parsed);
+        const result = TRADING_LLM_SIGNAL_PARTIAL_SCHEMA.safeParse(parsed);
         if (!result.success) {
           throw new Error(`Resposta LLM inválida após reparo: ${result.error.message}`);
         }
@@ -7030,7 +7051,7 @@ function parseLlmSignalResponse(rawResponse: string) {
       try {
         logger.warn({ error: error instanceof Error ? error.message : error }, 'Resposta LLM inválida; aplicando reparo YAML-like.');
         const parsed = JSON.parse(yamlRepair.json) as unknown;
-        const result = TRADING_LLM_SIGNAL_SCHEMA.safeParse(parsed);
+        const result = TRADING_LLM_SIGNAL_PARTIAL_SCHEMA.safeParse(parsed);
         if (!result.success) {
           throw new Error(`Resposta LLM inválida após reparo: ${result.error.message}`);
         }
@@ -7050,7 +7071,7 @@ function parseLlmSignalResponse(rawResponse: string) {
       try {
         logger.warn({ error: error instanceof Error ? error.message : error }, 'Resposta LLM inválida; aplicando reparo seguro do JSON.');
         const parsed = JSON.parse(repair.json) as unknown;
-        const result = TRADING_LLM_SIGNAL_SCHEMA.safeParse(parsed);
+        const result = TRADING_LLM_SIGNAL_PARTIAL_SCHEMA.safeParse(parsed);
         if (!result.success) {
           throw new Error(`Resposta LLM inválida após reparo: ${result.error.message}`);
         }
@@ -7081,6 +7102,74 @@ function parseLlmSignalResponse(rawResponse: string) {
     }, 'Resposta LLM inválida (hash/len).');
     throw new Error(`Resposta LLM inválida: ${message}`);
   }
+}
+
+function resolveSignalTypeFromAnalysis(analysis: technicalIndicators.TechnicalAnalysisResult): schema.TradingSignal['signalType'] {
+  if (analysis.overallSignal === 'strong_buy' || analysis.overallSignal === 'buy') {
+    return 'entry_long';
+  }
+  if (analysis.overallSignal === 'strong_sell' || analysis.overallSignal === 'sell') {
+    return 'entry_short';
+  }
+  return 'hold';
+}
+
+function normalizeNullableNumber(value?: number | null): number | undefined {
+  if (value === null || value === undefined || Number.isNaN(value)) return undefined;
+  return value;
+}
+
+function buildLlmSignalFromPartial(params: {
+  partial: TradingLlmSignalPartial;
+  analysis: technicalIndicators.TechnicalAnalysisResult;
+  tradePlan: ReturnType<typeof buildTradePlanFromAnalysis>;
+}): TradingLlmSignal {
+  const baseConfidence = typeof params.partial.confidence === 'number'
+    ? params.partial.confidence
+    : params.analysis.confidence;
+  const confidence = Math.min(Math.max(baseConfidence, 0), 1);
+  const motivators = Array.isArray(params.partial.motivators) && params.partial.motivators.length > 0
+    ? params.partial.motivators
+    : params.tradePlan.motivators;
+  const invalidationReasons = Array.isArray(params.partial.invalidationReasons) && params.partial.invalidationReasons.length > 0
+    ? params.partial.invalidationReasons
+    : params.tradePlan.invalidationReasons;
+  const reasoning = typeof params.partial.reasoning === 'string' && params.partial.reasoning.trim().length >= 10
+    ? params.partial.reasoning
+    : buildAnalysisMotivators(params.analysis).join('; ');
+  const suggestedPrice = normalizeNullableNumber(params.partial.suggestedPrice) ?? params.tradePlan.entryPrice;
+  const suggestedStopLoss = normalizeNullableNumber(params.partial.suggestedStopLoss) ?? params.tradePlan.stopLoss ?? undefined;
+  const suggestedTakeProfit = normalizeNullableNumber(params.partial.suggestedTakeProfit) ?? params.tradePlan.takeProfit ?? undefined;
+  const riskReward = normalizeNullableNumber(params.partial.riskReward) ?? params.tradePlan.riskReward ?? undefined;
+  const suggestedSize = normalizeNullableNumber(params.partial.suggestedSize);
+  const riskScore = normalizeNullableNumber(params.partial.riskScore)
+    ?? Math.round(confidence * 100);
+  const marketCondition = params.partial.marketCondition
+    ?? (params.analysis.movingAverages?.trend ? `Tendência ${params.analysis.movingAverages.trend}` : undefined);
+
+  const draft: TradingLlmSignal = {
+    signalType: params.partial.signalType ?? resolveSignalTypeFromAnalysis(params.analysis),
+    operationType: params.partial.operationType ?? params.tradePlan.operationType,
+    expectedDurationMinutes: params.partial.expectedDurationMinutes ?? params.tradePlan.expectedDurationMinutes,
+    confidence,
+    tradeSummary: params.partial.tradeSummary ?? params.tradePlan.tradeSummary,
+    motivators,
+    invalidationReasons,
+    reasoning,
+    suggestedPrice,
+    suggestedStopLoss,
+    suggestedTakeProfit,
+    suggestedSize,
+    riskReward,
+    marketCondition,
+    riskScore,
+  };
+
+  const validated = TRADING_LLM_SIGNAL_SCHEMA.safeParse(draft);
+  if (!validated.success) {
+    throw new Error(`Resposta LLM inválida após normalização: ${validated.error.message}`);
+  }
+  return validated.data;
 }
 
 function formatDurationLabel(minutes: number): string {
@@ -8571,6 +8660,15 @@ async function generateTradingSignalFromLlm(params: {
   const trainingSummary = dataSources.trainingData
     ? await fetchTradingDatasetSummary(params.tenantId)
     : null;
+  const riskConfig = await kucoinService.getRiskConfig({ tenantId: params.tenantId, userId: params.userId });
+  const tradePlan = buildTradePlanFromAnalysis({
+    analysis: primaryAnalysis.analysis,
+    interval: primaryAnalysis.interval,
+    timeframes,
+    marketType: params.marketType ?? 'futures',
+    marginMode: params.marginMode,
+    riskConfig,
+  });
   const rawAnalysisPrompt = buildMultiTimeframePrompt({
     matrix: analysisMatrix,
     consensus,
@@ -8636,7 +8734,12 @@ async function generateTradingSignalFromLlm(params: {
     throw new Error('Resposta do LLM vazia ou inválida.');
   }
 
-  const llmSignal = parseLlmSignalResponse(llmContent);
+  const llmSignalPartial = parseLlmSignalResponse(llmContent);
+  const llmSignal = buildLlmSignalFromPartial({
+    partial: llmSignalPartial,
+    analysis: primaryAnalysis.analysis,
+    tradePlan,
+  });
   const durationLabel = formatDurationLabel(llmSignal.expectedDurationMinutes);
 
   const createResult = await kucoinService.createSignal(
@@ -12145,6 +12248,9 @@ app.get('/api/integrations/trading/analysis/history', requirePermission('integra
       overallSignal: z.enum(['strong_buy', 'buy', 'neutral', 'sell', 'strong_sell']).optional(),
       technique: z.string().optional(),
       includeDeleted: z.coerce.boolean().optional(),
+      marketType: z.enum(['futures', 'spot', 'margin']).optional(),
+      type: z.enum(['futures', 'spot', 'margin']).optional(),
+      marginMode: z.enum(['cross', 'isolated']).optional(),
     });
     const queryResult = querySchema.safeParse(req.query);
     if (!queryResult.success) {
@@ -12152,10 +12258,12 @@ app.get('/api/integrations/trading/analysis/history', requirePermission('integra
       return;
     }
 
+    const marketType = resolveMarketTypeParam(queryResult.data);
+    const marginMode = queryResult.data.marginMode;
     const symbolParam = queryResult.data.symbol;
     const resolvedSymbol = symbolParam
-      ? await resolveTradingSymbolOrRespond(res, tradingAuth, symbolParam, { required: true })
-      : await kucoinService.resolveTradingSymbol(tradingAuth);
+      ? await resolveTradingSymbolOrRespond(res, tradingAuth, symbolParam, { required: true, marketType, marginMode })
+      : await kucoinService.resolveTradingSymbol(tradingAuth, undefined, marketType, marginMode);
     if (!resolvedSymbol) return;
     const intervalParam = queryResult.data.interval || '5m';
     const limit = queryResult.data.limit ?? 50;

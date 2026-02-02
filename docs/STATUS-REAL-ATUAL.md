@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 02 de Fevereiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.81 - Detalhes em históricos trading
+**Versão:** 10.82 - Correções LLM e histórico multi-mercado
 
 ---
 
@@ -50,6 +50,8 @@
 - Sinais IA: reparo JSON mais robusto (valores single‑quote/bare) no parser LLM.
 - Trading: guarda contra símbolo inválido ao trocar marketType (evita 400 em market/klines/orderbook).
 - Trading: histórico de Sinais IA e Análises agora abre detalhe completo ao clicar na linha.
+- Sinais IA: resposta LLM agora é normalizada com base em análise determinística quando faltam campos críticos.
+- Análises: histórico suporta marketType/marginMode (Spot/Margin) sem erro 400.
 - Trading: feePct é automático (maior entre exchanges) e aplicado em análise/sinal.
 - Proxy (Caddy): timeout dedicado para `/api/integrations/trading/analysis*` evita 502 em arbitragem pesada.
 - API Gateway (dev): timeouts long‑running para trading/LLM alinhados com Caddy e integrations-service.
