@@ -206,6 +206,18 @@ yesyoudeserve.duckdns.org, *.yesyoudeserve.duckdns.org {
 		# =========================================================================
 		# Chat API
 		# =========================================================================
+		# CORREÇÃO 02/02/2026: Streaming SSE pode durar mais em modo agentic/LLM.
+		# Ajuste de timeouts evita encerramento prematuro do stream pelo proxy.
+		handle /api/chat/stream {
+			reverse_proxy alice-chat:3002 {
+				import proxy_headers
+				transport http {
+					dial_timeout 15s
+					read_timeout 5m
+					write_timeout 10m
+				}
+			}
+		}
 		handle /api/chat/* {
 			reverse_proxy alice-chat:3002 {
 				import proxy_headers
@@ -276,6 +288,18 @@ yesyoudeserve.duckdns.org, *.yesyoudeserve.duckdns.org {
 		# =========================================================================
 		# Integrations API
 		# =========================================================================
+		# CORREÇÃO 02/02/2026: Geração de sinal LLM pode exceder 30s.
+		# Timeout dedicado para evitar 502 no proxy.
+		handle /api/integrations/trading/signals/generate {
+			reverse_proxy alice-integrations:3005 {
+				import proxy_headers
+				transport http {
+					dial_timeout 15s
+					read_timeout 2m
+					write_timeout 2m
+				}
+			}
+		}
 		handle /api/integrations/* {
 			reverse_proxy alice-integrations:3005 {
 				import proxy_headers

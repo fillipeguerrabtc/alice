@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 **Autor:** Fillipe Guerra  
-**Data:** 01 de Fevereiro de 2026  
+**Data:** 02 de Fevereiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.67 - Trading JSON robusto + evidência de notícias
+**Versão:** 10.68 - Chat stream estável + timeouts LLM no proxy
 
 ---
 
@@ -37,6 +37,8 @@
 - Chat: correção do upgrade WS evita crash por double handleUpgrade.
 - Trading: extração de JSON balanceada evita truncamento por chaves em texto.
 - Trading: logging explícito de notícias confirma uso de SearXNG na análise.
+- Chat: headers SSE enviados antes de qualquer `res.write` (corrige ERR_HTTP_HEADERS_SENT no modo agentic).
+- Proxy (Caddy): timeouts dedicados para `/api/chat/stream` e `signals/generate` evitam 502 em LLM lento.
 - Sinais IA: parsing robusto de JSON do LLM com reparo seguro e prompt de saída estrito.
 - Roteamento de agentes: gatilhos configuráveis no Modo Agentic (manual/auto) por tenant.
 - Roteamento agentic: normalização de comandos (acentos/@) e detecção consistente no WebSocket.
