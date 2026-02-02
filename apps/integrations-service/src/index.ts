@@ -53,7 +53,7 @@ import type { AuthContext } from '@alice/shared-utils';
 import { integrationsServicePaths, integrationsServiceSchemas } from './openapi-specs.js';
 import { loadConfig, integrationsServiceConfigSchema } from '@alice/config';
 import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, getPool } from '@alice/database';
-import { eq, desc, asc, sql, and, inArray, not, isNull, lte } from '@alice/database';
+import { eq, desc, asc, sql, and, inArray, not, isNull, lte, lt } from '@alice/database';
 import { tradingIntervalEnum, TradingOperationTypeSchema, TradingProfileNewsConfigSchema } from '@alice/shared';
 import type { TradingSignalMetadata, TradingIndicatorKey, TradingProfileConsensus, TradingProfileDataSources, TradingProfileModelConfig, TradingProfileNewsConfig, TradingCandleData, TradingOperationType, TradingRiskConfig, TradingOrderMetadata } from '@alice/shared';
 import { z } from 'zod';
@@ -1156,6 +1156,25 @@ setPermissionResolver(async (auth: AuthContext) => {
   }
   return Array.from(resolved);
 });
+
+async function isAdminUser(authContext?: { userId?: string | null }): Promise<boolean> {
+  const userId = authContext?.userId ?? null;
+  if (!userId) return false;
+  const db = getDatabase();
+  const baseRoleRows = await db.query.userRoles.findMany({
+    where: eq(schema.userRoles.userId, userId),
+    columns: { role: true },
+  });
+  const baseRoles = baseRoleRows.map((row) => row.role as Role).filter(Boolean);
+  if (baseRoles.some((role) => role === 'admin' || role === 'super_admin')) {
+    return true;
+  }
+  const fallbackUser = await db.query.users.findFirst({
+    where: eq(schema.users.id, userId),
+    columns: { role: true },
+  });
+  return fallbackUser?.role === 'admin' || fallbackUser?.role === 'super_admin';
+}
 
 // ============================================================================
 // PROMETHEUS: Instrumentação de métricas (Regra 16 - Observability Enterprise)
@@ -5873,7 +5892,17 @@ function repairLlmJsonContent(content: string): { json: string; repaired: boolea
     repaired = true;
   }
 
-  return { json: trailingCommaResult.json, repaired };
+  const commaRepair = insertMissingCommasInArrays(trailingCommaResult.json);
+  if (commaRepair.inserted) {
+    repaired = true;
+  }
+
+  const finalTrailingCommaResult = removeTrailingCommasOutsideStrings(commaRepair.json);
+  if (finalTrailingCommaResult.removed) {
+    repaired = true;
+  }
+
+  return { json: finalTrailingCommaResult.json, repaired };
 }
 
 function removeTrailingCommasOutsideStrings(content: string): { json: string; removed: boolean } {
@@ -5916,6 +5945,94 @@ function removeTrailingCommasOutsideStrings(content: string): { json: string; re
   return { json: output, removed };
 }
 
+function insertMissingCommasInArrays(content: string): { json: string; inserted: boolean } {
+  let inString = false;
+  let escaping = false;
+  let arrayDepth = 0;
+  let inserted = false;
+  let output = '';
+
+  const peekNextNonWhitespace = (startIndex: number): string | null => {
+    for (let i = startIndex; i < content.length; i += 1) {
+      if (!/\s/.test(content[i])) return content[i];
+    }
+    return null;
+  };
+
+  const peekPrevNonWhitespace = (): string | null => {
+    for (let i = output.length - 1; i >= 0; i -= 1) {
+      if (!/\s/.test(output[i])) return output[i];
+    }
+    return null;
+  };
+
+  const shouldInsertComma = (nextChar: string | null): boolean => {
+    if (!nextChar) return false;
+    if (nextChar === ']' || nextChar === ',') return false;
+    if (nextChar === ':') return false;
+    const prevNonWs = peekPrevNonWhitespace();
+    if (!prevNonWs || prevNonWs === '[' || prevNonWs === ',') return false;
+    return nextChar === '"' || nextChar === '{' || nextChar === '[';
+  };
+
+  for (let i = 0; i < content.length; i += 1) {
+    const char = content[i];
+    if (escaping) {
+      output += char;
+      escaping = false;
+      continue;
+    }
+    if (char === '\\') {
+      output += char;
+      if (inString) escaping = true;
+      continue;
+    }
+    if (char === '"') {
+      output += char;
+      inString = !inString;
+      if (!inString && arrayDepth > 0) {
+        const nextChar = peekNextNonWhitespace(i + 1);
+        if (shouldInsertComma(nextChar)) {
+          output += ',';
+          inserted = true;
+        }
+      }
+      continue;
+    }
+    if (!inString) {
+      if (char === '[') {
+        arrayDepth += 1;
+        output += char;
+        continue;
+      }
+      if (char === ']') {
+        arrayDepth = Math.max(0, arrayDepth - 1);
+        output += char;
+        if (arrayDepth > 0) {
+          const nextChar = peekNextNonWhitespace(i + 1);
+          if (shouldInsertComma(nextChar)) {
+            output += ',';
+            inserted = true;
+          }
+        }
+        continue;
+      }
+      if (char === '}' && arrayDepth > 0) {
+        output += char;
+        const nextChar = peekNextNonWhitespace(i + 1);
+        if (shouldInsertComma(nextChar)) {
+          output += ',';
+          inserted = true;
+        }
+        continue;
+      }
+    }
+    output += char;
+  }
+
+  return { json: output, inserted };
+}
+
 function parseLlmSignalResponse(rawResponse: string) {
   const candidate = extractJsonObjectCandidate(rawResponse);
   try {
@@ -5941,6 +6058,12 @@ function parseLlmSignalResponse(rawResponse: string) {
         if (message.startsWith('Resposta LLM inválida após reparo:')) {
           throw new Error(message);
         }
+        logger.error({
+          error: message,
+          responseHash: computeSemHash(repair.json),
+          responseLength: repair.json.length,
+          candidateLength: candidate.length,
+        }, 'Resposta LLM inválida após reparo seguro (hash/len).');
         throw new Error(`Resposta LLM inválida após reparo: ${message}`);
       }
     }
@@ -5948,6 +6071,11 @@ function parseLlmSignalResponse(rawResponse: string) {
     if (message.startsWith('Resposta LLM inválida:')) {
       throw new Error(message);
     }
+    logger.error({
+      error: message,
+      responseHash: computeSemHash(candidate),
+      responseLength: candidate.length,
+    }, 'Resposta LLM inválida (hash/len).');
     throw new Error(`Resposta LLM inválida: ${message}`);
   }
 }
@@ -7402,6 +7530,7 @@ async function generateTradingSignalFromLlm(params: {
     body: {
       model: agentContext.llmConfig.model,
       messages,
+      response_format: { type: 'json_object' },
       max_tokens: tokenBudget.maxCompletionTokens,
       temperature: params.modelConfig?.temperature ?? agentContext.llmConfig.temperature ?? 0.7,
       stream: false,
@@ -7456,6 +7585,7 @@ async function generateTradingSignalFromLlm(params: {
         generationSource: params.source,
         schedulerId: params.schedulerId,
         validationStatus: 'pending',
+        createdByUserId: params.userId,
         timeframes,
         enabledIndicators: indicators,
         dataSources,
@@ -7527,6 +7657,44 @@ function mapTradingSignalForApi(signal: schema.TradingSignal) {
   };
 }
 
+function buildNotDeletedMetadataCondition(
+  metadataColumn:
+    | typeof schema.tradingSignals.metadata
+    | typeof schema.tradingOrders.metadata
+    | typeof schema.tradingTechnicalIndicators.metadata
+) {
+  return sql<boolean>`COALESCE((${metadataColumn} ->> 'isDeleted')::boolean, false) = false`;
+}
+
+function buildOwnerMetadataCondition(
+  metadataColumn:
+    | typeof schema.tradingSignals.metadata
+    | typeof schema.tradingOrders.metadata
+    | typeof schema.tradingTechnicalIndicators.metadata,
+  userId: string
+) {
+  return sql<boolean>`(${metadataColumn} ->> 'createdByUserId') = ${userId}`;
+}
+
+function buildSoftDeleteMetadataUpdate(
+  metadataColumn:
+    | typeof schema.tradingSignals.metadata
+    | typeof schema.tradingOrders.metadata
+    | typeof schema.tradingTechnicalIndicators.metadata,
+  deletedAt: string,
+  deletedByUserId: string
+) {
+  return sql`
+    jsonb_set(
+      jsonb_set(
+        jsonb_set(coalesce(${metadataColumn}, '{}'::jsonb), '{isDeleted}', 'true'::jsonb, true),
+        '{deletedAt}', to_jsonb(${deletedAt}), true
+      ),
+      '{deletedByUserId}', to_jsonb(${deletedByUserId}), true
+    )
+  `;
+}
+
 // GET /api/integrations/trading/signals - Lista sinais de trading ativos
 app.get('/api/integrations/trading/signals', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
@@ -7559,6 +7727,189 @@ app.get('/api/integrations/trading/signals', requirePermission('integrations:tra
     if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao obter sinais');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/signals/history - Histórico de sinais (paginado)
+app.get('/api/integrations/trading/signals/history', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+    const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
+    const querySchema = z.object({
+      limit: z.coerce.number().int().min(1).max(200).optional(),
+      cursor: z.string().datetime().optional(),
+      symbol: z.string().optional(),
+      marketType: z.enum(['futures', 'spot', 'margin']).optional(),
+      validationStatus: z.enum(['pending', 'validated', 'failed']).optional(),
+      approvalStatus: z.enum(['pending', 'approved', 'rejected']).optional(),
+      includeDeleted: z.coerce.boolean().optional(),
+    });
+    const queryResult = querySchema.safeParse(req.query);
+    if (!queryResult.success) {
+      res.status(400).json({ error: 'Query inválida', details: queryResult.error.flatten() });
+      return;
+    }
+
+    const limit = queryResult.data.limit ?? 50;
+    const cursorDate = queryResult.data.cursor ? new Date(queryResult.data.cursor) : null;
+    const marketType = queryResult.data.marketType ?? undefined;
+    const validationStatus = queryResult.data.validationStatus ?? undefined;
+    const approvalStatus = queryResult.data.approvalStatus ?? undefined;
+    const includeDeleted = queryResult.data.includeDeleted ?? false;
+
+    const symbolParam = queryResult.data.symbol;
+    const resolvedSymbol = symbolParam
+      ? await resolveTradingSymbolOrRespond(res, tradingAuth, symbolParam, { required: true, marketType })
+      : undefined;
+    if (symbolParam && !resolvedSymbol) return;
+
+    const conditions = [eq(schema.tradingSignals.tenantId, authContext.tenantId)];
+    if (resolvedSymbol) conditions.push(eq(schema.tradingSignals.symbol, resolvedSymbol));
+    if (marketType) conditions.push(eq(schema.tradingSignals.marketType, marketType));
+    if (cursorDate) conditions.push(lt(schema.tradingSignals.criadoEm, cursorDate));
+    if (validationStatus) {
+      conditions.push(sql`(${schema.tradingSignals.metadata} ->> 'validationStatus') = ${validationStatus}`);
+    }
+    if (approvalStatus) {
+      conditions.push(sql`(${schema.tradingSignals.metadata} ->> 'approvalStatus') = ${approvalStatus}`);
+    }
+    if (!includeDeleted) {
+      conditions.push(buildNotDeletedMetadataCondition(schema.tradingSignals.metadata));
+    }
+
+    const db = getDatabase();
+    const history = await db
+      .select()
+      .from(schema.tradingSignals)
+      .where(and(...conditions))
+      .orderBy(desc(schema.tradingSignals.criadoEm))
+      .limit(limit);
+
+    const nextCursor = history.length > 0
+      ? history[history.length - 1]?.criadoEm?.toISOString() ?? null
+      : null;
+
+    res.json({
+      success: true,
+      data: history.map(mapTradingSignalForApi),
+      nextCursor,
+    });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter histórico de sinais');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/signals/history/stats - Estatísticas do histórico de sinais
+app.get('/api/integrations/trading/signals/history/stats', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+    const db = getDatabase();
+    const notDeleted = buildNotDeletedMetadataCondition(schema.tradingSignals.metadata);
+
+    const [stats] = await db
+      .select({
+        total: sql<number>`count(*)`,
+        validated: sql<number>`count(*) filter (where coalesce(${schema.tradingSignals.metadata} ->> 'validationStatus', 'pending') = 'validated')`,
+        failed: sql<number>`count(*) filter (where coalesce(${schema.tradingSignals.metadata} ->> 'validationStatus', 'pending') = 'failed')`,
+        pendingValidation: sql<number>`count(*) filter (where coalesce(${schema.tradingSignals.metadata} ->> 'validationStatus', 'pending') = 'pending')`,
+        approved: sql<number>`count(*) filter (where coalesce(${schema.tradingSignals.metadata} ->> 'approvalStatus', 'pending') = 'approved')`,
+        rejected: sql<number>`count(*) filter (where coalesce(${schema.tradingSignals.metadata} ->> 'approvalStatus', 'pending') = 'rejected')`,
+        pendingApproval: sql<number>`count(*) filter (where coalesce(${schema.tradingSignals.metadata} ->> 'approvalStatus', 'pending') = 'pending')`,
+      })
+      .from(schema.tradingSignals)
+      .where(and(eq(schema.tradingSignals.tenantId, authContext.tenantId), notDeleted));
+
+    res.json({
+      success: true,
+      data: {
+        total: Number(stats?.total ?? 0),
+        validation: {
+          validated: Number(stats?.validated ?? 0),
+          failed: Number(stats?.failed ?? 0),
+          pending: Number(stats?.pendingValidation ?? 0),
+        },
+        approval: {
+          approved: Number(stats?.approved ?? 0),
+          rejected: Number(stats?.rejected ?? 0),
+          pending: Number(stats?.pendingApproval ?? 0),
+        },
+      },
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter estatísticas de sinais');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/signals/history/delete - Exclusão lógica de sinais
+app.post('/api/integrations/trading/signals/history/delete', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+    const bodySchema = z.object({
+      ids: z.array(z.string().uuid()).optional(),
+      all: z.boolean().optional(),
+      scope: z.enum(['self', 'tenant']).optional(),
+    });
+    const bodyResult = bodySchema.safeParse(req.body ?? {});
+    if (!bodyResult.success) {
+      res.status(400).json({ error: 'Dados inválidos', details: bodyResult.error.flatten() });
+      return;
+    }
+    const { ids, all, scope } = bodyResult.data;
+    if (!ids?.length && !all) {
+      res.status(400).json({ error: 'Informe ids ou use all=true para excluir.' });
+      return;
+    }
+
+    const isAdmin = await isAdminUser(authContext);
+    const effectiveScope = scope === 'tenant' && isAdmin ? 'tenant' : 'self';
+    if (scope === 'tenant' && !isAdmin) {
+      res.status(403).json({ error: 'Apenas administradores podem excluir histórico de todo o tenant.' });
+      return;
+    }
+
+    const conditions = [eq(schema.tradingSignals.tenantId, authContext.tenantId)];
+    if (effectiveScope === 'self') {
+      conditions.push(buildOwnerMetadataCondition(schema.tradingSignals.metadata, authContext.userId));
+    }
+    if (ids?.length) {
+      conditions.push(inArray(schema.tradingSignals.id, ids));
+    }
+
+    const deletedAt = new Date().toISOString();
+    const db = getDatabase();
+    const updateResult = await db
+      .update(schema.tradingSignals)
+      .set({
+        metadata: buildSoftDeleteMetadataUpdate(schema.tradingSignals.metadata, deletedAt, authContext.userId),
+      })
+      .where(and(...conditions));
+
+    res.json({
+      success: true,
+      data: { deletedAt, scope: effectiveScope },
+      updated: updateResult.rowCount ?? 0,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao excluir histórico de sinais');
     res.status(500).json({ error: errorMessage });
   }
 });
@@ -7603,9 +7954,13 @@ app.post('/api/integrations/trading/signals', requirePermission('integrations:tr
       : undefined;
     if (symbolParam && !resolvedSymbol) return;
 
+    const metadata = {
+      ...(validated.metadata ?? {}),
+      createdByUserId: authContext.userId,
+    };
     const result = await kucoinService.createSignal(
       tradingAuth,
-      { ...validated, symbol: resolvedSymbol, marketType, marginMode }
+      { ...validated, symbol: resolvedSymbol, marketType, marginMode, metadata }
     );
 
     if (!result.success) {
@@ -7630,6 +7985,12 @@ app.post('/api/integrations/trading/signals', requirePermission('integrations:tr
 const tradingUuidParamSchema = z.object({
   id: z.string().uuid('ID deve ser UUID válido'),
 });
+
+const optionalReasonSchema = z.preprocess((value) => {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}, z.string().max(500).optional());
 
 // DELETE /api/integrations/trading/signals/:id - Desativar sinal
 app.delete('/api/integrations/trading/signals/:id', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
@@ -7684,7 +8045,7 @@ app.post('/api/integrations/trading/signals/:id/approve', requirePermission('int
       return;
     }
     const bodySchema = z.object({
-      reason: z.string().min(3).max(500).optional(),
+      reason: optionalReasonSchema,
       overrides: z.object({
         orderType: z.enum(['limit', 'market', 'stop_limit', 'stop_market', 'take_profit']).optional(),
         size: z.number().positive().optional(),
@@ -7738,7 +8099,7 @@ app.post('/api/integrations/trading/signals/:id/reject', requirePermission('inte
       return;
     }
     const bodySchema = z.object({
-      reason: z.string().min(3).max(500).optional(),
+      reason: optionalReasonSchema,
     });
     const bodyResult = bodySchema.safeParse(req.body ?? {});
     if (!bodyResult.success) {
@@ -9811,17 +10172,13 @@ app.get('/api/integrations/trading/orders/history', requirePermission('integrati
       res.status(401).json({ error: 'Autenticação necessária' });
       return;
     }
-    const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
-
-    if (!kucoinClient.isKucoinConfigured()) {
-      respondKucoinNotConfigured(res);
-      return;
-    }
-
     const querySchema = z.object({
       symbol: z.string().optional(),
-      pageSize: z.coerce.number().int().min(1).max(1000).optional(),
-      currentPage: z.coerce.number().int().min(1).max(1000).optional(),
+      marketType: z.enum(['futures', 'spot', 'margin']).optional(),
+      status: z.enum(['pending_review', 'review_rejected', 'pending', 'submitted', 'open', 'filled', 'cancelled', 'rejected', 'expired', 'error']).optional(),
+      side: z.enum(['buy', 'sell']).optional(),
+      limit: z.coerce.number().int().min(1).max(200).optional(),
+      cursor: z.string().datetime().optional(),
     });
     const queryResult = querySchema.safeParse(req.query);
     if (!queryResult.success) {
@@ -9831,23 +10188,105 @@ app.get('/api/integrations/trading/orders/history', requirePermission('integrati
 
     const symbolParam = queryResult.data.symbol;
     const resolvedSymbol = symbolParam
-      ? await resolveTradingSymbolOrRespond(res, tradingAuth, symbolParam, { required: true })
+      ? await resolveTradingSymbolOrRespond(res, { tenantId: authContext.tenantId, userId: authContext.userId }, symbolParam, { required: true })
       : undefined;
     if (symbolParam && !resolvedSymbol) return;
 
-    const pageSize = queryResult.data.pageSize ?? 50;
-    const currentPage = queryResult.data.currentPage ?? 1;
+    const limit = queryResult.data.limit ?? 50;
+    const cursorDate = queryResult.data.cursor ? new Date(queryResult.data.cursor) : null;
+    const marketType = queryResult.data.marketType ?? undefined;
+    const status = queryResult.data.status ?? undefined;
+    const side = queryResult.data.side ?? undefined;
 
-    const history = await kucoinClient.getOrderHistory(resolvedSymbol, pageSize, currentPage);
+    const conditions = [eq(schema.tradingOrders.tenantId, authContext.tenantId)];
+    if (resolvedSymbol) conditions.push(eq(schema.tradingOrders.symbol, resolvedSymbol));
+    if (marketType) conditions.push(eq(schema.tradingOrders.marketType, marketType));
+    if (status) conditions.push(eq(schema.tradingOrders.status, status));
+    if (side) conditions.push(eq(schema.tradingOrders.side, side));
+    if (cursorDate) conditions.push(lt(schema.tradingOrders.criadoEm, cursorDate));
+    conditions.push(buildNotDeletedMetadataCondition(schema.tradingOrders.metadata));
+
+    const db = getDatabase();
+    const history = await db
+      .select()
+      .from(schema.tradingOrders)
+      .where(and(...conditions))
+      .orderBy(desc(schema.tradingOrders.criadoEm))
+      .limit(limit);
+
+    const nextCursor = history.length > 0
+      ? history[history.length - 1]?.criadoEm?.toISOString() ?? null
+      : null;
 
     res.json({
       success: true,
       data: history,
+      nextCursor,
     });
   } catch (error) {
     if (sendKucoinErrorResponse(res, error)) return;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao obter histórico de ordens');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/orders/history/delete - Exclusão lógica de ordens
+app.post('/api/integrations/trading/orders/history/delete', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+    const bodySchema = z.object({
+      ids: z.array(z.string().uuid()).optional(),
+      all: z.boolean().optional(),
+      scope: z.enum(['self', 'tenant']).optional(),
+    });
+    const bodyResult = bodySchema.safeParse(req.body ?? {});
+    if (!bodyResult.success) {
+      res.status(400).json({ error: 'Dados inválidos', details: bodyResult.error.flatten() });
+      return;
+    }
+    const { ids, all, scope } = bodyResult.data;
+    if (!ids?.length && !all) {
+      res.status(400).json({ error: 'Informe ids ou use all=true para excluir.' });
+      return;
+    }
+
+    const isAdmin = await isAdminUser(authContext);
+    const effectiveScope = scope === 'tenant' && isAdmin ? 'tenant' : 'self';
+    if (scope === 'tenant' && !isAdmin) {
+      res.status(403).json({ error: 'Apenas administradores podem excluir histórico de todo o tenant.' });
+      return;
+    }
+
+    const conditions = [eq(schema.tradingOrders.tenantId, authContext.tenantId)];
+    if (effectiveScope === 'self') {
+      conditions.push(buildOwnerMetadataCondition(schema.tradingOrders.metadata, authContext.userId));
+    }
+    if (ids?.length) {
+      conditions.push(inArray(schema.tradingOrders.id, ids));
+    }
+
+    const deletedAt = new Date().toISOString();
+    const db = getDatabase();
+    const updateResult = await db
+      .update(schema.tradingOrders)
+      .set({
+        metadata: buildSoftDeleteMetadataUpdate(schema.tradingOrders.metadata, deletedAt, authContext.userId),
+      })
+      .where(and(...conditions));
+
+    res.json({
+      success: true,
+      data: { deletedAt, scope: effectiveScope },
+      updated: updateResult.rowCount ?? 0,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao excluir histórico de ordens');
     res.status(500).json({ error: errorMessage });
   }
 });
@@ -10202,6 +10641,7 @@ async function calculateAndPersistTechnicalAnalysis(params: {
         calculationDurationMs: Date.now() - analysis.timestamp,
         candleCount: candles.length,
         lastCandleTime: new Date(candles[candles.length - 1].timestamp).toISOString(),
+        createdByUserId: userId,
       },
     })
     .returning({ id: schema.tradingTechnicalIndicators.id });
@@ -10389,7 +10829,9 @@ app.get('/api/integrations/trading/analysis/history', requirePermission('integra
       : await kucoinService.resolveTradingSymbol(tradingAuth);
     if (!resolvedSymbol) return;
     const intervalParam = req.query.interval as string || '5m';
-    const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+    const cursorParam = req.query.cursor as string | undefined;
+    const cursorDate = cursorParam ? new Date(cursorParam) : null;
 
     // BUG FIX 21/12/2025: Validação e type narrowing para TypeScript
     const validIntervals = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d', '1w'] as const;
@@ -10403,16 +10845,20 @@ app.get('/api/integrations/trading/analysis/history', requirePermission('integra
 
     const db = getDatabase();
     // BUG FIX 21/12/2025: interval agora é usado na query (antes era ignorado)
+    const conditions = [
+      eq(schema.tradingTechnicalIndicators.tenantId, authContext.tenantId),
+      eq(schema.tradingTechnicalIndicators.symbol, resolvedSymbol),
+      eq(schema.tradingTechnicalIndicators.interval, interval),
+      buildNotDeletedMetadataCondition(schema.tradingTechnicalIndicators.metadata),
+    ];
+    if (cursorDate && !Number.isNaN(cursorDate.getTime())) {
+      conditions.push(lt(schema.tradingTechnicalIndicators.calculatedAt, cursorDate));
+    }
+
     const history = await db
       .select()
       .from(schema.tradingTechnicalIndicators)
-      .where(
-        and(
-          eq(schema.tradingTechnicalIndicators.tenantId, authContext.tenantId),
-          eq(schema.tradingTechnicalIndicators.symbol, resolvedSymbol),
-          eq(schema.tradingTechnicalIndicators.interval, interval)
-        )
-      )
+      .where(and(...conditions))
       .orderBy(desc(schema.tradingTechnicalIndicators.calculatedAt))
       .limit(limit);
 
@@ -10421,10 +10867,73 @@ app.get('/api/integrations/trading/analysis/history', requirePermission('integra
       data: history,
       count: history.length,
       symbol: resolvedSymbol,
+      nextCursor: history.length > 0
+        ? history[history.length - 1]?.calculatedAt?.toISOString() ?? null
+        : null,
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao obter histórico de análises');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/analysis/history/delete - Exclusão lógica de análises
+app.post('/api/integrations/trading/analysis/history/delete', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+    const bodySchema = z.object({
+      ids: z.array(z.string().uuid()).optional(),
+      all: z.boolean().optional(),
+      scope: z.enum(['self', 'tenant']).optional(),
+    });
+    const bodyResult = bodySchema.safeParse(req.body ?? {});
+    if (!bodyResult.success) {
+      res.status(400).json({ error: 'Dados inválidos', details: bodyResult.error.flatten() });
+      return;
+    }
+    const { ids, all, scope } = bodyResult.data;
+    if (!ids?.length && !all) {
+      res.status(400).json({ error: 'Informe ids ou use all=true para excluir.' });
+      return;
+    }
+
+    const isAdmin = await isAdminUser(authContext);
+    const effectiveScope = scope === 'tenant' && isAdmin ? 'tenant' : 'self';
+    if (scope === 'tenant' && !isAdmin) {
+      res.status(403).json({ error: 'Apenas administradores podem excluir histórico de todo o tenant.' });
+      return;
+    }
+
+    const conditions = [eq(schema.tradingTechnicalIndicators.tenantId, authContext.tenantId)];
+    if (effectiveScope === 'self') {
+      conditions.push(buildOwnerMetadataCondition(schema.tradingTechnicalIndicators.metadata, authContext.userId));
+    }
+    if (ids?.length) {
+      conditions.push(inArray(schema.tradingTechnicalIndicators.id, ids));
+    }
+
+    const deletedAt = new Date().toISOString();
+    const db = getDatabase();
+    const updateResult = await db
+      .update(schema.tradingTechnicalIndicators)
+      .set({
+        metadata: buildSoftDeleteMetadataUpdate(schema.tradingTechnicalIndicators.metadata, deletedAt, authContext.userId),
+      })
+      .where(and(...conditions));
+
+    res.json({
+      success: true,
+      data: { deletedAt, scope: effectiveScope },
+      updated: updateResult.rowCount ?? 0,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao excluir histórico de análises');
     res.status(500).json({ error: errorMessage });
   }
 });

@@ -27,7 +27,7 @@
  * Data: 16 de Janeiro de 2026
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
@@ -58,6 +58,7 @@ import {
   AlertCircle,
   ArrowUpRight,
   ArrowDownRight,
+  Trash2,
   Loader2,
   Pencil,
   // CORREÇÃO 19/12/2025: Remover Eye não utilizado (no-unused-vars)
@@ -73,6 +74,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -635,6 +637,8 @@ export default function Trading() {
   const { user } = useAuth();
   const locale = user?.idioma ?? 'pt-BR';
   const timeZone = user?.timezone ?? TIMEZONE;
+  const userRoles = user?.roles ?? (user?.role ? [user.role] : []);
+  const isAdminRole = userRoles.includes('admin') || userRoles.includes('super_admin');
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState('overview');
   const [selectedMarketType, setSelectedMarketType] = useState<'futures' | 'spot' | 'margin'>('futures');
@@ -677,6 +681,11 @@ export default function Trading() {
     stopLoss: '',
     takeProfit: '',
   });
+  const [orderHistoryItems, setOrderHistoryItems] = useState<TradingOrder[]>([]);
+  const [orderHistoryCursor, setOrderHistoryCursor] = useState<string | null>(null);
+  const [orderHistoryHasMore, setOrderHistoryHasMore] = useState(false);
+  const [orderHistoryLoading, setOrderHistoryLoading] = useState(false);
+  const [orderHistorySelectedIds, setOrderHistorySelectedIds] = useState<Set<string>>(new Set());
 
   // Form state para configuração de risco
   const [riskForm, setRiskForm] = useState({
@@ -1159,6 +1168,18 @@ export default function Trading() {
       setSelectedInterval(fallback);
     }
   }, [intervalsData, selectedInterval]);
+
+  useEffect(() => {
+    if (activeTab !== 'history') return;
+    if (orderHistoryItems.length === 0) {
+      fetchOrderHistory({ reset: true });
+    }
+  }, [activeTab, fetchOrderHistory, orderHistoryItems.length]);
+
+  useEffect(() => {
+    if (activeTab !== 'history') return;
+    fetchOrderHistory({ reset: true });
+  }, [activeTab, fetchOrderHistory, selectedMarketType]);
 
   const wsChannels = useMemo(() => {
     if (!wsEnabled) return [];
@@ -1997,6 +2018,84 @@ export default function Trading() {
       ? hasOrderSize || hasOrderFunds
       : hasOrderSize;
   const orders = ordersData?.data || [];
+  const allOrderHistorySelected = orderHistoryItems.length > 0 && orderHistorySelectedIds.size === orderHistoryItems.length;
+  const hasOrderHistorySelection = orderHistorySelectedIds.size > 0;
+
+  const fetchOrderHistory = useCallback(async (options: { reset?: boolean } = {}) => {
+    if (orderHistoryLoading) return;
+    const reset = options.reset ?? false;
+    setOrderHistoryLoading(true);
+    const params = new URLSearchParams();
+    params.set('limit', '50');
+    if (!reset && orderHistoryCursor) {
+      params.set('cursor', orderHistoryCursor);
+    }
+    if (selectedMarketType) {
+      params.set('marketType', selectedMarketType);
+    }
+    try {
+      const res = await apiRequest('GET', `/api/integrations/trading/orders/history?${params.toString()}`);
+      const payload = await res.json();
+      if (!res.ok) {
+        throw new Error(payload.error || t('trading.errors.historyFailed'));
+      }
+      const nextCursor = payload.nextCursor as string | null;
+      const items = payload.data as TradingOrder[];
+      setOrderHistoryItems((prev) => (reset ? items : [...prev, ...items]));
+      setOrderHistoryCursor(nextCursor ?? null);
+      setOrderHistoryHasMore(Boolean(nextCursor));
+      if (reset) {
+        setOrderHistorySelectedIds(new Set());
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('common.error');
+      toast({ title: t('trading.errors.historyFailed'), description: message, variant: 'destructive' });
+    } finally {
+      setOrderHistoryLoading(false);
+    }
+  }, [orderHistoryCursor, orderHistoryLoading, selectedMarketType, t, toast]);
+
+  const deleteOrderHistoryMutation = useMutation({
+    mutationFn: async ({ ids, all, scope }: { ids?: string[]; all?: boolean; scope?: 'self' | 'tenant' }) => {
+      const res = await apiRequest('POST', '/api/integrations/trading/orders/history/delete', {
+        ids,
+        all,
+        scope,
+      });
+      const payload = await res.json();
+      if (!res.ok) {
+        throw new Error(payload.error || t('trading.errors.historyDeleteFailed'));
+      }
+      return payload;
+    },
+    onSuccess: () => {
+      toast({ title: t('trading.success.historyDeleted') });
+      fetchOrderHistory({ reset: true });
+    },
+    onError: (error: Error) => {
+      toast({ title: t('trading.errors.historyDeleteFailed'), description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const toggleOrderHistorySelection = (orderId: string, checked: boolean) => {
+    setOrderHistorySelectedIds((prev) => {
+      const updated = new Set(prev);
+      if (checked) {
+        updated.add(orderId);
+      } else {
+        updated.delete(orderId);
+      }
+      return updated;
+    });
+  };
+
+  const toggleOrderHistorySelectAll = (checked: boolean) => {
+    if (checked) {
+      setOrderHistorySelectedIds(new Set(orderHistoryItems.map((item) => item.id)));
+      return;
+    }
+    setOrderHistorySelectedIds(new Set());
+  };
   const riskConfig = riskConfigData?.data;
   const wsTickerPrice = wsEnabled && wsTicker?.symbol?.toUpperCase() === normalizedSymbol
     ? Number(wsTicker.price)
@@ -3665,12 +3764,45 @@ export default function Trading() {
                 <CardDescription>{t('trading.history.subtitle')}</CardDescription>
               </CardHeader>
               <CardContent>
-                {isLoadingOrders ? (
+                <div className="flex flex-wrap items-center gap-2 mb-4">
+                  <Button
+                    variant="destructive"
+                    disabled={!hasOrderHistorySelection || deleteOrderHistoryMutation.isPending}
+                    onClick={() => deleteOrderHistoryMutation.mutate({ ids: Array.from(orderHistorySelectedIds), scope: 'self' })}
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    {t('trading.history.actions.deleteSelected')}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    disabled={deleteOrderHistoryMutation.isPending}
+                    onClick={() => deleteOrderHistoryMutation.mutate({ all: true, scope: 'self' })}
+                  >
+                    {t('trading.history.actions.deleteAllMine')}
+                  </Button>
+                  {isAdminRole && (
+                    <Button
+                      variant="outline"
+                      disabled={deleteOrderHistoryMutation.isPending}
+                      onClick={() => deleteOrderHistoryMutation.mutate({ all: true, scope: 'tenant' })}
+                    >
+                      {t('trading.history.actions.deleteAllTenant')}
+                    </Button>
+                  )}
+                </div>
+
+                {orderHistoryLoading ? (
                   <Skeleton className="h-64" />
                 ) : (
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <TableHead className="w-10">
+                          <Checkbox
+                            checked={allOrderHistorySelected}
+                            onCheckedChange={(checked) => toggleOrderHistorySelectAll(Boolean(checked))}
+                          />
+                        </TableHead>
                         <TableHead>{t('trading.history.table.date')}</TableHead>
                         <TableHead>{t('trading.history.table.type')}</TableHead>
                         <TableHead>{t('trading.history.table.symbol')}</TableHead>
@@ -3681,33 +3813,57 @@ export default function Trading() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {orders
-                        .filter(o => o.status === 'filled' || o.status === 'cancelled' || o.status === 'expired')
-                        .map((order) => (
-                          <TableRow key={order.id}>
-                            <TableCell className="text-muted-foreground">
-                              {formatDateTime(order.criadoEm, { locale, timeZone })}
-                            </TableCell>
-                            <TableCell className="capitalize">{order.orderType}</TableCell>
-                            <TableCell>{order.symbol}</TableCell>
-                            <TableCell>
-                              <Badge
-                                variant="outline"
-                                className={order.side === 'buy' ? 'text-green-500 border-green-500' : 'text-red-500 border-red-500'}
-                              >
-                                {order.side.toUpperCase()}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>{order.filledSize || order.size}</TableCell>
-                            <TableCell>
-                              ${formatNumber(parseFloat(order.avgFilledPrice || order.price), locale)}
-                            </TableCell>
-                            <TableCell><OrderStatusBadge status={order.status} /></TableCell>
-                          </TableRow>
-                        ))}
+                      {orderHistoryItems.map((order) => (
+                        <TableRow key={order.id}>
+                          <TableCell>
+                            <Checkbox
+                              checked={orderHistorySelectedIds.has(order.id)}
+                              onCheckedChange={(checked) => toggleOrderHistorySelection(order.id, Boolean(checked))}
+                            />
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {formatDateTime(order.criadoEm, { locale, timeZone })}
+                          </TableCell>
+                          <TableCell className="capitalize">{order.orderType}</TableCell>
+                          <TableCell>{order.symbol}</TableCell>
+                          <TableCell>
+                            <Badge
+                              variant="outline"
+                              className={order.side === 'buy' ? 'text-green-500 border-green-500' : 'text-red-500 border-red-500'}
+                            >
+                              {order.side.toUpperCase()}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{order.filledSize || order.size}</TableCell>
+                          <TableCell>
+                            ${formatNumber(parseFloat(order.avgFilledPrice || order.price), locale)}
+                          </TableCell>
+                          <TableCell><OrderStatusBadge status={order.status} /></TableCell>
+                        </TableRow>
+                      ))}
+                      {orderHistoryItems.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={8} className="text-center text-muted-foreground">
+                            {t('trading.history.empty')}
+                          </TableCell>
+                        </TableRow>
+                      )}
                     </TableBody>
                   </Table>
                 )}
+                <div className="flex items-center justify-between mt-4">
+                  <span className="text-xs text-muted-foreground">
+                    {t('trading.history.loadedCount', { count: orderHistoryItems.length })}
+                  </span>
+                  <Button
+                    variant="outline"
+                    disabled={!orderHistoryHasMore || orderHistoryLoading}
+                    onClick={() => fetchOrderHistory()}
+                  >
+                    {orderHistoryLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                    {t('trading.history.loadMore')}
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>

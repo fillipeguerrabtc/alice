@@ -16,7 +16,7 @@
  * Regra 8: TypeScript strict
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
@@ -35,9 +35,19 @@ import {
   Brain,
   Loader2,
   AlertTriangle,
+  Trash2,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -146,6 +156,16 @@ export interface TechnicalAnalysisResult {
   volume?: VolumeAnalysisResult;
   overallSignal: 'strong_buy' | 'buy' | 'neutral' | 'sell' | 'strong_sell';
   confidence: number;
+}
+
+export interface TradingAnalysisHistoryItem {
+  id: string;
+  symbol: string;
+  interval: string;
+  currentPrice: number;
+  overallSignal: 'strong_buy' | 'buy' | 'neutral' | 'sell' | 'strong_sell';
+  signalConfidence: number;
+  calculatedAt: string;
 }
 
 export interface IntervalOption {
@@ -407,6 +427,13 @@ export function TechnicalAnalysisPanel({
   });
   const locale = user?.idioma ?? 'pt-BR';
   const timeZone = user?.timezone ?? TIMEZONE;
+  const userRoles = user?.roles ?? (user?.role ? [user.role] : []);
+  const isAdminRole = userRoles.includes('admin') || userRoles.includes('super_admin');
+  const [analysisHistoryItems, setAnalysisHistoryItems] = useState<TradingAnalysisHistoryItem[]>([]);
+  const [analysisHistoryCursor, setAnalysisHistoryCursor] = useState<string | null>(null);
+  const [analysisHistoryHasMore, setAnalysisHistoryHasMore] = useState(false);
+  const [analysisHistoryLoading, setAnalysisHistoryLoading] = useState(false);
+  const [analysisHistorySelectedIds, setAnalysisHistorySelectedIds] = useState<Set<string>>(new Set());
 
   const toggleTimeframe = (value: string) => {
     setProfileForm((prev) => {
@@ -604,6 +631,89 @@ export function TechnicalAnalysisPanel({
   const analysis = analysisResponse?.data;
   const SignalIcon = analysis ? getSignalIcon(analysis.overallSignal) : Activity;
   const primaryInterval = profileForm.timeframes?.[0] ?? interval;
+  const allAnalysisHistorySelected = analysisHistoryItems.length > 0 && analysisHistorySelectedIds.size === analysisHistoryItems.length;
+  const hasAnalysisHistorySelection = analysisHistorySelectedIds.size > 0;
+
+
+  const fetchAnalysisHistory = useCallback(async (options: { reset?: boolean } = {}) => {
+    if (!symbol || analysisHistoryLoading) return;
+    const reset = options.reset ?? false;
+    setAnalysisHistoryLoading(true);
+    const params = new URLSearchParams();
+    params.set('symbol', symbol);
+    params.set('interval', primaryInterval);
+    params.set('limit', '50');
+    if (!reset && analysisHistoryCursor) {
+      params.set('cursor', analysisHistoryCursor);
+    }
+    try {
+      const response = await apiRequest('GET', `/api/integrations/trading/analysis/history?${params.toString()}`);
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || t('trading.analysis.historyLoadFailed'));
+      }
+      const nextCursor = payload.nextCursor as string | null;
+      const items = payload.data as TradingAnalysisHistoryItem[];
+      setAnalysisHistoryItems((prev) => (reset ? items : [...prev, ...items]));
+      setAnalysisHistoryCursor(nextCursor ?? null);
+      setAnalysisHistoryHasMore(Boolean(nextCursor));
+      if (reset) {
+        setAnalysisHistorySelectedIds(new Set());
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('common.error');
+      toast({ title: t('trading.analysis.historyLoadFailed'), description: message, variant: 'destructive' });
+    } finally {
+      setAnalysisHistoryLoading(false);
+    }
+  }, [analysisHistoryCursor, analysisHistoryLoading, primaryInterval, symbol, t, toast]);
+
+  useEffect(() => {
+    if (!symbol) return;
+    fetchAnalysisHistory({ reset: true });
+  }, [symbol, primaryInterval, fetchAnalysisHistory]);
+
+  const deleteAnalysisHistoryMutation = useMutation({
+    mutationFn: async ({ ids, all, scope }: { ids?: string[]; all?: boolean; scope?: 'self' | 'tenant' }) => {
+      const response = await apiRequest('POST', '/api/integrations/trading/analysis/history/delete', {
+        ids,
+        all,
+        scope,
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || t('trading.analysis.historyDeleteFailed'));
+      }
+      return payload;
+    },
+    onSuccess: () => {
+      toast({ title: t('trading.analysis.historyDeleted') });
+      fetchAnalysisHistory({ reset: true });
+    },
+    onError: (error: Error) => {
+      toast({ title: t('trading.analysis.historyDeleteFailed'), description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const toggleAnalysisHistorySelection = (analysisId: string, checked: boolean) => {
+    setAnalysisHistorySelectedIds((prev) => {
+      const updated = new Set(prev);
+      if (checked) {
+        updated.add(analysisId);
+      } else {
+        updated.delete(analysisId);
+      }
+      return updated;
+    });
+  };
+
+  const toggleAnalysisHistorySelectAll = (checked: boolean) => {
+    if (checked) {
+      setAnalysisHistorySelectedIds(new Set(analysisHistoryItems.map((item) => item.id)));
+      return;
+    }
+    setAnalysisHistorySelectedIds(new Set());
+  };
 
   const updateAnalysisSchedulerMutation = useMutation({
     mutationFn: async () => {
@@ -1610,6 +1720,107 @@ export function TechnicalAnalysisPanel({
       </CardContent>
     </Card>
       )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('trading.analysis.history.title')}</CardTitle>
+          <CardDescription>{t('trading.analysis.history.subtitle')}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap items-center gap-2 mb-4">
+            <Button
+              variant="destructive"
+              disabled={!hasAnalysisHistorySelection || deleteAnalysisHistoryMutation.isPending}
+              onClick={() => deleteAnalysisHistoryMutation.mutate({ ids: Array.from(analysisHistorySelectedIds), scope: 'self' })}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              {t('trading.analysis.history.deleteSelected')}
+            </Button>
+            <Button
+              variant="outline"
+              disabled={deleteAnalysisHistoryMutation.isPending}
+              onClick={() => deleteAnalysisHistoryMutation.mutate({ all: true, scope: 'self' })}
+            >
+              {t('trading.analysis.history.deleteAllMine')}
+            </Button>
+            {isAdminRole && (
+              <Button
+                variant="outline"
+                disabled={deleteAnalysisHistoryMutation.isPending}
+                onClick={() => deleteAnalysisHistoryMutation.mutate({ all: true, scope: 'tenant' })}
+              >
+                {t('trading.analysis.history.deleteAllTenant')}
+              </Button>
+            )}
+          </div>
+
+          {analysisHistoryLoading ? (
+            <Skeleton className="h-64" />
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-10">
+                    <Checkbox
+                      checked={allAnalysisHistorySelected}
+                      onCheckedChange={(checked) => toggleAnalysisHistorySelectAll(Boolean(checked))}
+                    />
+                  </TableHead>
+                  <TableHead>{t('trading.analysis.history.table.date')}</TableHead>
+                  <TableHead>{t('trading.analysis.history.table.symbol')}</TableHead>
+                  <TableHead>{t('trading.analysis.history.table.interval')}</TableHead>
+                  <TableHead>{t('trading.analysis.history.table.signal')}</TableHead>
+                  <TableHead>{t('trading.analysis.history.table.confidence')}</TableHead>
+                  <TableHead>{t('trading.analysis.history.table.price')}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {analysisHistoryItems.map((item) => (
+                  <TableRow key={item.id}>
+                    <TableCell>
+                      <Checkbox
+                        checked={analysisHistorySelectedIds.has(item.id)}
+                        onCheckedChange={(checked) => toggleAnalysisHistorySelection(item.id, Boolean(checked))}
+                      />
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {formatDateTime(item.calculatedAt, { locale, timeZone })}
+                    </TableCell>
+                    <TableCell>{item.symbol}</TableCell>
+                    <TableCell>{item.interval}</TableCell>
+                    <TableCell className="uppercase">{item.overallSignal}</TableCell>
+                    <TableCell>
+                      {formatNumber(item.signalConfidence, locale, { maximumFractionDigits: 2 })}
+                    </TableCell>
+                    <TableCell>{formatNumber(item.currentPrice, locale, { maximumFractionDigits: 2 })}</TableCell>
+                  </TableRow>
+                ))}
+                {analysisHistoryItems.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center text-muted-foreground">
+                      {t('trading.analysis.history.empty')}
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          )}
+
+          <div className="flex items-center justify-between mt-4">
+            <span className="text-xs text-muted-foreground">
+              {t('trading.analysis.history.loadedCount', { count: analysisHistoryItems.length })}
+            </span>
+            <Button
+              variant="outline"
+              disabled={!analysisHistoryHasMore || analysisHistoryLoading}
+              onClick={() => fetchAnalysisHistory()}
+            >
+              {analysisHistoryLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              {t('trading.analysis.history.loadMore')}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -1834,6 +1834,10 @@ export const TradingSignalMetadataSchema = z.object({
     interval: z.string(),
     analysis: z.record(z.unknown()),
   })).optional(),
+  createdByUserId: z.string().uuid().optional(),
+  isDeleted: z.boolean().optional(),
+  deletedAt: z.string().optional(),
+  deletedByUserId: z.string().uuid().optional(),
 });
 export type TradingSignalMetadata = z.infer<typeof TradingSignalMetadataSchema>;
 
@@ -1856,6 +1860,11 @@ export const TradingOrderMetadataSchema = z.object({
     sizeRule: z.string().optional(),
     suggestedSize: z.number().optional(),
   }).optional(),
+  createdByUserId: z.string().uuid().optional(),
+  source: z.enum(['signal', 'manual']).optional(),
+  isDeleted: z.boolean().optional(),
+  deletedAt: z.string().optional(),
+  deletedByUserId: z.string().uuid().optional(),
 });
 
 export type TradingOrderMetadata = z.infer<typeof TradingOrderMetadataSchema>;

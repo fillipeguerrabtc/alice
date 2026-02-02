@@ -364,6 +364,146 @@ export const integrationsServicePaths = {
       },
     },
   },
+  '/api/integrations/trading/signals/history': {
+    get: {
+      summary: 'Histórico de sinais (paginado)',
+      tags: ['Trading'],
+      parameters: [
+        { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 200 } },
+        { name: 'cursor', in: 'query', schema: { type: 'string', format: 'date-time' } },
+        { name: 'symbol', in: 'query', schema: { type: 'string' } },
+        { name: 'marketType', in: 'query', schema: { type: 'string', enum: ['futures', 'spot', 'margin'] } },
+        { name: 'validationStatus', in: 'query', schema: { type: 'string', enum: ['pending', 'validated', 'failed'] } },
+        { name: 'approvalStatus', in: 'query', schema: { type: 'string', enum: ['pending', 'approved', 'rejected'] } },
+      ],
+      responses: {
+        200: { description: 'Histórico de sinais' },
+        401: { description: 'Não autenticado' },
+        400: { description: 'Query inválida' },
+      },
+    },
+  },
+  '/api/integrations/trading/signals/history/stats': {
+    get: {
+      summary: 'Estatísticas do histórico de sinais',
+      tags: ['Trading'],
+      responses: {
+        200: { description: 'Estatísticas de sinais' },
+        401: { description: 'Não autenticado' },
+      },
+    },
+  },
+  '/api/integrations/trading/signals/history/delete': {
+    post: {
+      summary: 'Excluir sinais do histórico (exclusão lógica)',
+      tags: ['Trading'],
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                ids: { type: 'array', items: { type: 'string', format: 'uuid' } },
+                all: { type: 'boolean' },
+                scope: { type: 'string', enum: ['self', 'tenant'] },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Histórico de sinais atualizado' },
+        401: { description: 'Não autenticado' },
+        403: { description: 'Apenas administradores podem excluir tudo' },
+      },
+    },
+  },
+  '/api/integrations/trading/orders/history': {
+    get: {
+      summary: 'Histórico de ordens (banco)',
+      tags: ['Trading'],
+      parameters: [
+        { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 200 } },
+        { name: 'cursor', in: 'query', schema: { type: 'string', format: 'date-time' } },
+        { name: 'symbol', in: 'query', schema: { type: 'string' } },
+        { name: 'marketType', in: 'query', schema: { type: 'string', enum: ['futures', 'spot', 'margin'] } },
+        { name: 'status', in: 'query', schema: { type: 'string' } },
+        { name: 'side', in: 'query', schema: { type: 'string', enum: ['buy', 'sell'] } },
+      ],
+      responses: {
+        200: { description: 'Histórico de ordens' },
+        401: { description: 'Não autenticado' },
+        400: { description: 'Query inválida' },
+      },
+    },
+  },
+  '/api/integrations/trading/orders/history/delete': {
+    post: {
+      summary: 'Excluir ordens do histórico (exclusão lógica)',
+      tags: ['Trading'],
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                ids: { type: 'array', items: { type: 'string', format: 'uuid' } },
+                all: { type: 'boolean' },
+                scope: { type: 'string', enum: ['self', 'tenant'] },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Histórico de ordens atualizado' },
+        401: { description: 'Não autenticado' },
+        403: { description: 'Apenas administradores podem excluir tudo' },
+      },
+    },
+  },
+  '/api/integrations/trading/analysis/history': {
+    get: {
+      summary: 'Histórico de análises (paginado)',
+      tags: ['Trading'],
+      parameters: [
+        { name: 'symbol', in: 'query', schema: { type: 'string' } },
+        { name: 'interval', in: 'query', schema: { type: 'string' } },
+        { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 200 } },
+        { name: 'cursor', in: 'query', schema: { type: 'string', format: 'date-time' } },
+      ],
+      responses: {
+        200: { description: 'Histórico de análises' },
+        401: { description: 'Não autenticado' },
+        400: { description: 'Query inválida' },
+      },
+    },
+  },
+  '/api/integrations/trading/analysis/history/delete': {
+    post: {
+      summary: 'Excluir análises do histórico (exclusão lógica)',
+      tags: ['Trading'],
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                ids: { type: 'array', items: { type: 'string', format: 'uuid' } },
+                all: { type: 'boolean' },
+                scope: { type: 'string', enum: ['self', 'tenant'] },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Histórico de análises atualizado' },
+        401: { description: 'Não autenticado' },
+        403: { description: 'Apenas administradores podem excluir tudo' },
+      },
+    },
+  },
   '/api/integrations/stats': {
     get: {
       summary: 'Estatísticas das integrações',

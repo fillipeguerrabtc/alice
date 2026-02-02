@@ -1579,6 +1579,28 @@
         "newsQuery": "Consulta",
         "newsEmpty": "Notícias habilitadas, mas nenhum resultado relevante retornado."
       },
+      "history": {
+        "title": "Histórico de Sinais",
+        "approvalStatus": "Status de aprovação: {{status}}",
+        "validationStatus": "Status de validação: {{status}}",
+        "deleteSelected": "Excluir selecionados",
+        "deleteAllMine": "Excluir tudo (meus)",
+        "deleteAllTenant": "Excluir tudo (tenant)",
+        "loadMore": "Carregar mais",
+        "empty": "Nenhum item encontrado.",
+        "loadedCount": "{{count}} itens carregados",
+        "loadFailed": "Erro ao carregar histórico",
+        "deleteFailed": "Erro ao excluir histórico",
+        "deletedTitle": "Histórico atualizado",
+        "deletedDescription": "Itens removidos com sucesso.",
+        "table": {
+          "type": "Tipo",
+          "symbol": "Par",
+          "validation": "Validação",
+          "approval": "Aprovação",
+          "date": "Data"
+        }
+      },
       "table": {
         "type": "Tipo",
         "symbol": "Par",
@@ -1747,6 +1769,27 @@
           "neutral": "Neutro"
         }
       },
+      "history": {
+        "title": "Histórico de Análises",
+        "subtitle": "Lista completa de análises determinísticas geradas.",
+        "deleteSelected": "Excluir selecionados",
+        "deleteAllMine": "Excluir tudo (meus)",
+        "deleteAllTenant": "Excluir tudo (tenant)",
+        "empty": "Nenhuma análise no histórico",
+        "loadedCount": "{{count}} itens carregados",
+        "loadMore": "Carregar mais",
+        "table": {
+          "date": "Data",
+          "symbol": "Par",
+          "interval": "Intervalo",
+          "signal": "Sinal",
+          "confidence": "Confiança",
+          "price": "Preço"
+        }
+      },
+      "historyLoadFailed": "Erro ao carregar histórico de análises",
+      "historyDeleteFailed": "Erro ao excluir histórico de análises",
+      "historyDeleted": "Histórico de análises atualizado",
       "scheduler": {
         "title": "Scheduler de Análise",
         "subtitle": "Configure a geração automática da análise determinística",
@@ -1781,6 +1824,14 @@
     "history": {
       "title": "Histórico de Operações",
       "subtitle": "Todas as operações executadas com auditoria completa",
+      "actions": {
+        "deleteSelected": "Excluir selecionados",
+        "deleteAllMine": "Excluir tudo (meus)",
+        "deleteAllTenant": "Excluir tudo (tenant)"
+      },
+      "empty": "Nenhuma ordem no histórico",
+      "loadedCount": "{{count}} itens carregados",
+      "loadMore": "Carregar mais",
       "table": {
         "date": "Data",
         "type": "Tipo",
@@ -1825,7 +1876,8 @@
       "signalGenerated": "Sinal gerado",
       "signalGeneratedDesc": "O sinal foi criado a partir da análise do LLM",
       "schedulerUpdated": "Scheduler atualizado",
-      "profileUpdated": "Perfil atualizado"
+      "profileUpdated": "Perfil atualizado",
+      "historyDeleted": "Histórico atualizado"
     },
     "errors": {
       "orderFailed": "Erro ao criar ordem",
@@ -1837,6 +1889,8 @@
       "signalFailed": "Erro ao criar sinal",
       "signalDeactivateFailed": "Erro ao desativar sinal",
       "signalGenerateFailed": "Erro ao gerar sinal",
+      "historyFailed": "Erro ao carregar histórico",
+      "historyDeleteFailed": "Erro ao excluir histórico",
       "schedulerUpdateFailed": "Erro ao atualizar scheduler",
       "profileUpdateFailed": "Erro ao atualizar perfil"
     },

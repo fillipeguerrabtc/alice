@@ -13,7 +13,7 @@
  * Regra 6: Dados reais, sem mocks
  */
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -30,6 +30,7 @@ import {
   Loader2,
   AlertCircle,
   FileCheck,
+  Trash2,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -54,6 +55,15 @@ import {
 } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import {
   Collapsible,
   CollapsibleContent,
@@ -127,21 +137,21 @@ type ApproveOverridesForm = {
 const getSignalTypeInfo = (type: TradingSignal['signalType']) => {
   switch (type) {
     case 'entry_long':
-      return { label: 'COMPRA', icon: TrendingUp, color: 'text-green-500 bg-green-50 border-green-200' };
+      return { label: 'COMPRA', icon: TrendingUp, color: 'text-green-600 dark:text-green-400 bg-green-500/10 border-green-500/30' };
     case 'entry_short':
-      return { label: 'VENDA', icon: TrendingDown, color: 'text-red-500 bg-red-50 border-red-200' };
+      return { label: 'VENDA', icon: TrendingDown, color: 'text-red-600 dark:text-red-400 bg-red-500/10 border-red-500/30' };
     case 'exit':
-      return { label: 'SAIR', icon: XCircle, color: 'text-yellow-500 bg-yellow-50 border-yellow-200' };
+      return { label: 'SAIR', icon: XCircle, color: 'text-yellow-600 dark:text-yellow-400 bg-yellow-500/10 border-yellow-500/30' };
     case 'adjust_sl':
-      return { label: 'AJUSTAR SL', icon: Shield, color: 'text-blue-500 bg-blue-50 border-blue-200' };
+      return { label: 'AJUSTAR SL', icon: Shield, color: 'text-blue-600 dark:text-blue-400 bg-blue-500/10 border-blue-500/30' };
     case 'adjust_tp':
-      return { label: 'AJUSTAR TP', icon: TrendingUp, color: 'text-purple-500 bg-purple-50 border-purple-200' };
+      return { label: 'AJUSTAR TP', icon: TrendingUp, color: 'text-purple-600 dark:text-purple-400 bg-purple-500/10 border-purple-500/30' };
     case 'hold':
-      return { label: 'MANTER', icon: Clock, color: 'text-gray-500 bg-gray-50 border-gray-200' };
+      return { label: 'MANTER', icon: Clock, color: 'text-muted-foreground bg-muted/60 border-muted-foreground/30' };
     case 'neutral':
-      return { label: 'NEUTRO', icon: AlertCircle, color: 'text-gray-500 bg-gray-50 border-gray-200' };
+      return { label: 'NEUTRO', icon: AlertCircle, color: 'text-muted-foreground bg-muted/60 border-muted-foreground/30' };
     default:
-      return { label: type, icon: AlertCircle, color: 'text-gray-500 bg-gray-50 border-gray-200' };
+      return { label: type, icon: AlertCircle, color: 'text-muted-foreground bg-muted/60 border-muted-foreground/30' };
   }
 };
 
@@ -202,8 +212,8 @@ function SignalCard({
   timeZone,
 }: {
   signal: TradingSignal;
-  onApprove: (signalId: string, reason: string, overrides?: SignalApprovalOverrides) => void;
-  onReject: (signalId: string, reason: string) => void;
+  onApprove: (signalId: string, reason?: string, overrides?: SignalApprovalOverrides) => void;
+  onReject: (signalId: string, reason?: string) => void;
   onSendToTraining: (signalId: string) => void;
   isApproving: boolean;
   isRejecting: boolean;
@@ -634,7 +644,12 @@ function SignalCard({
                 if (Number.isFinite(leverageValue) && leverageValue > 0) overrides.leverage = leverageValue;
                 if (Number.isFinite(stopLossValue) && stopLossValue > 0) overrides.stopLoss = stopLossValue;
                 if (Number.isFinite(takeProfitValue) && takeProfitValue > 0) overrides.takeProfit = takeProfitValue;
-                onApprove(signal.id, reason, Object.keys(overrides).length ? overrides : undefined);
+                const trimmedReason = reason.trim();
+                onApprove(
+                  signal.id,
+                  trimmedReason.length > 0 ? trimmedReason : undefined,
+                  Object.keys(overrides).length ? overrides : undefined
+                );
                 setShowApproveDialog(false);
                 setReason('');
               }}
@@ -680,7 +695,8 @@ function SignalCard({
             <Button
               variant="destructive"
               onClick={() => {
-                onReject(signal.id, reason);
+                const trimmedReason = reason.trim();
+                onReject(signal.id, trimmedReason.length > 0 ? trimmedReason : undefined);
                 setShowRejectDialog(false);
                 setReason('');
               }}
@@ -707,9 +723,18 @@ export function SignalApprovalPanel({
   const queryClient = useQueryClient();
   const locale = user?.idioma ?? 'pt-BR';
   const timeZone = user?.timezone ?? TIMEZONE;
+  const userRoles = user?.roles ?? (user?.role ? [user.role] : []);
+  const isAdminRole = userRoles.includes('admin') || userRoles.includes('super_admin');
   const [approvingSignalId, setApprovingSignalId] = useState<string | null>(null);
   const [rejectingSignalId, setRejectingSignalId] = useState<string | null>(null);
   const [creatingDatasetSignalId, setCreatingDatasetSignalId] = useState<string | null>(null);
+  const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
+  const [historyFilter, setHistoryFilter] = useState<{ kind: 'approval' | 'validation'; status: string } | null>(null);
+  const [historyItems, setHistoryItems] = useState<TradingSignal[]>([]);
+  const [historyCursor, setHistoryCursor] = useState<string | null>(null);
+  const [historyHasMore, setHistoryHasMore] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [selectedHistoryIds, setSelectedHistoryIds] = useState<Set<string>>(new Set());
 
   // Buscar sinais pendentes
   const { data: signalsResponse, isLoading, refetch } = useQuery<{
@@ -742,11 +767,29 @@ export function SignalApprovalPanel({
     refetchInterval: 30000,
   });
 
+  const { data: signalHistoryStats, refetch: refetchSignalHistoryStats } = useQuery<{
+    success: boolean;
+    data: {
+      total: number;
+      validation: { validated: number; failed: number; pending: number };
+      approval: { approved: number; rejected: number; pending: number };
+    };
+  }>({
+    queryKey: ['trading-signals-history-stats', marketType],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (marketType) params.set('marketType', marketType);
+      const response = await apiRequest('GET', `/api/integrations/trading/signals/history/stats${params.toString() ? `?${params}` : ''}`);
+      return response.json();
+    },
+    refetchInterval: 30000,
+  });
+
   // Mutation para aprovar sinal
   const approveMutation = useMutation({
-    mutationFn: async ({ signalId, reason, overrides }: { signalId: string; reason: string; overrides?: SignalApprovalOverrides }) => {
+    mutationFn: async ({ signalId, reason, overrides }: { signalId: string; reason?: string; overrides?: SignalApprovalOverrides }) => {
       const response = await apiRequest('POST', `/api/integrations/trading/signals/${signalId}/approve`, {
-        reason,
+        ...(reason ? { reason } : {}),
         overrides,
       });
       return response.json();
@@ -776,9 +819,9 @@ export function SignalApprovalPanel({
 
   // Mutation para rejeitar sinal
   const rejectMutation = useMutation({
-    mutationFn: async ({ signalId, reason }: { signalId: string; reason: string }) => {
+    mutationFn: async ({ signalId, reason }: { signalId: string; reason?: string }) => {
       const response = await apiRequest('POST', `/api/integrations/trading/signals/${signalId}/reject`, {
-        reason,
+        ...(reason ? { reason } : {}),
       });
       return response.json();
     },
@@ -830,8 +873,103 @@ export function SignalApprovalPanel({
     },
   });
 
+  const fetchSignalHistory = useCallback(async (options: { reset?: boolean; filter?: { kind: 'approval' | 'validation'; status: string } } = {}) => {
+    if (historyLoading) return;
+    const filter = options.filter ?? historyFilter;
+    if (!filter) return;
+    const reset = options.reset ?? false;
+    setHistoryLoading(true);
+    const params = new URLSearchParams();
+    params.set('limit', '50');
+    if (!reset && historyCursor) {
+      params.set('cursor', historyCursor);
+    }
+    if (marketType) params.set('marketType', marketType);
+    if (filter.kind === 'approval') {
+      params.set('approvalStatus', filter.status);
+    } else {
+      params.set('validationStatus', filter.status);
+    }
+    try {
+      const response = await apiRequest('GET', `/api/integrations/trading/signals/history?${params.toString()}`);
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || t('trading.signals.history.loadFailed'));
+      }
+      const nextCursor = payload.nextCursor as string | null;
+      const newItems = payload.data as TradingSignal[];
+      setHistoryItems((prev) => reset ? newItems : [...prev, ...newItems]);
+      setHistoryCursor(nextCursor ?? null);
+      setHistoryHasMore(Boolean(nextCursor));
+      if (reset) {
+        setSelectedHistoryIds(new Set());
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('common.error');
+      toast({ title: t('trading.signals.history.loadFailed'), description: message, variant: 'destructive' });
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [historyCursor, historyFilter, historyLoading, marketType, t, toast]);
+
+  const deleteHistoryMutation = useMutation({
+    mutationFn: async ({ ids, all, scope }: { ids?: string[]; all?: boolean; scope?: 'self' | 'tenant' }) => {
+      const response = await apiRequest('POST', '/api/integrations/trading/signals/history/delete', {
+        ids,
+        all,
+        scope,
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || t('trading.signals.history.deleteFailed'));
+      }
+      return data;
+    },
+    onSuccess: () => {
+      toast({ title: t('trading.signals.history.deletedTitle'), description: t('trading.signals.history.deletedDescription') });
+      refetchSignalHistoryStats();
+      if (historyFilter) {
+        fetchSignalHistory({ reset: true, filter: historyFilter });
+      }
+    },
+    onError: (error: Error) => {
+      toast({ title: t('trading.signals.history.deleteFailed'), description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const openHistoryDialog = (filter: { kind: 'approval' | 'validation'; status: string }) => {
+    setHistoryFilter(filter);
+    setHistoryDialogOpen(true);
+    setHistoryCursor(null);
+    setHistoryHasMore(false);
+    fetchSignalHistory({ reset: true, filter });
+  };
+
+  const toggleHistorySelection = (signalId: string, checked: boolean) => {
+    setSelectedHistoryIds((prev) => {
+      const updated = new Set(prev);
+      if (checked) {
+        updated.add(signalId);
+      } else {
+        updated.delete(signalId);
+      }
+      return updated;
+    });
+  };
+
+  const toggleHistorySelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedHistoryIds(new Set(historyItems.map((item) => item.id)));
+      return;
+    }
+    setSelectedHistoryIds(new Set());
+  };
+
   const signals: TradingSignal[] = signalsResponse?.data ?? [];
   const stats = validationStats?.stats;
+  const historyStats = signalHistoryStats?.data;
+  const allHistorySelected = historyItems.length > 0 && selectedHistoryIds.size === historyItems.length;
+  const hasHistorySelection = selectedHistoryIds.size > 0;
 
   return (
     <Card>
@@ -853,31 +991,41 @@ export function SignalApprovalPanel({
           </Button>
         </div>
 
-        {/* Estatísticas de Validação */}
+        {/* Estatísticas de Sinais */}
+        {historyStats && (
+          <div className="grid grid-cols-3 gap-4 mt-4 p-4 bg-muted/50 rounded-lg">
+            <Button
+              variant="ghost"
+              className="h-auto flex-col gap-1 py-2"
+              onClick={() => openHistoryDialog({ kind: 'approval', status: 'approved' })}
+            >
+              <p className="text-2xl font-bold text-green-600">{historyStats.approval.approved}</p>
+              <p className="text-xs text-muted-foreground">Aprovados</p>
+            </Button>
+            <Button
+              variant="ghost"
+              className="h-auto flex-col gap-1 py-2"
+              onClick={() => openHistoryDialog({ kind: 'approval', status: 'rejected' })}
+            >
+              <p className="text-2xl font-bold text-red-600">{historyStats.approval.rejected}</p>
+              <p className="text-xs text-muted-foreground">Rejeitados</p>
+            </Button>
+            <Button
+              variant="ghost"
+              className="h-auto flex-col gap-1 py-2"
+              onClick={() => openHistoryDialog({ kind: 'validation', status: 'failed' })}
+            >
+              <p className="text-2xl font-bold text-orange-600">{historyStats.validation.failed}</p>
+              <p className="text-xs text-muted-foreground">Falhas de validação</p>
+            </Button>
+          </div>
+        )}
         {stats && (
-          <div className="grid grid-cols-4 gap-4 mt-4 p-4 bg-muted/50 rounded-lg">
-            <div className="text-center">
-              <p className="text-2xl font-bold">{stats.total}</p>
-              <p className="text-xs text-muted-foreground">Total Validações</p>
-            </div>
-            <div className="text-center">
-              <p className="text-2xl font-bold text-green-600">{stats.passed}</p>
-              <p className="text-xs text-muted-foreground">Aprovadas</p>
-            </div>
-            <div className="text-center">
-              <p className="text-2xl font-bold text-red-600">{stats.failed}</p>
-              <p className="text-xs text-muted-foreground">Falhas</p>
-            </div>
-            <div className="text-center">
-              <p className="text-2xl font-bold">
-                {formatNumber(stats.accuracyRate, locale, {
-                  minimumFractionDigits: 1,
-                  maximumFractionDigits: 1,
-                })}
-                %
-              </p>
-              <p className="text-xs text-muted-foreground">Taxa de Acerto</p>
-            </div>
+          <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="font-medium">Validados:</span>
+            <span>passaram na validação cruzada LLM.</span>
+            <span className="font-medium">Falhou validação:</span>
+            <span>valores citados divergiram dos indicadores reais.</span>
           </div>
         )}
       </CardHeader>
@@ -924,6 +1072,125 @@ export function SignalApprovalPanel({
           </span>
         </div>
       </CardContent>
+
+      <Dialog open={historyDialogOpen} onOpenChange={setHistoryDialogOpen}>
+        <DialogContent className="max-w-5xl">
+          <DialogHeader>
+            <DialogTitle>{t('trading.signals.history.title')}</DialogTitle>
+            <DialogDescription>
+              {historyFilter?.kind === 'approval'
+                ? t('trading.signals.history.approvalStatus', { status: historyFilter.status })
+                : t('trading.signals.history.validationStatus', { status: historyFilter?.status ?? '-' })}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="destructive"
+              disabled={!hasHistorySelection || deleteHistoryMutation.isPending}
+              onClick={() => deleteHistoryMutation.mutate({ ids: Array.from(selectedHistoryIds), scope: 'self' })}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              {t('trading.signals.history.deleteSelected')}
+            </Button>
+            <Button
+              variant="outline"
+              disabled={deleteHistoryMutation.isPending}
+              onClick={() => deleteHistoryMutation.mutate({ all: true, scope: 'self' })}
+            >
+              {t('trading.signals.history.deleteAllMine')}
+            </Button>
+            {isAdminRole && (
+              <Button
+                variant="outline"
+                disabled={deleteHistoryMutation.isPending}
+                onClick={() => deleteHistoryMutation.mutate({ all: true, scope: 'tenant' })}
+              >
+                {t('trading.signals.history.deleteAllTenant')}
+              </Button>
+            )}
+          </div>
+
+          <div className="border rounded-lg overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-10">
+                    <Checkbox
+                      checked={allHistorySelected}
+                      onCheckedChange={(checked) => toggleHistorySelectAll(Boolean(checked))}
+                    />
+                  </TableHead>
+                  <TableHead>{t('trading.signals.history.table.type')}</TableHead>
+                  <TableHead>{t('trading.signals.history.table.symbol')}</TableHead>
+                  <TableHead>{t('trading.signals.history.table.validation')}</TableHead>
+                  <TableHead>{t('trading.signals.history.table.approval')}</TableHead>
+                  <TableHead>{t('trading.signals.history.table.date')}</TableHead>
+                  <TableHead className="w-12" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {historyItems.map((signal) => {
+                  const typeInfo = getSignalTypeInfo(signal.signalType);
+                  const TypeIcon = typeInfo.icon;
+                  return (
+                  <TableRow key={signal.id}>
+                    <TableCell>
+                      <Checkbox
+                        checked={selectedHistoryIds.has(signal.id)}
+                        onCheckedChange={(checked) => toggleHistorySelection(signal.id, Boolean(checked))}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={`${typeInfo.color} border-current`}>
+                        <TypeIcon className="h-3 w-3 mr-1" />
+                        {typeInfo.label}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{signal.symbol}</TableCell>
+                    <TableCell className="capitalize">{signal.metadata?.validationStatus ?? 'pending'}</TableCell>
+                    <TableCell className="capitalize">{signal.metadata?.approvalStatus ?? 'pending'}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {formatDateTime(signal.criadoEm, { locale, timeZone })}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => deleteHistoryMutation.mutate({ ids: [signal.id], scope: 'self' })}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                  );
+                })}
+                {historyItems.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center text-muted-foreground">
+                      {t('trading.signals.history.empty')}
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">
+              {t('trading.signals.history.loadedCount', { count: historyItems.length })}
+            </span>
+            <Button
+              variant="outline"
+              disabled={!historyHasMore || historyLoading}
+              onClick={() => fetchSignalHistory()}
+            >
+              {historyLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              {t('trading.signals.history.loadMore')}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

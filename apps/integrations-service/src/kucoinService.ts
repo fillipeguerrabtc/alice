@@ -1046,6 +1046,7 @@ export async function createPendingOrderFromSignal(
         closePosition,
         stopLoss,
         takeProfit,
+        createdByUserId: authContext.userId,
         review: {
           source: 'signal',
           reason,
@@ -1652,7 +1653,10 @@ export async function createOrderFromSignal(
       leverage: params.leverage ?? 1,
       // CORREÇÃO 18/12/2025: stopLoss/takeProfit não existem em TradingOrderMetadata
       // Esses valores são gerenciados via stop orders separadas na KuCoin API
-      metadata: {},
+      metadata: {
+        createdByUserId: authContext.userId,
+        source: validSignalId ? 'signal' : 'manual',
+      },
     };
 
     const [order] = await db

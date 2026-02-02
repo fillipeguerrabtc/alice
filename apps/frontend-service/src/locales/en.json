@@ -1548,6 +1548,28 @@
         "newsQuery": "Query",
         "newsEmpty": "News enabled, but no relevant results returned."
       },
+      "history": {
+        "title": "Signal History",
+        "approvalStatus": "Approval status: {{status}}",
+        "validationStatus": "Validation status: {{status}}",
+        "deleteSelected": "Delete selected",
+        "deleteAllMine": "Delete all (mine)",
+        "deleteAllTenant": "Delete all (tenant)",
+        "loadMore": "Load more",
+        "empty": "No items found.",
+        "loadedCount": "{{count}} items loaded",
+        "loadFailed": "Failed to load history",
+        "deleteFailed": "Failed to delete history",
+        "deletedTitle": "History updated",
+        "deletedDescription": "Items removed successfully.",
+        "table": {
+          "type": "Type",
+          "symbol": "Pair",
+          "validation": "Validation",
+          "approval": "Approval",
+          "date": "Date"
+        }
+      },
       "table": {
         "type": "Type",
         "symbol": "Pair",
@@ -1716,6 +1738,27 @@
           "neutral": "Neutral"
         }
       },
+      "history": {
+        "title": "Analysis History",
+        "subtitle": "Complete list of generated deterministic analyses.",
+        "deleteSelected": "Delete selected",
+        "deleteAllMine": "Delete all (mine)",
+        "deleteAllTenant": "Delete all (tenant)",
+        "empty": "No analyses in history",
+        "loadedCount": "{{count}} items loaded",
+        "loadMore": "Load more",
+        "table": {
+          "date": "Date",
+          "symbol": "Pair",
+          "interval": "Interval",
+          "signal": "Signal",
+          "confidence": "Confidence",
+          "price": "Price"
+        }
+      },
+      "historyLoadFailed": "Failed to load analysis history",
+      "historyDeleteFailed": "Failed to delete analysis history",
+      "historyDeleted": "Analysis history updated",
       "scheduler": {
         "title": "Analysis Scheduler",
         "subtitle": "Configure automatic deterministic analysis generation",
@@ -1750,6 +1793,14 @@
     "history": {
       "title": "Operations History",
       "subtitle": "All executed operations with complete audit trail",
+      "actions": {
+        "deleteSelected": "Delete selected",
+        "deleteAllMine": "Delete all (mine)",
+        "deleteAllTenant": "Delete all (tenant)"
+      },
+      "empty": "No orders in history",
+      "loadedCount": "{{count}} items loaded",
+      "loadMore": "Load more",
       "table": {
         "date": "Date",
         "type": "Type",
@@ -1794,7 +1845,8 @@
       "signalGenerated": "Signal generated",
       "signalGeneratedDesc": "The signal was created from LLM analysis",
       "schedulerUpdated": "Scheduler updated",
-      "profileUpdated": "Profile updated"
+      "profileUpdated": "Profile updated",
+      "historyDeleted": "History updated"
     },
     "errors": {
       "orderFailed": "Error creating order",
@@ -1806,6 +1858,8 @@
       "signalFailed": "Error creating signal",
       "signalDeactivateFailed": "Error deactivating signal",
       "signalGenerateFailed": "Error generating signal",
+      "historyFailed": "Failed to load history",
+      "historyDeleteFailed": "Failed to delete history",
       "schedulerUpdateFailed": "Error updating scheduler",
       "profileUpdateFailed": "Error updating profile"
     },
