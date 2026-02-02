@@ -745,14 +745,10 @@ export function TechnicalAnalysisPanel({
     analysisHistoryCursorRef.current = analysisHistoryCursor;
   }, [analysisHistoryCursor]);
 
-  useEffect(() => {
-    analysisHistoryLoadingRef.current = analysisHistoryLoading;
-  }, [analysisHistoryLoading]);
-
-
   const fetchAnalysisHistory = useCallback(async (options: { reset?: boolean } = {}) => {
     if (!symbol || analysisHistoryLoadingRef.current) return;
     const reset = options.reset ?? false;
+    analysisHistoryLoadingRef.current = true;
     setAnalysisHistoryLoading(true);
     const params = new URLSearchParams();
     params.set('symbol', symbol);
@@ -781,6 +777,7 @@ export function TechnicalAnalysisPanel({
       toast({ title: t('trading.analysis.historyLoadFailed'), description: message, variant: 'destructive' });
     } finally {
       setAnalysisHistoryLoading(false);
+      analysisHistoryLoadingRef.current = false;
     }
   }, [primaryInterval, symbol, t, toast]);
 
