@@ -1389,7 +1389,9 @@
       "selectAll": "Select all",
       "clearSelection": "Clear selection",
       "noOptions": "No options available",
-      "loadingOptions": "Loading options..."
+      "loadingOptions": "Loading options...",
+      "selectedCount": "{{count}} selected",
+      "maxSelected": "Max {{max}}"
     },
     "marginMode": {
       "cross": "Cross",

@@ -3493,6 +3493,8 @@ export default function Trading() {
                     selectedValues={signalProfileForm.timeframes}
                     onChange={updateSignalTimeframes}
                     placeholder={t('trading.common.selectPlaceholder')}
+                    selectedCountLabel={t('trading.common.selectedCount', { count: signalProfileForm.timeframes.length })}
+                    maxLabel={t('trading.common.maxSelected', { max: signalProfileForm.timeframes.length })}
                     selectAllLabel={t('trading.common.selectAll')}
                     clearLabel={t('trading.common.clearSelection')}
                     emptyLabel={t('trading.common.noOptions')}
@@ -3510,6 +3512,8 @@ export default function Trading() {
                     selectedValues={signalProfileForm.indicators}
                     onChange={updateSignalIndicators}
                     placeholder={t('trading.common.selectPlaceholder')}
+                    selectedCountLabel={t('trading.common.selectedCount', { count: signalProfileForm.indicators.length })}
+                    maxLabel={t('trading.common.maxSelected', { max: signalProfileForm.indicators.length })}
                     selectAllLabel={t('trading.common.selectAll')}
                     clearLabel={t('trading.common.clearSelection')}
                     emptyLabel={t('trading.common.noOptions')}
@@ -3528,6 +3532,8 @@ export default function Trading() {
                     selectedValues={signalProfileForm.techniques}
                     onChange={updateSignalTechniques}
                     placeholder={t('trading.common.selectPlaceholder')}
+                    selectedCountLabel={t('trading.common.selectedCount', { count: signalProfileForm.techniques.length })}
+                    maxLabel={t('trading.common.maxSelected', { max: signalProfileForm.techniques.length })}
                     selectAllLabel={t('trading.common.selectAll')}
                     clearLabel={t('trading.common.clearSelection')}
                     emptyLabel={t('trading.common.noOptions')}
@@ -3578,6 +3584,8 @@ export default function Trading() {
                           selectedValues={signalProfileForm.arbitrageConfig?.exchanges ?? []}
                           onChange={updateSignalArbitrageExchanges}
                           placeholder={t('trading.common.selectPlaceholder')}
+                          selectedCountLabel={t('trading.common.selectedCount', { count: signalProfileForm.arbitrageConfig?.exchanges?.length ?? 0 })}
+                          maxLabel={t('trading.common.maxSelected', { max: signalProfileForm.arbitrageConfig?.exchanges?.length ?? 0 })}
                           selectAllLabel={t('trading.common.selectAll')}
                           clearLabel={t('trading.common.clearSelection')}
                           emptyLabel={isSignalArbitrageCatalogLoading ? t('trading.common.loadingOptions') : t('trading.common.noOptions')}
@@ -3594,6 +3602,8 @@ export default function Trading() {
                           onChange={updateSignalArbitrageAssets}
                           maxSelected={MAX_ARBITRAGE_ASSETS}
                           placeholder={t('trading.common.selectPlaceholder')}
+                          selectedCountLabel={t('trading.common.selectedCount', { count: signalProfileForm.arbitrageConfig?.intermediateAssets?.length ?? 0 })}
+                          maxLabel={t('trading.common.maxSelected', { max: MAX_ARBITRAGE_ASSETS })}
                           selectAllLabel={t('trading.common.selectAll')}
                           clearLabel={t('trading.common.clearSelection')}
                           emptyLabel={isSignalArbitrageCatalogLoading ? t('trading.common.loadingOptions') : t('trading.common.noOptions')}
@@ -3658,6 +3668,8 @@ export default function Trading() {
                     selectedValues={selectedSignalSources}
                     onChange={updateSignalSources}
                     placeholder={t('trading.common.selectPlaceholder')}
+                    selectedCountLabel={t('trading.common.selectedCount', { count: selectedSignalSources.length })}
+                    maxLabel={t('trading.common.maxSelected', { max: selectedSignalSources.length })}
                     selectAllLabel={t('trading.common.selectAll')}
                     clearLabel={t('trading.common.clearSelection')}
                     emptyLabel={t('trading.common.noOptions')}

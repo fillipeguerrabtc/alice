@@ -1178,6 +1178,8 @@ export function TechnicalAnalysisPanel({
               selectedValues={profileForm.timeframes}
               onChange={updateTimeframes}
               placeholder={t('trading.common.selectPlaceholder')}
+              selectedCountLabel={t('trading.common.selectedCount', { count: profileForm.timeframes.length })}
+              maxLabel={t('trading.common.maxSelected', { max: profileForm.timeframes.length })}
               selectAllLabel={t('trading.common.selectAll')}
               clearLabel={t('trading.common.clearSelection')}
               emptyLabel={t('trading.common.noOptions')}
@@ -1196,6 +1198,8 @@ export function TechnicalAnalysisPanel({
               selectedValues={profileForm.indicators}
               onChange={updateIndicators}
               placeholder={t('trading.common.selectPlaceholder')}
+              selectedCountLabel={t('trading.common.selectedCount', { count: profileForm.indicators.length })}
+              maxLabel={t('trading.common.maxSelected', { max: profileForm.indicators.length })}
               selectAllLabel={t('trading.common.selectAll')}
               clearLabel={t('trading.common.clearSelection')}
               emptyLabel={t('trading.common.noOptions')}
@@ -1214,6 +1218,8 @@ export function TechnicalAnalysisPanel({
             selectedValues={profileForm.techniques}
             onChange={updateTechniques}
             placeholder={t('trading.common.selectPlaceholder')}
+            selectedCountLabel={t('trading.common.selectedCount', { count: profileForm.techniques.length })}
+            maxLabel={t('trading.common.maxSelected', { max: profileForm.techniques.length })}
             selectAllLabel={t('trading.common.selectAll')}
             clearLabel={t('trading.common.clearSelection')}
             emptyLabel={t('trading.common.noOptions')}
@@ -1255,6 +1261,8 @@ export function TechnicalAnalysisPanel({
                   selectedValues={profileForm.arbitrageConfig?.exchanges ?? []}
                   onChange={updateArbitrageExchanges}
                   placeholder={t('trading.common.selectPlaceholder')}
+              selectedCountLabel={t('trading.common.selectedCount', { count: profileForm.arbitrageConfig?.exchanges?.length ?? 0 })}
+              maxLabel={t('trading.common.maxSelected', { max: profileForm.arbitrageConfig?.exchanges?.length ?? 0 })}
                   selectAllLabel={t('trading.common.selectAll')}
                   clearLabel={t('trading.common.clearSelection')}
                   emptyLabel={arbitrageCatalogLoading ? t('trading.common.loadingOptions') : t('trading.common.noOptions')}
@@ -1271,6 +1279,8 @@ export function TechnicalAnalysisPanel({
                   onChange={updateArbitrageAssets}
                   maxSelected={MAX_ARBITRAGE_ASSETS}
                   placeholder={t('trading.common.selectPlaceholder')}
+              selectedCountLabel={t('trading.common.selectedCount', { count: profileForm.arbitrageConfig?.intermediateAssets?.length ?? 0 })}
+              maxLabel={t('trading.common.maxSelected', { max: MAX_ARBITRAGE_ASSETS })}
                   selectAllLabel={t('trading.common.selectAll')}
                   clearLabel={t('trading.common.clearSelection')}
                   emptyLabel={arbitrageCatalogLoading ? t('trading.common.loadingOptions') : t('trading.common.noOptions')}
@@ -1328,6 +1338,8 @@ export function TechnicalAnalysisPanel({
               selectedValues={selectedAnalysisSources}
               onChange={updateAnalysisSources}
               placeholder={t('trading.common.selectPlaceholder')}
+              selectedCountLabel={t('trading.common.selectedCount', { count: selectedAnalysisSources.length })}
+              maxLabel={t('trading.common.maxSelected', { max: selectedAnalysisSources.length })}
               selectAllLabel={t('trading.common.selectAll')}
               clearLabel={t('trading.common.clearSelection')}
               emptyLabel={t('trading.common.noOptions')}

@@ -24,6 +24,8 @@ type MultiSelectDropdownProps = {
   maxSelected?: number;
   emptyLabel?: string;
   placeholder?: string;
+  selectedCountLabel?: string;
+  maxLabel?: string;
   selectAllLabel?: string;
   clearLabel?: string;
   disabled?: boolean;
@@ -37,10 +39,20 @@ export function MultiSelectDropdown({
   maxSelected,
   emptyLabel = 'Nenhuma opção disponível',
   placeholder = 'Selecione...',
+  selectedCountLabel = '{count} selecionados',
+  maxLabel = 'Máx {max}',
   selectAllLabel = 'Selecionar todos',
   clearLabel = 'Limpar seleção',
   disabled = false,
 }: MultiSelectDropdownProps) {
+  const resolvedSelectedCountLabel = useMemo(
+    () => selectedCountLabel.replace('{count}', String(selectedValues.length)),
+    [selectedCountLabel, selectedValues.length]
+  );
+  const resolvedMaxLabel = useMemo(
+    () => maxLabel.replace('{max}', String(maxSelected ?? 0)),
+    [maxLabel, maxSelected]
+  );
   const selectedSet = useMemo(() => new Set(selectedValues), [selectedValues]);
   const selectedLabel = useMemo(() => {
     if (selectedValues.length === 0) return placeholder;
@@ -48,8 +60,8 @@ export function MultiSelectDropdown({
       const match = options.find((option) => option.value === selectedValues[0]);
       return match?.label ?? selectedValues[0];
     }
-    return `${selectedValues.length} selecionados`;
-  }, [options, placeholder, selectedValues]);
+    return resolvedSelectedCountLabel;
+  }, [options, placeholder, resolvedSelectedCountLabel, selectedValues]);
 
   const handleToggle = (value: string, checked: boolean) => {
     const next = new Set(selectedValues);
@@ -78,7 +90,7 @@ export function MultiSelectDropdown({
         <div className="flex items-center justify-between">
           <span className="text-xs text-muted-foreground">{label}</span>
           {maxSelected ? (
-            <span className="text-xs text-muted-foreground">Máx {maxSelected}</span>
+            <span className="text-xs text-muted-foreground">{resolvedMaxLabel}</span>
           ) : null}
         </div>
         <DropdownMenuTrigger asChild disabled={disabled}>

@@ -1420,7 +1420,9 @@
       "selectAll": "Selecionar todos",
       "clearSelection": "Limpar seleção",
       "noOptions": "Nenhuma opção disponível",
-      "loadingOptions": "Carregando opções..."
+      "loadingOptions": "Carregando opções...",
+      "selectedCount": "{{count}} selecionados",
+      "maxSelected": "Máx {{max}}"
     },
     "marginMode": {
       "cross": "Cross",
