@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 01 de Fevereiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.66 - Trading JSON resiliente + WS chat sem crash
+**Versão:** 10.67 - Trading JSON robusto + evidência de notícias
 
 ---
 
@@ -35,6 +35,8 @@
 - Chat/Trading: WebSocket do frontend alinhado com `/ws/chat` (rota correta no chat-service).
 - Trading: reparo de JSON mais robusto (aspas internas + string incompleta) evita falhas na geração de sinais.
 - Chat: correção do upgrade WS evita crash por double handleUpgrade.
+- Trading: extração de JSON balanceada evita truncamento por chaves em texto.
+- Trading: logging explícito de notícias confirma uso de SearXNG na análise.
 - Sinais IA: parsing robusto de JSON do LLM com reparo seguro e prompt de saída estrito.
 - Roteamento de agentes: gatilhos configuráveis no Modo Agentic (manual/auto) por tenant.
 - Roteamento agentic: normalização de comandos (acentos/@) e detecção consistente no WebSocket.

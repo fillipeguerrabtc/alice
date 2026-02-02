@@ -527,11 +527,21 @@ async function fetchNewsSummary(
   }
 
   const data = await response.json() as { results?: Array<{ title?: string; url?: string; score?: number }> };
+  const results = (data.results ?? [])
+    .filter((item) => item?.title && item?.url)
+    .map((item) => ({ title: item.title as string, url: item.url as string, score: item.score }));
+
+  logger.info({
+    tenantId: auth.tenantId,
+    symbol,
+    marketType: marketType ?? 'futures',
+    query,
+    results: results.length,
+  }, 'Notícias consultadas via SearXNG para análise de trading');
+
   return {
     query,
-    results: (data.results ?? [])
-      .filter((item) => item?.title && item?.url)
-      .map((item) => ({ title: item.title as string, url: item.url as string, score: item.score })),
+    results,
   };
 }
 
@@ -5741,12 +5751,53 @@ function stripJsonCodeFence(content: string): string {
 
 function extractJsonObjectCandidate(content: string): string {
   const cleaned = stripJsonCodeFence(content).trim();
-  const firstBrace = cleaned.indexOf('{');
-  const lastBrace = cleaned.lastIndexOf('}');
-  if (firstBrace >= 0 && lastBrace > firstBrace) {
-    return cleaned.slice(firstBrace, lastBrace + 1).trim();
+  if (!cleaned) return cleaned;
+
+  let inString = false;
+  let escaping = false;
+  let started = false;
+  let depth = 0;
+  let output = '';
+
+  for (let i = 0; i < cleaned.length; i += 1) {
+    const char = cleaned[i];
+    if (escaping) {
+      if (started) output += char;
+      escaping = false;
+      continue;
+    }
+    if (char === '\\') {
+      if (started) output += char;
+      if (inString) escaping = true;
+      continue;
+    }
+    if (char === '"') {
+      if (started) output += char;
+      inString = !inString;
+      continue;
+    }
+    if (!inString) {
+      if (char === '{') {
+        depth += 1;
+        started = true;
+        output += char;
+        continue;
+      }
+      if (char === '}' && started) {
+        depth -= 1;
+        output += char;
+        if (depth === 0) {
+          return output.trim();
+        }
+        continue;
+      }
+    }
+    if (started) {
+      output += char;
+    }
   }
-  return cleaned;
+
+  return output.trim() || cleaned;
 }
 
 function repairLlmJsonContent(content: string): { json: string; repaired: boolean } {
