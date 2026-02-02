@@ -440,6 +440,21 @@ interface TradingProfileForm {
   };
 }
 
+type SignalProfilePayload = {
+  kind: 'signal';
+  marketType: 'futures' | 'spot' | 'margin';
+  symbol?: string;
+  timeframes: string[];
+  indicators: string[];
+  dataSources: TradingProfileForm['dataSources'];
+  newsConfig: TradingNewsConfigForm;
+  techniques: string[];
+  ensembleConfig?: TradingProfileForm['ensembleConfig'];
+  arbitrageConfig?: TradingProfileForm['arbitrageConfig'];
+  modelConfig?: TradingProfileForm['modelConfig'];
+  consensus?: TradingProfileForm['consensus'];
+};
+
 // ============================================================================
 // CONSTANTES
 // ============================================================================
@@ -501,6 +516,7 @@ const DEFAULT_ARBITRAGE_CONFIG = {
   maxIntervalMinutes: 5,
 };
 const MAX_ARBITRAGE_ASSETS = 30;
+const AUTO_SAVE_DEBOUNCE_MS = 600;
 
 const ORDER_STATUS_BADGES: Record<string, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; icon: typeof CheckCircle }> = {
   pending: { variant: 'secondary', icon: Clock },
@@ -769,25 +785,29 @@ export default function Trading() {
     modelConfig: {},
     consensus: { rule: 'majority' },
   });
+  const autoSaveSignalEnabledRef = useRef(false);
+  const autoSaveSignalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoSaveSignalLastPayloadRef = useRef<string>('');
+  const autoSaveSignalContextRef = useRef(false);
 
   const updateSignalTimeframes = (next: string[]) => {
     setSignalProfileForm((prev) => ({
       ...prev,
-      timeframes: next.length > 0 ? next : prev.timeframes,
+      timeframes: next,
     }));
   };
 
   const updateSignalIndicators = (next: string[]) => {
     setSignalProfileForm((prev) => ({
       ...prev,
-      indicators: next.length > 0 ? next : prev.indicators,
+      indicators: next,
     }));
   };
 
   const updateSignalTechniques = (next: string[]) => {
     setSignalProfileForm((prev) => ({
       ...prev,
-      techniques: next.length > 0 ? next : prev.techniques,
+      techniques: next,
     }));
   };
 
@@ -1003,20 +1023,6 @@ export default function Trading() {
   });
 
   useEffect(() => {
-    if (signalProfileResponse?.data) {
-      setSignalProfileForm({
-        ...signalProfileResponse.data,
-        newsConfig: normalizeTradingNewsConfigForm(signalProfileResponse.data.newsConfig),
-        techniques: signalProfileResponse.data.techniques?.length
-          ? signalProfileResponse.data.techniques
-          : DEFAULT_SIGNAL_TECHNIQUES,
-        ensembleConfig: signalProfileResponse.data.ensembleConfig ?? DEFAULT_ENSEMBLE_CONFIG,
-        arbitrageConfig: signalProfileResponse.data.arbitrageConfig ?? null,
-      });
-    }
-  }, [signalProfileResponse]);
-
-  useEffect(() => {
     if (!signalProfileForm.arbitrageConfig || !signalArbitrageCatalogResponse?.success) return;
     const effectiveFee = signalArbitrageCatalogResponse.data.effectiveFeePct;
     if (Number.isFinite(effectiveFee) && effectiveFee !== signalProfileForm.arbitrageConfig.feePct) {
@@ -1037,12 +1043,6 @@ export default function Trading() {
   const restOrderBookDepth = useMemo(() => {
     return intervalsData?.data?.restOrderBookDepth ?? null;
   }, [intervalsData]);
-
-  const isFuturesMarket = selectedMarketType === 'futures';
-  const wsEnabled = isFuturesMarket
-    && !!sanitizedSymbol
-    && !!statusData?.data?.isConfigured
-    && !statusData?.data?.requiresTenant;
 
   // ============================================================================
   // QUERIES
@@ -1083,6 +1083,13 @@ export default function Trading() {
   const featuredOverride = symbolsData?.data?.featured ?? [];
   const topSymbols = symbolsData?.data?.topSymbols ?? [];
   const featuredSymbols = featuredOverride.length > 0 ? featuredOverride : topSymbols;
+  const isSymbolValidForMarket = Boolean(sanitizedSymbol && availableSymbols.includes(sanitizedSymbol));
+  const requestSymbol = isSymbolValidForMarket ? sanitizedSymbol : '';
+  const isFuturesMarket = selectedMarketType === 'futures';
+  const wsEnabled = isFuturesMarket
+    && isSymbolValidForMarket
+    && !!statusData?.data?.isConfigured
+    && !statusData?.data?.requiresTenant;
 
   const symbolOptions = useMemo(() => {
     if (availableSymbols.length === 0) return [];
@@ -1175,13 +1182,13 @@ export default function Trading() {
     error: marketError,
     refetch: refetchMarket,
   } = useQuery<{ success: boolean; data: MarketData }>({
-    queryKey: ['/api/integrations/trading/market', selectedSymbol, selectedMarketType, selectedMarginMode],
+    queryKey: ['/api/integrations/trading/market', requestSymbol, selectedMarketType, selectedMarginMode],
     queryFn: async () => {
-      const res = await apiRequest('GET', `/api/integrations/trading/market/${sanitizedSymbol}?${marketQueryString}`);
+      const res = await apiRequest('GET', `/api/integrations/trading/market/${requestSymbol}?${marketQueryString}`);
       return res.json();
     },
     refetchInterval: wsEnabled ? 15000 : 5000,
-    enabled: statusData?.data?.isConfigured && !!sanitizedSymbol,
+    enabled: statusData?.data?.isConfigured && isSymbolValidForMarket,
   });
 
   const {
@@ -1196,7 +1203,7 @@ export default function Trading() {
       return res.json();
     },
     refetchInterval: 10000,
-    enabled: statusData?.data?.isConfigured && !!sanitizedSymbol,
+    enabled: statusData?.data?.isConfigured && isSymbolValidForMarket,
   });
 
   const {
@@ -1211,7 +1218,7 @@ export default function Trading() {
       return res.json();
     },
     refetchInterval: 10000,
-    enabled: statusData?.data?.isConfigured && !!sanitizedSymbol && selectedMarketType === 'futures',
+    enabled: statusData?.data?.isConfigured && isSymbolValidForMarket && selectedMarketType === 'futures',
   });
 
   const {
@@ -1399,7 +1406,7 @@ export default function Trading() {
     orderBook: wsOrderBook,
     klines: wsKlines,
   } = useKucoinWebSocket({
-    symbol: wsEnabled ? sanitizedSymbol : '',
+    symbol: wsEnabled ? requestSymbol : '',
     channels: wsChannels,
     interval: wsInterval,
     autoConnect: wsEnabled,
@@ -1417,30 +1424,31 @@ export default function Trading() {
     error: klinesError,
     refetch: refetchKlines,
   } = useQuery<{ success: boolean; data: KlineData[] }>({
-    queryKey: ['/api/integrations/trading/klines', selectedSymbol, selectedInterval, selectedMarketType, selectedMarginMode],
+    queryKey: ['/api/integrations/trading/klines', requestSymbol, selectedInterval, selectedMarketType, selectedMarginMode],
     queryFn: async () => {
       const params = new URLSearchParams(marketQuery);
       if (!granularityValue) {
         throw new Error('Intervalo inválido para klines');
       }
       params.set('granularity', String(granularityValue));
-      const res = await apiRequest('GET', `/api/integrations/trading/klines/${sanitizedSymbol}?${params.toString()}`);
+      const res = await apiRequest('GET', `/api/integrations/trading/klines/${requestSymbol}?${params.toString()}`);
       return res.json();
     },
     refetchInterval: wsEnabled ? 120000 : 60000,
-    enabled: statusData?.data?.isConfigured && !!granularityValue && !!sanitizedSymbol,
+    enabled: statusData?.data?.isConfigured && !!granularityValue && isSymbolValidForMarket,
   });
 
   useEffect(() => {
-    if (!statusData?.data?.isConfigured || !granularityValue || !sanitizedSymbol) return;
+    if (!statusData?.data?.isConfigured || !granularityValue || !isSymbolValidForMarket) return;
     queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/klines'] });
   }, [
     granularityValue,
-    sanitizedSymbol,
+    requestSymbol,
     selectedInterval,
     selectedMarketType,
     selectedMarginMode,
     statusData?.data?.isConfigured,
+    isSymbolValidForMarket,
   ]);
 
   // Query para Order Book
@@ -1449,17 +1457,17 @@ export default function Trading() {
     isLoading: isLoadingOrderBook,
     error: orderBookError,
   } = useQuery<OrderBookResponse>({
-    queryKey: ['/api/integrations/trading/orderbook', selectedSymbol, selectedMarketType, selectedMarginMode, restOrderBookDepth],
+    queryKey: ['/api/integrations/trading/orderbook', requestSymbol, selectedMarketType, selectedMarginMode, restOrderBookDepth],
     queryFn: async () => {
       const params = new URLSearchParams(marketQuery);
       if (restOrderBookDepth) {
         params.set('depth', String(restOrderBookDepth));
       }
-      const res = await apiRequest('GET', `/api/integrations/trading/orderbook/${sanitizedSymbol}?${params.toString()}`);
+      const res = await apiRequest('GET', `/api/integrations/trading/orderbook/${requestSymbol}?${params.toString()}`);
       return res.json();
     },
     refetchInterval: wsEnabled ? 20000 : 5000,
-    enabled: statusData?.data?.isConfigured && !!restOrderBookDepth && !!sanitizedSymbol,
+    enabled: statusData?.data?.isConfigured && !!restOrderBookDepth && isSymbolValidForMarket,
   });
 
   // Query para histórico de controle (handover/takeover)
@@ -1478,7 +1486,7 @@ export default function Trading() {
   });
 
   const market = marketData?.data;
-  const normalizedSymbol = selectedSymbol.toUpperCase();
+  const normalizedSymbol = requestSymbol.toUpperCase();
   const wsOrderBookData = wsEnabled && wsOrderBook?.symbol?.toUpperCase() === normalizedSymbol
     ? wsOrderBook
     : null;
@@ -1813,41 +1821,90 @@ export default function Trading() {
     },
   });
 
-  const updateSignalProfileMutation = useMutation({
-    mutationFn: async () => {
-      const payload = {
-        kind: 'signal',
-        marketType: selectedMarketType,
-        symbol: selectedSymbol || undefined,
-        timeframes: signalProfileForm.timeframes,
-        indicators: signalProfileForm.indicators,
-        dataSources: signalProfileForm.dataSources,
-        newsConfig: signalProfileForm.newsConfig,
-        techniques: signalProfileForm.techniques,
-        ensembleConfig: signalProfileForm.ensembleConfig,
-        arbitrageConfig: signalProfileForm.arbitrageConfig ?? undefined,
-        modelConfig: signalProfileForm.modelConfig,
-        consensus: signalProfileForm.consensus,
+  const buildSignalProfilePayload = useCallback((form: TradingProfileForm): SignalProfilePayload => ({
+    kind: 'signal',
+    marketType: selectedMarketType,
+    symbol: selectedSymbol || undefined,
+    timeframes: form.timeframes,
+    indicators: form.indicators,
+    dataSources: form.dataSources,
+    newsConfig: form.newsConfig,
+    techniques: form.techniques,
+    ensembleConfig: form.ensembleConfig,
+    arbitrageConfig: form.arbitrageConfig ?? undefined,
+    modelConfig: form.modelConfig,
+    consensus: form.consensus,
+  }), [selectedMarketType, selectedSymbol]);
+
+  const signalProfilePayload = useMemo(
+    () => buildSignalProfilePayload(signalProfileForm),
+    [buildSignalProfilePayload, signalProfileForm]
+  );
+
+  useEffect(() => {
+    if (signalProfileResponse?.data) {
+      const nextForm: TradingProfileForm = {
+        ...signalProfileResponse.data,
+        newsConfig: normalizeTradingNewsConfigForm(signalProfileResponse.data.newsConfig),
+        techniques: signalProfileResponse.data.techniques?.length
+          ? signalProfileResponse.data.techniques
+          : DEFAULT_SIGNAL_TECHNIQUES,
+        ensembleConfig: signalProfileResponse.data.ensembleConfig ?? DEFAULT_ENSEMBLE_CONFIG,
+        arbitrageConfig: signalProfileResponse.data.arbitrageConfig ?? null,
       };
+      setSignalProfileForm(nextForm);
+      autoSaveSignalEnabledRef.current = true;
+      autoSaveSignalLastPayloadRef.current = JSON.stringify(buildSignalProfilePayload(nextForm));
+    }
+  }, [buildSignalProfilePayload, signalProfileResponse]);
+
+  const updateSignalProfileMutation = useMutation({
+    mutationFn: async (payload: SignalProfilePayload) => {
       const res = await apiRequest('PUT', '/api/integrations/trading/analysis-profile', payload);
       return res.json();
     },
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
       if (!data?.success) {
         throw new Error(data?.error || t('trading.errors.profileUpdateFailed'));
       }
       setSignalProfileForm(data.data as TradingProfileForm);
-      toast({ title: t('trading.success.profileUpdated') });
+      autoSaveSignalLastPayloadRef.current = JSON.stringify(variables);
+      if (!autoSaveSignalContextRef.current) {
+        toast({ title: t('trading.success.profileUpdated') });
+      }
       refetchSignalProfile();
     },
     onError: (error: Error) => {
-      toast({
-        title: t('trading.errors.profileUpdateFailed'),
-        description: error.message,
-        variant: 'destructive',
-      });
+      if (!autoSaveSignalContextRef.current) {
+        toast({
+          title: t('trading.errors.profileUpdateFailed'),
+          description: error.message,
+          variant: 'destructive',
+        });
+      }
+    },
+    onSettled: () => {
+      autoSaveSignalContextRef.current = false;
     },
   });
+
+  useEffect(() => {
+    if (!autoSaveSignalEnabledRef.current) return;
+    const payloadKey = JSON.stringify(signalProfilePayload);
+    if (payloadKey === autoSaveSignalLastPayloadRef.current) return;
+    if (autoSaveSignalTimerRef.current) {
+      clearTimeout(autoSaveSignalTimerRef.current);
+    }
+    autoSaveSignalTimerRef.current = setTimeout(() => {
+      autoSaveSignalContextRef.current = true;
+      updateSignalProfileMutation.mutate(signalProfilePayload);
+    }, AUTO_SAVE_DEBOUNCE_MS);
+    return () => {
+      if (autoSaveSignalTimerRef.current) {
+        clearTimeout(autoSaveSignalTimerRef.current);
+      }
+    };
+  }, [signalProfilePayload, updateSignalProfileMutation]);
 
   const createSignalMutation = useMutation({
     mutationFn: async (data: typeof signalForm) => {
@@ -1885,8 +1942,11 @@ export default function Trading() {
 
   const generateSignalMutation = useMutation({
     mutationFn: async () => {
+      if (!requestSymbol) {
+        throw new Error(t('trading.signals.errors.symbolRequired'));
+      }
       const res = await apiRequest('POST', '/api/integrations/trading/signals/generate', {
-        symbol: selectedSymbol || undefined,
+        symbol: requestSymbol,
         interval: selectedInterval || '5m',
         timeframes: signalProfileForm.timeframes,
         indicators: signalProfileForm.indicators,
@@ -3711,7 +3771,7 @@ export default function Trading() {
 
                 <div className="flex flex-wrap gap-2">
                   <Button
-                    onClick={() => updateSignalProfileMutation.mutate()}
+                    onClick={() => updateSignalProfileMutation.mutate(signalProfilePayload)}
                     disabled={updateSignalProfileMutation.isPending}
                   >
                     {updateSignalProfileMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}

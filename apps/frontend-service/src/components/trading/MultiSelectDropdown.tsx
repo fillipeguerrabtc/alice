@@ -102,11 +102,19 @@ export function MultiSelectDropdown({
         <DropdownMenuContent className="w-72 max-h-64">
           <DropdownMenuLabel>{label}</DropdownMenuLabel>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={handleSelectAll} disabled={options.length === 0}>
+          <DropdownMenuItem
+            onClick={handleSelectAll}
+            onSelect={(event) => event.preventDefault()}
+            disabled={options.length === 0}
+          >
             <Check className="h-4 w-4 mr-2 opacity-70" />
             {selectAllLabel}
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={handleClear} disabled={selectedValues.length === 0}>
+          <DropdownMenuItem
+            onClick={handleClear}
+            onSelect={(event) => event.preventDefault()}
+            disabled={selectedValues.length === 0}
+          >
             {clearLabel}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
@@ -118,6 +126,7 @@ export function MultiSelectDropdown({
                 key={option.value}
                 checked={selectedSet.has(option.value)}
                 onCheckedChange={(checked) => handleToggle(option.value, Boolean(checked))}
+                onSelect={(event) => event.preventDefault()}
               >
                 {option.label}
               </DropdownMenuCheckboxItem>

@@ -1655,7 +1655,15 @@
           "total": "Total {{total}}",
           "prev": "Anterior",
           "next": "Próxima"
+        },
+        "detail": {
+          "title": "Detalhes do sinal",
+          "description": "Clique em um item do histórico para revisar o conteúdo completo.",
+          "close": "Fechar"
         }
+      },
+      "errors": {
+        "symbolRequired": "Selecione um símbolo válido para gerar o sinal"
       },
       "noSignals": "Nenhum sinal ativo",
       "confidence": "Confiança",
@@ -1916,6 +1924,28 @@
           "total": "Total {{total}}",
           "prev": "Anterior",
           "next": "Próxima"
+        },
+        "detail": {
+          "title": "Detalhes da Análise",
+          "description": "Clique em um item do histórico para revisar a análise completa.",
+          "indicatorSummary": "Indicadores principais",
+          "techniquesTitle": "Técnicas avaliadas",
+          "ensembleTitle": "Resultado do ensemble",
+          "ensembleSignal": "Sinal",
+          "ensembleConfidence": "Confiança",
+          "scoresTitle": "Pontuação por técnica",
+          "scoreConfidence": "Confiança",
+          "metadataTitle": "Metadados do cálculo",
+          "calculationDuration": "Duração",
+          "candleCount": "Candles",
+          "lastCandleTime": "Último candle",
+          "fields": {
+            "signal": "Sinal",
+            "confidence": "Confiança",
+            "price": "Preço",
+            "interval": "Intervalo",
+            "date": "Data"
+          }
         }
       },
       "historyLoadFailed": "Erro ao carregar histórico de análises",

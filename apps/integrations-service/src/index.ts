@@ -6623,6 +6623,36 @@ function normalizeLlmJsonKeys(content: string): { json: string; repaired: boolea
   return { json: output, repaired };
 }
 
+function escapeJsonString(value: string): string {
+  return value
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n');
+}
+
+function quoteJsonString(value: string): string {
+  return `"${escapeJsonString(value)}"`;
+}
+
+function coerceYamlLikeValue(value: string): string {
+  const raw = value.trim().replace(/,+\s*$/, '');
+  if (!raw) return '""';
+  if (raw.startsWith('"') || raw.startsWith('[') || raw.startsWith('{')) {
+    return raw;
+  }
+  if (raw.startsWith("'") && raw.endsWith("'") && raw.length >= 2) {
+    return quoteJsonString(raw.slice(1, -1));
+  }
+  if (/^(true|false|null)$/i.test(raw)) {
+    return raw.toLowerCase();
+  }
+  if (/^-?\d+(?:[.,]\d+)?$/.test(raw)) {
+    return raw.replace(',', '.');
+  }
+  return quoteJsonString(raw);
+}
+
 function repairYamlLikeObject(content: string): { json: string; repaired: boolean } {
   const trimmed = content.trim();
   if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) {
@@ -6663,6 +6693,11 @@ function repairYamlLikeObject(content: string): { json: string; repaired: boolea
       work = work.replace(/^([A-Za-z_][A-Za-z0-9_]*)\s*:/, `"${bareKey[1]}":`);
       repaired = true;
     }
+    const valueMatch = work.match(/^"([A-Za-z_][A-Za-z0-9_]*)"\s*:\s*(.*)$/);
+    if (valueMatch && TRADING_LLM_SIGNAL_KEYS.has(valueMatch[1])) {
+      work = `"${valueMatch[1]}": ${coerceYamlLikeValue(valueMatch[2] ?? '')}`;
+      repaired = true;
+    }
     props.push(work);
   }
 
@@ -6693,29 +6728,6 @@ function repairYamlLikeBlockWithoutBraces(content: string): { json: string; repa
   let currentKey: string | null = null;
   let currentArray: string[] = [];
 
-  const quoteStringValue = (value: string) => {
-    const normalized = value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-    return `"${normalized}"`;
-  };
-
-  const coerceJsonValue = (value: string) => {
-    const raw = value.trim().replace(/,+\s*$/, '');
-    if (!raw) return '""';
-    if (raw.startsWith('"') || raw.startsWith('[') || raw.startsWith('{')) {
-      return raw;
-    }
-    if (raw.startsWith("'") && raw.endsWith("'") && raw.length >= 2) {
-      return quoteStringValue(raw.slice(1, -1));
-    }
-    if (/^(true|false|null)$/i.test(raw)) {
-      return raw.toLowerCase();
-    }
-    if (/^-?\d+(\.\d+)?$/.test(raw)) {
-      return raw;
-    }
-    return quoteStringValue(raw);
-  };
-
   const flushArray = () => {
     if (!currentKey) return;
     const items = currentArray.length > 0 ? currentArray.join(', ') : '';
@@ -6730,7 +6742,7 @@ function repairYamlLikeBlockWithoutBraces(content: string): { json: string; repa
     if (line.startsWith('-')) {
       if (!currentKey) continue;
       const item = line.replace(/^-\s*/, '');
-      currentArray.push(coerceJsonValue(item));
+      currentArray.push(coerceYamlLikeValue(item));
       repaired = true;
       continue;
     }
@@ -6750,7 +6762,7 @@ function repairYamlLikeBlockWithoutBraces(content: string): { json: string; repa
       repaired = true;
       continue;
     }
-    props.push(`"${key}": ${coerceJsonValue(value)}`);
+    props.push(`"${key}": ${coerceYamlLikeValue(value)}`);
     repaired = true;
   }
 

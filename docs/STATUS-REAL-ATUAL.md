@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 02 de Fevereiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.79 - Histórico de sinais IA com i18n corrigido
+**Versão:** 10.81 - Detalhes em históricos trading
 
 ---
 
@@ -45,6 +45,11 @@
 - Sinais IA: histórico inline com paginação, ordenação e filtros por data/tipo/status (validação/aprovação).
 - Build Frontend: correção de referências ausentes em Sinais IA e Arbitragem evita falha no release.
 - Sinais IA: correção de i18n no histórico (removida duplicidade de chaves).
+- Trading: dropdown multi‑select mantém seleção aberta e salva automaticamente.
+- Trading: limpar seleção permite zerar timeframes/indicadores/técnicas para reconfigurar do zero.
+- Sinais IA: reparo JSON mais robusto (valores single‑quote/bare) no parser LLM.
+- Trading: guarda contra símbolo inválido ao trocar marketType (evita 400 em market/klines/orderbook).
+- Trading: histórico de Sinais IA e Análises agora abre detalhe completo ao clicar na linha.
 - Trading: feePct é automático (maior entre exchanges) e aplicado em análise/sinal.
 - Proxy (Caddy): timeout dedicado para `/api/integrations/trading/analysis*` evita 502 em arbitragem pesada.
 - API Gateway (dev): timeouts long‑running para trading/LLM alinhados com Caddy e integrations-service.

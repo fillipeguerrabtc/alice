@@ -257,6 +257,7 @@ function SignalCard({
   isSendingToTraining,
   locale,
   timeZone,
+  showActions = true,
 }: {
   signal: TradingSignal;
   onApprove: (signalId: string, reason?: string, overrides?: SignalApprovalOverrides) => void;
@@ -267,6 +268,7 @@ function SignalCard({
   isSendingToTraining: boolean;
   locale: string;
   timeZone: string;
+  showActions?: boolean;
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [showApproveDialog, setShowApproveDialog] = useState(false);
@@ -355,40 +357,42 @@ function SignalCard({
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-green-600 border-green-600 hover:bg-green-50"
-                  onClick={() => setShowApproveDialog(true)}
-                  disabled={isApproving || isRejecting}
-                >
-                  {isApproving ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <>
-                      <CheckCircle className="h-4 w-4 mr-1" />
-                      Aprovar
-                    </>
-                  )}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-red-600 border-red-600 hover:bg-red-50"
-                  onClick={() => setShowRejectDialog(true)}
-                  disabled={isApproving || isRejecting}
-                >
-                  {isRejecting ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <>
-                      <XCircle className="h-4 w-4 mr-1" />
-                      Rejeitar
-                    </>
-                  )}
-                </Button>
-              </div>
+              {showActions ? (
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-green-600 border-green-600 hover:bg-green-50"
+                    onClick={() => setShowApproveDialog(true)}
+                    disabled={isApproving || isRejecting}
+                  >
+                    {isApproving ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <>
+                        <CheckCircle className="h-4 w-4 mr-1" />
+                        Aprovar
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-red-600 border-red-600 hover:bg-red-50"
+                    onClick={() => setShowRejectDialog(true)}
+                    disabled={isApproving || isRejecting}
+                  >
+                    {isRejecting ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <>
+                        <XCircle className="h-4 w-4 mr-1" />
+                        Rejeitar
+                      </>
+                    )}
+                  </Button>
+                </div>
+              ) : null}
             </div>
 
             {/* Detalhes Expansíveis */}
@@ -568,23 +572,25 @@ function SignalCard({
                     )}
                   </div>
 
-                  <div className="flex justify-end">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onSendToTraining(signal.id)}
-                      disabled={isSendingToTraining}
-                    >
-                      {isSendingToTraining ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <>
-                          <FileCheck className="h-4 w-4 mr-2" />
-                          Enviar para Treinamento
-                        </>
-                      )}
-                    </Button>
-                  </div>
+                  {showActions ? (
+                    <div className="flex justify-end">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onSendToTraining(signal.id)}
+                        disabled={isSendingToTraining}
+                      >
+                        {isSendingToTraining ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <>
+                            <FileCheck className="h-4 w-4 mr-2" />
+                            Enviar para Treinamento
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  ) : null}
 
                   {/* Indicadores Técnicos */}
                   {signal.metadata?.technicalIndicators && Object.keys(signal.metadata.technicalIndicators).length > 0 && (
@@ -607,198 +613,200 @@ function SignalCard({
         </Card>
       </motion.div>
 
-      {/* Dialog de Aprovação */}
-      <Dialog open={showApproveDialog} onOpenChange={(open) => {
-        setShowApproveDialog(open);
-        if (open) {
-          setApproveOverrides({
-            orderType: signal.suggestedPrice ? 'limit' : 'market',
-            size: '',
-            price: signal.suggestedPrice ? String(signal.suggestedPrice) : '',
-            leverage: '',
-            stopLoss: signal.suggestedStopLoss ? String(signal.suggestedStopLoss) : '',
-            takeProfit: signal.suggestedTakeProfit ? String(signal.suggestedTakeProfit) : '',
-          });
-        }
-      }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-green-600">
-              <CheckCircle className="h-5 w-5" />
-              Aprovar Sinal de Trading
-            </DialogTitle>
-            <DialogDescription>
-              Ajuste os parâmetros se necessário. A ordem ficará pendente para revisão final.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-4">
-            <div className="flex items-center gap-4 p-4 bg-muted rounded-lg mb-4">
-              <TypeIcon className={`h-8 w-8 ${typeInfo.color.split(' ')[0]}`} />
-              <div>
-                <p className="font-bold">{typeInfo.label} - {signal.symbol}</p>
-                <p className="text-sm text-muted-foreground">Confiança: {confidencePercent}%</p>
+      {showActions ? (
+        <>
+          <Dialog open={showApproveDialog} onOpenChange={(open) => {
+            setShowApproveDialog(open);
+            if (open) {
+              setApproveOverrides({
+                orderType: signal.suggestedPrice ? 'limit' : 'market',
+                size: '',
+                price: signal.suggestedPrice ? String(signal.suggestedPrice) : '',
+                leverage: '',
+                stopLoss: signal.suggestedStopLoss ? String(signal.suggestedStopLoss) : '',
+                takeProfit: signal.suggestedTakeProfit ? String(signal.suggestedTakeProfit) : '',
+              });
+            }
+          }}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-green-600">
+                  <CheckCircle className="h-5 w-5" />
+                  Aprovar Sinal de Trading
+                </DialogTitle>
+                <DialogDescription>
+                  Ajuste os parâmetros se necessário. A ordem ficará pendente para revisão final.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="py-4">
+                <div className="flex items-center gap-4 p-4 bg-muted rounded-lg mb-4">
+                  <TypeIcon className={`h-8 w-8 ${typeInfo.color.split(' ')[0]}`} />
+                  <div>
+                    <p className="font-bold">{typeInfo.label} - {signal.symbol}</p>
+                    <p className="text-sm text-muted-foreground">Confiança: {confidencePercent}%</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 mb-4">
+                  <div className="space-y-1">
+                    <Label>Tipo</Label>
+                    <Select
+                      value={approveOverrides.orderType ?? ''}
+                      onValueChange={(value: string) =>
+                        setApproveOverrides({
+                          ...approveOverrides,
+                          orderType: (value || 'market') as SignalApprovalOverrides['orderType'],
+                        })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="market">Market</SelectItem>
+                        <SelectItem value="limit">Limit</SelectItem>
+                        <SelectItem value="stop_market">Stop Market</SelectItem>
+                        <SelectItem value="stop_limit">Stop Limit</SelectItem>
+                        <SelectItem value="take_profit">Take Profit</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Quantidade</Label>
+                    <Input
+                      type="number"
+                      value={approveOverrides.size}
+                      onChange={(e) => setApproveOverrides({ ...approveOverrides, size: e.target.value })}
+                      placeholder="Ex: 10"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Preço</Label>
+                    <Input
+                      type="number"
+                      value={approveOverrides.price}
+                      onChange={(e) => setApproveOverrides({ ...approveOverrides, price: e.target.value })}
+                      placeholder="Mercado"
+                      disabled={approveOverrides.orderType === 'market' || approveOverrides.orderType === 'stop_market' || approveOverrides.orderType === 'take_profit'}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Alavancagem</Label>
+                    <Input
+                      type="number"
+                      value={approveOverrides.leverage}
+                      onChange={(e) => setApproveOverrides({ ...approveOverrides, leverage: e.target.value })}
+                      placeholder="Ex: 10"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Stop Loss</Label>
+                    <Input
+                      type="number"
+                      value={approveOverrides.stopLoss}
+                      onChange={(e) => setApproveOverrides({ ...approveOverrides, stopLoss: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Take Profit</Label>
+                    <Input
+                      type="number"
+                      value={approveOverrides.takeProfit}
+                      onChange={(e) => setApproveOverrides({ ...approveOverrides, takeProfit: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <Textarea
+                  placeholder="Motivo da aprovação (opcional)..."
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  className="min-h-[80px]"
+                />
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              <div className="space-y-1">
-                <Label>Tipo</Label>
-                <Select
-                  value={approveOverrides.orderType ?? ''}
-                  onValueChange={(value: string) =>
-                    setApproveOverrides({
-                      ...approveOverrides,
-                      orderType: (value || 'market') as SignalApprovalOverrides['orderType'],
-                    })
-                  }
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowApproveDialog(false)}>
+                  Cancelar
+                </Button>
+                <Button
+                  className="bg-green-600 hover:bg-green-700"
+                  onClick={() => {
+                    const overrides: SignalApprovalOverrides = {};
+                    const sizeValue = Number(approveOverrides.size);
+                    const priceValue = Number(approveOverrides.price);
+                    const leverageValue = Number(approveOverrides.leverage);
+                    const stopLossValue = Number(approveOverrides.stopLoss);
+                    const takeProfitValue = Number(approveOverrides.takeProfit);
+                    if (approveOverrides.orderType) {
+                      overrides.orderType = approveOverrides.orderType as SignalApprovalOverrides['orderType'];
+                    }
+                    if (Number.isFinite(sizeValue) && sizeValue > 0) overrides.size = sizeValue;
+                    if (Number.isFinite(priceValue) && priceValue > 0) overrides.price = priceValue;
+                    if (Number.isFinite(leverageValue) && leverageValue > 0) overrides.leverage = leverageValue;
+                    if (Number.isFinite(stopLossValue) && stopLossValue > 0) overrides.stopLoss = stopLossValue;
+                    if (Number.isFinite(takeProfitValue) && takeProfitValue > 0) overrides.takeProfit = takeProfitValue;
+                    const trimmedReason = reason.trim();
+                    onApprove(
+                      signal.id,
+                      trimmedReason.length > 0 ? trimmedReason : undefined,
+                      Object.keys(overrides).length ? overrides : undefined
+                    );
+                    setShowApproveDialog(false);
+                    setReason('');
+                  }}
                 >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="market">Market</SelectItem>
-                    <SelectItem value="limit">Limit</SelectItem>
-                    <SelectItem value="stop_market">Stop Market</SelectItem>
-                    <SelectItem value="stop_limit">Stop Limit</SelectItem>
-                    <SelectItem value="take_profit">Take Profit</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label>Quantidade</Label>
-                <Input
-                  type="number"
-                  value={approveOverrides.size}
-                  onChange={(e) => setApproveOverrides({ ...approveOverrides, size: e.target.value })}
-                  placeholder="Ex: 10"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label>Preço</Label>
-                <Input
-                  type="number"
-                  value={approveOverrides.price}
-                  onChange={(e) => setApproveOverrides({ ...approveOverrides, price: e.target.value })}
-                  placeholder="Mercado"
-                  disabled={approveOverrides.orderType === 'market' || approveOverrides.orderType === 'stop_market' || approveOverrides.orderType === 'take_profit'}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label>Alavancagem</Label>
-                <Input
-                  type="number"
-                  value={approveOverrides.leverage}
-                  onChange={(e) => setApproveOverrides({ ...approveOverrides, leverage: e.target.value })}
-                  placeholder="Ex: 10"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label>Stop Loss</Label>
-                <Input
-                  type="number"
-                  value={approveOverrides.stopLoss}
-                  onChange={(e) => setApproveOverrides({ ...approveOverrides, stopLoss: e.target.value })}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label>Take Profit</Label>
-                <Input
-                  type="number"
-                  value={approveOverrides.takeProfit}
-                  onChange={(e) => setApproveOverrides({ ...approveOverrides, takeProfit: e.target.value })}
-                />
-              </div>
-            </div>
-            <Textarea
-              placeholder="Motivo da aprovação (opcional)..."
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              className="min-h-[80px]"
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowApproveDialog(false)}>
-              Cancelar
-            </Button>
-            <Button
-              className="bg-green-600 hover:bg-green-700"
-              onClick={() => {
-                const overrides: SignalApprovalOverrides = {};
-                const sizeValue = Number(approveOverrides.size);
-                const priceValue = Number(approveOverrides.price);
-                const leverageValue = Number(approveOverrides.leverage);
-                const stopLossValue = Number(approveOverrides.stopLoss);
-                const takeProfitValue = Number(approveOverrides.takeProfit);
-                if (approveOverrides.orderType) {
-                  overrides.orderType = approveOverrides.orderType as SignalApprovalOverrides['orderType'];
-                }
-                if (Number.isFinite(sizeValue) && sizeValue > 0) overrides.size = sizeValue;
-                if (Number.isFinite(priceValue) && priceValue > 0) overrides.price = priceValue;
-                if (Number.isFinite(leverageValue) && leverageValue > 0) overrides.leverage = leverageValue;
-                if (Number.isFinite(stopLossValue) && stopLossValue > 0) overrides.stopLoss = stopLossValue;
-                if (Number.isFinite(takeProfitValue) && takeProfitValue > 0) overrides.takeProfit = takeProfitValue;
-                const trimmedReason = reason.trim();
-                onApprove(
-                  signal.id,
-                  trimmedReason.length > 0 ? trimmedReason : undefined,
-                  Object.keys(overrides).length ? overrides : undefined
-                );
-                setShowApproveDialog(false);
-                setReason('');
-              }}
-            >
-              <CheckCircle className="h-4 w-4 mr-2" />
-              Confirmar Aprovação
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                  Confirmar Aprovação
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
-      {/* Dialog de Rejeição */}
-      <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-600">
-              <XCircle className="h-5 w-5" />
-              Rejeitar Sinal de Trading
-            </DialogTitle>
-            <DialogDescription>
-              Confirme a rejeição deste sinal. A ordem não será executada.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-4">
-            <div className="flex items-center gap-4 p-4 bg-muted rounded-lg mb-4">
-              <TypeIcon className={`h-8 w-8 ${typeInfo.color.split(' ')[0]}`} />
-              <div>
-                <p className="font-bold">{typeInfo.label} - {signal.symbol}</p>
-                <p className="text-sm text-muted-foreground">Confiança: {confidencePercent}%</p>
+          <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-red-600">
+                  <XCircle className="h-5 w-5" />
+                  Rejeitar Sinal de Trading
+                </DialogTitle>
+                <DialogDescription>
+                  Confirme a rejeição deste sinal. A ordem não será executada.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="py-4">
+                <div className="flex items-center gap-4 p-4 bg-muted rounded-lg mb-4">
+                  <TypeIcon className={`h-8 w-8 ${typeInfo.color.split(' ')[0]}`} />
+                  <div>
+                    <p className="font-bold">{typeInfo.label} - {signal.symbol}</p>
+                    <p className="text-sm text-muted-foreground">Confiança: {confidencePercent}%</p>
+                  </div>
+                </div>
+                <Textarea
+                  placeholder="Motivo da rejeição (recomendado)..."
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  className="min-h-[80px]"
+                />
               </div>
-            </div>
-            <Textarea
-              placeholder="Motivo da rejeição (recomendado)..."
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              className="min-h-[80px]"
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowRejectDialog(false)}>
-              Cancelar
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                const trimmedReason = reason.trim();
-                onReject(signal.id, trimmedReason.length > 0 ? trimmedReason : undefined);
-                setShowRejectDialog(false);
-                setReason('');
-              }}
-            >
-              <XCircle className="h-4 w-4 mr-2" />
-              Confirmar Rejeição
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowRejectDialog(false)}>
+                  Cancelar
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => {
+                    const trimmedReason = reason.trim();
+                    onReject(signal.id, trimmedReason.length > 0 ? trimmedReason : undefined);
+                    setShowRejectDialog(false);
+                    setReason('');
+                  }}
+                >
+                  <XCircle className="h-4 w-4 mr-2" />
+                  Confirmar Rejeição
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </>
+      ) : null}
     </>
   );
 }
@@ -835,6 +843,7 @@ export function SignalApprovalPanel({
   const [historyLoading, setHistoryLoading] = useState(false);
   const historyLoadingRef = useRef(false);
   const [selectedHistoryIds, setSelectedHistoryIds] = useState<Set<string>>(new Set());
+  const [historyDetailSignal, setHistoryDetailSignal] = useState<TradingSignal | null>(null);
 
   // Buscar sinais pendentes
   const { data: signalsResponse, isLoading, refetch } = useQuery<{
@@ -1405,9 +1414,22 @@ export function SignalApprovalPanel({
                   {historyItems.map((signal) => {
                     const typeInfo = getSignalTypeInfo(signal.signalType);
                     const TypeIcon = typeInfo.icon;
+                    const openHistoryDetail = () => setHistoryDetailSignal(signal);
                     return (
-                      <TableRow key={signal.id}>
-                        <TableCell>
+                      <TableRow
+                        key={signal.id}
+                        role="button"
+                        tabIndex={0}
+                        className="cursor-pointer hover:bg-muted/50"
+                        onClick={openHistoryDetail}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            openHistoryDetail();
+                          }
+                        }}
+                      >
+                        <TableCell onClick={(event) => event.stopPropagation()}>
                           <Checkbox
                             checked={selectedHistoryIds.has(signal.id)}
                             onCheckedChange={(checked) => toggleHistorySelection(signal.id, Boolean(checked))}
@@ -1425,7 +1447,7 @@ export function SignalApprovalPanel({
                         <TableCell className="text-muted-foreground">
                           {formatDateTime(signal.criadoEm, { locale, timeZone })}
                         </TableCell>
-                        <TableCell>
+                        <TableCell onClick={(event) => event.stopPropagation()}>
                           <Button
                             variant="ghost"
                             size="icon"
@@ -1475,6 +1497,38 @@ export function SignalApprovalPanel({
           </div>
         </CardContent>
       </Card>
+      <Dialog
+        open={Boolean(historyDetailSignal)}
+        onOpenChange={(open) => {
+          if (!open) setHistoryDetailSignal(null);
+        }}
+      >
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{t('trading.signals.history.detail.title')}</DialogTitle>
+            <DialogDescription>{t('trading.signals.history.detail.description')}</DialogDescription>
+          </DialogHeader>
+          {historyDetailSignal ? (
+            <SignalCard
+              signal={historyDetailSignal}
+              onApprove={() => undefined}
+              onReject={() => undefined}
+              onSendToTraining={() => undefined}
+              isApproving={false}
+              isRejecting={false}
+              isSendingToTraining={false}
+              locale={locale}
+              timeZone={timeZone}
+              showActions={false}
+            />
+          ) : null}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setHistoryDetailSignal(null)}>
+              {t('trading.signals.history.detail.close')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

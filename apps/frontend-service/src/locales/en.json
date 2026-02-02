@@ -1653,7 +1653,15 @@
           "total": "Total {{total}}",
           "prev": "Previous",
           "next": "Next"
+        },
+        "detail": {
+          "title": "Signal details",
+          "description": "Click a history item to review the full content.",
+          "close": "Close"
         }
+      },
+      "errors": {
+        "symbolRequired": "Select a valid symbol to generate the signal"
       },
       "table": {
         "type": "Type",
@@ -1885,6 +1893,28 @@
           "total": "Total {{total}}",
           "prev": "Previous",
           "next": "Next"
+        },
+        "detail": {
+          "title": "Analysis details",
+          "description": "Click a history item to review the full analysis.",
+          "indicatorSummary": "Key indicators",
+          "techniquesTitle": "Techniques evaluated",
+          "ensembleTitle": "Ensemble result",
+          "ensembleSignal": "Signal",
+          "ensembleConfidence": "Confidence",
+          "scoresTitle": "Scores by technique",
+          "scoreConfidence": "Confidence",
+          "metadataTitle": "Calculation metadata",
+          "calculationDuration": "Duration",
+          "candleCount": "Candles",
+          "lastCandleTime": "Last candle",
+          "fields": {
+            "signal": "Signal",
+            "confidence": "Confidence",
+            "price": "Price",
+            "interval": "Interval",
+            "date": "Date"
+          }
         }
       },
       "historyLoadFailed": "Failed to load analysis history",

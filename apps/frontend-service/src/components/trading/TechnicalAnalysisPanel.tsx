@@ -55,6 +55,14 @@ import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { NewsConfigEditor, DEFAULT_TRADING_NEWS_CONFIG, normalizeTradingNewsConfigForm, type TradingNewsConfigForm, type TradingNewsPresetOption } from './NewsConfigEditor';
 import { MultiSelectDropdown } from './MultiSelectDropdown';
 
@@ -172,6 +180,65 @@ export interface TradingAnalysisHistoryItem {
   };
 }
 
+type TradingAnalysisHistoryDetail = TradingAnalysisHistoryItem & {
+  rsiValue?: number | null;
+  rsiInterpretation?: string | null;
+  rsiPeriod?: number | null;
+  macdLine?: number | null;
+  macdSignal?: number | null;
+  macdHistogram?: number | null;
+  macdInterpretation?: string | null;
+  macdCrossover?: string | null;
+  ema9?: number | null;
+  ema21?: number | null;
+  ema50?: number | null;
+  ema200?: number | null;
+  sma20?: number | null;
+  sma50?: number | null;
+  sma200?: number | null;
+  maTrend?: string | null;
+  bollingerUpper?: number | null;
+  bollingerMiddle?: number | null;
+  bollingerLower?: number | null;
+  bollingerWidth?: number | null;
+  bollingerPercentB?: number | null;
+  bollingerInterpretation?: string | null;
+  atrValue?: number | null;
+  atrPercentage?: number | null;
+  atrVolatility?: string | null;
+  stochasticK?: number | null;
+  stochasticD?: number | null;
+  stochasticInterpretation?: string | null;
+  adxValue?: number | null;
+  adxPlusDI?: number | null;
+  adxMinusDI?: number | null;
+  adxTrendStrength?: string | null;
+  pivotPoint?: number | null;
+  resistance1?: number | null;
+  resistance2?: number | null;
+  resistance3?: number | null;
+  support1?: number | null;
+  support2?: number | null;
+  support3?: number | null;
+  currentVolume?: number | null;
+  averageVolume?: number | null;
+  volumeRatio?: number | null;
+  obv?: number | null;
+  volumeInterpretation?: string | null;
+  metadata?: {
+    techniques?: string[];
+    techniqueScores?: Array<{ technique: string; signal: string; confidence: number; rationale?: string }>;
+    ensembleResult?: {
+      overallSignal?: string;
+      confidence?: number;
+      topTechniques?: Array<{ technique: string; signal: string; confidence: number; rationale?: string }>;
+    };
+    calculationDurationMs?: number;
+    candleCount?: number;
+    lastCandleTime?: string;
+  } & Record<string, unknown>;
+};
+
 export interface IntervalOption {
   value: string;
   label: string;
@@ -264,6 +331,20 @@ export interface AnalysisProfile {
   };
 }
 
+type AnalysisProfilePayload = {
+  kind: 'analysis';
+  marketType?: 'futures' | 'spot' | 'margin';
+  symbol: string;
+  timeframes: string[];
+  indicators: string[];
+  dataSources: AnalysisProfileDataSources;
+  newsConfig: TradingNewsConfigForm;
+  techniques: string[];
+  ensembleConfig?: AnalysisProfile['ensembleConfig'];
+  arbitrageConfig?: AnalysisProfile['arbitrageConfig'];
+  consensus?: AnalysisProfile['consensus'];
+};
+
 export interface TechnicalAnalysisPanelProps {
   symbol: string;
   defaultInterval?: string;
@@ -326,6 +407,7 @@ const DEFAULT_ARBITRAGE_CONFIG = {
   maxIntervalMinutes: 5,
 };
 const MAX_ARBITRAGE_ASSETS = 30;
+const AUTO_SAVE_DEBOUNCE_MS = 600;
 
 const ANALYSIS_SIGNAL_OPTIONS = [
   { value: 'strong_buy', label: 'Compra forte' },
@@ -512,7 +594,7 @@ export function TechnicalAnalysisPanel({
   const timeZone = user?.timezone ?? TIMEZONE;
   const userRoles = user?.roles ?? (user?.role ? [user.role] : []);
   const isAdminRole = userRoles.includes('admin') || userRoles.includes('super_admin');
-  const [analysisHistoryItems, setAnalysisHistoryItems] = useState<TradingAnalysisHistoryItem[]>([]);
+  const [analysisHistoryItems, setAnalysisHistoryItems] = useState<TradingAnalysisHistoryDetail[]>([]);
   const [analysisHistoryPage, setAnalysisHistoryPage] = useState(1);
   const [analysisHistoryPageSize, setAnalysisHistoryPageSize] = useState(25);
   const [analysisHistoryTotal, setAnalysisHistoryTotal] = useState(0);
@@ -524,25 +606,30 @@ export function TechnicalAnalysisPanel({
   const [analysisHistoryDateTo, setAnalysisHistoryDateTo] = useState('');
   const [analysisHistorySignalFilter, setAnalysisHistorySignalFilter] = useState('');
   const [analysisHistoryTechniqueFilter, setAnalysisHistoryTechniqueFilter] = useState('');
+  const [analysisHistoryDetail, setAnalysisHistoryDetail] = useState<TradingAnalysisHistoryDetail | null>(null);
+  const autoSaveEnabledRef = useRef(false);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoSaveLastPayloadRef = useRef<string>('');
+  const autoSaveContextRef = useRef(false);
 
   const updateTimeframes = (next: string[]) => {
     setProfileForm((prev) => ({
       ...prev,
-      timeframes: next.length > 0 ? next : prev.timeframes,
+      timeframes: next,
     }));
   };
 
   const updateIndicators = (next: string[]) => {
     setProfileForm((prev) => ({
       ...prev,
-      indicators: next.length > 0 ? next : prev.indicators,
+      indicators: next,
     }));
   };
 
   const updateTechniques = (next: string[]) => {
     setProfileForm((prev) => ({
       ...prev,
-      techniques: next.length > 0 ? next : prev.techniques,
+      techniques: next,
     }));
   };
 
@@ -699,23 +786,6 @@ export function TechnicalAnalysisPanel({
     },
   });
 
-  useEffect(() => {
-    if (profileResponse?.data) {
-      setProfileForm({
-        ...profileResponse.data,
-        newsConfig: normalizeTradingNewsConfigForm(profileResponse.data.newsConfig),
-        techniques: profileResponse.data.techniques?.length
-          ? profileResponse.data.techniques
-          : DEFAULT_TECHNIQUES,
-        ensembleConfig: profileResponse.data.ensembleConfig ?? DEFAULT_ENSEMBLE_CONFIG,
-        arbitrageConfig: profileResponse.data.arbitrageConfig ?? null,
-      });
-      if (profileResponse.data.timeframes?.[0]) {
-        setInterval(profileResponse.data.timeframes[0]);
-      }
-    }
-  }, [profileResponse]);
-
   const {
     data: analysisSchedulerData,
     isLoading: isLoadingAnalysisScheduler,
@@ -857,6 +927,31 @@ export function TechnicalAnalysisPanel({
   const selectedAnalysisSources = Object.entries(profileForm.dataSources)
     .filter(([, enabled]) => enabled)
     .map(([key]) => key);
+
+  const buildHistoryIndicatorSummary = useCallback((item: TradingAnalysisHistoryDetail) => {
+    const summary: string[] = [];
+    const formatValue = (value: number) => formatNumber(value, locale, { maximumFractionDigits: 4 });
+    const addNumber = (label: string, value?: number | null, suffix?: string) => {
+      if (value === undefined || value === null || Number.isNaN(value)) return;
+      summary.push(`${label} ${formatValue(value)}${suffix ?? ''}`);
+    };
+    if (item.rsiValue !== undefined && item.rsiValue !== null) {
+      const interpretation = item.rsiInterpretation ?? 'neutral';
+      summary.push(`RSI ${formatValue(item.rsiValue)} (${interpretation})`);
+    }
+    addNumber('MACD', item.macdHistogram, item.macdInterpretation ? ` (${item.macdInterpretation})` : undefined);
+    if (item.maTrend) summary.push(`Médias móveis: tendência ${item.maTrend}`);
+    addNumber('Bollinger %B', item.bollingerPercentB, item.bollingerInterpretation ? ` (${item.bollingerInterpretation})` : undefined);
+    addNumber('ATR %', item.atrPercentage, item.atrVolatility ? ` (${item.atrVolatility})` : undefined);
+    if (item.stochasticK !== undefined && item.stochasticK !== null && item.stochasticD !== undefined && item.stochasticD !== null) {
+      const interpretation = item.stochasticInterpretation ?? 'neutral';
+      summary.push(`Stochastic %K ${formatValue(item.stochasticK)} / %D ${formatValue(item.stochasticD)} (${interpretation})`);
+    }
+    addNumber('ADX', item.adxValue, item.adxTrendStrength ? ` (${item.adxTrendStrength})` : undefined);
+    addNumber('Pivot', item.pivotPoint);
+    addNumber('Volume ratio', item.volumeRatio, item.volumeInterpretation ? ` (${item.volumeInterpretation})` : undefined);
+    return summary;
+  }, [locale]);
   const allAnalysisHistorySelected = analysisHistoryItems.length > 0 && analysisHistorySelectedIds.size === analysisHistoryItems.length;
   const hasAnalysisHistorySelection = analysisHistorySelectedIds.size > 0;
   const analysisHistoryLoadingRef = useRef(analysisHistoryLoading);
@@ -1062,40 +1157,93 @@ export function TechnicalAnalysisPanel({
     },
   });
 
-  const updateProfileMutation = useMutation({
-    mutationFn: async () => {
-      const payload = {
-        kind: 'analysis',
-        marketType,
-        symbol,
-        timeframes: profileForm.timeframes,
-        indicators: profileForm.indicators,
-        dataSources: profileForm.dataSources,
-        newsConfig: profileForm.newsConfig,
-        techniques: profileForm.techniques,
-        ensembleConfig: profileForm.ensembleConfig,
-        arbitrageConfig: profileForm.arbitrageConfig ?? undefined,
-        consensus: profileForm.consensus,
+  const buildProfilePayload = useCallback((form: AnalysisProfile): AnalysisProfilePayload => ({
+    kind: 'analysis',
+    marketType,
+    symbol,
+    timeframes: form.timeframes,
+    indicators: form.indicators,
+    dataSources: form.dataSources,
+    newsConfig: form.newsConfig,
+    techniques: form.techniques,
+    ensembleConfig: form.ensembleConfig,
+    arbitrageConfig: form.arbitrageConfig ?? undefined,
+    consensus: form.consensus,
+  }), [marketType, symbol]);
+
+  const profilePayload = useMemo(
+    () => buildProfilePayload(profileForm),
+    [buildProfilePayload, profileForm]
+  );
+
+  useEffect(() => {
+    if (profileResponse?.data) {
+      const nextForm: AnalysisProfile = {
+        ...profileResponse.data,
+        newsConfig: normalizeTradingNewsConfigForm(profileResponse.data.newsConfig),
+        techniques: profileResponse.data.techniques?.length
+          ? profileResponse.data.techniques
+          : DEFAULT_TECHNIQUES,
+        ensembleConfig: profileResponse.data.ensembleConfig ?? DEFAULT_ENSEMBLE_CONFIG,
+        arbitrageConfig: profileResponse.data.arbitrageConfig ?? null,
       };
+      setProfileForm(nextForm);
+      autoSaveEnabledRef.current = true;
+      autoSaveLastPayloadRef.current = JSON.stringify(buildProfilePayload(nextForm));
+      if (profileResponse.data.timeframes?.[0]) {
+        setInterval(profileResponse.data.timeframes[0]);
+      }
+    }
+  }, [buildProfilePayload, profileResponse]);
+
+  const updateProfileMutation = useMutation({
+    mutationFn: async (payload: AnalysisProfilePayload) => {
       const res = await apiRequest('PUT', '/api/integrations/trading/analysis-profile', payload);
       return res.json();
     },
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
       if (!data?.success) {
         throw new Error(data?.error || t('trading.errors.profileUpdateFailed'));
       }
       setProfileForm(data.data as AnalysisProfile);
-      toast({ title: t('trading.success.profileUpdated') });
+      autoSaveLastPayloadRef.current = JSON.stringify(variables);
+      if (!autoSaveContextRef.current) {
+        toast({ title: t('trading.success.profileUpdated') });
+      }
       refetchProfile();
     },
     onError: (err: Error) => {
-      toast({
-        title: t('trading.errors.profileUpdateFailed'),
-        description: err.message,
-        variant: 'destructive',
-      });
+      if (!autoSaveContextRef.current) {
+        toast({
+          title: t('trading.errors.profileUpdateFailed'),
+          description: err.message,
+          variant: 'destructive',
+        });
+      }
+    },
+    onSettled: () => {
+      autoSaveContextRef.current = false;
     },
   });
+
+  useEffect(() => {
+    if (!autoSaveEnabledRef.current) return;
+    if (!symbol) return;
+    const payloadKey = JSON.stringify(profilePayload);
+    if (payloadKey === autoSaveLastPayloadRef.current) return;
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+    autoSaveTimerRef.current = setTimeout(() => {
+      autoSaveContextRef.current = true;
+      updateProfileMutation.mutate(profilePayload);
+    }, AUTO_SAVE_DEBOUNCE_MS);
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+    };
+  }, [profilePayload, symbol, updateProfileMutation]);
 
   const executeAnalysisNowMutation = useMutation({
     mutationFn: async () => {
@@ -1164,6 +1312,23 @@ export function TechnicalAnalysisPanel({
       </CardContent>
     </Card>
   );
+
+  const analysisHistoryDetailSummary = useMemo(() => {
+    if (!analysisHistoryDetail) return [];
+    return buildHistoryIndicatorSummary(analysisHistoryDetail);
+  }, [analysisHistoryDetail, buildHistoryIndicatorSummary]);
+
+  const analysisHistoryMetadata = (analysisHistoryDetail?.metadata ?? {}) as NonNullable<TradingAnalysisHistoryDetail['metadata']>;
+  const analysisHistoryTechniques = Array.isArray(analysisHistoryMetadata.techniques)
+    ? analysisHistoryMetadata.techniques.filter(Boolean)
+    : [];
+  const analysisHistoryScores = Array.isArray(analysisHistoryMetadata.techniqueScores)
+    ? analysisHistoryMetadata.techniqueScores
+    : [];
+  const analysisHistoryEnsemble = analysisHistoryMetadata.ensembleResult ?? null;
+  const AnalysisHistorySignalIcon = analysisHistoryDetail
+    ? getSignalIcon(analysisHistoryDetail.overallSignal)
+    : Activity;
 
   return (
     <div className="space-y-4">
@@ -1387,7 +1552,7 @@ export function TechnicalAnalysisPanel({
 
           <div className="flex flex-wrap gap-2">
             <Button
-              onClick={() => updateProfileMutation.mutate()}
+              onClick={() => updateProfileMutation.mutate(profilePayload)}
               disabled={updateProfileMutation.isPending}
             >
               {updateProfileMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
@@ -2390,9 +2555,23 @@ export function TechnicalAnalysisPanel({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {analysisHistoryItems.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell>
+                {analysisHistoryItems.map((item) => {
+                  const openDetail = () => setAnalysisHistoryDetail(item);
+                  return (
+                    <TableRow
+                      key={item.id}
+                      role="button"
+                      tabIndex={0}
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={openDetail}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          openDetail();
+                        }
+                      }}
+                    >
+                      <TableCell onClick={(event) => event.stopPropagation()}>
                       <Checkbox
                         checked={analysisHistorySelectedIds.has(item.id)}
                         onCheckedChange={(checked) => toggleAnalysisHistorySelection(item.id, Boolean(checked))}
@@ -2411,8 +2590,9 @@ export function TechnicalAnalysisPanel({
                       {formatNumber(item.signalConfidence, locale, { maximumFractionDigits: 2 })}
                     </TableCell>
                     <TableCell>{formatNumber(item.currentPrice, locale, { maximumFractionDigits: 2 })}</TableCell>
-                  </TableRow>
-                ))}
+                    </TableRow>
+                  );
+                })}
                 {analysisHistoryItems.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={8} className="text-center text-muted-foreground">
@@ -2450,6 +2630,161 @@ export function TechnicalAnalysisPanel({
           </div>
         </CardContent>
       </Card>
+      <Dialog
+        open={Boolean(analysisHistoryDetail)}
+        onOpenChange={(open) => {
+          if (!open) setAnalysisHistoryDetail(null);
+        }}
+      >
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{t('trading.analysis.history.detail.title')}</DialogTitle>
+            <DialogDescription>{t('trading.analysis.history.detail.description')}</DialogDescription>
+          </DialogHeader>
+          {analysisHistoryDetail ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground">{t('trading.analysis.history.detail.fields.signal')}</p>
+                  <div className="flex items-center gap-2">
+                    <AnalysisHistorySignalIcon className="h-4 w-4" />
+                    <span className="font-semibold uppercase">{analysisHistoryDetail.overallSignal}</span>
+                  </div>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground">{t('trading.analysis.history.detail.fields.confidence')}</p>
+                  <span className="font-semibold">
+                    {formatNumber(analysisHistoryDetail.signalConfidence * 100, locale, { maximumFractionDigits: 0 })}%
+                  </span>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground">{t('trading.analysis.history.detail.fields.price')}</p>
+                  <span className="font-semibold">
+                    {formatNumber(analysisHistoryDetail.currentPrice, locale, { maximumFractionDigits: 4 })}
+                  </span>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground">{t('trading.analysis.history.detail.fields.interval')}</p>
+                  <span className="font-semibold">{analysisHistoryDetail.interval}</span>
+                </div>
+              </div>
+
+              <div className="rounded-lg border p-3">
+                <p className="text-xs text-muted-foreground">{t('trading.analysis.history.detail.fields.date')}</p>
+                <span className="font-semibold">
+                  {formatDateTime(analysisHistoryDetail.calculatedAt, { locale, timeZone })}
+                </span>
+              </div>
+
+              {analysisHistoryDetailSummary.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">{t('trading.analysis.history.detail.indicatorSummary')}</p>
+                  <ul className="list-disc pl-5 text-sm text-muted-foreground space-y-1">
+                    {analysisHistoryDetailSummary.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {analysisHistoryTechniques.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">{t('trading.analysis.history.detail.techniquesTitle')}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {analysisHistoryTechniques.map((technique) => (
+                      <Badge key={technique} variant="outline">{technique}</Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {analysisHistoryEnsemble && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">{t('trading.analysis.history.detail.ensembleTitle')}</p>
+                  <div className="text-sm text-muted-foreground space-y-1">
+                    {analysisHistoryEnsemble.overallSignal && (
+                      <div>
+                        {t('trading.analysis.history.detail.ensembleSignal')}: {analysisHistoryEnsemble.overallSignal.toUpperCase()}
+                      </div>
+                    )}
+                    {typeof analysisHistoryEnsemble.confidence === 'number' && (
+                      <div>
+                        {t('trading.analysis.history.detail.ensembleConfidence')}:{' '}
+                        {formatNumber(analysisHistoryEnsemble.confidence * 100, locale, { maximumFractionDigits: 0 })}%
+                      </div>
+                    )}
+                    {(analysisHistoryEnsemble.topTechniques ?? []).length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {analysisHistoryEnsemble.topTechniques?.map((entry) => (
+                          <Badge key={`${entry.technique}-${entry.signal}`} variant="secondary">
+                            {entry.technique} ({entry.signal})
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {analysisHistoryScores.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">{t('trading.analysis.history.detail.scoresTitle')}</p>
+                  <div className="grid gap-2">
+                    {analysisHistoryScores.map((score) => (
+                      <div key={`${score.technique}-${score.signal}`} className="rounded-md border px-3 py-2 text-sm">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium">{score.technique}</span>
+                          <Badge variant="outline">{score.signal}</Badge>
+                        </div>
+                        <div className="text-muted-foreground">
+                          {t('trading.analysis.history.detail.scoreConfidence')}:{' '}
+                          {formatNumber(score.confidence * 100, locale, { maximumFractionDigits: 0 })}%
+                        </div>
+                        {score.rationale && (
+                          <div className="text-muted-foreground">{score.rationale}</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {(analysisHistoryMetadata.calculationDurationMs !== undefined
+                || analysisHistoryMetadata.candleCount !== undefined
+                || analysisHistoryMetadata.lastCandleTime) && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">{t('trading.analysis.history.detail.metadataTitle')}</p>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-muted-foreground">
+                    {analysisHistoryMetadata.calculationDurationMs !== undefined && (
+                      <div>
+                        {t('trading.analysis.history.detail.calculationDuration')}:{' '}
+                        {formatNumber(Number(analysisHistoryMetadata.calculationDurationMs), locale, { maximumFractionDigits: 0 })} ms
+                      </div>
+                    )}
+                    {analysisHistoryMetadata.candleCount !== undefined && (
+                      <div>
+                        {t('trading.analysis.history.detail.candleCount')}:{' '}
+                        {analysisHistoryMetadata.candleCount}
+                      </div>
+                    )}
+                    {analysisHistoryMetadata.lastCandleTime && (
+                      <div>
+                        {t('trading.analysis.history.detail.lastCandleTime')}:{' '}
+                        {formatDateTime(analysisHistoryMetadata.lastCandleTime, { locale, timeZone })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAnalysisHistoryDetail(null)}>
+              {t('common.close')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
