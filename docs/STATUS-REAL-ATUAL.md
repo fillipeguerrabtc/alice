@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 02 de Fevereiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.71 - Histórico de ordens sem requisições duplicadas
+**Versão:** 10.72 - Histórico de ordens sem loop de retry
 
 ---
 
@@ -22,7 +22,7 @@
 - Segurança enterprise com hardening de containers, RLS no PostgreSQL e validação Zod em APIs.
 - Integração KuCoin auditada e corrigida conforme docs oficiais (auth HMAC v2/v3, time sync, stop orders, WS broadcast via Redis).
 - Trading UI: chamadas REST bloqueadas quando símbolo não está definido (evita 404 e tela “Algo deu errado”).
-- Trading UI: histórico de ordens evita chamadas duplicadas ao alternar para a aba Histórico.
+- Trading UI: histórico de ordens evita chamadas duplicadas e loop de retry ao alternar para a aba Histórico.
 - Integrações UI: tipagem i18n alinhada para interpolação (build frontend sem erro TS2554).
 - Trading multi‑timeframe: perfis persistidos (analysis/signal), consenso por maioria, seleção dinâmica de indicadores e fontes.
 - Suporte/Resistência explícito na UI com toggle e explicação detalhada por timeframe.

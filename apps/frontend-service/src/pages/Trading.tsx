@@ -727,6 +727,7 @@ export default function Trading() {
   const [orderHistoryLoading, setOrderHistoryLoading] = useState(false);
   const [orderHistorySelectedIds, setOrderHistorySelectedIds] = useState<Set<string>>(new Set());
   const orderHistoryMarketRef = useRef<string | null>(null);
+  const orderHistoryLoadingRef = useRef(false);
 
   // Form state para configuração de risco
   const [riskForm, setRiskForm] = useState({
@@ -2112,8 +2113,9 @@ export default function Trading() {
   const hasSignalArbitrage = signalProfileForm.techniques.includes('arbitrage_triangular');
 
   const fetchOrderHistory = useCallback(async (options: { reset?: boolean } = {}) => {
-    if (orderHistoryLoading) return;
+    if (orderHistoryLoadingRef.current) return;
     const reset = options.reset ?? false;
+    orderHistoryLoadingRef.current = true;
     setOrderHistoryLoading(true);
     const params = new URLSearchParams();
     params.set('limit', '50');
@@ -2142,8 +2144,9 @@ export default function Trading() {
       toast({ title: t('trading.errors.historyFailed'), description: message, variant: 'destructive' });
     } finally {
       setOrderHistoryLoading(false);
+      orderHistoryLoadingRef.current = false;
     }
-  }, [orderHistoryCursor, orderHistoryLoading, selectedMarketType, t, toast]);
+  }, [orderHistoryCursor, selectedMarketType, t, toast]);
 
   const deleteOrderHistoryMutation = useMutation({
     mutationFn: async ({ ids, all, scope }: { ids?: string[]; all?: boolean; scope?: 'self' | 'tenant' }) => {
