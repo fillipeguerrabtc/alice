@@ -926,10 +926,16 @@ export function TechnicalAnalysisPanel({
     toast,
   ]);
 
-  useEffect(() => {
-    if (!symbol) return;
-    setAnalysisHistoryPage(1);
-  }, [
+  const analysisHistoryFilterKey = useMemo(() => JSON.stringify({
+    dateFrom: analysisHistoryDateFrom,
+    dateTo: analysisHistoryDateTo,
+    order: analysisHistoryOrder,
+    pageSize: analysisHistoryPageSize,
+    signal: analysisHistorySignalFilter,
+    technique: analysisHistoryTechniqueFilter,
+    interval: primaryInterval,
+    symbol,
+  }), [
     analysisHistoryDateFrom,
     analysisHistoryDateTo,
     analysisHistoryOrder,
@@ -939,11 +945,21 @@ export function TechnicalAnalysisPanel({
     primaryInterval,
     symbol,
   ]);
+  const lastAnalysisHistoryFilterRef = useRef(analysisHistoryFilterKey);
 
   useEffect(() => {
     if (!symbol) return;
+    const filterChanged = lastAnalysisHistoryFilterRef.current !== analysisHistoryFilterKey;
+    if (filterChanged) {
+      lastAnalysisHistoryFilterRef.current = analysisHistoryFilterKey;
+      if (analysisHistoryPage !== 1) {
+        setAnalysisHistoryPage(1);
+      }
+      fetchAnalysisHistory({ page: 1, resetSelection: true });
+      return;
+    }
     fetchAnalysisHistory({ page: analysisHistoryPage, resetSelection: analysisHistoryPage === 1 });
-  }, [analysisHistoryPage, fetchAnalysisHistory, symbol]);
+  }, [analysisHistoryFilterKey, analysisHistoryPage, fetchAnalysisHistory, symbol]);
 
   const deleteAnalysisHistoryMutation = useMutation({
     mutationFn: async ({ ids, all, scope }: { ids?: string[]; all?: boolean; scope?: 'self' | 'tenant' }) => {

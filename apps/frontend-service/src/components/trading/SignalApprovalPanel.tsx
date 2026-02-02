@@ -13,7 +13,7 @@
  * Regra 6: Dados reais, sem mocks
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -1064,9 +1064,16 @@ export function SignalApprovalPanel({
     },
   });
 
-  useEffect(() => {
-    setHistoryPage(1);
-  }, [
+  const historyFilterKey = useMemo(() => JSON.stringify({
+    approval: historyApprovalStatus,
+    validation: historyValidationStatus,
+    dateFrom: historyDateFrom,
+    dateTo: historyDateTo,
+    order: historyOrder,
+    pageSize: historyPageSize,
+    signalType: historySignalType,
+    marketType,
+  }), [
     historyApprovalStatus,
     historyDateFrom,
     historyDateTo,
@@ -1076,10 +1083,20 @@ export function SignalApprovalPanel({
     historyValidationStatus,
     marketType,
   ]);
+  const lastHistoryFilterRef = useRef(historyFilterKey);
 
   useEffect(() => {
-    fetchSignalHistory({ page: historyPage, resetSelection: true });
-  }, [fetchSignalHistory, historyPage]);
+    const filterChanged = lastHistoryFilterRef.current !== historyFilterKey;
+    if (filterChanged) {
+      lastHistoryFilterRef.current = historyFilterKey;
+      if (historyPage !== 1) {
+        setHistoryPage(1);
+      }
+      fetchSignalHistory({ page: 1, resetSelection: true });
+      return;
+    }
+    fetchSignalHistory({ page: historyPage, resetSelection: historyPage === 1 });
+  }, [fetchSignalHistory, historyFilterKey, historyPage]);
 
   const toggleHistorySelection = (signalId: string, checked: boolean) => {
     setSelectedHistoryIds((prev) => {
