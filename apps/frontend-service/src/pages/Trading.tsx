@@ -1967,6 +1967,28 @@ export default function Trading() {
     }
   };
 
+  const deleteOrderHistoryMutation = useMutation({
+    mutationFn: async ({ ids, all, scope }: { ids?: string[]; all?: boolean; scope?: 'self' | 'tenant' }) => {
+      const res = await apiRequest('POST', '/api/integrations/trading/orders/history/delete', {
+        ids,
+        all,
+        scope,
+      });
+      const payload = await res.json();
+      if (!res.ok) {
+        throw new Error(payload.error || t('trading.errors.historyDeleteFailed'));
+      }
+      return payload;
+    },
+    onSuccess: () => {
+      toast({ title: t('trading.success.historyDeleted') });
+      fetchOrderHistory({ reset: true });
+    },
+    onError: (error: Error) => {
+      toast({ title: t('trading.errors.historyDeleteFailed'), description: error.message, variant: 'destructive' });
+    },
+  });
+
   // ============================================================================
   // RENDER - Loading State
   // ============================================================================
@@ -2146,28 +2168,6 @@ export default function Trading() {
   const allOrderHistorySelected = orderHistoryItems.length > 0 && orderHistorySelectedIds.size === orderHistoryItems.length;
   const hasOrderHistorySelection = orderHistorySelectedIds.size > 0;
   const hasSignalArbitrage = signalProfileForm.techniques.includes('arbitrage_triangular');
-
-  const deleteOrderHistoryMutation = useMutation({
-    mutationFn: async ({ ids, all, scope }: { ids?: string[]; all?: boolean; scope?: 'self' | 'tenant' }) => {
-      const res = await apiRequest('POST', '/api/integrations/trading/orders/history/delete', {
-        ids,
-        all,
-        scope,
-      });
-      const payload = await res.json();
-      if (!res.ok) {
-        throw new Error(payload.error || t('trading.errors.historyDeleteFailed'));
-      }
-      return payload;
-    },
-    onSuccess: () => {
-      toast({ title: t('trading.success.historyDeleted') });
-      fetchOrderHistory({ reset: true });
-    },
-    onError: (error: Error) => {
-      toast({ title: t('trading.errors.historyDeleteFailed'), description: error.message, variant: 'destructive' });
-    },
-  });
 
   const toggleOrderHistorySelection = (orderId: string, checked: boolean) => {
     setOrderHistorySelectedIds((prev) => {
