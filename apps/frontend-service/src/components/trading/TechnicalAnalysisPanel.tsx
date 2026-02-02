@@ -56,6 +56,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { NewsConfigEditor, DEFAULT_TRADING_NEWS_CONFIG, normalizeTradingNewsConfigForm, type TradingNewsConfigForm, type TradingNewsPresetOption } from './NewsConfigEditor';
+import { MultiSelectDropdown } from './MultiSelectDropdown';
 
 // NOTA: Tooltip removido - não utilizado neste componente (21/12/2025)
 import { apiRequest, queryClient } from '@/lib/queryClient';
@@ -166,6 +167,9 @@ export interface TradingAnalysisHistoryItem {
   overallSignal: 'strong_buy' | 'buy' | 'neutral' | 'sell' | 'strong_sell';
   signalConfidence: number;
   calculatedAt: string;
+  metadata?: {
+    techniques?: string[];
+  };
 }
 
 export interface IntervalOption {
@@ -323,6 +327,14 @@ const DEFAULT_ARBITRAGE_CONFIG = {
 };
 const MAX_ARBITRAGE_ASSETS = 30;
 
+const ANALYSIS_SIGNAL_OPTIONS = [
+  { value: 'strong_buy', label: 'Compra forte' },
+  { value: 'buy', label: 'Compra' },
+  { value: 'neutral', label: 'Neutro' },
+  { value: 'sell', label: 'Venda' },
+  { value: 'strong_sell', label: 'Venda forte' },
+] as const;
+
 const getSignalColor = (signal: TechnicalAnalysisResult['overallSignal']) => {
   switch (signal) {
     case 'strong_buy': return 'bg-green-500';
@@ -354,6 +366,14 @@ const getSignalLabel = (signal: TechnicalAnalysisResult['overallSignal']) => {
     case 'sell': return 'VENDA';
     case 'strong_sell': return 'VENDA FORTE';
   }
+};
+
+const getTechniqueLabel = (technique?: string, t?: (key: string) => string) => {
+  if (!technique) return 'N/A';
+  const option = TRADING_TECHNIQUE_OPTIONS.find((item) => item.key === technique);
+  if (!option) return technique;
+  if (!t) return option.key;
+  return t(option.labelKey);
 };
 
 const getInterpretationBadge = (interpretation: 'oversold' | 'neutral' | 'overbought') => {
@@ -493,50 +513,37 @@ export function TechnicalAnalysisPanel({
   const userRoles = user?.roles ?? (user?.role ? [user.role] : []);
   const isAdminRole = userRoles.includes('admin') || userRoles.includes('super_admin');
   const [analysisHistoryItems, setAnalysisHistoryItems] = useState<TradingAnalysisHistoryItem[]>([]);
-  const [analysisHistoryCursor, setAnalysisHistoryCursor] = useState<string | null>(null);
-  const [analysisHistoryHasMore, setAnalysisHistoryHasMore] = useState(false);
+  const [analysisHistoryPage, setAnalysisHistoryPage] = useState(1);
+  const [analysisHistoryPageSize, setAnalysisHistoryPageSize] = useState(25);
+  const [analysisHistoryTotal, setAnalysisHistoryTotal] = useState(0);
+  const [analysisHistoryTotalPages, setAnalysisHistoryTotalPages] = useState(1);
   const [analysisHistoryLoading, setAnalysisHistoryLoading] = useState(false);
   const [analysisHistorySelectedIds, setAnalysisHistorySelectedIds] = useState<Set<string>>(new Set());
-  const [selectedArbitrageAssets, setSelectedArbitrageAssets] = useState<Set<string>>(new Set());
-  const [selectedArbitrageExchanges, setSelectedArbitrageExchanges] = useState<Set<string>>(new Set());
+  const [analysisHistoryOrder, setAnalysisHistoryOrder] = useState<'asc' | 'desc'>('desc');
+  const [analysisHistoryDateFrom, setAnalysisHistoryDateFrom] = useState('');
+  const [analysisHistoryDateTo, setAnalysisHistoryDateTo] = useState('');
+  const [analysisHistorySignalFilter, setAnalysisHistorySignalFilter] = useState('');
+  const [analysisHistoryTechniqueFilter, setAnalysisHistoryTechniqueFilter] = useState('');
 
-  const toggleTimeframe = (value: string) => {
-    setProfileForm((prev) => {
-      const exists = prev.timeframes.includes(value);
-      const next = exists
-        ? prev.timeframes.filter((item) => item !== value)
-        : [...prev.timeframes, value];
-      return {
-        ...prev,
-        timeframes: next.length > 0 ? next : prev.timeframes,
-      };
-    });
+  const updateTimeframes = (next: string[]) => {
+    setProfileForm((prev) => ({
+      ...prev,
+      timeframes: next.length > 0 ? next : prev.timeframes,
+    }));
   };
 
-  const toggleIndicator = (value: string) => {
-    setProfileForm((prev) => {
-      const exists = prev.indicators.includes(value);
-      const next = exists
-        ? prev.indicators.filter((item) => item !== value)
-        : [...prev.indicators, value];
-      return {
-        ...prev,
-        indicators: next.length > 0 ? next : prev.indicators,
-      };
-    });
+  const updateIndicators = (next: string[]) => {
+    setProfileForm((prev) => ({
+      ...prev,
+      indicators: next.length > 0 ? next : prev.indicators,
+    }));
   };
 
-  const toggleTechnique = (value: string) => {
-    setProfileForm((prev) => {
-      const exists = prev.techniques.includes(value);
-      const next = exists
-        ? prev.techniques.filter((item) => item !== value)
-        : [...prev.techniques, value];
-      return {
-        ...prev,
-        techniques: next.length > 0 ? next : prev.techniques,
-      };
-    });
+  const updateTechniques = (next: string[]) => {
+    setProfileForm((prev) => ({
+      ...prev,
+      techniques: next.length > 0 ? next : prev.techniques,
+    }));
   };
 
   const updateArbitrageConfig = (updates: Partial<NonNullable<AnalysisProfile['arbitrageConfig']>>) => {
@@ -556,57 +563,19 @@ export function TechnicalAnalysisPanel({
 
   const updateArbitrageAssets = (next: string[]) => {
     const normalized = Array.from(new Set(next.map((value) => value.trim().toUpperCase()).filter(Boolean)));
-    updateArbitrageConfig({ intermediateAssets: normalized });
+    updateArbitrageConfig({ intermediateAssets: normalized.slice(0, MAX_ARBITRAGE_ASSETS) });
   };
 
-  const toggleArbitrageExchange = (exchangeId: string, checked: boolean) => {
-    setSelectedArbitrageExchanges((prev) => {
-      const updated = new Set(prev);
-      if (checked) {
-        updated.add(exchangeId);
-      } else {
-        updated.delete(exchangeId);
-      }
-      updateArbitrageExchanges(Array.from(updated));
-      return updated;
-    });
-  };
-
-  const toggleArbitrageAsset = (asset: string, checked: boolean) => {
-    setSelectedArbitrageAssets((prev) => {
-      const updated = new Set(prev);
-      if (checked) {
-        if (updated.size < MAX_ARBITRAGE_ASSETS) {
-          updated.add(asset.toUpperCase());
-        }
-      } else {
-        updated.delete(asset.toUpperCase());
-      }
-      updateArbitrageAssets(Array.from(updated));
-      return updated;
-    });
-  };
-
-  const toggleSelectAllArbitrageAssets = (checked: boolean) => {
-    if (!checked) {
-      setSelectedArbitrageAssets(new Set());
-      updateArbitrageAssets([]);
-      return;
-    }
-    const selected = availableArbitrageAssets.slice(0, MAX_ARBITRAGE_ASSETS).map((asset) => asset.toUpperCase());
-    setSelectedArbitrageAssets(new Set(selected));
-    updateArbitrageAssets(selected);
-  };
-
-  const toggleSelectAllArbitrageExchanges = (checked: boolean) => {
-    if (!checked) {
-      setSelectedArbitrageExchanges(new Set());
-      updateArbitrageExchanges([]);
-      return;
-    }
-    const selected = availableArbitrageExchanges.map((exchange) => exchange.id);
-    setSelectedArbitrageExchanges(new Set(selected));
-    updateArbitrageExchanges(selected);
+  const updateAnalysisSources = (next: string[]) => {
+    const selected = new Set(next);
+    setProfileForm((prev) => ({
+      ...prev,
+      dataSources: {
+        orderBook: selected.has('orderBook'),
+        news: selected.has('news'),
+        trainingData: selected.has('trainingData'),
+      },
+    }));
   };
 
   useEffect(() => {
@@ -878,44 +847,62 @@ export function TechnicalAnalysisPanel({
   const availableArbitrageAssets = arbitrageCatalog?.intermediateAssets?.length
     ? arbitrageCatalog.intermediateAssets
     : (profileForm.arbitrageConfig?.intermediateAssets ?? []);
-  const allAssetsSelected = availableArbitrageAssets.length > 0
-    && selectedArbitrageAssets.size === Math.min(availableArbitrageAssets.length, MAX_ARBITRAGE_ASSETS);
-  const allExchangesSelected = availableArbitrageExchanges.length > 0
-    && selectedArbitrageExchanges.size === availableArbitrageExchanges.length;
+  const analysisSourceOptions = [
+    {
+      value: 'orderBook',
+      label: t('trading.analysis.profile.sourcesOrderBookTitle'),
+      description: t('trading.analysis.profile.sourcesOrderBookDesc'),
+    },
+    {
+      value: 'news',
+      label: t('trading.analysis.profile.sourcesNewsTitle'),
+      description: t('trading.analysis.profile.sourcesNewsDesc'),
+    },
+    {
+      value: 'trainingData',
+      label: t('trading.analysis.profile.sourcesTrainingTitle'),
+      description: t('trading.analysis.profile.sourcesTrainingDesc'),
+    },
+  ];
+  const selectedAnalysisSources = Object.entries(profileForm.dataSources)
+    .filter(([, enabled]) => enabled)
+    .map(([key]) => key);
   const allAnalysisHistorySelected = analysisHistoryItems.length > 0 && analysisHistorySelectedIds.size === analysisHistoryItems.length;
   const hasAnalysisHistorySelection = analysisHistorySelectedIds.size > 0;
-  const analysisHistoryCursorRef = useRef<string | null>(analysisHistoryCursor);
   const analysisHistoryLoadingRef = useRef(analysisHistoryLoading);
 
   useEffect(() => {
-    analysisHistoryCursorRef.current = analysisHistoryCursor;
-  }, [analysisHistoryCursor]);
+    analysisHistoryLoadingRef.current = analysisHistoryLoading;
+  }, [analysisHistoryLoading]);
 
-  const fetchAnalysisHistory = useCallback(async (options: { reset?: boolean } = {}) => {
+  const fetchAnalysisHistory = useCallback(async (options: { page?: number; resetSelection?: boolean } = {}) => {
     if (!symbol || analysisHistoryLoadingRef.current) return;
-    const reset = options.reset ?? false;
+    const nextPage = options.page ?? analysisHistoryPage;
     analysisHistoryLoadingRef.current = true;
     setAnalysisHistoryLoading(true);
     const params = new URLSearchParams();
     params.set('symbol', symbol);
     params.set('interval', primaryInterval);
-    params.set('limit', '50');
-    const cursor = analysisHistoryCursorRef.current;
-    if (!reset && cursor) {
-      params.set('cursor', cursor);
-    }
+    params.set('page', String(nextPage));
+    params.set('pageSize', String(analysisHistoryPageSize));
+    params.set('orderDirection', analysisHistoryOrder);
+    if (analysisHistoryDateFrom) params.set('dateFrom', analysisHistoryDateFrom);
+    if (analysisHistoryDateTo) params.set('dateTo', analysisHistoryDateTo);
+    if (analysisHistorySignalFilter) params.set('overallSignal', analysisHistorySignalFilter);
+    if (analysisHistoryTechniqueFilter) params.set('technique', analysisHistoryTechniqueFilter);
     try {
       const response = await apiRequest('GET', `/api/integrations/trading/analysis/history?${params.toString()}`);
       const payload = await response.json();
       if (!response.ok) {
         throw new Error(payload.error || t('trading.analysis.historyLoadFailed'));
       }
-      const nextCursor = payload.nextCursor as string | null;
       const items = payload.data as TradingAnalysisHistoryItem[];
-      setAnalysisHistoryItems((prev) => (reset ? items : [...prev, ...items]));
-      setAnalysisHistoryCursor(nextCursor ?? null);
-      setAnalysisHistoryHasMore(Boolean(nextCursor));
-      if (reset) {
+      setAnalysisHistoryItems(items);
+      setAnalysisHistoryPage(payload.page ?? nextPage);
+      setAnalysisHistoryPageSize(payload.pageSize ?? analysisHistoryPageSize);
+      setAnalysisHistoryTotal(payload.total ?? items.length);
+      setAnalysisHistoryTotalPages(payload.totalPages ?? 1);
+      if (options.resetSelection) {
         setAnalysisHistorySelectedIds(new Set());
       }
     } catch (error) {
@@ -925,12 +912,38 @@ export function TechnicalAnalysisPanel({
       setAnalysisHistoryLoading(false);
       analysisHistoryLoadingRef.current = false;
     }
-  }, [primaryInterval, symbol, t, toast]);
+  }, [
+    analysisHistoryDateFrom,
+    analysisHistoryDateTo,
+    analysisHistoryOrder,
+    analysisHistoryPage,
+    analysisHistoryPageSize,
+    analysisHistorySignalFilter,
+    analysisHistoryTechniqueFilter,
+    primaryInterval,
+    symbol,
+    t,
+    toast,
+  ]);
 
   useEffect(() => {
     if (!symbol) return;
-    fetchAnalysisHistory({ reset: true });
-  }, [symbol, primaryInterval, fetchAnalysisHistory]);
+    setAnalysisHistoryPage(1);
+  }, [
+    analysisHistoryDateFrom,
+    analysisHistoryDateTo,
+    analysisHistoryOrder,
+    analysisHistoryPageSize,
+    analysisHistorySignalFilter,
+    analysisHistoryTechniqueFilter,
+    primaryInterval,
+    symbol,
+  ]);
+
+  useEffect(() => {
+    if (!symbol) return;
+    fetchAnalysisHistory({ page: analysisHistoryPage, resetSelection: analysisHistoryPage === 1 });
+  }, [analysisHistoryPage, fetchAnalysisHistory, symbol]);
 
   const deleteAnalysisHistoryMutation = useMutation({
     mutationFn: async ({ ids, all, scope }: { ids?: string[]; all?: boolean; scope?: 'self' | 'tenant' }) => {
@@ -947,7 +960,8 @@ export function TechnicalAnalysisPanel({
     },
     onSuccess: () => {
       toast({ title: t('trading.analysis.historyDeleted') });
-      fetchAnalysisHistory({ reset: true });
+      setAnalysisHistoryPage(1);
+      fetchAnalysisHistory({ page: 1, resetSelection: true });
     },
     onError: (error: Error) => {
       toast({ title: t('trading.analysis.historyDeleteFailed'), description: error.message, variant: 'destructive' });
@@ -969,7 +983,8 @@ export function TechnicalAnalysisPanel({
     },
     onSuccess: () => {
       toast({ title: t('trading.analysis.historyPurged') });
-      fetchAnalysisHistory({ reset: true });
+      setAnalysisHistoryPage(1);
+      fetchAnalysisHistory({ page: 1, resetSelection: true });
     },
     onError: (error: Error) => {
       toast({ title: t('trading.analysis.historyPurgeFailed'), description: error.message, variant: 'destructive' });
@@ -1154,55 +1169,55 @@ export function TechnicalAnalysisPanel({
         <CardContent className="space-y-6">
           <div className="space-y-3">
             <Label>{t('trading.analysis.profile.timeframes')}</Label>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {resolvedIntervalOptions.map((option) => (
-                <div key={option.value} className="flex items-center justify-between rounded-md border px-3 py-2">
-                  <span className="text-sm">{option.label}</span>
-                  <Switch
-                    checked={profileForm.timeframes.includes(option.value)}
-                    onCheckedChange={() => toggleTimeframe(option.value)}
-                  />
-                </div>
-              ))}
-            </div>
+            <MultiSelectDropdown
+              label={t('trading.analysis.profile.timeframes')}
+              options={resolvedIntervalOptions.map((option) => ({
+                value: option.value,
+                label: option.label,
+              }))}
+              selectedValues={profileForm.timeframes}
+              onChange={updateTimeframes}
+              placeholder={t('trading.common.selectPlaceholder')}
+              selectAllLabel={t('trading.common.selectAll')}
+              clearLabel={t('trading.common.clearSelection')}
+              emptyLabel={t('trading.common.noOptions')}
+            />
             <p className="text-xs text-muted-foreground">{t('trading.analysis.profile.timeframesHint')}</p>
           </div>
 
           <div className="space-y-3">
             <Label>{t('trading.analysis.profile.indicators')}</Label>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {INDICATOR_OPTIONS.map((option) => (
-                <div key={option.key} className="flex items-start justify-between rounded-md border px-3 py-2">
-                  <div>
-                    <p className="text-sm font-medium">{option.label}</p>
-                    <p className="text-xs text-muted-foreground">{option.description}</p>
-                  </div>
-                  <Switch
-                    checked={profileForm.indicators.includes(option.key)}
-                    onCheckedChange={() => toggleIndicator(option.key)}
-                  />
-                </div>
-              ))}
-            </div>
+            <MultiSelectDropdown
+              label={t('trading.analysis.profile.indicators')}
+              options={INDICATOR_OPTIONS.map((option) => ({
+                value: option.key,
+                label: option.label,
+              }))}
+              selectedValues={profileForm.indicators}
+              onChange={updateIndicators}
+              placeholder={t('trading.common.selectPlaceholder')}
+              selectAllLabel={t('trading.common.selectAll')}
+              clearLabel={t('trading.common.clearSelection')}
+              emptyLabel={t('trading.common.noOptions')}
+            />
             <p className="text-xs text-muted-foreground">{t('trading.analysis.profile.indicatorsSupportHint')}</p>
           </div>
 
         <div className="space-y-3">
           <Label>{t('trading.analysis.profile.techniques')}</Label>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {TRADING_TECHNIQUE_OPTIONS.map((option) => (
-              <div key={option.key} className="flex items-start justify-between rounded-md border px-3 py-2">
-                <div>
-                  <p className="text-sm font-medium">{t(option.labelKey)}</p>
-                  <p className="text-xs text-muted-foreground">{t(option.descKey)}</p>
-                </div>
-                <Switch
-                  checked={profileForm.techniques.includes(option.key)}
-                  onCheckedChange={() => toggleTechnique(option.key)}
-                />
-              </div>
-            ))}
-          </div>
+          <MultiSelectDropdown
+            label={t('trading.analysis.profile.techniques')}
+            options={TRADING_TECHNIQUE_OPTIONS.map((option) => ({
+              value: option.key,
+              label: t(option.labelKey),
+            }))}
+            selectedValues={profileForm.techniques}
+            onChange={updateTechniques}
+            placeholder={t('trading.common.selectPlaceholder')}
+            selectAllLabel={t('trading.common.selectAll')}
+            clearLabel={t('trading.common.clearSelection')}
+            emptyLabel={t('trading.common.noOptions')}
+          />
           <p className="text-xs text-muted-foreground">{t('trading.analysis.profile.techniquesHint')}</p>
         </div>
 
@@ -1231,56 +1246,35 @@ export function TechnicalAnalysisPanel({
             <Label>{t('trading.analysis.profile.arbitrage')}</Label>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs text-muted-foreground">{t('trading.analysis.profile.arbitrageExchange')}</Label>
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      checked={allExchangesSelected}
-                      onCheckedChange={(checked) => toggleSelectAllArbitrageExchanges(Boolean(checked))}
-                    />
-                    <span className="text-xs text-muted-foreground">Selecionar todos</span>
-                  </div>
-                </div>
-                <div className="max-h-40 overflow-y-auto rounded-md border p-2 space-y-2">
-                  {availableArbitrageExchanges.map((exchange) => (
-                    <div key={exchange.id} className="flex items-center justify-between">
-                      <span className="text-sm">{exchange.label}</span>
-                      <Checkbox
-                        checked={selectedArbitrageExchanges.has(exchange.id)}
-                        onCheckedChange={(checked) => toggleArbitrageExchange(exchange.id, Boolean(checked))}
-                      />
-                    </div>
-                  ))}
-                  {arbitrageCatalogLoading && (
-                    <p className="text-xs text-muted-foreground">Carregando exchanges...</p>
-                  )}
-                </div>
+                <MultiSelectDropdown
+                  label={t('trading.analysis.profile.arbitrageExchange')}
+                  options={availableArbitrageExchanges.map((exchange) => ({
+                    value: exchange.id,
+                    label: exchange.label,
+                  }))}
+                  selectedValues={profileForm.arbitrageConfig?.exchanges ?? []}
+                  onChange={updateArbitrageExchanges}
+                  placeholder={t('trading.common.selectPlaceholder')}
+                  selectAllLabel={t('trading.common.selectAll')}
+                  clearLabel={t('trading.common.clearSelection')}
+                  emptyLabel={arbitrageCatalogLoading ? t('trading.common.loadingOptions') : t('trading.common.noOptions')}
+                />
               </div>
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs text-muted-foreground">{t('trading.analysis.profile.arbitrageIntermediate')}</Label>
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      checked={allAssetsSelected}
-                      onCheckedChange={(checked) => toggleSelectAllArbitrageAssets(Boolean(checked))}
-                    />
-                    <span className="text-xs text-muted-foreground">Selecionar todos</span>
-                  </div>
-                </div>
-                <div className="max-h-48 overflow-y-auto rounded-md border p-2 space-y-2">
-                  {availableArbitrageAssets.map((asset) => (
-                    <div key={asset} className="flex items-center justify-between">
-                      <span className="text-sm">{asset}</span>
-                      <Checkbox
-                        checked={selectedArbitrageAssets.has(asset.toUpperCase())}
-                        onCheckedChange={(checked) => toggleArbitrageAsset(asset, Boolean(checked))}
-                      />
-                    </div>
-                  ))}
-                  {arbitrageCatalogLoading && (
-                    <p className="text-xs text-muted-foreground">Carregando ativos...</p>
-                  )}
-                </div>
+                <MultiSelectDropdown
+                  label={t('trading.analysis.profile.arbitrageIntermediate')}
+                  options={availableArbitrageAssets.map((asset) => ({
+                    value: asset.toUpperCase(),
+                    label: asset.toUpperCase(),
+                  }))}
+                  selectedValues={profileForm.arbitrageConfig?.intermediateAssets ?? []}
+                  onChange={updateArbitrageAssets}
+                  maxSelected={MAX_ARBITRAGE_ASSETS}
+                  placeholder={t('trading.common.selectPlaceholder')}
+                  selectAllLabel={t('trading.common.selectAll')}
+                  clearLabel={t('trading.common.clearSelection')}
+                  emptyLabel={arbitrageCatalogLoading ? t('trading.common.loadingOptions') : t('trading.common.noOptions')}
+                />
                 <p className="text-xs text-muted-foreground">
                   Limite de {MAX_ARBITRAGE_ASSETS} ativos para evitar explosão combinatória.
                 </p>
@@ -1325,46 +1319,25 @@ export function TechnicalAnalysisPanel({
 
           <div className="space-y-3">
             <Label>{t('trading.analysis.profile.sources')}</Label>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div className="flex items-center justify-between rounded-md border px-3 py-2">
-                <div>
-                  <p className="text-sm font-medium">{t('trading.analysis.profile.sourcesOrderBookTitle')}</p>
-                  <p className="text-xs text-muted-foreground">{t('trading.analysis.profile.sourcesOrderBookDesc')}</p>
-                </div>
-                <Switch
-                  checked={profileForm.dataSources.orderBook}
-                  onCheckedChange={(checked) => setProfileForm((prev) => ({
-                    ...prev,
-                    dataSources: { ...prev.dataSources, orderBook: checked },
-                  }))}
-                />
-              </div>
-              <div className="flex items-center justify-between rounded-md border px-3 py-2">
-                <div>
-                  <p className="text-sm font-medium">{t('trading.analysis.profile.sourcesNewsTitle')}</p>
-                  <p className="text-xs text-muted-foreground">{t('trading.analysis.profile.sourcesNewsDesc')}</p>
-                </div>
-                <Switch
-                  checked={profileForm.dataSources.news}
-                  onCheckedChange={(checked) => setProfileForm((prev) => ({
-                    ...prev,
-                    dataSources: { ...prev.dataSources, news: checked },
-                  }))}
-                />
-              </div>
-              <div className="flex items-center justify-between rounded-md border px-3 py-2">
-                <div>
-                  <p className="text-sm font-medium">{t('trading.analysis.profile.sourcesTrainingTitle')}</p>
-                  <p className="text-xs text-muted-foreground">{t('trading.analysis.profile.sourcesTrainingDesc')}</p>
-                </div>
-                <Switch
-                  checked={profileForm.dataSources.trainingData}
-                  onCheckedChange={(checked) => setProfileForm((prev) => ({
-                    ...prev,
-                    dataSources: { ...prev.dataSources, trainingData: checked },
-                  }))}
-                />
-              </div>
+            <MultiSelectDropdown
+              label={t('trading.analysis.profile.sources')}
+              options={analysisSourceOptions.map((option) => ({
+                value: option.value,
+                label: option.label,
+              }))}
+              selectedValues={selectedAnalysisSources}
+              onChange={updateAnalysisSources}
+              placeholder={t('trading.common.selectPlaceholder')}
+              selectAllLabel={t('trading.common.selectAll')}
+              clearLabel={t('trading.common.clearSelection')}
+              emptyLabel={t('trading.common.noOptions')}
+            />
+            <div className="text-xs text-muted-foreground space-y-1">
+              {analysisSourceOptions.map((option) => (
+                <p key={option.value}>
+                  <span className="font-medium">{option.label}:</span> {option.description}
+                </p>
+              ))}
             </div>
           </div>
 
@@ -2309,6 +2282,74 @@ export function TechnicalAnalysisPanel({
             )}
           </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-3 mb-4">
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">{t('trading.analysis.history.filters.dateFrom')}</Label>
+              <Input
+                type="date"
+                value={analysisHistoryDateFrom}
+                onChange={(event) => setAnalysisHistoryDateFrom(event.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">{t('trading.analysis.history.filters.dateTo')}</Label>
+              <Input
+                type="date"
+                value={analysisHistoryDateTo}
+                onChange={(event) => setAnalysisHistoryDateTo(event.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">{t('trading.analysis.history.filters.orderByDate')}</Label>
+              <select
+                className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                value={analysisHistoryOrder}
+                onChange={(event) => setAnalysisHistoryOrder(event.target.value === 'asc' ? 'asc' : 'desc')}
+              >
+                <option value="desc">{t('trading.analysis.history.filters.orderDesc')}</option>
+                <option value="asc">{t('trading.analysis.history.filters.orderAsc')}</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">{t('trading.analysis.history.filters.signal')}</Label>
+              <select
+                className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                value={analysisHistorySignalFilter}
+                onChange={(event) => setAnalysisHistorySignalFilter(event.target.value)}
+              >
+                <option value="">{t('trading.analysis.history.filters.all')}</option>
+                {ANALYSIS_SIGNAL_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">{t('trading.analysis.history.filters.analysisType')}</Label>
+              <select
+                className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                value={analysisHistoryTechniqueFilter}
+                onChange={(event) => setAnalysisHistoryTechniqueFilter(event.target.value)}
+              >
+                <option value="">{t('trading.analysis.history.filters.all')}</option>
+                {TRADING_TECHNIQUE_OPTIONS.map((option) => (
+                  <option key={option.key} value={option.key}>{t(option.labelKey)}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">{t('trading.analysis.history.filters.pageSize')}</Label>
+              <select
+                className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                value={analysisHistoryPageSize}
+                onChange={(event) => setAnalysisHistoryPageSize(Number(event.target.value) || 25)}
+              >
+                {[10, 25, 50, 100].map((size) => (
+                  <option key={size} value={size}>{size}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
           {analysisHistoryLoading ? (
             <Skeleton className="h-64" />
           ) : (
@@ -2324,6 +2365,7 @@ export function TechnicalAnalysisPanel({
                   <TableHead>{t('trading.analysis.history.table.date')}</TableHead>
                   <TableHead>{t('trading.analysis.history.table.symbol')}</TableHead>
                   <TableHead>{t('trading.analysis.history.table.interval')}</TableHead>
+                  <TableHead>{t('trading.analysis.history.table.type')}</TableHead>
                   <TableHead>{t('trading.analysis.history.table.signal')}</TableHead>
                   <TableHead>{t('trading.analysis.history.table.confidence')}</TableHead>
                   <TableHead>{t('trading.analysis.history.table.price')}</TableHead>
@@ -2343,6 +2385,9 @@ export function TechnicalAnalysisPanel({
                     </TableCell>
                     <TableCell>{item.symbol}</TableCell>
                     <TableCell>{item.interval}</TableCell>
+                    <TableCell>
+                      {getTechniqueLabel(item.metadata?.techniques?.[0], t)}
+                    </TableCell>
                     <TableCell className="uppercase">{item.overallSignal}</TableCell>
                     <TableCell>
                       {formatNumber(item.signalConfidence, locale, { maximumFractionDigits: 2 })}
@@ -2352,7 +2397,7 @@ export function TechnicalAnalysisPanel({
                 ))}
                 {analysisHistoryItems.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center text-muted-foreground">
                       {t('trading.analysis.history.empty')}
                     </TableCell>
                   </TableRow>
@@ -2363,16 +2408,27 @@ export function TechnicalAnalysisPanel({
 
           <div className="flex items-center justify-between mt-4">
             <span className="text-xs text-muted-foreground">
-              {t('trading.analysis.history.loadedCount', { count: analysisHistoryItems.length })}
+              {t('trading.analysis.history.loadedCount', { count: analysisHistoryItems.length })} •
+              {t('trading.analysis.history.pagination.pageOf', { page: analysisHistoryPage, totalPages: analysisHistoryTotalPages })} •
+              {t('trading.analysis.history.pagination.total', { total: analysisHistoryTotal })}
             </span>
-            <Button
-              variant="outline"
-              disabled={!analysisHistoryHasMore || analysisHistoryLoading}
-              onClick={() => fetchAnalysisHistory()}
-            >
-              {analysisHistoryLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              {t('trading.analysis.history.loadMore')}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                disabled={analysisHistoryPage <= 1 || analysisHistoryLoading}
+                onClick={() => setAnalysisHistoryPage((prev) => Math.max(1, prev - 1))}
+              >
+                {t('trading.analysis.history.pagination.prev')}
+              </Button>
+              <Button
+                variant="outline"
+                disabled={analysisHistoryPage >= analysisHistoryTotalPages || analysisHistoryLoading}
+                onClick={() => setAnalysisHistoryPage((prev) => Math.min(analysisHistoryTotalPages, prev + 1))}
+              >
+                {analysisHistoryLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                {t('trading.analysis.history.pagination.next')}
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>

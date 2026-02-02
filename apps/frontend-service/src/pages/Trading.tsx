@@ -124,6 +124,7 @@ import {
   HandoverPanel, 
   TechnicalAnalysisPanel,
   SignalApprovalPanel,
+  MultiSelectDropdown,
   NewsConfigEditor,
   DEFAULT_TRADING_NEWS_CONFIG,
   normalizeTradingNewsConfigForm,
@@ -768,40 +769,26 @@ export default function Trading() {
     modelConfig: {},
     consensus: { rule: 'majority' },
   });
-  const [selectedSignalArbitrageAssets, setSelectedSignalArbitrageAssets] = useState<Set<string>>(new Set());
-  const [selectedSignalArbitrageExchanges, setSelectedSignalArbitrageExchanges] = useState<Set<string>>(new Set());
 
-  const toggleSignalProfileTimeframe = (value: string) => {
-    setSignalProfileForm((prev) => {
-      const exists = prev.timeframes.includes(value);
-      const next = exists ? prev.timeframes.filter((item) => item !== value) : [...prev.timeframes, value];
-      return {
-        ...prev,
-        timeframes: next.length > 0 ? next : prev.timeframes,
-      };
-    });
+  const updateSignalTimeframes = (next: string[]) => {
+    setSignalProfileForm((prev) => ({
+      ...prev,
+      timeframes: next.length > 0 ? next : prev.timeframes,
+    }));
   };
 
-  const toggleSignalIndicator = (value: string) => {
-    setSignalProfileForm((prev) => {
-      const exists = prev.indicators.includes(value);
-      const next = exists ? prev.indicators.filter((item) => item !== value) : [...prev.indicators, value];
-      return {
-        ...prev,
-        indicators: next.length > 0 ? next : prev.indicators,
-      };
-    });
+  const updateSignalIndicators = (next: string[]) => {
+    setSignalProfileForm((prev) => ({
+      ...prev,
+      indicators: next.length > 0 ? next : prev.indicators,
+    }));
   };
 
-  const toggleSignalTechnique = (value: string) => {
-    setSignalProfileForm((prev) => {
-      const exists = prev.techniques.includes(value);
-      const next = exists ? prev.techniques.filter((item) => item !== value) : [...prev.techniques, value];
-      return {
-        ...prev,
-        techniques: next.length > 0 ? next : prev.techniques,
-      };
-    });
+  const updateSignalTechniques = (next: string[]) => {
+    setSignalProfileForm((prev) => ({
+      ...prev,
+      techniques: next.length > 0 ? next : prev.techniques,
+    }));
   };
 
   const updateSignalArbitrageConfig = (updates: Partial<NonNullable<TradingProfileForm['arbitrageConfig']>>) => {
@@ -821,57 +808,19 @@ export default function Trading() {
 
   const updateSignalArbitrageAssets = (next: string[]) => {
     const normalized = Array.from(new Set(next.map((value) => value.trim().toUpperCase()).filter(Boolean)));
-    updateSignalArbitrageConfig({ intermediateAssets: normalized });
+    updateSignalArbitrageConfig({ intermediateAssets: normalized.slice(0, MAX_ARBITRAGE_ASSETS) });
   };
 
-  const toggleSignalArbitrageExchange = (exchangeId: string, checked: boolean) => {
-    setSelectedSignalArbitrageExchanges((prev) => {
-      const updated = new Set(prev);
-      if (checked) {
-        updated.add(exchangeId);
-      } else {
-        updated.delete(exchangeId);
-      }
-      updateSignalArbitrageExchanges(Array.from(updated));
-      return updated;
-    });
-  };
-
-  const toggleSignalArbitrageAsset = (asset: string, checked: boolean) => {
-    setSelectedSignalArbitrageAssets((prev) => {
-      const updated = new Set(prev);
-      if (checked) {
-        if (updated.size < MAX_ARBITRAGE_ASSETS) {
-          updated.add(asset.toUpperCase());
-        }
-      } else {
-        updated.delete(asset.toUpperCase());
-      }
-      updateSignalArbitrageAssets(Array.from(updated));
-      return updated;
-    });
-  };
-
-  const toggleSelectAllSignalArbitrageAssets = (checked: boolean, availableAssets: string[]) => {
-    if (!checked) {
-      setSelectedSignalArbitrageAssets(new Set());
-      updateSignalArbitrageAssets([]);
-      return;
-    }
-    const selected = availableAssets.slice(0, MAX_ARBITRAGE_ASSETS).map((asset) => asset.toUpperCase());
-    setSelectedSignalArbitrageAssets(new Set(selected));
-    updateSignalArbitrageAssets(selected);
-  };
-
-  const toggleSelectAllSignalArbitrageExchanges = (checked: boolean, availableExchanges: string[]) => {
-    if (!checked) {
-      setSelectedSignalArbitrageExchanges(new Set());
-      updateSignalArbitrageExchanges([]);
-      return;
-    }
-    const selected = [...availableExchanges];
-    setSelectedSignalArbitrageExchanges(new Set(selected));
-    updateSignalArbitrageExchanges(selected);
+  const updateSignalSources = (next: string[]) => {
+    const selected = new Set(next);
+    setSignalProfileForm((prev) => ({
+      ...prev,
+      dataSources: {
+        orderBook: selected.has('orderBook'),
+        news: selected.has('news'),
+        trainingData: selected.has('trainingData'),
+      },
+    }));
   };
 
   useEffect(() => {
@@ -886,16 +835,6 @@ export default function Trading() {
       return prev;
     });
   }, [signalProfileForm.techniques]);
-
-  useEffect(() => {
-    const exchanges = signalProfileForm.arbitrageConfig?.exchanges ?? [];
-    setSelectedSignalArbitrageExchanges(new Set(exchanges));
-  }, [signalProfileForm.arbitrageConfig?.exchanges]);
-
-  useEffect(() => {
-    const assets = signalProfileForm.arbitrageConfig?.intermediateAssets ?? [];
-    setSelectedSignalArbitrageAssets(new Set(assets));
-  }, [signalProfileForm.arbitrageConfig?.intermediateAssets]);
 
   const {
     data: statusData,
@@ -990,10 +929,26 @@ export default function Trading() {
   const availableSignalArbitrageAssets = signalArbitrageCatalog?.intermediateAssets?.length
     ? signalArbitrageCatalog.intermediateAssets
     : (signalProfileForm.arbitrageConfig?.intermediateAssets ?? []);
-  const allSignalArbitrageAssetsSelected = availableSignalArbitrageAssets.length > 0
-    && selectedSignalArbitrageAssets.size === Math.min(availableSignalArbitrageAssets.length, MAX_ARBITRAGE_ASSETS);
-  const allSignalArbitrageExchangesSelected = availableSignalArbitrageExchanges.length > 0
-    && selectedSignalArbitrageExchanges.size === availableSignalArbitrageExchanges.length;
+  const signalSourceOptions = [
+    {
+      value: 'orderBook',
+      label: t('trading.signals.profile.sourcesOrderBookTitle'),
+      description: t('trading.signals.profile.sourcesOrderBookDesc'),
+    },
+    {
+      value: 'news',
+      label: t('trading.signals.profile.sourcesNewsTitle'),
+      description: t('trading.signals.profile.sourcesNewsDesc'),
+    },
+    {
+      value: 'trainingData',
+      label: t('trading.signals.profile.sourcesTrainingTitle'),
+      description: t('trading.signals.profile.sourcesTrainingDesc'),
+    },
+  ];
+  const selectedSignalSources = Object.entries(signalProfileForm.dataSources)
+    .filter(([, enabled]) => enabled)
+    .map(([key]) => key);
 
   const {
     data: newsPresetsResponse,
@@ -3529,54 +3484,54 @@ export default function Trading() {
               <CardContent className="space-y-6">
                 <div className="space-y-3">
                   <Label>{t('trading.signals.profile.timeframes')}</Label>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    {intervalOptions.map((option) => (
-                      <div key={option.value} className="flex items-center justify-between rounded-md border px-3 py-2">
-                        <span className="text-sm">{option.label}</span>
-                        <Switch
-                          checked={signalProfileForm.timeframes.includes(option.value)}
-                          onCheckedChange={() => toggleSignalProfileTimeframe(option.value)}
-                        />
-                      </div>
-                    ))}
-                  </div>
+                  <MultiSelectDropdown
+                    label={t('trading.signals.profile.timeframes')}
+                    options={intervalOptions.map((option) => ({
+                      value: option.value,
+                      label: option.label,
+                    }))}
+                    selectedValues={signalProfileForm.timeframes}
+                    onChange={updateSignalTimeframes}
+                    placeholder={t('trading.common.selectPlaceholder')}
+                    selectAllLabel={t('trading.common.selectAll')}
+                    clearLabel={t('trading.common.clearSelection')}
+                    emptyLabel={t('trading.common.noOptions')}
+                  />
                 </div>
 
                 <div className="space-y-3">
                   <Label>{t('trading.signals.profile.indicators')}</Label>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {SIGNAL_INDICATOR_OPTIONS.map((option) => (
-                      <div key={option.key} className="flex items-start justify-between rounded-md border px-3 py-2">
-                        <div>
-                          <p className="text-sm font-medium">{option.label}</p>
-                          <p className="text-xs text-muted-foreground">{option.description}</p>
-                        </div>
-                        <Switch
-                          checked={signalProfileForm.indicators.includes(option.key)}
-                          onCheckedChange={() => toggleSignalIndicator(option.key)}
-                        />
-                      </div>
-                    ))}
-                  </div>
+                  <MultiSelectDropdown
+                    label={t('trading.signals.profile.indicators')}
+                    options={SIGNAL_INDICATOR_OPTIONS.map((option) => ({
+                      value: option.key,
+                      label: option.label,
+                    }))}
+                    selectedValues={signalProfileForm.indicators}
+                    onChange={updateSignalIndicators}
+                    placeholder={t('trading.common.selectPlaceholder')}
+                    selectAllLabel={t('trading.common.selectAll')}
+                    clearLabel={t('trading.common.clearSelection')}
+                    emptyLabel={t('trading.common.noOptions')}
+                  />
                   <p className="text-xs text-muted-foreground">{t('trading.signals.profile.indicatorsSupportHint')}</p>
                 </div>
 
                 <div className="space-y-3">
                   <Label>{t('trading.signals.profile.techniques')}</Label>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {TRADING_TECHNIQUE_OPTIONS.map((option) => (
-                      <div key={option.key} className="flex items-start justify-between rounded-md border px-3 py-2">
-                        <div>
-                          <p className="text-sm font-medium">{t(option.labelKey)}</p>
-                          <p className="text-xs text-muted-foreground">{t(option.descKey)}</p>
-                        </div>
-                        <Switch
-                          checked={signalProfileForm.techniques.includes(option.key)}
-                          onCheckedChange={() => toggleSignalTechnique(option.key)}
-                        />
-                      </div>
-                    ))}
-                  </div>
+                  <MultiSelectDropdown
+                    label={t('trading.signals.profile.techniques')}
+                    options={TRADING_TECHNIQUE_OPTIONS.map((option) => ({
+                      value: option.key,
+                      label: t(option.labelKey),
+                    }))}
+                    selectedValues={signalProfileForm.techniques}
+                    onChange={updateSignalTechniques}
+                    placeholder={t('trading.common.selectPlaceholder')}
+                    selectAllLabel={t('trading.common.selectAll')}
+                    clearLabel={t('trading.common.clearSelection')}
+                    emptyLabel={t('trading.common.noOptions')}
+                  />
                   <p className="text-xs text-muted-foreground">{t('trading.signals.profile.techniquesHint')}</p>
                 </div>
 
@@ -3614,56 +3569,35 @@ export default function Trading() {
                     <Label>{t('trading.signals.profile.arbitrage')}</Label>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <Label className="text-xs text-muted-foreground">{t('trading.signals.profile.arbitrageExchange')}</Label>
-                          <div className="flex items-center gap-2">
-                            <Checkbox
-                              checked={allSignalArbitrageExchangesSelected}
-                              onCheckedChange={(checked) => toggleSelectAllSignalArbitrageExchanges(Boolean(checked), availableSignalArbitrageExchanges.map((item) => item.id))}
-                            />
-                            <span className="text-xs text-muted-foreground">Selecionar todos</span>
-                          </div>
-                        </div>
-                        <div className="max-h-40 overflow-y-auto rounded-md border p-2 space-y-2">
-                          {availableSignalArbitrageExchanges.map((exchange) => (
-                            <div key={exchange.id} className="flex items-center justify-between">
-                              <span className="text-sm">{exchange.label}</span>
-                              <Checkbox
-                                checked={selectedSignalArbitrageExchanges.has(exchange.id)}
-                                onCheckedChange={(checked) => toggleSignalArbitrageExchange(exchange.id, Boolean(checked))}
-                              />
-                            </div>
-                          ))}
-                          {isSignalArbitrageCatalogLoading && (
-                            <p className="text-xs text-muted-foreground">Carregando exchanges...</p>
-                          )}
-                        </div>
+                        <MultiSelectDropdown
+                          label={t('trading.signals.profile.arbitrageExchange')}
+                          options={availableSignalArbitrageExchanges.map((exchange) => ({
+                            value: exchange.id,
+                            label: exchange.label,
+                          }))}
+                          selectedValues={signalProfileForm.arbitrageConfig?.exchanges ?? []}
+                          onChange={updateSignalArbitrageExchanges}
+                          placeholder={t('trading.common.selectPlaceholder')}
+                          selectAllLabel={t('trading.common.selectAll')}
+                          clearLabel={t('trading.common.clearSelection')}
+                          emptyLabel={isSignalArbitrageCatalogLoading ? t('trading.common.loadingOptions') : t('trading.common.noOptions')}
+                        />
                       </div>
                       <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <Label className="text-xs text-muted-foreground">{t('trading.signals.profile.arbitrageIntermediate')}</Label>
-                          <div className="flex items-center gap-2">
-                            <Checkbox
-                              checked={allSignalArbitrageAssetsSelected}
-                              onCheckedChange={(checked) => toggleSelectAllSignalArbitrageAssets(Boolean(checked), availableSignalArbitrageAssets)}
-                            />
-                            <span className="text-xs text-muted-foreground">Selecionar todos</span>
-                          </div>
-                        </div>
-                        <div className="max-h-48 overflow-y-auto rounded-md border p-2 space-y-2">
-                          {availableSignalArbitrageAssets.map((asset) => (
-                            <div key={asset} className="flex items-center justify-between">
-                              <span className="text-sm">{asset}</span>
-                              <Checkbox
-                                checked={selectedSignalArbitrageAssets.has(asset.toUpperCase())}
-                                onCheckedChange={(checked) => toggleSignalArbitrageAsset(asset, Boolean(checked))}
-                              />
-                            </div>
-                          ))}
-                          {isSignalArbitrageCatalogLoading && (
-                            <p className="text-xs text-muted-foreground">Carregando ativos...</p>
-                          )}
-                        </div>
+                        <MultiSelectDropdown
+                          label={t('trading.signals.profile.arbitrageIntermediate')}
+                          options={availableSignalArbitrageAssets.map((asset) => ({
+                            value: asset.toUpperCase(),
+                            label: asset.toUpperCase(),
+                          }))}
+                          selectedValues={signalProfileForm.arbitrageConfig?.intermediateAssets ?? []}
+                          onChange={updateSignalArbitrageAssets}
+                          maxSelected={MAX_ARBITRAGE_ASSETS}
+                          placeholder={t('trading.common.selectPlaceholder')}
+                          selectAllLabel={t('trading.common.selectAll')}
+                          clearLabel={t('trading.common.clearSelection')}
+                          emptyLabel={isSignalArbitrageCatalogLoading ? t('trading.common.loadingOptions') : t('trading.common.noOptions')}
+                        />
                         <p className="text-xs text-muted-foreground">
                           Limite de {MAX_ARBITRAGE_ASSETS} ativos para evitar explosão combinatória.
                         </p>
@@ -3715,46 +3649,25 @@ export default function Trading() {
 
                 <div className="space-y-3">
                   <Label>{t('trading.signals.profile.sources')}</Label>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <div className="flex items-center justify-between rounded-md border px-3 py-2">
-                      <div>
-                        <p className="text-sm font-medium">{t('trading.signals.profile.sourcesOrderBookTitle')}</p>
-                        <p className="text-xs text-muted-foreground">{t('trading.signals.profile.sourcesOrderBookDesc')}</p>
-                      </div>
-                      <Switch
-                        checked={signalProfileForm.dataSources.orderBook}
-                        onCheckedChange={(checked) => setSignalProfileForm((prev) => ({
-                          ...prev,
-                          dataSources: { ...prev.dataSources, orderBook: checked },
-                        }))}
-                      />
-                    </div>
-                    <div className="flex items-center justify-between rounded-md border px-3 py-2">
-                      <div>
-                        <p className="text-sm font-medium">{t('trading.signals.profile.sourcesNewsTitle')}</p>
-                        <p className="text-xs text-muted-foreground">{t('trading.signals.profile.sourcesNewsDesc')}</p>
-                      </div>
-                      <Switch
-                        checked={signalProfileForm.dataSources.news}
-                        onCheckedChange={(checked) => setSignalProfileForm((prev) => ({
-                          ...prev,
-                          dataSources: { ...prev.dataSources, news: checked },
-                        }))}
-                      />
-                    </div>
-                    <div className="flex items-center justify-between rounded-md border px-3 py-2">
-                      <div>
-                        <p className="text-sm font-medium">{t('trading.signals.profile.sourcesTrainingTitle')}</p>
-                        <p className="text-xs text-muted-foreground">{t('trading.signals.profile.sourcesTrainingDesc')}</p>
-                      </div>
-                      <Switch
-                        checked={signalProfileForm.dataSources.trainingData}
-                        onCheckedChange={(checked) => setSignalProfileForm((prev) => ({
-                          ...prev,
-                          dataSources: { ...prev.dataSources, trainingData: checked },
-                        }))}
-                      />
-                    </div>
+                  <MultiSelectDropdown
+                    label={t('trading.signals.profile.sources')}
+                    options={signalSourceOptions.map((option) => ({
+                      value: option.value,
+                      label: option.label,
+                    }))}
+                    selectedValues={selectedSignalSources}
+                    onChange={updateSignalSources}
+                    placeholder={t('trading.common.selectPlaceholder')}
+                    selectAllLabel={t('trading.common.selectAll')}
+                    clearLabel={t('trading.common.clearSelection')}
+                    emptyLabel={t('trading.common.noOptions')}
+                  />
+                  <div className="text-xs text-muted-foreground space-y-1">
+                    {signalSourceOptions.map((option) => (
+                      <p key={option.value}>
+                        <span className="font-medium">{option.label}:</span> {option.description}
+                      </p>
+                    ))}
                   </div>
                 </div>
 

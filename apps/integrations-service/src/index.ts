@@ -53,7 +53,7 @@ import type { AuthContext } from '@alice/shared-utils';
 import { integrationsServicePaths, integrationsServiceSchemas } from './openapi-specs.js';
 import { loadConfig, integrationsServiceConfigSchema } from '@alice/config';
 import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, getPool } from '@alice/database';
-import { eq, desc, asc, sql, and, inArray, not, isNull, lte, lt } from '@alice/database';
+import { eq, desc, asc, sql, and, inArray, not, isNull, lte, lt, gte } from '@alice/database';
 import {
   tradingIntervalEnum,
   TradingOperationTypeSchema,
@@ -6452,6 +6452,17 @@ function stripJsonCodeFence(content: string): string {
   return trimmed;
 }
 
+function stripListPrefix(line: string): { value: string; stripped: boolean } {
+  const stripped = line.replace(/^(?:[-*•]\s+|\d+[).\]]\s+|\d+\s*-\s+)/, '');
+  return { value: stripped, stripped: stripped !== line };
+}
+
+function buildLlmResponseSnippet(content: string, limit = 220): string {
+  const normalized = content.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= limit) return normalized;
+  return `${normalized.slice(0, limit)}…`;
+}
+
 function extractJsonObjectCandidate(content: string): string {
   const cleaned = stripJsonCodeFence(content).trim();
   if (!cleaned) return cleaned;
@@ -6635,7 +6646,9 @@ function repairYamlLikeObject(content: string): { json: string; repaired: boolea
     }
     if (!insideObject) continue;
 
-    let work = line.replace(/,+\s*$/, '');
+    const prefixed = stripListPrefix(line);
+    if (prefixed.stripped) repaired = true;
+    let work = prefixed.value.replace(/,+\s*$/, '');
     if (work.startsWith('-')) {
       work = work.replace(/^-\s*/, '');
       repaired = true;
@@ -6724,7 +6737,9 @@ function repairYamlLikeBlockWithoutBraces(content: string): { json: string; repa
     if (currentKey) {
       flushArray();
     }
-    const match = line.match(/^['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?\s*:\s*(.*)$/);
+    const prefixed = stripListPrefix(line);
+    if (prefixed.stripped) repaired = true;
+    const match = prefixed.value.match(/^['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?\s*:\s*(.*)$/);
     if (!match) continue;
     const key = match[1];
     if (!TRADING_LLM_SIGNAL_KEYS.has(key)) continue;
@@ -7050,6 +7065,7 @@ function parseLlmSignalResponse(rawResponse: string) {
       error: message,
       responseHash: computeSemHash(candidate),
       responseLength: candidate.length,
+      responseSnippet: buildLlmResponseSnippet(candidate),
     }, 'Resposta LLM inválida (hash/len).');
     throw new Error(`Resposta LLM inválida: ${message}`);
   }
@@ -8762,6 +8778,13 @@ function buildSoftDeleteMetadataUpdate(
   `;
 }
 
+function parseHistoryDateParam(value?: string): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
 // GET /api/integrations/trading/signals - Lista sinais de trading ativos
 app.get('/api/integrations/trading/signals', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
@@ -8810,8 +8833,14 @@ app.get('/api/integrations/trading/signals/history', requirePermission('integrat
     const querySchema = z.object({
       limit: z.coerce.number().int().min(1).max(200).optional(),
       cursor: z.string().datetime().optional(),
+      page: z.coerce.number().int().min(1).optional(),
+      pageSize: z.coerce.number().int().min(1).max(200).optional(),
+      orderDirection: z.enum(['asc', 'desc']).optional(),
+      dateFrom: z.string().optional(),
+      dateTo: z.string().optional(),
       symbol: z.string().optional(),
       marketType: z.enum(['futures', 'spot', 'margin']).optional(),
+      signalType: z.enum(['entry_long', 'entry_short', 'exit', 'adjust_sl', 'adjust_tp', 'hold', 'neutral']).optional(),
       validationStatus: z.enum(['pending', 'validated', 'failed']).optional(),
       approvalStatus: z.enum(['pending', 'approved', 'rejected']).optional(),
       includeDeleted: z.coerce.boolean().optional(),
@@ -8824,10 +8853,25 @@ app.get('/api/integrations/trading/signals/history', requirePermission('integrat
 
     const limit = queryResult.data.limit ?? 50;
     const cursorDate = queryResult.data.cursor ? new Date(queryResult.data.cursor) : null;
+    const usePaging = queryResult.data.page !== undefined || queryResult.data.pageSize !== undefined;
+    const page = queryResult.data.page ?? 1;
+    const pageSize = queryResult.data.pageSize ?? limit;
+    const orderDirection = queryResult.data.orderDirection ?? 'desc';
     const marketType = queryResult.data.marketType ?? undefined;
+    const signalType = queryResult.data.signalType ?? undefined;
     const validationStatus = queryResult.data.validationStatus ?? undefined;
     const approvalStatus = queryResult.data.approvalStatus ?? undefined;
     const includeDeleted = queryResult.data.includeDeleted ?? false;
+    const dateFrom = parseHistoryDateParam(queryResult.data.dateFrom);
+    const dateTo = parseHistoryDateParam(queryResult.data.dateTo);
+    if (queryResult.data.dateFrom && !dateFrom) {
+      res.status(400).json({ error: 'Data inicial inválida.' });
+      return;
+    }
+    if (queryResult.data.dateTo && !dateTo) {
+      res.status(400).json({ error: 'Data final inválida.' });
+      return;
+    }
 
     const symbolParam = queryResult.data.symbol;
     const resolvedSymbol = symbolParam
@@ -8838,7 +8882,10 @@ app.get('/api/integrations/trading/signals/history', requirePermission('integrat
     const conditions = [eq(schema.tradingSignals.tenantId, authContext.tenantId)];
     if (resolvedSymbol) conditions.push(eq(schema.tradingSignals.symbol, resolvedSymbol));
     if (marketType) conditions.push(eq(schema.tradingSignals.marketType, marketType));
-    if (cursorDate) conditions.push(lt(schema.tradingSignals.criadoEm, cursorDate));
+    if (signalType) conditions.push(eq(schema.tradingSignals.signalType, signalType));
+    if (dateFrom) conditions.push(gte(schema.tradingSignals.criadoEm, dateFrom));
+    if (dateTo) conditions.push(lte(schema.tradingSignals.criadoEm, dateTo));
+    if (!usePaging && cursorDate) conditions.push(lt(schema.tradingSignals.criadoEm, cursorDate));
     if (validationStatus) {
       conditions.push(sql`(${schema.tradingSignals.metadata} ->> 'validationStatus') = ${validationStatus}`);
     }
@@ -8850,11 +8897,43 @@ app.get('/api/integrations/trading/signals/history', requirePermission('integrat
     }
 
     const db = getDatabase();
+    const orderByClause = orderDirection === 'asc'
+      ? asc(schema.tradingSignals.criadoEm)
+      : desc(schema.tradingSignals.criadoEm);
+
+    if (usePaging) {
+      const [totalRow] = await db
+        .select({ total: sql<number>`count(*)` })
+        .from(schema.tradingSignals)
+        .where(and(...conditions));
+      const total = Number(totalRow?.total ?? 0);
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+      const offset = Math.max(0, (page - 1) * pageSize);
+      const history = await db
+        .select()
+        .from(schema.tradingSignals)
+        .where(and(...conditions))
+        .orderBy(orderByClause)
+        .limit(pageSize)
+        .offset(offset);
+
+      res.json({
+        success: true,
+        data: history.map(mapTradingSignalForApi),
+        page,
+        pageSize,
+        total,
+        totalPages,
+        orderDirection,
+      });
+      return;
+    }
+
     const history = await db
       .select()
       .from(schema.tradingSignals)
       .where(and(...conditions))
-      .orderBy(desc(schema.tradingSignals.criadoEm))
+      .orderBy(orderByClause)
       .limit(limit);
 
     const nextCursor = history.length > 0
@@ -8865,6 +8944,7 @@ app.get('/api/integrations/trading/signals/history', requirePermission('integrat
       success: true,
       data: history.map(mapTradingSignalForApi),
       nextCursor,
+      orderDirection,
     });
   } catch (error) {
     if (sendKucoinErrorResponse(res, error)) return;
@@ -12040,15 +12120,52 @@ app.get('/api/integrations/trading/analysis/history', requirePermission('integra
     }
     const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
 
-    const symbolParam = req.query.symbol as string | undefined;
+    const querySchema = z.object({
+      symbol: z.string().optional(),
+      interval: z.string().optional(),
+      limit: z.coerce.number().int().min(1).max(200).optional(),
+      cursor: z.string().datetime().optional(),
+      page: z.coerce.number().int().min(1).optional(),
+      pageSize: z.coerce.number().int().min(1).max(200).optional(),
+      orderDirection: z.enum(['asc', 'desc']).optional(),
+      dateFrom: z.string().optional(),
+      dateTo: z.string().optional(),
+      overallSignal: z.enum(['strong_buy', 'buy', 'neutral', 'sell', 'strong_sell']).optional(),
+      technique: z.string().optional(),
+      includeDeleted: z.coerce.boolean().optional(),
+    });
+    const queryResult = querySchema.safeParse(req.query);
+    if (!queryResult.success) {
+      res.status(400).json({ error: 'Query inválida', details: queryResult.error.flatten() });
+      return;
+    }
+
+    const symbolParam = queryResult.data.symbol;
     const resolvedSymbol = symbolParam
       ? await resolveTradingSymbolOrRespond(res, tradingAuth, symbolParam, { required: true })
       : await kucoinService.resolveTradingSymbol(tradingAuth);
     if (!resolvedSymbol) return;
-    const intervalParam = req.query.interval as string || '5m';
-    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
-    const cursorParam = req.query.cursor as string | undefined;
+    const intervalParam = queryResult.data.interval || '5m';
+    const limit = queryResult.data.limit ?? 50;
+    const cursorParam = queryResult.data.cursor;
     const cursorDate = cursorParam ? new Date(cursorParam) : null;
+    const usePaging = queryResult.data.page !== undefined || queryResult.data.pageSize !== undefined;
+    const page = queryResult.data.page ?? 1;
+    const pageSize = queryResult.data.pageSize ?? limit;
+    const orderDirection = queryResult.data.orderDirection ?? 'desc';
+    const dateFrom = parseHistoryDateParam(queryResult.data.dateFrom);
+    const dateTo = parseHistoryDateParam(queryResult.data.dateTo);
+    if (queryResult.data.dateFrom && !dateFrom) {
+      res.status(400).json({ error: 'Data inicial inválida.' });
+      return;
+    }
+    if (queryResult.data.dateTo && !dateTo) {
+      res.status(400).json({ error: 'Data final inválida.' });
+      return;
+    }
+    const overallSignal = queryResult.data.overallSignal ?? undefined;
+    const technique = queryResult.data.technique?.trim();
+    const includeDeleted = queryResult.data.includeDeleted ?? false;
 
     // BUG FIX 21/12/2025: Validação e type narrowing para TypeScript
     const validIntervals = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d', '1w'] as const;
@@ -12066,9 +12183,19 @@ app.get('/api/integrations/trading/analysis/history', requirePermission('integra
       eq(schema.tradingTechnicalIndicators.tenantId, authContext.tenantId),
       eq(schema.tradingTechnicalIndicators.symbol, resolvedSymbol),
       eq(schema.tradingTechnicalIndicators.interval, interval),
-      buildNotDeletedMetadataCondition(schema.tradingTechnicalIndicators.metadata),
     ];
-    if (cursorDate && !Number.isNaN(cursorDate.getTime())) {
+    if (!includeDeleted) {
+      conditions.push(buildNotDeletedMetadataCondition(schema.tradingTechnicalIndicators.metadata));
+    }
+    if (overallSignal) {
+      conditions.push(eq(schema.tradingTechnicalIndicators.overallSignal, overallSignal));
+    }
+    if (technique) {
+      conditions.push(sql`(${schema.tradingTechnicalIndicators.metadata} -> 'techniques') ? ${technique}`);
+    }
+    if (dateFrom) conditions.push(gte(schema.tradingTechnicalIndicators.calculatedAt, dateFrom));
+    if (dateTo) conditions.push(lte(schema.tradingTechnicalIndicators.calculatedAt, dateTo));
+    if (!usePaging && cursorDate && !Number.isNaN(cursorDate.getTime())) {
       conditions.push(lt(schema.tradingTechnicalIndicators.calculatedAt, cursorDate));
     }
 
@@ -12076,8 +12203,32 @@ app.get('/api/integrations/trading/analysis/history', requirePermission('integra
       .select()
       .from(schema.tradingTechnicalIndicators)
       .where(and(...conditions))
-      .orderBy(desc(schema.tradingTechnicalIndicators.calculatedAt))
-      .limit(limit);
+      .orderBy(orderDirection === 'asc'
+        ? asc(schema.tradingTechnicalIndicators.calculatedAt)
+        : desc(schema.tradingTechnicalIndicators.calculatedAt))
+      .limit(usePaging ? pageSize : limit)
+      .offset(usePaging ? Math.max(0, (page - 1) * pageSize) : 0);
+
+    if (usePaging) {
+      const [totalRow] = await db
+        .select({ total: sql<number>`count(*)` })
+        .from(schema.tradingTechnicalIndicators)
+        .where(and(...conditions));
+      const total = Number(totalRow?.total ?? 0);
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+      res.json({
+        success: true,
+        data: history,
+        count: history.length,
+        symbol: resolvedSymbol,
+        page,
+        pageSize,
+        total,
+        totalPages,
+        orderDirection,
+      });
+      return;
+    }
 
     res.json({
       success: true,
@@ -12087,6 +12238,7 @@ app.get('/api/integrations/trading/analysis/history', requirePermission('integra
       nextCursor: history.length > 0
         ? history[history.length - 1]?.calculatedAt?.toISOString() ?? null
         : null,
+      orderDirection,
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';

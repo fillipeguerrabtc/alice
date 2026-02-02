@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 02 de Fevereiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.76 - Arbitragem multi‑exchange + timeouts end‑to‑end
+**Versão:** 10.77 - Multi‑select em dropdown + histórico Sinais IA paginado
 
 ---
 
@@ -40,7 +40,9 @@
 - Sinais IA: reparo extra para YAML-like sem chaves (blocos key: value) garante JSON válido sem retry.
 - Trading: arbitragem triangular agora suporta multi‑exchange com top 3 rotas e network fees por ativo.
 - Trading: catálogo de arbitragem fornece exchanges, ativos intermediários e feePct efetivo via API KuCoin.
-- Trading: UI de arbitragem com multi‑select (exchanges/ativos) + Selecionar todos + limite de 30 ativos.
+- Trading: UI de arbitragem com dropdown multi‑select (exchanges/ativos) + limite de 30 ativos.
+- Trading: seleções múltiplas (timeframes/indicadores/técnicas/fontes) agora usam dropdown com scroll nas abas Análise e Sinais IA.
+- Sinais IA: histórico inline com paginação, ordenação e filtros por data/tipo/status (validação/aprovação).
 - Trading: feePct é automático (maior entre exchanges) e aplicado em análise/sinal.
 - Proxy (Caddy): timeout dedicado para `/api/integrations/trading/analysis*` evita 502 em arbitragem pesada.
 - API Gateway (dev): timeouts long‑running para trading/LLM alinhados com Caddy e integrations-service.

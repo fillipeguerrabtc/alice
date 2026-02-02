@@ -1384,6 +1384,13 @@
       "spot": "Spot",
       "margin": "Margin"
     },
+    "common": {
+      "selectPlaceholder": "Select...",
+      "selectAll": "Select all",
+      "clearSelection": "Clear selection",
+      "noOptions": "No options available",
+      "loadingOptions": "Loading options..."
+    },
     "marginMode": {
       "cross": "Cross",
       "isolated": "Isolated"
@@ -1604,30 +1611,46 @@
         "newsEmpty": "News enabled, but no relevant results returned."
       },
       "history": {
-        "title": "Signal History",
-        "approvalStatus": "Approval status: {{status}}",
-        "validationStatus": "Validation status: {{status}}",
-        "deleteSelected": "Delete selected",
-        "deleteAllMine": "Delete all (mine)",
-        "deleteAllTenant": "Delete all (tenant)",
-        "purgeSelected": "Delete permanently (selected)",
-        "purgeAllTenant": "Purge permanently (tenant)",
-        "loadMore": "Load more",
-        "empty": "No items found.",
-        "loadedCount": "{{count}} items loaded",
+        "title": "AI Signals History",
+        "subtitle": "Full records of generated, validated, and approved signals.",
         "loadFailed": "Failed to load history",
+        "empty": "No history found",
+        "loadedCount": "Items shown: {{count}}",
+        "deleteSelected": "Remove selected",
+        "deleteAllMine": "Remove my records",
+        "deleteAllTenant": "Remove all tenant records",
+        "purgeSelected": "Permanently delete (selected)",
+        "purgeAllTenant": "Permanently delete (tenant)",
         "deleteFailed": "Failed to delete history",
-        "deletedTitle": "History updated",
-        "deletedDescription": "Items removed successfully.",
+        "deletedTitle": "History removed",
+        "deletedDescription": "Selected records were removed.",
         "purgeFailed": "Failed to permanently delete history",
-        "purgedTitle": "History permanently cleared",
-        "purgedDescription": "Items removed permanently.",
+        "purgedTitle": "History deleted",
+        "purgedDescription": "Selected records were permanently deleted.",
         "table": {
           "type": "Type",
           "symbol": "Pair",
           "validation": "Validation",
           "approval": "Approval",
           "date": "Date"
+        },
+        "filters": {
+          "dateFrom": "Start date",
+          "dateTo": "End date",
+          "orderByDate": "Order by date",
+          "orderDesc": "Newest first",
+          "orderAsc": "Oldest first",
+          "signalType": "Signal type",
+          "validationStatus": "Validation status",
+          "approvalStatus": "Approval status",
+          "pageSize": "Items per page",
+          "all": "All"
+        },
+        "pagination": {
+          "pageOf": "Page {{page}} of {{totalPages}}",
+          "total": "Total {{total}}",
+          "prev": "Previous",
+          "next": "Next"
         }
       },
       "table": {

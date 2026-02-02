@@ -13,7 +13,7 @@
  * Regra 6: Dados reais, sem mocks
  */
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -811,11 +811,17 @@ export function SignalApprovalPanel({
   const [approvingSignalId, setApprovingSignalId] = useState<string | null>(null);
   const [rejectingSignalId, setRejectingSignalId] = useState<string | null>(null);
   const [creatingDatasetSignalId, setCreatingDatasetSignalId] = useState<string | null>(null);
-  const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
-  const [historyFilter, setHistoryFilter] = useState<{ kind: 'approval' | 'validation'; status: string } | null>(null);
   const [historyItems, setHistoryItems] = useState<TradingSignal[]>([]);
-  const [historyCursor, setHistoryCursor] = useState<string | null>(null);
-  const [historyHasMore, setHistoryHasMore] = useState(false);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyPageSize, setHistoryPageSize] = useState(25);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyTotalPages, setHistoryTotalPages] = useState(1);
+  const [historyOrder, setHistoryOrder] = useState<'asc' | 'desc'>('desc');
+  const [historyDateFrom, setHistoryDateFrom] = useState('');
+  const [historyDateTo, setHistoryDateTo] = useState('');
+  const [historySignalType, setHistorySignalType] = useState('');
+  const [historyValidationStatus, setHistoryValidationStatus] = useState('');
+  const [historyApprovalStatus, setHistoryApprovalStatus] = useState('');
   const [historyLoading, setHistoryLoading] = useState(false);
   const historyLoadingRef = useRef(false);
   const [selectedHistoryIds, setSelectedHistoryIds] = useState<Set<string>>(new Set());
@@ -957,36 +963,36 @@ export function SignalApprovalPanel({
     },
   });
 
-  const fetchSignalHistory = useCallback(async (options: { reset?: boolean; filter?: { kind: 'approval' | 'validation'; status: string } } = {}) => {
+  const fetchSignalHistory = useCallback(async (options: { page?: number; resetSelection?: boolean } = {}) => {
     if (historyLoadingRef.current) return;
-    const filter = options.filter ?? historyFilter;
-    if (!filter) return;
-    const reset = options.reset ?? false;
+    const nextPage = options.page ?? historyPage;
     historyLoadingRef.current = true;
     setHistoryLoading(true);
     const params = new URLSearchParams();
-    params.set('limit', '50');
-    if (!reset && historyCursor) {
-      params.set('cursor', historyCursor);
-    }
+    params.set('page', String(nextPage));
+    params.set('pageSize', String(historyPageSize));
+    params.set('orderDirection', historyOrder);
     if (marketType) params.set('marketType', marketType);
-    if (filter.kind === 'approval') {
-      params.set('approvalStatus', filter.status);
-    } else {
-      params.set('validationStatus', filter.status);
-    }
+    if (historyDateFrom) params.set('dateFrom', historyDateFrom);
+    if (historyDateTo) params.set('dateTo', historyDateTo);
+    if (historySignalType) params.set('signalType', historySignalType);
+    if (historyValidationStatus) params.set('validationStatus', historyValidationStatus);
+    if (historyApprovalStatus) params.set('approvalStatus', historyApprovalStatus);
     try {
       const response = await apiRequest('GET', `/api/integrations/trading/signals/history?${params.toString()}`);
       const payload = await response.json();
       if (!response.ok) {
         throw new Error(payload.error || t('trading.signals.history.loadFailed'));
       }
-      const nextCursor = payload.nextCursor as string | null;
       const newItems = payload.data as TradingSignal[];
-      setHistoryItems((prev) => reset ? newItems : [...prev, ...newItems]);
-      setHistoryCursor(nextCursor ?? null);
-      setHistoryHasMore(Boolean(nextCursor));
-      if (reset) {
+      setHistoryItems(newItems);
+      const resolvedPage = Math.min(payload.page ?? nextPage, totalPages);
+      setHistoryPage(resolvedPage);
+      setHistoryPageSize(payload.pageSize ?? historyPageSize);
+      const totalPages = Math.max(1, payload.totalPages ?? 1);
+      setHistoryTotal(payload.total ?? newItems.length);
+      setHistoryTotalPages(totalPages);
+      if (options.resetSelection) {
         setSelectedHistoryIds(new Set());
       }
     } catch (error) {
@@ -996,7 +1002,19 @@ export function SignalApprovalPanel({
       setHistoryLoading(false);
       historyLoadingRef.current = false;
     }
-  }, [historyCursor, historyFilter, marketType, t, toast]);
+  }, [
+    historyApprovalStatus,
+    historyDateFrom,
+    historyDateTo,
+    historyOrder,
+    historyPage,
+    historyPageSize,
+    historySignalType,
+    historyValidationStatus,
+    marketType,
+    t,
+    toast,
+  ]);
 
   const deleteHistoryMutation = useMutation({
     mutationFn: async ({ ids, all, scope }: { ids?: string[]; all?: boolean; scope?: 'self' | 'tenant' }) => {
@@ -1014,9 +1032,8 @@ export function SignalApprovalPanel({
     onSuccess: () => {
       toast({ title: t('trading.signals.history.deletedTitle'), description: t('trading.signals.history.deletedDescription') });
       refetchSignalHistoryStats();
-      if (historyFilter) {
-        fetchSignalHistory({ reset: true, filter: historyFilter });
-      }
+      setHistoryPage(1);
+      fetchSignalHistory({ page: 1, resetSelection: true });
     },
     onError: (error: Error) => {
       toast({ title: t('trading.signals.history.deleteFailed'), description: error.message, variant: 'destructive' });
@@ -1039,22 +1056,30 @@ export function SignalApprovalPanel({
     onSuccess: () => {
       toast({ title: t('trading.signals.history.purgedTitle'), description: t('trading.signals.history.purgedDescription') });
       refetchSignalHistoryStats();
-      if (historyFilter) {
-        fetchSignalHistory({ reset: true, filter: historyFilter });
-      }
+      setHistoryPage(1);
+      fetchSignalHistory({ page: 1, resetSelection: true });
     },
     onError: (error: Error) => {
       toast({ title: t('trading.signals.history.purgeFailed'), description: error.message, variant: 'destructive' });
     },
   });
 
-  const openHistoryDialog = (filter: { kind: 'approval' | 'validation'; status: string }) => {
-    setHistoryFilter(filter);
-    setHistoryDialogOpen(true);
-    setHistoryCursor(null);
-    setHistoryHasMore(false);
-    fetchSignalHistory({ reset: true, filter });
-  };
+  useEffect(() => {
+    setHistoryPage(1);
+  }, [
+    historyApprovalStatus,
+    historyDateFrom,
+    historyDateTo,
+    historyOrder,
+    historyPageSize,
+    historySignalType,
+    historyValidationStatus,
+    marketType,
+  ]);
+
+  useEffect(() => {
+    fetchSignalHistory({ page: historyPage, resetSelection: true });
+  }, [fetchSignalHistory, historyPage]);
 
   const toggleHistorySelection = (signalId: string, checked: boolean) => {
     setSelectedHistoryIds((prev) => {
@@ -1083,7 +1108,8 @@ export function SignalApprovalPanel({
   const hasHistorySelection = selectedHistoryIds.size > 0;
 
   return (
-    <Card>
+    <div className="space-y-6">
+      <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
@@ -1108,7 +1134,10 @@ export function SignalApprovalPanel({
             <Button
               variant="ghost"
               className="h-auto flex-col gap-1 py-2"
-              onClick={() => openHistoryDialog({ kind: 'approval', status: 'approved' })}
+              onClick={() => {
+                setHistoryApprovalStatus('approved');
+                setHistoryValidationStatus('');
+              }}
             >
               <p className="text-2xl font-bold text-green-600">{historyStats.approval.approved}</p>
               <p className="text-xs text-muted-foreground">Aprovados</p>
@@ -1116,7 +1145,10 @@ export function SignalApprovalPanel({
             <Button
               variant="ghost"
               className="h-auto flex-col gap-1 py-2"
-              onClick={() => openHistoryDialog({ kind: 'approval', status: 'rejected' })}
+              onClick={() => {
+                setHistoryApprovalStatus('rejected');
+                setHistoryValidationStatus('');
+              }}
             >
               <p className="text-2xl font-bold text-red-600">{historyStats.approval.rejected}</p>
               <p className="text-xs text-muted-foreground">Rejeitados</p>
@@ -1124,7 +1156,10 @@ export function SignalApprovalPanel({
             <Button
               variant="ghost"
               className="h-auto flex-col gap-1 py-2"
-              onClick={() => openHistoryDialog({ kind: 'validation', status: 'failed' })}
+              onClick={() => {
+                setHistoryValidationStatus('failed');
+                setHistoryApprovalStatus('');
+              }}
             >
               <p className="text-2xl font-bold text-orange-600">{historyStats.validation.failed}</p>
               <p className="text-xs text-muted-foreground">Falhas de validação</p>
@@ -1183,19 +1218,15 @@ export function SignalApprovalPanel({
           </span>
         </div>
       </CardContent>
+      </Card>
 
-      <Dialog open={historyDialogOpen} onOpenChange={setHistoryDialogOpen}>
-        <DialogContent className="max-w-5xl">
-          <DialogHeader>
-            <DialogTitle>{t('trading.signals.history.title')}</DialogTitle>
-            <DialogDescription>
-              {historyFilter?.kind === 'approval'
-                ? t('trading.signals.history.approvalStatus', { status: historyFilter.status })
-                : t('trading.signals.history.validationStatus', { status: historyFilter?.status ?? '-' })}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="flex flex-wrap items-center gap-2">
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('trading.signals.history.title')}</CardTitle>
+          <CardDescription>{t('trading.signals.history.subtitle')}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap items-center gap-2 mb-4">
             <Button
               variant="destructive"
               disabled={!hasHistorySelection || deleteHistoryMutation.isPending}
@@ -1238,87 +1269,183 @@ export function SignalApprovalPanel({
             )}
           </div>
 
-          <div className="border rounded-lg overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-10">
-                    <Checkbox
-                      checked={allHistorySelected}
-                      onCheckedChange={(checked) => toggleHistorySelectAll(Boolean(checked))}
-                    />
-                  </TableHead>
-                  <TableHead>{t('trading.signals.history.table.type')}</TableHead>
-                  <TableHead>{t('trading.signals.history.table.symbol')}</TableHead>
-                  <TableHead>{t('trading.signals.history.table.validation')}</TableHead>
-                  <TableHead>{t('trading.signals.history.table.approval')}</TableHead>
-                  <TableHead>{t('trading.signals.history.table.date')}</TableHead>
-                  <TableHead className="w-12" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {historyItems.map((signal) => {
-                  const typeInfo = getSignalTypeInfo(signal.signalType);
-                  const TypeIcon = typeInfo.icon;
-                  return (
-                  <TableRow key={signal.id}>
-                    <TableCell>
-                      <Checkbox
-                        checked={selectedHistoryIds.has(signal.id)}
-                        onCheckedChange={(checked) => toggleHistorySelection(signal.id, Boolean(checked))}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={`${typeInfo.color} border-current`}>
-                        <TypeIcon className="h-3 w-3 mr-1" />
-                        {typeInfo.label}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{signal.symbol}</TableCell>
-                    <TableCell className="capitalize">{signal.metadata?.validationStatus ?? 'pending'}</TableCell>
-                    <TableCell className="capitalize">{signal.metadata?.approvalStatus ?? 'pending'}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {formatDateTime(signal.criadoEm, { locale, timeZone })}
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => deleteHistoryMutation.mutate({ ids: [signal.id], scope: 'self' })}
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                  );
-                })}
-                {historyItems.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground">
-                      {t('trading.signals.history.empty')}
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
+          <div className="grid grid-cols-1 md:grid-cols-7 gap-3 mb-4">
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">{t('trading.signals.history.filters.dateFrom')}</Label>
+              <Input
+                type="date"
+                value={historyDateFrom}
+                onChange={(event) => setHistoryDateFrom(event.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">{t('trading.signals.history.filters.dateTo')}</Label>
+              <Input
+                type="date"
+                value={historyDateTo}
+                onChange={(event) => setHistoryDateTo(event.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">{t('trading.signals.history.filters.orderByDate')}</Label>
+              <select
+                className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                value={historyOrder}
+                onChange={(event) => setHistoryOrder(event.target.value === 'asc' ? 'asc' : 'desc')}
+              >
+                <option value="desc">{t('trading.signals.history.filters.orderDesc')}</option>
+                <option value="asc">{t('trading.signals.history.filters.orderAsc')}</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">{t('trading.signals.history.filters.signalType')}</Label>
+              <select
+                className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                value={historySignalType}
+                onChange={(event) => setHistorySignalType(event.target.value)}
+              >
+                <option value="">{t('trading.signals.history.filters.all')}</option>
+                {Object.keys(SIGNAL_TYPE_INFO).map((key) => (
+                  <option key={key} value={key}>{SIGNAL_TYPE_INFO[key as TradingSignal['signalType']].label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">{t('trading.signals.history.filters.validationStatus')}</Label>
+              <select
+                className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                value={historyValidationStatus}
+                onChange={(event) => setHistoryValidationStatus(event.target.value)}
+              >
+                <option value="">{t('trading.signals.history.filters.all')}</option>
+                <option value="pending">pending</option>
+                <option value="validated">validated</option>
+                <option value="failed">failed</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">{t('trading.signals.history.filters.approvalStatus')}</Label>
+              <select
+                className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                value={historyApprovalStatus}
+                onChange={(event) => setHistoryApprovalStatus(event.target.value)}
+              >
+                <option value="">{t('trading.signals.history.filters.all')}</option>
+                <option value="pending">pending</option>
+                <option value="approved">approved</option>
+                <option value="rejected">rejected</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">{t('trading.signals.history.filters.pageSize')}</Label>
+              <select
+                className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                value={historyPageSize}
+                onChange={(event) => setHistoryPageSize(Number(event.target.value))}
+              >
+                {[10, 25, 50, 100].map((size) => (
+                  <option key={size} value={size}>{size}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
-          <div className="flex items-center justify-between">
+          {historyLoading ? (
+            <Skeleton className="h-64" />
+          ) : (
+            <div className="border rounded-lg overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-10">
+                      <Checkbox
+                        checked={allHistorySelected}
+                        onCheckedChange={(checked) => toggleHistorySelectAll(Boolean(checked))}
+                      />
+                    </TableHead>
+                    <TableHead>{t('trading.signals.history.table.type')}</TableHead>
+                    <TableHead>{t('trading.signals.history.table.symbol')}</TableHead>
+                    <TableHead>{t('trading.signals.history.table.validation')}</TableHead>
+                    <TableHead>{t('trading.signals.history.table.approval')}</TableHead>
+                    <TableHead>{t('trading.signals.history.table.date')}</TableHead>
+                    <TableHead className="w-12" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {historyItems.map((signal) => {
+                    const typeInfo = getSignalTypeInfo(signal.signalType);
+                    const TypeIcon = typeInfo.icon;
+                    return (
+                      <TableRow key={signal.id}>
+                        <TableCell>
+                          <Checkbox
+                            checked={selectedHistoryIds.has(signal.id)}
+                            onCheckedChange={(checked) => toggleHistorySelection(signal.id, Boolean(checked))}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={`${typeInfo.color} border-current`}>
+                            <TypeIcon className="h-3 w-3 mr-1" />
+                            {typeInfo.label}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{signal.symbol}</TableCell>
+                        <TableCell className="capitalize">{signal.metadata?.validationStatus ?? 'pending'}</TableCell>
+                        <TableCell className="capitalize">{signal.metadata?.approvalStatus ?? 'pending'}</TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {formatDateTime(signal.criadoEm, { locale, timeZone })}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => deleteHistoryMutation.mutate({ ids: [signal.id], scope: 'self' })}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  {historyItems.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center text-muted-foreground">
+                        {t('trading.signals.history.empty')}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between mt-4">
             <span className="text-xs text-muted-foreground">
-              {t('trading.signals.history.loadedCount', { count: historyItems.length })}
+              {t('trading.signals.history.loadedCount', { count: historyItems.length })} •
+              {t('trading.signals.history.pagination.pageOf', { page: historyPage, totalPages: historyTotalPages })} •
+              {t('trading.signals.history.pagination.total', { total: historyTotal })}
             </span>
-            <Button
-              variant="outline"
-              disabled={!historyHasMore || historyLoading}
-              onClick={() => fetchSignalHistory()}
-            >
-              {historyLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              {t('trading.signals.history.loadMore')}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                disabled={historyPage <= 1 || historyLoading}
+                onClick={() => setHistoryPage((prev) => Math.max(1, prev - 1))}
+              >
+                {t('trading.signals.history.pagination.prev')}
+              </Button>
+              <Button
+                variant="outline"
+                disabled={historyPage >= historyTotalPages || historyLoading}
+                onClick={() => setHistoryPage((prev) => Math.min(historyTotalPages, prev + 1))}
+              >
+                {historyLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                {t('trading.signals.history.pagination.next')}
+              </Button>
+            </div>
           </div>
-        </DialogContent>
-      </Dialog>
-    </Card>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 

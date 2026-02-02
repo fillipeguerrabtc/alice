@@ -1415,6 +1415,13 @@
       "spot": "Spot",
       "margin": "Margin"
     },
+    "common": {
+      "selectPlaceholder": "Selecione...",
+      "selectAll": "Selecionar todos",
+      "clearSelection": "Limpar seleção",
+      "noOptions": "Nenhuma opção disponível",
+      "loadingOptions": "Carregando opções..."
+    },
     "marginMode": {
       "cross": "Cross",
       "isolated": "Isolado"
@@ -1604,6 +1611,49 @@
         "sourcesTrainingTitle": "Dataset aprovado",
         "sourcesTrainingDesc": "Resumo de dados de treinamento.",
         "save": "Salvar perfil"
+      },
+      "history": {
+        "title": "Histórico de Sinais IA",
+        "subtitle": "Registros completos de sinais gerados, validados e aprovados.",
+        "loadFailed": "Falha ao carregar histórico",
+        "empty": "Nenhum histórico encontrado",
+        "loadedCount": "Itens exibidos: {{count}}",
+        "deleteSelected": "Remover selecionados",
+        "deleteAllMine": "Remover meus registros",
+        "deleteAllTenant": "Remover todos do tenant",
+        "purgeSelected": "Excluir permanente (selecionados)",
+        "purgeAllTenant": "Excluir permanente (tenant)",
+        "deleteFailed": "Falha ao remover histórico",
+        "deletedTitle": "Histórico removido",
+        "deletedDescription": "Os registros selecionados foram removidos.",
+        "purgeFailed": "Falha ao excluir histórico permanentemente",
+        "purgedTitle": "Histórico excluído",
+        "purgedDescription": "Os registros selecionados foram excluídos permanentemente.",
+        "table": {
+          "type": "Tipo",
+          "symbol": "Par",
+          "validation": "Validação",
+          "approval": "Aprovação",
+          "date": "Data"
+        },
+        "filters": {
+          "dateFrom": "Data inicial",
+          "dateTo": "Data final",
+          "orderByDate": "Ordenar por data",
+          "orderDesc": "Mais recentes",
+          "orderAsc": "Mais antigos",
+          "signalType": "Tipo de sinal",
+          "validationStatus": "Status validação",
+          "approvalStatus": "Status aprovação",
+          "pageSize": "Itens por página",
+          "all": "Todos"
+        },
+        "pagination": {
+          "pageOf": "Página {{page}} de {{totalPages}}",
+          "total": "Total {{total}}",
+          "prev": "Anterior",
+          "next": "Próxima"
+        }
       },
       "noSignals": "Nenhum sinal ativo",
       "confidence": "Confiança",
