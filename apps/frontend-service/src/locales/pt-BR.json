@@ -1910,6 +1910,7 @@
       "history": {
         "title": "Histórico de Análises",
         "subtitle": "Lista completa de análises determinísticas geradas.",
+        "loadFailed": "Falha ao carregar histórico",
         "deleteSelected": "Excluir selecionados",
         "deleteAllMine": "Excluir tudo (meus)",
         "deleteAllTenant": "Excluir tudo (tenant)",
@@ -1917,14 +1918,31 @@
         "purgeAllTenant": "Limpar definitivo (tenant)",
         "empty": "Nenhuma análise no histórico",
         "loadedCount": "{{count}} itens carregados",
-        "loadMore": "Carregar mais",
         "table": {
           "date": "Data",
           "symbol": "Par",
           "interval": "Intervalo",
+          "type": "Tipo",
           "signal": "Sinal",
           "confidence": "Confiança",
           "price": "Preço"
+        },
+        "filters": {
+          "dateFrom": "Data inicial",
+          "dateTo": "Data final",
+          "orderByDate": "Ordenar por data",
+          "orderDesc": "Mais recentes",
+          "orderAsc": "Mais antigos",
+          "signal": "Sinal",
+          "analysisType": "Tipo de análise",
+          "pageSize": "Itens por página",
+          "all": "Todos"
+        },
+        "pagination": {
+          "pageOf": "Página {{page}} de {{totalPages}}",
+          "total": "Total {{total}}",
+          "prev": "Anterior",
+          "next": "Próxima"
         }
       },
       "historyLoadFailed": "Erro ao carregar histórico de análises",

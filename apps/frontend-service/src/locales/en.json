@@ -1852,6 +1852,7 @@
       "history": {
         "title": "Analysis History",
         "subtitle": "Complete list of generated deterministic analyses.",
+        "loadFailed": "Failed to load history",
         "deleteSelected": "Delete selected",
         "deleteAllMine": "Delete all (mine)",
         "deleteAllTenant": "Delete all (tenant)",
@@ -1859,14 +1860,31 @@
         "purgeAllTenant": "Purge permanently (tenant)",
         "empty": "No analyses in history",
         "loadedCount": "{{count}} items loaded",
-        "loadMore": "Load more",
         "table": {
           "date": "Date",
           "symbol": "Pair",
           "interval": "Interval",
+          "type": "Type",
           "signal": "Signal",
           "confidence": "Confidence",
           "price": "Price"
+        },
+        "filters": {
+          "dateFrom": "Start date",
+          "dateTo": "End date",
+          "orderByDate": "Order by date",
+          "orderDesc": "Newest first",
+          "orderAsc": "Oldest first",
+          "signal": "Signal",
+          "analysisType": "Analysis type",
+          "pageSize": "Items per page",
+          "all": "All"
+        },
+        "pagination": {
+          "pageOf": "Page {{page}} of {{totalPages}}",
+          "total": "Total {{total}}",
+          "prev": "Previous",
+          "next": "Next"
         }
       },
       "historyLoadFailed": "Failed to load analysis history",
