@@ -16,7 +16,7 @@
  * Regra 8: TypeScript strict
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
@@ -633,18 +633,29 @@ export function TechnicalAnalysisPanel({
   const primaryInterval = profileForm.timeframes?.[0] ?? interval;
   const allAnalysisHistorySelected = analysisHistoryItems.length > 0 && analysisHistorySelectedIds.size === analysisHistoryItems.length;
   const hasAnalysisHistorySelection = analysisHistorySelectedIds.size > 0;
+  const analysisHistoryCursorRef = useRef<string | null>(analysisHistoryCursor);
+  const analysisHistoryLoadingRef = useRef(analysisHistoryLoading);
+
+  useEffect(() => {
+    analysisHistoryCursorRef.current = analysisHistoryCursor;
+  }, [analysisHistoryCursor]);
+
+  useEffect(() => {
+    analysisHistoryLoadingRef.current = analysisHistoryLoading;
+  }, [analysisHistoryLoading]);
 
 
   const fetchAnalysisHistory = useCallback(async (options: { reset?: boolean } = {}) => {
-    if (!symbol || analysisHistoryLoading) return;
+    if (!symbol || analysisHistoryLoadingRef.current) return;
     const reset = options.reset ?? false;
     setAnalysisHistoryLoading(true);
     const params = new URLSearchParams();
     params.set('symbol', symbol);
     params.set('interval', primaryInterval);
     params.set('limit', '50');
-    if (!reset && analysisHistoryCursor) {
-      params.set('cursor', analysisHistoryCursor);
+    const cursor = analysisHistoryCursorRef.current;
+    if (!reset && cursor) {
+      params.set('cursor', cursor);
     }
     try {
       const response = await apiRequest('GET', `/api/integrations/trading/analysis/history?${params.toString()}`);
@@ -666,7 +677,7 @@ export function TechnicalAnalysisPanel({
     } finally {
       setAnalysisHistoryLoading(false);
     }
-  }, [analysisHistoryCursor, analysisHistoryLoading, primaryInterval, symbol, t, toast]);
+  }, [primaryInterval, symbol, t, toast]);
 
   useEffect(() => {
     if (!symbol) return;
