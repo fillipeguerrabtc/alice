@@ -773,7 +773,7 @@ export function TechnicalAnalysisPanel({
         setAnalysisHistorySelectedIds(new Set());
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : t('common.error');
+      const message = error instanceof Error ? error.message : t('errors.generic');
       toast({ title: t('trading.analysis.historyLoadFailed'), description: message, variant: 'destructive' });
     } finally {
       setAnalysisHistoryLoading(false);

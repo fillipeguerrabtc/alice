@@ -1147,7 +1147,7 @@ export default function UsersAdmin() {
       setUserDialogOpen(false);
       setUserForm((prev) => ({ ...prev, password: '' }));
     } catch (error) {
-      const message = error instanceof Error ? error.message : t('common.error');
+      const message = error instanceof Error ? error.message : t('errors.generic');
       toast({ title: t('usersAdmin.users.updateError'), description: message, variant: 'destructive' });
     }
   };

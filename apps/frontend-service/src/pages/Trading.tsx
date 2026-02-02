@@ -1281,7 +1281,7 @@ export default function Trading() {
         setOrderHistorySelectedIds(new Set());
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : t('common.error');
+      const message = error instanceof Error ? error.message : t('errors.generic');
       toast({ title: t('trading.errors.historyFailed'), description: message, variant: 'destructive' });
     } finally {
       setOrderHistoryLoading(false);

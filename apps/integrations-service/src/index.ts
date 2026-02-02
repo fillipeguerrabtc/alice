@@ -58,10 +58,8 @@ import {
   tradingIntervalEnum,
   TradingOperationTypeSchema,
   TradingProfileNewsConfigSchema,
-  TradingTechniqueSchema,
   TradingEnsembleConfigSchema,
   TradingArbitrageConfigSchema,
-  TradingOverallSignalSchema,
 } from '@alice/shared';
 import type {
   TradingSignalMetadata,
@@ -679,7 +677,7 @@ async function getConversionRate(params: {
   const trySnapshot = async (symbol: string) => {
     try {
       return await getOrderBookSnapshot(params.auth, symbol, params.marketType, params.marginMode);
-    } catch (_error) {
+    } catch {
       return null;
     }
   };
