@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 02 de Fevereiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.75 - Trading timeouts + purge de histórico
+**Versão:** 10.76 - Arbitragem multi‑exchange + timeouts end‑to‑end
 
 ---
 
@@ -38,8 +38,14 @@
 - Sinais IA: normalização de chaves JSON do LLM (sem aspas) reduz falhas de parse.
 - Sinais IA: reparo adicional para respostas YAML-like (linhas com "- key:") evita erro de parse.
 - Sinais IA: reparo extra para YAML-like sem chaves (blocos key: value) garante JSON válido sem retry.
+- Trading: arbitragem triangular agora suporta multi‑exchange com top 3 rotas e network fees por ativo.
+- Trading: catálogo de arbitragem fornece exchanges, ativos intermediários e feePct efetivo via API KuCoin.
+- Trading: UI de arbitragem com multi‑select (exchanges/ativos) + Selecionar todos + limite de 30 ativos.
+- Trading: feePct é automático (maior entre exchanges) e aplicado em análise/sinal.
+- Proxy (Caddy): timeout dedicado para `/api/integrations/trading/analysis*` evita 502 em arbitragem pesada.
+- API Gateway (dev): timeouts long‑running para trading/LLM alinhados com Caddy e integrations-service.
 - Análise: rota `/analysis/history` não conflita com `/analysis/:symbol` (sem “history” como símbolo).
-- Trading: timeout do integrations-service ajustado para 120s (reduz 502 por EOF em sinais longos).
+- Trading: timeout do integrations-service ajustado para 180s (reduz 502 por EOF em sinais longos).
 - Trading: histórico com purge definitivo admin (limpa sinais/análises + validações e desvincula ordens/schedulers).
 - Análise: guard explícito evita erro com “history” e bloqueia lista vermelha na UI.
 - Presets de notícias: edição completa e salvamento ao lado de Salvar/Gerar (Análise + Sinais IA).

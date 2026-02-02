@@ -109,8 +109,30 @@ interface TradingSignal {
     arbitrageSnapshot?: {
       intermediateAsset?: string;
       edgePct?: number;
-      legs?: Array<{ from: string; to: string; symbol: string; side: string; rate: number }>;
+      networkFeeTotal?: number;
+      networkFeesApplied?: Array<{ asset: string; amount: number; fromExchange: string; toExchange: string }>;
+      legs?: Array<{ from: string; to: string; symbol: string; side: string; rate: number; exchange?: string }>;
     };
+    arbitrageSnapshots?: Array<{
+      intermediateAsset?: string;
+      edgePct?: number;
+      networkFeeTotal?: number;
+      networkFeesApplied?: Array<{ asset: string; amount: number; fromExchange: string; toExchange: string }>;
+      legs?: Array<{ from: string; to: string; symbol: string; side: string; rate: number; exchange?: string }>;
+    }>;
+    timeframes?: string[];
+    enabledIndicators?: string[];
+    consensus?: {
+      rule?: 'majority';
+      overallSignal?: string;
+      requiredAgree?: number;
+      agreementRatio?: number;
+      alignedTimeframes?: string[];
+      misalignedTimeframes?: string[];
+      isMajorityReached?: boolean;
+    };
+    dataSources?: Record<string, boolean>;
+    analysisMatrix?: Array<{ interval?: string; analysis?: Record<string, unknown> }>;
   };
   isActive: boolean;
   criadoEm: string;
@@ -240,7 +262,7 @@ function SignalCard({
   const [showApproveDialog, setShowApproveDialog] = useState(false);
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [reason, setReason] = useState('');
-  const metadata = (signal.metadata ?? {}) as Record<string, unknown>;
+  const metadata = (signal.metadata ?? {}) as TradingSignal['metadata'];
   const hasMultiTimeframeContext = Boolean(
     metadata.timeframes || metadata.enabledIndicators || metadata.consensus,
   );
@@ -452,14 +474,26 @@ function SignalCard({
                           )}
                         </div>
                       )}
-                      {typeof metadata.arbitrageSnapshot === 'object' && metadata.arbitrageSnapshot !== null && (
+                      {(metadata.arbitrageSnapshots?.length || metadata.arbitrageSnapshot) && (
                         <div className="text-sm text-muted-foreground space-y-1">
-                          <p>Arbitragem: {(metadata.arbitrageSnapshot as { intermediateAsset?: string }).intermediateAsset ?? 'N/A'}</p>
-                          <p>
-                            Edge: {typeof (metadata.arbitrageSnapshot as { edgePct?: number }).edgePct === 'number'
-                              ? `${(metadata.arbitrageSnapshot as { edgePct?: number }).edgePct?.toFixed(2)}%`
-                              : 'N/A'}
-                          </p>
+                          {(metadata.arbitrageSnapshots?.length
+                            ? metadata.arbitrageSnapshots
+                            : metadata.arbitrageSnapshot
+                              ? [metadata.arbitrageSnapshot]
+                              : []
+                          ).map((snapshot, index) => (
+                            <div key={`arb-${signal.id}-${index}`}>
+                              <p>Arbitragem #{index + 1}: {snapshot.intermediateAsset ?? 'N/A'}</p>
+                              <p>
+                                Edge: {typeof snapshot.edgePct === 'number'
+                                  ? `${snapshot.edgePct.toFixed(2)}%`
+                                  : 'N/A'}
+                              </p>
+                              {snapshot.networkFeeTotal !== undefined && (
+                                <p>Network fee: {snapshot.networkFeeTotal}</p>
+                              )}
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>

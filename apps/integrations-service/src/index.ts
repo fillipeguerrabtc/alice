@@ -60,6 +60,7 @@ import {
   TradingProfileNewsConfigSchema,
   TradingEnsembleConfigSchema,
   TradingArbitrageConfigSchema,
+  TradingArbitrageExchangeSchema,
 } from '@alice/shared';
 import type {
   TradingSignalMetadata,
@@ -75,9 +76,11 @@ import type {
   TradingTechnique,
   TradingEnsembleConfig,
   TradingArbitrageConfig,
+  TradingArbitrageExchange,
   TradingTechniqueScore,
   TradingOverallSignal,
   TradingEnsembleResult,
+  IntegrationConfiguracao,
 } from '@alice/shared';
 import { z } from 'zod';
 import { wiseService } from './wiseService.js';
@@ -321,7 +324,18 @@ function normalizeTradingArbitrageConfig(raw?: TradingArbitrageConfig | null): T
   if (!parsed.success) {
     throw new Error('Configuração de arbitragem inválida');
   }
-  return parsed.data;
+  const normalizedExchanges = Array.from(new Set(parsed.data.exchanges));
+  const normalizedAssets = Array.from(
+    new Set(parsed.data.intermediateAssets.map((asset) => asset.trim().toUpperCase()).filter(Boolean))
+  );
+  if (normalizedAssets.length > MAX_ARBITRAGE_INTERMEDIATE_ASSETS) {
+    throw new Error(`Máximo de ${MAX_ARBITRAGE_INTERMEDIATE_ASSETS} ativos intermediários permitido.`);
+  }
+  return {
+    ...parsed.data,
+    exchanges: normalizedExchanges,
+    intermediateAssets: normalizedAssets,
+  };
 }
 
 function resolveIntervalMinutes(interval: TradingIntervalValue): number {
@@ -351,6 +365,211 @@ function splitSymbolPair(symbol: string): { base: string; quote: string } {
     throw new Error(`Símbolo inválido para arbitragem triangular: ${symbol}`);
   }
   return { base: parts[0], quote: parts[1] };
+}
+
+const ARBITRAGE_EXCHANGE_LABELS: Record<TradingArbitrageExchange, string> = {
+  kucoin: 'KuCoin',
+};
+
+const MAX_ARBITRAGE_INTERMEDIATE_ASSETS = 30;
+
+type KucoinTradingFeeCache = {
+  spotPct?: number;
+  marginPct?: number;
+  futuresPct?: number;
+  updatedAt: string;
+};
+
+type KucoinNetworkFeeCache = {
+  feesByAsset: Record<string, number>;
+  updatedAt: string;
+};
+
+function deriveIntermediateAssetsFromSymbols(symbols: string[]): string[] {
+  const assets = new Set<string>();
+  for (const symbol of symbols) {
+    try {
+      const { base, quote } = splitSymbolPair(symbol);
+      assets.add(base.toUpperCase());
+      assets.add(quote.toUpperCase());
+    } catch {
+      continue;
+    }
+  }
+  return Array.from(assets).sort((a, b) => a.localeCompare(b));
+}
+
+async function loadKucoinIntegrationConfig(tenantId: string): Promise<schema.Integration | null> {
+  const integration = await getDatabase().query.integrations.findFirst({
+    where: and(
+      eq(schema.integrations.tenantId, tenantId),
+      eq(schema.integrations.tipo, 'kucoin')
+    ),
+  });
+  return integration ?? null;
+}
+
+async function updateKucoinIntegrationConfig(
+  tenantId: string,
+  patch: Partial<IntegrationConfiguracao>
+): Promise<void> {
+  const current = await loadKucoinIntegrationConfig(tenantId);
+  if (!current) return;
+  const nextConfig = {
+    ...(current.configuracao ?? {}),
+    ...patch,
+  } as IntegrationConfiguracao;
+  await getDatabase()
+    .update(schema.integrations)
+    .set({ configuracao: nextConfig, atualizadoEm: new Date() })
+    .where(eq(schema.integrations.id, current.id));
+}
+
+function coerceFeeRateToPct(rate?: string | number): number | null {
+  if (rate === undefined || rate === null) return null;
+  const parsed = Number(String(rate).trim());
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return parsed * 100;
+}
+
+function resolveNetworkFeeFromChains(chains: kucoinSpotClient.KucoinCurrencyChain[] | undefined): number | null {
+  if (!Array.isArray(chains) || chains.length === 0) return null;
+  const eligible = chains.filter((chain) => chain.isWithdrawEnabled !== false);
+  if (eligible.length === 0) return null;
+  const fees = eligible
+    .map((chain) => Number(String(chain.withdrawalMinFee ?? chain.withdrawFeeRate ?? '').trim()))
+    .filter((fee) => Number.isFinite(fee) && fee > 0);
+  if (fees.length === 0) return null;
+  return Math.max(...fees);
+}
+
+async function resolveKucoinNetworkFeesByAsset(): Promise<Record<string, number>> {
+  const currencies = await kucoinSpotClient.getCurrencies();
+  const feesByAsset: Record<string, number> = {};
+  for (const currency of currencies) {
+    const asset = currency.currency?.toUpperCase();
+    if (!asset) continue;
+    const fee = resolveNetworkFeeFromChains(currency.chains);
+    if (fee === null) continue;
+    feesByAsset[asset] = fee;
+  }
+  return feesByAsset;
+}
+
+async function resolveKucoinTradeFeePct(params: {
+  symbol: string;
+  marketType: TradingMarketType;
+}): Promise<number> {
+  if (params.marketType === 'futures') {
+    const contract = await kucoinClient.getContractInfo(params.symbol);
+    const makerPct = coerceFeeRateToPct(contract.makerFeeRate);
+    const takerPct = coerceFeeRateToPct(contract.takerFeeRate);
+    const resolved = Math.max(makerPct ?? 0, takerPct ?? 0);
+    if (!Number.isFinite(resolved) || resolved <= 0) {
+      throw new Error('Taxas de trade Futures inválidas para KuCoin.');
+    }
+    return resolved;
+  }
+  const fees = await kucoinSpotClient.getSpotTradeFees([params.symbol]);
+  const fee = fees.find((item) => item.symbol === params.symbol) ?? fees[0];
+  if (!fee) {
+    throw new Error('Taxas de trade Spot/Margin não encontradas para KuCoin.');
+  }
+  const makerPct = coerceFeeRateToPct(fee.makerFeeRate);
+  const takerPct = coerceFeeRateToPct(fee.takerFeeRate);
+  const resolved = Math.max(makerPct ?? 0, takerPct ?? 0);
+  if (!Number.isFinite(resolved) || resolved <= 0) {
+    throw new Error('Taxas de trade Spot/Margin inválidas para KuCoin.');
+  }
+  return resolved;
+}
+
+async function resolveArbitrageFeePctForExchanges(params: {
+  exchanges: TradingArbitrageExchange[];
+  symbol: string;
+  marketType: TradingMarketType;
+  tenantId: string;
+}): Promise<{ feePctByExchange: Record<TradingArbitrageExchange, number>; effectiveFeePct: number }> {
+  const feePctByExchange = {} as Record<TradingArbitrageExchange, number>;
+  const uniqueExchanges = Array.from(new Set(params.exchanges));
+  const cachedIntegration = await loadKucoinIntegrationConfig(params.tenantId);
+  const cachedFees = (cachedIntegration?.configuracao as IntegrationConfiguracao | undefined)?.tradingFees as KucoinTradingFeeCache | undefined;
+
+  for (const exchange of uniqueExchanges) {
+    if (exchange === 'kucoin') {
+      try {
+        const feePct = await resolveKucoinTradeFeePct({ symbol: params.symbol, marketType: params.marketType });
+        feePctByExchange[exchange] = feePct;
+        const nextCache: KucoinTradingFeeCache = {
+          ...(cachedFees ?? {}),
+          updatedAt: new Date().toISOString(),
+        };
+        if (params.marketType === 'spot') nextCache.spotPct = feePct;
+        if (params.marketType === 'margin') nextCache.marginPct = feePct;
+        if (params.marketType === 'futures') nextCache.futuresPct = feePct;
+        await updateKucoinIntegrationConfig(params.tenantId, { tradingFees: nextCache });
+      } catch (error) {
+        const cachedValue = params.marketType === 'futures'
+          ? cachedFees?.futuresPct
+          : params.marketType === 'margin'
+            ? cachedFees?.marginPct
+            : cachedFees?.spotPct;
+        if (Number.isFinite(cachedValue ?? NaN) && (cachedValue ?? 0) > 0) {
+          feePctByExchange[exchange] = cachedValue as number;
+          logger.warn({ error, exchange, cachedValue }, 'Usando taxa de trade KuCoin em cache persistido.');
+        } else {
+          throw error;
+        }
+      }
+    }
+  }
+
+  const effectiveFeePct = Math.max(...Object.values(feePctByExchange));
+  if (!Number.isFinite(effectiveFeePct) || effectiveFeePct <= 0) {
+    throw new Error('Taxa de arbitragem inválida para exchanges selecionadas.');
+  }
+  return { feePctByExchange, effectiveFeePct };
+}
+
+async function resolveNetworkFeesForTenant(tenantId: string): Promise<Record<string, number>> {
+  const cachedIntegration = await loadKucoinIntegrationConfig(tenantId);
+  const cachedNetwork = (cachedIntegration?.configuracao as IntegrationConfiguracao | undefined)?.networkFeesByAsset as KucoinNetworkFeeCache | undefined;
+  try {
+    const networkFeesByAsset = await resolveKucoinNetworkFeesByAsset();
+    await updateKucoinIntegrationConfig(tenantId, {
+      networkFeesByAsset: {
+        feesByAsset: networkFeesByAsset,
+        updatedAt: new Date().toISOString(),
+      } satisfies KucoinNetworkFeeCache,
+    });
+    return networkFeesByAsset;
+  } catch (error) {
+    if (cachedNetwork?.feesByAsset && Object.keys(cachedNetwork.feesByAsset).length > 0) {
+      logger.warn({ error }, 'Usando network fees de KuCoin em cache persistido.');
+      return cachedNetwork.feesByAsset;
+    }
+    throw error;
+  }
+}
+
+async function resolveDefaultSymbolForMarketType(params: {
+  auth: { tenantId: string; userId: string };
+  marketType: TradingMarketType;
+}): Promise<string> {
+  if (params.marketType === 'futures') {
+    const contracts = await kucoinClient.getActiveContracts();
+    const contract = contracts[0];
+    if (!contract?.symbol) {
+      throw new Error('Não foi possível determinar símbolo Futures padrão na KuCoin.');
+    }
+    return contract.symbol;
+  }
+  const symbols = await kucoinSpotClient.getSpotSymbols();
+  const symbol = symbols[0]?.symbol;
+  if (!symbol) {
+    throw new Error('Não foi possível determinar símbolo Spot/Margin padrão na KuCoin.');
+  }
+  return symbol;
 }
 
 function normalizeTradingNewsConfig(raw?: TradingProfileNewsConfig | null): TradingNewsConfigResolved {
@@ -613,7 +832,8 @@ async function getOrderBookSnapshot(
   auth: { tenantId: string; userId: string },
   symbol: string,
   marketType?: TradingMarketType,
-  marginMode?: TradingMarginMode
+  marginMode?: TradingMarginMode,
+  exchange: TradingArbitrageExchange = 'kucoin'
 ): Promise<{
   symbol: string;
   bestBid: number | null;
@@ -622,6 +842,9 @@ async function getOrderBookSnapshot(
   spreadPct: number | null;
   depth: number;
 }> {
+  if (exchange !== 'kucoin') {
+    throw new Error(`Exchange não suportada para order book: ${exchange}`);
+  }
   const resolvedSymbol = await kucoinService.resolveTradingSymbolStrict(auth, symbol, marketType, marginMode);
   const depth = 20;
   const orderbook = marketType === 'spot' || marketType === 'margin'
@@ -649,10 +872,18 @@ type ArbitrageLeg = {
   from: string;
   to: string;
   symbol: string;
+  exchange: TradingArbitrageExchange;
   side: 'sell' | 'buy';
   rate: number;
   bestBid: number | null;
   bestAsk: number | null;
+};
+
+type NetworkFeeApplied = {
+  asset: string;
+  amount: number;
+  fromExchange: TradingArbitrageExchange;
+  toExchange: TradingArbitrageExchange;
 };
 
 type TriangularArbitrageResult = {
@@ -661,6 +892,8 @@ type TriangularArbitrageResult = {
   endAsset: string;
   edgePct: number;
   finalAmount: number;
+  networkFeeTotal: number;
+  networkFeesApplied: NetworkFeeApplied[];
   legs: ArbitrageLeg[];
 };
 
@@ -670,13 +903,14 @@ async function getConversionRate(params: {
   to: string;
   marketType?: TradingMarketType;
   marginMode?: TradingMarginMode;
+  exchange: TradingArbitrageExchange;
 }): Promise<ArbitrageLeg | null> {
   const candidateDirect = `${params.from}-${params.to}`;
   const candidateInverse = `${params.to}-${params.from}`;
 
   const trySnapshot = async (symbol: string) => {
     try {
-      return await getOrderBookSnapshot(params.auth, symbol, params.marketType, params.marginMode);
+      return await getOrderBookSnapshot(params.auth, symbol, params.marketType, params.marginMode, params.exchange);
     } catch {
       return null;
     }
@@ -688,6 +922,7 @@ async function getConversionRate(params: {
       from: params.from,
       to: params.to,
       symbol: direct.symbol,
+      exchange: params.exchange,
       side: 'sell',
       rate: direct.bestBid,
       bestBid: direct.bestBid,
@@ -701,6 +936,7 @@ async function getConversionRate(params: {
       from: params.from,
       to: params.to,
       symbol: inverse.symbol,
+      exchange: params.exchange,
       side: 'buy',
       rate: 1 / inverse.bestAsk,
       bestBid: inverse.bestBid,
@@ -719,59 +955,113 @@ async function calculateTriangularArbitrage(params: {
   marketType?: TradingMarketType;
   marginMode?: TradingMarginMode;
   feePct: number;
+  exchanges: TradingArbitrageExchange[];
+  feePctByExchange: Record<TradingArbitrageExchange, number>;
+  networkFeesByAsset?: Record<string, number>;
   maxSlippagePct: number;
-}): Promise<TriangularArbitrageResult | null> {
-  let best: TriangularArbitrageResult | null = null;
+}): Promise<TriangularArbitrageResult[]> {
+  const results: TriangularArbitrageResult[] = [];
   const feeMultiplier = 1 - params.feePct / 100;
   const slippageMultiplier = 1 - params.maxSlippagePct / 100;
+  const exchanges = params.exchanges.length > 0 ? params.exchanges : (['kucoin'] as TradingArbitrageExchange[]);
+  const networkFeesByAsset = params.networkFeesByAsset ?? {};
+  const exchangeCombos: TradingArbitrageExchange[][] = [];
+  for (const ex1 of exchanges) {
+    for (const ex2 of exchanges) {
+      for (const ex3 of exchanges) {
+        exchangeCombos.push([ex1, ex2, ex3]);
+      }
+    }
+  }
 
   for (const intermediate of params.intermediateAssets) {
-    const leg1 = await getConversionRate({
-      auth: params.auth,
-      from: params.startAsset,
-      to: intermediate,
-      marketType: params.marketType,
-      marginMode: params.marginMode,
-    });
-    if (!leg1) continue;
+    for (const combo of exchangeCombos) {
+      const [exchange1, exchange2, exchange3] = combo;
+      const leg1 = await getConversionRate({
+        auth: params.auth,
+        from: params.startAsset,
+        to: intermediate,
+        marketType: params.marketType,
+        marginMode: params.marginMode,
+        exchange: exchange1,
+      });
+      if (!leg1) continue;
 
-    const leg2 = await getConversionRate({
-      auth: params.auth,
-      from: intermediate,
-      to: params.quoteAsset,
-      marketType: params.marketType,
-      marginMode: params.marginMode,
-    });
-    if (!leg2) continue;
+      const leg2 = await getConversionRate({
+        auth: params.auth,
+        from: intermediate,
+        to: params.quoteAsset,
+        marketType: params.marketType,
+        marginMode: params.marginMode,
+        exchange: exchange2,
+      });
+      if (!leg2) continue;
 
-    const leg3 = await getConversionRate({
-      auth: params.auth,
-      from: params.quoteAsset,
-      to: params.startAsset,
-      marketType: params.marketType,
-      marginMode: params.marginMode,
-    });
-    if (!leg3) continue;
+      const leg3 = await getConversionRate({
+        auth: params.auth,
+        from: params.quoteAsset,
+        to: params.startAsset,
+        marketType: params.marketType,
+        marginMode: params.marginMode,
+        exchange: exchange3,
+      });
+      if (!leg3) continue;
 
-    const startAmount = 1;
-    const afterLeg1 = startAmount * leg1.rate * feeMultiplier * slippageMultiplier;
-    const afterLeg2 = afterLeg1 * leg2.rate * feeMultiplier * slippageMultiplier;
-    const finalAmount = afterLeg2 * leg3.rate * feeMultiplier * slippageMultiplier;
-    const edgePct = ((finalAmount - startAmount) / startAmount) * 100;
+      const startAmount = 1;
+      let afterLeg1 = startAmount * leg1.rate * feeMultiplier * slippageMultiplier;
+      const networkFeesApplied: NetworkFeeApplied[] = [];
 
-    if (!best || edgePct > best.edgePct) {
-      best = {
+      if (leg1.exchange !== leg2.exchange) {
+        const fee = networkFeesByAsset[intermediate.toUpperCase()];
+        if (!Number.isFinite(fee) || fee <= 0) {
+          logger.warn({ intermediate, exchange1, exchange2 }, 'Network fee indisponível para transferência entre exchanges.');
+          continue;
+        }
+        afterLeg1 = Math.max(afterLeg1 - fee, 0);
+        networkFeesApplied.push({
+          asset: intermediate.toUpperCase(),
+          amount: fee,
+          fromExchange: leg1.exchange,
+          toExchange: leg2.exchange,
+        });
+      }
+
+      let afterLeg2 = afterLeg1 * leg2.rate * feeMultiplier * slippageMultiplier;
+      if (leg2.exchange !== leg3.exchange) {
+        const fee = networkFeesByAsset[params.quoteAsset.toUpperCase()];
+        if (!Number.isFinite(fee) || fee <= 0) {
+          logger.warn({ quoteAsset: params.quoteAsset, exchange2, exchange3 }, 'Network fee indisponível para transferência entre exchanges.');
+          continue;
+        }
+        afterLeg2 = Math.max(afterLeg2 - fee, 0);
+        networkFeesApplied.push({
+          asset: params.quoteAsset.toUpperCase(),
+          amount: fee,
+          fromExchange: leg2.exchange,
+          toExchange: leg3.exchange,
+        });
+      }
+
+      const finalAmount = afterLeg2 * leg3.rate * feeMultiplier * slippageMultiplier;
+      const edgePct = ((finalAmount - startAmount) / startAmount) * 100;
+      const networkFeeTotal = networkFeesApplied.reduce((sum, fee) => sum + fee.amount, 0);
+
+      results.push({
         intermediateAsset: intermediate,
         startAsset: params.startAsset,
         endAsset: params.startAsset,
         edgePct: Math.round(edgePct * 100) / 100,
         finalAmount: Math.round(finalAmount * 1000000) / 1000000,
+        networkFeeTotal: Math.round(networkFeeTotal * 1000000) / 1000000,
+        networkFeesApplied,
         legs: [leg1, leg2, leg3],
-      };
+      });
     }
   }
 
-  return best;
+  if (results.length === 0) return [];
+  const sorted = results.sort((a, b) => b.edgePct - a.edgePct);
+  return sorted.slice(0, 3);
 }
 
 function buildNewsQuery(params: {
@@ -1126,6 +1416,7 @@ async function buildTradingDatasetSeedFromSignal(params: {
       techniqueScores,
       ensembleResult,
       arbitrageSnapshot: null,
+      arbitrageSnapshots: [],
     })
     : (params.signal.metadata as TradingSignalMetadata)?.reasoning ?? 'Sinal gerado sem contexto detalhado.';
 
@@ -1324,6 +1615,7 @@ function buildMultiTimeframePrompt(params: {
   techniqueScores: TradingTechniqueScore[];
   ensembleResult: TradingEnsembleResult;
   arbitrageSnapshot: TriangularArbitrageResult | null;
+  arbitrageSnapshots?: TriangularArbitrageResult[];
 }): string {
   const blocks = params.matrix.map((entry) => {
     const analysisBlock = truncateText(
@@ -1369,12 +1661,20 @@ ${samples || '- Nenhum exemplo disponível'}`);
     .map((score) => `- ${score.technique}: ${score.signal} (conf ${score.confidence.toFixed(2)})${score.rationale ? ` - ${score.rationale}` : ''}`)
     .join('\n');
 
-  const arbitrageBlock = params.arbitrageSnapshot
-    ? `### ARBITRAGEM TRIANGULAR (KuCoin)
-Intermediário: ${params.arbitrageSnapshot.intermediateAsset}
-Edge estimada: ${params.arbitrageSnapshot.edgePct.toFixed(2)}%
+  const arbitrageList = params.arbitrageSnapshots?.length
+    ? params.arbitrageSnapshots
+    : (params.arbitrageSnapshot ? [params.arbitrageSnapshot] : []);
+  const arbitrageBlock = arbitrageList.length > 0
+    ? `### ARBITRAGEM TRIANGULAR (Top 3)
+${arbitrageList.map((snapshot, index) => {
+  const feesApplied = snapshot.networkFeesApplied?.length
+    ? `\nNetwork fees aplicadas: ${snapshot.networkFeesApplied.map((fee) => `${fee.asset} ${fee.amount} (${fee.fromExchange}→${fee.toExchange})`).join(', ')}`
+    : '';
+  return `#${index + 1} Intermediário: ${snapshot.intermediateAsset}
+Edge estimada: ${snapshot.edgePct.toFixed(2)}%
 Rotas:
-${params.arbitrageSnapshot.legs.map((leg) => `- ${leg.from} -> ${leg.to} via ${leg.symbol} (${leg.side}, rate ${leg.rate.toFixed(8)})`).join('\n')}`
+${snapshot.legs.map((leg) => `- ${leg.from} -> ${leg.to} via ${leg.symbol} (${leg.side}, rate ${leg.rate.toFixed(8)}, exchange ${leg.exchange})`).join('\n')}${feesApplied}`;
+}).join('\n\n')}`
     : '';
 
   return `
@@ -6381,7 +6681,7 @@ function repairYamlLikeBlockWithoutBraces(content: string): { json: string; repa
   let currentArray: string[] = [];
 
   const quoteStringValue = (value: string) => {
-    const normalized = value.replace(/\\+/g, '\\\\').replace(/"/g, '\\"');
+    const normalized = value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
     return `"${normalized}"`;
   };
 
@@ -8168,20 +8468,34 @@ async function generateTradingSignalFromLlm(params: {
   const primaryAnalysis = analysisMatrix[0];
   let techniqueScores = aggregateTechniqueScores(analysisMatrix, techniques);
   let arbitrageSnapshot: TriangularArbitrageResult | null = null;
+  let arbitrageSnapshots: TriangularArbitrageResult[] = [];
 
   if (techniques.includes('arbitrage_triangular') && arbitrageConfig) {
     const resolvedSymbol = primaryAnalysis.resolvedSymbol ?? params.symbol;
     const { base, quote } = splitSymbolPair(resolvedSymbol);
-    arbitrageSnapshot = await calculateTriangularArbitrage({
+    const { feePctByExchange, effectiveFeePct } = await resolveArbitrageFeePctForExchanges({
+      exchanges: arbitrageConfig.exchanges,
+      symbol: resolvedSymbol,
+      marketType: params.marketType ?? 'spot',
+      tenantId: params.tenantId,
+    });
+    const networkFeesByAsset = arbitrageConfig.exchanges.length > 1
+      ? await resolveNetworkFeesForTenant(params.tenantId)
+      : undefined;
+    arbitrageSnapshots = await calculateTriangularArbitrage({
       auth: { tenantId: params.tenantId, userId: params.userId },
       startAsset: base,
       quoteAsset: quote,
       intermediateAssets: arbitrageConfig.intermediateAssets,
       marketType: params.marketType,
       marginMode: params.marginMode,
-      feePct: arbitrageConfig.feePct,
+      feePct: effectiveFeePct,
+      exchanges: arbitrageConfig.exchanges,
+      feePctByExchange,
+      networkFeesByAsset,
       maxSlippagePct: arbitrageConfig.maxSlippagePct,
     });
+    arbitrageSnapshot = arbitrageSnapshots[0] ?? null;
     if (arbitrageSnapshot) {
       const edgePct = arbitrageSnapshot.edgePct;
       const minEdge = arbitrageConfig.minEdgePct;
@@ -8241,6 +8555,7 @@ async function generateTradingSignalFromLlm(params: {
     techniqueScores,
     ensembleResult,
     arbitrageSnapshot,
+    arbitrageSnapshots,
   });
 
   const requestedMaxTokens = params.modelConfig?.maxTokens ?? agentContext.llmConfig.maxTokens ?? 2048;
@@ -8266,11 +8581,13 @@ async function generateTradingSignalFromLlm(params: {
     { role: 'user', content: analysisPrompt },
   ];
 
+  const llmTimeoutMs = techniques.includes('arbitrage_triangular') ? 180000 : 120000;
   const gpuResponse = await requestGpu({
     serviceType: GpuServiceType.LLM,
     endpoint: '/v1/chat/completions',
     method: 'POST',
     priority: GpuRequestPriority.HIGH,
+    timeout: llmTimeoutMs,
     body: {
       model: agentContext.llmConfig.model,
       messages,
@@ -8326,6 +8643,7 @@ async function generateTradingSignalFromLlm(params: {
         techniqueScores,
         ensembleResult,
         arbitrageSnapshot,
+        arbitrageSnapshots,
         motivators: llmSignal.motivators,
         invalidationReasons: llmSignal.invalidationReasons,
         tradeSummary: llmSignal.tradeSummary,
@@ -8694,7 +9012,7 @@ app.post('/api/integrations/trading/signals/history/purge', requirePermission('i
       return;
     }
 
-    const effectiveScope = scope === 'self' ? 'self' : 'tenant';
+    const effectiveScope = scope ?? 'self';
     const baseConditions = [eq(schema.tradingSignals.tenantId, tenantId)];
     if (effectiveScope === 'self') {
       baseConditions.push(buildOwnerMetadataCondition(schema.tradingSignals.metadata, userId));
@@ -10211,6 +10529,83 @@ app.get('/api/integrations/trading/analysis-profile', requirePermission('integra
   }
 });
 
+// GET /api/integrations/trading/arbitrage/catalog - Catálogo de arbitragem (exchanges, ativos e taxas)
+app.get('/api/integrations/trading/arbitrage/catalog', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const querySchema = z.object({
+      marketType: z.enum(['spot', 'margin', 'futures']).optional().default('spot'),
+      symbol: z.string().min(1).optional(),
+      exchanges: z.string().optional(),
+    });
+    const parsedQuery = querySchema.safeParse(req.query);
+    if (!parsedQuery.success) {
+      res.status(400).json({ error: 'Query inválida', details: parsedQuery.error.flatten() });
+      return;
+    }
+
+    const marketType = parsedQuery.data.marketType;
+    if (marketType === 'futures') {
+      res.status(400).json({ error: 'Arbitragem triangular não suporta mercado Futures.' });
+      return;
+    }
+
+    const requestedExchanges = parseListParam(parsedQuery.data.exchanges);
+    const parsedExchanges = requestedExchanges.length > 0
+      ? requestedExchanges.map((value) => TradingArbitrageExchangeSchema.parse(value))
+      : (['kucoin'] as TradingArbitrageExchange[]);
+
+    const spotSymbols = await kucoinSpotClient.getSpotSymbols();
+    const symbolList = spotSymbols.map((item) => item.symbol).filter(Boolean);
+    const resolvedSymbol = parsedQuery.data.symbol
+      ? parsedQuery.data.symbol.trim().toUpperCase()
+      : (symbolList[0] ?? '');
+    if (!resolvedSymbol) {
+      res.status(500).json({ error: 'Não foi possível determinar um símbolo para calcular taxa de trade.' });
+      return;
+    }
+
+    const intermediateAssets = deriveIntermediateAssetsFromSymbols(symbolList);
+
+    const { feePctByExchange, effectiveFeePct } = await resolveArbitrageFeePctForExchanges({
+      exchanges: parsedExchanges,
+      symbol: resolvedSymbol,
+      marketType,
+      tenantId: authContext.tenantId,
+    });
+
+    const networkFeesByAsset = await resolveNetworkFeesForTenant(authContext.tenantId);
+
+    res.json({
+      success: true,
+      data: {
+        exchanges: parsedExchanges.map((exchange) => ({
+          id: exchange,
+          label: ARBITRAGE_EXCHANGE_LABELS[exchange] ?? exchange,
+        })),
+        intermediateAssets,
+        feePctByExchange,
+        effectiveFeePct,
+        networkFeesByAsset,
+        updatedAt: new Date().toISOString(),
+        sources: {
+          feePct: 'kucoin_api',
+          networkFees: 'kucoin_api',
+        },
+      },
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter catálogo de arbitragem');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
 // PUT /api/integrations/trading/analysis-profile - Atualizar perfil multi-timeframe
 app.put('/api/integrations/trading/analysis-profile', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
   try {
@@ -10222,6 +10617,8 @@ app.put('/api/integrations/trading/analysis-profile', requirePermission('integra
 
     const bodySchema = z.object({
       kind: z.enum(['analysis', 'signal']).optional().default('analysis'),
+      marketType: z.enum(['spot', 'margin', 'futures']).optional(),
+      symbol: z.string().min(3).optional(),
       name: z.string().min(1).max(100).optional(),
       timeframes: z.array(TRADING_INTERVAL_ZOD).min(1).optional(),
       indicators: z.array(TRADING_INDICATOR_ZOD).min(1).optional(),
@@ -10270,12 +10667,37 @@ app.put('/api/integrations/trading/analysis-profile', requirePermission('integra
     const resolvedArbitrage = normalizeTradingArbitrageConfig(
       parsedBody.data.arbitrageConfig ?? (profileRow.arbitrageConfig as TradingArbitrageConfig | null)
     );
+    const marketTypeForFees = parsedBody.data.marketType ?? 'spot';
     assertArbitrageConfigForTechniques({
       techniques: resolvedTechniques,
       arbitrageConfig: resolvedArbitrage,
       timeframes: resolvedTimeframes,
       context: 'perfil de análise/sinal',
     });
+    if (resolvedArbitrage && marketTypeForFees === 'futures') {
+      res.status(400).json({ error: 'Arbitragem triangular não é suportada em mercado futures.' });
+      return;
+    }
+
+    let arbitrageConfigToPersist = resolvedArbitrage;
+    if (resolvedArbitrage) {
+      const feeSymbol = parsedBody.data.symbol
+        ? parsedBody.data.symbol.trim().toUpperCase()
+        : await resolveDefaultSymbolForMarketType({
+          auth: { tenantId: authContext.tenantId, userId: authContext.userId },
+          marketType: marketTypeForFees,
+        });
+      const { effectiveFeePct } = await resolveArbitrageFeePctForExchanges({
+        exchanges: resolvedArbitrage.exchanges,
+        symbol: feeSymbol,
+        marketType: marketTypeForFees,
+        tenantId: authContext.tenantId,
+      });
+      arbitrageConfigToPersist = {
+        ...resolvedArbitrage,
+        feePct: effectiveFeePct,
+      };
+    }
 
     const updated = await getDatabase()
       .update(schema.tradingAnalysisProfiles)
@@ -10286,7 +10708,7 @@ app.put('/api/integrations/trading/analysis-profile', requirePermission('integra
         dataSources: parsedBody.data.dataSources ?? profileRow.dataSources,
         techniques: resolvedTechniques,
         ensembleConfig: resolvedEnsemble,
-        arbitrageConfig: resolvedArbitrage ?? null,
+        arbitrageConfig: arbitrageConfigToPersist ?? null,
         modelConfig: parsedBody.data.modelConfig ?? profileRow.modelConfig,
         newsConfig: parsedBody.data.newsConfig ?? profileRow.newsConfig,
         consensus: consensusUpdate ?? profileRow.consensus,
@@ -11793,19 +12215,33 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
     const consensus = buildMajorityConsensus(analysisResults, profile.consensus);
     let techniqueScores = aggregateTechniqueScores(analysisResults, techniques);
     let arbitrageSnapshot: TriangularArbitrageResult | null = null;
+    let arbitrageSnapshots: TriangularArbitrageResult[] = [];
     if (techniques.includes('arbitrage_triangular') && arbitrageConfig) {
       const resolvedSymbol = primaryResult.resolvedSymbol ?? symbol;
       const { base, quote } = splitSymbolPair(resolvedSymbol);
-      arbitrageSnapshot = await calculateTriangularArbitrage({
+      const { feePctByExchange, effectiveFeePct } = await resolveArbitrageFeePctForExchanges({
+        exchanges: arbitrageConfig.exchanges,
+        symbol: resolvedSymbol,
+        marketType: marketType ?? 'spot',
+        tenantId,
+      });
+      const networkFeesByAsset = arbitrageConfig.exchanges.length > 1
+        ? await resolveNetworkFeesForTenant(tenantId)
+        : undefined;
+      arbitrageSnapshots = await calculateTriangularArbitrage({
         auth: { tenantId, userId },
         startAsset: base,
         quoteAsset: quote,
         intermediateAssets: arbitrageConfig.intermediateAssets,
         marketType,
         marginMode,
-        feePct: arbitrageConfig.feePct,
+        feePct: effectiveFeePct,
+        exchanges: arbitrageConfig.exchanges,
+        feePctByExchange,
+        networkFeesByAsset,
         maxSlippagePct: arbitrageConfig.maxSlippagePct,
       });
+      arbitrageSnapshot = arbitrageSnapshots[0] ?? null;
       if (arbitrageSnapshot) {
         const edgePct = arbitrageSnapshot.edgePct;
         const minEdge = arbitrageConfig.minEdgePct;
@@ -11878,6 +12314,7 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
       techniqueScores,
       ensembleResult,
       arbitrageSnapshot,
+      arbitrageSnapshots,
       profile: {
         kind: profileRow.kind,
         timeframes,
@@ -11994,7 +12431,7 @@ app.post('/api/integrations/trading/analysis/history/purge', requirePermission('
       return;
     }
 
-    const effectiveScope = scope === 'self' ? 'self' : 'tenant';
+    const effectiveScope = scope ?? 'self';
     const baseConditions = [eq(schema.tradingTechnicalIndicators.tenantId, tenantId)];
     if (effectiveScope === 'self') {
       baseConditions.push(buildOwnerMetadataCondition(schema.tradingTechnicalIndicators.metadata, userId));
@@ -12164,7 +12601,7 @@ initializeCaches().then(() => {
   }, INTEGRATION_HEALTH_REFRESH_MS);
 
   // SEGURANÇA: Timeouts para prevenir conexões pendentes (Node.js 20 LTS Best Practices)
-  server.timeout = 120000; // 120s para requisições longas (LLM/Trading)
+  server.timeout = 180000; // 180s para requisições longas (LLM/Trading)
   server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
   server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
 

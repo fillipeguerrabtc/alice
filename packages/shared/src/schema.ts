@@ -1781,7 +1781,7 @@ export type TradingArbitrageExchange = z.infer<typeof TradingArbitrageExchangeSc
 
 export const TradingArbitrageConfigSchema = z.object({
   exchanges: z.array(TradingArbitrageExchangeSchema).min(1),
-  intermediateAssets: z.array(z.string().min(1)).min(1),
+  intermediateAssets: z.array(z.string().min(1)).min(1).max(30),
   feePct: z.number().min(0).max(5),
   maxSlippagePct: z.number().min(0).max(5),
   minEdgePct: z.number().min(0).max(10),
@@ -1789,10 +1789,19 @@ export const TradingArbitrageConfigSchema = z.object({
 });
 export type TradingArbitrageConfig = z.infer<typeof TradingArbitrageConfigSchema>;
 
+export const TradingArbitrageNetworkFeeSchema = z.object({
+  asset: z.string().min(1),
+  amount: z.number().nonnegative(),
+  fromExchange: TradingArbitrageExchangeSchema,
+  toExchange: TradingArbitrageExchangeSchema,
+});
+export type TradingArbitrageNetworkFee = z.infer<typeof TradingArbitrageNetworkFeeSchema>;
+
 export const TradingArbitrageLegSchema = z.object({
   from: z.string().min(1),
   to: z.string().min(1),
   symbol: z.string().min(1),
+  exchange: TradingArbitrageExchangeSchema,
   side: z.enum(['sell', 'buy']),
   rate: z.number().positive(),
   bestBid: z.number().nullable().optional(),
@@ -1806,6 +1815,8 @@ export const TradingArbitrageSnapshotSchema = z.object({
   endAsset: z.string().min(1),
   edgePct: z.number(),
   finalAmount: z.number(),
+  networkFeeTotal: z.number().nonnegative().optional(),
+  networkFeesApplied: z.array(TradingArbitrageNetworkFeeSchema).optional(),
   legs: z.array(TradingArbitrageLegSchema).min(1),
 });
 export type TradingArbitrageSnapshot = z.infer<typeof TradingArbitrageSnapshotSchema>;

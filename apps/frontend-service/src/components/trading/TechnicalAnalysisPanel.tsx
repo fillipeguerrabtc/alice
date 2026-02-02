@@ -190,6 +190,23 @@ export interface AnalysisConsensus {
   isMajorityReached: boolean;
 }
 
+interface ArbitrageLegSnapshot {
+  from: string;
+  to: string;
+  symbol: string;
+  side: string;
+  rate: number;
+  exchange?: string;
+}
+
+interface ArbitrageSnapshot {
+  intermediateAsset: string;
+  edgePct: number;
+  networkFeeTotal?: number;
+  networkFeesApplied?: Array<{ asset: string; amount: number; fromExchange: string; toExchange: string }>;
+  legs: ArbitrageLegSnapshot[];
+}
+
 export type TradingOperationType = 'scalping' | 'swing' | 'position' | 'cash_and_carry' | 'arbitrage' | 'hedge' | 'neutral';
 
 export interface TradePlan {
@@ -304,6 +321,7 @@ const DEFAULT_ARBITRAGE_CONFIG = {
   minEdgePct: 0.3,
   maxIntervalMinutes: 5,
 };
+const MAX_ARBITRAGE_ASSETS = 30;
 
 const getSignalColor = (signal: TechnicalAnalysisResult['overallSignal']) => {
   switch (signal) {
@@ -479,6 +497,8 @@ export function TechnicalAnalysisPanel({
   const [analysisHistoryHasMore, setAnalysisHistoryHasMore] = useState(false);
   const [analysisHistoryLoading, setAnalysisHistoryLoading] = useState(false);
   const [analysisHistorySelectedIds, setAnalysisHistorySelectedIds] = useState<Set<string>>(new Set());
+  const [selectedArbitrageAssets, setSelectedArbitrageAssets] = useState<Set<string>>(new Set());
+  const [selectedArbitrageExchanges, setSelectedArbitrageExchanges] = useState<Set<string>>(new Set());
 
   const toggleTimeframe = (value: string) => {
     setProfileForm((prev) => {
@@ -529,6 +549,66 @@ export function TechnicalAnalysisPanel({
     }));
   };
 
+  const updateArbitrageExchanges = (next: string[]) => {
+    const unique = Array.from(new Set(next.map((value) => value.trim()).filter(Boolean)));
+    updateArbitrageConfig({ exchanges: unique });
+  };
+
+  const updateArbitrageAssets = (next: string[]) => {
+    const normalized = Array.from(new Set(next.map((value) => value.trim().toUpperCase()).filter(Boolean)));
+    updateArbitrageConfig({ intermediateAssets: normalized });
+  };
+
+  const toggleArbitrageExchange = (exchangeId: string, checked: boolean) => {
+    setSelectedArbitrageExchanges((prev) => {
+      const updated = new Set(prev);
+      if (checked) {
+        updated.add(exchangeId);
+      } else {
+        updated.delete(exchangeId);
+      }
+      updateArbitrageExchanges(Array.from(updated));
+      return updated;
+    });
+  };
+
+  const toggleArbitrageAsset = (asset: string, checked: boolean) => {
+    setSelectedArbitrageAssets((prev) => {
+      const updated = new Set(prev);
+      if (checked) {
+        if (updated.size < MAX_ARBITRAGE_ASSETS) {
+          updated.add(asset.toUpperCase());
+        }
+      } else {
+        updated.delete(asset.toUpperCase());
+      }
+      updateArbitrageAssets(Array.from(updated));
+      return updated;
+    });
+  };
+
+  const toggleSelectAllArbitrageAssets = (checked: boolean) => {
+    if (!checked) {
+      setSelectedArbitrageAssets(new Set());
+      updateArbitrageAssets([]);
+      return;
+    }
+    const selected = availableArbitrageAssets.slice(0, MAX_ARBITRAGE_ASSETS).map((asset) => asset.toUpperCase());
+    setSelectedArbitrageAssets(new Set(selected));
+    updateArbitrageAssets(selected);
+  };
+
+  const toggleSelectAllArbitrageExchanges = (checked: boolean) => {
+    if (!checked) {
+      setSelectedArbitrageExchanges(new Set());
+      updateArbitrageExchanges([]);
+      return;
+    }
+    const selected = availableArbitrageExchanges.map((exchange) => exchange.id);
+    setSelectedArbitrageExchanges(new Set(selected));
+    updateArbitrageExchanges(selected);
+  };
+
   useEffect(() => {
     const hasArbitrage = profileForm.techniques.includes('arbitrage_triangular');
     setProfileForm((prev) => {
@@ -541,6 +621,16 @@ export function TechnicalAnalysisPanel({
       return prev;
     });
   }, [profileForm.techniques]);
+
+  useEffect(() => {
+    const exchanges = profileForm.arbitrageConfig?.exchanges ?? [];
+    setSelectedArbitrageExchanges(new Set(exchanges));
+  }, [profileForm.arbitrageConfig?.exchanges]);
+
+  useEffect(() => {
+    const assets = profileForm.arbitrageConfig?.intermediateAssets ?? [];
+    setSelectedArbitrageAssets(new Set(assets));
+  }, [profileForm.arbitrageConfig?.intermediateAssets]);
 
   const {
     data: profileResponse,
@@ -555,6 +645,48 @@ export function TechnicalAnalysisPanel({
     },
     enabled: Boolean(symbol),
   });
+
+  const {
+    data: arbitrageCatalogResponse,
+    isLoading: arbitrageCatalogLoading,
+  } = useQuery<{
+    success: boolean;
+    data: {
+      exchanges: Array<{ id: string; label: string }>;
+      intermediateAssets: string[];
+      feePctByExchange: Record<string, number>;
+      effectiveFeePct: number;
+      networkFeesByAsset: Record<string, number>;
+      updatedAt: string;
+    };
+  }>({
+    queryKey: [
+      '/api/integrations/trading/arbitrage/catalog',
+      marketType,
+      symbol,
+      profileForm.arbitrageConfig?.exchanges,
+    ],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (marketType) params.set('marketType', marketType);
+      if (symbol) params.set('symbol', symbol);
+      const exchanges = profileForm.arbitrageConfig?.exchanges ?? [];
+      if (exchanges.length > 0) {
+        params.set('exchanges', exchanges.join(','));
+      }
+      const response = await apiRequest('GET', `/api/integrations/trading/arbitrage/catalog?${params.toString()}`);
+      return response.json();
+    },
+    enabled: Boolean(profileForm.arbitrageConfig && profileForm.techniques.includes('arbitrage_triangular')),
+  });
+
+  useEffect(() => {
+    if (!profileForm.arbitrageConfig || !arbitrageCatalogResponse?.success) return;
+    const effectiveFee = arbitrageCatalogResponse.data.effectiveFeePct;
+    if (Number.isFinite(effectiveFee) && effectiveFee !== profileForm.arbitrageConfig.feePct) {
+      updateArbitrageConfig({ feePct: effectiveFee });
+    }
+  }, [arbitrageCatalogResponse, profileForm.arbitrageConfig, updateArbitrageConfig]);
 
   const {
     data: newsPresetsResponse,
@@ -685,11 +817,8 @@ export function TechnicalAnalysisPanel({
     consensus: AnalysisConsensus;
     techniqueScores: Array<{ technique: string; signal: string; confidence: number; rationale?: string }>;
     ensembleResult: { overallSignal: string; confidence: number; topTechniques: Array<{ technique: string; signal: string; confidence: number; rationale?: string }> };
-    arbitrageSnapshot?: {
-      intermediateAsset: string;
-      edgePct: number;
-      legs: Array<{ from: string; to: string; symbol: string; side: string; rate: number }>;
-    } | null;
+    arbitrageSnapshot?: ArbitrageSnapshot | null;
+    arbitrageSnapshots?: ArbitrageSnapshot[];
     profile: AnalysisProfile;
     tradePlan?: TradePlan;
     sources: {
@@ -742,6 +871,17 @@ export function TechnicalAnalysisPanel({
   const analysis = analysisResponse?.data;
   const SignalIcon = analysis ? getSignalIcon(analysis.overallSignal) : Activity;
   const primaryInterval = profileForm.timeframes?.[0] ?? interval;
+  const arbitrageCatalog = arbitrageCatalogResponse?.success ? arbitrageCatalogResponse.data : undefined;
+  const availableArbitrageExchanges = arbitrageCatalog?.exchanges?.length
+    ? arbitrageCatalog.exchanges
+    : [{ id: 'kucoin', label: 'KuCoin' }];
+  const availableArbitrageAssets = arbitrageCatalog?.intermediateAssets?.length
+    ? arbitrageCatalog.intermediateAssets
+    : (profileForm.arbitrageConfig?.intermediateAssets ?? []);
+  const allAssetsSelected = availableArbitrageAssets.length > 0
+    && selectedArbitrageAssets.size === Math.min(availableArbitrageAssets.length, MAX_ARBITRAGE_ASSETS);
+  const allExchangesSelected = availableArbitrageExchanges.length > 0
+    && selectedArbitrageExchanges.size === availableArbitrageExchanges.length;
   const allAnalysisHistorySelected = analysisHistoryItems.length > 0 && analysisHistorySelectedIds.size === analysisHistoryItems.length;
   const hasAnalysisHistorySelection = analysisHistorySelectedIds.size > 0;
   const analysisHistoryCursorRef = useRef<string | null>(analysisHistoryCursor);
@@ -905,6 +1045,8 @@ export function TechnicalAnalysisPanel({
     mutationFn: async () => {
       const payload = {
         kind: 'analysis',
+        marketType,
+        symbol,
         timeframes: profileForm.timeframes,
         indicators: profileForm.indicators,
         dataSources: profileForm.dataSources,
@@ -1089,27 +1231,66 @@ export function TechnicalAnalysisPanel({
             <Label>{t('trading.analysis.profile.arbitrage')}</Label>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">{t('trading.analysis.profile.arbitrageExchange')}</Label>
-                <Input value="KuCoin" disabled />
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs text-muted-foreground">{t('trading.analysis.profile.arbitrageExchange')}</Label>
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      checked={allExchangesSelected}
+                      onCheckedChange={(checked) => toggleSelectAllArbitrageExchanges(Boolean(checked))}
+                    />
+                    <span className="text-xs text-muted-foreground">Selecionar todos</span>
+                  </div>
+                </div>
+                <div className="max-h-40 overflow-y-auto rounded-md border p-2 space-y-2">
+                  {availableArbitrageExchanges.map((exchange) => (
+                    <div key={exchange.id} className="flex items-center justify-between">
+                      <span className="text-sm">{exchange.label}</span>
+                      <Checkbox
+                        checked={selectedArbitrageExchanges.has(exchange.id)}
+                        onCheckedChange={(checked) => toggleArbitrageExchange(exchange.id, Boolean(checked))}
+                      />
+                    </div>
+                  ))}
+                  {arbitrageCatalogLoading && (
+                    <p className="text-xs text-muted-foreground">Carregando exchanges...</p>
+                  )}
+                </div>
               </div>
               <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">{t('trading.analysis.profile.arbitrageIntermediate')}</Label>
-                <Input
-                  value={profileForm.arbitrageConfig.intermediateAssets.join(', ')}
-                  onChange={(event) => updateArbitrageConfig({
-                    intermediateAssets: event.target.value
-                      .split(',')
-                      .map((asset) => asset.trim().toUpperCase())
-                      .filter(Boolean),
-                  })}
-                />
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs text-muted-foreground">{t('trading.analysis.profile.arbitrageIntermediate')}</Label>
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      checked={allAssetsSelected}
+                      onCheckedChange={(checked) => toggleSelectAllArbitrageAssets(Boolean(checked))}
+                    />
+                    <span className="text-xs text-muted-foreground">Selecionar todos</span>
+                  </div>
+                </div>
+                <div className="max-h-48 overflow-y-auto rounded-md border p-2 space-y-2">
+                  {availableArbitrageAssets.map((asset) => (
+                    <div key={asset} className="flex items-center justify-between">
+                      <span className="text-sm">{asset}</span>
+                      <Checkbox
+                        checked={selectedArbitrageAssets.has(asset.toUpperCase())}
+                        onCheckedChange={(checked) => toggleArbitrageAsset(asset, Boolean(checked))}
+                      />
+                    </div>
+                  ))}
+                  {arbitrageCatalogLoading && (
+                    <p className="text-xs text-muted-foreground">Carregando ativos...</p>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Limite de {MAX_ARBITRAGE_ASSETS} ativos para evitar explosão combinatória.
+                </p>
               </div>
               <div className="space-y-2">
                 <Label className="text-xs text-muted-foreground">{t('trading.analysis.profile.arbitrageFee')}</Label>
-                <Input
-                  value={String(profileForm.arbitrageConfig.feePct)}
-                  onChange={(event) => updateArbitrageConfig({ feePct: Number(event.target.value) || 0 })}
-                />
+                <Input value={String(profileForm.arbitrageConfig.feePct)} readOnly />
+                <p className="text-xs text-muted-foreground">
+                  Taxa automática (maior entre exchanges selecionadas).
+                </p>
               </div>
               <div className="space-y-2">
                 <Label className="text-xs text-muted-foreground">{t('trading.analysis.profile.arbitrageSlippage')}</Label>
@@ -1135,6 +1316,9 @@ export function TechnicalAnalysisPanel({
                 />
               </div>
             </div>
+            <p className="text-xs text-muted-foreground">
+              Network fees são aplicadas automaticamente quando a rota cruza exchanges.
+            </p>
             <p className="text-xs text-muted-foreground">{t('trading.analysis.profile.arbitrageHint')}</p>
           </div>
         )}
@@ -1517,28 +1701,49 @@ export function TechnicalAnalysisPanel({
               </Card>
             )}
 
-            {analysisResponse?.arbitrageSnapshot && (
+            {(analysisResponse?.arbitrageSnapshots?.length || analysisResponse?.arbitrageSnapshot) && (
               <Card>
                 <CardHeader>
                   <CardTitle>{t('trading.analysis.arbitrage.title')}</CardTitle>
                   <CardDescription>{t('trading.analysis.arbitrage.subtitle')}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <Badge variant="outline">
-                      {t('trading.analysis.arbitrage.assetLabel')} {analysisResponse.arbitrageSnapshot.intermediateAsset}
-                    </Badge>
-                    <Badge variant="outline">
-                      {t('trading.analysis.arbitrage.edgeLabel')} {formatNumber(analysisResponse.arbitrageSnapshot.edgePct, locale, { maximumFractionDigits: 2 })}%
-                    </Badge>
-                  </div>
-                  <div className="grid gap-2">
-                    {analysisResponse.arbitrageSnapshot.legs.map((leg, index) => (
-                      <div key={`${leg.symbol}-${index}`} className="text-xs text-muted-foreground">
-                        {leg.from} → {leg.to} ({leg.symbol}) • {leg.side.toUpperCase()} • {formatNumber(leg.rate, locale, { maximumFractionDigits: 6 })}
+                  {(analysisResponse.arbitrageSnapshots?.length
+                    ? analysisResponse.arbitrageSnapshots
+                    : analysisResponse.arbitrageSnapshot
+                      ? [analysisResponse.arbitrageSnapshot]
+                      : []
+                  ).map((snapshot, index) => (
+                    <div key={`${snapshot.intermediateAsset}-${index}`} className="space-y-2 rounded-md border px-3 py-2">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <Badge variant="outline"># {index + 1}</Badge>
+                        <Badge variant="outline">
+                          {t('trading.analysis.arbitrage.assetLabel')} {snapshot.intermediateAsset}
+                        </Badge>
+                        <Badge variant="outline">
+                          {t('trading.analysis.arbitrage.edgeLabel')} {formatNumber(snapshot.edgePct, locale, { maximumFractionDigits: 2 })}%
+                        </Badge>
+                        {snapshot.networkFeeTotal !== undefined && (
+                          <Badge variant="outline">
+                            Network fee {formatNumber(snapshot.networkFeeTotal, locale, { maximumFractionDigits: 6 })}
+                          </Badge>
+                        )}
                       </div>
-                    ))}
-                  </div>
+                      <div className="grid gap-2">
+                        {snapshot.legs.map((leg, legIndex) => (
+                          <div key={`${leg.symbol}-${legIndex}`} className="text-xs text-muted-foreground">
+                            {leg.from} → {leg.to} ({leg.symbol}) • {leg.side.toUpperCase()} • {formatNumber(leg.rate, locale, { maximumFractionDigits: 6 })}
+                            {leg.exchange ? ` • ${leg.exchange}` : ''}
+                          </div>
+                        ))}
+                      </div>
+                      {snapshot.networkFeesApplied?.length ? (
+                        <div className="text-xs text-muted-foreground">
+                          Network fees: {snapshot.networkFeesApplied.map((fee) => `${fee.asset} ${fee.amount} (${fee.fromExchange}→${fee.toExchange})`).join(', ')}
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
                 </CardContent>
               </Card>
             )}

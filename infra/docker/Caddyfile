@@ -295,8 +295,20 @@ yesyoudeserve.duckdns.org, *.yesyoudeserve.duckdns.org {
 				import proxy_headers
 				transport http {
 					dial_timeout 15s
-					read_timeout 2m
-					write_timeout 2m
+					read_timeout 4m
+					write_timeout 4m
+				}
+			}
+		}
+		# CORREÇÃO 04/02/2026: Análise com arbitragem pode ser mais lenta (CPU).
+		# Timeout dedicado evita encerramento prematuro no proxy.
+		handle /api/integrations/trading/analysis* {
+			reverse_proxy alice-integrations:3005 {
+				import proxy_headers
+				transport http {
+					dial_timeout 15s
+					read_timeout 3m
+					write_timeout 3m
 				}
 			}
 		}

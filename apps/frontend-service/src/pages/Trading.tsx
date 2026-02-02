@@ -499,6 +499,7 @@ const DEFAULT_ARBITRAGE_CONFIG = {
   minEdgePct: 0.3,
   maxIntervalMinutes: 5,
 };
+const MAX_ARBITRAGE_ASSETS = 30;
 
 const ORDER_STATUS_BADGES: Record<string, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; icon: typeof CheckCircle }> = {
   pending: { variant: 'secondary', icon: Clock },
@@ -767,6 +768,8 @@ export default function Trading() {
     modelConfig: {},
     consensus: { rule: 'majority' },
   });
+  const [selectedSignalArbitrageAssets, setSelectedSignalArbitrageAssets] = useState<Set<string>>(new Set());
+  const [selectedSignalArbitrageExchanges, setSelectedSignalArbitrageExchanges] = useState<Set<string>>(new Set());
 
   const toggleSignalProfileTimeframe = (value: string) => {
     setSignalProfileForm((prev) => {
@@ -811,6 +814,66 @@ export default function Trading() {
     }));
   };
 
+  const updateSignalArbitrageExchanges = (next: string[]) => {
+    const unique = Array.from(new Set(next.map((value) => value.trim()).filter(Boolean)));
+    updateSignalArbitrageConfig({ exchanges: unique });
+  };
+
+  const updateSignalArbitrageAssets = (next: string[]) => {
+    const normalized = Array.from(new Set(next.map((value) => value.trim().toUpperCase()).filter(Boolean)));
+    updateSignalArbitrageConfig({ intermediateAssets: normalized });
+  };
+
+  const toggleSignalArbitrageExchange = (exchangeId: string, checked: boolean) => {
+    setSelectedSignalArbitrageExchanges((prev) => {
+      const updated = new Set(prev);
+      if (checked) {
+        updated.add(exchangeId);
+      } else {
+        updated.delete(exchangeId);
+      }
+      updateSignalArbitrageExchanges(Array.from(updated));
+      return updated;
+    });
+  };
+
+  const toggleSignalArbitrageAsset = (asset: string, checked: boolean) => {
+    setSelectedSignalArbitrageAssets((prev) => {
+      const updated = new Set(prev);
+      if (checked) {
+        if (updated.size < MAX_ARBITRAGE_ASSETS) {
+          updated.add(asset.toUpperCase());
+        }
+      } else {
+        updated.delete(asset.toUpperCase());
+      }
+      updateSignalArbitrageAssets(Array.from(updated));
+      return updated;
+    });
+  };
+
+  const toggleSelectAllSignalArbitrageAssets = (checked: boolean, availableAssets: string[]) => {
+    if (!checked) {
+      setSelectedSignalArbitrageAssets(new Set());
+      updateSignalArbitrageAssets([]);
+      return;
+    }
+    const selected = availableAssets.slice(0, MAX_ARBITRAGE_ASSETS).map((asset) => asset.toUpperCase());
+    setSelectedSignalArbitrageAssets(new Set(selected));
+    updateSignalArbitrageAssets(selected);
+  };
+
+  const toggleSelectAllSignalArbitrageExchanges = (checked: boolean, availableExchanges: string[]) => {
+    if (!checked) {
+      setSelectedSignalArbitrageExchanges(new Set());
+      updateSignalArbitrageExchanges([]);
+      return;
+    }
+    const selected = [...availableExchanges];
+    setSelectedSignalArbitrageExchanges(new Set(selected));
+    updateSignalArbitrageExchanges(selected);
+  };
+
   useEffect(() => {
     const hasArbitrage = signalProfileForm.techniques.includes('arbitrage_triangular');
     setSignalProfileForm((prev) => {
@@ -823,6 +886,16 @@ export default function Trading() {
       return prev;
     });
   }, [signalProfileForm.techniques]);
+
+  useEffect(() => {
+    const exchanges = signalProfileForm.arbitrageConfig?.exchanges ?? [];
+    setSelectedSignalArbitrageExchanges(new Set(exchanges));
+  }, [signalProfileForm.arbitrageConfig?.exchanges]);
+
+  useEffect(() => {
+    const assets = signalProfileForm.arbitrageConfig?.intermediateAssets ?? [];
+    setSelectedSignalArbitrageAssets(new Set(assets));
+  }, [signalProfileForm.arbitrageConfig?.intermediateAssets]);
 
   const {
     data: statusData,
@@ -875,6 +948,52 @@ export default function Trading() {
     },
     enabled: Boolean(selectedSymbol),
   });
+
+  const {
+    data: signalArbitrageCatalogResponse,
+    isLoading: isSignalArbitrageCatalogLoading,
+  } = useQuery<{
+    success: boolean;
+    data: {
+      exchanges: Array<{ id: string; label: string }>;
+      intermediateAssets: string[];
+      feePctByExchange: Record<string, number>;
+      effectiveFeePct: number;
+      networkFeesByAsset: Record<string, number>;
+      updatedAt: string;
+    };
+  }>({
+    queryKey: [
+      '/api/integrations/trading/arbitrage/catalog',
+      selectedMarketType,
+      selectedSymbol,
+      signalProfileForm.arbitrageConfig?.exchanges,
+    ],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (selectedMarketType) params.set('marketType', selectedMarketType);
+      if (selectedSymbol) params.set('symbol', selectedSymbol);
+      const exchanges = signalProfileForm.arbitrageConfig?.exchanges ?? [];
+      if (exchanges.length > 0) {
+        params.set('exchanges', exchanges.join(','));
+      }
+      const response = await apiRequest('GET', `/api/integrations/trading/arbitrage/catalog?${params.toString()}`);
+      return response.json();
+    },
+    enabled: Boolean(signalProfileForm.arbitrageConfig && signalProfileForm.techniques.includes('arbitrage_triangular')),
+  });
+
+  const signalArbitrageCatalog = signalArbitrageCatalogResponse?.success ? signalArbitrageCatalogResponse.data : undefined;
+  const availableSignalArbitrageExchanges = signalArbitrageCatalog?.exchanges?.length
+    ? signalArbitrageCatalog.exchanges
+    : [{ id: 'kucoin', label: 'KuCoin' }];
+  const availableSignalArbitrageAssets = signalArbitrageCatalog?.intermediateAssets?.length
+    ? signalArbitrageCatalog.intermediateAssets
+    : (signalProfileForm.arbitrageConfig?.intermediateAssets ?? []);
+  const allSignalArbitrageAssetsSelected = availableSignalArbitrageAssets.length > 0
+    && selectedSignalArbitrageAssets.size === Math.min(availableSignalArbitrageAssets.length, MAX_ARBITRAGE_ASSETS);
+  const allSignalArbitrageExchangesSelected = availableSignalArbitrageExchanges.length > 0
+    && selectedSignalArbitrageExchanges.size === availableSignalArbitrageExchanges.length;
 
   const {
     data: newsPresetsResponse,
@@ -941,6 +1060,14 @@ export default function Trading() {
       });
     }
   }, [signalProfileResponse]);
+
+  useEffect(() => {
+    if (!signalProfileForm.arbitrageConfig || !signalArbitrageCatalogResponse?.success) return;
+    const effectiveFee = signalArbitrageCatalogResponse.data.effectiveFeePct;
+    if (Number.isFinite(effectiveFee) && effectiveFee !== signalProfileForm.arbitrageConfig.feePct) {
+      updateSignalArbitrageConfig({ feePct: effectiveFee });
+    }
+  }, [signalArbitrageCatalogResponse, signalProfileForm.arbitrageConfig, updateSignalArbitrageConfig]);
 
   const wsInterval = useMemo(() => {
     if (!selectedInterval) return '';
@@ -1735,6 +1862,8 @@ export default function Trading() {
     mutationFn: async () => {
       const payload = {
         kind: 'signal',
+        marketType: selectedMarketType,
+        symbol: selectedSymbol || undefined,
         timeframes: signalProfileForm.timeframes,
         indicators: signalProfileForm.indicators,
         dataSources: signalProfileForm.dataSources,
@@ -3485,39 +3614,69 @@ export default function Trading() {
                     <Label>{t('trading.signals.profile.arbitrage')}</Label>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div className="space-y-2">
-                        <Label className="text-xs text-muted-foreground">{t('trading.signals.profile.arbitrageExchange')}</Label>
-                        <Select
-                          value={signalProfileForm.arbitrageConfig.exchanges[0] ?? 'kucoin'}
-                          onValueChange={(value) => updateSignalArbitrageConfig({ exchanges: [value] })}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="kucoin">KuCoin</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs text-muted-foreground">{t('trading.signals.profile.arbitrageExchange')}</Label>
+                          <div className="flex items-center gap-2">
+                            <Checkbox
+                              checked={allSignalArbitrageExchangesSelected}
+                              onCheckedChange={(checked) => toggleSelectAllSignalArbitrageExchanges(Boolean(checked), availableSignalArbitrageExchanges.map((item) => item.id))}
+                            />
+                            <span className="text-xs text-muted-foreground">Selecionar todos</span>
+                          </div>
+                        </div>
+                        <div className="max-h-40 overflow-y-auto rounded-md border p-2 space-y-2">
+                          {availableSignalArbitrageExchanges.map((exchange) => (
+                            <div key={exchange.id} className="flex items-center justify-between">
+                              <span className="text-sm">{exchange.label}</span>
+                              <Checkbox
+                                checked={selectedSignalArbitrageExchanges.has(exchange.id)}
+                                onCheckedChange={(checked) => toggleSignalArbitrageExchange(exchange.id, Boolean(checked))}
+                              />
+                            </div>
+                          ))}
+                          {isSignalArbitrageCatalogLoading && (
+                            <p className="text-xs text-muted-foreground">Carregando exchanges...</p>
+                          )}
+                        </div>
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-xs text-muted-foreground">{t('trading.signals.profile.arbitrageIntermediate')}</Label>
-                        <Input
-                          value={signalProfileForm.arbitrageConfig.intermediateAssets.join(', ')}
-                          onChange={(event) => updateSignalArbitrageConfig({
-                            intermediateAssets: event.target.value
-                              .split(',')
-                              .map((asset) => asset.trim().toUpperCase())
-                              .filter(Boolean),
-                          })}
-                        />
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs text-muted-foreground">{t('trading.signals.profile.arbitrageIntermediate')}</Label>
+                          <div className="flex items-center gap-2">
+                            <Checkbox
+                              checked={allSignalArbitrageAssetsSelected}
+                              onCheckedChange={(checked) => toggleSelectAllSignalArbitrageAssets(Boolean(checked), availableSignalArbitrageAssets)}
+                            />
+                            <span className="text-xs text-muted-foreground">Selecionar todos</span>
+                          </div>
+                        </div>
+                        <div className="max-h-48 overflow-y-auto rounded-md border p-2 space-y-2">
+                          {availableSignalArbitrageAssets.map((asset) => (
+                            <div key={asset} className="flex items-center justify-between">
+                              <span className="text-sm">{asset}</span>
+                              <Checkbox
+                                checked={selectedSignalArbitrageAssets.has(asset.toUpperCase())}
+                                onCheckedChange={(checked) => toggleSignalArbitrageAsset(asset, Boolean(checked))}
+                              />
+                            </div>
+                          ))}
+                          {isSignalArbitrageCatalogLoading && (
+                            <p className="text-xs text-muted-foreground">Carregando ativos...</p>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Limite de {MAX_ARBITRAGE_ASSETS} ativos para evitar explosão combinatória.
+                        </p>
                       </div>
                       <div className="space-y-2">
                         <Label className="text-xs text-muted-foreground">{t('trading.signals.profile.arbitrageFee')}</Label>
                         <Input
                           value={String(signalProfileForm.arbitrageConfig.feePct)}
-                          onChange={(event) => updateSignalArbitrageConfig({
-                            feePct: Number(event.target.value) || 0,
-                          })}
+                          readOnly
                         />
+                        <p className="text-xs text-muted-foreground">
+                          Taxa automática (maior entre exchanges selecionadas).
+                        </p>
                       </div>
                       <div className="space-y-2">
                         <Label className="text-xs text-muted-foreground">{t('trading.signals.profile.arbitrageSlippage')}</Label>
@@ -3547,6 +3706,9 @@ export default function Trading() {
                         />
                       </div>
                     </div>
+                    <p className="text-xs text-muted-foreground">
+                      Network fees são aplicadas automaticamente quando a rota cruza exchanges.
+                    </p>
                     <p className="text-xs text-muted-foreground">{t('trading.signals.profile.arbitrageHint')}</p>
                   </div>
                 )}

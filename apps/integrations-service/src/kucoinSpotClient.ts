@@ -134,6 +134,27 @@ export interface SpotOrderCreateResponse {
   orderId: string;
 }
 
+export interface KucoinCurrencyChain {
+  chain: string;
+  withdrawalMinFee?: string;
+  withdrawFeeRate?: string;
+  withdrawalMinSize?: string;
+  withdrawMaxFee?: string;
+  isWithdrawEnabled?: boolean;
+}
+
+export interface KucoinCurrencyInfo {
+  currency: string;
+  name?: string;
+  chains?: KucoinCurrencyChain[];
+}
+
+export interface KucoinTradeFee {
+  symbol: string;
+  makerFeeRate?: string;
+  takerFeeRate?: string;
+}
+
 export interface CreateSpotOrderParams {
   clientOid: string;
   side: 'buy' | 'sell';
@@ -190,6 +211,38 @@ export async function getSpotSymbols(): Promise<SpotSymbolInfo[]> {
   );
   const symbols = response.data ?? [];
   return symbols.filter((item) => item.enableTrading !== false);
+}
+
+/**
+ * Lista moedas com taxas de saque (withdrawal)
+ * GET /api/v3/currencies
+ */
+export async function getCurrencies(): Promise<KucoinCurrencyInfo[]> {
+  const response = await kucoinSpotRequester.executeRequest<KucoinCurrencyInfo[]>(
+    'GET',
+    '/api/v3/currencies',
+    undefined,
+    false
+  );
+  return response.data ?? [];
+}
+
+/**
+ * Obtém taxas de trade por símbolo (Spot/Margin)
+ * GET /api/v1/trade-fees
+ */
+export async function getSpotTradeFees(symbols: string[]): Promise<KucoinTradeFee[]> {
+  if (!Array.isArray(symbols) || symbols.length === 0) {
+    throw new Error('Símbolos são obrigatórios para obter taxas de trade.');
+  }
+  const endpoint = buildEndpoint('/api/v1/trade-fees', { symbols: symbols.join(',') });
+  const response = await kucoinSpotRequester.executeRequest<KucoinTradeFee[]>(
+    'GET',
+    endpoint,
+    undefined,
+    true
+  );
+  return response.data ?? [];
 }
 
 /**

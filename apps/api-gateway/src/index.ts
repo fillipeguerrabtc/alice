@@ -266,6 +266,14 @@ const services: ServiceConfig[] = [
   { name: 'observability-service', url: config.OBSERVABILITY_SERVICE_URL, healthPath: '/health', pathPrefix: '/api/observability' },
 ];
 
+const integrationsService = services.find((service) => service.name === 'integrations-service');
+if (!integrationsService) {
+  logger.error('Serviço integrations-service não configurado no API Gateway.');
+  if (nodeEnv === 'production') {
+    process.exit(1);
+  }
+}
+
 // Circuit Breaker para cada serviço
 const circuitBreakers = new Map<string, CircuitBreaker>();
 
@@ -483,10 +491,29 @@ const createServiceProxy = (service: ServiceConfig): Options => ({
   },
 });
 
+const createLongRunningProxy = (service: ServiceConfig, timeoutMs: number): Options => ({
+  ...createServiceProxy(service),
+  timeout: timeoutMs,
+  proxyTimeout: timeoutMs,
+});
+
 // Rate limiter especial para login
 // Express 5: usar type assertion para rate limiter
 app.use('/api/auth/login', authLimiter as RequestHandler);
 app.use('/api/auth/register', authLimiter as RequestHandler);
+
+// Rotas de longa duração (Trading + LLM/GPU)
+if (integrationsService) {
+  const longRunningTimeoutMs = 180000;
+  app.use(
+    '/api/integrations/trading/signals/generate',
+    createProxyMiddleware(createLongRunningProxy(integrationsService, longRunningTimeoutMs))
+  );
+  app.use(
+    '/api/integrations/trading/analysis',
+    createProxyMiddleware(createLongRunningProxy(integrationsService, longRunningTimeoutMs))
+  );
+}
 
 // Configurar proxies para cada serviço
 services.forEach(service => {
@@ -517,7 +544,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
 });
 
 // SEGURANÇA: Timeouts para prevenir conexões pendentes (Node.js 20 LTS Best Practices)
-server.timeout = 30000; // 30s timeout para requisições
+server.timeout = 180000; // 180s para requisições longas (Trading/LLM)
 server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
 server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
 
