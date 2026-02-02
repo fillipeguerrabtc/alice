@@ -1425,6 +1425,48 @@
       "history": "History",
       "control": "Control"
     },
+    "techniques": {
+      "scalping": {
+        "title": "Scalping",
+        "desc": "Targets quick moves with short objectives and high frequency."
+      },
+      "day_trade": {
+        "title": "Day Trade",
+        "desc": "Intraday trades closed within the same session."
+      },
+      "swing": {
+        "title": "Swing Trade",
+        "desc": "Captures multi‑day swings with broader moves."
+      },
+      "position": {
+        "title": "Position Trading",
+        "desc": "Longer exposure focused on major trends."
+      },
+      "trend": {
+        "title": "Trend Following",
+        "desc": "Follows confirmed trends with strength filters."
+      },
+      "mean_reversion": {
+        "title": "Mean Reversion",
+        "desc": "Looks for reversion after statistical deviations."
+      },
+      "breakout": {
+        "title": "Breakout",
+        "desc": "Entries on breakouts with volume confirmation."
+      },
+      "range": {
+        "title": "Range",
+        "desc": "Buys support and sells resistance."
+      },
+      "momentum": {
+        "title": "Momentum",
+        "desc": "Rides acceleration and directional strength."
+      },
+      "arbitrage_triangular": {
+        "title": "Triangular Arbitrage",
+        "desc": "Three sequential conversions on the same exchange with profit edge."
+      }
+    },
     "quickTrade": {
       "title": "Quick Trade",
       "subtitle": "Execute orders quickly",
@@ -1510,6 +1552,19 @@
         "timeframes": "Timeframes",
         "indicators": "Indicators",
         "indicatorsSupportHint": "Support/Resistance is also applied on each timeframe when enabled.",
+        "techniques": "Trading Techniques",
+        "techniquesHint": "Combine techniques to generate a consolidated high-confidence signal.",
+        "ensemble": "Confidence Ensemble",
+        "ensembleMode": "Mode",
+        "ensembleTopN": "Top N contributions",
+        "arbitrage": "Triangular Arbitrage",
+        "arbitrageExchange": "Exchange",
+        "arbitrageIntermediate": "Intermediate assets",
+        "arbitrageFee": "Fee per trade (%)",
+        "arbitrageSlippage": "Max slippage (%)",
+        "arbitrageMinEdge": "Minimum edge (%)",
+        "arbitrageMaxInterval": "Max interval (min)",
+        "arbitrageHint": "Arbitrage uses short timeframes and is only valid for Spot/Margin.",
         "sources": "Additional sources",
         "sourcesOrderBookTitle": "Order Book",
         "sourcesOrderBookDesc": "Depth and spread in real time.",
@@ -1676,6 +1731,19 @@
         "timeframesHint": "Use multiple timeframes for majority consensus.",
         "indicators": "Indicators",
         "indicatorsSupportHint": "The Support/Resistance toggle enables pivot points for all timeframes.",
+        "techniques": "Trading Techniques",
+        "techniquesHint": "Combine techniques to compare with AI outputs.",
+        "ensemble": "Confidence Ensemble",
+        "ensembleMode": "Mode",
+        "ensembleTopN": "Top N contributions",
+        "arbitrage": "Triangular Arbitrage",
+        "arbitrageExchange": "Exchange",
+        "arbitrageIntermediate": "Intermediate assets",
+        "arbitrageFee": "Fee per trade (%)",
+        "arbitrageSlippage": "Max slippage (%)",
+        "arbitrageMinEdge": "Minimum edge (%)",
+        "arbitrageMaxInterval": "Max interval (min)",
+        "arbitrageHint": "Arbitrage uses short timeframes and is only valid for Spot/Margin.",
         "sources": "Additional sources",
         "sourcesOrderBookTitle": "Order Book",
         "sourcesOrderBookDesc": "Depth and spread in real time.",
@@ -1695,6 +1763,19 @@
         "alignedLabel": "Aligned:",
         "misalignedLabel": "Misaligned:",
         "none": "None"
+      },
+      "ensemble": {
+        "title": "Technique Ensemble",
+        "subtitle": "Ranking of techniques and consolidated signal.",
+        "overallLabel": "Consolidated signal:",
+        "confidenceLabel": "Confidence:",
+        "signalLabel": "Signal:"
+      },
+      "arbitrage": {
+        "title": "Triangular Arbitrage",
+        "subtitle": "Deterministic snapshot of the three conversions.",
+        "assetLabel": "Intermediate asset:",
+        "edgeLabel": "Estimated edge:"
       },
       "matrix": {
         "title": "Timeframe Summary",

@@ -1,7 +1,7 @@
 # Alice Enterprise Platform - Arquitetura de Software
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 31 de Janeiro de 2026  
+> **Data:** 02 de Fevereiro de 2026  
 > **Versão:** 3.4.4 - Configuração de notícias SearXNG para Trading  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
@@ -829,6 +829,15 @@ logger.info({
 | **Decisão** | Parser NLP + Orchestrator (handover/takeover) + KuCoin Client |
 | **Alternativas** | UI-only trading, Webhooks automáticos |
 | **Consequências** | + UX natural, + Controle IA/Manual, - Complexidade de parsing |
+
+### ADR-009: Técnicas de Trading + Ensemble + Arbitragem Triangular
+
+| Aspecto | Decisão |
+|---------|---------|
+| **Status** | Aceito (02/02/2026) |
+| **Contexto** | Sinais IA e Análise determinística precisavam usar múltiplas técnicas, com ranking de confiança e comparação direta entre LLM (GPU) e código (CPU). Arbitragem triangular requer validação explícita de custos (taxas + slippage) e timeframes curtos. |
+| **Decisão** | Adotar um **conjunto enterprise de técnicas** (scalping, day_trade, swing, position, trend, mean_reversion, breakout, range, momentum, arbitrage_triangular). Implementar **ensemble_top3** com `topN` configurável, retornando sinal consolidado + top 3 contribuições. **Configurações idênticas** nas abas Sinais IA e Análise (diferença apenas no modo de execução). Arbitragem triangular **apenas Spot/Margin**, com validação obrigatória de taxas, slippage e edge mínimo; exchange selector exibido com **KuCoin** (preparado para multi-exchange futuro). |
+| **Consequências** | + Sinal consolidado com ranking transparente; + Comparação IA vs determinístico com mesmas configs; + Arbitragem segura com validações de custo; - Mais parâmetros na UI; - Necessidade de dados de order book sempre atualizados. |
 
 ### ADR-007: Arquitetura Multi-Stack Modular (05/01/2026)
 

@@ -1723,6 +1723,19 @@ export const tradingProfileKindEnum = pgEnum("trading_profile_kind", [
   "signal",
 ]);
 
+export const tradingTechniqueEnum = pgEnum("trading_technique", [
+  "scalping",
+  "day_trade",
+  "swing",
+  "position",
+  "trend",
+  "mean_reversion",
+  "breakout",
+  "range",
+  "momentum",
+  "arbitrage_triangular",
+]);
+
 export const TradingIndicatorKeySchema = z.enum([
   "rsi",
   "macd",
@@ -1735,6 +1748,67 @@ export const TradingIndicatorKeySchema = z.enum([
   "volume",
 ]);
 export type TradingIndicatorKey = z.infer<typeof TradingIndicatorKeySchema>;
+
+export const TradingTechniqueSchema = z.enum([
+  "scalping",
+  "day_trade",
+  "swing",
+  "position",
+  "trend",
+  "mean_reversion",
+  "breakout",
+  "range",
+  "momentum",
+  "arbitrage_triangular",
+]);
+export type TradingTechnique = z.infer<typeof TradingTechniqueSchema>;
+
+export const TradingEnsembleModeSchema = z.enum([
+  "ensemble_top3",
+]);
+export type TradingEnsembleMode = z.infer<typeof TradingEnsembleModeSchema>;
+
+export const TradingEnsembleConfigSchema = z.object({
+  mode: TradingEnsembleModeSchema.default("ensemble_top3"),
+  topN: z.number().int().min(1).max(5).default(3),
+});
+export type TradingEnsembleConfig = z.infer<typeof TradingEnsembleConfigSchema>;
+
+export const TradingArbitrageExchangeSchema = z.enum([
+  "kucoin",
+]);
+export type TradingArbitrageExchange = z.infer<typeof TradingArbitrageExchangeSchema>;
+
+export const TradingArbitrageConfigSchema = z.object({
+  exchanges: z.array(TradingArbitrageExchangeSchema).min(1),
+  intermediateAssets: z.array(z.string().min(1)).min(1),
+  feePct: z.number().min(0).max(5),
+  maxSlippagePct: z.number().min(0).max(5),
+  minEdgePct: z.number().min(0).max(10),
+  maxIntervalMinutes: z.number().int().min(1).max(60),
+});
+export type TradingArbitrageConfig = z.infer<typeof TradingArbitrageConfigSchema>;
+
+export const TradingArbitrageLegSchema = z.object({
+  from: z.string().min(1),
+  to: z.string().min(1),
+  symbol: z.string().min(1),
+  side: z.enum(['sell', 'buy']),
+  rate: z.number().positive(),
+  bestBid: z.number().nullable().optional(),
+  bestAsk: z.number().nullable().optional(),
+});
+export type TradingArbitrageLeg = z.infer<typeof TradingArbitrageLegSchema>;
+
+export const TradingArbitrageSnapshotSchema = z.object({
+  intermediateAsset: z.string().min(1),
+  startAsset: z.string().min(1),
+  endAsset: z.string().min(1),
+  edgePct: z.number(),
+  finalAmount: z.number(),
+  legs: z.array(TradingArbitrageLegSchema).min(1),
+});
+export type TradingArbitrageSnapshot = z.infer<typeof TradingArbitrageSnapshotSchema>;
 
 export const TradingProfileDataSourcesSchema = z.object({
   orderBook: z.boolean().optional(),
@@ -1791,6 +1865,30 @@ export const TradingOperationTypeSchema = z.enum([
 ]);
 export type TradingOperationType = z.infer<typeof TradingOperationTypeSchema>;
 
+export const TradingOverallSignalSchema = z.enum([
+  "strong_buy",
+  "buy",
+  "neutral",
+  "sell",
+  "strong_sell",
+]);
+export type TradingOverallSignal = z.infer<typeof TradingOverallSignalSchema>;
+
+export const TradingTechniqueScoreSchema = z.object({
+  technique: TradingTechniqueSchema,
+  signal: TradingOverallSignalSchema,
+  confidence: z.number().min(0).max(1),
+  rationale: z.string().optional(),
+});
+export type TradingTechniqueScore = z.infer<typeof TradingTechniqueScoreSchema>;
+
+export const TradingEnsembleResultSchema = z.object({
+  overallSignal: TradingOverallSignalSchema,
+  confidence: z.number().min(0).max(1),
+  topTechniques: z.array(TradingTechniqueScoreSchema).min(1),
+});
+export type TradingEnsembleResult = z.infer<typeof TradingEnsembleResultSchema>;
+
 // Zod schema para metadados de trading (JSONB)
 export const TradingSignalMetadataSchema = z.object({
   confidence: z.number().min(0).max(1).optional(),  // Confiança do modelo (0-1)
@@ -1830,6 +1928,11 @@ export const TradingSignalMetadataSchema = z.object({
     misalignedTimeframes: z.array(z.string()).optional(),
     isMajorityReached: z.boolean().optional(),
   }).optional(),
+  techniques: z.array(TradingTechniqueSchema).optional(),
+  ensemble: TradingEnsembleConfigSchema.optional(),
+  techniqueScores: z.array(TradingTechniqueScoreSchema).optional(),
+  ensembleResult: TradingEnsembleResultSchema.optional(),
+  arbitrageSnapshot: TradingArbitrageSnapshotSchema.optional(),
   analysisMatrix: z.array(z.object({
     interval: z.string(),
     analysis: z.record(z.unknown()),
@@ -1929,6 +2032,9 @@ export const tradingSignalSchedulers = pgTable(
     interval: varchar("interval", { length: 10 }).notNull().default("5m"),
     symbols: text("symbols").array().default([]),
     maxSignalsPerRun: integer("max_signals_per_run").notNull().default(1),
+    techniques: tradingTechniqueEnum("techniques").array(),
+    ensembleConfig: jsonb("ensemble_config").$type<TradingEnsembleConfig | null>().default(sql`NULL`),
+    arbitrageConfig: jsonb("arbitrage_config").$type<TradingArbitrageConfig | null>().default(sql`NULL`),
     enabled: boolean("enabled").notNull().default(false),
     lastRunAt: timestamp("last_run_at"),
     nextRunAt: timestamp("next_run_at"),
@@ -1962,6 +2068,9 @@ export const tradingAnalysisSchedulers = pgTable(
     interval: varchar("interval", { length: 10 }).notNull().default("5m"),
     symbols: text("symbols").array().default([]),
     maxSymbolsPerRun: integer("max_symbols_per_run").notNull().default(1),
+    techniques: tradingTechniqueEnum("techniques").array(),
+    ensembleConfig: jsonb("ensemble_config").$type<TradingEnsembleConfig | null>().default(sql`NULL`),
+    arbitrageConfig: jsonb("arbitrage_config").$type<TradingArbitrageConfig | null>().default(sql`NULL`),
     enabled: boolean("enabled").notNull().default(false),
     lastRunAt: timestamp("last_run_at"),
     nextRunAt: timestamp("next_run_at"),
@@ -1997,6 +2106,12 @@ export const tradingAnalysisProfiles = pgTable(
       .default(sql`'["rsi","macd","moving_averages","bollinger","atr","stochastic","adx","support_resistance","volume"]'::jsonb`),
     dataSources: jsonb("data_sources").$type<TradingProfileDataSources>().notNull()
       .default(sql`'{"orderBook": false, "news": false, "trainingData": false}'::jsonb`),
+    techniques: tradingTechniqueEnum("techniques").array().notNull()
+      .default(sql`ARRAY['scalping','day_trade','swing','position','trend','mean_reversion','breakout','range','momentum']::trading_technique[]`),
+    ensembleConfig: jsonb("ensemble_config").$type<TradingEnsembleConfig>().notNull()
+      .default(sql`'{"mode":"ensemble_top3","topN":3}'::jsonb`),
+    arbitrageConfig: jsonb("arbitrage_config").$type<TradingArbitrageConfig | null>()
+      .default(sql`NULL`),
     modelConfig: jsonb("model_config").$type<TradingProfileModelConfig>().notNull()
       .default(sql`'{}'::jsonb`),
     newsConfig: jsonb("news_config").$type<TradingProfileNewsConfig>().notNull()

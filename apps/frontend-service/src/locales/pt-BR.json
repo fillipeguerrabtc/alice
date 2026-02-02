@@ -1456,6 +1456,48 @@
       "history": "Histórico",
       "control": "Controle"
     },
+    "techniques": {
+      "scalping": {
+        "title": "Scalping",
+        "desc": "Busca movimentos rápidos com alvos curtos e alta frequência."
+      },
+      "day_trade": {
+        "title": "Day Trade",
+        "desc": "Operações intradiárias com fechamento no mesmo dia."
+      },
+      "swing": {
+        "title": "Swing Trade",
+        "desc": "Movimentos de alguns dias aproveitando oscilações relevantes."
+      },
+      "position": {
+        "title": "Position Trading",
+        "desc": "Exposição prolongada com foco em grandes tendências."
+      },
+      "trend": {
+        "title": "Trend Following",
+        "desc": "Seguir tendências confirmadas com filtros de força."
+      },
+      "mean_reversion": {
+        "title": "Mean Reversion",
+        "desc": "Reversão à média após desvios estatísticos."
+      },
+      "breakout": {
+        "title": "Breakout",
+        "desc": "Entrada em rompimentos com confirmação de volume."
+      },
+      "range": {
+        "title": "Range",
+        "desc": "Compra no suporte e venda na resistência."
+      },
+      "momentum": {
+        "title": "Momentum",
+        "desc": "Aproveita aceleração de preço e força direcional."
+      },
+      "arbitrage_triangular": {
+        "title": "Arbitragem Triangular",
+        "desc": "Três conversões sequenciais na mesma exchange com margem de lucro."
+      }
+    },
     "quickTrade": {
       "title": "Trade Rápido",
       "subtitle": "Execute ordens rapidamente",
@@ -1541,6 +1583,19 @@
         "timeframes": "Timeframes",
         "indicators": "Indicadores",
         "indicatorsSupportHint": "Suporte/Resistência também é aplicado em cada timeframe quando habilitado.",
+        "techniques": "Técnicas de Trading",
+        "techniquesHint": "Combine técnicas para gerar um sinal consolidado com maior confiança.",
+        "ensemble": "Ensemble de Confiança",
+        "ensembleMode": "Modo",
+        "ensembleTopN": "Top N contribuições",
+        "arbitrage": "Arbitragem Triangular",
+        "arbitrageExchange": "Exchange",
+        "arbitrageIntermediate": "Ativos intermediários",
+        "arbitrageFee": "Taxa por operação (%)",
+        "arbitrageSlippage": "Slippage máx. (%)",
+        "arbitrageMinEdge": "Lucro mínimo (%)",
+        "arbitrageMaxInterval": "Intervalo máx. (min)",
+        "arbitrageHint": "A arbitragem usa timeframes curtos e só é válida para Spot/Margin.",
         "sources": "Fontes adicionais",
         "sourcesOrderBookTitle": "Order Book",
         "sourcesOrderBookDesc": "Profundidade e spread em tempo real.",
@@ -1707,6 +1762,19 @@
         "timeframesHint": "Use múltiplos timeframes para consenso por maioria simples.",
         "indicators": "Indicadores",
         "indicatorsSupportHint": "O toggle “Suporte/Resistência” controla o cálculo de pivot points em todos os timeframes.",
+        "techniques": "Técnicas de Trading",
+        "techniquesHint": "Combine técnicas para comparar com os resultados da IA.",
+        "ensemble": "Ensemble de Confiança",
+        "ensembleMode": "Modo",
+        "ensembleTopN": "Top N contribuições",
+        "arbitrage": "Arbitragem Triangular",
+        "arbitrageExchange": "Exchange",
+        "arbitrageIntermediate": "Ativos intermediários",
+        "arbitrageFee": "Taxa por operação (%)",
+        "arbitrageSlippage": "Slippage máx. (%)",
+        "arbitrageMinEdge": "Lucro mínimo (%)",
+        "arbitrageMaxInterval": "Intervalo máx. (min)",
+        "arbitrageHint": "A arbitragem usa timeframes curtos e só é válida para Spot/Margin.",
         "sources": "Fontes adicionais",
         "sourcesOrderBookTitle": "Order Book",
         "sourcesOrderBookDesc": "Profundidade e spread em tempo real.",
@@ -1726,6 +1794,19 @@
         "alignedLabel": "Alinhados:",
         "misalignedLabel": "Divergentes:",
         "none": "Nenhum"
+      },
+      "ensemble": {
+        "title": "Ensemble de Técnicas",
+        "subtitle": "Ranking das técnicas e consolidação do sinal.",
+        "overallLabel": "Sinal consolidado:",
+        "confidenceLabel": "Confiança:",
+        "signalLabel": "Sinal:"
+      },
+      "arbitrage": {
+        "title": "Arbitragem Triangular",
+        "subtitle": "Snapshot determinístico das três conversões.",
+        "assetLabel": "Ativo intermediário:",
+        "edgeLabel": "Edge estimado:"
       },
       "matrix": {
         "title": "Resumo por Timeframe",

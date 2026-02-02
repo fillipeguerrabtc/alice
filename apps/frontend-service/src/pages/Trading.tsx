@@ -411,12 +411,25 @@ interface TradingProfileForm {
   kind: 'analysis' | 'signal';
   timeframes: string[];
   indicators: string[];
+  techniques: string[];
   dataSources: {
     orderBook: boolean;
     news: boolean;
     trainingData: boolean;
   };
   newsConfig: TradingNewsConfigForm;
+  ensembleConfig?: {
+    mode?: 'ensemble_top3';
+    topN?: number;
+  };
+  arbitrageConfig?: {
+    exchanges: string[];
+    intermediateAssets: string[];
+    feePct: number;
+    maxSlippagePct: number;
+    minEdgePct: number;
+    maxIntervalMinutes: number;
+  } | null;
   modelConfig?: {
     temperature?: number;
     maxTokens?: number;
@@ -460,6 +473,33 @@ const SIGNAL_INDICATOR_OPTIONS = [
   { key: 'support_resistance', label: 'Suporte/Resistência', description: 'Níveis técnicos de reversão (pivot points).' },
   { key: 'volume', label: 'Volume', description: 'Força do movimento via fluxo negociado.' },
 ] as const;
+
+const TRADING_TECHNIQUE_OPTIONS = [
+  { key: 'scalping', labelKey: 'trading.techniques.scalping.title', descKey: 'trading.techniques.scalping.desc' },
+  { key: 'day_trade', labelKey: 'trading.techniques.day_trade.title', descKey: 'trading.techniques.day_trade.desc' },
+  { key: 'swing', labelKey: 'trading.techniques.swing.title', descKey: 'trading.techniques.swing.desc' },
+  { key: 'position', labelKey: 'trading.techniques.position.title', descKey: 'trading.techniques.position.desc' },
+  { key: 'trend', labelKey: 'trading.techniques.trend.title', descKey: 'trading.techniques.trend.desc' },
+  { key: 'mean_reversion', labelKey: 'trading.techniques.mean_reversion.title', descKey: 'trading.techniques.mean_reversion.desc' },
+  { key: 'breakout', labelKey: 'trading.techniques.breakout.title', descKey: 'trading.techniques.breakout.desc' },
+  { key: 'range', labelKey: 'trading.techniques.range.title', descKey: 'trading.techniques.range.desc' },
+  { key: 'momentum', labelKey: 'trading.techniques.momentum.title', descKey: 'trading.techniques.momentum.desc' },
+  { key: 'arbitrage_triangular', labelKey: 'trading.techniques.arbitrage_triangular.title', descKey: 'trading.techniques.arbitrage_triangular.desc' },
+] as const;
+
+const DEFAULT_SIGNAL_TECHNIQUES = TRADING_TECHNIQUE_OPTIONS
+  .map((option) => option.key)
+  .filter((key) => key !== 'arbitrage_triangular');
+
+const DEFAULT_ENSEMBLE_CONFIG = { mode: 'ensemble_top3' as const, topN: 3 };
+const DEFAULT_ARBITRAGE_CONFIG = {
+  exchanges: ['kucoin'],
+  intermediateAssets: ['ETH'],
+  feePct: 0.1,
+  maxSlippagePct: 0.05,
+  minEdgePct: 0.3,
+  maxIntervalMinutes: 5,
+};
 
 const ORDER_STATUS_BADGES: Record<string, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; icon: typeof CheckCircle }> = {
   pending: { variant: 'secondary', icon: Clock },
@@ -712,12 +752,15 @@ export default function Trading() {
     kind: 'signal',
     timeframes: [selectedInterval || '5m'],
     indicators: SIGNAL_INDICATOR_OPTIONS.map((option) => option.key),
+    techniques: DEFAULT_SIGNAL_TECHNIQUES,
     dataSources: {
       orderBook: false,
       news: false,
       trainingData: false,
     },
     newsConfig: DEFAULT_TRADING_NEWS_CONFIG,
+    ensembleConfig: DEFAULT_ENSEMBLE_CONFIG,
+    arbitrageConfig: null,
     modelConfig: {},
     consensus: { rule: 'majority' },
   });
@@ -743,6 +786,40 @@ export default function Trading() {
       };
     });
   };
+
+  const toggleSignalTechnique = (value: string) => {
+    setSignalProfileForm((prev) => {
+      const exists = prev.techniques.includes(value);
+      const next = exists ? prev.techniques.filter((item) => item !== value) : [...prev.techniques, value];
+      return {
+        ...prev,
+        techniques: next.length > 0 ? next : prev.techniques,
+      };
+    });
+  };
+
+  const updateSignalArbitrageConfig = (updates: Partial<NonNullable<TradingProfileForm['arbitrageConfig']>>) => {
+    setSignalProfileForm((prev) => ({
+      ...prev,
+      arbitrageConfig: {
+        ...(prev.arbitrageConfig ?? DEFAULT_ARBITRAGE_CONFIG),
+        ...updates,
+      },
+    }));
+  };
+
+  useEffect(() => {
+    const hasArbitrage = signalProfileForm.techniques.includes('arbitrage_triangular');
+    setSignalProfileForm((prev) => {
+      if (hasArbitrage && !prev.arbitrageConfig) {
+        return { ...prev, arbitrageConfig: DEFAULT_ARBITRAGE_CONFIG };
+      }
+      if (!hasArbitrage && prev.arbitrageConfig) {
+        return { ...prev, arbitrageConfig: null };
+      }
+      return prev;
+    });
+  }, [signalProfileForm.techniques]);
 
   const {
     data: statusData,
@@ -849,6 +926,11 @@ export default function Trading() {
       setSignalProfileForm({
         ...signalProfileResponse.data,
         newsConfig: normalizeTradingNewsConfigForm(signalProfileResponse.data.newsConfig),
+        techniques: signalProfileResponse.data.techniques?.length
+          ? signalProfileResponse.data.techniques
+          : DEFAULT_SIGNAL_TECHNIQUES,
+        ensembleConfig: signalProfileResponse.data.ensembleConfig ?? DEFAULT_ENSEMBLE_CONFIG,
+        arbitrageConfig: signalProfileResponse.data.arbitrageConfig ?? null,
       });
     }
   }, [signalProfileResponse]);
@@ -1617,6 +1699,9 @@ export default function Trading() {
         indicators: signalProfileForm.indicators,
         dataSources: signalProfileForm.dataSources,
         newsConfig: signalProfileForm.newsConfig,
+        techniques: signalProfileForm.techniques,
+        ensembleConfig: signalProfileForm.ensembleConfig,
+        arbitrageConfig: signalProfileForm.arbitrageConfig,
         modelConfig: signalProfileForm.modelConfig,
         consensus: signalProfileForm.consensus,
       };
@@ -1682,6 +1767,9 @@ export default function Trading() {
         timeframes: signalProfileForm.timeframes,
         indicators: signalProfileForm.indicators,
         dataSources: signalProfileForm.dataSources,
+        techniques: signalProfileForm.techniques,
+        ensembleConfig: signalProfileForm.ensembleConfig,
+        arbitrageConfig: signalProfileForm.arbitrageConfig ?? undefined,
         modelConfig: signalProfileForm.modelConfig,
         consensus: signalProfileForm.consensus,
         marketType: selectedMarketType,
@@ -1729,6 +1817,9 @@ export default function Trading() {
           .filter(Boolean),
         enabled: schedulerForm.enabled,
         maxSignalsPerRun,
+        techniques: signalProfileForm.techniques,
+        ensembleConfig: signalProfileForm.ensembleConfig,
+        arbitrageConfig: signalProfileForm.arbitrageConfig ?? undefined,
       };
       const res = await apiRequest('PUT', '/api/integrations/trading/signal-scheduler', payload);
       return res.json();
@@ -2020,6 +2111,7 @@ export default function Trading() {
   const orders = ordersData?.data || [];
   const allOrderHistorySelected = orderHistoryItems.length > 0 && orderHistorySelectedIds.size === orderHistoryItems.length;
   const hasOrderHistorySelection = orderHistorySelectedIds.size > 0;
+  const hasSignalArbitrage = signalProfileForm.techniques.includes('arbitrage_triangular');
 
   const fetchOrderHistory = useCallback(async (options: { reset?: boolean } = {}) => {
     if (orderHistoryLoading) return;
@@ -3333,6 +3425,125 @@ export default function Trading() {
                   </div>
                   <p className="text-xs text-muted-foreground">{t('trading.signals.profile.indicatorsSupportHint')}</p>
                 </div>
+
+                <div className="space-y-3">
+                  <Label>{t('trading.signals.profile.techniques')}</Label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {TRADING_TECHNIQUE_OPTIONS.map((option) => (
+                      <div key={option.key} className="flex items-start justify-between rounded-md border px-3 py-2">
+                        <div>
+                          <p className="text-sm font-medium">{t(option.labelKey)}</p>
+                          <p className="text-xs text-muted-foreground">{t(option.descKey)}</p>
+                        </div>
+                        <Switch
+                          checked={signalProfileForm.techniques.includes(option.key)}
+                          onCheckedChange={() => toggleSignalTechnique(option.key)}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">{t('trading.signals.profile.techniquesHint')}</p>
+                </div>
+
+                <div className="space-y-3">
+                  <Label>{t('trading.signals.profile.ensemble')}</Label>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="space-y-2">
+                      <Label className="text-xs text-muted-foreground">{t('trading.signals.profile.ensembleMode')}</Label>
+                      <Input value="ensemble_top3" disabled />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs text-muted-foreground">{t('trading.signals.profile.ensembleTopN')}</Label>
+                      <Select
+                        value={String(signalProfileForm.ensembleConfig?.topN ?? DEFAULT_ENSEMBLE_CONFIG.topN)}
+                        onValueChange={(value) => setSignalProfileForm((prev) => ({
+                          ...prev,
+                          ensembleConfig: { ...DEFAULT_ENSEMBLE_CONFIG, ...prev.ensembleConfig, topN: Number(value) },
+                        }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {[1, 2, 3, 4, 5].map((value) => (
+                            <SelectItem key={value} value={String(value)}>{value}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+
+                {hasSignalArbitrage && signalProfileForm.arbitrageConfig && (
+                  <div className="space-y-3">
+                    <Label>{t('trading.signals.profile.arbitrage')}</Label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Label className="text-xs text-muted-foreground">{t('trading.signals.profile.arbitrageExchange')}</Label>
+                        <Select
+                          value={signalProfileForm.arbitrageConfig.exchanges[0] ?? 'kucoin'}
+                          onValueChange={(value) => updateSignalArbitrageConfig({ exchanges: [value] })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="kucoin">KuCoin</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs text-muted-foreground">{t('trading.signals.profile.arbitrageIntermediate')}</Label>
+                        <Input
+                          value={signalProfileForm.arbitrageConfig.intermediateAssets.join(', ')}
+                          onChange={(event) => updateSignalArbitrageConfig({
+                            intermediateAssets: event.target.value
+                              .split(',')
+                              .map((asset) => asset.trim().toUpperCase())
+                              .filter(Boolean),
+                          })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs text-muted-foreground">{t('trading.signals.profile.arbitrageFee')}</Label>
+                        <Input
+                          value={String(signalProfileForm.arbitrageConfig.feePct)}
+                          onChange={(event) => updateSignalArbitrageConfig({
+                            feePct: Number(event.target.value) || 0,
+                          })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs text-muted-foreground">{t('trading.signals.profile.arbitrageSlippage')}</Label>
+                        <Input
+                          value={String(signalProfileForm.arbitrageConfig.maxSlippagePct)}
+                          onChange={(event) => updateSignalArbitrageConfig({
+                            maxSlippagePct: Number(event.target.value) || 0,
+                          })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs text-muted-foreground">{t('trading.signals.profile.arbitrageMinEdge')}</Label>
+                        <Input
+                          value={String(signalProfileForm.arbitrageConfig.minEdgePct)}
+                          onChange={(event) => updateSignalArbitrageConfig({
+                            minEdgePct: Number(event.target.value) || 0,
+                          })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs text-muted-foreground">{t('trading.signals.profile.arbitrageMaxInterval')}</Label>
+                        <Input
+                          value={String(signalProfileForm.arbitrageConfig.maxIntervalMinutes)}
+                          onChange={(event) => updateSignalArbitrageConfig({
+                            maxIntervalMinutes: Number(event.target.value) || DEFAULT_ARBITRAGE_CONFIG.maxIntervalMinutes,
+                          })}
+                        />
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{t('trading.signals.profile.arbitrageHint')}</p>
+                  </div>
+                )}
 
                 <div className="space-y-3">
                   <Label>{t('trading.signals.profile.sources')}</Label>

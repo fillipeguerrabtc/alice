@@ -28,7 +28,7 @@
  */
 
 import { createLogger } from '@alice/logger';
-import type { TradingIndicatorKey } from '@alice/shared';
+import type { TradingIndicatorKey, TradingTechnique, TradingTechniqueScore, TradingOverallSignal } from '@alice/shared';
 import {
   RSI,
   MACD,
@@ -664,6 +664,177 @@ export function calculateFullAnalysis(
   }, 'Análise técnica completa finalizada');
 
   return result;
+}
+
+function resolveSignalFromRatio(ratio: number): TradingOverallSignal {
+  if (ratio >= 0.6) return 'strong_buy';
+  if (ratio >= 0.2) return 'buy';
+  if (ratio <= -0.6) return 'strong_sell';
+  if (ratio <= -0.2) return 'sell';
+  return 'neutral';
+}
+
+function buildTechniqueScore(params: {
+  technique: TradingTechnique;
+  score: number;
+  maxScore: number;
+  rationale?: string;
+}): TradingTechniqueScore {
+  const ratio = params.maxScore > 0 ? params.score / params.maxScore : 0;
+  const confidence = params.maxScore > 0 ? Math.min(Math.abs(ratio), 1) : 0;
+  return {
+    technique: params.technique,
+    signal: resolveSignalFromRatio(ratio),
+    confidence: Math.round(confidence * 100) / 100,
+    rationale: params.rationale,
+  };
+}
+
+export function calculateTechniqueScores(params: {
+  analysis: TechnicalAnalysisResult;
+  techniques: TradingTechnique[];
+}): TradingTechniqueScore[] {
+  const { analysis, techniques } = params;
+  const scores: TradingTechniqueScore[] = [];
+
+  for (const technique of techniques) {
+    if (technique === 'arbitrage_triangular') {
+      continue;
+    }
+    let score = 0;
+    let maxScore = 0;
+    let rationale = '';
+
+    if (technique === 'scalping' || technique === 'mean_reversion') {
+      if (analysis.rsi) {
+        maxScore += 1;
+        if (analysis.rsi.interpretation === 'oversold') score += 1;
+        if (analysis.rsi.interpretation === 'overbought') score -= 1;
+      }
+      if (analysis.stochastic) {
+        maxScore += 1;
+        if (analysis.stochastic.interpretation === 'oversold') score += 1;
+        if (analysis.stochastic.interpretation === 'overbought') score -= 1;
+      }
+      if (analysis.bollinger) {
+        maxScore += 1;
+        if (analysis.bollinger.interpretation === 'oversold') score += 1;
+        if (analysis.bollinger.interpretation === 'overbought') score -= 1;
+      }
+      rationale = 'RSI/Stochastic/Bollinger para reversões curtas.';
+    }
+
+    if (technique === 'day_trade') {
+      if (analysis.macd) {
+        maxScore += 3;
+        if (analysis.macd.crossover === 'bullish_cross') score += 2;
+        if (analysis.macd.crossover === 'bearish_cross') score -= 2;
+        if (analysis.macd.interpretation === 'bullish') score += 1;
+        if (analysis.macd.interpretation === 'bearish') score -= 1;
+      }
+      if (analysis.movingAverages) {
+        maxScore += 1;
+        if (analysis.movingAverages.trend === 'bullish') score += 1;
+        if (analysis.movingAverages.trend === 'bearish') score -= 1;
+      }
+      if (analysis.adx) {
+        maxScore += 1;
+        if (analysis.adx.trendStrength === 'strong' || analysis.adx.trendStrength === 'very_strong') {
+          score += analysis.adx.plusDI > analysis.adx.minusDI ? 1 : -1;
+        }
+      }
+      rationale = 'MACD + tendência + força (ADX) para entradas intradiárias.';
+    }
+
+    if (technique === 'swing') {
+      if (analysis.movingAverages) {
+        maxScore += 2;
+        if (analysis.movingAverages.trend === 'bullish') score += 2;
+        if (analysis.movingAverages.trend === 'bearish') score -= 2;
+      }
+      if (analysis.supportResistance) {
+        maxScore += 1;
+        const price = analysis.currentPrice;
+        if (price <= analysis.supportResistance.support1 * 1.01) score += 1;
+        if (price >= analysis.supportResistance.resistance1 * 0.99) score -= 1;
+      }
+      if (analysis.adx) {
+        maxScore += 1;
+        if (analysis.adx.trendStrength === 'strong' || analysis.adx.trendStrength === 'very_strong') {
+          score += analysis.adx.plusDI > analysis.adx.minusDI ? 1 : -1;
+        }
+      }
+      rationale = 'Tendência + S/R + ADX para swings.';
+    }
+
+    if (technique === 'position' || technique === 'trend') {
+      if (analysis.movingAverages) {
+        maxScore += 2;
+        if (analysis.movingAverages.trend === 'bullish') score += 2;
+        if (analysis.movingAverages.trend === 'bearish') score -= 2;
+      }
+      if (analysis.adx) {
+        maxScore += 1;
+        if (analysis.adx.trendStrength === 'strong' || analysis.adx.trendStrength === 'very_strong') {
+          score += analysis.adx.plusDI > analysis.adx.minusDI ? 1 : -1;
+        }
+      }
+      if (analysis.macd) {
+        maxScore += 1;
+        if (analysis.macd.interpretation === 'bullish') score += 1;
+        if (analysis.macd.interpretation === 'bearish') score -= 1;
+      }
+      rationale = 'Tendência prolongada com confirmação MACD/ADX.';
+    }
+
+    if (technique === 'breakout') {
+      if (analysis.bollinger) {
+        maxScore += 2;
+        if (analysis.bollinger.percentB > 1) score += 2;
+        if (analysis.bollinger.percentB < 0) score -= 2;
+      }
+      if (analysis.volume) {
+        maxScore += 1;
+        if (analysis.volume.interpretation === 'high' || analysis.volume.interpretation === 'very_high') {
+          score += score >= 0 ? 1 : -1;
+        }
+      }
+      rationale = 'Bollinger + volume para rompimentos.';
+    }
+
+    if (technique === 'range') {
+      if (analysis.supportResistance) {
+        maxScore += 2;
+        const price = analysis.currentPrice;
+        if (price <= analysis.supportResistance.support1 * 1.01) score += 2;
+        if (price >= analysis.supportResistance.resistance1 * 0.99) score -= 2;
+      }
+      rationale = 'Suporte/Resistência para range.';
+    }
+
+    if (technique === 'momentum') {
+      if (analysis.macd) {
+        maxScore += 1;
+        score += analysis.macd.histogram >= 0 ? 1 : -1;
+      }
+      if (analysis.rsi) {
+        maxScore += 1;
+        if (analysis.rsi.value >= 60) score += 1;
+        if (analysis.rsi.value <= 40) score -= 1;
+      }
+      if (analysis.volume) {
+        maxScore += 1;
+        if (analysis.volume.interpretation === 'high' || analysis.volume.interpretation === 'very_high') {
+          score += score >= 0 ? 1 : -1;
+        }
+      }
+      rationale = 'MACD/RSI/Volume para momentum.';
+    }
+
+    scores.push(buildTechniqueScore({ technique, score, maxScore, rationale }));
+  }
+
+  return scores;
 }
 
 /**

@@ -218,8 +218,21 @@ export interface AnalysisProfile {
   kind: 'analysis' | 'signal';
   timeframes: string[];
   indicators: string[];
+  techniques: string[];
   dataSources: AnalysisProfileDataSources;
   newsConfig: TradingNewsConfigForm;
+  ensembleConfig?: {
+    mode?: 'ensemble_top3';
+    topN?: number;
+  };
+  arbitrageConfig?: {
+    exchanges: string[];
+    intermediateAssets: string[];
+    feePct: number;
+    maxSlippagePct: number;
+    minEdgePct: number;
+    maxIntervalMinutes: number;
+  } | null;
   modelConfig?: {
     temperature?: number;
     maxTokens?: number;
@@ -264,6 +277,33 @@ const INDICATOR_OPTIONS = [
   { key: 'support_resistance', label: 'Suporte/Resistência', description: 'Níveis técnicos de reversão (pivot points).' },
   { key: 'volume', label: 'Volume', description: 'Força do movimento via fluxo negociado.' },
 ] as const;
+
+const TRADING_TECHNIQUE_OPTIONS = [
+  { key: 'scalping', labelKey: 'trading.techniques.scalping.title', descKey: 'trading.techniques.scalping.desc' },
+  { key: 'day_trade', labelKey: 'trading.techniques.day_trade.title', descKey: 'trading.techniques.day_trade.desc' },
+  { key: 'swing', labelKey: 'trading.techniques.swing.title', descKey: 'trading.techniques.swing.desc' },
+  { key: 'position', labelKey: 'trading.techniques.position.title', descKey: 'trading.techniques.position.desc' },
+  { key: 'trend', labelKey: 'trading.techniques.trend.title', descKey: 'trading.techniques.trend.desc' },
+  { key: 'mean_reversion', labelKey: 'trading.techniques.mean_reversion.title', descKey: 'trading.techniques.mean_reversion.desc' },
+  { key: 'breakout', labelKey: 'trading.techniques.breakout.title', descKey: 'trading.techniques.breakout.desc' },
+  { key: 'range', labelKey: 'trading.techniques.range.title', descKey: 'trading.techniques.range.desc' },
+  { key: 'momentum', labelKey: 'trading.techniques.momentum.title', descKey: 'trading.techniques.momentum.desc' },
+  { key: 'arbitrage_triangular', labelKey: 'trading.techniques.arbitrage_triangular.title', descKey: 'trading.techniques.arbitrage_triangular.desc' },
+] as const;
+
+const DEFAULT_TECHNIQUES = TRADING_TECHNIQUE_OPTIONS
+  .map((option) => option.key)
+  .filter((key) => key !== 'arbitrage_triangular');
+
+const DEFAULT_ENSEMBLE_CONFIG = { mode: 'ensemble_top3' as const, topN: 3 };
+const DEFAULT_ARBITRAGE_CONFIG = {
+  exchanges: ['kucoin'],
+  intermediateAssets: ['ETH'],
+  feePct: 0.1,
+  maxSlippagePct: 0.05,
+  minEdgePct: 0.3,
+  maxIntervalMinutes: 5,
+};
 
 const getSignalColor = (signal: TechnicalAnalysisResult['overallSignal']) => {
   switch (signal) {
@@ -409,12 +449,15 @@ export function TechnicalAnalysisPanel({
     kind: 'analysis',
     timeframes: [resolvedDefaultInterval],
     indicators: INDICATOR_OPTIONS.map((option) => option.key),
+    techniques: DEFAULT_TECHNIQUES,
     dataSources: {
       orderBook: false,
       news: false,
       trainingData: false,
     },
     newsConfig: DEFAULT_TRADING_NEWS_CONFIG,
+    ensembleConfig: DEFAULT_ENSEMBLE_CONFIG,
+    arbitrageConfig: null,
     modelConfig: {},
     consensus: { rule: 'majority' },
   });
@@ -460,6 +503,42 @@ export function TechnicalAnalysisPanel({
       };
     });
   };
+
+  const toggleTechnique = (value: string) => {
+    setProfileForm((prev) => {
+      const exists = prev.techniques.includes(value);
+      const next = exists
+        ? prev.techniques.filter((item) => item !== value)
+        : [...prev.techniques, value];
+      return {
+        ...prev,
+        techniques: next.length > 0 ? next : prev.techniques,
+      };
+    });
+  };
+
+  const updateArbitrageConfig = (updates: Partial<NonNullable<AnalysisProfile['arbitrageConfig']>>) => {
+    setProfileForm((prev) => ({
+      ...prev,
+      arbitrageConfig: {
+        ...(prev.arbitrageConfig ?? DEFAULT_ARBITRAGE_CONFIG),
+        ...updates,
+      },
+    }));
+  };
+
+  useEffect(() => {
+    const hasArbitrage = profileForm.techniques.includes('arbitrage_triangular');
+    setProfileForm((prev) => {
+      if (hasArbitrage && !prev.arbitrageConfig) {
+        return { ...prev, arbitrageConfig: DEFAULT_ARBITRAGE_CONFIG };
+      }
+      if (!hasArbitrage && prev.arbitrageConfig) {
+        return { ...prev, arbitrageConfig: null };
+      }
+      return prev;
+    });
+  }, [profileForm.techniques]);
 
   const {
     data: profileResponse,
@@ -528,6 +607,11 @@ export function TechnicalAnalysisPanel({
       setProfileForm({
         ...profileResponse.data,
         newsConfig: normalizeTradingNewsConfigForm(profileResponse.data.newsConfig),
+        techniques: profileResponse.data.techniques?.length
+          ? profileResponse.data.techniques
+          : DEFAULT_TECHNIQUES,
+        ensembleConfig: profileResponse.data.ensembleConfig ?? DEFAULT_ENSEMBLE_CONFIG,
+        arbitrageConfig: profileResponse.data.arbitrageConfig ?? null,
       });
       if (profileResponse.data.timeframes?.[0]) {
         setInterval(profileResponse.data.timeframes[0]);
@@ -593,6 +677,13 @@ export function TechnicalAnalysisPanel({
     llmPrompt: string;
     matrix: AnalysisMatrixEntry[];
     consensus: AnalysisConsensus;
+    techniqueScores: Array<{ technique: string; signal: string; confidence: number; rationale?: string }>;
+    ensembleResult: { overallSignal: string; confidence: number; topTechniques: Array<{ technique: string; signal: string; confidence: number; rationale?: string }> };
+    arbitrageSnapshot?: {
+      intermediateAsset: string;
+      edgePct: number;
+      legs: Array<{ from: string; to: string; symbol: string; side: string; rate: number }>;
+    } | null;
     profile: AnalysisProfile;
     tradePlan?: TradePlan;
     sources: {
@@ -601,7 +692,18 @@ export function TechnicalAnalysisPanel({
       trainingData: { totalApproved: number; samples: Array<{ prompt: string; response: string; actionType: string; createdAt: string }> } | null;
     };
   }>({
-    queryKey: ['trading-analysis', symbol, profileForm.timeframes, profileForm.indicators, profileForm.dataSources, marketType, marginMode],
+    queryKey: [
+      'trading-analysis',
+      symbol,
+      profileForm.timeframes,
+      profileForm.indicators,
+      profileForm.techniques,
+      profileForm.ensembleConfig,
+      profileForm.arbitrageConfig,
+      profileForm.dataSources,
+      marketType,
+      marginMode,
+    ],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (profileForm.timeframes?.length) {
@@ -611,6 +713,9 @@ export function TechnicalAnalysisPanel({
       }
       if (profileForm.indicators?.length) {
         params.set('indicators', profileForm.indicators.join(','));
+      }
+      if (profileForm.techniques?.length) {
+        params.set('techniques', profileForm.techniques.join(','));
       }
       params.set('orderBook', String(profileForm.dataSources.orderBook));
       params.set('news', String(profileForm.dataSources.news));
@@ -745,6 +850,9 @@ export function TechnicalAnalysisPanel({
           .filter(Boolean),
         enabled: analysisSchedulerForm.enabled,
         maxSymbolsPerRun,
+        techniques: profileForm.techniques,
+        ensembleConfig: profileForm.ensembleConfig,
+        arbitrageConfig: profileForm.arbitrageConfig ?? undefined,
       };
 
       const res = await apiRequest('PUT', '/api/integrations/trading/analysis-scheduler', payload);
@@ -776,6 +884,9 @@ export function TechnicalAnalysisPanel({
         indicators: profileForm.indicators,
         dataSources: profileForm.dataSources,
         newsConfig: profileForm.newsConfig,
+        techniques: profileForm.techniques,
+        ensembleConfig: profileForm.ensembleConfig,
+        arbitrageConfig: profileForm.arbitrageConfig ?? undefined,
         consensus: profileForm.consensus,
       };
       const res = await apiRequest('PUT', '/api/integrations/trading/analysis-profile', payload);
@@ -812,6 +923,9 @@ export function TechnicalAnalysisPanel({
       }
       if (profileForm.indicators?.length) {
         params.set('indicators', profileForm.indicators.join(','));
+      }
+      if (profileForm.techniques?.length) {
+        params.set('techniques', profileForm.techniques.join(','));
       }
       params.set('orderBook', String(profileForm.dataSources.orderBook));
       params.set('news', String(profileForm.dataSources.news));
@@ -905,6 +1019,100 @@ export function TechnicalAnalysisPanel({
             </div>
             <p className="text-xs text-muted-foreground">{t('trading.analysis.profile.indicatorsSupportHint')}</p>
           </div>
+
+        <div className="space-y-3">
+          <Label>{t('trading.analysis.profile.techniques')}</Label>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {TRADING_TECHNIQUE_OPTIONS.map((option) => (
+              <div key={option.key} className="flex items-start justify-between rounded-md border px-3 py-2">
+                <div>
+                  <p className="text-sm font-medium">{t(option.labelKey)}</p>
+                  <p className="text-xs text-muted-foreground">{t(option.descKey)}</p>
+                </div>
+                <Switch
+                  checked={profileForm.techniques.includes(option.key)}
+                  onCheckedChange={() => toggleTechnique(option.key)}
+                />
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">{t('trading.analysis.profile.techniquesHint')}</p>
+        </div>
+
+        <div className="space-y-3">
+          <Label>{t('trading.analysis.profile.ensemble')}</Label>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">{t('trading.analysis.profile.ensembleMode')}</Label>
+              <Input value="ensemble_top3" disabled />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">{t('trading.analysis.profile.ensembleTopN')}</Label>
+              <Input
+                value={String(profileForm.ensembleConfig?.topN ?? DEFAULT_ENSEMBLE_CONFIG.topN)}
+                onChange={(event) => setProfileForm((prev) => ({
+                  ...prev,
+                  ensembleConfig: { ...DEFAULT_ENSEMBLE_CONFIG, ...prev.ensembleConfig, topN: Number(event.target.value) || DEFAULT_ENSEMBLE_CONFIG.topN },
+                }))}
+              />
+            </div>
+          </div>
+        </div>
+
+        {profileForm.techniques.includes('arbitrage_triangular') && profileForm.arbitrageConfig && (
+          <div className="space-y-3">
+            <Label>{t('trading.analysis.profile.arbitrage')}</Label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">{t('trading.analysis.profile.arbitrageExchange')}</Label>
+                <Input value="KuCoin" disabled />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">{t('trading.analysis.profile.arbitrageIntermediate')}</Label>
+                <Input
+                  value={profileForm.arbitrageConfig.intermediateAssets.join(', ')}
+                  onChange={(event) => updateArbitrageConfig({
+                    intermediateAssets: event.target.value
+                      .split(',')
+                      .map((asset) => asset.trim().toUpperCase())
+                      .filter(Boolean),
+                  })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">{t('trading.analysis.profile.arbitrageFee')}</Label>
+                <Input
+                  value={String(profileForm.arbitrageConfig.feePct)}
+                  onChange={(event) => updateArbitrageConfig({ feePct: Number(event.target.value) || 0 })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">{t('trading.analysis.profile.arbitrageSlippage')}</Label>
+                <Input
+                  value={String(profileForm.arbitrageConfig.maxSlippagePct)}
+                  onChange={(event) => updateArbitrageConfig({ maxSlippagePct: Number(event.target.value) || 0 })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">{t('trading.analysis.profile.arbitrageMinEdge')}</Label>
+                <Input
+                  value={String(profileForm.arbitrageConfig.minEdgePct)}
+                  onChange={(event) => updateArbitrageConfig({ minEdgePct: Number(event.target.value) || 0 })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">{t('trading.analysis.profile.arbitrageMaxInterval')}</Label>
+                <Input
+                  value={String(profileForm.arbitrageConfig.maxIntervalMinutes)}
+                  onChange={(event) => updateArbitrageConfig({
+                    maxIntervalMinutes: Number(event.target.value) || DEFAULT_ARBITRAGE_CONFIG.maxIntervalMinutes,
+                  })}
+                />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">{t('trading.analysis.profile.arbitrageHint')}</p>
+          </div>
+        )}
 
           <div className="space-y-3">
             <Label>{t('trading.analysis.profile.sources')}</Label>
@@ -1215,6 +1423,66 @@ export function TechnicalAnalysisPanel({
                         ))}
                       </ul>
                     </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {analysisResponse?.ensembleResult && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>{t('trading.analysis.ensemble.title')}</CardTitle>
+                  <CardDescription>{t('trading.analysis.ensemble.subtitle')}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Badge variant="outline">
+                      {t('trading.analysis.ensemble.overallLabel')} {analysisResponse.ensembleResult.overallSignal.toUpperCase()}
+                    </Badge>
+                    <Badge variant="outline">
+                      {t('trading.analysis.ensemble.confidenceLabel')} {formatNumber(analysisResponse.ensembleResult.confidence * 100, locale, { maximumFractionDigits: 0 })}%
+                    </Badge>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {(analysisResponse.ensembleResult.topTechniques ?? []).map((technique) => (
+                      <div key={`${technique.technique}-${technique.signal}`} className="rounded-md border p-3">
+                        <p className="text-sm font-medium">{t(`trading.techniques.${technique.technique}.title`)}</p>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <span>{t('trading.analysis.ensemble.signalLabel')} {technique.signal.toUpperCase()}</span>
+                          <span>•</span>
+                          <span>{formatNumber(technique.confidence * 100, locale, { maximumFractionDigits: 0 })}%</span>
+                        </div>
+                        {technique.rationale && (
+                          <p className="text-xs text-muted-foreground mt-2">{technique.rationale}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {analysisResponse?.arbitrageSnapshot && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>{t('trading.analysis.arbitrage.title')}</CardTitle>
+                  <CardDescription>{t('trading.analysis.arbitrage.subtitle')}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Badge variant="outline">
+                      {t('trading.analysis.arbitrage.assetLabel')} {analysisResponse.arbitrageSnapshot.intermediateAsset}
+                    </Badge>
+                    <Badge variant="outline">
+                      {t('trading.analysis.arbitrage.edgeLabel')} {formatNumber(analysisResponse.arbitrageSnapshot.edgePct, locale, { maximumFractionDigits: 2 })}%
+                    </Badge>
+                  </div>
+                  <div className="grid gap-2">
+                    {analysisResponse.arbitrageSnapshot.legs.map((leg, index) => (
+                      <div key={`${leg.symbol}-${index}`} className="text-xs text-muted-foreground">
+                        {leg.from} → {leg.to} ({leg.symbol}) • {leg.side.toUpperCase()} • {formatNumber(leg.rate, locale, { maximumFractionDigits: 6 })}
+                      </div>
+                    ))}
                   </div>
                 </CardContent>
               </Card>

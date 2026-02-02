@@ -96,6 +96,18 @@ interface TradingSignal {
     technicalIndicators?: Record<string, number>;
     validationStatus?: 'pending' | 'validated' | 'failed';
     validationId?: string;
+    techniques?: string[];
+    techniqueScores?: Array<{ technique: string; signal: string; confidence: number; rationale?: string }>;
+    ensembleResult?: {
+      overallSignal?: string;
+      confidence?: number;
+      topTechniques?: Array<{ technique: string; signal: string; confidence: number; rationale?: string }>;
+    };
+    arbitrageSnapshot?: {
+      intermediateAsset?: string;
+      edgePct?: number;
+      legs?: Array<{ from: string; to: string; symbol: string; side: string; rate: number }>;
+    };
   };
   isActive: boolean;
   criadoEm: string;
@@ -413,6 +425,39 @@ function SignalCard({
                             .filter((key) => (metadata.dataSources as Record<string, boolean>)[key])
                             .join(', ') || 'Nenhuma'}
                         </p>
+                      )}
+                      {Array.isArray(metadata.techniques) && metadata.techniques.length > 0 && (
+                        <p className="text-sm text-muted-foreground">
+                          Técnicas: {metadata.techniques.join(', ')}
+                        </p>
+                      )}
+                      {typeof metadata.ensembleResult === 'object' && metadata.ensembleResult !== null && (
+                        <div className="text-sm text-muted-foreground space-y-1">
+                          <p>Ensemble: {(metadata.ensembleResult as { overallSignal?: string }).overallSignal ?? 'N/A'}</p>
+                          <p>
+                            Confiança: {typeof (metadata.ensembleResult as { confidence?: number }).confidence === 'number'
+                              ? `${Math.round(((metadata.ensembleResult as { confidence?: number }).confidence ?? 0) * 100)}%`
+                              : 'N/A'}
+                          </p>
+                          {Array.isArray((metadata.ensembleResult as { topTechniques?: Array<{ technique?: string; confidence?: number }> }).topTechniques) && (
+                            <p>
+                              Top 3: {(metadata.ensembleResult as { topTechniques?: Array<{ technique?: string }> }).topTechniques
+                                ?.map((item) => item.technique)
+                                .filter(Boolean)
+                                .join(', ') || 'Nenhum'}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      {typeof metadata.arbitrageSnapshot === 'object' && metadata.arbitrageSnapshot !== null && (
+                        <div className="text-sm text-muted-foreground space-y-1">
+                          <p>Arbitragem: {(metadata.arbitrageSnapshot as { intermediateAsset?: string }).intermediateAsset ?? 'N/A'}</p>
+                          <p>
+                            Edge: {typeof (metadata.arbitrageSnapshot as { edgePct?: number }).edgePct === 'number'
+                              ? `${(metadata.arbitrageSnapshot as { edgePct?: number }).edgePct?.toFixed(2)}%`
+                              : 'N/A'}
+                          </p>
+                        </div>
                       )}
                     </div>
                   )}

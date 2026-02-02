@@ -54,8 +54,33 @@ import { integrationsServicePaths, integrationsServiceSchemas } from './openapi-
 import { loadConfig, integrationsServiceConfigSchema } from '@alice/config';
 import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, getPool } from '@alice/database';
 import { eq, desc, asc, sql, and, inArray, not, isNull, lte, lt } from '@alice/database';
-import { tradingIntervalEnum, TradingOperationTypeSchema, TradingProfileNewsConfigSchema } from '@alice/shared';
-import type { TradingSignalMetadata, TradingIndicatorKey, TradingProfileConsensus, TradingProfileDataSources, TradingProfileModelConfig, TradingProfileNewsConfig, TradingCandleData, TradingOperationType, TradingRiskConfig, TradingOrderMetadata } from '@alice/shared';
+import {
+  tradingIntervalEnum,
+  TradingOperationTypeSchema,
+  TradingProfileNewsConfigSchema,
+  TradingTechniqueSchema,
+  TradingEnsembleConfigSchema,
+  TradingArbitrageConfigSchema,
+  TradingOverallSignalSchema,
+} from '@alice/shared';
+import type {
+  TradingSignalMetadata,
+  TradingIndicatorKey,
+  TradingProfileConsensus,
+  TradingProfileDataSources,
+  TradingProfileModelConfig,
+  TradingProfileNewsConfig,
+  TradingCandleData,
+  TradingOperationType,
+  TradingRiskConfig,
+  TradingOrderMetadata,
+  TradingTechnique,
+  TradingEnsembleConfig,
+  TradingArbitrageConfig,
+  TradingTechniqueScore,
+  TradingOverallSignal,
+  TradingEnsembleResult,
+} from '@alice/shared';
 import { z } from 'zod';
 import { wiseService } from './wiseService.js';
 import { isWiseConfigured, getSandboxStatus, getProfileIdSafe, getWiseCircuitBreakerStatus, validateWiseWebhook, initWiseMetrics } from './wiseClient.js';
@@ -192,6 +217,19 @@ const TRADING_INDICATOR_KEYS = [
   'volume',
 ] as const;
 const TRADING_INDICATOR_ZOD = z.enum(TRADING_INDICATOR_KEYS);
+const TRADING_TECHNIQUE_KEYS = [
+  'scalping',
+  'day_trade',
+  'swing',
+  'position',
+  'trend',
+  'mean_reversion',
+  'breakout',
+  'range',
+  'momentum',
+  'arbitrage_triangular',
+] as const;
+const TRADING_TECHNIQUE_ZOD = z.enum(TRADING_TECHNIQUE_KEYS);
 
 type TradingProfileKind = 'analysis' | 'signal';
 
@@ -206,6 +244,23 @@ const DEFAULT_TRADING_NEWS_CONFIG: TradingNewsConfigResolved = {
   queryTemplates: ['{symbol} {marketType} news {terms}'],
   extraTerms: [],
   maxResults: 5,
+};
+
+const DEFAULT_TRADING_TECHNIQUES: TradingTechnique[] = [
+  'scalping',
+  'day_trade',
+  'swing',
+  'position',
+  'trend',
+  'mean_reversion',
+  'breakout',
+  'range',
+  'momentum',
+];
+
+const DEFAULT_TRADING_ENSEMBLE_CONFIG: TradingEnsembleConfig = {
+  mode: 'ensemble_top3',
+  topN: 3,
 };
 
 type TradingNewsConfigResolved = {
@@ -239,6 +294,65 @@ function parseIndicatorsParam(input?: string | string[]): TradingIndicatorKey[] 
   const list = parseListParam(input);
   if (list.length === 0) return [];
   return list.map((value) => TRADING_INDICATOR_ZOD.parse(value)) as TradingIndicatorKey[];
+}
+
+function parseTechniquesParam(input?: string | string[]): TradingTechnique[] {
+  const list = parseListParam(input);
+  if (list.length === 0) return [];
+  return list.map((value) => TRADING_TECHNIQUE_ZOD.parse(value)) as TradingTechnique[];
+}
+
+function normalizeTradingTechniques(raw?: TradingTechnique[] | null): TradingTechnique[] {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return [...DEFAULT_TRADING_TECHNIQUES];
+  }
+  const parsed = raw.map((value) => TRADING_TECHNIQUE_ZOD.parse(value));
+  const unique = Array.from(new Set(parsed));
+  return unique.length > 0 ? unique : [...DEFAULT_TRADING_TECHNIQUES];
+}
+
+function normalizeTradingEnsembleConfig(raw?: TradingEnsembleConfig | null): TradingEnsembleConfig {
+  const parsed = TradingEnsembleConfigSchema.safeParse(raw ?? DEFAULT_TRADING_ENSEMBLE_CONFIG);
+  if (parsed.success) return parsed.data;
+  return { ...DEFAULT_TRADING_ENSEMBLE_CONFIG };
+}
+
+function normalizeTradingArbitrageConfig(raw?: TradingArbitrageConfig | null): TradingArbitrageConfig | undefined {
+  if (!raw) return undefined;
+  const parsed = TradingArbitrageConfigSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error('Configuração de arbitragem inválida');
+  }
+  return parsed.data;
+}
+
+function resolveIntervalMinutes(interval: TradingIntervalValue): number {
+  return TRADING_INTERVAL_GRANULARITY[interval];
+}
+
+function assertArbitrageConfigForTechniques(params: {
+  techniques: TradingTechnique[];
+  arbitrageConfig?: TradingArbitrageConfig;
+  timeframes: TradingIntervalValue[];
+  context: string;
+}): void {
+  if (!params.techniques.includes('arbitrage_triangular')) return;
+  if (!params.arbitrageConfig) {
+    throw new Error(`Configuração de arbitragem obrigatória para ${params.context}`);
+  }
+  const maxMinutes = params.arbitrageConfig.maxIntervalMinutes;
+  const invalidFrames = params.timeframes.filter((frame) => resolveIntervalMinutes(frame) > maxMinutes);
+  if (invalidFrames.length > 0) {
+    throw new Error(`Arbitragem triangular exige timeframes <= ${maxMinutes} minutos. Ajuste: ${invalidFrames.join(', ')}`);
+  }
+}
+
+function splitSymbolPair(symbol: string): { base: string; quote: string } {
+  const parts = symbol.split('-').map((value) => value.trim()).filter(Boolean);
+  if (parts.length !== 2) {
+    throw new Error(`Símbolo inválido para arbitragem triangular: ${symbol}`);
+  }
+  return { base: parts[0], quote: parts[1] };
 }
 
 function normalizeTradingNewsConfig(raw?: TradingProfileNewsConfig | null): TradingNewsConfigResolved {
@@ -314,6 +428,9 @@ function normalizeTradingProfile(row?: schema.TradingAnalysisProfile | null): {
   timeframes: TradingIntervalValue[];
   indicators: TradingIndicatorKey[];
   dataSources: TradingProfileDataSources;
+  techniques: TradingTechnique[];
+  ensembleConfig: TradingEnsembleConfig;
+  arbitrageConfig?: TradingArbitrageConfig;
   modelConfig: TradingProfileModelConfig;
   consensus: TradingProfileConsensus;
   newsConfig: TradingNewsConfigResolved;
@@ -330,6 +447,9 @@ function normalizeTradingProfile(row?: schema.TradingAnalysisProfile | null): {
     news: Boolean(dataSourcesRaw?.news),
     trainingData: Boolean(dataSourcesRaw?.trainingData),
   };
+  const techniques = normalizeTradingTechniques(row?.techniques as TradingTechnique[] | null);
+  const ensembleConfig = normalizeTradingEnsembleConfig(row?.ensembleConfig as TradingEnsembleConfig | null);
+  const arbitrageConfig = normalizeTradingArbitrageConfig(row?.arbitrageConfig as TradingArbitrageConfig | null);
   const modelConfigRaw = row?.modelConfig ?? {};
   const modelConfig: TradingProfileModelConfig = {
     temperature: modelConfigRaw?.temperature,
@@ -342,7 +462,17 @@ function normalizeTradingProfile(row?: schema.TradingAnalysisProfile | null): {
     minAgree: consensusRaw?.minAgree,
   };
 
-  return { timeframes, indicators, dataSources, modelConfig, consensus, newsConfig };
+  return {
+    timeframes,
+    indicators,
+    dataSources,
+    techniques,
+    ensembleConfig,
+    arbitrageConfig,
+    modelConfig,
+    consensus,
+    newsConfig,
+  };
 }
 
 type AnalysisMatrixEntry = {
@@ -415,6 +545,72 @@ function buildMajorityConsensus(
   };
 }
 
+function aggregateTechniqueScores(matrix: AnalysisMatrixEntry[], techniques: TradingTechnique[]): TradingTechniqueScore[] {
+  const perFrame = matrix.map((entry) => technicalIndicators.calculateTechniqueScores({
+    analysis: entry.analysis,
+    techniques,
+  }));
+
+  return techniques
+    .filter((technique) => technique !== 'arbitrage_triangular')
+    .map((technique) => {
+      const scores = perFrame
+        .map((list) => list.find((item) => item.technique === technique))
+        .filter((item): item is TradingTechniqueScore => Boolean(item));
+      if (scores.length === 0) {
+        return { technique, signal: 'neutral', confidence: 0 };
+      }
+      const weightMap = new Map<TradingOverallSignal, number>();
+      let confidenceSum = 0;
+      for (const score of scores) {
+        confidenceSum += score.confidence;
+        weightMap.set(score.signal, (weightMap.get(score.signal) ?? 0) + score.confidence);
+      }
+      let bestSignal: TradingOverallSignal = 'neutral';
+      let bestWeight = -1;
+      for (const [signal, weight] of weightMap.entries()) {
+        if (weight > bestWeight) {
+          bestWeight = weight;
+          bestSignal = signal;
+        }
+      }
+      const avgConfidence = confidenceSum / scores.length;
+      return {
+        technique,
+        signal: bestSignal,
+        confidence: Math.round(avgConfidence * 100) / 100,
+      };
+    });
+}
+
+function buildEnsembleResult(
+  scores: TradingTechniqueScore[],
+  config: TradingEnsembleConfig
+): TradingEnsembleResult {
+  const sorted = [...scores].sort((a, b) => b.confidence - a.confidence);
+  const topTechniques = sorted.slice(0, Math.max(1, config.topN));
+  const weightMap = new Map<TradingOverallSignal, number>();
+  let confidenceSum = 0;
+  for (const score of topTechniques) {
+    confidenceSum += score.confidence;
+    weightMap.set(score.signal, (weightMap.get(score.signal) ?? 0) + score.confidence);
+  }
+  let bestSignal: TradingOverallSignal = 'neutral';
+  let bestWeight = -1;
+  for (const [signal, weight] of weightMap.entries()) {
+    if (weight > bestWeight) {
+      bestWeight = weight;
+      bestSignal = signal;
+    }
+  }
+  const avgConfidence = topTechniques.length > 0 ? confidenceSum / topTechniques.length : 0;
+  return {
+    overallSignal: bestSignal,
+    confidence: Math.round(avgConfidence * 100) / 100,
+    topTechniques,
+  };
+}
+
 async function getOrderBookSnapshot(
   auth: { tenantId: string; userId: string },
   symbol: string,
@@ -449,6 +645,135 @@ async function getOrderBookSnapshot(
     spreadPct,
     depth,
   };
+}
+
+type ArbitrageLeg = {
+  from: string;
+  to: string;
+  symbol: string;
+  side: 'sell' | 'buy';
+  rate: number;
+  bestBid: number | null;
+  bestAsk: number | null;
+};
+
+type TriangularArbitrageResult = {
+  intermediateAsset: string;
+  startAsset: string;
+  endAsset: string;
+  edgePct: number;
+  finalAmount: number;
+  legs: ArbitrageLeg[];
+};
+
+async function getConversionRate(params: {
+  auth: { tenantId: string; userId: string };
+  from: string;
+  to: string;
+  marketType?: TradingMarketType;
+  marginMode?: TradingMarginMode;
+}): Promise<ArbitrageLeg | null> {
+  const candidateDirect = `${params.from}-${params.to}`;
+  const candidateInverse = `${params.to}-${params.from}`;
+
+  const trySnapshot = async (symbol: string) => {
+    try {
+      return await getOrderBookSnapshot(params.auth, symbol, params.marketType, params.marginMode);
+    } catch (_error) {
+      return null;
+    }
+  };
+
+  const direct = await trySnapshot(candidateDirect);
+  if (direct?.bestBid && direct.bestAsk) {
+    return {
+      from: params.from,
+      to: params.to,
+      symbol: direct.symbol,
+      side: 'sell',
+      rate: direct.bestBid,
+      bestBid: direct.bestBid,
+      bestAsk: direct.bestAsk,
+    };
+  }
+
+  const inverse = await trySnapshot(candidateInverse);
+  if (inverse?.bestBid && inverse.bestAsk) {
+    return {
+      from: params.from,
+      to: params.to,
+      symbol: inverse.symbol,
+      side: 'buy',
+      rate: 1 / inverse.bestAsk,
+      bestBid: inverse.bestBid,
+      bestAsk: inverse.bestAsk,
+    };
+  }
+
+  return null;
+}
+
+async function calculateTriangularArbitrage(params: {
+  auth: { tenantId: string; userId: string };
+  startAsset: string;
+  quoteAsset: string;
+  intermediateAssets: string[];
+  marketType?: TradingMarketType;
+  marginMode?: TradingMarginMode;
+  feePct: number;
+  maxSlippagePct: number;
+}): Promise<TriangularArbitrageResult | null> {
+  let best: TriangularArbitrageResult | null = null;
+  const feeMultiplier = 1 - params.feePct / 100;
+  const slippageMultiplier = 1 - params.maxSlippagePct / 100;
+
+  for (const intermediate of params.intermediateAssets) {
+    const leg1 = await getConversionRate({
+      auth: params.auth,
+      from: params.startAsset,
+      to: intermediate,
+      marketType: params.marketType,
+      marginMode: params.marginMode,
+    });
+    if (!leg1) continue;
+
+    const leg2 = await getConversionRate({
+      auth: params.auth,
+      from: intermediate,
+      to: params.quoteAsset,
+      marketType: params.marketType,
+      marginMode: params.marginMode,
+    });
+    if (!leg2) continue;
+
+    const leg3 = await getConversionRate({
+      auth: params.auth,
+      from: params.quoteAsset,
+      to: params.startAsset,
+      marketType: params.marketType,
+      marginMode: params.marginMode,
+    });
+    if (!leg3) continue;
+
+    const startAmount = 1;
+    const afterLeg1 = startAmount * leg1.rate * feeMultiplier * slippageMultiplier;
+    const afterLeg2 = afterLeg1 * leg2.rate * feeMultiplier * slippageMultiplier;
+    const finalAmount = afterLeg2 * leg3.rate * feeMultiplier * slippageMultiplier;
+    const edgePct = ((finalAmount - startAmount) / startAmount) * 100;
+
+    if (!best || edgePct > best.edgePct) {
+      best = {
+        intermediateAsset: intermediate,
+        startAsset: params.startAsset,
+        endAsset: params.startAsset,
+        edgePct: Math.round(edgePct * 100) / 100,
+        finalAmount: Math.round(finalAmount * 1000000) / 1000000,
+        legs: [leg1, leg2, leg3],
+      };
+    }
+  }
+
+  return best;
 }
 
 function buildNewsQuery(params: {
@@ -770,6 +1095,18 @@ async function buildTradingDatasetSeedFromSignal(params: {
     analysis,
   });
 
+  const techniques = Array.isArray(metadata.techniques)
+    ? (metadata.techniques as TradingTechnique[])
+    : [];
+  const techniqueScores = Array.isArray(metadata.techniqueScores)
+    ? (metadata.techniqueScores as TradingTechniqueScore[])
+    : [];
+  const ensembleResult = (metadata.ensembleResult as TradingEnsembleResult | undefined) ?? {
+    overallSignal: 'neutral',
+    confidence: 0,
+    topTechniques: [],
+  };
+
   const prompt = matrix.length > 0
     ? buildMultiTimeframePrompt({
       matrix: matrix.map((entry) => ({
@@ -787,6 +1124,10 @@ async function buildTradingDatasetSeedFromSignal(params: {
       orderBook: null,
       news: null,
       trainingData: null,
+      techniques,
+      techniqueScores,
+      ensembleResult,
+      arbitrageSnapshot: null,
     })
     : (params.signal.metadata as TradingSignalMetadata)?.reasoning ?? 'Sinal gerado sem contexto detalhado.';
 
@@ -981,6 +1322,10 @@ function buildMultiTimeframePrompt(params: {
   orderBook: Awaited<ReturnType<typeof getOrderBookSnapshot>> | null;
   news: Awaited<ReturnType<typeof fetchNewsSummary>> | null;
   trainingData: Awaited<ReturnType<typeof fetchTradingDatasetSummary>> | null;
+  techniques: TradingTechnique[];
+  techniqueScores: TradingTechniqueScore[];
+  ensembleResult: TradingEnsembleResult;
+  arbitrageSnapshot: TriangularArbitrageResult | null;
 }): string {
   const blocks = params.matrix.map((entry) => {
     const analysisBlock = truncateText(
@@ -1021,9 +1366,27 @@ Exemplos:
 ${samples || '- Nenhum exemplo disponível'}`);
   }
 
+  const techniqueLines = params.techniqueScores
+    .sort((a, b) => b.confidence - a.confidence)
+    .map((score) => `- ${score.technique}: ${score.signal} (conf ${score.confidence.toFixed(2)})${score.rationale ? ` - ${score.rationale}` : ''}`)
+    .join('\n');
+
+  const arbitrageBlock = params.arbitrageSnapshot
+    ? `### ARBITRAGEM TRIANGULAR (KuCoin)
+Intermediário: ${params.arbitrageSnapshot.intermediateAsset}
+Edge estimada: ${params.arbitrageSnapshot.edgePct.toFixed(2)}%
+Rotas:
+${params.arbitrageSnapshot.legs.map((leg) => `- ${leg.from} -> ${leg.to} via ${leg.symbol} (${leg.side}, rate ${leg.rate.toFixed(8)})`).join('\n')}`
+    : '';
+
   return `
 ## CONTEXTO MULTI-TIMEFRAME
 Indicadores habilitados: ${params.indicators.join(', ')}
+Técnicas selecionadas: ${params.techniques.join(', ')}
+Ensemble: ${params.ensembleResult.overallSignal.toUpperCase()} (conf ${params.ensembleResult.confidence.toFixed(2)})
+
+Ranking técnico (determinístico):
+${techniqueLines || '- Nenhuma técnica disponível'}
 
 Consenso (maioria simples):
 - Sinal: ${params.consensus.overallSignal.toUpperCase()}
@@ -1034,6 +1397,7 @@ Consenso (maioria simples):
 ${blocks.join('\n\n')}
 
 ${sources.length > 0 ? `### FONTES EXTRAS\n${sources.join('\n\n')}` : ''}
+${arbitrageBlock}
 `.trim();
 }
 
@@ -1478,6 +1842,11 @@ async function runDueSignalSchedulers(): Promise<void> {
 
       const profileRow = await getOrCreateTradingProfile(scheduler.tenantId, 'signal');
       const profile = normalizeTradingProfile(profileRow);
+      const techniques = (scheduler.techniques?.length
+        ? scheduler.techniques
+        : profile.techniques) as TradingTechnique[];
+      const ensembleConfig = (scheduler.ensembleConfig ?? profile.ensembleConfig) as TradingEnsembleConfig;
+      const arbitrageConfig = (scheduler.arbitrageConfig ?? profile.arbitrageConfig) as TradingArbitrageConfig | undefined;
 
       const maxSignals = Math.max(1, scheduler.maxSignalsPerRun ?? 1);
       const selectedSymbols = symbols.slice(0, maxSignals);
@@ -1498,6 +1867,9 @@ async function runDueSignalSchedulers(): Promise<void> {
           timeframes: profile.timeframes,
           indicators: profile.indicators,
           dataSources: profile.dataSources,
+          techniques,
+          ensembleConfig,
+          arbitrageConfig,
           modelConfig: profile.modelConfig,
           consensus: profile.consensus,
         });
@@ -1595,10 +1967,22 @@ async function runDueAnalysisSchedulers(): Promise<void> {
 
       const profileRow = await getOrCreateTradingProfile(scheduler.tenantId, 'analysis');
       const profile = normalizeTradingProfile(profileRow);
-      const timeframes = profile.timeframes?.length
+      const techniques = (scheduler.techniques?.length
+        ? scheduler.techniques
+        : profile.techniques) as TradingTechnique[];
+      const ensembleConfig = (scheduler.ensembleConfig ?? profile.ensembleConfig) as TradingEnsembleConfig;
+      const arbitrageConfig = (scheduler.arbitrageConfig ?? profile.arbitrageConfig) as TradingArbitrageConfig | undefined;
+      const timeframes: TradingIntervalValue[] = profile.timeframes?.length
         ? profile.timeframes
-        : [scheduler.interval || '5m'];
+        : [TRADING_INTERVAL_ZOD.parse(scheduler.interval ?? '5m')];
       const enabledIndicators = profile.indicators?.length ? profile.indicators : undefined;
+
+      assertArbitrageConfigForTechniques({
+        techniques,
+        arbitrageConfig,
+        timeframes,
+        context: 'scheduler de análise',
+      });
 
       const maxSymbols = Math.max(1, scheduler.maxSymbolsPerRun ?? 1);
       const selectedSymbols = symbols.slice(0, maxSymbols);
@@ -1615,6 +1999,8 @@ async function runDueAnalysisSchedulers(): Promise<void> {
             marketType: scheduler.marketType as TradingMarketType,
             marginMode: (scheduler.marginMode ?? undefined) as TradingMarginMode | undefined,
             enabledIndicators,
+            techniques,
+            ensembleConfig,
           });
           lastIndicatorId = result.indicatorId;
         }
@@ -6431,6 +6817,9 @@ function buildTradingSignalSystemPrompt(params: {
     personality ? `Personalidade: ${personality}` : null,
     `MarketType: ${params.marketType}`,
     params.marginMode ? `MarginMode: ${params.marginMode}` : null,
+    'Use o ranking técnico determinístico e o ensemble fornecidos no prompt.',
+    'Sinais DEVEM incluir preço de entrada e níveis de saída (TP/SL) quando aplicável.',
+    'Para arbitragem, considere timeframes curtos e execução imediata.',
     'Responda SOMENTE com JSON válido (sem texto extra).',
     'Use aspas duplas para TODAS as chaves e strings.',
     'Não use aspas duplas dentro dos valores; se precisar citar algo, use aspas simples ou escape com \\".',
@@ -7424,6 +7813,9 @@ async function generateTradingSignalFromLlm(params: {
   dataSources?: TradingProfileDataSources;
   modelConfig?: TradingProfileModelConfig;
   consensus?: TradingProfileConsensus;
+  techniques?: TradingTechnique[];
+  ensembleConfig?: TradingEnsembleConfig;
+  arbitrageConfig?: TradingArbitrageConfig;
 }): Promise<{
   signal: schema.TradingSignal;
   validationId: string;
@@ -7445,6 +7837,19 @@ async function generateTradingSignalFromLlm(params: {
   const indicators = params.indicators?.length ? params.indicators : profile.indicators;
   const dataSources = params.dataSources ?? profile.dataSources;
   const consensusConfig = params.consensus ?? profile.consensus;
+  const techniques = params.techniques?.length ? params.techniques : profile.techniques;
+  const ensembleConfig = params.ensembleConfig ?? profile.ensembleConfig;
+  const arbitrageConfig = params.arbitrageConfig ?? profile.arbitrageConfig;
+
+  assertArbitrageConfigForTechniques({
+    techniques,
+    arbitrageConfig,
+    timeframes,
+    context: 'geração de sinais IA',
+  });
+  if (techniques.includes('arbitrage_triangular') && (params.marketType ?? 'futures') === 'futures') {
+    throw new Error('Arbitragem triangular não é suportada em mercado futures.');
+  }
 
   const analysisMatrix = await Promise.all(
     timeframes.map(async (frame) => {
@@ -7456,6 +7861,8 @@ async function generateTradingSignalFromLlm(params: {
         marketType: params.marketType,
         marginMode: params.marginMode,
         enabledIndicators: indicators,
+        techniques,
+        ensembleConfig,
       });
       return {
         interval: frame,
@@ -7468,6 +7875,48 @@ async function generateTradingSignalFromLlm(params: {
 
   const consensus = buildMajorityConsensus(analysisMatrix, consensusConfig);
   const primaryAnalysis = analysisMatrix[0];
+  let techniqueScores = aggregateTechniqueScores(analysisMatrix, techniques);
+  let arbitrageSnapshot: TriangularArbitrageResult | null = null;
+
+  if (techniques.includes('arbitrage_triangular') && arbitrageConfig) {
+    const resolvedSymbol = primaryAnalysis.resolvedSymbol ?? params.symbol;
+    const { base, quote } = splitSymbolPair(resolvedSymbol);
+    arbitrageSnapshot = await calculateTriangularArbitrage({
+      auth: { tenantId: params.tenantId, userId: params.userId },
+      startAsset: base,
+      quoteAsset: quote,
+      intermediateAssets: arbitrageConfig.intermediateAssets,
+      marketType: params.marketType,
+      marginMode: params.marginMode,
+      feePct: arbitrageConfig.feePct,
+      maxSlippagePct: arbitrageConfig.maxSlippagePct,
+    });
+    if (arbitrageSnapshot) {
+      const edgePct = arbitrageSnapshot.edgePct;
+      const minEdge = arbitrageConfig.minEdgePct;
+      const confidence = Math.min(edgePct / Math.max(minEdge, 0.01), 1);
+      const signal: TradingOverallSignal = edgePct >= minEdge * 2
+        ? 'strong_buy'
+        : edgePct >= minEdge
+          ? 'buy'
+          : 'neutral';
+      techniqueScores = techniqueScores.concat([{
+        technique: 'arbitrage_triangular',
+        signal,
+        confidence: Math.round(confidence * 100) / 100,
+        rationale: `Edge ${edgePct.toFixed(2)}% (mín ${minEdge.toFixed(2)}%)`,
+      }]);
+    } else {
+      techniqueScores = techniqueScores.concat([{
+        technique: 'arbitrage_triangular',
+        signal: 'neutral',
+        confidence: 0,
+        rationale: 'Sem rota triangular válida com liquidez suficiente.',
+      }]);
+    }
+  }
+
+  const ensembleResult = buildEnsembleResult(techniqueScores, ensembleConfig);
 
   const systemPrompt = buildTradingSignalSystemPrompt({
     marketType: params.marketType ?? 'futures',
@@ -7497,6 +7946,10 @@ async function generateTradingSignalFromLlm(params: {
     orderBook: orderBookSnapshot,
     news: newsSummary,
     trainingData: trainingSummary,
+    techniques,
+    techniqueScores,
+    ensembleResult,
+    arbitrageSnapshot,
   });
 
   const requestedMaxTokens = params.modelConfig?.maxTokens ?? agentContext.llmConfig.maxTokens ?? 2048;
@@ -7577,6 +8030,11 @@ async function generateTradingSignalFromLlm(params: {
         takeProfit: llmSignal.suggestedTakeProfit,
         stopLoss: llmSignal.suggestedStopLoss,
         riskReward: llmSignal.riskReward,
+        techniques,
+        ensemble: ensembleConfig,
+        techniqueScores,
+        ensembleResult,
+        arbitrageSnapshot,
         motivators: llmSignal.motivators,
         invalidationReasons: llmSignal.invalidationReasons,
         tradeSummary: llmSignal.tradeSummary,
@@ -8670,6 +9128,9 @@ app.post('/api/integrations/trading/signals/generate', requirePermission('integr
         news: z.boolean().optional(),
         trainingData: z.boolean().optional(),
       }).optional(),
+      techniques: z.array(TRADING_TECHNIQUE_ZOD).min(1).optional(),
+      ensembleConfig: TradingEnsembleConfigSchema.optional(),
+      arbitrageConfig: TradingArbitrageConfigSchema.optional().nullable(),
       modelConfig: z.object({
         temperature: z.number().min(0).max(2).optional(),
         maxTokens: z.number().min(256).max(4096).optional(),
@@ -8730,6 +9191,9 @@ app.post('/api/integrations/trading/signals/generate', requirePermission('integr
       timeframes: parsed.data.timeframes,
       indicators: parsed.data.indicators as TradingIndicatorKey[] | undefined,
       dataSources: parsed.data.dataSources,
+      techniques: parsed.data.techniques as TradingTechnique[] | undefined,
+      ensembleConfig: parsed.data.ensembleConfig ?? undefined,
+      arbitrageConfig: parsed.data.arbitrageConfig ?? undefined,
       modelConfig: parsed.data.modelConfig,
       consensus: consensusOverride,
     });
@@ -8993,6 +9457,9 @@ app.get('/api/integrations/trading/signal-scheduler', requirePermission('integra
           interval: '5m',
           symbols: [],
           maxSignalsPerRun: 1,
+          techniques: DEFAULT_TRADING_TECHNIQUES,
+          ensembleConfig: DEFAULT_TRADING_ENSEMBLE_CONFIG,
+          arbitrageConfig: null,
           enabled: false,
           lastRunAt: null,
           nextRunAt: null,
@@ -9343,6 +9810,9 @@ app.get('/api/integrations/trading/analysis-profile', requirePermission('integra
         timeframes: profile.timeframes,
         indicators: profile.indicators,
         dataSources: profile.dataSources,
+        techniques: profile.techniques,
+        ensembleConfig: profile.ensembleConfig,
+        arbitrageConfig: profile.arbitrageConfig,
         modelConfig: profile.modelConfig,
         newsConfig: profile.newsConfig,
         consensus: profile.consensus,
@@ -9374,6 +9844,9 @@ app.put('/api/integrations/trading/analysis-profile', requirePermission('integra
         news: z.boolean().optional(),
         trainingData: z.boolean().optional(),
       }).optional(),
+      techniques: z.array(TRADING_TECHNIQUE_ZOD).min(1).optional(),
+      ensembleConfig: TradingEnsembleConfigSchema.optional(),
+      arbitrageConfig: TradingArbitrageConfigSchema.optional().nullable(),
       newsConfig: z.object({
         engines: z.array(z.string().min(1)).optional(),
         categories: z.string().min(1).optional(),
@@ -9405,13 +9878,29 @@ app.put('/api/integrations/trading/analysis-profile', requirePermission('integra
     const consensusUpdate = parsedBody.data.consensus
       ? { rule: 'majority' as const, minAgree: parsedBody.data.consensus.minAgree }
       : undefined;
+    const resolvedTimeframes = (parsedBody.data.timeframes ?? profileRow.timeframes) as TradingIntervalValue[];
+    const resolvedTechniques = normalizeTradingTechniques(parsedBody.data.techniques ?? (profileRow.techniques as TradingTechnique[] | null));
+    const resolvedEnsemble = normalizeTradingEnsembleConfig(parsedBody.data.ensembleConfig ?? (profileRow.ensembleConfig as TradingEnsembleConfig | null));
+    const resolvedArbitrage = normalizeTradingArbitrageConfig(
+      parsedBody.data.arbitrageConfig ?? (profileRow.arbitrageConfig as TradingArbitrageConfig | null)
+    );
+    assertArbitrageConfigForTechniques({
+      techniques: resolvedTechniques,
+      arbitrageConfig: resolvedArbitrage,
+      timeframes: resolvedTimeframes,
+      context: 'perfil de análise/sinal',
+    });
+
     const updated = await getDatabase()
       .update(schema.tradingAnalysisProfiles)
       .set({
         name: parsedBody.data.name ?? profileRow.name,
-        timeframes: parsedBody.data.timeframes ?? profileRow.timeframes,
+        timeframes: resolvedTimeframes,
         indicators: parsedBody.data.indicators ?? profileRow.indicators,
         dataSources: parsedBody.data.dataSources ?? profileRow.dataSources,
+        techniques: resolvedTechniques,
+        ensembleConfig: resolvedEnsemble,
+        arbitrageConfig: resolvedArbitrage ?? null,
         modelConfig: parsedBody.data.modelConfig ?? profileRow.modelConfig,
         newsConfig: parsedBody.data.newsConfig ?? profileRow.newsConfig,
         consensus: consensusUpdate ?? profileRow.consensus,
@@ -9432,6 +9921,9 @@ app.put('/api/integrations/trading/analysis-profile', requirePermission('integra
         timeframes: profile.timeframes,
         indicators: profile.indicators,
         dataSources: profile.dataSources,
+        techniques: profile.techniques,
+        ensembleConfig: profile.ensembleConfig,
+        arbitrageConfig: profile.arbitrageConfig,
         modelConfig: profile.modelConfig,
         newsConfig: profile.newsConfig,
         consensus: profile.consensus,
@@ -9462,6 +9954,9 @@ app.put('/api/integrations/trading/signal-scheduler', requirePermission('integra
       enabled: z.boolean(),
       maxSignalsPerRun: z.number().int().min(1).max(20).optional(),
       agentId: z.string().uuid().optional(),
+      techniques: z.array(TRADING_TECHNIQUE_ZOD).min(1).optional(),
+      ensembleConfig: TradingEnsembleConfigSchema.optional(),
+      arbitrageConfig: TradingArbitrageConfigSchema.optional().nullable(),
     });
 
     const parsed = schedulerSchema.safeParse(req.body);
@@ -9487,6 +9982,24 @@ app.put('/api/integrations/trading/signal-scheduler', requirePermission('integra
     if (parsed.data.marketType === 'futures' && !kucoinClient.isKucoinConfigured()) {
       respondKucoinNotConfigured(res);
       return;
+    }
+
+    const resolvedTechniques = parsed.data.techniques ?? [];
+    if (resolvedTechniques.includes('arbitrage_triangular') && parsed.data.marketType === 'futures') {
+      res.status(400).json({ error: 'Arbitragem triangular não é suportada em mercado futures.' });
+      return;
+    }
+    if (resolvedTechniques.includes('arbitrage_triangular') && !parsed.data.arbitrageConfig) {
+      res.status(400).json({ error: 'Configuração de arbitragem é obrigatória quando a técnica está habilitada.' });
+      return;
+    }
+    if (resolvedTechniques.length > 0) {
+      assertArbitrageConfigForTechniques({
+        techniques: resolvedTechniques,
+        arbitrageConfig: parsed.data.arbitrageConfig ?? undefined,
+        timeframes: [parsed.data.interval],
+        context: 'scheduler de sinais',
+      });
     }
 
     const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
@@ -9519,6 +10032,9 @@ app.put('/api/integrations/trading/signal-scheduler', requirePermission('integra
     const nextRunAt = parsed.data.enabled
       ? new Date(now.getTime() + parsed.data.intervalMinutes * 60 * 1000)
       : null;
+    const techniques = parsed.data.techniques ?? null;
+    const ensembleConfig = parsed.data.ensembleConfig ?? null;
+    const arbitrageConfig = parsed.data.arbitrageConfig ?? null;
 
     const db = getDatabase();
     const [saved] = await db
@@ -9534,6 +10050,9 @@ app.put('/api/integrations/trading/signal-scheduler', requirePermission('integra
         symbols: normalizedSymbols,
         enabled: parsed.data.enabled,
         maxSignalsPerRun: parsed.data.maxSignalsPerRun ?? 1,
+        techniques,
+        ensembleConfig,
+        arbitrageConfig,
         nextRunAt,
         atualizadoEm: now,
       })
@@ -9548,6 +10067,9 @@ app.put('/api/integrations/trading/signal-scheduler', requirePermission('integra
           symbols: normalizedSymbols,
           enabled: parsed.data.enabled,
           maxSignalsPerRun: parsed.data.maxSignalsPerRun ?? 1,
+          techniques,
+          ensembleConfig,
+          arbitrageConfig,
           nextRunAt,
           atualizadoEm: now,
         },
@@ -9606,6 +10128,9 @@ app.get('/api/integrations/trading/analysis-scheduler', requirePermission('integ
           interval: '5m',
           symbols: [],
           maxSymbolsPerRun: 1,
+          techniques: DEFAULT_TRADING_TECHNIQUES,
+          ensembleConfig: DEFAULT_TRADING_ENSEMBLE_CONFIG,
+          arbitrageConfig: null,
           enabled: false,
           lastRunAt: null,
           nextRunAt: null,
@@ -9640,6 +10165,9 @@ app.put('/api/integrations/trading/analysis-scheduler', requirePermission('integ
       symbols: z.array(z.string().min(2).max(30)).max(50).optional(),
       enabled: z.boolean(),
       maxSymbolsPerRun: z.number().int().min(1).max(50).optional(),
+      techniques: z.array(TRADING_TECHNIQUE_ZOD).min(1).optional(),
+      ensembleConfig: TradingEnsembleConfigSchema.optional(),
+      arbitrageConfig: TradingArbitrageConfigSchema.optional().nullable(),
     });
 
     const parsed = schedulerSchema.safeParse(req.body);
@@ -9667,6 +10195,24 @@ app.put('/api/integrations/trading/analysis-scheduler', requirePermission('integ
       return;
     }
 
+    const resolvedTechniques = parsed.data.techniques ?? [];
+    if (resolvedTechniques.includes('arbitrage_triangular') && parsed.data.marketType === 'futures') {
+      res.status(400).json({ error: 'Arbitragem triangular não é suportada em mercado futures.' });
+      return;
+    }
+    if (resolvedTechniques.includes('arbitrage_triangular') && !parsed.data.arbitrageConfig) {
+      res.status(400).json({ error: 'Configuração de arbitragem é obrigatória quando a técnica está habilitada.' });
+      return;
+    }
+    if (resolvedTechniques.length > 0) {
+      assertArbitrageConfigForTechniques({
+        techniques: resolvedTechniques,
+        arbitrageConfig: parsed.data.arbitrageConfig ?? undefined,
+        timeframes: [parsed.data.interval],
+        context: 'scheduler de análise',
+      });
+    }
+
     const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
     for (const symbol of normalizedSymbols) {
       await kucoinService.resolveTradingSymbolStrict(
@@ -9681,6 +10227,9 @@ app.put('/api/integrations/trading/analysis-scheduler', requirePermission('integ
     const nextRunAt = parsed.data.enabled
       ? new Date(now.getTime() + parsed.data.intervalMinutes * 60 * 1000)
       : null;
+    const techniques = parsed.data.techniques ?? null;
+    const ensembleConfig = parsed.data.ensembleConfig ?? null;
+    const arbitrageConfig = parsed.data.arbitrageConfig ?? null;
 
     const db = getDatabase();
     const [saved] = await db
@@ -9694,6 +10243,9 @@ app.put('/api/integrations/trading/analysis-scheduler', requirePermission('integ
         symbols: normalizedSymbols,
         enabled: parsed.data.enabled,
         maxSymbolsPerRun: parsed.data.maxSymbolsPerRun ?? 1,
+        techniques,
+        ensembleConfig,
+        arbitrageConfig,
         nextRunAt,
         atualizadoEm: now,
       })
@@ -9706,6 +10258,9 @@ app.put('/api/integrations/trading/analysis-scheduler', requirePermission('integ
           symbols: normalizedSymbols,
           enabled: parsed.data.enabled,
           maxSymbolsPerRun: parsed.data.maxSymbolsPerRun ?? 1,
+          techniques,
+          ensembleConfig,
+          arbitrageConfig,
           nextRunAt,
           atualizadoEm: now,
         },
@@ -10522,10 +11077,14 @@ async function calculateAndPersistTechnicalAnalysis(params: {
   marketType?: TradingMarketType;
   marginMode?: TradingMarginMode;
   enabledIndicators?: TradingIndicatorKey[];
+  techniques?: TradingTechnique[];
+  ensembleConfig?: TradingEnsembleConfig;
 }): Promise<{
   analysis: technicalIndicators.TechnicalAnalysisResult;
   indicatorId: string;
   resolvedSymbol: string;
+  techniqueScores: TradingTechniqueScore[];
+  ensembleResult: TradingEnsembleResult;
 }> {
   const { tenantId, userId, symbol, interval, marketType, marginMode, enabledIndicators } = params;
   const tradingAuth = { tenantId, userId };
@@ -10558,6 +11117,10 @@ async function calculateAndPersistTechnicalAnalysis(params: {
   }));
 
   const analysis = technicalIndicators.calculateFullAnalysis(candles, resolvedSymbol, interval, enabledIndicators);
+  const techniques = params.techniques?.length ? params.techniques : [...DEFAULT_TRADING_TECHNIQUES];
+  const ensembleConfig = params.ensembleConfig ?? { ...DEFAULT_TRADING_ENSEMBLE_CONFIG };
+  const techniqueScores = technicalIndicators.calculateTechniqueScores({ analysis, techniques });
+  const ensembleResult = buildEnsembleResult(techniqueScores, ensembleConfig);
 
   const validatedInterval = interval as TradingIntervalValue;
   const db = getDatabase();
@@ -10642,6 +11205,10 @@ async function calculateAndPersistTechnicalAnalysis(params: {
         candleCount: candles.length,
         lastCandleTime: new Date(candles[candles.length - 1].timestamp).toISOString(),
         createdByUserId: userId,
+        techniques,
+        ensembleConfig,
+        techniqueScores,
+        ensembleResult,
       },
     })
     .returning({ id: schema.tradingTechnicalIndicators.id });
@@ -10650,6 +11217,8 @@ async function calculateAndPersistTechnicalAnalysis(params: {
     analysis,
     indicatorId: savedIndicator?.id ?? '',
     resolvedSymbol,
+    techniqueScores,
+    ensembleResult,
   };
 }
 
@@ -10668,6 +11237,7 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
       interval: z.string().optional(),
       timeframes: z.union([z.string(), z.array(z.string())]).optional(),
       indicators: z.union([z.string(), z.array(z.string())]).optional(),
+      techniques: z.union([z.string(), z.array(z.string())]).optional(),
       orderBook: z.union([z.string(), z.boolean()]).optional(),
       news: z.union([z.string(), z.boolean()]).optional(),
       trainingData: z.union([z.string(), z.boolean()]).optional(),
@@ -10688,10 +11258,14 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
     const profile = normalizeTradingProfile(profileRow);
     const requestedTimeframes = parseTimeframesParam(parsedQuery.data.timeframes);
     const requestedIndicators = parseIndicatorsParam(parsedQuery.data.indicators);
+    const requestedTechniques = parseTechniquesParam(parsedQuery.data.techniques);
     const timeframes = parsedQuery.data.interval
       ? [TRADING_INTERVAL_ZOD.parse(parsedQuery.data.interval)]
       : (requestedTimeframes.length > 0 ? requestedTimeframes : profile.timeframes);
     const indicators = requestedIndicators.length > 0 ? requestedIndicators : profile.indicators;
+    const techniques = requestedTechniques.length > 0 ? requestedTechniques : profile.techniques;
+    const ensembleConfig = profile.ensembleConfig;
+    const arbitrageConfig = profile.arbitrageConfig;
     const dataSources: TradingProfileDataSources = {
       orderBook: typeof parsedQuery.data.orderBook === 'boolean'
         ? parsedQuery.data.orderBook
@@ -10725,6 +11299,17 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
       }
     }
 
+    assertArbitrageConfigForTechniques({
+      techniques,
+      arbitrageConfig,
+      timeframes,
+      context: 'análise determinística',
+    });
+    if (techniques.includes('arbitrage_triangular') && (marketType ?? 'futures') === 'futures') {
+      res.status(400).json({ error: 'Arbitragem triangular não é suportada em mercado futures.' });
+      return;
+    }
+
     const analysisResults = await Promise.all(
       timeframes.map(async (frame) => {
         const result = await calculateAndPersistTechnicalAnalysis({
@@ -10735,18 +11320,62 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
           marketType,
           marginMode,
           enabledIndicators: indicators,
+          techniques,
+          ensembleConfig,
         });
         return {
           interval: frame,
           analysis: result.analysis,
           indicatorId: result.indicatorId,
           resolvedSymbol: result.resolvedSymbol,
+          techniqueScores: result.techniqueScores,
+          ensembleResult: result.ensembleResult,
         };
       })
     );
 
     const primaryResult = analysisResults[0];
     const consensus = buildMajorityConsensus(analysisResults, profile.consensus);
+    let techniqueScores = aggregateTechniqueScores(analysisResults, techniques);
+    let arbitrageSnapshot: TriangularArbitrageResult | null = null;
+    if (techniques.includes('arbitrage_triangular') && arbitrageConfig) {
+      const resolvedSymbol = primaryResult.resolvedSymbol ?? symbol;
+      const { base, quote } = splitSymbolPair(resolvedSymbol);
+      arbitrageSnapshot = await calculateTriangularArbitrage({
+        auth: { tenantId, userId },
+        startAsset: base,
+        quoteAsset: quote,
+        intermediateAssets: arbitrageConfig.intermediateAssets,
+        marketType,
+        marginMode,
+        feePct: arbitrageConfig.feePct,
+        maxSlippagePct: arbitrageConfig.maxSlippagePct,
+      });
+      if (arbitrageSnapshot) {
+        const edgePct = arbitrageSnapshot.edgePct;
+        const minEdge = arbitrageConfig.minEdgePct;
+        const confidence = Math.min(edgePct / Math.max(minEdge, 0.01), 1);
+        const signal: TradingOverallSignal = edgePct >= minEdge * 2
+          ? 'strong_buy'
+          : edgePct >= minEdge
+            ? 'buy'
+            : 'neutral';
+        techniqueScores = techniqueScores.concat([{
+          technique: 'arbitrage_triangular',
+          signal,
+          confidence: Math.round(confidence * 100) / 100,
+          rationale: `Edge ${edgePct.toFixed(2)}% (mín ${minEdge.toFixed(2)}%)`,
+        }]);
+      } else {
+        techniqueScores = techniqueScores.concat([{
+          technique: 'arbitrage_triangular',
+          signal: 'neutral',
+          confidence: 0,
+          rationale: 'Sem rota triangular válida com liquidez suficiente.',
+        }]);
+      }
+    }
+    const ensembleResult = buildEnsembleResult(techniqueScores, ensembleConfig);
     const orderBook = dataSources.orderBook
       ? await getOrderBookSnapshot({ tenantId, userId }, symbol, marketType, marginMode)
       : null;
@@ -10791,12 +11420,18 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
         indicatorId: item.indicatorId,
       })),
       consensus,
+      techniqueScores,
+      ensembleResult,
+      arbitrageSnapshot,
       profile: {
         kind: profileRow.kind,
         timeframes,
         indicators,
         dataSources,
         newsConfig: profile.newsConfig,
+        techniques,
+        ensembleConfig,
+        arbitrageConfig,
       },
       tradePlan,
       sources: {
