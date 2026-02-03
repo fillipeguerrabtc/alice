@@ -6732,6 +6732,14 @@ const TRADING_LLM_SIGNAL_KEYS = new Set([
   'riskScore',
 ]);
 
+type NormalizeLlmJsonKeysOptions = {
+  allowAnyKey?: boolean;
+};
+
+function shouldNormalizeLlmKey(key: string, allowAnyKey: boolean): boolean {
+  return allowAnyKey || TRADING_LLM_SIGNAL_KEYS.has(key);
+}
+
 function coerceNumericField(value: unknown): number | undefined {
   if (value === null || value === undefined) return undefined;
   if (typeof value === 'number') {
@@ -6814,7 +6822,11 @@ function normalizeLlmSignalPayload(payload: Record<string, unknown>): {
   return { normalized, citedValuesSource };
 }
 
-function normalizeLlmJsonKeys(content: string): { json: string; repaired: boolean } {
+function normalizeLlmJsonKeys(
+  content: string,
+  options: NormalizeLlmJsonKeysOptions = {}
+): { json: string; repaired: boolean } {
+  const allowAnyKey = options.allowAnyKey ?? false;
   const singleQuotedKeys = content.replace(/'([A-Za-z_][A-Za-z0-9_]*)'\s*:/g, '"$1":');
   const preprocessedContent = singleQuotedKeys.replace(/:\s*'([^'\\]*(?:\\.[^'\\]*)*)'/g, ':"$1"');
   const source = preprocessedContent;
@@ -6867,7 +6879,7 @@ function normalizeLlmJsonKeys(content: string): { json: string; repaired: boolea
           const key = source.slice(start, end);
           let cursor = end + 1;
           while (cursor < source.length && isWhitespace(source[cursor])) cursor += 1;
-          if (source[cursor] === ':' && TRADING_LLM_SIGNAL_KEYS.has(key)) {
+        if (source[cursor] === ':' && shouldNormalizeLlmKey(key, allowAnyKey)) {
             output += `"${key}"`;
             output += source.slice(end + 1, cursor);
             output += ':';
@@ -6890,7 +6902,7 @@ function normalizeLlmJsonKeys(content: string): { json: string; repaired: boolea
         const key = source.slice(start, end);
         let cursor = end;
         while (cursor < source.length && isWhitespace(source[cursor])) cursor += 1;
-        if (source[cursor] === ':' && TRADING_LLM_SIGNAL_KEYS.has(key)) {
+        if (source[cursor] === ':' && shouldNormalizeLlmKey(key, allowAnyKey)) {
           output += `"${key}"`;
           output += source.slice(end, cursor);
           output += ':';
@@ -7294,7 +7306,29 @@ function parseLlmSignalResponse(rawResponse: string): {
     }
     return { data: result.data, citedValuesSource };
   } catch (error) {
-    const blockRepair = repairYamlLikeBlockWithoutBraces(normalized.json);
+    const permissive = normalizeLlmJsonKeys(candidate, { allowAnyKey: true });
+    if (permissive.json !== normalized.json) {
+      try {
+        logger.warn({ error: error instanceof Error ? error.message : error }, 'Resposta LLM inválida; aplicando reparo de chaves JSON.');
+        const parsed = JSON.parse(permissive.json) as Record<string, unknown>;
+        const { normalized: normalizedPayload, citedValuesSource } = normalizeLlmSignalPayload(parsed);
+        const result = TRADING_LLM_SIGNAL_PARTIAL_SCHEMA.safeParse(normalizedPayload);
+        if (!result.success) {
+          throw new Error(`Resposta LLM inválida após reparo: ${result.error.message}`);
+        }
+        return { data: result.data, citedValuesSource };
+      } catch (permissiveError) {
+        const message = permissiveError instanceof Error ? permissiveError.message : 'Erro desconhecido';
+        logger.error({
+          error: message,
+          responseHash: computeSemHash(permissive.json),
+          responseLength: permissive.json.length,
+          candidateLength: candidate.length,
+        }, 'Resposta LLM inválida após reparo de chaves JSON (hash/len).');
+      }
+    }
+    const baseJson = permissive.json !== normalized.json ? permissive.json : normalized.json;
+    const blockRepair = repairYamlLikeBlockWithoutBraces(baseJson);
     if (blockRepair.repaired) {
       try {
         logger.warn({ error: error instanceof Error ? error.message : error }, 'Resposta LLM inválida; aplicando reparo YAML-like sem chaves.');
@@ -7315,7 +7349,7 @@ function parseLlmSignalResponse(rawResponse: string): {
         }, 'Resposta LLM inválida após reparo YAML-like sem chaves (hash/len).');
       }
     }
-    const yamlRepair = repairYamlLikeObject(normalized.json);
+    const yamlRepair = repairYamlLikeObject(baseJson);
     if (yamlRepair.repaired) {
       try {
         logger.warn({ error: error instanceof Error ? error.message : error }, 'Resposta LLM inválida; aplicando reparo YAML-like.');
@@ -7336,7 +7370,7 @@ function parseLlmSignalResponse(rawResponse: string): {
         }, 'Resposta LLM inválida após reparo YAML-like (hash/len).');
       }
     }
-    const repair = repairLlmJsonContent(normalized.json);
+    const repair = repairLlmJsonContent(baseJson);
     if (repair.repaired) {
       try {
         logger.warn({ error: error instanceof Error ? error.message : error }, 'Resposta LLM inválida; aplicando reparo seguro do JSON.');
@@ -13321,8 +13355,17 @@ app.get('/api/integrations/trading/validations/diagnostics', requirePermission('
         count(*)::int AS total,
         sum(case when v.validation_passed then 1 else 0 end)::int AS passed,
         sum(case when not v.validation_passed then 1 else 0 end)::int AS failed,
-        sum(case when coalesce(v.no_values_extracted, jsonb_object_length(v.llm_cited_values) = 0) then 1 else 0 end)::int AS no_values,
-        avg(coalesce(jsonb_object_length(v.discrepancies), 0))::float AS avg_discrepancy_fields,
+        sum(case when coalesce(
+          v.no_values_extracted,
+          (
+            SELECT count(*) = 0
+            FROM jsonb_object_keys(COALESCE(v.llm_cited_values, '{}'::jsonb))
+          )
+        ) then 1 else 0 end)::int AS no_values,
+        avg((
+          SELECT count(*)
+          FROM jsonb_object_keys(COALESCE(v.discrepancies, '{}'::jsonb))
+        ))::float AS avg_discrepancy_fields,
         min(v.max_allowed_deviation)::float AS min_allowed_deviation,
         max(v.max_allowed_deviation)::float AS max_allowed_deviation
       FROM trading_llm_validations v
@@ -13366,7 +13409,13 @@ app.get('/api/integrations/trading/validations/diagnostics', requirePermission('
         count(*)::int AS total,
         sum(case when v.validation_passed then 1 else 0 end)::int AS passed,
         sum(case when not v.validation_passed then 1 else 0 end)::int AS failed,
-        sum(case when coalesce(v.no_values_extracted, jsonb_object_length(v.llm_cited_values) = 0) then 1 else 0 end)::int AS no_values
+        sum(case when coalesce(
+          v.no_values_extracted,
+          (
+            SELECT count(*) = 0
+            FROM jsonb_object_keys(COALESCE(v.llm_cited_values, '{}'::jsonb))
+          )
+        ) then 1 else 0 end)::int AS no_values
       FROM trading_llm_validations v
       LEFT JOIN trading_technical_indicators ti ON ti.id = v.indicator_snapshot_id
       ${whereClause}

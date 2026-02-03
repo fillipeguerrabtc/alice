@@ -61,6 +61,8 @@
 - Análise: guard explícito evita erro com “history” e bloqueia lista vermelha na UI.
 - Presets de notícias: edição completa e salvamento ao lado de Salvar/Gerar (Análise + Sinais IA).
 - Deploy: migration `0049_trading_llm_validation_details.sql` agora calcula contagem de chaves JSONB via `jsonb_object_keys` (compatível com PostgreSQL).
+- Sinais IA: reparo de chaves JSON não-quotadas agora aceita qualquer key (inclui `citedValues`) e reduz falhas de parse.
+- Sinais IA: diagnóstico de validações LLM usa contagem de chaves JSONB compatível com PostgreSQL.
 - Observability: limites de Prometheus/ClickHouse/OTel ajustados para usar melhor CPU/RAM e evitar throttling.
 - SearXNG: engines ahmia/torch removidas para eliminar ruído; Tor mantido para deep web sob demanda.
 - Chat: correção do upgrade WS evita crash por double handleUpgrade.
