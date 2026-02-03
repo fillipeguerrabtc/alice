@@ -2140,6 +2140,40 @@ export default function Trading() {
     },
   });
 
+  const wsKlinesForChart = wsEnabled
+    ? wsKlines
+        .filter((kline) => kline.symbol?.toUpperCase() === normalizedSymbol)
+        .filter((kline) => !wsInterval || kline.interval === wsInterval)
+        .map(({ time, open, close, high, low, volume, turnover }) => ({
+          time,
+          open,
+          close,
+          high,
+          low,
+          volume,
+          turnover,
+        }))
+    : [];
+  const [lastKlines, setLastKlines] = useState<KlineData[]>([]);
+
+  useEffect(() => {
+    setLastKlines([]);
+  }, [normalizedSymbol, wsInterval, selectedMarketType, selectedMarginMode]);
+
+  useEffect(() => {
+    if (wsKlinesForChart.length > 0) {
+      setLastKlines(wsKlinesForChart);
+      return;
+    }
+    if (klinesData?.data && klinesData.data.length > 0) {
+      setLastKlines(klinesData.data);
+    }
+  }, [wsKlinesForChart, klinesData?.data]);
+
+  const klines = wsKlinesForChart.length > 0
+    ? wsKlinesForChart
+    : (klinesData?.data && klinesData.data.length > 0 ? klinesData.data : lastKlines);
+
   // ============================================================================
   // RENDER - Loading State
   // ============================================================================
@@ -2343,39 +2377,6 @@ export default function Trading() {
   const wsTickerPrice = wsEnabled && wsTicker?.symbol?.toUpperCase() === normalizedSymbol
     ? Number(wsTicker.price)
     : NaN;
-  const wsKlinesForChart = wsEnabled
-    ? wsKlines
-        .filter((kline) => kline.symbol?.toUpperCase() === normalizedSymbol)
-        .filter((kline) => !wsInterval || kline.interval === wsInterval)
-        .map(({ time, open, close, high, low, volume, turnover }) => ({
-          time,
-          open,
-          close,
-          high,
-          low,
-          volume,
-          turnover,
-        }))
-    : [];
-  const [lastKlines, setLastKlines] = useState<KlineData[]>([]);
-
-  useEffect(() => {
-    setLastKlines([]);
-  }, [normalizedSymbol, wsInterval, selectedMarketType, selectedMarginMode]);
-
-  useEffect(() => {
-    if (wsKlinesForChart.length > 0) {
-      setLastKlines(wsKlinesForChart);
-      return;
-    }
-    if (klinesData?.data && klinesData.data.length > 0) {
-      setLastKlines(klinesData.data);
-    }
-  }, [wsKlinesForChart, klinesData?.data]);
-
-  const klines = wsKlinesForChart.length > 0
-    ? wsKlinesForChart
-    : (klinesData?.data && klinesData.data.length > 0 ? klinesData.data : lastKlines);
   const orderBookDepth = orderBookResponse?.depth ?? restOrderBookDepth ?? null;
   const controlHistory = controlHistoryData?.data || [];
   // `wsStatusData` já é o payload `{ success, data: KucoinWsStatus }`.

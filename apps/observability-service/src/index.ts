@@ -16,7 +16,7 @@ import type { Request, Response, NextFunction } from 'express';
 import compression from 'compression';
 import cors from 'cors';
 import CircuitBreaker from 'opossum';
-import { getDatabase, schema, and, eq, gte, sql } from '@alice/database';
+import { getDatabase, getPool, schema, and, eq, gte, sql } from '@alice/database';
 import {
   createSecurityMiddleware,
   createRateLimiter,
@@ -26,6 +26,9 @@ import {
   ShutdownPriority,
   setupSwaggerUI,
   OBSERVABILITY_SERVICE_TAGS,
+  createSessionAuthMiddleware,
+  initializeSessionAuthCache,
+  initializeRedisCache,
 } from '@alice/shared-utils';
 import { createLogger } from '@alice/logger';
 import { observabilityServicePaths, observabilityServiceSchemas } from './openapi-specs.js';
@@ -45,6 +48,18 @@ if (!INTERNAL_API_SECRET && isProduction) {
 }
 
 // Middleware de autenticação para endpoints internos
+function isInternalAuthValid(req: Request): boolean {
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.replace('Bearer ', '');
+
+  // Em desenvolvimento sem token configurado, permitir acesso
+  if (!INTERNAL_API_SECRET && !isProduction) {
+    return true;
+  }
+
+  return Boolean(token && token === INTERNAL_API_SECRET);
+}
+
 function requireInternalAuth(req: Request, res: Response, next: NextFunction): void {
   // Kubernetes probes e Docker healthcheck não requerem auth
   // CORREÇÃO 07/01/2026: /live e /ready são endpoints de orquestração
@@ -56,21 +71,25 @@ function requireInternalAuth(req: Request, res: Response, next: NextFunction): v
     return next();
   }
 
-  const authHeader = req.headers.authorization;
-  const token = authHeader?.replace('Bearer ', '');
-
-  // Em desenvolvimento sem token configurado, permitir acesso
-  if (!INTERNAL_API_SECRET && !isProduction) {
-    return next();
-  }
-
-  if (!token || token !== INTERNAL_API_SECRET) {
+  if (!isInternalAuthValid(req)) {
     logger.warn({ path: req.path, ip: req.ip }, 'Tentativa de acesso não autorizado');
     res.status(401).json({ error: 'Token de autenticação inválido ou ausente' });
     return;
   }
 
   next();
+}
+
+function requireInternalOrSessionAuth(req: Request, res: Response, next: NextFunction): void {
+  if (['/health', '/live', '/ready'].includes(req.path)) {
+    return next();
+  }
+
+  if (req.user) {
+    return next();
+  }
+
+  return requireInternalAuth(req, res, next);
 }
 
 const PORT = process.env.PORT || 3007;
@@ -427,6 +446,14 @@ app.use(cors({
 // SEGURANÇA: Limites de payload para prevenir DoS (OWASP API4)
 app.use(express.json({ limit: '1mb' }));
 
+// =============================================================================
+// MIDDLEWARE: Autenticação via Cookie de Sessão PostgreSQL
+// =============================================================================
+app.use(createSessionAuthMiddleware({
+  pool: getPool(),
+  publicPaths: ['/health', '/live', '/ready', '/metrics'],
+}));
+
 // Rate limiting multi-tenant (módulo @alice/shared-utils)
 app.use(createRateLimiter({
   windowMs: 60 * 1000,
@@ -436,7 +463,7 @@ app.use(createRateLimiter({
 }));
 
 // Aplicar autenticação em todos os endpoints exceto /health
-app.use(requireInternalAuth);
+app.use(requireInternalOrSessionAuth);
 
 // ============================================================================
 // ENDPOINTS
@@ -944,54 +971,68 @@ app.use(createErrorHandler({
 // STARTUP
 // ============================================================================
 
-const server = app.listen(PORT, () => {
-  logger.info({ port: PORT }, 'Observability Health Checker iniciado');
-  logger.info({ 
-    prometheus: PROMETHEUS_URL,
-    grafana: GRAFANA_URL,
-    jaeger: JAEGER_URL,
-    langfuse: LANGFUSE_URL,
-  }, 'Monitorando serviços de observabilidade');
-});
+async function initializeCaches(): Promise<void> {
+  const redisConnected = await initializeRedisCache();
+  logger.info({ redisConnected }, 'Redis cache inicializado');
+  await initializeSessionAuthCache();
+  logger.info('Session auth cache inicializado');
+}
 
-// SEGURANÇA: Timeouts para prevenir conexões pendentes (Node.js 20 LTS Best Practices)
-server.timeout = 30000; // 30s timeout para requisições
-server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
-server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
+initializeCaches().then(() => {
+  const server = app.listen(PORT, () => {
+    logger.info({ port: PORT }, 'Observability Health Checker iniciado');
+    logger.info({ 
+      prometheus: PROMETHEUS_URL,
+      grafana: GRAFANA_URL,
+      jaeger: JAEGER_URL,
+      langfuse: LANGFUSE_URL,
+    }, 'Monitorando serviços de observabilidade');
+  });
 
-// ============================================================================
-// GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 CLAUDE.md)
-// ShutdownManager centralizado elimina duplicação de listeners (Regra 6)
-// Ordem: Circuit Breakers → HTTP server
-// ============================================================================
+  // SEGURANÇA: Timeouts para prevenir conexões pendentes (Node.js 20 LTS Best Practices)
+  server.timeout = 30000; // 30s timeout para requisições
+  server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
+  server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
 
-registerShutdownCallback(
-  'observability-circuit-breakers',
-  async () => {
-    logger.info('Encerrando circuit breakers de health check...');
-    circuitBreakers.forEach((breaker, name) => {
-      breaker.shutdown();
-      logger.info({ service: name }, 'Circuit breaker encerrado');
-    });
-  },
-  { priority: ShutdownPriority.EXTERNAL_CONNECTIONS }
-);
+  // ============================================================================
+  // GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 CLAUDE.md)
+  // ShutdownManager centralizado elimina duplicação de listeners (Regra 6)
+  // Ordem: Circuit Breakers → HTTP server
+  // ============================================================================
 
-registerShutdownCallback(
-  'observability-http-server',
-  async () => {
-    logger.info('Encerrando HTTP server...');
-    await new Promise<void>((resolve, reject) => {
-      server.close((err) => {
-        if (err) {
-          logger.error({ error: err }, 'Erro ao fechar HTTP server');
-          reject(err);
-        } else {
-          logger.info('HTTP server encerrado com sucesso');
-          resolve();
-        }
+  registerShutdownCallback(
+    'observability-circuit-breakers',
+    async () => {
+      logger.info('Encerrando circuit breakers de health check...');
+      circuitBreakers.forEach((breaker, name) => {
+        breaker.shutdown();
+        logger.info({ service: name }, 'Circuit breaker encerrado');
       });
-    });
-  },
-  { priority: ShutdownPriority.HTTP_SERVER }
-);
+    },
+    { priority: ShutdownPriority.EXTERNAL_CONNECTIONS }
+  );
+
+  registerShutdownCallback(
+    'observability-http-server',
+    async () => {
+      logger.info('Encerrando HTTP server...');
+      await new Promise<void>((resolve, reject) => {
+        server.close((err) => {
+          if (err) {
+            logger.error({ error: err }, 'Erro ao fechar HTTP server');
+            reject(err);
+          } else {
+            logger.info('HTTP server encerrado com sucesso');
+            resolve();
+          }
+        });
+      });
+    },
+    { priority: ShutdownPriority.HTTP_SERVER }
+  );
+}).catch((error) => {
+  logger.error({ error }, 'Falha ao inicializar caches do observability-service');
+  if (isProduction) {
+    process.exit(1);
+  }
+});
