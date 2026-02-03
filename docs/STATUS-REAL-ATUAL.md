@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 03 de Fevereiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.86 - Timezone persistente e UI alinhada ao perfil
+**Versão:** 10.87 - Trading sem loop de render em histórico
 
 ---
 
@@ -64,6 +64,7 @@
 - SearXNG: engines ahmia/torch removidas para eliminar ruído; Tor mantido para deep web sob demanda.
 - Chat: correção do upgrade WS evita crash por double handleUpgrade.
 - Timezone: configuração regional do usuário persiste no PostgreSQL e UI usa timezone do perfil (fallback America/Sao_Paulo).
+- Trading: histórico de sinais evita loop de render e re-fetch contínuo em filtros/paginação.
 - Trading: extração de JSON balanceada evita truncamento por chaves em texto.
 - Trading: logging explícito de notícias confirma uso de SearXNG na análise.
 - Trading: presets de notícias com CRUD (criar, editar e excluir) direto nas abas Análise e Sinais IA.

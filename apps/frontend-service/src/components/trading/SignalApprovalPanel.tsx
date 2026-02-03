@@ -1007,10 +1007,20 @@ export function SignalApprovalPanel({
       const totalPages = Math.max(1, payload.totalPages ?? 1);
       setHistoryItems(newItems);
       const resolvedPage = Math.min(payload.page ?? nextPage, totalPages);
-      setHistoryPage(resolvedPage);
-      setHistoryPageSize(payload.pageSize ?? historyPageSize);
-      setHistoryTotal(payload.total ?? newItems.length);
-      setHistoryTotalPages(totalPages);
+      if (resolvedPage !== historyPage) {
+        setHistoryPage(resolvedPage);
+      }
+      const resolvedPageSize = payload.pageSize ?? historyPageSize;
+      if (resolvedPageSize !== historyPageSize) {
+        setHistoryPageSize(resolvedPageSize);
+      }
+      const resolvedTotal = payload.total ?? newItems.length;
+      if (resolvedTotal !== historyTotal) {
+        setHistoryTotal(resolvedTotal);
+      }
+      if (totalPages !== historyTotalPages) {
+        setHistoryTotalPages(totalPages);
+      }
       if (options.resetSelection) {
         setSelectedHistoryIds(new Set());
       }
@@ -1031,6 +1041,8 @@ export function SignalApprovalPanel({
     historySignalType,
     historyValidationStatus,
     marketType,
+    historyTotal,
+    historyTotalPages,
     t,
     toast,
   ]);
@@ -1103,6 +1115,7 @@ export function SignalApprovalPanel({
     marketType,
   ]);
   const lastHistoryFilterRef = useRef(historyFilterKey);
+  const lastHistoryFetchRef = useRef<string>('');
 
   useEffect(() => {
     const filterChanged = lastHistoryFilterRef.current !== historyFilterKey;
@@ -1111,9 +1124,16 @@ export function SignalApprovalPanel({
       if (historyPage !== 1) {
         setHistoryPage(1);
       }
-      fetchSignalHistory({ page: 1, resetSelection: true });
+      const fetchKey = `${historyFilterKey}:1`;
+      if (lastHistoryFetchRef.current !== fetchKey) {
+        lastHistoryFetchRef.current = fetchKey;
+        fetchSignalHistory({ page: 1, resetSelection: true });
+      }
       return;
     }
+    const fetchKey = `${historyFilterKey}:${historyPage}`;
+    if (lastHistoryFetchRef.current === fetchKey) return;
+    lastHistoryFetchRef.current = fetchKey;
     fetchSignalHistory({ page: historyPage, resetSelection: historyPage === 1 });
   }, [fetchSignalHistory, historyFilterKey, historyPage]);
 
