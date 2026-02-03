@@ -6798,16 +6798,16 @@ function normalizeLlmSignalPayload(payload: Record<string, unknown>): {
     }
   }
 
-  if (!normalized.citedValues) {
+  const shouldFallbackToRegex = !normalized.citedValues
+    || (typeof normalized.citedValues === 'object' && !Array.isArray(normalized.citedValues) && Object.keys(normalized.citedValues).length === 0);
+  if (shouldFallbackToRegex) {
     const reasoning = typeof normalized.reasoning === 'string' ? normalized.reasoning : '';
     const extracted = extractValuesFromLLMResponse(reasoning);
     const extractedValues = Object.entries(extracted).reduce<Record<string, number>>((acc, [key, value]) => {
       if (value !== undefined) acc[key] = value;
       return acc;
     }, {});
-    if (Object.keys(extractedValues).length > 0) {
-      citedValuesSource = 'regex';
-    }
+    citedValuesSource = 'regex';
     normalized.citedValues = Object.keys(extractedValues).length > 0 ? extractedValues : {};
   }
 
@@ -13366,7 +13366,7 @@ app.get('/api/integrations/trading/validations/diagnostics', requirePermission('
         count(*)::int AS total,
         sum(case when v.validation_passed then 1 else 0 end)::int AS passed,
         sum(case when not v.validation_passed then 1 else 0 end)::int AS failed,
-        sum(case when jsonb_object_length(v.llm_cited_values) = 0 then 1 else 0 end)::int AS no_values
+        sum(case when coalesce(v.no_values_extracted, jsonb_object_length(v.llm_cited_values) = 0) then 1 else 0 end)::int AS no_values
       FROM trading_llm_validations v
       LEFT JOIN trading_technical_indicators ti ON ti.id = v.indicator_snapshot_id
       ${whereClause}
