@@ -1228,9 +1228,9 @@ export function SignalApprovalPanel({
   const stats = validationStats?.stats;
   const historyStats = signalHistoryStats?.data;
   const diagnosticsTotals = validationDiagnostics?.totals;
-  const diagnosticsDiscrepancies = validationDiagnostics?.breakdown.topDiscrepancies ?? [];
-  const diagnosticsFailureReasons = validationDiagnostics?.breakdown.byFailureReason ?? [];
-  const diagnosticsExtractionSources = validationDiagnostics?.breakdown.byExtractionSource ?? [];
+  const diagnosticsDiscrepancies = validationDiagnostics?.breakdown?.topDiscrepancies ?? [];
+  const diagnosticsFailureReasons = validationDiagnostics?.breakdown?.byFailureReason ?? [];
+  const diagnosticsExtractionSources = validationDiagnostics?.breakdown?.byExtractionSource ?? [];
   const allHistorySelected = historyItems.length > 0 && selectedHistoryIds.size === historyItems.length;
   const hasHistorySelection = selectedHistoryIds.size > 0;
 
