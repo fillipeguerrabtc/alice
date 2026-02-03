@@ -420,17 +420,19 @@ export class KucoinSpotWebSocketClient extends EventEmitter {
     }
   }
 
-  private sendSubscribe(topic: string, isPrivate: boolean): void {
+  private sendSubscribe(topic: string, isPrivate: boolean, isResubscribe: boolean = false): void {
     if (!this.ws || this.state !== 'connected') return;
-    if (this.subscriptions.has(topic)) return;
+    if (!isResubscribe && this.subscriptions.has(topic)) return;
 
-    this.subscriptions.add(topic);
+    if (!isResubscribe) {
+      this.subscriptions.add(topic);
+    }
     const payload = {
       id: Date.now().toString(),
       type: 'subscribe',
       topic,
       response: true,
-      privateChannel: isPrivate ? 'true' : 'false',
+      privateChannel: isPrivate,
     };
     this.ws.send(JSON.stringify(payload));
   }
@@ -445,7 +447,7 @@ export class KucoinSpotWebSocketClient extends EventEmitter {
       type: 'unsubscribe',
       topic,
       response: true,
-      privateChannel: isPrivate ? 'true' : 'false',
+      privateChannel: isPrivate,
     };
     this.ws.send(JSON.stringify(payload));
   }
@@ -453,7 +455,7 @@ export class KucoinSpotWebSocketClient extends EventEmitter {
   private resubscribeAll(): void {
     this.subscriptions.forEach((topic) => {
       const isPrivate = topic.startsWith('/margin/');
-      this.sendSubscribe(topic, isPrivate);
+      this.sendSubscribe(topic, isPrivate, true);
     });
   }
 
