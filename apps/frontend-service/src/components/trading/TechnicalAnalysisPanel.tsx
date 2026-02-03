@@ -989,10 +989,22 @@ export function TechnicalAnalysisPanel({
       }
       const items = payload.data as TradingAnalysisHistoryItem[];
       setAnalysisHistoryItems(items);
-      setAnalysisHistoryPage(payload.page ?? nextPage);
-      setAnalysisHistoryPageSize(payload.pageSize ?? analysisHistoryPageSize);
-      setAnalysisHistoryTotal(payload.total ?? items.length);
-      setAnalysisHistoryTotalPages(payload.totalPages ?? 1);
+      const resolvedPage = payload.page ?? nextPage;
+      if (resolvedPage !== analysisHistoryPage) {
+        setAnalysisHistoryPage(resolvedPage);
+      }
+      const resolvedPageSize = payload.pageSize ?? analysisHistoryPageSize;
+      if (resolvedPageSize !== analysisHistoryPageSize) {
+        setAnalysisHistoryPageSize(resolvedPageSize);
+      }
+      const resolvedTotal = payload.total ?? items.length;
+      if (resolvedTotal !== analysisHistoryTotal) {
+        setAnalysisHistoryTotal(resolvedTotal);
+      }
+      const resolvedTotalPages = payload.totalPages ?? 1;
+      if (resolvedTotalPages !== analysisHistoryTotalPages) {
+        setAnalysisHistoryTotalPages(resolvedTotalPages);
+      }
       if (options.resetSelection) {
         setAnalysisHistorySelectedIds(new Set());
       }
@@ -1011,6 +1023,8 @@ export function TechnicalAnalysisPanel({
     analysisHistoryPageSize,
     analysisHistorySignalFilter,
     analysisHistoryTechniqueFilter,
+    analysisHistoryTotal,
+    analysisHistoryTotalPages,
     primaryInterval,
     symbol,
     t,
@@ -1037,6 +1051,7 @@ export function TechnicalAnalysisPanel({
     symbol,
   ]);
   const lastAnalysisHistoryFilterRef = useRef(analysisHistoryFilterKey);
+  const lastAnalysisHistoryFetchRef = useRef<string>('');
 
   useEffect(() => {
     if (!symbol) return;
@@ -1046,9 +1061,16 @@ export function TechnicalAnalysisPanel({
       if (analysisHistoryPage !== 1) {
         setAnalysisHistoryPage(1);
       }
-      fetchAnalysisHistory({ page: 1, resetSelection: true });
+      const fetchKey = `${analysisHistoryFilterKey}:1`;
+      if (lastAnalysisHistoryFetchRef.current !== fetchKey) {
+        lastAnalysisHistoryFetchRef.current = fetchKey;
+        fetchAnalysisHistory({ page: 1, resetSelection: true });
+      }
       return;
     }
+    const fetchKey = `${analysisHistoryFilterKey}:${analysisHistoryPage}`;
+    if (lastAnalysisHistoryFetchRef.current === fetchKey) return;
+    lastAnalysisHistoryFetchRef.current = fetchKey;
     fetchAnalysisHistory({ page: analysisHistoryPage, resetSelection: analysisHistoryPage === 1 });
   }, [analysisHistoryFilterKey, analysisHistoryPage, fetchAnalysisHistory, symbol]);
 
