@@ -40,8 +40,11 @@ async function sendWithRetry(entry: LogEntry, retries = 0): Promise<boolean> {
   try {
     const payload = JSON.stringify(entry);
     
-    if (navigator.sendBeacon && navigator.sendBeacon(LOG_ENDPOINT, payload)) {
-      return true;
+    if (navigator.sendBeacon) {
+      const blob = new Blob([payload], { type: 'application/json' });
+      if (navigator.sendBeacon(LOG_ENDPOINT, blob)) {
+        return true;
+      }
     }
 
     const response = await fetch(LOG_ENDPOINT, {
@@ -49,6 +52,7 @@ async function sendWithRetry(entry: LogEntry, retries = 0): Promise<boolean> {
       headers: { 'Content-Type': 'application/json' },
       body: payload,
       keepalive: true,
+      credentials: 'include',
     });
 
     return response.ok || response.status === 202;
@@ -104,7 +108,8 @@ if (typeof window !== 'undefined') {
   window.addEventListener('beforeunload', () => {
     for (const entry of logQueue) {
       const payload = JSON.stringify(entry);
-      navigator.sendBeacon?.(LOG_ENDPOINT, payload);
+      const blob = new Blob([payload], { type: 'application/json' });
+      navigator.sendBeacon?.(LOG_ENDPOINT, blob);
     }
   });
 }
