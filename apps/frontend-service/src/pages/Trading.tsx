@@ -2360,6 +2360,10 @@ export default function Trading() {
   const [lastKlines, setLastKlines] = useState<KlineData[]>([]);
 
   useEffect(() => {
+    setLastKlines([]);
+  }, [normalizedSymbol, wsInterval, selectedMarketType, selectedMarginMode]);
+
+  useEffect(() => {
     if (wsKlinesForChart.length > 0) {
       setLastKlines(wsKlinesForChart);
       return;

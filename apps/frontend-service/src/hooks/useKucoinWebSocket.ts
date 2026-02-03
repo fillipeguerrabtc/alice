@@ -559,7 +559,7 @@ export function useKucoinWebSocket(
 
   useEffect(() => {
     setKlines([]);
-  }, [symbol, marketType, marginMode]);
+  }, [symbol, interval, marketType, marginMode]);
 
   // Resubscribe when symbol/interval changes
   useEffect(() => {

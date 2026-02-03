@@ -6743,6 +6743,7 @@ function normalizeLlmSignalPayload(payload: Record<string, unknown>): Record<str
 function normalizeLlmJsonKeys(content: string): { json: string; repaired: boolean } {
   const singleQuotedKeys = content.replace(/'([A-Za-z_][A-Za-z0-9_]*)'\s*:/g, '"$1":');
   const preprocessedContent = singleQuotedKeys.replace(/:\s*'([^'\\]*(?:\\.[^'\\]*)*)'/g, ':"$1"');
+  const source = preprocessedContent;
   let repaired = false;
   let inString = false;
   let escaping = false;
@@ -6753,8 +6754,8 @@ function normalizeLlmJsonKeys(content: string): { json: string; repaired: boolea
   const isIdentifierChar = (char: string) => /[A-Za-z0-9_]/.test(char);
   const isWhitespace = (char: string) => /\s/.test(char);
 
-  while (i < preprocessedContent.length) {
-    const char = preprocessedContent[i];
+  while (i < source.length) {
+    const char = source[i];
     if (escaping) {
       output += char;
       escaping = false;
@@ -6776,48 +6777,48 @@ function normalizeLlmJsonKeys(content: string): { json: string; repaired: boolea
     if (!inString && (char === '{' || char === ',')) {
       output += char;
       i += 1;
-      while (i < content.length && isWhitespace(content[i])) {
-        output += content[i];
+      while (i < source.length && isWhitespace(source[i])) {
+        output += source[i];
         i += 1;
       }
-      if (i >= content.length) break;
+      if (i >= source.length) break;
 
-      if (content[i] === "'") {
+      if (source[i] === "'") {
         const start = i + 1;
         let end = start;
-        while (end < content.length && content[end] !== "'") {
+        while (end < source.length && source[end] !== "'") {
           end += 1;
         }
-        if (end < content.length) {
-          const key = content.slice(start, end);
+        if (end < source.length) {
+          const key = source.slice(start, end);
           let cursor = end + 1;
-          while (cursor < content.length && isWhitespace(content[cursor])) cursor += 1;
-          if (content[cursor] === ':' && TRADING_LLM_SIGNAL_KEYS.has(key)) {
+          while (cursor < source.length && isWhitespace(source[cursor])) cursor += 1;
+          if (source[cursor] === ':' && TRADING_LLM_SIGNAL_KEYS.has(key)) {
             output += `"${key}"`;
-            output += content.slice(end + 1, cursor);
+            output += source.slice(end + 1, cursor);
             output += ':';
             repaired = true;
             i = cursor + 1;
             continue;
           }
         }
-        output += content[i];
+        output += source[i];
         i += 1;
         continue;
       }
 
-      if (isIdentifierStart(content[i])) {
+      if (isIdentifierStart(source[i])) {
         const start = i;
         let end = start + 1;
-        while (end < content.length && isIdentifierChar(content[end])) {
+        while (end < source.length && isIdentifierChar(source[end])) {
           end += 1;
         }
-        const key = content.slice(start, end);
+        const key = source.slice(start, end);
         let cursor = end;
-        while (cursor < content.length && isWhitespace(content[cursor])) cursor += 1;
-        if (content[cursor] === ':' && TRADING_LLM_SIGNAL_KEYS.has(key)) {
+        while (cursor < source.length && isWhitespace(source[cursor])) cursor += 1;
+        if (source[cursor] === ':' && TRADING_LLM_SIGNAL_KEYS.has(key)) {
           output += `"${key}"`;
-          output += content.slice(end, cursor);
+          output += source.slice(end, cursor);
           output += ':';
           repaired = true;
           i = cursor + 1;
