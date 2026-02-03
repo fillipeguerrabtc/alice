@@ -878,16 +878,16 @@ echo "📄 Gerando arquivo .env.prod..."
   # =================================================================
   # KuCoin Futures - Validação obrigatória (quando KuCoin ativo)
   # =================================================================
-  KUCOIN_WS_ORDERBOOK_DEPTH="${KUCOIN_WS_ORDERBOOK_DEPTH:-}"
-  KUCOIN_REST_ORDERBOOK_DEPTH="${KUCOIN_REST_ORDERBOOK_DEPTH:-}"
+  KUCOIN_WS_ORDERBOOK_DEPTH="$(printf '%s' "${KUCOIN_WS_ORDERBOOK_DEPTH:-}" | xargs)"
+  KUCOIN_REST_ORDERBOOK_DEPTH="$(printf '%s' "${KUCOIN_REST_ORDERBOOK_DEPTH:-}" | xargs)"
 
   if [ -n "${KUCOIN_PRO_API_KEY:-}" ]; then
     if [ -z "${KUCOIN_WS_ORDERBOOK_DEPTH}" ]; then
       echo "::error::KUCOIN_WS_ORDERBOOK_DEPTH não configurado. Use 5 ou 50." >&2
       exit 1
     fi
-  if [ -z "${KUCOIN_REST_ORDERBOOK_DEPTH}" ]; then
-    echo "::error::KUCOIN_REST_ORDERBOOK_DEPTH não configurado. Use 20." >&2
+    if [ -z "${KUCOIN_REST_ORDERBOOK_DEPTH}" ]; then
+      echo "::error::KUCOIN_REST_ORDERBOOK_DEPTH não configurado. Use 20 ou 100." >&2
       exit 1
     fi
 
@@ -895,8 +895,8 @@ echo "📄 Gerando arquivo .env.prod..."
       echo "::error::KUCOIN_WS_ORDERBOOK_DEPTH inválido: ${KUCOIN_WS_ORDERBOOK_DEPTH}. Use 5 ou 50." >&2
       exit 1
     fi
-  if ! echo "${KUCOIN_REST_ORDERBOOK_DEPTH}" | grep -qE '^(20)$'; then
-    echo "::error::KUCOIN_REST_ORDERBOOK_DEPTH inválido: ${KUCOIN_REST_ORDERBOOK_DEPTH}. Use 20." >&2
+    if ! echo "${KUCOIN_REST_ORDERBOOK_DEPTH}" | grep -qE '^(20|100)$'; then
+      echo "::error::KUCOIN_REST_ORDERBOOK_DEPTH inválido: ${KUCOIN_REST_ORDERBOOK_DEPTH}. Use 20 ou 100." >&2
       exit 1
     fi
   fi

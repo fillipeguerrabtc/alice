@@ -1,8 +1,8 @@
 # Guia Completo de Secrets - Alice Enterprise Platform
 
 **Author:** Fillipe Guerra  
-**Data:** 30 de Janeiro de 2026  
-**Versão:** 7.15 - Secrets Stripe/Wise opcionais documentados
+**Data:** 03 de Fevereiro de 2026  
+**Versão:** 7.16 - KuCoin depth validado (20/100) com normalização
 
 ## Visão geral
 
@@ -95,7 +95,8 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `KUCOIN_REST_ORDERBOOK_DEPTH` | Profundidade REST KuCoin (20 ou 100) | ✅ (se KuCoin ativo) |
 
 > **Nota (27/01/2026):** `KUCOIN_TENANT_ID` foi removido. O tenant para eventos privados do KuCoin WS é resolvido dinamicamente no banco (`integrations`).
-> **Nota (28/01/2026):** Se `KUCOIN_PRO_API_KEY` estiver configurada, `KUCOIN_WS_ORDERBOOK_DEPTH` e `KUCOIN_REST_ORDERBOOK_DEPTH` são obrigatórias para evitar crashloop do `integrations-service`.
+> **Nota (28/01/2026):** Se `KUCOIN_PRO_API_KEY` estiver configurada, `KUCOIN_WS_ORDERBOOK_DEPTH` e `KUCOIN_REST_ORDERBOOK_DEPTH` são obrigatórias para evitar crashloop do `integrations-service`.  
+> **Nota (03/02/2026):** Os valores são normalizados (trim) na geração do `.env.prod`. Use apenas `20` ou `100`.
 
 ## GitHub Actions (Stack Ops)
 
