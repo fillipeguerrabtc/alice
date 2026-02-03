@@ -675,7 +675,14 @@
     "uploadZone": {
       "sending": "Enviando...",
       "dragOrClick": "Arraste arquivos ou clique para enviar",
+      "selectNamespaceFirst": "Selecione um namespace antes de enviar",
       "supportedTypes": "Suporta: TXT, MD, PDF, DOCX, CSV, JSON (até 50MB)"
+    },
+    "namespace": {
+      "label": "Namespace",
+      "placeholder": "Selecione o namespace do documento",
+      "helper": "Os documentos ficam isolados por namespace e só aparecem nas buscas desse contexto.",
+      "empty": "Nenhum namespace ativo disponível"
     },
     "viewer": {
       "createdAt": "Criado em {{date}}",
@@ -709,6 +716,7 @@
       "loadFailed": "Erro ao carregar documentos",
       "loadFailedDesc": "Não foi possível carregar a lista de documentos. Tente novamente mais tarde.",
       "uploadFailed": "Falha ao enviar documento",
+      "namespaceRequired": "Selecione um namespace antes de enviar o documento",
       "deleteFailed": "Erro ao excluir documento"
     },
     "success": {

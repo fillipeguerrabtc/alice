@@ -651,7 +651,14 @@
     "uploadZone": {
       "sending": "Sending...",
       "dragOrClick": "Drag files or click to upload",
+      "selectNamespaceFirst": "Select a namespace before uploading",
       "supportedTypes": "Supports: TXT, MD, PDF, DOCX, CSV, JSON (up to 50MB)"
+    },
+    "namespace": {
+      "label": "Namespace",
+      "placeholder": "Select the document namespace",
+      "helper": "Documents are isolated by namespace and only appear in searches for that context.",
+      "empty": "No active namespaces available"
     },
     "viewer": {
       "createdAt": "Created on {{date}}",
@@ -685,6 +692,7 @@
       "loadFailed": "Error loading documents",
       "loadFailedDesc": "Could not load the document list. Please try again later.",
       "uploadFailed": "Failed to upload document",
+      "namespaceRequired": "Select a namespace before uploading the document",
       "deleteFailed": "Error deleting document"
     },
     "success": {

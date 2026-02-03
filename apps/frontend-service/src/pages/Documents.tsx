@@ -75,6 +75,13 @@ interface DocumentsResponse {
   documents: Document[];
 }
 
+interface Namespace {
+  id: string;
+  nome: string;
+  slug: string;
+  ativo: boolean;
+}
+
 const containerVariants = {
   hidden: { opacity: 0 },
   visible: {
@@ -98,6 +105,7 @@ function DocumentCard({
   onView, 
   onDelete,
   viewMode,
+  namespaceName,
   t,
   locale,
   timeZone,
@@ -106,6 +114,7 @@ function DocumentCard({
   onView: () => void;
   onDelete: () => void;
   viewMode: 'grid' | 'list';
+  namespaceName?: string;
   t: (key: string, options?: Record<string, unknown>) => string;
   locale: string;
   timeZone: string;
@@ -144,6 +153,11 @@ function DocumentCard({
                 )}
               </div>
               <p className="text-sm text-muted-foreground truncate">{truncatedContent}</p>
+              {namespaceName && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  {t('documents.namespace.label')}: {namespaceName}
+                </p>
+              )}
             </div>
 
             <div className="flex items-center gap-1 shrink-0">
@@ -207,6 +221,12 @@ function DocumentCard({
                 {document.tipo.split('/').pop()}
               </span>
             )}
+            {namespaceName && (
+              <span className="flex items-center gap-1">
+                <Layers className="h-3 w-3" />
+                {namespaceName}
+              </span>
+            )}
           </div>
         </CardContent>
 
@@ -224,7 +244,17 @@ function DocumentCard({
   );
 }
 
-function UploadZone({ onUpload, isUploading, t }: { onUpload: (file: File) => void; isUploading: boolean; t: (key: string) => string }) {
+function UploadZone({
+  onUpload,
+  isUploading,
+  disabled,
+  t,
+}: {
+  onUpload: (file: File) => void;
+  isUploading: boolean;
+  disabled: boolean;
+  t: (key: string) => string;
+}) {
   const [isDragging, setIsDragging] = useState(false);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -256,7 +286,7 @@ function UploadZone({ onUpload, isUploading, t }: { onUpload: (file: File) => vo
       className={cn(
         'border-2 border-dashed rounded-lg p-8 text-center transition-colors',
         isDragging ? 'border-primary bg-primary/5' : 'border-muted-foreground/25 hover:border-primary/50',
-        isUploading && 'opacity-50 pointer-events-none'
+        (isUploading || disabled) && 'opacity-50 pointer-events-none'
       )}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -268,12 +298,16 @@ function UploadZone({ onUpload, isUploading, t }: { onUpload: (file: File) => vo
         className="hidden"
         onChange={handleFileChange}
         accept=".txt,.md,.pdf,.docx,.csv,.json"
-        disabled={isUploading}
+        disabled={isUploading || disabled}
       />
       <label htmlFor="file-upload" className="cursor-pointer">
         <div className="flex flex-col items-center gap-3">
           {isUploading ? (
             <Loader2 className="h-10 w-10 text-primary animate-spin" />
+          ) : disabled ? (
+            <div className="p-3 rounded-full bg-muted">
+              <Upload className="h-6 w-6 text-muted-foreground" />
+            </div>
           ) : (
             <div className="p-3 rounded-full bg-primary/10">
               <Upload className="h-6 w-6 text-primary" />
@@ -281,7 +315,11 @@ function UploadZone({ onUpload, isUploading, t }: { onUpload: (file: File) => vo
           )}
           <div>
             <p className="font-medium">
-              {isUploading ? t('documents.uploadZone.sending') : t('documents.uploadZone.dragOrClick')}
+              {isUploading
+                ? t('documents.uploadZone.sending')
+                : disabled
+                  ? t('documents.uploadZone.selectNamespaceFirst')
+                  : t('documents.uploadZone.dragOrClick')}
             </p>
             <p className="text-sm text-muted-foreground mt-1">
               {t('documents.uploadZone.supportedTypes')}
@@ -372,17 +410,31 @@ export default function Documents() {
   const [filterStatus, setFilterStatus] = useState<'all' | 'processed' | 'pending'>('all');
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
   const [deleteDocument, setDeleteDocument] = useState<Document | null>(null);
+  const [selectedNamespaceId, setSelectedNamespaceId] = useState<string>('');
 
   const { data, isLoading, error } = useQuery<DocumentsResponse>({
     queryKey: ['/api/rag/documents'],
     staleTime: 1000 * 60,
   });
 
+  const { data: namespaces, isLoading: isLoadingNamespaces } = useQuery<Namespace[]>({
+    queryKey: ['/api/namespaces'],
+    enabled: !!user,
+    staleTime: 1000 * 60,
+  });
+
+  const activeNamespaces = (namespaces ?? []).filter((namespace) => namespace.ativo);
+  const namespaceMap = new Map((namespaces ?? []).map((namespace) => [namespace.id, namespace.nome]));
+
   const uploadMutation = useMutation({
     mutationFn: async (file: File) => {
+      if (!selectedNamespaceId) {
+        throw new Error(t('documents.errors.namespaceRequired'));
+      }
       const formData = new FormData();
       formData.append('file', file);
       formData.append('titulo', file.name);
+      formData.append('namespaceId', selectedNamespaceId);
 
       const response = await fetch('/api/rag/documents/upload', {
         method: 'POST',
@@ -400,8 +452,9 @@ export default function Documents() {
       queryClient.invalidateQueries({ queryKey: ['/api/rag/documents'] });
       toast({ title: t('documents.success.uploaded') });
     },
-    onError: () => {
-      toast({ title: t('documents.errors.uploadFailed'), variant: 'destructive' });
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : t('documents.errors.uploadFailed');
+      toast({ title: message, variant: 'destructive' });
     },
   });
 
@@ -437,6 +490,7 @@ export default function Documents() {
     processed: documents.filter(d => d.processado).length,
     pending: documents.filter(d => !d.processado).length,
   };
+  const isNamespaceReady = selectedNamespaceId !== '' && activeNamespaces.length > 0;
 
   if (error) {
     return (
@@ -489,9 +543,39 @@ export default function Documents() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
           <Card className="col-span-1 md:col-span-2">
             <CardContent className="p-4">
+              <div className="flex flex-col gap-3 mb-4">
+                <div className="flex items-center gap-2">
+                  <Layers className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">{t('documents.namespace.label')}</span>
+                </div>
+                <Select
+                  value={selectedNamespaceId}
+                  onValueChange={setSelectedNamespaceId}
+                  disabled={isLoadingNamespaces || activeNamespaces.length === 0}
+                >
+                  <SelectTrigger className="w-full" data-testid="select-namespace">
+                    <SelectValue
+                      placeholder={
+                        activeNamespaces.length === 0
+                          ? t('documents.namespace.empty')
+                          : t('documents.namespace.placeholder')
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {activeNamespaces.map((namespace) => (
+                      <SelectItem key={namespace.id} value={namespace.id}>
+                        {namespace.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">{t('documents.namespace.helper')}</p>
+              </div>
               <UploadZone 
                 onUpload={(file) => uploadMutation.mutate(file)} 
                 isUploading={uploadMutation.isPending}
+                disabled={!isNamespaceReady}
                 t={t}
               />
             </CardContent>
@@ -602,6 +686,7 @@ export default function Documents() {
                   key={doc.id}
                   document={doc}
                   viewMode={viewMode}
+                  namespaceName={doc.namespaceId ? namespaceMap.get(doc.namespaceId) : undefined}
                   onView={() => setSelectedDocument(doc)}
                   onDelete={() => setDeleteDocument(doc)}
                   t={t}

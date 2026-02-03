@@ -9,12 +9,14 @@
 ## Objetivo deste guia
 
 Este guia explica, de forma simples, **como treinar os Agentes da Alice** usando:
+
 - **Documentos e livros** (RAG);
 - **Conversas no chat** (dados de qualidade);
 - **Operações e sinais de trading** (experiência prática).
 
 Ele foi escrito para **usuários de negócio**, sem exigir conhecimento técnico.  
 Quando precisar de detalhes técnicos (API, cron, infraestrutura), consulte:
+
 - `docs/TRAINING.md`
 - `docs/SISTEMA-APRENDIZADO.md`
 
@@ -23,19 +25,22 @@ Quando precisar de detalhes técnicos (API, cron, infraestrutura), consulte:
 ## 1) Conceitos básicos (o que é e para que serve)
 
 ### 1.1 Treinamento / Fine-tuning
+
 **O que é:** ensinar o modelo a **responder melhor** em um domínio específico (ex.: trading).  
 **Para que serve:** ajustar **estilo**, **tom**, **prioridades** e **raciocínio** com base em dados aprovados.  
 **Quando usar:** quando o agente precisa **aprender comportamento**, não só consultar fatos.
 
 **Exemplo:**  
 Você quer que o Agente Trading responda sempre com:
-1) Resumo da operação;  
-2) Plano (entrada, stop, alvo);  
-3) Risco e validações.
+
+- Resumo da operação;  
+- Plano (entrada, stop, alvo);  
+- Risco e validações.
 
 Treinamento é o caminho para **fixar esse padrão**.
 
 ### 1.2 RAG (Base de Conhecimento)
+
 **O que é:** uma “memória consultável” que o agente usa na hora de responder.  
 **Para que serve:** manter **fatos atualizados** sem mudar o modelo.  
 **Quando usar:** quando o conteúdo muda com frequência (ex.: regras internas, playbooks).
@@ -45,6 +50,7 @@ Você atualiza a política de risco.
 Você sobe o documento no RAG e o agente passa a usar a regra **imediatamente**.
 
 ### 1.3 Namespace
+
 **O que é:** “pasta” de conhecimento separada por área (ex.: Trading, Jurídico, Suporte).  
 **Para que serve:** evitar mistura de assuntos e reduzir respostas fora de contexto.
 
@@ -52,11 +58,22 @@ Você sobe o documento no RAG e o agente passa a usar a regra **imediatamente**.
 O namespace **Trading** só recebe conteúdo de trading.  
 O agente de trading consulta esse namespace.
 
+**Como a separação funciona na prática:**
+
+- **RAG**: todo documento precisa de um **namespace**.  
+  Sem namespace, o upload é bloqueado.
+- **Busca**: o agente consulta apenas o namespace configurado no contexto.  
+  Isso impede que conteúdo jurídico apareça em respostas de trading.
+- **Treinamento**: dados aprovados são vinculados ao **namespace** de origem.  
+  Assim, o Agente Trading aprende apenas com dados de trading.
+
 ### 1.4 Dataset de Treinamento
+
 **O que é:** conjunto de exemplos aprovados (conversas, sinais, análises) usados no fine‑tuning.  
 **Para que serve:** ensinar o **comportamento ideal** do agente.
 
 ### 1.5 Deduplicação Semântica
+
 **O que é:** limpeza automática de conteúdos muito parecidos.  
 **Para que serve:** evitar “lixo repetido” no treinamento.
 
@@ -68,7 +85,7 @@ O agente de trading consulta esse namespace.
 ## 2) Quando usar RAG ou Treinamento?
 
 | Situação | Use RAG | Use Treinamento |
-|---------|---------|----------------|
+| --- | --- | --- |
 | Regras e políticas atualizadas | ✅ | ❌ |
 | Livros, manuais e playbooks | ✅ | ❌ |
 | Estilo e formato de resposta | ❌ | ✅ |
@@ -83,6 +100,7 @@ O agente de trading consulta esse namespace.
 ## 3) Passo a passo — Inserir documentos no RAG (namespace Trading)
 
 ### 3.1 Defina o objetivo do conteúdo
+
 Pergunte:  
 “Qual decisão de negócio este documento ajuda a tomar?”
 
@@ -90,25 +108,31 @@ Pergunte:
 “Este playbook define quando operar scalping em 5m.”
 
 ### 3.2 Prepare os documentos (boa qualidade)
+
 Preferências:
+
 - PDF, DOCX, TXT, Markdown, CSV ou JSON.
 - Textos claros e estruturados.
 - Uma versão “limpa” do documento (sem propaganda ou ruído).
 
 ### 3.3 Crie ou selecione o namespace **Trading**
+
 No painel, selecione o namespace **Trading** para o upload.  
-(Esse namespace separa o conhecimento de outras áreas.)
+(Esse namespace separa o conhecimento de outras áreas.)  
+Se não existir, crie em **Namespaces** antes de enviar o documento.
 
 ### 3.4 Faça o upload
+
 - Envie o documento para o RAG com o namespace **Trading**.
 - O sistema divide em “trechos” e gera embeddings.
 - O conteúdo fica **disponível imediatamente** para consulta.
 
 ### 3.5 Valide na prática
+
 - Faça uma pergunta real no chat/trading.
 - Verifique se a resposta cita o conteúdo correto.
 
-**Exemplo de pergunta:**
+**Exemplo de pergunta:**  
 “Qual é o limite de risco diário para scalping?”
 
 ---
@@ -116,22 +140,26 @@ No painel, selecione o namespace **Trading** para o upload.
 ## 4) Passo a passo — Treinar com conversas de chat
 
 ### 4.1 Use conversas reais e de alta qualidade
+
 - Perguntas claras.
 - Respostas completas, com contexto e justificativa.
 
-**Exemplo de boa conversa:**
+**Exemplo de boa conversa:**  
 Usuário: “Quero operar BTC em 5m. Qual estratégia?”  
 Agente: “Sugiro scalping com confirmação de RSI + volume. Entrada em X, stop em Y.”
 
 ### 4.2 Avalie a conversa
+
 - Dê nota **4 ou 5 estrelas** para respostas boas.
 - Evite aprovar respostas genéricas.
 
 ### 4.3 Envie para Treinamento
+
 - Use o botão **“Enviar para Treino”** (quando disponível).
 - Ou aprove no painel de Treinamento.
 
 ### 4.4 Aprovação final
+
 - No painel `/training`, aprove apenas o que for **excelente**.
 - Reprove respostas vagas, erradas ou inseguras.
 
@@ -140,19 +168,23 @@ Agente: “Sugiro scalping com confirmação de RSI + volume. Entrada em X, stop
 ## 5) Passo a passo — Treinar com operações e sinais de trading
 
 ### 5.1 Gere sinais com contexto completo
+
 - Timeframe, marketType e motivo da operação.
 - Indique **por que** o sinal foi dado.
 
 ### 5.2 Acompanhe o resultado
+
 - O sinal foi bom?  
 - O stop estava correto?  
 - O risco foi respeitado?
 
 ### 5.3 Classifique e aprove
+
 - **Aprovado**: sinal correto, bem explicado, risco controlado.
 - **Rejeitado**: sinal ruim, sem fundamento ou sem controle de risco.
 
 ### 5.4 Use a aprovação para dataset
+
 - Sinais aprovados viram exemplos para fine‑tuning.
 
 ---
@@ -175,11 +207,12 @@ O agente aprende **o comportamento aprovado** pela equipe.
 ## 7) Deduplicação semântica (por que isso importa)
 
 O sistema calcula um “hash semântico” para cada exemplo.  
-- Se 2 exemplos são **95% parecidos**, só o melhor fica.
+Se 2 exemplos são **95% parecidos**, só o melhor fica.
 
 **Benefício:** evita “lixo repetido” e melhora a qualidade.
 
 **Como ajudar o sistema:**
+
 - Evite copiar a mesma resposta.
 - Crie exemplos **variados**, com casos reais.
 
@@ -187,19 +220,24 @@ O sistema calcula um “hash semântico” para cada exemplo.
 
 ## 8) O que inserir no RAG (bons exemplos)
 
-✅ **Playbooks de Trading**  
+✅ **Playbooks de Trading**
+
 - Estratégias por timeframe (1m, 5m, 15m).  
 
-✅ **Políticas de risco e compliance**  
+✅ **Políticas de risco e compliance**
+
 - Limites de exposição, stop obrigatório, regras de alavancagem.
 
-✅ **Glossário interno**  
+✅ **Glossário interno**
+
 - Termos que o time usa (ex.: “região de liquidez”, “pivô diário”).
 
-✅ **Relatórios e análises oficiais**  
+✅ **Relatórios e análises oficiais**
+
 - Relatórios auditados, pesquisas internas e documentos técnicos.
 
-✅ **Checklist operacional**  
+✅ **Checklist operacional**
+
 - “Antes de abrir posição, valide A, B, C”.
 
 ---
@@ -230,7 +268,7 @@ Sem contexto, isso vira ruído.
 - Incluir **risco** (stop, take profit, risco diário).
 - Evitar “certezas absolutas” (usar linguagem de probabilidade).
 
-**Exemplo aprovado:**
+**Exemplo aprovado:**  
 “Entrada em 5m com RSI sobrevendido, stop em 2%.  
 Risco calculado para 1% do capital.”
 
@@ -239,6 +277,7 @@ Risco calculado para 1% do capital.”
 ## 11) Checklist rápido (para usuários de negócio)
 
 Antes de enviar qualquer conteúdo:
+
 - O conteúdo é **claro e objetivo**?
 - Está **atualizado**?
 - Ajuda a tomar **decisões reais**?
@@ -268,5 +307,6 @@ Se você seguir este guia, o Agente Trading evolui de forma **segura, limpa e es
 4. Rodar o treinamento incremental quando houver dados suficientes.
 
 Se precisar de apoio técnico, use como referência:
+
 - `docs/TRAINING.md`
 - `docs/SISTEMA-APRENDIZADO.md`

@@ -345,6 +345,21 @@ const DOCUMENT_UPLOAD_WHITELIST = [
   'text/html',
 ];
 
+const DOCUMENT_MIME_BY_EXTENSION: Record<string, string> = {
+  '.txt': 'text/plain',
+  '.md': 'text/markdown',
+  '.csv': 'text/csv',
+  '.json': 'application/json',
+  '.xml': 'application/xml',
+  '.html': 'text/html',
+  '.htm': 'text/html',
+  '.pdf': 'application/pdf',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.doc': 'application/msword',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.xls': 'application/vnd.ms-excel',
+};
+
 // Magic bytes de formatos binários conhecidos que NÃO devem ser aceitos como documentos de texto
 // CRÍTICO: Inclui todos os formatos que podem ser usados para bypass de segurança
 const BINARY_FORMAT_SIGNATURES: { name: string; bytes: number[]; offset?: number }[] = [
@@ -417,6 +432,14 @@ function validateDocumentUpload(file: Express.Multer.File): { valid: boolean; er
   // 2. Tamanho mínimo
   if (file.buffer.length < 8) {
     return { valid: false, error: 'Arquivo muito pequeno ou corrompido' };
+  }
+
+  if (file.mimetype === 'application/octet-stream') {
+    const extension = path.extname(file.originalname || '').toLowerCase();
+    const inferredMime = extension ? DOCUMENT_MIME_BY_EXTENSION[extension] : undefined;
+    if (inferredMime) {
+      file.mimetype = inferredMime;
+    }
   }
   
   // 3. MIME type na whitelist
