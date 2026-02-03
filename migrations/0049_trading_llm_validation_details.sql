@@ -21,7 +21,13 @@ ALTER TABLE trading_llm_validations
   ADD COLUMN IF NOT EXISTS max_deviation_found real;
 
 UPDATE trading_llm_validations
-SET no_values_extracted = COALESCE(no_values_extracted, (jsonb_object_length(llm_cited_values) = 0))
+SET no_values_extracted = COALESCE(
+  no_values_extracted,
+  (
+    SELECT count(*) = 0
+    FROM jsonb_object_keys(COALESCE(llm_cited_values, '{}'::jsonb))
+  )
+)
 WHERE no_values_extracted IS NULL;
 
 UPDATE trading_llm_validations
@@ -29,7 +35,10 @@ SET failure_reason = COALESCE(
   failure_reason,
   CASE
     WHEN validation_passed THEN 'ok'::llm_validation_reason
-    WHEN jsonb_object_length(llm_cited_values) = 0 THEN 'no_values'::llm_validation_reason
+    WHEN (
+      SELECT count(*) = 0
+      FROM jsonb_object_keys(COALESCE(llm_cited_values, '{}'::jsonb))
+    ) THEN 'no_values'::llm_validation_reason
     ELSE 'discrepancy'::llm_validation_reason
   END
 )
