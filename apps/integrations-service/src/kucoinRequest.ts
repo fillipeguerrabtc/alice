@@ -200,6 +200,16 @@ function generateAuthHeaders(
   };
 }
 
+export async function getKucoinAuthHeaders(params: {
+  baseUrl: string;
+  method: string;
+  endpoint: string;
+  body?: string;
+}): Promise<Record<string, string>> {
+  const offsetMs = await ensureKucoinTimeSync(params.baseUrl);
+  return generateAuthHeaders(params.method, params.endpoint, params.body ?? '', offsetMs);
+}
+
 // ============================================================================
 // MÉTRICAS + HTTP EXECUTION
 // ============================================================================
@@ -314,13 +324,13 @@ export function createKucoinRequester(params: {
     const bodyString = body ? JSON.stringify(body) : '';
     const operation = normalizeKucoinOperation(method, endpoint, params.operationPrefix);
 
-    let offsetMs = 0;
-    if (requiresAuth) {
-      offsetMs = await ensureKucoinTimeSync(params.baseUrl);
-    }
-
     const headers: Record<string, string> = requiresAuth
-      ? generateAuthHeaders(method, endpoint, bodyString, offsetMs)
+      ? await getKucoinAuthHeaders({
+          baseUrl: params.baseUrl,
+          method,
+          endpoint,
+          body: bodyString,
+        })
       : { 'Content-Type': 'application/json' };
 
     const maxAttempts = method === 'GET' || method === 'DELETE' ? 3 : 1;

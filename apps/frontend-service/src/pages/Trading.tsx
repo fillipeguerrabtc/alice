@@ -1032,7 +1032,8 @@ export default function Trading() {
 
   const wsInterval = useMemo(() => {
     if (!selectedInterval) return '';
-    return intervalsData?.data?.wsIntervalMap?.[selectedInterval] ?? '';
+    const mapped = intervalsData?.data?.wsIntervalMap?.[selectedInterval] ?? '';
+    return mapped || selectedInterval;
   }, [intervalsData, selectedInterval]);
 
   const granularityValue = useMemo(() => {
@@ -2356,8 +2357,21 @@ export default function Trading() {
           turnover,
         }))
     : [];
+  const [lastKlines, setLastKlines] = useState<KlineData[]>([]);
 
-  const klines = wsKlinesForChart.length > 0 ? wsKlinesForChart : (klinesData?.data || []);
+  useEffect(() => {
+    if (wsKlinesForChart.length > 0) {
+      setLastKlines(wsKlinesForChart);
+      return;
+    }
+    if (klinesData?.data && klinesData.data.length > 0) {
+      setLastKlines(klinesData.data);
+    }
+  }, [wsKlinesForChart, klinesData?.data]);
+
+  const klines = wsKlinesForChart.length > 0
+    ? wsKlinesForChart
+    : (klinesData?.data && klinesData.data.length > 0 ? klinesData.data : lastKlines);
   const orderBookDepth = orderBookResponse?.depth ?? restOrderBookDepth ?? null;
   const controlHistory = controlHistoryData?.data || [];
   // `wsStatusData` já é o payload `{ success, data: KucoinWsStatus }`.

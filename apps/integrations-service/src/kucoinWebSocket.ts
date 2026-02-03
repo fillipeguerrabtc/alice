@@ -25,8 +25,10 @@ import WebSocket from 'ws';
 import crypto from 'node:crypto';
 import { createLogger } from '@alice/logger';
 import { EventEmitter } from 'node:events';
+import { getKucoinAuthHeaders } from './kucoinRequest.js';
 
 const logger = createLogger('kucoin-websocket');
+const KUCOIN_WS_MAX_TOPICS = 400;
 
 // ============================================================================
 // CONFIGURAÇÃO (via variáveis de ambiente - Regra 6: sem hardcoded)
@@ -36,74 +38,9 @@ const KUCOIN_FUTURES_BASE_URL = process.env.KUCOIN_PRO_BASE_URL || 'https://api-
 const KUCOIN_PRO_API_KEY = process.env.KUCOIN_PRO_API_KEY;
 const KUCOIN_PRO_API_SECRET = process.env.KUCOIN_PRO_API_SECRET;
 const KUCOIN_PRO_API_PASSPHRASE = process.env.KUCOIN_PRO_API_PASSPHRASE;
-const KUCOIN_PRO_API_KEY_VERSION = (process.env.KUCOIN_PRO_API_KEY_VERSION || '2').trim();
-const KUCOIN_TIME_SYNC_INTERVAL_MS = Number(process.env.KUCOIN_TIME_SYNC_INTERVAL_MS || 300_000);
-
-// ============================================================================
-// TIME SYNC (conforme documentação oficial)
-// Endpoint: GET /api/v1/timestamp
-// ============================================================================
-let kucoinTimeOffsetMs = 0;
-let kucoinLastTimeSyncMs = 0;
-let kucoinTimeSyncInFlight = false;
-
-function isValidKucoinTimeSyncInterval(intervalMs: number): boolean {
-  return Number.isFinite(intervalMs) && intervalMs >= 60_000 && intervalMs <= 3_600_000;
-}
-
-async function fetchKucoinServerTimeMs(baseUrl: string): Promise<number> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5_000);
-  try {
-    const response = await fetch(`${baseUrl}/api/v1/timestamp`, {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      const errorBody = await response.text().catch(() => '');
-      throw new Error(`KuCoin timestamp HTTP ${response.status}: ${errorBody}`);
-    }
-    const data = (await response.json()) as KucoinServerTimeResponse;
-    if (data.code !== '200000' || !Number.isFinite(data.data)) {
-      throw new Error('KuCoin timestamp inválido');
-    }
-    return data.data;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-async function ensureKucoinTimeSync(baseUrl: string): Promise<void> {
-  const now = Date.now();
-  const intervalMs = isValidKucoinTimeSyncInterval(KUCOIN_TIME_SYNC_INTERVAL_MS)
-    ? KUCOIN_TIME_SYNC_INTERVAL_MS
-    : 300_000;
-  if (kucoinTimeSyncInFlight) return;
-  if (now - kucoinLastTimeSyncMs < intervalMs) return;
-
-  kucoinTimeSyncInFlight = true;
-  try {
-    const serverTime = await fetchKucoinServerTimeMs(baseUrl);
-    kucoinTimeOffsetMs = serverTime - Date.now();
-    kucoinLastTimeSyncMs = now;
-    logger.info({ offsetMs: kucoinTimeOffsetMs }, 'Sincronização de tempo KuCoin (WS) atualizada');
-  } catch (error) {
-    logger.warn({ error }, 'Falha ao sincronizar horário KuCoin (WS) - usando clock local');
-  } finally {
-    kucoinTimeSyncInFlight = false;
-  }
-}
-
 // ============================================================================
 // TIPOS (TypeScript strict - Regra 8)
 // ============================================================================
-
-/** Resposta do endpoint de timestamp */
-interface KucoinServerTimeResponse {
-  code: string;
-  data: number;
-}
 
 /** Resposta do endpoint bullet para obter token WebSocket */
 export interface BulletResponse {
@@ -281,58 +218,6 @@ export interface KucoinWSEvents {
 }
 
 // ============================================================================
-// AUTENTICAÇÃO (HMAC-SHA256 conforme documentação KuCoin)
-// ============================================================================
-
-/**
- * Gera assinatura HMAC-SHA256 para autenticação
- */
-function generateSignature(timestamp: string, method: string, endpoint: string, body: string = ''): string {
-  if (!KUCOIN_PRO_API_SECRET) {
-    throw new Error('KUCOIN_PRO_API_SECRET não configurada');
-  }
-  const prehashString = timestamp + method.toUpperCase() + endpoint + body;
-  return crypto.createHmac('sha256', KUCOIN_PRO_API_SECRET).update(prehashString).digest('base64');
-}
-
-/**
- * Gera passphrase criptografada (requerido pela API v2)
- */
-function generatePassphraseSignature(): string {
-  if (!KUCOIN_PRO_API_SECRET || !KUCOIN_PRO_API_PASSPHRASE) {
-    throw new Error('KUCOIN_PRO_API_SECRET ou KUCOIN_PRO_API_PASSPHRASE não configurada');
-  }
-  if (KUCOIN_PRO_API_KEY_VERSION === '1') {
-    return KUCOIN_PRO_API_PASSPHRASE;
-  }
-  return crypto.createHmac('sha256', KUCOIN_PRO_API_SECRET).update(KUCOIN_PRO_API_PASSPHRASE).digest('base64');
-}
-
-/**
- * Gera headers de autenticação
- */
-function generateAuthHeaders(method: string, endpoint: string, body: string = ''): Record<string, string> {
-  if (!KUCOIN_PRO_API_KEY) {
-    throw new Error('KUCOIN_PRO_API_KEY não configurada');
-  }
-  if (!['1', '2', '3'].includes(KUCOIN_PRO_API_KEY_VERSION)) {
-    throw new Error(`KUCOIN_PRO_API_KEY_VERSION inválida: ${KUCOIN_PRO_API_KEY_VERSION}`);
-  }
-  const timestamp = (Date.now() + kucoinTimeOffsetMs).toString();
-  const signature = generateSignature(timestamp, method, endpoint, body);
-  const passphrase = generatePassphraseSignature();
-
-  return {
-    'KC-API-KEY': KUCOIN_PRO_API_KEY,
-    'KC-API-SIGN': signature,
-    'KC-API-TIMESTAMP': timestamp,
-    'KC-API-PASSPHRASE': passphrase,
-    'KC-API-KEY-VERSION': KUCOIN_PRO_API_KEY_VERSION,
-    'Content-Type': 'application/json',
-  };
-}
-
-// ============================================================================
 // CLASSE PRINCIPAL: KuCoin WebSocket Client
 // ============================================================================
 
@@ -366,12 +251,12 @@ export class KucoinWebSocketClient extends EventEmitter {
     const endpoint = isPrivate ? '/api/v1/bullet-private' : '/api/v1/bullet-public';
     const url = `${baseUrl}${endpoint}`;
 
-    if (isPrivate) {
-      await ensureKucoinTimeSync(baseUrl);
-    }
-
     const headers: Record<string, string> = isPrivate
-      ? generateAuthHeaders('POST', endpoint)
+      ? await getKucoinAuthHeaders({
+          baseUrl,
+          method: 'POST',
+          endpoint,
+        })
       : { 'Content-Type': 'application/json' };
 
     logger.debug({ isPrivate, endpoint }, 'Obtendo token WebSocket');
@@ -739,6 +624,20 @@ export class KucoinWebSocketClient extends EventEmitter {
   private sendSubscribe(topic: string, isResubscribe: boolean = false): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       logger.warn({ topic }, 'WebSocket não conectado - subscribe pendente');
+      return;
+    }
+
+    if (!isResubscribe && this.subscriptions.has(topic)) {
+      logger.debug({ topic }, 'Subscribe ignorado - tópico já inscrito');
+      return;
+    }
+
+    if (!isResubscribe && this.subscriptions.size >= KUCOIN_WS_MAX_TOPICS) {
+      logger.warn({
+        topic,
+        total: this.subscriptions.size,
+        limit: KUCOIN_WS_MAX_TOPICS,
+      }, 'Limite de tópicos WS atingido - subscribe bloqueado');
       return;
     }
 

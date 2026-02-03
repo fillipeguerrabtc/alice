@@ -96,11 +96,11 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
-          cpus: '1'
+          memory: 2G
+          cpus: '2'
         reservations:
-          memory: 512M
-          cpus: '0.25'
+          memory: 1G
+          cpus: '0.5'
 
   # ===========================================================================
   # GRAFANA - Dashboards + SSO Alice Auth
@@ -396,11 +396,11 @@ services:
     deploy:
       resources:
         limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
           memory: 256M
           cpus: '0.25'
-        reservations:
-          memory: 128M
-          cpus: '0.1'
 
   # ===========================================================================
   # NODE EXPORTER - Métricas do Host
@@ -507,11 +507,11 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
-          cpus: '0.75'
+          memory: 3G
+          cpus: '2'
         reservations:
-          memory: 512M
-          cpus: '0.25'
+          memory: 1G
+          cpus: '0.5'
 
   # ===========================================================================
   # LANGFUSE DB - PostgreSQL para Langfuse

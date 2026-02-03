@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 **Autor:** Fillipe Guerra  
-**Data:** 02 de Fevereiro de 2026  
+**Data:** 03 de Fevereiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.83 - Modo Agentic resiliente e bootstrap de integrações
+**Versão:** 10.85 - Tuning de observabilidade + SearXNG limpo
 
 ---
 
@@ -60,6 +60,8 @@
 - Trading: histórico com purge definitivo admin (limpa sinais/análises + validações e desvincula ordens/schedulers).
 - Análise: guard explícito evita erro com “history” e bloqueia lista vermelha na UI.
 - Presets de notícias: edição completa e salvamento ao lado de Salvar/Gerar (Análise + Sinais IA).
+- Observability: limites de Prometheus/ClickHouse/OTel ajustados para usar melhor CPU/RAM e evitar throttling.
+- SearXNG: engines ahmia/torch removidas para eliminar ruído; Tor mantido para deep web sob demanda.
 - Chat: correção do upgrade WS evita crash por double handleUpgrade.
 - Trading: extração de JSON balanceada evita truncamento por chaves em texto.
 - Trading: logging explícito de notícias confirma uso de SearXNG na análise.

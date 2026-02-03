@@ -97,12 +97,24 @@ import {
   initializeWebSocketClients as initializeKucoinWebSocketClients,
   isWebSocketConfigured as isKucoinWebSocketConfigured,
 } from './kucoinWebSocket.js';
+import {
+  buildSpotMarketTopic,
+  closeSpotWebSocketClients,
+  getSpotPrivateWebSocketClient,
+  getSpotPublicWebSocketClient,
+  initializeSpotWebSocketClients,
+  isSpotWebSocketConfigured,
+} from './kucoinSpotWebSocket.js';
 import { initializeBroadcast, getPublisher, closeBroadcast } from './tradingBroadcast.js';
 import {
   normalizeTickerData,
   normalizeOrderBookData,
   normalizeKlineData,
   normalizeTradeData,
+  normalizeSpotTickerData,
+  normalizeSpotOrderBookData,
+  normalizeSpotKlineData,
+  normalizeSpotTradeData,
 } from './tradingTypes.js';
 import { sendKucoinErrorResponse } from './kucoin-error-mapper.js';
 import * as technicalIndicators from './technical-indicators.js';
@@ -1114,48 +1126,60 @@ async function fetchNewsSummary(
     role: 'operator',
   });
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
-  const response = await fetch(`${RAG_SERVICE_URL_FINAL}/api/rag/web-search`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...internalHeaders,
-    },
-    body: JSON.stringify({
+  const timeout = setTimeout(() => controller.abort(), 20000);
+  try {
+    const response = await fetch(`${RAG_SERVICE_URL_FINAL}/api/rag/web-search`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...internalHeaders,
+      },
+      body: JSON.stringify({
+        query,
+        limit: resolvedConfig.maxResults,
+        engines: resolvedConfig.engines.length > 0 ? resolvedConfig.engines : undefined,
+        categories: resolvedConfig.categories,
+        language: resolvedConfig.language,
+        safesearch: resolvedConfig.safesearch,
+        timeRange: resolveTimeRangeParam(resolvedConfig.timeRange),
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Falha ao buscar notícias: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json() as { results?: Array<{ title?: string; url?: string; score?: number }> };
+    const results = (data.results ?? [])
+      .filter((item) => item?.title && item?.url)
+      .map((item) => ({ title: item.title as string, url: item.url as string, score: item.score }));
+
+    logger.info({
+      tenantId: auth.tenantId,
+      symbol,
+      marketType: marketType ?? 'futures',
       query,
-      limit: resolvedConfig.maxResults,
-      engines: resolvedConfig.engines.length > 0 ? resolvedConfig.engines : undefined,
-      categories: resolvedConfig.categories,
-      language: resolvedConfig.language,
-      safesearch: resolvedConfig.safesearch,
-      timeRange: resolveTimeRangeParam(resolvedConfig.timeRange),
-    }),
-    signal: controller.signal,
-  });
-  clearTimeout(timeout);
+      results: results.length,
+    }, 'Notícias consultadas via SearXNG para análise de trading');
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Falha ao buscar notícias: ${response.status} - ${errorText}`);
+    return {
+      query,
+      results,
+    };
+  } catch (error) {
+    logger.warn({
+      tenantId: auth.tenantId,
+      symbol,
+      marketType: marketType ?? 'futures',
+      query,
+      error: error instanceof Error ? error.message : 'Erro desconhecido',
+    }, 'Falha ao buscar notícias via SearXNG - seguindo sem notícias');
+    return { query, results: [] };
+  } finally {
+    clearTimeout(timeout);
   }
-
-  const data = await response.json() as { results?: Array<{ title?: string; url?: string; score?: number }> };
-  const results = (data.results ?? [])
-    .filter((item) => item?.title && item?.url)
-    .map((item) => ({ title: item.title as string, url: item.url as string, score: item.score }));
-
-  logger.info({
-    tenantId: auth.tenantId,
-    symbol,
-    marketType: marketType ?? 'futures',
-    query,
-    results: results.length,
-  }, 'Notícias consultadas via SearXNG para análise de trading');
-
-  return {
-    query,
-    results,
-  };
 }
 
 function truncateText(input: string, maxLength: number): string {
@@ -1576,7 +1600,7 @@ async function createTradingDatasetFromOrder(params: {
   return { created };
 }
 
-const TRADING_LLM_MAX_CONTEXT_TOKENS = 4096;
+const TRADING_LLM_MAX_CONTEXT_TOKENS = 6144;
 const TRADING_LLM_MIN_COMPLETION_TOKENS = 128;
 const TRADING_LLM_PROMPT_SAFETY_TOKENS = 128;
 const TRADING_LLM_MESSAGE_OVERHEAD_TOKENS = 8;
@@ -1586,9 +1610,10 @@ const TRADING_LLM_PROMPT_ESTIMATE_MULTIPLIER = 1.25;
 const TRADING_LLM_TOKEN_REGEX_SAFETY_MULTIPLIER = 1.15;
 const TRADING_LLM_TOKEN_REGEX_PATTERN = /[\p{L}\p{N}]+|[^\s\p{L}\p{N}]/gu;
 const TRADING_LLM_MAX_ANALYSIS_BLOCK_CHARS = 1200;
-const TRADING_LLM_MAX_NEWS_ITEMS = 5;
+const TRADING_LLM_MAX_NEWS_ITEMS = 3;
 const TRADING_LLM_MAX_TRAINING_SAMPLES = 3;
-const TRADING_LLM_MAX_SOURCE_LINE_CHARS = 220;
+const TRADING_LLM_MAX_SOURCE_LINE_CHARS = 180;
+const TRADING_LLM_MAX_NEWS_BLOCK_CHARS = 900;
 const TRADING_LLM_MAX_NEWS_QUERY_CHARS = 200;
 
 function estimateTokensFromText(value: string): number {
@@ -1637,9 +1662,10 @@ function buildMultiTimeframePrompt(params: {
       .slice(0, TRADING_LLM_MAX_NEWS_ITEMS)
       .map((item) => `- ${truncateText(item.title, TRADING_LLM_MAX_SOURCE_LINE_CHARS)} (${item.url})`)
       .join('\n');
-    sources.push(`Notícias (SearXNG):
+    const newsBlock = `Notícias (SearXNG):
 Consulta: ${params.news.query}
-${newsLines || '- Nenhum resultado relevante'}`);
+${newsLines || '- Nenhum resultado relevante'}`;
+    sources.push(truncateText(newsBlock, TRADING_LLM_MAX_NEWS_BLOCK_CHARS));
   }
   if (params.trainingData) {
     const samples = params.trainingData.samples
@@ -6237,6 +6263,57 @@ function isValidKucoinWsInterval(interval: string): boolean {
   return kucoinClient.granularityToInterval(granularity) === normalized;
 }
 
+type SpotMarginMarketType = 'spot' | 'margin';
+type SpotWsSubscriptionKey = `${SpotMarginMarketType}:${'cross' | 'isolated' | 'none'}`;
+type SpotWsSubscriptionMeta = { marketType: SpotMarginMarketType; marginMode?: 'cross' | 'isolated' };
+const spotWsTopicMarketTypes = new Map<string, Set<SpotWsSubscriptionKey>>();
+
+function buildSpotWsSubscriptionKey(marketType: SpotMarginMarketType, marginMode?: 'cross' | 'isolated'): SpotWsSubscriptionKey {
+  if (marketType === 'margin') {
+    return `margin:${marginMode ?? 'cross'}`;
+  }
+  return 'spot:none';
+}
+
+function registerSpotWsMarketType(topic: string, marketType: SpotMarginMarketType, marginMode?: 'cross' | 'isolated'): void {
+  const key = buildSpotWsSubscriptionKey(marketType, marginMode);
+  const existing = spotWsTopicMarketTypes.get(topic);
+  if (existing) {
+    existing.add(key);
+    return;
+  }
+  spotWsTopicMarketTypes.set(topic, new Set([key]));
+}
+
+function unregisterSpotWsMarketType(topic: string, marketType: SpotMarginMarketType, marginMode?: 'cross' | 'isolated'): boolean {
+  const key = buildSpotWsSubscriptionKey(marketType, marginMode);
+  const existing = spotWsTopicMarketTypes.get(topic);
+  if (!existing) return false;
+  existing.delete(key);
+  if (existing.size === 0) {
+    spotWsTopicMarketTypes.delete(topic);
+    return true;
+  }
+  return false;
+}
+
+function getSpotMarketTypesForTopic(topic: string): SpotWsSubscriptionMeta[] {
+  const existing = spotWsTopicMarketTypes.get(topic);
+  if (!existing) return [];
+  return Array.from(existing).map((key) => {
+    const [marketType, marginMode] = key.split(':') as [SpotMarginMarketType, 'cross' | 'isolated' | 'none'];
+    return marketType === 'margin' ? { marketType, marginMode: marginMode === 'none' ? 'cross' : marginMode } : { marketType };
+  });
+}
+
+function resolveSpotSymbolFromTopic(topic: string): string | null {
+  const parts = topic.split(':');
+  if (parts.length < 2) return null;
+  const symbolPart = parts[1] ?? '';
+  const symbol = symbolPart.split('_')[0]?.trim();
+  return symbol ? symbol.toUpperCase() : null;
+}
+
 // ============================================================================
 // TRADING: KuCoin Futures BTC Perpetuals
 // Sistema enterprise-grade para trading automatizado (modelo LLM é agnóstico).
@@ -6278,7 +6355,10 @@ if (kucoinClient.isKucoinConfigured()) {
     throw error;
   }
 
-  initializeKucoinWebSocketClients()
+  Promise.all([
+    initializeKucoinWebSocketClients(),
+    initializeSpotWebSocketClients(),
+  ])
     .then(async () => {
       initializeBroadcast()
         .then(async (status) => {
@@ -6288,33 +6368,85 @@ if (kucoinClient.isKucoinConfigured()) {
           const publisher = getPublisher();
           const publicWs = getPublicWebSocketClient();
           const privateWs = isKucoinWebSocketConfigured() ? getPrivateWebSocketClient() : null;
+          const spotPublicWs = getSpotPublicWebSocketClient();
+          const spotPrivateWs = isSpotWebSocketConfigured() ? getSpotPrivateWebSocketClient() : null;
           const privateTenantId = await resolveKucoinTenantIdForPrivateWs();
 
           publicWs.on('ticker', (data) => {
             const normalized = normalizeTickerData(data);
-            void publisher.publishTicker(data.symbol, normalized).catch((error) => {
+            void publisher.publishTicker(data.symbol, normalized, 'futures').catch((error) => {
               logger.error({ error }, 'Falha ao publicar ticker de trading');
             });
           });
 
           publicWs.on('orderbook', (data, symbol) => {
             const normalized = normalizeOrderBookData(data);
-            void publisher.publishOrderBook(data.symbol || symbol, normalized).catch((error) => {
+            void publisher.publishOrderBook(data.symbol || symbol, normalized, 'futures').catch((error) => {
               logger.error({ error }, 'Falha ao publicar orderbook de trading');
             });
           });
 
           publicWs.on('kline', (data) => {
             const normalized = normalizeKlineData(data);
-            void publisher.publishKlines(data.symbol, normalized).catch((error) => {
+            void publisher.publishKlines(data.symbol, normalized, 'futures').catch((error) => {
               logger.error({ error }, 'Falha ao publicar kline de trading');
             });
           });
 
           publicWs.on('trade', (data) => {
             const normalized = normalizeTradeData(data);
-            void publisher.publishTrades(data.symbol, normalized).catch((error) => {
+            void publisher.publishTrades(data.symbol, normalized, 'futures').catch((error) => {
               logger.error({ error }, 'Falha ao publicar trades de trading');
+            });
+          });
+
+          spotPublicWs.on('ticker', (data, topic) => {
+            const subscriptions = getSpotMarketTypesForTopic(topic);
+            if (subscriptions.length === 0) return;
+            const normalized = normalizeSpotTickerData(data);
+            subscriptions.forEach((subscription) => {
+              void publisher.publishTicker(data.symbol, normalized, subscription.marketType, subscription.marginMode).catch((error) => {
+                logger.error({ error }, 'Falha ao publicar ticker Spot/Margin');
+              });
+            });
+          });
+
+          spotPublicWs.on('orderbook', (data, topic) => {
+            const subscriptions = getSpotMarketTypesForTopic(topic);
+            if (subscriptions.length === 0) return;
+            const normalized = normalizeSpotOrderBookData(data);
+            const symbol = data.symbol ?? resolveSpotSymbolFromTopic(topic);
+            if (!symbol) return;
+            subscriptions.forEach((subscription) => {
+              void publisher.publishOrderBook(symbol, normalized, subscription.marketType, subscription.marginMode).catch((error) => {
+                logger.error({ error }, 'Falha ao publicar orderbook Spot/Margin');
+              });
+            });
+          });
+
+          spotPublicWs.on('kline', (data, topic) => {
+            const subscriptions = getSpotMarketTypesForTopic(topic);
+            if (subscriptions.length === 0) return;
+            const normalized = normalizeSpotKlineData(data);
+            const symbol = data.symbol ?? resolveSpotSymbolFromTopic(topic);
+            if (!symbol) return;
+            subscriptions.forEach((subscription) => {
+              void publisher.publishKlines(symbol, normalized, subscription.marketType, subscription.marginMode).catch((error) => {
+                logger.error({ error }, 'Falha ao publicar kline Spot/Margin');
+              });
+            });
+          });
+
+          spotPublicWs.on('trade', (data, topic) => {
+            const subscriptions = getSpotMarketTypesForTopic(topic);
+            if (subscriptions.length === 0) return;
+            const normalized = normalizeSpotTradeData(data);
+            const symbol = data.symbol ?? resolveSpotSymbolFromTopic(topic);
+            if (!symbol) return;
+            subscriptions.forEach((subscription) => {
+              void publisher.publishTrades(symbol, normalized, subscription.marketType, subscription.marginMode).catch((error) => {
+                logger.error({ error }, 'Falha ao publicar trades Spot/Margin');
+              });
             });
           });
 
@@ -6338,6 +6470,13 @@ if (kucoinClient.isKucoinConfigured()) {
                 });
               });
             }
+          }
+
+          if (spotPrivateWs) {
+            spotPrivateWs.on('marginPosition', (data, topic) => {
+              const symbol = data.symbol ?? resolveSpotSymbolFromTopic(topic);
+              logger.info({ symbol, topic }, 'Update de posição margin recebido (WS)');
+            });
           }
         })
         .catch((error) => {
@@ -6602,6 +6741,8 @@ function normalizeLlmSignalPayload(payload: Record<string, unknown>): Record<str
 }
 
 function normalizeLlmJsonKeys(content: string): { json: string; repaired: boolean } {
+  const singleQuotedKeys = content.replace(/'([A-Za-z_][A-Za-z0-9_]*)'\s*:/g, '"$1":');
+  const preprocessedContent = singleQuotedKeys.replace(/:\s*'([^'\\]*(?:\\.[^'\\]*)*)'/g, ':"$1"');
   let repaired = false;
   let inString = false;
   let escaping = false;
@@ -6612,8 +6753,8 @@ function normalizeLlmJsonKeys(content: string): { json: string; repaired: boolea
   const isIdentifierChar = (char: string) => /[A-Za-z0-9_]/.test(char);
   const isWhitespace = (char: string) => /\s/.test(char);
 
-  while (i < content.length) {
-    const char = content[i];
+  while (i < preprocessedContent.length) {
+    const char = preprocessedContent[i];
     if (escaping) {
       output += char;
       escaping = false;
@@ -7672,9 +7813,10 @@ app.get('/api/integrations/trading/ws/status', requirePermission('integrations:t
         success: true,
         data: {
           configured: false,
-          supportedMarkets: ['futures'],
+          supportedMarkets: ['futures', 'spot', 'margin'],
           public: { state: 'disconnected' },
           private: { enabled: false, state: 'disconnected' },
+          spot: { public: { state: 'disconnected' }, private: { enabled: false, state: 'disconnected' } },
         },
       });
       return;
@@ -7683,6 +7825,9 @@ app.get('/api/integrations/trading/ws/status', requirePermission('integrations:t
     const publicWs = getPublicWebSocketClient();
     const privateEnabled = isKucoinWebSocketConfigured();
     const privateWs = privateEnabled ? getPrivateWebSocketClient() : null;
+    const spotPublicWs = getSpotPublicWebSocketClient();
+    const spotPrivateEnabled = isSpotWebSocketConfigured();
+    const spotPrivateWs = spotPrivateEnabled ? getSpotPrivateWebSocketClient() : null;
 
     const authContext = extractAuthContext(req);
     const allowedSymbols = await kucoinClient.getAllowedSymbols();
@@ -7696,9 +7841,13 @@ app.get('/api/integrations/trading/ws/status', requirePermission('integrations:t
         configured: true,
         allowedSymbols,
         defaultSymbol,
-        supportedMarkets: ['futures'],
+        supportedMarkets: ['futures', 'spot', 'margin'],
         public: { state: publicWs.getState() },
         private: { enabled: privateEnabled, state: privateWs?.getState() ?? 'disconnected' },
+        spot: {
+          public: { state: spotPublicWs.getState() },
+          private: { enabled: spotPrivateEnabled, state: spotPrivateWs?.getState() ?? 'disconnected' },
+        },
       },
     });
   } catch (error) {
@@ -7755,17 +7904,6 @@ app.post('/api/integrations/trading/ws/subscribe', requirePermission('integratio
     }
 
     const { channel, symbol, interval, depth, marketType, marginMode } = parsed.data;
-    if (marketType !== 'futures') {
-      kucoinWsSubscriptionsTotal.inc({ action: 'subscribe', channel, status: 'unsupported_market' }, 1);
-      res.json({
-        success: true,
-        data: {
-          supported: false,
-          message: 'WebSocket KuCoin está disponível apenas para Futures; usando REST como fallback.',
-        },
-      });
-      return;
-    }
 
     if (channel === 'klines') {
       if (!interval) {
@@ -7791,34 +7929,86 @@ app.post('/api/integrations/trading/ws/subscribe', requirePermission('integratio
     const resolvedSymbol = await resolveTradingSymbolOrRespond(res, tradingAuth, symbol, { required: true, marketType, marginMode });
     if (!resolvedSymbol) return;
 
-    const publicWs = getPublicWebSocketClient();
-    if (!publicWs.isConnected()) {
-      await publicWs.connect(false);
-    }
-
     const orderBookDepth = (depth ?? resolveKucoinWsOrderBookDepth()) as 5 | 50;
-    if (channel === 'ticker') {
-      publicWs.subscribeTicker(resolvedSymbol);
-    } else if (channel === 'orderbook') {
-      publicWs.subscribeOrderBook(resolvedSymbol, orderBookDepth);
-    } else if (channel === 'trades') {
-      publicWs.subscribeTrades(resolvedSymbol);
-    } else if (channel === 'klines' && interval) {
-      publicWs.subscribeKlines(resolvedSymbol, interval);
+
+    if (marketType === 'futures') {
+      const publicWs = getPublicWebSocketClient();
+      if (!publicWs.isConnected()) {
+        await publicWs.connect(false);
+      }
+
+      if (channel === 'ticker') {
+        publicWs.subscribeTicker(resolvedSymbol);
+      } else if (channel === 'orderbook') {
+        publicWs.subscribeOrderBook(resolvedSymbol, orderBookDepth);
+      } else if (channel === 'trades') {
+        publicWs.subscribeTrades(resolvedSymbol);
+      } else if (channel === 'klines' && interval) {
+        publicWs.subscribeKlines(resolvedSymbol, interval);
+      }
+
+      kucoinWsSubscriptionsTotal.inc({ action: 'subscribe', channel, status: 'success' }, 1);
+
+      res.json({
+        success: true,
+        data: {
+          channel,
+          symbol: resolvedSymbol,
+          interval: channel === 'klines' ? interval : undefined,
+          depth: channel === 'orderbook' ? orderBookDepth : undefined,
+          marketType,
+          marginMode,
+          state: publicWs.getState(),
+        },
+      });
+      return;
     }
 
-    kucoinWsSubscriptionsTotal.inc({ action: 'subscribe', channel, status: 'success' }, 1);
+    if (marketType === 'spot' || marketType === 'margin') {
+      const publicWs = getSpotPublicWebSocketClient();
+      if (!publicWs.isConnected()) {
+        await publicWs.connect(false);
+      }
 
+      let topic = '';
+      if (channel === 'ticker') {
+        topic = publicWs.subscribeTicker(resolvedSymbol);
+      } else if (channel === 'orderbook') {
+        topic = publicWs.subscribeOrderBook(resolvedSymbol, orderBookDepth);
+      } else if (channel === 'trades') {
+        topic = publicWs.subscribeTrades(resolvedSymbol);
+      } else if (channel === 'klines' && interval) {
+        topic = publicWs.subscribeKlines(resolvedSymbol, interval);
+      }
+
+      if (topic) {
+        registerSpotWsMarketType(topic, marketType, marginMode);
+      }
+
+      kucoinWsSubscriptionsTotal.inc({ action: 'subscribe', channel, status: 'success' }, 1);
+
+      res.json({
+        success: true,
+        data: {
+          channel,
+          symbol: resolvedSymbol,
+          interval: channel === 'klines' ? interval : undefined,
+          depth: channel === 'orderbook' ? orderBookDepth : undefined,
+          marketType,
+          marginMode,
+          state: publicWs.getState(),
+          topic,
+        },
+      });
+      return;
+    }
+
+    kucoinWsSubscriptionsTotal.inc({ action: 'subscribe', channel, status: 'unsupported_market' }, 1);
     res.json({
       success: true,
       data: {
-        channel,
-        symbol: resolvedSymbol,
-        interval: channel === 'klines' ? interval : undefined,
-        depth: channel === 'orderbook' ? orderBookDepth : undefined,
-        marketType,
-        marginMode,
-        state: publicWs.getState(),
+        supported: false,
+        message: 'MarketType não suportado no WebSocket.',
       },
     });
   } catch (error) {
@@ -7853,17 +8043,6 @@ app.post('/api/integrations/trading/ws/unsubscribe', requirePermission('integrat
     }
 
     const { channel, symbol, interval, depth, marketType, marginMode } = parsed.data;
-    if (marketType !== 'futures') {
-      kucoinWsSubscriptionsTotal.inc({ action: 'unsubscribe', channel, status: 'unsupported_market' }, 1);
-      res.json({
-        success: true,
-        data: {
-          supported: false,
-          message: 'WebSocket KuCoin está disponível apenas para Futures; cancelamento ignorado.',
-        },
-      });
-      return;
-    }
 
     if (channel === 'klines') {
       if (!interval) {
@@ -7889,36 +8068,93 @@ app.post('/api/integrations/trading/ws/unsubscribe', requirePermission('integrat
     const resolvedSymbol = await resolveTradingSymbolOrRespond(res, tradingAuth, symbol, { required: true, marketType, marginMode });
     if (!resolvedSymbol) return;
 
-    const publicWs = getPublicWebSocketClient();
-    if (!publicWs.isConnected()) {
-      kucoinWsSubscriptionsTotal.inc({ action: 'unsubscribe', channel, status: 'ws_disconnected' }, 1);
-      res.status(409).json({ error: 'WebSocket KuCoin não está conectado' });
+    const orderBookDepth = (depth ?? resolveKucoinWsOrderBookDepth()) as 5 | 50;
+
+    if (marketType === 'futures') {
+      const publicWs = getPublicWebSocketClient();
+      if (!publicWs.isConnected()) {
+        kucoinWsSubscriptionsTotal.inc({ action: 'unsubscribe', channel, status: 'ws_disconnected' }, 1);
+        res.status(409).json({ error: 'WebSocket KuCoin não está conectado' });
+        return;
+      }
+
+      if (channel === 'ticker') {
+        publicWs.unsubscribeTicker(resolvedSymbol);
+      } else if (channel === 'orderbook') {
+        publicWs.unsubscribeOrderBook(resolvedSymbol, orderBookDepth);
+      } else if (channel === 'trades') {
+        publicWs.unsubscribeTrades(resolvedSymbol);
+      } else if (channel === 'klines' && interval) {
+        publicWs.unsubscribeKlines(resolvedSymbol, interval);
+      }
+
+      kucoinWsSubscriptionsTotal.inc({ action: 'unsubscribe', channel, status: 'success' }, 1);
+
+      res.json({
+        success: true,
+        data: {
+          channel,
+          symbol: resolvedSymbol,
+          interval: channel === 'klines' ? interval : undefined,
+          depth: channel === 'orderbook' ? orderBookDepth : undefined,
+          marketType,
+          marginMode,
+          state: publicWs.getState(),
+        },
+      });
       return;
     }
 
-    const orderBookDepth = (depth ?? resolveKucoinWsOrderBookDepth()) as 5 | 50;
-    if (channel === 'ticker') {
-      publicWs.unsubscribeTicker(resolvedSymbol);
-    } else if (channel === 'orderbook') {
-      publicWs.unsubscribeOrderBook(resolvedSymbol, orderBookDepth);
-    } else if (channel === 'trades') {
-      publicWs.unsubscribeTrades(resolvedSymbol);
-    } else if (channel === 'klines' && interval) {
-      publicWs.unsubscribeKlines(resolvedSymbol, interval);
+    if (marketType === 'spot' || marketType === 'margin') {
+      const publicWs = getSpotPublicWebSocketClient();
+      if (!publicWs.isConnected()) {
+        kucoinWsSubscriptionsTotal.inc({ action: 'unsubscribe', channel, status: 'ws_disconnected' }, 1);
+        res.status(409).json({ error: 'WebSocket KuCoin Spot/Margin não está conectado' });
+        return;
+      }
+
+      let topic = '';
+      if (channel === 'ticker') {
+        topic = buildSpotMarketTopic({ channel, symbol: resolvedSymbol });
+      } else if (channel === 'orderbook') {
+        topic = buildSpotMarketTopic({ channel, symbol: resolvedSymbol, depth: orderBookDepth });
+      } else if (channel === 'trades') {
+        topic = buildSpotMarketTopic({ channel, symbol: resolvedSymbol });
+      } else if (channel === 'klines' && interval) {
+        topic = buildSpotMarketTopic({ channel, symbol: resolvedSymbol, interval });
+      }
+
+      if (topic) {
+        const shouldUnsubscribe = unregisterSpotWsMarketType(topic, marketType, marginMode);
+        if (shouldUnsubscribe) {
+          publicWs.unsubscribe(topic, false);
+        }
+      }
+
+      kucoinWsSubscriptionsTotal.inc({ action: 'unsubscribe', channel, status: 'success' }, 1);
+
+      res.json({
+        success: true,
+        data: {
+          channel,
+          symbol: resolvedSymbol,
+          interval: channel === 'klines' ? interval : undefined,
+          depth: channel === 'orderbook' ? orderBookDepth : undefined,
+          marketType,
+          marginMode,
+          state: publicWs.getState(),
+          topic,
+        },
+      });
+      return;
     }
 
-    kucoinWsSubscriptionsTotal.inc({ action: 'unsubscribe', channel, status: 'success' }, 1);
-
+    kucoinWsSubscriptionsTotal.inc({ action: 'unsubscribe', channel, status: 'unsupported_market' }, 1);
     res.json({
       success: true,
       data: {
-        channel,
-        symbol: resolvedSymbol,
-        interval: channel === 'klines' ? interval : undefined,
-        depth: channel === 'orderbook' ? orderBookDepth : undefined,
-        marketType,
-        marginMode,
-        state: publicWs.getState(),
+        supported: false,
+        message: 'MarketType não suportado no WebSocket.',
       },
     });
   } catch (error) {
@@ -8732,13 +8968,16 @@ async function generateTradingSignalFromLlm(params: {
     marginMode: params.marginMode,
     riskConfig,
   });
-  const rawAnalysisPrompt = buildMultiTimeframePrompt({
+  let newsForPrompt = newsSummary;
+  const requestedMaxTokens = params.modelConfig?.maxTokens ?? agentContext.llmConfig.maxTokens ?? 2048;
+
+  const buildPromptWithNews = (news: typeof newsSummary) => buildMultiTimeframePrompt({
     matrix: analysisMatrix,
     consensus,
     indicators,
     dataSources,
     orderBook: orderBookSnapshot,
-    news: newsSummary,
+    news,
     trainingData: trainingSummary,
     techniques,
     techniqueScores,
@@ -8747,12 +8986,51 @@ async function generateTradingSignalFromLlm(params: {
     arbitrageSnapshots,
   });
 
-  const requestedMaxTokens = params.modelConfig?.maxTokens ?? agentContext.llmConfig.maxTokens ?? 2048;
-  const tokenBudget = resolveMaxTokensForPrompt({
+  let rawAnalysisPrompt = buildPromptWithNews(newsForPrompt);
+  let tokenBudget = resolveMaxTokensForPrompt({
     systemPrompt,
     analysisPrompt: rawAnalysisPrompt,
     requestedMaxTokens,
   });
+
+  if (tokenBudget.analysisPrompt !== rawAnalysisPrompt && newsSummary?.results?.length) {
+    const originalCount = newsSummary.results.length;
+    let chosenPrompt = rawAnalysisPrompt;
+    let chosenBudget = tokenBudget;
+    let chosenNewsCount = originalCount;
+
+    for (let i = Math.min(originalCount, TRADING_LLM_MAX_NEWS_ITEMS); i >= 0; i -= 1) {
+      const trimmedNews = i === 0 ? { ...newsSummary, results: [] } : { ...newsSummary, results: newsSummary.results.slice(0, i) };
+      const candidatePrompt = buildPromptWithNews(trimmedNews);
+      const candidateBudget = resolveMaxTokensForPrompt({
+        systemPrompt,
+        analysisPrompt: candidatePrompt,
+        requestedMaxTokens,
+      });
+
+      chosenPrompt = candidatePrompt;
+      chosenBudget = candidateBudget;
+      chosenNewsCount = i;
+
+      if (candidateBudget.analysisPrompt === candidatePrompt) {
+        newsForPrompt = trimmedNews;
+        break;
+      }
+    }
+
+    rawAnalysisPrompt = chosenPrompt;
+    tokenBudget = chosenBudget;
+    if (chosenNewsCount !== originalCount) {
+      logger.warn({
+        tenantId: params.tenantId,
+        symbol: params.symbol,
+        originalNewsCount: originalCount,
+        usedNewsCount: chosenNewsCount,
+        promptTokens: chosenBudget.promptTokens,
+      }, 'Notícias reduzidas para respeitar orçamento de tokens');
+    }
+  }
+
   const analysisPrompt = tokenBudget.analysisPrompt;
 
   if (analysisPrompt !== rawAnalysisPrompt) {
@@ -8764,6 +9042,14 @@ async function generateTradingSignalFromLlm(params: {
       maxCompletionTokens: tokenBudget.maxCompletionTokens,
     }, 'Prompt de sinal LLM truncado para respeitar o limite de contexto.');
   }
+  logger.info({
+    tenantId: params.tenantId,
+    symbol: params.symbol,
+    promptTokens: tokenBudget.promptTokens,
+    maxCompletionTokens: tokenBudget.maxCompletionTokens,
+    analysisPromptChars: analysisPrompt.length,
+    newsResults: newsSummary?.results?.length ?? 0,
+  }, 'Orçamento de tokens calculado para sinal LLM');
 
   const messages: LLMMessage[] = [
     { role: 'system', content: systemPrompt },
@@ -13129,6 +13415,7 @@ initializeCaches().then(() => {
     async () => {
       // WS5: garante shutdown limpo dos clientes WS (evita sockets pendurados)
       closeKucoinWebSocketClients();
+      closeSpotWebSocketClients();
     },
     { priority: ShutdownPriority.EXTERNAL_CONNECTIONS }
   );

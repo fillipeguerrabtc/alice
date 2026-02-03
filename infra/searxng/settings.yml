@@ -95,28 +95,9 @@ search:
   # Máximo de resultados por request
   max_request_timeout: 15.0
 
-# Configuração de engines
-# CORREÇÃO 23/12/2025: Proxy Tor configurado APENAS nos engines .onion
-# Formato socks5h:// (h = resolve DNS via Tor também, necessário para .onion)
-engines:
-  # Engine ahmia (.onion) - requer Tor
-  - name: ahmia
-    engine: ahmia
-    shortcut: ah
-    disabled: false
-    # Proxy Tor APENAS para este engine (não global)
-    proxies:
-      all://:
-        - socks5h://alice-tor:9050
-    timeout: 15.0
-  
-  # Engine torch (.onion) - DESABILITADO explicitamente
-  # use_default_settings=true ainda tenta carregar engines padrão.
-  # Torch falha porque o engine não existe na imagem atual.
-  - name: torch
-    engine: torch
-    shortcut: tor
-    disabled: true
+# Engines custom removidas para evitar ruído de deepweb.
+# Mantemos engines padrão (use_default_settings: true).
+# O Tor permanece disponível para deepweb quando necessário.
 
 # Bot detection (acesso interno via alice-network)
 # CORREÇÃO 23/12/2025: Configura trusted proxies para eliminar warning

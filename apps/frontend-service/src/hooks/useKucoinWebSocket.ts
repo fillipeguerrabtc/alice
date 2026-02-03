@@ -555,23 +555,28 @@ export function useKucoinWebSocket(
     };
   }, [autoConnect]);
 
+  const previousSubscriptionKeyRef = useRef<string | null>(null);
+
   useEffect(() => {
     setKlines([]);
-  }, [symbol, interval, marketType, marginMode]);
+  }, [symbol, marketType, marginMode]);
 
-  // Resubscribe when symbol changes
+  // Resubscribe when symbol/interval changes
   useEffect(() => {
     if (state.connected && symbol) {
+      const subscriptionKey = `${symbol}:${interval}:${marketType}:${marginMode}`;
       // CORREÇÃO 17/12/2025: Evitar subscriptions duplicadas na conexão inicial
       // Bug: onopen já envia subscriptions, mas este useEffect dispara novamente quando
       // state.connected muda para true, enviando subscriptions duplicadas
       // Solução: Verificar se é conexão inicial (flag true E símbolo não mudou)
-      const isInitialConnection = initialSubscriptionSentRef.current && previousSymbolRef.current === symbol;
+      const isInitialConnection = initialSubscriptionSentRef.current
+        && previousSubscriptionKeyRef.current === subscriptionKey;
       
       if (isInitialConnection) {
         // Conexão inicial - subscriptions já foram enviadas no onopen
         // Apenas resetar a flag e não fazer nada
         initialSubscriptionSentRef.current = false;
+        previousSubscriptionKeyRef.current = subscriptionKey;
         return;
       }
 
@@ -592,8 +597,9 @@ export function useKucoinWebSocket(
         subscribe(channel, symbol, channel === 'klines' ? interval : undefined, marketType, marginMode);
       });
 
-      // Atualizar referência do símbolo
+      // Atualizar referência do símbolo/intervalo
       previousSymbolRef.current = symbol;
+      previousSubscriptionKeyRef.current = subscriptionKey;
     }
   }, [symbol, state.connected, channels, interval, marketType, marginMode, subscribe, unsubscribe]);
 

@@ -36,7 +36,7 @@ exec python3 -m vllm.entrypoints.openai.api_server \
   --dtype float16 \
   --max-model-len "${MAX_MODEL_LEN}" \
   --gpu-memory-utilization "${GPU_MEMORY_UTILIZATION}" \
-  --max-num-batched-tokens "${MAX_NUM_BATCHED_TOKENS:-2048}" \
+  --max-num-batched-tokens "${MAX_NUM_BATCHED_TOKENS:-1536}" \
   --max-num-seqs "${MAX_NUM_SEQS:-16}" \
   --tensor-parallel-size "${TENSOR_PARALLEL_SIZE}" \
   --host "${HOST}" \

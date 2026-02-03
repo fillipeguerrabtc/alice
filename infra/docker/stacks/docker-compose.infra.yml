@@ -74,7 +74,7 @@ networks:
 services:
 
   # ===========================================================================
-  # TOR PROXY - Proxy SOCKS5 para acesso a .onion (engines ahmia/torch)
+  # TOR PROXY - Proxy SOCKS5 para acesso a .onion (deep web sob demanda)
   # ===========================================================================
   # NOTA: dperson/torproxy é a imagem mantida ativamente com curl instalado
   # osminogin/tor-simple é minimalista SEM curl/wget - healthcheck falhava
@@ -140,7 +140,7 @@ services:
       - alice-network
     healthcheck:
       # CORREÇÃO PR#104: Reduzir interval para 20s
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/', timeout=5)"]
+      test: ["CMD", "python3", "-c", "import urllib.request; req=urllib.request.Request('http://localhost:8080/', headers={'X-Forwarded-For':'127.0.0.1','X-Real-IP':'127.0.0.1'}); urllib.request.urlopen(req, timeout=5)"]
       interval: 20s
       timeout: 10s
       retries: 5

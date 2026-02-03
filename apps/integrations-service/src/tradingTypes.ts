@@ -162,3 +162,95 @@ export function normalizeTradeData(
     ts: data.ts,
   };
 }
+
+/**
+ * Normaliza dados de ticker Spot/Margin do WebSocket KuCoin
+ */
+export function normalizeSpotTickerData(data: {
+  symbol: string;
+  price: string;
+  size: string;
+  bestBid: string;
+  bestBidSize: string;
+  bestAsk: string;
+  bestAskSize: string;
+  time: number;
+}): NormalizedTickerData {
+  return {
+    symbol: data.symbol,
+    price: data.price,
+    size: data.size,
+    bestBid: data.bestBid,
+    bestBidSize: data.bestBidSize,
+    bestAsk: data.bestAsk,
+    bestAskSize: data.bestAskSize,
+    timestamp: data.time,
+  };
+}
+
+/**
+ * Normaliza dados de order book Spot/Margin do WebSocket KuCoin
+ */
+export function normalizeSpotOrderBookData(data: {
+  symbol: string;
+  asks: Array<[string | number, string | number]>;
+  bids: Array<[string | number, string | number]>;
+  timestamp: number;
+}): NormalizedOrderBookData {
+  const sequence = data.timestamp;
+  const toEntry = (entry: [string | number, string | number]): NormalizedOrderBookEntry => ({
+    price: String(entry[0]),
+    size: String(entry[1]),
+    sequence,
+  });
+  return {
+    symbol: data.symbol,
+    sequence,
+    bids: data.bids.map(toEntry),
+    asks: data.asks.map(toEntry),
+    timestamp: data.timestamp,
+  };
+}
+
+/**
+ * Normaliza dados de kline Spot/Margin do WebSocket KuCoin
+ */
+export function normalizeSpotKlineData(data: {
+  symbol: string;
+  interval?: string;
+  candles: [string, string, string, string, string, string, string];
+  time: number;
+}): NormalizedKlineData {
+  return {
+    symbol: data.symbol,
+    interval: data.interval,
+    time: data.time || Number(data.candles[0]),
+    open: data.candles[1],
+    close: data.candles[2],
+    high: data.candles[3],
+    low: data.candles[4],
+    volume: data.candles[5],
+    turnover: data.candles[6],
+  };
+}
+
+/**
+ * Normaliza dados de trade Spot/Margin do WebSocket KuCoin
+ */
+export function normalizeSpotTradeData(data: {
+  symbol: string;
+  price: string;
+  size: string;
+  side: string;
+  tradeId: string;
+  time: number;
+}): NormalizedTradeData {
+  return {
+    symbol: data.symbol,
+    price: data.price,
+    size: Number(data.size),
+    side: data.side,
+    tradeId: data.tradeId,
+    ts: data.time,
+  };
+}
