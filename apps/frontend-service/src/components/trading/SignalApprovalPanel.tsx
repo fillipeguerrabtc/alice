@@ -97,6 +97,17 @@ interface TradingSignal {
     technicalIndicators?: Record<string, number>;
     validationStatus?: 'pending' | 'validated' | 'failed';
     validationId?: string;
+    validationSummary?: {
+      reasonCode?: 'ok' | 'no_values' | 'discrepancy';
+      failedFields?: string[];
+      noValuesExtracted?: boolean;
+      accuracy?: number;
+      extractionSource?: string;
+      timeframeUsed?: string;
+      maxDeviationFound?: number;
+      maxAllowedDeviationPercent?: number;
+      allowedDeviationByField?: Record<string, number>;
+    };
     approvalStatus?: 'pending' | 'approved' | 'rejected';
     approvalReason?: string;
     techniques?: string[];
@@ -143,6 +154,33 @@ interface ValidationStats {
   passed: number;
   failed: number;
   accuracyRate: number;
+}
+
+interface ValidationDiagnostics {
+  success: boolean;
+  meta: {
+    tenantId: string;
+    dateFrom: string | null;
+    dateTo: string | null;
+    topLimit: number;
+  };
+  totals: {
+    total?: number;
+    passed?: number;
+    failed?: number;
+    no_values?: number;
+    avg_discrepancy_fields?: number;
+    min_allowed_deviation?: number;
+    max_allowed_deviation?: number;
+  };
+  breakdown: {
+    byAction: Array<{ action: string; total: number }>;
+    byFailureReason: Array<{ reason: string; total: number }>;
+    byExtractionSource: Array<{ source: string; total: number }>;
+    byInterval: Array<{ interval: string; total: number; passed: number; failed: number; no_values: number }>;
+    bySymbol: Array<{ symbol: string; total: number; passed: number; failed: number }>;
+    topDiscrepancies: Array<{ field: string; occurrences: number; avg_diff: number; max_diff: number }>;
+  };
 }
 
 export interface SignalApprovalPanelProps {
@@ -201,6 +239,18 @@ const SIGNAL_TYPE_OPTIONS: TradingSignal['signalType'][] = [
   'hold',
   'neutral',
 ];
+
+const resolveValidationReasonLabel = (summary?: TradingSignal['metadata']['validationSummary']) => {
+  if (!summary) return null;
+  if (summary.reasonCode === 'no_values') {
+    return 'Sem números citados pela IA';
+  }
+  if (summary.reasonCode === 'discrepancy') {
+    const fields = summary.failedFields?.length ? summary.failedFields.slice(0, 3).join(', ') : null;
+    return fields ? `Divergências em: ${fields}` : 'Divergências nos indicadores';
+  }
+  return null;
+};
 
 const buildIndicatorExplanation = (analysis: Record<string, unknown>): string[] => {
   const items: string[] = [];
@@ -291,6 +341,7 @@ function SignalCard({
   const typeInfo = getSignalTypeInfo(signal.signalType);
   const TypeIcon = typeInfo.icon;
   const confidencePercent = Math.round(signal.confidence * 100);
+  const validationReasonLabel = resolveValidationReasonLabel(metadata.validationSummary);
 
   return (
     <>
@@ -351,6 +402,9 @@ function SignalCard({
                       </Badge>
                     )}
                   </div>
+                  {signal.metadata?.validationStatus === 'failed' && validationReasonLabel && (
+                    <p className="text-xs text-muted-foreground mt-1">{validationReasonLabel}</p>
+                  )}
                   <p className="text-xs text-muted-foreground mt-1">
                     {formatDateTime(signal.criadoEm, { locale, timeZone })}
                   </p>
@@ -876,6 +930,19 @@ export function SignalApprovalPanel({
     refetchInterval: 30000,
   });
 
+  const { data: validationDiagnostics, isLoading: validationDiagnosticsLoading } = useQuery<ValidationDiagnostics>({
+    queryKey: ['trading-validation-diagnostics', historyDateFrom, historyDateTo],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (historyDateFrom) params.set('dateFrom', historyDateFrom);
+      if (historyDateTo) params.set('dateTo', historyDateTo);
+      params.set('topLimit', '8');
+      const response = await apiRequest('GET', `/api/integrations/trading/validations/diagnostics${params.toString() ? `?${params}` : ''}`);
+      return response.json();
+    },
+    refetchInterval: 60000,
+  });
+
   const { data: signalHistoryStats, refetch: refetchSignalHistoryStats } = useQuery<{
     success: boolean;
     data: {
@@ -1160,6 +1227,10 @@ export function SignalApprovalPanel({
   const signals: TradingSignal[] = signalsResponse?.data ?? [];
   const stats = validationStats?.stats;
   const historyStats = signalHistoryStats?.data;
+  const diagnosticsTotals = validationDiagnostics?.totals;
+  const diagnosticsDiscrepancies = validationDiagnostics?.breakdown.topDiscrepancies ?? [];
+  const diagnosticsFailureReasons = validationDiagnostics?.breakdown.byFailureReason ?? [];
+  const diagnosticsExtractionSources = validationDiagnostics?.breakdown.byExtractionSource ?? [];
   const allHistorySelected = historyItems.length > 0 && selectedHistoryIds.size === historyItems.length;
   const hasHistorySelection = selectedHistoryIds.size > 0;
 
@@ -1228,6 +1299,89 @@ export function SignalApprovalPanel({
             <span>passaram na validação cruzada LLM.</span>
             <span className="font-medium">Falhou validação:</span>
             <span>valores citados divergiram dos indicadores reais.</span>
+          </div>
+        )}
+
+        {validationDiagnostics?.success && diagnosticsTotals && (
+          <div className="mt-4 rounded-lg border border-muted-foreground/20 bg-muted/20 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Shield className="h-4 w-4 text-emerald-500" />
+                <span className="text-sm font-semibold">Diagnóstico de Validação LLM</span>
+              </div>
+              {validationDiagnosticsLoading && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Atualizando
+                </div>
+              )}
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+              <div className="rounded-md bg-background/70 p-2">
+                <p className="text-muted-foreground">Total analisado</p>
+                <p className="text-base font-semibold">{formatNumber(diagnosticsTotals.total ?? 0, locale)}</p>
+              </div>
+              <div className="rounded-md bg-background/70 p-2">
+                <p className="text-muted-foreground">Falhas sem números</p>
+                <p className="text-base font-semibold text-orange-600">{formatNumber(diagnosticsTotals.no_values ?? 0, locale)}</p>
+              </div>
+              <div className="rounded-md bg-background/70 p-2">
+                <p className="text-muted-foreground">Campos divergentes (média)</p>
+                <p className="text-base font-semibold">{formatNumber(diagnosticsTotals.avg_discrepancy_fields ?? 0, locale, { maximumFractionDigits: 2 })}</p>
+              </div>
+              <div className="rounded-md bg-background/70 p-2">
+                <p className="text-muted-foreground">Desvio permitido</p>
+                <p className="text-base font-semibold">
+                  {formatNumber((diagnosticsTotals.min_allowed_deviation ?? 0) * 100, locale, { maximumFractionDigits: 2 })}% ·
+                  {formatNumber((diagnosticsTotals.max_allowed_deviation ?? 0) * 100, locale, { maximumFractionDigits: 2 })}%
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+              <div className="rounded-md bg-background/70 p-2">
+                <p className="text-muted-foreground">Motivo de falha</p>
+                <div className="mt-1 space-y-1">
+                  {diagnosticsFailureReasons.length > 0 ? diagnosticsFailureReasons.map((item) => (
+                    <div key={item.reason} className="flex items-center justify-between">
+                      <span className="font-mono">{item.reason}</span>
+                      <span className="text-muted-foreground">{formatNumber(item.total, locale)}</span>
+                    </div>
+                  )) : (
+                    <span className="text-muted-foreground">Sem dados no período.</span>
+                  )}
+                </div>
+              </div>
+              <div className="rounded-md bg-background/70 p-2">
+                <p className="text-muted-foreground">Origem da extração</p>
+                <div className="mt-1 space-y-1">
+                  {diagnosticsExtractionSources.length > 0 ? diagnosticsExtractionSources.map((item) => (
+                    <div key={item.source} className="flex items-center justify-between">
+                      <span className="font-mono">{item.source}</span>
+                      <span className="text-muted-foreground">{formatNumber(item.total, locale)}</span>
+                    </div>
+                  )) : (
+                    <span className="text-muted-foreground">Sem dados no período.</span>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="space-y-2 text-xs">
+              <p className="font-semibold text-muted-foreground">Principais discrepâncias</p>
+              {diagnosticsDiscrepancies.length > 0 ? (
+                <div className="space-y-1">
+                  {diagnosticsDiscrepancies.map((item) => (
+                    <div key={item.field} className="flex items-center justify-between rounded-md bg-background/70 px-2 py-1">
+                      <span className="font-mono">{item.field}</span>
+                      <span className="text-muted-foreground">
+                        {formatNumber(item.occurrences, locale)}x · média {formatNumber((item.avg_diff ?? 0) * 100, locale, { maximumFractionDigits: 2 })}% · máx {formatNumber((item.max_diff ?? 0) * 100, locale, { maximumFractionDigits: 2 })}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <span className="text-muted-foreground">Nenhuma discrepância registrada no período.</span>
+              )}
+            </div>
           </div>
         )}
       </CardHeader>

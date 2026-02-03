@@ -67,6 +67,7 @@ export interface FieldValidation {
   actualValue: number;
   difference: number;
   percentageDiff: number;
+  allowedDeviation: number;
   isValid: boolean;
 }
 
@@ -82,17 +83,44 @@ export interface ValidationResult {
   overallAccuracy: number;
   /** BUG FIX 21/12/2025: Flag para indicar que não havia valores numéricos para validar */
   noValuesExtracted: boolean;
+  failureReason: 'ok' | 'no_values' | 'discrepancy';
+  extractionSource: 'llm_payload' | 'regex';
+  allowedDeviationByField: Record<string, number>;
 }
 
 /** Parâmetros para validação */
 export interface ValidateParams {
   tenantId: string;
   llmResponse: string;
+  citedValues?: ExtractedLLMValues;
   indicatorSnapshot: TechnicalAnalysisResult;
   indicatorSnapshotId?: string;
   signalId?: string;
   conversationId?: string;
+  timeframeUsed?: string;
   maxAllowedDeviation?: number;
+}
+
+const DEFAULT_PERCENT_TOLERANCE = 0.01;
+const FIELD_TOLERANCES: Record<string, { percent?: number; absolute?: number }> = {
+  rsi: { absolute: 0.5 },
+  macdLine: { absolute: 0.05 },
+  macdSignal: { absolute: 0.05 },
+  macdHistogram: { absolute: 0.05 },
+  atrPercentage: { absolute: 0.2 },
+  bollingerPercentB: { absolute: 0.02 },
+  stochasticK: { absolute: 0.5 },
+  stochasticD: { absolute: 0.5 },
+  adxValue: { absolute: 0.5 },
+  volumeRatio: { percent: 0.05 },
+};
+
+function resolveAllowedDeviation(field: string, actualValue: number, percentFallback: number): number {
+  const config = FIELD_TOLERANCES[field];
+  const percent = config?.percent ?? percentFallback;
+  const absolute = config?.absolute ?? 0;
+  const percentDeviation = Math.abs(actualValue) > 0 ? percent * Math.abs(actualValue) : percent;
+  return Math.max(percentDeviation, absolute);
 }
 
 // ============================================================================
@@ -286,11 +314,13 @@ function snapshotToComparableValues(snapshot: TechnicalAnalysisResult): Record<s
 export function validateValues(
   extractedValues: ExtractedLLMValues,
   actualValues: Record<string, number>,
-  maxDeviation = 0.01
+  maxDeviation = DEFAULT_PERCENT_TOLERANCE,
+  extractionSource: 'llm_payload' | 'regex' = 'regex'
 ): ValidationResult {
   const details: FieldValidation[] = [];
   const discrepancies: Record<string, { cited: number; actual: number; diff: number }> = {};
   let maxDeviationFound = 0;
+  const allowedDeviationByField: Record<string, number> = {};
 
   for (const [field, citedValue] of Object.entries(extractedValues)) {
     if (citedValue === undefined || citedValue === null) continue;
@@ -302,8 +332,9 @@ export function validateValues(
     const percentageDiff = actualValue !== 0 
       ? (difference / Math.abs(actualValue)) 
       : (citedValue !== 0 ? 1 : 0);
-    
-    const isValid = percentageDiff <= maxDeviation;
+    const allowedDeviation = resolveAllowedDeviation(field, actualValue, maxDeviation);
+    allowedDeviationByField[field] = allowedDeviation;
+    const isValid = difference <= allowedDeviation;
 
     if (percentageDiff > maxDeviationFound) {
       maxDeviationFound = percentageDiff;
@@ -315,6 +346,7 @@ export function validateValues(
       actualValue,
       difference,
       percentageDiff,
+      allowedDeviation,
       isValid,
     });
 
@@ -335,6 +367,7 @@ export function validateValues(
   // Isso evita que respostas vagas do LLM sejam aprovadas sem validação real
   const overallAccuracy = totalFields > 0 ? validFields / totalFields : 0;
   const passed = totalFields > 0 && invalidFields === 0;
+  const noValuesExtracted = totalFields === 0;
 
   return {
     passed,
@@ -346,7 +379,10 @@ export function validateValues(
     maxDeviationFound,
     overallAccuracy,
     // BUG FIX 21/12/2025: Flag para indicar que não havia valores para validar
-    noValuesExtracted: totalFields === 0,
+    noValuesExtracted,
+    failureReason: passed ? 'ok' : (noValuesExtracted ? 'no_values' : 'discrepancy'),
+    extractionSource,
+    allowedDeviationByField,
   };
 }
 
@@ -367,17 +403,20 @@ export async function validateAndPersist(params: ValidateParams): Promise<{
   const {
     tenantId,
     llmResponse,
+    citedValues,
     indicatorSnapshot,
     indicatorSnapshotId,
     signalId,
     conversationId,
+    timeframeUsed,
     maxAllowedDeviation = 0.01,
   } = params;
 
   logger.info({ tenantId, signalId }, 'Iniciando validação cruzada de resposta LLM');
 
   // 1. Extrair valores citados pelo LLM
-  const extractedValues = extractValuesFromLLMResponse(llmResponse);
+  const extractionSource: 'llm_payload' | 'regex' = citedValues ? 'llm_payload' : 'regex';
+  const extractedValues = citedValues ?? extractValuesFromLLMResponse(llmResponse);
   const extractedCount = Object.keys(extractedValues).filter(k => 
     extractedValues[k as keyof ExtractedLLMValues] !== undefined
   ).length;
@@ -388,7 +427,7 @@ export async function validateAndPersist(params: ValidateParams): Promise<{
   const actualValues = snapshotToComparableValues(indicatorSnapshot);
 
   // 3. Validar
-  const result = validateValues(extractedValues, actualValues, maxAllowedDeviation);
+  const result = validateValues(extractedValues, actualValues, maxAllowedDeviation, extractionSource);
 
   // 4. Determinar ação
   let actionTaken: 'approved' | 'rejected' | 'flagged_for_review';
@@ -400,6 +439,8 @@ export async function validateAndPersist(params: ValidateParams): Promise<{
   } else {
     actionTaken = 'rejected';
   }
+
+  const resolvedTimeframeUsed = timeframeUsed ?? indicatorSnapshot.interval;
 
   // 5. Persistir resultado
   const db = getDatabase();
@@ -415,6 +456,14 @@ export async function validateAndPersist(params: ValidateParams): Promise<{
       validationPassed: result.passed,
       discrepancies: Object.keys(result.discrepancies).length > 0 ? result.discrepancies : null,
       maxAllowedDeviation,
+      failureReason: result.failureReason,
+      extractionSource: result.extractionSource,
+      noValuesExtracted: result.noValuesExtracted,
+      overallAccuracy: result.overallAccuracy,
+      failedFields: Object.keys(result.discrepancies ?? {}),
+      timeframeUsed: resolvedTimeframeUsed,
+      allowedDeviationByField: Object.keys(result.allowedDeviationByField).length > 0 ? result.allowedDeviationByField : null,
+      maxDeviationFound: result.maxDeviationFound,
       actionTaken,
     })
     .returning({ id: schema.tradingLlmValidations.id });

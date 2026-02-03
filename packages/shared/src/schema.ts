@@ -1900,6 +1900,19 @@ export const TradingEnsembleResultSchema = z.object({
 });
 export type TradingEnsembleResult = z.infer<typeof TradingEnsembleResultSchema>;
 
+export const TradingSignalValidationSummarySchema = z.object({
+  reasonCode: z.enum(['ok', 'no_values', 'discrepancy']).optional(),
+  failedFields: z.array(z.string()).optional(),
+  noValuesExtracted: z.boolean().optional(),
+  accuracy: z.number().min(0).max(1).optional(),
+  extractionSource: z.enum(['llm_payload', 'regex']).optional(),
+  timeframeUsed: z.string().optional(),
+  maxDeviationFound: z.number().optional(),
+  maxAllowedDeviationPercent: z.number().optional(),
+  allowedDeviationByField: z.record(z.number()).optional(),
+}).optional();
+export type TradingSignalValidationSummary = z.infer<typeof TradingSignalValidationSummarySchema>;
+
 // Zod schema para metadados de trading (JSONB)
 export const TradingSignalMetadataSchema = z.object({
   confidence: z.number().min(0).max(1).optional(),  // Confiança do modelo (0-1)
@@ -1920,6 +1933,7 @@ export const TradingSignalMetadataSchema = z.object({
   tradeSummary: z.string().optional(),
   validationStatus: z.enum(['pending', 'validated', 'failed']).optional(), // Status da validação LLM
   validationId: z.string().uuid().optional(),         // ID da validação LLM
+  validationSummary: TradingSignalValidationSummarySchema,
   approvalStatus: z.enum(['pending', 'approved', 'rejected']).optional(), // Status da aprovação humana
   approvalReason: z.string().optional(),              // Motivo da aprovação/rejeição
   agentId: z.string().uuid().optional(),              // Agente que gerou o sinal
@@ -2506,6 +2520,19 @@ export const validationActionEnum = pgEnum("validation_action", [
   "flagged_for_review"
 ]);
 
+// Enum para motivo de validação
+export const llmValidationReasonEnum = pgEnum("llm_validation_reason", [
+  "ok",
+  "no_values",
+  "discrepancy",
+]);
+
+// Enum para origem da extração
+export const llmValidationExtractionSourceEnum = pgEnum("llm_validation_extraction_source", [
+  "llm_payload",
+  "regex",
+]);
+
 // Tabela de indicadores técnicos calculados
 export const tradingTechnicalIndicators = pgTable(
   "trading_technical_indicators",
@@ -2626,6 +2653,14 @@ export const tradingLlmValidations = pgTable(
     validationPassed: boolean("validation_passed").notNull(),
     discrepancies: jsonb("discrepancies").$type<Record<string, { cited: number; actual: number; diff: number }>>(),
     maxAllowedDeviation: real("max_allowed_deviation").default(0.01),
+    failureReason: llmValidationReasonEnum("failure_reason"),
+    extractionSource: llmValidationExtractionSourceEnum("extraction_source"),
+    noValuesExtracted: boolean("no_values_extracted").default(false),
+    overallAccuracy: real("overall_accuracy"),
+    failedFields: text("failed_fields").array(),
+    timeframeUsed: varchar("timeframe_used", { length: 10 }),
+    allowedDeviationByField: jsonb("allowed_deviation_by_field").$type<Record<string, number>>(),
+    maxDeviationFound: real("max_deviation_found"),
     
     // Ação tomada
     actionTaken: validationActionEnum("action_taken"),

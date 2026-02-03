@@ -118,7 +118,8 @@ import {
 } from './tradingTypes.js';
 import { sendKucoinErrorResponse } from './kucoin-error-mapper.js';
 import * as technicalIndicators from './technical-indicators.js';
-import { validateAndPersist } from './llm-validation.js';
+import { extractValuesFromLLMResponse, validateAndPersist } from './llm-validation.js';
+import type { ExtractedLLMValues } from './llm-validation.js';
 
 const logger = createLogger('integrations-service');
 const config = loadConfig(integrationsServiceConfigSchema);
@@ -1708,6 +1709,7 @@ ${snapshot.legs.map((leg) => `- ${leg.from} -> ${leg.to} via ${leg.symbol} (${le
 Indicadores habilitados: ${params.indicators.join(', ')}
 Técnicas selecionadas: ${params.techniques.join(', ')}
 Ensemble: ${params.ensembleResult.overallSignal.toUpperCase()} (conf ${params.ensembleResult.confidence.toFixed(2)})
+Timeframes disponíveis: ${params.matrix.map((entry) => entry.interval).join(', ')}
 
 Ranking técnico (determinístico):
 ${techniqueLines || '- Nenhuma técnica disponível'}
@@ -1745,6 +1747,38 @@ async function getOrCreateTradingProfile(tenantId: string, kind: TradingProfileK
   return created;
 }
 
+const TRADING_LLM_CITED_VALUES_SCHEMA = z.object({
+  rsi: z.number().optional(),
+  macdLine: z.number().optional(),
+  macdSignal: z.number().optional(),
+  macdHistogram: z.number().optional(),
+  ema9: z.number().optional(),
+  ema21: z.number().optional(),
+  ema50: z.number().optional(),
+  ema200: z.number().optional(),
+  sma20: z.number().optional(),
+  sma50: z.number().optional(),
+  sma200: z.number().optional(),
+  bollingerUpper: z.number().optional(),
+  bollingerMiddle: z.number().optional(),
+  bollingerLower: z.number().optional(),
+  bollingerPercentB: z.number().optional(),
+  atrValue: z.number().optional(),
+  atrPercentage: z.number().optional(),
+  stochasticK: z.number().optional(),
+  stochasticD: z.number().optional(),
+  adxValue: z.number().optional(),
+  pivotPoint: z.number().optional(),
+  resistance1: z.number().optional(),
+  resistance2: z.number().optional(),
+  resistance3: z.number().optional(),
+  support1: z.number().optional(),
+  support2: z.number().optional(),
+  support3: z.number().optional(),
+  volumeRatio: z.number().optional(),
+  currentPrice: z.number().optional(),
+}).partial().default({});
+
 const TRADING_LLM_SIGNAL_SCHEMA = z.object({
   signalType: z.enum(['entry_long', 'entry_short', 'exit', 'adjust_sl', 'adjust_tp', 'hold', 'neutral']),
   operationType: TradingOperationTypeSchema,
@@ -1754,6 +1788,8 @@ const TRADING_LLM_SIGNAL_SCHEMA = z.object({
   motivators: z.array(z.string().min(2)).min(1),
   invalidationReasons: z.array(z.string().min(2)).min(1),
   reasoning: z.string().min(10),
+  timeframeUsed: TRADING_INTERVAL_ZOD.optional(),
+  citedValues: TRADING_LLM_CITED_VALUES_SCHEMA,
   suggestedPrice: z.number().positive().optional(),
   suggestedStopLoss: z.number().positive().optional(),
   suggestedTakeProfit: z.number().positive().optional(),
@@ -1772,6 +1808,8 @@ const TRADING_LLM_SIGNAL_PARTIAL_SCHEMA = z.object({
   motivators: z.array(z.string().min(2)).optional(),
   invalidationReasons: z.array(z.string().min(2)).optional(),
   reasoning: z.string().min(5).optional(),
+  timeframeUsed: TRADING_INTERVAL_ZOD.optional(),
+  citedValues: TRADING_LLM_CITED_VALUES_SCHEMA,
   suggestedPrice: z.number().positive().nullable().optional(),
   suggestedStopLoss: z.number().positive().nullable().optional(),
   suggestedTakeProfit: z.number().positive().nullable().optional(),
@@ -6683,6 +6721,8 @@ const TRADING_LLM_SIGNAL_KEYS = new Set([
   'motivators',
   'invalidationReasons',
   'reasoning',
+  'timeframeUsed',
+  'citedValues',
   'suggestedPrice',
   'suggestedStopLoss',
   'suggestedTakeProfit',
@@ -6735,6 +6775,28 @@ function normalizeLlmSignalPayload(payload: Record<string, unknown>): Record<str
   }
   if (typeof normalized.invalidationReasons === 'string') {
     normalized.invalidationReasons = [normalized.invalidationReasons].filter(Boolean);
+  }
+
+  if (normalized.citedValues && typeof normalized.citedValues === 'object' && !Array.isArray(normalized.citedValues)) {
+    const citedValues = normalized.citedValues as Record<string, unknown>;
+    const next: Record<string, number> = {};
+    for (const [key, value] of Object.entries(citedValues)) {
+      const coerced = coerceNumericField(value);
+      if (coerced !== undefined) {
+        next[key] = coerced;
+      }
+    }
+    normalized.citedValues = Object.keys(next).length > 0 ? next : {};
+  }
+
+  if (!normalized.citedValues) {
+    const reasoning = typeof normalized.reasoning === 'string' ? normalized.reasoning : '';
+    const extracted = extractValuesFromLLMResponse(reasoning);
+    const extractedValues = Object.entries(extracted).reduce<Record<string, number>>((acc, [key, value]) => {
+      if (value !== undefined) acc[key] = value;
+      return acc;
+    }, {});
+    normalized.citedValues = Object.keys(extractedValues).length > 0 ? extractedValues : {};
   }
 
   return normalized;
@@ -7322,6 +7384,18 @@ function normalizeNullableNumber(value?: number | string | null): number | undef
   return undefined;
 }
 
+function normalizeCitedValues(values?: Record<string, unknown>): ExtractedLLMValues | null {
+  if (!values || typeof values !== 'object') return null;
+  const normalized: ExtractedLLMValues = {};
+  for (const [key, rawValue] of Object.entries(values)) {
+    const numeric = normalizeNullableNumber(rawValue as number | string | null);
+    if (numeric !== undefined) {
+      (normalized as Record<string, number>)[key] = numeric;
+    }
+  }
+  return Object.keys(normalized).length > 0 ? normalized : null;
+}
+
 function buildLlmSignalFromPartial(params: {
   partial: TradingLlmSignalPartial;
   analysis: technicalIndicators.TechnicalAnalysisResult;
@@ -7347,6 +7421,8 @@ function buildLlmSignalFromPartial(params: {
   const suggestedSize = normalizeNullableNumber(params.partial.suggestedSize);
   const riskScore = normalizeNullableNumber(params.partial.riskScore)
     ?? Math.round(confidence * 100);
+  const citedValues = normalizeCitedValues(params.partial.citedValues as Record<string, unknown> | undefined);
+  const resolvedCitedValues = citedValues ?? extractValuesFromLLMResponse(reasoning);
   const marketCondition = params.partial.marketCondition
     ?? (params.analysis.movingAverages?.trend ? `Tendência ${params.analysis.movingAverages.trend}` : undefined);
 
@@ -7359,6 +7435,8 @@ function buildLlmSignalFromPartial(params: {
     motivators,
     invalidationReasons,
     reasoning,
+    timeframeUsed: params.partial.timeframeUsed,
+    citedValues: resolvedCitedValues,
     suggestedPrice,
     suggestedStopLoss,
     suggestedTakeProfit,
@@ -7736,6 +7814,9 @@ function buildTradingSignalSystemPrompt(params: {
     'Não use vírgulas finais (trailing commas).',
     'Evite quebras de linha dentro de strings: use \\n quando necessário.',
     'Campos numéricos devem ser números (sem aspas). Quando desconhecido, omita o campo (não use null).',
+    'Preencha "timeframeUsed" com o timeframe principal usado (ex: "5m", "15m").',
+    'Preencha "citedValues" com os valores numéricos EXATOS citados na análise (use apenas números do prompt).',
+    'O campo "citedValues" é OBRIGATÓRIO (mesmo que tenha poucos valores).',
     'Campos motivators e invalidationReasons DEVEM ter pelo menos 1 item cada.',
     'Retorne o JSON em UMA única linha, sem markdown.',
     'NÃO use YAML, listas com "-" ou comentários.',
@@ -7749,6 +7830,8 @@ function buildTradingSignalSystemPrompt(params: {
     '  "motivators": ["driver 1", "driver 2"],',
     '  "invalidationReasons": ["condição 1", "condição 2"],',
     '  "reasoning": "Texto com valores citados exatamente",',
+    '  "timeframeUsed": "timeframe principal",',
+    '  "citedValues": { "rsi": number, "macdHistogram": number, "atrPercentage": number, "currentPrice": number, ... },',
     '  "suggestedPrice": number (opcional),',
     '  "suggestedStopLoss": number (opcional),',
     '  "suggestedTakeProfit": number (opcional),',
@@ -9159,13 +9242,18 @@ async function generateTradingSignalFromLlm(params: {
     throw new Error(createResult.error || 'Falha ao persistir sinal LLM.');
   }
 
-  const validationSnapshot = analysisMatrix.find((entry) => consensus.alignedTimeframes.includes(entry.interval)) ?? primaryAnalysis;
+  const requestedValidationTimeframe = llmSignal.timeframeUsed;
+  const validationSnapshot = requestedValidationTimeframe
+    ? (analysisMatrix.find((entry) => entry.interval === requestedValidationTimeframe) ?? primaryAnalysis)
+    : (analysisMatrix.find((entry) => consensus.alignedTimeframes.includes(entry.interval)) ?? primaryAnalysis);
   const validation = await validateAndPersist({
     tenantId: params.tenantId,
     llmResponse: llmSignal.reasoning,
+    citedValues: llmSignal.citedValues,
     indicatorSnapshot: validationSnapshot.analysis,
     indicatorSnapshotId: validationSnapshot.indicatorId,
     signalId: createResult.data.id,
+    timeframeUsed: requestedValidationTimeframe ?? validationSnapshot.interval,
     maxAllowedDeviation: 0.01,
   });
 
@@ -9180,6 +9268,17 @@ async function generateTradingSignalFromLlm(params: {
     ...(createResult.data.metadata as Record<string, unknown>),
     validationStatus,
     validationId: validation.validationId,
+    validationSummary: {
+      reasonCode: validation.result.failureReason,
+      failedFields: Object.keys(validation.result.discrepancies ?? {}),
+      noValuesExtracted: validation.result.noValuesExtracted,
+      accuracy: validation.result.overallAccuracy,
+      extractionSource: validation.result.extractionSource,
+      timeframeUsed: requestedValidationTimeframe ?? validationSnapshot.interval,
+      allowedDeviationByField: validation.result.allowedDeviationByField,
+      maxAllowedDeviationPercent: 0.01,
+      maxDeviationFound: validation.result.maxDeviationFound,
+    },
   };
 
   const [updatedSignal] = await db
@@ -13158,6 +13257,162 @@ app.get('/api/integrations/trading/validations', requirePermission('integrations
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao obter validações LLM');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/validations/diagnostics - Diagnóstico detalhado das validações LLM
+app.get('/api/integrations/trading/validations/diagnostics', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const dateFromRaw = req.query.dateFrom as string | undefined;
+    const dateToRaw = req.query.dateTo as string | undefined;
+    const dateFrom = parseHistoryDateParam(dateFromRaw);
+    const dateTo = parseHistoryDateParam(dateToRaw);
+    if (dateFromRaw && !dateFrom) {
+      res.status(400).json({ error: 'Data inicial inválida.' });
+      return;
+    }
+    if (dateToRaw && !dateTo) {
+      res.status(400).json({ error: 'Data final inválida.' });
+      return;
+    }
+    const topLimit = Math.min(Number.parseInt(req.query.topLimit as string, 10) || 10, 50);
+
+    const conditions: ReturnType<typeof sql>[] = [
+      sql`v.tenant_id = ${authContext.tenantId}`,
+    ];
+    if (dateFrom) {
+      conditions.push(sql`v.validated_at >= ${dateFrom}`);
+    }
+    if (dateTo) {
+      conditions.push(sql`v.validated_at <= ${dateTo}`);
+    }
+
+    const whereClause = conditions.length
+      ? sql`WHERE ${sql.join(conditions, sql` AND `)}`
+      : sql``;
+
+    const db = getDatabase();
+
+    const totalsResult = await db.execute(sql`
+      SELECT
+        count(*)::int AS total,
+        sum(case when v.validation_passed then 1 else 0 end)::int AS passed,
+        sum(case when not v.validation_passed then 1 else 0 end)::int AS failed,
+        sum(case when coalesce(v.no_values_extracted, jsonb_object_length(v.llm_cited_values) = 0) then 1 else 0 end)::int AS no_values,
+        avg(coalesce(jsonb_object_length(v.discrepancies), 0))::float AS avg_discrepancy_fields,
+        min(v.max_allowed_deviation)::float AS min_allowed_deviation,
+        max(v.max_allowed_deviation)::float AS max_allowed_deviation
+      FROM trading_llm_validations v
+      ${whereClause}
+    `);
+    const totalsRow = (totalsResult as { rows?: Array<Record<string, unknown>> }).rows?.[0] ?? {};
+
+    const actionResult = await db.execute(sql`
+      SELECT
+        coalesce(v.action_taken, 'unknown') AS action,
+        count(*)::int AS total
+      FROM trading_llm_validations v
+      ${whereClause}
+      GROUP BY v.action_taken
+      ORDER BY total DESC
+    `);
+
+    const failureReasonResult = await db.execute(sql`
+      SELECT
+        coalesce(v.failure_reason::text, 'unknown') AS reason,
+        count(*)::int AS total
+      FROM trading_llm_validations v
+      ${whereClause}
+      GROUP BY v.failure_reason
+      ORDER BY total DESC
+    `);
+
+    const extractionResult = await db.execute(sql`
+      SELECT
+        coalesce(v.extraction_source::text, 'unknown') AS source,
+        count(*)::int AS total
+      FROM trading_llm_validations v
+      ${whereClause}
+      GROUP BY v.extraction_source
+      ORDER BY total DESC
+    `);
+
+    const intervalResult = await db.execute(sql`
+      SELECT
+        coalesce(ti.interval, 'N/A') AS interval,
+        count(*)::int AS total,
+        sum(case when v.validation_passed then 1 else 0 end)::int AS passed,
+        sum(case when not v.validation_passed then 1 else 0 end)::int AS failed,
+        sum(case when jsonb_object_length(v.llm_cited_values) = 0 then 1 else 0 end)::int AS no_values
+      FROM trading_llm_validations v
+      LEFT JOIN trading_technical_indicators ti ON ti.id = v.indicator_snapshot_id
+      ${whereClause}
+      GROUP BY ti.interval
+      ORDER BY total DESC
+    `);
+
+    const symbolResult = await db.execute(sql`
+      SELECT
+        coalesce(ti.symbol, 'N/A') AS symbol,
+        count(*)::int AS total,
+        sum(case when v.validation_passed then 1 else 0 end)::int AS passed,
+        sum(case when not v.validation_passed then 1 else 0 end)::int AS failed
+      FROM trading_llm_validations v
+      LEFT JOIN trading_technical_indicators ti ON ti.id = v.indicator_snapshot_id
+      ${whereClause}
+      GROUP BY ti.symbol
+      ORDER BY total DESC
+      LIMIT ${topLimit}
+    `);
+
+    const discrepancyConditions = [
+      ...conditions,
+      sql`v.discrepancies is not null`,
+    ];
+    const discrepancyWhere = sql`WHERE ${sql.join(discrepancyConditions, sql` AND `)}`;
+
+    const discrepancyResult = await db.execute(sql`
+      SELECT
+        d.key AS field,
+        count(*)::int AS occurrences,
+        avg((d.value->>'diff')::float)::float AS avg_diff,
+        max((d.value->>'diff')::float)::float AS max_diff
+      FROM trading_llm_validations v
+      CROSS JOIN LATERAL jsonb_each(v.discrepancies) AS d(key, value)
+      ${discrepancyWhere}
+      GROUP BY d.key
+      ORDER BY occurrences DESC
+      LIMIT ${topLimit}
+    `);
+
+    res.json({
+      success: true,
+      meta: {
+        tenantId: authContext.tenantId,
+        dateFrom: dateFrom ? dateFrom.toISOString() : null,
+        dateTo: dateTo ? dateTo.toISOString() : null,
+        topLimit,
+      },
+      totals: totalsRow,
+      breakdown: {
+        byAction: (actionResult as { rows?: Array<Record<string, unknown>> }).rows ?? [],
+        byFailureReason: (failureReasonResult as { rows?: Array<Record<string, unknown>> }).rows ?? [],
+        byExtractionSource: (extractionResult as { rows?: Array<Record<string, unknown>> }).rows ?? [],
+        byInterval: (intervalResult as { rows?: Array<Record<string, unknown>> }).rows ?? [],
+        bySymbol: (symbolResult as { rows?: Array<Record<string, unknown>> }).rows ?? [],
+        topDiscrepancies: (discrepancyResult as { rows?: Array<Record<string, unknown>> }).rows ?? [],
+      },
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter diagnóstico de validações LLM');
     res.status(500).json({ error: errorMessage });
   }
 });
