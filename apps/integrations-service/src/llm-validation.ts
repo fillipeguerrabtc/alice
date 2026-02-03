@@ -98,6 +98,7 @@ export interface ValidateParams {
   signalId?: string;
   conversationId?: string;
   timeframeUsed?: string;
+  extractionSource?: 'llm_payload' | 'regex';
   maxAllowedDeviation?: number;
 }
 
@@ -409,13 +410,14 @@ export async function validateAndPersist(params: ValidateParams): Promise<{
     signalId,
     conversationId,
     timeframeUsed,
+    extractionSource: extractionSourceOverride,
     maxAllowedDeviation = 0.01,
   } = params;
 
   logger.info({ tenantId, signalId }, 'Iniciando validação cruzada de resposta LLM');
 
   // 1. Extrair valores citados pelo LLM
-  const extractionSource: 'llm_payload' | 'regex' = citedValues ? 'llm_payload' : 'regex';
+  const extractionSource: 'llm_payload' | 'regex' = extractionSourceOverride ?? (citedValues ? 'llm_payload' : 'regex');
   const extractedValues = citedValues ?? extractValuesFromLLMResponse(llmResponse);
   const extractedCount = Object.keys(extractedValues).filter(k => 
     extractedValues[k as keyof ExtractedLLMValues] !== undefined

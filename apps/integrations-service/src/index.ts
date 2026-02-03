@@ -6746,8 +6746,12 @@ function coerceNumericField(value: unknown): number | undefined {
   return undefined;
 }
 
-function normalizeLlmSignalPayload(payload: Record<string, unknown>): Record<string, unknown> {
+function normalizeLlmSignalPayload(payload: Record<string, unknown>): {
+  normalized: Record<string, unknown>;
+  citedValuesSource: 'llm_payload' | 'regex';
+} {
   const normalized = { ...payload };
+  let citedValuesSource: 'llm_payload' | 'regex' = 'regex';
   const numericKeys = [
     'expectedDurationMinutes',
     'confidence',
@@ -6786,7 +6790,12 @@ function normalizeLlmSignalPayload(payload: Record<string, unknown>): Record<str
         next[key] = coerced;
       }
     }
-    normalized.citedValues = Object.keys(next).length > 0 ? next : {};
+    if (Object.keys(next).length > 0) {
+      citedValuesSource = 'llm_payload';
+      normalized.citedValues = next;
+    } else {
+      normalized.citedValues = {};
+    }
   }
 
   if (!normalized.citedValues) {
@@ -6796,10 +6805,13 @@ function normalizeLlmSignalPayload(payload: Record<string, unknown>): Record<str
       if (value !== undefined) acc[key] = value;
       return acc;
     }, {});
+    if (Object.keys(extractedValues).length > 0) {
+      citedValuesSource = 'regex';
+    }
     normalized.citedValues = Object.keys(extractedValues).length > 0 ? extractedValues : {};
   }
 
-  return normalized;
+  return { normalized, citedValuesSource };
 }
 
 function normalizeLlmJsonKeys(content: string): { json: string; repaired: boolean } {
@@ -7267,29 +7279,32 @@ function insertMissingCommasInArrays(content: string): { json: string; inserted:
   return { json: output, inserted };
 }
 
-function parseLlmSignalResponse(rawResponse: string) {
+function parseLlmSignalResponse(rawResponse: string): {
+  data: TradingLlmSignalPartial;
+  citedValuesSource: 'llm_payload' | 'regex';
+} {
   const candidate = extractJsonObjectCandidate(rawResponse);
   const normalized = normalizeLlmJsonKeys(candidate);
   try {
     const parsed = JSON.parse(normalized.json) as Record<string, unknown>;
-    const normalizedPayload = normalizeLlmSignalPayload(parsed);
+    const { normalized: normalizedPayload, citedValuesSource } = normalizeLlmSignalPayload(parsed);
     const result = TRADING_LLM_SIGNAL_PARTIAL_SCHEMA.safeParse(normalizedPayload);
     if (!result.success) {
       throw new Error(`Resposta LLM inválida: ${result.error.message}`);
     }
-    return result.data;
+    return { data: result.data, citedValuesSource };
   } catch (error) {
     const blockRepair = repairYamlLikeBlockWithoutBraces(normalized.json);
     if (blockRepair.repaired) {
       try {
         logger.warn({ error: error instanceof Error ? error.message : error }, 'Resposta LLM inválida; aplicando reparo YAML-like sem chaves.');
         const parsed = JSON.parse(blockRepair.json) as Record<string, unknown>;
-        const normalizedPayload = normalizeLlmSignalPayload(parsed);
+        const { normalized: normalizedPayload, citedValuesSource } = normalizeLlmSignalPayload(parsed);
         const result = TRADING_LLM_SIGNAL_PARTIAL_SCHEMA.safeParse(normalizedPayload);
         if (!result.success) {
           throw new Error(`Resposta LLM inválida após reparo: ${result.error.message}`);
         }
-        return result.data;
+        return { data: result.data, citedValuesSource };
       } catch (blockError) {
         const message = blockError instanceof Error ? blockError.message : 'Erro desconhecido';
         logger.error({
@@ -7305,12 +7320,12 @@ function parseLlmSignalResponse(rawResponse: string) {
       try {
         logger.warn({ error: error instanceof Error ? error.message : error }, 'Resposta LLM inválida; aplicando reparo YAML-like.');
         const parsed = JSON.parse(yamlRepair.json) as Record<string, unknown>;
-        const normalizedPayload = normalizeLlmSignalPayload(parsed);
+        const { normalized: normalizedPayload, citedValuesSource } = normalizeLlmSignalPayload(parsed);
         const result = TRADING_LLM_SIGNAL_PARTIAL_SCHEMA.safeParse(normalizedPayload);
         if (!result.success) {
           throw new Error(`Resposta LLM inválida após reparo: ${result.error.message}`);
         }
-        return result.data;
+        return { data: result.data, citedValuesSource };
       } catch (yamlError) {
         const message = yamlError instanceof Error ? yamlError.message : 'Erro desconhecido';
         logger.error({
@@ -7326,12 +7341,12 @@ function parseLlmSignalResponse(rawResponse: string) {
       try {
         logger.warn({ error: error instanceof Error ? error.message : error }, 'Resposta LLM inválida; aplicando reparo seguro do JSON.');
         const parsed = JSON.parse(repair.json) as Record<string, unknown>;
-        const normalizedPayload = normalizeLlmSignalPayload(parsed);
+        const { normalized: normalizedPayload, citedValuesSource } = normalizeLlmSignalPayload(parsed);
         const result = TRADING_LLM_SIGNAL_PARTIAL_SCHEMA.safeParse(normalizedPayload);
         if (!result.success) {
           throw new Error(`Resposta LLM inválida após reparo: ${result.error.message}`);
         }
-        return result.data;
+        return { data: result.data, citedValuesSource };
       } catch (repairError) {
         const message = repairError instanceof Error ? repairError.message : 'Erro desconhecido';
         if (message.startsWith('Resposta LLM inválida após reparo:')) {
@@ -9167,9 +9182,9 @@ async function generateTradingSignalFromLlm(params: {
     throw new Error('Resposta do LLM vazia ou inválida.');
   }
 
-  const llmSignalPartial = parseLlmSignalResponse(llmContent);
+  const llmSignalPartialResult = parseLlmSignalResponse(llmContent);
   const llmSignal = buildLlmSignalFromPartial({
-    partial: llmSignalPartial,
+    partial: llmSignalPartialResult.data,
     analysis: primaryAnalysis.analysis,
     tradePlan,
   });
@@ -9253,6 +9268,7 @@ async function generateTradingSignalFromLlm(params: {
     indicatorSnapshot: validationSnapshot.analysis,
     indicatorSnapshotId: validationSnapshot.indicatorId,
     signalId: createResult.data.id,
+    extractionSource: llmSignalPartialResult.citedValuesSource,
     timeframeUsed: requestedValidationTimeframe ?? validationSnapshot.interval,
     maxAllowedDeviation: 0.01,
   });
