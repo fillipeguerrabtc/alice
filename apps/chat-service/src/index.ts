@@ -7083,6 +7083,7 @@ const wsMessageSchema = z.object({
   interval: z.string().max(10).optional(),
   marketType: z.enum(['spot', 'margin', 'futures']).optional(),
   marginMode: z.enum(['cross', 'isolated']).optional(),
+  depth: z.union([z.literal(5), z.literal(50)]).optional(),
 });
 
 const _wsAgentMessageSchema = z.object({
@@ -12068,6 +12069,7 @@ wss.on('connection', (ws, req) => {
         interval?: string;
         marketType?: 'spot' | 'margin' | 'futures';
         marginMode?: 'cross' | 'isolated';
+        depth?: 5 | 50;
       };
 
       // ========================================================================
@@ -12082,6 +12084,7 @@ wss.on('connection', (ws, req) => {
         const interval = message.interval?.trim();
         const marketType = message.marketType || 'futures';
         const marginMode = message.marginMode;
+        const depth = message.depth;
         if (!symbol) {
           ws.send(JSON.stringify({
             type: 'trading:error',
@@ -12120,6 +12123,7 @@ wss.on('connection', (ws, req) => {
           interval,
           marketType,
           marginMode,
+          depth,
           timestamp: new Date().toISOString(),
         }));
 
@@ -12155,6 +12159,7 @@ wss.on('connection', (ws, req) => {
                 interval,
                 marketType,
                 marginMode,
+                depth,
               }),
               signal: controller.signal,
             });
@@ -12175,6 +12180,7 @@ wss.on('connection', (ws, req) => {
         const interval = message.interval?.trim();
         const marketType = message.marketType || 'futures';
         const marginMode = message.marginMode;
+        const depth = message.depth;
         if (!symbol) {
           ws.send(JSON.stringify({
             type: 'trading:error',
@@ -12211,6 +12217,7 @@ wss.on('connection', (ws, req) => {
           interval,
           marketType,
           marginMode,
+          depth,
         }));
 
         if (['ticker', 'orderbook', 'klines', 'trades'].includes(tradingChannel)) {
@@ -12245,6 +12252,7 @@ wss.on('connection', (ws, req) => {
                 interval,
                 marketType,
                 marginMode,
+                depth,
               }),
               signal: controller.signal,
             });

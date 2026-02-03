@@ -1041,8 +1041,17 @@ export default function Trading() {
     return intervalsData?.data?.granularityMap?.[selectedInterval] ?? null;
   }, [intervalsData, selectedInterval]);
 
+  const wsOrderBookDepth = useMemo<5 | 50 | null>(() => {
+    const depths = intervalsData?.data?.wsOrderBookDepths ?? [];
+    if (!depths.length) return null;
+    const resolved = Math.min(...depths);
+    return resolved as 5 | 50;
+  }, [intervalsData]);
+
   const restOrderBookDepth = useMemo(() => {
-    return intervalsData?.data?.restOrderBookDepth ?? null;
+    const depths = intervalsData?.data?.restOrderBookDepths ?? [];
+    if (!depths.length) return null;
+    return Math.min(...depths);
   }, [intervalsData]);
 
   // ============================================================================
@@ -1413,6 +1422,7 @@ export default function Trading() {
     autoConnect: wsEnabled,
     marketType: selectedMarketType,
     marginMode: selectedMarginMode,
+    orderBookDepth: wsOrderBookDepth ?? undefined,
     onError: (error) => {
       frontendLogger.warn('WebSocket KuCoin indisponível - fallback REST ativo', { error });
     },
@@ -2140,35 +2150,55 @@ export default function Trading() {
     },
   });
 
-  const wsKlinesForChart = wsEnabled
-    ? wsKlines
-        .filter((kline) => kline.symbol?.toUpperCase() === normalizedSymbol)
-        .filter((kline) => !wsInterval || kline.interval === wsInterval)
-        .map(({ time, open, close, high, low, volume, turnover }) => ({
-          time,
-          open,
-          close,
-          high,
-          low,
-          volume,
-          turnover,
-        }))
-    : [];
+  const wsKlinesForChart = useMemo(() => {
+    if (!wsEnabled) return [];
+    return wsKlines
+      .filter((kline) => kline.symbol?.toUpperCase() === normalizedSymbol)
+      .filter((kline) => !wsInterval || kline.interval === wsInterval)
+      .map(({ time, open, close, high, low, volume, turnover }) => ({
+        time,
+        open,
+        close,
+        high,
+        low,
+        volume,
+        turnover,
+      }));
+  }, [normalizedSymbol, wsEnabled, wsInterval, wsKlines]);
   const [lastKlines, setLastKlines] = useState<KlineData[]>([]);
+  const lastKlinesSignatureRef = useRef<string>('');
 
   useEffect(() => {
     setLastKlines([]);
+    lastKlinesSignatureRef.current = '';
   }, [normalizedSymbol, wsInterval, selectedMarketType, selectedMarginMode]);
 
   useEffect(() => {
-    if (wsKlinesForChart.length > 0) {
-      setLastKlines(wsKlinesForChart);
-      return;
-    }
-    if (klinesData?.data && klinesData.data.length > 0) {
-      setLastKlines(klinesData.data);
-    }
-  }, [wsKlinesForChart, klinesData?.data]);
+    const source = wsKlinesForChart.length > 0
+      ? wsKlinesForChart
+      : (klinesData?.data ?? []);
+    if (source.length === 0) return;
+    const last = source[source.length - 1];
+    const signature = [
+      wsKlinesForChart.length > 0 ? 'ws' : 'rest',
+      normalizedSymbol,
+      wsInterval ?? '',
+      selectedMarketType,
+      selectedMarginMode,
+      String(source.length),
+      String(last?.time ?? ''),
+    ].join('|');
+    if (lastKlinesSignatureRef.current === signature) return;
+    lastKlinesSignatureRef.current = signature;
+    setLastKlines(source);
+  }, [
+    klinesData?.data,
+    normalizedSymbol,
+    selectedMarketType,
+    selectedMarginMode,
+    wsInterval,
+    wsKlinesForChart,
+  ]);
 
   const klines = wsKlinesForChart.length > 0
     ? wsKlinesForChart

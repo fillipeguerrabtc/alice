@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 03 de Fevereiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.90 - Trading análise sem loop de render (React #185)
+**Versão:** 10.92 - Trading realtime com depth máximo 50
 
 ---
 
@@ -67,6 +67,9 @@
 - Trading: histórico de sinais evita loop de render e re-fetch contínuo em filtros/paginação.
 - Observability: logs do frontend enviados com JSON válido (sendBeacon com content-type correto).
 - Trading: histórico de análise evita loop de render em filtros/paginação (dedupe + guards).
+- Trading: WS orderbook usa depth mínimo disponível e dedupe por sequência.
+- Trading: WS ticker dedupado por assinatura (menos re-render).
+- Trading: REST orderbook limitado a depth 20 (limite oficial KuCoin); WS mantém máximo 50.
 - Trading: extração de JSON balanceada evita truncamento por chaves em texto.
 - Trading: logging explícito de notícias confirma uso de SearXNG na análise.
 - Trading: presets de notícias com CRUD (criar, editar e excluir) direto nas abas Análise e Sinais IA.

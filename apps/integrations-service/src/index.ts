@@ -6173,7 +6173,7 @@ app.get('/api/integrations/twilio/status', (_req: Request, res: Response) => {
 // ============================================================================
 // KuCoin Trading - Configurações e validações (definido ANTES do bootstrap)
 // ============================================================================
-const KUCOIN_REST_ORDERBOOK_DEPTHS = [20, 100] as const;
+const KUCOIN_REST_ORDERBOOK_DEPTHS = [20] as const;
 const KUCOIN_WS_ORDERBOOK_DEPTHS = [5, 50] as const;
 
 function parseTradingIntervalToMinutes(interval: string): number | null {
@@ -6190,16 +6190,16 @@ function parseTradingIntervalToMinutes(interval: string): number | null {
   return null;
 }
 
-function resolveKucoinRestOrderBookDepth(): 20 | 100 {
+function resolveKucoinRestOrderBookDepth(): 20 {
   const raw = process.env.KUCOIN_REST_ORDERBOOK_DEPTH;
   if (!raw) {
     throw new Error('KUCOIN_REST_ORDERBOOK_DEPTH não configurado');
   }
   const parsed = Number(raw);
   if (!KUCOIN_REST_ORDERBOOK_DEPTHS.includes(parsed as (typeof KUCOIN_REST_ORDERBOOK_DEPTHS)[number])) {
-    throw new Error(`KUCOIN_REST_ORDERBOOK_DEPTH inválido: ${raw}. Use 20 ou 100.`);
+    throw new Error(`KUCOIN_REST_ORDERBOOK_DEPTH inválido: ${raw}. Use 20.`);
   }
-  return parsed as 20 | 100;
+  return parsed as 20;
 }
 
 function resolveTradingIntervals(): {
@@ -6207,7 +6207,7 @@ function resolveTradingIntervals(): {
   granularityMap: Record<string, number>;
   wsIntervalMap: Record<string, string>;
   defaultInterval: string;
-  restOrderBookDepth: 20 | 100;
+  restOrderBookDepth: 20;
   restOrderBookDepths: number[];
   wsOrderBookDepth: 5 | 50;
   wsOrderBookDepths: number[];
@@ -11906,7 +11906,7 @@ async function handleTradingOrderBookRequest(
       if (!KUCOIN_REST_ORDERBOOK_DEPTHS.includes(depth as (typeof KUCOIN_REST_ORDERBOOK_DEPTHS)[number])) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'depth inválido. Valores permitidos: 20, 100.',
+          message: 'depth inválido. Valores permitidos: 20.',
           path: ['depth'],
         });
       }
@@ -11918,7 +11918,7 @@ async function handleTradingOrderBookRequest(
       return;
     }
 
-    const depth = (queryResult.data.depth ?? defaultDepth) as 20 | 100;
+    const depth = (queryResult.data.depth ?? defaultDepth) as 20;
     const marketType = resolveMarketTypeParam(queryResult.data);
     const marginMode = queryResult.data.marginMode;
 

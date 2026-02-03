@@ -98,6 +98,7 @@ export interface UseKucoinWebSocketOptions {
   interval?: string;
   marketType?: MarketType;
   marginMode?: MarginMode;
+  orderBookDepth?: 5 | 50;
   autoConnect?: boolean;
   onTicker?: (data: TickerData) => void;
   onOrderBook?: (data: OrderBookData) => void;
@@ -143,6 +144,7 @@ export function useKucoinWebSocket(
     interval = '',
     marketType = 'futures',
     marginMode = 'cross',
+    orderBookDepth,
     autoConnect = true,
     onTicker,
     onOrderBook,
@@ -172,6 +174,8 @@ export function useKucoinWebSocket(
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const subscriptionsRef = useRef<Set<string>>(new Set());
+  const lastOrderBookSequenceRef = useRef<number | null>(null);
+  const lastTickerSignatureRef = useRef<string>('');
   // CORREÇÃO 17/12/2025: Flag para evitar subscriptions duplicadas na conexão inicial
   // Bug: onopen envia subscriptions E o useEffect[state.connected] dispara novamente
   // quando connected=true, enviando subscriptions duplicadas porque subscriptionsRef está vazio
@@ -261,12 +265,28 @@ export function useKucoinWebSocket(
 
         case 'trading:ticker':
           if (data.marketType && data.marketType !== marketType) break;
+          if (data?.data) {
+            const signature = [
+              data.data.symbol,
+              data.data.price,
+              data.data.bestBid,
+              data.data.bestAsk,
+              data.data.size,
+            ].join('|');
+            if (lastTickerSignatureRef.current === signature) break;
+            lastTickerSignatureRef.current = signature;
+          }
           setTicker(data.data);
           onTicker?.(data.data);
           break;
 
         case 'trading:orderbook':
           if (data.marketType && data.marketType !== marketType) break;
+          if (data?.data?.sequence !== undefined && data?.data?.sequence !== null) {
+            const lastSequence = lastOrderBookSequenceRef.current;
+            if (lastSequence !== null && data.data.sequence <= lastSequence) break;
+            lastOrderBookSequenceRef.current = data.data.sequence;
+          }
           setOrderBook(data.data);
           onOrderBook?.(data.data);
           break;
@@ -376,6 +396,7 @@ export function useKucoinWebSocket(
               interval: channel === 'klines' ? interval : undefined,
               marketType,
               marginMode,
+              depth: channel === 'orderbook' ? orderBookDepth : undefined,
             }));
           });
         }
@@ -447,7 +468,7 @@ export function useKucoinWebSocket(
         lastPing: null,
       });
     }
-  }, [getWsUrl, handleMessage, clearReconnect, clearPing, channels, symbol, interval, marketType, marginMode, autoConnect]);
+  }, [getWsUrl, handleMessage, clearReconnect, clearPing, channels, symbol, interval, marketType, marginMode, orderBookDepth, autoConnect]);
 
   // Disconnect from WebSocket
   const disconnect = useCallback(() => {
@@ -489,7 +510,8 @@ export function useKucoinWebSocket(
     channelSymbol?: string,
     channelInterval?: string,
     channelMarketType?: MarketType,
-    channelMarginMode?: MarginMode
+    channelMarginMode?: MarginMode,
+    channelOrderBookDepth?: 5 | 50
   ) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       const targetSymbol = channelSymbol || symbol;
@@ -506,9 +528,10 @@ export function useKucoinWebSocket(
         interval: channelInterval || interval,
         marketType: resolvedMarketType,
         marginMode: resolvedMarginMode,
+        depth: channel === 'orderbook' ? (channelOrderBookDepth ?? orderBookDepth) : undefined,
       }));
     }
-  }, [symbol, interval, marketType, marginMode]);
+  }, [symbol, interval, marketType, marginMode, orderBookDepth]);
 
   // Unsubscribe from a channel
   const unsubscribe = useCallback((
@@ -516,7 +539,8 @@ export function useKucoinWebSocket(
     channelSymbol?: string,
     channelInterval?: string,
     channelMarketType?: MarketType,
-    channelMarginMode?: MarginMode
+    channelMarginMode?: MarginMode,
+    channelOrderBookDepth?: 5 | 50
   ) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       const targetSymbol = channelSymbol || symbol;
@@ -530,9 +554,10 @@ export function useKucoinWebSocket(
         interval: channelInterval || interval,
         marketType: resolvedMarketType,
         marginMode: resolvedMarginMode,
+        depth: channel === 'orderbook' ? (channelOrderBookDepth ?? orderBookDepth) : undefined,
       }));
     }
-  }, [symbol, interval, marketType, marginMode]);
+  }, [symbol, interval, marketType, marginMode, orderBookDepth]);
 
   // Send trading command
   const sendCommand = useCallback((content: string) => {
@@ -589,19 +614,20 @@ export function useKucoinWebSocket(
         const intervalValue = channel === 'klines' ? oldInterval : undefined;
         const marketTypeValue = (oldMarketType as MarketType | undefined) ?? marketType;
         const marginModeValue = (oldMarginMode as MarginMode | undefined) ?? marginMode;
-        unsubscribe(channel, oldSymbol, intervalValue, marketTypeValue, marginModeValue);
+        const depthValue = channel === 'orderbook' ? orderBookDepth : undefined;
+        unsubscribe(channel, oldSymbol, intervalValue, marketTypeValue, marginModeValue, depthValue);
       });
 
       // Subscribe to new channels
       channels.forEach(channel => {
-        subscribe(channel, symbol, channel === 'klines' ? interval : undefined, marketType, marginMode);
+        subscribe(channel, symbol, channel === 'klines' ? interval : undefined, marketType, marginMode, orderBookDepth);
       });
 
       // Atualizar referência do símbolo/intervalo
       previousSymbolRef.current = symbol;
       previousSubscriptionKeyRef.current = subscriptionKey;
     }
-  }, [symbol, state.connected, channels, interval, marketType, marginMode, subscribe, unsubscribe]);
+  }, [symbol, state.connected, channels, interval, marketType, marginMode, orderBookDepth, subscribe, unsubscribe]);
 
   return {
     state,
