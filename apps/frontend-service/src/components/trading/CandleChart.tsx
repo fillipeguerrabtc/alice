@@ -46,6 +46,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { formatNumber } from '@/lib/utils';
+import { TIMEZONE } from '@/lib/i18n';
 import {
   BarChart3,
   TrendingUp,
@@ -109,12 +110,12 @@ function resolveLocale(locale?: string): string {
 }
 
 function resolveTimeZone(timeZone?: string): string {
-  if (!timeZone) return 'UTC';
+  if (!timeZone) return TIMEZONE;
   try {
     new Intl.DateTimeFormat('pt-BR', { timeZone }).format(new Date());
     return timeZone;
   } catch {
-    return 'UTC';
+    return TIMEZONE;
   }
 }
 

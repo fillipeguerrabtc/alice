@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { TIMEZONE } from '@/lib/i18n';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -16,12 +17,12 @@ function resolveLocale(locale?: string | null): string {
 }
 
 function resolveTimeZone(timeZone?: string | null): string {
-  if (!timeZone) return 'UTC';
+  if (!timeZone) return TIMEZONE;
   try {
     new Intl.DateTimeFormat('pt-BR', { timeZone }).format(new Date());
     return timeZone;
   } catch {
-    return 'UTC';
+    return TIMEZONE;
   }
 }
 

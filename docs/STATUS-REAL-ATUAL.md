@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 03 de Fevereiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.85 - Tuning de observabilidade + SearXNG limpo
+**Versão:** 10.86 - Timezone persistente e UI alinhada ao perfil
 
 ---
 
@@ -63,6 +63,7 @@
 - Observability: limites de Prometheus/ClickHouse/OTel ajustados para usar melhor CPU/RAM e evitar throttling.
 - SearXNG: engines ahmia/torch removidas para eliminar ruído; Tor mantido para deep web sob demanda.
 - Chat: correção do upgrade WS evita crash por double handleUpgrade.
+- Timezone: configuração regional do usuário persiste no PostgreSQL e UI usa timezone do perfil (fallback America/Sao_Paulo).
 - Trading: extração de JSON balanceada evita truncamento por chaves em texto.
 - Trading: logging explícito de notícias confirma uso de SearXNG na análise.
 - Trading: presets de notícias com CRUD (criar, editar e excluir) direto nas abas Análise e Sinais IA.

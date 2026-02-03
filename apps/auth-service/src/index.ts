@@ -678,7 +678,7 @@ async function ensureGlobalAdmin(): Promise<void> {
     emailVerified: true,
     role: 'super_admin' as const,
     idioma: 'pt-BR',
-    timezone: 'UTC',
+    timezone: 'America/Sao_Paulo',
     tenantId: defaultTenant.id, // BUG FIX 13/01/2026: SEMPRE associar a um tenant
   };
 
@@ -710,6 +710,10 @@ async function ensureGlobalAdmin(): Promise<void> {
     .update(schema.users)
     .set({
       ...baseUser,
+      // Preservar configurações regionais já personalizadas
+      idioma: existing.idioma ?? baseUser.idioma,
+      timezone: existing.timezone ?? baseUser.timezone,
+      preferencias: existing.preferencias ?? undefined,
     })
     .where(eq(schema.users.id, existing.id))
     .returning();
