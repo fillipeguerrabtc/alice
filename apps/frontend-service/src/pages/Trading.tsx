@@ -789,6 +789,7 @@ export default function Trading() {
   const autoSaveSignalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSaveSignalLastPayloadRef = useRef<string>('');
   const autoSaveSignalContextRef = useRef(false);
+  const [isManualSignalSavePending, setIsManualSignalSavePending] = useState(false);
 
   const updateSignalTimeframes = (next: string[]) => {
     setSignalProfileForm((prev) => ({
@@ -3820,10 +3821,18 @@ export default function Trading() {
 
                 <div className="flex flex-wrap gap-2">
                   <Button
-                    onClick={() => updateSignalProfileMutation.mutate(signalProfilePayload)}
-                    disabled={updateSignalProfileMutation.isPending}
+                    onClick={() => {
+                      if (isManualSignalSavePending) return;
+                      setIsManualSignalSavePending(true);
+                      updateSignalProfileMutation.mutate(signalProfilePayload, {
+                        onSettled: () => {
+                          setIsManualSignalSavePending(false);
+                        },
+                      });
+                    }}
+                    disabled={isManualSignalSavePending}
                   >
-                    {updateSignalProfileMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    {isManualSignalSavePending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                     {t('trading.signals.profile.save')}
                   </Button>
                   <Button
