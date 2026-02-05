@@ -10203,6 +10203,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
               actionResult: result,
             }),
             tradingCommand: parsedCommand,
+            tradingResult: result,
           },
         }).returning();
 

@@ -9,6 +9,7 @@ Documentação em PT-BR (Regra 10 CLAUDE.md).
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import io
@@ -73,6 +74,7 @@ aesgcm = AESGCM(ENCRYPTION_KEY)
 
 app = FastAPI(title="Alice Biometrics Service", version="1.0.0")
 pool: Optional[asyncpg.Pool] = None
+pool_lock = asyncio.Lock()
 
 class EnrollRequest(BaseModel):
   userId: str = Field(..., min_length=36)
@@ -127,22 +129,37 @@ async def init_pool() -> asyncpg.Pool:
   global pool
   if pool:
     return pool
-  async def init_connection(conn: asyncpg.Connection) -> None:
-    await register_vector(conn)
+  async with pool_lock:
+    if pool:
+      return pool
 
-  pool = await asyncpg.create_pool(
-    DATABASE_URL,
-    min_size=1,
-    max_size=5,
-    init=init_connection,
-  )
-  return pool
+    async def init_connection(conn: asyncpg.Connection) -> None:
+      await register_vector(conn)
 
-async def rate_limit_check(conn: asyncpg.Connection, user_id: str, window_seconds: int, max_requests: int) -> None:
+    pool = await asyncpg.create_pool(
+      DATABASE_URL,
+      min_size=1,
+      max_size=5,
+      init=init_connection,
+    )
+    return pool
+
+async def rate_limit_check(
+  conn: asyncpg.Connection,
+  user_id: str,
+  action_type: str,
+  window_seconds: int,
+  max_requests: int,
+) -> None:
   since = datetime.utcnow() - timedelta(seconds=window_seconds)
   count = await conn.fetchval(
-    "SELECT COUNT(1) FROM biometric_verifications WHERE user_id = $1 AND created_at >= $2",
+    """
+    SELECT COUNT(1)
+    FROM biometric_verifications
+    WHERE user_id = $1 AND action_type = $2 AND created_at >= $3
+    """,
     user_id,
+    action_type,
     since,
   )
   if count and count >= max_requests:
@@ -198,7 +215,13 @@ async def enroll(
   embedding_hash = hashlib.sha256(embedding.tobytes()).hexdigest()
 
   async with conn.acquire() as db:
-    await rate_limit_check(db, payload.userId, window_seconds=86400, max_requests=ENROLL_RATE_LIMIT)
+    await rate_limit_check(
+      db,
+      payload.userId,
+      action_type="enroll",
+      window_seconds=86400,
+      max_requests=ENROLL_RATE_LIMIT,
+    )
 
     profile = await db.fetchrow(
       """
@@ -261,7 +284,13 @@ async def verify(
   embedding = extract_embedding(image)
 
   async with conn.acquire() as db:
-    await rate_limit_check(db, payload.userId, window_seconds=60, max_requests=VERIFY_RATE_LIMIT)
+    await rate_limit_check(
+      db,
+      payload.userId,
+      action_type=payload.actionType,
+      window_seconds=60,
+      max_requests=VERIFY_RATE_LIMIT,
+    )
 
     record = await db.fetchrow(
       """
