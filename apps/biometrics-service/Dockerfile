@@ -9,6 +9,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
+    git \
     libopenblas-dev \
     liblapack-dev \
     libjpeg62-turbo-dev \
