@@ -92,6 +92,7 @@ export function BiometricCapture({ onCapture, onError, autoStart = false }: Biom
     ctx.drawImage(video, 0, 0, width, height);
     const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
     onCapture(dataUrl);
+    stopStream();
   };
 
   return (

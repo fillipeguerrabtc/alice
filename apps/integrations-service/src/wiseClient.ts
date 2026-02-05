@@ -69,9 +69,9 @@ function classifyWiseError(error: unknown): string {
 // RESILIÊNCIA: Timeout para chamadas à API Wise (Best Practices 2025)
 const WISE_API_TIMEOUT_MS = 30000; // 30 segundos
 
-// URLs da API Wise
-const WISE_API_URL = process.env.WISE_API_URL || 'https://api.transferwise.com';
-const WISE_SANDBOX_URL = 'https://api.sandbox.transferwise.tech';
+// URLs da API Wise (docs oficiais)
+const WISE_API_URL = process.env.WISE_API_URL || 'https://api.wise.com';
+const WISE_SANDBOX_URL = 'https://api.wise-sandbox.com';
 
 // Usa CIRCUIT_BREAKER_PRESETS.wiseApi centralizado (Regra 2 - Não Duplicar)
 
@@ -158,6 +158,32 @@ interface WiseRequestParams {
   body?: unknown;
 }
 
+function summarizeWiseErrorBody(bodyText: string): string {
+  if (!bodyText) return 'Resposta vazia';
+  try {
+    const parsed = JSON.parse(bodyText) as {
+      error?: string;
+      error_description?: string;
+      message?: string;
+      errors?: Array<{ code?: string; message?: string; path?: string }>;
+    };
+    if (Array.isArray(parsed.errors) && parsed.errors.length > 0) {
+      const first = parsed.errors[0];
+      const parts = [first.code, first.path, first.message].filter(Boolean);
+      return parts.join(' | ') || 'Erro Wise (array)';
+    }
+    if (parsed.error || parsed.error_description) {
+      return [parsed.error, parsed.error_description].filter(Boolean).join(' | ');
+    }
+    if (parsed.message) {
+      return parsed.message;
+    }
+  } catch {
+    // Ignorar parse JSON e usar texto bruto.
+  }
+  return bodyText.slice(0, 400);
+}
+
 // Função interna de requisição HTTP
 // CORREÇÃO AUDITORIA 17/12/2025: Adicionado timeout via AbortSignal
 async function executeWiseRequest<T>(params: WiseRequestParams): Promise<T> {
@@ -176,7 +202,8 @@ async function executeWiseRequest<T>(params: WiseRequestParams): Promise<T> {
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Wise API error: ${response.status} - ${errorText}`);
+      const summary = summarizeWiseErrorBody(errorText);
+      throw new Error(`Wise API error: ${response.status} - ${summary}`);
     }
 
     return response.json() as Promise<T>;
@@ -215,7 +242,8 @@ export async function wiseRequest<T>(
     const durationSeconds = Number(process.hrtime.bigint() - start) / 1e9;
     recordWiseCall({ operation, status: 'error', durationSeconds });
     recordWiseError({ operation, errorType: classifyWiseError(error) });
-    logger.error({ error, method, endpoint }, 'Falha na requisição Wise');
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error({ error: message, method, endpoint }, 'Falha na requisição Wise');
     throw error;
   }
 }

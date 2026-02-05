@@ -6622,11 +6622,18 @@ if (kucoinClient.isKucoinConfigured()) {
     throw error;
   }
 
-  Promise.all([
+  Promise.allSettled([
     initializeKucoinWebSocketClients(),
     initializeSpotWebSocketClients(),
   ])
-    .then(async () => {
+    .then(async (results) => {
+      const [futuresResult, spotResult] = results;
+      if (futuresResult.status === 'rejected') {
+        logger.error({ error: futuresResult.reason }, 'Falha ao iniciar WS KuCoin Futures');
+      }
+      if (spotResult.status === 'rejected') {
+        logger.error({ error: spotResult.reason }, 'Falha ao iniciar WS KuCoin Spot/Margin');
+      }
       initializeBroadcast()
         .then(async (status) => {
           if (!status.publisher) {
@@ -6884,6 +6891,38 @@ function stripListPrefix(line: string): { value: string; stripped: boolean } {
   return { value: stripped, stripped: stripped !== line };
 }
 
+function sanitizeJsonCandidate(content: string): { json: string; repaired: boolean } {
+  if (!content) return { json: content, repaired: false };
+  let repaired = false;
+  const withoutBom = content.replace(/^\uFEFF/, '');
+  if (withoutBom !== content) repaired = true;
+
+  const lines = withoutBom.split('\n').map((line) => {
+    const trimmedStart = line.trimStart();
+    if (!trimmedStart) return line;
+
+    const stripped = stripListPrefix(trimmedStart);
+    if (stripped.stripped) {
+      repaired = true;
+      const indent = line.slice(0, line.length - trimmedStart.length);
+      return `${indent}${stripped.value}`;
+    }
+
+    if (/^json\s*[:{-]/i.test(trimmedStart)) {
+      const next = trimmedStart.replace(/^json\s*[:]?/i, '').trimStart();
+      if (next) {
+        repaired = true;
+        const indent = line.slice(0, line.length - trimmedStart.length);
+        return `${indent}${next}`;
+      }
+    }
+
+    return line;
+  });
+
+  return { json: lines.join('\n'), repaired };
+}
+
 function buildLlmResponseSnippet(content: string, limit = 220): string {
   const normalized = content.replace(/\s+/g, ' ').trim();
   if (normalized.length <= limit) return normalized;
@@ -7068,6 +7107,7 @@ function normalizeLlmJsonKeys(
   const isIdentifierStart = (char: string) => /[A-Za-z_]/.test(char);
   const isIdentifierChar = (char: string) => /[A-Za-z0-9_]/.test(char);
   const isWhitespace = (char: string) => /\s/.test(char);
+  const listPrefixRegex = /^(?:[-*•]\s+|\d+[).\]]\s+|\d+\s*-\s+)/;
 
   while (i < source.length) {
     const char = source[i];
@@ -7092,6 +7132,18 @@ function normalizeLlmJsonKeys(
     if (!inString && (char === '{' || char === ',')) {
       output += char;
       i += 1;
+      while (i < source.length && isWhitespace(source[i])) {
+        output += source[i];
+        i += 1;
+      }
+      if (i >= source.length) break;
+
+      const remaining = source.slice(i);
+      const listPrefixMatch = remaining.match(listPrefixRegex);
+      if (listPrefixMatch) {
+        repaired = true;
+        i += listPrefixMatch[0].length;
+      }
       while (i < source.length && isWhitespace(source[i])) {
         output += source[i];
         i += 1;
@@ -7525,7 +7577,14 @@ function parseLlmSignalResponse(rawResponse: string): {
   citedValuesSource: 'llm_payload' | 'regex';
 } {
   const candidate = extractJsonObjectCandidate(rawResponse);
-  const normalized = normalizeLlmJsonKeys(candidate);
+  const sanitized = sanitizeJsonCandidate(candidate);
+  if (sanitized.repaired) {
+    logger.warn('Resposta LLM continha prefixos não JSON; sanitização aplicada.');
+  }
+  const normalized = normalizeLlmJsonKeys(sanitized.json);
+  if (normalized.repaired) {
+    logger.warn('Resposta LLM continha chaves sem aspas; normalização aplicada.');
+  }
   try {
     const parsed = JSON.parse(normalized.json) as Record<string, unknown>;
     const { normalized: normalizedPayload, citedValuesSource } = normalizeLlmSignalPayload(parsed);
@@ -7535,7 +7594,7 @@ function parseLlmSignalResponse(rawResponse: string): {
     }
     return { data: result.data, citedValuesSource };
   } catch (error) {
-    const permissive = normalizeLlmJsonKeys(candidate, { allowAnyKey: true });
+    const permissive = normalizeLlmJsonKeys(sanitized.json, { allowAnyKey: true });
     if (permissive.json !== normalized.json) {
       try {
         logger.warn({ error: error instanceof Error ? error.message : error }, 'Resposta LLM inválida; aplicando reparo de chaves JSON.');
@@ -7552,7 +7611,7 @@ function parseLlmSignalResponse(rawResponse: string): {
           error: message,
           responseHash: computeSemHash(permissive.json),
           responseLength: permissive.json.length,
-          candidateLength: candidate.length,
+          candidateLength: sanitized.json.length,
         }, 'Resposta LLM inválida após reparo de chaves JSON (hash/len).');
       }
     }
@@ -7574,7 +7633,7 @@ function parseLlmSignalResponse(rawResponse: string): {
           error: message,
           responseHash: computeSemHash(blockRepair.json),
           responseLength: blockRepair.json.length,
-          candidateLength: candidate.length,
+          candidateLength: sanitized.json.length,
         }, 'Resposta LLM inválida após reparo YAML-like sem chaves (hash/len).');
       }
     }
@@ -7595,7 +7654,7 @@ function parseLlmSignalResponse(rawResponse: string): {
           error: message,
           responseHash: computeSemHash(yamlRepair.json),
           responseLength: yamlRepair.json.length,
-          candidateLength: candidate.length,
+          candidateLength: sanitized.json.length,
         }, 'Resposta LLM inválida após reparo YAML-like (hash/len).');
       }
     }
@@ -7630,9 +7689,9 @@ function parseLlmSignalResponse(rawResponse: string): {
     }
     logger.error({
       error: message,
-      responseHash: computeSemHash(candidate),
-      responseLength: candidate.length,
-      responseSnippet: buildLlmResponseSnippet(candidate),
+      responseHash: computeSemHash(sanitized.json),
+      responseLength: sanitized.json.length,
+      responseSnippet: buildLlmResponseSnippet(sanitized.json),
     }, 'Resposta LLM inválida (hash/len).');
     throw new Error(`Resposta LLM inválida: ${message}`);
   }

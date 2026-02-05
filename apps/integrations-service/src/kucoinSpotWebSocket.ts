@@ -295,8 +295,7 @@ export class KucoinSpotWebSocketClient extends EventEmitter {
       });
 
       this.ws.on('error', (err) => {
-        logger.error({ error: err }, 'Erro WebSocket Spot/Margin');
-        this.emit('error', err instanceof Error ? err : new Error(String(err)));
+        this.handleConnectionError(err);
       });
     } catch (error) {
       this.setState('disconnected');
@@ -506,6 +505,14 @@ export class KucoinSpotWebSocketClient extends EventEmitter {
     }, delay);
   }
 
+  private handleConnectionError(error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error({ error: message }, 'Erro WebSocket Spot/Margin');
+    this.emit('error', error instanceof Error ? error : new Error(message));
+    this.cleanupConnection();
+    this.scheduleReconnect();
+  }
+
   private scheduleTokenRefresh(): void {
     if (this.tokenRefreshTimer) clearTimeout(this.tokenRefreshTimer);
     this.tokenRefreshTimer = setTimeout(() => {
@@ -579,8 +586,7 @@ export async function initializeSpotWebSocketClients(): Promise<void> {
       logger.warn('Credenciais KuCoin não configuradas - WS Spot/Margin privado não inicializado');
     }
   } catch (error) {
-    logger.error({ error: (error as Error).message }, 'Erro ao inicializar WS Spot/Margin');
-    throw error;
+    logger.error({ error: error instanceof Error ? error.message : String(error) }, 'Erro ao inicializar WS Spot/Margin');
   }
 }
 
