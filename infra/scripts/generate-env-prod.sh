@@ -363,6 +363,18 @@ if [ -z "${INTERNAL_API_SECRET}" ]; then
   exit 1
 fi
 
+BIOMETRICS_ENCRYPTION_KEY="${BIOMETRICS_ENCRYPTION_KEY_SECRET:-}"
+if [ -z "${BIOMETRICS_ENCRYPTION_KEY}" ]; then
+  echo "::error::BIOMETRICS_ENCRYPTION_KEY não definido. Configure o secret BIOMETRICS_ENCRYPTION_KEY no repositório (obrigatório para biometria)." >&2
+  echo "   Use uma chave de 32 bytes (hex 64 ou base64). Ex: openssl rand -hex 32" >&2
+  exit 1
+fi
+
+if [ ${#BIOMETRICS_ENCRYPTION_KEY} -lt 32 ]; then
+  echo "::error::BIOMETRICS_ENCRYPTION_KEY muito curta (${#BIOMETRICS_ENCRYPTION_KEY} chars). Use 32 bytes (hex 64 ou base64)." >&2
+  exit 1
+fi
+
 # =============================================================================
 # GITHUB ACTIONS - Stack Ops (Agentic)
 # =============================================================================
@@ -814,6 +826,7 @@ echo "📄 Gerando arquivo .env.prod..."
   printf '# Sessão e Segurança S2S\n'
   printf 'SESSION_SECRET=%s\n' "${SESSION_SECRET}"
   printf 'INTERNAL_API_SECRET=%s\n' "${INTERNAL_API_SECRET}"
+  printf 'BIOMETRICS_ENCRYPTION_KEY=%s\n' "${BIOMETRICS_ENCRYPTION_KEY}"
   printf '\n'
   BASE_URL_VALUE="${BASE_URL:-https://yesyoudeserve.duckdns.org}"
   printf '# OAuth Google\n'

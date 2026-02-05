@@ -29,6 +29,7 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `REDIS_QUEUE_PASSWORD` | Senha Redis Queue (ERPNext) | ✅ |
 | `SESSION_SECRET` | Secret de sessão (64+ chars) | ✅ |
 | `INTERNAL_API_SECRET` | Secret S2S interno | ✅ |
+| `BIOMETRICS_ENCRYPTION_KEY` | Chave AES-256 para biometria (32 bytes, hex/base64) | ✅ |
 | `OPENAI_API_KEY` | OpenAI (Vision + Images) | ✅ |
 | `BACKUP_CIPHER_PASS` | Cifra pgBackRest (32+ chars) | ✅ |
 | `ADMIN_USER` | Usuário admin Alice Auth | ✅ |
