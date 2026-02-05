@@ -17,6 +17,7 @@ type BiometricCaptureProps = {
 export function BiometricCapture({ onCapture, onError, autoStart = true }: BiometricCaptureProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const isMountedRef = useRef(true);
   const [isStreaming, setIsStreaming] = useState(false);
 
   const stopStream = useCallback(() => {
@@ -33,11 +34,17 @@ export function BiometricCapture({ onCapture, onError, autoStart = true }: Biome
   const startStream = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+      if (!isMountedRef.current || !videoRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
       }
-      setIsStreaming(true);
+      if (isMountedRef.current) {
+        setIsStreaming(true);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Falha ao acessar a câmera';
       onError?.(message);
@@ -45,10 +52,14 @@ export function BiometricCapture({ onCapture, onError, autoStart = true }: Biome
   }, [onError]);
 
   useEffect(() => {
+    isMountedRef.current = true;
     if (autoStart) {
       startStream();
     }
-    return () => stopStream();
+    return () => {
+      isMountedRef.current = false;
+      stopStream();
+    };
   }, [autoStart, startStream, stopStream]);
 
   const handleCapture = () => {
