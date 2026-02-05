@@ -209,11 +209,6 @@ async def enroll(
 ) -> dict[str, Any]:
   ensure_internal_auth(x_internal_api_secret)
   conn = await init_pool()
-  image = decode_image(payload.imageBase64)
-  embedding = extract_embedding(image)
-  encrypted = encrypt_embedding(embedding)
-  embedding_hash = hashlib.sha256(embedding.tobytes()).hexdigest()
-
   async with conn.acquire() as db:
     await rate_limit_check(
       db,
@@ -223,47 +218,53 @@ async def enroll(
       max_requests=ENROLL_RATE_LIMIT,
     )
 
-    profile = await db.fetchrow(
-      """
-      INSERT INTO biometric_profiles (tenant_id, user_id, status, metadata)
-      VALUES ($1, $2, 'active', COALESCE($3::jsonb, '{}'::jsonb))
-      ON CONFLICT (tenant_id, user_id)
-      DO UPDATE SET status='active', updated_at=NOW(), metadata=COALESCE(EXCLUDED.metadata, biometric_profiles.metadata)
-      RETURNING id
-      """,
-      payload.tenantId,
-      payload.userId,
-      payload.metadata,
-    )
-    profile_id = profile["id"]
+    image = decode_image(payload.imageBase64)
+    embedding = extract_embedding(image)
+    encrypted = encrypt_embedding(embedding)
+    embedding_hash = hashlib.sha256(embedding.tobytes()).hexdigest()
 
-    await db.execute(
-      "UPDATE biometric_embeddings SET is_active = false WHERE profile_id = $1",
-      profile_id,
-    )
+    async with db.transaction():
+      profile = await db.fetchrow(
+        """
+        INSERT INTO biometric_profiles (tenant_id, user_id, status, metadata)
+        VALUES ($1, $2, 'active', COALESCE($3::jsonb, '{}'::jsonb))
+        ON CONFLICT (tenant_id, user_id)
+        DO UPDATE SET status='active', updated_at=NOW(), metadata=COALESCE(EXCLUDED.metadata, biometric_profiles.metadata)
+        RETURNING id
+        """,
+        payload.tenantId,
+        payload.userId,
+        payload.metadata,
+      )
+      profile_id = profile["id"]
 
-    await db.execute(
-      """
-      INSERT INTO biometric_embeddings (profile_id, embedding, embedding_encrypted, embedding_hash, model, is_active)
-      VALUES ($1, $2, $3, $4, $5, true)
-      """,
-      profile_id,
-      embedding.tolist(),
-      encrypted,
-      embedding_hash,
-      "face_recognition_128d",
-    )
+      await db.execute(
+        "UPDATE biometric_embeddings SET is_active = false WHERE profile_id = $1",
+        profile_id,
+      )
 
-    await db.execute(
-      """
-      INSERT INTO biometric_verifications
-      (profile_id, tenant_id, user_id, action_type, status, score, threshold, ip, user_agent, context)
-      VALUES ($1, $2, $3, 'enroll', 'success', NULL, NULL, NULL, NULL, '{}'::jsonb)
-      """,
-      profile_id,
-      payload.tenantId,
-      payload.userId,
-    )
+      await db.execute(
+        """
+        INSERT INTO biometric_embeddings (profile_id, embedding, embedding_encrypted, embedding_hash, model, is_active)
+        VALUES ($1, $2, $3, $4, $5, true)
+        """,
+        profile_id,
+        embedding.tolist(),
+        encrypted,
+        embedding_hash,
+        "face_recognition_128d",
+      )
+
+      await db.execute(
+        """
+        INSERT INTO biometric_verifications
+        (profile_id, tenant_id, user_id, action_type, status, score, threshold, ip, user_agent, context)
+        VALUES ($1, $2, $3, 'enroll', 'success', NULL, NULL, NULL, NULL, '{}'::jsonb)
+        """,
+        profile_id,
+        payload.tenantId,
+        payload.userId,
+      )
 
   return {
     "profileId": str(profile_id),
@@ -280,9 +281,6 @@ async def verify(
 ) -> dict[str, Any]:
   ensure_internal_auth(x_internal_api_secret)
   conn = await init_pool()
-  image = decode_image(payload.imageBase64)
-  embedding = extract_embedding(image)
-
   async with conn.acquire() as db:
     await rate_limit_check(
       db,
@@ -291,6 +289,9 @@ async def verify(
       window_seconds=60,
       max_requests=VERIFY_RATE_LIMIT,
     )
+
+    image = decode_image(payload.imageBase64)
+    embedding = extract_embedding(image)
 
     record = await db.fetchrow(
       """
