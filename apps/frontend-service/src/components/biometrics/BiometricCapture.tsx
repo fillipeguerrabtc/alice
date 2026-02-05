@@ -18,7 +18,12 @@ export function BiometricCapture({ onCapture, onError, autoStart = true }: Biome
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const isMountedRef = useRef(true);
+  const onErrorRef = useRef(onError);
   const [isStreaming, setIsStreaming] = useState(false);
+
+  useEffect(() => {
+    onErrorRef.current = onError;
+  }, [onError]);
 
   const stopStream = useCallback(() => {
     const stream = videoRef.current?.srcObject as MediaStream | null;
@@ -47,9 +52,9 @@ export function BiometricCapture({ onCapture, onError, autoStart = true }: Biome
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Falha ao acessar a câmera';
-      onError?.(message);
+      onErrorRef.current?.(message);
     }
-  }, [onError]);
+  }, []);
 
   useEffect(() => {
     isMountedRef.current = true;
