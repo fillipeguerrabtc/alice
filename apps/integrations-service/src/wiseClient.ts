@@ -156,6 +156,7 @@ interface WiseRequestParams {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE';
   endpoint: string;
   body?: unknown;
+  headers?: Record<string, string>;
 }
 
 function summarizeWiseErrorBody(bodyText: string): string {
@@ -187,10 +188,10 @@ function summarizeWiseErrorBody(bodyText: string): string {
 // Função interna de requisição HTTP
 // CORREÇÃO AUDITORIA 17/12/2025: Adicionado timeout via AbortSignal
 async function executeWiseRequest<T>(params: WiseRequestParams): Promise<T> {
-  const { method, endpoint, body } = params;
+  const { method, endpoint, body, headers: extraHeaders } = params;
   const baseUrl = getBaseUrl();
   const url = `${baseUrl}${endpoint}`;
-  const headers = getHeaders();
+  const headers = { ...getHeaders(), ...extraHeaders };
 
   try {
     const response = await fetch(url, {
@@ -226,14 +227,15 @@ const wiseCircuitBreaker = createCircuitBreaker(executeWiseRequest, {
 export async function wiseRequest<T>(
   method: 'GET' | 'POST' | 'PUT' | 'DELETE',
   endpoint: string,
-  body?: unknown
+  body?: unknown,
+  headers?: Record<string, string>
 ): Promise<T> {
   logger.info({ method, endpoint }, 'Requisição Wise API');
   const operation = normalizeWiseOperation(method, endpoint);
   const start = process.hrtime.bigint();
 
   try {
-    const result = await wiseCircuitBreaker.fire({ method, endpoint, body }) as T;
+    const result = await wiseCircuitBreaker.fire({ method, endpoint, body, headers }) as T;
     const durationSeconds = Number(process.hrtime.bigint() - start) / 1e9;
     recordWiseCall({ operation, status: 'success', durationSeconds });
     logger.info({ method, endpoint, success: true }, 'Resposta Wise API');
@@ -275,40 +277,64 @@ export function isWiseSandbox(): boolean {
   return config.useSandbox;
 }
 
-// Valida assinatura de webhook Wise
-// SEGURANÇA: Usa timingSafeEqual para prevenir timing attacks (OWASP)
+const WISE_WEBHOOK_PUBLIC_KEY_PROD = `-----BEGINPUBLICKEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvO8vXV+JksBzZAY6GhSO
+XdoTCfhXaaiZ+qAbtaDBiu2AGkGVpmEygFmWP4Li9m5+Ni85BhVvZOodM9epgW3F
+bA5Q1SexvAF1PPjX4JpMstak/QhAgl1qMSqEevL8cmUeTgcMuVWCJmlge9h7B1CS
+D4rtlimGZozG39rUBDg6Qt2K+P4wBfLblL0k4C4YUdLnpGYEDIth+i8XsRpFlogx
+CAFyH9+knYsDbR43UJ9shtc42Ybd40Afihj8KnYKXzchyQ42aC8aZ/h5hyZ28yVy
+Oj3Vos0VdBIs/gAyJ/4yyQFCXYte64I7ssrlbGRaco4nKF3HmaNhxwyKyJafz19e
+HwIDAQAB
+-----ENDPUBLICKEY-----`;
+
+const WISE_WEBHOOK_PUBLIC_KEY_SANDBOX = `-----BEGINPUBLICKEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwpb91cEYuyJNQepZAVfP
+ZIlPZfNUefH+n6w9SW3fykqKu938cR7WadQv87oF2VuT+fDt7kqeRziTmPSUhqPU
+ys/V2Q1rlfJuXbE+Gga37t7zwd0egQ+KyOEHQOpcTwKmtZ81ieGHynAQzsn1We3j
+wt760MsCPJ7GMT141ByQM+yW1Bx+4SG3IGjXWyqOWrcXsxAvIXkpUD/jK/L958Cg
+nZEgz0BSEh0QxYLITnW1lLokSx/dTianWPFEhMC9BgijempgNXHNfcVirg1lPSyg
+z7KqoKUN0oHqWLr2U1A+7kqrl6O2nx3CKs1bj1hToT1+p4kcMoHXA7kA+VBLUpEs
+VwIDAQAB
+-----ENDPUBLICKEY-----`;
+
+function getWiseWebhookPublicKey(): string | null {
+  if (process.env.WISE_WEBHOOK_PUBLIC_KEY) {
+    return process.env.WISE_WEBHOOK_PUBLIC_KEY;
+  }
+  return getSandboxStatus() ? WISE_WEBHOOK_PUBLIC_KEY_SANDBOX : WISE_WEBHOOK_PUBLIC_KEY_PROD;
+}
+
+// Valida assinatura de webhook Wise (RSA + SHA256)
+// SEGURANÇA: A assinatura é base64 no header X-Signature-SHA256 (docs oficiais Wise)
 export function validateWiseWebhook(
-  signature: string,
-  payload: string,
-  webhookSecret: string
+  signature: string | undefined,
+  payload: string
 ): { valid: boolean; reason?: string } {
   if (!signature) {
     return { valid: false, reason: 'SIGNATURE_MISSING' };
   }
-  
-  if (!webhookSecret) {
-    return { valid: false, reason: 'SECRET_MISSING' };
+
+  const publicKey = getWiseWebhookPublicKey();
+  if (!publicKey) {
+    return { valid: false, reason: 'PUBLIC_KEY_MISSING' };
   }
 
   try {
-    const expectedSignature = crypto
-      .createHmac('sha256', webhookSecret)
-      .update(payload)
-      .digest('hex');
-    
-    // SEGURANÇA: Usar timingSafeEqual para prevenir timing attacks
-    const signatureBuffer = Buffer.from(signature, 'hex');
-    const expectedBuffer = Buffer.from(expectedSignature, 'hex');
-    
-    // Verificar comprimento primeiro (timingSafeEqual requer mesmo tamanho)
-    if (signatureBuffer.length !== expectedBuffer.length) {
-      return { valid: false, reason: 'SIGNATURE_LENGTH_MISMATCH' };
+    const signatureBuffer = Buffer.from(signature, 'base64');
+    if (signatureBuffer.length === 0) {
+      return { valid: false, reason: 'SIGNATURE_INVALID_FORMAT' };
     }
-    
-    const isValid = crypto.timingSafeEqual(signatureBuffer, expectedBuffer);
-    return { 
-      valid: isValid, 
-      reason: isValid ? 'VALID' : 'SIGNATURE_MISMATCH' 
+
+    const isValid = crypto.verify(
+      'RSA-SHA256',
+      Buffer.from(payload, 'utf8'),
+      publicKey,
+      signatureBuffer
+    );
+
+    return {
+      valid: isValid,
+      reason: isValid ? 'VALID' : 'SIGNATURE_MISMATCH',
     };
   } catch (error) {
     logger.error({ error }, 'Erro ao validar assinatura Wise webhook');

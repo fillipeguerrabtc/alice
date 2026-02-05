@@ -54,7 +54,7 @@ const operationsItems = [
 ];
 
 const financeItems = [
-  { title: 'Wise Pagamentos', url: '/wise', icon: Wallet },
+  { title: 'Wise', url: '/wise', icon: Wallet },
   { title: 'Trading', url: '/trading', icon: LineChart },
 ];
 

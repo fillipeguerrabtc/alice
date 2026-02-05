@@ -105,7 +105,7 @@
     "finance": "Finance",
     "takeover": "Customer Service",
     "images": "Image Gallery",
-    "wise": "Wise Payments"
+    "wise": "Wise"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -928,18 +928,45 @@
     "features": "Features included"
   },
   "wise": {
-    "title": "Wise Payments",
-    "subtitle": "Global payments with the best rates",
+    "title": "Wise",
+    "subtitle": "Payments, FX, and multi-currency balances",
     "sandbox": "Sandbox Mode",
     "production": "Production",
     "notConfigured": "Wise not configured",
     "balances": {
       "title": "Balances",
       "subtitle": "Multi-currency balances",
+      "new": "New balance",
+      "newDescription": "Create a standard balance or a jar to organize funds.",
+      "currency": "Currency",
+      "type": "Type",
+      "standard": "Standard balance",
+      "savings": "Savings (Jar)",
+      "name": "Jar name",
+      "namePlaceholder": "e.g. EUR Reserve",
+      "nameRequired": "Please provide a jar name.",
       "available": "Available",
       "reserved": "Reserved",
       "total": "Total",
-      "noBalances": "No balances available"
+      "noBalances": "No balances available",
+      "created": "Balance created successfully",
+      "deleted": "Balance removed successfully",
+      "confirmDelete": "Are you sure you want to remove this balance?"
+    },
+    "exchange": {
+      "title": "Exchange",
+      "subtitle": "Convert between currencies using your Wise balances",
+      "from": "From",
+      "to": "To",
+      "amount": "Amount",
+      "getQuote": "Get conversion quote",
+      "receive": "You receive",
+      "execute": "Convert balance",
+      "quoteReady": "Conversion quote ready",
+      "quoteFailed": "Failed to get conversion quote",
+      "completed": "Conversion completed",
+      "failed": "Conversion failed",
+      "noBalances": "Create balances to enable currency conversion."
     },
     "transfers": {
       "title": "Transfers",
@@ -1014,6 +1041,20 @@
       "subtitle": "Transaction history",
       "filter": "Filter",
       "export": "Export",
+      "balance": "Balance",
+      "balancePlaceholder": "Select a balance",
+      "currency": "Currency",
+      "start": "Start",
+      "end": "End",
+      "fetch": "Fetch statement",
+      "date": "Date",
+      "type": "Type",
+      "amount": "Amount",
+      "fees": "Fees",
+      "reference": "Reference",
+      "balanceAfter": "Balance after",
+      "missingParams": "Select a balance and date range.",
+      "fetchFailed": "Failed to fetch Wise statement",
       "noHistory": "No transactions in history"
     },
     "errors": {
@@ -1021,7 +1062,9 @@
       "createFailed": "Failed to create",
       "deleteFailed": "Failed to delete",
       "transferFailed": "Transfer failed",
-      "quoteFailed": "Failed to get quote"
+      "quoteFailed": "Failed to get quote",
+      "balanceCreateFailed": "Failed to create balance",
+      "balanceDeleteFailed": "Failed to remove balance"
     },
     "success": {
       "transferCreated": "Transfer created successfully",

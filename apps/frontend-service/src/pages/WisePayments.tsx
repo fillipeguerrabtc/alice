@@ -16,6 +16,8 @@ import {
   CheckCircle,
   Clock,
   XCircle,
+  ArrowLeftRight,
+  FileText,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -57,11 +59,17 @@ import { formatCurrency, formatDate, formatNumber } from '@/lib/utils';
 interface WiseBalance {
   id: number;
   currency: string;
+  type: 'STANDARD' | 'SAVINGS';
+  name?: string | null;
   amount: {
     value: number;
     currency: string;
   };
   reservedAmount?: {
+    value: number;
+    currency: string;
+  };
+  totalWorth?: {
     value: number;
     currency: string;
   };
@@ -97,14 +105,15 @@ interface WiseRecipient {
 
 interface WiseQuote {
   id: string;
-  source: string;
-  target: string;
+  sourceCurrency: string;
+  targetCurrency: string;
   sourceAmount: number;
   targetAmount: number;
   rate: number;
   fee: number;
-  expirationTime: string;
-  deliveryEstimate: string;
+  expirationTime: string | null;
+  deliveryEstimate: string | null;
+  formattedEstimatedDelivery: string | null;
 }
 
 interface WiseBatchGroup {
@@ -114,6 +123,24 @@ interface WiseBatchGroup {
   sourceCurrency: string;
   version: number;
   created: string;
+}
+
+interface WiseBalanceStatement {
+  type: string;
+  amount: { value: number; currency: string };
+  date: string;
+  note?: string;
+  totalFees?: { value: number; currency: string };
+  reference?: string;
+  runningBalance?: { value: number; currency: string };
+}
+
+interface WiseBalanceStatementResponse {
+  accountId: number;
+  currency: string;
+  intervalStart: string;
+  intervalEnd: string;
+  transactions: WiseBalanceStatement[];
 }
 
 interface WiseStatus {
@@ -182,7 +209,25 @@ export default function WisePayments() {
     targetCurrency: 'USD',
     sourceAmount: '',
   });
+  const [exchangeForm, setExchangeForm] = useState({
+    sourceCurrency: 'EUR',
+    targetCurrency: 'USD',
+    sourceAmount: '',
+  });
+  const [statementForm, setStatementForm] = useState({
+    balanceId: '',
+    currency: 'EUR',
+    intervalStart: '',
+    intervalEnd: '',
+  });
+  const [statementData, setStatementData] = useState<WiseBalanceStatementResponse | null>(null);
   const [showNewRecipientDialog, setShowNewRecipientDialog] = useState(false);
+  const [showNewBalanceDialog, setShowNewBalanceDialog] = useState(false);
+  const [newBalanceForm, setNewBalanceForm] = useState({
+    currency: 'EUR',
+    type: 'STANDARD' as 'STANDARD' | 'SAVINGS',
+    name: '',
+  });
 
   const { data: statusData, isLoading: isLoadingStatus } = useQuery<WiseStatus>({
     queryKey: ['/api/integrations/wise/status'],
@@ -227,6 +272,104 @@ export default function WisePayments() {
     },
   });
 
+  const createBalanceMutation = useMutation({
+    mutationFn: async (payload: { currency: string; type: 'STANDARD' | 'SAVINGS'; name?: string }) => {
+      const res = await apiRequest('POST', '/api/integrations/wise/balances', payload);
+      return res.json() as Promise<{ balance: WiseBalance }>;
+    },
+    onSuccess: () => {
+      setShowNewBalanceDialog(false);
+      setNewBalanceForm({ currency: 'EUR', type: 'STANDARD', name: '' });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/wise/balances'] });
+      toast({ title: t('wise.balances.created') });
+    },
+    onError: (error) => {
+      toast({
+        title: t('wise.errors.balanceCreateFailed'),
+        description: error instanceof Error ? error.message : undefined,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const deleteBalanceMutation = useMutation({
+    mutationFn: async (balanceId: number) => {
+      const res = await apiRequest('DELETE', `/api/integrations/wise/balances/${balanceId}`);
+      return res.json() as Promise<{ balance: WiseBalance }>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/wise/balances'] });
+      toast({ title: t('wise.balances.deleted') });
+    },
+    onError: (error) => {
+      toast({
+        title: t('wise.errors.balanceDeleteFailed'),
+        description: error instanceof Error ? error.message : undefined,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const exchangeQuoteMutation = useMutation({
+    mutationFn: async (payload: { sourceCurrency: string; targetCurrency: string; sourceAmount: number }) => {
+      const res = await apiRequest('POST', '/api/integrations/wise/balance-quotes', payload);
+      return res.json() as Promise<{ quote: WiseQuote }>;
+    },
+    onSuccess: () => {
+      toast({
+        title: t('wise.exchange.quoteReady'),
+        description: t('wise.quotes.expiresIn', { minutes: 30 }),
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: t('wise.exchange.quoteFailed'),
+        description: error instanceof Error ? error.message : undefined,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const exchangeExecuteMutation = useMutation({
+    mutationFn: async (quoteId: string) => {
+      const res = await apiRequest('POST', '/api/integrations/wise/balance-movements', { quoteId });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/wise/balances'] });
+      toast({ title: t('wise.exchange.completed') });
+    },
+    onError: (error) => {
+      toast({
+        title: t('wise.exchange.failed'),
+        description: error instanceof Error ? error.message : undefined,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const statementMutation = useMutation({
+    mutationFn: async (payload: { balanceId: string; currency: string; intervalStart: string; intervalEnd: string }) => {
+      const params = new URLSearchParams({
+        currency: payload.currency,
+        intervalStart: payload.intervalStart,
+        intervalEnd: payload.intervalEnd,
+      });
+      const res = await apiRequest('GET', `/api/integrations/wise/balances/${payload.balanceId}/statement?${params.toString()}`);
+      return res.json() as Promise<{ statement: WiseBalanceStatementResponse }>;
+    },
+    onSuccess: (data) => {
+      setStatementData(data.statement);
+    },
+    onError: (error) => {
+      toast({
+        title: t('wise.history.fetchFailed'),
+        description: error instanceof Error ? error.message : undefined,
+        variant: 'destructive',
+      });
+    },
+  });
+
   const deleteRecipientMutation = useMutation({
     mutationFn: async (id: number) => {
       return apiRequest('DELETE', `/api/integrations/wise/recipients/${id}`);
@@ -254,9 +397,58 @@ export default function WisePayments() {
     });
   };
 
+  const handleGetExchangeQuote = () => {
+    if (!exchangeForm.sourceAmount) return;
+    exchangeQuoteMutation.mutate({
+      sourceCurrency: exchangeForm.sourceCurrency,
+      targetCurrency: exchangeForm.targetCurrency,
+      sourceAmount: parseFloat(exchangeForm.sourceAmount),
+    });
+  };
+
+  const handleExecuteExchange = () => {
+    const quote = (exchangeQuoteMutation.data as { quote: WiseQuote } | undefined)?.quote;
+    if (!quote?.id) return;
+    exchangeExecuteMutation.mutate(quote.id);
+  };
+
+  const handleFetchStatement = () => {
+    if (!statementForm.balanceId || !statementForm.intervalStart || !statementForm.intervalEnd) {
+      toast({ title: t('wise.history.missingParams'), variant: 'destructive' });
+      return;
+    }
+    const startIso = new Date(`${statementForm.intervalStart}T00:00:00.000Z`).toISOString();
+    const endIso = new Date(`${statementForm.intervalEnd}T23:59:59.999Z`).toISOString();
+    statementMutation.mutate({
+      balanceId: statementForm.balanceId,
+      currency: statementForm.currency,
+      intervalStart: startIso,
+      intervalEnd: endIso,
+    });
+  };
+
+  const handleCreateBalance = () => {
+    if (newBalanceForm.type === 'SAVINGS' && !newBalanceForm.name.trim()) {
+      toast({ title: t('wise.balances.nameRequired'), variant: 'destructive' });
+      return;
+    }
+    const payload = {
+      currency: newBalanceForm.currency,
+      type: newBalanceForm.type,
+      name: newBalanceForm.type === 'SAVINGS' ? newBalanceForm.name.trim() : undefined,
+    };
+    createBalanceMutation.mutate(payload);
+  };
+
   const handleDeleteRecipient = (id: number) => {
     if (window.confirm(t('wise.recipients.confirmDelete'))) {
       deleteRecipientMutation.mutate(id);
+    }
+  };
+
+  const handleDeleteBalance = (balanceId: number) => {
+    if (window.confirm(t('wise.balances.confirmDelete'))) {
+      deleteBalanceMutation.mutate(balanceId);
     }
   };
 
@@ -293,6 +485,7 @@ export default function WisePayments() {
   const transfers = (transfersData?.transfers || []) as WiseTransfer[];
   const recipients = (recipientsData?.recipients || []) as WiseRecipient[];
   const batchGroups = (batchGroupsData?.batchGroups || []) as WiseBatchGroup[];
+  const balanceCurrencies = Array.from(new Set(balances.map((balance) => balance.currency)));
 
   return (
     <div className="p-6 space-y-6">
@@ -340,10 +533,14 @@ export default function WisePayments() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-6 gap-1">
+        <TabsList className="grid w-full grid-cols-7 gap-1">
           <TabsTrigger value="balances" data-testid="tab-balances">
             <Wallet className="h-4 w-4 mr-2" />
             {t('wise.balances.title')}
+          </TabsTrigger>
+          <TabsTrigger value="exchange" data-testid="tab-exchange">
+            <ArrowLeftRight className="h-4 w-4 mr-2" />
+            {t('wise.exchange.title')}
           </TabsTrigger>
           <TabsTrigger value="transfers" data-testid="tab-transfers">
             <Send className="h-4 w-4 mr-2" />
@@ -361,13 +558,95 @@ export default function WisePayments() {
             <Layers className="h-4 w-4 mr-2" />
             {t('wise.batch.title')}
           </TabsTrigger>
-          <TabsTrigger value="history" data-testid="tab-history">
-            <History className="h-4 w-4 mr-2" />
+          <TabsTrigger value="statements" data-testid="tab-statements">
+            <FileText className="h-4 w-4 mr-2" />
             {t('wise.history.title')}
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="balances" className="space-y-4 mt-6">
+          <div className="flex justify-between items-center">
+            <CardDescription>{t('wise.balances.subtitle')}</CardDescription>
+            <Dialog open={showNewBalanceDialog} onOpenChange={setShowNewBalanceDialog}>
+              <DialogTrigger asChild>
+                <Button data-testid="button-new-balance">
+                  <Plus className="h-4 w-4 mr-2" />
+                  {t('wise.balances.new')}
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>{t('wise.balances.new')}</DialogTitle>
+                  <DialogDescription>{t('wise.balances.newDescription')}</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label>{t('wise.balances.currency')}</Label>
+                    <Select
+                      value={newBalanceForm.currency}
+                      onValueChange={(value: string) => setNewBalanceForm((prev) => ({ ...prev, currency: value }))}
+                    >
+                      <SelectTrigger data-testid="select-balance-currency">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {CURRENCIES.map((curr) => (
+                          <SelectItem key={curr.code} value={curr.code}>
+                            {curr.code} - {curr.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t('wise.balances.type')}</Label>
+                    <Select
+                      value={newBalanceForm.type}
+                      onValueChange={(value: 'STANDARD' | 'SAVINGS') => setNewBalanceForm((prev) => ({ ...prev, type: value }))}
+                    >
+                      <SelectTrigger data-testid="select-balance-type">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="STANDARD">{t('wise.balances.standard')}</SelectItem>
+                        <SelectItem value="SAVINGS">{t('wise.balances.savings')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {newBalanceForm.type === 'SAVINGS' && (
+                    <div className="space-y-2">
+                      <Label>{t('wise.balances.name')}</Label>
+                      <Input
+                        value={newBalanceForm.name}
+                        onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
+                          setNewBalanceForm((prev) => ({ ...prev, name: event.target.value }))
+                        }
+                        placeholder={t('wise.balances.namePlaceholder')}
+                        data-testid="input-balance-name"
+                      />
+                    </div>
+                  )}
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setShowNewBalanceDialog(false)}>
+                    {t('common.cancel')}
+                  </Button>
+                  <Button
+                    onClick={handleCreateBalance}
+                    disabled={createBalanceMutation.isPending}
+                    data-testid="button-save-balance"
+                  >
+                    {createBalanceMutation.isPending ? (
+                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Plus className="h-4 w-4 mr-2" />
+                    )}
+                    {t('common.save')}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
           {isLoadingBalances ? (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Skeleton className="h-32" />
@@ -386,18 +665,40 @@ export default function WisePayments() {
               {balances.map((balance) => (
                 <Card key={balance.id} data-testid={`card-balance-${balance.currency}`}>
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <Badge variant="outline">{balance.currency}</Badge>
+                    <CardTitle className="text-lg flex items-center gap-2 justify-between">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline">{balance.currency}</Badge>
+                        <Badge variant="secondary" className="text-xs">
+                          {balance.type}
+                        </Badge>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDeleteBalance(balance.id)}
+                        data-testid={`button-delete-balance-${balance.id}`}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold">
                       {formatCurrency(balance.amount.value, balance.currency, locale)}
                     </div>
+                    {balance.name && (
+                      <p className="text-sm text-muted-foreground mt-1">{balance.name}</p>
+                    )}
                     {balance.reservedAmount && balance.reservedAmount.value > 0 && (
                       <p className="text-sm text-muted-foreground mt-1">
-                        {t('wise.balances.reserved')}:{' '}
+                        {t('wise.balances.reserved')}: {' '}
                         {formatCurrency(balance.reservedAmount.value, balance.currency, locale)}
+                      </p>
+                    )}
+                    {balance.totalWorth && (
+                      <p className="text-sm text-muted-foreground mt-1">
+                        {t('wise.balances.total')}: {' '}
+                        {formatCurrency(balance.totalWorth.value, balance.totalWorth.currency, locale)}
                       </p>
                     )}
                   </CardContent>
@@ -405,6 +706,142 @@ export default function WisePayments() {
               ))}
             </div>
           )}
+        </TabsContent>
+
+        <TabsContent value="exchange" className="space-y-4 mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>{t('wise.exchange.title')}</CardTitle>
+              <CardDescription>{t('wise.exchange.subtitle')}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {balanceCurrencies.length === 0 ? (
+                <p className="text-sm text-muted-foreground">{t('wise.exchange.noBalances')}</p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="space-y-2">
+                    <Label>{t('wise.exchange.from')}</Label>
+                    <Select
+                      value={exchangeForm.sourceCurrency}
+                      onValueChange={(value: string) => setExchangeForm((prev) => ({ ...prev, sourceCurrency: value }))}
+                    >
+                      <SelectTrigger data-testid="select-exchange-source">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(balanceCurrencies.length ? balanceCurrencies : CURRENCIES.map((curr) => curr.code)).map((currency) => (
+                          <SelectItem key={currency} value={currency}>
+                            {currency}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t('wise.exchange.amount')}</Label>
+                    <Input
+                      type="number"
+                      placeholder="1000"
+                      value={exchangeForm.sourceAmount}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setExchangeForm((prev) => ({ ...prev, sourceAmount: e.target.value }))}
+                      data-testid="input-exchange-amount"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t('wise.exchange.to')}</Label>
+                    <Select
+                      value={exchangeForm.targetCurrency}
+                      onValueChange={(value: string) => setExchangeForm((prev) => ({ ...prev, targetCurrency: value }))}
+                    >
+                      <SelectTrigger data-testid="select-exchange-target">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(balanceCurrencies.length ? balanceCurrencies : CURRENCIES.map((curr) => curr.code)).map((currency) => (
+                          <SelectItem key={currency} value={currency}>
+                            {currency}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-end">
+                    <Button
+                      className="w-full"
+                      onClick={handleGetExchangeQuote}
+                      disabled={!exchangeForm.sourceAmount || exchangeQuoteMutation.isPending}
+                      data-testid="button-exchange-quote"
+                    >
+                      {exchangeQuoteMutation.isPending ? (
+                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <ArrowLeftRight className="h-4 w-4 mr-2" />
+                      )}
+                      {t('wise.exchange.getQuote')}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {exchangeQuoteMutation.data && (
+                <Card className="mt-4 bg-muted/50">
+                  <CardContent className="pt-6 space-y-4">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div>
+                        <p className="text-sm text-muted-foreground">{t('wise.quotes.rate')}</p>
+                        <p className="text-lg font-medium">
+                          {formatNumber((exchangeQuoteMutation.data as { quote: WiseQuote }).quote.rate, locale, {
+                            minimumFractionDigits: 4,
+                            maximumFractionDigits: 4,
+                          })}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">{t('wise.quotes.fee')}</p>
+                        <p className="text-lg font-medium">
+                          {formatCurrency(
+                            (exchangeQuoteMutation.data as { quote: WiseQuote }).quote.fee,
+                            exchangeForm.sourceCurrency,
+                            locale
+                          )}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">{t('wise.exchange.receive')}</p>
+                        <p className="text-lg font-medium text-green-600">
+                          {formatCurrency(
+                            (exchangeQuoteMutation.data as { quote: WiseQuote }).quote.targetAmount,
+                            exchangeForm.targetCurrency,
+                            locale
+                          )}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">{t('wise.quotes.expires')}</p>
+                        <p className="text-lg font-medium">
+                          {(exchangeQuoteMutation.data as { quote: WiseQuote }).quote.expirationTime
+                            ? formatDate((exchangeQuoteMutation.data as { quote: WiseQuote }).quote.expirationTime as string, { locale, timeZone })
+                            : '-'}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      onClick={handleExecuteExchange}
+                      disabled={exchangeExecuteMutation.isPending}
+                      data-testid="button-exchange-execute"
+                    >
+                      {exchangeExecuteMutation.isPending ? (
+                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <ArrowLeftRight className="h-4 w-4 mr-2" />
+                      )}
+                      {t('wise.exchange.execute')}
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="transfers" className="space-y-4 mt-6">
@@ -671,7 +1108,9 @@ export default function WisePayments() {
                       <div>
                         <p className="text-sm text-muted-foreground">{t('wise.quotes.delivery')}</p>
                         <p className="text-lg font-medium">
-                          {formatDate((createQuoteMutation.data as { quote: WiseQuote }).quote.deliveryEstimate, { locale, timeZone })}
+                          {(createQuoteMutation.data as { quote: WiseQuote }).quote.deliveryEstimate
+                            ? formatDate((createQuoteMutation.data as { quote: WiseQuote }).quote.deliveryEstimate as string, { locale, timeZone })
+                            : ((createQuoteMutation.data as { quote: WiseQuote }).quote.formattedEstimatedDelivery ?? '-')}
                         </p>
                       </div>
                     </div>
@@ -732,15 +1171,130 @@ export default function WisePayments() {
           )}
         </TabsContent>
 
-        <TabsContent value="history" className="space-y-4 mt-6">
+        <TabsContent value="statements" className="space-y-4 mt-6">
           <Card>
             <CardHeader>
               <CardTitle>{t('wise.history.title')}</CardTitle>
               <CardDescription>{t('wise.history.subtitle')}</CardDescription>
             </CardHeader>
-            <CardContent className="flex flex-col items-center justify-center py-12">
-              <History className="h-12 w-12 text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">{t('wise.history.noHistory')}</p>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="space-y-2">
+                  <Label>{t('wise.history.balance')}</Label>
+                  <Select
+                    value={statementForm.balanceId}
+                    onValueChange={(value: string) => setStatementForm((prev) => ({ ...prev, balanceId: value }))}
+                  >
+                    <SelectTrigger data-testid="select-statement-balance">
+                      <SelectValue placeholder={t('wise.history.balancePlaceholder')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {balances.map((balance) => (
+                        <SelectItem key={balance.id} value={String(balance.id)}>
+                          {balance.currency} • {balance.type}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('wise.history.currency')}</Label>
+                  <Select
+                    value={statementForm.currency}
+                    onValueChange={(value: string) => setStatementForm((prev) => ({ ...prev, currency: value }))}
+                  >
+                    <SelectTrigger data-testid="select-statement-currency">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(balanceCurrencies.length ? balanceCurrencies : CURRENCIES.map((curr) => curr.code)).map((currency) => (
+                        <SelectItem key={currency} value={currency}>
+                          {currency}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('wise.history.start')}</Label>
+                  <Input
+                    type="date"
+                    value={statementForm.intervalStart}
+                    onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
+                      setStatementForm((prev) => ({ ...prev, intervalStart: event.target.value }))
+                    }
+                    data-testid="input-statement-start"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('wise.history.end')}</Label>
+                  <Input
+                    type="date"
+                    value={statementForm.intervalEnd}
+                    onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
+                      setStatementForm((prev) => ({ ...prev, intervalEnd: event.target.value }))
+                    }
+                    data-testid="input-statement-end"
+                  />
+                </div>
+              </div>
+              <Button
+                onClick={handleFetchStatement}
+                disabled={statementMutation.isPending}
+                data-testid="button-fetch-statement"
+              >
+                {statementMutation.isPending ? (
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <History className="h-4 w-4 mr-2" />
+                )}
+                {t('wise.history.fetch')}
+              </Button>
+
+              {statementData ? (
+                statementData.transactions.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">{t('wise.history.noHistory')}</p>
+                ) : (
+                  <Card>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>{t('wise.history.date')}</TableHead>
+                          <TableHead>{t('wise.history.type')}</TableHead>
+                          <TableHead>{t('wise.history.amount')}</TableHead>
+                          <TableHead>{t('wise.history.fees')}</TableHead>
+                          <TableHead>{t('wise.history.reference')}</TableHead>
+                          <TableHead>{t('wise.history.balanceAfter')}</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {statementData.transactions.map((row, index) => (
+                          <TableRow key={`${row.date}-${index}`}>
+                            <TableCell>{formatDate(row.date, { locale, timeZone })}</TableCell>
+                            <TableCell>{row.type}</TableCell>
+                            <TableCell>
+                              {formatCurrency(row.amount.value, row.amount.currency, locale)}
+                            </TableCell>
+                            <TableCell>
+                              {row.totalFees
+                                ? formatCurrency(row.totalFees.value, row.totalFees.currency, locale)
+                                : '-'}
+                            </TableCell>
+                            <TableCell>{row.reference || '-'}</TableCell>
+                            <TableCell>
+                              {row.runningBalance
+                                ? formatCurrency(row.runningBalance.value, row.runningBalance.currency, locale)
+                                : '-'}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </Card>
+                )
+              ) : (
+                <p className="text-sm text-muted-foreground">{t('wise.history.noHistory')}</p>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

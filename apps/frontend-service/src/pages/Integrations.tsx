@@ -793,7 +793,8 @@ export default function Integrations() {
                   <>
                     <p>WISE_API_KEY</p>
                     <p>WISE_PROFILE_ID</p>
-                    <p>WISE_WEBHOOK_SECRET</p>
+                    <p>WISE_SANDBOX</p>
+                    <p>WISE_WEBHOOK_PUBLIC_KEY (opcional)</p>
                   </>
                 )}
                 {showConfigDialog === 'erpnext' && (

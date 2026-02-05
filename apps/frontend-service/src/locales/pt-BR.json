@@ -105,7 +105,7 @@
     "finance": "Finanças",
     "takeover": "Atendimento",
     "images": "Galeria de Imagens",
-    "wise": "Wise Pagamentos"
+    "wise": "Wise"
   },
   "dashboard": {
     "title": "Painel de Controle",
@@ -953,18 +953,45 @@
     "features": "Recursos incluídos"
   },
   "wise": {
-    "title": "Wise Pagamentos",
-    "subtitle": "Pagamentos globais com as melhores taxas",
+    "title": "Wise",
+    "subtitle": "Pagamentos, câmbio e contas multi-moeda",
     "sandbox": "Ambiente de Testes",
     "production": "Produção",
     "notConfigured": "Wise não configurado",
     "balances": {
       "title": "Saldos",
       "subtitle": "Saldos em múltiplas moedas",
+      "new": "Novo saldo",
+      "newDescription": "Crie um saldo padrão ou uma jar (poupança) para organizar fundos.",
+      "currency": "Moeda",
+      "type": "Tipo",
+      "standard": "Saldo padrão",
+      "savings": "Poupança (Jar)",
+      "name": "Nome da poupança",
+      "namePlaceholder": "Ex: Reserva EUR",
+      "nameRequired": "Informe um nome para a poupança.",
       "available": "Disponível",
       "reserved": "Reservado",
       "total": "Total",
-      "noBalances": "Nenhum saldo disponível"
+      "noBalances": "Nenhum saldo disponível",
+      "created": "Saldo criado com sucesso",
+      "deleted": "Saldo removido com sucesso",
+      "confirmDelete": "Tem certeza que deseja remover este saldo?"
+    },
+    "exchange": {
+      "title": "Exchange",
+      "subtitle": "Converter saldo entre moedas usando sua conta Wise",
+      "from": "De",
+      "to": "Para",
+      "amount": "Valor",
+      "getQuote": "Simular conversão",
+      "receive": "Você recebe",
+      "execute": "Converter saldo",
+      "quoteReady": "Cotação pronta para conversão",
+      "quoteFailed": "Falha ao obter cotação de conversão",
+      "completed": "Conversão concluída",
+      "failed": "Falha ao converter saldo",
+      "noBalances": "Crie saldos para habilitar conversões entre moedas."
     },
     "transfers": {
       "title": "Transferências",
@@ -1039,6 +1066,20 @@
       "subtitle": "Histórico de transações",
       "filter": "Filtrar",
       "export": "Exportar",
+      "balance": "Saldo",
+      "balancePlaceholder": "Selecione um saldo",
+      "currency": "Moeda",
+      "start": "Início",
+      "end": "Fim",
+      "fetch": "Buscar extrato",
+      "date": "Data",
+      "type": "Tipo",
+      "amount": "Valor",
+      "fees": "Taxas",
+      "reference": "Referência",
+      "balanceAfter": "Saldo após",
+      "missingParams": "Informe saldo e período para buscar o extrato.",
+      "fetchFailed": "Falha ao buscar extrato Wise",
       "noHistory": "Nenhuma transação no histórico"
     },
     "errors": {
@@ -1046,7 +1087,9 @@
       "createFailed": "Falha ao criar",
       "deleteFailed": "Falha ao excluir",
       "transferFailed": "Falha na transferência",
-      "quoteFailed": "Falha ao obter cotação"
+      "quoteFailed": "Falha ao obter cotação",
+      "balanceCreateFailed": "Falha ao criar saldo",
+      "balanceDeleteFailed": "Falha ao remover saldo"
     },
     "success": {
       "transferCreated": "Transferência criada com sucesso",

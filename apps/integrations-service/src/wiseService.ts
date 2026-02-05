@@ -4,6 +4,7 @@
 
 import { wiseRequest, getWiseProfileId, isWiseSandbox } from './wiseClient.js';
 import { createLogger } from '@alice/logger';
+import crypto from 'crypto';
 
 // Logger padronizado (Regra 2 - Não Duplicar)
 const logger = createLogger('wise-service');
@@ -25,31 +26,28 @@ interface WiseProfile {
 interface WiseBalance {
   id: number;
   currency: string;
+  type: 'STANDARD' | 'SAVINGS';
+  name?: string | null;
+  investmentState?: 'NOT_INVESTED' | 'INVESTED' | 'DIVESTING' | 'UNKNOWN';
   amount: {
     value: number;
     currency: string;
   };
-  reservedAmount: {
+  reservedAmount?: {
     value: number;
     currency: string;
   };
-  bankDetails?: {
-    accountNumber?: string;
-    bankCode?: string;
-    iban?: string;
-    bic?: string;
+  cashAmount?: {
+    value: number;
+    currency: string;
   };
-}
-
-interface WiseBorderlessAccount {
-  id: number;
-  profileId: number;
-  recipientId: number;
-  creationTime: string;
-  modificationTime: string;
-  active: boolean;
-  eligible: boolean;
-  balances: WiseBalance[];
+  totalWorth?: {
+    value: number;
+    currency: string;
+  };
+  creationTime?: string;
+  modificationTime?: string;
+  visible?: boolean;
 }
 
 // Cotação
@@ -58,6 +56,9 @@ interface WiseQuoteRequest {
   targetCurrency: string;
   sourceAmount?: number;
   targetAmount?: number;
+  payOut?: 'BANK_TRANSFER' | 'BALANCE' | 'SWIFT' | 'SWIFT_OUR' | 'INTERAC' | null;
+  preferredPayIn?: 'BANK_TRANSFER' | 'BALANCE' | null;
+  targetAccount?: number;
 }
 
 interface WiseQuote {
@@ -68,8 +69,36 @@ interface WiseQuote {
   targetAmount: number;
   rate: number;
   fee: number;
-  formattedEstimatedDelivery: string;
-  expirationTime: string;
+  deliveryEstimate: string | null;
+  formattedEstimatedDelivery: string | null;
+  expirationTime: string | null;
+}
+
+interface WiseQuotePaymentOption {
+  payIn: string;
+  payOut: string;
+  disabled: boolean;
+  disabledReason?: { code?: string; message?: string };
+  fee?: {
+    transferwise?: number;
+    payIn?: number;
+    discount?: number;
+    partner?: number;
+    total?: number;
+  };
+  estimatedDelivery?: string;
+  formattedEstimatedDelivery?: string;
+}
+
+interface WiseQuoteApiResponse {
+  id: string;
+  sourceCurrency: string;
+  targetCurrency: string;
+  sourceAmount: number;
+  targetAmount: number;
+  rate: number;
+  rateExpirationTime?: string;
+  paymentOptions?: WiseQuotePaymentOption[];
 }
 
 // Destinatário
@@ -160,6 +189,58 @@ interface WiseExchangeRate {
   time: string;
 }
 
+interface WiseBalanceMovementRequest {
+  quoteId?: string;
+  sourceBalanceId?: number;
+  targetBalanceId?: number;
+  amount?: { value: number; currency: string };
+}
+
+interface WiseBalanceMovement {
+  id: number;
+  type: string;
+  state: string;
+  creationTime: string;
+  sourceAmount?: { value: number; currency: string };
+  targetAmount?: { value: number; currency: string };
+  rate?: number;
+  feeAmounts?: Array<{ value: number; currency: string }>;
+}
+
+interface WiseBalanceStatement {
+  type: string;
+  amount: { value: number; currency: string };
+  date: string;
+  note?: string;
+  totalFees?: { value: number; currency: string };
+  reference?: string;
+  runningBalance?: { value: number; currency: string };
+}
+
+interface WiseBalanceStatementResponse {
+  accountId: number;
+  currency: string;
+  intervalStart: string;
+  intervalEnd: string;
+  transactions: WiseBalanceStatement[];
+}
+
+interface WiseBalanceCapacity {
+  hasLimit: boolean;
+  depositLimit?: { amount: number; currency: string };
+}
+
+interface WiseTotalFunds {
+  totalWorth: { value: number; currency: string };
+  totalAvailable: { value: number; currency: string };
+  totalCash: { value: number; currency: string };
+  overdraft?: {
+    limit?: { value: number; currency: string };
+    used?: { value: number; currency: string };
+    available?: { value: number; currency: string };
+  };
+}
+
 // Classe de serviço Wise
 export class WiseService {
   // Obter perfis
@@ -169,39 +250,91 @@ export class WiseService {
   }
 
   // Obter saldos (conta multi-moeda)
-  async getBalances(): Promise<WiseBorderlessAccount> {
+  async getBalances(types: Array<'STANDARD' | 'SAVINGS'> = ['STANDARD', 'SAVINGS']): Promise<WiseBalance[]> {
     const profileId = getWiseProfileId();
     logger.info({ profileId }, 'Obtendo saldos Wise');
-    
-    const accounts = await wiseRequest<WiseBorderlessAccount[]>(
+
+    const typesParam = types.join(',');
+    return wiseRequest<WiseBalance[]>(
       'GET',
-      `/v1/borderless-accounts?profileId=${profileId}`
+      `/v4/profiles/${profileId}/balances?types=${typesParam}`
     );
-    
-    if (accounts.length === 0) {
-      throw new Error('Nenhuma conta borderless encontrada');
-    }
-    
-    return accounts[0];
   }
 
   // Obter saldo por moeda
   async getBalanceByCurrency(currency: string): Promise<WiseBalance | null> {
-    const account = await this.getBalances();
-    return account.balances.find(b => b.currency === currency) || null;
+    const balances = await this.getBalances();
+    return balances.find(b => b.currency === currency) || null;
+  }
+
+  async getBalanceById(balanceId: number): Promise<WiseBalance> {
+    const profileId = getWiseProfileId();
+    logger.info({ profileId, balanceId }, 'Obtendo saldo Wise');
+    return wiseRequest<WiseBalance>('GET', `/v4/profiles/${profileId}/balances/${balanceId}`);
+  }
+
+  async createBalance(request: { currency: string; type: 'STANDARD' | 'SAVINGS'; name?: string }): Promise<WiseBalance> {
+    const profileId = getWiseProfileId();
+    logger.info({ profileId, currency: request.currency, type: request.type }, 'Criando saldo Wise');
+    const idempotenceKey = crypto.randomUUID();
+    return wiseRequest<WiseBalance>(
+      'POST',
+      `/v4/profiles/${profileId}/balances`,
+      request,
+      { 'X-idempotence-uuid': idempotenceKey }
+    );
+  }
+
+  async deleteBalance(balanceId: number): Promise<WiseBalance> {
+    const profileId = getWiseProfileId();
+    logger.info({ profileId, balanceId }, 'Removendo saldo Wise');
+    return wiseRequest<WiseBalance>('DELETE', `/v4/profiles/${profileId}/balances/${balanceId}`);
   }
 
   // Criar cotação
   async createQuote(request: WiseQuoteRequest): Promise<WiseQuote> {
     const profileId = getWiseProfileId();
     logger.info({ profileId, ...request }, 'Criando cotação Wise');
-    
-    return wiseRequest<WiseQuote>('POST', `/v3/profiles/${profileId}/quotes`, {
+
+    const payload: Record<string, unknown> = {
       sourceCurrency: request.sourceCurrency,
       targetCurrency: request.targetCurrency,
-      sourceAmount: request.sourceAmount,
-      targetAmount: request.targetAmount,
-    });
+    };
+    if (request.sourceAmount !== undefined) payload.sourceAmount = request.sourceAmount;
+    if (request.targetAmount !== undefined) payload.targetAmount = request.targetAmount;
+    if (request.payOut !== undefined) payload.payOut = request.payOut;
+    if (request.preferredPayIn !== undefined) payload.preferredPayIn = request.preferredPayIn;
+    if (request.targetAccount !== undefined) payload.targetAccount = request.targetAccount;
+
+    const response = await wiseRequest<WiseQuoteApiResponse>('POST', `/v3/profiles/${profileId}/quotes`, payload);
+    const paymentOptions = response.paymentOptions || [];
+    const preferredPayIn = request.preferredPayIn ?? null;
+    const preferredPayOut = request.payOut ?? null;
+
+    const selectedOption = paymentOptions.find((option) => {
+      if (option.disabled) return false;
+      if (preferredPayIn && option.payIn !== preferredPayIn) return false;
+      if (preferredPayOut && option.payOut !== preferredPayOut) return false;
+      return true;
+    }) ?? paymentOptions.find((option) => !option.disabled) ?? paymentOptions[0];
+
+    const fee = selectedOption?.fee?.total
+      ?? selectedOption?.fee?.transferwise
+      ?? selectedOption?.fee?.payIn
+      ?? 0;
+
+    return {
+      id: response.id,
+      sourceCurrency: response.sourceCurrency,
+      targetCurrency: response.targetCurrency,
+      sourceAmount: response.sourceAmount,
+      targetAmount: response.targetAmount,
+      rate: response.rate,
+      fee,
+      deliveryEstimate: selectedOption?.estimatedDelivery ?? null,
+      formattedEstimatedDelivery: selectedOption?.formattedEstimatedDelivery ?? null,
+      expirationTime: response.rateExpirationTime ?? null,
+    };
   }
 
   // Obter taxas de câmbio
@@ -218,6 +351,51 @@ export class WiseService {
     }
     
     return rates[0];
+  }
+
+  async createBalanceMovement(request: WiseBalanceMovementRequest): Promise<WiseBalanceMovement> {
+    const profileId = getWiseProfileId();
+    logger.info({ profileId, request }, 'Executando movimento de saldo Wise');
+    const idempotenceKey = crypto.randomUUID();
+    return wiseRequest<WiseBalanceMovement>(
+      'POST',
+      `/v2/profiles/${profileId}/balance-movements`,
+      request,
+      { 'X-idempotence-uuid': idempotenceKey }
+    );
+  }
+
+  async getBalanceStatement(params: {
+    balanceId: number;
+    intervalStart: string;
+    intervalEnd: string;
+    currency: string;
+    type?: 'COMPACT' | 'FLAT';
+  }): Promise<WiseBalanceStatementResponse> {
+    const profileId = getWiseProfileId();
+    const query = new URLSearchParams({
+      currency: params.currency,
+      intervalStart: params.intervalStart,
+      intervalEnd: params.intervalEnd,
+      type: params.type ?? 'COMPACT',
+    });
+    logger.info({ profileId, balanceId: params.balanceId }, 'Obtendo extrato Wise');
+    return wiseRequest<WiseBalanceStatementResponse>(
+      'GET',
+      `/v1/profiles/${profileId}/balance-statements/${params.balanceId}/statement.json?${query.toString()}`
+    );
+  }
+
+  async getBalanceCapacity(currency: string): Promise<WiseBalanceCapacity> {
+    const profileId = getWiseProfileId();
+    logger.info({ profileId, currency }, 'Obtendo limite de depósito Wise');
+    return wiseRequest<WiseBalanceCapacity>('GET', `/v1/profiles/${profileId}/balance-capacity?currency=${currency}`);
+  }
+
+  async getTotalFunds(currency: string): Promise<WiseTotalFunds> {
+    const profileId = getWiseProfileId();
+    logger.info({ profileId, currency }, 'Obtendo total de fundos Wise');
+    return wiseRequest<WiseTotalFunds>('GET', `/v1/profiles/${profileId}/total-funds/${currency}`);
   }
 
   // Listar destinatários
@@ -304,7 +482,7 @@ export class WiseService {
     
     return wiseRequest<WiseBatchGroup>(
       'POST',
-      `/v1/profiles/${profileId}/batch-groups`,
+      `/v3/profiles/${profileId}/batch-groups`,
       request
     );
   }
@@ -330,8 +508,8 @@ export class WiseService {
     logger.info({ profileId, batchGroupId }, 'Completando batch group Wise');
     
     return wiseRequest<WiseBatchGroup>(
-      'PUT',
-      `/v1/profiles/${profileId}/batch-groups/${batchGroupId}/status`,
+      'PATCH',
+      `/v3/profiles/${profileId}/batch-groups/${batchGroupId}`,
       { status: 'COMPLETED', version }
     );
   }
@@ -343,7 +521,7 @@ export class WiseService {
     
     return wiseRequest<WiseBatchGroup>(
       'GET',
-      `/v1/profiles/${profileId}/batch-groups/${batchGroupId}`
+      `/v3/profiles/${profileId}/batch-groups/${batchGroupId}`
     );
   }
 
@@ -354,7 +532,7 @@ export class WiseService {
     
     return wiseRequest<WiseBatchGroup[]>(
       'GET',
-      `/v1/profiles/${profileId}/batch-groups`
+      `/v3/profiles/${profileId}/batch-groups`
     );
   }
 
@@ -392,13 +570,16 @@ export const wiseService = new WiseService();
 export type {
   WiseProfile,
   WiseBalance,
-  WiseBorderlessAccount,
   WiseQuote,
   WiseQuoteRequest,
   WiseRecipient,
   WiseRecipientRequest,
   WiseTransfer,
   WiseTransferRequest,
+  WiseBalanceMovement,
+  WiseBalanceStatementResponse,
+  WiseBalanceCapacity,
+  WiseTotalFunds,
   WiseBatchGroup,
   WiseBatchGroupRequest,
   WiseExchangeRate,

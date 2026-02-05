@@ -3464,6 +3464,10 @@ const numericIdParamSchema = z.object({
   id: z.string().regex(/^\d+$/, 'ID deve ser numérico').transform(Number).refine(n => n > 0, 'ID deve ser positivo'),
 });
 
+const balanceIdParamSchema = z.object({
+  balanceId: z.string().regex(/^\d+$/, 'balanceId deve ser numérico').transform(Number).refine(n => n > 0, 'balanceId deve ser positivo'),
+});
+
 // Schema para ID string (batch groups usam UUID) - reservado para uso futuro
 const _stringIdParamSchema = z.object({
   id: z.string().min(1).max(100),
@@ -3505,6 +3509,85 @@ const wiseRecipientsQuerySchema = z.object({
     .max(3, 'currency deve ter 3 caracteres')
     .regex(/^[A-Z]{3}$/, 'currency deve ser código de moeda válido')
     .optional(),
+});
+
+const wiseBalancesQuerySchema = z.object({
+  types: z.string()
+    .regex(/^[A-Z,]+$/, 'types deve conter apenas letras e vírgulas')
+    .optional(),
+});
+
+const wiseBalanceCreateSchema = z.object({
+  currency: z.string()
+    .min(3, 'currency deve ter 3 caracteres')
+    .max(3, 'currency deve ter 3 caracteres')
+    .regex(/^[A-Z]{3}$/, 'currency deve ser código de moeda válido'),
+  type: z.enum(['STANDARD', 'SAVINGS']),
+  name: z.string().min(1).max(100).optional(),
+}).superRefine((data, ctx) => {
+  if (data.type === 'SAVINGS' && !data.name) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'name é obrigatório para saldo SAVINGS', path: ['name'] });
+  }
+});
+
+const wiseBalanceStatementQuerySchema = z.object({
+  currency: z.string()
+    .min(3, 'currency deve ter 3 caracteres')
+    .max(3, 'currency deve ter 3 caracteres')
+    .regex(/^[A-Z]{3}$/, 'currency deve ser código de moeda válido'),
+  intervalStart: z.string().min(10, 'intervalStart inválido'),
+  intervalEnd: z.string().min(10, 'intervalEnd inválido'),
+  type: z.enum(['COMPACT', 'FLAT']).optional(),
+});
+
+const wiseBalanceMovementSchema = z.object({
+  quoteId: z.string().uuid().optional(),
+  sourceBalanceId: z.coerce.number().int().positive().optional(),
+  targetBalanceId: z.coerce.number().int().positive().optional(),
+  amount: z.object({
+    value: z.coerce.number().positive(),
+    currency: z.string().min(3).max(3).regex(/^[A-Z]{3}$/),
+  }).optional(),
+}).superRefine((data, ctx) => {
+  const hasQuote = Boolean(data.quoteId);
+  const hasAmount = Boolean(data.amount);
+  const hasBalances = Boolean(data.sourceBalanceId && data.targetBalanceId);
+  if (!hasQuote && !hasAmount) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'quoteId ou amount é obrigatório', path: ['quoteId'] });
+  }
+  if (hasAmount && !hasBalances) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'sourceBalanceId e targetBalanceId são obrigatórios com amount', path: ['sourceBalanceId'] });
+  }
+});
+
+const wiseCurrencyQuerySchema = z.object({
+  currency: z.string()
+    .min(3, 'currency deve ter 3 caracteres')
+    .max(3, 'currency deve ter 3 caracteres')
+    .regex(/^[A-Z]{3}$/, 'currency deve ser código de moeda válido'),
+});
+
+const wiseQuoteCreateSchema = z.object({
+  sourceCurrency: z.string()
+    .min(3, 'sourceCurrency deve ter 3 caracteres')
+    .max(3, 'sourceCurrency deve ter 3 caracteres')
+    .regex(/^[A-Z]{3}$/, 'sourceCurrency deve ser código de moeda válido'),
+  targetCurrency: z.string()
+    .min(3, 'targetCurrency deve ter 3 caracteres')
+    .max(3, 'targetCurrency deve ter 3 caracteres')
+    .regex(/^[A-Z]{3}$/, 'targetCurrency deve ser código de moeda válido'),
+  sourceAmount: z.coerce.number().positive().optional(),
+  targetAmount: z.coerce.number().positive().optional(),
+  payOut: z.enum(['BANK_TRANSFER', 'BALANCE', 'SWIFT', 'SWIFT_OUR', 'INTERAC']).optional(),
+  preferredPayIn: z.enum(['BANK_TRANSFER', 'BALANCE']).optional(),
+  targetAccount: z.coerce.number().int().positive().optional(),
+}).superRefine((data, ctx) => {
+  if (!data.sourceAmount && !data.targetAmount) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'sourceAmount ou targetAmount é obrigatório', path: ['sourceAmount'] });
+  }
+  if (data.sourceAmount && data.targetAmount) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Informe apenas sourceAmount ou targetAmount', path: ['targetAmount'] });
+  }
 });
 
 // Schema para requisitos de destinatário
@@ -3694,7 +3777,6 @@ app.post('/api/integrations/stripe/create-payment-intent', requirePermission('in
 
 // Validar secrets obrigatórios em produção (Regra 16 - Segurança Enterprise)
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
-const WISE_WEBHOOK_SECRET = process.env.WISE_WEBHOOK_SECRET;
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
 // STRIPE: Fail-fast se produção sem webhook secret
@@ -3703,12 +3785,7 @@ if (!STRIPE_WEBHOOK_SECRET && IS_PRODUCTION && stripe) {
   process.exit(1);
 }
 
-// WISE: Warning se produção sem webhook secret (webhooks desabilitados, API funciona)
-// CORREÇÃO 23/12/2025: WISE_WEBHOOK_SECRET só é gerado após primeiro deploy
-// O serviço deve funcionar sem webhook secret - apenas webhooks ficam desabilitados
-if (!WISE_WEBHOOK_SECRET && IS_PRODUCTION && isWiseConfigured()) {
-  logger.warn('WISE_WEBHOOK_SECRET não configurado - webhooks Wise desabilitados. Configure após primeiro deploy se necessário.');
-}
+// WISE: Webhooks usam assinatura RSA com chave pública oficial (docs Wise)
 
 // Função auxiliar para verificar idempotência de webhooks
 async function checkWebhookIdempotency(
@@ -4941,17 +5018,142 @@ app.get('/api/integrations/email/health', requirePermission('integrations:email:
 // ============================================================
 
 // Obter saldos multi-moeda
-app.get('/api/integrations/wise/balances', requirePermission('integrations:wise:read'), async (_req: Request, res: Response) => {
+app.get('/api/integrations/wise/balances', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
   if (!isWiseConfigured()) {
     return res.status(503).json({ error: 'Wise não configurado' });
   }
 
   try {
-    const account = await wiseService.getBalances();
-    res.json({ balances: account.balances, sandbox: wiseService.isSandboxMode() });
+    const queryResult = wiseBalancesQuerySchema.safeParse(req.query);
+    if (!queryResult.success) {
+      logger.warn({ errors: queryResult.error.flatten() }, 'Input inválido em /api/integrations/wise/balances');
+      return res.status(400).json({ error: 'Parâmetros inválidos', details: queryResult.error.format() });
+    }
+
+    const types = queryResult.data.types
+      ? queryResult.data.types.split(',').map((value) => value.trim()).filter(Boolean) as Array<'STANDARD' | 'SAVINGS'>
+      : ['STANDARD', 'SAVINGS'];
+    const allowedTypes = ['STANDARD', 'SAVINGS'] as const;
+    if (types.some((type) => !allowedTypes.includes(type))) {
+      return res.status(400).json({ error: 'Tipos inválidos. Use STANDARD e/ou SAVINGS.' });
+    }
+
+    const balances = await wiseService.getBalances(types);
+    res.json({ balances, sandbox: wiseService.isSandboxMode() });
   } catch (error) {
     logger.error({ error }, 'Falha ao obter saldos Wise');
     res.status(500).json({ error: 'Falha ao obter saldos' });
+  }
+});
+
+// Criar saldo
+app.post('/api/integrations/wise/balances', requirePermission('integrations:wise:write'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+
+  const parsed = wiseBalanceCreateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
+  }
+
+  try {
+    const balance = await wiseService.createBalance(parsed.data);
+    res.json({ balance });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao criar saldo Wise');
+    res.status(500).json({ error: 'Falha ao criar saldo' });
+  }
+});
+
+// Remover saldo
+app.delete('/api/integrations/wise/balances/:balanceId', requirePermission('integrations:wise:delete'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+
+  const parsed = balanceIdParamSchema.safeParse(req.params);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'balanceId inválido', details: parsed.error.format() });
+  }
+
+  try {
+    const balance = await wiseService.deleteBalance(parsed.data.balanceId);
+    res.json({ balance });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao remover saldo Wise');
+    res.status(500).json({ error: 'Falha ao remover saldo' });
+  }
+});
+
+// Extrato de saldo
+app.get('/api/integrations/wise/balances/:balanceId/statement', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+
+  const balanceParsed = balanceIdParamSchema.safeParse(req.params);
+  if (!balanceParsed.success) {
+    return res.status(400).json({ error: 'balanceId inválido', details: balanceParsed.error.format() });
+  }
+
+  const queryParsed = wiseBalanceStatementQuerySchema.safeParse(req.query);
+  if (!queryParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: queryParsed.error.format() });
+  }
+
+  try {
+    const statement = await wiseService.getBalanceStatement({
+      balanceId: balanceParsed.data.balanceId,
+      currency: queryParsed.data.currency,
+      intervalStart: queryParsed.data.intervalStart,
+      intervalEnd: queryParsed.data.intervalEnd,
+      type: queryParsed.data.type,
+    });
+    res.json({ statement });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter extrato Wise');
+    res.status(500).json({ error: 'Falha ao obter extrato' });
+  }
+});
+
+// Limite de depósito
+app.get('/api/integrations/wise/balance-capacity', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+
+  const queryParsed = wiseCurrencyQuerySchema.safeParse(req.query);
+  if (!queryParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: queryParsed.error.format() });
+  }
+
+  try {
+    const capacity = await wiseService.getBalanceCapacity(queryParsed.data.currency);
+    res.json({ capacity });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter limite de depósito Wise');
+    res.status(500).json({ error: 'Falha ao obter limite de depósito' });
+  }
+});
+
+// Total de fundos
+app.get('/api/integrations/wise/total-funds', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+
+  const queryParsed = wiseCurrencyQuerySchema.safeParse(req.query);
+  if (!queryParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: queryParsed.error.format() });
+  }
+
+  try {
+    const total = await wiseService.getTotalFunds(queryParsed.data.currency);
+    res.json({ total });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter total de fundos Wise');
+    res.status(500).json({ error: 'Falha ao obter total de fundos' });
   }
 });
 
@@ -4985,19 +5187,72 @@ app.post('/api/integrations/wise/quotes', requirePermission('integrations:wise:w
     return res.status(503).json({ error: 'Wise não configurado' });
   }
 
-  const { sourceCurrency, targetCurrency, sourceAmount, targetAmount } = req.body;
+  const parsed = wiseQuoteCreateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
+  }
 
   try {
     const quote = await wiseService.createQuote({
-      sourceCurrency,
-      targetCurrency,
-      sourceAmount,
-      targetAmount,
+      sourceCurrency: parsed.data.sourceCurrency,
+      targetCurrency: parsed.data.targetCurrency,
+      sourceAmount: parsed.data.sourceAmount,
+      targetAmount: parsed.data.targetAmount,
+      payOut: parsed.data.payOut,
+      preferredPayIn: parsed.data.preferredPayIn,
+      targetAccount: parsed.data.targetAccount,
     });
     res.json({ quote });
   } catch (error) {
     logger.error({ error }, 'Falha ao criar cotação Wise');
     res.status(500).json({ error: 'Falha ao criar cotação' });
+  }
+});
+
+// Criar cotação para conversão de saldo
+app.post('/api/integrations/wise/balance-quotes', requirePermission('integrations:wise:write'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+
+  const parsed = wiseQuoteCreateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
+  }
+
+  try {
+    const quote = await wiseService.createQuote({
+      sourceCurrency: parsed.data.sourceCurrency,
+      targetCurrency: parsed.data.targetCurrency,
+      sourceAmount: parsed.data.sourceAmount,
+      targetAmount: parsed.data.targetAmount,
+      payOut: 'BALANCE',
+      preferredPayIn: 'BALANCE',
+    });
+    res.json({ quote });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao criar cotação de conversão Wise');
+    res.status(500).json({ error: 'Falha ao criar cotação de conversão' });
+  }
+});
+
+// Executar conversão ou movimento de saldo
+app.post('/api/integrations/wise/balance-movements', requirePermission('integrations:wise:write'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+
+  const parsed = wiseBalanceMovementSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
+  }
+
+  try {
+    const movement = await wiseService.createBalanceMovement(parsed.data);
+    res.json({ movement });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao executar movimento de saldo Wise');
+    res.status(500).json({ error: 'Falha ao executar movimento de saldo' });
   }
 });
 
@@ -5314,14 +5569,7 @@ app.post('/api/integrations/wise/webhook', async (req: Request, res: Response) =
   }
 
   // CRÍTICO: Validar assinatura ANTES de responder (não depois!)
-  const webhookSecret = WISE_WEBHOOK_SECRET;
-  if (!webhookSecret) {
-    logger.error({ deliveryId }, 'Webhook Wise: WISE_WEBHOOK_SECRET não configurado');
-    res.status(500).json({ error: 'Webhook secret not configured' });
-    return;
-  }
-
-  const validation = validateWiseWebhook(signature, payload, webhookSecret);
+  const validation = validateWiseWebhook(signature, payload);
   if (!validation.valid) {
     logger.warn({ 
       deliveryId, 

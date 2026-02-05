@@ -82,7 +82,7 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `STRIPE_WEBHOOK_BASE_URL` | Base URL para webhooks Stripe | ⚠️ |
 | `WISE_API_KEY` | Wise API | ✅ |
 | `WISE_PROFILE_ID` | Wise Profile ID | ✅ |
-| `WISE_WEBHOOK_SECRET` | Wise Webhook | ⚠️ |
+| `WISE_WEBHOOK_PUBLIC_KEY` | Wise Webhook Public Key (override) | ⚠️ |
 | `WISE_SANDBOX` | Wise Sandbox (`true`/`false`) | ⚠️ |
 | `TWILIO_ACCOUNT_SID` | Twilio Account SID | ✅ |
 | `TWILIO_AUTH_TOKEN` | Twilio Auth Token | ✅ |

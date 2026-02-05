@@ -611,12 +611,6 @@ else
   STRIPE_WEBHOOK_BASE_URL="${STRIPE_WEBHOOK_BASE_URL_SECRET}"
 fi
 
-if [ -z "${WISE_WEBHOOK_SECRET_SECRET:-}" ]; then
-  WISE_WEBHOOK_SECRET=""
-else
-  WISE_WEBHOOK_SECRET="${WISE_WEBHOOK_SECRET_SECRET}"
-fi
-
 if [ -z "${WISE_SANDBOX_SECRET:-}" ]; then
   WISE_SANDBOX="false"
 else
@@ -884,7 +878,6 @@ echo "📄 Gerando arquivo .env.prod..."
   printf '# Wise\n'
   printf 'WISE_API_KEY=%s\n' "${WISE_API_KEY:-}"
   printf 'WISE_PROFILE_ID=%s\n' "${WISE_PROFILE_ID:-}"
-  printf 'WISE_WEBHOOK_SECRET=%s\n' "${WISE_WEBHOOK_SECRET}"
   printf 'WISE_SANDBOX=%s\n' "${WISE_SANDBOX}"
   printf '\n'
 
