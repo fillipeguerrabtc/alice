@@ -59,6 +59,14 @@ export default function Settings() {
   });
   const [biometricStatus, setBiometricStatus] = useState<{ enrolled: boolean; lastVerifiedAt?: string | null } | null>(null);
   const [biometricLoading, setBiometricLoading] = useState(false);
+  const [biometricCaptureStep, setBiometricCaptureStep] = useState(0);
+  const [biometricEnrollPending, setBiometricEnrollPending] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
+  const maxBiometricCaptures = 3;
 
   useEffect(() => {
     setProfileForm({
@@ -85,6 +93,13 @@ export default function Settings() {
       .catch(() => setBiometricStatus(null))
       .finally(() => setBiometricLoading(false));
   }, [activeTab, user?.id]);
+
+  useEffect(() => {
+    if (activeTab !== 'security') {
+      setBiometricCaptureStep(0);
+      setBiometricEnrollPending(false);
+    }
+  }, [activeTab]);
 
   const updateProfile = useMutation({
     mutationFn: async (payload: UpdateUserPayload) => {
@@ -165,6 +180,89 @@ export default function Settings() {
         });
       },
     });
+  };
+
+  const handleBiometricCapture = async (imageBase64: string) => {
+    if (biometricEnrollPending) return;
+    try {
+      setBiometricEnrollPending(true);
+      const captureMode = biometricCaptureStep === 0 ? 'replace' : 'append';
+      await apiRequest('POST', '/api/auth/biometrics/enroll', { imageBase64, captureMode });
+      const nextStep = biometricCaptureStep + 1;
+      if (nextStep < maxBiometricCaptures) {
+        setBiometricCaptureStep(nextStep);
+        toast({
+          title: 'Captura registrada',
+          description: `Agora faça a captura ${nextStep + 1} de ${maxBiometricCaptures}.`,
+        });
+      } else {
+        setBiometricCaptureStep(0);
+        toast({
+          title: 'Biometria cadastrada',
+          description: 'Sua biometria foi registrada com sucesso.',
+        });
+        const statusResponse = await apiRequest('POST', '/api/auth/biometrics/status');
+        const statusData = await statusResponse.json();
+        setBiometricStatus(statusData);
+      }
+    } catch (error) {
+      toast({
+        title: 'Falha ao cadastrar biometria',
+        description: error instanceof Error ? error.message : 'Não foi possível cadastrar.',
+        variant: 'destructive',
+      });
+    } finally {
+      setBiometricEnrollPending(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    const currentPassword = passwordForm.currentPassword.trim();
+    const newPassword = passwordForm.newPassword.trim();
+    const confirmPassword = passwordForm.confirmPassword.trim();
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      toast({
+        title: 'Preencha todos os campos',
+        description: 'Informe senha atual, nova senha e confirmação.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (newPassword.length < 8) {
+      toast({
+        title: 'Senha muito curta',
+        description: 'A nova senha deve ter no mínimo 8 caracteres.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast({
+        title: 'Confirmação inválida',
+        description: 'A nova senha e a confirmação devem ser iguais.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      await apiRequest('POST', '/api/auth/change-password', {
+        currentPassword,
+        newPassword,
+      });
+      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      toast({
+        title: 'Senha atualizada',
+        description: 'Sua senha foi alterada com sucesso.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Falha ao atualizar senha',
+        description: error instanceof Error ? error.message : 'Não foi possível alterar a senha.',
+        variant: 'destructive',
+      });
+    }
   };
 
   const tabs = [
@@ -346,6 +444,12 @@ export default function Settings() {
                   <p className="text-sm text-muted-foreground mb-3">
                     Cadastre sua biometria para login e aprovações com segurança adicional.
                   </p>
+                  <ul className="text-xs text-muted-foreground mb-3 list-disc pl-4 space-y-1">
+                    <li>Fique de frente para a câmera com boa iluminação (sem sombras fortes).</li>
+                    <li>Centralize o rosto e mantenha distância de 40–60 cm.</li>
+                    <li>Remova óculos escuros, bonés ou acessórios que escondam o rosto.</li>
+                    <li>Serão feitas 3 capturas: frontal, leve inclinação à esquerda e à direita.</li>
+                  </ul>
                   {biometricLoading ? (
                     <p className="text-xs text-muted-foreground">Carregando status da biometria...</p>
                   ) : biometricStatus?.enrolled ? (
@@ -355,39 +459,57 @@ export default function Settings() {
                   ) : (
                     <p className="text-xs text-muted-foreground">Biometria não cadastrada.</p>
                   )}
+                  {biometricCaptureStep > 0 && (
+                    <p className="text-xs text-amber-600 mt-2">
+                      Captura {biometricCaptureStep + 1} de {maxBiometricCaptures}: ajuste levemente o ângulo do rosto.
+                    </p>
+                  )}
                   <div className="mt-3">
                     <BiometricCapture
-                      onCapture={async (imageBase64) => {
-                        try {
-                          await apiRequest('POST', '/api/auth/biometrics/enroll', { imageBase64 });
-                          toast({
-                            title: 'Biometria cadastrada',
-                            description: 'Sua biometria foi registrada com sucesso.',
-                          });
-                          const statusResponse = await apiRequest('POST', '/api/auth/biometrics/status');
-                          const statusData = await statusResponse.json();
-                          setBiometricStatus(statusData);
-                        } catch (error) {
-                          toast({
-                            title: 'Falha ao cadastrar biometria',
-                            description: error instanceof Error ? error.message : 'Não foi possível cadastrar.',
-                            variant: 'destructive',
-                          });
-                        }
-                      }}
+                      autoStart={false}
+                      onCapture={handleBiometricCapture}
                       onError={(message) => {
                         toast({ title: 'Falha na câmera', description: message, variant: 'destructive' });
                       }}
                     />
                   </div>
                 </div>
-                <div>
-                  <h4 className="font-medium mb-2">{t('settings.security')}</h4>
-                  <p className="text-sm text-muted-foreground mb-3">
-                    {t('settings.general')}
+                <div className="pt-4 border-t space-y-3">
+                  <h4 className="font-medium">Alterar senha</h4>
+                  <p className="text-sm text-muted-foreground">
+                    Atualize sua senha local com segurança.
                   </p>
-                  <Button variant="outline" data-testid="button-enable-2fa">
-                    {t('common.confirm')}
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div>
+                      <label className="text-sm font-medium">Senha atual</label>
+                      <Input
+                        type="password"
+                        value={passwordForm.currentPassword}
+                        onChange={(event) => setPasswordForm((prev) => ({ ...prev, currentPassword: event.target.value }))}
+                        className="mt-1"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium">Nova senha</label>
+                      <Input
+                        type="password"
+                        value={passwordForm.newPassword}
+                        onChange={(event) => setPasswordForm((prev) => ({ ...prev, newPassword: event.target.value }))}
+                        className="mt-1"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="text-sm font-medium">Confirmar nova senha</label>
+                      <Input
+                        type="password"
+                        value={passwordForm.confirmPassword}
+                        onChange={(event) => setPasswordForm((prev) => ({ ...prev, confirmPassword: event.target.value }))}
+                        className="mt-1"
+                      />
+                    </div>
+                  </div>
+                  <Button variant="outline" onClick={handleChangePassword} data-testid="button-change-password">
+                    Atualizar senha
                   </Button>
                 </div>
                 <div className="pt-4 border-t">

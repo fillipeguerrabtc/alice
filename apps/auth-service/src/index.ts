@@ -2066,6 +2066,7 @@ const verifyPasswordRateLimiter = rateLimit({
 
 const biometricsImageSchema = z.object({
   imageBase64: z.string().min(100),
+  captureMode: z.enum(['replace', 'append']).optional(),
 });
 
 const biometricsLoginSchema = z.object({
@@ -2081,6 +2082,11 @@ const biometricsVerifySchema = z.object({
 
 const verifyPasswordSchema = z.object({
   password: z.string().min(1, 'Senha é obrigatória'),
+});
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'Senha atual é obrigatória'),
+  newPassword: z.string().min(8, 'Nova senha deve ter no mínimo 8 caracteres').max(200),
 });
 
 async function callBiometricsService<T>(endpoint: string, body: Record<string, unknown>): Promise<T> {
@@ -2154,6 +2160,40 @@ app.post('/api/auth/verify-password', requireAuth(), verifyPasswordRateLimiter, 
   }
 });
 
+app.post('/api/auth/change-password', requireAuth(), verifyPasswordRateLimiter, async (req: Request, res: Response) => {
+  const parsed = changePasswordSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
+  }
+  try {
+    const auth = req.user as AuthContext;
+    const db = getDatabase();
+    const dbUser = await db.query.users.findFirst({
+      where: eq(schema.users.id, auth.userId),
+      columns: { passwordHash: true },
+    });
+    if (!dbUser?.passwordHash) {
+      return res.status(400).json({ error: 'Usuário não possui senha local cadastrada.' });
+    }
+    const valid = await bcrypt.compare(parsed.data.currentPassword, dbUser.passwordHash);
+    if (!valid) {
+      return res.status(401).json({ error: 'Senha atual incorreta' });
+    }
+    if (parsed.data.currentPassword === parsed.data.newPassword) {
+      return res.status(400).json({ error: 'A nova senha deve ser diferente da atual.' });
+    }
+    const newHash = await bcrypt.hash(parsed.data.newPassword, 12);
+    await db.update(schema.users)
+      .set({ passwordHash: newHash, updatedAt: new Date() })
+      .where(eq(schema.users.id, auth.userId));
+    res.json({ success: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: message }, 'Falha ao alterar senha');
+    res.status(500).json({ error: message });
+  }
+});
+
 app.post('/api/auth/biometrics/login', biometricsLoginRateLimiter, async (req: Request, res: Response) => {
   const parsed = biometricsLoginSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -2221,6 +2261,7 @@ app.post('/api/auth/biometrics/enroll', requireAuth(), async (req: Request, res:
       userId: auth.userId,
       tenantId: auth.tenantId,
       imageBase64: parsed.data.imageBase64,
+      captureMode: parsed.data.captureMode,
     });
     res.json(result);
   } catch (error) {

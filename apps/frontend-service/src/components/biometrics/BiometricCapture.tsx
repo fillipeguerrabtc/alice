@@ -14,7 +14,7 @@ type BiometricCaptureProps = {
   autoStart?: boolean;
 };
 
-export function BiometricCapture({ onCapture, onError, autoStart = true }: BiometricCaptureProps) {
+export function BiometricCapture({ onCapture, onError, autoStart = false }: BiometricCaptureProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const isMountedRef = useRef(true);
@@ -38,7 +38,13 @@ export function BiometricCapture({ onCapture, onError, autoStart = true }: Biome
 
   const startStream = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: 'user',
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+      });
       if (!isMountedRef.current || !videoRef.current) {
         stream.getTracks().forEach((track) => track.stop());
         return;
@@ -91,7 +97,9 @@ export function BiometricCapture({ onCapture, onError, autoStart = true }: Biome
   return (
     <Card className="p-3 space-y-3">
       <div className="flex justify-center">
-        <video ref={videoRef} className="h-48 w-full rounded-md bg-black object-cover" />
+        <div className="w-full max-w-2xl aspect-video overflow-hidden rounded-md bg-black">
+          <video ref={videoRef} className="h-full w-full object-contain" />
+        </div>
         <canvas ref={canvasRef} className="hidden" />
       </div>
       <div className="flex items-center justify-between gap-2">

@@ -59,6 +59,7 @@ def parse_rate_limit(raw: str, fallback: int) -> int:
 MATCH_THRESHOLD = parse_threshold(BIOMETRICS_MATCH_THRESHOLD)
 VERIFY_RATE_LIMIT = parse_rate_limit(BIOMETRICS_VERIFY_RATE_LIMIT, 5)
 ENROLL_RATE_LIMIT = parse_rate_limit(BIOMETRICS_ENROLL_RATE_LIMIT, 3)
+MAX_ACTIVE_EMBEDDINGS = 3
 
 def decode_encryption_key(raw: str) -> bytes:
   cleaned = raw.strip()
@@ -80,6 +81,7 @@ class EnrollRequest(BaseModel):
   userId: str = Field(..., min_length=36)
   tenantId: str = Field(..., min_length=36)
   imageBase64: str
+  captureMode: Optional[str] = None
   metadata: Optional[dict[str, Any]] = None
 
 class VerifyRequest(BaseModel):
@@ -294,6 +296,9 @@ async def enroll(
 
       encrypted = encrypt_embedding(embedding)
       embedding_hash = hashlib.sha256(embedding.tobytes()).hexdigest()
+      capture_mode = (payload.captureMode or "replace").strip().lower()
+      if capture_mode not in ("replace", "append"):
+        raise HTTPException(status_code=400, detail="Modo de captura inválido.")
 
       async with db.transaction():
         profile = await db.fetchrow(
@@ -310,10 +315,11 @@ async def enroll(
         )
         profile_id = profile["id"]
 
-        await db.execute(
-          "UPDATE biometric_embeddings SET is_active = false WHERE profile_id = $1",
-          profile_id,
-        )
+        if capture_mode == "replace":
+          await db.execute(
+            "UPDATE biometric_embeddings SET is_active = false WHERE profile_id = $1",
+            profile_id,
+          )
 
         await db.execute(
           """
@@ -325,6 +331,25 @@ async def enroll(
           encrypted,
           embedding_hash,
           "face_recognition_128d",
+        )
+
+        await db.execute(
+          """
+          UPDATE biometric_embeddings
+          SET is_active = false
+          WHERE profile_id = $1
+            AND is_active = true
+            AND id IN (
+              SELECT id
+              FROM biometric_embeddings
+              WHERE profile_id = $1
+                AND is_active = true
+              ORDER BY created_at DESC
+              OFFSET $2
+            )
+          """,
+          profile_id,
+          MAX_ACTIVE_EMBEDDINGS,
         )
 
         await record_verification_attempt(
@@ -404,11 +429,9 @@ async def verify(
 
       record = await db.fetchrow(
         """
-        SELECT p.id AS profile_id, e.embedding
+        SELECT p.id AS profile_id
         FROM biometric_profiles p
-        JOIN biometric_embeddings e ON e.profile_id = p.id
-        WHERE p.user_id = $1 AND p.tenant_id = $2 AND p.status = 'active' AND e.is_active = true
-        ORDER BY e.created_at DESC
+        WHERE p.user_id = $1 AND p.tenant_id = $2 AND p.status = 'active'
         LIMIT 1
         """,
         payload.userId,
@@ -431,9 +454,39 @@ async def verify(
         )
         raise HTTPException(status_code=404, detail="Biometria não cadastrada.")
 
-      stored_embedding = np.array(record["embedding"], dtype=np.float32)
-      distance = float(face_recognition.face_distance([stored_embedding], embedding)[0])
-      match = distance <= MATCH_THRESHOLD
+      embeddings_rows = await db.fetch(
+        """
+        SELECT embedding
+        FROM biometric_embeddings
+        WHERE profile_id = $1 AND is_active = true
+        ORDER BY created_at DESC
+        """,
+        record["profile_id"],
+      )
+      if not embeddings_rows:
+        await record_verification_attempt(
+          db,
+          record["profile_id"],
+          payload.tenantId,
+          payload.userId,
+          payload.actionType,
+          "failed",
+          None,
+          MATCH_THRESHOLD,
+          x_forwarded_for,
+          user_agent,
+          payload.actionContext,
+          "Biometria não cadastrada.",
+        )
+        raise HTTPException(status_code=404, detail="Biometria não cadastrada.")
+
+      stored_embeddings = [
+        np.array(row["embedding"], dtype=np.float32)
+        for row in embeddings_rows
+      ]
+      distances = face_recognition.face_distance(stored_embeddings, embedding)
+      min_distance = float(np.min(distances))
+      match = min_distance <= MATCH_THRESHOLD
 
       await record_verification_attempt(
         db,
@@ -442,7 +495,7 @@ async def verify(
         payload.userId,
         payload.actionType,
         "success" if match else "failed",
-        distance,
+        min_distance,
         MATCH_THRESHOLD,
         x_forwarded_for,
         user_agent,
@@ -456,7 +509,7 @@ async def verify(
           record["profile_id"],
         )
 
-      return match, distance, record["profile_id"]
+      return match, min_distance, record["profile_id"]
 
     match, distance, profile_id = await with_rate_limit_lock(
       db,

@@ -221,6 +221,7 @@ export const authServicePaths = {
               required: ['imageBase64'],
               properties: {
                 imageBase64: { type: 'string' },
+                captureMode: { type: 'string', enum: ['replace', 'append'] },
               },
             },
           },
@@ -289,6 +290,32 @@ export const authServicePaths = {
       },
       responses: {
         200: { description: 'Senha validada' },
+        401: { $ref: '#/components/responses/Unauthorized' },
+        429: { $ref: '#/components/responses/RateLimited' },
+      },
+    },
+  },
+  '/api/auth/change-password': {
+    post: {
+      summary: 'Alterar senha do usuário autenticado',
+      tags: ['Auth'],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['currentPassword', 'newPassword'],
+              properties: {
+                currentPassword: { type: 'string', format: 'password' },
+                newPassword: { type: 'string', format: 'password', minLength: 8 },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Senha atualizada' },
         401: { $ref: '#/components/responses/Unauthorized' },
         429: { $ref: '#/components/responses/RateLimited' },
       },
