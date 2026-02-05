@@ -530,11 +530,10 @@ if (!sessionSecret && nodeEnv === 'development') {
 }
 
 if (nodeEnv === 'production' && (!BIOMETRICS_SERVICE_URL || !INTERNAL_API_SECRET)) {
-  logger.error({
+  logger.warn({
     BIOMETRICS_SERVICE_URL: BIOMETRICS_SERVICE_URL ? '[SET]' : '[NOT SET]',
     INTERNAL_API_SECRET: INTERNAL_API_SECRET ? '[SET]' : '[NOT SET]',
-  }, 'BIOMETRICS_SERVICE_URL e INTERNAL_API_SECRET são obrigatórios em produção para biometria.');
-  process.exit(1);
+  }, 'Biometria não configurada em produção. Login e aprovações por biometria ficarão indisponíveis.');
 }
 
 try {

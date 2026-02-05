@@ -165,6 +165,20 @@ async def rate_limit_check(
   if count and count >= max_requests:
     raise HTTPException(status_code=429, detail="Limite de tentativas excedido. Tente novamente mais tarde.")
 
+async def with_rate_limit_lock(
+  conn: asyncpg.Connection,
+  tenant_id: str,
+  user_id: str,
+  action_type: str,
+  handler,
+) -> Any:
+  lock_key = f"{tenant_id}:{user_id}:{action_type}"
+  await conn.execute("SELECT pg_advisory_lock(hashtext($1))", lock_key)
+  try:
+    return await handler()
+  finally:
+    await conn.execute("SELECT pg_advisory_unlock(hashtext($1))", lock_key)
+
 @app.get("/health")
 async def health() -> dict[str, str]:
   return {"status": "ok"}
@@ -210,21 +224,22 @@ async def enroll(
   ensure_internal_auth(x_internal_api_secret)
   conn = await init_pool()
   async with conn.acquire() as db:
-    await rate_limit_check(
-      db,
-      payload.userId,
-      action_type="enroll",
-      window_seconds=86400,
-      max_requests=ENROLL_RATE_LIMIT,
-    )
+    async def handle_enroll():
+      await rate_limit_check(
+        db,
+        payload.userId,
+        action_type="enroll",
+        window_seconds=86400,
+        max_requests=ENROLL_RATE_LIMIT,
+      )
 
-    image = decode_image(payload.imageBase64)
-    embedding = extract_embedding(image)
-    encrypted = encrypt_embedding(embedding)
-    embedding_hash = hashlib.sha256(embedding.tobytes()).hexdigest()
+      image = decode_image(payload.imageBase64)
+      embedding = extract_embedding(image)
+      encrypted = encrypt_embedding(embedding)
+      embedding_hash = hashlib.sha256(embedding.tobytes()).hexdigest()
 
-    async with db.transaction():
-      profile = await db.fetchrow(
+      async with db.transaction():
+        profile = await db.fetchrow(
         """
         INSERT INTO biometric_profiles (tenant_id, user_id, status, metadata)
         VALUES ($1, $2, 'active', COALESCE($3::jsonb, '{}'::jsonb))
@@ -235,36 +250,45 @@ async def enroll(
         payload.tenantId,
         payload.userId,
         payload.metadata,
-      )
-      profile_id = profile["id"]
+        )
+        profile_id = profile["id"]
 
-      await db.execute(
-        "UPDATE biometric_embeddings SET is_active = false WHERE profile_id = $1",
-        profile_id,
-      )
+        await db.execute(
+          "UPDATE biometric_embeddings SET is_active = false WHERE profile_id = $1",
+          profile_id,
+        )
 
-      await db.execute(
-        """
-        INSERT INTO biometric_embeddings (profile_id, embedding, embedding_encrypted, embedding_hash, model, is_active)
-        VALUES ($1, $2, $3, $4, $5, true)
-        """,
-        profile_id,
-        embedding.tolist(),
-        encrypted,
-        embedding_hash,
-        "face_recognition_128d",
-      )
+        await db.execute(
+          """
+          INSERT INTO biometric_embeddings (profile_id, embedding, embedding_encrypted, embedding_hash, model, is_active)
+          VALUES ($1, $2, $3, $4, $5, true)
+          """,
+          profile_id,
+          embedding.tolist(),
+          encrypted,
+          embedding_hash,
+          "face_recognition_128d",
+        )
 
-      await db.execute(
-        """
-        INSERT INTO biometric_verifications
-        (profile_id, tenant_id, user_id, action_type, status, score, threshold, ip, user_agent, context)
-        VALUES ($1, $2, $3, 'enroll', 'success', NULL, NULL, NULL, NULL, '{}'::jsonb)
-        """,
-        profile_id,
-        payload.tenantId,
-        payload.userId,
-      )
+        await db.execute(
+          """
+          INSERT INTO biometric_verifications
+          (profile_id, tenant_id, user_id, action_type, status, score, threshold, ip, user_agent, context)
+          VALUES ($1, $2, $3, 'enroll', 'success', NULL, NULL, NULL, NULL, '{}'::jsonb)
+          """,
+          profile_id,
+          payload.tenantId,
+          payload.userId,
+        )
+      return profile_id
+
+    profile_id = await with_rate_limit_lock(
+      db,
+      payload.tenantId,
+      payload.userId,
+      "enroll",
+      handle_enroll,
+    )
 
   return {
     "profileId": str(profile_id),
@@ -282,18 +306,19 @@ async def verify(
   ensure_internal_auth(x_internal_api_secret)
   conn = await init_pool()
   async with conn.acquire() as db:
-    await rate_limit_check(
-      db,
-      payload.userId,
-      action_type=payload.actionType,
-      window_seconds=60,
-      max_requests=VERIFY_RATE_LIMIT,
-    )
+    async def handle_verify():
+      await rate_limit_check(
+        db,
+        payload.userId,
+        action_type=payload.actionType,
+        window_seconds=60,
+        max_requests=VERIFY_RATE_LIMIT,
+      )
 
-    image = decode_image(payload.imageBase64)
-    embedding = extract_embedding(image)
+      image = decode_image(payload.imageBase64)
+      embedding = extract_embedding(image)
 
-    record = await db.fetchrow(
+      record = await db.fetchrow(
       """
       SELECT p.id AS profile_id, e.embedding
       FROM biometric_profiles p
@@ -304,42 +329,52 @@ async def verify(
       """,
       payload.userId,
       payload.tenantId,
-    )
-    if not record:
-      raise HTTPException(status_code=404, detail="Biometria não cadastrada.")
+      )
+      if not record:
+        raise HTTPException(status_code=404, detail="Biometria não cadastrada.")
 
-    stored_embedding = np.array(record["embedding"], dtype=np.float32)
-    distance = float(face_recognition.face_distance([stored_embedding], embedding)[0])
-    match = distance <= MATCH_THRESHOLD
+      stored_embedding = np.array(record["embedding"], dtype=np.float32)
+      distance = float(face_recognition.face_distance([stored_embedding], embedding)[0])
+      match = distance <= MATCH_THRESHOLD
 
-    await db.execute(
-      """
-      INSERT INTO biometric_verifications
-      (profile_id, tenant_id, user_id, action_type, status, score, threshold, ip, user_agent, context)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10::jsonb, '{}'::jsonb))
-      """,
-      record["profile_id"],
+      await db.execute(
+        """
+        INSERT INTO biometric_verifications
+        (profile_id, tenant_id, user_id, action_type, status, score, threshold, ip, user_agent, context)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10::jsonb, '{}'::jsonb))
+        """,
+        record["profile_id"],
+        payload.tenantId,
+        payload.userId,
+        payload.actionType,
+        "success" if match else "failed",
+        distance,
+        MATCH_THRESHOLD,
+        x_forwarded_for,
+        user_agent,
+        payload.actionContext,
+      )
+
+      if match:
+        await db.execute(
+          "UPDATE biometric_profiles SET last_verified_at = NOW(), updated_at = NOW() WHERE id = $1",
+          record["profile_id"],
+        )
+
+      return match, distance, record["profile_id"]
+
+    match, distance, profile_id = await with_rate_limit_lock(
+      db,
       payload.tenantId,
       payload.userId,
       payload.actionType,
-      "success" if match else "failed",
-      distance,
-      MATCH_THRESHOLD,
-      x_forwarded_for,
-      user_agent,
-      payload.actionContext,
+      handle_verify,
     )
-
-    if match:
-      await db.execute(
-        "UPDATE biometric_profiles SET last_verified_at = NOW(), updated_at = NOW() WHERE id = $1",
-        record["profile_id"],
-      )
 
   return {
     "match": match,
     "score": distance,
     "threshold": MATCH_THRESHOLD,
-    "profileId": str(record["profile_id"]),
+    "profileId": str(profile_id),
   }
 
