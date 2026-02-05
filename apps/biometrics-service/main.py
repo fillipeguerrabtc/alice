@@ -165,6 +165,39 @@ async def rate_limit_check(
   if count and count >= max_requests:
     raise HTTPException(status_code=429, detail="Limite de tentativas excedido. Tente novamente mais tarde.")
 
+async def record_verification_attempt(
+  conn: asyncpg.Connection,
+  profile_id: Optional[str],
+  tenant_id: str,
+  user_id: str,
+  action_type: str,
+  status: str,
+  score: Optional[float],
+  threshold: Optional[float],
+  ip: Optional[str],
+  user_agent: Optional[str],
+  context: Optional[dict[str, Any]],
+  failure_reason: Optional[str],
+) -> None:
+  await conn.execute(
+    """
+    INSERT INTO biometric_verifications
+    (profile_id, tenant_id, user_id, action_type, status, score, threshold, ip, user_agent, context, failure_reason)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10::jsonb, '{}'::jsonb), $11)
+    """,
+    profile_id,
+    tenant_id,
+    user_id,
+    action_type,
+    status,
+    score,
+    threshold,
+    ip,
+    user_agent,
+    context,
+    failure_reason,
+  )
+
 async def with_rate_limit_lock(
   conn: asyncpg.Connection,
   tenant_id: str,
@@ -233,23 +266,47 @@ async def enroll(
         max_requests=ENROLL_RATE_LIMIT,
       )
 
-      image = decode_image(payload.imageBase64)
-      embedding = extract_embedding(image)
+      profile_id = await db.fetchval(
+        "SELECT id FROM biometric_profiles WHERE user_id = $1 AND tenant_id = $2",
+        payload.userId,
+        payload.tenantId,
+      )
+
+      try:
+        image = decode_image(payload.imageBase64)
+        embedding = extract_embedding(image)
+      except HTTPException as exc:
+        await record_verification_attempt(
+          db,
+          profile_id,
+          payload.tenantId,
+          payload.userId,
+          "enroll",
+          "failed",
+          None,
+          None,
+          None,
+          None,
+          {},
+          str(exc.detail),
+        )
+        raise
+
       encrypted = encrypt_embedding(embedding)
       embedding_hash = hashlib.sha256(embedding.tobytes()).hexdigest()
 
       async with db.transaction():
         profile = await db.fetchrow(
-        """
-        INSERT INTO biometric_profiles (tenant_id, user_id, status, metadata)
-        VALUES ($1, $2, 'active', COALESCE($3::jsonb, '{}'::jsonb))
-        ON CONFLICT (tenant_id, user_id)
-        DO UPDATE SET status='active', updated_at=NOW(), metadata=COALESCE(EXCLUDED.metadata, biometric_profiles.metadata)
-        RETURNING id
-        """,
-        payload.tenantId,
-        payload.userId,
-        payload.metadata,
+          """
+          INSERT INTO biometric_profiles (tenant_id, user_id, status, metadata)
+          VALUES ($1, $2, 'active', COALESCE($3::jsonb, '{}'::jsonb))
+          ON CONFLICT (tenant_id, user_id)
+          DO UPDATE SET status='active', updated_at=NOW(), metadata=COALESCE(EXCLUDED.metadata, biometric_profiles.metadata)
+          RETURNING id
+          """,
+          payload.tenantId,
+          payload.userId,
+          payload.metadata,
         )
         profile_id = profile["id"]
 
@@ -270,15 +327,19 @@ async def enroll(
           "face_recognition_128d",
         )
 
-        await db.execute(
-          """
-          INSERT INTO biometric_verifications
-          (profile_id, tenant_id, user_id, action_type, status, score, threshold, ip, user_agent, context)
-          VALUES ($1, $2, $3, 'enroll', 'success', NULL, NULL, NULL, NULL, '{}'::jsonb)
-          """,
+        await record_verification_attempt(
+          db,
           profile_id,
           payload.tenantId,
           payload.userId,
+          "enroll",
+          "success",
+          None,
+          None,
+          None,
+          None,
+          {},
+          None,
         )
       return profile_id
 
@@ -315,34 +376,67 @@ async def verify(
         max_requests=VERIFY_RATE_LIMIT,
       )
 
-      image = decode_image(payload.imageBase64)
-      embedding = extract_embedding(image)
+      profile_id = await db.fetchval(
+        "SELECT id FROM biometric_profiles WHERE user_id = $1 AND tenant_id = $2",
+        payload.userId,
+        payload.tenantId,
+      )
+
+      try:
+        image = decode_image(payload.imageBase64)
+        embedding = extract_embedding(image)
+      except HTTPException as exc:
+        await record_verification_attempt(
+          db,
+          profile_id,
+          payload.tenantId,
+          payload.userId,
+          payload.actionType,
+          "failed",
+          None,
+          None,
+          x_forwarded_for,
+          user_agent,
+          payload.actionContext,
+          str(exc.detail),
+        )
+        raise
 
       record = await db.fetchrow(
-      """
-      SELECT p.id AS profile_id, e.embedding
-      FROM biometric_profiles p
-      JOIN biometric_embeddings e ON e.profile_id = p.id
-      WHERE p.user_id = $1 AND p.tenant_id = $2 AND p.status = 'active' AND e.is_active = true
-      ORDER BY e.created_at DESC
-      LIMIT 1
-      """,
-      payload.userId,
-      payload.tenantId,
+        """
+        SELECT p.id AS profile_id, e.embedding
+        FROM biometric_profiles p
+        JOIN biometric_embeddings e ON e.profile_id = p.id
+        WHERE p.user_id = $1 AND p.tenant_id = $2 AND p.status = 'active' AND e.is_active = true
+        ORDER BY e.created_at DESC
+        LIMIT 1
+        """,
+        payload.userId,
+        payload.tenantId,
       )
       if not record:
+        await record_verification_attempt(
+          db,
+          profile_id,
+          payload.tenantId,
+          payload.userId,
+          payload.actionType,
+          "failed",
+          None,
+          MATCH_THRESHOLD,
+          x_forwarded_for,
+          user_agent,
+          payload.actionContext,
+          "Biometria não cadastrada.",
+        )
         raise HTTPException(status_code=404, detail="Biometria não cadastrada.")
 
       stored_embedding = np.array(record["embedding"], dtype=np.float32)
       distance = float(face_recognition.face_distance([stored_embedding], embedding)[0])
       match = distance <= MATCH_THRESHOLD
 
-      await db.execute(
-        """
-        INSERT INTO biometric_verifications
-        (profile_id, tenant_id, user_id, action_type, status, score, threshold, ip, user_agent, context)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10::jsonb, '{}'::jsonb))
-        """,
+      await record_verification_attempt(
+        db,
         record["profile_id"],
         payload.tenantId,
         payload.userId,
@@ -353,6 +447,7 @@ async def verify(
         x_forwarded_for,
         user_agent,
         payload.actionContext,
+        None,
       )
 
       if match:

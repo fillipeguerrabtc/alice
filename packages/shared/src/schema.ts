@@ -1155,7 +1155,7 @@ export const biometricEmbeddings = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     profileId: uuid("profile_id").references(() => biometricProfiles.id, { onDelete: "cascade" }).notNull(),
-    embedding: biometricsVector128("embedding"),
+    embedding: biometricsVector128("embedding").notNull(),
     embeddingEncrypted: bytea("embedding_encrypted").notNull(),
     embeddingHash: varchar("embedding_hash", { length: 64 }).notNull(),
     model: varchar("model", { length: 128 }).notNull(),
@@ -1171,7 +1171,7 @@ export const biometricVerifications = pgTable(
   "biometric_verifications",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    profileId: uuid("profile_id").references(() => biometricProfiles.id, { onDelete: "cascade" }).notNull(),
+    profileId: uuid("profile_id").references(() => biometricProfiles.id, { onDelete: "cascade" }),
     tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
     userId: uuid("user_id").references(() => users.id).notNull(),
     actionType: biometricsActionTypeEnum("action_type").notNull(),
