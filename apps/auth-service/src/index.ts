@@ -2197,7 +2197,7 @@ app.post('/api/auth/biometrics/login', biometricsLoginRateLimiter, async (req: R
   }
 });
 
-app.post('/api/auth/biometrics/status', requireAuth, async (req: Request, res: Response) => {
+app.post('/api/auth/biometrics/status', requireAuth(), async (req: Request, res: Response) => {
   try {
     const auth = req.user as AuthContext;
     const result = await callBiometricsService<Record<string, unknown>>('/status', {
@@ -2211,7 +2211,7 @@ app.post('/api/auth/biometrics/status', requireAuth, async (req: Request, res: R
   }
 });
 
-app.post('/api/auth/biometrics/enroll', requireAuth, async (req: Request, res: Response) => {
+app.post('/api/auth/biometrics/enroll', requireAuth(), async (req: Request, res: Response) => {
   const parsed = biometricsImageSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: 'Imagem inválida', details: parsed.error.flatten() });
@@ -2230,7 +2230,7 @@ app.post('/api/auth/biometrics/enroll', requireAuth, async (req: Request, res: R
   }
 });
 
-app.post('/api/auth/biometrics/verify', requireAuth, async (req: Request, res: Response) => {
+app.post('/api/auth/biometrics/verify', requireAuth(), async (req: Request, res: Response) => {
   const parsed = biometricsVerifySchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
