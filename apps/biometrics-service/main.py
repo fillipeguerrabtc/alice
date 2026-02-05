@@ -127,9 +127,15 @@ async def init_pool() -> asyncpg.Pool:
   global pool
   if pool:
     return pool
-  pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=5)
-  async with pool.acquire() as conn:
+  async def init_connection(conn: asyncpg.Connection) -> None:
     await register_vector(conn)
+
+  pool = await asyncpg.create_pool(
+    DATABASE_URL,
+    min_size=1,
+    max_size=5,
+    init=init_connection,
+  )
   return pool
 
 async def rate_limit_check(conn: asyncpg.Connection, user_id: str, window_seconds: int, max_requests: int) -> None:

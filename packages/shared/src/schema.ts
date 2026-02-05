@@ -80,6 +80,14 @@ const bytea = customType<{ data: Buffer; driverData: Buffer }>({
 // Alias para compatibilidade
 // NOTA: Novos embeddings de texto devem ir para Qdrant (1024 dim)
 const vector = textVector;
+
+// BIOMETRIA: embeddings faciais (face_recognition) usam 128 dimensões
+// Deve mapear para vector(128) no PostgreSQL (pgvector)
+const biometricsVector128 = customType<{ data: number[]; driverData: number[] }>({
+  dataType() {
+    return 'vector(128)';
+  },
+});
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -1147,7 +1155,7 @@ export const biometricEmbeddings = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     profileId: uuid("profile_id").references(() => biometricProfiles.id, { onDelete: "cascade" }).notNull(),
-    embedding: vector("embedding"),
+    embedding: biometricsVector128("embedding"),
     embeddingEncrypted: bytea("embedding_encrypted").notNull(),
     embeddingHash: varchar("embedding_hash", { length: 64 }).notNull(),
     model: varchar("model", { length: 128 }).notNull(),
