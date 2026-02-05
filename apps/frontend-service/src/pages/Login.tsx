@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Loader2, Mail, Chrome, Github } from 'lucide-react';
+import { Loader2, Mail, Chrome, Github, Camera } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -10,6 +10,8 @@ import { useAuth } from '@/hooks/use-auth';
 import { toast } from '@/hooks/use-toast';
 import { LanguageSwitch } from '@/components/language-switch';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { apiRequest, queryClient } from '@/lib/queryClient';
+import { BiometricCapture } from '@/components/biometrics/BiometricCapture';
 
 /**
  * Obtém a URL de retorno após login bem-sucedido.
@@ -57,6 +59,8 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [providers, setProviders] = useState<AuthProvider[]>([]);
   const [isLoadingProviders, setIsLoadingProviders] = useState(true);
+  const [isBiometricPending, setIsBiometricPending] = useState(false);
+  const [biometricReady, setBiometricReady] = useState(false);
 
   useEffect(() => {
     fetch('/api/auth/providers')
@@ -110,6 +114,33 @@ export default function Login() {
       ? `/api/auth/${provider}?returnTo=${encodeURIComponent(returnUrl)}`
       : `/api/auth/${provider}`;
     window.location.href = oauthUrl;
+  };
+
+  const handleBiometricLogin = async (imageBase64: string) => {
+    if (!email.trim()) {
+      toast({
+        title: 'Informe o email',
+        description: 'Para login biométrico, informe o email do usuário.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    try {
+      setIsBiometricPending(true);
+      await apiRequest('POST', '/api/auth/biometrics/login', {
+        email: email.trim(),
+        imageBase64,
+      });
+      await queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
+    } catch (error) {
+      toast({
+        title: 'Biometria não reconhecida',
+        description: error instanceof Error ? error.message : 'Falha ao autenticar com biometria.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsBiometricPending(false);
+    }
   };
 
   const getProviderIcon = (id: string) => {
@@ -228,6 +259,37 @@ export default function Login() {
                     {t('auth.login')}
                   </Button>
                 </form>
+              )}
+
+              {hasLocalAuth && (
+                <div className="space-y-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => setBiometricReady((prev) => !prev)}
+                    data-testid="button-login-biometrics"
+                  >
+                    <Camera className="mr-2 h-4 w-4" />
+                    Entrar com biometria facial
+                  </Button>
+                  {biometricReady && (
+                    <div className="space-y-2">
+                      <BiometricCapture
+                        onCapture={handleBiometricLogin}
+                        onError={(message) => {
+                          toast({ title: 'Falha na câmera', description: message, variant: 'destructive' });
+                        }}
+                      />
+                      {isBiometricPending && (
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Validando biometria...
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
             </>
           )}

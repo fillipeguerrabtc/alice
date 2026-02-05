@@ -15,11 +15,17 @@ import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { AgentEvent, Message } from './types';
 import { InlineImage } from './InlineImage';
 import { InlineMediaAttachment } from './InlineMediaAttachment';
 import { MessageActions } from './MessageActions';
+import { ActionResultCard } from './ActionResultCard';
+import { BiometricCapture } from '@/components/biometrics/BiometricCapture';
+import { apiRequest } from '@/lib/queryClient';
+import { toast } from '@/hooks/use-toast';
 // AudioPlayer disponível via InlineMediaAttachment quando necessário
 // REMOVIDO 23/12/2025: VideoPlayer desabilitado (muito pesado para GPU)
 
@@ -66,6 +72,11 @@ export function MessageBubble({
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const [displayedContent, setDisplayedContent] = useState(message.content ?? '');
+  const [biometricOpen, setBiometricOpen] = useState(false);
+  const [biometricPending, setBiometricPending] = useState(false);
+  const [passwordApproval, setPasswordApproval] = useState('');
+  const [biometricStatus, setBiometricStatus] = useState<{ enrolled?: boolean } | null>(null);
+  const [biometricStatusLoading, setBiometricStatusLoading] = useState(false);
   const latestTargetRef = useRef(message.content ?? '');
   const displayedContentRef = useRef(displayedContent);
   const isUser = message.role === 'user';
@@ -157,9 +168,97 @@ export function MessageBubble({
     };
   }, [displayedContent, isLast, isStreaming, message.content, message.role, typingIntervalMs]);
 
+  const handleOpenBiometricApproval = async () => {
+    setBiometricOpen(true);
+    setBiometricStatusLoading(true);
+    try {
+      const response = await apiRequest('POST', '/api/auth/biometrics/status');
+      const status = await response.json();
+      setBiometricStatus(status);
+    } catch (error) {
+      toast({
+        title: 'Falha ao verificar biometria',
+        description: error instanceof Error ? error.message : 'Não foi possível validar o status da biometria.',
+        variant: 'destructive',
+      });
+      setBiometricStatus(null);
+    } finally {
+      setBiometricStatusLoading(false);
+    }
+  };
+
+  const handleBiometricCapture = async (imageBase64: string) => {
+    if (biometricStatus && biometricStatus.enrolled === false) {
+      toast({
+        title: 'Biometria não cadastrada',
+        description: 'Cadastre a biometria nas configurações para usar esta opção.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    try {
+      setBiometricPending(true);
+      const response = await apiRequest('POST', '/api/auth/biometrics/verify', {
+        imageBase64,
+        actionType: 'approval',
+        actionContext: {
+          actionRequestId: message.metadata?.actionRequestId,
+        },
+      });
+      const result = await response.json();
+      if (!result?.match) {
+        toast({
+          title: 'Biometria não reconhecida',
+          description: 'Não foi possível confirmar sua identidade.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      setBiometricOpen(false);
+      onQuickReply?.('confirmar');
+    } catch (error) {
+      toast({
+        title: 'Falha na verificação biométrica',
+        description: error instanceof Error ? error.message : 'Erro ao validar biometria.',
+        variant: 'destructive',
+      });
+    } finally {
+      setBiometricPending(false);
+    }
+  };
+
+  const handlePasswordApproval = async () => {
+    if (!passwordApproval.trim()) {
+      toast({
+        title: 'Senha obrigatória',
+        description: 'Informe sua senha para aprovar.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    try {
+      setBiometricPending(true);
+      await apiRequest('POST', '/api/auth/verify-password', {
+        password: passwordApproval,
+      });
+      setBiometricOpen(false);
+      setPasswordApproval('');
+      onQuickReply?.('confirmar');
+    } catch (error) {
+      toast({
+        title: 'Senha inválida',
+        description: error instanceof Error ? error.message : 'Não foi possível validar a senha.',
+        variant: 'destructive',
+      });
+    } finally {
+      setBiometricPending(false);
+    }
+  };
+
   const shouldShowTypingCursor = isLast && message.role === 'assistant' && (isStreaming || displayedContent.length < (message.content ?? '').length);
   const shouldShowThinking = shouldShowTypingCursor && displayedContent.trim().length === 0;
   const requiresConfirmation = Boolean(message.metadata?.requiresConfirmation);
+  const shouldShowActionCard = Boolean(message.metadata?.actionType || message.metadata?.actionStatus || message.metadata?.actionResult);
 
   return (
     <motion.div
@@ -233,6 +332,16 @@ export function MessageBubble({
               />
             </div>
           )}
+
+          {shouldShowActionCard && (
+            <ActionResultCard
+              actionType={message.metadata?.actionType as string | undefined}
+              actionOperation={message.metadata?.actionOperation as string | undefined}
+              actionSummary={message.metadata?.actionSummary as string | undefined}
+              actionStatus={message.metadata?.actionStatus as string | undefined}
+              actionResult={message.metadata?.actionResult as Record<string, unknown> | undefined}
+            />
+          )}
         </Card>
 
         {!isUser && requiresConfirmation && (
@@ -240,7 +349,7 @@ export function MessageBubble({
             <Button
               variant="default"
               size="sm"
-              onClick={() => onQuickReply?.('confirmar')}
+              onClick={handleOpenBiometricApproval}
             >
               Aprovar
             </Button>
@@ -253,6 +362,53 @@ export function MessageBubble({
             </Button>
           </div>
         )}
+
+        <Dialog open={biometricOpen} onOpenChange={setBiometricOpen}>
+          <DialogContent className="sm:max-w-[520px]">
+            <DialogHeader>
+              <DialogTitle>Aprovação segura</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Escolha uma forma de aprovação. Você pode usar senha ou biometria.
+              </p>
+              <div className="space-y-2 rounded border p-3">
+                <div className="text-xs font-semibold uppercase text-muted-foreground">Aprovar com senha</div>
+                <div className="flex gap-2">
+                  <Input
+                    type="password"
+                    placeholder="Sua senha"
+                    value={passwordApproval}
+                    onChange={(event) => setPasswordApproval(event.target.value)}
+                  />
+                  <Button onClick={handlePasswordApproval} disabled={biometricPending}>
+                    Aprovar
+                  </Button>
+                </div>
+              </div>
+              <div className="space-y-2 rounded border p-3">
+                <div className="text-xs font-semibold uppercase text-muted-foreground">Aprovar com biometria</div>
+                {biometricStatusLoading && (
+                  <p className="text-xs text-muted-foreground">Verificando status da biometria...</p>
+                )}
+                {!biometricStatusLoading && biometricStatus && !biometricStatus.enrolled && (
+                  <p className="text-xs text-amber-600">
+                    Biometria não cadastrada. Cadastre nas configurações para usar esta opção.
+                  </p>
+                )}
+                <BiometricCapture
+                  onCapture={handleBiometricCapture}
+                  onError={(message) => {
+                    toast({ title: 'Falha na câmera', description: message, variant: 'destructive' });
+                  }}
+                />
+              </div>
+              {biometricPending && (
+                <p className="text-xs text-muted-foreground">Validando aprovação...</p>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
         
         <div className={cn(
           'flex items-center gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity',

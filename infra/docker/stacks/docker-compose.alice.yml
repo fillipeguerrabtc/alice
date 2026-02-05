@@ -154,6 +154,7 @@ services:
       GRAFANA_OAUTH_CLIENT_SECRET: ${GRAFANA_OAUTH_CLIENT_SECRET}
       ERPNEXT_OAUTH_CLIENT_SECRET: ${ERPNEXT_OAUTH_CLIENT_SECRET}
       REDIS_URL: redis://:${REDIS_PASSWORD}@alice-redis:6379
+      BIOMETRICS_SERVICE_URL: http://alice-biometrics:3011
     # NOTA: postgres e alice-redis estão no stack infra - verificados pelo workflow
     networks:
       - alice-network
@@ -161,6 +162,47 @@ services:
       # CORREÇÃO PR#103 (10/01/2026): Aumentar start_period
       # CORREÇÃO PR#104: Reduzir timeouts
       test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:3001/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.25'
+
+  # ===========================================================================
+  # ALICE BIOMETRICS SERVICE - Biometria Facial (CPU-only)
+  # ===========================================================================
+  alice-biometrics:
+    image: ${IMAGE_PREFIX}-biometrics:${IMAGE_TAG:-latest}
+    platform: linux/amd64
+    container_name: alice-biometrics
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64M
+    env_file:
+      - ../.env.prod
+    environment:
+      NODE_ENV: production
+      SERVICE_NAME: biometrics-service
+      DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@alice-pgbouncer:6432/${POSTGRES_DB:-alice_prod}?sslmode=disable
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
+      BIOMETRICS_ENCRYPTION_KEY: ${BIOMETRICS_ENCRYPTION_KEY}
+      BIOMETRICS_MATCH_THRESHOLD: ${BIOMETRICS_MATCH_THRESHOLD}
+      BIOMETRICS_VERIFY_RATE_LIMIT: ${BIOMETRICS_VERIFY_RATE_LIMIT}
+      BIOMETRICS_ENROLL_RATE_LIMIT: ${BIOMETRICS_ENROLL_RATE_LIMIT}
+    networks:
+      - alice-network
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:3011/health').read();\" || exit 1"]
       interval: 20s
       timeout: 10s
       retries: 5

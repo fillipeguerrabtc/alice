@@ -65,6 +65,13 @@ export interface Message {
   metadata?: {
     rating?: number;
     feedback?: 'positive' | 'negative';
+    actionRequestId?: string;
+    actionType?: string;
+    actionOperation?: string;
+    actionSummary?: string;
+    actionStatus?: string;
+    actionResult?: Record<string, unknown>;
+    requiresConfirmation?: boolean;
     [key: string]: unknown;
   };
   user?: {

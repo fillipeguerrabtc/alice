@@ -170,6 +170,94 @@ export const authServicePaths = {
       },
     },
   },
+  '/api/auth/biometrics/login': {
+    post: {
+      summary: 'Login com biometria facial',
+      description: 'Autentica usuário via biometria (CPU-only, sem liveness).',
+      tags: ['Auth'],
+      security: [],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['email', 'imageBase64'],
+              properties: {
+                email: { type: 'string', format: 'email' },
+                imageBase64: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Login bem-sucedido' },
+        401: { $ref: '#/components/responses/Unauthorized' },
+        429: { $ref: '#/components/responses/RateLimited' },
+      },
+    },
+  },
+  '/api/auth/biometrics/status': {
+    post: {
+      summary: 'Status de biometria do usuário',
+      tags: ['Auth'],
+      responses: {
+        200: { description: 'Status retornado' },
+        401: { $ref: '#/components/responses/Unauthorized' },
+      },
+    },
+  },
+  '/api/auth/biometrics/enroll': {
+    post: {
+      summary: 'Cadastrar biometria facial',
+      tags: ['Auth'],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['imageBase64'],
+              properties: {
+                imageBase64: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Biometria cadastrada' },
+        401: { $ref: '#/components/responses/Unauthorized' },
+      },
+    },
+  },
+  '/api/auth/biometrics/verify': {
+    post: {
+      summary: 'Verificar biometria facial',
+      tags: ['Auth'],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['imageBase64', 'actionType'],
+              properties: {
+                imageBase64: { type: 'string' },
+                actionType: { type: 'string', enum: ['login', 'approval'] },
+                actionContext: { type: 'object' },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Verificação executada' },
+        401: { $ref: '#/components/responses/Unauthorized' },
+      },
+    },
+  },
   '/api/auth/logout': {
     post: {
       summary: 'Encerrar sessão',
@@ -178,6 +266,31 @@ export const authServicePaths = {
       responses: {
         200: { description: 'Logout bem-sucedido' },
         401: { $ref: '#/components/responses/Unauthorized' },
+      },
+    },
+  },
+  '/api/auth/verify-password': {
+    post: {
+      summary: 'Validar senha do usuário autenticado',
+      tags: ['Auth'],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['password'],
+              properties: {
+                password: { type: 'string', format: 'password' },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Senha validada' },
+        401: { $ref: '#/components/responses/Unauthorized' },
+        429: { $ref: '#/components/responses/RateLimited' },
       },
     },
   },

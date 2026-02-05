@@ -83,6 +83,9 @@ import { authServicePaths, authServiceSchemas } from './openapi-specs.js';
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
 const logger = createLogger('auth-service');
 
+const BIOMETRICS_SERVICE_URL = process.env.BIOMETRICS_SERVICE_URL?.trim();
+const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET?.trim();
+
 // Inicializar sistema de feature flags com storage PostgreSQL (Regra 16 - Enterprise)
 const featureFlagStorage = createDrizzleFeatureFlagStorage();
 initFeatureFlags(featureFlagStorage);
@@ -389,6 +392,7 @@ function csrfProtection(req: Request, res: Response, next: NextFunction): void {
   // Rotas isentas (login inicial, webhooks, health checks)
   const exemptRoutes = [
     '/api/auth/login',
+    '/api/auth/biometrics/login',
     '/api/auth/google',
     '/api/auth/github',
     '/api/auth/saml',
@@ -523,6 +527,14 @@ if (nodeEnv === 'production' && (!sessionSecret || sessionSecret.length < 64 || 
 
 if (!sessionSecret && nodeEnv === 'development') {
   logger.warn('SESSION_SECRET não definido. Usando valor de desenvolvimento (NÃO usar em produção!)');
+}
+
+if (nodeEnv === 'production' && (!BIOMETRICS_SERVICE_URL || !INTERNAL_API_SECRET)) {
+  logger.error({
+    BIOMETRICS_SERVICE_URL: BIOMETRICS_SERVICE_URL ? '[SET]' : '[NOT SET]',
+    INTERNAL_API_SECRET: INTERNAL_API_SECRET ? '[SET]' : '[NOT SET]',
+  }, 'BIOMETRICS_SERVICE_URL e INTERNAL_API_SECRET são obrigatórios em produção para biometria.');
+  process.exit(1);
 }
 
 try {
@@ -2022,6 +2034,75 @@ const loginRateLimiter = rateLimit({
   },
 });
 
+const biometricsLoginRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 3,
+  message: { error: 'Muitas tentativas de biometria. Aguarde 1 minuto.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const email = req.body?.email || '';
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    return `${ip}-${email}-biometrics`;
+  },
+  validate: {
+    keyGeneratorIpFallback: false,
+  },
+});
+
+const verifyPasswordRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  message: { error: 'Muitas tentativas de senha. Aguarde 1 minuto.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    return `${ip}-verify-password`;
+  },
+  validate: {
+    keyGeneratorIpFallback: false,
+  },
+});
+
+const biometricsImageSchema = z.object({
+  imageBase64: z.string().min(100),
+});
+
+const biometricsLoginSchema = z.object({
+  email: z.string().email(),
+  imageBase64: z.string().min(100),
+});
+
+const biometricsVerifySchema = z.object({
+  imageBase64: z.string().min(100),
+  actionType: z.enum(['login', 'approval']),
+  actionContext: z.record(z.string(), z.unknown()).optional(),
+});
+
+const verifyPasswordSchema = z.object({
+  password: z.string().min(1, 'Senha é obrigatória'),
+});
+
+async function callBiometricsService<T>(endpoint: string, body: Record<string, unknown>): Promise<T> {
+  if (!BIOMETRICS_SERVICE_URL || !INTERNAL_API_SECRET) {
+    throw new Error('Biometria não configurada.');
+  }
+  const response = await fetch(`${BIOMETRICS_SERVICE_URL}${endpoint}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Internal-Api-Secret': INTERNAL_API_SECRET,
+    },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const errText = await response.text().catch(() => '');
+    throw new Error(errText || 'Falha ao chamar biometria.');
+  }
+  return response.json() as Promise<T>;
+}
+
 // Middleware de validação Zod para login (OWASP API3)
 const validateLogin = (req: Request, res: Response, next: NextFunction) => {
   const parseResult = loginSchema.safeParse(req.body);
@@ -2045,6 +2126,129 @@ app.post('/api/auth/login', loginRateLimiter, validateLogin, passport.authentica
   }
   
   res.json({ user: req.user });
+});
+
+app.post('/api/auth/verify-password', requireAuth(), verifyPasswordRateLimiter, async (req: Request, res: Response) => {
+  const parsed = verifyPasswordSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Senha inválida', details: parsed.error.flatten() });
+  }
+  try {
+    const auth = req.user as AuthContext;
+    const db = getDatabase();
+    const dbUser = await db.query.users.findFirst({
+      where: eq(schema.users.id, auth.userId),
+      columns: { passwordHash: true },
+    });
+    if (!dbUser?.passwordHash) {
+      return res.status(400).json({ error: 'Usuário não possui senha local cadastrada.' });
+    }
+    const valid = await bcrypt.compare(parsed.data.password, dbUser.passwordHash);
+    if (!valid) {
+      return res.status(401).json({ error: 'Senha incorreta' });
+    }
+    res.json({ verified: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: message }, 'Falha ao validar senha');
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/api/auth/biometrics/login', biometricsLoginRateLimiter, async (req: Request, res: Response) => {
+  const parsed = biometricsLoginSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
+  }
+  try {
+    const db = getDatabase();
+    const dbUser = await db.query.users.findFirst({
+      where: eq(schema.users.email, parsed.data.email),
+    });
+    if (!dbUser) {
+      return res.status(404).json({ error: 'Usuário não encontrado' });
+    }
+    const authContext = await buildAuthContext(dbUser);
+    const verifyResult = await callBiometricsService<{ match: boolean }>(
+      '/verify',
+      {
+        userId: authContext.userId,
+        tenantId: authContext.tenantId,
+        imageBase64: parsed.data.imageBase64,
+        actionType: 'login',
+        actionContext: { ip: req.ip },
+      }
+    );
+    if (!verifyResult.match) {
+      return res.status(401).json({ error: 'Biometria não reconhecida' });
+    }
+
+    req.login(authContext, (err) => {
+      if (err) {
+        logger.error({ err }, 'Falha ao iniciar sessão biométrica');
+        return res.status(500).json({ error: 'Falha ao iniciar sessão' });
+      }
+      return res.json({ user: authContext });
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: message }, 'Falha no login biométrico');
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/api/auth/biometrics/status', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const auth = req.user as AuthContext;
+    const result = await callBiometricsService<Record<string, unknown>>('/status', {
+      userId: auth.userId,
+      tenantId: auth.tenantId,
+    });
+    res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Erro desconhecido';
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/api/auth/biometrics/enroll', requireAuth, async (req: Request, res: Response) => {
+  const parsed = biometricsImageSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Imagem inválida', details: parsed.error.flatten() });
+  }
+  try {
+    const auth = req.user as AuthContext;
+    const result = await callBiometricsService<Record<string, unknown>>('/enroll', {
+      userId: auth.userId,
+      tenantId: auth.tenantId,
+      imageBase64: parsed.data.imageBase64,
+    });
+    res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Erro desconhecido';
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/api/auth/biometrics/verify', requireAuth, async (req: Request, res: Response) => {
+  const parsed = biometricsVerifySchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
+  }
+  try {
+    const auth = req.user as AuthContext;
+    const result = await callBiometricsService<Record<string, unknown>>('/verify', {
+      userId: auth.userId,
+      tenantId: auth.tenantId,
+      imageBase64: parsed.data.imageBase64,
+      actionType: parsed.data.actionType,
+      actionContext: parsed.data.actionContext,
+    });
+    res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Erro desconhecido';
+    res.status(500).json({ error: message });
+  }
 });
 
 // ============================================================================

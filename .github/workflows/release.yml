@@ -261,6 +261,7 @@ jobs:
           SERVICES=(
             "api-gateway:./apps/api-gateway/Dockerfile:."
             "auth:./apps/auth-service/Dockerfile:."
+            "biometrics:./apps/biometrics-service/Dockerfile:./apps/biometrics-service"
             "chat:./apps/chat-service/Dockerfile:."
             "frontend:./apps/frontend-service/Dockerfile:."
             "integrations:./apps/integrations-service/Dockerfile:."
@@ -302,6 +303,7 @@ jobs:
               case "$IMAGE" in
                 api-gateway) SERVICE_DIR_PATTERN="^apps/api-gateway/" ;;
                 auth) SERVICE_DIR_PATTERN="^apps/auth-service/" ;;
+                biometrics) SERVICE_DIR_PATTERN="^apps/biometrics-service/" ;;
                 chat) SERVICE_DIR_PATTERN="^apps/chat-service/" ;;
                 frontend) SERVICE_DIR_PATTERN="^apps/frontend-service/" ;;
                 integrations) SERVICE_DIR_PATTERN="^apps/integrations-service/" ;;
@@ -314,7 +316,7 @@ jobs:
                 caddy) SERVICE_DIR_PATTERN="^infra/docker/" ;;
                 *)
                   echo "❌ ERRO: serviço desconhecido no pipeline release: $IMAGE"
-                  echo "Serviços válidos: api-gateway, auth, chat, frontend, integrations, observability, rag, training, gpu-manager, pgbackrest, postgres, caddy"
+                  echo "Serviços válidos: api-gateway, auth, biometrics, chat, frontend, integrations, observability, rag, training, gpu-manager, pgbackrest, postgres, caddy"
                   exit 1
                   ;;
               esac

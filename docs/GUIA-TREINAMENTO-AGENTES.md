@@ -97,6 +97,35 @@ O agente de trading consulta esse namespace.
 
 ---
 
+## 2.1 AgenticConfig + RAG (melhor prática)
+
+**O que usar:**  
+- **AgenticConfig**: define gatilhos, roteamento, permissões e limites do agente.  
+- **RAG**: contém playbooks e manuais operacionais (fatos e regras).
+
+**Por que usar ambos:**  
+- O agente **detecta a intenção** com AgenticConfig.  
+- O agente **executa com segurança** consultando playbooks no RAG.  
+- O comportamento é **auditável** e consistente com governança.
+
+**Regra prática:**  
+Se o conteúdo muda (processo, regra, checklist) → **RAG**.  
+Se o agente precisa decidir “como responder” → **Treinamento**.
+
+---
+
+## 2.2 Aprovações no chat (senha ou biometria)
+
+Algumas ações exigem aprovação humana (ex.: trading, pagamentos).  
+No chat, você pode aprovar:
+
+- **Com senha** (método padrão);
+- **Com biometria facial** (opcional, CPU-only, sem liveness).
+
+> A biometria é **uma camada opcional** — quem preferir pode aprovar com senha.
+
+---
+
 ## 3) Passo a passo — Inserir documentos no RAG (namespace Trading)
 
 ### 3.1 Defina o objetivo do conteúdo

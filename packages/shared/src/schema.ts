@@ -68,6 +68,12 @@ const textVector = customType<{ data: number[]; driverData: number[] }>({
   // pgvector driver já faz a conversão automaticamente
 });
 
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return 'bytea';
+  },
+});
+
 // IMAGEM: embeddings de imagem removidos do schema principal
 // Mantido apenas como referência histórica do modelo (OpenAI-only para imagens)
 
@@ -488,6 +494,22 @@ export const actionRequestStatusEnum = pgEnum("action_request_status", [
   "executed",
   "failed",
   "cancelled",
+]);
+
+export const biometricsProfileStatusEnum = pgEnum("biometrics_profile_status", [
+  "active",
+  "disabled",
+]);
+
+export const biometricsVerificationStatusEnum = pgEnum("biometrics_verification_status", [
+  "success",
+  "failed",
+]);
+
+export const biometricsActionTypeEnum = pgEnum("biometrics_action_type", [
+  "login",
+  "approval",
+  "enroll",
 ]);
 
 export const backupTypeEnum = pgEnum("backup_type", [
@@ -1095,6 +1117,68 @@ export const actionRequests = pgTable(
     idxActionRequestsTenant: index("idx_action_requests_tenant").on(table.tenantId),
     idxActionRequestsConversation: index("idx_action_requests_conversation").on(table.conversationId),
     idxActionRequestsStatus: index("idx_action_requests_status").on(table.tenantId, table.status, table.criadoEm),
+  })
+);
+
+// ============================================================================
+// BIOMETRIA FACIAL (CPU-only, sem liveness)
+// ============================================================================
+
+export const biometricProfiles = pgTable(
+  "biometric_profiles",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    userId: uuid("user_id").references(() => users.id).notNull(),
+    status: biometricsProfileStatusEnum("status").notNull().default("active"),
+    metadata: jsonb("metadata").$type<GenericMetadata>().default({}),
+    lastVerifiedAt: timestamp("last_verified_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => ({
+    idxBiometricProfilesTenant: index("idx_biometric_profiles_tenant").on(table.tenantId),
+    idxBiometricProfilesUser: index("idx_biometric_profiles_user").on(table.userId),
+  })
+);
+
+export const biometricEmbeddings = pgTable(
+  "biometric_embeddings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id").references(() => biometricProfiles.id, { onDelete: "cascade" }).notNull(),
+    embedding: vector("embedding"),
+    embeddingEncrypted: bytea("embedding_encrypted").notNull(),
+    embeddingHash: varchar("embedding_hash", { length: 64 }).notNull(),
+    model: varchar("model", { length: 128 }).notNull(),
+    isActive: boolean("is_active").default(true),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => ({
+    idxBiometricEmbeddingsProfile: index("idx_biometric_embeddings_profile").on(table.profileId, table.isActive),
+  })
+);
+
+export const biometricVerifications = pgTable(
+  "biometric_verifications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id").references(() => biometricProfiles.id, { onDelete: "cascade" }).notNull(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    userId: uuid("user_id").references(() => users.id).notNull(),
+    actionType: biometricsActionTypeEnum("action_type").notNull(),
+    status: biometricsVerificationStatusEnum("status").notNull(),
+    score: real("score"),
+    threshold: real("threshold"),
+    ip: text("ip"),
+    userAgent: text("user_agent"),
+    context: jsonb("context").$type<GenericMetadata>().default({}),
+    failureReason: text("failure_reason"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => ({
+    idxBiometricVerificationsTenant: index("idx_biometric_verifications_tenant").on(table.tenantId, table.createdAt),
+    idxBiometricVerificationsUser: index("idx_biometric_verifications_user").on(table.userId, table.createdAt),
   })
 );
 

@@ -347,6 +347,25 @@ const recordAgenticMetrics = (params: {
   }
 };
 
+const buildActionMetadata = (params: {
+  actionRequestId?: string;
+  actionType?: string;
+  actionOperation?: string;
+  actionStatus: AgenticStatusLabel | string;
+  actionSummary?: string;
+  actionResult?: unknown;
+}): Record<string, unknown> => {
+  const redactedResult = redactSensitivePayload(params.actionResult);
+  return {
+    actionRequestId: params.actionRequestId,
+    actionType: params.actionType,
+    actionOperation: params.actionOperation,
+    actionStatus: params.actionStatus,
+    actionSummary: params.actionSummary,
+    actionResult: redactedResult ?? (params.actionResult && typeof params.actionResult === 'object' ? params.actionResult : undefined),
+  };
+};
+
 // Endpoint /metrics para Prometheus scraper (antes de outros middlewares)
 app.use(metricsRouter);
 
@@ -9332,7 +9351,11 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         };
         const pendingCommand = payload.command;
         const pendingTask = payload.task;
-        const pendingIntegration = payload.integration;
+        const pendingIntegration = payload.integration as {
+          action?: 'payments' | 'stack_ops' | 'erp' | 'grafana';
+          operation?: string;
+          params?: Record<string, unknown>;
+        } | undefined;
         const isAgenticAction = ['document', 'report', 'accounting', 'planning'].includes(pendingAction.type);
         const actionLabel = resolveAgenticActionLabel({
           pendingCommand,
@@ -9340,6 +9363,9 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           pendingIntegration,
           fallback: isAgenticAction ? 'agentic_task' : undefined,
         });
+        const actionType = pendingIntegration?.action
+          ?? (pendingCommand ? 'trading' : pendingTask ? 'agentic_task' : actionLabel);
+        const actionOperation = pendingIntegration?.operation ?? pendingCommand?.type ?? pendingTask?.taskType;
         const actionStartedAt = pendingAction.criadoEm ?? null;
         if (!pendingCommand && !pendingTask && !pendingIntegration) {
           await db.update(schema.actionRequests)
@@ -9364,10 +9390,13 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             conteudo: responseContent,
             tipo: 'text',
             isFromUser: false,
-            metadata: {
+            metadata: buildActionMetadata({
               actionRequestId: pendingAction.id,
+              actionType,
+              actionOperation,
               actionStatus: 'failed',
-            },
+              actionSummary: payload.summary,
+            }),
           }).returning();
 
           await db.update(schema.conversations)
@@ -9421,9 +9450,14 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             tipo: 'text',
             isFromUser: false,
             metadata: {
-              actionRequestId: pendingAction.id,
+              ...buildActionMetadata({
+                actionRequestId: pendingAction.id,
+                actionType,
+                actionOperation,
+                actionStatus: 'rejected',
+                actionSummary: payload.summary,
+              }),
               tradingCommand: pendingCommand,
-              actionStatus: 'rejected',
             },
           }).returning();
 
@@ -9616,11 +9650,14 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
               conteudo: responseContent,
               tipo: 'text',
               isFromUser: false,
-              metadata: {
+              metadata: buildActionMetadata({
                 actionRequestId: pendingAction.id,
-                integrationResult,
+                actionType: pendingIntegration?.action ?? actionLabel,
+                actionOperation: pendingIntegration?.operation,
                 actionStatus: 'executed',
-              },
+                actionSummary: payload.summary,
+                actionResult: integrationResult,
+              }),
             }).returning();
 
             await db.update(schema.conversations)
@@ -9730,8 +9767,14 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
               tipo: 'text',
               isFromUser: false,
               metadata: {
-                actionRequestId: pendingAction.id,
-                actionStatus: taskResult.success ? 'executed' : 'failed',
+                ...buildActionMetadata({
+                  actionRequestId: pendingAction.id,
+                  actionType: 'agentic_task',
+                  actionOperation: taskType,
+                  actionStatus: taskResult.success ? 'executed' : 'failed',
+                  actionSummary: payload.summary,
+                  actionResult: taskResult,
+                }),
                 agenticTask: taskResult,
               },
             }).returning();
@@ -9800,9 +9843,14 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             tipo: 'text',
             isFromUser: false,
             metadata: {
-              actionRequestId: pendingAction.id,
+              ...buildActionMetadata({
+                actionRequestId: pendingAction.id,
+                actionType: 'trading',
+                actionOperation: pendingCommand?.type,
+                actionStatus: 'failed',
+                actionSummary: payload.summary,
+              }),
               tradingCommand: pendingCommand,
-              actionStatus: 'failed',
               reason: canExecute.reason ?? null,
             },
           }).returning();
@@ -9865,10 +9913,16 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             tipo: 'text',
             isFromUser: false,
             metadata: {
-              actionRequestId: pendingAction.id,
+              ...buildActionMetadata({
+                actionRequestId: pendingAction.id,
+                actionType: 'trading',
+                actionOperation: tradingCommand.type,
+                actionStatus: result.success ? 'executed' : 'failed',
+                actionSummary: payload.summary ?? description,
+                actionResult: result,
+              }),
               tradingCommand: tradingCommand,
               tradingResult: result,
-              actionStatus: result.success ? 'executed' : 'failed',
             },
           }).returning();
 
@@ -10083,9 +10137,14 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           tipo: 'text',
           isFromUser: false,
           metadata: {
-            actionRequestId: actionRequest?.id,
+            ...buildActionMetadata({
+              actionRequestId: actionRequest?.id,
+              actionType: 'trading',
+              actionOperation: parsedCommand.type,
+              actionStatus: 'pending',
+              actionSummary: description,
+            }),
             tradingCommand: parsedCommand,
-            actionStatus: 'pending',
             requiresConfirmation: true,
           },
         }).returning();
@@ -10136,8 +10195,14 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           tipo: 'text',
           isFromUser: false,
           metadata: {
+            ...buildActionMetadata({
+              actionType: 'trading',
+              actionOperation: parsedCommand.type,
+              actionStatus: result.success ? 'executed' : 'failed',
+              actionSummary: description,
+              actionResult: result,
+            }),
             tradingCommand: parsedCommand,
-            tradingResult: result,
           },
         }).returning();
 
@@ -10301,18 +10366,23 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         });
 
         const responseContent = `Para executar a operação (${grafanaSummary}), preciso de confirmação explícita.\nResponda "confirmar" para executar ou "cancelar" para abortar.`;
-        const [assistantMessage] = await db.insert(schema.messages).values({
+          const [assistantMessage] = await db.insert(schema.messages).values({
           conversationId,
           agentId: conversation?.agentId ?? undefined,
           conteudo: responseContent,
           tipo: 'text',
           isFromUser: false,
-          metadata: {
-            actionRequestId: actionRequest?.id,
-            actionStatus: 'pending',
-            requiresConfirmation: true,
-            grafanaCommand,
-          },
+            metadata: {
+              ...buildActionMetadata({
+                actionRequestId: actionRequest?.id,
+                actionType: 'grafana',
+                actionOperation: grafanaCommand.type,
+                actionStatus: 'pending',
+                actionSummary: grafanaSummary,
+              }),
+              requiresConfirmation: true,
+              grafanaCommand,
+            },
         }).returning();
 
         await db.update(schema.conversations)
@@ -10453,8 +10523,13 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           tipo: 'text',
           isFromUser: false,
           metadata: {
-            actionRequestId: actionRequest?.id,
-            actionStatus: 'pending',
+            ...buildActionMetadata({
+              actionRequestId: actionRequest?.id,
+              actionType: 'erp',
+              actionOperation: erpCommand.type,
+              actionStatus: 'pending',
+              actionSummary: erpSummary,
+            }),
             requiresConfirmation: true,
           },
         }).returning();
@@ -10511,9 +10586,15 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           tipo: 'text',
           isFromUser: false,
           metadata: {
-            actionRequestId: actionRequest?.id,
+            ...buildActionMetadata({
+              actionRequestId: actionRequest?.id,
+              actionType: 'erp',
+              actionOperation: erpCommand.type,
+              actionStatus: 'executed',
+              actionSummary: erpSummary,
+              actionResult: integrationResult,
+            }),
             erpCommand,
-            actionStatus: 'executed',
           },
         }).returning();
 
@@ -10643,10 +10724,14 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             conteudo: responseContent,
             tipo: 'text',
             isFromUser: false,
-            metadata: {
+            metadata: buildActionMetadata({
               actionRequestId: actionRequest?.id,
+              actionType: 'payments',
+              actionOperation: 'wise_recipients',
               actionStatus: 'executed',
-            },
+              actionSummary: 'Listagem de destinatários Wise',
+              actionResult: result,
+            }),
           }).returning();
 
           await db.update(schema.conversations)
@@ -10776,10 +10861,14 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             conteudo: responseContent,
             tipo: 'text',
             isFromUser: false,
-            metadata: {
+            metadata: buildActionMetadata({
               actionRequestId: actionRequest?.id,
+              actionType: 'payments',
+              actionOperation: paymentCommand.type,
               actionStatus: 'executed',
-            },
+              actionSummary: summary,
+              actionResult: result,
+            }),
           }).returning();
 
           await db.update(schema.conversations)
@@ -10839,8 +10928,13 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         tipo: 'text',
         isFromUser: false,
         metadata: {
-          actionRequestId: actionRequest?.id,
-          actionStatus: 'pending',
+          ...buildActionMetadata({
+            actionRequestId: actionRequest?.id,
+            actionType: 'payments',
+            actionOperation: paymentCommand.type,
+            actionStatus: 'pending',
+                actionSummary: summary,
+          }),
           requiresConfirmation: true,
         },
       }).returning();
@@ -10986,8 +11080,13 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         tipo: 'text',
         isFromUser: false,
         metadata: {
-          actionRequestId: actionRequest?.id,
-          actionStatus: 'pending',
+          ...buildActionMetadata({
+            actionRequestId: actionRequest?.id,
+            actionType: 'stack_ops',
+            actionOperation: stackCommand.type,
+            actionStatus: 'pending',
+                actionSummary: summary,
+          }),
           requiresConfirmation: true,
         },
       }).returning();
@@ -11054,8 +11153,13 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             tipo: 'text',
             isFromUser: false,
             metadata: {
-              actionRequestId: actionRequest?.id,
-              actionStatus: 'pending',
+              ...buildActionMetadata({
+                actionRequestId: actionRequest?.id,
+                actionType: 'agentic_task',
+                actionOperation: agenticDetection.taskType,
+                actionStatus: 'pending',
+                actionSummary: taskSummary,
+              }),
               requiresConfirmation: true,
             },
           }).returning();

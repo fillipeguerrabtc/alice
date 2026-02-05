@@ -21,6 +21,7 @@ import { LanguageSwitch } from '@/components/language-switch';
 import { apiRequest } from '@/lib/queryClient';
 import { TIMEZONE } from '@/lib/i18n';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { BiometricCapture } from '@/components/biometrics/BiometricCapture';
 
 type UpdateUserPayload = {
   firstName?: string;
@@ -56,6 +57,8 @@ export default function Settings() {
     region: user?.preferencias?.location?.region || '',
     city: user?.preferencias?.location?.city || '',
   });
+  const [biometricStatus, setBiometricStatus] = useState<{ enrolled: boolean; lastVerifiedAt?: string | null } | null>(null);
+  const [biometricLoading, setBiometricLoading] = useState(false);
 
   useEffect(() => {
     setProfileForm({
@@ -72,6 +75,16 @@ export default function Settings() {
       city: user?.preferencias?.location?.city || '',
     });
   }, [user, i18n.language]);
+
+  useEffect(() => {
+    if (activeTab !== 'security' || !user?.id) return;
+    setBiometricLoading(true);
+    apiRequest('POST', '/api/auth/biometrics/status')
+      .then((res) => res.json())
+      .then((data) => setBiometricStatus(data))
+      .catch(() => setBiometricStatus(null))
+      .finally(() => setBiometricLoading(false));
+  }, [activeTab, user?.id]);
 
   const updateProfile = useMutation({
     mutationFn: async (payload: UpdateUserPayload) => {
@@ -328,6 +341,46 @@ export default function Settings() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                <div className="pt-2">
+                  <h4 className="font-medium mb-2">Biometria facial</h4>
+                  <p className="text-sm text-muted-foreground mb-3">
+                    Cadastre sua biometria para login e aprovações com segurança adicional.
+                  </p>
+                  {biometricLoading ? (
+                    <p className="text-xs text-muted-foreground">Carregando status da biometria...</p>
+                  ) : biometricStatus?.enrolled ? (
+                    <p className="text-xs text-emerald-600">
+                      Biometria cadastrada{biometricStatus.lastVerifiedAt ? ` (última verificação: ${new Date(biometricStatus.lastVerifiedAt).toLocaleString('pt-BR')})` : ''}.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Biometria não cadastrada.</p>
+                  )}
+                  <div className="mt-3">
+                    <BiometricCapture
+                      onCapture={async (imageBase64) => {
+                        try {
+                          await apiRequest('POST', '/api/auth/biometrics/enroll', { imageBase64 });
+                          toast({
+                            title: 'Biometria cadastrada',
+                            description: 'Sua biometria foi registrada com sucesso.',
+                          });
+                          const statusResponse = await apiRequest('POST', '/api/auth/biometrics/status');
+                          const statusData = await statusResponse.json();
+                          setBiometricStatus(statusData);
+                        } catch (error) {
+                          toast({
+                            title: 'Falha ao cadastrar biometria',
+                            description: error instanceof Error ? error.message : 'Não foi possível cadastrar.',
+                            variant: 'destructive',
+                          });
+                        }
+                      }}
+                      onError={(message) => {
+                        toast({ title: 'Falha na câmera', description: message, variant: 'destructive' });
+                      }}
+                    />
+                  </div>
+                </div>
                 <div>
                   <h4 className="font-medium mb-2">{t('settings.security')}</h4>
                   <p className="text-sm text-muted-foreground mb-3">

@@ -294,6 +294,7 @@ jobs:
             ALICE_CONTAINERS=(
               "alice-frontend"
               "alice-auth"
+              "alice-biometrics"
               "alice-chat"
               "alice-rag"
               "alice-training"
@@ -3859,7 +3860,7 @@ jobs:
               docker ps -a --filter "name=alice-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" || true
               echo ""
               echo "📋 Logs dos containers com erro (últimas 30 linhas cada):"
-              for c in alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager; do
+              for c in alice-frontend alice-auth alice-biometrics alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager; do
                 if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
                   echo ""
                   echo "── $c ──"
@@ -3894,7 +3895,7 @@ jobs:
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "🔍 VERIFICAÇÃO INICIAL DE SAÚDE (quick check):"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            ALICE_CONTAINERS="alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager"
+            ALICE_CONTAINERS="alice-frontend alice-auth alice-biometrics alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager"
             ALL_RUNNING=true
             for c in $ALICE_CONTAINERS; do
               if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
@@ -3948,7 +3949,7 @@ jobs:
             echo "🧭 DIAGNÓSTICO RÁPIDO - ALICE (tail na tela)"
             echo "================================================"
             docker ps -a --filter "name=alice-" --filter "name=gpu-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "alice-|gpu-" || true
-            for c in alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager gpu-llm gpu-embeddings gpu-asr gpu-trainer; do
+            for c in alice-frontend alice-auth alice-biometrics alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager gpu-llm gpu-embeddings gpu-asr gpu-trainer; do
               if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
                 echo ""
                 echo "── $c (tail 80) ──"
@@ -3988,7 +3989,7 @@ jobs:
 
             docker ps -a --filter "name=alice-" --filter "name=gpu-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" > "${LOG_DIR}/containers.txt" 2>&1 || true
 
-            for c in alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager gpu-llm gpu-embeddings gpu-asr gpu-trainer; do
+            for c in alice-frontend alice-auth alice-biometrics alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager gpu-llm gpu-embeddings gpu-asr gpu-trainer; do
               if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
                 docker logs "$c" --tail 500 > "${LOG_DIR}/${c}.log" 2>&1 || true
               fi
@@ -4063,7 +4064,7 @@ jobs:
             # Gate 2: containers GPU são parte do stack ALICE e DEVEM estar healthy
             # para evitar "Deploy OK" enquanto inference está em crash/restart loop.
             #
-            CONTAINERS="alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager gpu-llm gpu-embeddings"
+            CONTAINERS="alice-frontend alice-auth alice-biometrics alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager gpu-llm gpu-embeddings"
             # =================================================================
             # CORREÇÃO PR#100 (09/01/2026): Alinhar workflow timeout com Docker healthcheck
             # =================================================================
@@ -4250,6 +4251,7 @@ jobs:
             ALICE_CONTAINERS=(
               "alice-frontend"
               "alice-auth"
+              "alice-biometrics"
               "alice-chat"
               "alice-rag"
               "alice-training"

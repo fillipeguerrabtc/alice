@@ -53,6 +53,8 @@ const erpNextConfigSchema = z.object({
   ERPNEXT_URL: z.string().url().optional(),
   ERPNEXT_API_KEY: z.string().optional(),
   ERPNEXT_API_SECRET: z.string().optional(),
+  ERPNEXT_ALLOWED_DOCTYPES: z.string().optional(),
+  ERPNEXT_ALLOWED_METHODS: z.string().optional(),
 });
 
 const githubActionsConfigSchema = z.object({

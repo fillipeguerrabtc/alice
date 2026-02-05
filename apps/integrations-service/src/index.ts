@@ -2721,6 +2721,65 @@ async function executeErpNextRequest<T>(operation: string, options: {
 // Type assertion necessária: Opossum CircuitBreaker tem tipos de eventos mais específicos
 instrumentCircuitBreaker(metrics, 'erpnext', erpNextBreaker as unknown as Parameters<typeof instrumentCircuitBreaker>[2]);
 
+type ErpNextAllowList = {
+  allowAll: boolean;
+  items: Set<string>;
+};
+
+function parseErpNextAllowList(raw?: string | null): ErpNextAllowList {
+  const normalized = String(raw ?? '').trim();
+  if (!normalized) {
+    return { allowAll: false, items: new Set() };
+  }
+  if (normalized === '*') {
+    return { allowAll: true, items: new Set() };
+  }
+  const items = normalized
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map((value) => value.toLowerCase());
+  return { allowAll: false, items: new Set(items) };
+}
+
+const ERPNEXT_ALLOWED_DOCTYPES = parseErpNextAllowList(config.ERPNEXT_ALLOWED_DOCTYPES);
+const ERPNEXT_ALLOWED_METHODS = parseErpNextAllowList(config.ERPNEXT_ALLOWED_METHODS);
+
+function isErpNextAllowed(value: string, allowList: ErpNextAllowList): boolean {
+  if (allowList.allowAll) return true;
+  if (!value) return false;
+  return allowList.items.has(value.toLowerCase());
+}
+
+function normalizeErpNextDoctype(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    throw new Error('DocType obrigatório');
+  }
+  if (!/^[a-zA-Z0-9_\-\s]+$/.test(trimmed)) {
+    throw new Error('DocType inválido');
+  }
+  return trimmed;
+}
+
+function normalizeErpNextMethod(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    throw new Error('Method obrigatório');
+  }
+  if (!/^[a-zA-Z0-9_.]+$/.test(trimmed)) {
+    throw new Error('Method inválido');
+  }
+  return trimmed;
+}
+
+function buildErpNextHeaders(): Record<string, string> {
+  return {
+    'Authorization': `token ${config.ERPNEXT_API_KEY}:${config.ERPNEXT_API_SECRET}`,
+    'Content-Type': 'application/json',
+  };
+}
+
 // Sincronizar cliente/pedido com ERPNext (com Circuit Breaker)
 // Fluxo correto ERPNext: Customer → Sales Order → Sales Invoice → Payment Entry com referência
 async function syncToERPNext(
@@ -4407,6 +4466,176 @@ app.post('/api/integrations/erpnext/invoices', requirePermission('integrations:e
     res.status(500).json({ error: 'Failed to create invoice' });
   } finally {
     clearTimeout(timeoutId);
+  }
+});
+
+// ============================================================================
+// ERPNext API Proxy (cobertura completa)
+// ============================================================================
+
+app.get('/api/integrations/erpnext/resource/:doctype', requirePermission('integrations:erpnext:read'), async (req: Request, res: Response) => {
+  if (!config.ERPNEXT_URL || !config.ERPNEXT_API_KEY || !config.ERPNEXT_API_SECRET) {
+    return res.status(503).json({ error: 'ERPNext not configured' });
+  }
+
+  try {
+    const doctype = normalizeErpNextDoctype(req.params.doctype);
+    if (!isErpNextAllowed(doctype, ERPNEXT_ALLOWED_DOCTYPES)) {
+      return res.status(403).json({ error: 'DocType não permitido. Ajuste ERPNEXT_ALLOWED_DOCTYPES.' });
+    }
+
+    const name = typeof req.query.name === 'string' ? req.query.name.trim() : '';
+    const fields = typeof req.query.fields === 'string' ? req.query.fields : undefined;
+    const filters = typeof req.query.filters === 'string' ? req.query.filters : undefined;
+    const limitStart = typeof req.query.limit_start === 'string' ? req.query.limit_start : undefined;
+    const limitLength = typeof req.query.limit_page_length === 'string' ? req.query.limit_page_length : undefined;
+    const orderBy = typeof req.query.order_by === 'string' ? req.query.order_by : undefined;
+
+    const basePath = name
+      ? `/api/resource/${encodeURIComponent(doctype)}/${encodeURIComponent(name)}`
+      : `/api/resource/${encodeURIComponent(doctype)}`;
+
+    const query = new URLSearchParams();
+    if (fields) query.set('fields', fields);
+    if (filters) query.set('filters', filters);
+    if (limitStart) query.set('limit_start', limitStart);
+    if (limitLength) query.set('limit_page_length', limitLength);
+    if (orderBy) query.set('order_by', orderBy);
+
+    const url = `${config.ERPNEXT_URL}${basePath}${query.toString() ? `?${query}` : ''}`;
+    const result = await executeErpNextRequest<Record<string, unknown>>('erpnext.resource.read', {
+      url,
+      method: 'GET',
+      headers: buildErpNextHeaders(),
+    });
+
+    res.json({ data: result });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: message }, 'Falha ao consultar ERPNext resource');
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/api/integrations/erpnext/resource/:doctype', requirePermission('integrations:erpnext:write'), async (req: Request, res: Response) => {
+  if (!config.ERPNEXT_URL || !config.ERPNEXT_API_KEY || !config.ERPNEXT_API_SECRET) {
+    return res.status(503).json({ error: 'ERPNext not configured' });
+  }
+
+  try {
+    const doctype = normalizeErpNextDoctype(req.params.doctype);
+    if (!isErpNextAllowed(doctype, ERPNEXT_ALLOWED_DOCTYPES)) {
+      return res.status(403).json({ error: 'DocType não permitido. Ajuste ERPNEXT_ALLOWED_DOCTYPES.' });
+    }
+
+    if (!req.body || typeof req.body !== 'object') {
+      return res.status(400).json({ error: 'Payload inválido para criação' });
+    }
+
+    const url = `${config.ERPNEXT_URL}/api/resource/${encodeURIComponent(doctype)}`;
+    const result = await executeErpNextRequest<Record<string, unknown>>('erpnext.resource.create', {
+      url,
+      method: 'POST',
+      headers: buildErpNextHeaders(),
+      body: JSON.stringify(req.body),
+    });
+
+    res.json({ data: result });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: message }, 'Falha ao criar ERPNext resource');
+    res.status(500).json({ error: message });
+  }
+});
+
+app.put('/api/integrations/erpnext/resource/:doctype/:name', requirePermission('integrations:erpnext:write'), async (req: Request, res: Response) => {
+  if (!config.ERPNEXT_URL || !config.ERPNEXT_API_KEY || !config.ERPNEXT_API_SECRET) {
+    return res.status(503).json({ error: 'ERPNext not configured' });
+  }
+
+  try {
+    const doctype = normalizeErpNextDoctype(req.params.doctype);
+    if (!isErpNextAllowed(doctype, ERPNEXT_ALLOWED_DOCTYPES)) {
+      return res.status(403).json({ error: 'DocType não permitido. Ajuste ERPNEXT_ALLOWED_DOCTYPES.' });
+    }
+    const name = req.params.name?.trim();
+    if (!name) {
+      return res.status(400).json({ error: 'Nome do registro obrigatório' });
+    }
+    if (!req.body || typeof req.body !== 'object') {
+      return res.status(400).json({ error: 'Payload inválido para atualização' });
+    }
+
+    const url = `${config.ERPNEXT_URL}/api/resource/${encodeURIComponent(doctype)}/${encodeURIComponent(name)}`;
+    const result = await executeErpNextRequest<Record<string, unknown>>('erpnext.resource.update', {
+      url,
+      method: 'PUT',
+      headers: buildErpNextHeaders(),
+      body: JSON.stringify(req.body),
+    });
+
+    res.json({ data: result });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: message }, 'Falha ao atualizar ERPNext resource');
+    res.status(500).json({ error: message });
+  }
+});
+
+app.delete('/api/integrations/erpnext/resource/:doctype/:name', requirePermission('integrations:erpnext:write'), async (req: Request, res: Response) => {
+  if (!config.ERPNEXT_URL || !config.ERPNEXT_API_KEY || !config.ERPNEXT_API_SECRET) {
+    return res.status(503).json({ error: 'ERPNext not configured' });
+  }
+
+  try {
+    const doctype = normalizeErpNextDoctype(req.params.doctype);
+    if (!isErpNextAllowed(doctype, ERPNEXT_ALLOWED_DOCTYPES)) {
+      return res.status(403).json({ error: 'DocType não permitido. Ajuste ERPNEXT_ALLOWED_DOCTYPES.' });
+    }
+    const name = req.params.name?.trim();
+    if (!name) {
+      return res.status(400).json({ error: 'Nome do registro obrigatório' });
+    }
+
+    const url = `${config.ERPNEXT_URL}/api/resource/${encodeURIComponent(doctype)}/${encodeURIComponent(name)}`;
+    const result = await executeErpNextRequest<Record<string, unknown>>('erpnext.resource.delete', {
+      url,
+      method: 'DELETE',
+      headers: buildErpNextHeaders(),
+    });
+
+    res.json({ data: result });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: message }, 'Falha ao remover ERPNext resource');
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/api/integrations/erpnext/method/:method', requirePermission('integrations:erpnext:write'), async (req: Request, res: Response) => {
+  if (!config.ERPNEXT_URL || !config.ERPNEXT_API_KEY || !config.ERPNEXT_API_SECRET) {
+    return res.status(503).json({ error: 'ERPNext not configured' });
+  }
+
+  try {
+    const methodName = normalizeErpNextMethod(req.params.method);
+    if (!isErpNextAllowed(methodName, ERPNEXT_ALLOWED_METHODS)) {
+      return res.status(403).json({ error: 'Method não permitido. Ajuste ERPNEXT_ALLOWED_METHODS.' });
+    }
+
+    const url = `${config.ERPNEXT_URL}/api/method/${encodeURIComponent(methodName)}`;
+    const result = await executeErpNextRequest<Record<string, unknown>>('erpnext.method.call', {
+      url,
+      method: 'POST',
+      headers: buildErpNextHeaders(),
+      body: JSON.stringify(req.body ?? {}),
+    });
+
+    res.json({ data: result });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: message }, 'Falha ao executar método ERPNext');
+    res.status(500).json({ error: message });
   }
 });
 

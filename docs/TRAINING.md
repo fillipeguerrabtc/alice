@@ -12,6 +12,18 @@ O sistema de treinamento da Alice permite fine-tuning incremental do **LLM (text
 
 ---
 
+## Agentic: Configuração + Governança
+
+- **AgenticConfig** controla detecção, roteamento e permissões.  
+- **RAG** guarda playbooks e manuais (fatos operacionais).  
+- **Catálogo de ações** centraliza endpoints, risco e exigência de aprovação.  
+
+**Aprovações**:  
+- Ações críticas (financeiras/operacionais) exigem aprovação humana.  
+- **Senha e biometria** coexistem como opções; biometria é **opcional**.
+
+---
+
 ## Arquitetura
 
 ```
