@@ -217,9 +217,9 @@ export default function Settings() {
   };
 
   const handleChangePassword = async () => {
-    const currentPassword = passwordForm.currentPassword.trim();
-    const newPassword = passwordForm.newPassword.trim();
-    const confirmPassword = passwordForm.confirmPassword.trim();
+    const currentPassword = passwordForm.currentPassword;
+    const newPassword = passwordForm.newPassword;
+    const confirmPassword = passwordForm.confirmPassword;
 
     if (!currentPassword || !newPassword || !confirmPassword) {
       toast({

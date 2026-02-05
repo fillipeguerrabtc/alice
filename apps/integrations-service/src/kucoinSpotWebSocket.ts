@@ -587,6 +587,7 @@ export async function initializeSpotWebSocketClients(): Promise<void> {
     }
   } catch (error) {
     logger.error({ error: error instanceof Error ? error.message : String(error) }, 'Erro ao inicializar WS Spot/Margin');
+    throw error;
   }
 }
 
