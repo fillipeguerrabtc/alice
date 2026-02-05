@@ -397,6 +397,7 @@ export function MessageBubble({
                   </p>
                 )}
                 <BiometricCapture
+                  autoStart={true}
                   onCapture={handleBiometricCapture}
                   onError={(message) => {
                     toast({ title: 'Falha na câmera', description: message, variant: 'destructive' });

@@ -276,6 +276,7 @@ export default function Login() {
                   {biometricReady && (
                     <div className="space-y-2">
                       <BiometricCapture
+                        autoStart={true}
                         onCapture={handleBiometricLogin}
                         onError={(message) => {
                           toast({ title: 'Falha na câmera', description: message, variant: 'destructive' });
