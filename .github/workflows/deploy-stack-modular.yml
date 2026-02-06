@@ -1731,16 +1731,20 @@ jobs:
             fi
             echo "   ✅ Estágio 3: Permissões corretas (700)"
             
-            # Estágio 4: Teste de escrita como UID 70 (Alpine) via Docker
-            # (funciona em servidor limpo sem UID 70 (Alpine) no host)
-            if ! docker run --rm --user 70:70 -v "$POSTGRES_DIR:/test:rw" alpine:3.19 touch /test/.write-test 2>/dev/null; then
-              echo "❌ ERRO: Usuário 70 (postgres Alpine) NÃO consegue escrever no volume Docker"
+            # Estágio 4: Teste de escrita como UID 70 (Alpine) no host
+            # (usa setpriv para simular UID/GID sem depender de pull de imagem)
+            if ! command -v setpriv >/dev/null 2>&1; then
+              echo "❌ ERRO: setpriv não encontrado (pacote util-linux)."
+              echo "   Instale com: apt-get install -y util-linux"
+              exit 1
+            fi
+            if ! sudo setpriv --reuid=70 --regid=70 --clear-groups --inh-caps=-all \
+              sh -c "touch '$POSTGRES_DIR/.write-test'"; then
+              echo "❌ ERRO: Usuário 70 (postgres Alpine) NÃO consegue escrever no diretório"
               sudo ls -ld "$POSTGRES_DIR"
               exit 1
             fi
-            
-            # Limpar arquivo de teste (via Docker para consistência)
-            docker run --rm --user 70:70 -v "$POSTGRES_DIR:/test:rw" alpine:3.19 rm -f /test/.write-test 2>/dev/null || true
+            sudo rm -f "$POSTGRES_DIR/.write-test" 2>/dev/null || true
             echo "   ✅ Estágio 4: Teste de escrita OK"
             
             # =================================================================
@@ -3323,11 +3327,16 @@ jobs:
                     # Verificar se PostgreSQL consegue escrever no volume
                     echo ""
                     echo "✍️  Teste de escrita (como UID 70 (Alpine)):"
-                    if docker run --rm --user 70:70 -v /opt/alice/data/postgres:/test alpine:3.19 touch /test/.write-test 2>&1; then
-                      echo "✅ Escrita OK"
-                      docker run --rm --user 70:70 -v /opt/alice/data/postgres:/test alpine:3.19 rm /test/.write-test 2>&1 || true
+                    if command -v setpriv >/dev/null 2>&1; then
+                      if sudo setpriv --reuid=70 --regid=70 --clear-groups --inh-caps=-all \
+                        sh -c "touch /opt/alice/data/postgres/.write-test" 2>&1; then
+                        echo "✅ Escrita OK"
+                        sudo rm -f /opt/alice/data/postgres/.write-test 2>&1 || true
+                      else
+                        echo "❌ Escrita FALHOU - problema de permissions!"
+                      fi
                     else
-                      echo "❌ Escrita FALHOU - problema de permissions!"
+                      echo "⚠️ setpriv não disponível - não foi possível validar escrita via UID 70"
                     fi
                     
                     # Verificar estado do container
