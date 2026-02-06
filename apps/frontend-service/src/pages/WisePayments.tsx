@@ -724,6 +724,26 @@ export default function WisePayments() {
     }
   }, [statusData?.configured]);
 
+  useEffect(() => {
+    if (wiseBlockedUntil === null) {
+      return;
+    }
+
+    const remainingMs = wiseBlockedUntil - Date.now();
+    if (remainingMs <= 0) {
+      setWiseBlockedUntil(null);
+      return;
+    }
+
+    const timerId = window.setTimeout(() => {
+      setWiseBlockedUntil(null);
+    }, remainingMs);
+
+    return () => {
+      window.clearTimeout(timerId);
+    };
+  }, [wiseBlockedUntil]);
+
   const { data: balancesData, isLoading: isLoadingBalances, refetch: refetchBalances, error: balancesError } = useQuery<WiseBalancesResponse>({
     queryKey: ['/api/integrations/wise/balances'],
     enabled: wiseQueryEnabled,

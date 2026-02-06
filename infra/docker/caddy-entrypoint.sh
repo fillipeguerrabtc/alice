@@ -56,7 +56,7 @@ DNS_PRECHECK_REQUIRE_ALL_RESOLVERS="${ACME_DNS_PRECHECK_REQUIRE_ALL_RESOLVERS:-f
 get_caddy_hosts() {
     awk '
       /^[[:space:]]*#/ { next }
-      /\{/ {
+      /^[^[:space:]][^{]*\{/ {
         line=$0
         sub(/\{.*/, "", line)
         gsub(/,/, " ", line)
