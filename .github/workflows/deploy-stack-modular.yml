@@ -3887,7 +3887,7 @@ jobs:
             )
 
             REQUIRED_COLUMNS_SQL=$(printf "'%s'," "${REQUIRED_COLUMNS[@]}" | sed 's/,$//')
-            REQUIRED_COLUMNS_COUNT=$(printf '%s' "${REQUIRED_COLUMNS[@]}" | wc -w | tr -d ' ')
+            REQUIRED_COLUMNS_COUNT=${#REQUIRED_COLUMNS[@]}
 
             COLUMN_COUNT=$(docker exec -i \
               -e PGPASSWORD="$POSTGRES_PASSWORD" \
