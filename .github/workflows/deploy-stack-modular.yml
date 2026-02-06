@@ -2905,8 +2905,20 @@ jobs:
               echo "❌ ERRO: DNS não resolve ghcr.io a partir do servidor"
               exit 1
             fi
-            if ! curl -I -sS --max-time 10 https://ghcr.io/v2/ >/tmp/ghcr-check.txt; then
-              echo "❌ ERRO: Sem conectividade HTTP com ghcr.io (curl falhou)"
+            GHCR_OK=false
+            for attempt in 1 2 3 4 5; do
+              if curl -I -sS --connect-timeout 5 --max-time 30 https://ghcr.io/v2/ >/tmp/ghcr-check.txt 2>/tmp/ghcr-check.err; then
+                GHCR_OK=true
+                break
+              fi
+              echo "⚠️  GHCR timeout (tentativa $attempt/5). Aguardando $((attempt * 2))s..."
+              sleep $((attempt * 2))
+            done
+            if [ "$GHCR_OK" != "true" ]; then
+              echo "❌ ERRO: Sem conectividade HTTP com ghcr.io (curl falhou após retries)"
+              if [ -s /tmp/ghcr-check.err ]; then
+                echo "   Detalhe: $(tail -n 1 /tmp/ghcr-check.err)"
+              fi
               exit 1
             fi
             # GHCR pode responder 401/403 (sem auth) ou 405 (HEAD não permitido)
@@ -3961,8 +3973,20 @@ jobs:
               echo "❌ ERRO: DNS não resolve ghcr.io a partir do servidor"
               exit 1
             fi
-            if ! curl -I -sS --max-time 10 https://ghcr.io/v2/ >/tmp/ghcr-check.txt; then
-              echo "❌ ERRO: Sem conectividade HTTP com ghcr.io (curl falhou)"
+            GHCR_OK=false
+            for attempt in 1 2 3 4 5; do
+              if curl -I -sS --connect-timeout 5 --max-time 30 https://ghcr.io/v2/ >/tmp/ghcr-check.txt 2>/tmp/ghcr-check.err; then
+                GHCR_OK=true
+                break
+              fi
+              echo "⚠️  GHCR timeout (tentativa $attempt/5). Aguardando $((attempt * 2))s..."
+              sleep $((attempt * 2))
+            done
+            if [ "$GHCR_OK" != "true" ]; then
+              echo "❌ ERRO: Sem conectividade HTTP com ghcr.io (curl falhou após retries)"
+              if [ -s /tmp/ghcr-check.err ]; then
+                echo "   Detalhe: $(tail -n 1 /tmp/ghcr-check.err)"
+              fi
               exit 1
             fi
             # GHCR pode responder 401/403 (sem auth) ou 405 (HEAD não permitido)
@@ -4690,8 +4714,20 @@ jobs:
               echo "❌ ERRO: DNS não resolve ghcr.io a partir do servidor"
               exit 1
             fi
-            if ! curl -I -sS --max-time 10 https://ghcr.io/v2/ >/tmp/ghcr-check.txt; then
-              echo "❌ ERRO: Sem conectividade HTTP com ghcr.io (curl falhou)"
+            GHCR_OK=false
+            for attempt in 1 2 3 4 5; do
+              if curl -I -sS --connect-timeout 5 --max-time 30 https://ghcr.io/v2/ >/tmp/ghcr-check.txt 2>/tmp/ghcr-check.err; then
+                GHCR_OK=true
+                break
+              fi
+              echo "⚠️  GHCR timeout (tentativa $attempt/5). Aguardando $((attempt * 2))s..."
+              sleep $((attempt * 2))
+            done
+            if [ "$GHCR_OK" != "true" ]; then
+              echo "❌ ERRO: Sem conectividade HTTP com ghcr.io (curl falhou após retries)"
+              if [ -s /tmp/ghcr-check.err ]; then
+                echo "   Detalhe: $(tail -n 1 /tmp/ghcr-check.err)"
+              fi
               exit 1
             fi
             # GHCR pode responder 401/403 (sem auth) ou 405 (HEAD não permitido)
@@ -5351,8 +5387,20 @@ jobs:
               echo "❌ ERRO: DNS não resolve ghcr.io a partir do servidor"
               exit 1
             fi
-            if ! curl -I -sS --max-time 10 https://ghcr.io/v2/ >/tmp/ghcr-check.txt; then
-              echo "❌ ERRO: Sem conectividade HTTP com ghcr.io (curl falhou)"
+            GHCR_OK=false
+            for attempt in 1 2 3 4 5; do
+              if curl -I -sS --connect-timeout 5 --max-time 30 https://ghcr.io/v2/ >/tmp/ghcr-check.txt 2>/tmp/ghcr-check.err; then
+                GHCR_OK=true
+                break
+              fi
+              echo "⚠️  GHCR timeout (tentativa $attempt/5). Aguardando $((attempt * 2))s..."
+              sleep $((attempt * 2))
+            done
+            if [ "$GHCR_OK" != "true" ]; then
+              echo "❌ ERRO: Sem conectividade HTTP com ghcr.io (curl falhou após retries)"
+              if [ -s /tmp/ghcr-check.err ]; then
+                echo "   Detalhe: $(tail -n 1 /tmp/ghcr-check.err)"
+              fi
               exit 1
             fi
             # GHCR pode responder 401/403 (sem auth) ou 405 (HEAD não permitido)
@@ -5960,8 +6008,20 @@ jobs:
               echo "❌ ERRO: DNS não resolve ghcr.io a partir do servidor"
               exit 1
             fi
-            if ! curl -I -sS --max-time 10 https://ghcr.io/v2/ >/tmp/ghcr-check.txt; then
-              echo "❌ ERRO: Sem conectividade HTTP com ghcr.io (curl falhou)"
+            GHCR_OK=false
+            for attempt in 1 2 3 4 5; do
+              if curl -I -sS --connect-timeout 5 --max-time 30 https://ghcr.io/v2/ >/tmp/ghcr-check.txt 2>/tmp/ghcr-check.err; then
+                GHCR_OK=true
+                break
+              fi
+              echo "⚠️  GHCR timeout (tentativa $attempt/5). Aguardando $((attempt * 2))s..."
+              sleep $((attempt * 2))
+            done
+            if [ "$GHCR_OK" != "true" ]; then
+              echo "❌ ERRO: Sem conectividade HTTP com ghcr.io (curl falhou após retries)"
+              if [ -s /tmp/ghcr-check.err ]; then
+                echo "   Detalhe: $(tail -n 1 /tmp/ghcr-check.err)"
+              fi
               exit 1
             fi
             # GHCR pode responder 401/403 (sem auth) ou 405 (HEAD não permitido)
