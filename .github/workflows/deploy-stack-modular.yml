@@ -2872,13 +2872,16 @@ jobs:
             # =================================================================
             GHCR_USER="${{ github.repository_owner }}"
             GHCR_TOKEN="${{ secrets.GH_PAT }}"
+            TOKEN_SOURCE="GH_PAT"
             if [ -z "${GHCR_TOKEN}" ]; then
               echo "❌ ERRO: GH_PAT não disponível para login no GHCR"
-              echo "Configure o secret GH_PAT com escopo read:packages"
               exit 1
             fi
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null 2>&1 || {
-              echo "❌ ERRO: Falha no login do GHCR"
+            echo "🔐 Login GHCR com ${TOKEN_SOURCE} (usuário: ${GHCR_USER})"
+            echo "   🔎 GHCR token length: ${#GHCR_TOKEN}"
+            LOGIN_ERROR=$(echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>&1) || {
+              echo "❌ ERRO: Falha no login do GHCR com ${TOKEN_SOURCE}"
+              echo "   Detalhe: ${LOGIN_ERROR}"
               exit 1
             }
             echo "✅ Login GHCR OK"
@@ -3889,13 +3892,16 @@ jobs:
             # =================================================================
             GHCR_USER="${{ github.repository_owner }}"
             GHCR_TOKEN="${{ secrets.GH_PAT }}"
+            TOKEN_SOURCE="GH_PAT"
             if [ -z "${GHCR_TOKEN}" ]; then
               echo "❌ ERRO: GH_PAT não disponível para login no GHCR"
-              echo "Configure o secret GH_PAT com escopo read:packages"
               exit 1
             fi
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null 2>&1 || {
-              echo "❌ ERRO: Falha no login do GHCR"
+            echo "🔐 Login GHCR com ${TOKEN_SOURCE} (usuário: ${GHCR_USER})"
+            echo "   🔎 GHCR token length: ${#GHCR_TOKEN}"
+            LOGIN_ERROR=$(echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>&1) || {
+              echo "❌ ERRO: Falha no login do GHCR com ${TOKEN_SOURCE}"
+              echo "   Detalhe: ${LOGIN_ERROR}"
               exit 1
             }
             echo "✅ Login GHCR OK"
@@ -4584,13 +4590,16 @@ jobs:
             # =================================================================
             GHCR_USER="${{ github.repository_owner }}"
             GHCR_TOKEN="${{ secrets.GH_PAT }}"
+            TOKEN_SOURCE="GH_PAT"
             if [ -z "${GHCR_TOKEN}" ]; then
               echo "❌ ERRO: GH_PAT não disponível para login no GHCR"
-              echo "Configure o secret GH_PAT com escopo read:packages"
               exit 1
             fi
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null 2>&1 || {
-              echo "❌ ERRO: Falha no login do GHCR"
+            echo "🔐 Login GHCR com ${TOKEN_SOURCE} (usuário: ${GHCR_USER})"
+            echo "   🔎 GHCR token length: ${#GHCR_TOKEN}"
+            LOGIN_ERROR=$(echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>&1) || {
+              echo "❌ ERRO: Falha no login do GHCR com ${TOKEN_SOURCE}"
+              echo "   Detalhe: ${LOGIN_ERROR}"
               exit 1
             }
             echo "✅ Login GHCR OK"
@@ -5211,13 +5220,16 @@ jobs:
             # =================================================================
             GHCR_USER="${{ github.repository_owner }}"
             GHCR_TOKEN="${{ secrets.GH_PAT }}"
+            TOKEN_SOURCE="GH_PAT"
             if [ -z "${GHCR_TOKEN}" ]; then
               echo "❌ ERRO: GH_PAT não disponível para login no GHCR"
-              echo "Configure o secret GH_PAT com escopo read:packages"
               exit 1
             fi
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null 2>&1 || {
-              echo "❌ ERRO: Falha no login do GHCR"
+            echo "🔐 Login GHCR com ${TOKEN_SOURCE} (usuário: ${GHCR_USER})"
+            echo "   🔎 GHCR token length: ${#GHCR_TOKEN}"
+            LOGIN_ERROR=$(echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>&1) || {
+              echo "❌ ERRO: Falha no login do GHCR com ${TOKEN_SOURCE}"
+              echo "   Detalhe: ${LOGIN_ERROR}"
               exit 1
             }
             echo "✅ Login GHCR OK"
@@ -5786,13 +5798,16 @@ jobs:
             # =================================================================
             GHCR_USER="${{ github.repository_owner }}"
             GHCR_TOKEN="${{ secrets.GH_PAT }}"
+            TOKEN_SOURCE="GH_PAT"
             if [ -z "${GHCR_TOKEN}" ]; then
               echo "❌ ERRO: GH_PAT não disponível para login no GHCR"
-              echo "Configure o secret GH_PAT com escopo read:packages"
               exit 1
             fi
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null 2>&1 || {
-              echo "❌ ERRO: Falha no login do GHCR"
+            echo "🔐 Login GHCR com ${TOKEN_SOURCE} (usuário: ${GHCR_USER})"
+            echo "   🔎 GHCR token length: ${#GHCR_TOKEN}"
+            LOGIN_ERROR=$(echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>&1) || {
+              echo "❌ ERRO: Falha no login do GHCR com ${TOKEN_SOURCE}"
+              echo "   Detalhe: ${LOGIN_ERROR}"
               exit 1
             }
             echo "✅ Login GHCR OK"
