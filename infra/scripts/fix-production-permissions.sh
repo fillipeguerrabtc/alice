@@ -603,8 +603,50 @@ create_mode() {
             
             local chown_cmd="find \"$path\" \\( ! -user \"$uid\" -o ! -group \"$gid\" \\) $exclusions -exec chown \"${uid}:${gid}\" {} \\;"
             
-            if ! eval "$chown_cmd" 2>/dev/null; then
+            local chown_error=""
+            if ! chown_error=$(eval "$chown_cmd" 2>&1); then
                 log_error "  ❌ Falha ao atualizar ownership: $path"
+                if [[ -n "$chown_error" ]]; then
+                    log_error "     Detalhe: $chown_error"
+                fi
+                
+                # Diagnóstico adicional para arquivos problemáticos
+                if [[ -n "$wrong_files" ]]; then
+                    log_info "     🔍 Diagnóstico do arquivo com problema:"
+                    log_info "        Path: $wrong_files"
+                    stat "$wrong_files" 2>/dev/null || true
+                    
+                    if command -v lsattr >/dev/null 2>&1; then
+                        log_info "        Atributos (lsattr):"
+                        lsattr -d "$wrong_files" 2>/dev/null || true
+                    fi
+                    
+                    if command -v getfacl >/dev/null 2>&1; then
+                        log_info "        ACL (getfacl):"
+                        getfacl -p "$wrong_files" 2>/dev/null || true
+                    fi
+                    
+                    # Se arquivo estiver imutável, tentar remover atributo e reexecutar
+                    if command -v lsattr >/dev/null 2>&1 && command -v chattr >/dev/null 2>&1; then
+                        if lsattr -d "$wrong_files" 2>/dev/null | grep -q 'i'; then
+                            log_warning "     ⚠️  Atributo imutável detectado (i) - removendo..."
+                            chattr -i "$wrong_files" 2>/dev/null || true
+                            
+                            log_info "     🔁 Reexecutando correção de ownership após remover atributo..."
+                            if chown_error=$(eval "$chown_cmd" 2>&1); then
+                                log_success "  ✅ Ownership corrigido após remover atributo imutável"
+                                needs_update=true
+                                continue
+                            fi
+                            
+                            log_error "  ❌ Falha persistente após remover atributo imutável"
+                            if [[ -n "$chown_error" ]]; then
+                                log_error "     Detalhe: $chown_error"
+                            fi
+                        fi
+                    fi
+                fi
+                
                 ((failed++))
                 continue
             fi
