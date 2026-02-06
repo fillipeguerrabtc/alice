@@ -2861,6 +2861,21 @@ jobs:
             echo "🕐 Início: $(date '+%Y-%m-%d %H:%M:%S')"
             echo ""
             
+            # =================================================================
+            # Login GHCR (server-side) + retry de pull
+            # =================================================================
+            GHCR_USER="${{ github.actor }}"
+            GHCR_TOKEN="${{ secrets.GITHUB_TOKEN }}"
+            if [ -z "${GHCR_TOKEN}" ]; then
+              echo "❌ ERRO: GITHUB_TOKEN não disponível para login no GHCR"
+              exit 1
+            fi
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null 2>&1 || {
+              echo "❌ ERRO: Falha no login do GHCR"
+              exit 1
+            }
+            echo "✅ Login GHCR OK"
+            
             # Salvar versão anterior (rollback safety)
             if [ -f /opt/alice/versions/infra.current ]; then
               cp /opt/alice/versions/infra.current /opt/alice/versions/infra.previous
@@ -2874,7 +2889,23 @@ jobs:
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "📥 PULL: Baixando imagens..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            if ! docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.infra.yml pull 2>&1; then
+            pull_with_retry() {
+              local attempts=5
+              local delay=10
+              local attempt=1
+              while [ $attempt -le $attempts ]; do
+                if docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.infra.yml pull 2>&1; then
+                  return 0
+                fi
+                echo "⚠️ Pull falhou (tentativa $attempt/$attempts). Aguardando ${delay}s..."
+                sleep "$delay"
+                delay=$((delay * 2))
+                attempt=$((attempt + 1))
+              done
+              return 1
+            }
+            
+            if ! pull_with_retry; then
               echo ""
               echo "❌ ERRO: Falha no pull das imagens!"
               exit 1
@@ -3846,6 +3877,37 @@ jobs:
             fi
             echo ""
             
+            # =================================================================
+            # Login GHCR (server-side) + retry de pull
+            # =================================================================
+            GHCR_USER="${{ github.actor }}"
+            GHCR_TOKEN="${{ secrets.GITHUB_TOKEN }}"
+            if [ -z "${GHCR_TOKEN}" ]; then
+              echo "❌ ERRO: GITHUB_TOKEN não disponível para login no GHCR"
+              exit 1
+            fi
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null 2>&1 || {
+              echo "❌ ERRO: Falha no login do GHCR"
+              exit 1
+            }
+            echo "✅ Login GHCR OK"
+            
+            pull_with_retry() {
+              local attempts=5
+              local delay=10
+              local attempt=1
+              while [ $attempt -le $attempts ]; do
+                if "$@"; then
+                  return 0
+                fi
+                echo "⚠️ Pull falhou (tentativa $attempt/$attempts). Aguardando ${delay}s..."
+                sleep "$delay"
+                delay=$((delay * 2))
+                attempt=$((attempt + 1))
+              done
+              return 1
+            }
+            
             # Pull das imagens
             # ARQUITETURA ENTERPRISE (09/01/2026): Pull TODAS as imagens GPU
             # GPU Manager gerencia containers dinamicamente - todos devem estar disponíveis
@@ -3854,7 +3916,7 @@ jobs:
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             
             # Pull serviços principais (sem profile)
-            if ! docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull 2>&1; then
+            if ! pull_with_retry docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull 2>&1; then
               echo "⚠️  Aviso: Pull parcial, continuando..."
             fi
             
@@ -3866,13 +3928,13 @@ jobs:
             # NOTA: Vision e geração de imagens são via OpenAI (sem VLM local)
             echo ""
             echo "📥 Pull GPU LLM (Qwen2.5)..."
-            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull gpu-llm 2>&1 || echo "   ⚠️ gpu-llm: pull falhou"
+            pull_with_retry docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull gpu-llm 2>&1 || echo "   ⚠️ gpu-llm: pull falhou"
             
             echo "📥 Pull GPU Embeddings..."
-            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull gpu-embeddings 2>&1 || echo "   ⚠️ gpu-embeddings: pull falhou"
+            pull_with_retry docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull gpu-embeddings 2>&1 || echo "   ⚠️ gpu-embeddings: pull falhou"
             
             echo "📥 Pull GPU Trainer (fine-tuning sob demanda)..."
-            docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile training pull gpu-trainer 2>&1 || echo "   ⚠️ gpu-trainer: pull falhou"
+            pull_with_retry docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile training pull gpu-trainer 2>&1 || echo "   ⚠️ gpu-trainer: pull falhou"
             
             echo "✅ Pull concluído"
             echo ""
@@ -4509,6 +4571,37 @@ jobs:
             exec > >(tee -a "$LOG_FILE") 2>&1
             echo "📝 Log persistido em: $LOG_FILE"
             
+            # =================================================================
+            # Login GHCR (server-side) + retry de pull
+            # =================================================================
+            GHCR_USER="${{ github.actor }}"
+            GHCR_TOKEN="${{ secrets.GITHUB_TOKEN }}"
+            if [ -z "${GHCR_TOKEN}" ]; then
+              echo "❌ ERRO: GITHUB_TOKEN não disponível para login no GHCR"
+              exit 1
+            fi
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null 2>&1 || {
+              echo "❌ ERRO: Falha no login do GHCR"
+              exit 1
+            }
+            echo "✅ Login GHCR OK"
+            
+            pull_with_retry() {
+              local attempts=5
+              local delay=10
+              local attempt=1
+              while [ $attempt -le $attempts ]; do
+                if "$@"; then
+                  return 0
+                fi
+                echo "⚠️ Pull falhou (tentativa $attempt/$attempts). Aguardando ${delay}s..."
+                sleep "$delay"
+                delay=$((delay * 2))
+                attempt=$((attempt + 1))
+              done
+              return 1
+            }
+            
             echo "══════════════════════════════════════════════════════════════════"
             echo "🚀 DEPLOYING OBSERVABILITY STACK"
             echo "══════════════════════════════════════════════════════════════════"
@@ -4531,7 +4624,7 @@ jobs:
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "📥 PULL: Baixando imagens..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            if ! docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.observability.yml pull 2>&1; then
+            if ! pull_with_retry docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.observability.yml pull 2>&1; then
               echo ""
               echo "❌ ERRO: Falha no pull das imagens!"
               exit 1
@@ -5104,6 +5197,37 @@ jobs:
             exec > >(tee -a "$LOG_FILE") 2>&1
             echo "📝 Log persistido em: $LOG_FILE"
             
+            # =================================================================
+            # Login GHCR (server-side) + retry de pull
+            # =================================================================
+            GHCR_USER="${{ github.actor }}"
+            GHCR_TOKEN="${{ secrets.GITHUB_TOKEN }}"
+            if [ -z "${GHCR_TOKEN}" ]; then
+              echo "❌ ERRO: GITHUB_TOKEN não disponível para login no GHCR"
+              exit 1
+            fi
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null 2>&1 || {
+              echo "❌ ERRO: Falha no login do GHCR"
+              exit 1
+            }
+            echo "✅ Login GHCR OK"
+            
+            pull_with_retry() {
+              local attempts=5
+              local delay=10
+              local attempt=1
+              while [ $attempt -le $attempts ]; do
+                if "$@"; then
+                  return 0
+                fi
+                echo "⚠️ Pull falhou (tentativa $attempt/$attempts). Aguardando ${delay}s..."
+                sleep "$delay"
+                delay=$((delay * 2))
+                attempt=$((attempt + 1))
+              done
+              return 1
+            }
+            
             echo "══════════════════════════════════════════════════════════════════"
             echo "🚀 DEPLOYING ERPNEXT STACK"
             echo "══════════════════════════════════════════════════════════════════"
@@ -5126,7 +5250,7 @@ jobs:
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "📥 PULL: Baixando imagens..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            if ! docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml pull 2>&1; then
+            if ! pull_with_retry docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml pull 2>&1; then
               echo ""
               echo "❌ ERRO: Falha no pull das imagens!"
               exit 1
@@ -5647,6 +5771,37 @@ jobs:
             exec > >(tee -a "$LOG_FILE") 2>&1
             echo "📝 Log persistido em: $LOG_FILE"
             
+            # =================================================================
+            # Login GHCR (server-side) + retry de pull
+            # =================================================================
+            GHCR_USER="${{ github.actor }}"
+            GHCR_TOKEN="${{ secrets.GITHUB_TOKEN }}"
+            if [ -z "${GHCR_TOKEN}" ]; then
+              echo "❌ ERRO: GITHUB_TOKEN não disponível para login no GHCR"
+              exit 1
+            fi
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null 2>&1 || {
+              echo "❌ ERRO: Falha no login do GHCR"
+              exit 1
+            }
+            echo "✅ Login GHCR OK"
+            
+            pull_with_retry() {
+              local attempts=5
+              local delay=10
+              local attempt=1
+              while [ $attempt -le $attempts ]; do
+                if "$@"; then
+                  return 0
+                fi
+                echo "⚠️ Pull falhou (tentativa $attempt/$attempts). Aguardando ${delay}s..."
+                sleep "$delay"
+                delay=$((delay * 2))
+                attempt=$((attempt + 1))
+              done
+              return 1
+            }
+            
             echo "══════════════════════════════════════════════════════════════════"
             echo "🚀 DEPLOYING BACKUP STACK"
             echo "══════════════════════════════════════════════════════════════════"
@@ -5669,7 +5824,7 @@ jobs:
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "📥 PULL: Baixando imagens..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            if ! docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.backup.yml pull 2>&1; then
+            if ! pull_with_retry docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.backup.yml pull 2>&1; then
               echo ""
               echo "❌ ERRO: Falha no pull das imagens!"
               exit 1
