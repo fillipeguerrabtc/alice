@@ -2940,7 +2940,7 @@ jobs:
             if ! docker compose -p alice-infra --env-file ../.env.prod \
                            -f docker-compose.base.yml \
                            -f docker-compose.infra.yml \
-                           up -d --pull always --remove-orphans 2>&1; then
+                           up -d --remove-orphans 2>&1; then
               echo ""
               echo "❌ ERRO: Falha no docker compose up!"
               echo ""
