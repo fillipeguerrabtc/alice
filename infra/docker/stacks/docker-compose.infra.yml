@@ -687,8 +687,6 @@ services:
       # Fonte: https://github.com/oliver006/redis_exporter
       REDIS_ADDR: redis://alice-redis:6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
-    command:
-      - "--include-latency-histogram"
     networks:
       - alice-network
     depends_on:

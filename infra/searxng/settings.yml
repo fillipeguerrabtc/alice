@@ -106,17 +106,7 @@ engines:
     shortcut: ah
     enabled: true
     timeout: 6.0
-    proxies:
-      - socks5h://alice-tor:9050
-    categories: general
-    use_mobile_ui: false
-  - name: torch
-    engine: torch
-    shortcut: to
-    enabled: true
-    timeout: 6.0
-    proxies:
-      - socks5h://alice-tor:9050
+    proxies: "socks5h://alice-tor:9050"
     categories: general
     use_mobile_ui: false
 
