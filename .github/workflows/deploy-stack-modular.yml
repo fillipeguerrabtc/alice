@@ -2877,6 +2877,22 @@ jobs:
               echo "❌ ERRO: GH_PAT não disponível para login no GHCR"
               exit 1
             fi
+            echo "🌐 Verificando conectividade com GHCR..."
+            if ! getent hosts ghcr.io >/dev/null 2>&1; then
+              echo "❌ ERRO: DNS não resolve ghcr.io a partir do servidor"
+              exit 1
+            fi
+            if ! curl -I -sS --max-time 10 https://ghcr.io/v2/ >/tmp/ghcr-check.txt; then
+              echo "❌ ERRO: Sem conectividade HTTP com ghcr.io (curl falhou)"
+              exit 1
+            fi
+            if ! grep -qE 'HTTP/[0-9.]+ (401|403)' /tmp/ghcr-check.txt; then
+              echo "❌ ERRO: Resposta inesperada do GHCR:"
+              cat /tmp/ghcr-check.txt
+              exit 1
+            fi
+            echo "✅ Conectividade com GHCR OK"
+            echo ""
             echo "🔐 Login GHCR com ${TOKEN_SOURCE} (usuário: ${GHCR_USER})"
             echo "   🔎 GHCR token length: ${#GHCR_TOKEN}"
             LOGIN_ERROR=$(echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>&1) || {
@@ -3897,6 +3913,22 @@ jobs:
               echo "❌ ERRO: GH_PAT não disponível para login no GHCR"
               exit 1
             fi
+            echo "🌐 Verificando conectividade com GHCR..."
+            if ! getent hosts ghcr.io >/dev/null 2>&1; then
+              echo "❌ ERRO: DNS não resolve ghcr.io a partir do servidor"
+              exit 1
+            fi
+            if ! curl -I -sS --max-time 10 https://ghcr.io/v2/ >/tmp/ghcr-check.txt; then
+              echo "❌ ERRO: Sem conectividade HTTP com ghcr.io (curl falhou)"
+              exit 1
+            fi
+            if ! grep -qE 'HTTP/[0-9.]+ (401|403)' /tmp/ghcr-check.txt; then
+              echo "❌ ERRO: Resposta inesperada do GHCR:"
+              cat /tmp/ghcr-check.txt
+              exit 1
+            fi
+            echo "✅ Conectividade com GHCR OK"
+            echo ""
             echo "🔐 Login GHCR com ${TOKEN_SOURCE} (usuário: ${GHCR_USER})"
             echo "   🔎 GHCR token length: ${#GHCR_TOKEN}"
             LOGIN_ERROR=$(echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>&1) || {
@@ -4595,6 +4627,22 @@ jobs:
               echo "❌ ERRO: GH_PAT não disponível para login no GHCR"
               exit 1
             fi
+            echo "🌐 Verificando conectividade com GHCR..."
+            if ! getent hosts ghcr.io >/dev/null 2>&1; then
+              echo "❌ ERRO: DNS não resolve ghcr.io a partir do servidor"
+              exit 1
+            fi
+            if ! curl -I -sS --max-time 10 https://ghcr.io/v2/ >/tmp/ghcr-check.txt; then
+              echo "❌ ERRO: Sem conectividade HTTP com ghcr.io (curl falhou)"
+              exit 1
+            fi
+            if ! grep -qE 'HTTP/[0-9.]+ (401|403)' /tmp/ghcr-check.txt; then
+              echo "❌ ERRO: Resposta inesperada do GHCR:"
+              cat /tmp/ghcr-check.txt
+              exit 1
+            fi
+            echo "✅ Conectividade com GHCR OK"
+            echo ""
             echo "🔐 Login GHCR com ${TOKEN_SOURCE} (usuário: ${GHCR_USER})"
             echo "   🔎 GHCR token length: ${#GHCR_TOKEN}"
             LOGIN_ERROR=$(echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>&1) || {
@@ -5225,6 +5273,22 @@ jobs:
               echo "❌ ERRO: GH_PAT não disponível para login no GHCR"
               exit 1
             fi
+            echo "🌐 Verificando conectividade com GHCR..."
+            if ! getent hosts ghcr.io >/dev/null 2>&1; then
+              echo "❌ ERRO: DNS não resolve ghcr.io a partir do servidor"
+              exit 1
+            fi
+            if ! curl -I -sS --max-time 10 https://ghcr.io/v2/ >/tmp/ghcr-check.txt; then
+              echo "❌ ERRO: Sem conectividade HTTP com ghcr.io (curl falhou)"
+              exit 1
+            fi
+            if ! grep -qE 'HTTP/[0-9.]+ (401|403)' /tmp/ghcr-check.txt; then
+              echo "❌ ERRO: Resposta inesperada do GHCR:"
+              cat /tmp/ghcr-check.txt
+              exit 1
+            fi
+            echo "✅ Conectividade com GHCR OK"
+            echo ""
             echo "🔐 Login GHCR com ${TOKEN_SOURCE} (usuário: ${GHCR_USER})"
             echo "   🔎 GHCR token length: ${#GHCR_TOKEN}"
             LOGIN_ERROR=$(echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>&1) || {
@@ -5803,6 +5867,22 @@ jobs:
               echo "❌ ERRO: GH_PAT não disponível para login no GHCR"
               exit 1
             fi
+            echo "🌐 Verificando conectividade com GHCR..."
+            if ! getent hosts ghcr.io >/dev/null 2>&1; then
+              echo "❌ ERRO: DNS não resolve ghcr.io a partir do servidor"
+              exit 1
+            fi
+            if ! curl -I -sS --max-time 10 https://ghcr.io/v2/ >/tmp/ghcr-check.txt; then
+              echo "❌ ERRO: Sem conectividade HTTP com ghcr.io (curl falhou)"
+              exit 1
+            fi
+            if ! grep -qE 'HTTP/[0-9.]+ (401|403)' /tmp/ghcr-check.txt; then
+              echo "❌ ERRO: Resposta inesperada do GHCR:"
+              cat /tmp/ghcr-check.txt
+              exit 1
+            fi
+            echo "✅ Conectividade com GHCR OK"
+            echo ""
             echo "🔐 Login GHCR com ${TOKEN_SOURCE} (usuário: ${GHCR_USER})"
             echo "   🔎 GHCR token length: ${#GHCR_TOKEN}"
             LOGIN_ERROR=$(echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>&1) || {

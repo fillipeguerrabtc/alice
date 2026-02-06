@@ -264,6 +264,10 @@ cat > /etc/sysctl.d/99-alice.conf << 'EOF'
 # Memória
 vm.swappiness = 10
 vm.overcommit_memory = 1
+# IPv6
+net.ipv6.conf.all.disable_ipv6 = 1
+net.ipv6.conf.default.disable_ipv6 = 1
+net.ipv6.conf.lo.disable_ipv6 = 1
 # Network
 net.core.somaxconn = 65535
 net.core.rmem_max = 16777216
