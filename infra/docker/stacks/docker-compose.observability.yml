@@ -421,7 +421,6 @@ services:
       - "--path.sysfs=/host/sys"
       - "--path.rootfs=/host"
       - "--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($|/)"
-      - "--no-collector.udev"
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
