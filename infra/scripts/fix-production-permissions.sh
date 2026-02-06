@@ -71,7 +71,8 @@ readonly BACKUPS_DIR="${ALICE_BACKUPS_DIR}"
 readonly UPLOADS_DIR="${ALICE_UPLOADS_DIR}"
 readonly SECRETS_DIR="${ALICE_SECRETS_DIR}"
 
-# Usar PERMISSIONS_CONFIG do SSOT
+# Usar SSOT do permissions-config.sh
+declare -a BASE_DIRECTORIES=("${BASE_PERMISSIONS_CONFIG[@]}")
 declare -a DIRECTORIES=("${PERMISSIONS_CONFIG[@]}")
 
 # Cores para output
@@ -311,6 +312,44 @@ dry_run_mode() {
     
     local changes=0
     
+    # ==========================================================================
+    # DRY-RUN BASE (SEM RECURSÃO)
+    # ==========================================================================
+    if [[ ${#BASE_DIRECTORIES[@]} -gt 0 ]]; then
+        log_info "Verificando diretórios base (sem recursão)..."
+        for entry in "${BASE_DIRECTORIES[@]}"; do
+            IFS=':' read -r path uid gid perms <<< "$entry"
+            
+            if [[ ! -d "$path" ]]; then
+                log_warning "  🔧 CRIARIA: $path"
+                ((changes++))
+                continue
+            fi
+            
+            local current_owner
+            current_owner=$(stat -c '%u:%g' "$path" 2>/dev/null || stat -f '%u:%g' "$path" 2>/dev/null || echo "")
+            if [[ -z "$current_owner" ]] || [[ "$current_owner" != "${uid}:${gid}" ]]; then
+                log_warning "  🔧 MUDARIA: chown ${uid}:${gid} $path (atual: ${current_owner:-desconhecido})"
+                ((changes++))
+            fi
+            
+            local current_perms
+            current_perms=$(stat -c '%a' "$path" 2>/dev/null || stat -f '%Lp' "$path" 2>/dev/null)
+            local current_perms_normalized="${current_perms: -3}"
+            local has_special_bits=false
+            [[ "${#current_perms}" -gt 3 ]] && has_special_bits=true
+            
+            if [[ "$current_perms_normalized" != "$perms" ]] || [[ "$has_special_bits" == "true" ]]; then
+                log_warning "  🔧 MUDARIA: chmod 0$perms $path (atual: $current_perms)"
+                if [[ "$has_special_bits" == "true" ]]; then
+                    log_info "     NOTA: Bits especiais serão removidos (setuid/setgid/sticky)"
+                fi
+                ((changes++))
+            fi
+        done
+        echo ""
+    fi
+    
     for entry in "${DIRECTORIES[@]}"; do
         IFS=':' read -r path uid gid perms <<< "$entry"
         
@@ -396,6 +435,93 @@ create_mode() {
     local modified=0
     local unchanged=0
     local failed=0
+    
+    # ==========================================================================
+    # PERMISSÕES BASE (SEM RECURSÃO)
+    # ==========================================================================
+    # Diretórios base precisam permitir travessia (x), mas NÃO devem alterar
+    # ownership recursivamente para não sobrescrever UIDs dos subdiretórios.
+    # REF: permissions-config.sh (BASE_PERMISSIONS_CONFIG)
+    # ==========================================================================
+    if [[ ${#BASE_DIRECTORIES[@]} -gt 0 ]]; then
+        log_info "Aplicando permissões base (sem recursão)..."
+        for entry in "${BASE_DIRECTORIES[@]}"; do
+            IFS=':' read -r path uid gid perms <<< "$entry"
+            local needs_update=false
+            
+            if [[ ! -d "$path" ]]; then
+                if mkdir -p "$path" 2>/dev/null; then
+                    log_success "Criado: $path"
+                    ((created++))
+                    needs_update=true
+                else
+                    log_error "Falha ao criar: $path"
+                    ((failed++))
+                    continue
+                fi
+            fi
+            
+            local current_owner
+            current_owner=$(stat -c '%u:%g' "$path" 2>/dev/null || stat -f '%u:%g' "$path" 2>/dev/null || echo "")
+            if [[ -z "$current_owner" ]]; then
+                log_error "Falha ao ler ownership: $path"
+                ((failed++))
+                continue
+            fi
+            
+            if [[ "$current_owner" != "${uid}:${gid}" ]]; then
+                if ! chown "${uid}:${gid}" "$path" 2>/dev/null; then
+                    log_error "  ❌ Falha ao atualizar ownership (base): $path"
+                    ((failed++))
+                    continue
+                fi
+                log_success "  ✅ Ownership base ajustado: $path → ${uid}:${gid}"
+                needs_update=true
+            fi
+            
+            local current_perms
+            current_perms=$(stat -c '%a' "$path" 2>/dev/null || stat -f '%Lp' "$path" 2>/dev/null)
+            local current_perms_normalized="${current_perms: -3}"
+            local has_special_bits=false
+            [[ "${#current_perms}" -gt 3 ]] && has_special_bits=true
+            
+            if [[ "$current_perms_normalized" != "$perms" ]] || [[ "$has_special_bits" == "true" ]]; then
+                if [[ "$has_special_bits" == "true" ]]; then
+                    chmod a-st "$path" 2>/dev/null || true
+                fi
+                if ! chmod "0${perms}" "$path" 2>/dev/null; then
+                    log_error "  ❌ Falha ao atualizar permissões (base): $path"
+                    ((failed++))
+                    continue
+                fi
+                
+                local new_perms
+                new_perms=$(stat -c '%a' "$path" 2>/dev/null || stat -f '%Lp' "$path" 2>/dev/null)
+                local new_perms_normalized="${new_perms: -3}"
+                local still_has_special=false
+                [[ "${#new_perms}" -gt 3 ]] && still_has_special=true
+                
+                if [[ "$new_perms_normalized" != "$perms" ]] || [[ "$still_has_special" == "true" ]]; then
+                    log_error "  ❌ FALHA CRÍTICA: chmod não funcionou corretamente em $path"
+                    log_error "     Permissões antes: ${current_perms}"
+                    log_error "     Permissões após:  ${new_perms}"
+                    log_error "     Esperado:         0${perms}"
+                    ((failed++))
+                    continue
+                fi
+                
+                log_success "  ✅ Permissões base ajustadas: $path → 0${perms}"
+                needs_update=true
+            fi
+            
+            if [[ "$needs_update" == "true" ]]; then
+                ((modified++))
+            else
+                ((unchanged++))
+            fi
+        done
+        echo ""
+    fi
     
     for entry in "${DIRECTORIES[@]}"; do
         IFS=':' read -r path uid gid perms <<< "$entry"
@@ -612,6 +738,48 @@ validate_mode() {
     local valid=0
     local invalid=0
     local missing=0
+    
+    # ==========================================================================
+    # VALIDAR DIRETÓRIOS BASE (SEM RECURSÃO)
+    # ==========================================================================
+    if [[ ${#BASE_DIRECTORIES[@]} -gt 0 ]]; then
+        log_info "Validando permissões base (sem recursão)..."
+        for entry in "${BASE_DIRECTORIES[@]}"; do
+            IFS=':' read -r path uid gid perms <<< "$entry"
+            
+            if [[ ! -d "$path" ]]; then
+                log_error "FALTA: $path não existe"
+                ((missing++))
+                continue
+            fi
+            
+            local current_owner
+            current_owner=$(stat -c '%u:%g' "$path" 2>/dev/null || stat -f '%u:%g' "$path" 2>/dev/null || echo "")
+            if [[ -z "$current_owner" ]] || [[ "$current_owner" != "${uid}:${gid}" ]]; then
+                log_error "ERRO: Ownership incorreto (base) em $path"
+                log_error "  Esperado: ${uid}:${gid} | Atual: ${current_owner:-desconhecido}"
+                ((invalid++))
+                continue
+            fi
+            
+            local current_perms
+            current_perms=$(stat -c '%a' "$path" 2>/dev/null || stat -f '%Lp' "$path" 2>/dev/null)
+            local current_perms_normalized="${current_perms: -3}"
+            local has_special_bits=false
+            [[ "${#current_perms}" -gt 3 ]] && has_special_bits=true
+            
+            if [[ "$current_perms_normalized" != "$perms" ]] || [[ "$has_special_bits" == "true" ]]; then
+                log_error "ERRO: Permissões incorretas (base) em $path"
+                log_error "  Esperado: 0${perms} | Atual: ${current_perms}"
+                ((invalid++))
+                continue
+            fi
+            
+            log_success "  ✅ Base OK: $path (${uid}:${gid}, 0${perms})"
+            ((valid++))
+        done
+        echo ""
+    fi
     
     for entry in "${DIRECTORIES[@]}"; do
         IFS=':' read -r path uid gid perms <<< "$entry"

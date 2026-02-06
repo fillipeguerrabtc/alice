@@ -90,7 +90,9 @@ Servidor de produção com permissões corretas
 
 Estes diretórios são **pais** dos dados e precisam permitir **travessia** (`x`)
 por UIDs de containers. Sem isso, o PostgreSQL (UID 70) falha ao escrever em
-`/opt/alice/data/postgres` mesmo com ownership correto.
+`/opt/alice/data/postgres` mesmo com ownership correto.  
+**Importante:** a correção aplica **chown/chmod apenas no diretório base** (sem
+recursão) para não sobrescrever UIDs/GIDs dos subdiretórios de cada serviço.
 
 | Diretório | UID | GID | Permissões | Justificativa |
 |----------|-----|-----|------------|---------------|
