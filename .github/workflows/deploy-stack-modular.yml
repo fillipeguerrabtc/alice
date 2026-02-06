@@ -1397,12 +1397,22 @@ jobs:
             echo "   ✅ nvidia-smi encontrado"
             nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
             
-            # Verificar runtime Docker com GPU
-            if ! docker run --rm --gpus all nvidia/cuda:12.0.0-base-ubuntu22.04 nvidia-smi &> /dev/null; then
-              echo "::error::❌ Docker não consegue acessar GPU!"
-              echo "::error::Verifique NVIDIA Container Toolkit e configuração Docker."
-              exit 1
+            # Verificar runtime Docker com GPU (com diagnóstico explícito)
+            GPU_TEST_IMAGE="nvidia/cuda:12.0.0-base-ubuntu22.04"
+            if ! docker image inspect "$GPU_TEST_IMAGE" >/dev/null 2>&1; then
+              echo "   🧪 Baixando imagem de teste GPU ($GPU_TEST_IMAGE)..."
+              if ! docker pull "$GPU_TEST_IMAGE" >/tmp/gpu-test-pull.log 2>&1; then
+                echo "::error::❌ Falha ao baixar imagem de teste GPU ($GPU_TEST_IMAGE)"
+                echo "::error::Verifique conectividade com registry-1.docker.io"
+                tail -n 20 /tmp/gpu-test-pull.log || true
+                exit 1
+              fi
             fi
+            GPU_TEST_LOG=$(docker run --rm --gpus all "$GPU_TEST_IMAGE" nvidia-smi 2>&1) || {
+              echo "::error::❌ Docker não consegue acessar GPU!"
+              echo "::error::Detalhe: $GPU_TEST_LOG"
+              exit 1
+            }
             
             echo "   ✅ Docker com GPU funcionando"
             echo ""
@@ -1885,13 +1895,22 @@ jobs:
             fi
             echo "   ✅ Docker OK"
             
-            # Verificar runtime NVIDIA
-            if ! docker run --rm --gpus all nvidia/cuda:12.0.0-base-ubuntu22.04 nvidia-smi &>/dev/null; then
-              echo "❌ ERRO CRÍTICO: Docker não consegue acessar GPU!"
-              echo ""
-              echo "   Verifique NVIDIA Container Toolkit"
-              exit 1
+            # Verificar runtime NVIDIA (com diagnóstico explícito)
+            GPU_TEST_IMAGE="nvidia/cuda:12.0.0-base-ubuntu22.04"
+            if ! docker image inspect "$GPU_TEST_IMAGE" >/dev/null 2>&1; then
+              echo "   🧪 Baixando imagem de teste GPU ($GPU_TEST_IMAGE)..."
+              if ! docker pull "$GPU_TEST_IMAGE" >/tmp/gpu-test-pull.log 2>&1; then
+                echo "❌ ERRO CRÍTICO: Falha ao baixar imagem de teste GPU ($GPU_TEST_IMAGE)"
+                echo "   Verifique conectividade com registry-1.docker.io"
+                tail -n 20 /tmp/gpu-test-pull.log || true
+                exit 1
+              fi
             fi
+            GPU_TEST_LOG=$(docker run --rm --gpus all "$GPU_TEST_IMAGE" nvidia-smi 2>&1) || {
+              echo "❌ ERRO CRÍTICO: Docker não consegue acessar GPU!"
+              echo "   Detalhe: $GPU_TEST_LOG"
+              exit 1
+            }
             echo "   ✅ Docker com GPU OK"
             
             # =================================================================
@@ -2899,11 +2918,24 @@ jobs:
             echo ""
             echo "🔐 Login GHCR com ${TOKEN_SOURCE} (usuário: ${GHCR_USER})"
             echo "   🔎 GHCR token length: ${#GHCR_TOKEN}"
-            LOGIN_ERROR=$(echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>&1) || {
-              echo "❌ ERRO: Falha no login do GHCR com ${TOKEN_SOURCE}"
-              echo "   Detalhe: ${LOGIN_ERROR}"
-              exit 1
+            login_with_retry() {
+              local attempts=5
+              local delay=2
+              local attempt=1
+              while [ $attempt -le $attempts ]; do
+                LOGIN_ERROR=$(echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>&1) && return 0
+                echo "⚠️ Login GHCR falhou (tentativa $attempt/$attempts). Aguardando ${delay}s..."
+                echo "   Detalhe: ${LOGIN_ERROR}"
+                sleep "$delay"
+                delay=$((delay * 2))
+                attempt=$((attempt + 1))
+              done
+              return 1
             }
+            if ! login_with_retry; then
+              echo "❌ ERRO: Falha no login do GHCR com ${TOKEN_SOURCE} (após retries)"
+              exit 1
+            fi
             echo "✅ Login GHCR OK"
             
             # Salvar versão anterior (rollback safety)
@@ -3940,11 +3972,24 @@ jobs:
             echo ""
             echo "🔐 Login GHCR com ${TOKEN_SOURCE} (usuário: ${GHCR_USER})"
             echo "   🔎 GHCR token length: ${#GHCR_TOKEN}"
-            LOGIN_ERROR=$(echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>&1) || {
-              echo "❌ ERRO: Falha no login do GHCR com ${TOKEN_SOURCE}"
-              echo "   Detalhe: ${LOGIN_ERROR}"
-              exit 1
+            login_with_retry() {
+              local attempts=5
+              local delay=2
+              local attempt=1
+              while [ $attempt -le $attempts ]; do
+                LOGIN_ERROR=$(echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>&1) && return 0
+                echo "⚠️ Login GHCR falhou (tentativa $attempt/$attempts). Aguardando ${delay}s..."
+                echo "   Detalhe: ${LOGIN_ERROR}"
+                sleep "$delay"
+                delay=$((delay * 2))
+                attempt=$((attempt + 1))
+              done
+              return 1
             }
+            if ! login_with_retry; then
+              echo "❌ ERRO: Falha no login do GHCR com ${TOKEN_SOURCE} (após retries)"
+              exit 1
+            fi
             echo "✅ Login GHCR OK"
             
             pull_with_retry() {
@@ -4654,11 +4699,24 @@ jobs:
             echo ""
             echo "🔐 Login GHCR com ${TOKEN_SOURCE} (usuário: ${GHCR_USER})"
             echo "   🔎 GHCR token length: ${#GHCR_TOKEN}"
-            LOGIN_ERROR=$(echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>&1) || {
-              echo "❌ ERRO: Falha no login do GHCR com ${TOKEN_SOURCE}"
-              echo "   Detalhe: ${LOGIN_ERROR}"
-              exit 1
+            login_with_retry() {
+              local attempts=5
+              local delay=2
+              local attempt=1
+              while [ $attempt -le $attempts ]; do
+                LOGIN_ERROR=$(echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>&1) && return 0
+                echo "⚠️ Login GHCR falhou (tentativa $attempt/$attempts). Aguardando ${delay}s..."
+                echo "   Detalhe: ${LOGIN_ERROR}"
+                sleep "$delay"
+                delay=$((delay * 2))
+                attempt=$((attempt + 1))
+              done
+              return 1
             }
+            if ! login_with_retry; then
+              echo "❌ ERRO: Falha no login do GHCR com ${TOKEN_SOURCE} (após retries)"
+              exit 1
+            fi
             echo "✅ Login GHCR OK"
             
             pull_with_retry() {
@@ -5300,11 +5358,24 @@ jobs:
             echo ""
             echo "🔐 Login GHCR com ${TOKEN_SOURCE} (usuário: ${GHCR_USER})"
             echo "   🔎 GHCR token length: ${#GHCR_TOKEN}"
-            LOGIN_ERROR=$(echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>&1) || {
-              echo "❌ ERRO: Falha no login do GHCR com ${TOKEN_SOURCE}"
-              echo "   Detalhe: ${LOGIN_ERROR}"
-              exit 1
+            login_with_retry() {
+              local attempts=5
+              local delay=2
+              local attempt=1
+              while [ $attempt -le $attempts ]; do
+                LOGIN_ERROR=$(echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>&1) && return 0
+                echo "⚠️ Login GHCR falhou (tentativa $attempt/$attempts). Aguardando ${delay}s..."
+                echo "   Detalhe: ${LOGIN_ERROR}"
+                sleep "$delay"
+                delay=$((delay * 2))
+                attempt=$((attempt + 1))
+              done
+              return 1
             }
+            if ! login_with_retry; then
+              echo "❌ ERRO: Falha no login do GHCR com ${TOKEN_SOURCE} (após retries)"
+              exit 1
+            fi
             echo "✅ Login GHCR OK"
             
             pull_with_retry() {
@@ -5894,11 +5965,24 @@ jobs:
             echo ""
             echo "🔐 Login GHCR com ${TOKEN_SOURCE} (usuário: ${GHCR_USER})"
             echo "   🔎 GHCR token length: ${#GHCR_TOKEN}"
-            LOGIN_ERROR=$(echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>&1) || {
-              echo "❌ ERRO: Falha no login do GHCR com ${TOKEN_SOURCE}"
-              echo "   Detalhe: ${LOGIN_ERROR}"
-              exit 1
+            login_with_retry() {
+              local attempts=5
+              local delay=2
+              local attempt=1
+              while [ $attempt -le $attempts ]; do
+                LOGIN_ERROR=$(echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>&1) && return 0
+                echo "⚠️ Login GHCR falhou (tentativa $attempt/$attempts). Aguardando ${delay}s..."
+                echo "   Detalhe: ${LOGIN_ERROR}"
+                sleep "$delay"
+                delay=$((delay * 2))
+                attempt=$((attempt + 1))
+              done
+              return 1
             }
+            if ! login_with_retry; then
+              echo "❌ ERRO: Falha no login do GHCR com ${TOKEN_SOURCE} (após retries)"
+              exit 1
+            fi
             echo "✅ Login GHCR OK"
             
             pull_with_retry() {
