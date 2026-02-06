@@ -28,7 +28,7 @@ Alice is an autonomous AI enterprise platform served on Hetzner GPU server GEX44
 | 15 | **MICROSSERVIÇOS** | Código em apps/, compartilhado em packages/ |
 | 16 | **MELHORES PRÁTICAS** | API Gateway, health checks, circuit breakers |
 | 17 | **REVIEW APÓS COMMIT (CURSOR)** | Commits consolidados DEVEM ser feitos primeiro. A review automática do Cursor ocorre após o commit. A revisão humana acontece antes do push. **Staging é permitido** quando necessário (ex.: adicionar novos arquivos ou deleções). |
-| 18 | **COMMITS CONSOLIDADOS E PUSH MANUAL** | **OBRIGATÓRIO**: Fazer commits consolidados com várias mudanças relacionadas em modo enterprise, ao invés de commitar cada mudança individualmente. Isso otimiza a review automática do Cursor (habilitada após cada commit) e segue melhores práticas enterprise. **PROIBIDO** push automático. Push manual com "Sync Changes" SOMENTE quando todas as implementações estiverem revisadas, commitadas e aprovadas. O usuário decide quando fazer push. |
+| 18 | **COMMITS CONSOLIDADOS E PUSH MANUAL** | **OBRIGATÓRIO**: Fazer commits consolidados em ingles com várias mudanças relacionadas em modo enterprise, ao invés de commitar cada mudança individualmente. Isso otimiza a review automática do Cursor (habilitada após cada commit) e segue melhores práticas enterprise. **PROIBIDO** push automático. Push manual com "Sync Changes" SOMENTE quando todas as implementações estiverem revisadas, commitadas e aprovadas. O usuário decide quando fazer push. |
 
 ### Preferências de Idioma
 
