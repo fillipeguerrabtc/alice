@@ -605,9 +605,18 @@ create_mode() {
             
             local chown_error=""
             if ! chown_error=$(eval "$chown_cmd" 2>&1); then
-                log_error "  ❌ Falha ao atualizar ownership: $path"
-                if [[ -n "$chown_error" ]]; then
+                # ClickHouse gera arquivos temporários e pode apagar durante o chown.
+                # Se o erro for APENAS "No such file or directory", tratar como warning.
+                if [[ -n "$chown_error" ]] && ! echo "$chown_error" | grep -qi "No such file or directory"; then
+                    log_error "  ❌ Falha ao atualizar ownership: $path"
                     log_error "     Detalhe: $chown_error"
+                else
+                    log_warning "  ⚠️  Arquivos temporários desapareceram durante o chown (esperado no ClickHouse)"
+                    if [[ -n "$chown_error" ]]; then
+                        log_info "     Detalhe: $chown_error"
+                    fi
+                    needs_update=true
+                    continue
                 fi
                 
                 # Diagnóstico adicional para arquivos problemáticos
