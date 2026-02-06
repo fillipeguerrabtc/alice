@@ -2147,30 +2147,6 @@ function detectPaymentCommand(message: string, detectors: AgenticDetectors): Pay
 
   if (
     paymentDetectors.wiseKeywords.some((keyword) => normalized.includes(keyword))
-    && paymentDetectors.wiseExchangeKeywords.some((keyword) => normalized.includes(keyword))
-  ) {
-    const sourceCurrency = (extractField(message, 'moeda_origem') ?? extractField(message, 'source_currency') ?? '').toUpperCase();
-    const targetCurrency = (extractField(message, 'moeda_destino') ?? extractField(message, 'target_currency') ?? '').toUpperCase();
-    const amountRaw = extractField(message, 'valor') ?? extractField(message, 'amount');
-    const sourceAmount = amountRaw ? Number(amountRaw.replace(',', '.')) : NaN;
-    const missing = [
-      !sourceCurrency ? 'moeda_origem' : null,
-      !targetCurrency ? 'moeda_destino' : null,
-      !Number.isFinite(sourceAmount) ? 'valor' : null,
-    ].filter(Boolean) as string[];
-    return {
-      type: 'wise_exchange',
-      payload: {
-        sourceCurrency,
-        targetCurrency,
-        sourceAmount: Number.isFinite(sourceAmount) ? sourceAmount : 0,
-      },
-      missing: missing.length ? missing : undefined,
-    };
-  }
-
-  if (
-    paymentDetectors.wiseKeywords.some((keyword) => normalized.includes(keyword))
     && paymentDetectors.wiseTransferKeywords.some((keyword) => normalized.includes(keyword))
   ) {
     const sourceCurrency = (extractField(message, 'moeda_origem') ?? extractField(message, 'source_currency') ?? '').toUpperCase();
