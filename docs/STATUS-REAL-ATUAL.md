@@ -82,6 +82,7 @@
 - Trading: detalhes do Sinal IA agora exibem notícias usadas na geração quando habilitado.
 - Sinais IA: parsing robusto de JSON do LLM com reparo seguro e prompt de saída estrito.
 - Roteamento de agentes: gatilhos configuráveis no Modo Agentic (manual/auto) por tenant.
+- Chat: seleção manual de agentes no UI com persistência por conversa e envio no stream.
 - Roteamento agentic: normalização de comandos (acentos/@) e detecção consistente no WebSocket.
 - Roteamento stream: validação defensiva do insert do assistente evita messageId indefinido.
 - LLM Trading: erros de validação sem duplicação de prefixo (mensagem mais limpa).

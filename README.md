@@ -29,6 +29,7 @@
 |------------|-----------|
 | **IA 100% Autônoma** | LLM próprio (Qwen2.5 7B vLLM AWQ) hospedado em servidor Hetzner GPU GEX44 (RTX 4000 Ada 20GB) |
 | **Chat em Tempo Real** | Conversação via WebSocket com streaming de tokens |
+| **Roteamento de Agentes** | Seleção automática ou manual de agentes por conversa |
 | **Análise de Imagens** | OpenAI Vision (gpt-4.1) para gráficos, documentos, screenshots |
 | **Deduplicação Semântica** | SemHash para filtragem de dados duplicados no treinamento |
 | **Multi-tenant** | Suporte a múltiplas organizações com agentes IA especializados |

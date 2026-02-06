@@ -142,21 +142,53 @@ function getBaseUrl(): string {
   return config.useSandbox ? WISE_SANDBOX_URL : WISE_API_URL;
 }
 
-// Headers padrão para requisições
-function getHeaders(): Record<string, string> {
+function getBaseUrlSafe(): string {
+  return getSandboxStatus() ? WISE_SANDBOX_URL : WISE_API_URL;
+}
+
+function getAuthorizationHeader(tokenOverride?: string): string {
+  if (tokenOverride) {
+    return `Bearer ${tokenOverride}`;
+  }
   const config = getWiseConfig();
+  return `Bearer ${config.apiKey}`;
+}
+
+// Headers padrão para requisições
+function getHeaders(options?: {
+  token?: string;
+  includeContentType?: boolean;
+  headers?: Record<string, string>;
+}): Record<string, string> {
+  const includeContentType = options?.includeContentType !== false;
+  const baseHeaders: Record<string, string> = {
+    'Authorization': getAuthorizationHeader(options?.token),
+  };
+  if (includeContentType) {
+    baseHeaders['Content-Type'] = 'application/json';
+  }
   return {
-    'Authorization': `Bearer ${config.apiKey}`,
-    'Content-Type': 'application/json',
+    ...baseHeaders,
+    ...(options?.headers ?? {}),
   };
 }
 
 // Interface para parâmetros da requisição Wise
 interface WiseRequestParams {
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
   endpoint: string;
   body?: unknown;
   headers?: Record<string, string>;
+}
+
+interface WiseRequestRawParams {
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+  endpoint: string;
+  body?: BodyInit | null;
+  headers?: Record<string, string>;
+  token?: string;
+  includeContentType?: boolean;
+  baseUrl?: string;
 }
 
 function summarizeWiseErrorBody(bodyText: string): string {
@@ -191,7 +223,7 @@ async function executeWiseRequest<T>(params: WiseRequestParams): Promise<T> {
   const { method, endpoint, body, headers: extraHeaders } = params;
   const baseUrl = getBaseUrl();
   const url = `${baseUrl}${endpoint}`;
-  const headers = { ...getHeaders(), ...extraHeaders };
+  const headers = getHeaders({ headers: extraHeaders });
 
   try {
     const response = await fetch(url, {
@@ -217,15 +249,63 @@ async function executeWiseRequest<T>(params: WiseRequestParams): Promise<T> {
   }
 }
 
+async function parseWiseResponse<T>(response: Response): Promise<T> {
+  if (response.status === 204) {
+    return {} as T;
+  }
+  const responseText = await response.text();
+  if (!responseText) {
+    return {} as T;
+  }
+  try {
+    return JSON.parse(responseText) as T;
+  } catch {
+    return responseText as T;
+  }
+}
+
+async function executeWiseRequestRaw<T>(params: WiseRequestRawParams): Promise<T> {
+  const { method, endpoint, body, headers: extraHeaders, token, includeContentType, baseUrl } = params;
+  const url = `${baseUrl ?? getBaseUrlSafe()}${endpoint}`;
+  const headers = getHeaders({ token, includeContentType, headers: extraHeaders });
+
+  try {
+    const response = await fetch(url, {
+      method,
+      headers,
+      body: body ?? undefined,
+      signal: AbortSignal.timeout(WISE_API_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      const summary = summarizeWiseErrorBody(errorText);
+      throw new Error(`Wise API error: ${response.status} - ${summary}`);
+    }
+
+    return parseWiseResponse<T>(response);
+  } catch (error) {
+    if (error instanceof Error && error.name === 'TimeoutError') {
+      throw new Error(`Timeout ao chamar Wise API: ${endpoint} (${WISE_API_TIMEOUT_MS}ms)`);
+    }
+    throw error;
+  }
+}
+
 // Circuit Breaker para requisições Wise API
 const wiseCircuitBreaker = createCircuitBreaker(executeWiseRequest, {
   name: 'wise-api',
   ...CIRCUIT_BREAKER_PRESETS.wiseAPI,
 });
 
+const wiseRawCircuitBreaker = createCircuitBreaker(executeWiseRequestRaw, {
+  name: 'wise-api-raw',
+  ...CIRCUIT_BREAKER_PRESETS.wiseAPI,
+});
+
 // Cliente HTTP para API Wise com Circuit Breaker
 export async function wiseRequest<T>(
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH',
   endpoint: string,
   body?: unknown,
   headers?: Record<string, string>
@@ -248,6 +328,94 @@ export async function wiseRequest<T>(
     logger.error({ error: message, method, endpoint }, 'Falha na requisição Wise');
     throw error;
   }
+}
+
+export async function wiseRequestRaw<T>(
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH',
+  endpoint: string,
+  body?: BodyInit | null,
+  headers?: Record<string, string>,
+  options?: { token?: string; includeContentType?: boolean; baseUrl?: string }
+): Promise<T> {
+  logger.info({ method, endpoint }, 'Requisição Wise API (raw)');
+  const operation = normalizeWiseOperation(method, endpoint);
+  const start = process.hrtime.bigint();
+
+  try {
+    const result = await wiseRawCircuitBreaker.fire({
+      method,
+      endpoint,
+      body,
+      headers,
+      token: options?.token,
+      includeContentType: options?.includeContentType,
+      baseUrl: options?.baseUrl,
+    }) as T;
+    const durationSeconds = Number(process.hrtime.bigint() - start) / 1e9;
+    recordWiseCall({ operation, status: 'success', durationSeconds });
+    logger.info({ method, endpoint, success: true }, 'Resposta Wise API (raw)');
+    return result;
+  } catch (error) {
+    const durationSeconds = Number(process.hrtime.bigint() - start) / 1e9;
+    recordWiseCall({ operation, status: 'error', durationSeconds });
+    recordWiseError({ operation, errorType: classifyWiseError(error) });
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error({ error: message, method, endpoint }, 'Falha na requisição Wise (raw)');
+    throw error;
+  }
+}
+
+export async function wiseRequestWithToken<T>(
+  token: string,
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH',
+  endpoint: string,
+  body?: unknown,
+  headers?: Record<string, string>
+): Promise<T> {
+  const payload = body ? JSON.stringify(body) : undefined;
+  const mergedHeaders = {
+    'Content-Type': 'application/json',
+    ...(headers ?? {}),
+  };
+  return wiseRequestRaw<T>(
+    method,
+    endpoint,
+    payload,
+    mergedHeaders,
+    { token, includeContentType: false }
+  );
+}
+
+export interface WiseOAuthTokenResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  expires_at?: string;
+  refresh_token?: string;
+  refresh_token_expires_in?: number;
+  refresh_token_expires_at?: string;
+  scope?: string;
+  created_at?: string;
+}
+
+export async function requestWiseOAuthToken(
+  body: URLSearchParams,
+  auth: { clientId: string; clientSecret: string }
+): Promise<WiseOAuthTokenResponse> {
+  const baseUrl = getBaseUrlSafe();
+  const authHeader = Buffer.from(`${auth.clientId}:${auth.clientSecret}`).toString('base64');
+  const headers = {
+    'Authorization': `Basic ${authHeader}`,
+    'Content-Type': 'application/x-www-form-urlencoded',
+  };
+
+  return wiseRequestRaw<WiseOAuthTokenResponse>(
+    'POST',
+    '/oauth/token',
+    body,
+    headers,
+    { includeContentType: false, baseUrl }
+  );
 }
 
 // Exporta status do circuit breaker para health check

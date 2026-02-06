@@ -11,8 +11,8 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { queryClient, apiRequest } from "@/lib/queryClient";
-import { useForm, ControllerRenderProps } from "react-hook-form";
+import { queryClient, apiRequest, ApiError } from "@/lib/queryClient";
+import { useForm, ControllerRenderProps, FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { asResolver } from "@/lib/form-helpers";
 import { z } from "zod";
@@ -365,10 +365,14 @@ export default function Agents() {
       handleCloseSheet();
     },
     onError: (error: Error) => {
-      toast({ 
-        title: t('agents.errors.create'), 
-        description: error.message,
-        variant: "destructive" 
+      const description =
+        error instanceof ApiError && error.body
+          ? JSON.stringify(error.body)
+          : error.message;
+      toast({
+        title: t('agents.errors.create'),
+        description,
+        variant: "destructive"
       });
     },
   });
@@ -394,10 +398,14 @@ export default function Agents() {
       handleCloseSheet();
     },
     onError: (error: Error) => {
-      toast({ 
-        title: t('agents.errors.update'), 
-        description: error.message,
-        variant: "destructive" 
+      const description =
+        error instanceof ApiError && error.body
+          ? JSON.stringify(error.body)
+          : error.message;
+      toast({
+        title: t('agents.errors.update'),
+        description,
+        variant: "destructive"
       });
     },
   });
@@ -413,10 +421,14 @@ export default function Agents() {
       setAgentToDelete(null);
     },
     onError: (error: Error) => {
-      toast({ 
-        title: t('agents.errors.remove'), 
-        description: error.message,
-        variant: "destructive" 
+      const description =
+        error instanceof ApiError && error.body
+          ? JSON.stringify(error.body)
+          : error.message;
+      toast({
+        title: t('agents.errors.remove'),
+        description,
+        variant: "destructive"
       });
     },
   });
@@ -459,6 +471,28 @@ export default function Agents() {
     } else {
       createAgentMutation.mutate(data);
     }
+  };
+
+  const handleSubmitError = (errors: FieldErrors<AgentFormData>) => {
+    const firstField = Object.keys(errors)[0] as keyof AgentFormData | undefined;
+    if (firstField) {
+      const fieldTabMap: Partial<Record<keyof AgentFormData, string>> = {
+        nome: 'basic',
+        slug: 'basic',
+        status: 'basic',
+        descricao: 'basic',
+        avatar: 'basic',
+        namespaceId: 'basic',
+        instrucoes: 'prompt',
+        personalidade: 'prompt',
+        modeloBase: 'model',
+        temperaturaModelo: 'model',
+        maxTokens: 'model',
+        capacidades: 'capabilities',
+      };
+      setActiveTab(fieldTabMap[firstField] ?? 'basic');
+    }
+    toast({ title: t('errors.validationError'), variant: "destructive" });
   };
 
   const handleEdit = (agent: Agent) => {
@@ -727,7 +761,7 @@ export default function Agents() {
           </SheetHeader>
 
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
+            <form onSubmit={form.handleSubmit(handleSubmit, handleSubmitError)} className="space-y-6">
               <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                 <TabsList className="grid w-full grid-cols-4 mb-4">
                   <TabsTrigger value="basic" className="text-xs sm:text-sm">

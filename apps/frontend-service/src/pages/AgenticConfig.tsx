@@ -88,6 +88,7 @@ const agenticSettingsSchema = z.object({
       wiseKeywords: z.array(z.string().min(1).max(160)).max(200),
       wiseRecipientsKeywords: z.array(z.string().min(1).max(160)).max(200),
       wiseTransferKeywords: z.array(z.string().min(1).max(160)).max(200),
+      wiseExchangeKeywords: z.array(z.string().min(1).max(160)).max(200),
       stripeKeywords: z.array(z.string().min(1).max(160)).max(200),
       stripePaymentKeywords: z.array(z.string().min(1).max(160)).max(200),
     }),
@@ -140,6 +141,7 @@ export default function AgenticConfig() {
   const paymentsKeywordItems: Array<{ name: PaymentsKeywordField; label: string }> = [
     { name: 'wiseRecipientsKeywords', label: t('agenticConfig.wiseRecipientsKeywords') },
     { name: 'wiseTransferKeywords', label: t('agenticConfig.wiseTransferKeywords') },
+    { name: 'wiseExchangeKeywords', label: t('agenticConfig.wiseExchangeKeywords') },
     { name: 'stripeKeywords', label: t('agenticConfig.stripeKeywords') },
     { name: 'stripePaymentKeywords', label: t('agenticConfig.stripePaymentKeywords') },
   ];
@@ -203,6 +205,7 @@ export default function AgenticConfig() {
           wiseKeywords: [],
           wiseRecipientsKeywords: [],
           wiseTransferKeywords: [],
+          wiseExchangeKeywords: [],
           stripeKeywords: [],
           stripePaymentKeywords: [],
         },

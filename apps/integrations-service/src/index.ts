@@ -3606,6 +3606,73 @@ const wiseRecipientRequirementsQuerySchema = z.object({
     .refine(n => n > 0, 'sourceAmount deve ser positivo'),
 });
 
+const wiseProfileIdParamSchema = z.object({
+  profileId: z.string().regex(/^\d+$/, 'profileId deve ser numérico').transform(Number).refine(n => n > 0, 'profileId deve ser positivo'),
+});
+
+const wiseCardTokenParamSchema = z.object({
+  cardToken: z.string().min(16, 'cardToken inválido').max(128, 'cardToken inválido'),
+});
+
+const wiseDisputeIdParamSchema = z.object({
+  disputeId: z.string().min(1).max(128),
+});
+
+const wiseKycReviewIdParamSchema = z.object({
+  kycReviewId: z.string().min(1).max(128),
+});
+
+const wiseCardOrderIdParamSchema = z.object({
+  cardOrderId: z.string().min(1).max(128),
+});
+
+const wiseTransactionIdParamSchema = z.object({
+  transactionId: z.string().min(1).max(128),
+});
+
+const wiseWebhookIdParamSchema = z.object({
+  subscriptionId: z.string().min(1).max(128),
+});
+
+const wiseGenericPayloadSchema = z.object({}).passthrough();
+
+const wiseJosePayloadSchema = z.object({
+  josePayload: z.string().min(20, 'josePayload inválido'),
+});
+
+const wiseFileUploadSchema = z.object({
+  fileBase64: z.string().min(100, 'fileBase64 inválido'),
+  fileName: z.string().min(1, 'fileName inválido').max(255),
+  contentType: z.string().min(3, 'contentType inválido').max(100),
+});
+
+const wiseActivityQuerySchema = z.object({
+  profileId: z.string().regex(/^\d+$/).transform(Number).optional(),
+  monetaryResourceType: z.string().optional(),
+  status: z.string().optional(),
+  since: z.string().optional(),
+  until: z.string().optional(),
+  size: z.string().regex(/^\d+$/).transform(Number).optional(),
+});
+
+const wiseCardOrdersQuerySchema = z.object({
+  pageNumber: z.string().regex(/^\d+$/).transform(Number).optional(),
+  pageSize: z.string().regex(/^\d+$/).transform(Number).optional(),
+});
+
+const wiseSimulationActionSchema = z.object({
+  action: z.string().min(1).max(100),
+});
+
+const wiseOAuthExchangeSchema = z.object({
+  code: z.string().min(5, 'code inválido'),
+  redirectUri: z.string().url('redirectUri inválido'),
+});
+
+const wiseOAuthRefreshSchema = z.object({
+  refreshToken: z.string().min(10, 'refreshToken inválido'),
+});
+
 app.post('/api/integrations', requirePermission('integrations:integrations:write'), async (req: Request, res: Response) => {
   try {
     const body = createIntegrationSchema.parse(req.body);
@@ -5017,6 +5084,423 @@ app.get('/api/integrations/email/health', requirePermission('integrations:email:
 // Documentação: https://docs.wise.com/api-docs/
 // ============================================================
 
+type WiseAuthContext = AuthContext & { tenantId: string };
+
+function getWiseAuthContext(req: Request): WiseAuthContext {
+  const auth = req.user as AuthContext | undefined;
+  if (!auth?.tenantId) {
+    throw new Error('Contexto de tenant não encontrado.');
+  }
+  return auth as WiseAuthContext;
+}
+
+async function upsertWiseProfiles(tenantId: string, profiles: Array<{ id: number; type?: string; details?: unknown }>): Promise<void> {
+  if (!profiles.length) return;
+  const db = getDatabase();
+  const now = new Date();
+  for (const profile of profiles) {
+    await db.insert(schema.wiseProfiles).values({
+      tenantId,
+      wiseProfileId: profile.id,
+      type: profile.type ?? null,
+      details: (profile.details ?? {}) as Record<string, unknown>,
+      data: profile as Record<string, unknown>,
+      updatedAt: now,
+    }).onConflictDoUpdate({
+      target: [schema.wiseProfiles.tenantId, schema.wiseProfiles.wiseProfileId],
+      set: {
+        type: profile.type ?? null,
+        details: (profile.details ?? {}) as Record<string, unknown>,
+        data: profile as Record<string, unknown>,
+        updatedAt: now,
+      },
+    });
+  }
+}
+
+async function upsertWiseUsers(tenantId: string, users: Array<{ id: number; email?: string; name?: string; active?: boolean }>): Promise<void> {
+  if (!users.length) return;
+  const db = getDatabase();
+  const now = new Date();
+  for (const user of users) {
+    await db.insert(schema.wiseUsers).values({
+      tenantId,
+      wiseUserId: user.id,
+      email: user.email ?? null,
+      name: user.name ?? null,
+      active: user.active ?? true,
+      data: user as Record<string, unknown>,
+      updatedAt: now,
+    }).onConflictDoUpdate({
+      target: [schema.wiseUsers.tenantId, schema.wiseUsers.wiseUserId],
+      set: {
+        email: user.email ?? null,
+        name: user.name ?? null,
+        active: user.active ?? true,
+        data: user as Record<string, unknown>,
+        updatedAt: now,
+      },
+    });
+  }
+}
+
+async function upsertWiseBalances(tenantId: string, balances: Array<{
+  id: number;
+  currency: string;
+  type?: string;
+  name?: string | null;
+  amount?: unknown;
+  reservedAmount?: unknown;
+  totalWorth?: unknown;
+}>): Promise<void> {
+  if (!balances.length) return;
+  const db = getDatabase();
+  const now = new Date();
+  for (const balance of balances) {
+    await db.insert(schema.wiseBalances).values({
+      tenantId,
+      wiseBalanceId: balance.id,
+      currency: balance.currency,
+      type: balance.type ?? null,
+      name: balance.name ?? null,
+      amount: balance.amount as Record<string, unknown> | undefined,
+      reservedAmount: balance.reservedAmount as Record<string, unknown> | undefined,
+      totalWorth: balance.totalWorth as Record<string, unknown> | undefined,
+      data: balance as Record<string, unknown>,
+      updatedAt: now,
+    }).onConflictDoUpdate({
+      target: [schema.wiseBalances.tenantId, schema.wiseBalances.wiseBalanceId],
+      set: {
+        currency: balance.currency,
+        type: balance.type ?? null,
+        name: balance.name ?? null,
+        amount: balance.amount as Record<string, unknown> | undefined,
+        reservedAmount: balance.reservedAmount as Record<string, unknown> | undefined,
+        totalWorth: balance.totalWorth as Record<string, unknown> | undefined,
+        data: balance as Record<string, unknown>,
+        updatedAt: now,
+      },
+    });
+  }
+}
+
+async function upsertWiseRecipients(tenantId: string, recipients: Array<{
+  id: number;
+  currency?: string;
+  type?: string;
+  accountHolderName?: string;
+  active?: boolean;
+}>): Promise<void> {
+  if (!recipients.length) return;
+  const db = getDatabase();
+  const now = new Date();
+  for (const recipient of recipients) {
+    await db.insert(schema.wiseRecipients).values({
+      tenantId,
+      wiseRecipientId: recipient.id,
+      currency: recipient.currency ?? null,
+      type: recipient.type ?? null,
+      accountHolderName: recipient.accountHolderName ?? null,
+      active: recipient.active ?? true,
+      data: recipient as Record<string, unknown>,
+      updatedAt: now,
+    }).onConflictDoUpdate({
+      target: [schema.wiseRecipients.tenantId, schema.wiseRecipients.wiseRecipientId],
+      set: {
+        currency: recipient.currency ?? null,
+        type: recipient.type ?? null,
+        accountHolderName: recipient.accountHolderName ?? null,
+        active: recipient.active ?? true,
+        data: recipient as Record<string, unknown>,
+        updatedAt: now,
+      },
+    });
+  }
+}
+
+async function upsertWiseQuotes(tenantId: string, quote: { id: string; sourceCurrency?: string; targetCurrency?: string; sourceAmount?: number; targetAmount?: number; rate?: number; fee?: number }): Promise<void> {
+  const db = getDatabase();
+  await db.insert(schema.wiseQuotes).values({
+    tenantId,
+    wiseQuoteId: quote.id,
+    sourceCurrency: quote.sourceCurrency ?? null,
+    targetCurrency: quote.targetCurrency ?? null,
+    sourceAmount: quote.sourceAmount ?? null,
+    targetAmount: quote.targetAmount ?? null,
+    rate: quote.rate ?? null,
+    fee: quote.fee ?? null,
+    data: quote as Record<string, unknown>,
+  }).onConflictDoUpdate({
+    target: [schema.wiseQuotes.tenantId, schema.wiseQuotes.wiseQuoteId],
+    set: {
+      sourceCurrency: quote.sourceCurrency ?? null,
+      targetCurrency: quote.targetCurrency ?? null,
+      sourceAmount: quote.sourceAmount ?? null,
+      targetAmount: quote.targetAmount ?? null,
+      rate: quote.rate ?? null,
+      fee: quote.fee ?? null,
+      data: quote as Record<string, unknown>,
+    },
+  });
+}
+
+async function upsertWiseTransfers(tenantId: string, transfers: Array<{ id: number; status?: string; sourceCurrency?: string; targetCurrency?: string; sourceAmount?: number; targetAmount?: number; customerTransactionId?: string }>): Promise<void> {
+  if (!transfers.length) return;
+  const db = getDatabase();
+  const now = new Date();
+  for (const transfer of transfers) {
+    await db.insert(schema.wiseTransfers).values({
+      tenantId,
+      wiseTransferId: transfer.id,
+      status: transfer.status ?? null,
+      sourceCurrency: transfer.sourceCurrency ?? null,
+      targetCurrency: transfer.targetCurrency ?? null,
+      sourceValue: transfer.sourceAmount ?? null,
+      targetValue: transfer.targetAmount ?? null,
+      customerTransactionId: transfer.customerTransactionId ?? null,
+      data: transfer as Record<string, unknown>,
+      updatedAt: now,
+    }).onConflictDoUpdate({
+      target: [schema.wiseTransfers.tenantId, schema.wiseTransfers.wiseTransferId],
+      set: {
+        status: transfer.status ?? null,
+        sourceCurrency: transfer.sourceCurrency ?? null,
+        targetCurrency: transfer.targetCurrency ?? null,
+        sourceValue: transfer.sourceAmount ?? null,
+        targetValue: transfer.targetAmount ?? null,
+        customerTransactionId: transfer.customerTransactionId ?? null,
+        data: transfer as Record<string, unknown>,
+        updatedAt: now,
+      },
+    });
+  }
+}
+
+async function upsertWiseCards(tenantId: string, cards: Array<{ token?: string; cardToken?: string; status?: string; type?: string }>): Promise<void> {
+  if (!cards.length) return;
+  const db = getDatabase();
+  const now = new Date();
+  for (const card of cards) {
+    const cardToken = card.token ?? card.cardToken;
+    if (!cardToken) continue;
+    await db.insert(schema.wiseCards).values({
+      tenantId,
+      wiseCardToken: cardToken,
+      status: card.status ?? null,
+      type: card.type ?? null,
+      data: card as Record<string, unknown>,
+      updatedAt: now,
+    }).onConflictDoUpdate({
+      target: [schema.wiseCards.tenantId, schema.wiseCards.wiseCardToken],
+      set: {
+        status: card.status ?? null,
+        type: card.type ?? null,
+        data: card as Record<string, unknown>,
+        updatedAt: now,
+      },
+    });
+  }
+}
+
+async function upsertWiseCardOrders(tenantId: string, cardOrders: Array<{ id?: string; orderId?: string; status?: string; type?: string }>): Promise<void> {
+  if (!cardOrders.length) return;
+  const db = getDatabase();
+  const now = new Date();
+  for (const order of cardOrders) {
+    const cardOrderId = order.id ?? order.orderId;
+    if (!cardOrderId) continue;
+    await db.insert(schema.wiseCardOrders).values({
+      tenantId,
+      wiseCardOrderId: cardOrderId,
+      status: order.status ?? null,
+      type: order.type ?? null,
+      data: order as Record<string, unknown>,
+      updatedAt: now,
+    }).onConflictDoUpdate({
+      target: [schema.wiseCardOrders.tenantId, schema.wiseCardOrders.wiseCardOrderId],
+      set: {
+        status: order.status ?? null,
+        type: order.type ?? null,
+        data: order as Record<string, unknown>,
+        updatedAt: now,
+      },
+    });
+  }
+}
+
+async function upsertWiseCardTransactions(tenantId: string, transactions: Array<{ id?: string; transactionId?: string; cardToken?: string; status?: string; amount?: unknown; occurredAt?: string }>): Promise<void> {
+  if (!transactions.length) return;
+  const db = getDatabase();
+  for (const transaction of transactions) {
+    const transactionId = transaction.id ?? transaction.transactionId;
+    if (!transactionId) continue;
+    await db.insert(schema.wiseCardTransactions).values({
+      tenantId,
+      wiseTransactionId: transactionId,
+      wiseCardToken: transaction.cardToken ?? null,
+      status: transaction.status ?? null,
+      amount: transaction.amount as Record<string, unknown> | undefined,
+      occurredAt: transaction.occurredAt ? new Date(transaction.occurredAt) : null,
+      data: transaction as Record<string, unknown>,
+    }).onConflictDoUpdate({
+      target: [schema.wiseCardTransactions.tenantId, schema.wiseCardTransactions.wiseTransactionId],
+      set: {
+        wiseCardToken: transaction.cardToken ?? null,
+        status: transaction.status ?? null,
+        amount: transaction.amount as Record<string, unknown> | undefined,
+        occurredAt: transaction.occurredAt ? new Date(transaction.occurredAt) : null,
+        data: transaction as Record<string, unknown>,
+      },
+    });
+  }
+}
+
+async function upsertWiseSpendControls(tenantId: string, rules: Array<{ id?: number; ruleId?: number; type?: string; operation?: string; description?: string; values?: unknown }>): Promise<void> {
+  if (!rules.length) return;
+  const db = getDatabase();
+  for (const rule of rules) {
+    const ruleId = rule.id ?? rule.ruleId;
+    if (!ruleId) continue;
+    await db.insert(schema.wiseSpendControls).values({
+      tenantId,
+      wiseRuleId: ruleId,
+      type: rule.type ?? null,
+      operation: rule.operation ?? null,
+      description: rule.description ?? null,
+      values: rule.values as Record<string, unknown> | undefined,
+      data: rule as Record<string, unknown>,
+    }).onConflictDoUpdate({
+      target: [schema.wiseSpendControls.tenantId, schema.wiseSpendControls.wiseRuleId],
+      set: {
+        type: rule.type ?? null,
+        operation: rule.operation ?? null,
+        description: rule.description ?? null,
+        values: rule.values as Record<string, unknown> | undefined,
+        data: rule as Record<string, unknown>,
+      },
+    });
+  }
+}
+
+async function upsertWiseDisputes(tenantId: string, disputes: Array<{ id?: string; disputeId?: string; status?: string }>): Promise<void> {
+  if (!disputes.length) return;
+  const db = getDatabase();
+  const now = new Date();
+  for (const dispute of disputes) {
+    const disputeId = dispute.id ?? dispute.disputeId;
+    if (!disputeId) continue;
+    await db.insert(schema.wiseDisputes).values({
+      tenantId,
+      wiseDisputeId: disputeId,
+      status: dispute.status ?? null,
+      data: dispute as Record<string, unknown>,
+      updatedAt: now,
+    }).onConflictDoUpdate({
+      target: [schema.wiseDisputes.tenantId, schema.wiseDisputes.wiseDisputeId],
+      set: {
+        status: dispute.status ?? null,
+        data: dispute as Record<string, unknown>,
+        updatedAt: now,
+      },
+    });
+  }
+}
+
+async function upsertWiseActivities(tenantId: string, activities: Array<{ id?: string; resourceType?: string; status?: string; occurredAt?: string }>): Promise<void> {
+  if (!activities.length) return;
+  const db = getDatabase();
+  for (const activity of activities) {
+    await db.insert(schema.wiseActivities).values({
+      tenantId,
+      wiseActivityId: activity.id ?? null,
+      resourceType: activity.resourceType ?? null,
+      status: activity.status ?? null,
+      occurredAt: activity.occurredAt ? new Date(activity.occurredAt) : null,
+      data: activity as Record<string, unknown>,
+    }).onConflictDoNothing();
+  }
+}
+
+async function upsertWiseKycReviews(tenantId: string, reviews: Array<{ id?: string; kycReviewId?: string; status?: string; link?: string; requiredBy?: string }>): Promise<void> {
+  if (!reviews.length) return;
+  const db = getDatabase();
+  const now = new Date();
+  for (const review of reviews) {
+    const reviewId = review.id ?? review.kycReviewId;
+    if (!reviewId) continue;
+    await db.insert(schema.wiseKycReviews).values({
+      tenantId,
+      wiseKycReviewId: reviewId,
+      status: review.status ?? null,
+      linkUrl: review.link ?? null,
+      requiredBy: review.requiredBy ? new Date(review.requiredBy) : null,
+      data: review as Record<string, unknown>,
+      updatedAt: now,
+    }).onConflictDoUpdate({
+      target: [schema.wiseKycReviews.tenantId, schema.wiseKycReviews.wiseKycReviewId],
+      set: {
+        status: review.status ?? null,
+        linkUrl: review.link ?? null,
+        requiredBy: review.requiredBy ? new Date(review.requiredBy) : null,
+        data: review as Record<string, unknown>,
+        updatedAt: now,
+      },
+    });
+  }
+}
+
+async function upsertWiseWebhookSubscriptions(tenantId: string, subscriptions: Array<{ id?: string; subscriptionId?: string; scopeDomain?: string; scopeId?: string; triggerOn?: string; delivery?: { url?: string; version?: string } }>): Promise<void> {
+  if (!subscriptions.length) return;
+  const db = getDatabase();
+  for (const sub of subscriptions) {
+    const subscriptionId = sub.id ?? sub.subscriptionId;
+    if (!subscriptionId) continue;
+    await db.insert(schema.wiseWebhookSubscriptions).values({
+      tenantId,
+      wiseSubscriptionId: subscriptionId,
+      scopeDomain: sub.scopeDomain ?? null,
+      scopeId: sub.scopeId ?? null,
+      triggerOn: sub.triggerOn ?? null,
+      deliveryUrl: sub.delivery?.url ?? null,
+      deliveryVersion: sub.delivery?.version ?? null,
+      data: sub as Record<string, unknown>,
+    }).onConflictDoUpdate({
+      target: [schema.wiseWebhookSubscriptions.tenantId, schema.wiseWebhookSubscriptions.wiseSubscriptionId],
+      set: {
+        scopeDomain: sub.scopeDomain ?? null,
+        scopeId: sub.scopeId ?? null,
+        triggerOn: sub.triggerOn ?? null,
+        deliveryUrl: sub.delivery?.url ?? null,
+        deliveryVersion: sub.delivery?.version ?? null,
+        data: sub as Record<string, unknown>,
+      },
+    });
+  }
+}
+
+async function insertWiseWebhookEvent(params: {
+  tenantId?: string | null;
+  deliveryId?: string;
+  subscriptionId?: string;
+  eventType?: string;
+  schemaVersion?: string;
+  sentAt?: string;
+  signatureValid: boolean;
+  payload: Record<string, unknown>;
+}): Promise<void> {
+  const db = getDatabase();
+  await db.insert(schema.wiseWebhookEvents).values({
+    tenantId: params.tenantId ?? null,
+    deliveryId: params.deliveryId ?? null,
+    subscriptionId: params.subscriptionId ?? null,
+    eventType: params.eventType ?? null,
+    schemaVersion: params.schemaVersion ?? null,
+    sentAt: params.sentAt ? new Date(params.sentAt) : null,
+    signatureValid: params.signatureValid,
+    payload: params.payload,
+  });
+}
+
 // Obter saldos multi-moeda
 app.get('/api/integrations/wise/balances', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
   if (!isWiseConfigured()) {
@@ -5024,21 +5508,24 @@ app.get('/api/integrations/wise/balances', requirePermission('integrations:wise:
   }
 
   try {
+    const auth = getWiseAuthContext(req);
     const queryResult = wiseBalancesQuerySchema.safeParse(req.query);
     if (!queryResult.success) {
       logger.warn({ errors: queryResult.error.flatten() }, 'Input inválido em /api/integrations/wise/balances');
       return res.status(400).json({ error: 'Parâmetros inválidos', details: queryResult.error.format() });
     }
 
-    const types = queryResult.data.types
-      ? queryResult.data.types.split(',').map((value) => value.trim()).filter(Boolean) as Array<'STANDARD' | 'SAVINGS'>
-      : ['STANDARD', 'SAVINGS'];
     const allowedTypes = ['STANDARD', 'SAVINGS'] as const;
-    if (types.some((type) => !allowedTypes.includes(type))) {
+    const rawTypes = queryResult.data.types
+      ? queryResult.data.types.split(',').map((value) => value.trim()).filter(Boolean)
+      : [...allowedTypes];
+    const types = rawTypes.filter((type): type is (typeof allowedTypes)[number] => allowedTypes.includes(type as (typeof allowedTypes)[number]));
+    if (types.length !== rawTypes.length) {
       return res.status(400).json({ error: 'Tipos inválidos. Use STANDARD e/ou SAVINGS.' });
     }
 
     const balances = await wiseService.getBalances(types);
+    await upsertWiseBalances(auth.tenantId, balances);
     res.json({ balances, sandbox: wiseService.isSandboxMode() });
   } catch (error) {
     logger.error({ error }, 'Falha ao obter saldos Wise');
@@ -5058,7 +5545,9 @@ app.post('/api/integrations/wise/balances', requirePermission('integrations:wise
   }
 
   try {
+    const auth = getWiseAuthContext(req);
     const balance = await wiseService.createBalance(parsed.data);
+    await upsertWiseBalances(auth.tenantId, [balance]);
     res.json({ balance });
   } catch (error) {
     logger.error({ error }, 'Falha ao criar saldo Wise');
@@ -5078,7 +5567,14 @@ app.delete('/api/integrations/wise/balances/:balanceId', requirePermission('inte
   }
 
   try {
+    const auth = getWiseAuthContext(req);
     const balance = await wiseService.deleteBalance(parsed.data.balanceId);
+    await getDatabase().delete(schema.wiseBalances).where(
+      and(
+        eq(schema.wiseBalances.tenantId, auth.tenantId),
+        eq(schema.wiseBalances.wiseBalanceId, parsed.data.balanceId)
+      )
+    );
     res.json({ balance });
   } catch (error) {
     logger.error({ error }, 'Falha ao remover saldo Wise');
@@ -5193,6 +5689,7 @@ app.post('/api/integrations/wise/quotes', requirePermission('integrations:wise:w
   }
 
   try {
+    const auth = getWiseAuthContext(req);
     const quote = await wiseService.createQuote({
       sourceCurrency: parsed.data.sourceCurrency,
       targetCurrency: parsed.data.targetCurrency,
@@ -5202,6 +5699,7 @@ app.post('/api/integrations/wise/quotes', requirePermission('integrations:wise:w
       preferredPayIn: parsed.data.preferredPayIn,
       targetAccount: parsed.data.targetAccount,
     });
+    await upsertWiseQuotes(auth.tenantId, quote);
     res.json({ quote });
   } catch (error) {
     logger.error({ error }, 'Falha ao criar cotação Wise');
@@ -5221,6 +5719,7 @@ app.post('/api/integrations/wise/balance-quotes', requirePermission('integration
   }
 
   try {
+    const auth = getWiseAuthContext(req);
     const quote = await wiseService.createQuote({
       sourceCurrency: parsed.data.sourceCurrency,
       targetCurrency: parsed.data.targetCurrency,
@@ -5229,6 +5728,7 @@ app.post('/api/integrations/wise/balance-quotes', requirePermission('integration
       payOut: 'BALANCE',
       preferredPayIn: 'BALANCE',
     });
+    await upsertWiseQuotes(auth.tenantId, quote);
     res.json({ quote });
   } catch (error) {
     logger.error({ error }, 'Falha ao criar cotação de conversão Wise');
@@ -5272,7 +5772,9 @@ app.get('/api/integrations/wise/recipients', requirePermission('integrations:wis
   const { currency } = queryResult.data;
 
   try {
+    const auth = getWiseAuthContext(req);
     const recipients = await wiseService.listRecipients(currency);
+    await upsertWiseRecipients(auth.tenantId, recipients);
     res.json({ recipients });
   } catch (error) {
     logger.error({ error }, 'Falha ao listar destinatários Wise');
@@ -5289,12 +5791,14 @@ app.post('/api/integrations/wise/recipients', requirePermission('integrations:wi
   const { currency, type, accountHolderName, details } = req.body;
 
   try {
+    const auth = getWiseAuthContext(req);
     const recipient = await wiseService.createRecipient({
       currency,
       type,
       accountHolderName,
       details,
     });
+    await upsertWiseRecipients(auth.tenantId, [recipient]);
     res.json({ recipient });
   } catch (error) {
     logger.error({ error }, 'Falha ao criar destinatário Wise');
@@ -5315,7 +5819,9 @@ app.get('/api/integrations/wise/recipients/:id', requirePermission('integrations
   }
 
   try {
+    const auth = getWiseAuthContext(req);
     const recipient = await wiseService.getRecipient(paramResult.data.id);
+    await upsertWiseRecipients(auth.tenantId, [recipient]);
     res.json({ recipient });
   } catch (error) {
     logger.error({ error }, 'Falha ao obter destinatário Wise');
@@ -5336,7 +5842,14 @@ app.delete('/api/integrations/wise/recipients/:id', requirePermission('integrati
   }
 
   try {
+    const auth = getWiseAuthContext(req);
     await wiseService.deleteRecipient(paramResult.data.id);
+    await getDatabase().delete(schema.wiseRecipients).where(
+      and(
+        eq(schema.wiseRecipients.tenantId, auth.tenantId),
+        eq(schema.wiseRecipients.wiseRecipientId, paramResult.data.id)
+      )
+    );
     res.json({ success: true });
   } catch (error) {
     logger.error({ error }, 'Falha ao excluir destinatário Wise');
@@ -5359,7 +5872,9 @@ app.get('/api/integrations/wise/transfers', requirePermission('integrations:wise
   const offset = queryResult.data.offset ?? 0;
 
   try {
+    const auth = getWiseAuthContext(req);
     const transfers = await wiseService.listTransfers(limit, offset);
+    await upsertWiseTransfers(auth.tenantId, transfers);
     res.json({ transfers });
   } catch (error) {
     logger.error({ error }, 'Falha ao listar transferências Wise');
@@ -5376,6 +5891,7 @@ app.post('/api/integrations/wise/transfers', requirePermission('integrations:wis
   const { targetAccount, quoteUuid, customerTransactionId, details } = req.body;
 
   try {
+    const auth = getWiseAuthContext(req);
     const transfer = await wiseService.createTransfer({
       targetAccount,
       quoteUuid,
@@ -5383,6 +5899,7 @@ app.post('/api/integrations/wise/transfers', requirePermission('integrations:wis
       details: details || { reference: 'Pagamento Alice' },
     });
 
+    await upsertWiseTransfers(auth.tenantId, [transfer]);
     logger.info({ transferId: transfer.id, targetAccount }, 'Transferência Wise criada');
     res.json({ transfer });
   } catch (error) {
@@ -5404,7 +5921,9 @@ app.get('/api/integrations/wise/transfers/:id', requirePermission('integrations:
   }
 
   try {
+    const auth = getWiseAuthContext(req);
     const transfer = await wiseService.getTransfer(paramResult.data.id);
+    await upsertWiseTransfers(auth.tenantId, [transfer]);
     res.json({ transfer });
   } catch (error) {
     logger.error({ error }, 'Falha ao obter transferência Wise');
@@ -5425,7 +5944,14 @@ app.post('/api/integrations/wise/transfers/:id/fund', requirePermission('integra
   }
 
   try {
+    const auth = getWiseAuthContext(req);
     const result = await wiseService.fundTransfer(paramResult.data.id);
+    await getDatabase().update(schema.wiseTransfers)
+      .set({ updatedAt: new Date() })
+      .where(and(
+        eq(schema.wiseTransfers.tenantId, auth.tenantId),
+        eq(schema.wiseTransfers.wiseTransferId, paramResult.data.id)
+      ));
     res.json({ result });
   } catch (error) {
     logger.error({ error }, 'Falha ao financiar transferência Wise');
@@ -5446,7 +5972,9 @@ app.post('/api/integrations/wise/transfers/:id/cancel', requirePermission('integ
   }
 
   try {
+    const auth = getWiseAuthContext(req);
     const transfer = await wiseService.cancelTransfer(paramResult.data.id);
+    await upsertWiseTransfers(auth.tenantId, [transfer]);
     res.json({ transfer });
   } catch (error) {
     logger.error({ error }, 'Falha ao cancelar transferência Wise');
@@ -5626,6 +6154,26 @@ app.post('/api/integrations/wise/webhook', async (req: Request, res: Response) =
     return;
   }
 
+  let webhookTenantId: string | null = null;
+  if (Number.isFinite(event.data.resource.profile_id)) {
+    const profileRecord = await db.query.wiseProfiles.findFirst({
+      where: eq(schema.wiseProfiles.wiseProfileId, event.data.resource.profile_id),
+      columns: { tenantId: true },
+    });
+    webhookTenantId = profileRecord?.tenantId ?? null;
+  }
+
+  await insertWiseWebhookEvent({
+    tenantId: webhookTenantId,
+    deliveryId,
+    subscriptionId: typeof req.headers['x-subscription-id'] === 'string' ? req.headers['x-subscription-id'] : undefined,
+    eventType: event.event_type,
+    schemaVersion: typeof req.headers['x-schema-version'] === 'string' ? req.headers['x-schema-version'] : undefined,
+    sentAt: event.data.occurred_at,
+    signatureValid: true,
+    payload: event as unknown as Record<string, unknown>,
+  });
+
   // Assinatura válida e não duplicado - responder 200 e processar
   res.status(200).json({ received: true });
 
@@ -5721,6 +6269,1504 @@ app.get('/api/integrations/wise/recipient-requirements', requirePermission('inte
   } catch (error) {
     logger.error({ error }, 'Falha ao obter requisitos de destinatário Wise');
     res.status(500).json({ error: 'Falha ao obter requisitos' });
+  }
+});
+
+// Perfis Wise
+app.get('/api/integrations/wise/profiles', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  try {
+    const auth = getWiseAuthContext(req);
+    const profiles = await wiseService.getProfiles();
+    await upsertWiseProfiles(auth.tenantId, profiles);
+    res.json({ profiles });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter perfis Wise');
+    res.status(500).json({ error: 'Falha ao obter perfis' });
+  }
+});
+
+app.get('/api/integrations/wise/profiles/:profileId', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const parsed = wiseProfileIdParamSchema.safeParse(req.params);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'profileId inválido', details: parsed.error.format() });
+  }
+  try {
+    const auth = getWiseAuthContext(req);
+    const profile = await wiseService.getProfileById(parsed.data.profileId);
+    await upsertWiseProfiles(auth.tenantId, [{ id: parsed.data.profileId, ...(profile as Record<string, unknown>) }]);
+    res.json({ profile });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter perfil Wise');
+    res.status(500).json({ error: 'Falha ao obter perfil' });
+  }
+});
+
+// Usuários Wise
+app.get('/api/integrations/wise/users/me', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  try {
+    const auth = getWiseAuthContext(req);
+    const user = await wiseService.getCurrentUser();
+    const userId = typeof user.id === 'number' ? user.id : undefined;
+    if (userId) {
+      await upsertWiseUsers(auth.tenantId, [{ id: userId, ...(user as Record<string, unknown>) }]);
+    }
+    res.json({ user });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter usuário Wise');
+    res.status(500).json({ error: 'Falha ao obter usuário Wise' });
+  }
+});
+
+app.get('/api/integrations/wise/users/:id', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const parsed = numericIdParamSchema.safeParse(req.params);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'ID inválido', details: parsed.error.format() });
+  }
+  try {
+    const auth = getWiseAuthContext(req);
+    const user = await wiseService.getUserById(parsed.data.id);
+    await upsertWiseUsers(auth.tenantId, [{ id: parsed.data.id, ...(user as Record<string, unknown>) }]);
+    res.json({ user });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter usuário Wise');
+    res.status(500).json({ error: 'Falha ao obter usuário Wise' });
+  }
+});
+
+// Atividades Wise
+app.get('/api/integrations/wise/activities', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const parsed = wiseActivityQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: parsed.error.format() });
+  }
+  try {
+    const auth = getWiseAuthContext(req);
+    const activities = await wiseService.listActivities(parsed.data);
+    if (Array.isArray(activities)) {
+      await upsertWiseActivities(auth.tenantId, activities as Array<Record<string, unknown>>);
+    }
+    res.json({ activities });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao listar atividades Wise');
+    res.status(500).json({ error: 'Falha ao listar atividades' });
+  }
+});
+
+// Account details
+app.get('/api/integrations/wise/account-details', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const parsed = wiseProfileIdParamSchema.safeParse(req.query);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'profileId inválido', details: parsed.error.format() });
+  }
+  try {
+    const details = await wiseService.getAccountDetails(parsed.data.profileId);
+    res.json({ details });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter account details Wise');
+    res.status(500).json({ error: 'Falha ao obter account details' });
+  }
+});
+
+app.get('/api/integrations/wise/account-details/orders', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const parsed = wiseProfileIdParamSchema.safeParse(req.query);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'profileId inválido', details: parsed.error.format() });
+  }
+  try {
+    const orders = await wiseService.listAccountDetailsOrders(parsed.data.profileId);
+    res.json({ orders });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao listar account details orders');
+    res.status(500).json({ error: 'Falha ao listar account details orders' });
+  }
+});
+
+app.post('/api/integrations/wise/account-details/orders', requirePermission('integrations:wise:write'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const queryParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  if (!queryParsed.success) {
+    return res.status(400).json({ error: 'profileId inválido', details: queryParsed.error.format() });
+  }
+  const bodyParsed = wiseGenericPayloadSchema.safeParse(req.body);
+  if (!bodyParsed.success) {
+    return res.status(400).json({ error: 'Payload inválido', details: bodyParsed.error.format() });
+  }
+  try {
+    const order = await wiseService.createAccountDetailsOrder(queryParsed.data.profileId, bodyParsed.data);
+    res.json({ order });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao criar account details order');
+    res.status(500).json({ error: 'Falha ao criar account details order' });
+  }
+});
+
+// Cartões Wise
+app.get('/api/integrations/wise/cards', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const parsed = wiseProfileIdParamSchema.safeParse(req.query);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'profileId inválido', details: parsed.error.format() });
+  }
+  try {
+    const auth = getWiseAuthContext(req);
+    const cards = await wiseService.listCards(parsed.data.profileId);
+    if (Array.isArray(cards)) {
+      await upsertWiseCards(auth.tenantId, cards as Array<Record<string, unknown>>);
+    }
+    res.json({ cards });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao listar cartões Wise');
+    res.status(500).json({ error: 'Falha ao listar cartões' });
+  }
+});
+
+app.get('/api/integrations/wise/cards/:cardToken', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const tokenParsed = wiseCardTokenParamSchema.safeParse(req.params);
+  if (!profileParsed.success || !tokenParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), token: tokenParsed.error?.format() } });
+  }
+  try {
+    const auth = getWiseAuthContext(req);
+    const card = await wiseService.getCard(profileParsed.data.profileId, tokenParsed.data.cardToken);
+    await upsertWiseCards(auth.tenantId, [card as Record<string, unknown>]);
+    res.json({ card });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter cartão Wise');
+    res.status(500).json({ error: 'Falha ao obter cartão' });
+  }
+});
+
+app.put('/api/integrations/wise/cards/:cardToken/status', requirePermission('integrations:wise:manage'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const tokenParsed = wiseCardTokenParamSchema.safeParse(req.params);
+  const bodyParsed = wiseGenericPayloadSchema.safeParse(req.body);
+  if (!profileParsed.success || !tokenParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), token: tokenParsed.error?.format(), body: bodyParsed.error?.format() } });
+  }
+  try {
+    const auth = getWiseAuthContext(req);
+    const card = await wiseService.updateCardStatus(profileParsed.data.profileId, tokenParsed.data.cardToken, bodyParsed.data);
+    await upsertWiseCards(auth.tenantId, [card as Record<string, unknown>]);
+    res.json({ card });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao atualizar status do cartão Wise');
+    res.status(500).json({ error: 'Falha ao atualizar status do cartão' });
+  }
+});
+
+app.post('/api/integrations/wise/cards/:cardToken/pin/reset', requirePermission('integrations:wise:manage'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const tokenParsed = wiseCardTokenParamSchema.safeParse(req.params);
+  if (!profileParsed.success || !tokenParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), token: tokenParsed.error?.format() } });
+  }
+  try {
+    const result = await wiseService.resetCardPin(profileParsed.data.profileId, tokenParsed.data.cardToken);
+    res.json({ result });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao resetar PIN do cartão Wise');
+    res.status(500).json({ error: 'Falha ao resetar PIN' });
+  }
+});
+
+app.get('/api/integrations/wise/cards/:cardToken/permissions', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const tokenParsed = wiseCardTokenParamSchema.safeParse(req.params);
+  if (!profileParsed.success || !tokenParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), token: tokenParsed.error?.format() } });
+  }
+  try {
+    const permissions = await wiseService.getCardPermissions(profileParsed.data.profileId, tokenParsed.data.cardToken);
+    res.json({ permissions });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter permissões do cartão Wise');
+    res.status(500).json({ error: 'Falha ao obter permissões do cartão' });
+  }
+});
+
+app.put('/api/integrations/wise/cards/:cardToken/permissions', requirePermission('integrations:wise:manage'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const tokenParsed = wiseCardTokenParamSchema.safeParse(req.params);
+  const bodyParsed = wiseGenericPayloadSchema.safeParse(req.body);
+  if (!profileParsed.success || !tokenParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), token: tokenParsed.error?.format(), body: bodyParsed.error?.format() } });
+  }
+  try {
+    const permissions = await wiseService.updateCardPermission(profileParsed.data.profileId, tokenParsed.data.cardToken, bodyParsed.data);
+    res.json({ permissions });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao atualizar permissões do cartão Wise');
+    res.status(500).json({ error: 'Falha ao atualizar permissões do cartão' });
+  }
+});
+
+app.put('/api/integrations/wise/cards/permissions', requirePermission('integrations:wise:manage'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const bodyParsed = wiseGenericPayloadSchema.safeParse(req.body);
+  if (!profileParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), body: bodyParsed.error?.format() } });
+  }
+  try {
+    const result = await wiseService.updateCardPermissionsBulk(profileParsed.data.profileId, bodyParsed.data);
+    res.json({ result });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao atualizar permissões em lote Wise');
+    res.status(500).json({ error: 'Falha ao atualizar permissões em lote' });
+  }
+});
+
+app.get('/api/integrations/wise/cards/transactions/:transactionId', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const transactionParsed = wiseTransactionIdParamSchema.safeParse(req.params);
+  if (!profileParsed.success || !transactionParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), transaction: transactionParsed.error?.format() } });
+  }
+  try {
+    const auth = getWiseAuthContext(req);
+    const transaction = await wiseService.getCardTransaction(profileParsed.data.profileId, transactionParsed.data.transactionId);
+    await upsertWiseCardTransactions(auth.tenantId, [{
+      id: transactionParsed.data.transactionId,
+      ...(transaction as Record<string, unknown>),
+    }]);
+    res.json({ transaction });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter transação de cartão Wise');
+    res.status(500).json({ error: 'Falha ao obter transação de cartão' });
+  }
+});
+
+// Dados sensíveis de cartão (TwCard)
+app.get('/api/integrations/wise/cards/secure/encryption-key', requirePermission('integrations:wise:read'), async (_req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  try {
+    const key = await wiseService.getTwCardEncryptionKey();
+    res.json({ key });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter chave de criptografia Wise');
+    res.status(500).json({ error: 'Falha ao obter chave de criptografia' });
+  }
+});
+
+app.post('/api/integrations/wise/cards/secure/details', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const tokenParsed = wiseCardTokenParamSchema.safeParse(req.query);
+  const bodyParsed = wiseGenericPayloadSchema.safeParse(req.body);
+  if (!tokenParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { token: tokenParsed.error?.format(), body: bodyParsed.error?.format() } });
+  }
+  try {
+    const details = await wiseService.getSensitiveCardDetails(tokenParsed.data.cardToken, bodyParsed.data);
+    res.json({ details });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter detalhes sensíveis Wise');
+    res.status(500).json({ error: 'Falha ao obter detalhes sensíveis' });
+  }
+});
+
+app.post('/api/integrations/wise/cards/secure/pin', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const tokenParsed = wiseCardTokenParamSchema.safeParse(req.query);
+  const bodyParsed = wiseGenericPayloadSchema.safeParse(req.body);
+  if (!tokenParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { token: tokenParsed.error?.format(), body: bodyParsed.error?.format() } });
+  }
+  try {
+    const pin = await wiseService.getCardPin(tokenParsed.data.cardToken, bodyParsed.data);
+    res.json({ pin });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter PIN Wise');
+    res.status(500).json({ error: 'Falha ao obter PIN' });
+  }
+});
+
+// Card Orders
+app.get('/api/integrations/wise/card-orders', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const queryParsed = wiseCardOrdersQuerySchema.safeParse(req.query);
+  if (!profileParsed.success || !queryParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), query: queryParsed.error?.format() } });
+  }
+  try {
+    const auth = getWiseAuthContext(req);
+    const pageNumber = queryParsed.data.pageNumber ?? 1;
+    const pageSize = queryParsed.data.pageSize ?? 10;
+    const orders = await wiseService.listCardOrders(profileParsed.data.profileId, pageNumber, pageSize);
+    const items = Array.isArray((orders as Record<string, unknown>).content) ? (orders as Record<string, unknown>).content as Array<Record<string, unknown>> : [];
+    await upsertWiseCardOrders(auth.tenantId, items);
+    res.json({ orders });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao listar card orders Wise');
+    res.status(500).json({ error: 'Falha ao listar card orders' });
+  }
+});
+
+app.post('/api/integrations/wise/card-orders', requirePermission('integrations:wise:write'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const bodyParsed = wiseGenericPayloadSchema.safeParse(req.body);
+  if (!profileParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), body: bodyParsed.error?.format() } });
+  }
+  try {
+    const auth = getWiseAuthContext(req);
+    const order = await wiseService.createCardOrder(profileParsed.data.profileId, bodyParsed.data);
+    await upsertWiseCardOrders(auth.tenantId, [order as Record<string, unknown>]);
+    res.json({ order });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao criar card order Wise');
+    res.status(500).json({ error: 'Falha ao criar card order' });
+  }
+});
+
+app.get('/api/integrations/wise/card-orders/availability', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  if (!profileParsed.success) {
+    return res.status(400).json({ error: 'profileId inválido', details: profileParsed.error.format() });
+  }
+  try {
+    const availability = await wiseService.listCardOrderAvailability(profileParsed.data.profileId);
+    res.json({ availability });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter disponibilidade de card order');
+    res.status(500).json({ error: 'Falha ao obter disponibilidade' });
+  }
+});
+
+app.get('/api/integrations/wise/card-orders/:cardOrderId', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const idParsed = wiseCardOrderIdParamSchema.safeParse(req.params);
+  if (!profileParsed.success || !idParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), id: idParsed.error?.format() } });
+  }
+  try {
+    const auth = getWiseAuthContext(req);
+    const order = await wiseService.getCardOrder(profileParsed.data.profileId, idParsed.data.cardOrderId);
+    await upsertWiseCardOrders(auth.tenantId, [order as Record<string, unknown>]);
+    res.json({ order });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter card order Wise');
+    res.status(500).json({ error: 'Falha ao obter card order' });
+  }
+});
+
+app.get('/api/integrations/wise/card-orders/:cardOrderId/requirements', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const idParsed = wiseCardOrderIdParamSchema.safeParse(req.params);
+  if (!profileParsed.success || !idParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), id: idParsed.error?.format() } });
+  }
+  try {
+    const requirements = await wiseService.getCardOrderRequirements(profileParsed.data.profileId, idParsed.data.cardOrderId);
+    res.json({ requirements });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter requisitos do card order');
+    res.status(500).json({ error: 'Falha ao obter requisitos' });
+  }
+});
+
+app.put('/api/integrations/wise/card-orders/:cardOrderId/status', requirePermission('integrations:wise:manage'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const idParsed = wiseCardOrderIdParamSchema.safeParse(req.params);
+  const bodyParsed = wiseGenericPayloadSchema.safeParse(req.body);
+  if (!profileParsed.success || !idParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), id: idParsed.error?.format(), body: bodyParsed.error?.format() } });
+  }
+  try {
+    const auth = getWiseAuthContext(req);
+    const order = await wiseService.updateCardOrderStatus(profileParsed.data.profileId, idParsed.data.cardOrderId, bodyParsed.data);
+    await upsertWiseCardOrders(auth.tenantId, [order as Record<string, unknown>]);
+    res.json({ order });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao atualizar status do card order');
+    res.status(500).json({ error: 'Falha ao atualizar status do card order' });
+  }
+});
+
+app.post('/api/integrations/wise/card-orders/validate-address', requirePermission('integrations:wise:write'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const bodyParsed = wiseGenericPayloadSchema.safeParse(req.body);
+  if (!bodyParsed.success) {
+    return res.status(400).json({ error: 'Payload inválido', details: bodyParsed.error.format() });
+  }
+  try {
+    const result = await wiseService.validateCardOrderAddress(bodyParsed.data);
+    res.json({ result });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao validar endereço Wise');
+    res.status(500).json({ error: 'Falha ao validar endereço' });
+  }
+});
+
+app.post('/api/integrations/wise/card-orders/:cardOrderId/preset-pin', requirePermission('integrations:wise:manage'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const idParsed = wiseCardOrderIdParamSchema.safeParse(req.params);
+  const bodyParsed = wiseGenericPayloadSchema.safeParse(req.body);
+  if (!idParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { id: idParsed.error?.format(), body: bodyParsed.error?.format() } });
+  }
+  try {
+    const result = await wiseService.setCardOrderPin(idParsed.data.cardOrderId, bodyParsed.data);
+    res.json({ result });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao definir PIN do card order');
+    res.status(500).json({ error: 'Falha ao definir PIN' });
+  }
+});
+
+// Spend controls
+app.get('/api/integrations/wise/spend-controls', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  if (!profileParsed.success) {
+    return res.status(400).json({ error: 'profileId inválido', details: profileParsed.error.format() });
+  }
+  try {
+    const auth = getWiseAuthContext(req);
+    const rules = await wiseService.listSpendControls(profileParsed.data.profileId);
+    if (Array.isArray(rules)) {
+      await upsertWiseSpendControls(auth.tenantId, rules as Array<Record<string, unknown>>);
+    }
+    res.json({ rules });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao listar spend controls Wise');
+    res.status(500).json({ error: 'Falha ao listar spend controls' });
+  }
+});
+
+app.post('/api/integrations/wise/spend-controls', requirePermission('integrations:wise:write'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const bodyParsed = wiseGenericPayloadSchema.safeParse(req.body);
+  if (!profileParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), body: bodyParsed.error?.format() } });
+  }
+  try {
+    const auth = getWiseAuthContext(req);
+    const rule = await wiseService.createSpendControl(profileParsed.data.profileId, bodyParsed.data);
+    await upsertWiseSpendControls(auth.tenantId, [rule as Record<string, unknown>]);
+    res.json({ rule });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao criar spend control Wise');
+    res.status(500).json({ error: 'Falha ao criar spend control' });
+  }
+});
+
+app.delete('/api/integrations/wise/spend-controls/:ruleId', requirePermission('integrations:wise:manage'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const ruleParsed = numericIdParamSchema.safeParse(req.params);
+  if (!profileParsed.success || !ruleParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), rule: ruleParsed.error?.format() } });
+  }
+  try {
+    const auth = getWiseAuthContext(req);
+    await wiseService.deleteSpendControl(profileParsed.data.profileId, ruleParsed.data.id);
+    await getDatabase().delete(schema.wiseSpendControls).where(
+      and(
+        eq(schema.wiseSpendControls.tenantId, auth.tenantId),
+        eq(schema.wiseSpendControls.wiseRuleId, ruleParsed.data.id)
+      )
+    );
+    res.json({ success: true });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao remover spend control Wise');
+    res.status(500).json({ error: 'Falha ao remover spend control' });
+  }
+});
+
+app.post('/api/integrations/wise/spend-controls/:ruleId/assign', requirePermission('integrations:wise:manage'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const ruleParsed = numericIdParamSchema.safeParse(req.params);
+  const bodyParsed = wiseGenericPayloadSchema.safeParse(req.body);
+  if (!profileParsed.success || !ruleParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), rule: ruleParsed.error?.format(), body: bodyParsed.error?.format() } });
+  }
+  try {
+    const result = await wiseService.applySpendControl(profileParsed.data.profileId, ruleParsed.data.id, bodyParsed.data);
+    res.json({ result });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao aplicar spend control Wise');
+    res.status(500).json({ error: 'Falha ao aplicar spend control' });
+  }
+});
+
+app.post('/api/integrations/wise/spend-controls/:ruleId/unassign', requirePermission('integrations:wise:manage'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const ruleParsed = numericIdParamSchema.safeParse(req.params);
+  const bodyParsed = wiseGenericPayloadSchema.safeParse(req.body);
+  if (!profileParsed.success || !ruleParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), rule: ruleParsed.error?.format(), body: bodyParsed.error?.format() } });
+  }
+  try {
+    const result = await wiseService.unassignSpendControl(profileParsed.data.profileId, ruleParsed.data.id, bodyParsed.data);
+    res.json({ result });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao remover spend control do cartão');
+    res.status(500).json({ error: 'Falha ao remover spend control do cartão' });
+  }
+});
+
+// Spend limits
+app.get('/api/integrations/wise/spend-limits/profile', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  if (!profileParsed.success) {
+    return res.status(400).json({ error: 'profileId inválido', details: profileParsed.error.format() });
+  }
+  try {
+    const limits = await wiseService.getSpendLimits(profileParsed.data.profileId);
+    res.json({ limits });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter spend limits Wise');
+    res.status(500).json({ error: 'Falha ao obter spend limits' });
+  }
+});
+
+app.patch('/api/integrations/wise/spend-limits/profile', requirePermission('integrations:wise:manage'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const bodyParsed = wiseGenericPayloadSchema.safeParse(req.body);
+  if (!profileParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), body: bodyParsed.error?.format() } });
+  }
+  try {
+    const limits = await wiseService.updateSpendLimits(profileParsed.data.profileId, bodyParsed.data);
+    res.json({ limits });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao atualizar spend limits Wise');
+    res.status(500).json({ error: 'Falha ao atualizar spend limits' });
+  }
+});
+
+app.get('/api/integrations/wise/spend-limits/cards/:cardToken', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const tokenParsed = wiseCardTokenParamSchema.safeParse(req.params);
+  if (!profileParsed.success || !tokenParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), token: tokenParsed.error?.format() } });
+  }
+  try {
+    const limits = await wiseService.getCardSpendLimits(profileParsed.data.profileId, tokenParsed.data.cardToken);
+    res.json({ limits });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter spend limits do cartão');
+    res.status(500).json({ error: 'Falha ao obter spend limits do cartão' });
+  }
+});
+
+app.patch('/api/integrations/wise/spend-limits/cards/:cardToken', requirePermission('integrations:wise:manage'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const tokenParsed = wiseCardTokenParamSchema.safeParse(req.params);
+  const bodyParsed = wiseGenericPayloadSchema.safeParse(req.body);
+  if (!profileParsed.success || !tokenParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), token: tokenParsed.error?.format(), body: bodyParsed.error?.format() } });
+  }
+  try {
+    const limits = await wiseService.updateCardSpendLimits(profileParsed.data.profileId, tokenParsed.data.cardToken, bodyParsed.data);
+    res.json({ limits });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao atualizar spend limits do cartão');
+    res.status(500).json({ error: 'Falha ao atualizar spend limits do cartão' });
+  }
+});
+
+app.delete('/api/integrations/wise/spend-limits/cards/:cardToken', requirePermission('integrations:wise:manage'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const tokenParsed = wiseCardTokenParamSchema.safeParse(req.params);
+  if (!profileParsed.success || !tokenParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), token: tokenParsed.error?.format() } });
+  }
+  try {
+    await wiseService.deleteCardSpendLimits(profileParsed.data.profileId, tokenParsed.data.cardToken);
+    res.json({ success: true });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao remover spend limits do cartão');
+    res.status(500).json({ error: 'Falha ao remover spend limits do cartão' });
+  }
+});
+
+// Disputas
+app.get('/api/integrations/wise/disputes/reasons', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  if (!profileParsed.success) {
+    return res.status(400).json({ error: 'profileId inválido', details: profileParsed.error.format() });
+  }
+  try {
+    const reasons = await wiseService.listDisputeReasons(profileParsed.data.profileId);
+    res.json({ reasons });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao listar razões de disputa Wise');
+    res.status(500).json({ error: 'Falha ao listar razões de disputa' });
+  }
+});
+
+app.post('/api/integrations/wise/disputes/flow/step', requirePermission('integrations:wise:write'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const { profileId, scheme, reason, transactionId, payload } = req.body as Record<string, unknown>;
+  if (!profileId || !scheme || !reason || !transactionId) {
+    return res.status(400).json({ error: 'profileId, scheme, reason e transactionId são obrigatórios' });
+  }
+  const bodyParsed = wiseGenericPayloadSchema.safeParse(payload ?? {});
+  if (!bodyParsed.success) {
+    return res.status(400).json({ error: 'Payload inválido', details: bodyParsed.error.format() });
+  }
+  try {
+    const result = await wiseService.getDisputeFlowStep(Number(profileId), String(scheme), String(reason), String(transactionId), bodyParsed.data);
+    res.json({ result });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter step de disputa Wise');
+    res.status(500).json({ error: 'Falha ao obter step de disputa' });
+  }
+});
+
+app.post('/api/integrations/wise/disputes/flow/submit', requirePermission('integrations:wise:write'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const { profileId, scheme, reason, transactionId, payload } = req.body as Record<string, unknown>;
+  if (!profileId || !scheme || !reason || !transactionId) {
+    return res.status(400).json({ error: 'profileId, scheme, reason e transactionId são obrigatórios' });
+  }
+  const bodyParsed = wiseGenericPayloadSchema.safeParse(payload ?? {});
+  if (!bodyParsed.success) {
+    return res.status(400).json({ error: 'Payload inválido', details: bodyParsed.error.format() });
+  }
+  try {
+    const result = await wiseService.submitDisputeFlow(Number(profileId), String(scheme), String(reason), String(transactionId), bodyParsed.data);
+    res.json({ result });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao enviar disputa Wise');
+    res.status(500).json({ error: 'Falha ao enviar disputa' });
+  }
+});
+
+app.post('/api/integrations/wise/disputes/upload', requirePermission('integrations:wise:write'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const bodyParsed = wiseFileUploadSchema.safeParse(req.body);
+  if (!profileParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), body: bodyParsed.error?.format() } });
+  }
+  try {
+    const buffer = Buffer.from(bodyParsed.data.fileBase64, 'base64');
+    const formData = new FormData();
+    formData.append('receipt', new Blob([buffer], { type: bodyParsed.data.contentType }), bodyParsed.data.fileName);
+    const result = await wiseService.uploadDisputeFile(profileParsed.data.profileId, formData);
+    res.json({ result });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao enviar arquivo de disputa Wise');
+    res.status(500).json({ error: 'Falha ao enviar arquivo' });
+  }
+});
+
+app.get('/api/integrations/wise/disputes', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  if (!profileParsed.success) {
+    return res.status(400).json({ error: 'profileId inválido', details: profileParsed.error.format() });
+  }
+  try {
+    const auth = getWiseAuthContext(req);
+    const disputes = await wiseService.listDisputes(profileParsed.data.profileId, req.query.status as string | undefined);
+    if (Array.isArray((disputes as Record<string, unknown>).content)) {
+      await upsertWiseDisputes(auth.tenantId, (disputes as Record<string, unknown>).content as Array<Record<string, unknown>>);
+    }
+    res.json({ disputes });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao listar disputas Wise');
+    res.status(500).json({ error: 'Falha ao listar disputas' });
+  }
+});
+
+app.get('/api/integrations/wise/disputes/:disputeId', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const idParsed = wiseDisputeIdParamSchema.safeParse(req.params);
+  if (!profileParsed.success || !idParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), id: idParsed.error?.format() } });
+  }
+  try {
+    const auth = getWiseAuthContext(req);
+    const dispute = await wiseService.getDispute(profileParsed.data.profileId, idParsed.data.disputeId);
+    await upsertWiseDisputes(auth.tenantId, [dispute as Record<string, unknown>]);
+    res.json({ dispute });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter disputa Wise');
+    res.status(500).json({ error: 'Falha ao obter disputa' });
+  }
+});
+
+app.put('/api/integrations/wise/disputes/:disputeId/status', requirePermission('integrations:wise:manage'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const idParsed = wiseDisputeIdParamSchema.safeParse(req.params);
+  const bodyParsed = wiseGenericPayloadSchema.safeParse(req.body);
+  if (!profileParsed.success || !idParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), id: idParsed.error?.format(), body: bodyParsed.error?.format() } });
+  }
+  try {
+    const auth = getWiseAuthContext(req);
+    const dispute = await wiseService.updateDisputeStatus(profileParsed.data.profileId, idParsed.data.disputeId, bodyParsed.data);
+    await upsertWiseDisputes(auth.tenantId, [dispute as Record<string, unknown>]);
+    res.json({ dispute });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao atualizar disputa Wise');
+    res.status(500).json({ error: 'Falha ao atualizar disputa' });
+  }
+});
+
+// Verificação e KYC
+app.get('/api/integrations/wise/verification/required-evidences', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  if (!profileParsed.success) {
+    return res.status(400).json({ error: 'profileId inválido', details: profileParsed.error.format() });
+  }
+  try {
+    const evidences = await wiseService.getVerificationRequiredEvidences(profileParsed.data.profileId);
+    res.json({ evidences });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter evidências Wise');
+    res.status(500).json({ error: 'Falha ao obter evidências' });
+  }
+});
+
+app.post('/api/integrations/wise/verification/upload-document', requirePermission('integrations:wise:write'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const bodyParsed = wiseFileUploadSchema.safeParse(req.body);
+  if (!profileParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), body: bodyParsed.error?.format() } });
+  }
+  try {
+    const buffer = Buffer.from(bodyParsed.data.fileBase64, 'base64');
+    const formData = new FormData();
+    formData.append('document', new Blob([buffer], { type: bodyParsed.data.contentType }), bodyParsed.data.fileName);
+    const result = await wiseService.uploadVerificationDocument(profileParsed.data.profileId, formData);
+    res.json({ result });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao enviar documento Wise');
+    res.status(500).json({ error: 'Falha ao enviar documento' });
+  }
+});
+
+app.post('/api/integrations/wise/verification/upload-evidences', requirePermission('integrations:wise:write'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const bodyParsed = wiseFileUploadSchema.safeParse(req.body);
+  if (!profileParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), body: bodyParsed.error?.format() } });
+  }
+  try {
+    const buffer = Buffer.from(bodyParsed.data.fileBase64, 'base64');
+    const formData = new FormData();
+    formData.append('document', new Blob([buffer], { type: bodyParsed.data.contentType }), bodyParsed.data.fileName);
+    const result = await wiseService.uploadAdditionalEvidences(profileParsed.data.profileId, formData);
+    res.json({ result });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao enviar evidências Wise');
+    res.status(500).json({ error: 'Falha ao enviar evidências' });
+  }
+});
+
+app.get('/api/integrations/wise/kyc-reviews', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  if (!profileParsed.success) {
+    return res.status(400).json({ error: 'profileId inválido', details: profileParsed.error.format() });
+  }
+  try {
+    const auth = getWiseAuthContext(req);
+    const reviews = await wiseService.listKycReviews(profileParsed.data.profileId);
+    const items = Array.isArray((reviews as Record<string, unknown>).content) ? (reviews as Record<string, unknown>).content as Array<Record<string, unknown>> : [];
+    await upsertWiseKycReviews(auth.tenantId, items);
+    res.json({ reviews });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao listar KYC reviews Wise');
+    res.status(500).json({ error: 'Falha ao listar KYC reviews' });
+  }
+});
+
+app.post('/api/integrations/wise/kyc-reviews', requirePermission('integrations:wise:write'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const bodyParsed = wiseGenericPayloadSchema.safeParse(req.body);
+  if (!profileParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), body: bodyParsed.error?.format() } });
+  }
+  try {
+    const auth = getWiseAuthContext(req);
+    const review = await wiseService.createKycReview(profileParsed.data.profileId, bodyParsed.data);
+    await upsertWiseKycReviews(auth.tenantId, [review as Record<string, unknown>]);
+    res.json({ review });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao criar KYC review Wise');
+    res.status(500).json({ error: 'Falha ao criar KYC review' });
+  }
+});
+
+app.get('/api/integrations/wise/kyc-reviews/:kycReviewId', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const idParsed = wiseKycReviewIdParamSchema.safeParse(req.params);
+  if (!profileParsed.success || !idParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), id: idParsed.error?.format() } });
+  }
+  try {
+    const auth = getWiseAuthContext(req);
+    const review = await wiseService.getKycReview(profileParsed.data.profileId, idParsed.data.kycReviewId);
+    await upsertWiseKycReviews(auth.tenantId, [review as Record<string, unknown>]);
+    res.json({ review });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter KYC review Wise');
+    res.status(500).json({ error: 'Falha ao obter KYC review' });
+  }
+});
+
+// SCA
+app.post('/api/integrations/wise/one-time-token', requirePermission('integrations:wise:write'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  if (!profileParsed.success) {
+    return res.status(400).json({ error: 'profileId inválido', details: profileParsed.error.format() });
+  }
+  try {
+    const result = await wiseService.getScaOneTimeToken(profileParsed.data.profileId);
+    res.json({ result });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter one-time token Wise');
+    res.status(500).json({ error: 'Falha ao obter one-time token' });
+  }
+});
+
+app.post('/api/integrations/wise/sca/sessions', requirePermission('integrations:wise:write'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const bodyParsed = wiseJosePayloadSchema.safeParse(req.body);
+  if (!profileParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), body: bodyParsed.error?.format() } });
+  }
+  try {
+    const result = await wiseService.createScaSession(profileParsed.data.profileId, bodyParsed.data.josePayload);
+    res.json({ result });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao criar sessão SCA Wise');
+    res.status(500).json({ error: 'Falha ao criar sessão SCA' });
+  }
+});
+
+app.post('/api/integrations/wise/sca/pin', requirePermission('integrations:wise:write'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const bodyParsed = wiseJosePayloadSchema.safeParse(req.body);
+  if (!profileParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), body: bodyParsed.error?.format() } });
+  }
+  try {
+    const result = await wiseService.createPin(profileParsed.data.profileId, bodyParsed.data.josePayload);
+    res.json({ result });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao criar PIN Wise');
+    res.status(500).json({ error: 'Falha ao criar PIN' });
+  }
+});
+
+app.post('/api/integrations/wise/sca/pin/verify', requirePermission('integrations:wise:write'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const bodyParsed = wiseJosePayloadSchema.safeParse(req.body);
+  if (!profileParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), body: bodyParsed.error?.format() } });
+  }
+  try {
+    const result = await wiseService.verifyPin(profileParsed.data.profileId, bodyParsed.data.josePayload);
+    res.json({ result });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao verificar PIN Wise');
+    res.status(500).json({ error: 'Falha ao verificar PIN' });
+  }
+});
+
+app.delete('/api/integrations/wise/sca/pin', requirePermission('integrations:wise:manage'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const bodyParsed = wiseJosePayloadSchema.safeParse(req.body);
+  if (!profileParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), body: bodyParsed.error?.format() } });
+  }
+  try {
+    const result = await wiseService.deletePin(profileParsed.data.profileId, bodyParsed.data.josePayload);
+    res.json({ result });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao remover PIN Wise');
+    res.status(500).json({ error: 'Falha ao remover PIN' });
+  }
+});
+
+app.post('/api/integrations/wise/sca/device-fingerprint', requirePermission('integrations:wise:write'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const bodyParsed = wiseJosePayloadSchema.safeParse(req.body);
+  if (!profileParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), body: bodyParsed.error?.format() } });
+  }
+  try {
+    const result = await wiseService.createDeviceFingerprint(profileParsed.data.profileId, bodyParsed.data.josePayload);
+    res.json({ result });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao criar device fingerprint Wise');
+    res.status(500).json({ error: 'Falha ao criar device fingerprint' });
+  }
+});
+
+app.post('/api/integrations/wise/sca/device-fingerprint/verify', requirePermission('integrations:wise:write'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const bodyParsed = wiseJosePayloadSchema.safeParse(req.body);
+  if (!profileParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), body: bodyParsed.error?.format() } });
+  }
+  try {
+    const result = await wiseService.verifyDeviceFingerprint(profileParsed.data.profileId, bodyParsed.data.josePayload);
+    res.json({ result });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao verificar device fingerprint Wise');
+    res.status(500).json({ error: 'Falha ao verificar device fingerprint' });
+  }
+});
+
+app.delete('/api/integrations/wise/sca/device-fingerprint', requirePermission('integrations:wise:manage'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const bodyParsed = wiseJosePayloadSchema.safeParse(req.body);
+  if (!profileParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), body: bodyParsed.error?.format() } });
+  }
+  try {
+    const result = await wiseService.deleteDeviceFingerprint(profileParsed.data.profileId, bodyParsed.data.josePayload);
+    res.json({ result });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao remover device fingerprint Wise');
+    res.status(500).json({ error: 'Falha ao remover device fingerprint' });
+  }
+});
+
+app.post('/api/integrations/wise/sca/facemap', requirePermission('integrations:wise:write'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const bodyParsed = wiseJosePayloadSchema.safeParse(req.body);
+  if (!profileParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), body: bodyParsed.error?.format() } });
+  }
+  try {
+    const result = await wiseService.createFacemap(profileParsed.data.profileId, bodyParsed.data.josePayload);
+    res.json({ result });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao criar facemap Wise');
+    res.status(500).json({ error: 'Falha ao criar facemap' });
+  }
+});
+
+app.post('/api/integrations/wise/sca/facemap/verify', requirePermission('integrations:wise:write'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const bodyParsed = wiseJosePayloadSchema.safeParse(req.body);
+  if (!profileParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), body: bodyParsed.error?.format() } });
+  }
+  try {
+    const result = await wiseService.verifyFacemap(profileParsed.data.profileId, bodyParsed.data.josePayload);
+    res.json({ result });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao verificar facemap Wise');
+    res.status(500).json({ error: 'Falha ao verificar facemap' });
+  }
+});
+
+app.delete('/api/integrations/wise/sca/facemap', requirePermission('integrations:wise:manage'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const bodyParsed = wiseJosePayloadSchema.safeParse(req.body);
+  if (!profileParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), body: bodyParsed.error?.format() } });
+  }
+  try {
+    const result = await wiseService.deleteFacemap(profileParsed.data.profileId, bodyParsed.data.josePayload);
+    res.json({ result });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao remover facemap Wise');
+    res.status(500).json({ error: 'Falha ao remover facemap' });
+  }
+});
+
+// Webhooks
+app.get('/api/integrations/wise/webhooks', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const application = String(req.query.application ?? '') === 'true';
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  let profileId: number | undefined;
+  if (application) {
+    profileId = undefined;
+  } else if (profileParsed.success) {
+    profileId = profileParsed.data.profileId;
+  } else {
+    return res.status(400).json({ error: 'profileId inválido', details: profileParsed.error?.format() });
+  }
+  try {
+    const auth = getWiseAuthContext(req);
+    const webhooks = await wiseService.listWebhooks({ profileId, application });
+    const items = Array.isArray((webhooks as Record<string, unknown>).content) ? (webhooks as Record<string, unknown>).content as Array<Record<string, unknown>> : [];
+    await upsertWiseWebhookSubscriptions(auth.tenantId, items);
+    res.json({ webhooks });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao listar webhooks Wise');
+    res.status(500).json({ error: 'Falha ao listar webhooks' });
+  }
+});
+
+app.post('/api/integrations/wise/webhooks', requirePermission('integrations:wise:manage'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const application = String(req.query.application ?? '') === 'true';
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const bodyParsed = wiseGenericPayloadSchema.safeParse(req.body);
+  let profileId: number | undefined;
+  if (application) {
+    profileId = undefined;
+  } else if (profileParsed.success) {
+    profileId = profileParsed.data.profileId;
+  } else {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), body: bodyParsed.error?.format() } });
+  }
+  if (!bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), body: bodyParsed.error?.format() } });
+  }
+  try {
+    const auth = getWiseAuthContext(req);
+    const webhook = await wiseService.createWebhook({ profileId, application }, bodyParsed.data);
+    await upsertWiseWebhookSubscriptions(auth.tenantId, [webhook as Record<string, unknown>]);
+    res.json({ webhook });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao criar webhook Wise');
+    res.status(500).json({ error: 'Falha ao criar webhook' });
+  }
+});
+
+app.delete('/api/integrations/wise/webhooks/:subscriptionId', requirePermission('integrations:wise:manage'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const application = String(req.query.application ?? '') === 'true';
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.query);
+  const idParsed = wiseWebhookIdParamSchema.safeParse(req.params);
+  let profileId: number | undefined;
+  if (application) {
+    profileId = undefined;
+  } else if (profileParsed.success) {
+    profileId = profileParsed.data.profileId;
+  } else {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), id: idParsed.error?.format() } });
+  }
+  if (!idParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), id: idParsed.error?.format() } });
+  }
+  try {
+    await wiseService.deleteWebhook({ profileId, application }, idParsed.data.subscriptionId);
+    res.status(204).send();
+  } catch (error) {
+    logger.error({ error }, 'Falha ao remover webhook Wise');
+    res.status(500).json({ error: 'Falha ao remover webhook' });
+  }
+});
+
+// Simulações
+app.post('/api/integrations/wise/simulation/transfers/:transferId/:action', requirePermission('integrations:wise:manage'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const transferId = Number(req.params.transferId);
+  const actionParsed = wiseSimulationActionSchema.safeParse(req.params);
+  if (!Number.isFinite(transferId) || transferId <= 0 || !actionParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos' });
+  }
+  try {
+    const result = await wiseService.simulateTransfer(transferId, actionParsed.data.action);
+    res.json({ result });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao simular transferência Wise');
+    res.status(500).json({ error: 'Falha ao simular transferência' });
+  }
+});
+
+app.post('/api/integrations/wise/simulation/profiles/:profileId/verifications', requirePermission('integrations:wise:manage'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.params);
+  const bodyParsed = wiseGenericPayloadSchema.safeParse(req.body);
+  if (!profileParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), body: bodyParsed.error?.format() } });
+  }
+  try {
+    const result = await wiseService.simulateVerification(profileParsed.data.profileId, bodyParsed.data);
+    res.json({ result });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao simular verificação Wise');
+    res.status(500).json({ error: 'Falha ao simular verificação' });
+  }
+});
+
+app.post('/api/integrations/wise/simulation/balance/topup', requirePermission('integrations:wise:manage'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const bodyParsed = wiseGenericPayloadSchema.safeParse(req.body);
+  if (!bodyParsed.success) {
+    return res.status(400).json({ error: 'Payload inválido', details: bodyParsed.error.format() });
+  }
+  try {
+    const result = await wiseService.simulateBalanceTopup(bodyParsed.data);
+    res.json({ result });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao simular topup Wise');
+    res.status(500).json({ error: 'Falha ao simular topup' });
+  }
+});
+
+app.post('/api/integrations/wise/simulation/spend/profiles/:profileId/cards/:cardToken/transactions/:action', requirePermission('integrations:wise:manage'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.params);
+  const cardParsed = wiseCardTokenParamSchema.safeParse(req.params);
+  const actionParsed = wiseSimulationActionSchema.safeParse(req.params);
+  const bodyParsed = wiseGenericPayloadSchema.safeParse(req.body);
+  if (!profileParsed.success || !cardParsed.success || !actionParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos' });
+  }
+  try {
+    const result = await wiseService.simulateCardTransaction(
+      profileParsed.data.profileId,
+      cardParsed.data.cardToken,
+      actionParsed.data.action,
+      bodyParsed.data
+    );
+    res.json({ result });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao simular transação de cartão Wise');
+    res.status(500).json({ error: 'Falha ao simular transação' });
+  }
+});
+
+app.post('/api/integrations/wise/simulation/spend/profiles/:profileId/cards/:cardToken/transactions/authorisation', requirePermission('integrations:wise:manage'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.params);
+  const cardParsed = wiseCardTokenParamSchema.safeParse(req.params);
+  const bodyParsed = wiseGenericPayloadSchema.safeParse(req.body);
+  if (!profileParsed.success || !cardParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos' });
+  }
+  try {
+    const result = await wiseService.simulateCardAuthorisation(profileParsed.data.profileId, cardParsed.data.cardToken, bodyParsed.data);
+    res.json({ result });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao simular autorização Wise');
+    res.status(500).json({ error: 'Falha ao simular autorização' });
+  }
+});
+
+app.post('/api/integrations/wise/simulation/spend/profiles/:profileId/cards/:cardToken/transactions/refund', requirePermission('integrations:wise:manage'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.params);
+  const cardParsed = wiseCardTokenParamSchema.safeParse(req.params);
+  const bodyParsed = wiseGenericPayloadSchema.safeParse(req.body);
+  if (!profileParsed.success || !cardParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos' });
+  }
+  try {
+    const result = await wiseService.simulateCardRefund(profileParsed.data.profileId, cardParsed.data.cardToken, bodyParsed.data);
+    res.json({ result });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao simular reembolso Wise');
+    res.status(500).json({ error: 'Falha ao simular reembolso' });
+  }
+});
+
+app.post('/api/integrations/wise/simulation/spend/profiles/:profileId/cards/:cardToken/production', requirePermission('integrations:wise:manage'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.params);
+  const cardParsed = wiseCardTokenParamSchema.safeParse(req.params);
+  const bodyParsed = wiseGenericPayloadSchema.safeParse(req.body);
+  if (!profileParsed.success || !cardParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos' });
+  }
+  try {
+    const result = await wiseService.simulateCardProduction(profileParsed.data.profileId, cardParsed.data.cardToken, bodyParsed.data);
+    res.json({ result });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao simular produção de cartão Wise');
+    res.status(500).json({ error: 'Falha ao simular produção' });
+  }
+});
+
+app.get('/api/integrations/wise/simulation/spend/profiles/:profileId/cards/:cardToken/transactions', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.params);
+  const cardParsed = wiseCardTokenParamSchema.safeParse(req.params);
+  if (!profileParsed.success || !cardParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos' });
+  }
+  const limit = req.query.limit ? Number(req.query.limit) : 10;
+  try {
+    const result = await wiseService.simulateCardRecentTransactions(profileParsed.data.profileId, cardParsed.data.cardToken, Number.isFinite(limit) ? limit : 10);
+    res.json({ result });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao listar transações simuladas Wise');
+    res.status(500).json({ error: 'Falha ao listar transações simuladas' });
+  }
+});
+
+app.get('/api/integrations/wise/simulation/profiles/:profileId/kyc-reviews/:kycReviewId/requirements', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.params);
+  const reviewParsed = wiseKycReviewIdParamSchema.safeParse(req.params);
+  if (!profileParsed.success || !reviewParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos' });
+  }
+  try {
+    const result = await wiseService.simulateKycRequirements(profileParsed.data.profileId, reviewParsed.data.kycReviewId);
+    res.json({ result });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao simular requisitos KYC Wise');
+    res.status(500).json({ error: 'Falha ao simular requisitos KYC' });
+  }
+});
+
+app.post('/api/integrations/wise/simulation/profiles/:profileId/bank-transactions/import', requirePermission('integrations:wise:manage'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const profileParsed = wiseProfileIdParamSchema.safeParse(req.params);
+  const bodyParsed = wiseGenericPayloadSchema.safeParse(req.body);
+  if (!profileParsed.success || !bodyParsed.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: { profile: profileParsed.error?.format(), body: bodyParsed.error?.format() } });
+  }
+  try {
+    const result = await wiseService.simulateBankTransactionImport(profileParsed.data.profileId, bodyParsed.data);
+    res.json({ result });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao simular importação bancária Wise');
+    res.status(500).json({ error: 'Falha ao simular importação bancária' });
+  }
+});
+
+// OAuth
+app.post('/api/integrations/wise/oauth/exchange-registration-code', requirePermission('integrations:wise:manage'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const bodyParsed = wiseOAuthExchangeSchema.safeParse(req.body);
+  if (!bodyParsed.success) {
+    return res.status(400).json({ error: 'Payload inválido', details: bodyParsed.error.format() });
+  }
+  try {
+    const token = await wiseService.exchangeRegistrationCode(bodyParsed.data);
+    res.json({ token });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao trocar registration code Wise');
+    res.status(500).json({ error: 'Falha ao trocar registration code' });
+  }
+});
+
+app.post('/api/integrations/wise/oauth/exchange-authorization-code', requirePermission('integrations:wise:manage'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const bodyParsed = wiseOAuthExchangeSchema.safeParse(req.body);
+  if (!bodyParsed.success) {
+    return res.status(400).json({ error: 'Payload inválido', details: bodyParsed.error.format() });
+  }
+  try {
+    const token = await wiseService.exchangeAuthorizationCode(bodyParsed.data);
+    res.json({ token });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao trocar authorization code Wise');
+    res.status(500).json({ error: 'Falha ao trocar authorization code' });
+  }
+});
+
+app.post('/api/integrations/wise/oauth/refresh-user-token', requirePermission('integrations:wise:manage'), async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+  const bodyParsed = wiseOAuthRefreshSchema.safeParse(req.body);
+  if (!bodyParsed.success) {
+    return res.status(400).json({ error: 'Payload inválido', details: bodyParsed.error.format() });
+  }
+  try {
+    const token = await wiseService.refreshUserToken(bodyParsed.data.refreshToken);
+    res.json({ token });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao renovar token Wise');
+    res.status(500).json({ error: 'Falha ao renovar token' });
   }
 });
 

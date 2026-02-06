@@ -62,6 +62,17 @@ providers:
     options:
       path: /etc/grafana/provisioning/dashboards/agentic
 
+  - name: 'Alice - Biometria'
+    orgId: 1
+    folder: 'Alice/Biometria'
+    folderUid: 'alice-biometrics'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/biometrics
+
   - name: 'Alice - Trading'
     orgId: 1
     folder: 'Alice/Trading'

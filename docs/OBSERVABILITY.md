@@ -1,7 +1,7 @@
 # Guia de Observabilidade - Alice Enterprise Platform
 
-**Versão:** 2.6.8  
-**Data:** 31 de Janeiro de 2026  
+**Versão:** 2.6.9  
+**Data:** 05 de Fevereiro de 2026  
 **Author:** Fillipe Guerra
 
 ---
@@ -73,6 +73,13 @@ A plataforma Alice implementa observabilidade **enterprise-grade** baseada em **
 - **Latência (rotas)**: `alice_http_request_duration_seconds_bucket{route=~"/api/agentic.*|/api/agents.*"}`
 - **Dashboard**: `apps/observability-service/config/grafana/dashboards/alice-agentic.json`
 
+### Métricas Biometria
+
+- **Requisições por rota**: `alice_http_requests_total{route=~"/api/auth/biometrics/(login|status|enroll|verify)"}`
+- **Latência P95**: `histogram_quantile(0.95, sum(rate(alice_http_request_duration_seconds_bucket{route=~"/api/auth/biometrics/(login|status|enroll|verify)"}[5m])) by (le, route))`
+- **Taxa de erro**: `sum(rate(alice_http_requests_total{route=~"/api/auth/biometrics/(login|status|enroll|verify)",status_code=~"4..|5.."}[5m])) / sum(rate(alice_http_requests_total{route=~"/api/auth/biometrics/(login|status|enroll|verify)"}[5m]))`
+- **Dashboard**: `apps/observability-service/config/grafana/dashboards/alice-biometrics.json`
+
 ### Streaming Agentic (UI)
 
 - **Objetivo**: exibir em tempo real as ações e ferramentas executadas durante uma resposta.
@@ -141,6 +148,8 @@ Permitir que o Chat consulte e **atualize dashboards** do Grafana com RBAC, audi
 **Navegação rápida:**
 
 - LLM/Chat
+- Agentic
+- Biometria
 - GPU Manager
 - Trading
 - Infrastructure

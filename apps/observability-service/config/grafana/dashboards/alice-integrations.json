@@ -194,7 +194,7 @@
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 },
       "id": 30,
-      "title": "Wise - Transferências Internacionais",
+      "title": "Wise - Operações",
       "type": "row"
     },
     {
@@ -220,7 +220,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Transferências processadas",
+      "description": "Operações Wise por endpoint",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -233,10 +233,10 @@
       "gridPos": { "h": 7, "w": 8, "x": 8, "y": 16 },
       "id": 32,
       "options": { "legend": { "calcs": ["sum"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
-      "title": "Wise Transfers",
+      "title": "Wise Operations",
       "type": "timeseries",
       "targets": [
-        { "expr": "increase(alice_integration_calls_total{integration=\"wise\",operation=\"transfer\"}[1h])", "legendFormat": "Transfers", "refId": "A" }
+        { "expr": "sum by (operation) (increase(alice_integration_calls_total{integration=\"wise\"}[1h]))", "legendFormat": "{{operation}}", "refId": "A" }
       ]
     },
     {

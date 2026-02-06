@@ -116,7 +116,7 @@ describe('Integrations Service - Stripe Events', () => {
 
 describe('Integrations Service - Wise', () => {
   const WISE_API_BASE = 'https://api.wise.com';
-  const WISE_SANDBOX_BASE = 'https://api.sandbox.wise.com';
+  const WISE_SANDBOX_BASE = 'https://api.wise-sandbox.com';
 
   it('deve ter URL de produção Wise', () => {
     expect(WISE_API_BASE).toBe('https://api.wise.com');
@@ -126,16 +126,14 @@ describe('Integrations Service - Wise', () => {
     expect(WISE_SANDBOX_BASE).toContain('sandbox');
   });
 
-  it('deve validar webhook signature do Wise', () => {
-    const webhookSecret = 'wise_webhook_secret';
+  it('deve validar webhook signature do Wise via RSA (SHA256)', () => {
     const payload = JSON.stringify({ type: 'transfer.state.changed' });
-    
-    const signature = crypto
-      .createHmac('sha256', webhookSecret)
-      .update(payload)
-      .digest('hex');
-    
-    expect(signature.length).toBe(64); // SHA256 hex
+    const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+    });
+    const signature = crypto.sign('sha256', Buffer.from(payload), privateKey);
+    const isValid = crypto.verify('sha256', Buffer.from(payload), publicKey, signature);
+    expect(isValid).toBe(true);
   });
 });
 

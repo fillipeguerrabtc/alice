@@ -83,6 +83,7 @@ import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { frontendLogger } from '@/lib/logger';
+import { MultiSelectDropdown } from '@/components/trading';
 
 /**
  * Hook para detectar viewport mobile
@@ -118,6 +119,13 @@ import {
   formatFileSize,
   AgentEvent,
 } from './components/types';
+
+type AgentSummary = {
+  id: string;
+  nome: string;
+  slug?: string | null;
+  status?: string | null;
+};
 
 interface Namespace {
   id: string;
@@ -1003,6 +1011,35 @@ export default function Chat() {
     staleTime: 1000 * 60,
   });
 
+  const { data: agentsData } = useQuery<AgentSummary[]>({
+    queryKey: ['/api/agents'],
+    staleTime: 1000 * 60,
+  });
+
+  const [routingModeByConversation, setRoutingModeByConversation] = useState<Record<string, 'auto' | 'manual'>>({});
+  const [routingAgentIdsByConversation, setRoutingAgentIdsByConversation] = useState<Record<string, string[]>>({});
+  const routingKey = conversationId ?? 'new';
+  const routingMode = routingModeByConversation[routingKey] ?? 'auto';
+  const routingAgentIds = routingAgentIdsByConversation[routingKey] ?? [];
+
+  const agentOptions = useMemo(() => {
+    return (agentsData ?? []).map((agent) => ({
+      value: agent.id,
+      label: `${agent.nome}${agent.slug ? ` (@${agent.slug})` : ''}`,
+    }));
+  }, [agentsData]);
+
+  useEffect(() => {
+    if (!agentOptions.length) return;
+    setRoutingAgentIdsByConversation((prev) => {
+      const current = prev[routingKey] ?? [];
+      const validIds = new Set(agentOptions.map((option) => option.value));
+      const filtered = current.filter((id) => validIds.has(id));
+      if (filtered.length === current.length) return prev;
+      return { ...prev, [routingKey]: filtered };
+    });
+  }, [agentOptions, routingKey]);
+
   const createConversation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest('POST', '/api/chat/conversations', { titulo: 'Nova Conversa' });
@@ -1085,6 +1122,14 @@ export default function Chat() {
       visionModel: anexo.visionModel,
     }));
   }, []);
+
+  const ensureRoutingSelection = useCallback(() => {
+    if (routingMode === 'manual' && routingAgentIds.length === 0) {
+      toast({ title: t('chat.routing.missingAgents'), variant: 'destructive' });
+      return false;
+    }
+    return true;
+  }, [routingAgentIds.length, routingMode, t, toast]);
 
   const normalizeServerMessage = useCallback((message: ServerMessage): Message => {
     const role = message.role ?? (message.isFromUser ? 'user' : 'assistant');
@@ -1206,6 +1251,12 @@ export default function Chat() {
   }, [resolveStreamStatus]);
   const sendMessage = useMutation({
     mutationFn: async ({ content, mediaAttachments }: { content: string; mediaAttachments?: MediaAttachment[] }) => {
+      if (!ensureRoutingSelection()) {
+        return '';
+      }
+      const currentRoutingMode = routingMode;
+      const currentRoutingAgentIds = routingAgentIds;
+      const currentRoutingKey = routingKey;
       const userMessage: Message = {
         id: crypto.randomUUID(),
         role: 'user',
@@ -1242,8 +1293,17 @@ export default function Chat() {
       let activeConversationId = conversationId;
       if (!activeConversationId) {
         const created = await createConversation.mutateAsync();
-        activeConversationId = created.conversation.id;
-        navigate(`/chat/${activeConversationId}`);
+        const nextConversationId = created.conversation.id;
+        activeConversationId = nextConversationId;
+        navigate(`/chat/${nextConversationId}`);
+        setRoutingModeByConversation((prev) => {
+          const { [currentRoutingKey]: _removed, ...rest } = prev;
+          return { ...rest, [nextConversationId]: currentRoutingMode };
+        });
+        setRoutingAgentIdsByConversation((prev) => {
+          const { [currentRoutingKey]: _removed, ...rest } = prev;
+          return { ...rest, [nextConversationId]: currentRoutingAgentIds };
+        });
       }
 
       stopRequestedRef.current = false;
@@ -1290,6 +1350,10 @@ export default function Chat() {
         conversationId: activeConversationId,
         ...(content.trim().length > 0 ? { message: content } : {}),
         ...(mediaPayload && mediaPayload.length > 0 ? { mediaAttachments: mediaPayload } : {}),
+        agentRouting: {
+          mode: currentRoutingMode,
+          agentIds: currentRoutingMode === 'manual' ? currentRoutingAgentIds : [],
+        },
       };
 
       const res = await apiRequest('POST', '/api/chat/stream', payload, { signal: controller.signal });
@@ -2076,28 +2140,61 @@ export default function Chat() {
               <Sparkles className="h-3 w-3" />
               {modelBadgeLabel}
             </Badge>
-            {conversationId && (
-              <div className="hidden md:flex items-center gap-2">
-                <Label className="text-xs text-muted-foreground">
-                  {t('chat.approvalPolicy.label')}
-                </Label>
-                <Select
-                  value={approvalPolicyForSelect}
-                  onValueChange={(value) => updateApprovalPolicy.mutate(value as ApprovalPolicy)}
-                >
-                  <SelectTrigger className="h-8 w-[200px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {approvalPolicyOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+            <div className="hidden md:flex items-center gap-2">
+              {conversationId && (
+                <>
+                  <Label className="text-xs text-muted-foreground">
+                    {t('chat.approvalPolicy.label')}
+                  </Label>
+                  <Select
+                    value={approvalPolicyForSelect}
+                    onValueChange={(value) => updateApprovalPolicy.mutate(value as ApprovalPolicy)}
+                  >
+                    <SelectTrigger className="h-8 w-[200px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {approvalPolicyOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </>
+              )}
+              <Label className="text-xs text-muted-foreground">
+                {t('chat.routing.label')}
+              </Label>
+              <Select
+                value={routingMode}
+                onValueChange={(value) => setRoutingModeByConversation((prev) => ({ ...prev, [routingKey]: value as 'auto' | 'manual' }))}
+              >
+                <SelectTrigger className="h-8 w-[140px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">{t('chat.routing.auto')}</SelectItem>
+                  <SelectItem value="manual">{t('chat.routing.manual')}</SelectItem>
+                </SelectContent>
+              </Select>
+              {routingMode === 'manual' && (
+                <div className="min-w-[220px]">
+                  <MultiSelectDropdown
+                    label={t('chat.routing.agentsLabel')}
+                    options={agentOptions}
+                    selectedValues={routingAgentIds}
+                    onChange={(next) => setRoutingAgentIdsByConversation((prev) => ({ ...prev, [routingKey]: next }))}
+                    emptyLabel={t('chat.routing.noAgents')}
+                    placeholder={t('chat.routing.selectAgents')}
+                    selectedCountLabel={t('chat.routing.selectedCount')}
+                    selectAllLabel={t('chat.routing.selectAll')}
+                    clearLabel={t('chat.routing.clearSelection')}
+                    disabled={agentOptions.length === 0}
+                  />
+                </div>
+              )}
+            </div>
             {conversationId && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -2159,6 +2256,34 @@ export default function Chat() {
                       ))}
                     </SelectContent>
                   </Select>
+                )}
+                <Select
+                  value={routingMode}
+                  onValueChange={(value) => setRoutingModeByConversation((prev) => ({ ...prev, [routingKey]: value as 'auto' | 'manual' }))}
+                >
+                  <SelectTrigger className="h-6 w-[110px] text-[10px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">{t('chat.routing.auto')}</SelectItem>
+                    <SelectItem value="manual">{t('chat.routing.manual')}</SelectItem>
+                  </SelectContent>
+                </Select>
+                {routingMode === 'manual' && (
+                  <div className="min-w-[180px]">
+                    <MultiSelectDropdown
+                      label={t('chat.routing.agentsLabel')}
+                      options={agentOptions}
+                      selectedValues={routingAgentIds}
+                      onChange={(next) => setRoutingAgentIdsByConversation((prev) => ({ ...prev, [routingKey]: next }))}
+                      emptyLabel={t('chat.routing.noAgents')}
+                      placeholder={t('chat.routing.selectAgents')}
+                      selectedCountLabel={t('chat.routing.selectedCount')}
+                      selectAllLabel={t('chat.routing.selectAll')}
+                      clearLabel={t('chat.routing.clearSelection')}
+                      disabled={agentOptions.length === 0}
+                    />
+                  </div>
                 )}
                 {conversationId && (
                   <DropdownMenu>

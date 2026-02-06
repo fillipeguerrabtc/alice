@@ -1450,6 +1450,402 @@ export const integrations = pgTable(
 );
 
 // ============================================================================
+// WISE (Sandbox/Produção) - Catálogo Completo
+// ============================================================================
+
+export const wiseTokens = pgTable(
+  "wise_tokens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    userId: uuid("user_id").references(() => users.id),
+    wiseUserId: integer("wise_user_id"),
+    tokenType: varchar("token_type", { length: 50 }).notNull(),
+    accessToken: text("access_token").notNull(),
+    refreshToken: text("refresh_token"),
+    scope: text("scope"),
+    expiresAt: timestamp("expires_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => ({
+    idxWiseTokensTenant: index("idx_wise_tokens_tenant").on(table.tenantId),
+    idxWiseTokensUser: index("idx_wise_tokens_user").on(table.userId),
+    idxWiseTokensType: index("idx_wise_tokens_type").on(table.tokenType),
+    uniqWiseTokensTenantTypeUser: uniqueIndex("uniq_wise_tokens_tenant_type_user").on(
+      table.tenantId,
+      table.tokenType,
+      table.userId
+    ),
+  })
+);
+
+export const wiseUsers = pgTable(
+  "wise_users",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    wiseUserId: integer("wise_user_id").notNull(),
+    email: varchar("email", { length: 255 }),
+    name: varchar("name", { length: 255 }),
+    active: boolean("active").default(true),
+    data: jsonb("data").$type<GenericMetadata>().default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => ({
+    idxWiseUsersTenant: index("idx_wise_users_tenant").on(table.tenantId),
+    uniqWiseUsersTenantWiseId: uniqueIndex("uniq_wise_users_tenant_wise_id").on(
+      table.tenantId,
+      table.wiseUserId
+    ),
+  })
+);
+
+export const wiseProfiles = pgTable(
+  "wise_profiles",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    wiseProfileId: integer("wise_profile_id").notNull(),
+    type: varchar("type", { length: 40 }),
+    details: jsonb("details").$type<GenericMetadata>().default({}),
+    data: jsonb("data").$type<GenericMetadata>().default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => ({
+    idxWiseProfilesTenant: index("idx_wise_profiles_tenant").on(table.tenantId),
+    uniqWiseProfilesTenantWiseId: uniqueIndex("uniq_wise_profiles_tenant_wise_id").on(
+      table.tenantId,
+      table.wiseProfileId
+    ),
+  })
+);
+
+export const wiseBalances = pgTable(
+  "wise_balances",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    wiseBalanceId: integer("wise_balance_id").notNull(),
+    wiseProfileId: integer("wise_profile_id"),
+    currency: varchar("currency", { length: 10 }).notNull(),
+    type: varchar("type", { length: 30 }),
+    name: varchar("name", { length: 255 }),
+    amount: jsonb("amount").$type<GenericMetadata>(),
+    reservedAmount: jsonb("reserved_amount").$type<GenericMetadata>(),
+    totalWorth: jsonb("total_worth").$type<GenericMetadata>(),
+    data: jsonb("data").$type<GenericMetadata>().default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => ({
+    idxWiseBalancesTenant: index("idx_wise_balances_tenant").on(table.tenantId),
+    idxWiseBalancesCurrency: index("idx_wise_balances_currency").on(table.currency),
+    uniqWiseBalancesTenantWiseId: uniqueIndex("uniq_wise_balances_tenant_wise_id").on(
+      table.tenantId,
+      table.wiseBalanceId
+    ),
+  })
+);
+
+export const wiseRecipients = pgTable(
+  "wise_recipients",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    wiseRecipientId: integer("wise_recipient_id").notNull(),
+    wiseProfileId: integer("wise_profile_id"),
+    accountHolderName: varchar("account_holder_name", { length: 255 }),
+    currency: varchar("currency", { length: 10 }),
+    type: varchar("type", { length: 50 }),
+    active: boolean("active").default(true),
+    data: jsonb("data").$type<GenericMetadata>().default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => ({
+    idxWiseRecipientsTenant: index("idx_wise_recipients_tenant").on(table.tenantId),
+    uniqWiseRecipientsTenantWiseId: uniqueIndex("uniq_wise_recipients_tenant_wise_id").on(
+      table.tenantId,
+      table.wiseRecipientId
+    ),
+  })
+);
+
+export const wiseQuotes = pgTable(
+  "wise_quotes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    wiseQuoteId: varchar("wise_quote_id", { length: 100 }).notNull(),
+    sourceCurrency: varchar("source_currency", { length: 10 }),
+    targetCurrency: varchar("target_currency", { length: 10 }),
+    sourceAmount: real("source_amount"),
+    targetAmount: real("target_amount"),
+    rate: real("rate"),
+    fee: real("fee"),
+    data: jsonb("data").$type<GenericMetadata>().default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => ({
+    idxWiseQuotesTenant: index("idx_wise_quotes_tenant").on(table.tenantId),
+    uniqWiseQuotesTenantWiseId: uniqueIndex("uniq_wise_quotes_tenant_wise_id").on(
+      table.tenantId,
+      table.wiseQuoteId
+    ),
+  })
+);
+
+export const wiseTransfers = pgTable(
+  "wise_transfers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    wiseTransferId: integer("wise_transfer_id").notNull(),
+    status: varchar("status", { length: 50 }),
+    sourceCurrency: varchar("source_currency", { length: 10 }),
+    targetCurrency: varchar("target_currency", { length: 10 }),
+    sourceValue: real("source_value"),
+    targetValue: real("target_value"),
+    customerTransactionId: varchar("customer_transaction_id", { length: 255 }),
+    data: jsonb("data").$type<GenericMetadata>().default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => ({
+    idxWiseTransfersTenant: index("idx_wise_transfers_tenant").on(table.tenantId),
+    idxWiseTransfersStatus: index("idx_wise_transfers_status").on(table.status),
+    uniqWiseTransfersTenantWiseId: uniqueIndex("uniq_wise_transfers_tenant_wise_id").on(
+      table.tenantId,
+      table.wiseTransferId
+    ),
+  })
+);
+
+export const wiseCards = pgTable(
+  "wise_cards",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    wiseCardToken: varchar("wise_card_token", { length: 128 }).notNull(),
+    wiseProfileId: integer("wise_profile_id"),
+    status: varchar("status", { length: 40 }),
+    type: varchar("type", { length: 50 }),
+    data: jsonb("data").$type<GenericMetadata>().default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => ({
+    idxWiseCardsTenant: index("idx_wise_cards_tenant").on(table.tenantId),
+    uniqWiseCardsTenantToken: uniqueIndex("uniq_wise_cards_tenant_token").on(
+      table.tenantId,
+      table.wiseCardToken
+    ),
+  })
+);
+
+export const wiseCardOrders = pgTable(
+  "wise_card_orders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    wiseCardOrderId: varchar("wise_card_order_id", { length: 128 }).notNull(),
+    status: varchar("status", { length: 40 }),
+    type: varchar("type", { length: 50 }),
+    data: jsonb("data").$type<GenericMetadata>().default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => ({
+    idxWiseCardOrdersTenant: index("idx_wise_card_orders_tenant").on(table.tenantId),
+    uniqWiseCardOrdersTenantId: uniqueIndex("uniq_wise_card_orders_tenant_id").on(
+      table.tenantId,
+      table.wiseCardOrderId
+    ),
+  })
+);
+
+export const wiseCardTransactions = pgTable(
+  "wise_card_transactions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    wiseTransactionId: varchar("wise_transaction_id", { length: 128 }).notNull(),
+    wiseCardToken: varchar("wise_card_token", { length: 128 }),
+    status: varchar("status", { length: 40 }),
+    amount: jsonb("amount").$type<GenericMetadata>(),
+    data: jsonb("data").$type<GenericMetadata>().default({}),
+    occurredAt: timestamp("occurred_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => ({
+    idxWiseCardTransactionsTenant: index("idx_wise_card_tx_tenant").on(table.tenantId),
+    uniqWiseCardTransactionsTenantId: uniqueIndex("uniq_wise_card_tx_tenant_id").on(
+      table.tenantId,
+      table.wiseTransactionId
+    ),
+  })
+);
+
+export const wiseSpendControls = pgTable(
+  "wise_spend_controls",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    wiseRuleId: integer("wise_rule_id").notNull(),
+    type: varchar("type", { length: 20 }),
+    operation: varchar("operation", { length: 20 }),
+    description: varchar("description", { length: 255 }),
+    values: jsonb("values").$type<GenericMetadata>(),
+    data: jsonb("data").$type<GenericMetadata>().default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => ({
+    idxWiseSpendControlsTenant: index("idx_wise_spend_controls_tenant").on(table.tenantId),
+    uniqWiseSpendControlsTenantId: uniqueIndex("uniq_wise_spend_controls_tenant_id").on(
+      table.tenantId,
+      table.wiseRuleId
+    ),
+  })
+);
+
+export const wiseSpendLimits = pgTable(
+  "wise_spend_limits",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    scope: varchar("scope", { length: 20 }).notNull(),
+    wiseProfileId: integer("wise_profile_id"),
+    wiseCardToken: varchar("wise_card_token", { length: 128 }),
+    data: jsonb("data").$type<GenericMetadata>().default({}),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => ({
+    idxWiseSpendLimitsTenant: index("idx_wise_spend_limits_tenant").on(table.tenantId),
+  })
+);
+
+export const wiseDisputes = pgTable(
+  "wise_disputes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    wiseDisputeId: varchar("wise_dispute_id", { length: 128 }).notNull(),
+    status: varchar("status", { length: 40 }),
+    data: jsonb("data").$type<GenericMetadata>().default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => ({
+    idxWiseDisputesTenant: index("idx_wise_disputes_tenant").on(table.tenantId),
+    uniqWiseDisputesTenantId: uniqueIndex("uniq_wise_disputes_tenant_id").on(
+      table.tenantId,
+      table.wiseDisputeId
+    ),
+  })
+);
+
+export const wiseActivities = pgTable(
+  "wise_activities",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    wiseActivityId: varchar("wise_activity_id", { length: 128 }),
+    resourceType: varchar("resource_type", { length: 50 }),
+    status: varchar("status", { length: 40 }),
+    occurredAt: timestamp("occurred_at"),
+    data: jsonb("data").$type<GenericMetadata>().default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => ({
+    idxWiseActivitiesTenant: index("idx_wise_activities_tenant").on(table.tenantId),
+  })
+);
+
+export const wiseKycReviews = pgTable(
+  "wise_kyc_reviews",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    wiseKycReviewId: varchar("wise_kyc_review_id", { length: 128 }).notNull(),
+    status: varchar("status", { length: 40 }),
+    linkUrl: text("link_url"),
+    requiredBy: timestamp("required_by"),
+    data: jsonb("data").$type<GenericMetadata>().default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => ({
+    idxWiseKycReviewsTenant: index("idx_wise_kyc_reviews_tenant").on(table.tenantId),
+    uniqWiseKycReviewsTenantId: uniqueIndex("uniq_wise_kyc_reviews_tenant_id").on(
+      table.tenantId,
+      table.wiseKycReviewId
+    ),
+  })
+);
+
+export const wiseVerificationEvidences = pgTable(
+  "wise_verification_evidences",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    wiseProfileId: integer("wise_profile_id"),
+    evidenceKey: varchar("evidence_key", { length: 120 }),
+    status: varchar("status", { length: 40 }),
+    data: jsonb("data").$type<GenericMetadata>().default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => ({
+    idxWiseVerificationTenant: index("idx_wise_verification_tenant").on(table.tenantId),
+  })
+);
+
+export const wiseWebhookSubscriptions = pgTable(
+  "wise_webhook_subscriptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    wiseSubscriptionId: varchar("wise_subscription_id", { length: 128 }).notNull(),
+    scopeDomain: varchar("scope_domain", { length: 30 }),
+    scopeId: varchar("scope_id", { length: 128 }),
+    triggerOn: varchar("trigger_on", { length: 120 }),
+    deliveryUrl: text("delivery_url"),
+    deliveryVersion: varchar("delivery_version", { length: 20 }),
+    data: jsonb("data").$type<GenericMetadata>().default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => ({
+    idxWiseWebhookSubsTenant: index("idx_wise_webhook_subs_tenant").on(table.tenantId),
+    uniqWiseWebhookSubsTenantId: uniqueIndex("uniq_wise_webhook_subs_tenant_id").on(
+      table.tenantId,
+      table.wiseSubscriptionId
+    ),
+  })
+);
+
+export const wiseWebhookEvents = pgTable(
+  "wise_webhook_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id),
+    deliveryId: varchar("delivery_id", { length: 128 }),
+    subscriptionId: varchar("subscription_id", { length: 128 }),
+    eventType: varchar("event_type", { length: 120 }),
+    schemaVersion: varchar("schema_version", { length: 20 }),
+    sentAt: timestamp("sent_at"),
+    signatureValid: boolean("signature_valid").default(false),
+    payload: jsonb("payload").$type<GenericMetadata>().default({}),
+    receivedAt: timestamp("received_at").defaultNow(),
+  },
+  (table) => ({
+    idxWiseWebhookEventsTenant: index("idx_wise_webhook_events_tenant").on(table.tenantId),
+    idxWiseWebhookEventsEvent: index("idx_wise_webhook_events_event").on(table.eventType),
+  })
+);
+
+// ============================================================================
 // CONFIGURAÇÕES DO MODELO LLM (Gate 2 - LLM texto + Vision via OpenAI)
 // - LLM (texto): Qwen2.5 7B Instruct (AWQ) via GPU Manager Service
 // - Vision (análise de imagens): OpenAI Responses API (gpt-4.1)
@@ -3535,6 +3931,7 @@ export interface AgenticDetectors {
     wiseKeywords: string[];
     wiseRecipientsKeywords: string[];
     wiseTransferKeywords: string[];
+    wiseExchangeKeywords: string[];
     stripeKeywords: string[];
     stripePaymentKeywords: string[];
   };

@@ -1055,6 +1055,72 @@ async function initializeTradingBroadcastSubscriber(): Promise<void> {
   );
 }
 
+async function ensureCambioResources(): Promise<void> {
+  try {
+    const tenantsList = await db.query.tenants.findMany({
+      columns: {
+        id: true,
+        nome: true,
+        slug: true,
+      },
+    });
+
+    for (const tenant of tenantsList) {
+      let cambioNamespace = await db.query.namespaces.findFirst({
+        where: and(
+          eq(schema.namespaces.tenantId, tenant.id),
+          eq(schema.namespaces.slug, 'cambio')
+        ),
+      });
+
+      if (!cambioNamespace) {
+        const [createdNamespace] = await db.insert(schema.namespaces).values({
+          tenantId: tenant.id,
+          nome: 'Câmbio',
+          slug: 'cambio',
+          descricao: 'Operações de câmbio e conversão de moedas via Wise',
+          contextoSistema: 'Você é o namespace responsável por operações de câmbio. Responda com precisão, valide moedas e valores, e priorize segurança e conformidade.',
+          ordem: 50,
+          ativo: true,
+        }).returning();
+        cambioNamespace = createdNamespace;
+        logger.info({ tenantId: tenant.id }, 'Namespace Câmbio criado automaticamente');
+      }
+
+      const cambioAgent = await db.query.agents.findFirst({
+        where: and(
+          eq(schema.agents.tenantId, tenant.id),
+          eq(schema.agents.slug, 'agente-cambio')
+        ),
+      });
+
+      if (!cambioAgent) {
+        await db.insert(schema.agents).values({
+          tenantId: tenant.id,
+          namespaceId: cambioNamespace?.id ?? undefined,
+          nome: 'Agente Câmbio',
+          slug: 'agente-cambio',
+          descricao: 'Especialista em câmbio Wise, cotações e conversões de moedas.',
+          personalidade: 'Preciso, objetivo e orientado a conformidade.',
+          instrucoes: 'Confirme moeda de origem/destino, valide valores e explique taxas e prazos. Para execução, use fluxos Wise com aprovação financeira quando exigido.',
+          capacidades: ['wise_exchange', 'wise_quotes', 'wise_balances', 'wise_transfers'],
+          temperaturaModelo: 0.2,
+          maxTokens: 1200,
+          status: 'active',
+        });
+        logger.info({ tenantId: tenant.id }, 'Agente Câmbio criado automaticamente');
+      } else if (!cambioAgent.namespaceId && cambioNamespace?.id) {
+        await db.update(schema.agents)
+          .set({ namespaceId: cambioNamespace.id, atualizadoEm: new Date() })
+          .where(eq(schema.agents.id, cambioAgent.id));
+        logger.info({ tenantId: tenant.id, agentId: cambioAgent.id }, 'Agente Câmbio associado ao namespace Câmbio');
+      }
+    }
+  } catch (error) {
+    logger.error({ error }, 'Erro ao garantir recursos padrão de Câmbio');
+  }
+}
+
 // ============================================================================
 // IMAGE GENERATION DETECTION (Tarefa 133 - Detectar pedidos de geração de imagem)
 // ============================================================================
@@ -1343,6 +1409,7 @@ const DEFAULT_AGENTIC_DETECTORS: AgenticDetectors = {
     wiseKeywords: ['wise'],
     wiseRecipientsKeywords: ['destinatario', 'recipient'],
     wiseTransferKeywords: ['transferir', 'transferencia', 'transfer'],
+    wiseExchangeKeywords: ['câmbio', 'cambio', 'converter', 'conversao', 'conversão', 'exchange'],
     stripeKeywords: ['stripe'],
     stripePaymentKeywords: ['pagamento', 'payment'],
   },
@@ -1420,6 +1487,7 @@ function normalizeAgenticDetectors(detectors: Partial<AgenticDetectors> | null |
       wiseKeywords: normalizeDetectorList(safe.payments?.wiseKeywords ?? DEFAULT_AGENTIC_DETECTORS.payments.wiseKeywords),
       wiseRecipientsKeywords: normalizeDetectorList(safe.payments?.wiseRecipientsKeywords ?? DEFAULT_AGENTIC_DETECTORS.payments.wiseRecipientsKeywords),
       wiseTransferKeywords: normalizeDetectorList(safe.payments?.wiseTransferKeywords ?? DEFAULT_AGENTIC_DETECTORS.payments.wiseTransferKeywords),
+      wiseExchangeKeywords: normalizeDetectorList(safe.payments?.wiseExchangeKeywords ?? DEFAULT_AGENTIC_DETECTORS.payments.wiseExchangeKeywords),
       stripeKeywords: normalizeDetectorList(safe.payments?.stripeKeywords ?? DEFAULT_AGENTIC_DETECTORS.payments.stripeKeywords),
       stripePaymentKeywords: normalizeDetectorList(safe.payments?.stripePaymentKeywords ?? DEFAULT_AGENTIC_DETECTORS.payments.stripePaymentKeywords),
     },
@@ -1658,6 +1726,7 @@ type ErpCommand =
 type PaymentCommand =
   | { type: 'wise_recipients' }
   | { type: 'wise_transfer'; payload: { sourceCurrency: string; targetCurrency: string; sourceAmount: number; recipientId: string; reference?: string }; missing?: string[] }
+  | { type: 'wise_exchange'; payload: { sourceCurrency: string; targetCurrency: string; sourceAmount: number }; missing?: string[] }
   | { type: 'stripe_payment_intent'; payload: { amount: number; currency: string; description?: string }; missing?: string[] };
 
 type StackCommand =
@@ -2078,6 +2147,30 @@ function detectPaymentCommand(message: string, detectors: AgenticDetectors): Pay
 
   if (
     paymentDetectors.wiseKeywords.some((keyword) => normalized.includes(keyword))
+    && paymentDetectors.wiseExchangeKeywords.some((keyword) => normalized.includes(keyword))
+  ) {
+    const sourceCurrency = (extractField(message, 'moeda_origem') ?? extractField(message, 'source_currency') ?? '').toUpperCase();
+    const targetCurrency = (extractField(message, 'moeda_destino') ?? extractField(message, 'target_currency') ?? '').toUpperCase();
+    const amountRaw = extractField(message, 'valor') ?? extractField(message, 'amount');
+    const sourceAmount = amountRaw ? Number(amountRaw.replace(',', '.')) : NaN;
+    const missing = [
+      !sourceCurrency ? 'moeda_origem' : null,
+      !targetCurrency ? 'moeda_destino' : null,
+      !Number.isFinite(sourceAmount) ? 'valor' : null,
+    ].filter(Boolean) as string[];
+    return {
+      type: 'wise_exchange',
+      payload: {
+        sourceCurrency,
+        targetCurrency,
+        sourceAmount: Number.isFinite(sourceAmount) ? sourceAmount : 0,
+      },
+      missing: missing.length ? missing : undefined,
+    };
+  }
+
+  if (
+    paymentDetectors.wiseKeywords.some((keyword) => normalized.includes(keyword))
     && paymentDetectors.wiseTransferKeywords.some((keyword) => normalized.includes(keyword))
   ) {
     const sourceCurrency = (extractField(message, 'moeda_origem') ?? extractField(message, 'source_currency') ?? '').toUpperCase();
@@ -2100,6 +2193,30 @@ function detectPaymentCommand(message: string, detectors: AgenticDetectors): Pay
         sourceAmount: Number.isFinite(sourceAmount) ? sourceAmount : 0,
         recipientId,
         reference,
+      },
+      missing: missing.length ? missing : undefined,
+    };
+  }
+
+  if (
+    paymentDetectors.wiseKeywords.some((keyword) => normalized.includes(keyword))
+    && paymentDetectors.wiseExchangeKeywords.some((keyword) => normalized.includes(keyword))
+  ) {
+    const sourceCurrency = (extractField(message, 'moeda_origem') ?? extractField(message, 'source_currency') ?? '').toUpperCase();
+    const targetCurrency = (extractField(message, 'moeda_destino') ?? extractField(message, 'target_currency') ?? '').toUpperCase();
+    const amountRaw = extractField(message, 'valor') ?? extractField(message, 'amount');
+    const sourceAmount = amountRaw ? Number(amountRaw.replace(',', '.')) : NaN;
+    const missing = [
+      !sourceCurrency ? 'moeda_origem' : null,
+      !targetCurrency ? 'moeda_destino' : null,
+      !Number.isFinite(sourceAmount) ? 'valor' : null,
+    ].filter(Boolean) as string[];
+    return {
+      type: 'wise_exchange',
+      payload: {
+        sourceCurrency,
+        targetCurrency,
+        sourceAmount: Number.isFinite(sourceAmount) ? sourceAmount : 0,
       },
       missing: missing.length ? missing : undefined,
     };
@@ -3258,7 +3375,7 @@ type LlmSource =
   | 'external-channel'
   | 'title';
 
-type LlmContextProfile = 'trading' | 'general' | 'analysis';
+type LlmContextProfile = 'trading' | 'general' | 'analysis' | 'cambio';
 
 const MIN_LLM_OUTPUT_TOKENS = parseEnvInt(
   process.env.LLM_MIN_OUTPUT_TOKENS,
@@ -3444,6 +3561,9 @@ function getSlaTargetSeconds(source: LlmSource, profile: LlmContextProfile): num
   if (profile === 'trading') {
     return Math.max(6, Math.floor(base * 0.8));
   }
+  if (profile === 'cambio') {
+    return Math.max(6, Math.floor(base * 0.9));
+  }
   if (profile === 'analysis') {
     return Math.min(30, Math.ceil(base * 1.2));
   }
@@ -3452,6 +3572,17 @@ function getSlaTargetSeconds(source: LlmSource, profile: LlmContextProfile): num
 
 function detectContextProfile(userMessage: string): LlmContextProfile {
   const normalized = userMessage.toLowerCase();
+  const cambioKeywords = [
+    'câmbio', 'cambio', 'wise', 'remessa', 'remessas',
+    'converter', 'conversao', 'conversão', 'cotação', 'cotacao',
+  ];
+  if (
+    cambioKeywords.some((k) => normalized.includes(k))
+    || ((normalized.includes('converter') || normalized.includes('conversao') || normalized.includes('conversão'))
+      && (normalized.includes('moeda') || normalized.includes('currency')))
+  ) {
+    return 'cambio';
+  }
   const tradingKeywords = [
     'buy', 'sell', 'long', 'short', 'btc', 'eth', 'alavancagem', 'stop loss',
     'take profit', 'kucoin', 'futuros', 'ordem', 'limit', 'market', 'scalping',
@@ -3680,6 +3811,9 @@ function getPromptTokenBudget(source: LlmSource, profile: LlmContextProfile): nu
   if (profile === 'trading') {
     return Math.min(2800, Math.max(900, Math.floor(budget * 0.75)));
   }
+  if (profile === 'cambio') {
+    return Math.min(3000, Math.max(1100, Math.floor(budget * 0.9)));
+  }
   if (profile === 'analysis') {
     return Math.min(3600, Math.max(1400, Math.floor(budget * 1.1)));
   }
@@ -3800,6 +3934,9 @@ function applyDynamicTokenBudget(
     if (context.profile === 'trading') {
       return Math.min(baseTemperature, 0.3);
     }
+    if (context.profile === 'cambio') {
+      return Math.min(baseTemperature, 0.5);
+    }
     if (context.profile === 'analysis') {
       return Math.min(baseTemperature, 0.6);
     }
@@ -3916,17 +4053,30 @@ const ROUTING_TRADING_KEYWORDS = [
   'order', 'ordem', 'stop loss', 'take profit', 'btc', 'eth', 'market', 'limit',
 ] as const;
 
+const ROUTING_CAMBIO_KEYWORDS = [
+  'câmbio', 'cambio', 'wise', 'remessa', 'remessas', 'converter', 'conversao', 'conversão',
+  'cotacao', 'cotação', 'moeda', 'currency', 'exchange', 'fx',
+] as const;
+
 function computeRoutingScore(text: string, userMessage: string, profile: LlmContextProfile): number {
   const base = computeRelevanceScore(text, userMessage);
-  if (profile !== 'trading') return base;
   const normalized = text.toLowerCase();
-  const hasTradingKeyword = ROUTING_TRADING_KEYWORDS.some((k) => normalized.includes(k));
-  const boost = hasTradingKeyword ? 0.06 : 0;
-  return Math.min(1, base + boost);
+  if (profile === 'trading') {
+    const hasTradingKeyword = ROUTING_TRADING_KEYWORDS.some((k) => normalized.includes(k));
+    const boost = hasTradingKeyword ? 0.06 : 0;
+    return Math.min(1, base + boost);
+  }
+  if (profile === 'cambio') {
+    const hasCambioKeyword = ROUTING_CAMBIO_KEYWORDS.some((k) => normalized.includes(k));
+    const boost = hasCambioKeyword ? 0.05 : 0;
+    return Math.min(1, base + boost);
+  }
+  return base;
 }
 
 function getRoutingThreshold(profile: LlmContextProfile): number {
   if (profile === 'trading') return 0.06;
+  if (profile === 'cambio') return 0.08;
   if (profile === 'analysis') return 0.1;
   return 0.12;
 }
@@ -7515,6 +7665,10 @@ const streamMessageSchema = z.object({
   })).min(1).max(50).optional(),
   conversationId: z.string().uuid().optional(),
   namespaceId: z.string().uuid().optional(),
+  agentRouting: z.object({
+    mode: z.enum(['auto', 'manual']),
+    agentIds: z.array(z.string().uuid()).max(10).default([]),
+  }).optional(),
   mediaAttachments: z.array(streamMediaAttachmentSchema).min(1).max(5).optional(),
 }).refine((data) => Boolean(data.message) || Boolean(data.messages?.length) || Boolean(data.mediaAttachments?.length), {
   message: 'Mensagem do usuário obrigatória',
@@ -7902,7 +8056,14 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
   if (!parseResult.success) {
     return res.status(400).json({ error: 'Input inválido' });
   }
-  const { messages: inputMessages, conversationId: _conversationId, namespaceId, message, mediaAttachments } = parseResult.data;
+  const {
+    messages: inputMessages,
+    conversationId: _conversationId,
+    namespaceId,
+    message,
+    mediaAttachments,
+    agentRouting,
+  } = parseResult.data;
   const userId = req.user?.userId;
   const tenantId = req.tenantId;
 
@@ -8011,6 +8172,43 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     }
 
     const conversationState = await getOrCreateConversationState(conversationId);
+
+    if (agentRouting) {
+      const requestedAgentIds = agentRouting.agentIds ?? [];
+      if (agentRouting.mode === 'manual' && requestedAgentIds.length === 0) {
+        res.write(`data: ${JSON.stringify({ error: 'Selecione ao menos um agente para o modo manual.' })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
+
+      if (agentRouting.mode === 'manual') {
+        const matchedAgents = await db.query.agents.findMany({
+          where: and(
+            eq(schema.agents.tenantId, tenantId),
+            eq(schema.agents.status, 'active'),
+            inArray(schema.agents.id, requestedAgentIds)
+          ),
+        });
+        if (matchedAgents.length !== requestedAgentIds.length) {
+          res.write(`data: ${JSON.stringify({ error: 'Agente(s) inválido(s) ou indisponível(is) para seleção manual.' })}\n\n`);
+          res.write('data: [DONE]\n\n');
+          res.end();
+          return;
+        }
+      }
+
+      await updateAgentRoutingMetadata({
+        conversationId,
+        metadata: conversationState.metadata,
+        routing: {
+          mode: agentRouting.mode,
+          agentIds: agentRouting.mode === 'manual' ? requestedAgentIds : [],
+          updatedAt: new Date().toISOString(),
+          reason: agentRouting.mode === 'manual' ? 'manual_ui' : 'auto_ui',
+        },
+      });
+    }
     const routingDecision = await resolveAgentRoutingForMessage({
       tenantId,
       conversationId,
@@ -9533,6 +9731,34 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                 responseContent = 'Transferência Wise criada com sucesso.';
               }
 
+              if (pendingIntegration.operation === 'wise_exchange') {
+                const params = pendingIntegration.params as {
+                  sourceCurrency: string;
+                  targetCurrency: string;
+                  sourceAmount: number;
+                };
+                const quote = await callIntegrationsService<{ quote: { id: string } }>({
+                  endpoint: '/api/integrations/wise/balance-quotes',
+                  method: 'POST',
+                  body: {
+                    sourceCurrency: params.sourceCurrency,
+                    targetCurrency: params.targetCurrency,
+                    sourceAmount: params.sourceAmount,
+                  },
+                  auth: authContext,
+                });
+                const movement = await callIntegrationsService<{ movement: unknown }>({
+                  endpoint: '/api/integrations/wise/balance-movements',
+                  method: 'POST',
+                  body: {
+                    quoteId: quote.quote.id,
+                  },
+                  auth: authContext,
+                });
+                integrationResult = movement;
+                responseContent = 'Câmbio Wise executado com sucesso.';
+              }
+
               if (pendingIntegration.operation === 'stripe_payment_intent') {
                 const params = pendingIntegration.params as {
                   amount: number;
@@ -10790,9 +11016,15 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         return;
       }
 
-      const summary = paymentCommand.type === 'wise_transfer'
-        ? `Transferência Wise (${paymentCommand.payload.sourceAmount} ${paymentCommand.payload.sourceCurrency} → ${paymentCommand.payload.targetCurrency})`
-        : `Pagamento Stripe (${paymentCommand.payload.amount} ${paymentCommand.payload.currency})`;
+      const summary = (() => {
+        if (paymentCommand.type === 'wise_transfer') {
+          return `Transferência Wise (${paymentCommand.payload.sourceAmount} ${paymentCommand.payload.sourceCurrency} → ${paymentCommand.payload.targetCurrency})`;
+        }
+        if (paymentCommand.type === 'wise_exchange') {
+          return `Câmbio Wise (${paymentCommand.payload.sourceAmount} ${paymentCommand.payload.sourceCurrency} → ${paymentCommand.payload.targetCurrency})`;
+        }
+        return `Pagamento Stripe (${paymentCommand.payload.amount} ${paymentCommand.payload.currency})`;
+      })();
 
       if (!agenticSettings.financialApprovalRequired) {
         try {
@@ -10815,6 +11047,27 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
                 quoteId: quote.quote.id,
                 targetRecipientId: paymentCommand.payload.recipientId,
                 reference: paymentCommand.payload.reference,
+              },
+              auth: authContext,
+            });
+          }
+
+          if (paymentCommand.type === 'wise_exchange') {
+            const quote = await callIntegrationsService<{ quote: { id: string } }>({
+              endpoint: '/api/integrations/wise/balance-quotes',
+              method: 'POST',
+              body: {
+                sourceCurrency: paymentCommand.payload.sourceCurrency,
+                targetCurrency: paymentCommand.payload.targetCurrency,
+                sourceAmount: paymentCommand.payload.sourceAmount,
+              },
+              auth: authContext,
+            });
+            result = await callIntegrationsService({
+              endpoint: '/api/integrations/wise/balance-movements',
+              method: 'POST',
+              body: {
+                quoteId: quote.quote.id,
               },
               auth: authContext,
             });
@@ -15804,6 +16057,7 @@ const agenticDetectorsSchema = z.object({
     wiseKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
     wiseRecipientsKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
     wiseTransferKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
+    wiseExchangeKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
     stripeKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
     stripePaymentKeywords: z.array(z.string().min(1).max(DETECTOR_ITEM_MAX_LENGTH)).max(DETECTOR_LIST_MAX),
   }),
@@ -17272,6 +17526,7 @@ app.use(createErrorHandler({
   try {
     await initializeAllCaches();
     await initializeTradingBroadcastSubscriber();
+    await ensureCambioResources();
     server.listen(PORT, () => {
       logger.info({ 
         port: PORT, 

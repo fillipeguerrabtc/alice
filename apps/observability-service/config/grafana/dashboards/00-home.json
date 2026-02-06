@@ -20,7 +20,7 @@
       "gridPos": { "h": 3, "w": 24, "x": 0, "y": 2 },
       "id": 2,
       "options": {
-        "content": "### Navegação Rápida\n| [LLM/IA](/d/alice-llm-metrics/alice-llm-metrics) | [Agentic](/d/alice-agentic/agentic) | [GPU Manager](/d/alice-gpu-manager/gpu-manager) | [Trading](/d/alice-trading/trading) | [Infraestrutura](/d/alice-infrastructure/infrastructure) | [Serviços](/d/alice-services/services) | [Integrações](/d/alice-integrations/integrations) | [RAG](/d/alice-rag/rag) | [Training](/d/alice-training/training) | [Training Pipeline](/d/alice-training-pipeline/training-pipeline) | [ERPNext](/d/alice-erpnext/erpnext) | [Traces](/explore?orgId=1&left=%7B%22datasource%22:%22Jaeger%22%7D) | [Alertas](/alerting/list) |",
+        "content": "### Navegação Rápida\n| [LLM/IA](/d/alice-llm-metrics/alice-llm-metrics) | [Agentic](/d/alice-agentic/agentic) | [Biometria](/d/alice-biometrics/biometria) | [GPU Manager](/d/alice-gpu-manager/gpu-manager) | [Trading](/d/alice-trading/trading) | [Infraestrutura](/d/alice-infrastructure/infrastructure) | [Serviços](/d/alice-services/services) | [Integrações](/d/alice-integrations/integrations) | [RAG](/d/alice-rag/rag) | [Training](/d/alice-training/training) | [Training Pipeline](/d/alice-training-pipeline/training-pipeline) | [ERPNext](/d/alice-erpnext/erpnext) | [Traces](/explore?orgId=1&left=%7B%22datasource%22:%22Jaeger%22%7D) | [Alertas](/alerting/list) |",
         "mode": "markdown"
       },
       "transparent": true,

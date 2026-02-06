@@ -57,6 +57,17 @@ const erpNextConfigSchema = z.object({
   ERPNEXT_ALLOWED_METHODS: z.string().optional(),
 });
 
+const wiseConfigSchema = z.object({
+  WISE_API_KEY: z.string().optional(),
+  WISE_PROFILE_ID: z.string().optional(),
+  WISE_SANDBOX: z.string().optional(),
+  WISE_WEBHOOK_PUBLIC_KEY: z.string().optional(),
+  WISE_CLIENT_ID: z.string().optional(),
+  WISE_CLIENT_SECRET: z.string().optional(),
+  WISE_CLIENT_KEY: z.string().optional(),
+  WISE_REDIRECT_URI: z.string().url().optional(),
+});
+
 const githubActionsConfigSchema = z.object({
   GH_PAT: z.string().optional(),
   GH_REPO: z.string().optional(),
@@ -95,6 +106,7 @@ export const integrationsServiceConfigSchema = baseConfigSchema
   .merge(databaseConfigSchema)
   .merge(stripeConfigSchema)
   .merge(erpNextConfigSchema)
+  .merge(wiseConfigSchema)
   .merge(githubActionsConfigSchema)
   .merge(grafanaConfigSchema);
 
@@ -104,6 +116,7 @@ export const fullConfigSchema = baseConfigSchema
   .merge(llmConfigSchema)
   .merge(stripeConfigSchema)
   .merge(erpNextConfigSchema)
+  .merge(wiseConfigSchema)
   .merge(githubActionsConfigSchema)
   .merge(observabilityConfigSchema)
   .merge(grafanaConfigSchema);
@@ -173,6 +186,7 @@ const SECRET_KEYS = new Set([
   'TWILIO_AUTH_TOKEN',
   'GMAIL_APP_PASSWORD', // Gmail SMTP (substitui RESEND_API_KEY - 30/12/2025)
   'WISE_API_KEY',
+  'WISE_CLIENT_SECRET',
   'INTERNAL_API_TOKEN',
   'SAML_CERT',
 ]);
