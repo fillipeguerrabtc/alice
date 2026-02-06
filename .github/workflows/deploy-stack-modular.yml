@@ -1577,14 +1577,20 @@ jobs:
             echo "📁 Criando estrutura de diretórios com permissões corretas..."
             
             # Executar script enterprise de permissões
-            chmod +x /opt/alice/app/infra/scripts/fix-production-permissions.sh
+            if [ -f /tmp/scripts/fix-production-permissions.sh ]; then
+              SCRIPT_PATH="/tmp/scripts/fix-production-permissions.sh"
+            else
+              SCRIPT_PATH="/opt/alice/app/infra/scripts/fix-production-permissions.sh"
+            fi
+            
+            chmod +x "$SCRIPT_PATH"
             
             # Modo create (com sudo pois precisa alterar ownership)
-            if ! sudo /opt/alice/app/infra/scripts/fix-production-permissions.sh --create; then
+            if ! sudo "$SCRIPT_PATH" --create; then
               echo "❌ ERRO: Falha ao configurar diretórios e permissões"
               echo ""
               echo "Tentando diagnóstico..."
-              sudo /opt/alice/app/infra/scripts/fix-production-permissions.sh --validate || true
+              sudo "$SCRIPT_PATH" --validate || true
               exit 1
             fi
             
@@ -1593,7 +1599,7 @@ jobs:
             # =========================================================
             echo ""
             echo "🧪 Validando permissões..."
-            if ! sudo /opt/alice/app/infra/scripts/fix-production-permissions.sh --validate; then
+            if ! sudo "$SCRIPT_PATH" --validate; then
               echo "❌ ERRO: Validação de permissões falhou"
               exit 1
             fi
@@ -1628,7 +1634,7 @@ jobs:
             if ! docker run --rm --user 1000:1000 -v "$CADDY_DATA_DIR:/test:rw" alpine:3.21 sh -c "touch /test/.rw-test && ls -la /test/.rw-test" 2>&1; then
               echo "⚠️  UID 1000 (caddy) não conseguiu escrever em $CADDY_DATA_DIR via Docker"
               echo "🔧 Reaplicando SSOT de permissões e tentando novamente..."
-              sudo /opt/alice/app/infra/scripts/fix-production-permissions.sh --create
+              sudo "$SCRIPT_PATH" --create
               if ! docker run --rm --user 1000:1000 -v "$CADDY_DATA_DIR:/test:rw" alpine:3.21 sh -c "touch /test/.rw-test && ls -la /test/.rw-test" 2>&1; then
                 echo "❌ ERRO: UID 1000 (caddy) ainda NÃO consegue escrever em $CADDY_DATA_DIR via Docker"
                 sudo ls -ld "$CADDY_DATA_DIR" || true
@@ -1640,7 +1646,7 @@ jobs:
             if ! docker run --rm --user 1000:1000 -v "$CADDY_CONFIG_DIR:/test:rw" alpine:3.21 sh -c "touch /test/.rw-test && ls -la /test/.rw-test" 2>&1; then
               echo "⚠️  UID 1000 (caddy) não conseguiu escrever em $CADDY_CONFIG_DIR via Docker"
               echo "🔧 Reaplicando SSOT de permissões e tentando novamente..."
-              sudo /opt/alice/app/infra/scripts/fix-production-permissions.sh --create
+              sudo "$SCRIPT_PATH" --create
               if ! docker run --rm --user 1000:1000 -v "$CADDY_CONFIG_DIR:/test:rw" alpine:3.21 sh -c "touch /test/.rw-test && ls -la /test/.rw-test" 2>&1; then
                 echo "❌ ERRO: UID 1000 (caddy) ainda NÃO consegue escrever em $CADDY_CONFIG_DIR via Docker"
                 sudo ls -ld "$CADDY_CONFIG_DIR" || true
