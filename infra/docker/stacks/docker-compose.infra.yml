@@ -483,8 +483,6 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
-    command:
-      - "--config.file="
     environment:
       # Fonte: https://github.com/prometheus-community/postgres_exporter
       DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}?sslmode=disable

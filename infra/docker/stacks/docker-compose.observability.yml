@@ -454,9 +454,6 @@ services:
     privileged: true
     security_opt:
       - no-new-privileges:true
-    command:
-      - "--storage_driver=overlay2"
-      - "--storage_driver_priority=overlay2"
     devices:
       - /dev/kmsg:/dev/kmsg
     volumes:
