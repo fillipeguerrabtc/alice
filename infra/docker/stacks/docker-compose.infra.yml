@@ -623,8 +623,6 @@ services:
     read_only: true
     tmpfs:
       - /tmp:mode=1777,size=16M
-    sysctls:
-      - vm.overcommit_memory=1
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD é obrigatório em produção}
     command:

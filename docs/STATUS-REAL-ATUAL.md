@@ -601,9 +601,10 @@ Retenção Arquivo:   30 dias
 
 ### Tuning de servidor (manual, sem pipeline)
 
-#### sysctl (arquivo `/etc/sysctl.d/99-alice-tuning.conf`)
+#### sysctl (arquivo `/etc/sysctl.d/99-alice.conf`)
 
 - `vm.swappiness=10`
+- `vm.overcommit_memory=1`
 - `fs.file-max=2097152`
 - `fs.inotify.max_user_watches=524288`
 - `net.core.rmem_max=16777216`

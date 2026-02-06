@@ -316,10 +316,14 @@ log_header "10. CONFIGURANDO LIMITES DO SISTEMA"
 # Aumentar limites de arquivos abertos
 cat > /etc/security/limits.d/alice.conf << 'EOF'
 # Limites para Alice Enterprise Platform
-*               soft    nofile          65535
-*               hard    nofile          65535
-root            soft    nofile          65535
-root            hard    nofile          65535
+*               soft    nofile          1048576
+*               hard    nofile          1048576
+*               soft    nproc           65535
+*               hard    nproc           65535
+root            soft    nofile          1048576
+root            hard    nofile          1048576
+root            soft    nproc           65535
+root            hard    nproc           65535
 EOF
 
 # Configurar sysctl para Docker/Containers
@@ -330,6 +334,8 @@ vm.swappiness = 10
 vm.overcommit_memory = 1
 # Network
 net.core.somaxconn = 65535
+net.core.rmem_max = 16777216
+net.core.wmem_max = 16777216
 net.ipv4.tcp_max_syn_backlog = 65535
 net.ipv4.ip_local_port_range = 1024 65535
 # File system
@@ -339,10 +345,48 @@ EOF
 
 sysctl -p /etc/sysctl.d/99-alice.conf
 
+CURRENT_OVERCOMMIT="$(sysctl -n vm.overcommit_memory 2>/dev/null || echo '')"
+if [ "${CURRENT_OVERCOMMIT}" != "1" ]; then
+    log_error "vm.overcommit_memory não foi aplicado corretamente (valor atual: ${CURRENT_OVERCOMMIT:-desconhecido})"
+fi
+
 log_ok "Limites do sistema configurados"
 
 # =============================================================================
-# 11. INFORMAÇÕES FINAIS
+# 11. DESABILITAR THP (Transparent Huge Pages)
+# =============================================================================
+log_header "11. DESABILITANDO THP (TRANSPARENT HUGE PAGES)"
+
+# Aplicar imediatamente (se disponível)
+if [ -f /sys/kernel/mm/transparent_hugepage/enabled ]; then
+    echo never > /sys/kernel/mm/transparent_hugepage/enabled
+fi
+if [ -f /sys/kernel/mm/transparent_hugepage/defrag ]; then
+    echo never > /sys/kernel/mm/transparent_hugepage/defrag
+fi
+
+# Garantir persistência via systemd
+cat > /etc/systemd/system/disable-thp.service << 'EOF'
+[Unit]
+Description=Desabilitar Transparent Huge Pages (THP)
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'if [ -f /sys/kernel/mm/transparent_hugepage/enabled ]; then echo never > /sys/kernel/mm/transparent_hugepage/enabled; fi; if [ -f /sys/kernel/mm/transparent_hugepage/defrag ]; then echo never > /sys/kernel/mm/transparent_hugepage/defrag; fi'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now disable-thp.service
+
+log_ok "THP desabilitado (enabled/defrag = never)"
+
+# =============================================================================
+# 12. INFORMAÇÕES FINAIS
 # =============================================================================
 log_header "CONFIGURAÇÃO CONCLUÍDA"
 

@@ -1247,7 +1247,9 @@ jobs:
             '  echo "🧹 Limpando diretórios críticos..."' \
             '  rm -rf /opt/alice/app 2>/dev/null || true' \
             '  rm -rf /opt/alice/data 2>/dev/null || true' \
-            '  rm -rf /opt/alice/logs 2>/dev/null || true' \
+            '  if [ -d /opt/alice/logs ]; then' \
+            '    find /opt/alice/logs -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} \;' \
+            '  fi' \
             '  rm -rf /opt/alice/uploads 2>/dev/null || true' \
             '  rm -rf /opt/alice/backups 2>/dev/null || true' \
             '  rm -rf /opt/alice/versions 2>/dev/null || true' \
@@ -1404,6 +1406,35 @@ jobs:
             
             echo "   ✅ Docker com GPU funcionando"
             echo ""
+            
+            # =================================================================
+            # CORREÇÃO ENTERPRISE: Validar compose sincronizado e bloquear sysctl vm.*
+            # =================================================================
+            # PROBLEMA: INFRA falhou ao subir por sysctl vm.overcommit_memory no container.
+            # SOLUÇÃO: Fail-fast se docker-compose.infra.yml contiver sysctl vm.*.
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 9 (Validação contínua)
+            # =================================================================
+            COMPOSE_PATH="/opt/alice/app/infra/docker/stacks/docker-compose.infra.yml"
+            if [ ! -f "$COMPOSE_PATH" ]; then
+              echo "::error::❌ docker-compose.infra.yml não encontrado no servidor!"
+              echo "::error::Verifique se o rsync sincronizou /opt/alice/app corretamente."
+              exit 1
+            fi
+            
+            if grep -nE "vm\." "$COMPOSE_PATH" >/tmp/compose-vm-sysctl.txt 2>/dev/null; then
+              echo "::error::❌ sysctl vm.* detectado no compose do servidor!"
+              echo "::error::Isso é PROIBIDO em containers (Docker bloqueia vm.*)."
+              echo ""
+              echo "📄 Ocorrências:"
+              cat /tmp/compose-vm-sysctl.txt || true
+              echo ""
+              echo "💡 AÇÃO NECESSÁRIA:"
+              echo "   - Garanta que o compose no repo NÃO tenha sysctls vm.*"
+              echo "   - Reexecute o deploy para sincronizar o arquivo correto"
+              exit 1
+            fi
+            echo "   ✅ Compose INFRA sem sysctl vm.*"
+            
             echo "✅ Validação do servidor de produção OK (GPU disponível)"
 
       - name: Preparar infraestrutura base (networks, volumes, permissões)
@@ -2421,6 +2452,19 @@ jobs:
             # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 16 (Idempotência)
             # =================================================================
             echo "🧹 Limpando containers parciais do stack INFRA (se existirem)..."
+            
+            LOG_DIR="/opt/alice/logs"
+            RUN_ID="${{ github.run_id }}"
+            RUN_ATTEMPT="${{ github.run_attempt }}"
+            LOG_FILE="${LOG_DIR}/deploy-infra-${RUN_ID}-${RUN_ATTEMPT}.log"
+            
+            mkdir -p "$LOG_DIR"
+            touch "$LOG_FILE"
+            chmod 640 "$LOG_FILE"
+            
+            # Persistir todo o output do deploy no servidor
+            exec > >(tee -a "$LOG_FILE") 2>&1
+            echo "📝 Log persistido em: $LOG_FILE"
             
             cd /opt/alice/app/infra/docker/stacks
             
@@ -3766,6 +3810,19 @@ jobs:
             }
             trap cleanup_on_failure EXIT
             
+            LOG_DIR="/opt/alice/logs"
+            RUN_ID="${{ github.run_id }}"
+            RUN_ATTEMPT="${{ github.run_attempt }}"
+            LOG_FILE="${LOG_DIR}/deploy-alice-${RUN_ID}-${RUN_ATTEMPT}.log"
+            
+            mkdir -p "$LOG_DIR"
+            touch "$LOG_FILE"
+            chmod 640 "$LOG_FILE"
+            
+            # Persistir todo o output do deploy no servidor
+            exec > >(tee -a "$LOG_FILE") 2>&1
+            echo "📝 Log persistido em: $LOG_FILE"
+            
             cd /opt/alice/app/infra/docker/stacks
             
             # Marcar início do deploy para calcular tempo total
@@ -4439,6 +4496,19 @@ jobs:
             echo "✅ Dashboards sincronizados com sucesso"
             echo ""
             
+            LOG_DIR="/opt/alice/logs"
+            RUN_ID="${{ github.run_id }}"
+            RUN_ATTEMPT="${{ github.run_attempt }}"
+            LOG_FILE="${LOG_DIR}/deploy-observability-${RUN_ID}-${RUN_ATTEMPT}.log"
+            
+            mkdir -p "$LOG_DIR"
+            touch "$LOG_FILE"
+            chmod 640 "$LOG_FILE"
+            
+            # Persistir todo o output do deploy no servidor
+            exec > >(tee -a "$LOG_FILE") 2>&1
+            echo "📝 Log persistido em: $LOG_FILE"
+            
             echo "══════════════════════════════════════════════════════════════════"
             echo "🚀 DEPLOYING OBSERVABILITY STACK"
             echo "══════════════════════════════════════════════════════════════════"
@@ -5021,6 +5091,19 @@ jobs:
             # Marcar início do deploy para calcular tempo total
             DEPLOY_START=$(date +%s)
             
+            LOG_DIR="/opt/alice/logs"
+            RUN_ID="${{ github.run_id }}"
+            RUN_ATTEMPT="${{ github.run_attempt }}"
+            LOG_FILE="${LOG_DIR}/deploy-erpnext-${RUN_ID}-${RUN_ATTEMPT}.log"
+            
+            mkdir -p "$LOG_DIR"
+            touch "$LOG_FILE"
+            chmod 640 "$LOG_FILE"
+            
+            # Persistir todo o output do deploy no servidor
+            exec > >(tee -a "$LOG_FILE") 2>&1
+            echo "📝 Log persistido em: $LOG_FILE"
+            
             echo "══════════════════════════════════════════════════════════════════"
             echo "🚀 DEPLOYING ERPNEXT STACK"
             echo "══════════════════════════════════════════════════════════════════"
@@ -5550,6 +5633,19 @@ jobs:
             
             # Marcar início do deploy para calcular tempo total
             DEPLOY_START=$(date +%s)
+            
+            LOG_DIR="/opt/alice/logs"
+            RUN_ID="${{ github.run_id }}"
+            RUN_ATTEMPT="${{ github.run_attempt }}"
+            LOG_FILE="${LOG_DIR}/deploy-backup-${RUN_ID}-${RUN_ATTEMPT}.log"
+            
+            mkdir -p "$LOG_DIR"
+            touch "$LOG_FILE"
+            chmod 640 "$LOG_FILE"
+            
+            # Persistir todo o output do deploy no servidor
+            exec > >(tee -a "$LOG_FILE") 2>&1
+            echo "📝 Log persistido em: $LOG_FILE"
             
             echo "══════════════════════════════════════════════════════════════════"
             echo "🚀 DEPLOYING BACKUP STACK"

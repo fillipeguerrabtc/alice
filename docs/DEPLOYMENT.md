@@ -143,6 +143,36 @@ ssh root@178.63.41.108
 sudo /opt/alice/app/infra/scripts/prepare-production-server.sh
 ```
 
+## Matriz de mudanças (auto-deploy vs manual)
+
+### Auto-deploy (aplica no próximo deploy)
+
+| Item | Local | Aplicação | Observações |
+| --- | --- | --- | --- |
+| Persistência de logs de deploy | `.github/workflows/deploy-stack-modular.yml` | Automática | Logs ficam em `/opt/alice/logs/deploy-<stack>-<run_id>-<run_attempt>.log`. |
+| Fail-fast de sysctl em container | `.github/workflows/deploy-stack-modular.yml` | Automática | Bloqueia `sysctl vm.*` no `docker-compose.infra.yml` do servidor. |
+| Sync do compose/infra | Workflow + rsync | Automática | Garante `/opt/alice/app/infra/docker/stacks` atualizado antes do deploy. |
+| Parâmetros de serviços | `infra/docker/stacks/*.yml` | Automática | Entra no próximo deploy sem ação manual. |
+| Parâmetros GPU | `docker/gpu/*` + `docker-compose.alice.yml` | Automática | vLLM/embeddings via imagem + env vars. |
+
+### Manual (executar no servidor)
+
+| Item | Local | Como aplicar | Observações |
+| --- | --- | --- | --- |
+| `vm.overcommit_memory=1` | `/etc/sysctl.d/99-alice.conf` | `sudo /opt/alice/app/infra/scripts/setup-hetzner-gpu.sh` | Obrigatório para Redis. Nunca via compose. |
+| `vm.swappiness=10` | `/etc/sysctl.d/99-alice.conf` | `sudo /opt/alice/app/infra/scripts/setup-hetzner-gpu.sh` | Reduz swap agressivo. |
+| `net.core.somaxconn=65535` | `/etc/sysctl.d/99-alice.conf` | `sudo /opt/alice/app/infra/scripts/setup-hetzner-gpu.sh` | Backlog de conexões. |
+| `net.core.rmem_max=16777216` | `/etc/sysctl.d/99-alice.conf` | `sudo /opt/alice/app/infra/scripts/setup-hetzner-gpu.sh` | Buffer máximo de recepção. |
+| `net.core.wmem_max=16777216` | `/etc/sysctl.d/99-alice.conf` | `sudo /opt/alice/app/infra/scripts/setup-hetzner-gpu.sh` | Buffer máximo de envio. |
+| `net.ipv4.tcp_max_syn_backlog=65535` | `/etc/sysctl.d/99-alice.conf` | `sudo /opt/alice/app/infra/scripts/setup-hetzner-gpu.sh` | SYN backlog alto volume. |
+| `net.ipv4.ip_local_port_range=1024 65535` | `/etc/sysctl.d/99-alice.conf` | `sudo /opt/alice/app/infra/scripts/setup-hetzner-gpu.sh` | Portas efêmeras. |
+| `fs.file-max=2097152` | `/etc/sysctl.d/99-alice.conf` | `sudo /opt/alice/app/infra/scripts/setup-hetzner-gpu.sh` | FD global do host. |
+| `fs.inotify.max_user_watches=524288` | `/etc/sysctl.d/99-alice.conf` | `sudo /opt/alice/app/infra/scripts/setup-hetzner-gpu.sh` | Watchers de arquivos. |
+| `nofile=1048576` | `/etc/security/limits.d/alice.conf` | `sudo /opt/alice/app/infra/scripts/setup-hetzner-gpu.sh` | Limites por usuário (observability/ClickHouse). |
+| `nproc=65535` | `/etc/security/limits.d/alice.conf` | `sudo /opt/alice/app/infra/scripts/setup-hetzner-gpu.sh` | Limite de processos por usuário. |
+| THP `enabled/defrag=never` | `/etc/systemd/system/disable-thp.service` | `sudo /opt/alice/app/infra/scripts/setup-hetzner-gpu.sh` | Recomendado para Redis/PostgreSQL. |
+| Swap 4GB (se ausente) | `/swapfile` | `sudo /opt/alice/app/infra/scripts/setup-hetzner-gpu.sh` | Criado apenas se não existir. |
+
 **Atalho Windows (PowerShell):**
 
 - Chave: `C:\Users\filli\.ssh\alice-deploy`
