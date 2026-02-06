@@ -130,6 +130,21 @@ readonly ROOT_GID=0
 # =============================================================================
 declare -a PERMISSIONS_CONFIG=(
     # =========================================================================
+    # DIRETÓRIOS BASE (root) - CRÍTICO PARA TRAVESSIA
+    # =========================================================================
+    # NOTA: Esses diretórios precisam de permissão de execução (x) para
+    # permitir que UIDs de containers acessem subdiretórios específicos.
+    # Sem isso, mesmo com /data/postgres em 70:70, o UID 70 não consegue
+    # atravessar /opt/alice ou /opt/alice/data (erro: Permission denied).
+    #
+    # REF: CLAUDE.md Regra 6 (Enterprise-grade), PostgreSQL FS perms
+    # =========================================================================
+    "${ALICE_BASE_DIR}:${ROOT_UID}:${ROOT_GID}:755"
+    "${ALICE_DATA_DIR}:${ROOT_UID}:${ROOT_GID}:755"
+    "${ALICE_LOGS_DIR}:${ROOT_UID}:${ROOT_GID}:755"
+    "${ALICE_BACKUPS_DIR}:${ROOT_UID}:${ROOT_GID}:755"
+
+    # =========================================================================
     # INFRA STACK
     # =========================================================================
     

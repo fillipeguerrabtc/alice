@@ -86,6 +86,19 @@ Servidor de produção com permissões corretas
 | **Backups PostgreSQL** | 70 | 70 | postgres | 755 | pgBackRest backups |
 | **Secrets** | 0 | 0 | root | 700 | Apenas root pode ler |
 
+### Diretórios Base (Root)
+
+Estes diretórios são **pais** dos dados e precisam permitir **travessia** (`x`)
+por UIDs de containers. Sem isso, o PostgreSQL (UID 70) falha ao escrever em
+`/opt/alice/data/postgres` mesmo com ownership correto.
+
+| Diretório | UID | GID | Permissões | Justificativa |
+|----------|-----|-----|------------|---------------|
+| `/opt/alice` | 0 | 0 | 755 | Permitir travessia para todos os serviços |
+| `/opt/alice/data` | 0 | 0 | 755 | Pai de todos os volumes de dados |
+| `/opt/alice/logs` | 0 | 0 | 755 | Pai de logs por serviço |
+| `/opt/alice/backups` | 0 | 0 | 755 | Pai de backups (pgBackRest) |
+
 ### Notas Importantes
 
 ## Permissões RBAC (Aplicação)
