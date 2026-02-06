@@ -2907,7 +2907,7 @@ jobs:
             fi
             GHCR_OK=false
             for attempt in 1 2 3 4 5; do
-              if curl -I -sS --connect-timeout 5 --max-time 30 https://ghcr.io/v2/ >/tmp/ghcr-check.txt 2>/tmp/ghcr-check.err; then
+              if curl -sS --connect-timeout 5 --max-time 30 -D /tmp/ghcr-check.txt -o /dev/null https://ghcr.io/v2/ 2>/tmp/ghcr-check.err; then
                 GHCR_OK=true
                 break
               fi
@@ -3975,7 +3975,7 @@ jobs:
             fi
             GHCR_OK=false
             for attempt in 1 2 3 4 5; do
-              if curl -I -sS --connect-timeout 5 --max-time 30 https://ghcr.io/v2/ >/tmp/ghcr-check.txt 2>/tmp/ghcr-check.err; then
+              if curl -sS --connect-timeout 5 --max-time 30 -D /tmp/ghcr-check.txt -o /dev/null https://ghcr.io/v2/ 2>/tmp/ghcr-check.err; then
                 GHCR_OK=true
                 break
               fi
@@ -4716,7 +4716,7 @@ jobs:
             fi
             GHCR_OK=false
             for attempt in 1 2 3 4 5; do
-              if curl -I -sS --connect-timeout 5 --max-time 30 https://ghcr.io/v2/ >/tmp/ghcr-check.txt 2>/tmp/ghcr-check.err; then
+              if curl -sS --connect-timeout 5 --max-time 30 -D /tmp/ghcr-check.txt -o /dev/null https://ghcr.io/v2/ 2>/tmp/ghcr-check.err; then
                 GHCR_OK=true
                 break
               fi
@@ -5389,7 +5389,7 @@ jobs:
             fi
             GHCR_OK=false
             for attempt in 1 2 3 4 5; do
-              if curl -I -sS --connect-timeout 5 --max-time 30 https://ghcr.io/v2/ >/tmp/ghcr-check.txt 2>/tmp/ghcr-check.err; then
+              if curl -sS --connect-timeout 5 --max-time 30 -D /tmp/ghcr-check.txt -o /dev/null https://ghcr.io/v2/ 2>/tmp/ghcr-check.err; then
                 GHCR_OK=true
                 break
               fi
@@ -6010,7 +6010,7 @@ jobs:
             fi
             GHCR_OK=false
             for attempt in 1 2 3 4 5; do
-              if curl -I -sS --connect-timeout 5 --max-time 30 https://ghcr.io/v2/ >/tmp/ghcr-check.txt 2>/tmp/ghcr-check.err; then
+              if curl -sS --connect-timeout 5 --max-time 30 -D /tmp/ghcr-check.txt -o /dev/null https://ghcr.io/v2/ 2>/tmp/ghcr-check.err; then
                 GHCR_OK=true
                 break
               fi
