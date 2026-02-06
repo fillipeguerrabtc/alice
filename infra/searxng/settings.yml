@@ -99,6 +99,27 @@ search:
 # Mantemos engines padrão (use_default_settings: true).
 # O Tor permanece disponível para deepweb quando necessário.
 
+# Engines .onion explícitas com proxy Tor
+engines:
+  - name: ahmia
+    engine: ahmia
+    shortcut: ah
+    enabled: true
+    timeout: 6.0
+    proxies:
+      - socks5h://alice-tor:9050
+    categories: general
+    use_mobile_ui: false
+  - name: torch
+    engine: torch
+    shortcut: to
+    enabled: true
+    timeout: 6.0
+    proxies:
+      - socks5h://alice-tor:9050
+    categories: general
+    use_mobile_ui: false
+
 # Bot detection (acesso interno via alice-network)
 # CORREÇÃO 23/12/2025: Configura trusted proxies para eliminar warning
 # "X-Forwarded-For nor X-Real-IP header is set!"

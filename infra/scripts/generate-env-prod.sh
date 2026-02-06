@@ -611,10 +611,15 @@ else
   STRIPE_WEBHOOK_BASE_URL="${STRIPE_WEBHOOK_BASE_URL_SECRET}"
 fi
 
-if [ -z "${WISE_SANDBOX_SECRET:-}" ]; then
-  WISE_SANDBOX="false"
-else
+if [ -n "${WISE_SANDBOX_SECRET:-}" ]; then
+  if [ "${WISE_SANDBOX_SECRET}" != "true" ] && [ "${WISE_SANDBOX_SECRET}" != "false" ]; then
+    echo "::error::WISE_SANDBOX_SECRET deve ser 'true' (sandbox) ou 'false' (produção). Valor: ${WISE_SANDBOX_SECRET}" >&2
+    exit 1
+  fi
   WISE_SANDBOX="${WISE_SANDBOX_SECRET}"
+else
+  # Política: sandbox somente quando explicitamente configurado
+  WISE_SANDBOX="false"
 fi
 
 if [ -z "${ERPNEXT_API_KEY_SECRET:-}" ]; then

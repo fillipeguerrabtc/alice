@@ -90,8 +90,8 @@ export function isWiseConfigured(): boolean {
 }
 
 // Obtém status do sandbox de forma segura
-// SEGURANÇA: WISE_SANDBOX DEVE ser explicitamente configurado
-// Em produção, se não configurado, assume sandbox para segurança (fail-safe)
+// POLÍTICA: Sandbox apenas quando WISE_SANDBOX=true (explicitamente configurado)
+// Se não configurado, usa produção por padrão conforme decisão operacional
 export function getSandboxStatus(): boolean {
   const wiseSandbox = process.env.WISE_SANDBOX;
   const isProduction = process.env.NODE_ENV === 'production';
@@ -107,11 +107,11 @@ export function getSandboxStatus(): boolean {
   
   // WISE_SANDBOX não configurado
   if (isProduction) {
-    logger.warn('WISE_SANDBOX não configurado em produção - usando sandbox por segurança. Configure WISE_SANDBOX=false para usar produção Wise.');
+    logger.warn('WISE_SANDBOX não configurado em produção - usando produção por padrão. Configure WISE_SANDBOX=true para usar sandbox.');
   }
-  
-  // Default: sandbox para segurança (fail-safe)
-  return true;
+
+  // Default: produção por padrão (sandbox apenas se configurado)
+  return false;
 }
 
 // Obtém Profile ID de forma segura (retorna null se não configurado)

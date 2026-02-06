@@ -140,6 +140,10 @@ services:
       EXPORTER_TELEMETRY_PATH: "/metrics"
       COLLECT_INTERVAL: "60"
       STANZA_INCLUDE: "alice_prod"
+      # pgBackRest (config explícita para evitar exit 37)
+      PGBACKREST_CONFIG_PATH: /etc/pgbackrest/pgbackrest.conf
+      PGBACKREST_STANZA: alice_prod
+      PGBACKREST_REPO1_PATH: /var/lib/pgbackrest
     volumes:
       # Config SSOT do pgBackRest (necessário para `pgbackrest info`)
       - ../../backup/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
@@ -151,6 +155,12 @@ services:
     depends_on:
       pgbackrest:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:9854/metrics || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:

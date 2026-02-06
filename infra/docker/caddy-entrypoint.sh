@@ -25,8 +25,13 @@ if [ "$(id -u)" = "0" ]; then
 fi
 
 # =================================================================
-# Validação Rápida do Caddyfile
+# Formatação + Validação Rápida do Caddyfile
 # =================================================================
+if ! caddy fmt --overwrite /etc/caddy/Caddyfile >/dev/null 2>&1; then
+    echo "❌ ERROR: Falha ao formatar o Caddyfile"
+    exit 1
+fi
+
 if ! caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; then
     echo "❌ ERROR: Invalid Caddyfile configuration"
     caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1
@@ -51,10 +56,16 @@ DNS_PRECHECK_REQUIRE_ALL_RESOLVERS="${ACME_DNS_PRECHECK_REQUIRE_ALL_RESOLVERS:-f
 get_caddy_hosts() {
     awk '
       /^[[:space:]]*#/ { next }
-      /^[^[:space:]][^[:space:]]*[[:space:]]*\{/ {
-        host=$1
-        if (host ~ /^:/) next
-        if (host ~ /\./) print host
+      /\{/ {
+        line=$0
+        sub(/\{.*/, "", line)
+        gsub(/,/, " ", line)
+        n=split(line, parts, /[[:space:]]+/)
+        for (i=1; i<=n; i++) {
+          host=parts[i]
+          if (host ~ /^:/) continue
+          if (host ~ /\./) print host
+        }
       }
     ' /etc/caddy/Caddyfile | sort | uniq
 }
@@ -111,6 +122,8 @@ if [ "$DNS_PRECHECK_ENABLED" = "true" ]; then
             sleep "$DNS_PRECHECK_INTERVAL_SECONDS"
         done
     fi
+else
+    echo "ℹ️  DNS precheck desabilitado (ACME_DNS_PRECHECK_ENABLED=false)"
 fi
 
 # =================================================================

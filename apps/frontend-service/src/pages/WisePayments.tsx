@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Wallet,
   Send,
@@ -55,7 +55,7 @@ import {
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
-import { apiRequest, queryClient } from '@/lib/queryClient';
+import { ApiError, apiRequest, queryClient } from '@/lib/queryClient';
 import { useAuth } from '@/hooks/use-auth';
 import { TIMEZONE } from '@/lib/i18n';
 import { formatCurrency, formatDate, formatNumber } from '@/lib/utils';
@@ -674,6 +674,7 @@ export default function WisePayments() {
   const [catalogResponse, setCatalogResponse] = useState<string | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
+  const [wiseBlockedUntil, setWiseBlockedUntil] = useState<number | null>(null);
 
   const catalogOperation = WISE_CATALOG_OPERATIONS.find((op) => op.id === catalogOperationId) ?? WISE_CATALOG_OPERATIONS[0];
 
@@ -688,19 +689,54 @@ export default function WisePayments() {
     queryKey: ['/api/integrations/wise/status'],
   });
 
-  const { data: balancesData, isLoading: isLoadingBalances, refetch: refetchBalances } = useQuery<WiseBalancesResponse>({
+  const isWiseBlocked = wiseBlockedUntil !== null && Date.now() < wiseBlockedUntil;
+  const wiseQueryEnabled = Boolean(statusData?.configured) && !isWiseBlocked;
+
+  const blockWiseRequests = useCallback((seconds: number, reason: string) => {
+    const safeSeconds = Math.max(30, seconds);
+    setWiseBlockedUntil(Date.now() + safeSeconds * 1000);
+    toast({
+      title: 'Wise temporariamente bloqueado',
+      description: `${reason} Nova tentativa em ${safeSeconds}s.`,
+      variant: 'destructive',
+    });
+  }, [toast]);
+
+  const handleWiseQueryError = useCallback((error: unknown) => {
+    if (!(error instanceof ApiError)) {
+      return;
+    }
+
+    if (error.status === 401) {
+      blockWiseRequests(300, 'Token Wise inválido ou expirado.');
+      return;
+    }
+
+    if (error.status === 429) {
+      const retrySeconds = error.retryAfterSeconds ?? 120;
+      blockWiseRequests(retrySeconds, 'Rate limit do Wise atingido.');
+    }
+  }, [blockWiseRequests]);
+
+  useEffect(() => {
+    if (!statusData?.configured) {
+      setWiseBlockedUntil(null);
+    }
+  }, [statusData?.configured]);
+
+  const { data: balancesData, isLoading: isLoadingBalances, refetch: refetchBalances, error: balancesError } = useQuery<WiseBalancesResponse>({
     queryKey: ['/api/integrations/wise/balances'],
-    enabled: statusData?.configured,
+    enabled: wiseQueryEnabled,
   });
 
-  const { data: transfersData, isLoading: isLoadingTransfers, refetch: refetchTransfers } = useQuery<WiseTransfersResponse>({
+  const { data: transfersData, isLoading: isLoadingTransfers, refetch: refetchTransfers, error: transfersError } = useQuery<WiseTransfersResponse>({
     queryKey: ['/api/integrations/wise/transfers'],
-    enabled: statusData?.configured,
+    enabled: wiseQueryEnabled,
   });
 
-  const { data: recipientsData, isLoading: isLoadingRecipients, refetch: refetchRecipients } = useQuery<WiseRecipientsResponse>({
+  const { data: recipientsData, isLoading: isLoadingRecipients, refetch: refetchRecipients, error: recipientsError } = useQuery<WiseRecipientsResponse>({
     queryKey: ['/api/integrations/wise/recipients'],
-    enabled: statusData?.configured,
+    enabled: wiseQueryEnabled,
   });
 
   useEffect(() => {
@@ -724,60 +760,60 @@ export default function WisePayments() {
     }
   }, [balancesData?.balances, spendControlForm.currency]);
 
-  const { data: batchGroupsData, isLoading: isLoadingBatchGroups, refetch: refetchBatchGroups } = useQuery<WiseBatchGroupsResponse>({
+  const { data: batchGroupsData, isLoading: isLoadingBatchGroups, refetch: refetchBatchGroups, error: batchGroupsError } = useQuery<WiseBatchGroupsResponse>({
     queryKey: ['/api/integrations/wise/batch-groups'],
-    enabled: statusData?.configured,
+    enabled: wiseQueryEnabled,
   });
 
-  const { data: profilesData, isLoading: isLoadingProfiles, refetch: refetchProfiles } = useQuery<WiseProfilesResponse>({
+  const { data: profilesData, isLoading: isLoadingProfiles, refetch: refetchProfiles, error: profilesError } = useQuery<WiseProfilesResponse>({
     queryKey: ['/api/integrations/wise/profiles'],
-    enabled: statusData?.configured,
+    enabled: wiseQueryEnabled,
   });
 
-  const { data: wiseUserMeData, isLoading: isLoadingWiseUserMe, refetch: refetchWiseUserMe } = useQuery<{ user: Record<string, unknown> }>({
+  const { data: wiseUserMeData, isLoading: isLoadingWiseUserMe, refetch: refetchWiseUserMe, error: wiseUserMeError } = useQuery<{ user: Record<string, unknown> }>({
     queryKey: ['/api/integrations/wise/users/me'],
-    enabled: statusData?.configured,
+    enabled: wiseQueryEnabled,
   });
 
-  const { data: cardsData, isLoading: isLoadingCards, refetch: refetchCards } = useQuery<WiseCardsResponse>({
+  const { data: cardsData, isLoading: isLoadingCards, refetch: refetchCards, error: cardsError } = useQuery<WiseCardsResponse>({
     queryKey: ['/api/integrations/wise/cards', profileFilter],
-    enabled: statusData?.configured && Boolean(profileFilter),
+    enabled: wiseQueryEnabled && Boolean(profileFilter),
     queryFn: async () => {
       const res = await apiRequest('GET', `/api/integrations/wise/cards?profileId=${encodeURIComponent(profileFilter)}`);
       return res.json() as Promise<WiseCardsResponse>;
     },
   });
 
-  const { data: spendControlsData, isLoading: isLoadingSpendControls, refetch: refetchSpendControls } = useQuery<WiseSpendControlsResponse>({
+  const { data: spendControlsData, isLoading: isLoadingSpendControls, refetch: refetchSpendControls, error: spendControlsError } = useQuery<WiseSpendControlsResponse>({
     queryKey: ['/api/integrations/wise/spend-controls', profileFilter],
-    enabled: statusData?.configured && Boolean(profileFilter),
+    enabled: wiseQueryEnabled && Boolean(profileFilter),
     queryFn: async () => {
       const res = await apiRequest('GET', `/api/integrations/wise/spend-controls?profileId=${encodeURIComponent(profileFilter)}`);
       return res.json() as Promise<WiseSpendControlsResponse>;
     },
   });
 
-  const { data: disputesData, isLoading: isLoadingDisputes, refetch: refetchDisputes } = useQuery<WiseDisputesResponse>({
+  const { data: disputesData, isLoading: isLoadingDisputes, refetch: refetchDisputes, error: disputesError } = useQuery<WiseDisputesResponse>({
     queryKey: ['/api/integrations/wise/disputes', profileFilter],
-    enabled: statusData?.configured && Boolean(profileFilter),
+    enabled: wiseQueryEnabled && Boolean(profileFilter),
     queryFn: async () => {
       const res = await apiRequest('GET', `/api/integrations/wise/disputes?profileId=${encodeURIComponent(profileFilter)}`);
       return res.json() as Promise<WiseDisputesResponse>;
     },
   });
 
-  const { data: kycReviewsData, isLoading: isLoadingKycReviews, refetch: refetchKycReviews } = useQuery<WiseKycReviewsResponse>({
+  const { data: kycReviewsData, isLoading: isLoadingKycReviews, refetch: refetchKycReviews, error: kycReviewsError } = useQuery<WiseKycReviewsResponse>({
     queryKey: ['/api/integrations/wise/kyc-reviews', profileFilter],
-    enabled: statusData?.configured && Boolean(profileFilter),
+    enabled: wiseQueryEnabled && Boolean(profileFilter),
     queryFn: async () => {
       const res = await apiRequest('GET', `/api/integrations/wise/kyc-reviews?profileId=${encodeURIComponent(profileFilter)}`);
       return res.json() as Promise<WiseKycReviewsResponse>;
     },
   });
 
-  const { data: cardOrdersData, isLoading: isLoadingCardOrders, refetch: refetchCardOrders } = useQuery<WiseCardOrdersResponse>({
+  const { data: cardOrdersData, isLoading: isLoadingCardOrders, refetch: refetchCardOrders, error: cardOrdersError } = useQuery<WiseCardOrdersResponse>({
     queryKey: ['/api/integrations/wise/card-orders', profileFilter, cardOrdersPage.pageNumber, cardOrdersPage.pageSize],
-    enabled: statusData?.configured && Boolean(profileFilter),
+    enabled: wiseQueryEnabled && Boolean(profileFilter),
     queryFn: async () => {
       const params = new URLSearchParams({
         profileId: profileFilter,
@@ -789,32 +825,71 @@ export default function WisePayments() {
     },
   });
 
-  const { data: disputeReasonsData, isLoading: isLoadingDisputeReasons } = useQuery<{ reasons: Record<string, unknown> }>({
+  const { data: disputeReasonsData, isLoading: isLoadingDisputeReasons, error: disputeReasonsError } = useQuery<{ reasons: Record<string, unknown> }>({
     queryKey: ['/api/integrations/wise/disputes/reasons', profileFilter],
-    enabled: statusData?.configured && Boolean(profileFilter),
+    enabled: wiseQueryEnabled && Boolean(profileFilter),
     queryFn: async () => {
       const res = await apiRequest('GET', `/api/integrations/wise/disputes/reasons?profileId=${encodeURIComponent(profileFilter)}`);
       return res.json() as Promise<{ reasons: Record<string, unknown> }>;
     },
   });
 
-  const { data: accountDetailsData, isLoading: isLoadingAccountDetails, refetch: refetchAccountDetails } = useQuery<WiseAccountDetailsResponse>({
+  const { data: accountDetailsData, isLoading: isLoadingAccountDetails, refetch: refetchAccountDetails, error: accountDetailsError } = useQuery<WiseAccountDetailsResponse>({
     queryKey: ['/api/integrations/wise/account-details', profileFilter],
-    enabled: statusData?.configured && Boolean(profileFilter),
+    enabled: wiseQueryEnabled && Boolean(profileFilter),
     queryFn: async () => {
       const res = await apiRequest('GET', `/api/integrations/wise/account-details?profileId=${encodeURIComponent(profileFilter)}`);
       return res.json() as Promise<WiseAccountDetailsResponse>;
     },
   });
 
-  const { data: accountDetailsOrdersData, isLoading: isLoadingAccountDetailsOrders, refetch: refetchAccountDetailsOrders } = useQuery<WiseAccountDetailsOrdersResponse>({
+  const { data: accountDetailsOrdersData, isLoading: isLoadingAccountDetailsOrders, refetch: refetchAccountDetailsOrders, error: accountDetailsOrdersError } = useQuery<WiseAccountDetailsOrdersResponse>({
     queryKey: ['/api/integrations/wise/account-details/orders', profileFilter],
-    enabled: statusData?.configured && Boolean(profileFilter),
+    enabled: wiseQueryEnabled && Boolean(profileFilter),
     queryFn: async () => {
       const res = await apiRequest('GET', `/api/integrations/wise/account-details/orders?profileId=${encodeURIComponent(profileFilter)}`);
       return res.json() as Promise<WiseAccountDetailsOrdersResponse>;
     },
   });
+
+  useEffect(() => {
+    const firstError = [
+      balancesError,
+      transfersError,
+      recipientsError,
+      batchGroupsError,
+      profilesError,
+      wiseUserMeError,
+      cardsError,
+      spendControlsError,
+      disputesError,
+      kycReviewsError,
+      cardOrdersError,
+      disputeReasonsError,
+      accountDetailsError,
+      accountDetailsOrdersError,
+    ].find(Boolean);
+
+    if (firstError) {
+      handleWiseQueryError(firstError);
+    }
+  }, [
+    balancesError,
+    transfersError,
+    recipientsError,
+    batchGroupsError,
+    profilesError,
+    wiseUserMeError,
+    cardsError,
+    spendControlsError,
+    disputesError,
+    kycReviewsError,
+    cardOrdersError,
+    disputeReasonsError,
+    accountDetailsError,
+    accountDetailsOrdersError,
+    handleWiseQueryError,
+  ]);
 
   const createQuoteMutation = useMutation({
     mutationFn: async (data: { sourceCurrency: string; targetCurrency: string; sourceAmount: number }) => {

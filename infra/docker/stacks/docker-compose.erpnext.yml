@@ -172,7 +172,7 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a ${REDIS_CACHE_PASSWORD} --no-auth-warning ping | grep -q PONG"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=${REDIS_CACHE_PASSWORD} redis-cli ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -232,7 +232,7 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a ${REDIS_QUEUE_PASSWORD} --no-auth-warning ping | grep -q PONG"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=${REDIS_QUEUE_PASSWORD} redis-cli ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -552,7 +552,7 @@ services:
       # REF: CLAUDE.md Regra 7 (Diagnóstico de causa raiz)
       # REF: https://docs.frappe.io/framework/v15/user/en/deployment
       # =======================================================================
-      test: ["CMD", "python3", "-c", "import urllib.request as u,urllib.error as e;exec('try: u.urlopen(\"http://localhost:8000/\",timeout=5)\\nexcept e.HTTPError: pass')"]
+      test: ["CMD", "python3", "-c", "import urllib.request as u,urllib.error as e;exec('try: r=u.urlopen(\"http://localhost:8000/api/method/ping\",timeout=5);exit(0 if r.getcode()==200 else 1)\\nexcept e.HTTPError as err: exit(0 if err.code==200 else 1)\\nexcept: exit(1)')"]
       interval: 20s
       timeout: 10s
       retries: 5
@@ -963,6 +963,8 @@ services:
     environment:
       REDIS_ADDR: redis://erpnext-redis-cache:6379
       REDIS_PASSWORD: ${REDIS_CACHE_PASSWORD}
+    command:
+      - "--include-latency-histogram"
     networks:
       - erpnext-network
       - alice-network
@@ -989,6 +991,8 @@ services:
     environment:
       REDIS_ADDR: redis://erpnext-redis-queue:6379
       REDIS_PASSWORD: ${REDIS_QUEUE_PASSWORD}
+    command:
+      - "--include-latency-histogram"
     networks:
       - erpnext-network
       - alice-network

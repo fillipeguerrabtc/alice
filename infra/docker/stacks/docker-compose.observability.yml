@@ -421,6 +421,7 @@ services:
       - "--path.sysfs=/host/sys"
       - "--path.rootfs=/host"
       - "--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($|/)"
+      - "--no-collector.udev"
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
@@ -453,6 +454,9 @@ services:
     privileged: true
     security_opt:
       - no-new-privileges:true
+    command:
+      - "--storage_driver=overlay2"
+      - "--storage_driver_priority=overlay2"
     devices:
       - /dev/kmsg:/dev/kmsg
     volumes:

@@ -50,7 +50,6 @@ MANDATORY_SECRETS=(
   GRAFANA_ADMIN_PASSWORD_SECRET
   ERPNEXT_ADMIN_PASSWORD_SECRET
   STRIPE_WEBHOOK_BASE_URL_SECRET
-  WISE_SANDBOX_SECRET
   GH_PAT_SECRET
   GH_REPO_SECRET
   ERPNEXT_API_KEY_SECRET
@@ -64,6 +63,16 @@ for secret_var in "${MANDATORY_SECRETS[@]}"; do
 done
 
 echo "✅ Todas as secrets obrigatórias estão presentes."
+
+# =============================================================================
+# Validações opcionais (Wise)
+# =============================================================================
+if [ -n "${WISE_SANDBOX_SECRET:-}" ]; then
+  if [ "${WISE_SANDBOX_SECRET}" != "true" ] && [ "${WISE_SANDBOX_SECRET}" != "false" ]; then
+    echo "::error::WISE_SANDBOX_SECRET deve ser 'true' (sandbox) ou 'false' (produção). Valor: ${WISE_SANDBOX_SECRET}"
+    exit 1
+  fi
+fi
 
 
 
