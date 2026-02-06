@@ -3868,6 +3868,43 @@ jobs:
               fi
             done
             echo "✅ Migrations SQL aplicadas com sucesso"
+
+            # =================================================================
+            # VALIDAÇÃO CRÍTICA: Tabela trading_llm_validations + colunas usadas
+            # =================================================================
+            REQUIRED_COLUMNS=(
+              tenant_id
+              validation_passed
+              action_taken
+              failure_reason
+              extraction_source
+              no_values_extracted
+              discrepancies
+              llm_cited_values
+              actual_values
+              max_allowed_deviation
+              validated_at
+            )
+
+            REQUIRED_COLUMNS_SQL=$(printf "'%s'," "${REQUIRED_COLUMNS[@]}" | sed 's/,$//')
+            REQUIRED_COLUMNS_COUNT=$(printf '%s' "${REQUIRED_COLUMNS[@]}" | wc -w | tr -d ' ')
+
+            COLUMN_COUNT=$(docker exec -i \
+              -e PGPASSWORD="$POSTGRES_PASSWORD" \
+              alice-postgres \
+              psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc \
+              "select count(*) from information_schema.columns where table_schema = 'public' and table_name = 'trading_llm_validations' and column_name in (${REQUIRED_COLUMNS_SQL});")
+
+            if [ "${COLUMN_COUNT:-0}" -ne "$REQUIRED_COLUMNS_COUNT" ]; then
+              echo "❌ ERRO CRÍTICO: Schema incompleto para trading_llm_validations."
+              echo "   Esperado: $REQUIRED_COLUMNS_COUNT colunas"
+              echo "   Encontrado: ${COLUMN_COUNT:-0}"
+              echo "   Aplique migrations SQL antes do deploy do stack ALICE."
+              rm -f "$DRIZZLE_LOG"
+              rm -rf /tmp/drizzle-app
+              exit 1
+            fi
+            echo "✅ Schema trading_llm_validations validado"
             
             rm -f "$DRIZZLE_LOG"
             rm -rf /tmp/drizzle-app
