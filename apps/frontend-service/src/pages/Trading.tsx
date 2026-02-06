@@ -515,6 +515,20 @@ const DEFAULT_ARBITRAGE_CONFIG = {
   minEdgePct: 0.3,
   maxIntervalMinutes: 5,
 };
+const FALLBACK_INTERVAL_MINUTES: Record<string, number> = {
+  '1m': 1,
+  '3m': 3,
+  '5m': 5,
+  '15m': 15,
+  '30m': 30,
+  '1h': 60,
+  '2h': 120,
+  '4h': 240,
+  '8h': 480,
+  '12h': 720,
+  '1d': 1440,
+  '1w': 10080,
+};
 const MAX_ARBITRAGE_ASSETS = 30;
 const AUTO_SAVE_DEBOUNCE_MS = 600;
 
@@ -1041,6 +1055,27 @@ export default function Trading() {
     if (!selectedInterval) return null;
     return intervalsData?.data?.granularityMap?.[selectedInterval] ?? null;
   }, [intervalsData, selectedInterval]);
+
+  const signalIntervalMinutesMap = useMemo(() => {
+    return intervalsData?.data?.granularityMap ?? FALLBACK_INTERVAL_MINUTES;
+  }, [intervalsData]);
+
+  const signalArbitrageInvalidFrames = useMemo(() => {
+    if (!signalProfileForm.techniques.includes('arbitrage_triangular')) return [];
+    const maxMinutes = signalProfileForm.arbitrageConfig?.maxIntervalMinutes ?? DEFAULT_ARBITRAGE_CONFIG.maxIntervalMinutes;
+    return signalProfileForm.timeframes.filter((frame) => {
+      const minutes = signalIntervalMinutesMap[frame] ?? Infinity;
+      return minutes > maxMinutes;
+    });
+  }, [signalProfileForm.arbitrageConfig?.maxIntervalMinutes, signalProfileForm.techniques, signalProfileForm.timeframes, signalIntervalMinutesMap]);
+
+  const isSignalArbitrageInvalid = signalArbitrageInvalidFrames.length > 0;
+  const signalArbitrageErrorMessage = isSignalArbitrageInvalid
+    ? t('trading.errors.arbitrageTimeframesInvalid', {
+        max: signalProfileForm.arbitrageConfig?.maxIntervalMinutes ?? DEFAULT_ARBITRAGE_CONFIG.maxIntervalMinutes,
+        frames: signalArbitrageInvalidFrames.join(', '),
+      })
+    : '';
 
   const wsOrderBookDepth = useMemo<5 | 50 | null>(() => {
     const depths = intervalsData?.data?.wsOrderBookDepths ?? [];
@@ -3822,6 +3857,14 @@ export default function Trading() {
                 <div className="flex flex-wrap gap-2">
                   <Button
                     onClick={() => {
+                      if (isSignalArbitrageInvalid) {
+                        toast({
+                          title: t('trading.errors.profileUpdateFailed'),
+                          description: signalArbitrageErrorMessage,
+                          variant: 'destructive',
+                        });
+                        return;
+                      }
                       if (isManualSignalSavePending) return;
                       setIsManualSignalSavePending(true);
                       updateSignalProfileMutation.mutate(signalProfilePayload, {
@@ -3830,15 +3873,25 @@ export default function Trading() {
                         },
                       });
                     }}
-                    disabled={isManualSignalSavePending}
+                    disabled={isManualSignalSavePending || isSignalArbitrageInvalid}
                   >
                     {isManualSignalSavePending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                     {t('trading.signals.profile.save')}
                   </Button>
                   <Button
                     variant="outline"
-                    onClick={() => generateSignalMutation.mutate()}
-                    disabled={generateSignalMutation.isPending}
+                    onClick={() => {
+                      if (isSignalArbitrageInvalid) {
+                        toast({
+                          title: t('trading.errors.signalGenerateFailed'),
+                          description: signalArbitrageErrorMessage,
+                          variant: 'destructive',
+                        });
+                        return;
+                      }
+                      generateSignalMutation.mutate();
+                    }}
+                    disabled={generateSignalMutation.isPending || isSignalArbitrageInvalid}
                   >
                     {generateSignalMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                     {t('trading.signals.generateNow')}
@@ -3870,6 +3923,11 @@ export default function Trading() {
                     {t('trading.newsConfig.createPreset')}
                   </Button>
                 </div>
+                {isSignalArbitrageInvalid && (
+                  <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                    {signalArbitrageErrorMessage}
+                  </div>
+                )}
                 <Separator className="my-6" />
 
                 <div className="space-y-4">

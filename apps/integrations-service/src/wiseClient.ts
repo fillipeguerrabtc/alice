@@ -7,6 +7,7 @@
 import { createLogger } from '@alice/logger';
 import crypto from 'crypto';
 import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS, createAlicePrometheus } from '@alice/shared-utils';
+import type { BodyInit } from 'undici-types';
 
 // Logger padronizado (Regra 2 - Não Duplicar)
 const logger = createLogger('wise-client');
@@ -181,10 +182,12 @@ interface WiseRequestParams {
   headers?: Record<string, string>;
 }
 
+type WiseBodyInit = BodyInit;
+
 interface WiseRequestRawParams {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
   endpoint: string;
-  body?: BodyInit | null;
+  body?: WiseBodyInit | null;
   headers?: Record<string, string>;
   token?: string;
   includeContentType?: boolean;
@@ -270,10 +273,11 @@ async function executeWiseRequestRaw<T>(params: WiseRequestRawParams): Promise<T
   const headers = getHeaders({ token, includeContentType, headers: extraHeaders });
 
   try {
+    const bodyPayload = body ?? undefined;
     const response = await fetch(url, {
       method,
       headers,
-      body: body ?? undefined,
+      body: bodyPayload as WiseBodyInit | undefined,
       signal: AbortSignal.timeout(WISE_API_TIMEOUT_MS),
     });
 
@@ -333,7 +337,7 @@ export async function wiseRequest<T>(
 export async function wiseRequestRaw<T>(
   method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH',
   endpoint: string,
-  body?: BodyInit | null,
+  body?: WiseBodyInit | null,
   headers?: Record<string, string>,
   options?: { token?: string; includeContentType?: boolean; baseUrl?: string }
 ): Promise<T> {

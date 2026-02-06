@@ -2493,7 +2493,8 @@
       "historyFailed": "Failed to load history",
       "historyDeleteFailed": "Failed to delete history",
       "schedulerUpdateFailed": "Error updating scheduler",
-      "profileUpdateFailed": "Error updating profile"
+      "profileUpdateFailed": "Error updating profile",
+      "arbitrageTimeframesInvalid": "Triangular arbitrage requires timeframes <= {{max}} minutes. Adjust: {{frames}}."
     },
     "chart": {
       "title": "Price Chart",

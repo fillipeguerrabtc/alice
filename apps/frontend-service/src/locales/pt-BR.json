@@ -2550,7 +2550,8 @@
       "historyFailed": "Erro ao carregar histórico",
       "historyDeleteFailed": "Erro ao excluir histórico",
       "schedulerUpdateFailed": "Erro ao atualizar scheduler",
-      "profileUpdateFailed": "Erro ao atualizar perfil"
+      "profileUpdateFailed": "Erro ao atualizar perfil",
+      "arbitrageTimeframesInvalid": "Arbitragem triangular exige timeframes <= {{max}} minutos. Ajuste: {{frames}}."
     },
     "chart": {
       "title": "Gráfico de Preços",

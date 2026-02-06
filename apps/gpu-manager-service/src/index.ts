@@ -273,6 +273,54 @@ const protectedFetchByServiceType = {
   [GpuServiceType.TRAINING]: gpuServiceClients[GpuServiceType.TRAINING].fetch,
 } as const;
 
+type GuidedJsonSchema = {
+  name?: string;
+  schema?: Record<string, unknown>;
+  strict?: boolean;
+} | Record<string, unknown>;
+
+function applyGuidedJsonSchema(params: {
+  serviceType: GpuServiceType;
+  endpoint: string;
+  body?: unknown;
+}): unknown {
+  if (params.serviceType !== GpuServiceType.LLM) return params.body;
+  if (!params.endpoint.includes('/v1/chat/completions')) return params.body;
+  if (!params.body || typeof params.body !== 'object' || Array.isArray(params.body)) return params.body;
+
+  const payload = { ...(params.body as Record<string, unknown>) };
+  const responseFormat = payload.response_format as Record<string, unknown> | undefined;
+  const extraBodyRaw = payload.extra_body as Record<string, unknown> | undefined;
+  const extraBody = extraBodyRaw ? { ...extraBodyRaw } : {};
+  let guidedSchema: GuidedJsonSchema | undefined;
+
+  if (responseFormat?.type === 'json_schema' && responseFormat.json_schema) {
+    guidedSchema = responseFormat.json_schema as GuidedJsonSchema;
+  }
+
+  if (!guidedSchema && responseFormat?.type === 'json_object' && responseFormat.json_schema) {
+    guidedSchema = responseFormat.json_schema as GuidedJsonSchema;
+  }
+
+  if (!guidedSchema) {
+    return payload;
+  }
+
+  const schemaPayload = (guidedSchema as { schema?: Record<string, unknown> }).schema ?? guidedSchema;
+  if (!extraBody.guided_json) {
+    extraBody.guided_json = schemaPayload;
+  }
+  if (!extraBody.structured_outputs) {
+    extraBody.structured_outputs = {
+      type: 'json_schema',
+      json_schema: guidedSchema,
+    };
+  }
+
+  payload.extra_body = extraBody;
+  return payload;
+}
+
 async function tryAcquireGpuLock(serviceType: GpuServiceType, requestId: string, ttlMs: number): Promise<boolean> {
   const redis = getRedisClient();
   if (!redis) {
@@ -612,6 +660,11 @@ async function processGpuRequest(request: GpuRequest): Promise<GpuResponse> {
   try {
     // Gate 2: Serviços sempre ativos, sem orquestração dinâmica
     const timeoutMs = request.timeout || GPU_SERVICE_TIMEOUT;
+    const requestBody = applyGuidedJsonSchema({
+      serviceType,
+      endpoint: request.endpoint,
+      body: request.body,
+    });
     const response = await protectedFetch(`${url}${request.endpoint}`, {
       method: request.method,
       headers: {
@@ -619,7 +672,7 @@ async function processGpuRequest(request: GpuRequest): Promise<GpuResponse> {
         ...(request.method !== 'GET' ? { 'Content-Type': 'application/json' } : {}),
         ...request.headers,
       },
-      body: request.method !== 'GET' && request.body ? JSON.stringify(request.body) : undefined,
+      body: request.method !== 'GET' && requestBody ? JSON.stringify(requestBody) : undefined,
       timeoutMs,
     });
 
@@ -971,13 +1024,18 @@ app.post('/api/gpu/stream', requireInternalAuth, asyncHandler(async (req: Reques
     await markServiceActive(serviceType, streamingRequestId);
 
     try {
+      const requestBody = applyGuidedJsonSchema({
+        serviceType,
+        endpoint: body.endpoint,
+        body: body.body,
+      });
       const response = await protectedFetch(`${url}${body.endpoint}`, {
         method: body.method || 'POST',
         headers: {
           ...(body.method !== 'GET' ? { 'Content-Type': 'application/json' } : {}),
           ...body.headers,
         },
-        body: body.method !== 'GET' && body.body ? JSON.stringify(body.body) : undefined,
+        body: body.method !== 'GET' && requestBody ? JSON.stringify(requestBody) : undefined,
         timeoutMs,
       });
 

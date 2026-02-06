@@ -331,18 +331,25 @@ function normalizeTradingEnsembleConfig(raw?: TradingEnsembleConfig | null): Tra
   return { ...DEFAULT_TRADING_ENSEMBLE_CONFIG };
 }
 
+class TradingConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TradingConfigError';
+  }
+}
+
 function normalizeTradingArbitrageConfig(raw?: TradingArbitrageConfig | null): TradingArbitrageConfig | undefined {
   if (!raw) return undefined;
   const parsed = TradingArbitrageConfigSchema.safeParse(raw);
   if (!parsed.success) {
-    throw new Error('Configuração de arbitragem inválida');
+    throw new TradingConfigError('Configuração de arbitragem inválida');
   }
   const normalizedExchanges = Array.from(new Set(parsed.data.exchanges));
   const normalizedAssets = Array.from(
     new Set(parsed.data.intermediateAssets.map((asset) => asset.trim().toUpperCase()).filter(Boolean))
   );
   if (normalizedAssets.length > MAX_ARBITRAGE_INTERMEDIATE_ASSETS) {
-    throw new Error(`Máximo de ${MAX_ARBITRAGE_INTERMEDIATE_ASSETS} ativos intermediários permitido.`);
+    throw new TradingConfigError(`Máximo de ${MAX_ARBITRAGE_INTERMEDIATE_ASSETS} ativos intermediários permitido.`);
   }
   return {
     ...parsed.data,
@@ -363,12 +370,12 @@ function assertArbitrageConfigForTechniques(params: {
 }): void {
   if (!params.techniques.includes('arbitrage_triangular')) return;
   if (!params.arbitrageConfig) {
-    throw new Error(`Configuração de arbitragem obrigatória para ${params.context}`);
+    throw new TradingConfigError(`Configuração de arbitragem obrigatória para ${params.context}`);
   }
   const maxMinutes = params.arbitrageConfig.maxIntervalMinutes;
   const invalidFrames = params.timeframes.filter((frame) => resolveIntervalMinutes(frame) > maxMinutes);
   if (invalidFrames.length > 0) {
-    throw new Error(`Arbitragem triangular exige timeframes <= ${maxMinutes} minutos. Ajuste: ${invalidFrames.join(', ')}`);
+    throw new TradingConfigError(`Arbitragem triangular exige timeframes <= ${maxMinutes} minutos. Ajuste: ${invalidFrames.join(', ')}`);
   }
 }
 
@@ -1798,6 +1805,54 @@ const TRADING_LLM_SIGNAL_SCHEMA = z.object({
   marketCondition: z.string().min(3).optional(),
   riskScore: z.number().min(0).max(100).optional(),
 });
+
+const TRADING_LLM_SIGNAL_JSON_SCHEMA = {
+  name: 'trading_llm_signal',
+  strict: true,
+  schema: {
+    type: 'object',
+    additionalProperties: false,
+    required: [
+      'signalType',
+      'operationType',
+      'expectedDurationMinutes',
+      'confidence',
+      'tradeSummary',
+      'motivators',
+      'invalidationReasons',
+      'reasoning',
+      'citedValues',
+    ],
+    properties: {
+      signalType: {
+        type: 'string',
+        enum: ['entry_long', 'entry_short', 'exit', 'adjust_sl', 'adjust_tp', 'hold', 'neutral'],
+      },
+      operationType: {
+        type: 'string',
+        enum: ['scalping', 'swing', 'position', 'cash_and_carry', 'arbitrage', 'hedge', 'neutral'],
+      },
+      expectedDurationMinutes: { type: 'integer', minimum: 1, maximum: 43200 },
+      confidence: { type: 'number', minimum: 0, maximum: 1 },
+      tradeSummary: { type: 'string', minLength: 10 },
+      motivators: { type: 'array', items: { type: 'string' }, minItems: 1 },
+      invalidationReasons: { type: 'array', items: { type: 'string' }, minItems: 1 },
+      reasoning: { type: 'string', minLength: 5 },
+      timeframeUsed: { type: 'string' },
+      citedValues: {
+        type: 'object',
+        additionalProperties: { type: 'number' },
+      },
+      suggestedPrice: { type: 'number', minimum: 0 },
+      suggestedStopLoss: { type: 'number', minimum: 0 },
+      suggestedTakeProfit: { type: 'number', minimum: 0 },
+      suggestedSize: { type: 'number', minimum: 0 },
+      riskReward: { type: 'number', minimum: 0 },
+      marketCondition: { type: 'string', minLength: 3 },
+      riskScore: { type: 'number', minimum: 0, maximum: 100 },
+    },
+  },
+} as const;
 
 const TRADING_LLM_SIGNAL_PARTIAL_SCHEMA = z.object({
   signalType: z.enum(['entry_long', 'entry_short', 'exit', 'adjust_sl', 'adjust_tp', 'hold', 'neutral']).optional(),
@@ -9652,6 +9707,67 @@ function repairYamlLikeBlockWithoutBraces(content: string): { json: string; repa
   };
 }
 
+function repairYamlLikeFromRawText(content: string): { json: string; repaired: boolean } {
+  const cleaned = sanitizeJsonCandidate(stripJsonCodeFence(content)).json;
+  const lines = cleaned.split(/\r?\n/);
+  const props: string[] = [];
+  let repaired = false;
+  let currentKey: string | null = null;
+  let currentArray: string[] = [];
+
+  const flushArray = () => {
+    if (!currentKey) return;
+    const items = currentArray.length > 0 ? currentArray.join(', ') : '';
+    props.push(`"${currentKey}": [${items}]`);
+    currentKey = null;
+    currentArray = [];
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (line === '{' || line === '}' || line.startsWith('```')) continue;
+    if (line.startsWith('-')) {
+      if (!currentKey) continue;
+      const item = line.replace(/^-\s*/, '');
+      currentArray.push(coerceYamlLikeValue(item));
+      repaired = true;
+      continue;
+    }
+    if (currentKey) {
+      flushArray();
+    }
+    const prefixed = stripListPrefix(line);
+    if (prefixed.stripped) repaired = true;
+    const match = prefixed.value.match(/^['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?\s*:\s*(.*)$/);
+    if (!match) continue;
+    const key = match[1];
+    if (!TRADING_LLM_SIGNAL_KEYS.has(key)) continue;
+    const value = match[2] ?? '';
+    if (!value.trim()) {
+      currentKey = key;
+      currentArray = [];
+      repaired = true;
+      continue;
+    }
+    props.push(`"${key}": ${coerceYamlLikeValue(value)}`);
+    repaired = true;
+  }
+
+  if (currentKey) {
+    flushArray();
+  }
+
+  if (!repaired || props.length === 0) {
+    return { json: content, repaired: false };
+  }
+
+  return {
+    json: `{\n${props.join(',\n')}\n}`,
+    repaired: true,
+  };
+}
+
 function repairLlmJsonContent(content: string): { json: string; repaired: boolean } {
   let repaired = false;
   let inString = false;
@@ -9977,6 +10093,27 @@ function parseLlmSignalResponse(rawResponse: string): {
         throw new Error(`Resposta LLM inválida após reparo: ${message}`);
       }
     }
+    const rawRepair = repairYamlLikeFromRawText(rawResponse);
+    if (rawRepair.repaired) {
+      try {
+        logger.warn({ error: error instanceof Error ? error.message : error }, 'Resposta LLM inválida; aplicando extração de chaves do texto bruto.');
+        const parsed = JSON.parse(rawRepair.json) as Record<string, unknown>;
+        const { normalized: normalizedPayload, citedValuesSource } = normalizeLlmSignalPayload(parsed);
+        const result = TRADING_LLM_SIGNAL_PARTIAL_SCHEMA.safeParse(normalizedPayload);
+        if (!result.success) {
+          throw new Error(`Resposta LLM inválida após reparo: ${result.error.message}`);
+        }
+        return { data: result.data, citedValuesSource };
+      } catch (rawError) {
+        const message = rawError instanceof Error ? rawError.message : 'Erro desconhecido';
+        logger.error({
+          error: message,
+          responseHash: computeSemHash(rawRepair.json),
+          responseLength: rawRepair.json.length,
+          candidateLength: baseJson.length,
+        }, 'Resposta LLM inválida após extração de chaves (hash/len).');
+      }
+    }
     const message = error instanceof Error ? error.message : 'Erro desconhecido';
     if (message.startsWith('Resposta LLM inválida:')) {
       throw new Error(message);
@@ -9985,7 +10122,7 @@ function parseLlmSignalResponse(rawResponse: string): {
       error: message,
       responseHash: computeSemHash(sanitized.json),
       responseLength: sanitized.json.length,
-      responseSnippet: buildLlmResponseSnippet(sanitized.json),
+      responseSnippet: buildLlmResponseSnippet(rawResponse),
     }, 'Resposta LLM inválida (hash/len).');
     throw new Error(`Resposta LLM inválida: ${message}`);
   }
@@ -11570,7 +11707,7 @@ async function generateTradingSignalFromLlm(params: {
     context: 'geração de sinais IA',
   });
   if (techniques.includes('arbitrage_triangular') && (params.marketType ?? 'futures') === 'futures') {
-    throw new Error('Arbitragem triangular não é suportada em mercado futures.');
+    throw new TradingConfigError('Arbitragem triangular não é suportada em mercado futures.');
   }
 
   const analysisMatrix = await Promise.all(
@@ -11781,7 +11918,17 @@ async function generateTradingSignalFromLlm(params: {
     body: {
       model: agentContext.llmConfig.model,
       messages,
-      response_format: { type: 'json_object' },
+      response_format: {
+        type: 'json_schema',
+        json_schema: TRADING_LLM_SIGNAL_JSON_SCHEMA,
+      },
+      extra_body: {
+        guided_json: TRADING_LLM_SIGNAL_JSON_SCHEMA.schema,
+        structured_outputs: {
+          type: 'json_schema',
+          json_schema: TRADING_LLM_SIGNAL_JSON_SCHEMA,
+        },
+      },
       max_tokens: tokenBudget.maxCompletionTokens,
       temperature: params.modelConfig?.temperature ?? agentContext.llmConfig.temperature ?? 0.7,
       stream: false,
@@ -13186,6 +13333,10 @@ app.post('/api/integrations/trading/signals/generate', requirePermission('integr
     });
   } catch (error) {
     if (sendKucoinErrorResponse(res, error)) return;
+    if (error instanceof TradingConfigError) {
+      res.status(400).json({ error: error.message });
+      return;
+    }
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao gerar sinal LLM');
     res.status(500).json({ error: errorMessage });
@@ -13950,7 +14101,7 @@ app.put('/api/integrations/trading/analysis-profile', requirePermission('integra
       timeframes: resolvedTimeframes,
       context: 'perfil de análise/sinal',
     });
-    if (resolvedArbitrage && marketTypeForFees === 'futures') {
+    if (resolvedTechniques.includes('arbitrage_triangular') && resolvedArbitrage && marketTypeForFees === 'futures') {
       res.status(400).json({ error: 'Arbitragem triangular não é suportada em mercado futures.' });
       return;
     }
@@ -14014,6 +14165,10 @@ app.put('/api/integrations/trading/analysis-profile', requirePermission('integra
       },
     });
   } catch (error) {
+    if (error instanceof TradingConfigError) {
+      res.status(400).json({ error: error.message });
+      return;
+    }
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao atualizar perfil de análise/sinal');
     res.status(500).json({ error: errorMessage });
@@ -14162,6 +14317,10 @@ app.put('/api/integrations/trading/signal-scheduler', requirePermission('integra
 
     res.json({ success: true, data: saved });
   } catch (error) {
+    if (error instanceof TradingConfigError) {
+      res.status(400).json({ error: error.message });
+      return;
+    }
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao atualizar scheduler de sinais');
     res.status(500).json({ error: errorMessage });
@@ -15957,7 +16116,7 @@ app.get('/api/integrations/trading/validations/diagnostics', requirePermission('
 
     const actionResult = await db.execute(sql`
       SELECT
-        coalesce(v.action_taken, 'unknown') AS action,
+        coalesce(v.action_taken::text, 'unknown') AS action,
         count(*)::int AS total
       FROM trading_llm_validations v
       ${whereClause}
