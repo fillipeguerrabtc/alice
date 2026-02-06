@@ -2909,7 +2909,9 @@ jobs:
               echo "❌ ERRO: Sem conectividade HTTP com ghcr.io (curl falhou)"
               exit 1
             fi
-            if ! grep -qE 'HTTP/[0-9.]+ (401|403)' /tmp/ghcr-check.txt; then
+            # GHCR pode responder 401/403 (sem auth) ou 405 (HEAD não permitido)
+            # Aceitar qualquer resposta que indique registry v2
+            if ! grep -qi 'docker-distribution-api-version: registry/2.0' /tmp/ghcr-check.txt; then
               echo "❌ ERRO: Resposta inesperada do GHCR:"
               cat /tmp/ghcr-check.txt
               exit 1
