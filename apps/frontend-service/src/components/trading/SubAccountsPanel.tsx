@@ -219,9 +219,12 @@ export function SubAccountsPanel({ onSubAccountCreated }: SubAccountsPanelProps)
         </Card>
       ) : (
         <div className="space-y-2">
-          {subAccounts.map((sub) => (
-            <Card key={sub.userId || sub.uid}>
-              <CardHeader className="pb-2 cursor-pointer" onClick={() => setExpandedSub(expandedSub === sub.userId ? null : sub.userId || null)}>
+          {subAccounts.map((sub) => {
+            // Identificador estável para expand/collapse (evita null === undefined)
+            const subId = sub.userId || (sub.uid != null ? String(sub.uid) : null);
+            return (
+            <Card key={subId || crypto.randomUUID()}>
+              <CardHeader className="pb-2 cursor-pointer" onClick={() => subId && setExpandedSub(expandedSub === subId ? null : subId)}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <CardTitle className="text-sm">{sub.subName || sub.userId}</CardTitle>
@@ -245,11 +248,11 @@ export function SubAccountsPanel({ onSubAccountCreated }: SubAccountsPanelProps)
                       <Wallet className="h-3 w-3 mr-1" />
                       Futures
                     </Button>
-                    {expandedSub === sub.userId ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    {expandedSub === subId ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                   </div>
                 </div>
               </CardHeader>
-              {expandedSub === sub.userId && (
+              {expandedSub === subId && (
                 <CardContent className="pt-0">
                   {loadingBalance ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -268,7 +271,8 @@ export function SubAccountsPanel({ onSubAccountCreated }: SubAccountsPanelProps)
                 </CardContent>
               )}
             </Card>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
