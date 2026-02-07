@@ -2534,7 +2534,12 @@ export default function Trading() {
             {/* Market Type Selector */}
             <Select
               value={selectedMarketType}
-              onValueChange={(value: 'futures' | 'spot' | 'margin') => setSelectedMarketType(value)}
+              onValueChange={(value: 'futures' | 'spot' | 'margin') => {
+                // CORREÇÃO CR5 (07/02/2026): Reset símbolo ao trocar mercado para evitar race condition.
+                // Sem reset, queries downstream podem disparar brevemente com símbolo do mercado antigo.
+                setSelectedSymbol('');
+                setSelectedMarketType(value);
+              }}
               data-testid="select-market-type"
             >
               <SelectTrigger className="w-[160px]">

@@ -182,7 +182,11 @@ interface WiseRequestParams {
   headers?: Record<string, string>;
 }
 
-type WiseBodyInit = BodyInit;
+// Tipos de body aceitos pela Wise API. Inclui FormData para upload de arquivos
+// (disputas, verificação KYC) e Uint8Array para payloads binários.
+// Definição explícita necessária porque BodyInit pode divergir entre @types/node
+// e lib.dom no TypeScript 5.9+ (Uint8Array e FormData podem estar ausentes).
+type WiseBodyInit = BodyInit | FormData | Uint8Array;
 
 interface WiseRequestRawParams {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
@@ -273,11 +277,13 @@ async function executeWiseRequestRaw<T>(params: WiseRequestRawParams): Promise<T
   const headers = getHeaders({ token, includeContentType, headers: extraHeaders });
 
   try {
-    const bodyPayload = body ?? undefined;
+    const bodyPayload = body ?? null;
     const response = await fetch(url, {
       method,
       headers,
-      body: bodyPayload as WiseBodyInit | undefined,
+      // Cast para RequestInit['body'] resolve incompatibilidade entre definições BodyInit
+      // de @types/node vs lib.dom no TypeScript 5.9+ (Node.js fetch aceita FormData/Uint8Array em runtime).
+      body: bodyPayload as RequestInit['body'],
       signal: AbortSignal.timeout(WISE_API_TIMEOUT_MS),
     });
 

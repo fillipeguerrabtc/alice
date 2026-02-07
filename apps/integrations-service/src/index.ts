@@ -52,7 +52,7 @@ import {
 import type { AuthContext } from '@alice/shared-utils';
 import { integrationsServicePaths, integrationsServiceSchemas } from './openapi-specs.js';
 import { loadConfig, integrationsServiceConfigSchema } from '@alice/config';
-import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, getPool } from '@alice/database';
+import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, getPool, withTenantContext } from '@alice/database';
 import { eq, desc, asc, sql, and, inArray, not, isNull, lte, lt, gte } from '@alice/database';
 import {
   tradingIntervalEnum,
@@ -476,11 +476,17 @@ async function resolveKucoinNetworkFeesByAsset(): Promise<Record<string, number>
   return feesByAsset;
 }
 
+// CORREÇÃO CR4 (07/02/2026): Validação prévia de credentials antes de APIs autenticadas.
+// Ref: https://www.kucoin.com/docs-new/api-3470148 (Get Actual Fee - Spot/Margin - REQUER auth)
+// Ref: https://www.kucoin.com/docs-new/api-3470220 (Futures contract info - público, mas fees via contrato)
 async function resolveKucoinTradeFeePct(params: {
   symbol: string;
   marketType: TradingMarketType;
 }): Promise<number> {
   if (params.marketType === 'futures') {
+    if (!kucoinClient.isKucoinConfigured()) {
+      throw new Error('Credenciais KuCoin (Futures) não configuradas. Configure KUCOIN_PRO_API_KEY nos GitHub Secrets.');
+    }
     const contract = await kucoinClient.getContractInfo(params.symbol);
     const makerPct = coerceFeeRateToPct(contract.makerFeeRate);
     const takerPct = coerceFeeRateToPct(contract.takerFeeRate);
@@ -490,16 +496,26 @@ async function resolveKucoinTradeFeePct(params: {
     }
     return resolved;
   }
+
+  // Spot e Margin compartilham o mesmo endpoint de taxas (GET /api/v1/trade-fees)
+  // Ref: KuCoin docs - "Get Actual Fee - Spot/Margin" usa a mesma API key
+  if (params.marketType === 'spot' && !kucoinSpotClient.isSpotConfigured()) {
+    throw new Error('Credenciais KuCoin (Spot) não configuradas. Configure KUCOIN_PRO_API_KEY nos GitHub Secrets.');
+  }
+  if (params.marketType === 'margin' && !kucoinMarginClient.isMarginConfigured()) {
+    throw new Error('Credenciais KuCoin (Margin) não configuradas. Configure KUCOIN_PRO_API_KEY nos GitHub Secrets.');
+  }
+
   const fees = await kucoinSpotClient.getSpotTradeFees([params.symbol]);
   const fee = fees.find((item) => item.symbol === params.symbol) ?? fees[0];
   if (!fee) {
-    throw new Error('Taxas de trade Spot/Margin não encontradas para KuCoin.');
+    throw new Error(`Taxas de trade ${params.marketType === 'margin' ? 'Margin' : 'Spot'} não encontradas para KuCoin (símbolo: ${params.symbol}).`);
   }
   const makerPct = coerceFeeRateToPct(fee.makerFeeRate);
   const takerPct = coerceFeeRateToPct(fee.takerFeeRate);
   const resolved = Math.max(makerPct ?? 0, takerPct ?? 0);
   if (!Number.isFinite(resolved) || resolved <= 0) {
-    throw new Error('Taxas de trade Spot/Margin inválidas para KuCoin.');
+    throw new Error(`Taxas de trade ${params.marketType === 'margin' ? 'Margin' : 'Spot'} inválidas para KuCoin.`);
   }
   return resolved;
 }
@@ -1806,11 +1822,15 @@ const TRADING_LLM_SIGNAL_SCHEMA = z.object({
   riskScore: z.number().min(0).max(100).optional(),
 });
 
+// CORREÇÃO CR1 (07/02/2026): Schema JSON com propriedades explícitas para citedValues.
+// vLLM constrained decoding NÃO suporta additionalProperties dinâmicos -
+// requer propriedades explícitas para gerar JSON válido via guided generation.
+// Ref: https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html#structured-outputs
 const TRADING_LLM_SIGNAL_JSON_SCHEMA = {
   name: 'trading_llm_signal',
   strict: true,
   schema: {
-    type: 'object',
+    type: 'object' as const,
     additionalProperties: false,
     required: [
       'signalType',
@@ -1825,34 +1845,66 @@ const TRADING_LLM_SIGNAL_JSON_SCHEMA = {
     ],
     properties: {
       signalType: {
-        type: 'string',
+        type: 'string' as const,
         enum: ['entry_long', 'entry_short', 'exit', 'adjust_sl', 'adjust_tp', 'hold', 'neutral'],
       },
       operationType: {
-        type: 'string',
+        type: 'string' as const,
         enum: ['scalping', 'swing', 'position', 'cash_and_carry', 'arbitrage', 'hedge', 'neutral'],
       },
-      expectedDurationMinutes: { type: 'integer', minimum: 1, maximum: 43200 },
-      confidence: { type: 'number', minimum: 0, maximum: 1 },
-      tradeSummary: { type: 'string', minLength: 10 },
-      motivators: { type: 'array', items: { type: 'string' }, minItems: 1 },
-      invalidationReasons: { type: 'array', items: { type: 'string' }, minItems: 1 },
-      reasoning: { type: 'string', minLength: 5 },
-      timeframeUsed: { type: 'string' },
+      expectedDurationMinutes: { type: 'integer' as const, minimum: 1, maximum: 43200 },
+      confidence: { type: 'number' as const, minimum: 0, maximum: 1 },
+      tradeSummary: { type: 'string' as const, minLength: 10 },
+      motivators: { type: 'array' as const, items: { type: 'string' as const }, minItems: 1 },
+      invalidationReasons: { type: 'array' as const, items: { type: 'string' as const }, minItems: 1 },
+      reasoning: { type: 'string' as const, minLength: 5 },
+      timeframeUsed: { type: 'string' as const },
       citedValues: {
-        type: 'object',
-        additionalProperties: { type: 'number' },
+        type: 'object' as const,
+        additionalProperties: false,
+        properties: {
+          rsi: { type: 'number' as const },
+          macdLine: { type: 'number' as const },
+          macdSignal: { type: 'number' as const },
+          macdHistogram: { type: 'number' as const },
+          ema9: { type: 'number' as const },
+          ema21: { type: 'number' as const },
+          ema50: { type: 'number' as const },
+          ema200: { type: 'number' as const },
+          sma20: { type: 'number' as const },
+          sma50: { type: 'number' as const },
+          sma200: { type: 'number' as const },
+          bollingerUpper: { type: 'number' as const },
+          bollingerMiddle: { type: 'number' as const },
+          bollingerLower: { type: 'number' as const },
+          bollingerPercentB: { type: 'number' as const },
+          atrValue: { type: 'number' as const },
+          atrPercentage: { type: 'number' as const },
+          stochasticK: { type: 'number' as const },
+          stochasticD: { type: 'number' as const },
+          adxValue: { type: 'number' as const },
+          pivotPoint: { type: 'number' as const },
+          resistance1: { type: 'number' as const },
+          resistance2: { type: 'number' as const },
+          resistance3: { type: 'number' as const },
+          support1: { type: 'number' as const },
+          support2: { type: 'number' as const },
+          support3: { type: 'number' as const },
+          volumeRatio: { type: 'number' as const },
+          currentPrice: { type: 'number' as const },
+        },
+        required: [],
       },
-      suggestedPrice: { type: 'number', minimum: 0 },
-      suggestedStopLoss: { type: 'number', minimum: 0 },
-      suggestedTakeProfit: { type: 'number', minimum: 0 },
-      suggestedSize: { type: 'number', minimum: 0 },
-      riskReward: { type: 'number', minimum: 0 },
-      marketCondition: { type: 'string', minLength: 3 },
-      riskScore: { type: 'number', minimum: 0, maximum: 100 },
+      suggestedPrice: { type: 'number' as const, minimum: 0 },
+      suggestedStopLoss: { type: 'number' as const, minimum: 0 },
+      suggestedTakeProfit: { type: 'number' as const, minimum: 0 },
+      suggestedSize: { type: 'number' as const, minimum: 0 },
+      riskReward: { type: 'number' as const, minimum: 0 },
+      marketCondition: { type: 'string' as const, minLength: 3 },
+      riskScore: { type: 'number' as const, minimum: 0, maximum: 100 },
     },
   },
-} as const;
+};
 
 const TRADING_LLM_SIGNAL_PARTIAL_SCHEMA = z.object({
   signalType: z.enum(['entry_long', 'entry_short', 'exit', 'adjust_sl', 'adjust_tp', 'hold', 'neutral']).optional(),
@@ -10565,6 +10617,10 @@ function buildTradingSignalSystemPrompt(params: {
   const instructions = params.agent.instrucoes?.trim();
   const personality = params.agent.personalidade?.trim();
 
+  // CORREÇÃO CR1 (07/02/2026): System prompt simplificado.
+  // Instruções de formatação JSON REMOVIDAS - o constrained decoding (response_format)
+  // garante formato JSON válido automaticamente. Prompts redundantes de formatação
+  // desperdiçam tokens e podem confundir o modelo.
   return [
     'Você é o Agente Trading da Alice. Gere um sinal objetivo e auditável.',
     context ? `Contexto do namespace: ${context}` : null,
@@ -10575,39 +10631,8 @@ function buildTradingSignalSystemPrompt(params: {
     'Use o ranking técnico determinístico e o ensemble fornecidos no prompt.',
     'Sinais DEVEM incluir preço de entrada e níveis de saída (TP/SL) quando aplicável.',
     'Para arbitragem, considere timeframes curtos e execução imediata.',
-    'Responda SOMENTE com JSON válido (sem texto extra).',
-    'O JSON DEVE começar com { e terminar com }.',
-    'Use aspas duplas para TODAS as chaves e strings.',
-    'Não use aspas duplas dentro dos valores; se precisar citar algo, use aspas simples ou escape com \\".',
-    'Não use vírgulas finais (trailing commas).',
-    'Evite quebras de linha dentro de strings: use \\n quando necessário.',
-    'Campos numéricos devem ser números (sem aspas). Quando desconhecido, omita o campo (não use null).',
-    'Preencha "timeframeUsed" com o timeframe principal usado (ex: "5m", "15m").',
     'Preencha "citedValues" com os valores numéricos EXATOS citados na análise (use apenas números do prompt).',
-    'O campo "citedValues" é OBRIGATÓRIO (mesmo que tenha poucos valores).',
     'Campos motivators e invalidationReasons DEVEM ter pelo menos 1 item cada.',
-    'Retorne o JSON em UMA única linha, sem markdown.',
-    'NÃO use YAML, listas com "-" ou comentários.',
-    'Schema:',
-    '{',
-    '  "signalType": "entry_long|entry_short|exit|adjust_sl|adjust_tp|hold|neutral",',
-    '  "operationType": "scalping|swing|position|cash_and_carry|arbitrage|hedge|neutral",',
-    '  "expectedDurationMinutes": number (min 1),',
-    '  "confidence": 0.0-1.0,',
-    '  "tradeSummary": "Resumo executivo do trade",',
-    '  "motivators": ["driver 1", "driver 2"],',
-    '  "invalidationReasons": ["condição 1", "condição 2"],',
-    '  "reasoning": "Texto com valores citados exatamente",',
-    '  "timeframeUsed": "timeframe principal",',
-    '  "citedValues": { "rsi": number, "macdHistogram": number, "atrPercentage": number, "currentPrice": number, ... },',
-    '  "suggestedPrice": number (opcional),',
-    '  "suggestedStopLoss": number (opcional),',
-    '  "suggestedTakeProfit": number (opcional),',
-    '  "suggestedSize": number (opcional),',
-    '  "riskReward": number (opcional),',
-    '  "marketCondition": "descrição curta" (opcional),',
-    '  "riskScore": 0-100 (opcional)',
-    '}',
   ].filter(Boolean).join('\n');
 }
 
@@ -11915,19 +11940,16 @@ async function generateTradingSignalFromLlm(params: {
     method: 'POST',
     priority: GpuRequestPriority.HIGH,
     timeout: llmTimeoutMs,
+    // CORREÇÃO CR1 (07/02/2026): Usar APENAS response_format (padrão OpenAI, suportado pelo vLLM).
+    // Parâmetros extra_body.guided_json e extra_body.structured_outputs REMOVIDOS -
+    // coexistência causa comportamento indefinido no vLLM (ignora constrained decoding).
+    // Ref: https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html#structured-outputs
     body: {
       model: agentContext.llmConfig.model,
       messages,
       response_format: {
         type: 'json_schema',
         json_schema: TRADING_LLM_SIGNAL_JSON_SCHEMA,
-      },
-      extra_body: {
-        guided_json: TRADING_LLM_SIGNAL_JSON_SCHEMA.schema,
-        structured_outputs: {
-          type: 'json_schema',
-          json_schema: TRADING_LLM_SIGNAL_JSON_SCHEMA,
-        },
       },
       max_tokens: tokenBudget.maxCompletionTokens,
       temperature: params.modelConfig?.temperature ?? agentContext.llmConfig.temperature ?? 0.7,
@@ -16025,14 +16047,18 @@ app.get('/api/integrations/trading/validations', requirePermission('integrations
       .orderBy(desc(schema.tradingLlmValidations.validatedAt))
       .limit(limit);
 
-    // Calcular estatísticas
-    const allValidations = await db
-      .select()
+    // MELHORIA M1 (07/02/2026): Agregação SQL ao invés de fetch all + contagem em memória.
+    // Antes: SELECT * sem limit → contagem em JS (O(n) memória). Agora: COUNT/SUM no PostgreSQL (O(1) memória).
+    const statsResult = await db
+      .select({
+        total: sql<number>`count(*)::int`,
+        passed: sql<number>`sum(case when ${schema.tradingLlmValidations.validationPassed} = true then 1 else 0 end)::int`,
+      })
       .from(schema.tradingLlmValidations)
       .where(eq(schema.tradingLlmValidations.tenantId, authContext.tenantId));
 
-    const totalValidations = allValidations.length;
-    const passedValidations = allValidations.filter(v => v.validationPassed).length;
+    const totalValidations = statsResult[0]?.total ?? 0;
+    const passedValidations = statsResult[0]?.passed ?? 0;
     const accuracyRate = totalValidations > 0 ? (passedValidations / totalValidations) * 100 : 0;
 
     res.json({
@@ -16053,6 +16079,9 @@ app.get('/api/integrations/trading/validations', requirePermission('integrations
 });
 
 // GET /api/integrations/trading/validations/diagnostics - Diagnóstico detalhado das validações LLM
+// CORREÇÃO CR2 (07/02/2026): Queries envolvidas em withTenantContext() para RLS funcionar
+// via PgBouncer (transaction pooling). Sem withTenantContext, current_setting('app.current_tenant_id')
+// não é definido e RLS bloqueia acesso à tabela trading_llm_validations.
 app.get('/api/integrations/trading/validations/diagnostics', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
     const authContext = extractAuthContext(req);
@@ -16075,128 +16104,138 @@ app.get('/api/integrations/trading/validations/diagnostics', requirePermission('
     }
     const topLimit = Math.min(Number.parseInt(req.query.topLimit as string, 10) || 10, 50);
 
-    const conditions: ReturnType<typeof sql>[] = [
-      sql`v.tenant_id = ${authContext.tenantId}`,
-    ];
-    if (dateFrom) {
-      conditions.push(sql`v.validated_at >= ${dateFrom}`);
-    }
-    if (dateTo) {
-      conditions.push(sql`v.validated_at <= ${dateTo}`);
-    }
+    const result = await withTenantContext(authContext.tenantId, authContext.role === 'super_admin', async (tx) => {
+      const conditions: ReturnType<typeof sql>[] = [
+        sql`v.tenant_id = ${authContext.tenantId}`,
+      ];
+      if (dateFrom) {
+        conditions.push(sql`v.validated_at >= ${dateFrom}`);
+      }
+      if (dateTo) {
+        conditions.push(sql`v.validated_at <= ${dateTo}`);
+      }
 
-    const whereClause = conditions.length
-      ? sql`WHERE ${sql.join(conditions, sql` AND `)}`
-      : sql``;
+      const whereClause = conditions.length
+        ? sql`WHERE ${sql.join(conditions, sql` AND `)}`
+        : sql``;
 
-    const db = getDatabase();
+      const totalsResult = await tx.execute(sql`
+        SELECT
+          count(*)::int AS total,
+          sum(case when v.validation_passed then 1 else 0 end)::int AS passed,
+          sum(case when not v.validation_passed then 1 else 0 end)::int AS failed,
+          sum(case when coalesce(
+            v.no_values_extracted,
+            (
+              SELECT count(*) = 0
+              FROM jsonb_object_keys(COALESCE(v.llm_cited_values, '{}'::jsonb))
+            )
+          ) then 1 else 0 end)::int AS no_values,
+          avg((
+            SELECT count(*)
+            FROM jsonb_object_keys(COALESCE(v.discrepancies, '{}'::jsonb))
+          ))::float AS avg_discrepancy_fields,
+          min(v.max_allowed_deviation)::float AS min_allowed_deviation,
+          max(v.max_allowed_deviation)::float AS max_allowed_deviation
+        FROM trading_llm_validations v
+        ${whereClause}
+      `);
+      const totalsRow = (totalsResult as { rows?: Array<Record<string, unknown>> }).rows?.[0] ?? {};
 
-    const totalsResult = await db.execute(sql`
-      SELECT
-        count(*)::int AS total,
-        sum(case when v.validation_passed then 1 else 0 end)::int AS passed,
-        sum(case when not v.validation_passed then 1 else 0 end)::int AS failed,
-        sum(case when coalesce(
-          v.no_values_extracted,
-          (
-            SELECT count(*) = 0
-            FROM jsonb_object_keys(COALESCE(v.llm_cited_values, '{}'::jsonb))
-          )
-        ) then 1 else 0 end)::int AS no_values,
-        avg((
-          SELECT count(*)
-          FROM jsonb_object_keys(COALESCE(v.discrepancies, '{}'::jsonb))
-        ))::float AS avg_discrepancy_fields,
-        min(v.max_allowed_deviation)::float AS min_allowed_deviation,
-        max(v.max_allowed_deviation)::float AS max_allowed_deviation
-      FROM trading_llm_validations v
-      ${whereClause}
-    `);
-    const totalsRow = (totalsResult as { rows?: Array<Record<string, unknown>> }).rows?.[0] ?? {};
+      const actionResult = await tx.execute(sql`
+        SELECT
+          coalesce(v.action_taken::text, 'unknown') AS action,
+          count(*)::int AS total
+        FROM trading_llm_validations v
+        ${whereClause}
+        GROUP BY v.action_taken
+        ORDER BY total DESC
+      `);
 
-    const actionResult = await db.execute(sql`
-      SELECT
-        coalesce(v.action_taken::text, 'unknown') AS action,
-        count(*)::int AS total
-      FROM trading_llm_validations v
-      ${whereClause}
-      GROUP BY v.action_taken
-      ORDER BY total DESC
-    `);
+      const failureReasonResult = await tx.execute(sql`
+        SELECT
+          coalesce(v.failure_reason::text, 'unknown') AS reason,
+          count(*)::int AS total
+        FROM trading_llm_validations v
+        ${whereClause}
+        GROUP BY v.failure_reason
+        ORDER BY total DESC
+      `);
 
-    const failureReasonResult = await db.execute(sql`
-      SELECT
-        coalesce(v.failure_reason::text, 'unknown') AS reason,
-        count(*)::int AS total
-      FROM trading_llm_validations v
-      ${whereClause}
-      GROUP BY v.failure_reason
-      ORDER BY total DESC
-    `);
+      const extractionResult = await tx.execute(sql`
+        SELECT
+          coalesce(v.extraction_source::text, 'unknown') AS source,
+          count(*)::int AS total
+        FROM trading_llm_validations v
+        ${whereClause}
+        GROUP BY v.extraction_source
+        ORDER BY total DESC
+      `);
 
-    const extractionResult = await db.execute(sql`
-      SELECT
-        coalesce(v.extraction_source::text, 'unknown') AS source,
-        count(*)::int AS total
-      FROM trading_llm_validations v
-      ${whereClause}
-      GROUP BY v.extraction_source
-      ORDER BY total DESC
-    `);
+      const intervalResult = await tx.execute(sql`
+        SELECT
+          coalesce(ti.interval, 'N/A') AS interval,
+          count(*)::int AS total,
+          sum(case when v.validation_passed then 1 else 0 end)::int AS passed,
+          sum(case when not v.validation_passed then 1 else 0 end)::int AS failed,
+          sum(case when coalesce(
+            v.no_values_extracted,
+            (
+              SELECT count(*) = 0
+              FROM jsonb_object_keys(COALESCE(v.llm_cited_values, '{}'::jsonb))
+            )
+          ) then 1 else 0 end)::int AS no_values
+        FROM trading_llm_validations v
+        LEFT JOIN trading_technical_indicators ti ON ti.id = v.indicator_snapshot_id
+        ${whereClause}
+        GROUP BY ti.interval
+        ORDER BY total DESC
+      `);
 
-    const intervalResult = await db.execute(sql`
-      SELECT
-        coalesce(ti.interval, 'N/A') AS interval,
-        count(*)::int AS total,
-        sum(case when v.validation_passed then 1 else 0 end)::int AS passed,
-        sum(case when not v.validation_passed then 1 else 0 end)::int AS failed,
-        sum(case when coalesce(
-          v.no_values_extracted,
-          (
-            SELECT count(*) = 0
-            FROM jsonb_object_keys(COALESCE(v.llm_cited_values, '{}'::jsonb))
-          )
-        ) then 1 else 0 end)::int AS no_values
-      FROM trading_llm_validations v
-      LEFT JOIN trading_technical_indicators ti ON ti.id = v.indicator_snapshot_id
-      ${whereClause}
-      GROUP BY ti.interval
-      ORDER BY total DESC
-    `);
+      const symbolResult = await tx.execute(sql`
+        SELECT
+          coalesce(ti.symbol, 'N/A') AS symbol,
+          count(*)::int AS total,
+          sum(case when v.validation_passed then 1 else 0 end)::int AS passed,
+          sum(case when not v.validation_passed then 1 else 0 end)::int AS failed
+        FROM trading_llm_validations v
+        LEFT JOIN trading_technical_indicators ti ON ti.id = v.indicator_snapshot_id
+        ${whereClause}
+        GROUP BY ti.symbol
+        ORDER BY total DESC
+        LIMIT ${topLimit}
+      `);
 
-    const symbolResult = await db.execute(sql`
-      SELECT
-        coalesce(ti.symbol, 'N/A') AS symbol,
-        count(*)::int AS total,
-        sum(case when v.validation_passed then 1 else 0 end)::int AS passed,
-        sum(case when not v.validation_passed then 1 else 0 end)::int AS failed
-      FROM trading_llm_validations v
-      LEFT JOIN trading_technical_indicators ti ON ti.id = v.indicator_snapshot_id
-      ${whereClause}
-      GROUP BY ti.symbol
-      ORDER BY total DESC
-      LIMIT ${topLimit}
-    `);
+      const discrepancyConditions = [
+        ...conditions,
+        sql`v.discrepancies is not null`,
+      ];
+      const discrepancyWhere = sql`WHERE ${sql.join(discrepancyConditions, sql` AND `)}`;
 
-    const discrepancyConditions = [
-      ...conditions,
-      sql`v.discrepancies is not null`,
-    ];
-    const discrepancyWhere = sql`WHERE ${sql.join(discrepancyConditions, sql` AND `)}`;
+      const discrepancyResult = await tx.execute(sql`
+        SELECT
+          d.key AS field,
+          count(*)::int AS occurrences,
+          avg((d.value->>'diff')::float)::float AS avg_diff,
+          max((d.value->>'diff')::float)::float AS max_diff
+        FROM trading_llm_validations v
+        CROSS JOIN LATERAL jsonb_each(v.discrepancies) AS d(key, value)
+        ${discrepancyWhere}
+        GROUP BY d.key
+        ORDER BY occurrences DESC
+        LIMIT ${topLimit}
+      `);
 
-    const discrepancyResult = await db.execute(sql`
-      SELECT
-        d.key AS field,
-        count(*)::int AS occurrences,
-        avg((d.value->>'diff')::float)::float AS avg_diff,
-        max((d.value->>'diff')::float)::float AS max_diff
-      FROM trading_llm_validations v
-      CROSS JOIN LATERAL jsonb_each(v.discrepancies) AS d(key, value)
-      ${discrepancyWhere}
-      GROUP BY d.key
-      ORDER BY occurrences DESC
-      LIMIT ${topLimit}
-    `);
+      return {
+        totalsRow,
+        actionRows: (actionResult as { rows?: Array<Record<string, unknown>> }).rows ?? [],
+        failureReasonRows: (failureReasonResult as { rows?: Array<Record<string, unknown>> }).rows ?? [],
+        extractionRows: (extractionResult as { rows?: Array<Record<string, unknown>> }).rows ?? [],
+        intervalRows: (intervalResult as { rows?: Array<Record<string, unknown>> }).rows ?? [],
+        symbolRows: (symbolResult as { rows?: Array<Record<string, unknown>> }).rows ?? [],
+        discrepancyRows: (discrepancyResult as { rows?: Array<Record<string, unknown>> }).rows ?? [],
+      };
+    });
 
     res.json({
       success: true,
@@ -16206,19 +16245,28 @@ app.get('/api/integrations/trading/validations/diagnostics', requirePermission('
         dateTo: dateTo ? dateTo.toISOString() : null,
         topLimit,
       },
-      totals: totalsRow,
+      totals: result.totalsRow,
       breakdown: {
-        byAction: (actionResult as { rows?: Array<Record<string, unknown>> }).rows ?? [],
-        byFailureReason: (failureReasonResult as { rows?: Array<Record<string, unknown>> }).rows ?? [],
-        byExtractionSource: (extractionResult as { rows?: Array<Record<string, unknown>> }).rows ?? [],
-        byInterval: (intervalResult as { rows?: Array<Record<string, unknown>> }).rows ?? [],
-        bySymbol: (symbolResult as { rows?: Array<Record<string, unknown>> }).rows ?? [],
-        topDiscrepancies: (discrepancyResult as { rows?: Array<Record<string, unknown>> }).rows ?? [],
+        byAction: result.actionRows,
+        byFailureReason: result.failureReasonRows,
+        byExtractionSource: result.extractionRows,
+        byInterval: result.intervalRows,
+        bySymbol: result.symbolRows,
+        topDiscrepancies: result.discrepancyRows,
       },
     });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-    logger.error({ error: errorMessage }, 'Erro ao obter diagnóstico de validações LLM');
+    // CORREÇÃO CR2 (07/02/2026): Error logging completo com detalhes PostgreSQL
+    // Erros RLS mostram apenas mensagem genérica sem code/detail/hint/constraint
+    const pgError = error as { code?: string; detail?: string; hint?: string; constraint?: string; message?: string };
+    logger.error({
+      message: pgError.message ?? 'Erro desconhecido',
+      code: pgError.code,
+      detail: pgError.detail,
+      hint: pgError.hint,
+      constraint: pgError.constraint,
+    }, 'Erro ao obter diagnóstico de validações LLM');
+    const errorMessage = pgError.message ?? 'Erro desconhecido';
     res.status(500).json({ error: errorMessage });
   }
 });
@@ -16389,6 +16437,19 @@ initializeCaches().then(() => {
   const server = app.listen(PORT, '0.0.0.0', () => {
     logger.info({ port: PORT }, 'Integrations service started');
   });
+
+  // Validação de credenciais KuCoin no startup (Regra 6 - fail-fast com log claro)
+  // KuCoin usa API unificada: mesma chave para Futures + Spot + Margin
+  // Ref: https://www.kucoin.com/docs-new/authentication
+  const kucoinConfigStatus = kucoinClient.getKucoinConfigStatus();
+  if (!kucoinConfigStatus.isConfigured) {
+    logger.warn(
+      { missingKeys: kucoinConfigStatus.missingKeys },
+      'Credenciais KuCoin NÃO configuradas - endpoints públicos (symbols, klines, orderbook) funcionam, mas endpoints autenticados (ordens, posições, taxas, conta) falharão para TODOS os 3 mercados (Futures, Spot, Margin). Configure os GitHub Secrets: KUCOIN_PRO_API_KEY, KUCOIN_PRO_API_SECRET, KUCOIN_PRO_API_PASSPHRASE'
+    );
+  } else {
+    logger.info('Credenciais KuCoin configuradas - Futures, Spot e Margin disponíveis');
+  }
 
   startTradingMetricsScheduler();
   startTradingSignalScheduler();

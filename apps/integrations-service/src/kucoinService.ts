@@ -17,6 +17,7 @@
 
 import { createLogger } from '@alice/logger';
 import { getDatabase, schema, eq, and, desc, sql } from '@alice/database';
+import { getRedisClient } from '@alice/shared-utils';
 // CORREÇÃO 19/12/2025: Remover tipos não utilizados (no-unused-vars)
 // TradingPosition, TradingAuditLog, InsertTradingPosition removidos
 import {
@@ -115,6 +116,70 @@ function normalizeSymbolKey(input: string): string {
   return normalizeSymbolInput(input).replace(/[^A-Z0-9]/g, '');
 }
 
+// ============================================================================
+// MAPEAMENTO DE SÍMBOLOS CROSS-MARKET (CR3 - 07/02/2026)
+// Converte símbolos entre formatos de mercado KuCoin:
+//   Futures: XBTUSDTM, ETHUSDTM (perpetual contract)
+//   Spot/Margin: BTC-USDT, ETH-USDT (trading pair)
+// Ref: https://www.kucoin.com/docs-new/api-3470220 (Futures symbols)
+// Ref: https://www.kucoin.com/docs-new/api-3470148 (Spot symbols)
+// ============================================================================
+
+/** Aliases conhecidos da KuCoin - mapeamento base currency */
+const KUCOIN_SYMBOL_ALIASES: Record<string, string> = {
+  XBT: 'BTC',  // KuCoin Futures usa XBT para Bitcoin
+  BTC: 'XBT',  // Reverso para conversão Spot→Futures
+};
+
+/**
+ * Tenta mapear um símbolo de um mercado para outro.
+ * Retorna o símbolo mapeado ou null se não conseguir.
+ * 
+ * Exemplos:
+ *   mapSymbolBetweenMarkets('XBTUSDTM', 'futures', 'spot') → 'BTC-USDT'
+ *   mapSymbolBetweenMarkets('BTC-USDT', 'spot', 'futures') → 'XBTUSDTM'
+ *   mapSymbolBetweenMarkets('ETH-USDT', 'spot', 'futures') → 'ETHUSDTM'
+ */
+function mapSymbolBetweenMarkets(
+  symbol: string,
+  fromMarket: TradingMarketType,
+  toMarket: TradingMarketType
+): string | null {
+  if (fromMarket === toMarket) return symbol;
+  const trimmed = symbol.trim().toUpperCase();
+
+  if (fromMarket === 'futures' && (toMarket === 'spot' || toMarket === 'margin')) {
+    // Futures → Spot/Margin: XBTUSDTM → BTC-USDT
+    // Formato Futures KuCoin: <BASE><QUOTE>M (ex: XBTUSDTM, ETHUSDTM)
+    const futuresMatch = trimmed.match(/^([A-Z]+)(USDT|USD|USDCM?)M$/);
+    if (!futuresMatch) return null;
+    let base = futuresMatch[1];
+    let quote = futuresMatch[2];
+    // Resolver aliases (XBT → BTC)
+    if (KUCOIN_SYMBOL_ALIASES[base]) {
+      base = KUCOIN_SYMBOL_ALIASES[base];
+    }
+    // Remover sufixo C de USDCM se necessário
+    if (quote === 'USDCM') quote = 'USDC';
+    return `${base}-${quote}`;
+  }
+
+  if ((fromMarket === 'spot' || fromMarket === 'margin') && toMarket === 'futures') {
+    // Spot/Margin → Futures: BTC-USDT → XBTUSDTM
+    // Formato Spot KuCoin: <BASE>-<QUOTE> (ex: BTC-USDT, ETH-USDT)
+    const spotMatch = trimmed.match(/^([A-Z0-9]+)-([A-Z]+)$/);
+    if (!spotMatch) return null;
+    let base = spotMatch[1];
+    const quote = spotMatch[2];
+    // Resolver aliases reverso (BTC → XBT para Futures)
+    if (base === 'BTC') base = 'XBT';
+    return `${base}${quote}M`;
+  }
+
+  // Spot ↔ Margin: mesmo formato (BTC-USDT)
+  return symbol;
+}
+
 async function resolveMarketType(
   authContext: TradingAuthContext,
   marketType?: TradingMarketType
@@ -133,22 +198,66 @@ async function resolveMarginMode(
   return (config?.marginMode as TradingMarginMode | undefined) ?? 'cross';
 }
 
+// CORREÇÃO CR6 (07/02/2026): Cache Redis de símbolos com TTL 5min para reduzir chamadas à API KuCoin.
+// Cada mercado/modo tem chave separada. Cache é best-effort: se Redis indisponível, busca da API diretamente.
+const SYMBOLS_CACHE_TTL_SECONDS = 300; // 5 minutos
+
+function buildSymbolsCacheKey(marketType: TradingMarketType, marginMode: TradingMarginMode): string {
+  if (marketType === 'margin') {
+    return `alice:trading:symbols:${marketType}:${marginMode}`;
+  }
+  return `alice:trading:symbols:${marketType}`;
+}
+
 async function getAllowedSymbolsByMarketType(
   authContext: TradingAuthContext,
   marketType: TradingMarketType,
   marginMode: TradingMarginMode
 ): Promise<string[]> {
-  if (marketType === 'spot') {
-    const symbols = await kucoinSpotClient.getSpotSymbols();
-    return symbols.map((item) => item.symbol).filter((symbol): symbol is string => Boolean(symbol));
+  const cacheKey = buildSymbolsCacheKey(marketType, marginMode);
+  const redis = getRedisClient();
+
+  // Tentar ler do cache Redis
+  if (redis) {
+    try {
+      const cached = await redis.get(cacheKey);
+      if (cached) {
+        const symbols = JSON.parse(cached) as string[];
+        if (Array.isArray(symbols) && symbols.length > 0) {
+          logger.debug({ marketType, marginMode, count: symbols.length }, 'Símbolos retornados do cache Redis');
+          return symbols;
+        }
+      }
+    } catch (err) {
+      logger.warn({ err, cacheKey }, 'Erro ao ler cache de símbolos Redis (continuando com API)');
+    }
   }
-  if (marketType === 'margin') {
-    const symbols = marginMode === 'isolated'
+
+  // Buscar da API KuCoin
+  let symbols: string[];
+  if (marketType === 'spot') {
+    const spotSymbols = await kucoinSpotClient.getSpotSymbols();
+    symbols = spotSymbols.map((item) => item.symbol).filter((symbol): symbol is string => Boolean(symbol));
+  } else if (marketType === 'margin') {
+    const marginSymbols = marginMode === 'isolated'
       ? await kucoinMarginClient.getIsolatedMarginSymbols()
       : await kucoinMarginClient.getCrossMarginSymbols();
-    return symbols.map((item) => item.symbol).filter((symbol): symbol is string => Boolean(symbol));
+    symbols = marginSymbols.map((item) => item.symbol).filter((symbol): symbol is string => Boolean(symbol));
+  } else {
+    symbols = await kucoinClient.getAllowedSymbols();
   }
-  return kucoinClient.getAllowedSymbols();
+
+  // Salvar no cache Redis (best-effort)
+  if (redis && symbols.length > 0) {
+    try {
+      await redis.set(cacheKey, JSON.stringify(symbols), { EX: SYMBOLS_CACHE_TTL_SECONDS });
+      logger.debug({ marketType, marginMode, count: symbols.length }, 'Símbolos salvos no cache Redis');
+    } catch (err) {
+      logger.warn({ err, cacheKey }, 'Erro ao salvar cache de símbolos Redis');
+    }
+  }
+
+  return symbols;
 }
 
 function parseKucoinVolume(value?: string | number): number {
@@ -260,9 +369,24 @@ export async function resolveTradingSymbol(
       const allowed = await getAllowedSymbolsByMarketType(authContext, resolvedMarket, resolvedMargin);
       const normalizedDefault = resolveNormalizedSymbolInList(config.defaultSymbol, allowed);
       if (normalizedDefault) return normalizedDefault;
+
+      // CORREÇÃO CR3 (07/02/2026): Tentar mapear símbolo cross-market antes de usar fallback.
+      // Ex: defaultSymbol é XBTUSDTM (Futures) mas mercado selecionado é Spot → mapeia para BTC-USDT
+      const configMarketType = (config.defaultMarketType as TradingMarketType) ?? 'futures';
+      const mapped = mapSymbolBetweenMarkets(config.defaultSymbol, configMarketType, resolvedMarket);
+      if (mapped) {
+        const mappedResolved = resolveNormalizedSymbolInList(mapped, allowed);
+        if (mappedResolved) {
+          logger.info(
+            { tenantId: authContext.tenantId, defaultSymbol: config.defaultSymbol, mappedSymbol: mappedResolved, fromMarket: configMarketType, toMarket: resolvedMarket },
+            'Símbolo default mapeado cross-market com sucesso'
+          );
+          return mappedResolved;
+        }
+      }
       logger.warn(
-        { tenantId: authContext.tenantId, defaultSymbol: config.defaultSymbol },
-        'Símbolo default configurado no tenant não é válido na KuCoin'
+        { tenantId: authContext.tenantId, defaultSymbol: config.defaultSymbol, marketType: resolvedMarket, marginMode: resolvedMargin },
+        'Símbolo default configurado no tenant não é válido para o mercado selecionado (mesmo após tentativa de mapeamento cross-market)'
       );
     }
 
