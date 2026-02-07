@@ -110,7 +110,7 @@ export function LedgerHistory({ defaultType = 'spot-margin' }: LedgerHistoryProp
           ) : (
             <div className="space-y-1 max-h-[400px] overflow-y-auto">
               {ledgers.map((entry, i) => {
-                const isCredit = entry.direction === 'in' || Number(entry.amount || 0) > 0;
+                const isCredit = entry.direction ? entry.direction === 'in' : Number(entry.amount || 0) > 0;
                 return (
                   <div key={entry.id || i} className="flex items-center justify-between p-2 hover:bg-muted/50 rounded text-sm border-b border-muted last:border-0">
                     <div className="flex items-center gap-2 min-w-0">
