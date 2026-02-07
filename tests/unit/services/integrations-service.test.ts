@@ -211,7 +211,8 @@ describe('Integrations Service - ERPNext', () => {
 describe('Integrations Service - Circuit Breaker', () => {
   it('deve ter preset KuCoin Futures (SSOT) para resiliência do trading', () => {
     // SSOT: presets centralizados em @alice/shared-utils (Regra 2)
-    expect(CIRCUIT_BREAKER_PRESETS.kucoinFutures.timeout).toBe(5000);
+    // CORREÇÃO: Timeout atualizado de 5s para 15s (CR3 07/02/2026 - KuCoin pode demorar >5s sob carga)
+    expect(CIRCUIT_BREAKER_PRESETS.kucoinFutures.timeout).toBe(15000);
     expect(CIRCUIT_BREAKER_PRESETS.kucoinFutures.errorThresholdPercentage).toBe(30);
     expect(CIRCUIT_BREAKER_PRESETS.kucoinFutures.resetTimeout).toBe(15000);
     expect(CIRCUIT_BREAKER_PRESETS.kucoinFutures.volumeThreshold).toBe(3);

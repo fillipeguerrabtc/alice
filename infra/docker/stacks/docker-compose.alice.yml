@@ -436,6 +436,19 @@ services:
       # Sem isso, session-auth middleware não consegue validar assinatura HMAC
       # Resultado: Trading/KuCoin retornava 401 "usuário não autenticado"
       SESSION_SECRET: ${SESSION_SECRET}
+      # CORREÇÃO CR1 (07/02/2026): Timeouts GPU configuráveis para integrations-service.
+      # gpu-client.ts lê estas variáveis para polling de resultado assíncrono.
+      # GPU_REQUEST_TIMEOUT_MS: tempo total de espera por resultado (deve ser > GPU_SERVICE_TIMEOUT)
+      # GPU_REQUEST_FETCH_TIMEOUT_MS: timeout individual de cada fetch ao GPU Manager
+      GPU_REQUEST_TIMEOUT_MS: ${GPU_REQUEST_TIMEOUT_MS:-180000}
+      GPU_REQUEST_FETCH_TIMEOUT_MS: ${GPU_REQUEST_FETCH_TIMEOUT_MS:-120000}
+      # CORREÇÃO A2: Timeouts LLM configuráveis para geração de sinais de trading
+      # LLM_SIGNAL_TIMEOUT_MS: timeout para sinais normais (default 240s = 4 min)
+      # LLM_SIGNAL_TIMEOUT_ARBITRAGE_MS: timeout para arbitragem triangular (default 360s = 6 min)
+      LLM_SIGNAL_TIMEOUT_MS: ${LLM_SIGNAL_TIMEOUT_MS:-240000}
+      LLM_SIGNAL_TIMEOUT_ARBITRAGE_MS: ${LLM_SIGNAL_TIMEOUT_ARBITRAGE_MS:-360000}
+      # CORREÇÃO M4: Tolerância de desvio da validação LLM (default 1% = 0.01)
+      LLM_VALIDATION_MAX_DEVIATION: ${LLM_VALIDATION_MAX_DEVIATION:-0.01}
     # NOTA: postgres, alice-qdrant, alice-redis estão no stack infra
     # alice-chat e alice-rag são do mesmo stack
     depends_on:
@@ -544,7 +557,12 @@ services:
       - EMBEDDINGS_GPU_URL=${EMBEDDINGS_GPU_URL:-http://gpu-embeddings:8000}
       - TRAINING_GPU_URL=${TRAINING_GPU_URL:-http://gpu-trainer:8000}
       - NODE_ENV=production
-      - GPU_SERVICE_TIMEOUT=${GPU_SERVICE_TIMEOUT:-60000}
+      # CORREÇÃO CR1 (07/02/2026): Aumentar timeout de 60s para 120s.
+      # vLLM structured JSON output leva ~58s; circuit breaker de 60s dispara retry
+      # desnecessário, causando cascata de timeout no client (120s) que desiste ANTES
+      # do GPU Manager completar. 120s comporta structured output com margem.
+      # Ref: Logs produção 07/02/2026 - latencyMs: 58385
+      - GPU_SERVICE_TIMEOUT=${GPU_SERVICE_TIMEOUT:-120000}
     ports:
       - "127.0.0.1:3010:3010"
     networks:

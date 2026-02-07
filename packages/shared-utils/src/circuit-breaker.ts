@@ -127,23 +127,32 @@ export const CIRCUIT_BREAKER_PRESETS = {
     resetTimeout: 30000,
     volumeThreshold: 5,
   },
-  /** KuCoin Futures API - Trading BTC Perps (timeout rápido para ordens) */
+  /** KuCoin Futures API - Trading BTC Perps
+   * CORREÇÃO CR3 (07/02/2026): Timeout aumentado de 5s para 15s.
+   * Logs de produção mostravam "Circuit breaker kucoin-futures: Timeout atingido (5000ms)"
+   * para GET /api/v1/contracts/active (endpoint público). KuCoin Futures API pode demorar
+   * >5s sob carga. 15s é adequado para API externa sem comprometer responsividade.
+   */
   kucoinFutures: {
-    timeout: 5000, // Trading precisa de respostas rápidas
+    timeout: 15000,
     errorThresholdPercentage: 30, // Mais sensível a erros (trading crítico)
     resetTimeout: 15000, // Recuperação rápida
     volumeThreshold: 3, // Abre circuit com poucos erros
   },
-  /** KuCoin Spot API - Trading spot (timeout moderado) */
+  /** KuCoin Spot API - Trading spot
+   * CORREÇÃO CR3 (07/02/2026): Timeout aumentado de 7s para 15s (consistente com Futures).
+   */
   kucoinSpot: {
-    timeout: 7000,
+    timeout: 15000,
     errorThresholdPercentage: 35,
     resetTimeout: 20000,
     volumeThreshold: 3,
   },
-  /** KuCoin Margin API - Trading margin (timeout moderado, validações extras) */
+  /** KuCoin Margin API - Trading margin
+   * CORREÇÃO CR3 (07/02/2026): Timeout aumentado de 8s para 15s (consistente com Futures/Spot).
+   */
   kucoinMargin: {
-    timeout: 8000,
+    timeout: 15000,
     errorThresholdPercentage: 35,
     resetTimeout: 20000,
     volumeThreshold: 3,

@@ -274,6 +274,30 @@ function resolveNormalizedSymbolInList(input: string, allowed: string[]): string
   return match ?? null;
 }
 
+// ============================================================================
+// VALIDAÇÃO DE FORMATO DE SÍMBOLO POR MERCADO
+// ============================================================================
+
+/**
+ * Valida se o formato do símbolo é compatível com o mercado especificado.
+ *
+ * Formatos conforme documentação oficial KuCoin 2025:
+ * - Futures: XBTUSDTM, ETHUSDTM (termina com 'M' - Marca de contrato perpétuo)
+ *   Ref: https://www.kucoin.com/docs-new/api-3470220
+ * - Spot/Margin: BTC-USDT, ETH-USDT (base-quote separados por hífen)
+ *   Ref: https://www.kucoin.com/docs-new/api-3470148
+ *
+ * @returns true se formato válido para o mercado, false caso contrário
+ */
+export function validateSymbolFormatForMarket(symbol: string, marketType: TradingMarketType): boolean {
+  if (marketType === 'futures') {
+    // Futures: símbolo termina com 'M' (ex: XBTUSDTM, ETHUSDTM, SOLUSDTM)
+    return /^[A-Z0-9]+M$/.test(symbol);
+  }
+  // Spot/Margin: símbolo contém hífen separando base e quote (ex: BTC-USDT, ETH-BTC)
+  return /^[A-Z0-9]+-[A-Z0-9]+$/.test(symbol);
+}
+
 async function resolveDefaultSymbolByMarket(
   authContext: TradingAuthContext,
   marketType: TradingMarketType,

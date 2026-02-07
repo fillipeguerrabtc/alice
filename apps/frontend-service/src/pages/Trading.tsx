@@ -132,6 +132,37 @@ import {
 import type { KlineData, OrderBookData, TradingControlMode, ControlHistoryEntry, TradingNewsConfigForm, TradingNewsPresetOption } from '@/components/trading';
 
 // ============================================================================
+// CONSTANTES DE POLLING (CORREÇÃO M3 - extrair magic numbers)
+// ============================================================================
+
+/** Intervalo de atualização do status geral do trading (30s) */
+const STATUS_REFETCH_INTERVAL = 30_000;
+
+/** Intervalo de atualização da lista de símbolos (10 min - muda raramente) */
+const SYMBOLS_REFETCH_INTERVAL = 600_000;
+
+/** Intervalo de atualização dos sinais de trading (15s) */
+const SIGNALS_REFETCH_INTERVAL = 15_000;
+
+/** Intervalo de atualização de conta/posições/ordens (10s) */
+const ACCOUNT_REFETCH_INTERVAL = 10_000;
+
+/** Intervalo de atualização do ticker quando WS ativo (15s) vs inativo (5s) */
+const TICKER_REFETCH_INTERVAL_WS = 15_000;
+const TICKER_REFETCH_INTERVAL_REST = 5_000;
+
+/** Intervalo de atualização de klines quando WS ativo (2 min) vs inativo (1 min) */
+const KLINES_REFETCH_INTERVAL_WS = 120_000;
+const KLINES_REFETCH_INTERVAL_REST = 60_000;
+
+/** Intervalo de atualização do order book quando WS ativo (20s) vs inativo (5s) */
+const ORDERBOOK_REFETCH_INTERVAL_WS = 20_000;
+const ORDERBOOK_REFETCH_INTERVAL_REST = 5_000;
+
+/** Intervalo padrão de candles */
+const DEFAULT_INTERVAL = '5m';
+
+// ============================================================================
 // TIPOS (TypeScript strict - Regra 8)
 // ============================================================================
 
@@ -785,7 +816,7 @@ export default function Trading() {
 
   const [signalProfileForm, setSignalProfileForm] = useState<TradingProfileForm>({
     kind: 'signal',
-    timeframes: [selectedInterval || '5m'],
+    timeframes: [selectedInterval || DEFAULT_INTERVAL],
     indicators: SIGNAL_INDICATOR_OPTIONS.map((option) => option.key),
     techniques: DEFAULT_SIGNAL_TECHNIQUES,
     dataSources: {
@@ -878,7 +909,7 @@ export default function Trading() {
     refetch: refetchStatus,
   } = useQuery<{ success: boolean; data: TradingStatus }>({
     queryKey: ['/api/integrations/trading/status'],
-    refetchInterval: 30000, // Atualizar a cada 30 segundos
+    refetchInterval: STATUS_REFETCH_INTERVAL,
   });
 
   const {
@@ -1120,7 +1151,7 @@ export default function Trading() {
       const res = await apiRequest('GET', `/api/integrations/trading/symbols?${params.toString()}`);
       return res.json();
     },
-    refetchInterval: 600000, // Atualizar a cada 10 minutos
+    refetchInterval: SYMBOLS_REFETCH_INTERVAL,
     enabled: statusData?.data?.isConfigured && !statusData?.data?.requiresTenant,
   });
 
@@ -1218,7 +1249,7 @@ export default function Trading() {
 
   const { data: wsStatusData } = useQuery<{ success: boolean; data: KucoinWsStatus }>({
     queryKey: ['/api/integrations/trading/ws/status'],
-    refetchInterval: 30000,
+    refetchInterval: STATUS_REFETCH_INTERVAL,
     enabled: !!statusData?.data?.isConfigured,
   });
 
@@ -1233,7 +1264,7 @@ export default function Trading() {
       const res = await apiRequest('GET', `/api/integrations/trading/market/${requestSymbol}?${marketQueryString}`);
       return res.json();
     },
-    refetchInterval: wsEnabled ? 15000 : 5000,
+    refetchInterval: wsEnabled ? TICKER_REFETCH_INTERVAL_WS : TICKER_REFETCH_INTERVAL_REST,
     enabled: statusData?.data?.isConfigured && isSymbolValidForMarket,
   });
 
@@ -1248,7 +1279,7 @@ export default function Trading() {
       const res = await apiRequest('GET', `/api/integrations/trading/account?${marketQueryString}`);
       return res.json();
     },
-    refetchInterval: 10000,
+    refetchInterval: ACCOUNT_REFETCH_INTERVAL,
     enabled: statusData?.data?.isConfigured && isSymbolValidForMarket,
   });
 
@@ -1263,7 +1294,7 @@ export default function Trading() {
       const res = await apiRequest('GET', `/api/integrations/trading/positions?${marketQueryString}`);
       return res.json();
     },
-    refetchInterval: 10000,
+    refetchInterval: ACCOUNT_REFETCH_INTERVAL,
     enabled: statusData?.data?.isConfigured && isSymbolValidForMarket && selectedMarketType === 'futures',
   });
 
@@ -1282,7 +1313,7 @@ export default function Trading() {
       const response = await apiRequest('GET', `/api/integrations/trading/signals${params.toString() ? `?${params}` : ''}`);
       return response.json();
     },
-    refetchInterval: 15000,
+    refetchInterval: SIGNALS_REFETCH_INTERVAL,
     enabled: statusData?.data?.isConfigured && !statusData?.data?.requiresTenant,
   });
 
@@ -1328,7 +1359,7 @@ export default function Trading() {
     return {
       enabled: Boolean(config.enabled),
       intervalMinutes: Number(config.intervalMinutes ?? 15),
-      interval: String(config.interval ?? '5m'),
+      interval: String(config.interval ?? DEFAULT_INTERVAL),
       symbols: Array.isArray(config.symbols) ? (config.symbols as string[]) : [],
       maxSignalsPerRun: Number(config.maxSignalsPerRun ?? 1),
       nextRunAt: config.nextRunAt as string | null,
@@ -1360,7 +1391,7 @@ export default function Trading() {
       const res = await apiRequest('GET', `/api/integrations/trading/orders?${ordersQueryString}`);
       return res.json();
     },
-    refetchInterval: 10000,
+    refetchInterval: ACCOUNT_REFETCH_INTERVAL,
     enabled: statusData?.data?.isConfigured && !statusData?.data?.requiresTenant,
   });
 
@@ -1377,7 +1408,8 @@ export default function Trading() {
     const symbols = symbolsData?.data?.symbols ?? [];
     if (symbols.length === 0) return;
 
-    const preferred = symbolsData?.data?.defaultSymbol || statusData?.data?.defaultSymbol || symbols[0];
+    // CORREÇÃO M2: Acesso seguro a symbols[0] com fallback para string vazia
+    const preferred = symbolsData?.data?.defaultSymbol || statusData?.data?.defaultSymbol || (symbols[0] ?? '');
     if (!preferred) return;
     if (!sanitizedSymbol || !symbols.includes(sanitizedSymbol)) {
       setSelectedSymbol(preferred);
@@ -1481,7 +1513,7 @@ export default function Trading() {
       const res = await apiRequest('GET', `/api/integrations/trading/klines/${requestSymbol}?${params.toString()}`);
       return res.json();
     },
-    refetchInterval: wsEnabled ? 120000 : 60000,
+    refetchInterval: wsEnabled ? KLINES_REFETCH_INTERVAL_WS : KLINES_REFETCH_INTERVAL_REST,
     enabled: statusData?.data?.isConfigured && !!granularityValue && isSymbolValidForMarket,
   });
 
@@ -1513,7 +1545,7 @@ export default function Trading() {
       const res = await apiRequest('GET', `/api/integrations/trading/orderbook/${requestSymbol}?${params.toString()}`);
       return res.json();
     },
-    refetchInterval: wsEnabled ? 20000 : 5000,
+    refetchInterval: wsEnabled ? ORDERBOOK_REFETCH_INTERVAL_WS : ORDERBOOK_REFETCH_INTERVAL_REST,
     enabled: statusData?.data?.isConfigured && !!restOrderBookDepth && isSymbolValidForMarket,
   });
 
@@ -1994,7 +2026,7 @@ export default function Trading() {
       }
       const res = await apiRequest('POST', '/api/integrations/trading/signals/generate', {
         symbol: requestSymbol,
-        interval: selectedInterval || '5m',
+        interval: selectedInterval || DEFAULT_INTERVAL,
         timeframes: signalProfileForm.timeframes,
         indicators: signalProfileForm.indicators,
         dataSources: signalProfileForm.dataSources,
@@ -2035,7 +2067,7 @@ export default function Trading() {
       if (Number.isNaN(intervalMinutes) || Number.isNaN(maxSignalsPerRun)) {
         throw new Error(t('trading.errors.schedulerUpdateFailed'));
       }
-      const primaryInterval = signalProfileForm.timeframes?.[0] ?? selectedInterval ?? '5m';
+      const primaryInterval = signalProfileForm.timeframes?.[0] ?? selectedInterval ?? DEFAULT_INTERVAL;
 
       const payload = {
         marketType: selectedMarketType,

@@ -10,7 +10,10 @@
  */
 
 import type { Response } from 'express';
+import { createLogger } from '@alice/logger';
 import { isKucoinRequestError, KucoinRequestError } from './kucoinClient.js';
+
+const logger = createLogger('kucoin-error-mapper');
 
 export type KucoinHttpErrorResponse = {
   status: number;
@@ -77,6 +80,8 @@ function mapKucoinApiCodeToHttp(kucoinCode?: string): KucoinApiErrorMapping | nu
       };
 
     default:
+      // CORREÇÃO M1: Logar códigos de erro desconhecidos para facilitar mapeamento futuro
+      logger.warn({ kucoinCode }, 'Código de erro KuCoin não mapeado - adicionar ao KUCOIN_ERROR_MAP');
       return null;
   }
 }

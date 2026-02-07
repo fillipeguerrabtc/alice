@@ -246,12 +246,13 @@ export async function getIsolatedMarginAccount(symbol?: string, quoteCurrency?: 
 
 /**
  * Cria ordem Margin
- * POST /api/v3/hf/margin/order
+ * POST /api/v3/margin/order
+ * Ref: https://www.kucoin.com/docs-new/api-3470272 (Add Margin Order - API Unificada 2025)
  */
 export async function createMarginOrder(params: CreateMarginOrderParams): Promise<MarginOrderCreateResponse> {
   const response = await kucoinMarginRequester.executeRequest<MarginOrderCreateResponse>(
     'POST',
-    '/api/v3/hf/margin/order',
+    '/api/v3/margin/order',
     params as unknown as Record<string, unknown>,
     true
   );
@@ -261,12 +262,13 @@ export async function createMarginOrder(params: CreateMarginOrderParams): Promis
 
 /**
  * Cancela ordem Margin por orderId
- * DELETE /api/v3/hf/margin/order/{orderId}
+ * DELETE /api/v3/margin/order/{orderId}
+ * Ref: https://www.kucoin.com/docs-new/api-3470273 (Cancel Margin Order - API Unificada 2025)
  */
 export async function cancelMarginOrder(orderId: string): Promise<{ cancelledOrderIds: string[] }> {
   const response = await kucoinMarginRequester.executeRequest<{ cancelledOrderIds: string[] }>(
     'DELETE',
-    `/api/v3/hf/margin/order/${orderId}`,
+    `/api/v3/margin/order/${orderId}`,
     undefined,
     true
   );
@@ -275,12 +277,13 @@ export async function cancelMarginOrder(orderId: string): Promise<{ cancelledOrd
 
 /**
  * Obtém detalhes de ordem Margin
- * GET /api/v3/hf/margin/order/{orderId}
+ * GET /api/v3/margin/order/{orderId}
+ * Ref: https://www.kucoin.com/docs-new/api-3470274 (Get Margin Order - API Unificada 2025)
  */
 export async function getMarginOrder(orderId: string): Promise<MarginOrder> {
   const response = await kucoinMarginRequester.executeRequest<MarginOrder>(
     'GET',
-    `/api/v3/hf/margin/order/${orderId}`,
+    `/api/v3/margin/order/${orderId}`,
     undefined,
     true
   );
@@ -289,12 +292,13 @@ export async function getMarginOrder(orderId: string): Promise<MarginOrder> {
 
 /**
  * Lista ordens Margin abertas
- * GET /api/v3/hf/margin/orders/active
+ * GET /api/v3/margin/orders/active
+ * Ref: https://www.kucoin.com/docs-new/api-3470275 (Get Active Margin Orders - API Unificada 2025)
  */
 export async function getOpenMarginOrders(): Promise<MarginOrder[]> {
   const response = await kucoinMarginRequester.executeRequest<{ items: MarginOrder[] }>(
     'GET',
-    '/api/v3/hf/margin/orders/active',
+    '/api/v3/margin/orders/active',
     undefined,
     true
   );
@@ -303,12 +307,13 @@ export async function getOpenMarginOrders(): Promise<MarginOrder[]> {
 
 /**
  * Lista ordens Margin encerradas
- * GET /api/v3/hf/margin/orders/done
+ * GET /api/v3/margin/orders/done
+ * Ref: https://www.kucoin.com/docs-new/api-3470276 (Get Closed Margin Orders - API Unificada 2025)
  */
 export async function getClosedMarginOrders(): Promise<MarginOrder[]> {
   const response = await kucoinMarginRequester.executeRequest<{ items: MarginOrder[] }>(
     'GET',
-    '/api/v3/hf/margin/orders/done',
+    '/api/v3/margin/orders/done',
     undefined,
     true
   );
@@ -317,12 +322,13 @@ export async function getClosedMarginOrders(): Promise<MarginOrder[]> {
 
 /**
  * Cria stop order Margin
- * POST /api/v3/hf/margin/stop-order
+ * POST /api/v3/margin/stop-order
+ * Ref: https://www.kucoin.com/docs-new/api-3470277 (Add Margin Stop Order - API Unificada 2025)
  */
 export async function createMarginStopOrder(params: CreateMarginStopOrderParams): Promise<MarginOrderCreateResponse> {
   const response = await kucoinMarginRequester.executeRequest<MarginOrderCreateResponse>(
     'POST',
-    '/api/v3/hf/margin/stop-order',
+    '/api/v3/margin/stop-order',
     params as unknown as Record<string, unknown>,
     true
   );
@@ -332,12 +338,13 @@ export async function createMarginStopOrder(params: CreateMarginStopOrderParams)
 
 /**
  * Lista stop orders Margin
- * GET /api/v3/hf/margin/stop-orders
+ * GET /api/v3/margin/stop-orders
+ * Ref: https://www.kucoin.com/docs-new/api-3470278 (Get Margin Stop Orders - API Unificada 2025)
  */
 export async function getMarginStopOrders(): Promise<MarginOrder[]> {
   const response = await kucoinMarginRequester.executeRequest<{ items: MarginOrder[] }>(
     'GET',
-    '/api/v3/hf/margin/stop-orders',
+    '/api/v3/margin/stop-orders',
     undefined,
     true
   );
@@ -346,12 +353,13 @@ export async function getMarginStopOrders(): Promise<MarginOrder[]> {
 
 /**
  * Cancela stop order Margin
- * DELETE /api/v3/hf/margin/stop-order/{orderId}
+ * DELETE /api/v3/margin/stop-order/{orderId}
+ * Ref: https://www.kucoin.com/docs-new/api-3470279 (Cancel Margin Stop Order - API Unificada 2025)
  */
 export async function cancelMarginStopOrder(orderId: string): Promise<{ cancelledOrderIds: string[] }> {
   const response = await kucoinMarginRequester.executeRequest<{ cancelledOrderIds: string[] }>(
     'DELETE',
-    `/api/v3/hf/margin/stop-order/${orderId}`,
+    `/api/v3/margin/stop-order/${orderId}`,
     undefined,
     true
   );

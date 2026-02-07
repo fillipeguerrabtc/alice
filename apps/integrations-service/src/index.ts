@@ -44,6 +44,7 @@ import {
   createSessionAuthMiddleware,
   initializeSessionAuthCache,
   initializeRedisCache,
+  getRedisClient,
   Gauge as PromGauge,
   Counter as PromCounter,
   Histogram as PromHistogram,
@@ -217,6 +218,14 @@ const TRADING_INTERVAL_GRANULARITY = {
   '1d': 1440, '1w': 10080,
 } as const;
 const TRADING_INTERVALS = Object.keys(TRADING_INTERVAL_GRANULARITY) as TradingIntervalValue[];
+
+// CORREÇÃO A2: Timeouts LLM configuráveis via env vars (sem hardcoded)
+// Ref: Regra 6 - PROIBIDO valores hardcoded
+const LLM_SIGNAL_TIMEOUT_MS = parseInt(process.env.LLM_SIGNAL_TIMEOUT_MS || '240000', 10);
+const LLM_SIGNAL_TIMEOUT_ARBITRAGE_MS = parseInt(process.env.LLM_SIGNAL_TIMEOUT_ARBITRAGE_MS || '360000', 10);
+
+// CORREÇÃO M4: maxAllowedDeviation configurável via env var
+const LLM_VALIDATION_MAX_DEVIATION = parseFloat(process.env.LLM_VALIDATION_MAX_DEVIATION || '0.01');
 const TRADING_INTERVAL_VALUES = TRADING_INTERVALS as [TradingIntervalValue, ...TradingIntervalValue[]];
 const TRADING_INTERVAL_ZOD = z.enum(TRADING_INTERVAL_VALUES);
 const TRADING_INDICATOR_KEYS = [
@@ -479,10 +488,62 @@ async function resolveKucoinNetworkFeesByAsset(): Promise<Record<string, number>
 // CORREÇÃO CR4 (07/02/2026): Validação prévia de credentials antes de APIs autenticadas.
 // Ref: https://www.kucoin.com/docs-new/api-3470148 (Get Actual Fee - Spot/Margin - REQUER auth)
 // Ref: https://www.kucoin.com/docs-new/api-3470220 (Futures contract info - público, mas fees via contrato)
+
+// CORREÇÃO A4: Mapeamento de erros amigáveis para o frontend
+// Ref: Regra 13 - PT-BR primário, EN secundário
+function mapTradingErrorToUserMessage(error: Error): { message: string; code: string } {
+  const msg = error.message.toLowerCase();
+  if (msg.includes('timeout') || msg.includes('gpu') || msg.includes('temporariamente indisponível'))
+    return { message: 'Serviço de IA temporariamente indisponível. Tente novamente em alguns segundos.', code: 'GPU_TIMEOUT' };
+  if (msg.includes('símbolo inválido') || msg.includes('invalid symbol') || msg.includes('formato de símbolo'))
+    return { message: 'Símbolo não suportado para este mercado.', code: 'INVALID_SYMBOL' };
+  if (msg.includes('taxas') || msg.includes('fee') || msg.includes('trade fee'))
+    return { message: 'Não foi possível obter taxas de trading. Verifique a configuração.', code: 'FEE_ERROR' };
+  if (msg.includes('circuit breaker'))
+    return { message: 'Serviço KuCoin temporariamente indisponível. Aguarde e tente novamente.', code: 'KUCOIN_UNAVAILABLE' };
+  if (msg.includes('credenciais') || msg.includes('não configurad'))
+    return { message: 'Credenciais de API não configuradas. Verifique a configuração no painel de administração.', code: 'CREDENTIALS_MISSING' };
+  if (msg.includes('resposta do llm vazia') || msg.includes('json'))
+    return { message: 'A IA não conseguiu gerar uma resposta válida. Tente novamente.', code: 'LLM_PARSE_ERROR' };
+  return { message: 'Erro ao gerar sinal de trading. Tente novamente.', code: 'UNKNOWN' };
+}
+
+// CORREÇÃO A1: Cache Redis para trade fees - taxas raramente mudam (TTL 15 min)
+const TRADE_FEE_CACHE_TTL_SECONDS = 900; // 15 minutos
+const TRADE_FEE_CACHE_PREFIX = 'alice:trading:fee';
+
 async function resolveKucoinTradeFeePct(params: {
   symbol: string;
   marketType: TradingMarketType;
 }): Promise<number> {
+  // CORREÇÃO C3: Validar formato do símbolo antes de qualquer chamada à API
+  if (!kucoinService.validateSymbolFormatForMarket(params.symbol, params.marketType)) {
+    throw new Error(
+      `Formato de símbolo inválido para mercado ${params.marketType}: "${params.symbol}". ` +
+      `Esperado: ${params.marketType === 'futures' ? 'XBTUSDTM (termina com M)' : 'BTC-USDT (base-quote com hífen)'}`
+    );
+  }
+
+  // CORREÇÃO A1: Tentar cache Redis primeiro
+  const cacheKey = `${TRADE_FEE_CACHE_PREFIX}:${params.marketType}:${params.symbol}`;
+  const redisClient = getRedisClient();
+  if (redisClient) {
+    try {
+      const cached = await redisClient.get(cacheKey);
+      if (cached) {
+        const cachedValue = parseFloat(cached);
+        if (Number.isFinite(cachedValue) && cachedValue > 0) {
+          logger.debug({ symbol: params.symbol, marketType: params.marketType, feePct: cachedValue }, 'Trade fee obtida do cache Redis');
+          return cachedValue;
+        }
+      }
+    } catch (cacheErr) {
+      logger.warn({ error: (cacheErr as Error).message }, 'Erro ao ler cache de trade fees - continuando com API');
+    }
+  }
+
+  let resolved: number;
+
   if (params.marketType === 'futures') {
     if (!kucoinClient.isKucoinConfigured()) {
       throw new Error('Credenciais KuCoin (Futures) não configuradas. Configure KUCOIN_PRO_API_KEY nos GitHub Secrets.');
@@ -490,33 +551,49 @@ async function resolveKucoinTradeFeePct(params: {
     const contract = await kucoinClient.getContractInfo(params.symbol);
     const makerPct = coerceFeeRateToPct(contract.makerFeeRate);
     const takerPct = coerceFeeRateToPct(contract.takerFeeRate);
-    const resolved = Math.max(makerPct ?? 0, takerPct ?? 0);
+    resolved = Math.max(makerPct ?? 0, takerPct ?? 0);
     if (!Number.isFinite(resolved) || resolved <= 0) {
       throw new Error('Taxas de trade Futures inválidas para KuCoin.');
     }
-    return resolved;
+  } else {
+    // Spot e Margin compartilham o mesmo endpoint de taxas (GET /api/v1/trade-fees)
+    // Ref: KuCoin docs - "Get Actual Fee - Spot/Margin" usa a mesma API key
+    if (params.marketType === 'spot' && !kucoinSpotClient.isSpotConfigured()) {
+      throw new Error('Credenciais KuCoin (Spot) não configuradas. Configure KUCOIN_PRO_API_KEY nos GitHub Secrets.');
+    }
+    if (params.marketType === 'margin' && !kucoinMarginClient.isMarginConfigured()) {
+      throw new Error('Credenciais KuCoin (Margin) não configuradas. Configure KUCOIN_PRO_API_KEY nos GitHub Secrets.');
+    }
+
+    const fees = await kucoinSpotClient.getSpotTradeFees([params.symbol]);
+    // CORREÇÃO C2: Fail-fast ao invés de fallback silencioso para fees[0]
+    // Ref: Regra 6 - PROIBIDO fallbacks perigosos que podem retornar taxas de outro par
+    const fee = fees.find((item) => item.symbol === params.symbol);
+    if (!fee) {
+      const availableSymbols = fees.map((f) => f.symbol).join(', ');
+      throw new Error(
+        `Taxas de trade ${params.marketType === 'margin' ? 'Margin' : 'Spot'} não encontradas para símbolo ${params.symbol}. ` +
+        `Símbolos disponíveis na resposta: ${availableSymbols || 'nenhum'}`
+      );
+    }
+    const makerPct = coerceFeeRateToPct(fee.makerFeeRate);
+    const takerPct = coerceFeeRateToPct(fee.takerFeeRate);
+    resolved = Math.max(makerPct ?? 0, takerPct ?? 0);
+    if (!Number.isFinite(resolved) || resolved <= 0) {
+      throw new Error(`Taxas de trade ${params.marketType === 'margin' ? 'Margin' : 'Spot'} inválidas para KuCoin.`);
+    }
   }
 
-  // Spot e Margin compartilham o mesmo endpoint de taxas (GET /api/v1/trade-fees)
-  // Ref: KuCoin docs - "Get Actual Fee - Spot/Margin" usa a mesma API key
-  if (params.marketType === 'spot' && !kucoinSpotClient.isSpotConfigured()) {
-    throw new Error('Credenciais KuCoin (Spot) não configuradas. Configure KUCOIN_PRO_API_KEY nos GitHub Secrets.');
-  }
-  if (params.marketType === 'margin' && !kucoinMarginClient.isMarginConfigured()) {
-    throw new Error('Credenciais KuCoin (Margin) não configuradas. Configure KUCOIN_PRO_API_KEY nos GitHub Secrets.');
+  // CORREÇÃO A1: Salvar no cache Redis
+  if (redisClient) {
+    try {
+      await redisClient.set(cacheKey, String(resolved), { EX: TRADE_FEE_CACHE_TTL_SECONDS });
+      logger.debug({ symbol: params.symbol, marketType: params.marketType, feePct: resolved, ttl: TRADE_FEE_CACHE_TTL_SECONDS }, 'Trade fee salva no cache Redis');
+    } catch (cacheErr) {
+      logger.warn({ error: (cacheErr as Error).message }, 'Erro ao salvar trade fee no cache Redis');
+    }
   }
 
-  const fees = await kucoinSpotClient.getSpotTradeFees([params.symbol]);
-  const fee = fees.find((item) => item.symbol === params.symbol) ?? fees[0];
-  if (!fee) {
-    throw new Error(`Taxas de trade ${params.marketType === 'margin' ? 'Margin' : 'Spot'} não encontradas para KuCoin (símbolo: ${params.symbol}).`);
-  }
-  const makerPct = coerceFeeRateToPct(fee.makerFeeRate);
-  const takerPct = coerceFeeRateToPct(fee.takerFeeRate);
-  const resolved = Math.max(makerPct ?? 0, takerPct ?? 0);
-  if (!Number.isFinite(resolved) || resolved <= 0) {
-    throw new Error(`Taxas de trade ${params.marketType === 'margin' ? 'Margin' : 'Spot'} inválidas para KuCoin.`);
-  }
   return resolved;
 }
 
@@ -10234,7 +10311,21 @@ function buildLlmSignalFromPartial(params: {
   const reasoning = typeof params.partial.reasoning === 'string' && params.partial.reasoning.trim().length >= 10
     ? params.partial.reasoning
     : buildAnalysisMotivators(params.analysis).join('; ');
-  const suggestedPrice = normalizeNullableNumber(params.partial.suggestedPrice) ?? params.tradePlan.entryPrice;
+  let suggestedPrice = normalizeNullableNumber(params.partial.suggestedPrice) ?? params.tradePlan.entryPrice;
+
+  // CORREÇÃO M5: Validar preço sugerido pelo LLM vs preço atual de mercado (threshold 5%)
+  const currentPrice = params.analysis.currentPrice;
+  if (suggestedPrice && currentPrice && currentPrice > 0) {
+    const priceDeviation = Math.abs(suggestedPrice - currentPrice) / currentPrice;
+    if (priceDeviation > 0.05) {
+      logger.warn(
+        { suggestedPrice, currentPrice, deviation: priceDeviation },
+        'Preço sugerido pelo LLM desvia >5% do mercado - usando preço atual'
+      );
+      suggestedPrice = currentPrice;
+    }
+  }
+
   const suggestedStopLoss = normalizeNullableNumber(params.partial.suggestedStopLoss) ?? params.tradePlan.stopLoss ?? undefined;
   const suggestedTakeProfit = normalizeNullableNumber(params.partial.suggestedTakeProfit) ?? params.tradePlan.takeProfit ?? undefined;
   const riskReward = normalizeNullableNumber(params.partial.riskReward) ?? params.tradePlan.riskReward ?? undefined;
@@ -11933,33 +12024,83 @@ async function generateTradingSignalFromLlm(params: {
     { role: 'user', content: analysisPrompt },
   ];
 
-  const llmTimeoutMs = techniques.includes('arbitrage_triangular') ? 180000 : 120000;
-  const gpuResponse = await requestGpu({
-    serviceType: GpuServiceType.LLM,
-    endpoint: '/v1/chat/completions',
-    method: 'POST',
-    priority: GpuRequestPriority.HIGH,
-    timeout: llmTimeoutMs,
-    // CORREÇÃO CR1 (07/02/2026): Usar APENAS response_format (padrão OpenAI, suportado pelo vLLM).
-    // Parâmetros extra_body.guided_json e extra_body.structured_outputs REMOVIDOS -
-    // coexistência causa comportamento indefinido no vLLM (ignora constrained decoding).
-    // Ref: https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html#structured-outputs
-    body: {
-      model: agentContext.llmConfig.model,
-      messages,
-      response_format: {
-        type: 'json_schema',
-        json_schema: TRADING_LLM_SIGNAL_JSON_SCHEMA,
-      },
-      max_tokens: tokenBudget.maxCompletionTokens,
-      temperature: params.modelConfig?.temperature ?? agentContext.llmConfig.temperature ?? 0.7,
-      stream: false,
-    },
-  });
+  // CORREÇÃO CR1 (07/02/2026): Aumentar timeouts para comportar structured JSON output do vLLM.
+  // vLLM structured output leva ~58s por request. Com GPU_SERVICE_TIMEOUT de 120s no GPU Manager
+  // e possível retry, o client precisa de margem: 240s (normal) / 360s (arbitragem triangular).
+  // Logs produção mostravam "Timeout aguardando resultado GPU (120000ms)" com latência real de 58385ms.
+  // CORREÇÃO A2: Timeouts configuráveis via env vars (LLM_SIGNAL_TIMEOUT_MS / LLM_SIGNAL_TIMEOUT_ARBITRAGE_MS)
+  const llmTimeoutMs = techniques.includes('arbitrage_triangular') ? LLM_SIGNAL_TIMEOUT_ARBITRAGE_MS : LLM_SIGNAL_TIMEOUT_MS;
+  // CORREÇÃO A3: Retry com backoff para falhas GPU (max 2 tentativas)
+  const MAX_GPU_RETRIES = 2;
+  const gpuRequestStartMs = Date.now();
+  let gpuResponse: Awaited<ReturnType<typeof requestGpu>> | null = null;
+  let lastGpuError: Error | null = null;
 
-  if (!gpuResponse.success || !gpuResponse.data) {
-    throw new Error(gpuResponse.error || 'Falha na resposta do GPU Manager.');
+  for (let attempt = 1; attempt <= MAX_GPU_RETRIES; attempt++) {
+    try {
+      logger.info({
+        symbol: params.symbol,
+        marketType: params.marketType,
+        timeoutMs: llmTimeoutMs,
+        model: agentContext.llmConfig.model,
+        promptTokens: tokenBudget.promptTokens,
+        maxCompletionTokens: tokenBudget.maxCompletionTokens,
+        attempt,
+        maxRetries: MAX_GPU_RETRIES,
+      }, 'Iniciando requisição GPU LLM para geração de sinal trading');
+
+      gpuResponse = await requestGpu({
+        serviceType: GpuServiceType.LLM,
+        endpoint: '/v1/chat/completions',
+        method: 'POST',
+        priority: GpuRequestPriority.HIGH,
+        timeout: llmTimeoutMs,
+        // CORREÇÃO CR1 (07/02/2026): Usar APENAS response_format (padrão OpenAI, suportado pelo vLLM).
+        // Parâmetros extra_body.guided_json e extra_body.structured_outputs REMOVIDOS -
+        // coexistência causa comportamento indefinido no vLLM (ignora constrained decoding).
+        // Ref: https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html#structured-outputs
+        body: {
+          model: agentContext.llmConfig.model,
+          messages,
+          response_format: {
+            type: 'json_schema',
+            json_schema: TRADING_LLM_SIGNAL_JSON_SCHEMA,
+          },
+          max_tokens: tokenBudget.maxCompletionTokens,
+          temperature: params.modelConfig?.temperature ?? agentContext.llmConfig.temperature ?? 0.7,
+          stream: false,
+        },
+      });
+
+      if (gpuResponse.success && gpuResponse.data) {
+        break; // Sucesso, sair do loop de retry
+      }
+      lastGpuError = new Error(gpuResponse.error || 'Falha na resposta do GPU Manager.');
+    } catch (err) {
+      lastGpuError = err instanceof Error ? err : new Error(String(err));
+    }
+
+    // Se não é a última tentativa, aguardar com backoff antes de retry
+    if (attempt < MAX_GPU_RETRIES) {
+      const backoffMs = attempt * 5000; // 5s, 10s
+      logger.warn({ attempt, backoffMs, error: lastGpuError?.message }, 'Retry GPU após falha - aguardando backoff');
+      await new Promise((resolve) => setTimeout(resolve, backoffMs));
+    }
   }
+
+  const gpuLatencyMs = Date.now() - gpuRequestStartMs;
+  if (!gpuResponse?.success || !gpuResponse?.data) {
+    logger.error({
+      gpuLatencyMs,
+      gpuError: lastGpuError?.message,
+      symbol: params.symbol,
+      marketType: params.marketType,
+      retriesExhausted: MAX_GPU_RETRIES,
+    }, 'Requisição GPU LLM falhou após todas as tentativas para geração de sinal trading');
+    throw lastGpuError ?? new Error('Falha na resposta do GPU Manager após retries.');
+  }
+
+  logger.info({ gpuLatencyMs, symbol: params.symbol }, 'Requisição GPU LLM completada com sucesso');
 
   const responseData = gpuResponse.data as LLMResponse;
   const llmContent = responseData.choices?.[0]?.message?.content?.trim() || '';
@@ -12055,7 +12196,7 @@ async function generateTradingSignalFromLlm(params: {
     signalId: createResult.data.id,
     extractionSource: llmSignalPartialResult.citedValuesSource,
     timeframeUsed: requestedValidationTimeframe ?? validationSnapshot.interval,
-    maxAllowedDeviation: 0.01,
+    maxAllowedDeviation: LLM_VALIDATION_MAX_DEVIATION,
   });
 
   const validationStatus: TradingSignalMetadata['validationStatus'] = validation.actionTaken === 'approved'
@@ -12077,7 +12218,7 @@ async function generateTradingSignalFromLlm(params: {
       extractionSource: validation.result.extractionSource,
       timeframeUsed: requestedValidationTimeframe ?? validationSnapshot.interval,
       allowedDeviationByField: validation.result.allowedDeviationByField,
-      maxAllowedDeviationPercent: 0.01,
+      maxAllowedDeviationPercent: LLM_VALIDATION_MAX_DEVIATION,
       maxDeviationFound: validation.result.maxDeviationFound,
     },
   };
@@ -13360,8 +13501,18 @@ app.post('/api/integrations/trading/signals/generate', requirePermission('integr
       return;
     }
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-    logger.error({ error: errorMessage }, 'Erro ao gerar sinal LLM');
-    res.status(500).json({ error: errorMessage });
+    // CORREÇÃO CR4 (07/02/2026): Logging detalhado para identificar etapa exata da falha.
+    // Inclui stack trace e causa raiz aninhada para diagnóstico rápido.
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    const errorCause = error instanceof Error && 'cause' in error ? (error.cause as { message?: string })?.message : undefined;
+    logger.error({
+      error: errorMessage,
+      cause: errorCause,
+      stack: errorStack,
+    }, 'Erro ao gerar sinal LLM');
+    // CORREÇÃO A4: Retornar mensagem amigável ao frontend (sem expor stack trace ou internals)
+    const userError = mapTradingErrorToUserMessage(error instanceof Error ? error : new Error(errorMessage));
+    res.status(500).json({ error: userError.message, code: userError.code });
   }
 });
 
@@ -16174,7 +16325,7 @@ app.get('/api/integrations/trading/validations/diagnostics', requirePermission('
 
       const intervalResult = await tx.execute(sql`
         SELECT
-          coalesce(ti.interval, 'N/A') AS interval,
+          coalesce(ti.interval::text, 'N/A') AS interval,
           count(*)::int AS total,
           sum(case when v.validation_passed then 1 else 0 end)::int AS passed,
           sum(case when not v.validation_passed then 1 else 0 end)::int AS failed,
@@ -16256,17 +16407,22 @@ app.get('/api/integrations/trading/validations/diagnostics', requirePermission('
       },
     });
   } catch (error) {
-    // CORREÇÃO CR2 (07/02/2026): Error logging completo com detalhes PostgreSQL
-    // Erros RLS mostram apenas mensagem genérica sem code/detail/hint/constraint
-    const pgError = error as { code?: string; detail?: string; hint?: string; constraint?: string; message?: string };
+    // CORREÇÃO CR2 (07/02/2026): Error logging completo com detalhes PostgreSQL.
+    // Drizzle encapsula erros PostgreSQL em error.cause - capturar ambos níveis.
+    // Exemplo: Drizzle error.message = "Failed query: SELECT..." mas o erro REAL
+    // do PostgreSQL (ex: "invalid input value for enum") está em error.cause.
+    const drizzleError = error as { message?: string; cause?: { code?: string; detail?: string; hint?: string; constraint?: string; message?: string } };
+    const pgCause = drizzleError.cause;
     logger.error({
-      message: pgError.message ?? 'Erro desconhecido',
-      code: pgError.code,
-      detail: pgError.detail,
-      hint: pgError.hint,
-      constraint: pgError.constraint,
+      message: drizzleError.message ?? 'Erro desconhecido',
+      // Detalhes do erro PostgreSQL real (extraídos de error.cause)
+      pgCode: pgCause?.code,
+      pgMessage: pgCause?.message,
+      pgDetail: pgCause?.detail,
+      pgHint: pgCause?.hint,
+      pgConstraint: pgCause?.constraint,
     }, 'Erro ao obter diagnóstico de validações LLM');
-    const errorMessage = pgError.message ?? 'Erro desconhecido';
+    const errorMessage = pgCause?.message ?? drizzleError.message ?? 'Erro desconhecido';
     res.status(500).json({ error: errorMessage });
   }
 });
