@@ -231,16 +231,16 @@ export function SubAccountsPanel({ onSubAccountCreated }: SubAccountsPanelProps)
                   <div className="flex items-center gap-2">
                     <Button
                       variant="ghost" size="sm"
-                      onClick={(e) => { e.stopPropagation(); enableMarginMutation.mutate(sub.userId!); }}
-                      disabled={enableMarginMutation.isPending}
+                      onClick={(e) => { e.stopPropagation(); if (sub.userId) enableMarginMutation.mutate(sub.userId); }}
+                      disabled={enableMarginMutation.isPending || !sub.userId}
                     >
                       <Shield className="h-3 w-3 mr-1" />
                       Margin
                     </Button>
                     <Button
                       variant="ghost" size="sm"
-                      onClick={(e) => { e.stopPropagation(); enableFuturesMutation.mutate(sub.userId!); }}
-                      disabled={enableFuturesMutation.isPending}
+                      onClick={(e) => { e.stopPropagation(); if (sub.userId) enableFuturesMutation.mutate(sub.userId); }}
+                      disabled={enableFuturesMutation.isPending || !sub.userId}
                     >
                       <Wallet className="h-3 w-3 mr-1" />
                       Futures
