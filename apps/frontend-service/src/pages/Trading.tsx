@@ -68,6 +68,8 @@ import {
   Layers,
   Hand,
   CandlestickChart,
+  Link2,
+  Wallet,
 } from 'lucide-react';
 // CORREÇÃO 19/12/2025: Remover CardFooter não utilizado (no-unused-vars)
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -128,6 +130,16 @@ import {
   NewsConfigEditor,
   DEFAULT_TRADING_NEWS_CONFIG,
   normalizeTradingNewsConfigForm,
+  OcoOrderForm,
+  MarginDebitPanel,
+  PositionActions,
+  PositionHistoryButton,
+  AccountOverview,
+  DepositWithdraw,
+  TransferPanel,
+  SubAccountsPanel,
+  LedgerHistory,
+  TradeFees,
 } from '@/components/trading';
 import type { KlineData, OrderBookData, TradingControlMode, ControlHistoryEntry, TradingNewsConfigForm, TradingNewsPresetOption } from '@/components/trading';
 
@@ -751,6 +763,7 @@ export default function Trading() {
   const [selectedInterval, setSelectedInterval] = useState('');
   const [controlMode, setControlMode] = useState<TradingControlMode>('manual');
   const [showNewOrderDialog, setShowNewOrderDialog] = useState(false);
+  const [showOcoOrderDialog, setShowOcoOrderDialog] = useState(false);
   const [showRiskConfigDialog, setShowRiskConfigDialog] = useState(false);
   const [showNewSignalDialog, setShowNewSignalDialog] = useState(false);
   const [showReviewOrderDialog, setShowReviewOrderDialog] = useState(false);
@@ -1408,8 +1421,18 @@ export default function Trading() {
     const symbols = symbolsData?.data?.symbols ?? [];
     if (symbols.length === 0) return;
 
-    // CORREÇÃO M2: Acesso seguro a symbols[0] com fallback para string vazia
-    const preferred = symbolsData?.data?.defaultSymbol || statusData?.data?.defaultSymbol || (symbols[0] ?? '');
+    // D4: Fallback seguro - preferir defaultSymbol do endpoint (já filtrado por marketType),
+    // depois defaultSymbol do status, e apenas em último caso o primeiro da lista.
+    // Sempre validar que o símbolo preferido está na lista de símbolos válidos para o market type atual.
+    const apiDefault = symbolsData?.data?.defaultSymbol;
+    const statusDefault = statusData?.data?.defaultSymbol;
+    const firstAvailable = symbols[0] ?? '';
+
+    // D1: Priorizar símbolo que EXISTA na lista do market type atual
+    const preferred = (apiDefault && symbols.includes(apiDefault)) ? apiDefault
+      : (statusDefault && symbols.includes(statusDefault)) ? statusDefault
+      : firstAvailable;
+
     if (!preferred) return;
     if (!sanitizedSymbol || !symbols.includes(sanitizedSymbol)) {
       setSelectedSymbol(preferred);
@@ -2907,7 +2930,7 @@ export default function Trading() {
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           {/* MOBILE-FIRST 12/01/2026: Tabs com scroll horizontal para caber em mobile */}
           <div className="overflow-x-auto pb-2 -mx-2 px-2 md:overflow-visible md:mx-0 md:px-0">
-            <TabsList className="grid w-full grid-cols-3 gap-1 sm:grid-cols-5 lg:grid-cols-9">
+            <TabsList className="grid w-full grid-cols-3 gap-1 sm:grid-cols-5 lg:grid-cols-10">
               <TabsTrigger value="overview" data-testid="tab-overview" className="whitespace-nowrap">
                 <BarChart3 className="h-4 w-4 md:mr-2" />
                 <span className="hidden md:inline">{t('trading.tabs.overview')}</span>
@@ -2939,6 +2962,10 @@ export default function Trading() {
               <TabsTrigger value="history" data-testid="tab-history" className="whitespace-nowrap">
                 <History className="h-4 w-4 md:mr-2" />
                 <span className="hidden md:inline">{t('trading.tabs.history')}</span>
+              </TabsTrigger>
+              <TabsTrigger value="account" data-testid="tab-account" className="whitespace-nowrap">
+                <Wallet className="h-4 w-4 md:mr-2" />
+                <span className="hidden md:inline">{t('trading.tabs.account', 'Conta')}</span>
               </TabsTrigger>
               <TabsTrigger value="control" data-testid="tab-control" className="whitespace-nowrap">
                 <Hand className="h-4 w-4 md:mr-2" />
@@ -3377,6 +3404,14 @@ export default function Trading() {
                   {t('trading.orders.sync')}
                 </Button>
                 <Button
+                  variant="outline"
+                  onClick={() => setShowOcoOrderDialog(true)}
+                  disabled={!riskConfig?.tradingEnabled}
+                >
+                  <Link2 className="h-4 w-4 mr-2" />
+                  {t('trading.oco.button')}
+                </Button>
+                <Button
                   onClick={() => setShowNewOrderDialog(true)}
                   disabled={!riskConfig?.tradingEnabled}
                 >
@@ -3490,14 +3525,19 @@ export default function Trading() {
           <TabsContent value="positions" className="space-y-4 mt-6">
             <div className="flex justify-between items-center">
               <CardDescription>{t('trading.positions.subtitle')}</CardDescription>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => refetchPositions()}
-              >
-                <RefreshCw className="h-4 w-4 mr-2" />
-                {t('common.refresh')}
-              </Button>
+              <div className="flex gap-2">
+                {isFuturesMarket && (
+                  <PositionHistoryButton symbol={selectedSymbol || defaultSymbol} />
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => refetchPositions()}
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  {t('common.refresh')}
+                </Button>
+              </div>
             </div>
 
             {isLoadingPositions ? (
@@ -3560,6 +3600,12 @@ export default function Trading() {
                             <p className="font-medium">${position.posMargin.toFixed(2)}</p>
                           </div>
                         </div>
+
+                        {/* Ações de gerenciamento da posição */}
+                        <PositionActions
+                          position={position}
+                          onActionComplete={() => refetchPositions()}
+                        />
                       </CardContent>
                     </Card>
                   ))}
@@ -3643,6 +3689,11 @@ export default function Trading() {
                   <p className="text-muted-foreground">{t('trading.positions.noPositions')}</p>
                 </CardContent>
               </Card>
+            )}
+
+            {/* Painel de Margin Debit (Borrow/Repay) - somente quando mercado Margin está selecionado */}
+            {selectedMarketType === 'margin' && (
+              <MarginDebitPanel defaultCurrency="USDT" />
             )}
           </TabsContent>
 
@@ -4460,6 +4511,29 @@ export default function Trading() {
               onTradingToggle={handleTradingToggle}
             />
           </TabsContent>
+
+          {/* Account Management Tab - Gestão Completa da Conta KuCoin */}
+          <TabsContent value="account" className="space-y-6 mt-6">
+            {/* Visão geral da conta e API key */}
+            <AccountOverview onRefresh={() => {
+              queryClient.invalidateQueries({ queryKey: ['account'] });
+            }} />
+
+            {/* Depósitos e Withdrawals */}
+            <DepositWithdraw defaultCurrency="USDT" />
+
+            {/* Transferências entre contas */}
+            <TransferPanel defaultCurrency="USDT" />
+
+            {/* Sub-contas */}
+            <SubAccountsPanel />
+
+            {/* Histórico de Ledgers */}
+            <LedgerHistory />
+
+            {/* Taxas de Trading */}
+            <TradeFees defaultFuturesSymbol={selectedSymbol} />
+          </TabsContent>
         </Tabs>
       </motion.div>
 
@@ -4668,6 +4742,16 @@ export default function Trading() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* OCO Order Dialog */}
+      <OcoOrderForm
+        open={showOcoOrderDialog}
+        onOpenChange={setShowOcoOrderDialog}
+        marketType={selectedMarketType}
+        symbol={selectedSymbol || defaultSymbol}
+        currentPrice={currentPrice}
+        marginMode={selectedMarginMode}
+      />
 
       {/* Review Order Dialog */}
       <Dialog open={showReviewOrderDialog} onOpenChange={setShowReviewOrderDialog}>

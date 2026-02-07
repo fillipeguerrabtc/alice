@@ -100,6 +100,37 @@ export interface MarginPositionData {
   [key: string]: unknown;
 }
 
+/** Update de ordem Spot/Margin privada */
+export interface SpotOrderUpdateData {
+  symbol: string;
+  orderType: string;
+  side: string;
+  orderId: string;
+  type: string;
+  orderTime: number;
+  size: string;
+  filledSize: string;
+  price: string;
+  clientOid: string;
+  remainSize: string;
+  status: string;
+  ts: number;
+}
+
+/** Update de balance Spot/Margin privada */
+export interface SpotBalanceUpdateData {
+  total: string;
+  available: string;
+  availableChange: string;
+  currency: string;
+  hold: string;
+  holdChange: string;
+  relationEvent: string;
+  relationEventId: string;
+  relationContext: string;
+  time: string;
+}
+
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
 
 export interface KucoinSpotWSEvents {
@@ -108,6 +139,8 @@ export interface KucoinSpotWSEvents {
   'kline': (data: SpotKlineData & { interval?: string }, topic: string) => void;
   'trade': (data: SpotTradeData, topic: string) => void;
   'marginPosition': (data: MarginPositionData, topic: string) => void;
+  'order': (data: SpotOrderUpdateData, topic: string) => void;
+  'balance': (data: SpotBalanceUpdateData, topic: string) => void;
   'connected': () => void;
   'disconnected': (reason: string) => void;
   'error': (error: Error) => void;
@@ -352,8 +385,135 @@ export class KucoinSpotWebSocketClient extends EventEmitter {
     return topic;
   }
 
+  /**
+   * Subscreve a updates de ordens Spot/Margin (privado)
+   * Canal: /spotMarket/tradeOrders
+   */
+  subscribeOrders(): string {
+    const topic = '/spotMarket/tradeOrders';
+    this.sendSubscribe(topic, true);
+    return topic;
+  }
+
+  /**
+   * Subscreve a updates de ordens Spot/Margin por símbolo (privado)
+   * Canal: /spotMarket/tradeOrdersV2
+   */
+  subscribeOrdersV2(): string {
+    const topic = '/spotMarket/tradeOrdersV2';
+    this.sendSubscribe(topic, true);
+    return topic;
+  }
+
+  /**
+   * Subscreve a updates de balance Spot/Margin (privado)
+   * Canal: /account/balance
+   */
+  subscribeBalance(): string {
+    const topic = '/account/balance';
+    this.sendSubscribe(topic, true);
+    return topic;
+  }
+
+  /**
+   * Subscreve a updates de debt ratio (margin cross) (privado)
+   * Canal: /margin/fundingBook
+   * Entrega notificações de mudança no debt ratio
+   */
+  subscribeDebtRatio(): string {
+    const topic = '/margin/fundingBook';
+    this.sendSubscribe(topic, true);
+    return topic;
+  }
+
   unsubscribe(topic: string, isPrivate: boolean): void {
     this.sendUnsubscribe(topic, isPrivate);
+  }
+
+  // ============================================================================
+  // ORDENS VIA WEBSOCKET (baixa latência - Spot/Margin)
+  // ============================================================================
+
+  /**
+   * Cria ordem Spot via WebSocket (baixa latência)
+   * Envia mensagem tipo 'openTrade' diretamente pelo WS
+   * Ref: KuCoin Spot WebSocket Trade API
+   */
+  wsPlaceOrder(params: {
+    clientOid: string;
+    side: 'buy' | 'sell';
+    symbol: string;
+    type?: 'limit' | 'market';
+    price?: string;
+    size?: string;
+    funds?: string;
+    timeInForce?: string;
+    postOnly?: boolean;
+    hidden?: boolean;
+    iceberg?: boolean;
+    visibleSize?: string;
+    cancelAfter?: number;
+  }): void {
+    if (!this.ws || this.state !== 'connected') {
+      logger.warn('WebSocket Spot não conectado - wsPlaceOrder bloqueado');
+      return;
+    }
+    const id = `ws-spot-order-${Date.now()}`;
+    const msg = {
+      id,
+      type: 'openTrade',
+      topic: '/spotMarket/tradeOrders',
+      data: params,
+      response: true,
+      privateChannel: true,
+    };
+    this.ws.send(JSON.stringify(msg));
+    logger.info({ id, clientOid: params.clientOid, symbol: params.symbol, side: params.side }, 'Ordem Spot WS enviada');
+  }
+
+  /**
+   * Cancela ordem Spot via WebSocket (baixa latência)
+   * Envia mensagem tipo 'cancelTrade' diretamente pelo WS
+   * Ref: KuCoin Spot WebSocket Trade API
+   */
+  wsCancelOrder(orderId: string): void {
+    if (!this.ws || this.state !== 'connected') {
+      logger.warn('WebSocket Spot não conectado - wsCancelOrder bloqueado');
+      return;
+    }
+    const id = `ws-spot-cancel-${Date.now()}`;
+    const msg = {
+      id,
+      type: 'cancelTrade',
+      topic: '/spotMarket/tradeOrders',
+      data: { orderId },
+      response: true,
+      privateChannel: true,
+    };
+    this.ws.send(JSON.stringify(msg));
+    logger.info({ id, orderId }, 'Cancelamento Spot WS enviado');
+  }
+
+  /**
+   * Cancela ordem Spot por clientOid via WebSocket (baixa latência)
+   * Ref: KuCoin Spot WebSocket Trade API
+   */
+  wsCancelOrderByClientOid(clientOid: string, symbol: string): void {
+    if (!this.ws || this.state !== 'connected') {
+      logger.warn('WebSocket Spot não conectado - wsCancelOrderByClientOid bloqueado');
+      return;
+    }
+    const id = `ws-spot-cancel-coid-${Date.now()}`;
+    const msg = {
+      id,
+      type: 'cancelTrade',
+      topic: '/spotMarket/tradeOrders',
+      data: { clientOid, symbol },
+      response: true,
+      privateChannel: true,
+    };
+    this.ws.send(JSON.stringify(msg));
+    logger.info({ id, clientOid, symbol }, 'Cancelamento Spot WS por clientOid enviado');
   }
 
   private handleMessage(raw: WebSocket.RawData): void {
@@ -416,7 +576,30 @@ export class KucoinSpotWebSocketClient extends EventEmitter {
       } else {
         logger.warn({ topic }, 'Payload inválido de posição Margin');
       }
+      return;
     }
+
+    // Ordens Spot/Margin: /spotMarket/tradeOrders ou /spotMarket/tradeOrdersV2
+    if (topic.startsWith('/spotMarket/tradeOrders')) {
+      if (isRecord(data)) {
+        this.emit('order', data as unknown as SpotOrderUpdateData, topic);
+      } else {
+        logger.warn({ topic }, 'Payload inválido de ordem Spot/Margin');
+      }
+      return;
+    }
+
+    // Balance Spot/Margin: /account/balance
+    if (topic === '/account/balance') {
+      if (isRecord(data)) {
+        this.emit('balance', data as unknown as SpotBalanceUpdateData, topic);
+      } else {
+        logger.warn({ topic }, 'Payload inválido de balance Spot/Margin');
+      }
+      return;
+    }
+
+    logger.debug({ topic }, 'Tópico WS Spot/Margin não mapeado');
   }
 
   private sendSubscribe(topic: string, isPrivate: boolean, isResubscribe: boolean = false): void {
@@ -453,8 +636,10 @@ export class KucoinSpotWebSocketClient extends EventEmitter {
 
   private resubscribeAll(): void {
     this.subscriptions.forEach((topic) => {
-      const isPrivate = topic.startsWith('/margin/');
-      this.sendSubscribe(topic, isPrivate, true);
+      const isPrivateChannel = topic.startsWith('/margin/') ||
+        topic.startsWith('/spotMarket/tradeOrders') ||
+        topic === '/account/balance';
+      this.sendSubscribe(topic, isPrivateChannel, true);
     });
   }
 

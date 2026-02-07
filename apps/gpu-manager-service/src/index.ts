@@ -273,13 +273,11 @@ const protectedFetchByServiceType = {
   [GpuServiceType.TRAINING]: gpuServiceClients[GpuServiceType.TRAINING].fetch,
 } as const;
 
-type GuidedJsonSchema = {
-  name?: string;
-  schema?: Record<string, unknown>;
-  strict?: boolean;
-} | Record<string, unknown>;
-
-function applyGuidedJsonSchema(params: {
+// Converte response_format.json_schema para structured_outputs.json (API nativa vLLM 0.12.0).
+// CRÍTICO: NÃO usar extra_body (conceito do SDK Python, não da API HTTP REST).
+// NÃO usar guided_json (removido no vLLM 0.12.0).
+// Ref: https://docs.vllm.ai/en/v0.12.0/features/structured_outputs/
+function applyStructuredOutputs(params: {
   serviceType: GpuServiceType;
   endpoint: string;
   body?: unknown;
@@ -290,34 +288,31 @@ function applyGuidedJsonSchema(params: {
 
   const payload = { ...(params.body as Record<string, unknown>) };
   const responseFormat = payload.response_format as Record<string, unknown> | undefined;
-  const extraBodyRaw = payload.extra_body as Record<string, unknown> | undefined;
-  const extraBody = extraBodyRaw ? { ...extraBodyRaw } : {};
-  let guidedSchema: GuidedJsonSchema | undefined;
 
-  if (responseFormat?.type === 'json_schema' && responseFormat.json_schema) {
-    guidedSchema = responseFormat.json_schema as GuidedJsonSchema;
-  }
-
-  if (!guidedSchema && responseFormat?.type === 'json_object' && responseFormat.json_schema) {
-    guidedSchema = responseFormat.json_schema as GuidedJsonSchema;
-  }
-
-  if (!guidedSchema) {
+  // Se não há response_format com json_schema, passa body sem modificação
+  if (!responseFormat || responseFormat.type !== 'json_schema' || !responseFormat.json_schema) {
+    // Remover extra_body se existir (campo inválido para API HTTP REST do vLLM)
+    if (payload.extra_body) {
+      delete payload.extra_body;
+    }
     return payload;
   }
 
-  const schemaPayload = (guidedSchema as { schema?: Record<string, unknown> }).schema ?? guidedSchema;
-  if (!extraBody.guided_json) {
-    extraBody.guided_json = schemaPayload;
-  }
-  if (!extraBody.structured_outputs) {
-    extraBody.structured_outputs = {
-      type: 'json_schema',
-      json_schema: guidedSchema,
-    };
+  // Extrair o schema JSON puro do wrapper OpenAI (response_format.json_schema.schema)
+  const jsonSchemaWrapper = responseFormat.json_schema as Record<string, unknown>;
+  const jsonSchema = (jsonSchemaWrapper.schema as Record<string, unknown>) ?? jsonSchemaWrapper;
+
+  // Setar structured_outputs.json como campo TOP-LEVEL (API nativa vLLM 0.12.0)
+  payload.structured_outputs = { json: jsonSchema };
+
+  // Remover response_format para evitar conflito com structured_outputs
+  delete payload.response_format;
+
+  // Remover extra_body se existir (campo inválido para API HTTP REST do vLLM)
+  if (payload.extra_body) {
+    delete payload.extra_body;
   }
 
-  payload.extra_body = extraBody;
   return payload;
 }
 
@@ -660,7 +655,7 @@ async function processGpuRequest(request: GpuRequest): Promise<GpuResponse> {
   try {
     // Gate 2: Serviços sempre ativos, sem orquestração dinâmica
     const timeoutMs = request.timeout || GPU_SERVICE_TIMEOUT;
-    const requestBody = applyGuidedJsonSchema({
+    const requestBody = applyStructuredOutputs({
       serviceType,
       endpoint: request.endpoint,
       body: request.body,
@@ -1024,7 +1019,7 @@ app.post('/api/gpu/stream', requireInternalAuth, asyncHandler(async (req: Reques
     await markServiceActive(serviceType, streamingRequestId);
 
     try {
-      const requestBody = applyGuidedJsonSchema({
+      const requestBody = applyStructuredOutputs({
         serviceType,
         endpoint: body.endpoint,
         body: body.body,

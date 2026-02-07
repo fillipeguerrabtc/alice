@@ -32,16 +32,29 @@ type KucoinApiErrorMapping = {
   message: string;
 };
 
+/**
+ * Mapeamento de códigos de erro da API KuCoin para respostas HTTP
+ * 
+ * Referências:
+ * - https://www.kucoin.com/docs-new/error-code/futures
+ * - https://www.kucoin.com/docs-new/error-code/spot
+ * - https://www.kucoin.com/docs/errors-code/futures-errors-code
+ * - tiagosiebler/kucoin-api (SDK community reference)
+ * 
+ * Atualizado: 07/02/2026
+ */
 function mapKucoinApiCodeToHttp(kucoinCode?: string): KucoinApiErrorMapping | null {
   if (!kucoinCode) return null;
 
   switch (kucoinCode) {
-    // Rate limit / throttling (docs oficiais)
+    // ============================================================================
+    // RATE LIMIT / THROTTLING
+    // ============================================================================
     case '1015':
       return {
         status: 429,
         retryAfterSeconds: 30,
-        message: 'KuCoin rate limit excedido (Cloudflare, aguarde 30s)',
+        message: 'KuCoin rate limit excedido (Cloudflare WAF, aguarde 30s)',
       };
     case '200002':
       return {
@@ -52,36 +65,118 @@ function mapKucoinApiCodeToHttp(kucoinCode?: string): KucoinApiErrorMapping | nu
     case '429000':
       return {
         status: 429,
-        message: 'KuCoin rate limit excedido',
+        message: 'KuCoin rate limit excedido (genérico)',
       };
 
-    // Autenticação / permissão / assinatura (credenciais do serviço)
+    // ============================================================================
+    // AUTENTICAÇÃO / PERMISSÃO / ASSINATURA
+    // ============================================================================
     case '400001':
+      return { status: 503, message: 'KuCoin: qualquer erro de autenticação - verifique API key' };
     case '400002':
+      return { status: 503, message: 'KuCoin: assinatura inválida (HMAC signature mismatch)' };
     case '400003':
+      return { status: 503, message: 'KuCoin: API key não encontrada' };
     case '400004':
+      return { status: 503, message: 'KuCoin: passphrase inválida' };
     case '400005':
+      return { status: 503, message: 'KuCoin: timestamp expirado (diferença > 5s do servidor)' };
     case '400006':
+      return { status: 503, message: 'KuCoin: IP não autorizado para esta API key' };
     case '400007':
-      return {
-        status: 503,
-        message: 'KuCoin indisponível (credenciais inválidas, timestamp ou permissão)',
-      };
+      return { status: 503, message: 'KuCoin: permissão insuficiente na API key' };
 
-    // Parâmetros inválidos (inputs rejeitados pelo upstream)
+    // ============================================================================
+    // PARÂMETROS INVÁLIDOS / VALIDAÇÃO DE INPUT
+    // ============================================================================
     case '100001':
+      return { status: 400, message: 'KuCoin: erro interno do sistema (parâmetro inválido)' };
     case '100003':
+      return { status: 400, message: 'KuCoin: parâmetro obrigatório ausente' };
+    case '100004':
+      return { status: 400, message: 'KuCoin: tipo de parâmetro inválido' };
+    case '100005':
+      return { status: 400, message: 'KuCoin: parâmetro fora do intervalo permitido' };
     case '200003':
+      return { status: 400, message: 'KuCoin: parâmetro de negócio inválido' };
+    case '200004':
+      return { status: 400, message: 'KuCoin: saldo insuficiente para a operação' };
     case '300000':
+      return { status: 400, message: 'KuCoin: parâmetros da requisição inválidos' };
+
+    // ============================================================================
+    // ERROS DE ORDENS - FUTURES
+    // ============================================================================
+    case '300001':
+      return { status: 400, message: 'KuCoin: símbolo inválido ou contrato não encontrado' };
+    case '300002':
+      return { status: 400, message: 'KuCoin: preço inválido (fora do tick size ou limites)' };
+    case '300003':
+      return { status: 400, message: 'KuCoin: quantidade inválida (fora dos limites do contrato)' };
+    case '300004':
+      return { status: 400, message: 'KuCoin: margem insuficiente para abrir posição' };
+    case '300005':
+      return { status: 400, message: 'KuCoin: quantidade máxima de ordens abertas atingida' };
+    case '300006':
+      return { status: 400, message: 'KuCoin: limite de posição atingido (max open size)' };
+    case '300007':
+      return { status: 400, message: 'KuCoin: direção da ordem conflita com posição existente' };
+    case '300008':
+      return { status: 400, message: 'KuCoin: contrato suspenso ou em manutenção' };
+    case '300009':
+      return { status: 400, message: 'KuCoin: reduceOnly rejeitado - sem posição para reduzir' };
+    case '300010':
+      return { status: 400, message: 'KuCoin: closeOrder rejeitado - sem posição para fechar' };
+    case '300011':
+      return { status: 400, message: 'KuCoin: alavancagem inválida para o símbolo' };
+    case '300012':
+      return { status: 400, message: 'KuCoin: erro de precisão (price/size decimal places)' };
+    case '300014':
+      return { status: 400, message: 'KuCoin: ordem seria liquidada imediatamente (margem insuficiente)' };
+    case '300015':
+      return { status: 400, message: 'KuCoin: modo hedge requer positionSide (LONG/SHORT)' };
+    case '300016':
+      return { status: 400, message: 'KuCoin: positionSide inválido para modo one-way' };
+
+    // ============================================================================
+    // ERROS DE ORDENS - SPOT/MARGIN
+    // ============================================================================
     case '400100':
-      return {
-        status: 400,
-        message: 'KuCoin rejeitou parâmetros da requisição',
-      };
+      return { status: 400, message: 'KuCoin: parâmetro de ordem Spot inválido' };
+    case '400200':
+      return { status: 400, message: 'KuCoin: saldo Spot insuficiente' };
+    case '400400':
+      return { status: 400, message: 'KuCoin: mercado fechado ou símbolo desativado' };
+    case '400500':
+      return { status: 400, message: 'KuCoin: ordem rejeitada (self-trade prevention)' };
+    case '400600':
+      return { status: 400, message: 'KuCoin: limite de ordens abertas Spot atingido' };
+    case '400700':
+      return { status: 400, message: 'KuCoin: ordem Spot não encontrada (já cancelada/executada)' };
+
+    // ============================================================================
+    // ERROS DE MARGIN
+    // ============================================================================
+    case '500000':
+      return { status: 400, message: 'KuCoin: empréstimo margin rejeitado (limite atingido ou ativo indisponível)' };
+
+    // ============================================================================
+    // ERROS INTERNOS KUCOIN
+    // ============================================================================
+    case '500001':
+    case '500002':
+    case '500003':
+      return { status: 502, message: 'KuCoin: erro interno do servidor (tente novamente)' };
+
+    // ============================================================================
+    // MANUTENÇÃO
+    // ============================================================================
+    case '200001':
+      return { status: 503, message: 'KuCoin: sistema em manutenção, tente novamente mais tarde' };
 
     default:
-      // CORREÇÃO M1: Logar códigos de erro desconhecidos para facilitar mapeamento futuro
-      logger.warn({ kucoinCode }, 'Código de erro KuCoin não mapeado - adicionar ao KUCOIN_ERROR_MAP');
+      // Logar códigos de erro desconhecidos para facilitar mapeamento futuro
+      logger.warn({ kucoinCode }, 'Código de erro KuCoin não mapeado - adicionar ao kucoin-error-mapper.ts');
       return null;
   }
 }

@@ -90,6 +90,7 @@ import { initWiseSyncService } from './wiseSyncService.js';
 import * as kucoinClient from './kucoinClient.js';
 import * as kucoinSpotClient from './kucoinSpotClient.js';
 import * as kucoinMarginClient from './kucoinMarginClient.js';
+import * as kucoinAccountClient from './kucoinAccountClient.js';
 import * as kucoinService from './kucoinService.js';
 import {
   closeWebSocketClients as closeKucoinWebSocketClients,
@@ -121,6 +122,7 @@ import { sendKucoinErrorResponse } from './kucoin-error-mapper.js';
 import * as technicalIndicators from './technical-indicators.js';
 import { extractValuesFromLLMResponse, validateAndPersist } from './llm-validation.js';
 import type { ExtractedLLMValues } from './llm-validation.js';
+import { jsonrepair } from 'jsonrepair';
 
 const logger = createLogger('integrations-service');
 const config = loadConfig(integrationsServiceConfigSchema);
@@ -1900,12 +1902,15 @@ const TRADING_LLM_SIGNAL_SCHEMA = z.object({
 });
 
 // CORREÇÃO CR1 (07/02/2026): Schema JSON com propriedades explícitas para citedValues.
-// vLLM constrained decoding NÃO suporta additionalProperties dinâmicos -
-// requer propriedades explícitas para gerar JSON válido via guided generation.
-// Ref: https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html#structured-outputs
+// Schema JSON para constrained decoding via vLLM 0.12.0 structured_outputs.
+// IMPORTANTE: citedValues NÃO usa additionalProperties:false porque 28 propriedades
+// opcionais + additionalProperties:false = 2^28 (~268M) combinações que causam
+// falha na compilação do xgrammar. A validação de campos extras é feita pelo
+// Zod schema TRADING_LLM_SIGNAL_PARTIAL_SCHEMA após parsing.
+// strict:true REMOVIDO - campo OpenAI-only, vLLM ignora silenciosamente.
+// Ref: https://docs.vllm.ai/en/v0.12.0/features/structured_outputs/
 const TRADING_LLM_SIGNAL_JSON_SCHEMA = {
   name: 'trading_llm_signal',
-  strict: true,
   schema: {
     type: 'object' as const,
     additionalProperties: false,
@@ -1929,16 +1934,17 @@ const TRADING_LLM_SIGNAL_JSON_SCHEMA = {
         type: 'string' as const,
         enum: ['scalping', 'swing', 'position', 'cash_and_carry', 'arbitrage', 'hedge', 'neutral'],
       },
-      expectedDurationMinutes: { type: 'integer' as const, minimum: 1, maximum: 43200 },
-      confidence: { type: 'number' as const, minimum: 0, maximum: 1 },
-      tradeSummary: { type: 'string' as const, minLength: 10 },
-      motivators: { type: 'array' as const, items: { type: 'string' as const }, minItems: 1 },
-      invalidationReasons: { type: 'array' as const, items: { type: 'string' as const }, minItems: 1 },
-      reasoning: { type: 'string' as const, minLength: 5 },
+      expectedDurationMinutes: { type: 'integer' as const },
+      confidence: { type: 'number' as const },
+      tradeSummary: { type: 'string' as const },
+      motivators: { type: 'array' as const, items: { type: 'string' as const } },
+      invalidationReasons: { type: 'array' as const, items: { type: 'string' as const } },
+      reasoning: { type: 'string' as const },
       timeframeUsed: { type: 'string' as const },
       citedValues: {
         type: 'object' as const,
-        additionalProperties: false,
+        // SEM additionalProperties:false - 28 props opcionais criam 2^28 combinações
+        // que causam falha na compilação do xgrammar. Validação via Zod pós-parse.
         properties: {
           rsi: { type: 'number' as const },
           macdLine: { type: 'number' as const },
@@ -1970,15 +1976,14 @@ const TRADING_LLM_SIGNAL_JSON_SCHEMA = {
           volumeRatio: { type: 'number' as const },
           currentPrice: { type: 'number' as const },
         },
-        required: [],
       },
-      suggestedPrice: { type: 'number' as const, minimum: 0 },
-      suggestedStopLoss: { type: 'number' as const, minimum: 0 },
-      suggestedTakeProfit: { type: 'number' as const, minimum: 0 },
-      suggestedSize: { type: 'number' as const, minimum: 0 },
-      riskReward: { type: 'number' as const, minimum: 0 },
-      marketCondition: { type: 'string' as const, minLength: 3 },
-      riskScore: { type: 'number' as const, minimum: 0, maximum: 100 },
+      suggestedPrice: { type: 'number' as const },
+      suggestedStopLoss: { type: 'number' as const },
+      suggestedTakeProfit: { type: 'number' as const },
+      suggestedSize: { type: 'number' as const },
+      riskReward: { type: 'number' as const },
+      marketCondition: { type: 'string' as const },
+      riskScore: { type: 'number' as const },
     },
   },
 };
@@ -10114,7 +10119,16 @@ function insertMissingCommasInArrays(content: string): { json: string; inserted:
 function parseLlmSignalResponse(rawResponse: string): {
   data: TradingLlmSignalPartial;
   citedValuesSource: 'llm_payload' | 'regex';
+  parseMethod: string;
 } {
+  // Log da resposta raw do LLM antes de qualquer tentativa de parse (primeiros 500 chars)
+  const isDirectJson = rawResponse.trimStart().startsWith('{');
+  logger.info({
+    rawResponseLength: rawResponse.length,
+    rawResponseSnippet: rawResponse.substring(0, 500),
+    isDirectJson,
+  }, 'Resposta raw do LLM recebida para parsing de sinal de trading');
+
   const candidate = extractJsonObjectCandidate(rawResponse);
   const sanitized = sanitizeJsonCandidate(candidate);
   if (sanitized.repaired) {
@@ -10131,7 +10145,9 @@ function parseLlmSignalResponse(rawResponse: string): {
     if (!result.success) {
       throw new Error(`Resposta LLM inválida: ${result.error.message}`);
     }
-    return { data: result.data, citedValuesSource };
+    const parseMethod = isDirectJson ? 'direct' : (sanitized.repaired || normalized.repaired ? 'sanitized' : 'direct');
+    logger.info({ parseMethod, citedValuesSource }, 'Sinal de trading parseado com sucesso');
+    return { data: result.data, citedValuesSource, parseMethod };
   } catch (error) {
     const permissive = normalizeLlmJsonKeys(sanitized.json, { allowAnyKey: true });
     if (permissive.json !== normalized.json) {
@@ -10143,7 +10159,8 @@ function parseLlmSignalResponse(rawResponse: string): {
         if (!result.success) {
           throw new Error(`Resposta LLM inválida após reparo: ${result.error.message}`);
         }
-        return { data: result.data, citedValuesSource };
+        logger.info({ parseMethod: 'permissive_keys', citedValuesSource }, 'Sinal de trading parseado com sucesso via reparo de chaves');
+        return { data: result.data, citedValuesSource, parseMethod: 'permissive_keys' };
       } catch (permissiveError) {
         const message = permissiveError instanceof Error ? permissiveError.message : 'Erro desconhecido';
         logger.error({
@@ -10165,7 +10182,8 @@ function parseLlmSignalResponse(rawResponse: string): {
         if (!result.success) {
           throw new Error(`Resposta LLM inválida após reparo: ${result.error.message}`);
         }
-        return { data: result.data, citedValuesSource };
+        logger.info({ parseMethod: 'yaml_block_repair', citedValuesSource }, 'Sinal de trading parseado com sucesso via reparo YAML-like sem chaves');
+        return { data: result.data, citedValuesSource, parseMethod: 'yaml_block_repair' };
       } catch (blockError) {
         const message = blockError instanceof Error ? blockError.message : 'Erro desconhecido';
         logger.error({
@@ -10186,7 +10204,8 @@ function parseLlmSignalResponse(rawResponse: string): {
         if (!result.success) {
           throw new Error(`Resposta LLM inválida após reparo: ${result.error.message}`);
         }
-        return { data: result.data, citedValuesSource };
+        logger.info({ parseMethod: 'yaml_object_repair', citedValuesSource }, 'Sinal de trading parseado com sucesso via reparo YAML-like');
+        return { data: result.data, citedValuesSource, parseMethod: 'yaml_object_repair' };
       } catch (yamlError) {
         const message = yamlError instanceof Error ? yamlError.message : 'Erro desconhecido';
         logger.error({
@@ -10207,7 +10226,8 @@ function parseLlmSignalResponse(rawResponse: string): {
         if (!result.success) {
           throw new Error(`Resposta LLM inválida após reparo: ${result.error.message}`);
         }
-        return { data: result.data, citedValuesSource };
+        logger.info({ parseMethod: 'json_content_repair', citedValuesSource }, 'Sinal de trading parseado com sucesso via reparo seguro de conteúdo JSON');
+        return { data: result.data, citedValuesSource, parseMethod: 'json_content_repair' };
       } catch (repairError) {
         const message = repairError instanceof Error ? repairError.message : 'Erro desconhecido';
         if (message.startsWith('Resposta LLM inválida após reparo:')) {
@@ -10232,8 +10252,9 @@ function parseLlmSignalResponse(rawResponse: string): {
         if (!result.success) {
           throw new Error(`Resposta LLM inválida após reparo: ${result.error.message}`);
         }
-        return { data: result.data, citedValuesSource };
-      } catch (rawError) {
+        logger.info({ parseMethod: 'raw_text_extraction', citedValuesSource }, 'Sinal de trading parseado com sucesso via extração de chaves do texto bruto');
+        return { data: result.data, citedValuesSource, parseMethod: 'raw_text_extraction' };
+      }       catch (rawError) {
         const message = rawError instanceof Error ? rawError.message : 'Erro desconhecido';
         logger.error({
           error: message,
@@ -10242,6 +10263,22 @@ function parseLlmSignalResponse(rawResponse: string): {
           candidateLength: baseJson.length,
         }, 'Resposta LLM inválida após extração de chaves (hash/len).');
       }
+    }
+    // Estágio final: jsonrepair (biblioteca battle-tested, 5M+ downloads/semana)
+    // Último recurso antes de desistir - tenta reparar JSON malformado automaticamente
+    try {
+      const repaired = jsonrepair(rawResponse);
+      const parsed = JSON.parse(repaired) as Record<string, unknown>;
+      const { normalized: normalizedPayload, citedValuesSource: cvSource } = normalizeLlmSignalPayload(parsed);
+      const result = TRADING_LLM_SIGNAL_PARTIAL_SCHEMA.safeParse(normalizedPayload);
+      if (result.success) {
+        logger.warn({ parseMethod: 'jsonrepair', citedValuesSource: cvSource }, 'Resposta LLM reparada com sucesso via jsonrepair (último recurso).');
+        return { data: result.data, citedValuesSource: cvSource, parseMethod: 'jsonrepair' };
+      }
+      logger.error({ zodError: result.error.message }, 'jsonrepair produziu JSON válido mas Zod rejeitou.');
+    } catch (jsonrepairError) {
+      const jrMessage = jsonrepairError instanceof Error ? jsonrepairError.message : 'Erro desconhecido';
+      logger.error({ error: jrMessage }, 'jsonrepair também falhou ao reparar resposta LLM.');
     }
     const message = error instanceof Error ? error.message : 'Erro desconhecido';
     if (message.startsWith('Resposta LLM inválida:')) {
@@ -12109,6 +12146,12 @@ async function generateTradingSignalFromLlm(params: {
   }
 
   const llmSignalPartialResult = parseLlmSignalResponse(llmContent);
+  logger.info({
+    parseMethod: llmSignalPartialResult.parseMethod,
+    citedValuesSource: llmSignalPartialResult.citedValuesSource,
+    symbol: params.symbol,
+    marketType: params.marketType,
+  }, 'Sinal de trading LLM parseado - método de parse utilizado');
   const llmSignal = buildLlmSignalFromPartial({
     partial: llmSignalPartialResult.data,
     analysis: primaryAnalysis.analysis,
@@ -16423,6 +16466,3173 @@ app.get('/api/integrations/trading/validations/diagnostics', requirePermission('
       pgConstraint: pgCause?.constraint,
     }, 'Erro ao obter diagnóstico de validações LLM');
     const errorMessage = pgCause?.message ?? drizzleError.message ?? 'Erro desconhecido';
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// ============================================================================
+// ROTAS KUCOIN DIRETAS - Futures, Spot, Margin (FASE 5 - KuCoin Features Completas)
+// Expõe endpoints dos clients KuCoin diretamente via Express routes
+// para que o frontend possa acessar todas as funcionalidades disponíveis.
+// Ref: Plano KuCoin Features Completas, CLAUDE.md Regra 6 (Enterprise-grade)
+// ============================================================================
+
+// --- FUTURES: Ticker, Orders, Positions, Margin Mode, Position Mode, Leverage ---
+
+// GET /api/integrations/trading/futures/ticker/:symbol - Ticker Futures em tempo real
+app.get('/api/integrations/trading/futures/ticker/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const { symbol } = req.params;
+    if (!symbol) {
+      res.status(400).json({ error: 'Símbolo obrigatório' });
+      return;
+    }
+    const ticker = await kucoinClient.getTicker(symbol);
+    res.json({ success: true, data: ticker });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter ticker Futures');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// DELETE /api/integrations/trading/futures/orders/all - Cancelar todas ordens Futures
+app.delete('/api/integrations/trading/futures/orders/all', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const symbol = req.query.symbol as string | undefined;
+    const result = await kucoinClient.cancelAllOrders(symbol);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao cancelar todas ordens Futures');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/futures/orders/open - Ordens abertas Futures
+app.get('/api/integrations/trading/futures/orders/open', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const symbol = req.query.symbol as string | undefined;
+    const result = await kucoinClient.getOpenOrders(symbol);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter ordens abertas Futures');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/futures/orders/:orderId - Detalhes de ordem Futures por ID
+app.get('/api/integrations/trading/futures/orders/:orderId', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const { orderId } = req.params;
+    if (!orderId) {
+      res.status(400).json({ error: 'orderId obrigatório' });
+      return;
+    }
+    const order = await kucoinClient.getOrder(orderId);
+    res.json({ success: true, data: order });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter ordem Futures');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/futures/orders/by-client-oid/:clientOid - Ordem Futures por clientOid
+app.get('/api/integrations/trading/futures/orders/by-client-oid/:clientOid', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const { clientOid } = req.params;
+    if (!clientOid) {
+      res.status(400).json({ error: 'clientOid obrigatório' });
+      return;
+    }
+    const order = await kucoinClient.getOrderByClientOid(clientOid);
+    res.json({ success: true, data: order });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter ordem Futures por clientOid');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/futures/positions/:symbol - Posição Futures por símbolo
+app.get('/api/integrations/trading/futures/positions/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const { symbol } = req.params;
+    if (!symbol) {
+      res.status(400).json({ error: 'Símbolo obrigatório' });
+      return;
+    }
+    const position = await kucoinClient.getPosition(symbol);
+    res.json({ success: true, data: position });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter posição Futures');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/futures/margin-mode/:symbol - Modo de margem Futures
+app.get('/api/integrations/trading/futures/margin-mode/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const { symbol } = req.params;
+    if (!symbol) {
+      res.status(400).json({ error: 'Símbolo obrigatório' });
+      return;
+    }
+    const result = await kucoinClient.getMarginMode(symbol);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter margin mode Futures');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/futures/margin-mode - Alterar modo de margem Futures
+app.post('/api/integrations/trading/futures/margin-mode', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const bodySchema = z.object({
+      symbol: z.string().min(1),
+      marginMode: z.enum(['ISOLATED', 'CROSS']),
+    });
+    const bodyResult = bodySchema.safeParse(req.body);
+    if (!bodyResult.success) {
+      res.status(400).json({ error: 'Parâmetros inválidos', details: bodyResult.error.flatten() });
+      return;
+    }
+    const { symbol, marginMode } = bodyResult.data;
+    const result = await kucoinClient.changeMarginMode(symbol, marginMode);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao alterar margin mode Futures');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/futures/position-mode - Modo de posição Futures
+app.get('/api/integrations/trading/futures/position-mode', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const result = await kucoinClient.getPositionMode();
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter position mode Futures');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/futures/position-mode - Alterar modo de posição Futures
+app.post('/api/integrations/trading/futures/position-mode', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const bodySchema = z.object({
+      positionMode: z.enum(['ONE_WAY', 'HEDGE']),
+    });
+    const bodyResult = bodySchema.safeParse(req.body);
+    if (!bodyResult.success) {
+      res.status(400).json({ error: 'Parâmetros inválidos', details: bodyResult.error.flatten() });
+      return;
+    }
+    const { positionMode } = bodyResult.data;
+    const result = await kucoinClient.changePositionMode(positionMode);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao alterar position mode Futures');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/futures/leverage/:symbol - Alavancagem cross Futures
+app.get('/api/integrations/trading/futures/leverage/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const { symbol } = req.params;
+    if (!symbol) {
+      res.status(400).json({ error: 'Símbolo obrigatório' });
+      return;
+    }
+    const result = await kucoinClient.getCrossUserLeverage(symbol);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter alavancagem Futures');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/futures/leverage - Alterar alavancagem cross Futures
+app.post('/api/integrations/trading/futures/leverage', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const bodySchema = z.object({
+      symbol: z.string().min(1),
+      leverage: z.string().min(1),
+    });
+    const bodyResult = bodySchema.safeParse(req.body);
+    if (!bodyResult.success) {
+      res.status(400).json({ error: 'Parâmetros inválidos', details: bodyResult.error.flatten() });
+      return;
+    }
+    const { symbol, leverage } = bodyResult.data;
+    const result = await kucoinClient.changeCrossUserLeverage(symbol, leverage);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao alterar alavancagem Futures');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// --- FUTURES: Position History, Isolated Margin, Max Open, Risk Limits (FASE 2) ---
+
+// GET /api/integrations/trading/futures/positions/history - Histórico de posições fechadas
+app.get('/api/integrations/trading/futures/positions/history', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const symbol = req.query.symbol as string | undefined;
+    const result = await kucoinClient.getPositionsHistory(symbol);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter histórico de posições');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/futures/positions/max-open - Tamanho máximo de abertura
+app.get('/api/integrations/trading/futures/positions/max-open', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const querySchema = z.object({
+      symbol: z.string().min(1),
+      price: z.string().min(1),
+      leverage: z.coerce.number().min(1),
+    });
+    const queryResult = querySchema.safeParse(req.query);
+    if (!queryResult.success) {
+      res.status(400).json({ error: 'Parâmetros inválidos (symbol, price, leverage obrigatórios)', details: queryResult.error.flatten() });
+      return;
+    }
+    const { symbol, price, leverage } = queryResult.data;
+    const result = await kucoinClient.getMaxOpenSize(symbol, price, leverage);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter max open size');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/futures/positions/margin/add - Adicionar margem isolada
+app.post('/api/integrations/trading/futures/positions/margin/add', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const bodySchema = z.object({
+      symbol: z.string().min(1),
+      margin: z.number().positive(),
+      bizNo: z.string().min(1),
+    });
+    const bodyResult = bodySchema.safeParse(req.body);
+    if (!bodyResult.success) {
+      res.status(400).json({ error: 'Parâmetros inválidos', details: bodyResult.error.flatten() });
+      return;
+    }
+    const { symbol, margin, bizNo } = bodyResult.data;
+    const result = await kucoinClient.addIsolatedMargin(symbol, margin, bizNo);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao adicionar margem isolada');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/futures/positions/margin/remove - Remover margem isolada
+app.post('/api/integrations/trading/futures/positions/margin/remove', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const bodySchema = z.object({
+      symbol: z.string().min(1),
+      withdrawAmount: z.string().min(1),
+    });
+    const bodyResult = bodySchema.safeParse(req.body);
+    if (!bodyResult.success) {
+      res.status(400).json({ error: 'Parâmetros inválidos', details: bodyResult.error.flatten() });
+      return;
+    }
+    const { symbol, withdrawAmount } = bodyResult.data;
+    const result = await kucoinClient.removeIsolatedMargin(symbol, withdrawAmount);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao remover margem isolada');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/futures/positions/margin/max-withdraw - Max margem retirável
+app.get('/api/integrations/trading/futures/positions/margin/max-withdraw', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const symbol = req.query.symbol as string;
+    if (!symbol) {
+      res.status(400).json({ error: 'symbol obrigatório' });
+      return;
+    }
+    const result = await kucoinClient.getMaxWithdrawMargin(symbol);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter max withdraw margin');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/futures/margin-mode/batch - Batch alterar margin mode
+app.post('/api/integrations/trading/futures/margin-mode/batch', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const bodySchema = z.object({
+      symbolModes: z.array(z.object({
+        symbol: z.string().min(1),
+        marginMode: z.enum(['ISOLATED', 'CROSS']),
+      })).min(1),
+    });
+    const bodyResult = bodySchema.safeParse(req.body);
+    if (!bodyResult.success) {
+      res.status(400).json({ error: 'Parâmetros inválidos', details: bodyResult.error.flatten() });
+      return;
+    }
+    const result = await kucoinClient.batchChangeMarginMode(bodyResult.data.symbolModes);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao alterar margin mode em batch');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/futures/risk-limits/:symbol - Risk limits por símbolo
+app.get('/api/integrations/trading/futures/risk-limits/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const { symbol } = req.params;
+    if (!symbol) {
+      res.status(400).json({ error: 'symbol obrigatório' });
+      return;
+    }
+    const marginType = (req.query.marginType as string) || 'cross';
+    const result = marginType === 'isolated'
+      ? await kucoinClient.getIsolatedMarginRiskLimit(symbol)
+      : await kucoinClient.getCrossMarginRiskLimit(symbol);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter risk limits');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// --- FUTURES: Batch Orders, Order Test, Cancel by ClientOid, Cancel All Stop Orders (FASE 1) ---
+
+// POST /api/integrations/trading/futures/orders/batch - Batch de ordens Futures (até 20)
+app.post('/api/integrations/trading/futures/orders/batch', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const bodySchema = z.object({
+      orders: z.array(z.object({
+        clientOid: z.string().min(1),
+        symbol: z.string().min(1),
+        side: z.enum(['buy', 'sell']),
+        type: z.enum(['limit', 'market']),
+        leverage: z.string().min(1),
+        price: z.string().optional(),
+        size: z.number().optional(),
+        qty: z.number().optional(),
+        valueQty: z.number().optional(),
+        timeInForce: z.enum(['GTC', 'IOC', 'FOK', 'RPI']).optional(),
+        postOnly: z.boolean().optional(),
+        hidden: z.boolean().optional(),
+        iceberg: z.boolean().optional(),
+        visibleSize: z.string().optional(),
+        remark: z.string().optional(),
+        stop: z.enum(['down', 'up']).optional(),
+        stopPriceType: z.enum(['TP', 'IP', 'MP']).optional(),
+        stopPrice: z.string().optional(),
+        reduceOnly: z.boolean().optional(),
+        closeOrder: z.boolean().optional(),
+        forceHold: z.boolean().optional(),
+        marginMode: z.enum(['ISOLATED', 'CROSS']).optional(),
+        stp: z.enum(['CN', 'CO', 'CB', 'DC']).optional(),
+      })).min(1).max(20),
+    });
+    const bodyResult = bodySchema.safeParse(req.body);
+    if (!bodyResult.success) {
+      res.status(400).json({ error: 'Parâmetros inválidos', details: bodyResult.error.flatten() });
+      return;
+    }
+    const ordersWithNumericLeverage = bodyResult.data.orders.map((o) => ({
+      ...o,
+      leverage: Number(o.leverage),
+      qty: o.qty != null ? String(o.qty) : undefined,
+      valueQty: o.valueQty != null ? String(o.valueQty) : undefined,
+    }));
+    const result = await kucoinClient.batchCreateOrders(ordersWithNumericLeverage as unknown as kucoinClient.CreateOrderParams[]);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao criar batch de ordens Futures');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/futures/orders/test - Ordem de teste Futures (dry run)
+app.post('/api/integrations/trading/futures/orders/test', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const bodySchema = z.object({
+      clientOid: z.string().min(1),
+      symbol: z.string().min(1),
+      side: z.enum(['buy', 'sell']),
+      type: z.enum(['limit', 'market']),
+      leverage: z.string().min(1),
+      price: z.string().optional(),
+      size: z.number().optional(),
+      qty: z.number().optional(),
+      valueQty: z.number().optional(),
+      timeInForce: z.enum(['GTC', 'IOC', 'FOK', 'RPI']).optional(),
+      postOnly: z.boolean().optional(),
+      hidden: z.boolean().optional(),
+      iceberg: z.boolean().optional(),
+      visibleSize: z.string().optional(),
+      remark: z.string().optional(),
+      stop: z.enum(['down', 'up']).optional(),
+      stopPriceType: z.enum(['TP', 'IP', 'MP']).optional(),
+      stopPrice: z.string().optional(),
+      reduceOnly: z.boolean().optional(),
+      closeOrder: z.boolean().optional(),
+      forceHold: z.boolean().optional(),
+      marginMode: z.enum(['ISOLATED', 'CROSS']).optional(),
+      stp: z.enum(['CN', 'CO', 'CB', 'DC']).optional(),
+    });
+    const bodyResult = bodySchema.safeParse(req.body);
+    if (!bodyResult.success) {
+      res.status(400).json({ error: 'Parâmetros inválidos', details: bodyResult.error.flatten() });
+      return;
+    }
+    const testOrderParams = {
+      ...bodyResult.data,
+      leverage: Number(bodyResult.data.leverage),
+      qty: bodyResult.data.qty != null ? String(bodyResult.data.qty) : undefined,
+      valueQty: bodyResult.data.valueQty != null ? String(bodyResult.data.valueQty) : undefined,
+    };
+    const result = await kucoinClient.createOrderTest(testOrderParams as unknown as kucoinClient.CreateOrderParams);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao criar ordem de teste Futures');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// DELETE /api/integrations/trading/futures/orders/by-client-oid/:clientOid - Cancelar ordem Futures por clientOid
+app.delete('/api/integrations/trading/futures/orders/by-client-oid/:clientOid', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const { clientOid } = req.params;
+    const symbol = req.query.symbol as string;
+    if (!clientOid || !symbol) {
+      res.status(400).json({ error: 'clientOid e symbol obrigatórios' });
+      return;
+    }
+    const result = await kucoinClient.cancelOrderByClientOid(clientOid, symbol);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao cancelar ordem Futures por clientOid');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// DELETE /api/integrations/trading/futures/stop-orders/all - Cancelar todas stop orders Futures
+app.delete('/api/integrations/trading/futures/stop-orders/all', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const symbol = req.query.symbol as string | undefined;
+    const result = await kucoinClient.cancelAllStopOrders(symbol);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao cancelar todas stop orders Futures');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// ============================================================================
+// FUTURES: Market Data Avançado, Ordens Avançadas, Posições, Funding Fees
+// Cobertura 100% KuCoin Futures API
+// ============================================================================
+
+// GET /api/integrations/trading/futures/tickers - Todos os tickers Futures
+app.get('/api/integrations/trading/futures/tickers', requirePermission('integrations:trading:read'), async (_req: Request, res: Response) => {
+  try {
+    const tickers = await kucoinClient.getAllFuturesTickers();
+    res.json({ success: true, data: tickers });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter todos os tickers Futures');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/futures/orderbook/full/:symbol - Order book completo Futures (Level 2)
+app.get('/api/integrations/trading/futures/orderbook/full/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const { symbol } = req.params;
+    if (!symbol) {
+      res.status(400).json({ error: 'Símbolo obrigatório' });
+      return;
+    }
+    const orderbook = await kucoinClient.getFullFuturesOrderBook(symbol);
+    res.json({ success: true, data: orderbook });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter order book completo Futures');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/futures/index/spot/:symbol - Índice de preço spot
+app.get('/api/integrations/trading/futures/index/spot/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const { symbol } = req.params;
+    if (!symbol) {
+      res.status(400).json({ error: 'Símbolo obrigatório' });
+      return;
+    }
+    const startAt = req.query.startAt ? Number(req.query.startAt) : undefined;
+    const endAt = req.query.endAt ? Number(req.query.endAt) : undefined;
+    const maxCount = req.query.maxCount ? Number(req.query.maxCount) : undefined;
+    const result = await kucoinClient.getSpotIndexPrice(symbol, { startAt, endAt, maxCount });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter índice de preço spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/futures/index/interest/:symbol - Índice de taxa de juros
+app.get('/api/integrations/trading/futures/index/interest/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const { symbol } = req.params;
+    if (!symbol) {
+      res.status(400).json({ error: 'Símbolo obrigatório' });
+      return;
+    }
+    const startAt = req.query.startAt ? Number(req.query.startAt) : undefined;
+    const endAt = req.query.endAt ? Number(req.query.endAt) : undefined;
+    const maxCount = req.query.maxCount ? Number(req.query.maxCount) : undefined;
+    const result = await kucoinClient.getInterestRateIndex(symbol, { startAt, endAt, maxCount });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter índice de taxa de juros');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/futures/index/premium/:symbol - Índice premium
+app.get('/api/integrations/trading/futures/index/premium/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const { symbol } = req.params;
+    if (!symbol) {
+      res.status(400).json({ error: 'Símbolo obrigatório' });
+      return;
+    }
+    const startAt = req.query.startAt ? Number(req.query.startAt) : undefined;
+    const endAt = req.query.endAt ? Number(req.query.endAt) : undefined;
+    const maxCount = req.query.maxCount ? Number(req.query.maxCount) : undefined;
+    const result = await kucoinClient.getPremiumIndex(symbol, { startAt, endAt, maxCount });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter índice premium');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/futures/stats/24hr - Estatísticas 24h Futures
+app.get('/api/integrations/trading/futures/stats/24hr', requirePermission('integrations:trading:read'), async (_req: Request, res: Response) => {
+  try {
+    const stats = await kucoinClient.get24hrStats();
+    res.json({ success: true, data: stats });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter estatísticas 24h Futures');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/futures/server-time - Hora do servidor Futures
+app.get('/api/integrations/trading/futures/server-time', requirePermission('integrations:trading:read'), async (_req: Request, res: Response) => {
+  try {
+    const time = await kucoinClient.getFuturesServerTime();
+    res.json({ success: true, data: { timestamp: time } });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter hora do servidor Futures');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/futures/service-status - Status do serviço Futures
+app.get('/api/integrations/trading/futures/service-status', requirePermission('integrations:trading:read'), async (_req: Request, res: Response) => {
+  try {
+    const status = await kucoinClient.getFuturesServiceStatus();
+    res.json({ success: true, data: status });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter status do serviço Futures');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// DELETE /api/integrations/trading/futures/orders/batch-cancel - Cancelar múltiplas ordens por IDs
+app.delete('/api/integrations/trading/futures/orders/batch-cancel', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const orderIdsRaw = req.query.orderIds as string | undefined;
+    if (!orderIdsRaw) {
+      res.status(400).json({ error: 'orderIds obrigatório (separados por vírgula)' });
+      return;
+    }
+    const orderIds = orderIdsRaw.split(',').map(id => id.trim()).filter(Boolean);
+    const result = await kucoinClient.batchCancelOrders(orderIds);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao cancelar ordens em batch Futures');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/futures/orders/recent-closed - Ordens recentes fechadas Futures
+app.get('/api/integrations/trading/futures/orders/recent-closed', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const symbol = req.query.symbol as string | undefined;
+    const result = await kucoinClient.getRecentClosedOrders(symbol);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter ordens recentes fechadas Futures');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/futures/orders/open-value/:symbol - Valor de ordens abertas Futures
+app.get('/api/integrations/trading/futures/orders/open-value/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const { symbol } = req.params;
+    if (!symbol) {
+      res.status(400).json({ error: 'Símbolo obrigatório' });
+      return;
+    }
+    const result = await kucoinClient.getOpenOrderValue(symbol);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter valor de ordens abertas Futures');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/futures/fills - Fills/trades Futures
+app.get('/api/integrations/trading/futures/fills', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const params = {
+      symbol: req.query.symbol as string | undefined,
+      orderId: req.query.orderId as string | undefined,
+      side: req.query.side as 'buy' | 'sell' | undefined,
+      type: req.query.type as 'limit' | 'market' | undefined,
+      startAt: req.query.startAt ? Number(req.query.startAt) : undefined,
+      endAt: req.query.endAt ? Number(req.query.endAt) : undefined,
+      pageSize: req.query.pageSize ? Number(req.query.pageSize) : undefined,
+      currentPage: req.query.currentPage ? Number(req.query.currentPage) : undefined,
+    };
+    const result = await kucoinClient.getFills(params);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter fills Futures');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/futures/positions/cross-margin-requirement/:symbol - Requisito margem cross
+app.get('/api/integrations/trading/futures/positions/cross-margin-requirement/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const { symbol } = req.params;
+    if (!symbol) {
+      res.status(400).json({ error: 'Símbolo obrigatório' });
+      return;
+    }
+    const result = await kucoinClient.getCrossMarginRequirement(symbol);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter requisito de margem cross');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/futures/risk-limits/isolated - Modificar risk limit isolado
+app.post('/api/integrations/trading/futures/risk-limits/isolated', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const { symbol, level } = req.body as { symbol?: string; level?: number };
+    if (!symbol || level === undefined) {
+      res.status(400).json({ error: 'symbol e level obrigatórios' });
+      return;
+    }
+    const result = await kucoinClient.modifyIsolatedMarginRiskLimit(symbol, level);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao modificar risk limit isolado');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/futures/funding/public/:symbol - Histórico público de funding
+app.get('/api/integrations/trading/futures/funding/public/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const { symbol } = req.params;
+    if (!symbol) {
+      res.status(400).json({ error: 'Símbolo obrigatório' });
+      return;
+    }
+    const from = req.query.from ? Number(req.query.from) : Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const to = req.query.to ? Number(req.query.to) : Date.now();
+    const result = await kucoinClient.getPublicFundingHistory(symbol, from, to);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter histórico público de funding');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/futures/funding/private/:symbol - Histórico privado de funding
+app.get('/api/integrations/trading/futures/funding/private/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const { symbol } = req.params;
+    if (!symbol) {
+      res.status(400).json({ error: 'Símbolo obrigatório' });
+      return;
+    }
+    const startAt = req.query.startAt ? Number(req.query.startAt) : undefined;
+    const endAt = req.query.endAt ? Number(req.query.endAt) : undefined;
+    const maxCount = req.query.maxCount ? Number(req.query.maxCount) : undefined;
+    const result = await kucoinClient.getPrivateFundingHistory(symbol, { startAt, endAt, maxCount });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter histórico privado de funding');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// --- SPOT: Ticker, Accounts, Orders, Stop Orders ---
+
+// GET /api/integrations/trading/spot/ticker/:symbol - Ticker Spot
+app.get('/api/integrations/trading/spot/ticker/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const { symbol } = req.params;
+    if (!symbol) {
+      res.status(400).json({ error: 'Símbolo obrigatório' });
+      return;
+    }
+    const ticker = await kucoinSpotClient.getSpotTicker(symbol);
+    res.json({ success: true, data: ticker });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter ticker Spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/spot/tickers - Todos os tickers Spot
+app.get('/api/integrations/trading/spot/tickers', requirePermission('integrations:trading:read'), async (_req: Request, res: Response) => {
+  try {
+    const tickers = await kucoinSpotClient.getSpotAllTickers();
+    res.json({ success: true, data: tickers });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter todos tickers Spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/spot/trades/:symbol - Trades recentes Spot
+app.get('/api/integrations/trading/spot/trades/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const { symbol } = req.params;
+    if (!symbol) {
+      res.status(400).json({ error: 'Símbolo obrigatório' });
+      return;
+    }
+    const trades = await kucoinSpotClient.getSpotTrades(symbol);
+    res.json({ success: true, data: trades });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter trades Spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/spot/accounts - Contas Spot
+app.get('/api/integrations/trading/spot/accounts', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinSpotClient.isSpotConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const type = (req.query.type as 'trade' | 'main' | 'margin' | 'isolated') || 'trade';
+    const accounts = await kucoinSpotClient.getSpotAccounts(type);
+    res.json({ success: true, data: accounts });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter contas Spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/spot/orders - Criar ordem Spot
+app.post('/api/integrations/trading/spot/orders', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinSpotClient.isSpotConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const bodySchema = z.object({
+      clientOid: z.string().min(1),
+      symbol: z.string().min(1),
+      side: z.enum(['buy', 'sell']),
+      type: z.enum(['limit', 'market']),
+      price: z.string().optional(),
+      size: z.string().optional(),
+      funds: z.string().optional(),
+      timeInForce: z.enum(['GTC', 'GTT', 'IOC', 'FOK']).optional(),
+      cancelAfter: z.number().optional(),
+      postOnly: z.boolean().optional(),
+      hidden: z.boolean().optional(),
+      iceberg: z.boolean().optional(),
+      visibleSize: z.string().optional(),
+      remark: z.string().optional(),
+      stp: z.enum(['CN', 'CO', 'CB', 'DC']).optional(),
+    });
+    const bodyResult = bodySchema.safeParse(req.body);
+    if (!bodyResult.success) {
+      res.status(400).json({ error: 'Parâmetros inválidos', details: bodyResult.error.flatten() });
+      return;
+    }
+    const result = await kucoinSpotClient.createSpotOrder(bodyResult.data);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao criar ordem Spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// DELETE /api/integrations/trading/spot/orders/:orderId - Cancelar ordem Spot por ID
+app.delete('/api/integrations/trading/spot/orders/:orderId', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinSpotClient.isSpotConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const { orderId } = req.params;
+    if (!orderId) {
+      res.status(400).json({ error: 'orderId obrigatório' });
+      return;
+    }
+    const result = await kucoinSpotClient.cancelSpotOrder(orderId);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao cancelar ordem Spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/spot/orders/:orderId - Detalhes de ordem Spot
+app.get('/api/integrations/trading/spot/orders/:orderId', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinSpotClient.isSpotConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const { orderId } = req.params;
+    if (!orderId) {
+      res.status(400).json({ error: 'orderId obrigatório' });
+      return;
+    }
+    const order = await kucoinSpotClient.getSpotOrder(orderId);
+    res.json({ success: true, data: order });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter ordem Spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/spot/orders/open - Ordens abertas Spot
+app.get('/api/integrations/trading/spot/orders/open', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinSpotClient.isSpotConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const symbol = req.query.symbol as string | undefined;
+    const orders = await kucoinSpotClient.getOpenSpotOrders(symbol);
+    res.json({ success: true, data: orders });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter ordens abertas Spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/spot/orders/closed - Ordens fechadas Spot
+app.get('/api/integrations/trading/spot/orders/closed', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinSpotClient.isSpotConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const symbol = req.query.symbol as string | undefined;
+    const orders = await kucoinSpotClient.getClosedSpotOrders(symbol);
+    res.json({ success: true, data: orders });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter ordens fechadas Spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/spot/stop-orders - Criar stop order Spot
+app.post('/api/integrations/trading/spot/stop-orders', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinSpotClient.isSpotConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const bodySchema = z.object({
+      clientOid: z.string().min(1),
+      symbol: z.string().min(1),
+      side: z.enum(['buy', 'sell']),
+      type: z.enum(['limit', 'market']),
+      stopPrice: z.string().min(1),
+      price: z.string().optional(),
+      size: z.string().optional(),
+      funds: z.string().optional(),
+      timeInForce: z.enum(['GTC', 'GTT', 'IOC', 'FOK']).optional(),
+      cancelAfter: z.number().optional(),
+      remark: z.string().optional(),
+      stp: z.enum(['CN', 'CO', 'CB', 'DC']).optional(),
+      tradeType: z.enum(['TRADE', 'MARGIN_TRADE', 'MARGIN_ISOLATED_TRADE']).optional(),
+    });
+    const bodyResult = bodySchema.safeParse(req.body);
+    if (!bodyResult.success) {
+      res.status(400).json({ error: 'Parâmetros inválidos', details: bodyResult.error.flatten() });
+      return;
+    }
+    const result = await kucoinSpotClient.createSpotStopOrder(bodyResult.data);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao criar stop order Spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/spot/stop-orders - Listar stop orders Spot
+app.get('/api/integrations/trading/spot/stop-orders', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinSpotClient.isSpotConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const symbol = req.query.symbol as string | undefined;
+    const orders = await kucoinSpotClient.getSpotStopOrders(symbol);
+    res.json({ success: true, data: orders });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter stop orders Spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// DELETE /api/integrations/trading/spot/stop-orders/:orderId - Cancelar stop order Spot
+app.delete('/api/integrations/trading/spot/stop-orders/:orderId', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinSpotClient.isSpotConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const { orderId } = req.params;
+    if (!orderId) {
+      res.status(400).json({ error: 'orderId obrigatório' });
+      return;
+    }
+    const result = await kucoinSpotClient.cancelSpotStopOrder(orderId);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao cancelar stop order Spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// ============================================================================
+// FASE 3 - Spot OCO Orders
+// ============================================================================
+
+const createSpotOcoOrderSchema = z.object({
+  clientOid: z.string().min(1),
+  symbol: z.string().min(1),
+  side: z.enum(['buy', 'sell']),
+  price: z.string().min(1),
+  size: z.string().min(1),
+  stopPrice: z.string().min(1),
+  limitPrice: z.string().min(1),
+  tradeType: z.literal('TRADE').optional(),
+  remark: z.string().optional(),
+});
+
+// Criar OCO order Spot
+app.post('/api/integrations/trading/spot/oco-orders', requirePermission('integrations:trading:write'), async (req, res) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const params = createSpotOcoOrderSchema.parse(req.body);
+    const result = await kucoinSpotClient.createSpotOcoOrder(params);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ error: 'Parâmetros inválidos', details: error.errors });
+      return;
+    }
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao criar OCO order Spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// Cancelar OCO order Spot por orderId
+app.delete('/api/integrations/trading/spot/oco-orders/:orderId', requirePermission('integrations:trading:write'), async (req, res) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { orderId } = req.params;
+    const result = await kucoinSpotClient.cancelSpotOcoOrder(orderId);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao cancelar OCO order Spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// Cancelar OCO order Spot por clientOid
+app.delete('/api/integrations/trading/spot/oco-orders/by-client-oid/:clientOid', requirePermission('integrations:trading:write'), async (req, res) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { clientOid } = req.params;
+    const result = await kucoinSpotClient.cancelSpotOcoOrderByClientOid(clientOid);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao cancelar OCO order Spot por clientOid');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// Cancelar todas OCO orders Spot
+app.delete('/api/integrations/trading/spot/oco-orders/all', requirePermission('integrations:trading:write'), async (req, res) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const symbol = req.query.symbol as string | undefined;
+    const orderIds = req.query.orderIds as string | undefined;
+    const result = await kucoinSpotClient.cancelAllSpotOcoOrders(symbol, orderIds);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao cancelar todas OCO orders Spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// Obter OCO order Spot por orderId
+app.get('/api/integrations/trading/spot/oco-orders/:orderId', requirePermission('integrations:trading:read'), async (req, res) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { orderId } = req.params;
+    const result = await kucoinSpotClient.getSpotOcoOrder(orderId);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter OCO order Spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// Obter OCO order Spot por clientOid
+app.get('/api/integrations/trading/spot/oco-orders/by-client-oid/:clientOid', requirePermission('integrations:trading:read'), async (req, res) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { clientOid } = req.params;
+    const result = await kucoinSpotClient.getSpotOcoOrderByClientOid(clientOid);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter OCO order Spot por clientOid');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// Listar OCO orders Spot
+app.get('/api/integrations/trading/spot/oco-orders', requirePermission('integrations:trading:read'), async (req, res) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const params = {
+      symbol: req.query.symbol as string | undefined,
+      orderIds: req.query.orderIds as string | undefined,
+      startAt: req.query.startAt ? Number(req.query.startAt) : undefined,
+      endAt: req.query.endAt ? Number(req.query.endAt) : undefined,
+      currentPage: req.query.currentPage ? Number(req.query.currentPage) : undefined,
+      pageSize: req.query.pageSize ? Number(req.query.pageSize) : undefined,
+    };
+    const result = await kucoinSpotClient.getSpotOcoOrders(params);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao listar OCO orders Spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// ============================================================================
+// FASE 3 - Spot Batch Orders, Cancel by ClientOid, Cancel All, Modify
+// ============================================================================
+
+const batchSpotOrderSchema = z.object({
+  orderList: z.array(z.object({
+    clientOid: z.string().min(1),
+    side: z.enum(['buy', 'sell']),
+    symbol: z.string().min(1),
+    type: z.enum(['limit', 'market']),
+    price: z.string().optional(),
+    size: z.string().optional(),
+    funds: z.string().optional(),
+    timeInForce: z.enum(['GTC', 'IOC', 'FOK']).optional(),
+    remark: z.string().optional(),
+  })).min(1).max(5),
+});
+
+const modifySpotOrderSchema = z.object({
+  symbol: z.string().min(1),
+  orderId: z.string().optional(),
+  clientOid: z.string().optional(),
+  newPrice: z.string().optional(),
+  newSize: z.string().optional(),
+});
+
+// Batch create spot orders
+app.post('/api/integrations/trading/spot/orders/batch', requirePermission('integrations:trading:write'), async (req, res) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { orderList } = batchSpotOrderSchema.parse(req.body);
+    const result = await kucoinSpotClient.batchCreateSpotOrders(orderList);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ error: 'Parâmetros inválidos', details: error.errors });
+      return;
+    }
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao criar batch spot orders');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// Cancelar spot order por clientOid
+app.delete('/api/integrations/trading/spot/orders/by-client-oid/:clientOid', requirePermission('integrations:trading:write'), async (req, res) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { clientOid } = req.params;
+    const symbol = req.query.symbol as string;
+    if (!symbol) {
+      res.status(400).json({ error: 'Query param symbol é obrigatório' });
+      return;
+    }
+    const result = await kucoinSpotClient.cancelSpotOrderByClientOid(clientOid, symbol);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao cancelar spot order por clientOid');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// Cancelar todas spot orders
+app.delete('/api/integrations/trading/spot/orders/all', requirePermission('integrations:trading:write'), async (req, res) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const symbol = req.query.symbol as string | undefined;
+    const result = await kucoinSpotClient.cancelAllSpotOrders(symbol);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao cancelar todas spot orders');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// Cancelar todas stop orders Spot
+app.delete('/api/integrations/trading/spot/stop-orders/all', requirePermission('integrations:trading:write'), async (req, res) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const symbol = req.query.symbol as string | undefined;
+    const result = await kucoinSpotClient.cancelAllSpotStopOrders(symbol);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao cancelar todas stop orders Spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// Modificar ordem Spot
+app.post('/api/integrations/trading/spot/orders/modify', requirePermission('integrations:trading:write'), async (req, res) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const params = modifySpotOrderSchema.parse(req.body);
+    const result = await kucoinSpotClient.modifySpotOrder(params);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ error: 'Parâmetros inválidos', details: error.errors });
+      return;
+    }
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao modificar spot order');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// --- SPOT: Market Data Avançado + Ordens Avançadas (cobertura 100%) ---
+
+// GET /api/integrations/trading/spot/announcements - Anúncios de novos pares Spot
+app.get('/api/integrations/trading/spot/announcements', requirePermission('integrations:trading:read'), async (_req: Request, res: Response) => {
+  try {
+    const data = await kucoinSpotClient.getSpotAnnouncements();
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar anúncios spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/spot/currency/:currency - Detalhes de uma moeda Spot
+app.get('/api/integrations/trading/spot/currency/:currency', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const { currency } = req.params;
+    const data = await kucoinSpotClient.getSpotCurrency(currency);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar moeda spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/spot/symbol/:symbol - Detalhes de um par Spot
+app.get('/api/integrations/trading/spot/symbol/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const { symbol } = req.params;
+    const data = await kucoinSpotClient.getSpotSymbol(symbol);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar símbolo spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/spot/orderbook/full/:symbol - Order book completo Spot (L3)
+app.get('/api/integrations/trading/spot/orderbook/full/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const { symbol } = req.params;
+    const data = await kucoinSpotClient.getFullSpotOrderBook(symbol);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar orderbook completo spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/spot/orderbook/call-auction/:symbol - Order book leilão Spot
+app.get('/api/integrations/trading/spot/orderbook/call-auction/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const { symbol } = req.params;
+    const data = await kucoinSpotClient.getCallAuctionOrderBook(symbol);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar orderbook leilão spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/spot/call-auction/:symbol - Informações de leilão Spot
+app.get('/api/integrations/trading/spot/call-auction/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const { symbol } = req.params;
+    const data = await kucoinSpotClient.getCallAuctionInfo(symbol);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar info leilão spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/spot/fiat-price - Preço fiat de moedas
+app.get('/api/integrations/trading/spot/fiat-price', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const base = req.query.base as string | undefined;
+    const currencies = req.query.currencies as string | undefined;
+    const data = await kucoinSpotClient.getFiatPrice({ base, currencies });
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar preço fiat');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/spot/stats/:symbol - Estatísticas 24h Spot
+app.get('/api/integrations/trading/spot/stats/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const { symbol } = req.params;
+    const data = await kucoinSpotClient.getSpot24hrStats(symbol);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar stats 24h spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/spot/markets - Lista de mercados Spot
+app.get('/api/integrations/trading/spot/markets', requirePermission('integrations:trading:read'), async (_req: Request, res: Response) => {
+  try {
+    const data = await kucoinSpotClient.getSpotMarketList();
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar mercados spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/spot/server-time - Hora do servidor Spot
+app.get('/api/integrations/trading/spot/server-time', requirePermission('integrations:trading:read'), async (_req: Request, res: Response) => {
+  try {
+    const data = await kucoinSpotClient.getSpotServerTime();
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar hora servidor spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/spot/service-status - Status do serviço Spot
+app.get('/api/integrations/trading/spot/service-status', requirePermission('integrations:trading:read'), async (_req: Request, res: Response) => {
+  try {
+    const data = await kucoinSpotClient.getSpotServiceStatus();
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar status serviço spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/spot/orders/sync - Criar ordem Spot síncrona
+app.post('/api/integrations/trading/spot/orders/sync', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const result = await kucoinSpotClient.createSpotOrderSync(req.body);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao criar spot order sync');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/spot/orders/test - Criar ordem Spot teste
+app.post('/api/integrations/trading/spot/orders/test', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const result = await kucoinSpotClient.createSpotOrderTest(req.body);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao criar spot order teste');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/spot/orders/batch/sync - Criar batch ordens Spot síncronas
+app.post('/api/integrations/trading/spot/orders/batch/sync', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { orderList } = req.body;
+    const result = await kucoinSpotClient.batchCreateSpotOrdersSync(orderList);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao criar batch spot orders sync');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// DELETE /api/integrations/trading/spot/orders/:orderId/sync - Cancelar ordem Spot síncrona
+app.delete('/api/integrations/trading/spot/orders/:orderId/sync', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { orderId } = req.params;
+    const symbol = req.query.symbol as string;
+    if (!symbol) { res.status(400).json({ error: 'symbol é obrigatório' }); return; }
+    const result = await kucoinSpotClient.cancelSpotOrderSync(orderId, symbol);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao cancelar spot order sync');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// DELETE /api/integrations/trading/spot/orders/by-client-oid/:clientOid/sync - Cancelar ordem Spot por clientOid síncrona
+app.delete('/api/integrations/trading/spot/orders/by-client-oid/:clientOid/sync', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { clientOid } = req.params;
+    const symbol = req.query.symbol as string;
+    if (!symbol) { res.status(400).json({ error: 'symbol é obrigatório' }); return; }
+    const result = await kucoinSpotClient.cancelSpotOrderByClientOidSync(clientOid, symbol);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao cancelar spot order por clientOid sync');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// DELETE /api/integrations/trading/spot/orders/:orderId/partial - Cancelar parcialmente ordem Spot
+app.delete('/api/integrations/trading/spot/orders/:orderId/partial', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { orderId } = req.params;
+    const { cancelSize, symbol } = req.body;
+    const result = await kucoinSpotClient.cancelPartialSpotOrder(orderId, cancelSize, symbol);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao cancelar parcialmente spot order');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// DELETE /api/integrations/trading/spot/orders/by-symbol/:symbol - Cancelar ordens Spot por símbolo
+app.delete('/api/integrations/trading/spot/orders/by-symbol/:symbol', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { symbol } = req.params;
+    const result = await kucoinSpotClient.cancelSpotOrdersBySymbol(symbol);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao cancelar spot orders por símbolo');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/spot/orders/by-client-oid/:clientOid/detail - Detalhes ordem Spot por clientOid
+app.get('/api/integrations/trading/spot/orders/by-client-oid/:clientOid/detail', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { clientOid } = req.params;
+    const symbol = req.query.symbol as string;
+    if (!symbol) { res.status(400).json({ error: 'symbol é obrigatório' }); return; }
+    const result = await kucoinSpotClient.getSpotOrderByClientOid(clientOid, symbol);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar spot order por clientOid');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/spot/orders/symbols-with-open - Símbolos com ordens abertas
+app.get('/api/integrations/trading/spot/orders/symbols-with-open', requirePermission('integrations:trading:read'), async (_req: Request, res: Response) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const data = await kucoinSpotClient.getSymbolsWithOpenOrder();
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar símbolos com ordens abertas');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/spot/orders/open/paged - Ordens abertas Spot paginadas
+app.get('/api/integrations/trading/spot/orders/open/paged', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const symbol = req.query.symbol as string;
+    if (!symbol) { res.status(400).json({ error: 'symbol é obrigatório' }); return; }
+    const currentPage = req.query.currentPage ? Number(req.query.currentPage) : undefined;
+    const pageSize = req.query.pageSize ? Number(req.query.pageSize) : undefined;
+    const data = await kucoinSpotClient.getOpenSpotOrdersByPage({ symbol, currentPage, pageSize });
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar ordens abertas paginadas');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/spot/fills - Histórico de trades Spot
+app.get('/api/integrations/trading/spot/fills', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const symbol = req.query.symbol as string;
+    if (!symbol) { res.status(400).json({ error: 'symbol é obrigatório' }); return; }
+    const data = await kucoinSpotClient.getSpotTradeHistory({
+      symbol,
+      orderId: req.query.orderId as string | undefined,
+      side: req.query.side as 'buy' | 'sell' | undefined,
+      type: req.query.type as 'limit' | 'market' | undefined,
+      startAt: req.query.startAt ? Number(req.query.startAt) : undefined,
+      endAt: req.query.endAt ? Number(req.query.endAt) : undefined,
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar fills spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/spot/dcp - Obter configuração DCP (Disconnect Cancel Protection)
+app.get('/api/integrations/trading/spot/dcp', requirePermission('integrations:trading:read'), async (_req: Request, res: Response) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const data = await kucoinSpotClient.getSpotDCP();
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar DCP spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/spot/dcp - Configurar DCP (Disconnect Cancel Protection)
+app.post('/api/integrations/trading/spot/dcp', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { timeout, symbols } = req.body;
+    const data = await kucoinSpotClient.setSpotDCP(timeout, symbols);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao configurar DCP spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// DELETE /api/integrations/trading/spot/stop-orders/by-client-oid/:clientOid - Cancelar stop order Spot por clientOid
+app.delete('/api/integrations/trading/spot/stop-orders/by-client-oid/:clientOid', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { clientOid } = req.params;
+    const symbol = req.query.symbol as string | undefined;
+    const result = await kucoinSpotClient.cancelSpotStopOrderByClientOid(clientOid, symbol);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao cancelar stop order spot por clientOid');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/spot/stop-orders/:orderId/detail - Detalhes stop order Spot por ID
+app.get('/api/integrations/trading/spot/stop-orders/:orderId/detail', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { orderId } = req.params;
+    const data = await kucoinSpotClient.getSpotStopOrderById(orderId);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar detalhes stop order spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/spot/stop-orders/by-client-oid/:clientOid - Detalhes stop order Spot por clientOid
+app.get('/api/integrations/trading/spot/stop-orders/by-client-oid/:clientOid', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { clientOid } = req.params;
+    const data = await kucoinSpotClient.getSpotStopOrderByClientOid(clientOid);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar stop order spot por clientOid');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/spot/oco-orders/:orderId/detail - Detalhes OCO Spot com sub-orders
+app.get('/api/integrations/trading/spot/oco-orders/:orderId/detail', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { orderId } = req.params;
+    const data = await kucoinSpotClient.getSpotOcoOrderDetail(orderId);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar detalhes OCO spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// --- MARGIN: Symbols, Accounts, Orders, Stop Orders ---
+
+// GET /api/integrations/trading/margin/symbols/cross - Símbolos margin cross
+app.get('/api/integrations/trading/margin/symbols/cross', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const symbol = req.query.symbol as string | undefined;
+    const symbols = await kucoinMarginClient.getCrossMarginSymbols(symbol);
+    res.json({ success: true, data: symbols });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter símbolos margin cross');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/margin/symbols/isolated - Símbolos margin isolated
+app.get('/api/integrations/trading/margin/symbols/isolated', requirePermission('integrations:trading:read'), async (_req: Request, res: Response) => {
+  try {
+    const symbols = await kucoinMarginClient.getIsolatedMarginSymbols();
+    res.json({ success: true, data: symbols });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter símbolos margin isolated');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/margin/account/cross - Conta margin cross
+app.get('/api/integrations/trading/margin/account/cross', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinMarginClient.isMarginConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const quoteCurrency = req.query.quoteCurrency as string | undefined;
+    const account = await kucoinMarginClient.getCrossMarginAccount(quoteCurrency);
+    res.json({ success: true, data: account });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter conta margin cross');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/margin/account/isolated - Conta margin isolated
+app.get('/api/integrations/trading/margin/account/isolated', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinMarginClient.isMarginConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const symbol = req.query.symbol as string | undefined;
+    const quoteCurrency = req.query.quoteCurrency as string | undefined;
+    const account = await kucoinMarginClient.getIsolatedMarginAccount(symbol, quoteCurrency);
+    res.json({ success: true, data: account });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter conta margin isolated');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/margin/orders - Criar ordem Margin
+app.post('/api/integrations/trading/margin/orders', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinMarginClient.isMarginConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const bodySchema = z.object({
+      clientOid: z.string().min(1),
+      symbol: z.string().min(1),
+      side: z.enum(['buy', 'sell']),
+      type: z.enum(['limit', 'market']),
+      price: z.string().optional(),
+      size: z.string().optional(),
+      funds: z.string().optional(),
+      timeInForce: z.enum(['GTC', 'GTT', 'IOC', 'FOK']).optional(),
+      cancelAfter: z.number().optional(),
+      postOnly: z.boolean().optional(),
+      hidden: z.boolean().optional(),
+      iceberg: z.boolean().optional(),
+      visibleSize: z.string().optional(),
+      remark: z.string().optional(),
+      stp: z.enum(['CN', 'CO', 'CB', 'DC']).optional(),
+      isIsolated: z.boolean().optional(),
+      autoBorrow: z.boolean().optional(),
+      autoRepay: z.boolean().optional(),
+    });
+    const bodyResult = bodySchema.safeParse(req.body);
+    if (!bodyResult.success) {
+      res.status(400).json({ error: 'Parâmetros inválidos', details: bodyResult.error.flatten() });
+      return;
+    }
+    const result = await kucoinMarginClient.createMarginOrder(bodyResult.data);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao criar ordem Margin');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// DELETE /api/integrations/trading/margin/orders/:orderId - Cancelar ordem Margin
+app.delete('/api/integrations/trading/margin/orders/:orderId', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinMarginClient.isMarginConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const { orderId } = req.params;
+    if (!orderId) {
+      res.status(400).json({ error: 'orderId obrigatório' });
+      return;
+    }
+    const result = await kucoinMarginClient.cancelMarginOrder(orderId);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao cancelar ordem Margin');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/margin/orders/:orderId - Detalhes de ordem Margin
+app.get('/api/integrations/trading/margin/orders/:orderId', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinMarginClient.isMarginConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const { orderId } = req.params;
+    if (!orderId) {
+      res.status(400).json({ error: 'orderId obrigatório' });
+      return;
+    }
+    const order = await kucoinMarginClient.getMarginOrder(orderId);
+    res.json({ success: true, data: order });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter ordem Margin');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/margin/orders/open - Ordens abertas Margin
+app.get('/api/integrations/trading/margin/orders/open', requirePermission('integrations:trading:read'), async (_req: Request, res: Response) => {
+  try {
+    if (!kucoinMarginClient.isMarginConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const orders = await kucoinMarginClient.getOpenMarginOrders();
+    res.json({ success: true, data: orders });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter ordens abertas Margin');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/margin/orders/closed - Ordens fechadas Margin
+app.get('/api/integrations/trading/margin/orders/closed', requirePermission('integrations:trading:read'), async (_req: Request, res: Response) => {
+  try {
+    if (!kucoinMarginClient.isMarginConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const orders = await kucoinMarginClient.getClosedMarginOrders();
+    res.json({ success: true, data: orders });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter ordens fechadas Margin');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/margin/stop-orders - Criar stop order Margin
+app.post('/api/integrations/trading/margin/stop-orders', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinMarginClient.isMarginConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const bodySchema = z.object({
+      clientOid: z.string().min(1),
+      symbol: z.string().min(1),
+      side: z.enum(['buy', 'sell']),
+      type: z.enum(['limit', 'market']),
+      stopPrice: z.string().min(1),
+      price: z.string().optional(),
+      size: z.string().optional(),
+      funds: z.string().optional(),
+      timeInForce: z.enum(['GTC', 'GTT', 'IOC', 'FOK']).optional(),
+      cancelAfter: z.number().optional(),
+      remark: z.string().optional(),
+      stp: z.enum(['CN', 'CO', 'CB', 'DC']).optional(),
+      isIsolated: z.boolean().optional(),
+      tradeType: z.enum(['MARGIN_TRADE', 'MARGIN_ISOLATED_TRADE']).optional(),
+    });
+    const bodyResult = bodySchema.safeParse(req.body);
+    if (!bodyResult.success) {
+      res.status(400).json({ error: 'Parâmetros inválidos', details: bodyResult.error.flatten() });
+      return;
+    }
+    const result = await kucoinMarginClient.createMarginStopOrder(bodyResult.data);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao criar stop order Margin');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/margin/stop-orders - Listar stop orders Margin
+app.get('/api/integrations/trading/margin/stop-orders', requirePermission('integrations:trading:read'), async (_req: Request, res: Response) => {
+  try {
+    if (!kucoinMarginClient.isMarginConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const orders = await kucoinMarginClient.getMarginStopOrders();
+    res.json({ success: true, data: orders });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter stop orders Margin');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// DELETE /api/integrations/trading/margin/stop-orders/:orderId - Cancelar stop order Margin
+app.delete('/api/integrations/trading/margin/stop-orders/:orderId', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    if (!kucoinMarginClient.isMarginConfigured()) {
+      respondKucoinNotConfigured(res);
+      return;
+    }
+    const { orderId } = req.params;
+    if (!orderId) {
+      res.status(400).json({ error: 'orderId obrigatório' });
+      return;
+    }
+    const result = await kucoinMarginClient.cancelMarginStopOrder(orderId);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao cancelar stop order Margin');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// ============================================================================
+// FASE 4 - Margin OCO Orders
+// ============================================================================
+
+const createMarginOcoOrderSchema = z.object({
+  clientOid: z.string().min(1),
+  symbol: z.string().min(1),
+  side: z.enum(['buy', 'sell']),
+  price: z.string().min(1),
+  size: z.string().min(1),
+  stopPrice: z.string().min(1),
+  limitPrice: z.string().min(1),
+  tradeType: z.enum(['MARGIN_TRADE', 'MARGIN_ISOLATED_TRADE']).optional(),
+  remark: z.string().optional(),
+});
+
+// Criar OCO order Margin
+app.post('/api/integrations/trading/margin/oco-orders', requirePermission('integrations:trading:write'), async (req, res) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const params = createMarginOcoOrderSchema.parse(req.body);
+    const result = await kucoinMarginClient.createMarginOcoOrder(params);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ error: 'Parâmetros inválidos', details: error.errors });
+      return;
+    }
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao criar OCO order Margin');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// Cancelar OCO order Margin por orderId
+app.delete('/api/integrations/trading/margin/oco-orders/:orderId', requirePermission('integrations:trading:write'), async (req, res) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { orderId } = req.params;
+    const result = await kucoinMarginClient.cancelMarginOcoOrder(orderId);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao cancelar OCO order Margin');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// Cancelar OCO order Margin por clientOid
+app.delete('/api/integrations/trading/margin/oco-orders/by-client-oid/:clientOid', requirePermission('integrations:trading:write'), async (req, res) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { clientOid } = req.params;
+    const result = await kucoinMarginClient.cancelMarginOcoOrderByClientOid(clientOid);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao cancelar OCO order Margin por clientOid');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// Cancelar todas OCO orders Margin
+app.delete('/api/integrations/trading/margin/oco-orders/all', requirePermission('integrations:trading:write'), async (req, res) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const symbol = req.query.symbol as string | undefined;
+    const orderIds = req.query.orderIds as string | undefined;
+    const result = await kucoinMarginClient.cancelAllMarginOcoOrders(symbol, orderIds);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao cancelar todas OCO orders Margin');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// Obter OCO order Margin por orderId
+app.get('/api/integrations/trading/margin/oco-orders/:orderId', requirePermission('integrations:trading:read'), async (req, res) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { orderId } = req.params;
+    const result = await kucoinMarginClient.getMarginOcoOrder(orderId);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter OCO order Margin');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// Obter OCO order Margin por clientOid
+app.get('/api/integrations/trading/margin/oco-orders/by-client-oid/:clientOid', requirePermission('integrations:trading:read'), async (req, res) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { clientOid } = req.params;
+    const result = await kucoinMarginClient.getMarginOcoOrderByClientOid(clientOid);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter OCO order Margin por clientOid');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// Listar OCO orders Margin
+app.get('/api/integrations/trading/margin/oco-orders', requirePermission('integrations:trading:read'), async (req, res) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const params = {
+      symbol: req.query.symbol as string | undefined,
+      orderIds: req.query.orderIds as string | undefined,
+      startAt: req.query.startAt ? Number(req.query.startAt) : undefined,
+      endAt: req.query.endAt ? Number(req.query.endAt) : undefined,
+      currentPage: req.query.currentPage ? Number(req.query.currentPage) : undefined,
+      pageSize: req.query.pageSize ? Number(req.query.pageSize) : undefined,
+    };
+    const result = await kucoinMarginClient.getMarginOcoOrders(params);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao listar OCO orders Margin');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// ============================================================================
+// FASE 4 - Margin Debit (Borrow/Repay/Interest)
+// ============================================================================
+
+const borrowMarginSchema = z.object({
+  currency: z.string().min(1),
+  size: z.string().min(1),
+  timeInForce: z.enum(['IOC', 'FOK']),
+  isIsolated: z.boolean().optional(),
+  symbol: z.string().optional(),
+  isHf: z.boolean().optional(),
+});
+
+const repayMarginSchema = z.object({
+  currency: z.string().min(1),
+  size: z.string().min(1),
+  isIsolated: z.boolean().optional(),
+  symbol: z.string().optional(),
+  isHf: z.boolean().optional(),
+});
+
+// Emprestar (borrow) moeda Margin
+app.post('/api/integrations/trading/margin/borrow', requirePermission('integrations:trading:write'), async (req, res) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const params = borrowMarginSchema.parse(req.body);
+    const result = await kucoinMarginClient.borrowMargin(params);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ error: 'Parâmetros inválidos', details: error.errors });
+      return;
+    }
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao realizar borrow Margin');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// Pagar (repay) empréstimo Margin
+app.post('/api/integrations/trading/margin/repay', requirePermission('integrations:trading:write'), async (req, res) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const params = repayMarginSchema.parse(req.body);
+    const result = await kucoinMarginClient.repayMargin(params);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ error: 'Parâmetros inválidos', details: error.errors });
+      return;
+    }
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao realizar repay Margin');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// Histórico de borrows
+app.get('/api/integrations/trading/margin/borrow', requirePermission('integrations:trading:read'), async (req, res) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const params = {
+      currency: req.query.currency as string | undefined,
+      isIsolated: req.query.isIsolated === 'true' ? true : req.query.isIsolated === 'false' ? false : undefined,
+      symbol: req.query.symbol as string | undefined,
+      orderNo: req.query.orderNo as string | undefined,
+      startTime: req.query.startTime ? Number(req.query.startTime) : undefined,
+      endTime: req.query.endTime ? Number(req.query.endTime) : undefined,
+      currentPage: req.query.currentPage ? Number(req.query.currentPage) : undefined,
+      pageSize: req.query.pageSize ? Number(req.query.pageSize) : undefined,
+    };
+    const result = await kucoinMarginClient.getBorrowHistory(params);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter histórico de borrows');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// Histórico de repays
+app.get('/api/integrations/trading/margin/repay', requirePermission('integrations:trading:read'), async (req, res) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const params = {
+      currency: req.query.currency as string | undefined,
+      isIsolated: req.query.isIsolated === 'true' ? true : req.query.isIsolated === 'false' ? false : undefined,
+      symbol: req.query.symbol as string | undefined,
+      orderNo: req.query.orderNo as string | undefined,
+      startTime: req.query.startTime ? Number(req.query.startTime) : undefined,
+      endTime: req.query.endTime ? Number(req.query.endTime) : undefined,
+      currentPage: req.query.currentPage ? Number(req.query.currentPage) : undefined,
+      pageSize: req.query.pageSize ? Number(req.query.pageSize) : undefined,
+    };
+    const result = await kucoinMarginClient.getRepayHistory(params);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter histórico de repays');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// Histórico de juros
+app.get('/api/integrations/trading/margin/interest', requirePermission('integrations:trading:read'), async (req, res) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const params = {
+      currency: req.query.currency as string | undefined,
+      isIsolated: req.query.isIsolated === 'true' ? true : req.query.isIsolated === 'false' ? false : undefined,
+      symbol: req.query.symbol as string | undefined,
+      startTime: req.query.startTime ? Number(req.query.startTime) : undefined,
+      endTime: req.query.endTime ? Number(req.query.endTime) : undefined,
+      currentPage: req.query.currentPage ? Number(req.query.currentPage) : undefined,
+      pageSize: req.query.pageSize ? Number(req.query.pageSize) : undefined,
+    };
+    const result = await kucoinMarginClient.getInterestHistory(params);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter histórico de juros');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// Obter taxas de juros de empréstimo
+app.get('/api/integrations/trading/margin/lending-rates', requirePermission('integrations:trading:read'), async (req, res) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const currency = req.query.currency as string | undefined;
+    const result = await kucoinMarginClient.getLendingRates(currency);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter taxas de juros');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// ============================================================================
+// FASE 4 - Cancelar Margin Order por ClientOid + Modificar Leverage
+// ============================================================================
+
+// Cancelar Margin Order por clientOid
+app.delete('/api/integrations/trading/margin/orders/by-client-oid/:clientOid', requirePermission('integrations:trading:write'), async (req, res) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { clientOid } = req.params;
+    const result = await kucoinMarginClient.cancelMarginOrderByClientOid(clientOid);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao cancelar Margin order por clientOid');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// Modificar leverage Cross Margin
+app.post('/api/integrations/trading/margin/leverage', requirePermission('integrations:trading:write'), async (req, res) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const leverageSchema = z.object({ leverage: z.number().int().min(1).max(10) });
+    const { leverage } = leverageSchema.parse(req.body);
+    const result = await kucoinMarginClient.updateCrossMarginLeverage(leverage);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ error: 'Parâmetros inválidos', details: error.errors });
+      return;
+    }
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao modificar leverage Margin');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// --- MARGIN: Market Data Avançado + Ordens Avançadas (cobertura 100%) ---
+
+// GET /api/integrations/trading/margin/etf-info - Info ETF Margin
+app.get('/api/integrations/trading/margin/etf-info', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const currency = req.query.currency as string | undefined;
+    const data = await kucoinMarginClient.getMarginETFInfo(currency);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar ETF info margin');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/margin/mark-price/:symbol - Mark price de um símbolo
+app.get('/api/integrations/trading/margin/mark-price/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const { symbol } = req.params;
+    const data = await kucoinMarginClient.getMarkPriceDetail(symbol);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar mark price margin');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/margin/config - Configuração geral Margin
+app.get('/api/integrations/trading/margin/config', requirePermission('integrations:trading:read'), async (_req: Request, res: Response) => {
+  try {
+    const data = await kucoinMarginClient.getMarginConfig();
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar config margin');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/margin/mark-prices - Lista de mark prices
+app.get('/api/integrations/trading/margin/mark-prices', requirePermission('integrations:trading:read'), async (_req: Request, res: Response) => {
+  try {
+    const data = await kucoinMarginClient.getMarkPriceList();
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar mark prices margin');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/margin/collateral-ratio - Collateral ratio
+app.get('/api/integrations/trading/margin/collateral-ratio', requirePermission('integrations:trading:read'), async (_req: Request, res: Response) => {
+  try {
+    const data = await kucoinMarginClient.getMarginCollateralRatio();
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar collateral ratio margin');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/margin/currencies - Moedas disponíveis para margin
+app.get('/api/integrations/trading/margin/currencies', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const type = req.query.type as string | undefined;
+    const data = await kucoinMarginClient.getMarginAvailableInventory(type);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar moedas margin');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/margin/orders/test - Criar ordem Margin teste
+app.post('/api/integrations/trading/margin/orders/test', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const result = await kucoinMarginClient.createMarginOrderTest(req.body);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao criar margin order teste');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// DELETE /api/integrations/trading/margin/orders/by-symbol/:symbol - Cancelar todas ordens por símbolo
+app.delete('/api/integrations/trading/margin/orders/by-symbol/:symbol', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { symbol } = req.params;
+    const tradeType = req.query.tradeType as string | undefined;
+    const result = await kucoinMarginClient.cancelAllMarginOrdersBySymbol(symbol, tradeType);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao cancelar margin orders por símbolo');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/margin/orders/symbols-with-open - Símbolos com ordens abertas
+app.get('/api/integrations/trading/margin/orders/symbols-with-open', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const tradeType = req.query.tradeType as string | undefined;
+    const data = await kucoinMarginClient.getMarginSymbolsWithOpenOrder(tradeType);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar símbolos com ordens abertas margin');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/margin/fills - Histórico de fills Margin
+app.get('/api/integrations/trading/margin/fills', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const params: Record<string, string | undefined> = {
+      symbol: req.query.symbol as string | undefined,
+      orderId: req.query.orderId as string | undefined,
+      side: req.query.side as string | undefined,
+      type: req.query.type as string | undefined,
+      tradeType: req.query.tradeType as string | undefined,
+      startAt: req.query.startAt as string | undefined,
+      endAt: req.query.endAt as string | undefined,
+    };
+    const cleanParams = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined));
+    const data = await kucoinMarginClient.getMarginTradeHistory(cleanParams as Record<string, string>);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar fills margin');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/margin/orders/by-client-oid/:clientOid - Ordem Margin por clientOid
+app.get('/api/integrations/trading/margin/orders/by-client-oid/:clientOid', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { clientOid } = req.params;
+    const symbol = req.query.symbol as string;
+    if (!symbol) {
+      res.status(400).json({ error: 'Parâmetro symbol é obrigatório' });
+      return;
+    }
+    const data = await kucoinMarginClient.getMarginOrderByClientOid(clientOid, symbol);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar margin order por clientOid');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// DELETE /api/integrations/trading/margin/stop-orders/by-client-oid/:clientOid - Cancelar stop order por clientOid
+app.delete('/api/integrations/trading/margin/stop-orders/by-client-oid/:clientOid', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { clientOid } = req.params;
+    const symbol = req.query.symbol as string | undefined;
+    const result = await kucoinMarginClient.cancelMarginStopOrderByClientOid(clientOid, symbol);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao cancelar stop order margin por clientOid');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// DELETE /api/integrations/trading/margin/stop-orders/all - Cancelar todas stop orders Margin
+app.delete('/api/integrations/trading/margin/stop-orders/all', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const params: Record<string, string | undefined> = {
+      symbol: req.query.symbol as string | undefined,
+      tradeType: req.query.tradeType as string | undefined,
+    };
+    const cleanParams = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined));
+    const result = await kucoinMarginClient.cancelAllMarginStopOrders(cleanParams as Record<string, string>);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao cancelar todas stop orders margin');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/margin/stop-orders/:orderId/detail - Detalhes stop order por ID
+app.get('/api/integrations/trading/margin/stop-orders/:orderId/detail', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { orderId } = req.params;
+    const data = await kucoinMarginClient.getMarginStopOrderById(orderId);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar stop order margin por ID');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/margin/stop-orders/by-client-oid/:clientOid - Detalhes stop order por clientOid
+app.get('/api/integrations/trading/margin/stop-orders/by-client-oid/:clientOid', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  if (!kucoinClient.isKucoinConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { clientOid } = req.params;
+    const symbol = req.query.symbol as string | undefined;
+    const data = await kucoinMarginClient.getMarginStopOrderByClientOid(clientOid, symbol);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar stop order margin por clientOid');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/margin/risk-limit - Risk limit para moedas margin
+app.get('/api/integrations/trading/margin/risk-limit', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const isIsolated = req.query.isIsolated === 'true';
+    const symbol = req.query.symbol as string | undefined;
+    const data = await kucoinMarginClient.getMarginRiskLimit(isIsolated, symbol);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar risk limit margin');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// --- ACCOUNT MANAGEMENT: Funding, Sub-Accounts, Deposits, Withdrawals, Transfers, Fees ---
+
+// GET /api/integrations/trading/account/summary - Resumo da conta
+app.get('/api/integrations/trading/account/summary', requirePermission('integrations:trading:read'), async (_req: Request, res: Response) => {
+  if (!kucoinAccountClient.isAccountConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const data = await kucoinAccountClient.getAccountSummaryInfo();
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar resumo da conta');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/account/apikey - Info da API key
+app.get('/api/integrations/trading/account/apikey', requirePermission('integrations:trading:read'), async (_req: Request, res: Response) => {
+  if (!kucoinAccountClient.isAccountConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const data = await kucoinAccountClient.getApikeyInfo();
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar info da API key');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/account/type/spot - Tipo de conta Spot
+app.get('/api/integrations/trading/account/type/spot', requirePermission('integrations:trading:read'), async (_req: Request, res: Response) => {
+  if (!kucoinAccountClient.isAccountConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const data = await kucoinAccountClient.getAccountTypeSpot();
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar tipo de conta spot');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/account/detail/:accountId - Detalhe de conta
+app.get('/api/integrations/trading/account/detail/:accountId', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  if (!kucoinAccountClient.isAccountConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { accountId } = req.params;
+    const data = await kucoinAccountClient.getAccountDetailSpot(accountId);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar detalhe de conta');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/account/ledgers/spot-margin - Ledger Spot/Margin
+app.get('/api/integrations/trading/account/ledgers/spot-margin', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  if (!kucoinAccountClient.isAccountConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const params: Record<string, string | undefined> = {
+      currency: req.query.currency as string | undefined,
+      direction: req.query.direction as string | undefined,
+      bizType: req.query.bizType as string | undefined,
+      startAt: req.query.startAt as string | undefined,
+      endAt: req.query.endAt as string | undefined,
+      currentPage: req.query.currentPage as string | undefined,
+      pageSize: req.query.pageSize as string | undefined,
+    };
+    const cleanParams = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined));
+    const data = await kucoinAccountClient.getAccountLedgersSpotMargin(cleanParams as Record<string, string>);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar ledger spot/margin');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/account/ledgers/trade-hf - Ledger Trade HF
+app.get('/api/integrations/trading/account/ledgers/trade-hf', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  if (!kucoinAccountClient.isAccountConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const params: Record<string, string | undefined> = {
+      currency: req.query.currency as string | undefined,
+      direction: req.query.direction as string | undefined,
+      bizType: req.query.bizType as string | undefined,
+      lastId: req.query.lastId as string | undefined,
+      limit: req.query.limit as string | undefined,
+      startAt: req.query.startAt as string | undefined,
+      endAt: req.query.endAt as string | undefined,
+    };
+    const cleanParams = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined));
+    const data = await kucoinAccountClient.getAccountLedgersTradeHf(cleanParams as Record<string, string>);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar ledger trade HF');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/account/ledgers/margin-hf - Ledger Margin HF
+app.get('/api/integrations/trading/account/ledgers/margin-hf', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  if (!kucoinAccountClient.isAccountConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const params: Record<string, string | undefined> = {
+      currency: req.query.currency as string | undefined,
+      direction: req.query.direction as string | undefined,
+      bizType: req.query.bizType as string | undefined,
+      lastId: req.query.lastId as string | undefined,
+      limit: req.query.limit as string | undefined,
+      startAt: req.query.startAt as string | undefined,
+      endAt: req.query.endAt as string | undefined,
+    };
+    const cleanParams = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined));
+    const data = await kucoinAccountClient.getAccountLedgersMarginHf(cleanParams as Record<string, string>);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar ledger margin HF');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/account/ledgers/futures - Ledger Futures
+app.get('/api/integrations/trading/account/ledgers/futures', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  if (!kucoinAccountClient.isAccountConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const params: Record<string, string | undefined> = {
+      currency: req.query.currency as string | undefined,
+      type: req.query.type as string | undefined,
+      offset: req.query.offset as string | undefined,
+      forward: req.query.forward as string | undefined,
+      maxCount: req.query.maxCount as string | undefined,
+      startAt: req.query.startAt as string | undefined,
+      endAt: req.query.endAt as string | undefined,
+    };
+    const cleanParams = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined));
+    const data = await kucoinAccountClient.getAccountLedgersFutures(cleanParams as Record<string, string>);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar ledger futures');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/account/sub-accounts - Criar sub-conta
+app.post('/api/integrations/trading/account/sub-accounts', requirePermission('integrations:trading:manage'), async (req: Request, res: Response) => {
+  if (!kucoinAccountClient.isAccountConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const data = await kucoinAccountClient.addSubAccount(req.body);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao criar sub-conta');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/account/sub-accounts/:subUserId/margin - Habilitar margin
+app.post('/api/integrations/trading/account/sub-accounts/:subUserId/margin', requirePermission('integrations:trading:manage'), async (req: Request, res: Response) => {
+  if (!kucoinAccountClient.isAccountConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { subUserId } = req.params;
+    const data = await kucoinAccountClient.addSubAccountMarginPermission(subUserId);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao habilitar margin para sub-conta');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/account/sub-accounts/:subUserId/futures - Habilitar futures
+app.post('/api/integrations/trading/account/sub-accounts/:subUserId/futures', requirePermission('integrations:trading:manage'), async (req: Request, res: Response) => {
+  if (!kucoinAccountClient.isAccountConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { subUserId } = req.params;
+    const data = await kucoinAccountClient.addSubAccountFuturesPermission(subUserId);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao habilitar futures para sub-conta');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/account/sub-accounts - Listar sub-contas
+app.get('/api/integrations/trading/account/sub-accounts', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  if (!kucoinAccountClient.isAccountConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const params: Record<string, string | undefined> = {
+      currentPage: req.query.currentPage as string | undefined,
+      pageSize: req.query.pageSize as string | undefined,
+    };
+    const cleanParams = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined));
+    const data = await kucoinAccountClient.getSubAccountListSummary(cleanParams as Record<string, string>);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao listar sub-contas');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/account/sub-accounts/:subUserId/balance - Balance de sub-conta
+app.get('/api/integrations/trading/account/sub-accounts/:subUserId/balance', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  if (!kucoinAccountClient.isAccountConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { subUserId } = req.params;
+    const data = await kucoinAccountClient.getSubAccountDetailBalance(subUserId);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar balance de sub-conta');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/account/sub-accounts/balances/spot - Balances Spot de sub-contas
+app.get('/api/integrations/trading/account/sub-accounts/balances/spot', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  if (!kucoinAccountClient.isAccountConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const params: Record<string, string | undefined> = {
+      currentPage: req.query.currentPage as string | undefined,
+      pageSize: req.query.pageSize as string | undefined,
+    };
+    const cleanParams = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined));
+    const data = await kucoinAccountClient.getSubAccountListSpotBalance(cleanParams as Record<string, string>);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar balances spot de sub-contas');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/account/sub-accounts/balances/futures - Balances Futures de sub-contas
+app.get('/api/integrations/trading/account/sub-accounts/balances/futures', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  if (!kucoinAccountClient.isAccountConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const params: Record<string, string | undefined> = {
+      currency: req.query.currency as string | undefined,
+    };
+    const cleanParams = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined));
+    const data = await kucoinAccountClient.getSubAccountListFuturesBalance(cleanParams as Record<string, string>);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar balances futures de sub-contas');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/account/deposit/address - Criar endereço de depósito
+app.post('/api/integrations/trading/account/deposit/address', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  if (!kucoinAccountClient.isAccountConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { currency, chain } = req.body;
+    if (!currency) {
+      res.status(400).json({ error: 'Parâmetro currency é obrigatório' });
+      return;
+    }
+    const data = await kucoinAccountClient.addDepositAddress(currency, chain);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao criar endereço de depósito');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/account/deposit/address - Obter endereço de depósito
+app.get('/api/integrations/trading/account/deposit/address', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  if (!kucoinAccountClient.isAccountConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const currency = req.query.currency as string;
+    const chain = req.query.chain as string | undefined;
+    if (!currency) {
+      res.status(400).json({ error: 'Parâmetro currency é obrigatório' });
+      return;
+    }
+    const data = await kucoinAccountClient.getDepositAddress(currency, chain);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar endereço de depósito');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/account/deposits - Histórico de depósitos
+app.get('/api/integrations/trading/account/deposits', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  if (!kucoinAccountClient.isAccountConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const params: Record<string, string | undefined> = {
+      currency: req.query.currency as string | undefined,
+      status: req.query.status as string | undefined,
+      startAt: req.query.startAt as string | undefined,
+      endAt: req.query.endAt as string | undefined,
+      currentPage: req.query.currentPage as string | undefined,
+      pageSize: req.query.pageSize as string | undefined,
+    };
+    const cleanParams = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined));
+    const data = await kucoinAccountClient.getDepositHistory(cleanParams as Record<string, string>);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar histórico de depósitos');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/account/withdrawal/quotas - Limites de withdrawal
+app.get('/api/integrations/trading/account/withdrawal/quotas', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  if (!kucoinAccountClient.isAccountConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const currency = req.query.currency as string;
+    const chain = req.query.chain as string | undefined;
+    if (!currency) {
+      res.status(400).json({ error: 'Parâmetro currency é obrigatório' });
+      return;
+    }
+    const data = await kucoinAccountClient.getWithdrawalQuotas(currency, chain);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar limites de withdrawal');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/account/withdraw - Executar withdrawal
+app.post('/api/integrations/trading/account/withdraw', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  if (!kucoinAccountClient.isAccountConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const data = await kucoinAccountClient.withdraw(req.body);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao executar withdrawal');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// DELETE /api/integrations/trading/account/withdrawals/:id - Cancelar withdrawal
+app.delete('/api/integrations/trading/account/withdrawals/:id', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  if (!kucoinAccountClient.isAccountConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { id } = req.params;
+    await kucoinAccountClient.cancelWithdrawal(id);
+    res.json({ success: true, data: { cancelledId: id } });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao cancelar withdrawal');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/account/withdrawals - Histórico de withdrawals
+app.get('/api/integrations/trading/account/withdrawals', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  if (!kucoinAccountClient.isAccountConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const params: Record<string, string | undefined> = {
+      currency: req.query.currency as string | undefined,
+      status: req.query.status as string | undefined,
+      startAt: req.query.startAt as string | undefined,
+      endAt: req.query.endAt as string | undefined,
+      currentPage: req.query.currentPage as string | undefined,
+      pageSize: req.query.pageSize as string | undefined,
+    };
+    const cleanParams = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined));
+    const data = await kucoinAccountClient.getWithdrawalHistory(cleanParams as Record<string, string>);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar histórico de withdrawals');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/account/withdrawals/:id - Withdrawal por ID
+app.get('/api/integrations/trading/account/withdrawals/:id', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  if (!kucoinAccountClient.isAccountConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const { id } = req.params;
+    const data = await kucoinAccountClient.getWithdrawalById(id);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar withdrawal por ID');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/account/transfer/quotas - Limites de transferência
+app.get('/api/integrations/trading/account/transfer/quotas', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  if (!kucoinAccountClient.isAccountConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const currency = req.query.currency as string;
+    const type = req.query.type as string;
+    if (!currency || !type) {
+      res.status(400).json({ error: 'Parâmetros currency e type são obrigatórios' });
+      return;
+    }
+    const data = await kucoinAccountClient.getTransferQuotas(currency, type);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar limites de transferência');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/account/transfer - Flex transfer
+app.post('/api/integrations/trading/account/transfer', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  if (!kucoinAccountClient.isAccountConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const data = await kucoinAccountClient.flexTransfer(req.body);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao executar flex transfer');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/account/fees/basic - Fee básica Spot/Margin
+app.get('/api/integrations/trading/account/fees/basic', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  if (!kucoinAccountClient.isAccountConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const currencyType = req.query.currencyType as string | undefined;
+    const data = await kucoinAccountClient.getBasicFeeSpotMargin(currencyType);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar fee básica');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/account/fees/futures - Fee Futures
+app.get('/api/integrations/trading/account/fees/futures', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  if (!kucoinAccountClient.isAccountConfigured()) { respondKucoinNotConfigured(res); return; }
+  try {
+    const symbol = req.query.symbol as string;
+    if (!symbol) {
+      res.status(400).json({ error: 'Parâmetro symbol é obrigatório' });
+      return;
+    }
+    const data = await kucoinAccountClient.getActualFeeFutures(symbol);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (sendKucoinErrorResponse(res, error)) return;
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar fee futures');
     res.status(500).json({ error: errorMessage });
   }
 });

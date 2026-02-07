@@ -199,6 +199,67 @@ export interface BalanceUpdateData {
   timestamp: number;
 }
 
+/** Update de stop order privado (advanced orders) */
+export interface StopOrderUpdateData {
+  orderId: string;
+  symbol: string;
+  type: string;
+  orderType: string;
+  side: string;
+  size: string;
+  orderPrice?: string;
+  stop: string;
+  stopPrice: string;
+  stopPriceType: string;
+  triggerSuccess: boolean;
+  error?: string;
+  createdAt: number;
+  ts: number;
+}
+
+/** Dados de funding rate */
+export interface FundingRateData {
+  symbol: string;
+  granularity: number;
+  fundingRate: number;
+  timestamp: number;
+}
+
+/** Update de cross-margin leverage (privado) */
+export interface CrossLeverageUpdateData {
+  symbol: string;
+  currentLeverage: number;
+  previousLeverage?: number;
+  timestamp: number;
+}
+
+/** Aviso de liquidação (privado) */
+export interface LiquidationWarningData {
+  symbol: string;
+  positionSide: string;
+  markPrice: string;
+  liquidationPrice: string;
+  unrealisedPnl: string;
+  maintenanceMargin: string;
+  timestamp: number;
+}
+
+/** Dados de execution privada (fills pessoais) */
+export interface ExecutionData {
+  symbol: string;
+  side: string;
+  orderId: string;
+  matchSize: string;
+  matchPrice: string;
+  orderType: string;
+  tradeId: string;
+  ts: number;
+  liquidity: string;
+  feeRate: string;
+  feeCurrency: string;
+  fee: string;
+}
+
 /** Estado da conexão WebSocket */
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
 
@@ -211,6 +272,11 @@ export interface KucoinWSEvents {
   'order': (data: OrderUpdateData) => void;
   'position': (data: PositionUpdateData) => void;
   'balance': (data: BalanceUpdateData) => void;
+  'stopOrder': (data: StopOrderUpdateData) => void;
+  'fundingRate': (data: FundingRateData) => void;
+  'crossLeverage': (data: CrossLeverageUpdateData) => void;
+  'liquidationWarning': (data: LiquidationWarningData) => void;
+  'execution': (data: ExecutionData) => void;
   'connected': () => void;
   'disconnected': (reason: string) => void;
   'error': (error: Error) => void;
@@ -481,6 +547,37 @@ export class KucoinWebSocketClient extends EventEmitter {
     // Balance: /contractAccount/wallet
     if (topic === '/contractAccount/wallet') {
       this.emit('balance', data as BalanceUpdateData);
+      return;
+    }
+
+    // Stop Orders (Advanced Orders): /contractMarket/advancedOrders
+    if (topic === '/contractMarket/advancedOrders') {
+      this.emit('stopOrder', data as StopOrderUpdateData);
+      return;
+    }
+
+    // Funding Rate: /contract/funding:{symbol}
+    if (topic.startsWith('/contract/funding:')) {
+      this.emit('fundingRate', data as FundingRateData);
+      return;
+    }
+
+    // Cross Leverage Change: /contract/crossLeverage (privado)
+    if (topic === '/contract/crossLeverage') {
+      this.emit('crossLeverage', data as CrossLeverageUpdateData);
+      return;
+    }
+
+    // Aviso de Liquidação: /contract/positionMarginEvent (privado)
+    if (topic === '/contract/positionMarginEvent') {
+      this.emit('liquidationWarning', data as LiquidationWarningData);
+      return;
+    }
+
+    // Execution privada (fills pessoais): /contractMarket/tradeOrders/v2 (privado)
+    // Canal que entrega fills individuais do usuário autenticado
+    if (topic.startsWith('/contractMarket/tradeOrders/v2') && subject === 'match') {
+      this.emit('execution', data as unknown as ExecutionData);
       return;
     }
 
@@ -757,6 +854,160 @@ export class KucoinWebSocketClient extends EventEmitter {
       return;
     }
     this.sendSubscribe('/contractAccount/wallet');
+  }
+
+  /**
+   * Subscreve a updates de stop orders / advanced orders (privado)
+   * Recebe notificações de lifecycle de stop orders (criação, trigger, cancelamento)
+   */
+  subscribeStopOrders(): void {
+    if (!this.isPrivate) {
+      logger.warn('Tentativa de subscription privada em conexão pública');
+      return;
+    }
+    this.sendSubscribe('/contractMarket/advancedOrders');
+  }
+
+  /**
+   * Subscreve a funding rate de um símbolo (público)
+   * Recebe notificações de taxa de financiamento a cada 8 horas
+   */
+  subscribeFundingRate(symbol: string): void {
+    this.sendSubscribe(`/contract/funding:${symbol}`);
+  }
+
+  /**
+   * Subscreve a mudanças de cross leverage (privado)
+   * Canal: /contract/crossLeverage
+   */
+  subscribeCrossLeverage(): void {
+    this.sendSubscribe('/contract/crossLeverage', true);
+  }
+
+  /**
+   * Subscreve a avisos de liquidação / margin events (privado)
+   * Canal: /contract/positionMarginEvent
+   */
+  subscribeLiquidationWarning(): void {
+    this.sendSubscribe('/contract/positionMarginEvent', true);
+  }
+
+  /**
+   * Subscreve a execution privada (fills pessoais) (privado)
+   * Canal: /contractMarket/tradeOrders/v2
+   * Entrega fills individuais do usuário autenticado em tempo real
+   */
+  subscribeExecution(): void {
+    if (!this.isPrivate) {
+      logger.warn('Tentativa de subscription privada em conexão pública');
+      return;
+    }
+    this.sendSubscribe('/contractMarket/tradeOrders/v2');
+  }
+
+  /**
+   * Cancela subscription de execution privada
+   */
+  unsubscribeExecution(): void {
+    this.sendUnsubscribe('/contractMarket/tradeOrders/v2');
+  }
+
+  // ============================================================================
+  // ORDENS VIA WEBSOCKET (baixa latência)
+  // ============================================================================
+
+  /**
+   * Cria ordem Futures via WebSocket (baixa latência)
+   * Envia mensagem tipo 'openTrade' diretamente pelo WS
+   * Ref: KuCoin Futures WebSocket Trade API
+   */
+  wsPlaceOrder(params: {
+    clientOid: string;
+    side: 'buy' | 'sell';
+    symbol: string;
+    leverage: number;
+    type?: 'limit' | 'market';
+    price?: string;
+    size?: number;
+    timeInForce?: string;
+    postOnly?: boolean;
+    hidden?: boolean;
+    iceberg?: boolean;
+    visibleSize?: number;
+    reduceOnly?: boolean;
+    closeOrder?: boolean;
+    forceHold?: boolean;
+    marginMode?: string;
+  }): void {
+    if (!this.isPrivate) {
+      logger.warn('wsPlaceOrder requer conexão privada');
+      return;
+    }
+    if (!this.isConnected()) {
+      logger.warn('WebSocket não conectado - wsPlaceOrder bloqueado');
+      return;
+    }
+    const id = `ws-order-${Date.now()}`;
+    const msg = {
+      id,
+      type: 'openTrade',
+      topic: '/contractMarket/tradeOrders',
+      data: params,
+      response: true,
+    };
+    this.ws!.send(JSON.stringify(msg));
+    logger.info({ id, clientOid: params.clientOid, symbol: params.symbol, side: params.side }, 'Ordem WS enviada');
+  }
+
+  /**
+   * Cancela ordem Futures via WebSocket (baixa latência)
+   * Envia mensagem tipo 'cancelTrade' diretamente pelo WS
+   * Ref: KuCoin Futures WebSocket Trade API
+   */
+  wsCancelOrder(orderId: string): void {
+    if (!this.isPrivate) {
+      logger.warn('wsCancelOrder requer conexão privada');
+      return;
+    }
+    if (!this.isConnected()) {
+      logger.warn('WebSocket não conectado - wsCancelOrder bloqueado');
+      return;
+    }
+    const id = `ws-cancel-${Date.now()}`;
+    const msg = {
+      id,
+      type: 'cancelTrade',
+      topic: '/contractMarket/tradeOrders',
+      data: { orderId },
+      response: true,
+    };
+    this.ws!.send(JSON.stringify(msg));
+    logger.info({ id, orderId }, 'Cancelamento WS enviado');
+  }
+
+  /**
+   * Cancela ordem por clientOid via WebSocket (baixa latência)
+   * Ref: KuCoin Futures WebSocket Trade API
+   */
+  wsCancelOrderByClientOid(clientOid: string, symbol: string): void {
+    if (!this.isPrivate) {
+      logger.warn('wsCancelOrderByClientOid requer conexão privada');
+      return;
+    }
+    if (!this.isConnected()) {
+      logger.warn('WebSocket não conectado - wsCancelOrderByClientOid bloqueado');
+      return;
+    }
+    const id = `ws-cancel-coid-${Date.now()}`;
+    const msg = {
+      id,
+      type: 'cancelTrade',
+      topic: '/contractMarket/tradeOrders',
+      data: { clientOid, symbol },
+      response: true,
+    };
+    this.ws!.send(JSON.stringify(msg));
+    logger.info({ id, clientOid, symbol }, 'Cancelamento WS por clientOid enviado');
   }
 
   /**
