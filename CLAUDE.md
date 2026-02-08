@@ -97,7 +97,7 @@ Alice employs a **modular multi-stack architecture** with 51 containerized servi
         - Serviços GPU rodam simultaneamente (20GB VRAM budget; métricas = fonte de verdade) - zero latência de troca
 - **ERPNext Stack (15 serviços)**: Includes MariaDB, Redis Cache/Queue, Frappe Bench services (configurator, create-site, backend), NGINX frontend, WebSocket, Scheduler, and 9 Workers (3x default, 3x short, 3x long) for comprehensive ERP functionalities.
 - **Observability Stack (13 serviços)**: Langfuse Web (LLM observability), **Langfuse Worker (processamento assíncrono v3)**, Langfuse DB (PostgreSQL), **ClickHouse (OLAP Langfuse v3)**, Prometheus (métricas), Grafana (dashboards + **Grafana Alerting** para notificações), Loki (logs), Promtail (coleta de logs), Jaeger (tracing), Vector (agregação de logs), OTel Collector (instrumentação), Node Exporter (métricas do host), cAdvisor (métricas de containers).
-- **Backup (1 serviço)**: pgBackRest for PostgreSQL enterprise backups (WAL archiving, incremental, encryption AES-256).
+- **Backup (2 serviços)**: pgBackRest (backup enterprise PostgreSQL - WAL archiving, incremental, encryption AES-256) + pgbackrest-exporter (métricas Prometheus porta 9854).
 
 **Shared Packages (`packages/`):**
 - `config`: Centralized configurations.

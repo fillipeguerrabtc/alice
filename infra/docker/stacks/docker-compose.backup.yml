@@ -1,21 +1,23 @@
 # =============================================================================
 # ALICE PLATFORM - BACKUP STACK
 # =============================================================================
-# Versão: 5.0 (Arquitetura Modular Multi-Stack)
-# Data: 05 de Janeiro de 2026
+# Versão: 5.1 (Arquitetura Modular Multi-Stack)
+# Data: 08 de Fevereiro de 2026
 # Autor: Fillipe Guerra
 #
 # PROPÓSITO: Stack de backup enterprise.
 #
-# CONTAINERS (1):
-#   - pgbackrest - Backup PostgreSQL enterprise (WAL archiving, incremental)
+# CONTAINERS (2):
+#   - pgbackrest          - Backup PostgreSQL enterprise (WAL archiving, incremental)
+#   - pgbackrest-exporter - Métricas de backup para Prometheus (porta 9854)
 #
 # DEPENDÊNCIAS:
 #   - INFRA Stack: postgres deve estar healthy
 #
 # OPERAÇÃO:
 #   - pgbackrest-init no INFRA stack cria a stanza
-#   - Este container executa backups programados
+#   - pgbackrest executa backups programados
+#   - pgbackrest-exporter expõe métricas via `pgbackrest info --output=json`
 #
 # REGRA 6 CLAUDE.md: Enterprise-grade, sem workarounds
 # =============================================================================
@@ -145,6 +147,15 @@ services:
       PGBACKREST_CONFIG_PATH: /etc/pgbackrest
       PGBACKREST_STANZA: alice_prod
       PGBACKREST_REPO1_PATH: /var/lib/pgbackrest
+      # =======================================================================
+      # CORREÇÃO 08/02/2026: Repositório usa AES-256-CBC - exporter PRECISA da
+      # cipher pass para executar `pgbackrest info --output=json` com sucesso.
+      # Sem esta variável: exit status 37 "info command requires option:
+      # repo1-cipher-pass". Mesma variável usada no container pgbackrest.
+      # Ref: https://pgbackrest.org/configuration.html#section-general/option-repo-cipher-pass
+      # =======================================================================
+      PGBACKREST_REPO1_CIPHER_TYPE: aes-256-cbc
+      PGBACKREST_REPO1_CIPHER_PASS: ${BACKUP_CIPHER_PASS}
     volumes:
       # Config SSOT do pgBackRest (necessário para `pgbackrest info`)
       - ../../backup/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
@@ -157,8 +168,14 @@ services:
       pgbackrest:
         condition: service_healthy
     healthcheck:
-      # Image não inclui wget/curl; usar /proc/net/tcp para validar porta 9854 (0x268E)
-      test: ["CMD-SHELL", "grep -qi ':268E' /proc/net/tcp || exit 1"]
+      # =======================================================================
+      # CORREÇÃO 08/02/2026: Duas causas raiz corrigidas:
+      # 1. Hex ERRADO: 9854 decimal = 0x267E (NÃO 0x268E que é 9870)
+      # 2. IPv6 ONLY: Exporter escuta em IPv6 (/proc/net/tcp6), não IPv4
+      #    Verificar AMBOS /proc/net/tcp e /proc/net/tcp6 para robustez
+      # Image não inclui wget/curl; usar /proc/net para validar porta 9854 (0x267E)
+      # =======================================================================
+      test: ["CMD-SHELL", "grep -qi ':267E' /proc/net/tcp 2>/dev/null || grep -qi ':267E' /proc/net/tcp6 2>/dev/null || exit 1"]
       interval: 20s
       timeout: 10s
       retries: 5

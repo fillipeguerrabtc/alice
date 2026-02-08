@@ -856,7 +856,7 @@ logger.info({
 - `infra/docker/stacks/docker-compose.alice.yml` - Stack Alice + GPU (8 + 5 containers)
 - `infra/docker/stacks/docker-compose.observability.yml` - Stack de observabilidade (13 containers)
 - `infra/docker/stacks/docker-compose.erpnext.yml` - Stack ERPNext (15 containers)
-- `infra/docker/stacks/docker-compose.backup.yml` - Stack de backup (1 container)
+- `infra/docker/stacks/docker-compose.backup.yml` - Stack de backup (2 containers: pgbackrest + pgbackrest-exporter)
 - `.github/workflows/deploy-stack.yml` - Workflow para deploy/rollback por stack
 
 **Ordem de Deploy:**

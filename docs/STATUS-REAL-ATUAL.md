@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 **Autor:** Fillipe Guerra  
-**Data:** 03 de Fevereiro de 2026  
+**Data:** 08 de Fevereiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.92 - Trading realtime com depth máximo 50
+**Versão:** 10.93 - pgBackRest Exporter unhealthy fix (3 causas raiz)
 
 ---
 
@@ -124,7 +124,7 @@
 ## Visão geral da plataforma
 
 - Arquitetura: Multi-Stack Modular (5 stacks independentes).
-- Total de containers: 49 (10 infra + 8 Alice + 2 GPU + 13 observability + 15 ERPNext + 1 backup) + 1 trainer sob demanda.
+- Total de containers: 50 (10 infra + 8 Alice + 2 GPU + 13 observability + 15 ERPNext + 2 backup) + 1 trainer sob demanda.
 - Servidor: Hetzner GEX44 (Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD RAID 1, RTX 4000 Ada 20GB).
 - SO: Ubuntu 24.04.3 LTS.
 - Docker: 29.1.3 + Compose v5.0.0.
@@ -186,6 +186,7 @@
 ### Stack BACKUP
 
 - pgBackRest (PITR, incremental, AES-256).
+- pgBackRest Exporter (métricas Prometheus porta 9854).
 
 ---
 
@@ -651,6 +652,24 @@ Retenção Arquivo:   30 dias
 
 - Cobertura de testes 80%.
 - Documentação OpenAPI ampliada para endpoints restantes.
+
+---
+
+## Changelog recente
+
+### v10.93 - 08 de Fevereiro de 2026
+
+**pgBackRest Exporter Unhealthy - 3 Causas Raiz**
+
+Container `alice-pgbackrest-exporter` unhealthy (FailingStreak 4863, falhando desde deploy).
+
+- **Causa raiz #1 - CIPHER PASS faltando**: Exporter executava `pgbackrest info --output=json` mas NÃO tinha variável `PGBACKREST_REPO1_CIPHER_PASS`. Repositório usa criptografia AES-256-CBC; sem a cipher pass, o comando falha com exit status 37 "info command requires option: repo1-cipher-pass". **Solução**: adicionadas `PGBACKREST_REPO1_CIPHER_TYPE` e `PGBACKREST_REPO1_CIPHER_PASS` (mesma variável `${BACKUP_CIPHER_PASS}` do container pgbackrest).
+- **Causa raiz #2 - Hex errado no healthcheck**: Comentário e healthcheck usavam `0x268E` (= 9870 decimal) mas porta real é 9854 (= `0x267E`). `grep` nunca encontrava match. **Solução**: corrigido de `:268E` para `:267E`.
+- **Causa raiz #3 - IPv6 only**: Exporter escuta em IPv6 (`/proc/net/tcp6`) mas healthcheck verificava apenas IPv4 (`/proc/net/tcp`). **Solução**: healthcheck verifica ambos `/proc/net/tcp` e `/proc/net/tcp6` com fallback.
+
+Diagnóstico via SSH em produção (`docker inspect`, logs, env vars, `/proc/net/tcp`, `/proc/net/tcp6`, `pgbackrest info`).
+
+**Arquivos modificados:** `infra/docker/stacks/docker-compose.backup.yml` (environment + healthcheck), `docs/ARQUITETURA.md`, `docs/STATUS-REAL-ATUAL.md`.
 
 ---
 
