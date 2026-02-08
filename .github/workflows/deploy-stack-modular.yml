@@ -301,6 +301,10 @@ jobs:
               "alice-integrations"
               "alice-observability"
               "alice-gpu-manager"
+              "gpu-llm"
+              "gpu-embeddings"
+              "gpu-asr"
+              "gpu-trainer"
             )
             
             OBSERVABILITY_CONTAINERS=(
@@ -3715,8 +3719,36 @@ jobs:
               echo "🐳 Deploying rollback version: $TARGET_VERSION"
               echo "========================================"
               
-              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.infra.yml pull
-              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.infra.yml up -d --pull always --remove-orphans
+              # =================================================================
+              # ROLLBACK LOCAL (08/02/2026): Usa imagens locais, fallback pull
+              # =================================================================
+              # PROBLEMA: Rollback anterior fazia docker compose pull obrigatório
+              # + --pull always, dependendo de GHCR (rede). Se GHCR inacessível,
+              # rollback falhava e stack ficava OFFLINE.
+              # SOLUÇÃO: Verificar imagens locais primeiro. Pull apenas como fallback
+              # se imagens faltam. up SEM --pull always.
+              # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Mudanças cirúrgicas)
+              # =================================================================
+              echo ""
+              echo "🔍 Verificando imagens locais para rollback..."
+              MISSING_IMAGES=0
+              for img in $(IMAGE_TAG=$TARGET_VERSION docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.infra.yml config --images 2>/dev/null); do
+                if ! docker image inspect "$img" >/dev/null 2>&1; then
+                  echo "   ⚠️  Imagem não encontrada localmente: $img"
+                  MISSING_IMAGES=$((MISSING_IMAGES + 1))
+                fi
+              done
+              
+              if [ "$MISSING_IMAGES" -gt 0 ]; then
+                echo "   📥 $MISSING_IMAGES imagens faltando. Tentando pull como fallback..."
+                IMAGE_TAG=$TARGET_VERSION docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.infra.yml pull 2>&1 || {
+                  echo "   ⚠️  Pull falhou. Rollback usará imagens disponíveis localmente."
+                }
+              else
+                echo "   ✅ Todas as imagens encontradas localmente"
+              fi
+              
+              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.infra.yml up -d --remove-orphans
               
               echo "$TARGET_VERSION" > /opt/alice/versions/infra.current
               
@@ -4092,15 +4124,33 @@ jobs:
             # - gpu-embeddings: Qwen3-Embedding-0.6B INT8 (1024 dim)
             # - gpu-trainer: QLoRA fine-tuning (sob demanda via profile)
             # NOTA: Vision e geração de imagens são via OpenAI (sem VLM local)
+            # =================================================================
+            # CORREÇÃO (08/02/2026): GPU pulls com fail-fast obrigatório
+            # =================================================================
+            # PROBLEMA: GPU pulls usavam || echo (falha silenciosa) - se pull
+            # falhava, deploy continuava sem imagem e container crashava no start.
+            # SOLUÇÃO: Usar if ! pull_with_retry; exit 1 (fail-fast, alinhado
+            # com padrão INFRA/BACKUP que já usam pull_with_retry com exit 1).
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Mudanças cirúrgicas)
+            # =================================================================
             echo ""
             echo "📥 Pull GPU LLM (Qwen2.5)..."
-            pull_with_retry docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull gpu-llm 2>&1 || echo "   ⚠️ gpu-llm: pull falhou"
+            if ! pull_with_retry docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull gpu-llm 2>&1; then
+              echo "❌ ERRO CRÍTICO: Falha ao baixar gpu-llm após 5 tentativas"
+              exit 1
+            fi
             
             echo "📥 Pull GPU Embeddings..."
-            pull_with_retry docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull gpu-embeddings 2>&1 || echo "   ⚠️ gpu-embeddings: pull falhou"
+            if ! pull_with_retry docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull gpu-embeddings 2>&1; then
+              echo "❌ ERRO CRÍTICO: Falha ao baixar gpu-embeddings após 5 tentativas"
+              exit 1
+            fi
             
             echo "📥 Pull GPU Trainer (fine-tuning sob demanda)..."
-            pull_with_retry docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile training pull gpu-trainer 2>&1 || echo "   ⚠️ gpu-trainer: pull falhou"
+            if ! pull_with_retry docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile training pull gpu-trainer 2>&1; then
+              echo "❌ ERRO CRÍTICO: Falha ao baixar gpu-trainer após 5 tentativas"
+              exit 1
+            fi
             
             echo "✅ Pull concluído"
             echo ""
@@ -4180,7 +4230,7 @@ jobs:
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "🔍 VERIFICAÇÃO INICIAL DE SAÚDE (quick check):"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            ALICE_CONTAINERS="alice-frontend alice-auth alice-biometrics alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager"
+            ALICE_CONTAINERS="alice-frontend alice-auth alice-biometrics alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager gpu-llm gpu-embeddings gpu-asr gpu-trainer"
             ALL_RUNNING=true
             for c in $ALICE_CONTAINERS; do
               if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
@@ -4532,7 +4582,10 @@ jobs:
             
             # STAGE 2: Force Remove All Containers
             echo ""
-            echo "🧹 Stage 2: Force cleaning ALL ALICE containers..."
+            echo "🧹 Stage 2: Force cleaning ALL ALICE containers (incluindo GPU)..."
+            # CORREÇÃO (08/02/2026): GPU containers adicionados à lista
+            # PROBLEMA: gpu-llm, gpu-embeddings, gpu-asr, gpu-trainer não eram
+            # removidos durante rollback, causando conflitos com containers antigos.
             ALICE_CONTAINERS=(
               "alice-frontend"
               "alice-auth"
@@ -4543,6 +4596,10 @@ jobs:
               "alice-integrations"
               "alice-observability"
               "alice-gpu-manager"
+              "gpu-llm"
+              "gpu-embeddings"
+              "gpu-asr"
+              "gpu-trainer"
             )
             
             REMOVED_COUNT=0
@@ -4584,11 +4641,36 @@ jobs:
               echo "🐳 Deploying rollback version: $TARGET_VERSION"
               echo "========================================"
               
-              # ARQUITETURA v4.0.0: Pull todas as imagens (GPU services rodam simultaneamente)
-              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull
+              # =================================================================
+              # ROLLBACK LOCAL (08/02/2026): Usa imagens locais, fallback pull
+              # =================================================================
+              # PROBLEMA: Rollback anterior fazia docker compose pull obrigatório
+              # + --pull always, dependendo de GHCR (rede). Se GHCR inacessível,
+              # rollback falhava e stack ALICE ficava OFFLINE.
+              # SOLUÇÃO: Verificar imagens locais primeiro. Pull apenas como fallback.
+              # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Mudanças cirúrgicas)
+              # =================================================================
+              echo ""
+              echo "🔍 Verificando imagens locais para rollback..."
+              MISSING_IMAGES=0
+              for img in $(IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml config --images 2>/dev/null); do
+                if ! docker image inspect "$img" >/dev/null 2>&1; then
+                  echo "   ⚠️  Imagem não encontrada localmente: $img"
+                  MISSING_IMAGES=$((MISSING_IMAGES + 1))
+                fi
+              done
+              
+              if [ "$MISSING_IMAGES" -gt 0 ]; then
+                echo "   📥 $MISSING_IMAGES imagens faltando. Tentando pull como fallback..."
+                IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull 2>&1 || {
+                  echo "   ⚠️  Pull falhou. Rollback usará imagens disponíveis localmente."
+                }
+              else
+                echo "   ✅ Todas as imagens encontradas localmente"
+              fi
               
               # Up serviços principais (todos os GPU services ativos simultaneamente)
-              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml up -d --pull always --remove-orphans
+              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml up -d --remove-orphans
               
               echo "$TARGET_VERSION" > /opt/alice/versions/alice.current
               
@@ -4850,7 +4932,7 @@ jobs:
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "🚀 UP: Iniciando containers..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            if ! docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.observability.yml up -d --pull always --remove-orphans 2>&1; then
+            if ! docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.observability.yml up -d --remove-orphans 2>&1; then
               echo ""
               echo "❌ ERRO: Falha no docker compose up!"
               echo ""
@@ -5316,8 +5398,29 @@ jobs:
               echo "========================================"
               echo "   NOTE: OBSERVABILITY uses public images only (no IMAGE_TAG)"
               
-              docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.observability.yml pull
-              docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.observability.yml up -d --pull always --remove-orphans
+              # =================================================================
+              # ROLLBACK LOCAL (08/02/2026): Usa imagens locais, fallback pull
+              # =================================================================
+              echo ""
+              echo "🔍 Verificando imagens locais para rollback..."
+              MISSING_IMAGES=0
+              for img in $(docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.observability.yml config --images 2>/dev/null); do
+                if ! docker image inspect "$img" >/dev/null 2>&1; then
+                  echo "   ⚠️  Imagem não encontrada localmente: $img"
+                  MISSING_IMAGES=$((MISSING_IMAGES + 1))
+                fi
+              done
+              
+              if [ "$MISSING_IMAGES" -gt 0 ]; then
+                echo "   📥 $MISSING_IMAGES imagens faltando. Tentando pull como fallback..."
+                docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.observability.yml pull 2>&1 || {
+                  echo "   ⚠️  Pull falhou. Rollback usará imagens disponíveis localmente."
+                }
+              else
+                echo "   ✅ Todas as imagens encontradas localmente"
+              fi
+              
+              docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.observability.yml up -d --remove-orphans
               
               echo "$TARGET_VERSION" > /opt/alice/versions/observability.current
               
@@ -5522,7 +5625,7 @@ jobs:
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "🚀 UP: Iniciando containers..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            if ! docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml up -d --pull always --remove-orphans 2>&1; then
+            if ! docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml up -d --remove-orphans 2>&1; then
               echo ""
               echo "❌ ERRO: Falha no docker compose up!"
               echo ""
@@ -5937,8 +6040,29 @@ jobs:
               echo "========================================"
               echo "   NOTE: ERPNEXT uses public Frappe images only (no IMAGE_TAG)"
               
-              docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml pull
-              docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml up -d --pull always --remove-orphans
+              # =================================================================
+              # ROLLBACK LOCAL (08/02/2026): Usa imagens locais, fallback pull
+              # =================================================================
+              echo ""
+              echo "🔍 Verificando imagens locais para rollback..."
+              MISSING_IMAGES=0
+              for img in $(docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml config --images 2>/dev/null); do
+                if ! docker image inspect "$img" >/dev/null 2>&1; then
+                  echo "   ⚠️  Imagem não encontrada localmente: $img"
+                  MISSING_IMAGES=$((MISSING_IMAGES + 1))
+                fi
+              done
+              
+              if [ "$MISSING_IMAGES" -gt 0 ]; then
+                echo "   📥 $MISSING_IMAGES imagens faltando. Tentando pull como fallback..."
+                docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml pull 2>&1 || {
+                  echo "   ⚠️  Pull falhou. Rollback usará imagens disponíveis localmente."
+                }
+              else
+                echo "   ✅ Todas as imagens encontradas localmente"
+              fi
+              
+              docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml up -d --remove-orphans
               
               echo "$TARGET_VERSION" > /opt/alice/versions/erpnext.current
               
@@ -6143,7 +6267,7 @@ jobs:
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "🚀 UP: Iniciando containers..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            if ! docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.backup.yml up -d --pull always --remove-orphans 2>&1; then
+            if ! docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.backup.yml up -d --remove-orphans 2>&1; then
               echo ""
               echo "❌ ERRO: Falha no docker compose up!"
               echo ""
@@ -6522,8 +6646,29 @@ jobs:
               echo "🐳 Deploying rollback version: $TARGET_VERSION"
               echo "========================================"
               
-              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.backup.yml pull
-              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.backup.yml up -d --pull always --remove-orphans
+              # =================================================================
+              # ROLLBACK LOCAL (08/02/2026): Usa imagens locais, fallback pull
+              # =================================================================
+              echo ""
+              echo "🔍 Verificando imagens locais para rollback..."
+              MISSING_IMAGES=0
+              for img in $(IMAGE_TAG=$TARGET_VERSION docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.backup.yml config --images 2>/dev/null); do
+                if ! docker image inspect "$img" >/dev/null 2>&1; then
+                  echo "   ⚠️  Imagem não encontrada localmente: $img"
+                  MISSING_IMAGES=$((MISSING_IMAGES + 1))
+                fi
+              done
+              
+              if [ "$MISSING_IMAGES" -gt 0 ]; then
+                echo "   📥 $MISSING_IMAGES imagens faltando. Tentando pull como fallback..."
+                IMAGE_TAG=$TARGET_VERSION docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.backup.yml pull 2>&1 || {
+                  echo "   ⚠️  Pull falhou. Rollback usará imagens disponíveis localmente."
+                }
+              else
+                echo "   ✅ Todas as imagens encontradas localmente"
+              fi
+              
+              IMAGE_TAG=$TARGET_VERSION docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.backup.yml up -d --remove-orphans
               
               echo "$TARGET_VERSION" > /opt/alice/versions/backup.current
               
@@ -6735,24 +6880,67 @@ jobs:
             echo ""
             
             # =================================================================
-            # ESTÁGIO 3: Remover imagens não utilizadas há 7+ dias
+            # ESTÁGIO 3: Rotação inteligente - manter 10 últimas versões
             # =================================================================
-            # CRITÉRIO: until=168h (7 dias)
-            # - Preserva imagens recentes (podem ser usadas em rollback)
-            # - Remove apenas imagens antigas não utilizadas
-            # - NÃO remove imagens em uso por containers running
+            # CORREÇÃO (08/02/2026): Substituído docker image prune -a --filter until=168h
+            # PROBLEMA: Flag -a removia TODAS imagens sem container running,
+            # incluindo imagens necessárias para rollback (embeddings-gpu, qwen-trainer).
+            # Após rollback limpar containers, cleanup removia imagens GPU (19.5GB cada).
+            # SOLUÇÃO: Rotação por contagem - manter 10 últimas versões de cada imagem
+            # GHCR do projeto. Remove apenas versões antigas excedentes.
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Mudanças cirúrgicas)
             # =================================================================
-            echo "🗑️  Removendo imagens não utilizadas há 7+ dias..."
-            OLD_IMAGES=$(docker images --filter "until=168h" --filter "dangling=false" -q 2>/dev/null | wc -l)
-            if [ "$OLD_IMAGES" -gt 0 ]; then
-              # --filter "until=168h" = imagens criadas há mais de 7 dias
-              # -a = todas (não apenas dangling)
-              # -f = force (sem confirmação)
-              docker image prune -a -f --filter "until=168h" 2>&1 || true
-              echo "   ✅ Limpeza de imagens antigas concluída"
-            else
-              echo "   ✅ Nenhuma imagem antiga para remover"
-            fi
+            echo "🗑️  Rotação de imagens: mantendo 10 últimas versões por repositório..."
+            
+            cleanup_old_versions() {
+              local image_name="$1"
+              local keep_count=10
+              # Listar apenas tags versionadas (v*), ordenar por versão semântica
+              local all_tags=$(docker images --format '{{.Tag}}' "$image_name" 2>/dev/null | grep '^v' | sort -V)
+              local total=$(echo "$all_tags" | grep -c . 2>/dev/null || echo 0)
+              
+              if [ "$total" -le "$keep_count" ]; then
+                echo "   $image_name: $total versões (dentro do limite $keep_count)"
+                return
+              fi
+              
+              local to_remove=$((total - keep_count))
+              local old_tags=$(echo "$all_tags" | head -n "$to_remove")
+              local removed=0
+              for tag in $old_tags; do
+                echo "   🗑️  Removendo $image_name:$tag"
+                docker rmi "$image_name:$tag" 2>/dev/null || true
+                removed=$((removed + 1))
+              done
+              echo "   ✅ $image_name: removidas $removed, mantidas $keep_count"
+            }
+            
+            # Lista COMPLETA de 15 imagens GHCR do projeto
+            GHCR_IMAGES=(
+              "ghcr.io/${{ github.repository_owner }}/alice-auth"
+              "ghcr.io/${{ github.repository_owner }}/alice-chat"
+              "ghcr.io/${{ github.repository_owner }}/alice-frontend"
+              "ghcr.io/${{ github.repository_owner }}/alice-rag"
+              "ghcr.io/${{ github.repository_owner }}/alice-training"
+              "ghcr.io/${{ github.repository_owner }}/alice-integrations"
+              "ghcr.io/${{ github.repository_owner }}/alice-observability"
+              "ghcr.io/${{ github.repository_owner }}/alice-gpu-manager"
+              "ghcr.io/${{ github.repository_owner }}/alice-llm-qwen25"
+              "ghcr.io/${{ github.repository_owner }}/alice-embeddings-gpu"
+              "ghcr.io/${{ github.repository_owner }}/alice-qwen-trainer"
+              "ghcr.io/${{ github.repository_owner }}/alice-caddy"
+              "ghcr.io/${{ github.repository_owner }}/alice-postgres"
+              "ghcr.io/${{ github.repository_owner }}/alice-pgbackrest"
+              "ghcr.io/${{ github.repository_owner }}/alice-api-gateway"
+            )
+            
+            TOTAL_REMOVED=0
+            for img in "${GHCR_IMAGES[@]}"; do
+              cleanup_old_versions "$img"
+            done
+            
+            echo ""
+            echo "   ✅ Rotação de imagens concluída"
             echo ""
             
             # =================================================================
