@@ -20,6 +20,9 @@ import { Button } from '@/components/ui/button';
 import { Loader2, Percent, Search } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
 
+/** Símbolo Futures padrão quando nenhum é fornecido */
+const DEFAULT_FUTURES_SYMBOL = 'XBTUSDTM';
+
 export interface TradeFeesProps {
   /** Símbolo Futures padrão */
   defaultFuturesSymbol?: string;
@@ -36,10 +39,12 @@ interface FuturesFee {
   makerFeeRate?: string;
 }
 
-export function TradeFees({ defaultFuturesSymbol = 'XBTUSDTM' }: TradeFeesProps) {
+export function TradeFees({ defaultFuturesSymbol }: TradeFeesProps) {
   const { t } = useTranslation();
-  const [futuresSymbol, setFuturesSymbol] = useState(defaultFuturesSymbol);
-  const [searchSymbol, setSearchSymbol] = useState(defaultFuturesSymbol);
+  // Fallback para constante quando string vazia ou undefined (default params não cobrem '')
+  const resolvedSymbol = defaultFuturesSymbol || DEFAULT_FUTURES_SYMBOL;
+  const [futuresSymbol, setFuturesSymbol] = useState(resolvedSymbol);
+  const [searchSymbol, setSearchSymbol] = useState(resolvedSymbol);
 
   // Fee básica Spot/Margin
   const { data: basicFee, isLoading: loadingBasic } = useQuery<BasicFee>({
@@ -124,7 +129,7 @@ export function TradeFees({ defaultFuturesSymbol = 'XBTUSDTM' }: TradeFeesProps)
               <Input
                 value={searchSymbol}
                 onChange={e => setSearchSymbol(e.target.value.toUpperCase())}
-                placeholder="XBTUSDTM"
+                placeholder={DEFAULT_FUTURES_SYMBOL}
               />
             </div>
             <div className="flex items-end">
