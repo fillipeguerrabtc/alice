@@ -1257,6 +1257,8 @@ export function TechnicalAnalysisPanel({
   useEffect(() => {
     if (!autoSaveEnabledRef.current) return;
     if (!symbol) return;
+    // Impede auto-save com arrays obrigatórios vazios (causa 400 no backend - Zod .min(1))
+    if (profilePayload.timeframes.length === 0 || profilePayload.indicators.length === 0 || profilePayload.techniques.length === 0) return;
     const payloadKey = JSON.stringify(profilePayload);
     if (payloadKey === autoSaveLastPayloadRef.current) return;
     if (autoSaveTimerRef.current) {
@@ -1376,6 +1378,7 @@ export function TechnicalAnalysisPanel({
               }))}
               selectedValues={profileForm.timeframes}
               onChange={updateTimeframes}
+              minSelected={1}
               placeholder={t('trading.common.selectPlaceholder')}
               selectedCountLabel={t('trading.common.selectedCount', { count: profileForm.timeframes.length })}
               maxLabel={t('trading.common.maxSelected', { max: profileForm.timeframes.length })}
@@ -1396,6 +1399,7 @@ export function TechnicalAnalysisPanel({
               }))}
               selectedValues={profileForm.indicators}
               onChange={updateIndicators}
+              minSelected={1}
               placeholder={t('trading.common.selectPlaceholder')}
               selectedCountLabel={t('trading.common.selectedCount', { count: profileForm.indicators.length })}
               maxLabel={t('trading.common.maxSelected', { max: profileForm.indicators.length })}
@@ -1416,6 +1420,7 @@ export function TechnicalAnalysisPanel({
             }))}
             selectedValues={profileForm.techniques}
             onChange={updateTechniques}
+            minSelected={1}
             placeholder={t('trading.common.selectPlaceholder')}
             selectedCountLabel={t('trading.common.selectedCount', { count: profileForm.techniques.length })}
             maxLabel={t('trading.common.maxSelected', { max: profileForm.techniques.length })}
@@ -1581,7 +1586,7 @@ export function TechnicalAnalysisPanel({
           <div className="flex flex-wrap gap-2">
             <Button
               onClick={() => updateProfileMutation.mutate(profilePayload)}
-              disabled={updateProfileMutation.isPending}
+              disabled={updateProfileMutation.isPending || profilePayload.timeframes.length === 0 || profilePayload.indicators.length === 0 || profilePayload.techniques.length === 0}
             >
               {updateProfileMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               {t('trading.analysis.profile.save')}

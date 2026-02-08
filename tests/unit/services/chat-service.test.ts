@@ -378,7 +378,9 @@ describe('Chat Service - Image Analysis (Vision)', () => {
 
 describe('Chat Service - Circuit Breakers', () => {
   it('deve usar presets SSOT para LLM e RAG (Regra 2 - Não Duplicar)', () => {
-    expect(CIRCUIT_BREAKER_PRESETS.gpuLLM.timeout).toBe(60000);
+    // Timeout 180s necessário: geração de sinais de trading pode levar 30-120s
+    // dependendo do tamanho do prompt e tokens de completion solicitados.
+    expect(CIRCUIT_BREAKER_PRESETS.gpuLLM.timeout).toBe(180000);
     expect(CIRCUIT_BREAKER_PRESETS.gpuLLM.resetTimeout).toBe(30000);
 
     expect(CIRCUIT_BREAKER_PRESETS.ragService.timeout).toBe(10000);

@@ -22,6 +22,8 @@ type MultiSelectDropdownProps = {
   selectedValues: string[];
   onChange: (next: string[]) => void;
   maxSelected?: number;
+  /** Mínimo de itens selecionados - impede desmarcar abaixo deste limite */
+  minSelected?: number;
   emptyLabel?: string;
   placeholder?: string;
   selectedCountLabel?: string;
@@ -37,6 +39,7 @@ export function MultiSelectDropdown({
   selectedValues,
   onChange,
   maxSelected,
+  minSelected,
   emptyLabel = 'Nenhuma opção disponível',
   placeholder = 'Selecione...',
   selectedCountLabel = '{count} selecionados',
@@ -69,6 +72,8 @@ export function MultiSelectDropdown({
       if (maxSelected && next.size >= maxSelected) return;
       next.add(value);
     } else {
+      // Impede desmarcar abaixo do mínimo obrigatório
+      if (minSelected && next.size <= minSelected) return;
       next.delete(value);
     }
     onChange(Array.from(next));
@@ -80,7 +85,10 @@ export function MultiSelectDropdown({
     onChange(options.slice(0, max).map((option) => option.value));
   };
 
+  const canClear = !minSelected || minSelected <= 0;
+
   const handleClear = () => {
+    if (!canClear) return;
     onChange([]);
   };
 
@@ -113,7 +121,7 @@ export function MultiSelectDropdown({
           <DropdownMenuItem
             onClick={handleClear}
             onSelect={(event) => event.preventDefault()}
-            disabled={selectedValues.length === 0}
+            disabled={selectedValues.length === 0 || !canClear}
           >
             {clearLabel}
           </DropdownMenuItem>

@@ -784,14 +784,14 @@ function normalizeTradingProfile(row?: schema.TradingAnalysisProfile | null): {
   const arbitrageConfig = normalizeTradingArbitrageConfig(row?.arbitrageConfig as TradingArbitrageConfig | null);
   const modelConfigRaw = row?.modelConfig ?? {};
   const modelConfig: TradingProfileModelConfig = {
-    temperature: modelConfigRaw?.temperature,
-    maxTokens: modelConfigRaw?.maxTokens,
+    temperature: modelConfigRaw?.temperature ?? undefined,
+    maxTokens: modelConfigRaw?.maxTokens ?? undefined,
   };
   const newsConfig = normalizeTradingNewsConfig(row?.newsConfig ?? null);
   const consensusRaw = row?.consensus as Partial<TradingProfileConsensus> | undefined;
   const consensus: TradingProfileConsensus = {
     rule: consensusRaw?.rule === 'majority' ? 'majority' : 'majority',
-    minAgree: consensusRaw?.minAgree,
+    minAgree: consensusRaw?.minAgree ?? undefined,
   };
 
   return {
@@ -1709,6 +1709,11 @@ const TRADING_LLM_PROMPT_SAFETY_TOKENS = 128;
 const TRADING_LLM_MESSAGE_OVERHEAD_TOKENS = 8;
 const TRADING_LLM_TOKEN_HEADROOM_TOKENS = 256;
 const TRADING_LLM_CHARS_PER_TOKEN = 2.2;
+// Teto enterprise para tokens de completion em sinais de trading.
+// O schema JSON do sinal tem ~15 campos obrigatórios + citedValues = ~200-500 tokens reais.
+// 768 tokens dá margem generosa sem causar timeouts desnecessários
+// (768 tokens a ~30 tok/s com awq_marlin = ~25s vs 2048 tokens a ~6 tok/s com awq = ~340s).
+const TRADING_LLM_MAX_SIGNAL_COMPLETION_TOKENS = 768;
 const TRADING_LLM_PROMPT_ESTIMATE_MULTIPLIER = 1.25;
 const TRADING_LLM_TOKEN_REGEX_SAFETY_MULTIPLIER = 1.15;
 const TRADING_LLM_TOKEN_REGEX_PATTERN = /[\p{L}\p{N}]+|[^\s\p{L}\p{N}]/gu;
@@ -1903,10 +1908,9 @@ const TRADING_LLM_SIGNAL_SCHEMA = z.object({
 
 // CORREÇÃO CR1 (07/02/2026): Schema JSON com propriedades explícitas para citedValues.
 // Schema JSON para constrained decoding via vLLM 0.12.0 structured_outputs.
-// IMPORTANTE: citedValues NÃO usa additionalProperties:false porque 28 propriedades
-// opcionais + additionalProperties:false = 2^28 (~268M) combinações que causam
-// falha na compilação do xgrammar. A validação de campos extras é feita pelo
-// Zod schema TRADING_LLM_SIGNAL_PARTIAL_SCHEMA após parsing.
+// Backend: outlines (configurado via --guided-decoding-backend outlines no entrypoint.sh).
+// outlines suporta schemas complexos com múltiplas propriedades opcionais sem
+// problemas de compilação (diferente do xgrammar que falha com 2^N combinações).
 // strict:true REMOVIDO - campo OpenAI-only, vLLM ignora silenciosamente.
 // Ref: https://docs.vllm.ai/en/v0.12.0/features/structured_outputs/
 const TRADING_LLM_SIGNAL_JSON_SCHEMA = {
@@ -1943,8 +1947,9 @@ const TRADING_LLM_SIGNAL_JSON_SCHEMA = {
       timeframeUsed: { type: 'string' as const },
       citedValues: {
         type: 'object' as const,
-        // SEM additionalProperties:false - 28 props opcionais criam 2^28 combinações
-        // que causam falha na compilação do xgrammar. Validação via Zod pós-parse.
+        additionalProperties: false,
+        // Com backend outlines (--guided-decoding-backend outlines), additionalProperties:false
+        // funciona corretamente mesmo com 29 propriedades opcionais. Validação via Zod pós-parse.
         properties: {
           rsi: { type: 'number' as const },
           macdLine: { type: 'number' as const },
@@ -9675,6 +9680,13 @@ function normalizeLlmJsonKeys(
           continue;
         }
       }
+      // =======================================================================
+      // CORREÇÃO 08/02/2026: char ('{' ou ',') JÁ foi emitido na linha acima
+      // e i JÁ foi avançado. Sem este continue, o loop caía para
+      // output += char; i += 1; que DUPLICAVA o caractere e PULAVA o próximo,
+      // corrompendo JSON válido do LLM (ex: "{{" ao invés de "{").
+      // =======================================================================
+      continue;
     }
 
     output += char;
@@ -9970,6 +9982,14 @@ function repairLlmJsonContent(content: string): { json: string; repaired: boolea
     repaired = true;
   }
 
+  // Reparo de leading commas em arrays: [, → [
+  // Padrão comum em LLMs que geram "motivators": [, "item1", "item2"]
+  const leadingCommaRegex = /\[\s*,/g;
+  if (leadingCommaRegex.test(output)) {
+    output = output.replace(/\[\s*,/g, '[');
+    repaired = true;
+  }
+
   const trailingCommaResult = removeTrailingCommasOutsideStrings(output);
   if (trailingCommaResult.removed) {
     repaired = true;
@@ -10116,6 +10136,64 @@ function insertMissingCommasInArrays(content: string): { json: string; inserted:
   return { json: output, inserted };
 }
 
+/**
+ * Tenta completar JSON truncado adicionando fechamentos faltantes (}, ]).
+ * Útil quando o LLM gera JSON válido mas é cortado por max_tokens.
+ * Retorna null se não conseguir determinar os fechamentos necessários.
+ */
+function tryCompleteJson(json: string): string | null {
+  const trimmed = json.trim();
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return null;
+
+  // Contar aberturas e fechamentos fora de strings
+  let inString = false;
+  let escaping = false;
+  const stack: string[] = [];
+
+  for (let i = 0; i < trimmed.length; i += 1) {
+    const char = trimmed[i];
+    if (escaping) {
+      escaping = false;
+      continue;
+    }
+    if (char === '\\' && inString) {
+      escaping = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (char === '{') stack.push('}');
+    else if (char === '[') stack.push(']');
+    else if (char === '}' || char === ']') {
+      if (stack.length > 0 && stack[stack.length - 1] === char) {
+        stack.pop();
+      }
+    }
+  }
+
+  // Se stack está vazio, JSON já está balanceado - não é truncamento
+  if (stack.length === 0) return null;
+
+  // Fechar string aberta se necessário
+  let completed = trimmed;
+  if (inString) {
+    completed += '"';
+  }
+
+  // Remover trailing comma antes de fechar
+  completed = completed.replace(/,\s*$/, '');
+
+  // Adicionar fechamentos na ordem reversa
+  while (stack.length > 0) {
+    completed += stack.pop();
+  }
+
+  return completed;
+}
+
 function parseLlmSignalResponse(rawResponse: string): {
   data: TradingLlmSignalPartial;
   citedValuesSource: 'llm_payload' | 'regex';
@@ -10130,6 +10208,42 @@ function parseLlmSignalResponse(rawResponse: string): {
   }, 'Resposta raw do LLM recebida para parsing de sinal de trading');
 
   const candidate = extractJsonObjectCandidate(rawResponse);
+
+  // FAST PATH: Se resposta começa com '{' (constrained decoding ativo),
+  // tentar JSON.parse DIRETO no candidato ANTES de qualquer normalização/reparo.
+  // Isso evita que normalizeLlmJsonKeys ou outros reparos corrompam JSON já válido.
+  if (isDirectJson) {
+    try {
+      const directParsed = JSON.parse(candidate) as Record<string, unknown>;
+      const { normalized: directNormPayload, citedValuesSource: directCvs } = normalizeLlmSignalPayload(directParsed);
+      const directResult = TRADING_LLM_SIGNAL_PARTIAL_SCHEMA.safeParse(directNormPayload);
+      if (directResult.success) {
+        logger.info({ parseMethod: 'direct_json', citedValuesSource: directCvs }, 'Sinal de trading parseado via JSON.parse direto (sem normalização)');
+        return { data: directResult.data, citedValuesSource: directCvs, parseMethod: 'direct_json' };
+      }
+      // JSON válido mas Zod rejeitou - log e cair para pipeline de reparo
+      logger.warn({ zodError: directResult.error.message }, 'JSON.parse direto OK mas Zod rejeitou - tentando pipeline de reparo');
+    } catch {
+      // JSON.parse direto falhou - tentar completar JSON truncado antes de cair para pipeline pesado
+      logger.info('JSON.parse direto falhou, tentando completar JSON truncado');
+      const completed = tryCompleteJson(candidate);
+      if (completed !== null) {
+        try {
+          const completedParsed = JSON.parse(completed) as Record<string, unknown>;
+          const { normalized: completedNormPayload, citedValuesSource: completedCvs } = normalizeLlmSignalPayload(completedParsed);
+          const completedResult = TRADING_LLM_SIGNAL_PARTIAL_SCHEMA.safeParse(completedNormPayload);
+          if (completedResult.success) {
+            logger.info({ parseMethod: 'completed_json', citedValuesSource: completedCvs }, 'Sinal de trading parseado via completamento de JSON truncado');
+            return { data: completedResult.data, citedValuesSource: completedCvs, parseMethod: 'completed_json' };
+          }
+          logger.warn({ zodError: completedResult.error.message }, 'JSON completado válido mas Zod rejeitou');
+        } catch {
+          logger.info('JSON completado também falhou no parse, seguindo para pipeline de normalização');
+        }
+      }
+    }
+  }
+
   const sanitized = sanitizeJsonCandidate(candidate);
   if (sanitized.repaired) {
     logger.warn('Resposta LLM continha prefixos não JSON; sanitização aplicada.');
@@ -10145,7 +10259,7 @@ function parseLlmSignalResponse(rawResponse: string): {
     if (!result.success) {
       throw new Error(`Resposta LLM inválida: ${result.error.message}`);
     }
-    const parseMethod = isDirectJson ? 'direct' : (sanitized.repaired || normalized.repaired ? 'sanitized' : 'direct');
+    const parseMethod = sanitized.repaired || normalized.repaired ? 'sanitized' : 'normalized';
     logger.info({ parseMethod, citedValuesSource }, 'Sinal de trading parseado com sucesso');
     return { data: result.data, citedValuesSource, parseMethod };
   } catch (error) {
@@ -10455,7 +10569,8 @@ function resolveMaxTokensForPrompt(params: {
   const maxCompletionTokens = Math.min(
     params.requestedMaxTokens,
     conservativeMaxCompletionTokens,
-    strictMaxCompletionTokens
+    strictMaxCompletionTokens,
+    TRADING_LLM_MAX_SIGNAL_COMPLETION_TOKENS
   );
 
   return {
@@ -14291,18 +14406,19 @@ app.put('/api/integrations/trading/analysis-profile', requirePermission('integra
       }).optional(),
       consensus: z.object({
         rule: z.literal('majority').optional(),
-        minAgree: z.number().min(1).optional(),
+        minAgree: z.number().min(1).optional().nullable(),
       }).optional(),
     });
     const parsedBody = bodySchema.safeParse(req.body);
     if (!parsedBody.success) {
+      logger.warn({ zodErrors: parsedBody.error.flatten(), bodyKeys: Object.keys(req.body ?? {}) }, 'Validação Zod falhou no perfil de análise/sinal');
       res.status(400).json({ error: 'Dados inválidos', details: parsedBody.error.flatten() });
       return;
     }
 
     const profileRow = await getOrCreateTradingProfile(authContext.tenantId, parsedBody.data.kind);
     const consensusUpdate = parsedBody.data.consensus
-      ? { rule: 'majority' as const, minAgree: parsedBody.data.consensus.minAgree }
+      ? { rule: 'majority' as const, minAgree: parsedBody.data.consensus.minAgree ?? undefined }
       : undefined;
     const resolvedTimeframes = (parsedBody.data.timeframes ?? profileRow.timeframes) as TradingIntervalValue[];
     const resolvedTechniques = normalizeTradingTechniques(parsedBody.data.techniques ?? (profileRow.techniques as TradingTechnique[] | null));

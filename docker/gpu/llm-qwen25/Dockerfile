@@ -31,7 +31,9 @@ RUN chmod +x /app/entrypoint.sh
 
 # Configuração do modelo (valores podem ser sobrescritos por env no docker-compose)
 ENV MODEL_NAME="Qwen/Qwen2.5-7B-Instruct-AWQ"
-ENV QUANTIZATION="awq"
+# awq_marlin usa kernels Marlin otimizados para AWQ no vLLM 0.12.0+
+# Benchmark: awq ~6-7 tok/s → awq_marlin ~20-50+ tok/s (2-4x melhoria)
+ENV QUANTIZATION="awq_marlin"
 ENV MAX_MODEL_LEN="6144"
 ENV GPU_MEMORY_UTILIZATION="0.42"
 ENV MAX_NUM_BATCHED_TOKENS="1536"

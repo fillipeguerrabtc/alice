@@ -39,6 +39,7 @@ exec python3 -m vllm.entrypoints.openai.api_server \
   --max-num-batched-tokens "${MAX_NUM_BATCHED_TOKENS:-1536}" \
   --max-num-seqs "${MAX_NUM_SEQS:-16}" \
   --tensor-parallel-size "${TENSOR_PARALLEL_SIZE}" \
+  --guided-decoding-backend outlines \
   --host "${HOST}" \
   --port "${PORT}"
 

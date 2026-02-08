@@ -702,15 +702,23 @@ export async function getBasicFeeSpotMargin(currencyType?: string): Promise<Basi
 
 /**
  * Fee real Futures por símbolo
- * GET /api/v1/trade-fees
+ *
+ * CORREÇÃO 08/02/2026: /api/v1/trade-fees é endpoint SPOT/MARGIN e retorna
+ * 400 Bad Request para símbolos Futures (ex: XBTUSDTM). Fees de Futures são
+ * obtidas via informações do contrato na API Futures
+ * (GET /api/v1/contracts/:symbol → makerFeeRate / takerFeeRate).
+ * Ref: https://www.kucoin.com/docs/rest/futures-trading/market-data/get-symbol-detail
  */
 export async function getActualFeeFutures(symbol: string): Promise<TradeFee[]> {
-  const endpoint = buildEndpoint('/api/v1/trade-fees', { symbol });
-  const response = await kucoinAccountRequester.executeRequest<TradeFee[]>(
-    'GET',
-    endpoint,
-  );
-  return response.data;
+  // Importar kucoinClient dinamicamente para evitar dependência circular
+  const kucoinClient = await import('./kucoinClient.js');
+  const contract = await kucoinClient.getContractInfo(symbol);
+  // Mapear informações do contrato para o formato TradeFee existente
+  return [{
+    symbol: contract.symbol,
+    takerFeeRate: String(contract.takerFeeRate),
+    makerFeeRate: String(contract.makerFeeRate),
+  }];
 }
 
 // ============================================================================

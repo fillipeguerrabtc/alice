@@ -50,16 +50,21 @@ export interface CircuitBreakerConfig {
  * ```
  */
 export const CIRCUIT_BREAKER_PRESETS = {
-  /** Serviço LLM GPU Manager Service - timeout alto para inferência (Gate 2) */
+  /** Serviço LLM GPU Manager Service - timeout alto para inferência (Gate 2)
+   * 180s necessário: geração de sinais de trading pode levar 30-120s
+   * dependendo do tamanho do prompt e tokens de completion solicitados.
+   * O timeout do circuit breaker PRECEDE o timeout da requisição individual,
+   * então deve ser >= ao maior timeout esperado de qualquer chamada LLM.
+   */
   gpuLLM: {
-    timeout: 60000,
+    timeout: 180000,
     errorThresholdPercentage: 50,
     resetTimeout: 30000,
     volumeThreshold: 5,
   },
-  // GPU Manager LLM - enterprise preset
+  // GPU Manager LLM - enterprise preset (alinhado com gpuLLM)
   gpuManagerLLM: {
-    timeout: 60000,
+    timeout: 180000,
     errorThresholdPercentage: 50,
     resetTimeout: 30000,
     volumeThreshold: 5,

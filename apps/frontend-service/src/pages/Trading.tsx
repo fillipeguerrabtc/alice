@@ -1992,6 +1992,8 @@ export default function Trading() {
 
   useEffect(() => {
     if (!autoSaveSignalEnabledRef.current) return;
+    // Impede auto-save com arrays obrigatórios vazios (causa 400 no backend - Zod .min(1))
+    if (signalProfilePayload.timeframes.length === 0 || signalProfilePayload.indicators.length === 0 || signalProfilePayload.techniques.length === 0) return;
     const payloadKey = JSON.stringify(signalProfilePayload);
     if (payloadKey === autoSaveSignalLastPayloadRef.current) return;
     if (autoSaveSignalTimerRef.current) {
@@ -3725,6 +3727,7 @@ export default function Trading() {
                     }))}
                     selectedValues={signalProfileForm.timeframes}
                     onChange={updateSignalTimeframes}
+                    minSelected={1}
                     placeholder={t('trading.common.selectPlaceholder')}
                     selectedCountLabel={t('trading.common.selectedCount', { count: signalProfileForm.timeframes.length })}
                     maxLabel={t('trading.common.maxSelected', { max: signalProfileForm.timeframes.length })}
@@ -3744,6 +3747,7 @@ export default function Trading() {
                     }))}
                     selectedValues={signalProfileForm.indicators}
                     onChange={updateSignalIndicators}
+                    minSelected={1}
                     placeholder={t('trading.common.selectPlaceholder')}
                     selectedCountLabel={t('trading.common.selectedCount', { count: signalProfileForm.indicators.length })}
                     maxLabel={t('trading.common.maxSelected', { max: signalProfileForm.indicators.length })}
@@ -3764,6 +3768,7 @@ export default function Trading() {
                     }))}
                     selectedValues={signalProfileForm.techniques}
                     onChange={updateSignalTechniques}
+                    minSelected={1}
                     placeholder={t('trading.common.selectPlaceholder')}
                     selectedCountLabel={t('trading.common.selectedCount', { count: signalProfileForm.techniques.length })}
                     maxLabel={t('trading.common.maxSelected', { max: signalProfileForm.techniques.length })}
@@ -3961,7 +3966,7 @@ export default function Trading() {
                         },
                       });
                     }}
-                    disabled={isManualSignalSavePending || isSignalArbitrageInvalid}
+                    disabled={isManualSignalSavePending || isSignalArbitrageInvalid || signalProfilePayload.timeframes.length === 0 || signalProfilePayload.indicators.length === 0 || signalProfilePayload.techniques.length === 0}
                   >
                     {isManualSignalSavePending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                     {t('trading.signals.profile.save')}

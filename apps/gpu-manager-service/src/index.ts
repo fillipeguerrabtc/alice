@@ -273,9 +273,10 @@ const protectedFetchByServiceType = {
   [GpuServiceType.TRAINING]: gpuServiceClients[GpuServiceType.TRAINING].fetch,
 } as const;
 
-// Converte response_format.json_schema para structured_outputs.json (API nativa vLLM 0.12.0).
-// CRÍTICO: NÃO usar extra_body (conceito do SDK Python, não da API HTTP REST).
-// NÃO usar guided_json (removido no vLLM 0.12.0).
+// Sanitiza payload LLM antes de enviar ao vLLM 0.12.0.
+// MANTÉM response_format intacto (formato OpenAI-compatible suportado nativamente pelo vLLM).
+// A conversão anterior para structured_outputs (top-level) podia desabilitar
+// constrained decoding silenciosamente se vLLM não reconhecesse o campo.
 // Ref: https://docs.vllm.ai/en/v0.12.0/features/structured_outputs/
 function applyStructuredOutputs(params: {
   serviceType: GpuServiceType;
@@ -287,31 +288,20 @@ function applyStructuredOutputs(params: {
   if (!params.body || typeof params.body !== 'object' || Array.isArray(params.body)) return params.body;
 
   const payload = { ...(params.body as Record<string, unknown>) };
-  const responseFormat = payload.response_format as Record<string, unknown> | undefined;
 
-  // Se não há response_format com json_schema, passa body sem modificação
-  if (!responseFormat || responseFormat.type !== 'json_schema' || !responseFormat.json_schema) {
-    // Remover extra_body se existir (campo inválido para API HTTP REST do vLLM)
-    if (payload.extra_body) {
-      delete payload.extra_body;
-    }
-    return payload;
-  }
-
-  // Extrair o schema JSON puro do wrapper OpenAI (response_format.json_schema.schema)
-  const jsonSchemaWrapper = responseFormat.json_schema as Record<string, unknown>;
-  const jsonSchema = (jsonSchemaWrapper.schema as Record<string, unknown>) ?? jsonSchemaWrapper;
-
-  // Setar structured_outputs.json como campo TOP-LEVEL (API nativa vLLM 0.12.0)
-  payload.structured_outputs = { json: jsonSchema };
-
-  // Remover response_format para evitar conflito com structured_outputs
-  delete payload.response_format;
-
-  // Remover extra_body se existir (campo inválido para API HTTP REST do vLLM)
+  // Remover extra_body se existir (campo do SDK Python, inválido para API HTTP REST do vLLM)
   if (payload.extra_body) {
     delete payload.extra_body;
   }
+
+  // Remover structured_outputs se existir (pode conflitar com response_format)
+  if (payload.structured_outputs) {
+    delete payload.structured_outputs;
+  }
+
+  // response_format é MANTIDO intacto - vLLM 0.12.0 suporta nativamente
+  // o formato OpenAI: { type: "json_schema", json_schema: { name, schema, strict } }
+  // Isso garante constrained decoding via xgrammar/outlines no vLLM
 
   return payload;
 }
