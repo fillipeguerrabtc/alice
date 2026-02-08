@@ -977,17 +977,35 @@ jobs:
               ;;
           esac
           
-          # Validar cada imagem pública
+          # Validar cada imagem pública (com timeout de 15s por imagem)
+          # NOTA (08/02/2026): docker manifest inspect vai direto ao registry
+          # (não usa mirror.gcr.io), então pode ser lento para Docker Hub.
+          # Timeout de 15s evita que uma imagem lenta trave todo o workflow.
           MISSING=""
+          TIMEOUT_IMGS=""
           for img in "${IMAGES_TO_CHECK[@]}"; do
-            echo "   Validando: $img"
-            if ! docker manifest inspect "$img" > /dev/null 2>&1; then
-              echo "   ❌ FALHOU: $img"
-              MISSING="$MISSING $img"
+            echo -n "   Validando: $img ... "
+            if timeout 15 docker manifest inspect "$img" > /dev/null 2>&1; then
+              echo "✅ OK"
             else
-              echo "   ✅ OK: $img"
+              # Verificar se é timeout ou imagem realmente não existe
+              # Se timeout, não bloquear deploy (mirror.gcr.io vai resolver no pull)
+              EXIT_CODE=$?
+              if [ "$EXIT_CODE" -eq 124 ]; then
+                echo "⏱️ TIMEOUT (registry lento, pull via mirror resolverá)"
+                TIMEOUT_IMGS="$TIMEOUT_IMGS $img"
+              else
+                echo "❌ FALHOU"
+                MISSING="$MISSING $img"
+              fi
             fi
           done
+          
+          if [ -n "$TIMEOUT_IMGS" ]; then
+            echo ""
+            echo "⚠️  Imagens com timeout na validação (serão baixadas via mirror.gcr.io no pull):"
+            echo "  $TIMEOUT_IMGS"
+          fi
           
           if [ -n "$MISSING" ]; then
             echo ""
@@ -1916,6 +1934,110 @@ jobs:
               exit 1
             }
             echo "   ✅ Docker com GPU OK"
+            
+            # =================================================================
+            # ESTÁGIO 3.5: Garantir daemon.json enterprise (registry mirror)
+            # =================================================================
+            # PROBLEMA (08/02/2026): Docker Hub tem latência alta (~2-11s TCP connect)
+            #   do Hetzner (Alemanha) para AWS US East. Com docker compose pull puxando
+            #   múltiplas imagens simultaneamente, cada uma com max-concurrent-downloads=10,
+            #   o daemon fica sobrecarregado e dá timeout/EOF em conexões.
+            #
+            # SOLUÇÃO ENTERPRISE:
+            #   1. mirror.gcr.io como registry mirror → Google CDN com latência <100ms
+            #   2. max-concurrent-downloads=3 → reduz contenção de conexões
+            #   3. max-concurrent-uploads=5 → equilibra uso de rede
+            #
+            # REF: https://docs.docker.com/engine/daemon/proxy/#use-a-registry-mirror
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 11 (Docs oficiais)
+            # =================================================================
+            echo ""
+            echo "🔧 ESTÁGIO 3.5: Verificando daemon.json enterprise..."
+            
+            DAEMON_JSON="/etc/docker/daemon.json"
+            NEEDS_RESTART=false
+            
+            # Verificar se registry-mirrors já está configurado
+            if [ -f "$DAEMON_JSON" ]; then
+              HAS_MIRROR=$(grep -c "mirror.gcr.io" "$DAEMON_JSON" 2>/dev/null || echo "0")
+              HAS_CONCURRENT=$(grep -c '"max-concurrent-downloads"' "$DAEMON_JSON" 2>/dev/null || echo "0")
+              
+              if [ "$HAS_MIRROR" -gt 0 ] && [ "$HAS_CONCURRENT" -gt 0 ]; then
+                CURRENT_CONCURRENT=$(grep '"max-concurrent-downloads"' "$DAEMON_JSON" | grep -o '[0-9]*' || echo "0")
+                if [ "$CURRENT_CONCURRENT" -le 5 ]; then
+                  echo "   ✅ daemon.json enterprise já configurado (mirror.gcr.io + downloads=$CURRENT_CONCURRENT)"
+                else
+                  NEEDS_RESTART=true
+                fi
+              else
+                NEEDS_RESTART=true
+              fi
+            else
+              NEEDS_RESTART=true
+            fi
+            
+            if [ "$NEEDS_RESTART" = true ]; then
+              echo "   ⚠️  daemon.json precisa ser atualizado..."
+              
+              # Backup do original
+              if [ -f "$DAEMON_JSON" ]; then
+                cp "$DAEMON_JSON" "${DAEMON_JSON}.bak.$(date +%Y%m%d%H%M%S)"
+                echo "   📋 Backup salvo"
+              fi
+              
+              # Ler configuração atual e mesclar com novas configurações
+              # Usa python3 (disponível no Ubuntu 24.04) para manipular JSON de forma segura
+              python3 -c "
+            import json, sys
+            
+            # Ler daemon.json existente ou criar vazio
+            try:
+                with open('$DAEMON_JSON', 'r') as f:
+                    config = json.load(f)
+            except (FileNotFoundError, json.JSONDecodeError):
+                config = {}
+            
+            # Garantir registry-mirrors (Google CDN - latência <100ms do Hetzner)
+            config['registry-mirrors'] = ['https://mirror.gcr.io']
+            
+            # Reduzir downloads paralelos (evita timeout em registries lentos)
+            config['max-concurrent-downloads'] = 3
+            config['max-concurrent-uploads'] = 5
+            
+            # Escrever de volta
+            with open('$DAEMON_JSON', 'w') as f:
+                json.dump(config, f, indent=4)
+            
+            print('   Configurações aplicadas:')
+            print(f'     registry-mirrors: {config[\"registry-mirrors\"]}')
+            print(f'     max-concurrent-downloads: {config[\"max-concurrent-downloads\"]}')
+            print(f'     max-concurrent-uploads: {config[\"max-concurrent-uploads\"]}')
+            "
+              
+              # Validar JSON
+              if ! python3 -c "import json; json.load(open('$DAEMON_JSON'))" 2>/dev/null; then
+                echo "   ❌ ERRO: daemon.json inválido! Restaurando backup..."
+                cp "${DAEMON_JSON}.bak."* "$DAEMON_JSON" 2>/dev/null
+                echo "   ⚠️  Continuando com configuração anterior"
+              else
+                echo "   🔄 Reiniciando Docker daemon..."
+                systemctl restart docker
+                sleep 5
+                
+                if docker info &>/dev/null; then
+                  echo "   ✅ Docker reiniciado com daemon.json enterprise"
+                  
+                  # Verificar que mirror está ativo
+                  MIRRORS=$(docker info 2>/dev/null | grep -A1 "Registry Mirrors" | tail -1 || echo "nenhum")
+                  echo "   📋 Registry Mirrors: $MIRRORS"
+                else
+                  echo "   ❌ ERRO: Docker não reiniciou! Restaurando backup..."
+                  cp "${DAEMON_JSON}.bak."* "$DAEMON_JSON" 2>/dev/null
+                  systemctl restart docker
+                  sleep 5
+                fi
+              fi
+            fi
             
             # =================================================================
             # ESTÁGIO 4: Verificar espaço em disco
@@ -2965,34 +3087,64 @@ jobs:
             fi
             echo ""
             
-            # Pull das imagens
+            # Pull das imagens (SEQUENCIAL - evita timeout em registries lentos)
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "📥 PULL: Baixando imagens..."
+            echo "📥 PULL: Baixando imagens SEQUENCIALMENTE..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            pull_with_retry() {
-              local attempts=10
-              local delay=15
-              local max_delay=300
+            # =================================================================
+            # CORREÇÃO (08/02/2026): Pull sequencial por imagem
+            # =================================================================
+            # PROBLEMA: docker compose pull baixa TODAS as imagens em paralelo.
+            #   Com ~10 imagens × max-concurrent-downloads=3, são ~30 conexões
+            #   simultâneas. Docker Hub/Quay.io têm latência alta (~2-11s TCP)
+            #   do Hetzner, causando timeouts e EOF errors.
+            #
+            # SOLUÇÃO: Listar imagens únicas e puxar uma a uma com retry.
+            #   registry-mirrors (mirror.gcr.io) + pull sequencial = zero timeouts.
+            #
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Mudanças cirúrgicas)
+            # =================================================================
+            pull_single_image() {
+              local image="$1"
+              local attempts=3
+              local delay=10
               local attempt=1
               while [ $attempt -le $attempts ]; do
-                if docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.infra.yml pull 2>&1; then
+                if docker pull "$image" 2>&1; then
                   return 0
                 fi
-                echo "⚠️ Pull falhou (tentativa $attempt/$attempts). Aguardando ${delay}s (anti rate-limit)..."
+                echo "   ⚠️ Retry $attempt/$attempts para $image (aguardando ${delay}s)..."
                 sleep "$delay"
                 delay=$((delay * 2))
-                [ $delay -gt $max_delay ] && delay=$max_delay
                 attempt=$((attempt + 1))
               done
               return 1
             }
             
-            if ! pull_with_retry; then
+            IMAGES=$(docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.infra.yml config --images 2>/dev/null | sort -u)
+            TOTAL=$(echo "$IMAGES" | wc -l)
+            COUNT=0
+            FAILED=""
+            
+            for img in $IMAGES; do
+              COUNT=$((COUNT + 1))
               echo ""
-              echo "❌ ERRO: Falha no pull das imagens!"
+              echo "📥 [$COUNT/$TOTAL] $img"
+              if ! pull_single_image "$img"; then
+                echo "   ❌ FALHOU: $img"
+                FAILED="$FAILED $img"
+              else
+                echo "   ✅ OK"
+              fi
+            done
+            
+            if [ -n "$FAILED" ]; then
+              echo ""
+              echo "❌ ERRO: Falha no pull das seguintes imagens:$FAILED"
               exit 1
             fi
-            echo "✅ Pull concluído"
+            echo ""
+            echo "✅ Pull INFRA concluído ($TOTAL imagens)"
             echo ""
             
             # =================================================================
@@ -4091,71 +4243,67 @@ jobs:
             fi
             echo "✅ Login GHCR OK"
             
-            pull_with_retry() {
-              local attempts=10
-              local delay=15
-              local max_delay=300
+            # =================================================================
+            # CORREÇÃO (08/02/2026): Pull SEQUENCIAL por imagem
+            # =================================================================
+            # PROBLEMA: docker compose pull baixa TODAS as imagens em paralelo.
+            #   Com ~15 imagens (8 services + 3 GPU), cada uma com downloads
+            #   paralelos, são dezenas de conexões simultâneas. Docker Hub tem
+            #   latência alta (~2-11s TCP) do Hetzner, causando timeouts.
+            #
+            # SOLUÇÃO: Listar imagens únicas e puxar uma a uma com retry.
+            #   registry-mirrors (mirror.gcr.io) + pull sequencial = zero timeouts.
+            #
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Mudanças cirúrgicas)
+            # =================================================================
+            pull_single_image() {
+              local image="$1"
+              local attempts=3
+              local delay=10
               local attempt=1
               while [ $attempt -le $attempts ]; do
-                if "$@"; then
+                if docker pull "$image" 2>&1; then
                   return 0
                 fi
-                echo "⚠️ Pull falhou (tentativa $attempt/$attempts). Aguardando ${delay}s (anti rate-limit)..."
+                echo "   ⚠️ Retry $attempt/$attempts para $image (aguardando ${delay}s)..."
                 sleep "$delay"
                 delay=$((delay * 2))
-                [ $delay -gt $max_delay ] && delay=$max_delay
                 attempt=$((attempt + 1))
               done
               return 1
             }
             
-            # Pull das imagens
-            # ARQUITETURA ENTERPRISE (09/01/2026): Pull TODAS as imagens GPU
-            # GPU Manager gerencia containers dinamicamente - todos devem estar disponíveis
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "📥 PULL: Baixando imagens (incluindo TODOS os serviços GPU)..."
+            echo "📥 PULL: Baixando imagens SEQUENCIALMENTE (services + GPU)..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             
-            # Pull serviços principais (sem profile)
-            if ! pull_with_retry docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull 2>&1; then
-              echo "⚠️  Aviso: Pull parcial, continuando..."
+            # Listar TODAS as imagens (services principais + GPU profiles)
+            IMAGES_MAIN=$(docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml config --images 2>/dev/null || true)
+            IMAGES_GPU=$(docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile training config --images 2>/dev/null || true)
+            IMAGES=$(echo -e "${IMAGES_MAIN}\n${IMAGES_GPU}" | sort -u | grep -v '^$')
+            TOTAL=$(echo "$IMAGES" | wc -l)
+            COUNT=0
+            FAILED=""
+            
+            for img in $IMAGES; do
+              COUNT=$((COUNT + 1))
+              echo ""
+              echo "📥 [$COUNT/$TOTAL] $img"
+              if ! pull_single_image "$img"; then
+                echo "   ❌ FALHOU: $img"
+                FAILED="$FAILED $img"
+              else
+                echo "   ✅ OK"
+              fi
+            done
+            
+            if [ -n "$FAILED" ]; then
+              echo ""
+              echo "❌ ERRO: Falha no pull das seguintes imagens:$FAILED"
+              exit 1
             fi
-            
-            # Pull TODOS os serviços GPU (cada serviço separadamente para melhor diagnóstico)
-            # Gate 2: Serviços GPU sempre ativos (budgets em 20GB VRAM)
-            # - gpu-llm: LLM (texto) (Qwen2.5 7B AWQ)
-            # - gpu-embeddings: Qwen3-Embedding-0.6B INT8 (1024 dim)
-            # - gpu-trainer: QLoRA fine-tuning (sob demanda via profile)
-            # NOTA: Vision e geração de imagens são via OpenAI (sem VLM local)
-            # =================================================================
-            # CORREÇÃO (08/02/2026): GPU pulls com fail-fast obrigatório
-            # =================================================================
-            # PROBLEMA: GPU pulls usavam || echo (falha silenciosa) - se pull
-            # falhava, deploy continuava sem imagem e container crashava no start.
-            # SOLUÇÃO: Usar if ! pull_with_retry; exit 1 (fail-fast, alinhado
-            # com padrão INFRA/BACKUP que já usam pull_with_retry com exit 1).
-            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Mudanças cirúrgicas)
-            # =================================================================
             echo ""
-            echo "📥 Pull GPU LLM (Qwen2.5)..."
-            if ! pull_with_retry docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull gpu-llm 2>&1; then
-              echo "❌ ERRO CRÍTICO: Falha ao baixar gpu-llm após 10 tentativas"
-              exit 1
-            fi
-            
-            echo "📥 Pull GPU Embeddings..."
-            if ! pull_with_retry docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull gpu-embeddings 2>&1; then
-              echo "❌ ERRO CRÍTICO: Falha ao baixar gpu-embeddings após 10 tentativas"
-              exit 1
-            fi
-            
-            echo "📥 Pull GPU Trainer (fine-tuning sob demanda)..."
-            if ! pull_with_retry docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile training pull gpu-trainer 2>&1; then
-              echo "❌ ERRO CRÍTICO: Falha ao baixar gpu-trainer após 10 tentativas"
-              exit 1
-            fi
-            
-            echo "✅ Pull concluído"
+            echo "✅ Pull ALICE concluído ($TOTAL imagens)"
             echo ""
 
             # =================================================================
@@ -4884,19 +5032,19 @@ jobs:
             fi
             echo "✅ Login GHCR OK"
             
-            pull_with_retry() {
-              local attempts=10
-              local delay=15
-              local max_delay=300
+            # Função de pull sequencial por imagem (evita timeout em registries lentos)
+            pull_single_image() {
+              local image="$1"
+              local attempts=3
+              local delay=10
               local attempt=1
               while [ $attempt -le $attempts ]; do
-                if "$@"; then
+                if docker pull "$image" 2>&1; then
                   return 0
                 fi
-                echo "⚠️ Pull falhou (tentativa $attempt/$attempts). Aguardando ${delay}s (anti rate-limit)..."
+                echo "   ⚠️ Retry $attempt/$attempts para $image (aguardando ${delay}s)..."
                 sleep "$delay"
                 delay=$((delay * 2))
-                [ $delay -gt $max_delay ] && delay=$max_delay
                 attempt=$((attempt + 1))
               done
               return 1
@@ -4920,16 +5068,34 @@ jobs:
             fi
             echo ""
             
-            # Pull das imagens
+            # Pull das imagens (SEQUENCIAL - evita timeout)
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "📥 PULL: Baixando imagens..."
+            echo "📥 PULL: Baixando imagens SEQUENCIALMENTE..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            if ! pull_with_retry docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.observability.yml pull 2>&1; then
+            IMAGES=$(docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.observability.yml config --images 2>/dev/null | sort -u)
+            TOTAL=$(echo "$IMAGES" | wc -l)
+            COUNT=0
+            FAILED=""
+            
+            for img in $IMAGES; do
+              COUNT=$((COUNT + 1))
               echo ""
-              echo "❌ ERRO: Falha no pull das imagens!"
+              echo "📥 [$COUNT/$TOTAL] $img"
+              if ! pull_single_image "$img"; then
+                echo "   ❌ FALHOU: $img"
+                FAILED="$FAILED $img"
+              else
+                echo "   ✅ OK"
+              fi
+            done
+            
+            if [ -n "$FAILED" ]; then
+              echo ""
+              echo "❌ ERRO: Falha no pull das seguintes imagens:$FAILED"
               exit 1
             fi
-            echo "✅ Pull concluído"
+            echo ""
+            echo "✅ Pull OBSERVABILITY concluído ($TOTAL imagens)"
             echo ""
             
             # =================================================================
@@ -5580,19 +5746,19 @@ jobs:
             fi
             echo "✅ Login GHCR OK"
             
-            pull_with_retry() {
-              local attempts=10
-              local delay=15
-              local max_delay=300
+            # Função de pull sequencial por imagem (evita timeout em registries lentos)
+            pull_single_image() {
+              local image="$1"
+              local attempts=3
+              local delay=10
               local attempt=1
               while [ $attempt -le $attempts ]; do
-                if "$@"; then
+                if docker pull "$image" 2>&1; then
                   return 0
                 fi
-                echo "⚠️ Pull falhou (tentativa $attempt/$attempts). Aguardando ${delay}s (anti rate-limit)..."
+                echo "   ⚠️ Retry $attempt/$attempts para $image (aguardando ${delay}s)..."
                 sleep "$delay"
                 delay=$((delay * 2))
-                [ $delay -gt $max_delay ] && delay=$max_delay
                 attempt=$((attempt + 1))
               done
               return 1
@@ -5616,16 +5782,34 @@ jobs:
             fi
             echo ""
             
-            # Pull das imagens
+            # Pull das imagens (SEQUENCIAL - evita timeout)
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "📥 PULL: Baixando imagens..."
+            echo "📥 PULL: Baixando imagens SEQUENCIALMENTE..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            if ! pull_with_retry docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml pull 2>&1; then
+            IMAGES=$(docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml config --images 2>/dev/null | sort -u)
+            TOTAL=$(echo "$IMAGES" | wc -l)
+            COUNT=0
+            FAILED=""
+            
+            for img in $IMAGES; do
+              COUNT=$((COUNT + 1))
               echo ""
-              echo "❌ ERRO: Falha no pull das imagens!"
+              echo "📥 [$COUNT/$TOTAL] $img"
+              if ! pull_single_image "$img"; then
+                echo "   ❌ FALHOU: $img"
+                FAILED="$FAILED $img"
+              else
+                echo "   ✅ OK"
+              fi
+            done
+            
+            if [ -n "$FAILED" ]; then
+              echo ""
+              echo "❌ ERRO: Falha no pull das seguintes imagens:$FAILED"
               exit 1
             fi
-            echo "✅ Pull concluído"
+            echo ""
+            echo "✅ Pull ERPNEXT concluído ($TOTAL imagens)"
             echo ""
 
             # Deploy
@@ -6224,19 +6408,19 @@ jobs:
             fi
             echo "✅ Login GHCR OK"
             
-            pull_with_retry() {
-              local attempts=10
-              local delay=15
-              local max_delay=300
+            # Função de pull sequencial por imagem (evita timeout em registries lentos)
+            pull_single_image() {
+              local image="$1"
+              local attempts=3
+              local delay=10
               local attempt=1
               while [ $attempt -le $attempts ]; do
-                if "$@"; then
+                if docker pull "$image" 2>&1; then
                   return 0
                 fi
-                echo "⚠️ Pull falhou (tentativa $attempt/$attempts). Aguardando ${delay}s (anti rate-limit)..."
+                echo "   ⚠️ Retry $attempt/$attempts para $image (aguardando ${delay}s)..."
                 sleep "$delay"
                 delay=$((delay * 2))
-                [ $delay -gt $max_delay ] && delay=$max_delay
                 attempt=$((attempt + 1))
               done
               return 1
@@ -6246,7 +6430,7 @@ jobs:
             echo "🚀 DEPLOYING BACKUP STACK"
             echo "══════════════════════════════════════════════════════════════════"
             echo ""
-            echo "📦 Containers: pgbackrest"
+            echo "📦 Containers: pgbackrest, pgbackrest-exporter"
             echo "📅 Versão: ${{ needs.validate.outputs.version }}"
             echo "🕐 Início: $(date '+%Y-%m-%d %H:%M:%S')"
             echo ""
@@ -6260,16 +6444,34 @@ jobs:
             fi
             echo ""
             
-            # Pull das imagens
+            # Pull das imagens (SEQUENCIAL - evita timeout)
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "📥 PULL: Baixando imagens..."
+            echo "📥 PULL: Baixando imagens SEQUENCIALMENTE..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            if ! pull_with_retry docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.backup.yml pull 2>&1; then
+            IMAGES=$(docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.backup.yml config --images 2>/dev/null | sort -u)
+            TOTAL=$(echo "$IMAGES" | wc -l)
+            COUNT=0
+            FAILED=""
+            
+            for img in $IMAGES; do
+              COUNT=$((COUNT + 1))
               echo ""
-              echo "❌ ERRO: Falha no pull das imagens!"
+              echo "📥 [$COUNT/$TOTAL] $img"
+              if ! pull_single_image "$img"; then
+                echo "   ❌ FALHOU: $img"
+                FAILED="$FAILED $img"
+              else
+                echo "   ✅ OK"
+              fi
+            done
+            
+            if [ -n "$FAILED" ]; then
+              echo ""
+              echo "❌ ERRO: Falha no pull das seguintes imagens:$FAILED"
               exit 1
             fi
-            echo "✅ Pull concluído"
+            echo ""
+            echo "✅ Pull BACKUP concluído ($TOTAL imagens)"
             echo ""
 
             # Deploy
