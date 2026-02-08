@@ -9538,6 +9538,18 @@ function normalizeLlmSignalPayload(payload: Record<string, unknown>): {
     }
   }
 
+  // Normalizar confidence para escala 0-1 (LLM pode retornar 0-100 ou 0-10)
+  if (typeof normalized.confidence === 'number' && normalized.confidence > 1) {
+    normalized.confidence = normalized.confidence > 10
+      ? normalized.confidence / 100  // Escala 0-100 → 0-1
+      : normalized.confidence / 10;  // Escala 0-10 → 0-1
+  }
+
+  // riskReward deve ser > 0; se inválido, remover para Zod aceitar como undefined (optional)
+  if (typeof normalized.riskReward === 'number' && normalized.riskReward <= 0) {
+    delete normalized.riskReward;
+  }
+
   if (typeof normalized.motivators === 'string') {
     normalized.motivators = [normalized.motivators].filter(Boolean);
   }
@@ -10876,6 +10888,8 @@ function buildTradingSignalSystemPrompt(params: {
     'Para arbitragem, considere timeframes curtos e execução imediata.',
     'Preencha "citedValues" com os valores numéricos EXATOS citados na análise (use apenas números do prompt).',
     'Campos motivators e invalidationReasons DEVEM ter pelo menos 1 item cada.',
+    'IMPORTANTE: O campo "confidence" DEVE ser um decimal entre 0.0 e 1.0 (ex: 0.75 para 75%). NÃO use escala 0-100 ou 0-10.',
+    'O campo "riskReward" deve ser > 0 (ex: 2.5 para risco/retorno 1:2.5). Se não aplicável, omita o campo.',
   ].filter(Boolean).join('\n');
 }
 

@@ -652,7 +652,7 @@
   "timepicker": {},
   "timezone": "",
   "title": "Alice ERPNext Dashboard",
-  "uid": "alice-erpnext",
+  "uid": "alice-erpnext-dashboard",
   "version": 1,
   "weekStart": ""
 }

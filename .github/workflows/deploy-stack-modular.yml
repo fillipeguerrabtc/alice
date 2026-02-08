@@ -303,7 +303,6 @@ jobs:
               "alice-gpu-manager"
               "gpu-llm"
               "gpu-embeddings"
-              "gpu-asr"
               "gpu-trainer"
             )
             
@@ -2971,16 +2970,18 @@ jobs:
             echo "📥 PULL: Baixando imagens..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             pull_with_retry() {
-              local attempts=5
-              local delay=10
+              local attempts=10
+              local delay=15
+              local max_delay=300
               local attempt=1
               while [ $attempt -le $attempts ]; do
                 if docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.infra.yml pull 2>&1; then
                   return 0
                 fi
-                echo "⚠️ Pull falhou (tentativa $attempt/$attempts). Aguardando ${delay}s..."
+                echo "⚠️ Pull falhou (tentativa $attempt/$attempts). Aguardando ${delay}s (anti rate-limit)..."
                 sleep "$delay"
                 delay=$((delay * 2))
+                [ $delay -gt $max_delay ] && delay=$max_delay
                 attempt=$((attempt + 1))
               done
               return 1
@@ -4091,16 +4092,18 @@ jobs:
             echo "✅ Login GHCR OK"
             
             pull_with_retry() {
-              local attempts=5
-              local delay=10
+              local attempts=10
+              local delay=15
+              local max_delay=300
               local attempt=1
               while [ $attempt -le $attempts ]; do
                 if "$@"; then
                   return 0
                 fi
-                echo "⚠️ Pull falhou (tentativa $attempt/$attempts). Aguardando ${delay}s..."
+                echo "⚠️ Pull falhou (tentativa $attempt/$attempts). Aguardando ${delay}s (anti rate-limit)..."
                 sleep "$delay"
                 delay=$((delay * 2))
+                [ $delay -gt $max_delay ] && delay=$max_delay
                 attempt=$((attempt + 1))
               done
               return 1
@@ -4136,19 +4139,19 @@ jobs:
             echo ""
             echo "📥 Pull GPU LLM (Qwen2.5)..."
             if ! pull_with_retry docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull gpu-llm 2>&1; then
-              echo "❌ ERRO CRÍTICO: Falha ao baixar gpu-llm após 5 tentativas"
+              echo "❌ ERRO CRÍTICO: Falha ao baixar gpu-llm após 10 tentativas"
               exit 1
             fi
             
             echo "📥 Pull GPU Embeddings..."
             if ! pull_with_retry docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml pull gpu-embeddings 2>&1; then
-              echo "❌ ERRO CRÍTICO: Falha ao baixar gpu-embeddings após 5 tentativas"
+              echo "❌ ERRO CRÍTICO: Falha ao baixar gpu-embeddings após 10 tentativas"
               exit 1
             fi
             
             echo "📥 Pull GPU Trainer (fine-tuning sob demanda)..."
             if ! pull_with_retry docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile training pull gpu-trainer 2>&1; then
-              echo "❌ ERRO CRÍTICO: Falha ao baixar gpu-trainer após 5 tentativas"
+              echo "❌ ERRO CRÍTICO: Falha ao baixar gpu-trainer após 10 tentativas"
               exit 1
             fi
             
@@ -4230,7 +4233,7 @@ jobs:
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "🔍 VERIFICAÇÃO INICIAL DE SAÚDE (quick check):"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            ALICE_CONTAINERS="alice-frontend alice-auth alice-biometrics alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager gpu-llm gpu-embeddings gpu-asr gpu-trainer"
+            ALICE_CONTAINERS="alice-frontend alice-auth alice-biometrics alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager gpu-llm gpu-embeddings gpu-trainer"
             ALL_RUNNING=true
             for c in $ALICE_CONTAINERS; do
               if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
@@ -4284,7 +4287,7 @@ jobs:
             echo "🧭 DIAGNÓSTICO RÁPIDO - ALICE (tail na tela)"
             echo "================================================"
             docker ps -a --filter "name=alice-" --filter "name=gpu-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "alice-|gpu-" || true
-            for c in alice-frontend alice-auth alice-biometrics alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager gpu-llm gpu-embeddings gpu-asr gpu-trainer; do
+            for c in alice-frontend alice-auth alice-biometrics alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager gpu-llm gpu-embeddings gpu-trainer; do
               if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
                 echo ""
                 echo "── $c (tail 80) ──"
@@ -4324,7 +4327,7 @@ jobs:
 
             docker ps -a --filter "name=alice-" --filter "name=gpu-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" > "${LOG_DIR}/containers.txt" 2>&1 || true
 
-            for c in alice-frontend alice-auth alice-biometrics alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager gpu-llm gpu-embeddings gpu-asr gpu-trainer; do
+            for c in alice-frontend alice-auth alice-biometrics alice-chat alice-rag alice-training alice-integrations alice-observability alice-gpu-manager gpu-llm gpu-embeddings gpu-trainer; do
               if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
                 docker logs "$c" --tail 500 > "${LOG_DIR}/${c}.log" 2>&1 || true
               fi
@@ -4584,8 +4587,9 @@ jobs:
             echo ""
             echo "🧹 Stage 2: Force cleaning ALL ALICE containers (incluindo GPU)..."
             # CORREÇÃO (08/02/2026): GPU containers adicionados à lista
-            # PROBLEMA: gpu-llm, gpu-embeddings, gpu-asr, gpu-trainer não eram
+            # PROBLEMA: gpu-llm, gpu-embeddings, gpu-trainer não eram
             # removidos durante rollback, causando conflitos com containers antigos.
+            # NOTA: gpu-asr removido (ASR via OpenAI gpt-4o-transcribe, não local)
             ALICE_CONTAINERS=(
               "alice-frontend"
               "alice-auth"
@@ -4598,7 +4602,6 @@ jobs:
               "alice-gpu-manager"
               "gpu-llm"
               "gpu-embeddings"
-              "gpu-asr"
               "gpu-trainer"
             )
             
@@ -4882,16 +4885,18 @@ jobs:
             echo "✅ Login GHCR OK"
             
             pull_with_retry() {
-              local attempts=5
-              local delay=10
+              local attempts=10
+              local delay=15
+              local max_delay=300
               local attempt=1
               while [ $attempt -le $attempts ]; do
                 if "$@"; then
                   return 0
                 fi
-                echo "⚠️ Pull falhou (tentativa $attempt/$attempts). Aguardando ${delay}s..."
+                echo "⚠️ Pull falhou (tentativa $attempt/$attempts). Aguardando ${delay}s (anti rate-limit)..."
                 sleep "$delay"
                 delay=$((delay * 2))
+                [ $delay -gt $max_delay ] && delay=$max_delay
                 attempt=$((attempt + 1))
               done
               return 1
@@ -5576,16 +5581,18 @@ jobs:
             echo "✅ Login GHCR OK"
             
             pull_with_retry() {
-              local attempts=5
-              local delay=10
+              local attempts=10
+              local delay=15
+              local max_delay=300
               local attempt=1
               while [ $attempt -le $attempts ]; do
                 if "$@"; then
                   return 0
                 fi
-                echo "⚠️ Pull falhou (tentativa $attempt/$attempts). Aguardando ${delay}s..."
+                echo "⚠️ Pull falhou (tentativa $attempt/$attempts). Aguardando ${delay}s (anti rate-limit)..."
                 sleep "$delay"
                 delay=$((delay * 2))
+                [ $delay -gt $max_delay ] && delay=$max_delay
                 attempt=$((attempt + 1))
               done
               return 1
@@ -6218,16 +6225,18 @@ jobs:
             echo "✅ Login GHCR OK"
             
             pull_with_retry() {
-              local attempts=5
-              local delay=10
+              local attempts=10
+              local delay=15
+              local max_delay=300
               local attempt=1
               while [ $attempt -le $attempts ]; do
                 if "$@"; then
                   return 0
                 fi
-                echo "⚠️ Pull falhou (tentativa $attempt/$attempts). Aguardando ${delay}s..."
+                echo "⚠️ Pull falhou (tentativa $attempt/$attempts). Aguardando ${delay}s (anti rate-limit)..."
                 sleep "$delay"
                 delay=$((delay * 2))
+                [ $delay -gt $max_delay ] && delay=$max_delay
                 attempt=$((attempt + 1))
               done
               return 1

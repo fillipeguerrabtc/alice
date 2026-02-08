@@ -105,9 +105,9 @@ import {
   updateConversationState,
   ESCALATION_CONFIG,
 } from './conversation-orchestrator.js';
-// Arquitetura atual (16/01/2026+):
-// - GPU local: Texto + Embeddings + ASR
-// - Vision e geração de imagens: OpenAI API (somente OPENAI_API_KEY)
+// Arquitetura atual (08/02/2026):
+// - GPU local: LLM Texto (Qwen2.5 7B AWQ) + Embeddings (Qwen3-Embedding-0.6B)
+// - OpenAI API: Vision (gpt-4.1), ASR (gpt-4o-transcribe), Geração de imagens (gpt-image-1)
 import { initTradingOrchestrator } from './trading-orchestrator.js';
 // CORREÇÃO 19/12/2025: Remover imports não utilizados (no-unused-vars)
 // isGreeting, getCacheMetrics, isCacheOperational estão disponíveis no módulo
@@ -3259,7 +3259,7 @@ interface LLMRequest {
 }
 
 // Valores padrão centralizados (Regra 2 - Não Duplicar)
-// Arquitetura atual (16/01/2026+): GPU local = Texto + Embeddings + ASR (Vision via OpenAI)
+// Arquitetura atual (08/02/2026): GPU local = LLM Texto + Embeddings (ASR/Vision/Imagens via OpenAI)
 const DEFAULT_LLM_CONFIG: Required<LLMConfig> = {
   temperature: 0.7,
   // Default de saída (max_tokens). Observação: `MAX_MODEL_LEN` do vLLM pode ser maior (ex.: 8192).

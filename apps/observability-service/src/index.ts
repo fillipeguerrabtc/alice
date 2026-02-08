@@ -152,10 +152,11 @@ async function queryPrometheus(query: string): Promise<PrometheusVectorResult[]>
       throw new Error(`Prometheus HTTP ${response.status}`);
     }
     const payload = await response.json() as PrometheusQueryResponse;
-    if (payload.status !== 'success' || payload.data?.resultType !== 'vector') {
-      throw new Error(payload.error || 'Resposta inválida do Prometheus');
+    if (payload.status !== 'success') {
+      throw new Error(payload.error || 'Prometheus retornou status de erro');
     }
-    return payload.data.result ?? [];
+    // Aceitar resultados vazios e tipos diferentes de 'vector' (métricas inexistentes retornam array vazio)
+    return payload.data?.result ?? [];
   } finally {
     clearTimeout(timeoutId);
   }

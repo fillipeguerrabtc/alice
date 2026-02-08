@@ -995,7 +995,7 @@
   "timepicker": {},
   "timezone": "browser",
   "title": "Alice - Backup & Restore",
-  "uid": "alice-backup",
+  "uid": "alice-backup-dashboard",
   "version": 1,
   "weekStart": ""
 }
