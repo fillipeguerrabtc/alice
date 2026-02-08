@@ -22,6 +22,9 @@ attached_assets/
 ci-jobs*.json
 tmp-trivy/
 
+# Scripts de teste local GPU (utilitários de debug, não pertencem ao repo)
+test-gpu*.sh
+
 # Ambiente local
 .env
 #
