@@ -200,6 +200,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
+      # =================================================================
+      # Login Docker Hub - conta Pro = rate limits altos para builds
+      # =================================================================
+      # CAUSA RAIZ (08/02/2026): Imagens base (pytorch, postgres, node,
+      #   nginx, alpine) são puxadas do Docker Hub durante buildx build.
+      #   Sem auth: 100 pulls/6h. Com auth Pro: 5000 pulls/dia.
+      # REF: https://docs.docker.com/docker-hub/download-rate-limit/
+      # =================================================================
+      - name: Login no Docker Hub (Pro - rate limits altos)
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+        continue-on-error: true
+
       # NOTA 28/12/2025: Removido login NGC - Personal API Key não funciona para containers públicos
       # Todos os containers GPU agora usam imagens 100% públicas (Docker Hub + PyPI)
       # - vLLM: vllm/vllm-openai (Docker Hub)
