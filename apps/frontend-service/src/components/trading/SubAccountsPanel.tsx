@@ -219,11 +219,11 @@ export function SubAccountsPanel({ onSubAccountCreated }: SubAccountsPanelProps)
         </Card>
       ) : (
         <div className="space-y-2">
-          {subAccounts.map((sub) => {
+          {subAccounts.map((sub, index) => {
             // Identificador estável para expand/collapse (evita null === undefined)
             const subId = sub.userId || (sub.uid != null ? String(sub.uid) : null);
             return (
-            <Card key={subId || crypto.randomUUID()}>
+            <Card key={subId || `sub-${index}`}>
               <CardHeader className="pb-2 cursor-pointer" onClick={() => subId && setExpandedSub(expandedSub === subId ? null : subId)}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">

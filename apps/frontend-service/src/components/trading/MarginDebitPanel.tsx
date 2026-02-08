@@ -128,7 +128,7 @@ export function MarginDebitPanel({ defaultCurrency = 'USDT' }: MarginDebitPanelP
         description: t('trading.margin.borrowSuccessDesc'),
       });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/margin/borrow'] });
-      setBorrowForm({ ...borrowForm, size: '' });
+      setBorrowForm(prev => ({ ...prev, size: '' }));
     },
     onError: (error: Error) => {
       toast({
@@ -154,7 +154,7 @@ export function MarginDebitPanel({ defaultCurrency = 'USDT' }: MarginDebitPanelP
         description: t('trading.margin.repaySuccessDesc'),
       });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/margin/repay'] });
-      setRepayForm({ ...repayForm, size: '' });
+      setRepayForm(prev => ({ ...prev, size: '' }));
     },
     onError: (error: Error) => {
       toast({
