@@ -910,6 +910,7 @@ jobs:
           echo "📋 Versões carregadas do SSOT:"
           echo "   REDIS_ALICE: ${REDIS_ALICE_VERSION}"
           echo "   QDRANT: ${QDRANT_VERSION}"
+          echo "   TORPROXY: ${TORPROXY_IMAGE}:${TORPROXY_VERSION}"
           echo "   SEARXNG: ${SEARXNG_VERSION}"
           echo "   PROMETHEUS: ${PROMETHEUS_VERSION}"
           echo "   GRAFANA: ${GRAFANA_VERSION}"
@@ -919,7 +920,7 @@ jobs:
           
           # INFRA Stack (docker-compose.infra.yml)
           INFRA_IMAGES=(
-            "dperson/torproxy:latest"
+            "${TORPROXY_IMAGE}:${TORPROXY_VERSION}"
             "searxng/searxng:${SEARXNG_VERSION}"
             "redis:${REDIS_ALICE_VERSION}"
             "qdrant/qdrant:${QDRANT_VERSION}"
@@ -3674,7 +3675,7 @@ jobs:
                 "redis:7.4.7-alpine"
                 "edoburu/pgbouncer:latest"
                 "searxng/searxng:2025.12.30-a5c946a32"
-                "dperson/torproxy:latest"
+                "shahradel/torproxy:1.0.3"
                 "quay.io/minio/minio:latest"
                 "quay.io/minio/mc:latest"
                 "prometheuscommunity/postgres-exporter:v0.17.1"

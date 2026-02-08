@@ -76,29 +76,28 @@ services:
   # ===========================================================================
   # TOR PROXY - Proxy SOCKS5 para acesso a .onion (deep web sob demanda)
   # ===========================================================================
-  # NOTA: dperson/torproxy é a imagem mantida ativamente com curl instalado
-  # osminogin/tor-simple é minimalista SEM curl/wget - healthcheck falhava
-  # Ref: https://github.com/dperson/torproxy
+  # NOTA (07/02/2026): dperson/torproxy descontinuado no Docker Hub (manifest unknown)
+  # Migração para shahradel/torproxy (mantido ativamente, multi-platform, GPL-3.0)
+  # SOCKS5 configurado na porta 9050 via TOR_SOCKS_PORT para compatibilidade SearXNG
+  # Ref: https://hub.docker.com/r/shahradel/torproxy
+  # Ref: https://github.com/shahradelahi/docker-torproxy
   # ===========================================================================
   alice-tor:
-    # NOTA: dperson/torproxy não publica tags versionadas (apenas :latest)
-    # Monitorar atualizações via Dependabot para supply chain security
-    image: dperson/torproxy:latest
+    image: ${TORPROXY_IMAGE:-shahradel/torproxy}:${TORPROXY_VERSION:-1.0.3}
     platform: linux/amd64
     container_name: alice-tor
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
     environment:
-      # Porta SOCKS5 padrão - SearXNG conecta via socks5h://alice-tor:9050
+      # Porta SOCKS5 para compatibilidade com SearXNG (socks5h://alice-tor:9050)
+      # shahradel/torproxy default é 1080, forçamos 9050 para manter compatibilidade
       TOR_SOCKS_PORT: "9050"
     networks:
       - alice-network
     healthcheck:
-      # CORREÇÃO PR#94 (09/01/2026): Verificar apenas porta SOCKS5 (9050)
-      # NÃO fazer requisição externa - muito lento e pode dar timeout
-      # dperson/torproxy tem curl instalado
-      # CORREÇÃO PR#104: Reduzir timeouts
+      # Verificar porta SOCKS5 (9050) via /dev/tcp (bash builtin)
+      # NÃO fazer requisição externa - lento e pode dar timeout
       test: ["CMD-SHELL", "timeout 3 bash -c 'echo > /dev/tcp/localhost/9050' 2>/dev/null || exit 1"]
       interval: 20s
       timeout: 10s
