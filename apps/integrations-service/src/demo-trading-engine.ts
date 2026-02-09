@@ -307,13 +307,25 @@ export async function createDemoOrder(params: CreateDemoOrderParams): Promise<De
   const notionalValue = params.size * fillPrice;
   const requiredMargin = notionalValue / leverage;
 
-  // Verificar balance suficiente (margem + fee se aplica a AMBOS buy e sell)
-  if (orderStatus === 'filled') {
-    if (requiredMargin + fee > availableBalance) {
-      throw new Error(
-        `Saldo insuficiente. Requerido: ${(requiredMargin + fee).toFixed(2)} USDT, Disponível: ${availableBalance.toFixed(2)} USDT`
-      );
-    }
+  // Verificar balance suficiente (margem + fee estimado se aplica a AMBOS buy e sell, AMBOS filled e pending)
+  const estimatedFee = orderStatus === 'filled' ? fee : calculateFee(params.size, fillPrice);
+  if (requiredMargin + estimatedFee > availableBalance) {
+    throw new Error(
+      `Saldo insuficiente. Requerido: ${(requiredMargin + estimatedFee).toFixed(2)} USDT, Disponível: ${availableBalance.toFixed(2)} USDT`
+    );
+  }
+
+  // Para ordens pendentes: congelar margem estimada imediatamente
+  if (orderStatus === 'open') {
+    const currentFrozen = Number(balance.frozen);
+    await db
+      .update(schema.demoBalances)
+      .set({
+        available: String(availableBalance - requiredMargin),
+        frozen: String(currentFrozen + requiredMargin),
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.demoBalances.id, balance.id));
   }
 
   // Criar registro da ordem
@@ -635,11 +647,25 @@ export async function getOrders(tenantId: string, limit = 50): Promise<Array<typ
 }
 
 /**
- * Cancela uma ordem demo pendente
+ * Cancela uma ordem demo pendente e devolve a margem congelada ao saldo disponível
  */
 export async function cancelDemoOrder(tenantId: string, orderId: string): Promise<boolean> {
   const db = getDatabase();
-  
+
+  // Buscar ordem antes de cancelar para saber margem congelada
+  const [order] = await db
+    .select()
+    .from(schema.demoOrders)
+    .where(and(
+      eq(schema.demoOrders.id, orderId),
+      eq(schema.demoOrders.tenantId, tenantId),
+      eq(schema.demoOrders.status, 'open'),
+    ))
+    .limit(1);
+
+  if (!order) return false;
+
+  // Cancelar ordem
   const result = await db
     .update(schema.demoOrders)
     .set({ status: 'cancelled' })
@@ -650,7 +676,25 @@ export async function cancelDemoOrder(tenantId: string, orderId: string): Promis
     ))
     .returning();
 
-  return result.length > 0;
+  if (result.length === 0) return false;
+
+  // Devolver margem congelada ao saldo disponível
+  const leverage = order.leverage ?? 1;
+  const frozenMargin = Number(order.size) * Number(order.price) / leverage;
+  const balance = await getOrCreateBalance(tenantId);
+  const currentAvailable = Number(balance.available);
+  const currentFrozen = Number(balance.frozen);
+
+  await db
+    .update(schema.demoBalances)
+    .set({
+      available: String(currentAvailable + frozenMargin),
+      frozen: String(Math.max(0, currentFrozen - frozenMargin)),
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.demoBalances.id, balance.id));
+
+  return true;
 }
 
 // ============================================================================
@@ -774,6 +818,24 @@ export async function processOpenOrdersAndPositions(): Promise<void> {
           side: order.side as DemoOrderSide,
           leverage,
         });
+
+        // Atualizar balance: margem já foi congelada na criação da ordem (createDemoOrder).
+        // Ajustar frozen→position margin real e debitar fee do available.
+        // A margem estimada (com base no preço da ordem) pode diferir da margem real (com base no fillPrice).
+        const orderBalance = await getOrCreateBalance(order.tenantId);
+        const estMargin = Number(order.size) * targetPrice / leverage;
+        const marginDiff = requiredMargin - estMargin;
+        const currentAvailable = Number(orderBalance.available);
+        const currentFrozen = Number(orderBalance.frozen);
+
+        await db
+          .update(schema.demoBalances)
+          .set({
+            available: String(currentAvailable - fee - Math.max(0, marginDiff)),
+            frozen: String(Math.max(0, currentFrozen - estMargin + marginDiff)),
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.demoBalances.id, orderBalance.id));
 
         // Obter stopLoss/takeProfit de metadata da ordem
         const orderMeta = (order.metadata ?? {}) as Record<string, unknown>;

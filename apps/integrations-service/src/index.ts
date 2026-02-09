@@ -20062,21 +20062,19 @@ app.get('/api/integrations/postmortem', requirePermission('integrations:trading:
     const limit = parseInt(req.query.limit as string) || 50;
     const isDemo = req.query.isDemo === 'true' ? true : req.query.isDemo === 'false' ? false : undefined;
 
-    const query = db
+    // Construir condição WHERE com isDemo na query SQL (não pós-filtro)
+    const whereCondition = isDemo !== undefined
+      ? and(eq(schema.tradingPostmortems.tenantId, tenantId), eq(schema.tradingPostmortems.isDemo, isDemo))
+      : eq(schema.tradingPostmortems.tenantId, tenantId);
+
+    const postmortems = await db
       .select()
       .from(schema.tradingPostmortems)
-      .where(eq(schema.tradingPostmortems.tenantId, tenantId))
+      .where(whereCondition)
       .orderBy(desc(schema.tradingPostmortems.createdAt))
       .limit(limit);
 
-    const postmortems = await query;
-
-    // Filtrar por isDemo se especificado
-    const filtered = isDemo !== undefined
-      ? postmortems.filter(pm => pm.isDemo === isDemo)
-      : postmortems;
-
-    res.json({ success: true, data: filtered });
+    res.json({ success: true, data: postmortems });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao listar post-mortems');
