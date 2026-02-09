@@ -306,23 +306,38 @@ Configure `DOCKERHUB_USERNAME` e `DOCKERHUB_TOKEN` nos secrets do GitHub.
 
 ### Smart Pull de Imagens Docker (09/02/2026)
 
-O workflow `deploy-stack-modular.yml` utiliza **pull inteligente com verificação de digest** para evitar downloads desnecessários de imagens Docker que já existem no servidor de produção.
+O workflow `deploy-stack-modular.yml` utiliza **pull inteligente com detecção de retag** para evitar downloads desnecessários de imagens Docker que já existem no servidor de produção.
 
-**Arquitetura:**
+**Arquitetura (3 Casos):**
 
 1. **Login Único (prepare job):** Autenticação no GHCR e Docker Hub é feita **uma única vez** no job `prepare`, com credenciais persistidas em `~/.docker/config.json`. Os 5 deploy jobs apenas verificam se as credenciais estão ativas (fallback com 1 tentativa se necessário).
 
-2. **Função `pull_if_needed()`:** Cada deploy job utiliza esta função para cada imagem:
-   - Se imagem **não existe** localmente → faz pull (nova imagem)
-   - Se imagem **existe** localmente → compara digest remoto vs local via `docker manifest inspect`
-   - Se digest **idêntico** → SKIP (imagem não mudou, economia de banda e tempo)
-   - Se digest **diferente** → faz pull (imagem foi atualizada)
+2. **Função `pull_if_needed()` — 3 casos de detecção:**
+
+   **CASO 1 — Tag exata existe localmente → SKIP (zero rede)**
+   - `docker image inspect ghcr.io/.../alice-auth:v3.52.1` encontra a imagem
+   - Resultado: `⏩ SKIP (tag v3.52.1 já existe localmente)`
+   - Cenário: Redeploy da mesma versão, imagens Docker Hub com tags fixas
+
+   **CASO 2 — Tag nova, mas conteúdo idêntico (retag da Release) → RETAG LOCAL (zero download)**
+   - Release fez retag: `v3.52.0 → v3.52.1` (mesmo conteúdo, tag nova)
+   - Servidor tem `v3.52.0` localmente, deploy pede `v3.52.1`
+   - Deploy obtém config digest remoto via `docker manifest inspect`
+   - Compara Image ID remoto com Image IDs das tags locais do mesmo repo
+   - Se match → `docker tag repo:v3.52.0 repo:v3.52.1` (instantâneo, zero download)
+   - Resultado: `🏷️ RETAG LOCAL (v3.52.0 → v3.52.1, conteúdo idêntico)`
+
+   **CASO 3 — Imagem realmente nova ou conteúdo atualizado → PULL com retry**
+   - Nenhuma tag local com conteúdo correspondente
+   - Resultado: `📥 PULL (imagem nova ou conteúdo atualizado)`
+   - 3 tentativas com backoff exponencial (10s, 20s, 30s)
 
 3. **Retries otimizados:** Login com 3 tentativas (backoff 5-10-15s), pull com 3 tentativas (backoff 10-20-30s). Sem retries excessivos que desperdiçam tempo.
 
 **Benefícios:**
-- Deploys subsequentes são significativamente mais rápidos (somente imagens modificadas são baixadas)
-- Economia de banda e redução de carga nos registries
+- Detecção de retag da Release evita downloads desnecessários de imagens idênticas com tag diferente
+- Deploys subsequentes são significativamente mais rápidos (~30s ao invés de ~10min para retags)
+- Economia de banda e redução de carga nos registries (GHCR e Docker Hub)
 - Elimina timeouts causados por pulls desnecessários de imagens grandes (ex: GPU ~11GB)
 - Login único elimina autenticação redundante entre jobs
 

@@ -3194,26 +3194,51 @@ jobs:
             # Função pull inteligente com verificação de digest
             pull_if_needed() {
               local image="$1"
-              local local_id
-              local_id=$(docker image inspect "$image" --format '{{.Id}}' 2>/dev/null) || local_id=""
-              if [ -z "$local_id" ]; then
-                echo "   📥 NOVA (não existe localmente) - baixando..."
-                for attempt in 1 2 3; do
-                  if docker pull "$image" 2>&1; then return 0; fi
-                  echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
-                  sleep $((attempt * 10))
-                done
-                return 1
-              fi
-              local remote_digest
-              remote_digest=$(docker manifest inspect "$image" 2>/dev/null | grep -m1 '"digest"' | cut -d'"' -f4) || remote_digest=""
-              local local_digest
-              local_digest=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}' 2>/dev/null | cut -d'@' -f2) || local_digest=""
-              if [ -n "$remote_digest" ] && [ "$remote_digest" = "$local_digest" ]; then
-                echo "   ⏩ SKIP (digest idêntico - imagem não mudou)"
+              local repo="${image%:*}"
+              local tag="${image##*:}"
+
+              # ─── CASO 1: Tag exata já existe localmente → SKIP ───
+              if docker image inspect "$image" >/dev/null 2>&1; then
+                echo "   ⏩ SKIP (tag $tag já existe localmente)"
                 return 0
               fi
-              echo "   📥 PULL (digest diferente ou atualizado)"
+
+              # ─── CASO 2: Tag nova - verificar se é retag da Release ───
+              # Release faz retag (ex: v3.52.0→v3.52.1) sem rebuild.
+              # O Image ID (config digest) é idêntico. Se outra tag local
+              # do mesmo repo tem o mesmo Image ID → retag local (zero download).
+              local existing_tags
+              existing_tags=$(docker images "$repo" --format '{{.Tag}}' 2>/dev/null | head -10)
+
+              if [ -n "$existing_tags" ]; then
+                # Obter config digest remoto (= Image ID) via manifest
+                local remote_cfg=""
+                remote_cfg=$(timeout 15 docker manifest inspect "$image" 2>/dev/null \
+                  | grep -A4 '"config"' | grep '"digest"' | head -1 \
+                  | sed 's/.*"\(sha256:[a-f0-9]*\)".*/\1/') || remote_cfg=""
+
+                # Fallback: verbose mode (para manifest lists / OCI index)
+                if [ -z "$remote_cfg" ]; then
+                  remote_cfg=$(timeout 15 docker manifest inspect -v "$image" 2>/dev/null \
+                    | grep -A4 '"config"' | grep '"digest"' | head -1 \
+                    | sed 's/.*"\(sha256:[a-f0-9]*\)".*/\1/') || remote_cfg=""
+                fi
+
+                if [ -n "$remote_cfg" ]; then
+                  for etag in $existing_tags; do
+                    local local_id
+                    local_id=$(docker image inspect "${repo}:${etag}" --format '{{.Id}}' 2>/dev/null) || continue
+                    if [ "$local_id" = "$remote_cfg" ]; then
+                      echo "   🏷️ RETAG LOCAL (${etag} → ${tag}, conteúdo idêntico)"
+                      docker tag "${repo}:${etag}" "$image"
+                      return 0
+                    fi
+                  done
+                fi
+              fi
+
+              # ─── CASO 3: Pull necessário (imagem nova ou conteúdo atualizado) ───
+              echo "   📥 PULL (imagem nova ou conteúdo atualizado)"
               for attempt in 1 2 3; do
                 if docker pull "$image" 2>&1; then return 0; fi
                 echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
@@ -4321,26 +4346,51 @@ jobs:
             # =================================================================
             pull_if_needed() {
               local image="$1"
-              local local_id
-              local_id=$(docker image inspect "$image" --format '{{.Id}}' 2>/dev/null) || local_id=""
-              if [ -z "$local_id" ]; then
-                echo "   📥 NOVA (não existe localmente) - baixando..."
-                for attempt in 1 2 3; do
-                  if docker pull "$image" 2>&1; then return 0; fi
-                  echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
-                  sleep $((attempt * 10))
-                done
-                return 1
-              fi
-              local remote_digest
-              remote_digest=$(docker manifest inspect "$image" 2>/dev/null | grep -m1 '"digest"' | cut -d'"' -f4) || remote_digest=""
-              local local_digest
-              local_digest=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}' 2>/dev/null | cut -d'@' -f2) || local_digest=""
-              if [ -n "$remote_digest" ] && [ "$remote_digest" = "$local_digest" ]; then
-                echo "   ⏩ SKIP (digest idêntico - imagem não mudou)"
+              local repo="${image%:*}"
+              local tag="${image##*:}"
+
+              # ─── CASO 1: Tag exata já existe localmente → SKIP ───
+              if docker image inspect "$image" >/dev/null 2>&1; then
+                echo "   ⏩ SKIP (tag $tag já existe localmente)"
                 return 0
               fi
-              echo "   📥 PULL (digest diferente ou atualizado)"
+
+              # ─── CASO 2: Tag nova - verificar se é retag da Release ───
+              # Release faz retag (ex: v3.52.0→v3.52.1) sem rebuild.
+              # O Image ID (config digest) é idêntico. Se outra tag local
+              # do mesmo repo tem o mesmo Image ID → retag local (zero download).
+              local existing_tags
+              existing_tags=$(docker images "$repo" --format '{{.Tag}}' 2>/dev/null | head -10)
+
+              if [ -n "$existing_tags" ]; then
+                # Obter config digest remoto (= Image ID) via manifest
+                local remote_cfg=""
+                remote_cfg=$(timeout 15 docker manifest inspect "$image" 2>/dev/null \
+                  | grep -A4 '"config"' | grep '"digest"' | head -1 \
+                  | sed 's/.*"\(sha256:[a-f0-9]*\)".*/\1/') || remote_cfg=""
+
+                # Fallback: verbose mode (para manifest lists / OCI index)
+                if [ -z "$remote_cfg" ]; then
+                  remote_cfg=$(timeout 15 docker manifest inspect -v "$image" 2>/dev/null \
+                    | grep -A4 '"config"' | grep '"digest"' | head -1 \
+                    | sed 's/.*"\(sha256:[a-f0-9]*\)".*/\1/') || remote_cfg=""
+                fi
+
+                if [ -n "$remote_cfg" ]; then
+                  for etag in $existing_tags; do
+                    local local_id
+                    local_id=$(docker image inspect "${repo}:${etag}" --format '{{.Id}}' 2>/dev/null) || continue
+                    if [ "$local_id" = "$remote_cfg" ]; then
+                      echo "   🏷️ RETAG LOCAL (${etag} → ${tag}, conteúdo idêntico)"
+                      docker tag "${repo}:${etag}" "$image"
+                      return 0
+                    fi
+                  done
+                fi
+              fi
+
+              # ─── CASO 3: Pull necessário (imagem nova ou conteúdo atualizado) ───
+              echo "   📥 PULL (imagem nova ou conteúdo atualizado)"
               for attempt in 1 2 3; do
                 if docker pull "$image" 2>&1; then return 0; fi
                 echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
@@ -5077,26 +5127,51 @@ jobs:
             # Função pull inteligente com verificação de digest
             pull_if_needed() {
               local image="$1"
-              local local_id
-              local_id=$(docker image inspect "$image" --format '{{.Id}}' 2>/dev/null) || local_id=""
-              if [ -z "$local_id" ]; then
-                echo "   📥 NOVA (não existe localmente) - baixando..."
-                for attempt in 1 2 3; do
-                  if docker pull "$image" 2>&1; then return 0; fi
-                  echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
-                  sleep $((attempt * 10))
-                done
-                return 1
-              fi
-              local remote_digest
-              remote_digest=$(docker manifest inspect "$image" 2>/dev/null | grep -m1 '"digest"' | cut -d'"' -f4) || remote_digest=""
-              local local_digest
-              local_digest=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}' 2>/dev/null | cut -d'@' -f2) || local_digest=""
-              if [ -n "$remote_digest" ] && [ "$remote_digest" = "$local_digest" ]; then
-                echo "   ⏩ SKIP (digest idêntico - imagem não mudou)"
+              local repo="${image%:*}"
+              local tag="${image##*:}"
+
+              # ─── CASO 1: Tag exata já existe localmente → SKIP ───
+              if docker image inspect "$image" >/dev/null 2>&1; then
+                echo "   ⏩ SKIP (tag $tag já existe localmente)"
                 return 0
               fi
-              echo "   📥 PULL (digest diferente ou atualizado)"
+
+              # ─── CASO 2: Tag nova - verificar se é retag da Release ───
+              # Release faz retag (ex: v3.52.0→v3.52.1) sem rebuild.
+              # O Image ID (config digest) é idêntico. Se outra tag local
+              # do mesmo repo tem o mesmo Image ID → retag local (zero download).
+              local existing_tags
+              existing_tags=$(docker images "$repo" --format '{{.Tag}}' 2>/dev/null | head -10)
+
+              if [ -n "$existing_tags" ]; then
+                # Obter config digest remoto (= Image ID) via manifest
+                local remote_cfg=""
+                remote_cfg=$(timeout 15 docker manifest inspect "$image" 2>/dev/null \
+                  | grep -A4 '"config"' | grep '"digest"' | head -1 \
+                  | sed 's/.*"\(sha256:[a-f0-9]*\)".*/\1/') || remote_cfg=""
+
+                # Fallback: verbose mode (para manifest lists / OCI index)
+                if [ -z "$remote_cfg" ]; then
+                  remote_cfg=$(timeout 15 docker manifest inspect -v "$image" 2>/dev/null \
+                    | grep -A4 '"config"' | grep '"digest"' | head -1 \
+                    | sed 's/.*"\(sha256:[a-f0-9]*\)".*/\1/') || remote_cfg=""
+                fi
+
+                if [ -n "$remote_cfg" ]; then
+                  for etag in $existing_tags; do
+                    local local_id
+                    local_id=$(docker image inspect "${repo}:${etag}" --format '{{.Id}}' 2>/dev/null) || continue
+                    if [ "$local_id" = "$remote_cfg" ]; then
+                      echo "   🏷️ RETAG LOCAL (${etag} → ${tag}, conteúdo idêntico)"
+                      docker tag "${repo}:${etag}" "$image"
+                      return 0
+                    fi
+                  done
+                fi
+              fi
+
+              # ─── CASO 3: Pull necessário (imagem nova ou conteúdo atualizado) ───
+              echo "   📥 PULL (imagem nova ou conteúdo atualizado)"
               for attempt in 1 2 3; do
                 if docker pull "$image" 2>&1; then return 0; fi
                 echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
@@ -5762,26 +5837,51 @@ jobs:
             # Função pull inteligente com verificação de digest
             pull_if_needed() {
               local image="$1"
-              local local_id
-              local_id=$(docker image inspect "$image" --format '{{.Id}}' 2>/dev/null) || local_id=""
-              if [ -z "$local_id" ]; then
-                echo "   📥 NOVA (não existe localmente) - baixando..."
-                for attempt in 1 2 3; do
-                  if docker pull "$image" 2>&1; then return 0; fi
-                  echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
-                  sleep $((attempt * 10))
-                done
-                return 1
-              fi
-              local remote_digest
-              remote_digest=$(docker manifest inspect "$image" 2>/dev/null | grep -m1 '"digest"' | cut -d'"' -f4) || remote_digest=""
-              local local_digest
-              local_digest=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}' 2>/dev/null | cut -d'@' -f2) || local_digest=""
-              if [ -n "$remote_digest" ] && [ "$remote_digest" = "$local_digest" ]; then
-                echo "   ⏩ SKIP (digest idêntico - imagem não mudou)"
+              local repo="${image%:*}"
+              local tag="${image##*:}"
+
+              # ─── CASO 1: Tag exata já existe localmente → SKIP ───
+              if docker image inspect "$image" >/dev/null 2>&1; then
+                echo "   ⏩ SKIP (tag $tag já existe localmente)"
                 return 0
               fi
-              echo "   📥 PULL (digest diferente ou atualizado)"
+
+              # ─── CASO 2: Tag nova - verificar se é retag da Release ───
+              # Release faz retag (ex: v3.52.0→v3.52.1) sem rebuild.
+              # O Image ID (config digest) é idêntico. Se outra tag local
+              # do mesmo repo tem o mesmo Image ID → retag local (zero download).
+              local existing_tags
+              existing_tags=$(docker images "$repo" --format '{{.Tag}}' 2>/dev/null | head -10)
+
+              if [ -n "$existing_tags" ]; then
+                # Obter config digest remoto (= Image ID) via manifest
+                local remote_cfg=""
+                remote_cfg=$(timeout 15 docker manifest inspect "$image" 2>/dev/null \
+                  | grep -A4 '"config"' | grep '"digest"' | head -1 \
+                  | sed 's/.*"\(sha256:[a-f0-9]*\)".*/\1/') || remote_cfg=""
+
+                # Fallback: verbose mode (para manifest lists / OCI index)
+                if [ -z "$remote_cfg" ]; then
+                  remote_cfg=$(timeout 15 docker manifest inspect -v "$image" 2>/dev/null \
+                    | grep -A4 '"config"' | grep '"digest"' | head -1 \
+                    | sed 's/.*"\(sha256:[a-f0-9]*\)".*/\1/') || remote_cfg=""
+                fi
+
+                if [ -n "$remote_cfg" ]; then
+                  for etag in $existing_tags; do
+                    local local_id
+                    local_id=$(docker image inspect "${repo}:${etag}" --format '{{.Id}}' 2>/dev/null) || continue
+                    if [ "$local_id" = "$remote_cfg" ]; then
+                      echo "   🏷️ RETAG LOCAL (${etag} → ${tag}, conteúdo idêntico)"
+                      docker tag "${repo}:${etag}" "$image"
+                      return 0
+                    fi
+                  done
+                fi
+              fi
+
+              # ─── CASO 3: Pull necessário (imagem nova ou conteúdo atualizado) ───
+              echo "   📥 PULL (imagem nova ou conteúdo atualizado)"
               for attempt in 1 2 3; do
                 if docker pull "$image" 2>&1; then return 0; fi
                 echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
@@ -6395,26 +6495,51 @@ jobs:
             # Função pull inteligente com verificação de digest
             pull_if_needed() {
               local image="$1"
-              local local_id
-              local_id=$(docker image inspect "$image" --format '{{.Id}}' 2>/dev/null) || local_id=""
-              if [ -z "$local_id" ]; then
-                echo "   📥 NOVA (não existe localmente) - baixando..."
-                for attempt in 1 2 3; do
-                  if docker pull "$image" 2>&1; then return 0; fi
-                  echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
-                  sleep $((attempt * 10))
-                done
-                return 1
-              fi
-              local remote_digest
-              remote_digest=$(docker manifest inspect "$image" 2>/dev/null | grep -m1 '"digest"' | cut -d'"' -f4) || remote_digest=""
-              local local_digest
-              local_digest=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}' 2>/dev/null | cut -d'@' -f2) || local_digest=""
-              if [ -n "$remote_digest" ] && [ "$remote_digest" = "$local_digest" ]; then
-                echo "   ⏩ SKIP (digest idêntico - imagem não mudou)"
+              local repo="${image%:*}"
+              local tag="${image##*:}"
+
+              # ─── CASO 1: Tag exata já existe localmente → SKIP ───
+              if docker image inspect "$image" >/dev/null 2>&1; then
+                echo "   ⏩ SKIP (tag $tag já existe localmente)"
                 return 0
               fi
-              echo "   📥 PULL (digest diferente ou atualizado)"
+
+              # ─── CASO 2: Tag nova - verificar se é retag da Release ───
+              # Release faz retag (ex: v3.52.0→v3.52.1) sem rebuild.
+              # O Image ID (config digest) é idêntico. Se outra tag local
+              # do mesmo repo tem o mesmo Image ID → retag local (zero download).
+              local existing_tags
+              existing_tags=$(docker images "$repo" --format '{{.Tag}}' 2>/dev/null | head -10)
+
+              if [ -n "$existing_tags" ]; then
+                # Obter config digest remoto (= Image ID) via manifest
+                local remote_cfg=""
+                remote_cfg=$(timeout 15 docker manifest inspect "$image" 2>/dev/null \
+                  | grep -A4 '"config"' | grep '"digest"' | head -1 \
+                  | sed 's/.*"\(sha256:[a-f0-9]*\)".*/\1/') || remote_cfg=""
+
+                # Fallback: verbose mode (para manifest lists / OCI index)
+                if [ -z "$remote_cfg" ]; then
+                  remote_cfg=$(timeout 15 docker manifest inspect -v "$image" 2>/dev/null \
+                    | grep -A4 '"config"' | grep '"digest"' | head -1 \
+                    | sed 's/.*"\(sha256:[a-f0-9]*\)".*/\1/') || remote_cfg=""
+                fi
+
+                if [ -n "$remote_cfg" ]; then
+                  for etag in $existing_tags; do
+                    local local_id
+                    local_id=$(docker image inspect "${repo}:${etag}" --format '{{.Id}}' 2>/dev/null) || continue
+                    if [ "$local_id" = "$remote_cfg" ]; then
+                      echo "   🏷️ RETAG LOCAL (${etag} → ${tag}, conteúdo idêntico)"
+                      docker tag "${repo}:${etag}" "$image"
+                      return 0
+                    fi
+                  done
+                fi
+              fi
+
+              # ─── CASO 3: Pull necessário (imagem nova ou conteúdo atualizado) ───
+              echo "   📥 PULL (imagem nova ou conteúdo atualizado)"
               for attempt in 1 2 3; do
                 if docker pull "$image" 2>&1; then return 0; fi
                 echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
