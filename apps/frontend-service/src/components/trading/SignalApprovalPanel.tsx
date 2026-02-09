@@ -1134,8 +1134,12 @@ export function SignalApprovalPanel({
       }
       // Derivar side a partir do signalType: entry_long → buy, entry_short → sell
       const side = signal.signalType === 'entry_long' ? 'buy' : 'sell';
-      // Usar size do override, do suggestedSize do sinal, ou default 0.001
-      const size = overrides?.size ?? signal.suggestedSize ?? 0.001;
+      // IMPORTANTE: signal.suggestedSize é um RATIO (0-1) representando % do capital máximo,
+      // NÃO um tamanho absoluto. No fluxo real, resolveHybridOrderSize() multiplica esse ratio
+      // por maxAllowed (derivado de risk config + preço). Usar o ratio diretamente como size
+      // resultaria em posições com tamanho incorreto (ex: 0.5 BTC ao invés de 50% do máximo).
+      // Se o usuário não especificou size no dialog, usar default seguro (0.001 = 1 lot XBTUSDTM).
+      const size = overrides?.size ?? 0.001;
 
       const response = await apiRequest('POST', '/api/integrations/demo-trading/orders/from-signal', {
         signalId,

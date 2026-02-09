@@ -2435,11 +2435,13 @@ export async function syncOrdersStatus(
               });
               const entrySnapshotId = entrySnapshotResult.id;
               // Persistir entrySnapshotId no metadata da ordem para uso posterior no post-mortem
+              // IMPORTANTE: usar updated.metadata (que já contém responseTime do primeiro update),
+              // NÃO order.metadata (original do fetch, sem responseTime)
               await db
                 .update(schema.tradingOrders)
                 .set({
                   metadata: {
-                    ...(order.metadata ?? {}),
+                    ...(updated.metadata ?? {}),
                     entrySnapshotId,
                   },
                 })

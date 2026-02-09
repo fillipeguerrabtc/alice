@@ -21,7 +21,7 @@ import {
   Gauge as PromGauge,
 } from '@alice/shared-utils';
 import { getDatabase, schema } from '@alice/database';
-import { eq, and, desc } from '@alice/database';
+import { eq, and, desc, sql } from '@alice/database';
 import * as kucoinClient from './kucoinClient.js';
 import { captureEntrySnapshot, captureExitSnapshot } from './snapshot-store.js';
 import { enqueuePostMortem } from './postmortem-worker.js';
@@ -162,16 +162,20 @@ export async function addFunds(params: {
   const db = getDatabase();
   const currency = params.currency ?? 'USDT';
 
+  // Garantir que balance existe antes de fazer UPDATE atômico
   const balance = await getOrCreateBalance(params.tenantId, currency);
-  const newAvailable = Number(balance.available) + params.amount;
 
-  await db
+  // UPDATE atômico com RETURNING: aritmética SQL evita race condition e captura novo saldo
+  const [updated] = await db
     .update(schema.demoBalances)
     .set({
-      available: String(newAvailable),
+      available: sql`${schema.demoBalances.available}::numeric + ${String(params.amount)}::numeric`,
       updatedAt: new Date(),
     })
-    .where(eq(schema.demoBalances.id, balance.id));
+    .where(eq(schema.demoBalances.id, balance.id))
+    .returning({ available: schema.demoBalances.available });
+
+  const newAvailable = updated?.available ?? '0';
 
   // Registrar no histórico
   await db.insert(schema.demoFundHistory).values({
@@ -266,13 +270,18 @@ async function getCurrentPrice(symbol: string): Promise<number> {
  */
 export async function createDemoOrder(params: CreateDemoOrderParams): Promise<DemoOrderResult> {
   const db = getDatabase();
+
+  // Validação defensiva: size DEVE ser positivo (defesa em profundidade - endpoint já valida)
+  if (!Number.isFinite(params.size) || params.size <= 0) {
+    throw new Error(`size inválido: ${params.size}. Deve ser um número positivo.`);
+  }
+
   // Sanitizar leverage: NaN, null, undefined, 0 ou negativo → default 1
   const rawLeverage = params.leverage ?? 1;
   const leverage = Number.isFinite(rawLeverage) && rawLeverage >= 1 ? rawLeverage : 1;
 
-  // Buscar/criar balance
+  // Buscar/criar balance (garante que a linha exista para o UPDATE atômico abaixo)
   const balance = await getOrCreateBalance(params.tenantId);
-  const availableBalance = Number(balance.available);
 
   // Buscar preço atual
   const marketPrice = await getCurrentPrice(params.symbol);
@@ -310,27 +319,53 @@ export async function createDemoOrder(params: CreateDemoOrderParams): Promise<De
   const notionalValue = params.size * fillPrice;
   const requiredMargin = notionalValue / leverage;
 
-  // Verificar balance suficiente (margem + fee estimado se aplica a AMBOS buy e sell, AMBOS filled e pending)
+  // Verificar balance E debitar atomicamente numa única operação SQL.
+  // Evita race condition onde duas requests concorrentes leem o mesmo saldo,
+  // ambas passam a verificação, e o last-write-wins perde uma dedução.
   const estimatedFee = orderStatus === 'filled' ? fee : calculateFee(params.size, fillPrice);
-  if (requiredMargin + estimatedFee > availableBalance) {
-    throw new Error(
-      `Saldo insuficiente. Requerido: ${(requiredMargin + estimatedFee).toFixed(2)} USDT, Disponível: ${availableBalance.toFixed(2)} USDT`
-    );
-  }
 
-  // Para ordens pendentes: congelar margem + fee estimado imediatamente
-  // Isso impede que o fee estimado seja gasto em outros trades antes do fill
   if (orderStatus === 'open') {
-    const currentFrozen = Number(balance.frozen);
+    // Ordem pendente: congelar margem + fee estimado imediatamente
     const totalToFreeze = requiredMargin + estimatedFee;
-    await db
+    const [balanceUpdated] = await db
       .update(schema.demoBalances)
       .set({
-        available: String(availableBalance - totalToFreeze),
-        frozen: String(currentFrozen + totalToFreeze),
+        available: sql`${schema.demoBalances.available}::numeric - ${String(totalToFreeze)}::numeric`,
+        frozen: sql`${schema.demoBalances.frozen}::numeric + ${String(totalToFreeze)}::numeric`,
         updatedAt: new Date(),
       })
-      .where(eq(schema.demoBalances.id, balance.id));
+      .where(and(
+        eq(schema.demoBalances.id, balance.id),
+        sql`${schema.demoBalances.available}::numeric >= ${String(totalToFreeze)}::numeric`,
+      ))
+      .returning({ id: schema.demoBalances.id });
+
+    if (!balanceUpdated) {
+      throw new Error(
+        `Saldo insuficiente. Requerido: ${totalToFreeze.toFixed(2)} USDT (margem + fee estimado)`
+      );
+    }
+  } else {
+    // Ordem filled: debitar margem + fee do available, congelar margem como garantia da posição
+    const totalRequired = requiredMargin + fee;
+    const [balanceUpdated] = await db
+      .update(schema.demoBalances)
+      .set({
+        available: sql`${schema.demoBalances.available}::numeric - ${String(totalRequired)}::numeric`,
+        frozen: sql`${schema.demoBalances.frozen}::numeric + ${String(requiredMargin)}::numeric`,
+        updatedAt: new Date(),
+      })
+      .where(and(
+        eq(schema.demoBalances.id, balance.id),
+        sql`${schema.demoBalances.available}::numeric >= ${String(totalRequired)}::numeric`,
+      ))
+      .returning({ id: schema.demoBalances.id });
+
+    if (!balanceUpdated) {
+      throw new Error(
+        `Saldo insuficiente. Requerido: ${totalRequired.toFixed(2)} USDT (margem + fee)`
+      );
+    }
   }
 
   // Criar registro da ordem
@@ -361,19 +396,8 @@ export async function createDemoOrder(params: CreateDemoOrderParams): Promise<De
   let positionId: string | undefined;
 
   // Se ordem foi preenchida, criar/atualizar posição
+  // NOTA: balance já foi debitado atomicamente acima (available -= margin+fee, frozen += margin)
   if (orderStatus === 'filled') {
-    // Atualizar balance (debitar margem + fee para AMBOS buy e sell)
-    const newAvailable = availableBalance - requiredMargin - fee;
-    const currentFrozen = Number(balance.frozen);
-    await db
-      .update(schema.demoBalances)
-      .set({
-        available: String(newAvailable),
-        frozen: String(currentFrozen + requiredMargin),
-        updatedAt: new Date(),
-      })
-      .where(eq(schema.demoBalances.id, balance.id));
-
     // Criar posição
     const positionSide = params.side === 'buy' ? 'long' : 'short';
     const liquidationPrice = calculateLiquidationPrice({
@@ -396,6 +420,8 @@ export async function createDemoOrder(params: CreateDemoOrderParams): Promise<De
         takeProfit: params.takeProfit ? String(params.takeProfit) : null,
         liquidationPrice: liquidationPrice > 0 ? String(liquidationPrice) : null,
         marginAmount: String(requiredMargin),
+        // Persistir entry fee na posição — acumulado com exit fee no close para totalFees correto
+        totalFees: String(fee),
         status: 'open',
         metadata: { orderId: order.id },
       })
@@ -522,19 +548,15 @@ export async function closeDemoPosition(params: {
     .where(eq(schema.demoPositions.id, position.id));
 
   // Devolver margem + PnL ao balance
-  const balance = await getOrCreateBalance(params.tenantId);
-  const currentAvailable = Number(balance.available);
-  const currentFrozen = Number(balance.frozen);
+  // UPDATE atômico: aritmética SQL evita race condition em read-modify-write concorrente
   const margin = Number(position.marginAmount ?? '0');
-
-  const newAvailable = currentAvailable + margin + realizedPnl;
-  const newFrozen = Math.max(0, currentFrozen - margin);
+  const creditAmount = margin + realizedPnl; // margem devolvida + PnL (pode ser negativo)
 
   await db
     .update(schema.demoBalances)
     .set({
-      available: String(newAvailable),
-      frozen: String(newFrozen),
+      available: sql`${schema.demoBalances.available}::numeric + ${String(creditAmount)}::numeric`,
+      frozen: sql`GREATEST(0, ${schema.demoBalances.frozen}::numeric - ${String(margin)}::numeric)`,
       updatedAt: new Date(),
     })
     .where(and(
@@ -580,7 +602,8 @@ export async function closeDemoPosition(params: {
       stopLoss: position.stopLoss ? Number(position.stopLoss) : undefined,
       takeProfit: position.takeProfit ? Number(position.takeProfit) : undefined,
       realizedPnl,
-      totalFees: fee,
+      // Usar total acumulado (entry fee + exit fee), não apenas exit fee
+      totalFees: fee + Number(position.totalFees ?? '0'),
       openedAt: position.openedAt,
       closedAt,
       entrySnapshotId: position.entrySnapshotId ?? undefined,
@@ -694,22 +717,23 @@ export async function cancelDemoOrder(tenantId: string, orderId: string): Promis
   if (result.length === 0) return false;
 
   // Devolver margem + fee estimado congelados ao saldo disponível
+  // UPDATE atômico: aritmética SQL evita race condition em read-modify-write concorrente
   const leverage = order.leverage ?? 1;
   const frozenMargin = Number(order.size) * Number(order.price) / leverage;
   const frozenFee = calculateFee(Number(order.size), Number(order.price));
   const totalFrozen = frozenMargin + frozenFee;
-  const balance = await getOrCreateBalance(tenantId);
-  const currentAvailable = Number(balance.available);
-  const currentFrozen = Number(balance.frozen);
 
   await db
     .update(schema.demoBalances)
     .set({
-      available: String(currentAvailable + totalFrozen),
-      frozen: String(Math.max(0, currentFrozen - totalFrozen)),
+      available: sql`${schema.demoBalances.available}::numeric + ${String(totalFrozen)}::numeric`,
+      frozen: sql`GREATEST(0, ${schema.demoBalances.frozen}::numeric - ${String(totalFrozen)}::numeric)`,
       updatedAt: new Date(),
     })
-    .where(eq(schema.demoBalances.id, balance.id));
+    .where(and(
+      eq(schema.demoBalances.tenantId, tenantId),
+      eq(schema.demoBalances.currency, 'USDT'),
+    ));
 
   return true;
 }
@@ -814,8 +838,10 @@ export async function processOpenOrdersAndPositions(): Promise<void> {
         const fillPrice = applySlippage(targetPrice, order.side as DemoOrderSide);
         const fee = calculateFee(Number(order.size), fillPrice);
 
-        // Atualizar ordem
-        await db
+        // Atualizar ordem — OBRIGATÓRIO filtrar por status='open' para evitar race condition
+        // com cancelDemoOrder (TOCTOU: entre o SELECT e este UPDATE, o usuário pode cancelar).
+        // Se 0 linhas afetadas, a ordem foi cancelada e o balance já foi restaurado — pular.
+        const fillResult = await db
           .update(schema.demoOrders)
           .set({
             status: 'filled',
@@ -824,7 +850,16 @@ export async function processOpenOrdersAndPositions(): Promise<void> {
             fees: String(fee),
             filledAt: new Date(),
           })
-          .where(eq(schema.demoOrders.id, order.id));
+          .where(and(
+            eq(schema.demoOrders.id, order.id),
+            eq(schema.demoOrders.status, 'open'),
+          ))
+          .returning({ id: schema.demoOrders.id });
+
+        if (fillResult.length === 0) {
+          logger.info({ orderId: order.id }, 'Ordem já cancelada entre SELECT e fill — pulando');
+          continue;
+        }
 
         // Criar posição
         const positionSide = order.side === 'buy' ? 'long' : 'short';
@@ -838,6 +873,7 @@ export async function processOpenOrdersAndPositions(): Promise<void> {
 
         // Atualizar balance: margem + fee estimado foram congelados na criação (createDemoOrder).
         // Agora substituir estimativas pelo custo real (margem real fica frozen, fee real é debitado).
+        // UPDATE atômico: aritmética SQL evita race condition em read-modify-write concorrente.
         const orderBalance = await getOrCreateBalance(order.tenantId);
         const estMargin = Number(order.size) * targetPrice / leverage;
         const estFee = calculateFee(Number(order.size), targetPrice);
@@ -845,45 +881,70 @@ export async function processOpenOrdersAndPositions(): Promise<void> {
         const totalReal = requiredMargin + fee;
         // adjustment = custo real - custo estimado (positivo = precisa mais de available)
         const adjustment = totalReal - totalEstimated;
-        const currentAvailable = Number(orderBalance.available);
-        const currentFrozen = Number(orderBalance.frozen);
 
-        // Defesa em profundidade: verificar se available cobre o ajuste
-        if (adjustment > 0 && adjustment > currentAvailable) {
-          logger.warn({
-            orderId: order.id,
-            adjustment: adjustment.toFixed(4),
-            currentAvailable: currentAvailable.toFixed(4),
-          }, 'Saldo insuficiente para fill de ordem pendente - cancelando ordem');
+        if (adjustment > 0) {
+          // Custo real > estimado: precisa debitar mais do available.
+          // UPDATE atômico com WHERE available >= adjustment para verificar + debitar numa operação.
+          const [adjustResult] = await db
+            .update(schema.demoBalances)
+            .set({
+              available: sql`${schema.demoBalances.available}::numeric - ${String(adjustment)}::numeric`,
+              frozen: sql`GREATEST(0, ${schema.demoBalances.frozen}::numeric - ${String(totalEstimated)}::numeric + ${String(requiredMargin)}::numeric)`,
+              updatedAt: new Date(),
+            })
+            .where(and(
+              eq(schema.demoBalances.id, orderBalance.id),
+              sql`${schema.demoBalances.available}::numeric >= ${String(adjustment)}::numeric`,
+            ))
+            .returning({ id: schema.demoBalances.id });
 
-          await db
-            .update(schema.demoOrders)
-            .set({ status: 'cancelled' })
-            .where(eq(schema.demoOrders.id, order.id));
+          if (!adjustResult) {
+            // Saldo insuficiente para fill: reverter ordem para cancelled e devolver tudo que foi congelado.
+            // IMPORTANTE: a ordem já foi atualizada para 'filled' na linha 838-851 acima,
+            // portanto o WHERE deve usar status='filled' (não 'open') para fazer match.
+            logger.warn({
+              orderId: order.id,
+              adjustment: adjustment.toFixed(4),
+            }, 'Saldo insuficiente para fill de ordem pendente - revertendo para cancelled');
 
-          // Devolver tudo que foi congelado (margem + fee estimado)
+            const cancelResult = await db
+              .update(schema.demoOrders)
+              .set({ status: 'cancelled' })
+              .where(and(
+                eq(schema.demoOrders.id, order.id),
+                eq(schema.demoOrders.status, 'filled'),
+              ))
+              .returning({ id: schema.demoOrders.id });
+
+            if (cancelResult.length === 0) {
+              // Situação anômala: ordem não estava nem 'open' nem 'filled'. Log para investigação.
+              logger.error({ orderId: order.id }, 'Falha ao reverter ordem filled→cancelled por saldo insuficiente — ordem em estado inconsistente');
+              continue;
+            }
+
+            // Devolver tudo que foi congelado (margem + fee estimado) — aritmética SQL atômica
+            await db
+              .update(schema.demoBalances)
+              .set({
+                available: sql`${schema.demoBalances.available}::numeric + ${String(totalEstimated)}::numeric`,
+                frozen: sql`GREATEST(0, ${schema.demoBalances.frozen}::numeric - ${String(totalEstimated)}::numeric)`,
+                updatedAt: new Date(),
+              })
+              .where(eq(schema.demoBalances.id, orderBalance.id));
+            continue;
+          }
+        } else {
+          // Custo real <= estimado: available recebe crédito (adjustment negativo ou zero).
+          // Sempre bem-sucedido (não precisa de check), mas usa aritmética SQL atômica igualmente.
           await db
             .update(schema.demoBalances)
             .set({
-              available: String(currentAvailable + totalEstimated),
-              frozen: String(Math.max(0, currentFrozen - totalEstimated)),
+              available: sql`${schema.demoBalances.available}::numeric - ${String(adjustment)}::numeric`,
+              frozen: sql`GREATEST(0, ${schema.demoBalances.frozen}::numeric - ${String(totalEstimated)}::numeric + ${String(requiredMargin)}::numeric)`,
               updatedAt: new Date(),
             })
             .where(eq(schema.demoBalances.id, orderBalance.id));
-          continue;
         }
-
-        // frozen: remover total estimado (margem + fee), adicionar margem real da posição
-        // available: debitar ajuste (diferença entre custo real e estimado)
-        // closeDemoPosition depois fará: frozen -= requiredMargin (devolver margem da posição)
-        await db
-          .update(schema.demoBalances)
-          .set({
-            available: String(currentAvailable - adjustment),
-            frozen: String(Math.max(0, currentFrozen - totalEstimated + requiredMargin)),
-            updatedAt: new Date(),
-          })
-          .where(eq(schema.demoBalances.id, orderBalance.id));
 
         // Obter stopLoss/takeProfit de metadata da ordem
         const orderMeta = (order.metadata ?? {}) as Record<string, unknown>;
@@ -904,6 +965,8 @@ export async function processOpenOrdersAndPositions(): Promise<void> {
             takeProfit: orderTakeProfit ? String(orderTakeProfit) : null,
             liquidationPrice: liquidationPrice > 0 ? String(liquidationPrice) : null,
             marginAmount: String(requiredMargin),
+            // Persistir entry fee na posição — acumulado com exit fee no close para totalFees correto
+            totalFees: String(fee),
             status: 'open',
             metadata: { orderId: order.id },
           })

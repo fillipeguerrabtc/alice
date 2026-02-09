@@ -19883,8 +19883,8 @@ app.post('/api/integrations/demo-trading/orders', requirePermission('integration
       takeProfit?: number;
     };
 
-    if (!symbol || !marketType || !side || !orderType || !size) {
-      res.status(400).json({ error: 'Campos obrigatórios: symbol, marketType, side, orderType, size' });
+    if (!symbol || !marketType || !side || !orderType || !size || size <= 0) {
+      res.status(400).json({ error: 'Campos obrigatórios: symbol, marketType, side, orderType, size (positivo)' });
       return;
     }
 
@@ -19932,8 +19932,8 @@ app.post('/api/integrations/demo-trading/orders/from-signal', requirePermission(
       price?: number;
     };
 
-    if (!signalId || !symbol || !marketType || !side || !size) {
-      res.status(400).json({ error: 'Campos obrigatórios: signalId, symbol, marketType, side, size' });
+    if (!signalId || !symbol || !marketType || !side || !size || size <= 0) {
+      res.status(400).json({ error: 'Campos obrigatórios: signalId, symbol, marketType, side, size (positivo)' });
       return;
     }
 
