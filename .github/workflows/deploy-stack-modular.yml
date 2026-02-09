@@ -1544,42 +1544,116 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          command_timeout: 2m
+          command_timeout: 5m
           envs: GHCR_USER,GHCR_TOKEN,DOCKERHUB_USER,DOCKERHUB_TOKEN
           script: |
             set -euo pipefail
             echo "🔐 LOGIN ÚNICO - Autenticando registries no servidor de produção..."
             echo ""
-            
+
+            # ─── Diagnóstico de rede (detecta problemas ANTES do login) ────
+            echo "🌐 Diagnóstico de rede..."
+            echo "   DNS resolver: $(cat /etc/resolv.conf 2>/dev/null | grep nameserver | head -3 | tr '\n' ' ')"
+            echo ""
+
+            # Testar conectividade com registries
+            check_registry() {
+              local registry="$1"
+              local ip
+              ip=$(getent hosts "$registry" 2>/dev/null | head -1 | awk '{print $1}') || ip=""
+              if [ -z "$ip" ]; then
+                echo "   ❌ DNS: $registry NÃO RESOLVE"
+                echo "   🔧 Tentando flush DNS e adicionar Google DNS..."
+                # Adicionar Google DNS como fallback se não resolver
+                if ! grep -q "8.8.8.8" /etc/resolv.conf 2>/dev/null; then
+                  echo "nameserver 8.8.8.8" | sudo tee -a /etc/resolv.conf >/dev/null 2>&1 || true
+                  echo "nameserver 8.8.4.4" | sudo tee -a /etc/resolv.conf >/dev/null 2>&1 || true
+                fi
+                # Retry DNS após adicionar Google DNS
+                ip=$(getent hosts "$registry" 2>/dev/null | head -1 | awk '{print $1}') || ip=""
+                if [ -z "$ip" ]; then
+                  echo "   ❌ DNS: $registry AINDA NÃO RESOLVE após fallback"
+                  return 1
+                fi
+              fi
+              echo "   ✅ DNS: $registry → $ip"
+
+              # Testar conectividade HTTPS (timeout 10s)
+              if timeout 10 bash -c "echo >/dev/tcp/$registry/443" 2>/dev/null; then
+                echo "   ✅ TCP: $registry:443 acessível"
+              else
+                echo "   ❌ TCP: $registry:443 NÃO acessível (timeout 10s)"
+                echo "   🔧 Diagnóstico: verificando rota..."
+                traceroute -m5 -w2 "$registry" 2>/dev/null | head -6 || true
+                return 1
+              fi
+              return 0
+            }
+
+            GHCR_REACHABLE=true
+            DH_REACHABLE=true
+
+            if ! check_registry "ghcr.io"; then
+              echo "   ⚠️ ghcr.io com problemas de rede - tentativas de login terão backoff longo"
+              GHCR_REACHABLE=false
+            fi
+            echo ""
+            if ! check_registry "index.docker.io"; then
+              # Docker Hub usa auth.docker.io e registry-1.docker.io
+              if ! check_registry "registry-1.docker.io"; then
+                echo "   ⚠️ Docker Hub com problemas de rede"
+                DH_REACHABLE=false
+              fi
+            fi
+            echo ""
+
+            # ─── Configurar Docker daemon DNS (se necessário) ──────────────
+            # Docker daemon pode usar DNS diferente do host
+            if [ -f /etc/docker/daemon.json ]; then
+              if ! grep -q '"dns"' /etc/docker/daemon.json 2>/dev/null; then
+                echo "   ℹ️ Docker daemon sem DNS explícito (usa DNS do host)"
+              fi
+            fi
+            echo ""
+
             # ─── GHCR (GitHub Container Registry) ───────────────────────────
             echo "🔐 [1/2] Login GHCR (ghcr.io)..."
             GHCR_OK=false
-            for attempt in 1 2 3; do
+            for attempt in 1 2 3 4 5; do
               if echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>&1; then
                 GHCR_OK=true
                 break
               fi
-              echo "   ⚠️ Tentativa $attempt/3 falhou. Aguardando $((attempt * 5))s..."
-              sleep $((attempt * 5))
+              WAIT=$((attempt * 10))
+              echo "   ⚠️ Tentativa $attempt/5 falhou. Aguardando ${WAIT}s..."
+              sleep $WAIT
             done
             if [ "$GHCR_OK" != "true" ]; then
-              echo "❌ ERRO: Falha no login GHCR após 3 tentativas"
+              echo "❌ ERRO: Falha no login GHCR após 5 tentativas"
+              echo ""
+              echo "🔍 DIAGNÓSTICO FINAL:"
+              echo "   IP servidor: $(hostname -I 2>/dev/null | awk '{print $1}')"
+              echo "   DNS ghcr.io: $(getent hosts ghcr.io 2>/dev/null | head -1 || echo 'NÃO RESOLVE')"
+              echo "   Curl ghcr.io: $(curl -sS --connect-timeout 10 -o /dev/null -w '%{http_code} (%{time_total}s)' https://ghcr.io/v2/ 2>&1 || echo 'FALHOU')"
+              echo "   Docker version: $(docker version --format '{{.Server.Version}}' 2>/dev/null || echo 'N/A')"
+              echo "   Uptime: $(uptime)"
               exit 1
             fi
             echo "✅ GHCR autenticado"
             echo ""
-            
+
             # ─── Docker Hub (conta Pro - rate limits altos) ─────────────────
             if [ -n "${DOCKERHUB_USER:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
               echo "🔐 [2/2] Login Docker Hub (conta Pro)..."
               DH_OK=false
-              for attempt in 1 2 3; do
+              for attempt in 1 2 3 4 5; do
                 if echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USER" --password-stdin 2>&1; then
                   DH_OK=true
                   break
                 fi
-                echo "   ⚠️ Tentativa $attempt/3 falhou. Aguardando $((attempt * 5))s..."
-                sleep $((attempt * 5))
+                WAIT=$((attempt * 10))
+                echo "   ⚠️ Tentativa $attempt/5 falhou. Aguardando ${WAIT}s..."
+                sleep $WAIT
               done
               if [ "$DH_OK" = "true" ]; then
                 echo "✅ Docker Hub autenticado (Pro - 5000 pulls/dia)"
@@ -1590,7 +1664,7 @@ jobs:
               echo "⚠️ [2/2] Docker Hub sem credenciais - rate limits anônimos (100 pulls/6h)"
             fi
             echo ""
-            
+
             # ─── Validação final ────────────────────────────────────────────
             echo "🔍 Validando credenciais salvas..."
             if [ -f ~/.docker/config.json ]; then
