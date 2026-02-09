@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 **Autor:** Fillipe Guerra  
-**Data:** 08 de Fevereiro de 2026  
+**Data:** 09 de Fevereiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.93 - pgBackRest Exporter unhealthy fix (3 causas raiz)
+**Versão:** 10.94 - Demo Trading + Post-Mortem Auto-Motivator + Dataset Generator
 
 ---
 
@@ -13,6 +13,11 @@
 - GPU local dedicada ao LLM, embeddings e training; ASR e Vision via OpenAI.
 - CI/CD 100% automático (Push → CI → Release → Deploy) com versionamento e cache enterprise.
 - Observabilidade completa com Prometheus, Grafana, Loki, Jaeger e Langfuse.
+- **Demo Trading enterprise** com simulação realista (Spot/Futures/Margin), balances auditáveis e dados reais de mercado.
+- **Post-Mortem Auto-Motivator** automático para posições reais e demo (pipeline CPU → LLM com citedValues).
+- **Dataset Generator** automático: post-mortems completos geram datasets de treinamento com status pending.
+- **Snapshot Store** para evidências de mercado (entry/exit/candles/orderbook/news) em JSONB comprimido.
+- **Botão "Aprovar Demo"** na aba Sinais IA permite converter sinais em ordens Demo (complementar ao "Aprovar" Real).
 - Status de Integrações no Dashboard/Integrações usa SSOT Prometheus via observability-service.
 - OpenAI Vision (Responses API) exibida com status operacional na página Integrações.
 - Prepare Infrastructure: preparação SSOT consolidada em sessão SSH única (menos conexões e menos timeouts).
@@ -233,12 +238,54 @@
 
 - `trading_signals`, `trading_orders`, `trading_positions`, `trading_risk_config`, `trading_audit_log`, `trading_market_data`, `trading_dataset`, `trading_lora_jobs`.
 
+### Schema Demo Trading + Post-Mortem (migration 0056)
+
+- `demo_balances` — saldo simulado por tenant (USDT, auditável).
+- `demo_fund_history` — histórico de adição de fundos e créditos/débitos de PnL.
+- `demo_orders` — ordens simuladas (market/limit/stop) com metadata JSONB (SL/TP).
+- `demo_positions` — posições demo com margem, leverage e PnL calculado.
+- `trading_snapshots` — snapshots de mercado (kinds: market_entry, market_exit, candles, orderbook_top, news, evidence_pack) com dados comprimidos.
+- `trading_postmortems` — análises pós-fechamento com classificação CPU + motivadores LLM, fingerprint idempotente.
+- `trading_dataset` — datasets gerados a partir de post-mortems completos, com status 'pending' para aprovação.
+
+---
+
+## Demo Trading
+
+- **Mercados suportados**: Spot, Futures (com leverage), Margin.
+- **Execução simulada** usando dados reais de mercado via KuCoin API.
+- **Fees realistas**: maker 0.02%, taker 0.06%, slippage 3 bps.
+- **Balances auditáveis**: histórico completo de adição de fundos e PnL.
+- **Scheduler automático**: verifica ordens limit/stop e posições para auto-close (SL/TP/liquidação).
+- **Integração Post-Mortem**: toda posição fechada gera post-mortem automaticamente.
+- **Frontend**: página `/demo-trading` com abas (Visão Geral, Ordens, Posições, Histórico, Post-Mortems).
+- **Sinais IA**: botão "Aprovar Demo" na aba Sinais IA converte sinal em ordem Demo.
+
+## Post-Mortem Auto-Motivator
+
+- **Trigger automático**: executa no fechamento de TODA posição (real e demo).
+- **Pipeline two-phase**:
+  - Phase 1 (CPU): classificação determinística — tradeStyle, archetype, strategy, techniqueScores, evidence pack.
+  - Phase 2 (LLM): motivadores explicativos com citedValues, fatores de sucesso/falha, lições aprendidas.
+- **Idempotência**: fingerprint SHA-256 de positionId + timestamps + fillsHash + engineVersions.
+- **Fila Redis**: Sorted Set com retry exponencial (3 tentativas), DLQ para falhas persistentes.
+- **Quotas**: limites diários de chamadas LLM por tenant (Phase 2).
+- **Métricas Prometheus**: `alice_postmortem_jobs_total`, `alice_postmortem_job_duration_seconds`, `alice_postmortem_queue_size`, `alice_postmortem_dlq_size`.
+
+## Dataset Generator
+
+- Geração automática de datasets de treinamento a partir de post-mortems completos (status=completed + snapshots).
+- Schema padronizado: marketContext, tradeExecution, autoAnnotation, prompt (system + user), expected response.
+- Datasets criados com status 'pending' para aprovação manual na página Training.
+- sourceType: 'postmortem' com sourceMetadata detalhado (isDemo, fingerprint, engineVersions).
+
 ---
 
 ## Observabilidade
 
 - Prometheus 3.8.1 e Grafana 12.3.2 com Grafana Alerting (Alertmanager removido).
-- Dashboards principais: Home, Services, LLM Metrics, RAG Metrics, Integrations, Infrastructure, Training, Training Pipeline, Backup.
+- Dashboards principais: Home, Services, LLM Metrics, RAG Metrics, Integrations, Infrastructure, Training, Training Pipeline, Backup, **Demo Trading + Post-Mortem**.
+- Dashboard Demo Trading: ordens por tipo de mercado, posições profit/loss, fila post-mortem, DLQ, latência P50/P95/P99.
 - Loki/Promtail 3.6.3 e Jaeger 2.13.0 (OTLP habilitado).
 - Langfuse v3 com worker e ClickHouse 25.12-alpine.
 

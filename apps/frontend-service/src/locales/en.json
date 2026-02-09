@@ -2049,6 +2049,26 @@
       "arbitrage_triangular": {
         "title": "Triangular Arbitrage",
         "desc": "Three sequential conversions on the same exchange with profit edge."
+      },
+      "cash_and_carry": {
+        "title": "Cash & Carry",
+        "desc": "Buy spot + sell futures exploiting contango (futures premium)."
+      },
+      "basis_trade": {
+        "title": "Basis Trade",
+        "desc": "Exploits spot-futures price difference for convergence."
+      },
+      "funding_arbitrage": {
+        "title": "Funding Arbitrage",
+        "desc": "Captures perpetual funding rate with spot hedge."
+      },
+      "grid_trading": {
+        "title": "Grid Trading",
+        "desc": "Scaled orders in a grid within a defined range."
+      },
+      "market_making": {
+        "title": "Market Making",
+        "desc": "Liquidity provision with orders on both sides of the book."
       }
     },
     "quickTrade": {
@@ -3154,5 +3174,81 @@
     "saveSuccessDesc": "Agentic mode updated successfully.",
     "saveError": "Save error",
     "saveErrorDesc": "Unable to update agentic mode."
+  },
+  "demoTrading": {
+    "title": "Demo Trading",
+    "subtitle": "Trade with real data in simulated mode. No risk, full learning.",
+    "balance": "Demo Balance",
+    "addFunds": "Add Funds",
+    "addFundsDesc": "Add funds to demo balance (simulated)",
+    "placeOrder": "Place Order",
+    "placeOrderDesc": "Place a simulated order using real market data",
+    "closePosition": "Close Position",
+    "cancelOrder": "Cancel Order",
+    "tabs": {
+      "overview": "Overview",
+      "orders": "Orders",
+      "positions": "Positions",
+      "history": "History",
+      "postmortems": "Post-Mortems"
+    },
+    "order": {
+      "market": "Market",
+      "limit": "Limit",
+      "stop": "Stop",
+      "buy": "Buy",
+      "sell": "Sell",
+      "size": "Size",
+      "price": "Price",
+      "leverage": "Leverage",
+      "stopLoss": "Stop Loss",
+      "takeProfit": "Take Profit",
+      "fees": "Fees",
+      "slippage": "Slippage"
+    },
+    "position": {
+      "side": "Side",
+      "long": "Long",
+      "short": "Short",
+      "entryPrice": "Entry Price",
+      "currentPrice": "Current Price",
+      "pnl": "P&L",
+      "margin": "Margin",
+      "liquidation": "Liquidation"
+    },
+    "postmortem": {
+      "title": "Post-Mortem",
+      "pending": "Pending",
+      "processing": "Processing",
+      "completedCpu": "CPU Completed",
+      "completed": "Completed",
+      "failed": "Failed",
+      "motivators": "Motivators",
+      "successFactors": "Success Factors",
+      "failureFactors": "Failure Factors",
+      "lessons": "Lessons Learned",
+      "sendToTraining": "Send to Training",
+      "sendBatchToTraining": "Send Batch to Training",
+      "datasetCreated": "Dataset created for approval"
+    },
+    "market": {
+      "spot": "Spot",
+      "futures": "Futures",
+      "margin": "Margin"
+    },
+    "status": {
+      "open": "Open",
+      "filled": "Filled",
+      "cancelled": "Cancelled",
+      "pending": "Pending"
+    }
+  },
+  "signals": {
+    "approveDemo": "Approve Demo",
+    "approveDemoDesc": "Approve signal and create Demo order",
+    "approveDemoConfirm": "Confirm approval as Demo order",
+    "approveDemoSuccess": "Signal approved as Demo order",
+    "approveReal": "Approve",
+    "approveRealDesc": "Approve signal and create Real order"
   }
 }

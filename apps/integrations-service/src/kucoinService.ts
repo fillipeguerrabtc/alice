@@ -32,6 +32,8 @@ import {
 import * as kucoinClient from './kucoinClient.js';
 import * as kucoinSpotClient from './kucoinSpotClient.js';
 import * as kucoinMarginClient from './kucoinMarginClient.js';
+import { captureEntrySnapshot, captureExitSnapshot } from './snapshot-store.js';
+import { enqueuePostMortem } from './postmortem-worker.js';
 
 const logger = createLogger('kucoin-service');
 
@@ -2416,6 +2418,33 @@ export async function syncOrdersStatus(
 
         if (updated && newStatus === 'filled') {
           filledOrders.push(updated);
+
+          // ================================================================
+          // ENTRY SNAPSHOT: Se ordem preenchida NÃO é fechamento de posição,
+          // capturar snapshot de entrada. Best-effort.
+          // ================================================================
+          const orderMeta = (order.metadata ?? {}) as TradingOrderMetadata;
+          if (!orderMeta.closePosition) {
+            try {
+              const marketType = (order.marketType as TradingMarketType) ?? 'futures';
+              const entrySnapshotResult = await captureEntrySnapshot({
+                tenantId: order.tenantId,
+                symbol: order.symbol,
+                marketType,
+                positionId: order.id,
+              });
+              const entrySnapshotId = entrySnapshotResult.id;
+              logger.info(
+                { orderId: order.id, symbol: order.symbol, snapshotId: entrySnapshotId },
+                'Entry snapshot capturado para ordem real preenchida'
+              );
+            } catch (snapError) {
+              logger.warn(
+                { err: snapError, orderId: order.id, symbol: order.symbol },
+                'Falha ao capturar entry snapshot (best-effort)'
+              );
+            }
+          }
         }
 
         synced++;
@@ -2653,6 +2682,69 @@ export async function closePositions(
         undefined,
         order as unknown as Record<string, unknown>
       );
+    }
+
+    // ====================================================================
+    // POST-MORTEM AUTOMÁTICO: Capturar exit snapshot + enfileirar post-mortem
+    // para cada posição fechada. Best-effort: falha não bloqueia o fluxo.
+    // ====================================================================
+    for (let i = 0; i < ordersPlan.length; i++) {
+      const orderPlan = ordersPlan[i];
+      const closedOrder = createdOrders[i];
+      if (!closedOrder) continue;
+
+      try {
+        const positionData = orderPlan.position;
+        const exitSnapshot = await captureExitSnapshot({
+          tenantId: authContext.tenantId,
+          symbol: positionData.symbol,
+          marketType: 'futures',
+          positionId: closedOrder.id,
+        });
+
+        // Dados da posição real da KuCoin para o post-mortem
+        const entryPrice = positionData.avgEntryPrice ?? positionData.markPrice;
+        const exitPrice = positionData.markPrice;
+        const side = positionData.currentQty > 0 ? 'long' : 'short';
+        const leverage = Number.isFinite(positionData.realLeverage) && positionData.realLeverage > 0
+          ? positionData.realLeverage
+          : 1;
+        const pnl = positionData.unrealisedPnl ?? 0;
+        const _pnlPct = entryPrice > 0
+          ? ((exitPrice - entryPrice) / entryPrice) * 100 * (side === 'long' ? 1 : -1)
+          : 0;
+
+        await enqueuePostMortem({
+          positionData: {
+            id: closedOrder.id,
+            tenantId: authContext.tenantId,
+            isDemo: false,
+            symbol: positionData.symbol,
+            marketType: 'futures',
+            side,
+            leverage,
+            entryPrice,
+            exitPrice,
+            size: Number(positionData.currentQty ?? 0),
+            realizedPnl: pnl,
+            totalFees: 0, // KuCoin não fornece fees acumuladas por posição diretamente
+            openedAt: closedOrder.criadoEm ?? new Date(),
+            closedAt: new Date(),
+            exitSnapshotId: exitSnapshot.id,
+          },
+        });
+
+        logger.info(
+          { orderId: closedOrder.id, symbol: positionData.symbol, pnl },
+          'Post-mortem enfileirado para posição real fechada'
+        );
+      } catch (pmError) {
+        // Best-effort: não bloquear fechamento de posição se post-mortem falhar
+        logger.warn(
+          { err: pmError, orderId: closedOrder.id, symbol: orderPlan.position.symbol },
+          'Falha ao enfileirar post-mortem para posição real (best-effort)'
+        );
+      }
     }
 
     return {

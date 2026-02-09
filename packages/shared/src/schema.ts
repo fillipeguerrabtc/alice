@@ -36,6 +36,7 @@ import {
   timestamp,
   boolean,
   integer,
+  numeric,
   customType,
   jsonb,
   index,
@@ -2222,6 +2223,11 @@ export const tradingTechniqueEnum = pgEnum("trading_technique", [
   "range",
   "momentum",
   "arbitrage_triangular",
+  "cash_and_carry",
+  "basis_trade",
+  "funding_arbitrage",
+  "grid_trading",
+  "market_making",
 ]);
 
 export const TradingIndicatorKeySchema = z.enum([
@@ -2248,6 +2254,11 @@ export const TradingTechniqueSchema = z.enum([
   "range",
   "momentum",
   "arbitrage_triangular",
+  "cash_and_carry",
+  "basis_trade",
+  "funding_arbitrage",
+  "grid_trading",
+  "market_making",
 ]);
 export type TradingTechnique = z.infer<typeof TradingTechniqueSchema>;
 
@@ -3215,6 +3226,7 @@ export const tradingDatasetSourceTypeEnum = pgEnum("trading_dataset_source_type"
   "order",
   "manual",
   "system",
+  "postmortem",
 ]);
 
 // Enum para tipo de dado de mercado
@@ -3477,6 +3489,215 @@ export const tradingLoraJobsRelations = relations(tradingLoraJobs, ({ one }) => 
   tenant: one(tenants, {
     fields: [tradingLoraJobs.tenantId],
     references: [tenants.id],
+  }),
+}));
+
+// ============================================================================
+// SNAPSHOT STORE - Armazena snapshots de mercado para post-mortem e datasets
+// ============================================================================
+export const tradingSnapshots = pgTable(
+  "trading_snapshots",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
+    kind: text("kind").notNull(), // market_entry, market_exit, candles, orderbook_top, news, evidence_pack
+    data: jsonb("data").$type<Record<string, unknown>>().notNull(),
+    refs: jsonb("refs").$type<Record<string, unknown>>().default({}),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    idxSnapshotsTenant: index("idx_drizzle_snapshots_tenant").on(table.tenantId),
+    idxSnapshotsKind: index("idx_drizzle_snapshots_kind").on(table.kind),
+    idxSnapshotsCreated: index("idx_drizzle_snapshots_created").on(table.createdAt),
+  })
+);
+
+export const tradingSnapshotsRelations = relations(tradingSnapshots, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [tradingSnapshots.tenantId],
+    references: [tenants.id],
+  }),
+}));
+
+// ============================================================================
+// POST-MORTEM ENGINE - Análise automática pós-trade (Two-Phase: CPU + LLM)
+// ============================================================================
+export const tradingPostmortems = pgTable(
+  "trading_postmortems",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
+    positionId: uuid("position_id").notNull(),
+    isDemo: boolean("is_demo").notNull().default(false),
+    fingerprint: text("fingerprint").notNull().unique(),
+    status: text("status").notNull().default("queued"), // queued, processing_cpu, completed_cpu, processing_llm, completed, failed
+    // Phase 1 CPU
+    classification: jsonb("classification").$type<Record<string, unknown>>(),
+    evidencePackSnapshotId: uuid("evidence_pack_snapshot_id").references(() => tradingSnapshots.id),
+    // Phase 2 LLM
+    motivators: jsonb("motivators").$type<unknown[]>().default([]),
+    successFactors: jsonb("success_factors").$type<unknown[]>().default([]),
+    failureFactors: jsonb("failure_factors").$type<unknown[]>().default([]),
+    lessons: jsonb("lessons").$type<Record<string, unknown>>(),
+    // Meta
+    engineVersions: jsonb("engine_versions").$type<Record<string, string>>().notNull(),
+    errorMessage: text("error_message"),
+    retryCount: integer("retry_count").notNull().default(0),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    completedAt: timestamp("completed_at"),
+  },
+  (table) => ({
+    idxPostmortemPosition: index("idx_drizzle_postmortem_position").on(table.positionId),
+    idxPostmortemTenantStatus: index("idx_drizzle_postmortem_tenant_status").on(table.tenantId, table.status),
+    idxPostmortemCreated: index("idx_drizzle_postmortem_created").on(table.createdAt),
+  })
+);
+
+export const tradingPostmortemsRelations = relations(tradingPostmortems, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [tradingPostmortems.tenantId],
+    references: [tenants.id],
+  }),
+  evidencePackSnapshot: one(tradingSnapshots, {
+    fields: [tradingPostmortems.evidencePackSnapshotId],
+    references: [tradingSnapshots.id],
+  }),
+}));
+
+// ============================================================================
+// DEMO TRADING - Balances (fundos simulados, auditáveis)
+// ============================================================================
+export const demoBalances = pgTable(
+  "demo_balances",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
+    currency: text("currency").notNull().default("USDT"),
+    available: numeric("available", { precision: 20, scale: 8 }).notNull().default("100000"),
+    frozen: numeric("frozen", { precision: 20, scale: 8 }).notNull().default("0"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    uniqTenantCurrency: uniqueIndex("uniq_demo_balance_tenant_currency").on(table.tenantId, table.currency),
+  })
+);
+
+export const demoBalancesRelations = relations(demoBalances, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [demoBalances.tenantId],
+    references: [tenants.id],
+  }),
+}));
+
+// ============================================================================
+// DEMO TRADING - Fund History (histórico de adição de fundos)
+// ============================================================================
+export const demoFundHistory = pgTable(
+  "demo_fund_history",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
+    amount: numeric("amount", { precision: 20, scale: 8 }).notNull(),
+    currency: text("currency").notNull().default("USDT"),
+    reason: text("reason"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    idxFundHistoryTenant: index("idx_demo_fund_history_tenant_drizzle").on(table.tenantId),
+  })
+);
+
+// ============================================================================
+// DEMO TRADING - Orders (ordens simuladas)
+// ============================================================================
+export const demoOrders = pgTable(
+  "demo_orders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
+    marketType: text("market_type").notNull(), // spot, futures, margin
+    symbol: text("symbol").notNull(),
+    side: text("side").notNull(), // buy, sell
+    orderType: text("order_type").notNull(), // market, limit, stop
+    status: text("status").notNull().default("pending"), // pending, open, filled, partially_filled, cancelled, failed
+    price: numeric("price", { precision: 20, scale: 8 }),
+    stopPrice: numeric("stop_price", { precision: 20, scale: 8 }),
+    size: numeric("size", { precision: 20, scale: 8 }).notNull(),
+    leverage: integer("leverage").default(1),
+    filledSize: numeric("filled_size", { precision: 20, scale: 8 }).default("0"),
+    avgFilledPrice: numeric("avg_filled_price", { precision: 20, scale: 8 }),
+    fees: numeric("fees", { precision: 20, scale: 8 }).default("0"),
+    signalId: uuid("signal_id"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    filledAt: timestamp("filled_at"),
+  },
+  (table) => ({
+    idxDemoOrdersTenant: index("idx_demo_orders_tenant_drizzle").on(table.tenantId),
+    idxDemoOrdersStatus: index("idx_demo_orders_status_drizzle").on(table.tenantId, table.status),
+    idxDemoOrdersSymbol: index("idx_demo_orders_symbol_drizzle").on(table.symbol),
+  })
+);
+
+export const demoOrdersRelations = relations(demoOrders, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [demoOrders.tenantId],
+    references: [tenants.id],
+  }),
+}));
+
+// ============================================================================
+// DEMO TRADING - Positions (posições simuladas)
+// ============================================================================
+export const demoPositions = pgTable(
+  "demo_positions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
+    marketType: text("market_type").notNull(), // spot, futures, margin
+    symbol: text("symbol").notNull(),
+    side: text("side").notNull(), // long, short
+    status: text("status").notNull().default("open"), // open, closed, liquidated
+    entryPrice: numeric("entry_price", { precision: 20, scale: 8 }).notNull(),
+    exitPrice: numeric("exit_price", { precision: 20, scale: 8 }),
+    currentPrice: numeric("current_price", { precision: 20, scale: 8 }),
+    size: numeric("size", { precision: 20, scale: 8 }).notNull(),
+    leverage: integer("leverage").default(1),
+    stopLoss: numeric("stop_loss", { precision: 20, scale: 8 }),
+    takeProfit: numeric("take_profit", { precision: 20, scale: 8 }),
+    unrealizedPnl: numeric("unrealized_pnl", { precision: 20, scale: 8 }).default("0"),
+    realizedPnl: numeric("realized_pnl", { precision: 20, scale: 8 }).default("0"),
+    totalFees: numeric("total_fees", { precision: 20, scale: 8 }).default("0"),
+    marginAmount: numeric("margin_amount", { precision: 20, scale: 8 }),
+    liquidationPrice: numeric("liquidation_price", { precision: 20, scale: 8 }),
+    entrySnapshotId: uuid("entry_snapshot_id").references(() => tradingSnapshots.id),
+    exitSnapshotId: uuid("exit_snapshot_id").references(() => tradingSnapshots.id),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
+    openedAt: timestamp("opened_at").defaultNow().notNull(),
+    closedAt: timestamp("closed_at"),
+  },
+  (table) => ({
+    idxDemoPositionsTenant: index("idx_demo_positions_tenant_drizzle").on(table.tenantId),
+    idxDemoPositionsStatus: index("idx_demo_positions_status_drizzle").on(table.tenantId, table.status),
+    idxDemoPositionsSymbol: index("idx_demo_positions_symbol_drizzle").on(table.symbol),
+  })
+);
+
+export const demoPositionsRelations = relations(demoPositions, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [demoPositions.tenantId],
+    references: [tenants.id],
+  }),
+  entrySnapshot: one(tradingSnapshots, {
+    fields: [demoPositions.entrySnapshotId],
+    references: [tradingSnapshots.id],
+    relationName: "entrySnapshot",
+  }),
+  exitSnapshot: one(tradingSnapshots, {
+    fields: [demoPositions.exitSnapshotId],
+    references: [tradingSnapshots.id],
+    relationName: "exitSnapshot",
   }),
 }));
 

@@ -1,0 +1,106 @@
+{
+  "annotations": { "list": [] },
+  "description": "Demo Trading + Post-Mortem - Métricas de trading simulado e análise pós-fechamento",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    { "title": "Trading Real", "url": "/d/alice-trading/trading", "type": "link" },
+    { "title": "GPU Manager", "url": "/d/alice-gpu-manager/gpu-manager", "type": "link" }
+  ],
+  "panels": [
+    {
+      "title": "Demo Orders (Total)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "targets": [{
+        "expr": "sum(alice_demo_orders_total)",
+        "legendFormat": "Total"
+      }],
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "blue", "value": null }] } } }
+    },
+    {
+      "title": "Posições Abertas Demo",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "targets": [{
+        "expr": "alice_demo_open_positions",
+        "legendFormat": "Abertas"
+      }],
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 10 }, { "color": "red", "value": 50 }] } } }
+    },
+    {
+      "title": "Post-Mortem Fila",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "targets": [{
+        "expr": "alice_postmortem_queue_size{queue_type=\"pending\"}",
+        "legendFormat": "Pendentes"
+      }],
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 10 }, { "color": "red", "value": 50 }] } } }
+    },
+    {
+      "title": "Post-Mortem DLQ",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "targets": [{
+        "expr": "alice_postmortem_dlq_size",
+        "legendFormat": "DLQ"
+      }],
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 10 }] } } }
+    },
+    {
+      "title": "Demo Orders por Tipo de Mercado",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [
+        { "expr": "rate(alice_demo_orders_total{market_type=\"futures\"}[5m])", "legendFormat": "Futures" },
+        { "expr": "rate(alice_demo_orders_total{market_type=\"spot\"}[5m])", "legendFormat": "Spot" },
+        { "expr": "rate(alice_demo_orders_total{market_type=\"margin\"}[5m])", "legendFormat": "Margin" }
+      ]
+    },
+    {
+      "title": "Posições Fechadas (Profit vs Loss)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [
+        { "expr": "rate(alice_demo_positions_closed_total{profit=\"true\"}[5m])", "legendFormat": "Profit" },
+        { "expr": "rate(alice_demo_positions_closed_total{profit=\"false\"}[5m])", "legendFormat": "Loss" }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 20 } }, "overrides": [
+        { "matcher": { "id": "byName", "options": "Profit" }, "properties": [{ "id": "color", "value": { "fixedColor": "green" } }] },
+        { "matcher": { "id": "byName", "options": "Loss" }, "properties": [{ "id": "color", "value": { "fixedColor": "red" } }] }
+      ] }
+    },
+    {
+      "title": "Post-Mortem Jobs Processados",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "targets": [
+        { "expr": "rate(alice_postmortem_jobs_total{status=\"completed\"}[5m])", "legendFormat": "Completed" },
+        { "expr": "rate(alice_postmortem_jobs_total{status=\"failed\"}[5m])", "legendFormat": "Failed" },
+        { "expr": "rate(alice_postmortem_jobs_total{status=\"retry\"}[5m])", "legendFormat": "Retry" }
+      ]
+    },
+    {
+      "title": "Post-Mortem Latência (P50/P95/P99)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(alice_postmortem_job_duration_seconds_bucket[5m])) by (le))", "legendFormat": "P50" },
+        { "expr": "histogram_quantile(0.95, sum(rate(alice_postmortem_job_duration_seconds_bucket[5m])) by (le))", "legendFormat": "P95" },
+        { "expr": "histogram_quantile(0.99, sum(rate(alice_postmortem_job_duration_seconds_bucket[5m])) by (le))", "legendFormat": "P99" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["alice", "trading", "demo", "postmortem"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Alice Demo Trading + Post-Mortem",
+  "uid": "alice-demo-trading"
+}

@@ -60,6 +60,7 @@ const Agents = lazy(() => import('@/pages/Agents'));
 const Namespaces = lazy(() => import('@/pages/Namespaces'));
 const WisePayments = lazy(() => import('@/pages/WisePayments'));
 const Trading = lazy(() => import('@/pages/Trading'));
+const DemoTrading = lazy(() => import('@/pages/DemoTrading'));
 const TakeoverPanel = lazy(() => import('@/pages/TakeoverPanel'));
 const ImageGalleryPage = lazy(() => import('@/pages/ImageGalleryPage'));
 const Observability = lazy(() => import('@/pages/Observability'));
@@ -146,6 +147,7 @@ function Router() {
       <Route path="/integrations" component={Integrations} />
       <Route path="/wise" component={WisePayments} />
       <Route path="/trading" component={Trading} />
+      <Route path="/demo-trading" component={DemoTrading} />
       <Route path="/users" component={UsersAdmin} />
       <Route path="/observability" component={Observability} />
       <Route path="/alice-config" component={AliceConfig} />

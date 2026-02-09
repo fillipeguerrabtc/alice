@@ -2106,6 +2106,26 @@
       "arbitrage_triangular": {
         "title": "Arbitragem Triangular",
         "desc": "Três conversões sequenciais na mesma exchange com margem de lucro."
+      },
+      "cash_and_carry": {
+        "title": "Cash & Carry",
+        "desc": "Compra spot + venda futures aproveitando contango (premium do futuro)."
+      },
+      "basis_trade": {
+        "title": "Basis Trade",
+        "desc": "Explora diferença entre preço spot e futuro para convergência."
+      },
+      "funding_arbitrage": {
+        "title": "Funding Arbitrage",
+        "desc": "Captura funding rate em perpetuais com hedge no spot."
+      },
+      "grid_trading": {
+        "title": "Grid Trading",
+        "desc": "Ordens escalonadas em grade dentro de um range definido."
+      },
+      "market_making": {
+        "title": "Market Making",
+        "desc": "Provisão de liquidez com ordens em ambos os lados do livro."
       }
     },
     "quickTrade": {
@@ -3210,5 +3230,81 @@
     "saveSuccessDesc": "Modo Agentic atualizado com sucesso.",
     "saveError": "Erro ao salvar",
     "saveErrorDesc": "Não foi possível atualizar o modo agentic."
+  },
+  "demoTrading": {
+    "title": "Trading Demo",
+    "subtitle": "Opere com dados reais em modo simulado. Sem risco, com aprendizado completo.",
+    "balance": "Saldo Demo",
+    "addFunds": "Adicionar Fundos",
+    "addFundsDesc": "Adicionar fundos ao saldo demo (simulado)",
+    "placeOrder": "Colocar Ordem",
+    "placeOrderDesc": "Colocar ordem simulada usando dados de mercado reais",
+    "closePosition": "Fechar Posição",
+    "cancelOrder": "Cancelar Ordem",
+    "tabs": {
+      "overview": "Visão Geral",
+      "orders": "Ordens",
+      "positions": "Posições",
+      "history": "Histórico",
+      "postmortems": "Post-Mortems"
+    },
+    "order": {
+      "market": "Market",
+      "limit": "Limit",
+      "stop": "Stop",
+      "buy": "Compra",
+      "sell": "Venda",
+      "size": "Tamanho",
+      "price": "Preço",
+      "leverage": "Alavancagem",
+      "stopLoss": "Stop Loss",
+      "takeProfit": "Take Profit",
+      "fees": "Taxas",
+      "slippage": "Slippage"
+    },
+    "position": {
+      "side": "Lado",
+      "long": "Long",
+      "short": "Short",
+      "entryPrice": "Preço de Entrada",
+      "currentPrice": "Preço Atual",
+      "pnl": "P&L",
+      "margin": "Margem",
+      "liquidation": "Liquidação"
+    },
+    "postmortem": {
+      "title": "Post-Mortem",
+      "pending": "Pendente",
+      "processing": "Processando",
+      "completedCpu": "CPU Completo",
+      "completed": "Completo",
+      "failed": "Falhou",
+      "motivators": "Motivadores",
+      "successFactors": "Fatores de Sucesso",
+      "failureFactors": "Fatores de Falha",
+      "lessons": "Lições Aprendidas",
+      "sendToTraining": "Enviar para Treinamento",
+      "sendBatchToTraining": "Enviar Lote para Treinamento",
+      "datasetCreated": "Dataset criado para aprovação"
+    },
+    "market": {
+      "spot": "Spot",
+      "futures": "Futures",
+      "margin": "Margin"
+    },
+    "status": {
+      "open": "Aberta",
+      "filled": "Executada",
+      "cancelled": "Cancelada",
+      "pending": "Pendente"
+    }
+  },
+  "signals": {
+    "approveDemo": "Aprovar Demo",
+    "approveDemoDesc": "Aprovar sinal e criar ordem no modo Demo",
+    "approveDemoConfirm": "Confirmar aprovação como ordem Demo",
+    "approveDemoSuccess": "Sinal aprovado como ordem Demo",
+    "approveReal": "Aprovar",
+    "approveRealDesc": "Aprovar sinal e criar ordem Real"
   }
 }

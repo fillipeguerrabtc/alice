@@ -19,6 +19,7 @@ import {
   Users,
   LineChart,
   Settings2,
+  FlaskConical,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -56,6 +57,7 @@ const operationsItems = [
 const financeItems = [
   { title: 'Wise', url: '/wise', icon: Wallet },
   { title: 'Trading', url: '/trading', icon: LineChart },
+  { title: 'Trading Demo', url: '/demo-trading', icon: FlaskConical },
 ];
 
 const adminExternalLinks = [

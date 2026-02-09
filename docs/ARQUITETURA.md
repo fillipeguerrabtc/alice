@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Arquitetura de Software
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 02 de Fevereiro de 2026  
-> **Versão:** 3.4.4 - Configuração de notícias SearXNG para Trading  
+> **Data:** 09 de Fevereiro de 2026  
+> **Versão:** 3.5.0 - Demo Trading + Post-Mortem Auto-Motivator + Dataset Generator  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 > 
@@ -434,6 +434,38 @@ A configuração é persistida por tenant no perfil `trading_analysis_profiles.n
 ```
 {symbol} {marketType} news {terms}
 ```
+
+### 6.2.2 Fluxo Demo Trading + Post-Mortem
+
+O ecossistema Demo Trading integra simulação enterprise com análise pós-fechamento automática e geração de datasets para treinamento.
+
+**Componentes:**
+
+| Módulo | Arquivo | Descrição |
+|--------|---------|-----------|
+| Demo Trading Engine | `demo-trading-engine.ts` | Balances, ordens, posições, PnL simulado |
+| Post-Mortem Engine | `postmortem-engine.ts` | Pipeline two-phase (CPU → LLM) |
+| Post-Mortem Worker | `postmortem-worker.ts` | Fila Redis com retry/DLQ |
+| Snapshot Store | `snapshot-store.ts` | Snapshots de mercado (6 kinds) |
+| Dataset Generator | `dataset-generator.ts` | Geração de datasets de treinamento |
+
+**Pipeline:**
+
+```
+Posição Fechada (real ou demo)
+    → Snapshot Store (market_exit + evidence_pack)
+    → Redis Queue (Sorted Set)
+    → Post-Mortem Worker processa
+        → Phase 1 (CPU): classificação determinística
+        → Phase 2 (LLM): motivadores + citedValues
+    → Fingerprint idempotente (SHA-256)
+    → Dataset Generator (status: pending)
+    → Training Page (aprovação manual)
+```
+
+**Mercados Demo suportados:** Spot, Futures (com leverage), Margin.
+
+**Sinais IA → Demo:** botão "Aprovar Demo" na aba Sinais IA converte sinal em ordem Demo (complementar ao "Aprovar" que cria ordem Real).
 
 ### 6.3 Fluxo de Embeddings (GPU Dedicada 24/7)
 

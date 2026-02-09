@@ -1,13 +1,13 @@
 # Alice - Plataforma Enterprise de IA Autônoma
 
 **Autor:** Fillipe Guerra  
-**Data:** 28 de Janeiro de 2026  
-**Versão:** 7.43 - Grafana 12.3.2 validado no registry
+**Data:** 09 de Fevereiro de 2026  
+**Versão:** 7.44 - Demo Trading + Post-Mortem Auto-Motivator
 
 <div align="center">
 
 ![Alice Logo](https://img.shields.io/badge/Alice-IA%20Enterprise-blue?style=for-the-badge&logo=robot&logoColor=white)
-![Version](https://img.shields.io/badge/versão-7.43-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/versão-7.44-green?style=for-the-badge)
 ![License](https://img.shields.io/badge/licença-Proprietária-red?style=for-the-badge)
 ![LLM](https://img.shields.io/badge/LLM-Qwen2.5%207B-purple?style=for-the-badge)
 
@@ -42,6 +42,9 @@
 | **Observabilidade LLM** | Prometheus, Grafana, Jaeger, Langfuse para métricas específicas |
 | **Auto-aprendizado** | QLoRA semanal (domingo 3:00 AM) com dados aprovados |
 | **Trading BTC Futures** | KuCoin Perpetuals com realtime WS (ticker/orderbook/klines), indicadores técnicos determinísticos e validação anti-alucinação |
+| **Trading Demo** | Simulação enterprise com dados reais (Spot/Futures/Margin), balances auditáveis, slippage e fees realistas |
+| **Post-Mortem Auto-Motivator** | Análise automática de posições fechadas (real + demo) via pipeline CPU → LLM com motivadores, lições e citedValues |
+| **Dataset Generator** | Geração automática de datasets de treinamento a partir de post-mortems completos, com schema padronizado |
 
 ### Diferenciais
 

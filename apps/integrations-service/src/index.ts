@@ -19768,6 +19768,442 @@ app.get('/api/integrations/trading/account/fees/futures', requirePermission('int
 });
 
 // ============================================================================
+// DEMO TRADING - Rotas REST
+// ============================================================================
+
+import {
+  getOrCreateBalance as getDemoBalance,
+  addFunds as addDemoFunds,
+  getFundHistory as getDemoFundHistory,
+  createDemoOrder,
+  closeDemoPosition,
+  getOpenPositions as getDemoOpenPositions,
+  getAllPositions as getDemoAllPositions,
+  getOrders as getDemoOrders,
+  cancelDemoOrder,
+  startDemoScheduler,
+  stopDemoScheduler,
+} from './demo-trading-engine.js';
+import {
+  getQueueStats as getPostMortemQueueStats,
+  retryDlqJob as retryPostMortemDlqJob,
+  startPostMortemWorker,
+  stopPostMortemWorker,
+} from './postmortem-worker.js';
+import { getSnapshotsByRefs } from './snapshot-store.js';
+import { createDatasetFromPostMortem, createDatasetsFromPostMortemsBatch } from './dataset-generator.js';
+
+// GET /api/integrations/demo-trading/balance - Buscar balance demo
+app.get('/api/integrations/demo-trading/balance', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.tenantId;
+    if (!tenantId) { res.status(403).json({ error: 'Tenant não identificado' }); return; }
+    const balance = await getDemoBalance(tenantId);
+    res.json({ success: true, data: balance });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar balance demo');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/demo-trading/funds - Adicionar fundos demo
+app.post('/api/integrations/demo-trading/funds', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const { amount, currency, note } = req.body as { amount: number; currency?: string; note?: string };
+    if (!amount || amount <= 0) {
+      res.status(400).json({ error: 'amount deve ser um número positivo' });
+      return;
+    }
+    const tenantId = req.tenantId;
+    if (!tenantId) { res.status(403).json({ error: 'Tenant não identificado' }); return; }
+    const result = await addDemoFunds({ tenantId, amount, currency, note });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao adicionar fundos demo');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/demo-trading/funds/history - Histórico de fundos
+app.get('/api/integrations/demo-trading/funds/history', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.tenantId;
+    if (!tenantId) { res.status(403).json({ error: 'Tenant não identificado' }); return; }
+    const history = await getDemoFundHistory(tenantId);
+    res.json({ success: true, data: history });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar histórico de fundos demo');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/demo-trading/orders - Criar ordem demo
+app.post('/api/integrations/demo-trading/orders', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const { symbol, marketType, side, orderType, size, price, leverage, stopLoss, takeProfit } = req.body as {
+      symbol: string;
+      marketType: 'spot' | 'futures' | 'margin';
+      side: 'buy' | 'sell';
+      orderType: 'market' | 'limit' | 'stop';
+      size: number;
+      price?: number;
+      leverage?: number;
+      stopLoss?: number;
+      takeProfit?: number;
+    };
+
+    if (!symbol || !marketType || !side || !orderType || !size) {
+      res.status(400).json({ error: 'Campos obrigatórios: symbol, marketType, side, orderType, size' });
+      return;
+    }
+
+    const tenantId = req.tenantId;
+    if (!tenantId) { res.status(403).json({ error: 'Tenant não identificado' }); return; }
+
+    const result = await createDemoOrder({
+      tenantId,
+      symbol,
+      marketType,
+      side,
+      orderType,
+      size,
+      price,
+      leverage,
+      stopLoss,
+      takeProfit,
+    });
+
+    res.status(201).json({ success: true, data: result });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    if (errorMessage.includes('Saldo insuficiente')) {
+      res.status(400).json({ error: errorMessage });
+      return;
+    }
+    logger.error({ error: errorMessage }, 'Erro ao criar ordem demo');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/demo-trading/orders/from-signal - Criar ordem demo a partir de sinal IA
+app.post('/api/integrations/demo-trading/orders/from-signal', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const { signalId, symbol, marketType, side, size, leverage, stopLoss, takeProfit, entryType, price } = req.body as {
+      signalId: string;
+      symbol: string;
+      marketType: 'spot' | 'futures' | 'margin';
+      side: 'buy' | 'sell';
+      size: number;
+      leverage?: number;
+      stopLoss?: number;
+      takeProfit?: number;
+      entryType?: 'market' | 'limit';
+      price?: number;
+    };
+
+    if (!signalId || !symbol || !marketType || !side || !size) {
+      res.status(400).json({ error: 'Campos obrigatórios: signalId, symbol, marketType, side, size' });
+      return;
+    }
+
+    const tenantId = req.tenantId;
+    if (!tenantId) { res.status(403).json({ error: 'Tenant não identificado' }); return; }
+
+    const result = await createDemoOrder({
+      tenantId,
+      symbol,
+      marketType,
+      side,
+      orderType: entryType ?? 'market',
+      size,
+      price,
+      leverage,
+      stopLoss,
+      takeProfit,
+    });
+
+    // Registrar que veio de sinal IA (para rastreabilidade)
+    logger.info({ signalId, orderId: result.orderId, positionId: result.positionId }, 'Ordem demo criada a partir de sinal IA');
+
+    res.status(201).json({ success: true, data: { ...result, fromSignalId: signalId } });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    if (errorMessage.includes('Saldo insuficiente')) {
+      res.status(400).json({ error: errorMessage });
+      return;
+    }
+    logger.error({ error: errorMessage }, 'Erro ao criar ordem demo a partir de sinal');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/demo-trading/orders - Listar ordens demo
+app.get('/api/integrations/demo-trading/orders', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 50;
+    const tenantId = req.tenantId;
+    if (!tenantId) { res.status(403).json({ error: 'Tenant não identificado' }); return; }
+    const orders = await getDemoOrders(tenantId, limit);
+    res.json({ success: true, data: orders });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao listar ordens demo');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// DELETE /api/integrations/demo-trading/orders/:id - Cancelar ordem demo
+app.delete('/api/integrations/demo-trading/orders/:id', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.tenantId;
+    if (!tenantId) { res.status(403).json({ error: 'Tenant não identificado' }); return; }
+    const orderId = req.params.id;
+    if (!orderId) { res.status(400).json({ error: 'ID da ordem é obrigatório' }); return; }
+    const success = await cancelDemoOrder(tenantId, orderId);
+    if (!success) {
+      res.status(404).json({ error: 'Ordem não encontrada ou não pode ser cancelada' });
+      return;
+    }
+    res.json({ success: true });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao cancelar ordem demo');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/demo-trading/positions - Listar posições demo
+app.get('/api/integrations/demo-trading/positions', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.tenantId;
+    if (!tenantId) { res.status(403).json({ error: 'Tenant não identificado' }); return; }
+    const status = req.query.status as string;
+    const limit = parseInt(req.query.limit as string) || 50;
+    let positions;
+    if (status === 'open') {
+      positions = await getDemoOpenPositions(tenantId);
+    } else {
+      positions = await getDemoAllPositions(tenantId, limit);
+    }
+    res.json({ success: true, data: positions });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao listar posições demo');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/demo-trading/positions/:id/close - Fechar posição demo
+app.post('/api/integrations/demo-trading/positions/:id/close', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.tenantId;
+    if (!tenantId) { res.status(403).json({ error: 'Tenant não identificado' }); return; }
+    const positionId = req.params.id;
+    if (!positionId) { res.status(400).json({ error: 'ID da posição é obrigatório' }); return; }
+    const result = await closeDemoPosition({
+      tenantId,
+      positionId,
+      reason: 'manual',
+    });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    if (errorMessage.includes('não encontrada')) {
+      res.status(404).json({ error: errorMessage });
+      return;
+    }
+    logger.error({ error: errorMessage }, 'Erro ao fechar posição demo');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// ============================================================================
+// POST-MORTEM - Rotas REST
+// ============================================================================
+
+// GET /api/integrations/postmortem/:positionId - Buscar post-mortem de uma posição
+app.get('/api/integrations/postmortem/:positionId', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.tenantId;
+    if (!tenantId) { res.status(403).json({ error: 'Tenant não identificado' }); return; }
+    const positionId = req.params.positionId;
+    if (!positionId) { res.status(400).json({ error: 'ID da posição é obrigatório' }); return; }
+    const db = getDatabase();
+    const [postmortem] = await db
+      .select()
+      .from(schema.tradingPostmortems)
+      .where(and(
+        eq(schema.tradingPostmortems.positionId, positionId),
+        eq(schema.tradingPostmortems.tenantId, tenantId),
+      ))
+      .limit(1);
+
+    if (!postmortem) {
+      res.status(404).json({ error: 'Post-mortem não encontrado para esta posição' });
+      return;
+    }
+    res.json({ success: true, data: postmortem });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar post-mortem');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/postmortem - Listar post-mortems do tenant
+app.get('/api/integrations/postmortem', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.tenantId;
+    if (!tenantId) { res.status(403).json({ error: 'Tenant não identificado' }); return; }
+    const db = getDatabase();
+    const limit = parseInt(req.query.limit as string) || 50;
+    const isDemo = req.query.isDemo === 'true' ? true : req.query.isDemo === 'false' ? false : undefined;
+
+    const query = db
+      .select()
+      .from(schema.tradingPostmortems)
+      .where(eq(schema.tradingPostmortems.tenantId, tenantId))
+      .orderBy(desc(schema.tradingPostmortems.createdAt))
+      .limit(limit);
+
+    const postmortems = await query;
+
+    // Filtrar por isDemo se especificado
+    const filtered = isDemo !== undefined
+      ? postmortems.filter(pm => pm.isDemo === isDemo)
+      : postmortems;
+
+    res.json({ success: true, data: filtered });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao listar post-mortems');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/postmortem/queue/stats - Estatísticas da fila de post-mortem
+app.get('/api/integrations/postmortem/queue/stats', requirePermission('integrations:trading:read'), async (_req: Request, res: Response) => {
+  try {
+    const stats = await getPostMortemQueueStats();
+    res.json({ success: true, data: stats });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar estatísticas da fila');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/postmortem/queue/retry/:jobId - Retry job da DLQ
+app.post('/api/integrations/postmortem/queue/retry/:jobId', requirePermission('integrations:trading:manage'), async (req: Request, res: Response) => {
+  try {
+    const success = await retryPostMortemDlqJob(req.params.jobId);
+    if (!success) {
+      res.status(404).json({ error: 'Job não encontrado na DLQ' });
+      return;
+    }
+    res.json({ success: true, message: 'Job reenfileirado com sucesso' });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao reenfileirar job');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/postmortem/snapshots/:positionId - Buscar snapshots de uma posição
+app.get('/api/integrations/postmortem/snapshots/:positionId', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.tenantId;
+    if (!tenantId) { res.status(403).json({ error: 'Tenant não identificado' }); return; }
+    const positionId = req.params.positionId;
+    if (!positionId) { res.status(400).json({ error: 'ID da posição é obrigatório' }); return; }
+    const snapshots = await getSnapshotsByRefs({
+      tenantId,
+      refKey: 'positionId',
+      refValue: positionId,
+    });
+    res.json({ success: true, data: snapshots });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar snapshots');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// ============================================================================
+// TRAINING DATASETS — Envio single/batch de post-mortems para Training
+// ============================================================================
+
+// POST /api/integrations/postmortem/send-to-training - Enviar post-mortem individual para Training
+app.post('/api/integrations/postmortem/send-to-training', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const { postmortemId } = req.body as { postmortemId?: string };
+    if (!postmortemId) {
+      res.status(400).json({ error: 'postmortemId é obrigatório' });
+      return;
+    }
+
+    const tenantId = req.tenantId;
+    if (!tenantId) { res.status(403).json({ error: 'Tenant não identificado' }); return; }
+    const datasetId = await createDatasetFromPostMortem(postmortemId, tenantId);
+    if (!datasetId) {
+      res.status(422).json({
+        error: 'Não foi possível criar dataset — post-mortem não encontrado, incompleto ou já processado',
+      });
+      return;
+    }
+
+    res.json({
+      success: true,
+      data: { datasetId, postmortemId },
+      message: 'Dataset criado com status pending para aprovação',
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao enviar post-mortem para training');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/postmortem/send-to-training/batch - Enviar múltiplos post-mortems para Training
+app.post('/api/integrations/postmortem/send-to-training/batch', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const { postmortemIds } = req.body as { postmortemIds?: string[] };
+    if (!postmortemIds || !Array.isArray(postmortemIds) || postmortemIds.length === 0) {
+      res.status(400).json({ error: 'postmortemIds (array não vazio) é obrigatório' });
+      return;
+    }
+
+    if (postmortemIds.length > 100) {
+      res.status(400).json({ error: 'Máximo de 100 post-mortems por batch' });
+      return;
+    }
+
+    const tenantId = req.tenantId;
+    if (!tenantId) { res.status(403).json({ error: 'Tenant não identificado' }); return; }
+    const results = await createDatasetsFromPostMortemsBatch(postmortemIds, tenantId);
+
+    const created = Object.values(results).filter(Boolean).length;
+    const failed = postmortemIds.length - created;
+
+    res.json({
+      success: true,
+      data: {
+        results,
+        summary: { total: postmortemIds.length, created, failed },
+      },
+      message: `${created} datasets criados com status pending para aprovação`,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao enviar batch de post-mortems para training');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// ============================================================================
 // MIDDLEWARE: Not Found + Error Handler (Express.js 2025)
 // ============================================================================
 
@@ -19950,6 +20386,10 @@ initializeCaches().then(() => {
   startTradingMetricsScheduler();
   startTradingSignalScheduler();
   startTradingAnalysisScheduler();
+
+  // Demo Trading + Post-Mortem workers
+  startDemoScheduler(5_000);
+  startPostMortemWorker();
   refreshIntegrationHealthMetrics().catch((error) => {
     logger.warn({ error }, 'Falha ao atualizar métricas de integrações no startup');
   });
@@ -20025,6 +20465,22 @@ initializeCaches().then(() => {
     'integrations-health-metrics',
     async () => {
       clearInterval(integrationHealthInterval);
+    },
+    { priority: ShutdownPriority.BACKGROUND_JOBS }
+  );
+
+  registerShutdownCallback(
+    'integrations-demo-scheduler',
+    async () => {
+      stopDemoScheduler();
+    },
+    { priority: ShutdownPriority.BACKGROUND_JOBS }
+  );
+
+  registerShutdownCallback(
+    'integrations-postmortem-worker',
+    async () => {
+      stopPostMortemWorker();
     },
     { priority: ShutdownPriority.BACKGROUND_JOBS }
   );

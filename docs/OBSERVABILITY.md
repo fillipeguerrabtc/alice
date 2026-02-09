@@ -1,7 +1,7 @@
 # Guia de Observabilidade - Alice Enterprise Platform
 
-**Versão:** 2.6.9  
-**Data:** 05 de Fevereiro de 2026  
+**Versão:** 2.7.0  
+**Data:** 09 de Fevereiro de 2026  
 **Author:** Fillipe Guerra
 
 ---
@@ -250,6 +250,37 @@ Permitir que o Chat consulte e **atualize dashboards** do Grafana com RBAC, audi
 - Circuit breaker KuCoin OPEN > 5min
 - P&L negativo > $100
 - Latência API > 1s por 5min
+
+---
+
+### 3.1 Dashboard Demo Trading + Post-Mortem
+
+**UID:** `alice-demo-trading`  
+**Quando usar:** Monitorar operações demo, fila de post-mortems e performance da pipeline
+
+**Métricas principais:**
+
+- **Demo Orders Total:** `alice_demo_orders_total{market_type, order_type, side}`
+- **Posições Abertas Demo:** `alice_demo_open_positions`
+- **Posições Fechadas (Profit/Loss):** `alice_demo_positions_closed_total{market_type, profit}`
+- **Post-Mortem Fila:** `alice_postmortem_queue_size{queue_type="pending"}`
+- **Post-Mortem DLQ:** `alice_postmortem_dlq_size`
+- **Post-Mortem Jobs:** `alice_postmortem_jobs_total{status, is_demo}`
+- **Post-Mortem Latência:** `alice_postmortem_job_duration_seconds{phase}`
+
+**Painéis:**
+
+1. **KPIs:** Total de ordens demo, posições abertas, fila pendente, DLQ
+2. **Demo Orders por Mercado:** Futures vs Spot vs Margin (timeseries)
+3. **Posições Fechadas:** Profit vs Loss (timeseries com cores verde/vermelho)
+4. **Post-Mortem Jobs:** Completed vs Failed vs Retry (timeseries)
+5. **Post-Mortem Latência:** P50/P95/P99 (timeseries em segundos)
+
+**Alertas recomendados:**
+
+- Post-Mortem DLQ > 10 jobs (fila de erros crescente)
+- Post-Mortem queue > 50 jobs (acúmulo de trabalho)
+- Post-Mortem P95 latência > 60s (pipeline lenta)
 
 ---
 

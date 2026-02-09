@@ -32,6 +32,7 @@ import {
   AlertCircle,
   FileCheck,
   Trash2,
+  FlaskConical,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -300,9 +301,11 @@ const buildIndicatorExplanation = (analysis: Record<string, unknown>): string[] 
 function SignalCard({
   signal,
   onApprove,
+  onApproveDemo,
   onReject,
   onSendToTraining,
   isApproving,
+  isApprovingDemo,
   isRejecting,
   isSendingToTraining,
   locale,
@@ -311,9 +314,11 @@ function SignalCard({
 }: {
   signal: TradingSignal;
   onApprove: (signalId: string, reason?: string, overrides?: SignalApprovalOverrides) => void;
+  onApproveDemo: (signalId: string, overrides?: SignalApprovalOverrides) => void;
   onReject: (signalId: string, reason?: string) => void;
   onSendToTraining: (signalId: string) => void;
   isApproving: boolean;
+  isApprovingDemo: boolean;
   isRejecting: boolean;
   isSendingToTraining: boolean;
   locale: string;
@@ -322,6 +327,7 @@ function SignalCard({
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [showApproveDialog, setShowApproveDialog] = useState(false);
+  const [showApproveDemoDialog, setShowApproveDemoDialog] = useState(false);
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [reason, setReason] = useState('');
   const metadata = (signal.metadata ?? {}) as TradingSignal['metadata'];
@@ -418,7 +424,7 @@ function SignalCard({
                     size="sm"
                     className="text-green-600 border-green-600 hover:bg-green-50"
                     onClick={() => setShowApproveDialog(true)}
-                    disabled={isApproving || isRejecting}
+                    disabled={isApproving || isApprovingDemo || isRejecting}
                   >
                     {isApproving ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -432,9 +438,25 @@ function SignalCard({
                   <Button
                     variant="outline"
                     size="sm"
+                    className="text-amber-600 border-amber-600 hover:bg-amber-50"
+                    onClick={() => setShowApproveDemoDialog(true)}
+                    disabled={isApproving || isApprovingDemo || isRejecting}
+                  >
+                    {isApprovingDemo ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <>
+                        <FlaskConical className="h-4 w-4 mr-1" />
+                        Aprovar Demo
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
                     className="text-red-600 border-red-600 hover:bg-red-50"
                     onClick={() => setShowRejectDialog(true)}
-                    disabled={isApproving || isRejecting}
+                    disabled={isApproving || isApprovingDemo || isRejecting}
                   >
                     {isRejecting ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -814,6 +836,106 @@ function SignalCard({
             </DialogContent>
           </Dialog>
 
+          {/* Dialog Aprovar Demo */}
+          <Dialog open={showApproveDemoDialog} onOpenChange={(open) => {
+            setShowApproveDemoDialog(open);
+            if (open) {
+              setApproveOverrides({
+                orderType: signal.suggestedPrice ? 'limit' : 'market',
+                size: '',
+                price: signal.suggestedPrice ? String(signal.suggestedPrice) : '',
+                leverage: '',
+                stopLoss: signal.suggestedStopLoss ? String(signal.suggestedStopLoss) : '',
+                takeProfit: signal.suggestedTakeProfit ? String(signal.suggestedTakeProfit) : '',
+              });
+            }
+          }}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-amber-600">
+                  <FlaskConical className="h-5 w-5" />
+                  Aprovar Sinal como Ordem Demo
+                </DialogTitle>
+                <DialogDescription>
+                  Cria uma ordem simulada no Trading Demo. Sem risco financeiro real.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="py-4">
+                <div className="flex items-center gap-4 p-4 bg-amber-50 border border-amber-200 rounded-lg mb-4">
+                  <TypeIcon className={`h-8 w-8 ${typeInfo.color.split(' ')[0]}`} />
+                  <div>
+                    <p className="font-bold">{typeInfo.label} - {signal.symbol}</p>
+                    <p className="text-sm text-muted-foreground">Confiança: {confidencePercent}%</p>
+                    <p className="text-xs text-amber-600 font-medium">Modo Demo — sem execução real</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 mb-4">
+                  <div className="space-y-1">
+                    <Label>Quantidade</Label>
+                    <Input
+                      type="number"
+                      value={approveOverrides.size}
+                      onChange={(e) => setApproveOverrides({ ...approveOverrides, size: e.target.value })}
+                      placeholder="Ex: 0.001"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Alavancagem</Label>
+                    <Input
+                      type="number"
+                      value={approveOverrides.leverage}
+                      onChange={(e) => setApproveOverrides({ ...approveOverrides, leverage: e.target.value })}
+                      placeholder="Ex: 10"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Stop Loss</Label>
+                    <Input
+                      type="number"
+                      value={approveOverrides.stopLoss}
+                      onChange={(e) => setApproveOverrides({ ...approveOverrides, stopLoss: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Take Profit</Label>
+                    <Input
+                      type="number"
+                      value={approveOverrides.takeProfit}
+                      onChange={(e) => setApproveOverrides({ ...approveOverrides, takeProfit: e.target.value })}
+                    />
+                  </div>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowApproveDemoDialog(false)}>
+                  Cancelar
+                </Button>
+                <Button
+                  className="bg-amber-600 hover:bg-amber-700 text-white"
+                  onClick={() => {
+                    const overrides: SignalApprovalOverrides = {};
+                    const sizeValue = Number(approveOverrides.size);
+                    const leverageValue = Number(approveOverrides.leverage);
+                    const stopLossValue = Number(approveOverrides.stopLoss);
+                    const takeProfitValue = Number(approveOverrides.takeProfit);
+                    if (Number.isFinite(sizeValue) && sizeValue > 0) overrides.size = sizeValue;
+                    if (Number.isFinite(leverageValue) && leverageValue > 0) overrides.leverage = leverageValue;
+                    if (Number.isFinite(stopLossValue) && stopLossValue > 0) overrides.stopLoss = stopLossValue;
+                    if (Number.isFinite(takeProfitValue) && takeProfitValue > 0) overrides.takeProfit = takeProfitValue;
+                    onApproveDemo(
+                      signal.id,
+                      Object.keys(overrides).length ? overrides : undefined
+                    );
+                    setShowApproveDemoDialog(false);
+                  }}
+                >
+                  <FlaskConical className="h-4 w-4 mr-2" />
+                  Criar Ordem Demo
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
           <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
             <DialogContent>
               <DialogHeader>
@@ -881,6 +1003,7 @@ export function SignalApprovalPanel({
   const userRoles = user?.roles ?? (user?.role ? [user.role] : []);
   const isAdminRole = userRoles.includes('admin') || userRoles.includes('super_admin');
   const [approvingSignalId, setApprovingSignalId] = useState<string | null>(null);
+  const [approvingDemoSignalId, setApprovingDemoSignalId] = useState<string | null>(null);
   const [rejectingSignalId, setRejectingSignalId] = useState<string | null>(null);
   const [creatingDatasetSignalId, setCreatingDatasetSignalId] = useState<string | null>(null);
   const [historyItems, setHistoryItems] = useState<TradingSignal[]>([]);
@@ -990,6 +1113,37 @@ export function SignalApprovalPanel({
     },
     onSettled: () => {
       setApprovingSignalId(null);
+    },
+  });
+
+  // Mutation para aprovar sinal como Demo
+  const approveDemoMutation = useMutation({
+    mutationFn: async ({ signalId, overrides }: { signalId: string; overrides?: SignalApprovalOverrides }) => {
+      const response = await apiRequest('POST', '/api/integrations/demo-trading/orders/from-signal', {
+        signalId,
+        overrides,
+      });
+      return response.json();
+    },
+    onMutate: ({ signalId }) => {
+      setApprovingDemoSignalId(signalId);
+    },
+    onSuccess: () => {
+      toast({
+        title: 'Ordem Demo Criada',
+        description: 'Sinal aprovado e ordem simulada criada no Trading Demo.',
+      });
+      queryClient.invalidateQueries({ queryKey: ['trading-signals-pending'] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erro ao Criar Ordem Demo',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+    onSettled: () => {
+      setApprovingDemoSignalId(null);
     },
   });
 
@@ -1407,9 +1561,11 @@ export function SignalApprovalPanel({
                     key={signal.id}
                     signal={signal}
                     onApprove={(signalId, reason, overrides) => approveMutation.mutate({ signalId, reason, overrides })}
+                    onApproveDemo={(signalId, overrides) => approveDemoMutation.mutate({ signalId, overrides })}
                     onReject={(signalId, reason) => rejectMutation.mutate({ signalId, reason })}
                     onSendToTraining={(signalId) => createDatasetMutation.mutate({ signalId })}
                     isApproving={approvingSignalId === signal.id}
+                    isApprovingDemo={approvingDemoSignalId === signal.id}
                     isRejecting={rejectingSignalId === signal.id}
                     isSendingToTraining={creatingDatasetSignalId === signal.id}
                     locale={locale}
@@ -1686,9 +1842,11 @@ export function SignalApprovalPanel({
             <SignalCard
               signal={historyDetailSignal}
               onApprove={() => undefined}
+              onApproveDemo={() => undefined}
               onReject={() => undefined}
               onSendToTraining={() => undefined}
               isApproving={false}
+              isApprovingDemo={false}
               isRejecting={false}
               isSendingToTraining={false}
               locale={locale}
