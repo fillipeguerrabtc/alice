@@ -1,8 +1,8 @@
 # Sistema de Aprendizado da Alice
 
 **Autor:** Fillipe Guerra  
-**Versão:** 5.4 - ASR OpenAI + Vision OpenAI (sem embeddings de imagem)  
-**Data:** 22 de Janeiro de 2026
+**Versão:** 5.5 - Ecossistema LLM (LoRA + RAG + Feedback Loop)  
+**Data:** 09 de Fevereiro de 2026
 
 > **ATUALIZAÇÃO 05/01/2026:** Arquitetura refatorada para 5 stacks independentes com deploy/rollback modular. Sistema de aprendizado integrado ao stack ALICE, com GPU containers gerenciados pelo GPU Manager Service.
 
@@ -209,6 +209,139 @@ const trainingResponse = await fetch(`${TRAINING_SERVICE_URL}/api/training/data`
         │ (Nova versão) │   │ (Automático)  │
         └───────────────┘   └───────────────┘
 ```
+
+---
+
+## Ecossistema LLM para Trading (LoRA + RAG + Feedback Loop)
+
+> **NOVO (09/02/2026):** Ciclo fechado de evolução contínua que integra LoRA adapters globais, RAG contextual e feedback automático.
+
+### Visão Geral
+
+O sistema de aprendizado agora forma um **ciclo fechado** onde cada operação de trading (real ou demo) melhora a inteligência futura da Alice:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                  CICLO DE EVOLUÇÃO CONTÍNUA                 │
+│                                                              │
+│  Geração Sinais IA ──→ Execução ──→ Post-Mortem Automático  │
+│       ↑                                        │            │
+│       │                                        ↓            │
+│  LoRA Adapter (QLoRA)                  Feedback Loop         │
+│       ↑                              (indexa no RAG)         │
+│       │                                        │            │
+│  Training (aprovação)    ←── Dataset ←─────────┘            │
+│       ↑                                                      │
+│       │                                                      │
+│  RAG Contextual (learnings acumulados) ────────────────→     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 1. LoRA Adapters Globais
+
+| Aspecto | Detalhes |
+|---------|----------|
+| **Escopo** | Global (compartilhado entre todos os tenants) |
+| **Modelo base** | Qwen2.5 7B Instruct AWQ |
+| **Método** | QLoRA 4-bit |
+| **Path produção** | `/opt/alice/data/lora-adapters/trading-global` |
+| **Ativação** | Automática após aprovação de job de treinamento |
+| **Cache** | Redis `alice:lora:active-adapter` (TTL 60s) |
+| **Resolução** | `resolveModelWithAdapter()` em `lora-adapter-resolver.ts` |
+
+**Fluxo de Ativação:**
+1. Dataset aprovado no dashboard → job QLoRA criado
+2. Training service executa fine-tuning no gpu-trainer
+3. Admin aprova o adapter → `activateLoraAdapter()` copia arquivos
+4. Campo `isActiveAdapter` marcado no banco → cache Redis atualizado
+5. Próximas chamadas LLM (sinais IA, post-mortems) usam adapter automaticamente
+
+### 2. RAG Contextual para Trading
+
+| Tipo de Consulta | Módulo | Contexto Injetado |
+|-----------------|--------|-------------------|
+| **Sinais IA** | `queryTradingRAGContext()` | Estratégias, regras, learnings de trades anteriores |
+| **Post-Mortems** | `queryPostMortemRAGContext()` | Análises anteriores de trades similares (símbolo, estilo) |
+
+- Consulta documentos e learnings do namespace do agente trading
+- Contexto injetado no system prompt LLM antes da geração
+- Fallback seguro: se RAG indisponível, prossegue sem contexto (sem bloquear)
+
+### 3. Feedback Loop Automático
+
+Quando um post-mortem é completado com sucesso:
+
+1. **Indexação automática**: `indexPostMortemLearnings()` gera documento textual
+2. **Conteúdo indexado**: motivadores, lições (repeat/avoid), fatores de sucesso/falha
+3. **Destino**: RAG namespace trading do tenant
+4. **Idempotência**: título único `[PostMortem] {symbol} {side} {date}`
+5. **Disponibilidade**: learnings ficam disponíveis imediatamente para próximas consultas
+
+**Documento gerado (exemplo):**
+```
+ANÁLISE DE TRADE - BTC-USDT (LONG)
+Estilo: scalping | Archetype: momentum | Resultado: +3.1%
+
+MOTIVADORES:
+- Breakout com volume crescente (RSI: 71, Volume Spike: 38%)
+
+LIÇÕES - REPETIR:
+- Priorizar breakouts com volume acima da média
+
+LIÇÕES - EVITAR:
+- Entrar sem confirmação de liquidez
+```
+
+### 4. Métricas de Observabilidade
+
+| Métrica | Tipo | Labels | Descrição |
+|---------|------|--------|-----------|
+| `alice_lora_resolve_total` | Counter | `result` | Resoluções de modelo (adapter/base/error) |
+| `alice_lora_resolve_duration_seconds` | Histogram | - | Latência de resolução |
+| `alice_lora_cache_total` | Counter | `status` | Cache Redis (hit/miss/error) |
+| `alice_trading_rag_query_total` | Counter | `type`, `result` | Consultas RAG |
+| `alice_trading_rag_query_duration_seconds` | Histogram | `type` | Latência de consultas RAG |
+| `alice_trading_rag_index_total` | Counter | `result` | Indexação de learnings |
+
+Dashboard Grafana: **alice-trading.json** (painéis LoRA + RAG + Feedback)
+
+### 5. Fluxo Completo: Post-Mortem → Dataset → Aprovação → LoRA
+
+O ciclo completo de evolução funciona em 6 etapas:
+
+```
+1. Posição Fechada (real ou demo)
+   ↓
+2. Post-Mortem automático (CPU → LLM)
+   - Phase 1: classificação determinística (style, archetype, strategy)
+   - Phase 2: motivadores + lições via LLM (com LoRA + RAG)
+   ↓
+3. Feedback Loop → learnings indexados no RAG (automático)
+   ↓
+4. Dataset Generator → cria registro na tabela `trading_dataset`
+   - status: 'pending' (aguarda aprovação)
+   - sourceType: 'postmortem' com metadata completa
+   ↓
+5. Aprovação Manual na Página Training
+   - Humano revisa e aprova/rejeita datasets
+   - Datasets aprovados alimentam próximo job QLoRA
+   ↓
+6. Treinamento LoRA + Ativação
+   - Job QLoRA treina adapter com datasets aprovados
+   - `POST /api/training/lora/activate/:jobId` ativa adapter
+   - vLLM carrega dinamicamente sem restart
+   - Próximas gerações de sinais e post-mortems usam adapter
+```
+
+**Observação:** As etapas 3 e 4 são independentes — o Feedback Loop enriquece o RAG imediatamente, enquanto o Dataset Generator prepara dados para treinamento futuro. Ambos rodam automaticamente após post-mortem completo.
+
+### 6. APIs de Gestão de Adapters
+
+| Endpoint | Método | Descrição |
+|----------|--------|-----------|
+| `/api/training/lora/activate/:jobId` | POST | Ativar adapter de um job aprovado |
+| `/api/training/lora/active` | GET | Consultar adapter ativo |
+| `/api/training/lora/active` | DELETE | Desativar adapter ativo |
 
 ---
 

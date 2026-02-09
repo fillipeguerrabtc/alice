@@ -1,8 +1,8 @@
 # Arquitetura GPU Manager Service
 
 **Autor:** Fillipe Guerra  
-**Data:** 22 de Janeiro de 2026  
-**Versão:** 4.3.0 - Gate 2: LLM Qwen2.5 7B + ASR/Vision via OpenAI
+**Data:** 09 de Fevereiro de 2026  
+**Versão:** 4.4.0 - Gate 2 + LoRA Adapters Dinâmicos
 
 > **OTIMIZAÇÃO CRÍTICA v4.0.4 (12/01/2026):** Migração de imagens GPU de `pytorch-devel` para `pytorch-runtime`:
 > - **embeddings-gpu**: 17.6GB → ~11GB (-6GB, -35%)
@@ -80,6 +80,48 @@ python3 -m vllm.entrypoints.openai.api_server \
 | Serviço | Modelo | VRAM | Função | Imagem Base | Imagem Size |
 |---------|--------|------|--------|-------------|-------------|
 | **gpu-trainer** | QLoRA (modelo base = LLM do stack) | ~12GB | Fine-tuning (pausa outros serviços) | **pytorch-runtime** | **~11GB (-35% ✅)** |
+
+### LoRA Adapters Dinâmicos (09/02/2026)
+
+O vLLM suporta carregamento dinâmico de LoRA adapters em runtime, permitindo que adapters treinados via QLoRA sejam aplicados sem reiniciar o container.
+
+**Configuração vLLM para LoRA:**
+
+```bash
+python3 -m vllm.entrypoints.openai.api_server \
+    --model "Qwen/Qwen2.5-7B-Instruct-AWQ" \
+    --enable-lora \                          # Habilita suporte LoRA
+    --max-lora-rank 64 \                     # Rank máximo suportado
+    --max-loras 2 \                          # Máximo de adapters simultâneos
+    --lora-modules trading-global=/opt/alice/data/lora-adapters/trading-global  # Auto-detect
+```
+
+**Volume montado:**
+```yaml
+volumes:
+  - /opt/alice/data/lora-adapters:/opt/alice/data/lora-adapters:ro
+```
+
+**Fluxo de uso:**
+
+1. **Resolução** (`lora-adapter-resolver.ts` no integrations-service):
+   - Verifica cache Redis (`alice:lora:active-adapter`, TTL 60s)
+   - Se cache miss, consulta training-service (`GET /api/training/lora/active`)
+   - Retorna nome do adapter (`trading-global`) ou modelo base como fallback
+
+2. **Request ao GPU Manager:**
+   - Body inclui `model: "trading-global"` (adapter) ou `model: "Qwen/Qwen2.5-7B-Instruct-AWQ"` (base)
+   - GPU Manager repassa ao vLLM que seleciona o adapter automaticamente
+
+3. **Ativação de adapter** (`training-service`):
+   - `POST /api/training/lora/activate/:jobId` copia arquivos para path padrão
+   - Invalida cache Redis para forçar atualização
+   - vLLM detecta adapter no próximo request (sem restart)
+
+**Observações:**
+- LoRA adapters **NÃO aumentam** uso de VRAM significativamente (~50-100MB por adapter)
+- Compatibilidade: AWQ + LoRA é suportado pelo vLLM 0.12.0+
+- Fallback: se adapter indisponível, usa modelo base sem degradação
 
 ---
 

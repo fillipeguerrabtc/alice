@@ -62,7 +62,7 @@ import {
 import { trainingServicePaths, trainingServiceSchemas } from './openapi-specs.js';
 import { eq, and, or, desc, sql, isNull, not, inArray } from '@alice/database';
 import { z } from 'zod';
-import { processTradingLoraJob } from './lora-job-manager.js';
+import { processTradingLoraJob, activateLoraAdapter, getActiveAdapter, deactivateLoraAdapter } from './lora-job-manager.js';
 // Fine-tuning é executado localmente via GPU Manager Service (Regra 6 - sem stubs/migração)
 
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
@@ -1250,6 +1250,67 @@ app.delete('/api/training/jobs/:id', requirePermission('training:fine_tuning_job
     res.json({ job: updated });
   } catch (error) {
     logger.error({ error }, 'Falha ao cancelar job');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// ============================================================================
+// LoRA ADAPTER MANAGEMENT - Ativação, Consulta e Desativação
+// ============================================================================
+
+/**
+ * POST /api/training/lora/activate/:jobId
+ * Aprova e ativa um adapter LoRA treinado, tornando-o disponível para inferência no vLLM.
+ * O adapter é copiado para /opt/alice/data/lora-adapters/trading-global/
+ * e o vLLM carrega automaticamente via filesystem resolver (sem restart).
+ */
+app.post('/api/training/lora/activate/:jobId', requirePermission('training:fine_tuning_jobs:start'), async (req: Request, res: Response) => {
+  const paramsResult = uuidParamSchema.safeParse({ id: req.params.jobId });
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'jobId inválido', details: paramsResult.error.format() });
+  }
+
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.userId) {
+      return res.status(403).json({ error: 'Usuário não identificado para aprovação' });
+    }
+
+    const result = await activateLoraAdapter(paramsResult.data.id, authContext.userId);
+    logger.info({ jobId: paramsResult.data.id, approvedBy: authContext.userId }, 'Adapter LoRA ativado via endpoint');
+    res.json(result);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error, jobId: req.params.jobId }, 'Falha ao ativar adapter LoRA');
+    res.status(400).json({ error: errorMessage });
+  }
+});
+
+/**
+ * GET /api/training/lora/active
+ * Retorna o adapter LoRA atualmente ativo, ou null se nenhum estiver ativo.
+ * Usado pelo GPU Manager e integrations-service para saber qual modelo solicitar.
+ */
+app.get('/api/training/lora/active', requirePermission('training:fine_tuning_jobs:read'), async (_req: Request, res: Response) => {
+  try {
+    const active = await getActiveAdapter();
+    res.json({ adapter: active });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao consultar adapter ativo');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+/**
+ * DELETE /api/training/lora/active
+ * Desativa o adapter LoRA ativo, voltando a usar apenas o modelo base.
+ */
+app.delete('/api/training/lora/active', requirePermission('training:fine_tuning_jobs:start'), async (_req: Request, res: Response) => {
+  try {
+    await deactivateLoraAdapter();
+    res.json({ success: true, message: 'Adapter LoRA desativado. vLLM usará modelo base.' });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao desativar adapter LoRA');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });

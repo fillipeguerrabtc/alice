@@ -175,6 +175,10 @@ declare -a PERMISSIONS_CONFIG=(
     # Qdrant (root) - banco vetorial
     "${ALICE_DATA_DIR}/qdrant:${ROOT_UID}:${ROOT_GID}:755"
     
+    # LoRA Adapters (root:root 755 - GPU container lê, training-service escreve via host)
+    # REF: docker-compose.alice.yml gpu-llm volume mount (read-only)
+    "${ALICE_DATA_DIR}/lora-adapters:${ROOT_UID}:${ROOT_GID}:755"
+    
     # =========================================================================
     # OBSERVABILITY STACK
     # =========================================================================

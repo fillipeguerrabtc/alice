@@ -2,12 +2,12 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 09 de Fevereiro de 2026  
-**Versão:** 7.44 - Demo Trading + Post-Mortem Auto-Motivator
+**Versão:** 7.45 - Demo Trading + Post-Mortem + Ecossistema LLM (LoRA + RAG + Feedback Loop)
 
 <div align="center">
 
 ![Alice Logo](https://img.shields.io/badge/Alice-IA%20Enterprise-blue?style=for-the-badge&logo=robot&logoColor=white)
-![Version](https://img.shields.io/badge/versão-7.44-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/versão-7.45-green?style=for-the-badge)
 ![License](https://img.shields.io/badge/licença-Proprietária-red?style=for-the-badge)
 ![LLM](https://img.shields.io/badge/LLM-Qwen2.5%207B-purple?style=for-the-badge)
 
@@ -45,6 +45,7 @@
 | **Trading Demo** | Simulação enterprise com dados reais (Spot/Futures/Margin), balances auditáveis, slippage e fees realistas |
 | **Post-Mortem Auto-Motivator** | Análise automática de posições fechadas (real + demo) via pipeline CPU → LLM com motivadores, lições e citedValues |
 | **Dataset Generator** | Geração automática de datasets de treinamento a partir de post-mortems completos, com schema padronizado |
+| **Ecossistema LLM** | LoRA adapters globais (QLoRA) + RAG contextual + Feedback Loop automático para evolução contínua de sinais IA e post-mortems |
 
 ### Diferenciais
 
@@ -70,6 +71,12 @@
 
 - **Gate 2**: LLM local (Qwen2.5 7B) + Vision/Imagens via OpenAI.
 - **GPU local**: LLM + Embeddings (always-on) e Training sob demanda; ASR via OpenAI.
+- **LoRA Adapters**: Adapters globais treinados via QLoRA, carregados dinamicamente no vLLM para inferência melhorada.
+- **RAG Trading**: Consulta contextual a documentos/learnings de trading para enriquecer sinais IA e post-mortems.
+- **Feedback Loop**: Post-mortems completados são automaticamente indexados no RAG, criando ciclo de evolução contínua.
+- **Demo Trading**: Página `/demo-trading` com simulação enterprise (Spot/Futures/Margin), balances auditáveis e scheduler automático.
+- **Snapshot Store**: Evidências de mercado (entry/exit/candles/orderbook) em JSONB comprimido para rastreabilidade completa.
+- **Aprovar Demo**: Botão na aba "Sinais IA" da página Trading converte sinais em ordens Demo (complementar ao "Aprovar" Real).
 - **RBAC**: painel de usuários/grupos/permissões e controle de Core via `admin:alice_core:write`.
 - **Onboarding seguro**: novos usuários entram como `guest` e criação é restrita a administradores.
 - **Deploy**: multi-stack modular com rollback cirúrgico.

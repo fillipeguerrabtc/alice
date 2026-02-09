@@ -1,8 +1,8 @@
 # Guia de Treinamento de Agentes da Alice (Negócios)
 
 **Autor:** Fillipe Guerra  
-**Data:** 03 de Fevereiro de 2026  
-**Versão:** 1.0.0 - Guia didático para usuários de negócio
+**Data:** 09 de Fevereiro de 2026  
+**Versão:** 1.1.0 - Guia didático + Ecossistema LLM (LoRA + RAG + Feedback Loop)
 
 ---
 
@@ -317,14 +317,61 @@ Se sim, ele pode entrar no RAG ou no Treinamento.
 
 ---
 
-## 12) Resumo final (bem direto)
+## 12) Ecossistema de evolução contínua (LoRA + RAG + Feedback Loop)
+
+> **NOVO (09/02/2026):** A Alice agora possui um ciclo fechado de evolução, onde cada operação melhora a inteligência futura.
+
+### O que mudou?
+
+Antes, cada geração de sinal IA e cada análise post-mortem eram **isoladas** — o modelo não aprendia com operações anteriores. Agora, o sistema funciona como um **ciclo contínuo**:
+
+```
+Sinal IA (com conhecimento acumulado)
+    → Operação (Real ou Demo)
+    → Post-Mortem automático (com conhecimento acumulado)
+    → Learnings indexados no RAG (automático)
+    → Próximo sinal IA é melhor (usa learnings)
+```
+
+### Como funciona na prática?
+
+1. **RAG contextual**: quando a Alice gera um sinal IA ou analisa um post-mortem, ela consulta automaticamente documentos e análises anteriores do namespace Trading. Isso dá **contexto histórico** à resposta.
+
+2. **Feedback automático**: quando um post-mortem é finalizado com sucesso, as lições aprendidas (o que repetir, o que evitar) são **automaticamente indexadas** no RAG. Isso significa que o próximo sinal já pode consultar essas lições.
+
+3. **LoRA adapter**: quando você aprova um treinamento no dashboard, o adapter (especialização do modelo) é ativado automaticamente. A partir desse momento, **todas as chamadas LLM** (sinais, post-mortems, chat) usam o modelo melhorado.
+
+### O que você precisa fazer?
+
+- **Continue aprovando dados de qualidade** — isso alimenta o treinamento.
+- **Continue subindo documentos no RAG** — isso enriquece o contexto.
+- **Aprove adapters LoRA** quando o treinamento concluir — isso melhora o modelo base.
+- **Acompanhe os dashboards** — painéis de LoRA + RAG no Grafana mostram se o ciclo está funcionando.
+
+### Resumo do ciclo
+
+| Etapa | O que acontece | Quem faz |
+|-------|----------------|----------|
+| 1. Sinal IA gerado | Alice consulta RAG + usa LoRA adapter | Automático |
+| 2. Operação executada | Real ou Demo | Usuário/Alice |
+| 3. Post-Mortem gerado | Alice consulta RAG + usa LoRA adapter | Automático |
+| 4. Learnings indexados | Motivadores e lições vão para o RAG | Automático |
+| 5. Training aprovado | Admin aprova → LoRA adapter ativado | Manual |
+| 6. Modelo melhorado | Próximos sinais/post-mortems usam adapter | Automático |
+
+---
+
+## 13) Resumo final (bem direto)
 
 - **RAG** = base de conhecimento (fatos atualizados).  
 - **Treinamento** = comportamento do agente (estilo, decisão, padrão).  
 - **Namespace Trading** = conhecimento isolado só de trading.  
 - **Deduplicação semântica** = mantém só o que importa.
 
-Se você seguir este guia, o Agente Trading evolui de forma **segura, limpa e escalável**.
+- **Feedback Loop** = cada trade melhora a inteligência futura (automático).
+- **LoRA Adapter** = especialização do modelo ativada após treinamento aprovado.
+
+Se você seguir este guia, o Agente Trading evolui de forma **segura, limpa e escalável**, com ciclo de feedback automático.
 
 ---
 
@@ -334,6 +381,8 @@ Se você seguir este guia, o Agente Trading evolui de forma **segura, limpa e es
 2. Subir tudo no RAG usando o namespace **Trading**.
 3. Gerar sinais com justificativa e aprovar apenas os melhores.
 4. Rodar o treinamento incremental quando houver dados suficientes.
+5. **Aprovar adapters LoRA** quando treinamento concluir (dashboard Trading).
+6. **Monitorar dashboards** de LoRA + RAG para verificar se o ciclo está funcionando.
 
 Se precisar de apoio técnico, use como referência:
 

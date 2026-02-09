@@ -1,8 +1,8 @@
 # Sistema de Treinamento - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 16 de Janeiro de 2026  
-**Versão:** 4.2.0 - Gate 2 (LLM local + Vision OpenAI)
+**Data:** 09 de Fevereiro de 2026  
+**Versão:** 4.3.0 - Gate 2 + Ecossistema LLM (LoRA + RAG + Feedback Loop)
 
 ---
 
@@ -181,6 +181,153 @@ Content-Type: application/json
   }
 }
 ```
+
+---
+
+## Gestão de LoRA Adapters (Trading)
+
+> **NOVO (09/02/2026):** Adapters LoRA globais treinados via QLoRA, carregados dinamicamente no vLLM para inferência.
+
+### Visão Geral
+
+Adapters LoRA são especializações do modelo base (Qwen2.5 7B) treinadas com dados de trading aprovados. O escopo é **global** — um único adapter é compartilhado entre todos os tenants, treinado com datasets aprovados de todas as fontes.
+
+### Fluxo de Ativação
+
+```
+Job QLoRA concluído
+    → Admin aprova no dashboard
+    → POST /api/training/lora/activate/:jobId
+    → activateLoraAdapter():
+        1. Copia arquivos do adapter para /opt/alice/data/lora-adapters/trading-global
+        2. Desativa adapter anterior (se existir)
+        3. Marca isActiveAdapter=true no banco
+        4. Invalida cache Redis (alice:lora:active-adapter)
+    → vLLM detecta e carrega adapter dinamicamente
+    → Próximas chamadas LLM usam adapter automaticamente
+```
+
+### API Endpoints de Adapters
+
+#### Ativar Adapter
+
+```http
+POST /api/training/lora/activate/:jobId
+Authorization: Bearer <token>
+```
+
+**Resposta:**
+```json
+{
+  "success": true,
+  "adapter": {
+    "jobId": "uuid",
+    "adapterName": "trading-global",
+    "adapterPath": "/opt/alice/data/lora-adapters/trading-global",
+    "activatedAt": "2026-02-09T12:00:00.000Z"
+  }
+}
+```
+
+#### Consultar Adapter Ativo
+
+```http
+GET /api/training/lora/active
+Authorization: Bearer <token>
+```
+
+**Resposta (adapter ativo):**
+```json
+{
+  "active": true,
+  "adapter": {
+    "jobId": "uuid",
+    "name": "Trading Fine-Tuning v3",
+    "adapterName": "trading-global",
+    "adapterPath": "/opt/alice/data/lora-adapters/trading-global",
+    "activatedAt": "2026-02-09T12:00:00.000Z",
+    "approvedAt": "2026-02-09T11:55:00.000Z"
+  }
+}
+```
+
+**Resposta (sem adapter):**
+```json
+{
+  "active": false,
+  "adapter": null
+}
+```
+
+#### Desativar Adapter
+
+```http
+DELETE /api/training/lora/active
+Authorization: Bearer <token>
+```
+
+### Resolução de Modelo em Inferência
+
+Quando sinais IA ou post-mortems são gerados, o `lora-adapter-resolver.ts` no integrations-service resolve qual modelo usar:
+
+1. Verifica cache Redis (`alice:lora:active-adapter`, TTL 60s)
+2. Se cache miss, consulta training-service via HTTP (`GET /api/training/lora/active`)
+3. Se adapter ativo, retorna `trading-global` como nome do modelo
+4. Se nenhum adapter ativo, retorna modelo base (`Qwen/Qwen2.5-7B-Instruct-AWQ`)
+5. Fallback: qualquer erro na resolução retorna modelo base (sem bloquear)
+
+### Configuração vLLM
+
+| Variável | Valor | Descrição |
+|----------|-------|-----------|
+| `ENABLE_LORA` | `true` | Habilita carregamento dinâmico de LoRA |
+| `MAX_LORA_RANK` | `64` | Rank máximo suportado |
+| `MAX_LORAS` | `2` | Máximo de adapters simultâneos |
+| `LORA_ADAPTER_DIR` | `/opt/alice/data/lora-adapters` | Diretório de adapters |
+| `VLLM_ALLOW_RUNTIME_LORA_UPDATING` | `true` | Permite atualização em runtime |
+
+---
+
+## Dataset Generator (Post-Mortem → Training)
+
+> **NOVO (09/02/2026):** Datasets de treinamento gerados automaticamente a partir de post-mortems completos.
+
+### Fluxo
+
+```
+Posição Fechada → Post-Mortem (status: completed)
+    → POST /api/integrations/postmortem/send-to-training
+    → Cria registro na tabela `trading_dataset`
+        - status: 'pending' (aguarda aprovação)
+        - sourceType: 'postmortem'
+        - prompt: sistema + contexto de mercado + execução + classificação
+        - response: ação recomendada + confiança + risco + invalidações
+    → Página Training → Tab "Datasets" → Aprovar/Rejeitar
+    → Datasets aprovados alimentam próximo job QLoRA
+```
+
+### Schema do Dataset
+
+| Campo | Tipo | Descrição |
+|-------|------|-----------|
+| `prompt` | text | Prompt do sistema + contexto de mercado + execução |
+| `response` | text | Resposta esperada (ação, confiança, risco) |
+| `conversation` | jsonb | Estrutura completa `[{role, content}]` |
+| `context` | jsonb | marketContext + tradeExecution + autoAnnotation |
+| `sourceType` | enum | `postmortem`, `signal`, `order`, `manual`, `system` |
+| `sourceMetadata` | jsonb | `isDemo`, `fingerprint`, `engineVersions` |
+| `qualityScore` | real | Score 0-1 de qualidade do dataset |
+| `semhash` | text | Hash semântico para deduplicação |
+
+### Batch Training
+
+Envio em lote via `POST /api/integrations/postmortem/send-to-training/batch`:
+
+```json
+{ "postmortemIds": ["uuid1", "uuid2", "uuid3"] }
+```
+
+Resposta com status individual por post-mortem (criado, existente, erro).
 
 ---
 

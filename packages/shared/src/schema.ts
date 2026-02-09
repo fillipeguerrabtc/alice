@@ -3443,8 +3443,14 @@ export const tradingLoraJobs = pgTable(
     resultAdapterPath: varchar("result_adapter_path", { length: 500 }),  // Path do adapter LoRA
     resultAdapterSize: integer("result_adapter_size"),                    // Tamanho em bytes
     
-    // GPU Manager Service (Hetzner GEX44) - campos removidos (migração completa)
-    // TODO: Adicionar campos para tracking de jobs GPU locais se necessário
+    // Adapter ativo: indica se este adapter é o atualmente carregado no vLLM para inferência
+    // Apenas UM adapter pode estar ativo por vez (constraint gerenciada no código)
+    // Ativação automática após aprovação do training job via activateLoraAdapter()
+    isActiveAdapter: boolean("is_active_adapter").default(false),
+    
+    // Status de aprovação manual: adapter precisa ser aprovado antes de ser ativado
+    approvedAt: timestamp("approved_at"),
+    approvedBy: uuid("approved_by"),
     
     // Erro
     errorMessage: text("error_message"),

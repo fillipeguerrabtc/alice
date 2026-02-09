@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 02 de Fevereiro de 2026  
-**Versão:** 11.14 - ERPNext v15.95.2 e ajustes Agentic
+**Data:** 09 de Fevereiro de 2026  
+**Versão:** 11.15 - LoRA Adapters Volume + Demo Trading
 
 ## Visão geral
 
@@ -154,6 +154,25 @@ sudo /opt/alice/app/infra/scripts/prepare-production-server.sh
 | Sync do compose/infra | Workflow + rsync | Automática | Garante `/opt/alice/app/infra/docker/stacks` atualizado antes do deploy. |
 | Parâmetros de serviços | `infra/docker/stacks/*.yml` | Automática | Entra no próximo deploy sem ação manual. |
 | Parâmetros GPU | `docker/gpu/*` + `docker-compose.alice.yml` | Automática | vLLM/embeddings via imagem + env vars. |
+| Volume LoRA Adapters | `infra/scripts/permissions-config.sh` | Automática | `/opt/alice/data/lora-adapters` criado com 0:0:755 pelo prepare-infrastructure. |
+
+### LoRA Adapters — Volume e Permissões
+
+O diretório `/opt/alice/data/lora-adapters` armazena adapters LoRA treinados via QLoRA. Ele é:
+
+- **Criado automaticamente** pelo job `prepare-infrastructure` do workflow de deploy.
+- **Permissões**: `root:root` (0:0), modo `755` — configurado em `infra/scripts/permissions-config.sh`.
+- **Montado como read-only** no container `gpu-llm`: `/opt/alice/data/lora-adapters:/opt/alice/data/lora-adapters:ro`.
+- **Escrito pelo training-service** via path do host (`/opt/alice/data/lora-adapters/trading-global`).
+- **Lido pelo vLLM** que detecta adapters e os carrega dinamicamente em runtime.
+
+```bash
+# Verificar adapter ativo no servidor
+ls -la /opt/alice/data/lora-adapters/trading-global/
+
+# Verificar se vLLM detectou o adapter
+docker logs alice-gpu-llm 2>&1 | grep -i lora
+```
 
 ### Manual (executar no servidor)
 

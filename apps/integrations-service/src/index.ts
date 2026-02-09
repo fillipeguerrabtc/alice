@@ -10867,10 +10867,12 @@ function buildTradingSignalSystemPrompt(params: {
   marginMode?: TradingMarginMode;
   agent: typeof schema.agents.$inferSelect;
   namespace: typeof schema.namespaces.$inferSelect | null;
+  ragContext?: string;
 }): string {
   const context = params.namespace?.contextoSistema?.trim();
   const instructions = params.agent.instrucoes?.trim();
   const personality = params.agent.personalidade?.trim();
+  const ragContext = params.ragContext?.trim();
 
   // CORREÇÃO CR1 (07/02/2026): System prompt simplificado.
   // Instruções de formatação JSON REMOVIDAS - o constrained decoding (response_format)
@@ -10881,6 +10883,8 @@ function buildTradingSignalSystemPrompt(params: {
     context ? `Contexto do namespace: ${context}` : null,
     instructions ? `Instruções do agente: ${instructions}` : null,
     personality ? `Personalidade: ${personality}` : null,
+    // Contexto RAG: estratégias, learnings de post-mortems anteriores e conhecimento indexado
+    ragContext ? `Conhecimento relevante do histórico de trading:\n${ragContext}` : null,
     `MarketType: ${params.marketType}`,
     params.marginMode ? `MarginMode: ${params.marginMode}` : null,
     'Use o ranking técnico determinístico e o ensemble fornecidos no prompt.',
@@ -10890,6 +10894,7 @@ function buildTradingSignalSystemPrompt(params: {
     'Campos motivators e invalidationReasons DEVEM ter pelo menos 1 item cada.',
     'IMPORTANTE: O campo "confidence" DEVE ser um decimal entre 0.0 e 1.0 (ex: 0.75 para 75%). NÃO use escala 0-100 ou 0-10.',
     'O campo "riskReward" deve ser > 0 (ex: 2.5 para risco/retorno 1:2.5). Se não aplicável, omita o campo.',
+    ragContext ? 'Considere os learnings e padrões do histórico acima na sua análise.' : null,
   ].filter(Boolean).join('\n');
 }
 
@@ -12073,11 +12078,25 @@ async function generateTradingSignalFromLlm(params: {
 
   const ensembleResult = buildEnsembleResult(techniqueScores, ensembleConfig);
 
+  // Buscar contexto RAG relevante para enriquecer o prompt com estratégias e learnings
+  // Consulta semântica no namespace do agente trading (documentos indexados no Qdrant)
+  const ragContext = await queryTradingRAGContext({
+    tenantId: params.tenantId,
+    userId: params.userId,
+    namespaceId: agentContext.agent.namespaceId ?? agentContext.namespace?.id,
+    symbol: params.symbol,
+    marketType: params.marketType ?? 'futures',
+    additionalContext: consensus.overallSignal !== 'neutral'
+      ? `Sinal ${consensus.overallSignal} com confiança ${(consensus.confidence * 100).toFixed(0)}%`
+      : undefined,
+  });
+
   const systemPrompt = buildTradingSignalSystemPrompt({
     marketType: params.marketType ?? 'futures',
     marginMode: params.marginMode,
     agent: agentContext.agent,
     namespace: agentContext.namespace,
+    ragContext: ragContext?.context,
   });
   const orderBookSnapshot = dataSources.orderBook
     ? await getOrderBookSnapshot({ tenantId: params.tenantId, userId: params.userId }, params.symbol, params.marketType, params.marginMode)
@@ -12202,13 +12221,20 @@ async function generateTradingSignalFromLlm(params: {
   let gpuResponse: Awaited<ReturnType<typeof requestGpu>> | null = null;
   let lastGpuError: Error | null = null;
 
+  // Resolver modelo com adapter LoRA ativo (se disponível)
+  // Se houver adapter treinado e ativo, usa-o ao invés do modelo base
+  // Fallback automático para modelo base se adapter não disponível
+  const resolvedModel = await resolveModelWithAdapter(agentContext.llmConfig.model);
+
   for (let attempt = 1; attempt <= MAX_GPU_RETRIES; attempt++) {
     try {
       logger.info({
         symbol: params.symbol,
         marketType: params.marketType,
         timeoutMs: llmTimeoutMs,
-        model: agentContext.llmConfig.model,
+        model: resolvedModel,
+        baseModel: agentContext.llmConfig.model,
+        usingLoraAdapter: resolvedModel !== agentContext.llmConfig.model,
         promptTokens: tokenBudget.promptTokens,
         maxCompletionTokens: tokenBudget.maxCompletionTokens,
         attempt,
@@ -12226,7 +12252,7 @@ async function generateTradingSignalFromLlm(params: {
         // coexistência causa comportamento indefinido no vLLM (ignora constrained decoding).
         // Ref: https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html#structured-outputs
         body: {
-          model: agentContext.llmConfig.model,
+          model: resolvedModel,
           messages,
           response_format: {
             type: 'json_schema',
@@ -19792,6 +19818,8 @@ import {
 } from './postmortem-worker.js';
 import { getSnapshotsByRefs } from './snapshot-store.js';
 import { createDatasetFromPostMortem, createDatasetsFromPostMortemsBatch } from './dataset-generator.js';
+import { resolveModelWithAdapter } from './lora-adapter-resolver.js';
+import { queryTradingRAGContext } from './trading-rag-client.js';
 
 // GET /api/integrations/demo-trading/balance - Buscar balance demo
 app.get('/api/integrations/demo-trading/balance', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {

@@ -691,6 +691,181 @@ export async function getJobStats(tenantId: string): Promise<{
   };
 }
 
+// ============================================================================
+// ATIVAÇÃO DE ADAPTER LoRA
+// ============================================================================
+
+/**
+ * Diretório padrão onde adapters ativos ficam disponíveis para o vLLM
+ * Volume montado como read-only no container gpu-llm
+ */
+const LORA_ACTIVE_DIR = '/opt/alice/data/lora-adapters';
+const LORA_ACTIVE_ADAPTER_NAME = 'trading-global';
+
+/**
+ * Ativa um adapter LoRA aprovado, tornando-o disponível para inferência no vLLM.
+ * 
+ * Fluxo:
+ * 1. Valida que o job está completo e tem adapter path
+ * 2. Copia/linka adapter para diretório padrão do vLLM
+ * 3. Valida existência de adapter_config.json e adapter_model.safetensors
+ * 4. Marca adapter como ativo no banco (desativando o anterior)
+ * 5. O vLLM carrega automaticamente via filesystem resolver (sem restart)
+ * 
+ * @param jobId - ID do job de treinamento LoRA a ativar
+ * @param approvedBy - ID do usuário que aprovou (para auditoria)
+ */
+export async function activateLoraAdapter(
+  jobId: string,
+  approvedBy: string
+): Promise<{ success: boolean; adapterPath: string; message: string }> {
+  const db = getDatabase();
+
+  // 1. Buscar job e validar estado
+  const job = await getJob(jobId);
+  if (!job) {
+    throw new Error(`Job LoRA não encontrado: ${jobId}`);
+  }
+  if (job.status !== 'completed') {
+    throw new Error(`Job LoRA deve estar completo para ativação. Status atual: ${job.status}`);
+  }
+  if (!job.resultAdapterPath) {
+    throw new Error(`Job LoRA ${jobId} não possui resultAdapterPath`);
+  }
+
+  const sourcePath = job.resultAdapterPath;
+
+  // 2. Validar que os arquivos do adapter existem no source
+  const configPath = path.join(sourcePath, 'adapter_config.json');
+  const modelPath = path.join(sourcePath, 'adapter_model.safetensors');
+
+  try {
+    await fs.access(configPath);
+  } catch {
+    throw new Error(`adapter_config.json não encontrado em ${sourcePath}`);
+  }
+  try {
+    await fs.access(modelPath);
+  } catch {
+    throw new Error(`adapter_model.safetensors não encontrado em ${sourcePath}`);
+  }
+
+  // 3. Copiar adapter para diretório ativo do vLLM
+  const targetDir = path.join(LORA_ACTIVE_DIR, LORA_ACTIVE_ADAPTER_NAME);
+  
+  // Criar diretório base se não existir
+  await fs.mkdir(LORA_ACTIVE_DIR, { recursive: true });
+  
+  // Remover adapter anterior se existir
+  try {
+    await fs.rm(targetDir, { recursive: true, force: true });
+  } catch {
+    // Diretório pode não existir ainda - OK
+  }
+
+  // Copiar todos os arquivos do adapter
+  await fs.cp(sourcePath, targetDir, { recursive: true });
+  logger.info({ sourcePath, targetDir }, 'Adapter LoRA copiado para diretório ativo do vLLM');
+
+  // 4. Validar que a cópia foi bem-sucedida
+  try {
+    await fs.access(path.join(targetDir, 'adapter_config.json'));
+    await fs.access(path.join(targetDir, 'adapter_model.safetensors'));
+  } catch {
+    throw new Error('Falha na validação pós-cópia do adapter');
+  }
+
+  // 5. Desativar todos os adapters anteriores e marcar este como ativo
+  await db.update(schema.tradingLoraJobs)
+    .set({ isActiveAdapter: false })
+    .where(eq(schema.tradingLoraJobs.isActiveAdapter, true));
+
+  await db.update(schema.tradingLoraJobs)
+    .set({
+      isActiveAdapter: true,
+      approvedAt: new Date(),
+      approvedBy,
+    })
+    .where(eq(schema.tradingLoraJobs.id, jobId));
+
+  logger.info(
+    { jobId, adapterPath: targetDir, approvedBy },
+    'Adapter LoRA ativado com sucesso - disponível para inferência no vLLM'
+  );
+
+  return {
+    success: true,
+    adapterPath: targetDir,
+    message: `Adapter LoRA ativado: ${LORA_ACTIVE_ADAPTER_NAME}. vLLM carregará automaticamente via filesystem resolver.`,
+  };
+}
+
+/**
+ * Retorna o adapter LoRA atualmente ativo, ou null se nenhum estiver ativo.
+ * Usado pelo GPU Manager e integrations-service para determinar qual modelo solicitar.
+ */
+export async function getActiveAdapter(): Promise<{
+  jobId: string;
+  adapterName: string;
+  adapterPath: string;
+  activatedAt: Date | null;
+  jobName: string;
+  metrics: TradingLoraMetrics;
+} | null> {
+  const db = getDatabase();
+
+  const [active] = await db
+    .select()
+    .from(schema.tradingLoraJobs)
+    .where(eq(schema.tradingLoraJobs.isActiveAdapter, true))
+    .limit(1);
+
+  if (!active || !active.resultAdapterPath) {
+    return null;
+  }
+
+  return {
+    jobId: active.id,
+    adapterName: LORA_ACTIVE_ADAPTER_NAME,
+    adapterPath: active.resultAdapterPath,
+    activatedAt: active.approvedAt,
+    jobName: active.name,
+    metrics: (active.metrics as TradingLoraMetrics) ?? {},
+  };
+}
+
+/**
+ * Desativa o adapter LoRA ativo (volta a usar modelo base puro).
+ */
+export async function deactivateLoraAdapter(): Promise<void> {
+  const db = getDatabase();
+
+  const [active] = await db
+    .select({ id: schema.tradingLoraJobs.id })
+    .from(schema.tradingLoraJobs)
+    .where(eq(schema.tradingLoraJobs.isActiveAdapter, true))
+    .limit(1);
+
+  if (!active) {
+    logger.info('Nenhum adapter ativo para desativar');
+    return;
+  }
+
+  await db.update(schema.tradingLoraJobs)
+    .set({ isActiveAdapter: false })
+    .where(eq(schema.tradingLoraJobs.id, active.id));
+
+  // Remover adapter do diretório ativo (vLLM para de usar)
+  const targetDir = path.join(LORA_ACTIVE_DIR, LORA_ACTIVE_ADAPTER_NAME);
+  try {
+    await fs.rm(targetDir, { recursive: true, force: true });
+  } catch {
+    logger.warn({ targetDir }, 'Falha ao remover diretório de adapter ativo (não bloqueante)');
+  }
+
+  logger.info({ jobId: active.id }, 'Adapter LoRA desativado - vLLM usará modelo base');
+}
+
 export default {
   // Dataset
   prepareDataset,
@@ -703,6 +878,11 @@ export default {
   cancelJob,
   setJobResult,
   setJobError,
+  
+  // Adapter activation
+  activateLoraAdapter,
+  getActiveAdapter,
+  deactivateLoraAdapter,
   
   // Stats
   getJobStats,

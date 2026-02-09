@@ -2,7 +2,7 @@
 
 > **Autor:** Fillipe Guerra  
 > **Data:** 09 de Fevereiro de 2026  
-> **Versão:** 3.5.0 - Demo Trading + Post-Mortem Auto-Motivator + Dataset Generator  
+> **Versão:** 3.6.0 - Demo Trading + Post-Mortem + Ecossistema LLM (LoRA + RAG + Feedback Loop)  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 > 
@@ -458,14 +458,112 @@ Posição Fechada (real ou demo)
     → Post-Mortem Worker processa
         → Phase 1 (CPU): classificação determinística
         → Phase 2 (LLM): motivadores + citedValues
-    → Fingerprint idempotente (SHA-256)
+            → LoRA Adapter: resolveModelWithAdapter() verifica adapter global ativo
+            → RAG Context: queryPostMortemRAGContext() enriquece prompt com learnings anteriores
+        → Fingerprint idempotente (SHA-256)
+    → Feedback Loop: indexPostMortemLearnings() indexa resultado no RAG namespace trading
     → Dataset Generator (status: pending)
-    → Training Page (aprovação manual)
+    → Training Page (aprovação manual → ativar adapter LoRA)
 ```
 
 **Mercados Demo suportados:** Spot, Futures (com leverage), Margin.
 
 **Sinais IA → Demo:** botão "Aprovar Demo" na aba Sinais IA converte sinal em ordem Demo (complementar ao "Aprovar" que cria ordem Real).
+
+**Snapshot Store — Detalhes Técnicos:**
+
+| Kind | Descrição | Dados Capturados |
+|------|-----------|------------------|
+| `market_entry` | Snapshot na abertura | Ticker (preço, bid/ask, volume, change24h) |
+| `market_exit` | Snapshot no fechamento | Ticker atualizado |
+| `candles` | Candles históricos | 1m, 3m, 5m, 15m, 1h recentes |
+| `orderbook_top` | Top do orderbook | Top N bids e asks |
+| `news` | Notícias relevantes | Via SearXNG (quando habilitado) |
+| `evidence_pack` | Pacote consolidado | Agregação de entry + exit + candles + orderbook |
+
+- Armazenamento: JSONB com compressão TOAST automática do PostgreSQL.
+- Referências: posições mantêm `entrySnapshotId` e `exitSnapshotId` para rastreabilidade completa.
+- Captura: `captureEntrySnapshot()` e `captureExitSnapshot()` em `snapshot-store.ts`.
+
+**Dataset Generator — Schema Padronizado:**
+
+Datasets gerados a partir de post-mortems completos seguem o schema:
+
+```json
+{
+  "marketContext": { "symbol", "marketType", "snapshots": { "entry", "exit" }, "regime": { "trend", "volatility", "liquidity" } },
+  "tradeExecution": { "position": { "side", "leverage", "entryPrice", "exitPrice", "durationSec", "pnl", "pnlPct" }, "executionModel": { "slippageBps", "feeBps" } },
+  "autoAnnotation": { "classification", "motivators[]", "successFactors[]", "failureFactors[]", "lessons": { "repeat[]", "avoid[]" } },
+  "prompt": { "system": "...", "user": "..." },
+  "expected_response_schema": { "action", "confidence", "entry", "risk", "invalidations" }
+}
+```
+
+- `sourceType`: `postmortem` com `sourceMetadata` contendo `isDemo`, `fingerprint`, `engineVersions`.
+- `status`: `pending` para aprovação manual na página Training.
+- `semhash`: hash semântico para deduplicação automática.
+
+### 6.2.3 Ecossistema LLM (LoRA + RAG + Feedback Loop)
+
+O ecossistema LLM integra adapters LoRA, RAG contextual e feedback loop para evolução contínua da inteligência de trading.
+
+**Componentes:**
+
+| Módulo | Arquivo | Descrição |
+|--------|---------|-----------|
+| LoRA Adapter Resolver | `lora-adapter-resolver.ts` | Resolução do modelo com cache Redis (TTL 60s) + fallback training-service |
+| Trading RAG Client | `trading-rag-client.ts` | Consulta RAG contextual (sinais, post-mortems) + indexação de learnings |
+| LoRA Job Manager | `lora-job-manager.ts` | Ativação/desativação de adapters + cópia de arquivos |
+
+**Fluxo de Dados:**
+
+```
+┌─────────────────────────────────────────────────────┐
+│                 CICLO DE EVOLUÇÃO                    │
+│                                                      │
+│  1. Geração de Sinais IA                             │
+│     → resolveModelWithAdapter (LoRA se disponível)   │
+│     → queryTradingRAGContext (learnings + docs)       │
+│     → LLM gera sinal com contexto enriquecido        │
+│                                                      │
+│  2. Execução (Real ou Demo)                          │
+│     → Posição aberta/fechada                         │
+│                                                      │
+│  3. Post-Mortem Automático                           │
+│     → resolveModelWithAdapter (LoRA se disponível)   │
+│     → queryPostMortemRAGContext (learnings anteriores)│
+│     → LLM analisa com contexto acumulado             │
+│                                                      │
+│  4. Feedback Loop (automático)                       │
+│     → indexPostMortemLearnings → RAG namespace        │
+│     → Próximos sinais/post-mortems usam learnings    │
+│                                                      │
+│  5. Training (aprovação manual)                      │
+│     → Dataset aprovado → QLoRA → Adapter global      │
+│     → activateLoraAdapter → vLLM carrega dinamicamente│
+│     → Próximos sinais/post-mortems usam adapter      │
+└─────────────────────────────────────────────────────┘
+```
+
+**LoRA Adapter:**
+- Escopo **global** (compartilhado entre todos os tenants)
+- Treinado via QLoRA no gpu-trainer local
+- Carregado dinamicamente no vLLM (`--enable-lora`, `--max-lora-rank 64`)
+- Path: `/opt/alice/data/lora-adapters/trading-global`
+- Cache Redis: `alice:lora:active-adapter` (TTL 60s)
+
+**RAG Contextual:**
+- Consulta documentos/learnings do namespace do agente trading
+- Sinais IA: estratégias, regras de mercado, indicadores preferidos
+- Post-Mortems: análises anteriores de trades similares (símbolo, estilo, archetype)
+- Indexação automática de post-mortems completados (feedback loop)
+
+**Métricas Prometheus:**
+- `alice_lora_resolve_total{result}` — resolução de modelo (adapter/base/error)
+- `alice_lora_resolve_duration_seconds` — latência de resolução
+- `alice_lora_cache_total{status}` — cache hit/miss/error
+- `alice_trading_rag_query_total{type,result}` — consultas RAG (signal/postmortem)
+- `alice_trading_rag_index_total{result}` — indexação de learnings
 
 ### 6.3 Fluxo de Embeddings (GPU Dedicada 24/7)
 
@@ -1263,6 +1361,46 @@ O deploy em produção falhava porque os scripts SSOT (`permissions-config.sh`, 
 - ✅ **Enterprise-grade**: Padrão industrial para distribuição
 
 **REF:** CLAUDE.md Regra 6 (Enterprise-grade), Regra 9 (Validação contínua)
+
+### ADR-015: Ecossistema LLM - LoRA + RAG + Feedback Loop para Trading (09/02/2026)
+
+**Status:** ✅ Aceito
+
+**Contexto:**
+A geração de sinais IA e análise post-mortem usavam apenas o modelo base (Qwen2.5 7B) sem aproveitar o ecossistema de aprendizado da plataforma (agentes especializados, RAG, fine-tuning). Cada chamada LLM era isolada, sem contexto de trades anteriores ou conhecimento acumulado.
+
+**Problema:**
+- Sinais IA não consideravam learnings de trades anteriores
+- Post-mortems não usavam conhecimento acumulado para melhorar análises
+- Adapters LoRA treinados não eram aplicados na inferência de trading
+- Não havia ciclo de feedback entre post-mortems e futuras gerações
+
+**Alternativas Consideradas:**
+
+| Alternativa | Prós | Contras |
+|-------------|------|---------|
+| **LoRA per-tenant** | Personalização por cliente | Fragmentação, custo de storage, complexidade |
+| **LoRA global** | Compartilhamento de learnings, simplicidade | Menos personalização por tenant |
+| **RAG only (sem LoRA)** | Simples, imediato | Sem melhoria do modelo base |
+| **LoRA + RAG + Feedback** | Evolução contínua, ciclo fechado | Mais complexo, requer orquestração |
+
+**Decisão:** LoRA global + RAG contextual + Feedback Loop automático
+
+**Implementação:**
+1. `lora-adapter-resolver.ts` — Resolve modelo com cache Redis + fallback HTTP ao training-service
+2. `trading-rag-client.ts` — Consulta RAG contextual + indexação de learnings
+3. `lora-job-manager.ts` — Gestão de adapters (ativar/desativar/copiar)
+4. vLLM configurado com `--enable-lora --max-lora-rank 64`
+5. Métricas Prometheus para LoRA resolution, RAG queries e feedback indexing
+
+**Benefícios:**
+- ✅ **Evolução contínua**: Cada trade melhora a inteligência futura
+- ✅ **Ciclo fechado**: Sinal → Execução → Post-Mortem → RAG → Sinal melhorado
+- ✅ **Fallback seguro**: Se adapter ou RAG indisponível, usa modelo base
+- ✅ **Observabilidade**: Métricas Prometheus + dashboards Grafana dedicados
+- ✅ **Enterprise-grade**: Cache Redis, retry logic, circuit breakers
+
+**REF:** CLAUDE.md Regra 6 (Enterprise-grade), Regra 11 (Best practices 2025), vLLM LoRA documentation
 
 ---
 

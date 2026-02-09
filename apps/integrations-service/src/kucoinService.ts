@@ -2798,6 +2798,7 @@ export async function closePositions(
             entrySnapshotId,
             exitSnapshotId: exitSnapshot.id,
           },
+          userId: authContext.userId,
         });
 
         logger.info(

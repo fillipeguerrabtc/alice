@@ -628,6 +628,15 @@ services:
       - HOST=0.0.0.0
       - PORT=8000
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
+      # LoRA dynamic loading (AWQ + LoRA compatível vLLM 0.12.0+)
+      - ENABLE_LORA=${ENABLE_LORA:-true}
+      - MAX_LORA_RANK=${MAX_LORA_RANK:-16}
+      - MAX_LORAS=${MAX_LORAS:-2}
+      - LORA_ADAPTER_DIR=/opt/alice/data/lora-adapters
+      - VLLM_ALLOW_RUNTIME_LORA_UPDATING=true
+    volumes:
+      # LoRA adapters - montado read-only; training-service escreve via host path
+      - /opt/alice/data/lora-adapters:/opt/alice/data/lora-adapters:ro
     ports:
       - "127.0.0.1:8004:8000"
     networks:

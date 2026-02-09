@@ -94,6 +94,10 @@ interface PostMortemJob {
   isDemo: boolean;
   positionData: PostMortemPositionData;
   indicators?: TechnicalAnalysisResult;
+  /** userId para busca RAG (contexto de learnings anteriores) */
+  userId?: string;
+  /** namespaceId do agente trading para busca RAG */
+  namespaceId?: string | null;
   retryCount: number;
   createdAt: string;
   scheduledAt: string;
@@ -130,6 +134,10 @@ export async function enqueuePostMortem(params: {
   positionData: PostMortemPositionData;
   indicators?: TechnicalAnalysisResult;
   delayMs?: number;
+  /** userId para busca RAG (contexto de learnings anteriores) */
+  userId?: string;
+  /** namespaceId do agente trading para busca RAG */
+  namespaceId?: string | null;
 }): Promise<string> {
   const redis = getRedisClient();
   if (!redis) {
@@ -138,6 +146,8 @@ export async function enqueuePostMortem(params: {
     const result = await executePostMortem({
       position: params.positionData,
       indicators: params.indicators,
+      userId: params.userId,
+      namespaceId: params.namespaceId,
     });
     return result.id;
   }
@@ -153,6 +163,8 @@ export async function enqueuePostMortem(params: {
     isDemo: params.positionData.isDemo,
     positionData: params.positionData,
     indicators: params.indicators,
+    userId: params.userId,
+    namespaceId: params.namespaceId,
     retryCount: 0,
     createdAt: new Date(now).toISOString(),
     scheduledAt: new Date(scheduledAt).toISOString(),
@@ -260,6 +272,8 @@ async function processJob(jobId: string): Promise<void> {
     const result = await executePostMortem({
       position: positionData,
       indicators: job.indicators,
+      userId: job.userId,
+      namespaceId: job.namespaceId,
     });
     const durationSec = (performance.now() - startTime) / 1_000;
 

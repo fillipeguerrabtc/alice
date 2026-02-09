@@ -1,6 +1,6 @@
 # Guia de Observabilidade - Alice Enterprise Platform
 
-**Versão:** 2.7.0  
+**Versão:** 2.8.0  
 **Data:** 09 de Fevereiro de 2026  
 **Author:** Fillipe Guerra
 
@@ -256,6 +256,7 @@ Permitir que o Chat consulte e **atualize dashboards** do Grafana com RBAC, audi
 ### 3.1 Dashboard Demo Trading + Post-Mortem
 
 **UID:** `alice-demo-trading`  
+**Arquivo:** `apps/observability-service/config/grafana/dashboards/alice-demo-trading.json`  
 **Quando usar:** Monitorar operações demo, fila de post-mortems e performance da pipeline
 
 **Métricas principais:**
@@ -281,6 +282,42 @@ Permitir que o Chat consulte e **atualize dashboards** do Grafana com RBAC, audi
 - Post-Mortem DLQ > 10 jobs (fila de erros crescente)
 - Post-Mortem queue > 50 jobs (acúmulo de trabalho)
 - Post-Mortem P95 latência > 60s (pipeline lenta)
+
+---
+
+### 3.2 Dashboard LoRA + RAG Ecosystem (Trading)
+
+**UID:** `alice-trading` (painéis adicionais)  
+**Arquivo:** `apps/observability-service/config/grafana/dashboards/alice-trading.json`  
+**Quando usar:** Monitorar o ecossistema LLM (LoRA adapters, RAG contextual, feedback loop)
+
+> **NOVO (09/02/2026):** Painéis adicionados ao dashboard Trading para visualizar o ciclo de evolução contínua.
+
+**Métricas principais:**
+
+- **LoRA Resolver:** `alice_lora_resolve_total{result}` — resoluções de modelo (adapter/base/error)
+- **LoRA Latência:** `alice_lora_resolve_duration_seconds` — P50/P95 de resolução
+- **LoRA Cache:** `alice_lora_cache_total{status}` — hit/miss/error no Redis
+- **RAG Queries:** `alice_trading_rag_query_total{type,result}` — consultas por tipo (signal/postmortem) e resultado
+- **RAG Latência:** `alice_trading_rag_query_duration_seconds{type}` — latência de consultas RAG
+- **RAG Indexação:** `alice_trading_rag_index_total{result}` — indexação de learnings (feedback loop)
+
+**Painéis:**
+
+1. **LoRA Adapter - Resolução por Resultado:** Timeseries de resoluções (adapter vs base vs error)
+2. **LoRA Adapter - Latência de Resolução (P50/P95):** histogram_quantile do resolve
+3. **RAG Trading - Consultas por Tipo/Resultado:** Timeseries de consultas RAG por tipo e resultado
+4. **RAG Feedback Loop - Indexação de Learnings:** Timeseries de indexações (success/error/duplicate)
+5. **LoRA Cache Redis - Hit/Miss/Error:** Timeseries da eficácia do cache Redis
+
+**O que monitorar:**
+
+| Métrica | Valor Esperado | Ação se Desviar |
+|---------|----------------|-----------------|
+| LoRA resolve `adapter` | > 0 (se adapter ativo) | Verificar training-service e cache Redis |
+| LoRA cache `hit` rate | > 90% | TTL pode estar muito curto |
+| RAG query `success` | > 80% | Verificar rag-service e Qdrant |
+| RAG index `success` | > 95% | Verificar namespaceId e rag-service |
 
 ---
 

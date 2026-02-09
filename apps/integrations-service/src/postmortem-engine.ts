@@ -15,7 +15,7 @@
 import { createHash } from 'node:crypto';
 import { createLogger } from '@alice/logger';
 import { getDatabase, schema } from '@alice/database';
-import { eq } from '@alice/database';
+import { eq, and, desc } from '@alice/database';
 import {
   requestGpu,
   GpuServiceType,
@@ -28,6 +28,8 @@ import { calculateTechniqueScores } from './technical-indicators.js';
 import type { TechnicalAnalysisResult } from './technical-indicators.js';
 import { getSnapshot, saveEvidencePack } from './snapshot-store.js';
 import type { EvidencePack } from './snapshot-store.js';
+import { resolveModelWithAdapter } from './lora-adapter-resolver.js';
+import { queryPostMortemRAGContext, indexPostMortemLearnings } from './trading-rag-client.js';
 
 const logger = createLogger('postmortem-engine');
 
@@ -373,12 +375,17 @@ function buildLLMPrompt(params: {
   position: PostMortemPositionData;
   classification: PostMortemClassification;
   evidencePack: EvidencePack;
+  ragContext?: string;
 }): Array<{ role: string; content: string }> {
-  const { position, classification, evidencePack } = params;
+  const { position, classification, evidencePack, ragContext } = params;
+
+  const ragSection = ragContext
+    ? `\nCONHECIMENTO DE TRADES ANTERIORES (RAG):\n${ragContext}\nUse esses learnings para contextualizar sua análise quando relevante.`
+    : '';
 
   const systemPrompt = `Você é um analista de trading sênior especializado em criptomoedas. 
 Sua tarefa é analisar uma operação de trading finalizada e gerar insights acionáveis.
-
+${ragSection}
 REGRAS OBRIGATÓRIAS:
 1. Cada motivador DEVE citar valores numéricos específicos em "citedValues" (ex: RSI, preço, volume)
 2. Os valores citados DEVEM existir no Evidence Pack fornecido
@@ -449,6 +456,8 @@ export async function executePhase2(params: {
   position: PostMortemPositionData;
   classification: PostMortemClassification;
   evidencePackSnapshotId: string;
+  userId?: string;
+  namespaceId?: string | null;
 }): Promise<{
   motivators: PostMortemMotivator[];
   successFactors: string[];
@@ -466,12 +475,38 @@ export async function executePhase2(params: {
     capturedAt: new Date().toISOString(),
   }) as unknown as EvidencePack;
 
-  // Montar prompt
-  const messages = buildLLMPrompt({ position, classification, evidencePack });
+  // Buscar contexto RAG para enriquecer post-mortem com learnings anteriores
+  let ragContext: string | undefined;
+  if (params.userId && params.namespaceId) {
+    const ragResult = await queryPostMortemRAGContext({
+      tenantId: position.tenantId,
+      userId: params.userId,
+      namespaceId: params.namespaceId,
+      symbol: position.symbol,
+      tradeStyle: classification.tradeStyle,
+      archetype: classification.archetype,
+      pnlPct: classification.pnlPct,
+    });
+    ragContext = ragResult?.context;
+  }
+
+  // Montar prompt (com contexto RAG se disponível)
+  const messages = buildLLMPrompt({ position, classification, evidencePack, ragContext });
 
   logger.info({ positionId: position.id }, 'Iniciando Phase 2 LLM para post-mortem');
 
   try {
+    // Resolver modelo com adapter LoRA ativo (se disponível)
+    // Post-mortem usa adapter treinado para gerar motivadores mais precisos
+    const baseModel = 'Qwen/Qwen2.5-7B-Instruct-AWQ';
+    const resolvedModel = await resolveModelWithAdapter(baseModel);
+
+    logger.info({
+      positionId: position.id,
+      model: resolvedModel,
+      usingLoraAdapter: resolvedModel !== baseModel,
+    }, 'Modelo resolvido para Phase 2 LLM do post-mortem');
+
     const gpuResponse = await requestGpu({
       serviceType: GpuServiceType.LLM,
       endpoint: '/v1/chat/completions',
@@ -479,7 +514,7 @@ export async function executePhase2(params: {
       priority: GpuRequestPriority.LOW,
       timeout: LLM_POSTMORTEM_TIMEOUT_MS,
       body: {
-        model: 'Qwen/Qwen2.5-7B-Instruct-AWQ',
+        model: resolvedModel,
         messages,
         max_tokens: 2048,
         temperature: 0.7,
@@ -540,6 +575,56 @@ export async function executePhase2(params: {
 }
 
 // ============================================================================
+// Helper: Resolver namespace trading do tenant
+// ============================================================================
+
+/**
+ * Busca o namespaceId do agente trading ativo para um tenant.
+ * Usado para enriquecer post-mortems com contexto RAG.
+ * Retorna null se não encontrado (não bloqueante).
+ */
+async function resolveTradingNamespaceId(tenantId: string): Promise<string | null> {
+  try {
+    const db = getDatabase();
+    const tradingNamespace = await db.query.namespaces.findFirst({
+      where: and(
+        eq(schema.namespaces.tenantId, tenantId),
+        eq(schema.namespaces.slug, 'trading'),
+        eq(schema.namespaces.ativo, true)
+      ),
+    });
+    return tradingNamespace?.id ?? null;
+  } catch (error) {
+    logger.warn(
+      { error: error instanceof Error ? error.message : String(error), tenantId },
+      'Falha ao resolver namespace trading para post-mortem RAG (continuando sem RAG)'
+    );
+    return null;
+  }
+}
+
+/**
+ * Busca o primeiro userId disponível para o tenant.
+ * Usado como fallback quando userId não é fornecido nos chamadores de post-mortem.
+ */
+async function resolveTenantUserId(tenantId: string): Promise<string | null> {
+  try {
+    const db = getDatabase();
+    const user = await db.query.users.findFirst({
+      where: eq(schema.users.tenantId, tenantId),
+      orderBy: [desc(schema.users.createdAt)],
+    });
+    return user?.id ?? null;
+  } catch (error) {
+    logger.warn(
+      { error: error instanceof Error ? error.message : String(error), tenantId },
+      'Falha ao resolver userId para post-mortem RAG (continuando sem RAG)'
+    );
+    return null;
+  }
+}
+
+// ============================================================================
 // Orquestração Completa
 // ============================================================================
 
@@ -550,9 +635,17 @@ export async function executePhase2(params: {
 export async function executePostMortem(params: {
   position: PostMortemPositionData;
   indicators?: TechnicalAnalysisResult;
+  userId?: string;
+  namespaceId?: string | null;
 }): Promise<PostMortemResult> {
   const { position, indicators } = params;
   const db = getDatabase();
+
+  // Resolver userId e namespaceId para RAG (se não fornecidos)
+  // Busca automática garante que post-mortems enfileirados sem contexto
+  // (ex: demo-trading-engine) ainda consigam usar RAG
+  const userId = params.userId ?? await resolveTenantUserId(position.tenantId);
+  const namespaceId = params.namespaceId !== undefined ? params.namespaceId : await resolveTradingNamespaceId(position.tenantId);
 
   // Computar fingerprint para idempotência
   const fingerprint = computeFingerprint({
@@ -661,6 +754,8 @@ export async function executePostMortem(params: {
       position,
       classification: phase1Result.classification,
       evidencePackSnapshotId: phase1Result.evidencePackSnapshotId,
+      userId: userId ?? undefined,
+      namespaceId,
     });
 
     // Marcar como completo
@@ -677,6 +772,39 @@ export async function executePostMortem(params: {
       .where(eq(schema.tradingPostmortems.id, postmortem.id));
 
     logger.info({ postmortemId: postmortem.id, positionId: position.id }, 'Post-mortem completo (Phase 1 + Phase 2)');
+
+    // Feedback loop: Indexar learnings no RAG para futuras gerações de sinais e post-mortems
+    // Não bloqueante - falhas são logadas mas não afetam o resultado do post-mortem
+    if (userId && namespaceId) {
+      indexPostMortemLearnings({
+        tenantId: position.tenantId,
+        userId,
+        namespaceId,
+        learning: {
+          postmortemId: postmortem.id,
+          symbol: position.symbol,
+          marketType: position.marketType,
+          tradeStyle: phase1Result.classification.tradeStyle,
+          archetype: phase1Result.classification.archetype,
+          strategy: phase1Result.classification.strategy,
+          side: position.side,
+          pnlPct: phase1Result.classification.pnlPct,
+          realizedPnl: position.realizedPnl,
+          leverage: position.leverage,
+          durationSec: phase1Result.classification.durationSec,
+          motivators: phase2Result.motivators,
+          successFactors: phase2Result.successFactors,
+          failureFactors: phase2Result.failureFactors,
+          lessons: phase2Result.lessons,
+          closedAt: position.closedAt.toISOString(),
+        },
+      }).catch((err: unknown) => {
+        logger.warn(
+          { error: err instanceof Error ? err.message : String(err), postmortemId: postmortem.id },
+          'Falha no feedback loop RAG (não bloqueante)'
+        );
+      });
+    }
 
     return {
       id: postmortem.id,

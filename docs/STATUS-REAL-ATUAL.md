@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 09 de Fevereiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.94 - Demo Trading + Post-Mortem Auto-Motivator + Dataset Generator
+**Versão:** 10.95 - Demo Trading + Post-Mortem + Ecossistema LLM (LoRA + RAG + Feedback Loop)
 
 ---
 
@@ -18,6 +18,7 @@
 - **Dataset Generator** automático: post-mortems completos geram datasets de treinamento com status pending.
 - **Snapshot Store** para evidências de mercado (entry/exit/candles/orderbook/news) em JSONB comprimido.
 - **Botão "Aprovar Demo"** na aba Sinais IA permite converter sinais em ordens Demo (complementar ao "Aprovar" Real).
+- **Ecossistema LLM completo**: LoRA adapters globais (QLoRA) + RAG contextual + Feedback Loop automático para evolução contínua.
 - Status de Integrações no Dashboard/Integrações usa SSOT Prometheus via observability-service.
 - OpenAI Vision (Responses API) exibida com status operacional na página Integrações.
 - Prepare Infrastructure: preparação SSOT consolidada em sessão SSH única (menos conexões e menos timeouts).
@@ -279,12 +280,97 @@
 - Datasets criados com status 'pending' para aprovação manual na página Training.
 - sourceType: 'postmortem' com sourceMetadata detalhado (isDemo, fingerprint, engineVersions).
 
+## Ecossistema LLM (LoRA + RAG + Feedback Loop)
+
+- **LoRA Adapters Globais**: Adapter trading único (`trading-global`) treinado via QLoRA, compartilhado entre tenants.
+  - Ativação automática após aprovação de job de treinamento.
+  - vLLM v0.12.0+ com suporte AWQ + LoRA (`--enable-lora`, `--max-lora-rank 16`).
+  - Adapter armazenado em `/opt/alice/data/lora-adapters/trading-global` (volume Docker read-only).
+  - Cache Redis com TTL 60s para resolver modelo com/sem adapter ativo.
+  - Fallback para modelo base (`Qwen/Qwen2.5-7B-Instruct-AWQ`) quando adapter não disponível.
+- **RAG Contextual para Trading**: Busca semântica em documentos de estratégia e learnings anteriores.
+  - Enriquece geração de sinais IA com contexto de namespace do agente trading.
+  - Enriquece post-mortem Phase 2 com learnings de trades similares.
+  - Threshold de similaridade 0.6, máximo 3 documentos por query.
+  - Non-blocking: falha no RAG não bloqueia geração de sinal nem post-mortem.
+- **Feedback Loop Automático**: Post-mortems completos são indexados automaticamente no namespace RAG.
+  - Documento estruturado com motivadores, lições, fatores de sucesso/falha.
+  - Dedup por source (`postmortem:{id}`), 409 tratado como sucesso.
+  - Futuras gerações de sinais e post-mortems se beneficiam dos learnings acumulados.
+- **Métricas Prometheus**:
+  - `alice_lora_resolve_total{result}`: resoluções de modelo (adapter/base/error).
+  - `alice_lora_resolve_duration_seconds`: latência de resolução.
+  - `alice_lora_cache_total{status}`: cache Redis hit/miss/error.
+  - `alice_trading_rag_query_total{type,result}`: consultas RAG (signal/postmortem).
+  - `alice_trading_rag_query_duration_seconds{type}`: latência de consultas RAG.
+  - `alice_trading_rag_index_total{result}`: indexação de learnings (success/error).
+- **API Training Service**:
+  - `POST /api/training/lora/activate/:jobId`: ativa adapter de job treinado.
+  - `GET /api/training/lora/active`: consulta adapter ativo.
+  - `DELETE /api/training/lora/active`: desativa adapter ativo.
+- **Dashboard Grafana**: Painéis no Trading Dashboard para LoRA (resolução, latência, cache) e RAG (consultas, feedback loop).
+
+## Snapshot Store
+
+- **Tabela**: `trading_snapshots` com JSONB comprimido via TOAST automático do PostgreSQL.
+- **Kinds suportados**: `market_entry`, `market_exit`, `candles`, `orderbook_top`, `news`, `evidence_pack`.
+- **Captura automática**: `captureEntrySnapshot()` na abertura e `captureExitSnapshot()` no fechamento.
+- **Dados capturados**: ticker (preço, bid/ask, volume), orderbook top (bids/asks), candles recentes (1m, 3m, 5m, 15m, 1h).
+- **Referências**: posições demo e reais mantêm `entrySnapshotId` e `exitSnapshotId` para rastreabilidade.
+
+## API Endpoints — Demo Trading + Post-Mortem
+
+### Demo Trading (integrations-service)
+
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| `GET` | `/api/integrations/demo-trading/balance` | Balance atual do tenant |
+| `POST` | `/api/integrations/demo-trading/funds` | Adicionar fundos auditáveis |
+| `GET` | `/api/integrations/demo-trading/funds/history` | Histórico de movimentações |
+| `POST` | `/api/integrations/demo-trading/orders` | Criar ordem (market/limit/stop) |
+| `POST` | `/api/integrations/demo-trading/orders/from-signal` | Criar ordem a partir de sinal IA |
+| `GET` | `/api/integrations/demo-trading/orders` | Listar ordens |
+| `DELETE` | `/api/integrations/demo-trading/orders/:id` | Cancelar ordem pendente |
+| `GET` | `/api/integrations/demo-trading/positions` | Listar posições |
+| `POST` | `/api/integrations/demo-trading/positions/:id/close` | Fechar posição |
+
+### Post-Mortem (integrations-service)
+
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| `GET` | `/api/integrations/postmortem/:positionId` | Post-mortem por posição |
+| `GET` | `/api/integrations/postmortem` | Listar post-mortems (filtro `isDemo`) |
+| `GET` | `/api/integrations/postmortem/queue/stats` | Estatísticas da fila Redis |
+| `POST` | `/api/integrations/postmortem/queue/retry/:jobId` | Reprocessar job da DLQ |
+| `GET` | `/api/integrations/postmortem/snapshots/:positionId` | Snapshots de uma posição |
+| `POST` | `/api/integrations/postmortem/send-to-training` | Enviar post-mortem para dataset |
+| `POST` | `/api/integrations/postmortem/send-to-training/batch` | Enviar batch para dataset |
+
+### Sinais IA (integrations-service)
+
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| `POST` | `/api/integrations/trading/signals/generate` | Gerar sinal via LLM (com RAG + LoRA) |
+| `GET` | `/api/integrations/trading/signals` | Sinais pendentes |
+| `POST` | `/api/integrations/trading/signals/:id/approve` | Aprovar sinal (ordem real) |
+| `POST` | `/api/integrations/trading/signals/:id/reject` | Rejeitar sinal |
+| `GET` | `/api/integrations/trading/signals/history` | Histórico de sinais |
+| `POST` | `/api/integrations/trading/datasets/from-signal` | Criar dataset a partir de sinal |
+
+### LoRA Adapter Management (training-service)
+
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| `POST` | `/api/training/lora/activate/:jobId` | Ativar adapter de job concluído |
+| `GET` | `/api/training/lora/active` | Consultar adapter ativo |
+| `DELETE` | `/api/training/lora/active` | Desativar adapter ativo |
+
 ---
 
 ## Observabilidade
 
 - Prometheus 3.8.1 e Grafana 12.3.2 com Grafana Alerting (Alertmanager removido).
-- Dashboards principais: Home, Services, LLM Metrics, RAG Metrics, Integrations, Infrastructure, Training, Training Pipeline, Backup, **Demo Trading + Post-Mortem**.
+- Dashboards principais: Home, Services, LLM Metrics, RAG Metrics, Integrations, Infrastructure, Training, Training Pipeline, Backup, **Demo Trading + Post-Mortem**, **LoRA + RAG Ecosystem**.
 - Dashboard Demo Trading: ordens por tipo de mercado, posições profit/loss, fila post-mortem, DLQ, latência P50/P95/P99.
 - Loki/Promtail 3.6.3 e Jaeger 2.13.0 (OTLP habilitado).
 - Langfuse v3 com worker e ClickHouse 25.12-alpine.

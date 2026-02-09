@@ -918,10 +918,15 @@ function SignalCard({
                   onClick={() => {
                     const overrides: SignalApprovalOverrides = {};
                     const sizeValue = Number(approveOverrides.size);
+                    const priceValue = Number(approveOverrides.price);
                     const leverageValue = Number(approveOverrides.leverage);
                     const stopLossValue = Number(approveOverrides.stopLoss);
                     const takeProfitValue = Number(approveOverrides.takeProfit);
+                    if (approveOverrides.orderType) {
+                      overrides.orderType = approveOverrides.orderType as SignalApprovalOverrides['orderType'];
+                    }
                     if (Number.isFinite(sizeValue) && sizeValue > 0) overrides.size = sizeValue;
+                    if (Number.isFinite(priceValue) && priceValue > 0) overrides.price = priceValue;
                     if (Number.isFinite(leverageValue) && leverageValue > 0) overrides.leverage = leverageValue;
                     if (Number.isFinite(stopLossValue) && stopLossValue > 0) overrides.stopLoss = stopLossValue;
                     if (Number.isFinite(takeProfitValue) && takeProfitValue > 0) overrides.takeProfit = takeProfitValue;

@@ -1,9 +1,10 @@
 # syntax=docker/dockerfile:1.4
 # =============================================================================
-# Alice Enterprise Platform - LLM (Texto) - Qwen2.5 7B Instruct (AWQ)
+# Alice Enterprise Platform - LLM (Texto + LoRA) - Qwen2.5 7B Instruct (AWQ)
 # =============================================================================
 # Objetivo:
-# - Servir um LLM **texto-only** para Chat/Trading via OpenAI-compatible API (vLLM)
+# - Servir LLM **texto-only** para Chat/Trading via OpenAI-compatible API (vLLM)
+# - Suporte a LoRA adapters dinâmicos para fine-tuning incremental
 # - GPU local dedicada apenas para Texto + Embeddings + ASR (Vision via OpenAI)
 #
 # Base:
@@ -11,17 +12,24 @@
 #
 # Modelo:
 # - Qwen/Qwen2.5-7B-Instruct-AWQ (AWQ 4-bit)
+# - LoRA adapters: carregados em runtime via filesystem resolver (~50-100MB extra)
+#
+# LoRA Architecture:
+# - AWQ + LoRA: compatível com vLLM 0.12.0+ (documentação oficial)
+# - Dynamic loading: adapters carregados sem restart do container
+# - Volume mount: /opt/alice/data/lora-adapters (read-only no container)
+# - Impacto VRAM: ~50-100MB por adapter rank-16 (negligível no budget 20GB)
 #
 # Autor: Fillipe Guerra
-# Data: 16 de Janeiro de 2026
+# Data: 09 de Fevereiro de 2026
 # =============================================================================
 
 FROM vllm/vllm-openai:v0.12.0
 
 LABEL maintainer="Fillipe Guerra"
-LABEL description="Qwen2.5 7B Instruct (AWQ) - LLM text-only vLLM inference server"
-LABEL version="1.0.0"
-LABEL architecture="gpu-text-only-openai-vision"
+LABEL description="Qwen2.5 7B Instruct (AWQ + LoRA) - LLM vLLM inference server"
+LABEL version="1.1.0"
+LABEL architecture="gpu-text-only-openai-vision-lora"
 
 WORKDIR /app
 
@@ -41,6 +49,19 @@ ENV MAX_NUM_SEQS="16"
 ENV TENSOR_PARALLEL_SIZE="1"
 ENV PORT="8000"
 ENV HOST="0.0.0.0"
+
+# Configuração LoRA (AWQ + LoRA suportado desde vLLM 0.12.0)
+# ENABLE_LORA: habilita suporte a LoRA adapters dinâmicos
+# MAX_LORA_RANK: rank máximo do adapter (alinhado com QLoRA config que usa rank 16)
+# MAX_LORAS: máximo de adapters carregados simultaneamente
+# LORA_ADAPTER_DIR: diretório onde adapters são disponibilizados pelo training-service
+ENV ENABLE_LORA="true"
+ENV MAX_LORA_RANK="16"
+ENV MAX_LORAS="2"
+ENV LORA_ADAPTER_DIR="/opt/alice/data/lora-adapters"
+
+# vLLM dynamic LoRA loading via filesystem resolver
+ENV VLLM_ALLOW_RUNTIME_LORA_UPDATING="true"
 
 EXPOSE 8000
 
