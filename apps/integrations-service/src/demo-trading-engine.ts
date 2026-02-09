@@ -87,6 +87,7 @@ export interface CreateDemoOrderParams {
   leverage?: number;     // Para futures/margin (default 1)
   stopLoss?: number;
   takeProfit?: number;
+  signalId?: string;     // ID do sinal IA que originou a ordem (rastreabilidade)
 }
 
 export interface DemoOrderResult {
@@ -265,7 +266,9 @@ async function getCurrentPrice(symbol: string): Promise<number> {
  */
 export async function createDemoOrder(params: CreateDemoOrderParams): Promise<DemoOrderResult> {
   const db = getDatabase();
-  const leverage = params.leverage ?? 1;
+  // Sanitizar leverage: NaN, null, undefined, 0 ou negativo → default 1
+  const rawLeverage = params.leverage ?? 1;
+  const leverage = Number.isFinite(rawLeverage) && rawLeverage >= 1 ? rawLeverage : 1;
 
   // Buscar/criar balance
   const balance = await getOrCreateBalance(params.tenantId);
@@ -315,14 +318,16 @@ export async function createDemoOrder(params: CreateDemoOrderParams): Promise<De
     );
   }
 
-  // Para ordens pendentes: congelar margem estimada imediatamente
+  // Para ordens pendentes: congelar margem + fee estimado imediatamente
+  // Isso impede que o fee estimado seja gasto em outros trades antes do fill
   if (orderStatus === 'open') {
     const currentFrozen = Number(balance.frozen);
+    const totalToFreeze = requiredMargin + estimatedFee;
     await db
       .update(schema.demoBalances)
       .set({
-        available: String(availableBalance - requiredMargin),
-        frozen: String(currentFrozen + requiredMargin),
+        available: String(availableBalance - totalToFreeze),
+        frozen: String(currentFrozen + totalToFreeze),
         updatedAt: new Date(),
       })
       .where(eq(schema.demoBalances.id, balance.id));
@@ -343,6 +348,7 @@ export async function createDemoOrder(params: CreateDemoOrderParams): Promise<De
       filledSize: orderStatus === 'filled' ? String(params.size) : '0',
       avgFilledPrice: orderStatus === 'filled' ? String(fillPrice) : null,
       fees: String(fee),
+      signalId: params.signalId ?? null,
       status: orderStatus,
       filledAt: orderStatus === 'filled' ? new Date() : null,
       metadata: {
@@ -397,14 +403,20 @@ export async function createDemoOrder(params: CreateDemoOrderParams): Promise<De
 
     positionId = position.id;
 
-    // Capturar snapshot de entrada
+    // Capturar snapshot de entrada e armazenar ID na posição para uso no post-mortem
     try {
-      await captureEntrySnapshot({
+      const entrySnapshot = await captureEntrySnapshot({
         tenantId: params.tenantId,
         symbol: params.symbol,
         marketType: params.marketType,
         positionId: position.id,
       });
+      // Persistir entrySnapshotId na posição para que o post-mortem e dataset generator possam usar
+      await db
+        .update(schema.demoPositions)
+        .set({ entrySnapshotId: entrySnapshot.id })
+        .where(eq(schema.demoPositions.id, position.id));
+      logger.info({ positionId: position.id, entrySnapshotId: entrySnapshot.id }, 'Entry snapshot capturado e vinculado à posição demo');
     } catch (snapshotError) {
       logger.warn({ error: snapshotError, positionId: position.id }, 'Falha ao capturar snapshot de entrada (não bloqueante)');
     }
@@ -486,11 +498,13 @@ export async function closeDemoPosition(params: {
   const size = Number(position.size);
   const leverage = position.leverage ?? 1;
 
+  // PnL = diferença de preço × tamanho da posição - fees
+  // Leverage afeta apenas margem necessária, NÃO amplifica PnL real
   let realizedPnl: number;
   if (position.side === 'long') {
-    realizedPnl = (exitPrice - entryPrice) * size * leverage - fee;
+    realizedPnl = (exitPrice - entryPrice) * size - fee;
   } else {
-    realizedPnl = (entryPrice - exitPrice) * size * leverage - fee;
+    realizedPnl = (entryPrice - exitPrice) * size - fee;
   }
 
   const closedAt = new Date();
@@ -569,6 +583,7 @@ export async function closeDemoPosition(params: {
       totalFees: fee,
       openedAt: position.openedAt,
       closedAt,
+      entrySnapshotId: position.entrySnapshotId ?? undefined,
       exitSnapshotId,
     };
 
@@ -678,9 +693,11 @@ export async function cancelDemoOrder(tenantId: string, orderId: string): Promis
 
   if (result.length === 0) return false;
 
-  // Devolver margem congelada ao saldo disponível
+  // Devolver margem + fee estimado congelados ao saldo disponível
   const leverage = order.leverage ?? 1;
   const frozenMargin = Number(order.size) * Number(order.price) / leverage;
+  const frozenFee = calculateFee(Number(order.size), Number(order.price));
+  const totalFrozen = frozenMargin + frozenFee;
   const balance = await getOrCreateBalance(tenantId);
   const currentAvailable = Number(balance.available);
   const currentFrozen = Number(balance.frozen);
@@ -688,8 +705,8 @@ export async function cancelDemoOrder(tenantId: string, orderId: string): Promis
   await db
     .update(schema.demoBalances)
     .set({
-      available: String(currentAvailable + frozenMargin),
-      frozen: String(Math.max(0, currentFrozen - frozenMargin)),
+      available: String(currentAvailable + totalFrozen),
+      frozen: String(Math.max(0, currentFrozen - totalFrozen)),
       updatedAt: new Date(),
     })
     .where(eq(schema.demoBalances.id, balance.id));
@@ -819,24 +836,51 @@ export async function processOpenOrdersAndPositions(): Promise<void> {
           leverage,
         });
 
-        // Atualizar balance: margem já foi congelada na criação da ordem (createDemoOrder).
-        // Ajustar frozen→position margin real e debitar fee do available.
-        // A margem estimada (com base no preço da ordem) pode diferir da margem real (com base no fillPrice).
+        // Atualizar balance: margem + fee estimado foram congelados na criação (createDemoOrder).
+        // Agora substituir estimativas pelo custo real (margem real fica frozen, fee real é debitado).
         const orderBalance = await getOrCreateBalance(order.tenantId);
         const estMargin = Number(order.size) * targetPrice / leverage;
-        const marginDiff = requiredMargin - estMargin;
+        const estFee = calculateFee(Number(order.size), targetPrice);
+        const totalEstimated = estMargin + estFee;
+        const totalReal = requiredMargin + fee;
+        // adjustment = custo real - custo estimado (positivo = precisa mais de available)
+        const adjustment = totalReal - totalEstimated;
         const currentAvailable = Number(orderBalance.available);
         const currentFrozen = Number(orderBalance.frozen);
 
-        // Substituir margem estimada (congelada na criação) pela margem real da posição:
-        // frozen = frozen - estMargin + requiredMargin (troca estimativa pela margem real)
-        // available -= fee + marginDiff (debitar fee; se fill price > target, debitar diferença extra)
+        // Defesa em profundidade: verificar se available cobre o ajuste
+        if (adjustment > 0 && adjustment > currentAvailable) {
+          logger.warn({
+            orderId: order.id,
+            adjustment: adjustment.toFixed(4),
+            currentAvailable: currentAvailable.toFixed(4),
+          }, 'Saldo insuficiente para fill de ordem pendente - cancelando ordem');
+
+          await db
+            .update(schema.demoOrders)
+            .set({ status: 'cancelled' })
+            .where(eq(schema.demoOrders.id, order.id));
+
+          // Devolver tudo que foi congelado (margem + fee estimado)
+          await db
+            .update(schema.demoBalances)
+            .set({
+              available: String(currentAvailable + totalEstimated),
+              frozen: String(Math.max(0, currentFrozen - totalEstimated)),
+              updatedAt: new Date(),
+            })
+            .where(eq(schema.demoBalances.id, orderBalance.id));
+          continue;
+        }
+
+        // frozen: remover total estimado (margem + fee), adicionar margem real da posição
+        // available: debitar ajuste (diferença entre custo real e estimado)
         // closeDemoPosition depois fará: frozen -= requiredMargin (devolver margem da posição)
         await db
           .update(schema.demoBalances)
           .set({
-            available: String(currentAvailable - fee - marginDiff),
-            frozen: String(Math.max(0, currentFrozen - estMargin + requiredMargin)),
+            available: String(currentAvailable - adjustment),
+            frozen: String(Math.max(0, currentFrozen - totalEstimated + requiredMargin)),
             updatedAt: new Date(),
           })
           .where(eq(schema.demoBalances.id, orderBalance.id));
@@ -871,16 +915,22 @@ export async function processOpenOrdersAndPositions(): Promise<void> {
           .set({ metadata: { ...orderMeta, positionId: position.id } })
           .where(eq(schema.demoOrders.id, order.id));
 
-        // Capturar snapshot de entrada
+        // Capturar snapshot de entrada e armazenar ID na posição para uso no post-mortem
         try {
-          await captureEntrySnapshot({
+          const entrySnapshot = await captureEntrySnapshot({
             tenantId: order.tenantId,
             symbol: order.symbol,
             marketType: order.marketType as 'spot' | 'futures' | 'margin',
             positionId: position.id,
           });
+          // Persistir entrySnapshotId na posição para que o post-mortem e dataset generator possam usar
+          await db
+            .update(schema.demoPositions)
+            .set({ entrySnapshotId: entrySnapshot.id })
+            .where(eq(schema.demoPositions.id, position.id));
+          logger.info({ positionId: position.id, entrySnapshotId: entrySnapshot.id }, 'Entry snapshot capturado e vinculado à posição demo (scheduled fill)');
         } catch (snapshotError) {
-          logger.warn({ error: snapshotError }, 'Falha ao capturar snapshot de entrada (scheduled fill)');
+          logger.warn({ error: snapshotError, positionId: position.id }, 'Falha ao capturar snapshot de entrada (scheduled fill)');
         }
 
         logger.info({

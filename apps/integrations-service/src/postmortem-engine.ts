@@ -150,16 +150,20 @@ export interface PostMortemLessons {
   avoid: string[];
 }
 
-/** Resultado completo do post-mortem */
+/** Resultado completo do post-mortem
+ * Campos de Phase 1 (classification) e Phase 2 (motivators, successFactors, failureFactors, lessons)
+ * são null quando o post-mortem ainda não completou a respectiva fase.
+ * Consumidores DEVEM verificar o campo `status` antes de acessar esses campos.
+ */
 export interface PostMortemResult {
   id: string;
   fingerprint: string;
   status: string;
-  classification: PostMortemClassification;
+  classification: PostMortemClassification | null;
   motivators: PostMortemMotivator[];
   successFactors: string[];
   failureFactors: string[];
-  lessons: PostMortemLessons;
+  lessons: PostMortemLessons | null;
   engineVersions: Record<string, string>;
 }
 
@@ -569,16 +573,26 @@ export async function executePostMortem(params: {
     .limit(1);
 
   if (existing) {
-    logger.info({ fingerprint, positionId: position.id }, 'Post-mortem já existe (idempotência) - retornando existente');
+    logger.info({ fingerprint, positionId: position.id, status: existing.status }, 'Post-mortem já existe (idempotência) - retornando existente');
     return {
       id: existing.id,
       fingerprint: existing.fingerprint,
       status: existing.status,
-      classification: existing.classification as unknown as PostMortemClassification,
-      motivators: existing.motivators as unknown as PostMortemMotivator[],
-      successFactors: existing.successFactors as unknown as string[],
-      failureFactors: existing.failureFactors as unknown as string[],
-      lessons: existing.lessons as unknown as PostMortemLessons,
+      classification: existing.classification
+        ? (existing.classification as unknown as PostMortemClassification)
+        : null,
+      motivators: Array.isArray(existing.motivators)
+        ? (existing.motivators as unknown as PostMortemMotivator[])
+        : [],
+      successFactors: Array.isArray(existing.successFactors)
+        ? (existing.successFactors as unknown as string[])
+        : [],
+      failureFactors: Array.isArray(existing.failureFactors)
+        ? (existing.failureFactors as unknown as string[])
+        : [],
+      lessons: existing.lessons
+        ? (existing.lessons as unknown as PostMortemLessons)
+        : null,
       engineVersions: existing.engineVersions,
     };
   }

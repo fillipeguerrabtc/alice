@@ -32,7 +32,7 @@ import {
 import * as kucoinClient from './kucoinClient.js';
 import * as kucoinSpotClient from './kucoinSpotClient.js';
 import * as kucoinMarginClient from './kucoinMarginClient.js';
-import { captureEntrySnapshot, captureExitSnapshot } from './snapshot-store.js';
+import { captureEntrySnapshot, captureExitSnapshot, getSnapshotsByRefs } from './snapshot-store.js';
 import { enqueuePostMortem } from './postmortem-worker.js';
 
 const logger = createLogger('kucoin-service');
@@ -2434,9 +2434,19 @@ export async function syncOrdersStatus(
                 positionId: order.id,
               });
               const entrySnapshotId = entrySnapshotResult.id;
+              // Persistir entrySnapshotId no metadata da ordem para uso posterior no post-mortem
+              await db
+                .update(schema.tradingOrders)
+                .set({
+                  metadata: {
+                    ...(order.metadata ?? {}),
+                    entrySnapshotId,
+                  },
+                })
+                .where(eq(schema.tradingOrders.id, order.id));
               logger.info(
                 { orderId: order.id, symbol: order.symbol, snapshotId: entrySnapshotId },
-                'Entry snapshot capturado para ordem real preenchida'
+                'Entry snapshot capturado e vinculado à ordem real'
               );
             } catch (snapError) {
               logger.warn(
@@ -2714,6 +2724,59 @@ export async function closePositions(
           ? ((exitPrice - entryPrice) / entryPrice) * 100 * (side === 'long' ? 1 : -1)
           : 0;
 
+        // Buscar entrySnapshotId: procura no metadata da ordem de abertura mais recente
+        // para este símbolo, ou via snapshot store refs como fallback
+        let entrySnapshotId: string | undefined;
+        try {
+          // Buscar ordem de abertura (não-closePosition) mais recente com entrySnapshotId no metadata
+          const [openingOrder] = await db
+            .select()
+            .from(schema.tradingOrders)
+            .where(
+              and(
+                eq(schema.tradingOrders.tenantId, authContext.tenantId),
+                eq(schema.tradingOrders.symbol, positionData.symbol),
+                eq(schema.tradingOrders.status, 'filled'),
+                sql`${schema.tradingOrders.metadata}->>'entrySnapshotId' IS NOT NULL`,
+                sql`${schema.tradingOrders.metadata}->>'closePosition' IS NULL`
+              )
+            )
+            .orderBy(desc(schema.tradingOrders.criadoEm))
+            .limit(1);
+
+          if (openingOrder) {
+            const meta = (openingOrder.metadata ?? {}) as Record<string, unknown>;
+            if (typeof meta.entrySnapshotId === 'string') {
+              entrySnapshotId = meta.entrySnapshotId;
+            }
+          }
+
+          // Fallback: buscar entry snapshot via refs no snapshot store
+          if (!entrySnapshotId) {
+            const entrySnapshots = await getSnapshotsByRefs({
+              tenantId: authContext.tenantId,
+              refKey: 'symbol',
+              refValue: positionData.symbol,
+            });
+            // Pegar o mais recente do tipo market_entry
+            const entrySnap = entrySnapshots
+              .filter(s => s.kind === 'market_entry')
+              .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+            if (entrySnap) {
+              entrySnapshotId = entrySnap.id;
+            }
+          }
+
+          if (entrySnapshotId) {
+            logger.info({ symbol: positionData.symbol, entrySnapshotId }, 'Entry snapshot recuperado para post-mortem real');
+          }
+        } catch (snapLookupError) {
+          logger.warn(
+            { err: snapLookupError, symbol: positionData.symbol },
+            'Falha ao buscar entry snapshot para post-mortem real (best-effort)'
+          );
+        }
+
         await enqueuePostMortem({
           positionData: {
             id: closedOrder.id,
@@ -2732,6 +2795,7 @@ export async function closePositions(
               ? new Date(positionData.openingTimestamp)
               : new Date(),
             closedAt: new Date(),
+            entrySnapshotId,
             exitSnapshotId: exitSnapshot.id,
           },
         });

@@ -435,22 +435,25 @@ function SignalCard({
                       </>
                     )}
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="text-amber-600 border-amber-600 hover:bg-amber-50"
-                    onClick={() => setShowApproveDemoDialog(true)}
-                    disabled={isApproving || isApprovingDemo || isRejecting}
-                  >
-                    {isApprovingDemo ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <>
-                        <FlaskConical className="h-4 w-4 mr-1" />
-                        Aprovar Demo
-                      </>
-                    )}
-                  </Button>
+                  {/* Aprovar Demo só para sinais de entrada — outros tipos (exit, hold, neutral, adjust_*) não geram ordens novas */}
+                  {(signal.signalType === 'entry_long' || signal.signalType === 'entry_short') && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-amber-600 border-amber-600 hover:bg-amber-50"
+                      onClick={() => setShowApproveDemoDialog(true)}
+                      disabled={isApproving || isApprovingDemo || isRejecting}
+                    >
+                      {isApprovingDemo ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <>
+                          <FlaskConical className="h-4 w-4 mr-1" />
+                          Aprovar Demo
+                        </>
+                      )}
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
                     size="sm"
@@ -1120,6 +1123,10 @@ export function SignalApprovalPanel({
   // Mutation para aprovar sinal como Demo
   const approveDemoMutation = useMutation({
     mutationFn: async ({ signalId, signal, overrides }: { signalId: string; signal: TradingSignal; overrides?: SignalApprovalOverrides }) => {
+      // Guard: apenas sinais de entrada podem gerar ordens demo
+      if (signal.signalType !== 'entry_long' && signal.signalType !== 'entry_short') {
+        throw new Error(`Tipo de sinal "${signal.signalType}" não pode ser convertido em ordem demo. Apenas entry_long e entry_short são suportados.`);
+      }
       // Derivar side a partir do signalType: entry_long → buy, entry_short → sell
       const side = signal.signalType === 'entry_long' ? 'buy' : 'sell';
       // Usar size do override, do suggestedSize do sinal, ou default 0.001

@@ -19923,9 +19923,9 @@ app.post('/api/integrations/demo-trading/orders/from-signal', requirePermission(
       leverage,
       stopLoss,
       takeProfit,
+      signalId,
     });
 
-    // Registrar que veio de sinal IA (para rastreabilidade)
     logger.info({ signalId, orderId: result.orderId, positionId: result.positionId }, 'Ordem demo criada a partir de sinal IA');
 
     res.status(201).json({ success: true, data: { ...result, fromSignalId: signalId } });

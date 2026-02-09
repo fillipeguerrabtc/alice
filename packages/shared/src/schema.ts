@@ -2478,6 +2478,7 @@ export const TradingOrderMetadataSchema = z.object({
   slippage: z.number().optional(),                   // Slippage em %
   responseTime: z.number().optional(),               // Tempo de resposta da exchange (ms)
   closePosition: z.boolean().optional(),             // Ordem criada para fechar posição
+  entrySnapshotId: z.string().uuid().optional(),     // ID do snapshot de entrada (capturado ao preencher ordem)
   stopLoss: z.number().optional(),                   // Preço de stop loss (se aplicável)
   takeProfit: z.number().optional(),                 // Preço de take profit (se aplicável)
   stopOrderIds: z.array(z.string()).optional(),       // IDs de stop orders criadas na KuCoin

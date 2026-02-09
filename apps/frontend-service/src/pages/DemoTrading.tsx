@@ -112,11 +112,10 @@ interface PostMortem {
 
 interface FundHistory {
   id: string;
-  action: string;
+  tenantId: string;
   amount: string;
   currency: string;
-  balanceAfter: string;
-  note: string | null;
+  reason: string | null;
   createdAt: string;
 }
 
@@ -214,6 +213,7 @@ export default function DemoTrading() {
 
   const createOrderMutation = useMutation({
     mutationFn: async () => {
+      const leverageValue = parseInt(orderForm.leverage);
       const body = {
         symbol: orderForm.symbol,
         marketType: orderForm.marketType,
@@ -221,7 +221,7 @@ export default function DemoTrading() {
         orderType: orderForm.orderType,
         size: parseFloat(orderForm.size),
         price: orderForm.price ? parseFloat(orderForm.price) : undefined,
-        leverage: parseInt(orderForm.leverage),
+        leverage: Number.isFinite(leverageValue) && leverageValue >= 1 ? leverageValue : 1,
         stopLoss: orderForm.stopLoss ? parseFloat(orderForm.stopLoss) : undefined,
         takeProfit: orderForm.takeProfit ? parseFloat(orderForm.takeProfit) : undefined,
       };
@@ -231,7 +231,10 @@ export default function DemoTrading() {
     },
     onSuccess: () => {
       setOrderDialogOpen(false);
-      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading'] });
+      // Ordem criada afeta: balance (margem congelada), ordens, e posições (se fill imediato)
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balance'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/orders'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/positions', 'all'] });
     },
   });
 
@@ -247,7 +250,9 @@ export default function DemoTrading() {
     onSuccess: () => {
       setAddFundsDialogOpen(false);
       setFundsAmount('');
-      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading'] });
+      // Fundos afetam: balance e histórico de fundos
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balance'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/funds/history'] });
     },
   });
 
@@ -258,8 +263,11 @@ export default function DemoTrading() {
       return json.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/integrations/postmortem'] });
+      // Fechar posição afeta: balance (margem devolvida + PnL), posições, post-mortems (novo enfileirado), fila
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balance'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/positions', 'all'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/postmortem', 'demo'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/postmortem/queue/stats'] });
     },
   });
 
@@ -268,7 +276,9 @@ export default function DemoTrading() {
       await apiRequest('DELETE', `/api/integrations/demo-trading/orders/${orderId}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading'] });
+      // Cancelar ordem afeta: balance (margem congelada devolvida) e ordens
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balance'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/orders'] });
     },
   });
 
@@ -835,20 +845,28 @@ export default function DemoTrading() {
                     <p className="text-muted-foreground text-center py-8">Nenhum registro</p>
                   ) : (
                     <div className="space-y-2">
-                      {(fundHistoryQuery.data ?? []).map(entry => (
-                        <div key={entry.id} className="flex items-center justify-between p-3 border rounded-lg">
-                          <div>
-                            <p className="text-sm font-medium">{entry.note ?? entry.action}</p>
-                            <p className="text-xs text-muted-foreground">{formatDate(entry.createdAt)}</p>
+                      {(fundHistoryQuery.data ?? []).map(entry => {
+                        // reason segue formato "action - descrição" (ex: "pnl_debit - PnL de XBTUSDTM long: -5.20 USDT")
+                        const reason = entry.reason ?? '';
+                        const separatorIdx = reason.indexOf(' - ');
+                        const action = separatorIdx >= 0 ? reason.slice(0, separatorIdx) : reason;
+                        const description = separatorIdx >= 0 ? reason.slice(separatorIdx + 3) : reason;
+                        const isDebit = action.includes('debit');
+
+                        return (
+                          <div key={entry.id} className="flex items-center justify-between p-3 border rounded-lg">
+                            <div>
+                              <p className="text-sm font-medium">{description || action || 'Movimentação'}</p>
+                              <p className="text-xs text-muted-foreground">{formatDate(entry.createdAt)}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className={`font-mono font-medium ${isDebit ? 'text-red-500' : 'text-green-500'}`}>
+                                {isDebit ? '-' : '+'}{formatMoney(entry.amount)} {entry.currency}
+                              </p>
+                            </div>
                           </div>
-                          <div className="text-right">
-                            <p className="font-mono font-medium">
-                              {entry.action.includes('debit') ? '-' : '+'}{formatMoney(entry.amount)} {entry.currency}
-                            </p>
-                            <p className="text-xs text-muted-foreground">Saldo: ${formatMoney(entry.balanceAfter)}</p>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </ScrollArea>
