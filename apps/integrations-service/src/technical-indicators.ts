@@ -896,7 +896,7 @@ export function calculateTechniqueScores(params: {
     // Grid Trading: Range definido com volatilidade moderada
     if (technique === 'grid_trading') {
       if (analysis.supportResistance) {
-        maxScore += 2;
+        maxScore += 3;
         const price = analysis.currentPrice;
         const rangeWidth = analysis.supportResistance.resistance1 - analysis.supportResistance.support1;
         const rangePercent = rangeWidth / analysis.supportResistance.support1;
@@ -904,7 +904,7 @@ export function calculateTechniqueScores(params: {
         if (rangePercent >= 0.02 && rangePercent <= 0.10) score += 2;
         // Preço no meio do range é bom para grid bidirecional
         const midRange = (analysis.supportResistance.support1 + analysis.supportResistance.resistance1) / 2;
-        if (Math.abs(price - midRange) / midRange < 0.02) score += 0;
+        if (Math.abs(price - midRange) / midRange < 0.02) score += 1;
       }
       if (analysis.adx) {
         maxScore += 1;

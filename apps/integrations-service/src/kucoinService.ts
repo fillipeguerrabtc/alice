@@ -2728,7 +2728,9 @@ export async function closePositions(
             size: Number(positionData.currentQty ?? 0),
             realizedPnl: pnl,
             totalFees: 0, // KuCoin não fornece fees acumuladas por posição diretamente
-            openedAt: closedOrder.criadoEm ?? new Date(),
+            openedAt: positionData.openingTimestamp > 0
+              ? new Date(positionData.openingTimestamp)
+              : new Date(),
             closedAt: new Date(),
             exitSnapshotId: exitSnapshot.id,
           },
