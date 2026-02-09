@@ -36,7 +36,7 @@ const postmortemJobsTotal = new PromCounter({
   labelNames: ['status', 'is_demo'] as const,
 });
 
-const _postmortemJobDuration = new PromHistogram({
+const postmortemJobDuration = new PromHistogram({
   name: 'alice_postmortem_job_duration_seconds',
   help: 'Duração do processamento de post-mortem em segundos',
   labelNames: ['phase'] as const,
@@ -255,11 +255,24 @@ async function processJob(jobId: string): Promise<void> {
       retryCount: job.retryCount,
     }, 'Processando post-mortem job');
 
-    // Executar post-mortem
-    await executePostMortem({
+    // Executar post-mortem com medição de duração
+    const startTime = performance.now();
+    const result = await executePostMortem({
       position: positionData,
       indicators: job.indicators,
     });
+    const durationSec = (performance.now() - startTime) / 1_000;
+
+    // Registrar duração total no histogram Prometheus
+    postmortemJobDuration.observe({ phase: 'total' }, durationSec);
+
+    // Se post-mortem chegou até Phase 2 (status completed), registrar como pipeline completa
+    // Se parou na Phase 1 (status completed_cpu), registrar como apenas CPU
+    if (result.status === 'completed') {
+      postmortemJobDuration.observe({ phase: 'full_pipeline' }, durationSec);
+    } else if (result.status === 'completed_cpu') {
+      postmortemJobDuration.observe({ phase: 'cpu_only' }, durationSec);
+    }
 
     // Sucesso - limpar job
     await redis.zRem(QUEUE_KEY, jobId);
@@ -267,7 +280,7 @@ async function processJob(jobId: string): Promise<void> {
 
     const isDemo = String(job.isDemo ?? false);
     postmortemJobsTotal.inc({ status: 'completed', is_demo: isDemo });
-    logger.info({ jobId, positionId: job.positionId }, 'Post-mortem job concluído com sucesso');
+    logger.info({ jobId, positionId: job.positionId, durationSec: durationSec.toFixed(2) }, 'Post-mortem job concluído com sucesso');
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);

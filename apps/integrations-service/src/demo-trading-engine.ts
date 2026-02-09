@@ -828,14 +828,15 @@ export async function processOpenOrdersAndPositions(): Promise<void> {
         const currentAvailable = Number(orderBalance.available);
         const currentFrozen = Number(orderBalance.frozen);
 
-        // frozen -= estMargin (liberar o que foi congelado na criação)
-        // available -= fee + max(0, marginDiff) (debitar fee e diferença de margem se fill price > target)
-        // Se marginDiff < 0 (fill price < target), a diferença volta para available
+        // Substituir margem estimada (congelada na criação) pela margem real da posição:
+        // frozen = frozen - estMargin + requiredMargin (troca estimativa pela margem real)
+        // available -= fee + marginDiff (debitar fee; se fill price > target, debitar diferença extra)
+        // closeDemoPosition depois fará: frozen -= requiredMargin (devolver margem da posição)
         await db
           .update(schema.demoBalances)
           .set({
             available: String(currentAvailable - fee - marginDiff),
-            frozen: String(Math.max(0, currentFrozen - estMargin)),
+            frozen: String(Math.max(0, currentFrozen - estMargin + requiredMargin)),
             updatedAt: new Date(),
           })
           .where(eq(schema.demoBalances.id, orderBalance.id));
