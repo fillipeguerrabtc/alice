@@ -627,7 +627,7 @@ services:
       - TENSOR_PARALLEL_SIZE=1
       - HOST=0.0.0.0
       - PORT=8000
-      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
+      - HF_TOKEN=${HF_TOKEN}
       # LoRA dynamic loading (AWQ + LoRA compatível vLLM 0.12.0+)
       - ENABLE_LORA=${ENABLE_LORA:-true}
       - MAX_LORA_RANK=${MAX_LORA_RANK:-16}
@@ -682,7 +682,7 @@ services:
       - QUANTIZATION=int8
       - DEVICE=cuda
       - PORT=8000
-      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
+      - HF_TOKEN=${HF_TOKEN}
     ports:
       - "127.0.0.1:8001:8000"
     networks:
@@ -727,7 +727,7 @@ services:
       - CUDA_VISIBLE_DEVICES=0
       - DEVICE=cuda
       - PORT=8000
-      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
+      - HF_TOKEN=${HF_TOKEN}
       - STORAGE_DIR=/opt/alice/uploads/training
       # Gate 2 (SSOT): Treinamento deve usar o MESMO modelo base do LLM (texto),
       # evitando divergência entre inference e fine-tuning.

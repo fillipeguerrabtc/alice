@@ -642,12 +642,19 @@ jobs:
           ref: refs/tags/${{ needs.validate.outputs.version }}
           fetch-depth: 0
 
-      - name: Login to GHCR
+      # =================================================================
+      # Login GHCR - usa GH_PAT (Personal Access Token) com scopes
+      # write:packages + read:packages para pull de imagens no deploy.
+      # CAUSA RAIZ (09/02/2026): ${{ secrets.GITHUB_TOKEN }} (token automático)
+      # pode não ter permissão suficiente para GHCR no runner self-hosted.
+      # REF: https://docs.github.com/en/packages/working-with-a-github-packages-registry
+      # =================================================================
+      - name: Login to GHCR (GH_PAT - packages read/write)
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GH_PAT }}
 
       - name: Generate .env.prod
         id: generate-env
@@ -697,7 +704,7 @@ jobs:
           SECRET_GH_REPO: ${{ secrets.GH_REPO }}
           SECRET_GMAIL_USER: ${{ secrets.GMAIL_USER }}
           SECRET_GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-          SECRET_HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
+          SECRET_HF_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
           SECRET_ERPNEXT_MYSQL_ROOT_PASSWORD: ${{ secrets.ERPNEXT_MYSQL_ROOT_PASSWORD }}
           SECRET_ERPNEXT_MYSQL_EXPORTER_PASSWORD: ${{ secrets.ERPNEXT_MYSQL_EXPORTER_PASSWORD }}
           SECRET_ERPNEXT_DB_PASSWORD: ${{ secrets.ERPNEXT_DB_PASSWORD }}
@@ -721,6 +728,11 @@ jobs:
           SECRET_KUCOIN_PRO_BASE_URL: ${{ secrets.KUCOIN_PRO_BASE_URL }}
           SECRET_KUCOIN_WS_ORDERBOOK_DEPTH: ${{ secrets.KUCOIN_WS_ORDERBOOK_DEPTH }}
           SECRET_KUCOIN_REST_ORDERBOOK_DEPTH: ${{ secrets.KUCOIN_REST_ORDERBOOK_DEPTH }}
+          # Secrets adicionais (09/02/2026 - Pente Fino Completo)
+          SECRET_BASE_URL: ${{ secrets.BASE_URL }}
+          SECRET_ERPNEXT_API_KEY: ${{ secrets.ERPNEXT_API_KEY }}
+          SECRET_ERPNEXT_API_SECRET: ${{ secrets.ERPNEXT_API_SECRET }}
+          SECRET_GH_API_URL: ${{ secrets.GH_API_URL }}
         run: |
           set -euo pipefail
           echo "📝 Gerando .env.prod para $STACK_NAME (versão: $DEPLOY_VERSION)..."
@@ -758,7 +770,7 @@ jobs:
           export STRIPE_WEBHOOK_BASE_URL_SECRET="${SECRET_STRIPE_WEBHOOK_BASE_URL}"
           export WISE_SANDBOX_SECRET="${SECRET_WISE_SANDBOX}"
           
-          # Variáveis sem sufixo _SECRET
+          # Variáveis sem sufixo _SECRET (script lê nome direto, não *_SECRET)
           export OIDC_COOKIE_KEYS="${SECRET_OIDC_COOKIE_KEYS}"
           export GOOGLE_CLIENT_ID="${SECRET_GOOGLE_CLIENT_ID}"
           export GOOGLE_CLIENT_SECRET="${SECRET_GOOGLE_CLIENT_SECRET}"
@@ -770,33 +782,61 @@ jobs:
           export LANGFUSE_NEXT_AUTH_SECRET="${SECRET_LANGFUSE_NEXT_AUTH_SECRET}"
           export LANGFUSE_SALT="${SECRET_LANGFUSE_SALT}"
           export LANGFUSE_ENCRYPTION_KEY="${SECRET_LANGFUSE_ENCRYPTION_KEY}"
-          export CLICKHOUSE_USER="${SECRET_CLICKHOUSE_USER}"
+          
+          # =================================================================
+          # CORREÇÃO CRÍTICA (09/02/2026): 20+ secrets NÃO chegavam ao .env.prod
+          # CAUSA RAIZ: Workflow passava SECRET_* no env block mas o mapping
+          # NÃO convertia para o nome que generate-env-prod.sh espera.
+          # Ex: SECRET_HF_TOKEN existia mas HF_TOKEN ficava vazio.
+          # Script fazia exit 1 para obrigatórios e gerava .env.prod com valores
+          # vazios para opcionais (Stripe, KuCoin, Twilio, Wise).
+          # =================================================================
+          
+          # CRÍTICOS (script faz exit 1 se vazio)
+          export HF_TOKEN="${SECRET_HF_TOKEN}"
           export GMAIL_USER="${SECRET_GMAIL_USER}"
           export GMAIL_APP_PASSWORD="${SECRET_GMAIL_APP_PASSWORD}"
-          export HUGGINGFACE_TOKEN="${SECRET_HUGGINGFACE_TOKEN}"
+          export ACME_EMAIL="${SECRET_ACME_EMAIL}"
+          export DUCKDNS_TOKEN="${SECRET_DUCKDNS_TOKEN}"
+          export CLICKHOUSE_USER="${SECRET_CLICKHOUSE_USER}"
+          
+          # Integrações de pagamento (Stripe)
           export STRIPE_SECRET_KEY="${SECRET_STRIPE_SECRET_KEY}"
           export STRIPE_PUBLISHABLE_KEY="${SECRET_STRIPE_PUBLISHABLE_KEY}"
           export STRIPE_WEBHOOK_SECRET="${SECRET_STRIPE_WEBHOOK_SECRET}"
+          
+          # Comunicação (Twilio)
           export TWILIO_ACCOUNT_SID="${SECRET_TWILIO_ACCOUNT_SID}"
           export TWILIO_AUTH_TOKEN="${SECRET_TWILIO_AUTH_TOKEN}"
           export TWILIO_WHATSAPP_NUMBER="${SECRET_TWILIO_WHATSAPP_NUMBER}"
+          
+          # Pagamentos internacionais (Wise)
           export WISE_API_KEY="${SECRET_WISE_API_KEY}"
           export WISE_PROFILE_ID="${SECRET_WISE_PROFILE_ID}"
+          
+          # Trading BTC Futures (KuCoin)
           export KUCOIN_PRO_API_KEY="${SECRET_KUCOIN_PRO_API_KEY}"
           export KUCOIN_PRO_API_SECRET="${SECRET_KUCOIN_PRO_API_SECRET}"
           export KUCOIN_PRO_API_PASSPHRASE="${SECRET_KUCOIN_PRO_API_PASSPHRASE}"
           export KUCOIN_PRO_BASE_URL="${SECRET_KUCOIN_PRO_BASE_URL}"
           export KUCOIN_WS_ORDERBOOK_DEPTH="${SECRET_KUCOIN_WS_ORDERBOOK_DEPTH}"
           export KUCOIN_REST_ORDERBOOK_DEPTH="${SECRET_KUCOIN_REST_ORDERBOOK_DEPTH}"
-          export OPENAI_API_KEY="${SECRET_OPENAI_API_KEY}"
+          
+          # Secrets adicionais (09/02/2026 - existem no GitHub mas não eram passados)
+          export BASE_URL="${SECRET_BASE_URL:-https://yesyoudeserve.duckdns.org}"
+          export ERPNEXT_API_KEY_SECRET="${SECRET_ERPNEXT_API_KEY}"
+          export ERPNEXT_API_SECRET_SECRET="${SECRET_ERPNEXT_API_SECRET}"
+          export GH_API_URL_SECRET="${SECRET_GH_API_URL:-https://api.github.com}"
+          # NOTA: OPENAI_ADMIN_KEY existe no GitHub mas não é usado pelo sistema atualmente
+          
+          # Variável de input (não é secret)
           export PGBACKREST_ALLOW_STANZA_RESET="${{ github.event.inputs.pgbackrest_allow_stanza_reset || 'false' }}"
           
-          # Variáveis da pipeline
+          # Variáveis da pipeline (IMAGE_PREFIX, IMAGE_TAG, etc.)
+          # NOTA: ACME_EMAIL e DUCKDNS_TOKEN já exportados no bloco de secrets acima
           export IMAGE_PREFIX="${ENV_IMAGE_PREFIX}"
           export IMAGE_TAG="${DEPLOY_VERSION}"
           export DOMAIN="${ENV_DOMAIN}"
-          export ACME_EMAIL="${SECRET_ACME_EMAIL}"
-          export DUCKDNS_TOKEN="${SECRET_DUCKDNS_TOKEN}"
           export DEPLOY_VERSION="${DEPLOY_VERSION}"
           export STACK_NAME="${STACK_NAME}"
           export IS_ROLLBACK="${IS_ROLLBACK}"

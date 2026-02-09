@@ -193,12 +193,20 @@ jobs:
           echo "=== Espaço em Disco ==="
           df -h /
 
-      - name: Login no GHCR
+      # =================================================================
+      # Login GHCR - usa GH_PAT (Personal Access Token) com scopes
+      # write:packages + read:packages para push/pull de imagens e cache.
+      # CAUSA RAIZ (09/02/2026): ${{ github.token }} (token automático)
+      # não tem permissão suficiente para GHCR no runner self-hosted,
+      # causando "failed to fetch oauth token: denied" durante buildx.
+      # REF: https://docs.github.com/en/packages/working-with-a-github-packages-registry
+      # =================================================================
+      - name: Login no GHCR (GH_PAT - packages read/write)
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GH_PAT }}
 
       # =================================================================
       # Login Docker Hub - conta Pro = rate limits altos para builds
@@ -711,9 +719,12 @@ jobs:
       contents: read
     
     steps:
+      # GH_PAT necessário para createWorkflowDispatch (token automático pode não
+      # ter permissão para disparar workflow_dispatch em workflows externos)
       - name: Disparar Deploy em Produção (Stacks)
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
         with:
+          github-token: ${{ secrets.GH_PAT }}
           script: |
             const version = '${{ needs.create-release.outputs.version }}';
             console.log(`🚀 Disparando deploy para versão: ${version}`);

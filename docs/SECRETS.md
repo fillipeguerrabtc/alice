@@ -141,7 +141,7 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `PGBACKREST_ALLOW_STANZA_RESET` | `true` permite reset controlado de stanza em mismatch de system-id (input do workflow) |
 | `DOCKERHUB_USERNAME` | Evita rate limit Docker Hub |
 | `DOCKERHUB_TOKEN` | Token Docker Hub |
-| `HUGGINGFACE_TOKEN` | Token HF (se necessário) |
+| `HUGGINGFACE_TOKEN` | Token HF → passado como `HF_TOKEN` (nome padrão huggingface_hub) |
 | `CORS_ORIGINS` | Lista de origens CORS permitidas (CSV) |
 | `SEARXNG_SECRET_KEY` | Secret do SearXNG |
 | `ERPNEXT_MYSQL_EXPORTER_USER` | Usuário do mysqld_exporter (default: `erpnext_exporter`) |

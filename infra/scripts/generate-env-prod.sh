@@ -496,15 +496,19 @@ fi
 # =============================================================================
 # Todos os serviços GPU rodam localmente no servidor Hetzner GPU único
 # e são gerenciados pelo GPU Manager Service
-# HUGGINGFACE_TOKEN é obrigatório para download de modelos
+# HF_TOKEN é usado para autenticação no HuggingFace Hub (evita rate limits)
+# Nome padrão reconhecido pela biblioteca huggingface_hub (não HUGGINGFACE_TOKEN)
+# Ref: https://huggingface.co/docs/huggingface_hub/package_reference/environment_variables#hf_token
 # =============================================================================
 echo ""
 echo "🔐 Validando GPU Services (Hetzner GPU Server)..."
 
-HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN:-}"
-if [ -z "${HUGGINGFACE_TOKEN}" ]; then
-  echo "::error::HUGGINGFACE_TOKEN não definido. Configure o secret HUGGINGFACE_TOKEN no repositório (obrigatório para download de modelos GPU em produção)." >&2
-  exit 1
+HF_TOKEN="${HF_TOKEN:-}"
+if [ -z "${HF_TOKEN}" ]; then
+  echo "⚠️  HF_TOKEN não definido. Modelos públicos (Qwen) funcionam sem token, mas rate limits podem afetar downloads." >&2
+  echo "    Para evitar rate limits, configure o secret HUGGINGFACE_TOKEN no repositório GitHub." >&2
+else
+  echo "✅ HF_TOKEN configurado (autenticação HuggingFace Hub ativa)"
 fi
 
 echo "✅ GPU Services validados (Hetzner GPU Server)"
@@ -845,7 +849,7 @@ echo "📄 Gerando arquivo .env.prod..."
   printf 'GH_API_URL=%s\n' "${GH_API_URL}"
   printf '\n'
   printf '# GPU Services (Hetzner GPU Server)\n'
-  printf 'HUGGINGFACE_TOKEN=%s\n' "${HUGGINGFACE_TOKEN:-}"
+  printf 'HF_TOKEN=%s\n' "${HF_TOKEN:-}"
   printf 'GPU_MANAGER_URL=http://alice-gpu-manager:3010\n'
   printf '\n'
   printf '# OpenAI (Vision + geração de imagens)\n'

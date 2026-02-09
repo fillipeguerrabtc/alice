@@ -53,7 +53,7 @@ services:
       - TENSOR_PARALLEL_SIZE=1
       - HOST=0.0.0.0
       - PORT=8000
-      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
+      - HF_TOKEN=${HF_TOKEN}
     ports:
       - "127.0.0.1:8004:8000"
     networks:
@@ -98,7 +98,7 @@ services:
       - QUANTIZATION=int8
       - DEVICE=cuda
       - PORT=8000
-      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
+      - HF_TOKEN=${HF_TOKEN}
     ports:
       - "127.0.0.1:8001:8000"
     networks:
@@ -144,7 +144,7 @@ services:
       - TRAINING_METHOD=${TRAINER_METHOD:-qlora}
       - DEVICE=cuda
       - PORT=8000
-      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
+      - HF_TOKEN=${HF_TOKEN}
     ports:
       - "127.0.0.1:8003:8000"
     networks:
