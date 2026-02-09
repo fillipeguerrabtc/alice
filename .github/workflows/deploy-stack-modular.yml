@@ -1525,6 +1525,89 @@ jobs:
             
             echo "✅ Validação do servidor de produção OK (GPU disponível)"
 
+      # =================================================================
+      # LOGIN ÚNICO NO SERVIDOR (09/02/2026)
+      # =================================================================
+      # PROBLEMA: Cada deploy job (INFRA, ALICE, OBS, ERPNEXT, BACKUP) fazia
+      #   login GHCR + Docker Hub separadamente (~100 linhas x 5 = 500 linhas).
+      #   12 operações de login total, com retries exponenciais até 640s.
+      # SOLUÇÃO: Login UMA VEZ no servidor de produção via prepare job.
+      #   Docker salva credenciais em ~/.docker/config.json que persiste
+      #   entre sessões SSH (mesmo servidor, mesmo usuário).
+      # ECONOMIA: ~500 linhas removidas, deploy 5-10 min mais rápido.
+      # REF: CLAUDE.md Regra 2 (Não duplicar), Regra 6 (Enterprise-grade)
+      # =================================================================
+      - name: Autenticar registries no servidor (login único)
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          command_timeout: 2m
+          envs: GHCR_USER,GHCR_TOKEN,DOCKERHUB_USER,DOCKERHUB_TOKEN
+          script: |
+            set -euo pipefail
+            echo "🔐 LOGIN ÚNICO - Autenticando registries no servidor de produção..."
+            echo ""
+            
+            # ─── GHCR (GitHub Container Registry) ───────────────────────────
+            echo "🔐 [1/2] Login GHCR (ghcr.io)..."
+            GHCR_OK=false
+            for attempt in 1 2 3; do
+              if echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>&1; then
+                GHCR_OK=true
+                break
+              fi
+              echo "   ⚠️ Tentativa $attempt/3 falhou. Aguardando $((attempt * 5))s..."
+              sleep $((attempt * 5))
+            done
+            if [ "$GHCR_OK" != "true" ]; then
+              echo "❌ ERRO: Falha no login GHCR após 3 tentativas"
+              exit 1
+            fi
+            echo "✅ GHCR autenticado"
+            echo ""
+            
+            # ─── Docker Hub (conta Pro - rate limits altos) ─────────────────
+            if [ -n "${DOCKERHUB_USER:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
+              echo "🔐 [2/2] Login Docker Hub (conta Pro)..."
+              DH_OK=false
+              for attempt in 1 2 3; do
+                if echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USER" --password-stdin 2>&1; then
+                  DH_OK=true
+                  break
+                fi
+                echo "   ⚠️ Tentativa $attempt/3 falhou. Aguardando $((attempt * 5))s..."
+                sleep $((attempt * 5))
+              done
+              if [ "$DH_OK" = "true" ]; then
+                echo "✅ Docker Hub autenticado (Pro - 5000 pulls/dia)"
+              else
+                echo "⚠️ Docker Hub login falhou - continuando com rate limits anônimos"
+              fi
+            else
+              echo "⚠️ [2/2] Docker Hub sem credenciais - rate limits anônimos (100 pulls/6h)"
+            fi
+            echo ""
+            
+            # ─── Validação final ────────────────────────────────────────────
+            echo "🔍 Validando credenciais salvas..."
+            if [ -f ~/.docker/config.json ]; then
+              AUTHS=$(grep -c '"auth"' ~/.docker/config.json 2>/dev/null || echo "0")
+              echo "   ✅ ~/.docker/config.json presente ($AUTHS registry(s) autenticado(s))"
+            else
+              echo "   ❌ ~/.docker/config.json NÃO encontrado!"
+              exit 1
+            fi
+            echo ""
+            echo "✅ Login único concluído - credenciais persistidas no servidor"
+        env:
+          GHCR_USER: ${{ github.repository_owner }}
+          GHCR_TOKEN: ${{ secrets.GH_PAT }}
+          DOCKERHUB_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Preparar infraestrutura base (networks, volumes, permissões)
         uses: appleboy/ssh-action@v1.2.2
         with:
@@ -3073,111 +3156,29 @@ jobs:
             echo ""
             
             # =================================================================
-            # Login GHCR (server-side) + retry de pull
+            # Verificação de autenticação Docker (login feito no prepare job)
             # =================================================================
-            GHCR_USER="${{ github.repository_owner }}"
-            GHCR_TOKEN="${{ secrets.GH_PAT }}"
-            TOKEN_SOURCE="GH_PAT"
-            if [ -z "${GHCR_TOKEN}" ]; then
-              echo "❌ ERRO: GH_PAT não disponível para login no GHCR"
-              exit 1
-            fi
-            echo "🌐 Verificando conectividade com GHCR..."
-            if ! getent hosts ghcr.io >/dev/null 2>&1; then
-              echo "❌ ERRO: DNS não resolve ghcr.io a partir do servidor"
-              exit 1
-            fi
-            GHCR_OK=false
-            for attempt in 1 2 3 4 5 6 7 8 9 10; do
-              if curl -sS --connect-timeout 10 --max-time 60 -D /tmp/ghcr-check.txt -o /dev/null https://ghcr.io/v2/ 2>/tmp/ghcr-check.err; then
-                GHCR_OK=true
-                break
-              fi
-              echo "⚠️  GHCR timeout (tentativa $attempt/10). Aguardando $((attempt * 3))s..."
-              sleep $((attempt * 3))
-            done
-            if [ "$GHCR_OK" != "true" ]; then
-              echo "❌ ERRO: Sem conectividade HTTP com ghcr.io (curl falhou após retries)"
-              if [ -s /tmp/ghcr-check.err ]; then
-                echo "   Detalhe: $(tail -n 1 /tmp/ghcr-check.err)"
-              fi
-              exit 1
-            fi
-            # GHCR pode responder 401/403 (sem auth) ou 405 (HEAD não permitido)
-            # Aceitar qualquer resposta que indique registry v2
-            if ! grep -qi 'docker-distribution-api-version: registry/2.0' /tmp/ghcr-check.txt; then
-              echo "❌ ERRO: Resposta inesperada do GHCR:"
-              cat /tmp/ghcr-check.txt
-              exit 1
-            fi
-            echo "✅ Conectividade com GHCR OK"
-            echo ""
-            echo "🔐 Login GHCR com ${TOKEN_SOURCE} (usuário: ${GHCR_USER})"
-            echo "   🔎 GHCR token length: ${#GHCR_TOKEN}"
-            login_with_retry() {
-              local attempts=8
-              local delay=5
-              local attempt=1
-              while [ $attempt -le $attempts ]; do
-                LOGIN_ERROR=$(echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>&1) && return 0
-                echo "⚠️ Login GHCR falhou (tentativa $attempt/$attempts). Aguardando ${delay}s..."
-                echo "   Detalhe: ${LOGIN_ERROR}"
-                sleep "$delay"
-                delay=$((delay * 2))
-                attempt=$((attempt + 1))
-              done
-              return 1
-            }
-            if ! login_with_retry; then
-              echo "❌ ERRO: Falha no login do GHCR com ${TOKEN_SOURCE} (após retries)"
-              exit 1
-            fi
-            echo "✅ Login GHCR OK"
-            
+            # Login GHCR + Docker Hub é feito UMA VEZ no job prepare.
+            # Aqui apenas verificamos que credenciais estão ativas.
+            # Se não estiverem, fazemos fallback com 1 tentativa.
+            # REF: CLAUDE.md Regra 2 (Não duplicar), Regra 6 (Enterprise-grade)
             # =================================================================
-            # Login Docker Hub (server-side) - conta Pro = rate limits altos
-            # =================================================================
-            # CAUSA RAIZ (08/02/2026): Imagens externas (cAdvisor, Grafana,
-            #   ClickHouse, etc.) eram puxadas SEM autenticação Docker Hub.
-            #   Sem auth: 100 pulls/6h. Com auth Pro: 5000 pulls/dia.
-            #   Erro "context deadline exceeded" ocorre por throttling anônimo.
-            # REF: https://docs.docker.com/docker-hub/download-rate-limit/
-            # =================================================================
-            DOCKERHUB_USER="${{ secrets.DOCKERHUB_USERNAME }}"
-            DOCKERHUB_TOKEN="${{ secrets.DOCKERHUB_TOKEN }}"
-            if [ -n "${DOCKERHUB_USER:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
-              echo "🔐 Login Docker Hub (conta Pro)..."
-              # =================================================================
-              # CORREÇÃO (09/02/2026): Retry logic para Docker Hub login
-              # =================================================================
-              # CAUSA RAIZ: Docker Hub login fazia UMA única tentativa. Se auth.docker.io
-              #   desse timeout (latência Hetzner→Docker Hub ~2-11s), login falhava e
-              #   deploy continuava sem autenticação (100 pulls/6h anônimo).
-              #   GHCR já tinha retry com 8 tentativas, mas Docker Hub não.
-              # SOLUÇÃO: Retry com exponential backoff (mesmo padrão GHCR).
-              # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 2 (Não duplicar padrões)
-              # =================================================================
-              dockerhub_login_with_retry() {
-                local attempts=5
-                local delay=5
-                local attempt=1
-                while [ $attempt -le $attempts ]; do
-                  DH_LOGIN_ERROR=$(echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USER" --password-stdin 2>&1) && return 0
-                  echo "   ⚠️ Docker Hub login falhou (tentativa $attempt/$attempts). Aguardando ${delay}s..."
-                  echo "   Detalhe: ${DH_LOGIN_ERROR}"
-                  sleep "$delay"
-                  delay=$((delay * 2))
-                  attempt=$((attempt + 1))
-                done
-                return 1
-              }
-              if dockerhub_login_with_retry; then
-                echo "✅ Docker Hub autenticado (rate limits Pro)"
-              else
-                echo "⚠️ Docker Hub login falhou após 5 tentativas - continuando sem auth (rate limits anônimos)"
-              fi
+            echo "🔐 Verificando autenticação Docker (login feito no prepare)..."
+            if grep -q "ghcr.io" ~/.docker/config.json 2>/dev/null; then
+              echo "   ✅ GHCR autenticado"
             else
-              echo "⚠️ Docker Hub sem credenciais - imagens externas com rate limit anônimo"
+              echo "   ⚠️ GHCR não encontrado - fallback login..."
+              echo "${{ secrets.GH_PAT }}" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin 2>&1 || {
+                echo "   ❌ ERRO: GHCR login falhou"; exit 1
+              }
+            fi
+            if grep -q "index.docker.io" ~/.docker/config.json 2>/dev/null; then
+              echo "   ✅ Docker Hub autenticado"
+            else
+              echo "   ⚠️ Docker Hub não encontrado - fallback login..."
+              echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin 2>&1 || {
+                echo "   ⚠️ Docker Hub fallback falhou - continuando com rate limits anônimos"
+              }
             fi
             echo ""
             
@@ -3190,40 +3191,41 @@ jobs:
             fi
             echo ""
             
-            # Pull das imagens (SEQUENCIAL - evita timeout em registries lentos)
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "📥 PULL: Baixando imagens SEQUENCIALMENTE..."
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            # =================================================================
-            # CORREÇÃO (08/02/2026): Pull sequencial por imagem
-            # =================================================================
-            # PROBLEMA: docker compose pull baixa TODAS as imagens em paralelo.
-            #   Com ~10 imagens × max-concurrent-downloads=3, são ~30 conexões
-            #   simultâneas. Docker Hub/Quay.io têm latência alta (~2-11s TCP)
-            #   do Hetzner, causando timeouts e EOF errors.
-            #
-            # SOLUÇÃO: Listar imagens únicas e puxar uma a uma com retry.
-            #   registry-mirrors (mirror.gcr.io) + pull sequencial = zero timeouts.
-            #
-            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Mudanças cirúrgicas)
-            # =================================================================
-            pull_single_image() {
+            # Função pull inteligente com verificação de digest
+            pull_if_needed() {
               local image="$1"
-              local attempts=5
-              local delay=15
-              local attempt=1
-              while [ $attempt -le $attempts ]; do
-                if docker pull "$image" 2>&1; then
-                  return 0
-                fi
-                echo "   ⚠️ Retry $attempt/$attempts para $image (aguardando ${delay}s)..."
-                sleep "$delay"
-                delay=$((delay * 2))
-                attempt=$((attempt + 1))
+              local local_id
+              local_id=$(docker image inspect "$image" --format '{{.Id}}' 2>/dev/null) || local_id=""
+              if [ -z "$local_id" ]; then
+                echo "   📥 NOVA (não existe localmente) - baixando..."
+                for attempt in 1 2 3; do
+                  if docker pull "$image" 2>&1; then return 0; fi
+                  echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
+                  sleep $((attempt * 10))
+                done
+                return 1
+              fi
+              local remote_digest
+              remote_digest=$(docker manifest inspect "$image" 2>/dev/null | grep -m1 '"digest"' | cut -d'"' -f4) || remote_digest=""
+              local local_digest
+              local_digest=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}' 2>/dev/null | cut -d'@' -f2) || local_digest=""
+              if [ -n "$remote_digest" ] && [ "$remote_digest" = "$local_digest" ]; then
+                echo "   ⏩ SKIP (digest idêntico - imagem não mudou)"
+                return 0
+              fi
+              echo "   📥 PULL (digest diferente ou atualizado)"
+              for attempt in 1 2 3; do
+                if docker pull "$image" 2>&1; then return 0; fi
+                echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
+                sleep $((attempt * 10))
               done
               return 1
             }
             
+            # Pull inteligente das imagens (verifica digest antes de baixar)
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📥 PULL INTELIGENTE: Verificando imagens..."
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             IMAGES=$(docker compose -p alice-infra --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.infra.yml config --images 2>/dev/null | sort -u)
             TOTAL=$(echo "$IMAGES" | wc -l)
             COUNT=0
@@ -3232,12 +3234,10 @@ jobs:
             for img in $IMAGES; do
               COUNT=$((COUNT + 1))
               echo ""
-              echo "📥 [$COUNT/$TOTAL] $img"
-              if ! pull_single_image "$img"; then
+              echo "🔍 [$COUNT/$TOTAL] $img"
+              if ! pull_if_needed "$img"; then
                 echo "   ❌ FALHOU: $img"
                 FAILED="$FAILED $img"
-              else
-                echo "   ✅ OK"
               fi
             done
             
@@ -3247,7 +3247,7 @@ jobs:
               exit 1
             fi
             echo ""
-            echo "✅ Pull INFRA concluído ($TOTAL imagens)"
+            echo "✅ Pull INFRA concluído ($TOTAL imagens verificadas)"
             echo ""
             
             # =================================================================
@@ -4285,157 +4285,90 @@ jobs:
             echo ""
             
             # =================================================================
-            # Login GHCR (server-side) + retry de pull
+            # Verificação de autenticação Docker (login feito no prepare job)
             # =================================================================
-            GHCR_USER="${{ github.repository_owner }}"
-            GHCR_TOKEN="${{ secrets.GH_PAT }}"
-            TOKEN_SOURCE="GH_PAT"
-            if [ -z "${GHCR_TOKEN}" ]; then
-              echo "❌ ERRO: GH_PAT não disponível para login no GHCR"
-              exit 1
+            echo "🔐 Verificando autenticação Docker (login feito no prepare)..."
+            if grep -q "ghcr.io" ~/.docker/config.json 2>/dev/null; then
+              echo "   ✅ GHCR autenticado"
+            else
+              echo "   ⚠️ GHCR não encontrado - fallback login..."
+              echo "${{ secrets.GH_PAT }}" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin 2>&1 || {
+                echo "   ❌ ERRO: GHCR login falhou"; exit 1
+              }
             fi
-            echo "🌐 Verificando conectividade com GHCR..."
-            if ! getent hosts ghcr.io >/dev/null 2>&1; then
-              echo "❌ ERRO: DNS não resolve ghcr.io a partir do servidor"
-              exit 1
+            if grep -q "index.docker.io" ~/.docker/config.json 2>/dev/null; then
+              echo "   ✅ Docker Hub autenticado"
+            else
+              echo "   ⚠️ Docker Hub não encontrado - fallback login..."
+              echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin 2>&1 || {
+                echo "   ⚠️ Docker Hub fallback falhou - continuando com rate limits anônimos"
+              }
             fi
-            GHCR_OK=false
-            for attempt in 1 2 3 4 5 6 7 8 9 10; do
-              if curl -sS --connect-timeout 10 --max-time 60 -D /tmp/ghcr-check.txt -o /dev/null https://ghcr.io/v2/ 2>/tmp/ghcr-check.err; then
-                GHCR_OK=true
-                break
-              fi
-              echo "⚠️  GHCR timeout (tentativa $attempt/10). Aguardando $((attempt * 3))s..."
-              sleep $((attempt * 3))
-            done
-            if [ "$GHCR_OK" != "true" ]; then
-              echo "❌ ERRO: Sem conectividade HTTP com ghcr.io (curl falhou após retries)"
-              if [ -s /tmp/ghcr-check.err ]; then
-                echo "   Detalhe: $(tail -n 1 /tmp/ghcr-check.err)"
-              fi
-              exit 1
-            fi
-            # GHCR pode responder 401/403 (sem auth) ou 405 (HEAD não permitido)
-            # Aceitar qualquer resposta que indique registry v2
-            if ! grep -qi 'docker-distribution-api-version: registry/2.0' /tmp/ghcr-check.txt; then
-              echo "❌ ERRO: Resposta inesperada do GHCR:"
-              cat /tmp/ghcr-check.txt
-              exit 1
-            fi
-            echo "✅ Conectividade com GHCR OK"
             echo ""
-            echo "🔐 Login GHCR com ${TOKEN_SOURCE} (usuário: ${GHCR_USER})"
-            echo "   🔎 GHCR token length: ${#GHCR_TOKEN}"
-            login_with_retry() {
-              local attempts=8
-              local delay=5
-              local attempt=1
-              while [ $attempt -le $attempts ]; do
-                LOGIN_ERROR=$(echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>&1) && return 0
-                echo "⚠️ Login GHCR falhou (tentativa $attempt/$attempts). Aguardando ${delay}s..."
-                echo "   Detalhe: ${LOGIN_ERROR}"
-                sleep "$delay"
-                delay=$((delay * 2))
-                attempt=$((attempt + 1))
-              done
-              return 1
-            }
-            if ! login_with_retry; then
-              echo "❌ ERRO: Falha no login do GHCR com ${TOKEN_SOURCE} (após retries)"
-              exit 1
-            fi
-            echo "✅ Login GHCR OK"
             
-            # Login Docker Hub (server-side) - conta Pro = rate limits altos
-            DOCKERHUB_USER="${{ secrets.DOCKERHUB_USERNAME }}"
-            DOCKERHUB_TOKEN="${{ secrets.DOCKERHUB_TOKEN }}"
-            if [ -n "${DOCKERHUB_USER:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
-              echo "🔐 Login Docker Hub (conta Pro)..."
-              # =================================================================
-              # CORREÇÃO (09/02/2026): Retry logic para Docker Hub login
-              # =================================================================
-              # CAUSA RAIZ: Docker Hub login fazia UMA única tentativa. Se auth.docker.io
-              #   desse timeout (latência Hetzner→Docker Hub ~2-11s), login falhava e
-              #   deploy continuava sem autenticação (100 pulls/6h anônimo).
-              #   GHCR já tinha retry com 8 tentativas, mas Docker Hub não.
-              # SOLUÇÃO: Retry com exponential backoff (mesmo padrão GHCR).
-              # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 2 (Não duplicar padrões)
-              # =================================================================
-              dockerhub_login_with_retry() {
-                local attempts=5
-                local delay=5
-                local attempt=1
-                while [ $attempt -le $attempts ]; do
-                  DH_LOGIN_ERROR=$(echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USER" --password-stdin 2>&1) && return 0
-                  echo "   ⚠️ Docker Hub login falhou (tentativa $attempt/$attempts). Aguardando ${delay}s..."
-                  echo "   Detalhe: ${DH_LOGIN_ERROR}"
-                  sleep "$delay"
-                  delay=$((delay * 2))
-                  attempt=$((attempt + 1))
+            # =================================================================
+            # Pull INTELIGENTE com verificação de digest (09/02/2026)
+            # =================================================================
+            # PROBLEMA: Pull cego baixava TODAS as imagens mesmo quando inalteradas.
+            #   Imagens GPU (11-17GB) e externas (Redis, Grafana) eram re-baixadas
+            #   desnecessariamente, desperdiçando 15-40 min por deploy.
+            #
+            # SOLUÇÃO: Comparar digest local vs remoto. Se idênticos = SKIP.
+            #   Imagens retagueadas pelo release.yml terão mesmo digest = SKIP.
+            #   Apenas imagens realmente modificadas são baixadas.
+            #
+            # REF: CLAUDE.md Regra 2 (Não duplicar), Regra 6 (Enterprise-grade)
+            # =================================================================
+            pull_if_needed() {
+              local image="$1"
+              local local_id
+              local_id=$(docker image inspect "$image" --format '{{.Id}}' 2>/dev/null) || local_id=""
+              if [ -z "$local_id" ]; then
+                echo "   📥 NOVA (não existe localmente) - baixando..."
+                for attempt in 1 2 3; do
+                  if docker pull "$image" 2>&1; then return 0; fi
+                  echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
+                  sleep $((attempt * 10))
                 done
                 return 1
-              }
-              if dockerhub_login_with_retry; then
-                echo "✅ Docker Hub autenticado (rate limits Pro)"
-              else
-                echo "⚠️ Docker Hub login falhou após 5 tentativas - continuando sem auth (rate limits anônimos)"
               fi
-            else
-              echo "⚠️ Docker Hub sem credenciais - imagens externas com rate limit anônimo"
-            fi
-            echo ""
-            
-            # =================================================================
-            # CORREÇÃO (08/02/2026): Pull SEQUENCIAL por imagem
-            # =================================================================
-            # PROBLEMA: docker compose pull baixa TODAS as imagens em paralelo.
-            #   Com ~15 imagens (8 services + 3 GPU), cada uma com downloads
-            #   paralelos, são dezenas de conexões simultâneas. Docker Hub tem
-            #   latência alta (~2-11s TCP) do Hetzner, causando timeouts.
-            #
-            # SOLUÇÃO: Listar imagens únicas e puxar uma a uma com retry.
-            #   registry-mirrors (mirror.gcr.io) + pull sequencial = zero timeouts.
-            #
-            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Mudanças cirúrgicas)
-            # =================================================================
-            pull_single_image() {
-              local image="$1"
-              local attempts=5
-              local delay=15
-              local attempt=1
-              while [ $attempt -le $attempts ]; do
-                if docker pull "$image" 2>&1; then
-                  return 0
-                fi
-                echo "   ⚠️ Retry $attempt/$attempts para $image (aguardando ${delay}s)..."
-                sleep "$delay"
-                delay=$((delay * 2))
-                attempt=$((attempt + 1))
+              local remote_digest
+              remote_digest=$(docker manifest inspect "$image" 2>/dev/null | grep -m1 '"digest"' | cut -d'"' -f4) || remote_digest=""
+              local local_digest
+              local_digest=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}' 2>/dev/null | cut -d'@' -f2) || local_digest=""
+              if [ -n "$remote_digest" ] && [ "$remote_digest" = "$local_digest" ]; then
+                echo "   ⏩ SKIP (digest idêntico - imagem não mudou)"
+                return 0
+              fi
+              echo "   📥 PULL (digest diferente ou atualizado)"
+              for attempt in 1 2 3; do
+                if docker pull "$image" 2>&1; then return 0; fi
+                echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
+                sleep $((attempt * 10))
               done
               return 1
             }
             
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "📥 PULL: Baixando imagens SEQUENCIALMENTE (services + GPU)..."
+            echo "📥 PULL INTELIGENTE: Verificando imagens (services + GPU)..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             
-            # Listar TODAS as imagens (services principais + GPU profiles)
             IMAGES_MAIN=$(docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml config --images 2>/dev/null || true)
             IMAGES_GPU=$(docker compose -p alice-alice --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.alice.yml --profile training config --images 2>/dev/null || true)
             IMAGES=$(echo -e "${IMAGES_MAIN}\n${IMAGES_GPU}" | sort -u | grep -v '^$')
             TOTAL=$(echo "$IMAGES" | wc -l)
             COUNT=0
             FAILED=""
+            SKIPPED=0
+            PULLED=0
             
             for img in $IMAGES; do
               COUNT=$((COUNT + 1))
               echo ""
-              echo "📥 [$COUNT/$TOTAL] $img"
-              if ! pull_single_image "$img"; then
+              echo "🔍 [$COUNT/$TOTAL] $img"
+              if ! pull_if_needed "$img"; then
                 echo "   ❌ FALHOU: $img"
                 FAILED="$FAILED $img"
-              else
-                echo "   ✅ OK"
               fi
             done
             
@@ -4445,7 +4378,7 @@ jobs:
               exit 1
             fi
             echo ""
-            echo "✅ Pull ALICE concluído ($TOTAL imagens)"
+            echo "✅ Pull ALICE concluído ($TOTAL imagens verificadas)"
             echo ""
 
             # =================================================================
@@ -5120,120 +5053,54 @@ jobs:
             echo "📝 Log persistido em: $LOG_FILE"
             
             # =================================================================
-            # Login GHCR (server-side) + retry de pull
+            # Verificação de autenticação Docker (login feito no prepare job)
             # =================================================================
-            GHCR_USER="${{ github.repository_owner }}"
-            GHCR_TOKEN="${{ secrets.GH_PAT }}"
-            TOKEN_SOURCE="GH_PAT"
-            if [ -z "${GHCR_TOKEN}" ]; then
-              echo "❌ ERRO: GH_PAT não disponível para login no GHCR"
-              exit 1
+            echo "🔐 Verificando autenticação Docker (login feito no prepare)..."
+            if grep -q "ghcr.io" ~/.docker/config.json 2>/dev/null; then
+              echo "   ✅ GHCR autenticado"
+            else
+              echo "   ⚠️ GHCR não encontrado - fallback login..."
+              echo "${{ secrets.GH_PAT }}" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin 2>&1 || {
+                echo "   ❌ ERRO: GHCR login falhou"; exit 1
+              }
             fi
-            echo "🌐 Verificando conectividade com GHCR..."
-            if ! getent hosts ghcr.io >/dev/null 2>&1; then
-              echo "❌ ERRO: DNS não resolve ghcr.io a partir do servidor"
-              exit 1
+            if grep -q "index.docker.io" ~/.docker/config.json 2>/dev/null; then
+              echo "   ✅ Docker Hub autenticado"
+            else
+              echo "   ⚠️ Docker Hub não encontrado - fallback login..."
+              echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin 2>&1 || {
+                echo "   ⚠️ Docker Hub fallback falhou - continuando com rate limits anônimos"
+              }
             fi
-            GHCR_OK=false
-            for attempt in 1 2 3 4 5 6 7 8 9 10; do
-              if curl -sS --connect-timeout 10 --max-time 60 -D /tmp/ghcr-check.txt -o /dev/null https://ghcr.io/v2/ 2>/tmp/ghcr-check.err; then
-                GHCR_OK=true
-                break
-              fi
-              echo "⚠️  GHCR timeout (tentativa $attempt/10). Aguardando $((attempt * 3))s..."
-              sleep $((attempt * 3))
-            done
-            if [ "$GHCR_OK" != "true" ]; then
-              echo "❌ ERRO: Sem conectividade HTTP com ghcr.io (curl falhou após retries)"
-              if [ -s /tmp/ghcr-check.err ]; then
-                echo "   Detalhe: $(tail -n 1 /tmp/ghcr-check.err)"
-              fi
-              exit 1
-            fi
-            # GHCR pode responder 401/403 (sem auth) ou 405 (HEAD não permitido)
-            # Aceitar qualquer resposta que indique registry v2
-            if ! grep -qi 'docker-distribution-api-version: registry/2.0' /tmp/ghcr-check.txt; then
-              echo "❌ ERRO: Resposta inesperada do GHCR:"
-              cat /tmp/ghcr-check.txt
-              exit 1
-            fi
-            echo "✅ Conectividade com GHCR OK"
             echo ""
-            echo "🔐 Login GHCR com ${TOKEN_SOURCE} (usuário: ${GHCR_USER})"
-            echo "   🔎 GHCR token length: ${#GHCR_TOKEN}"
-            login_with_retry() {
-              local attempts=8
-              local delay=5
-              local attempt=1
-              while [ $attempt -le $attempts ]; do
-                LOGIN_ERROR=$(echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>&1) && return 0
-                echo "⚠️ Login GHCR falhou (tentativa $attempt/$attempts). Aguardando ${delay}s..."
-                echo "   Detalhe: ${LOGIN_ERROR}"
-                sleep "$delay"
-                delay=$((delay * 2))
-                attempt=$((attempt + 1))
-              done
-              return 1
-            }
-            if ! login_with_retry; then
-              echo "❌ ERRO: Falha no login do GHCR com ${TOKEN_SOURCE} (após retries)"
-              exit 1
-            fi
-            echo "✅ Login GHCR OK"
             
-            # Login Docker Hub (server-side) - conta Pro = rate limits altos
-            DOCKERHUB_USER="${{ secrets.DOCKERHUB_USERNAME }}"
-            DOCKERHUB_TOKEN="${{ secrets.DOCKERHUB_TOKEN }}"
-            if [ -n "${DOCKERHUB_USER:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
-              echo "🔐 Login Docker Hub (conta Pro)..."
-              # =================================================================
-              # CORREÇÃO (09/02/2026): Retry logic para Docker Hub login
-              # =================================================================
-              # CAUSA RAIZ: Docker Hub login fazia UMA única tentativa. Se auth.docker.io
-              #   desse timeout (latência Hetzner→Docker Hub ~2-11s), login falhava e
-              #   deploy continuava sem autenticação (100 pulls/6h anônimo).
-              #   GHCR já tinha retry com 8 tentativas, mas Docker Hub não.
-              # SOLUÇÃO: Retry com exponential backoff (mesmo padrão GHCR).
-              # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 2 (Não duplicar padrões)
-              # =================================================================
-              dockerhub_login_with_retry() {
-                local attempts=5
-                local delay=5
-                local attempt=1
-                while [ $attempt -le $attempts ]; do
-                  DH_LOGIN_ERROR=$(echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USER" --password-stdin 2>&1) && return 0
-                  echo "   ⚠️ Docker Hub login falhou (tentativa $attempt/$attempts). Aguardando ${delay}s..."
-                  echo "   Detalhe: ${DH_LOGIN_ERROR}"
-                  sleep "$delay"
-                  delay=$((delay * 2))
-                  attempt=$((attempt + 1))
+            # Função pull inteligente com verificação de digest
+            pull_if_needed() {
+              local image="$1"
+              local local_id
+              local_id=$(docker image inspect "$image" --format '{{.Id}}' 2>/dev/null) || local_id=""
+              if [ -z "$local_id" ]; then
+                echo "   📥 NOVA (não existe localmente) - baixando..."
+                for attempt in 1 2 3; do
+                  if docker pull "$image" 2>&1; then return 0; fi
+                  echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
+                  sleep $((attempt * 10))
                 done
                 return 1
-              }
-              if dockerhub_login_with_retry; then
-                echo "✅ Docker Hub autenticado (rate limits Pro)"
-              else
-                echo "⚠️ Docker Hub login falhou após 5 tentativas - continuando sem auth (rate limits anônimos)"
               fi
-            else
-              echo "⚠️ Docker Hub sem credenciais - imagens externas com rate limit anônimo"
-            fi
-            echo ""
-            
-            # Função de pull sequencial por imagem (evita timeout em registries lentos)
-            pull_single_image() {
-              local image="$1"
-              local attempts=5
-              local delay=15
-              local attempt=1
-              while [ $attempt -le $attempts ]; do
-                if docker pull "$image" 2>&1; then
-                  return 0
-                fi
-                echo "   ⚠️ Retry $attempt/$attempts para $image (aguardando ${delay}s)..."
-                sleep "$delay"
-                delay=$((delay * 2))
-                attempt=$((attempt + 1))
+              local remote_digest
+              remote_digest=$(docker manifest inspect "$image" 2>/dev/null | grep -m1 '"digest"' | cut -d'"' -f4) || remote_digest=""
+              local local_digest
+              local_digest=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}' 2>/dev/null | cut -d'@' -f2) || local_digest=""
+              if [ -n "$remote_digest" ] && [ "$remote_digest" = "$local_digest" ]; then
+                echo "   ⏩ SKIP (digest idêntico - imagem não mudou)"
+                return 0
+              fi
+              echo "   📥 PULL (digest diferente ou atualizado)"
+              for attempt in 1 2 3; do
+                if docker pull "$image" 2>&1; then return 0; fi
+                echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
+                sleep $((attempt * 10))
               done
               return 1
             }
@@ -5256,9 +5123,9 @@ jobs:
             fi
             echo ""
             
-            # Pull das imagens (SEQUENCIAL - evita timeout)
+            # Pull inteligente das imagens (verifica digest antes de baixar)
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "📥 PULL: Baixando imagens SEQUENCIALMENTE..."
+            echo "📥 PULL INTELIGENTE: Verificando imagens..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             IMAGES=$(docker compose -p alice-observability --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.observability.yml config --images 2>/dev/null | sort -u)
             TOTAL=$(echo "$IMAGES" | wc -l)
@@ -5268,12 +5135,10 @@ jobs:
             for img in $IMAGES; do
               COUNT=$((COUNT + 1))
               echo ""
-              echo "📥 [$COUNT/$TOTAL] $img"
-              if ! pull_single_image "$img"; then
+              echo "🔍 [$COUNT/$TOTAL] $img"
+              if ! pull_if_needed "$img"; then
                 echo "   ❌ FALHOU: $img"
                 FAILED="$FAILED $img"
-              else
-                echo "   ✅ OK"
               fi
             done
             
@@ -5283,7 +5148,7 @@ jobs:
               exit 1
             fi
             echo ""
-            echo "✅ Pull OBSERVABILITY concluído ($TOTAL imagens)"
+            echo "✅ Pull OBSERVABILITY concluído ($TOTAL imagens verificadas)"
             echo ""
             
             # =================================================================
@@ -5873,120 +5738,54 @@ jobs:
             echo "📝 Log persistido em: $LOG_FILE"
             
             # =================================================================
-            # Login GHCR (server-side) + retry de pull
+            # Verificação de autenticação Docker (login feito no prepare job)
             # =================================================================
-            GHCR_USER="${{ github.repository_owner }}"
-            GHCR_TOKEN="${{ secrets.GH_PAT }}"
-            TOKEN_SOURCE="GH_PAT"
-            if [ -z "${GHCR_TOKEN}" ]; then
-              echo "❌ ERRO: GH_PAT não disponível para login no GHCR"
-              exit 1
+            echo "🔐 Verificando autenticação Docker (login feito no prepare)..."
+            if grep -q "ghcr.io" ~/.docker/config.json 2>/dev/null; then
+              echo "   ✅ GHCR autenticado"
+            else
+              echo "   ⚠️ GHCR não encontrado - fallback login..."
+              echo "${{ secrets.GH_PAT }}" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin 2>&1 || {
+                echo "   ❌ ERRO: GHCR login falhou"; exit 1
+              }
             fi
-            echo "🌐 Verificando conectividade com GHCR..."
-            if ! getent hosts ghcr.io >/dev/null 2>&1; then
-              echo "❌ ERRO: DNS não resolve ghcr.io a partir do servidor"
-              exit 1
+            if grep -q "index.docker.io" ~/.docker/config.json 2>/dev/null; then
+              echo "   ✅ Docker Hub autenticado"
+            else
+              echo "   ⚠️ Docker Hub não encontrado - fallback login..."
+              echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin 2>&1 || {
+                echo "   ⚠️ Docker Hub fallback falhou - continuando com rate limits anônimos"
+              }
             fi
-            GHCR_OK=false
-            for attempt in 1 2 3 4 5 6 7 8 9 10; do
-              if curl -sS --connect-timeout 10 --max-time 60 -D /tmp/ghcr-check.txt -o /dev/null https://ghcr.io/v2/ 2>/tmp/ghcr-check.err; then
-                GHCR_OK=true
-                break
-              fi
-              echo "⚠️  GHCR timeout (tentativa $attempt/10). Aguardando $((attempt * 3))s..."
-              sleep $((attempt * 3))
-            done
-            if [ "$GHCR_OK" != "true" ]; then
-              echo "❌ ERRO: Sem conectividade HTTP com ghcr.io (curl falhou após retries)"
-              if [ -s /tmp/ghcr-check.err ]; then
-                echo "   Detalhe: $(tail -n 1 /tmp/ghcr-check.err)"
-              fi
-              exit 1
-            fi
-            # GHCR pode responder 401/403 (sem auth) ou 405 (HEAD não permitido)
-            # Aceitar qualquer resposta que indique registry v2
-            if ! grep -qi 'docker-distribution-api-version: registry/2.0' /tmp/ghcr-check.txt; then
-              echo "❌ ERRO: Resposta inesperada do GHCR:"
-              cat /tmp/ghcr-check.txt
-              exit 1
-            fi
-            echo "✅ Conectividade com GHCR OK"
             echo ""
-            echo "🔐 Login GHCR com ${TOKEN_SOURCE} (usuário: ${GHCR_USER})"
-            echo "   🔎 GHCR token length: ${#GHCR_TOKEN}"
-            login_with_retry() {
-              local attempts=8
-              local delay=5
-              local attempt=1
-              while [ $attempt -le $attempts ]; do
-                LOGIN_ERROR=$(echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>&1) && return 0
-                echo "⚠️ Login GHCR falhou (tentativa $attempt/$attempts). Aguardando ${delay}s..."
-                echo "   Detalhe: ${LOGIN_ERROR}"
-                sleep "$delay"
-                delay=$((delay * 2))
-                attempt=$((attempt + 1))
-              done
-              return 1
-            }
-            if ! login_with_retry; then
-              echo "❌ ERRO: Falha no login do GHCR com ${TOKEN_SOURCE} (após retries)"
-              exit 1
-            fi
-            echo "✅ Login GHCR OK"
             
-            # Login Docker Hub (server-side) - conta Pro = rate limits altos
-            DOCKERHUB_USER="${{ secrets.DOCKERHUB_USERNAME }}"
-            DOCKERHUB_TOKEN="${{ secrets.DOCKERHUB_TOKEN }}"
-            if [ -n "${DOCKERHUB_USER:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
-              echo "🔐 Login Docker Hub (conta Pro)..."
-              # =================================================================
-              # CORREÇÃO (09/02/2026): Retry logic para Docker Hub login
-              # =================================================================
-              # CAUSA RAIZ: Docker Hub login fazia UMA única tentativa. Se auth.docker.io
-              #   desse timeout (latência Hetzner→Docker Hub ~2-11s), login falhava e
-              #   deploy continuava sem autenticação (100 pulls/6h anônimo).
-              #   GHCR já tinha retry com 8 tentativas, mas Docker Hub não.
-              # SOLUÇÃO: Retry com exponential backoff (mesmo padrão GHCR).
-              # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 2 (Não duplicar padrões)
-              # =================================================================
-              dockerhub_login_with_retry() {
-                local attempts=5
-                local delay=5
-                local attempt=1
-                while [ $attempt -le $attempts ]; do
-                  DH_LOGIN_ERROR=$(echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USER" --password-stdin 2>&1) && return 0
-                  echo "   ⚠️ Docker Hub login falhou (tentativa $attempt/$attempts). Aguardando ${delay}s..."
-                  echo "   Detalhe: ${DH_LOGIN_ERROR}"
-                  sleep "$delay"
-                  delay=$((delay * 2))
-                  attempt=$((attempt + 1))
+            # Função pull inteligente com verificação de digest
+            pull_if_needed() {
+              local image="$1"
+              local local_id
+              local_id=$(docker image inspect "$image" --format '{{.Id}}' 2>/dev/null) || local_id=""
+              if [ -z "$local_id" ]; then
+                echo "   📥 NOVA (não existe localmente) - baixando..."
+                for attempt in 1 2 3; do
+                  if docker pull "$image" 2>&1; then return 0; fi
+                  echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
+                  sleep $((attempt * 10))
                 done
                 return 1
-              }
-              if dockerhub_login_with_retry; then
-                echo "✅ Docker Hub autenticado (rate limits Pro)"
-              else
-                echo "⚠️ Docker Hub login falhou após 5 tentativas - continuando sem auth (rate limits anônimos)"
               fi
-            else
-              echo "⚠️ Docker Hub sem credenciais - imagens externas com rate limit anônimo"
-            fi
-            echo ""
-            
-            # Função de pull sequencial por imagem (evita timeout em registries lentos)
-            pull_single_image() {
-              local image="$1"
-              local attempts=5
-              local delay=15
-              local attempt=1
-              while [ $attempt -le $attempts ]; do
-                if docker pull "$image" 2>&1; then
-                  return 0
-                fi
-                echo "   ⚠️ Retry $attempt/$attempts para $image (aguardando ${delay}s)..."
-                sleep "$delay"
-                delay=$((delay * 2))
-                attempt=$((attempt + 1))
+              local remote_digest
+              remote_digest=$(docker manifest inspect "$image" 2>/dev/null | grep -m1 '"digest"' | cut -d'"' -f4) || remote_digest=""
+              local local_digest
+              local_digest=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}' 2>/dev/null | cut -d'@' -f2) || local_digest=""
+              if [ -n "$remote_digest" ] && [ "$remote_digest" = "$local_digest" ]; then
+                echo "   ⏩ SKIP (digest idêntico - imagem não mudou)"
+                return 0
+              fi
+              echo "   📥 PULL (digest diferente ou atualizado)"
+              for attempt in 1 2 3; do
+                if docker pull "$image" 2>&1; then return 0; fi
+                echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
+                sleep $((attempt * 10))
               done
               return 1
             }
@@ -6009,9 +5808,9 @@ jobs:
             fi
             echo ""
             
-            # Pull das imagens (SEQUENCIAL - evita timeout)
+            # Pull inteligente das imagens (verifica digest antes de baixar)
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "📥 PULL: Baixando imagens SEQUENCIALMENTE..."
+            echo "📥 PULL INTELIGENTE: Verificando imagens..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             IMAGES=$(docker compose -p alice-erpnext --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.erpnext.yml config --images 2>/dev/null | sort -u)
             TOTAL=$(echo "$IMAGES" | wc -l)
@@ -6021,12 +5820,10 @@ jobs:
             for img in $IMAGES; do
               COUNT=$((COUNT + 1))
               echo ""
-              echo "📥 [$COUNT/$TOTAL] $img"
-              if ! pull_single_image "$img"; then
+              echo "🔍 [$COUNT/$TOTAL] $img"
+              if ! pull_if_needed "$img"; then
                 echo "   ❌ FALHOU: $img"
                 FAILED="$FAILED $img"
-              else
-                echo "   ✅ OK"
               fi
             done
             
@@ -6036,7 +5833,7 @@ jobs:
               exit 1
             fi
             echo ""
-            echo "✅ Pull ERPNEXT concluído ($TOTAL imagens)"
+            echo "✅ Pull ERPNEXT concluído ($TOTAL imagens verificadas)"
             echo ""
 
             # Deploy
@@ -6574,120 +6371,54 @@ jobs:
             echo "📝 Log persistido em: $LOG_FILE"
             
             # =================================================================
-            # Login GHCR (server-side) + retry de pull
+            # Verificação de autenticação Docker (login feito no prepare job)
             # =================================================================
-            GHCR_USER="${{ github.repository_owner }}"
-            GHCR_TOKEN="${{ secrets.GH_PAT }}"
-            TOKEN_SOURCE="GH_PAT"
-            if [ -z "${GHCR_TOKEN}" ]; then
-              echo "❌ ERRO: GH_PAT não disponível para login no GHCR"
-              exit 1
+            echo "🔐 Verificando autenticação Docker (login feito no prepare)..."
+            if grep -q "ghcr.io" ~/.docker/config.json 2>/dev/null; then
+              echo "   ✅ GHCR autenticado"
+            else
+              echo "   ⚠️ GHCR não encontrado - fallback login..."
+              echo "${{ secrets.GH_PAT }}" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin 2>&1 || {
+                echo "   ❌ ERRO: GHCR login falhou"; exit 1
+              }
             fi
-            echo "🌐 Verificando conectividade com GHCR..."
-            if ! getent hosts ghcr.io >/dev/null 2>&1; then
-              echo "❌ ERRO: DNS não resolve ghcr.io a partir do servidor"
-              exit 1
+            if grep -q "index.docker.io" ~/.docker/config.json 2>/dev/null; then
+              echo "   ✅ Docker Hub autenticado"
+            else
+              echo "   ⚠️ Docker Hub não encontrado - fallback login..."
+              echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin 2>&1 || {
+                echo "   ⚠️ Docker Hub fallback falhou - continuando com rate limits anônimos"
+              }
             fi
-            GHCR_OK=false
-            for attempt in 1 2 3 4 5 6 7 8 9 10; do
-              if curl -sS --connect-timeout 10 --max-time 60 -D /tmp/ghcr-check.txt -o /dev/null https://ghcr.io/v2/ 2>/tmp/ghcr-check.err; then
-                GHCR_OK=true
-                break
-              fi
-              echo "⚠️  GHCR timeout (tentativa $attempt/10). Aguardando $((attempt * 3))s..."
-              sleep $((attempt * 3))
-            done
-            if [ "$GHCR_OK" != "true" ]; then
-              echo "❌ ERRO: Sem conectividade HTTP com ghcr.io (curl falhou após retries)"
-              if [ -s /tmp/ghcr-check.err ]; then
-                echo "   Detalhe: $(tail -n 1 /tmp/ghcr-check.err)"
-              fi
-              exit 1
-            fi
-            # GHCR pode responder 401/403 (sem auth) ou 405 (HEAD não permitido)
-            # Aceitar qualquer resposta que indique registry v2
-            if ! grep -qi 'docker-distribution-api-version: registry/2.0' /tmp/ghcr-check.txt; then
-              echo "❌ ERRO: Resposta inesperada do GHCR:"
-              cat /tmp/ghcr-check.txt
-              exit 1
-            fi
-            echo "✅ Conectividade com GHCR OK"
             echo ""
-            echo "🔐 Login GHCR com ${TOKEN_SOURCE} (usuário: ${GHCR_USER})"
-            echo "   🔎 GHCR token length: ${#GHCR_TOKEN}"
-            login_with_retry() {
-              local attempts=8
-              local delay=5
-              local attempt=1
-              while [ $attempt -le $attempts ]; do
-                LOGIN_ERROR=$(echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>&1) && return 0
-                echo "⚠️ Login GHCR falhou (tentativa $attempt/$attempts). Aguardando ${delay}s..."
-                echo "   Detalhe: ${LOGIN_ERROR}"
-                sleep "$delay"
-                delay=$((delay * 2))
-                attempt=$((attempt + 1))
-              done
-              return 1
-            }
-            if ! login_with_retry; then
-              echo "❌ ERRO: Falha no login do GHCR com ${TOKEN_SOURCE} (após retries)"
-              exit 1
-            fi
-            echo "✅ Login GHCR OK"
             
-            # Login Docker Hub (server-side) - conta Pro = rate limits altos
-            DOCKERHUB_USER="${{ secrets.DOCKERHUB_USERNAME }}"
-            DOCKERHUB_TOKEN="${{ secrets.DOCKERHUB_TOKEN }}"
-            if [ -n "${DOCKERHUB_USER:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
-              echo "🔐 Login Docker Hub (conta Pro)..."
-              # =================================================================
-              # CORREÇÃO (09/02/2026): Retry logic para Docker Hub login
-              # =================================================================
-              # CAUSA RAIZ: Docker Hub login fazia UMA única tentativa. Se auth.docker.io
-              #   desse timeout (latência Hetzner→Docker Hub ~2-11s), login falhava e
-              #   deploy continuava sem autenticação (100 pulls/6h anônimo).
-              #   GHCR já tinha retry com 8 tentativas, mas Docker Hub não.
-              # SOLUÇÃO: Retry com exponential backoff (mesmo padrão GHCR).
-              # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 2 (Não duplicar padrões)
-              # =================================================================
-              dockerhub_login_with_retry() {
-                local attempts=5
-                local delay=5
-                local attempt=1
-                while [ $attempt -le $attempts ]; do
-                  DH_LOGIN_ERROR=$(echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USER" --password-stdin 2>&1) && return 0
-                  echo "   ⚠️ Docker Hub login falhou (tentativa $attempt/$attempts). Aguardando ${delay}s..."
-                  echo "   Detalhe: ${DH_LOGIN_ERROR}"
-                  sleep "$delay"
-                  delay=$((delay * 2))
-                  attempt=$((attempt + 1))
+            # Função pull inteligente com verificação de digest
+            pull_if_needed() {
+              local image="$1"
+              local local_id
+              local_id=$(docker image inspect "$image" --format '{{.Id}}' 2>/dev/null) || local_id=""
+              if [ -z "$local_id" ]; then
+                echo "   📥 NOVA (não existe localmente) - baixando..."
+                for attempt in 1 2 3; do
+                  if docker pull "$image" 2>&1; then return 0; fi
+                  echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
+                  sleep $((attempt * 10))
                 done
                 return 1
-              }
-              if dockerhub_login_with_retry; then
-                echo "✅ Docker Hub autenticado (rate limits Pro)"
-              else
-                echo "⚠️ Docker Hub login falhou após 5 tentativas - continuando sem auth (rate limits anônimos)"
               fi
-            else
-              echo "⚠️ Docker Hub sem credenciais - imagens externas com rate limit anônimo"
-            fi
-            echo ""
-            
-            # Função de pull sequencial por imagem (evita timeout em registries lentos)
-            pull_single_image() {
-              local image="$1"
-              local attempts=5
-              local delay=15
-              local attempt=1
-              while [ $attempt -le $attempts ]; do
-                if docker pull "$image" 2>&1; then
-                  return 0
-                fi
-                echo "   ⚠️ Retry $attempt/$attempts para $image (aguardando ${delay}s)..."
-                sleep "$delay"
-                delay=$((delay * 2))
-                attempt=$((attempt + 1))
+              local remote_digest
+              remote_digest=$(docker manifest inspect "$image" 2>/dev/null | grep -m1 '"digest"' | cut -d'"' -f4) || remote_digest=""
+              local local_digest
+              local_digest=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}' 2>/dev/null | cut -d'@' -f2) || local_digest=""
+              if [ -n "$remote_digest" ] && [ "$remote_digest" = "$local_digest" ]; then
+                echo "   ⏩ SKIP (digest idêntico - imagem não mudou)"
+                return 0
+              fi
+              echo "   📥 PULL (digest diferente ou atualizado)"
+              for attempt in 1 2 3; do
+                if docker pull "$image" 2>&1; then return 0; fi
+                echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
+                sleep $((attempt * 10))
               done
               return 1
             }
@@ -6710,9 +6441,9 @@ jobs:
             fi
             echo ""
             
-            # Pull das imagens (SEQUENCIAL - evita timeout)
+            # Pull inteligente das imagens (verifica digest antes de baixar)
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "📥 PULL: Baixando imagens SEQUENCIALMENTE..."
+            echo "📥 PULL INTELIGENTE: Verificando imagens..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             IMAGES=$(docker compose -p alice-backup --env-file ../.env.prod -f docker-compose.base.yml -f docker-compose.backup.yml config --images 2>/dev/null | sort -u)
             TOTAL=$(echo "$IMAGES" | wc -l)
@@ -6722,12 +6453,10 @@ jobs:
             for img in $IMAGES; do
               COUNT=$((COUNT + 1))
               echo ""
-              echo "📥 [$COUNT/$TOTAL] $img"
-              if ! pull_single_image "$img"; then
+              echo "🔍 [$COUNT/$TOTAL] $img"
+              if ! pull_if_needed "$img"; then
                 echo "   ❌ FALHOU: $img"
                 FAILED="$FAILED $img"
-              else
-                echo "   ✅ OK"
               fi
             done
             
@@ -6737,7 +6466,7 @@ jobs:
               exit 1
             fi
             echo ""
-            echo "✅ Pull BACKUP concluído ($TOTAL imagens)"
+            echo "✅ Pull BACKUP concluído ($TOTAL imagens verificadas)"
             echo ""
 
             # Deploy

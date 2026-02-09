@@ -304,6 +304,32 @@ docker logs alice-minio-init --tail 50
 
 Configure `DOCKERHUB_USERNAME` e `DOCKERHUB_TOKEN` nos secrets do GitHub.
 
+### Smart Pull de Imagens Docker (09/02/2026)
+
+O workflow `deploy-stack-modular.yml` utiliza **pull inteligente com verificação de digest** para evitar downloads desnecessários de imagens Docker que já existem no servidor de produção.
+
+**Arquitetura:**
+
+1. **Login Único (prepare job):** Autenticação no GHCR e Docker Hub é feita **uma única vez** no job `prepare`, com credenciais persistidas em `~/.docker/config.json`. Os 5 deploy jobs apenas verificam se as credenciais estão ativas (fallback com 1 tentativa se necessário).
+
+2. **Função `pull_if_needed()`:** Cada deploy job utiliza esta função para cada imagem:
+   - Se imagem **não existe** localmente → faz pull (nova imagem)
+   - Se imagem **existe** localmente → compara digest remoto vs local via `docker manifest inspect`
+   - Se digest **idêntico** → SKIP (imagem não mudou, economia de banda e tempo)
+   - Se digest **diferente** → faz pull (imagem foi atualizada)
+
+3. **Retries otimizados:** Login com 3 tentativas (backoff 5-10-15s), pull com 3 tentativas (backoff 10-20-30s). Sem retries excessivos que desperdiçam tempo.
+
+**Benefícios:**
+- Deploys subsequentes são significativamente mais rápidos (somente imagens modificadas são baixadas)
+- Economia de banda e redução de carga nos registries
+- Elimina timeouts causados por pulls desnecessários de imagens grandes (ex: GPU ~11GB)
+- Login único elimina autenticação redundante entre jobs
+
+**Secrets utilizados:**
+- `GH_PAT` — Token para GHCR (GitHub Container Registry)
+- `DOCKERHUB_USERNAME` + `DOCKERHUB_TOKEN` — Conta Pro Docker Hub (5000 pulls/dia)
+
 ## Validações pós-deploy
 
 ```bash
