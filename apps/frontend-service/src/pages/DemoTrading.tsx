@@ -197,6 +197,8 @@ export default function DemoTrading() {
   // Seleção de mercado e símbolo (mesmo padrão Trading Real)
   const [selectedMarketType, setSelectedMarketType] = useState<MarketType>('futures');
   const [selectedSymbol, setSelectedSymbol] = useState('');
+  // marginMode alinhado com Trading Real para compartilhar cache TanStack Query
+  const selectedMarginMode: 'cross' | 'isolated' = 'cross';
 
   // Formulário de ordem
   const [orderForm, setOrderForm] = useState({
@@ -225,12 +227,15 @@ export default function DemoTrading() {
 
   const isConfigured = statusData?.data?.isConfigured ?? false;
 
-  /** Lista de símbolos disponíveis na KuCoin (mesma API da Trading Real) */
+  /** Lista de símbolos disponíveis na KuCoin (mesma query key da Trading Real para reusar cache) */
   const { data: symbolsData, isLoading: isLoadingSymbols } = useQuery<{ success: boolean; data: TradingSymbolsResponse }>({
-    queryKey: ['/api/integrations/trading/symbols', selectedMarketType],
+    queryKey: ['/api/integrations/trading/symbols', selectedMarketType, selectedMarginMode],
     queryFn: async () => {
       const params = new URLSearchParams();
       params.set('marketType', selectedMarketType);
+      if (selectedMarketType === 'margin') {
+        params.set('marginMode', selectedMarginMode);
+      }
       const res = await apiRequest('GET', `/api/integrations/trading/symbols?${params.toString()}`);
       return res.json();
     },
@@ -277,12 +282,20 @@ export default function DemoTrading() {
     marketType: selectedMarketType,
   });
 
-  /** Dados de mercado REST (fallback + dados complementares como high/low/volume) */
+  /** Dados de mercado REST (mesma query key da Trading Real para reusar cache) */
+  const marketQueryString = useMemo(() => {
+    const params = new URLSearchParams();
+    params.set('marketType', selectedMarketType);
+    if (selectedMarketType === 'margin') {
+      params.set('marginMode', selectedMarginMode);
+    }
+    return params.toString();
+  }, [selectedMarketType, selectedMarginMode]);
+
   const { data: marketData, isLoading: isLoadingMarket } = useQuery<{ success: boolean; data: MarketData }>({
-    queryKey: ['/api/integrations/trading/market', requestSymbol, selectedMarketType],
+    queryKey: ['/api/integrations/trading/market', requestSymbol, selectedMarketType, selectedMarginMode],
     queryFn: async () => {
-      const params = new URLSearchParams({ marketType: selectedMarketType });
-      const res = await apiRequest('GET', `/api/integrations/trading/market/${requestSymbol}?${params.toString()}`);
+      const res = await apiRequest('GET', `/api/integrations/trading/market/${requestSymbol}?${marketQueryString}`);
       return res.json();
     },
     refetchInterval: wsEnabled ? MARKET_REFETCH_INTERVAL_WS : MARKET_REFETCH_INTERVAL_REST,
@@ -458,33 +471,32 @@ export default function DemoTrading() {
   const lossCount = closedPositions.filter(p => parseFloat(p.realizedPnl ?? '0') < 0).length;
   const winRate = closedPositions.length > 0 ? (winCount / closedPositions.length * 100) : 0;
 
-  // Conversão USDT ↔ Quantidade (usa preço atual em tempo real)
+  // Conversão USDT ↔ Quantidade (usa preço atual em tempo real - apenas Futures)
+  // Para Futures: qty = usdt / (preço * multiplier), onde multiplier define valor de 1 contrato
+  // Para Spot/Margin: sem conversão automática (campo USDT não exibido - padrão Trading Real)
+  const contractMultiplier = market?.contract?.multiplier ?? 0.001;
+
   const handleUsdtAmountChange = useCallback((usdtValue: string) => {
     setOrderForm(prev => {
       const usdtNum = parseFloat(usdtValue);
-      if (currentPrice > 0 && Number.isFinite(usdtNum) && usdtNum > 0) {
-        // Para futuros KuCoin, o multiplier define quanto vale 1 contrato
-        const multiplier = market?.contract?.multiplier ?? 0.001;
-        // Quantidade = valor_usdt / (preço * multiplier)
-        const qty = usdtNum / (currentPrice * multiplier);
+      if (currentPrice > 0 && Number.isFinite(usdtNum) && usdtNum > 0 && isFuturesMarket) {
+        const qty = usdtNum / (currentPrice * contractMultiplier);
         return { ...prev, usdtAmount: usdtValue, size: qty.toFixed(4) };
       }
       return { ...prev, usdtAmount: usdtValue, size: '' };
     });
-  }, [currentPrice, market?.contract?.multiplier]);
+  }, [currentPrice, contractMultiplier, isFuturesMarket]);
 
   const handleSizeChange = useCallback((sizeValue: string) => {
     setOrderForm(prev => {
       const sizeNum = parseFloat(sizeValue);
-      if (currentPrice > 0 && Number.isFinite(sizeNum) && sizeNum > 0) {
-        const multiplier = market?.contract?.multiplier ?? 0.001;
-        // Valor USDT = quantidade * preço * multiplier
-        const usdtVal = sizeNum * currentPrice * multiplier;
+      if (currentPrice > 0 && Number.isFinite(sizeNum) && sizeNum > 0 && isFuturesMarket) {
+        const usdtVal = sizeNum * currentPrice * contractMultiplier;
         return { ...prev, size: sizeValue, usdtAmount: usdtVal.toFixed(2) };
       }
       return { ...prev, size: sizeValue, usdtAmount: '' };
     });
-  }, [currentPrice, market?.contract?.multiplier]);
+  }, [currentPrice, contractMultiplier, isFuturesMarket]);
 
   // Opções de símbolo ordenadas (featured primeiro, depois alfabético)
   const symbolOptions = useMemo(() => {
@@ -885,34 +897,37 @@ export default function DemoTrading() {
                 </div>
               )}
 
-              {/* Quantidade (contratos) + Valor em USDT (conversão automática) */}
+              {/* Quantidade */}
               <div className="space-y-2">
-                <Label>Quantidade (contratos)</Label>
+                <Label>{isFuturesMarket ? 'Quantidade (contratos)' : 'Quantidade'}</Label>
                 <Input
                   type="number"
                   value={orderForm.size}
-                  onChange={e => handleSizeChange(e.target.value)}
-                  placeholder="1"
-                />
-                {isFuturesMarket && (
-                  <p className="text-xs text-muted-foreground">
-                    1 contrato = {market?.contract?.multiplier ?? 0.001} BTC para {selectedSymbol}
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label>Valor em USDT</Label>
-                <Input
-                  type="number"
-                  value={orderForm.usdtAmount}
-                  onChange={e => handleUsdtAmountChange(e.target.value)}
-                  placeholder="100.00"
+                  onChange={e => isFuturesMarket ? handleSizeChange(e.target.value) : setOrderForm(prev => ({ ...prev, size: e.target.value }))}
+                  placeholder={isFuturesMarket ? '1' : '0.001'}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Preencha contratos OU valor em USDT — a conversão é automática.
+                  {isFuturesMarket
+                    ? `1 contrato = ${market?.contract?.multiplier ?? 0.001} BTC para ${selectedSymbol}`
+                    : 'Informe a quantidade do ativo para Spot/Margin'}
                 </p>
               </div>
+
+              {/* Valor em USDT (conversão automática - apenas Futures) */}
+              {isFuturesMarket && (
+                <div className="space-y-2">
+                  <Label>Valor em USDT</Label>
+                  <Input
+                    type="number"
+                    value={orderForm.usdtAmount}
+                    onChange={e => handleUsdtAmountChange(e.target.value)}
+                    placeholder="100.00"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Preencha contratos OU valor em USDT — a conversão é automática.
+                  </p>
+                </div>
+              )}
 
               {/* Alavancagem (Futures) */}
               {isFuturesMarket && (
@@ -987,7 +1002,20 @@ export default function DemoTrading() {
 
                       <span className="text-muted-foreground">Valor Estimado</span>
                       <span className="font-mono text-right font-medium">
-                        ~${orderForm.usdtAmount ? formatMoney(orderForm.usdtAmount) : '---'} USDT
+                        {(() => {
+                          if (isFuturesMarket && orderForm.usdtAmount) {
+                            return `~$${formatMoney(orderForm.usdtAmount)} USDT`;
+                          }
+                          // Spot/Margin: valor = quantidade * preço
+                          const qty = parseFloat(orderForm.size);
+                          const effectivePrice = orderForm.orderType === 'limit' && orderForm.price
+                            ? parseFloat(orderForm.price)
+                            : currentPrice;
+                          if (Number.isFinite(qty) && qty > 0 && effectivePrice > 0) {
+                            return `~$${formatMoney(qty * effectivePrice)} USDT`;
+                          }
+                          return '---';
+                        })()}
                       </span>
 
                       {isFuturesMarket && (
