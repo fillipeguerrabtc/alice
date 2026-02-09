@@ -314,7 +314,7 @@ function SignalCard({
 }: {
   signal: TradingSignal;
   onApprove: (signalId: string, reason?: string, overrides?: SignalApprovalOverrides) => void;
-  onApproveDemo: (signalId: string, overrides?: SignalApprovalOverrides) => void;
+  onApproveDemo: (signalId: string, signal: TradingSignal, overrides?: SignalApprovalOverrides) => void;
   onReject: (signalId: string, reason?: string) => void;
   onSendToTraining: (signalId: string) => void;
   isApproving: boolean;
@@ -924,6 +924,7 @@ function SignalCard({
                     if (Number.isFinite(takeProfitValue) && takeProfitValue > 0) overrides.takeProfit = takeProfitValue;
                     onApproveDemo(
                       signal.id,
+                      signal,
                       Object.keys(overrides).length ? overrides : undefined
                     );
                     setShowApproveDemoDialog(false);
@@ -1118,10 +1119,23 @@ export function SignalApprovalPanel({
 
   // Mutation para aprovar sinal como Demo
   const approveDemoMutation = useMutation({
-    mutationFn: async ({ signalId, overrides }: { signalId: string; overrides?: SignalApprovalOverrides }) => {
+    mutationFn: async ({ signalId, signal, overrides }: { signalId: string; signal: TradingSignal; overrides?: SignalApprovalOverrides }) => {
+      // Derivar side a partir do signalType: entry_long → buy, entry_short → sell
+      const side = signal.signalType === 'entry_long' ? 'buy' : 'sell';
+      // Usar size do override, do suggestedSize do sinal, ou default 0.001
+      const size = overrides?.size ?? signal.suggestedSize ?? 0.001;
+
       const response = await apiRequest('POST', '/api/integrations/demo-trading/orders/from-signal', {
         signalId,
-        overrides,
+        symbol: signal.symbol,
+        marketType: marketType ?? 'futures',
+        side,
+        size,
+        leverage: overrides?.leverage,
+        stopLoss: overrides?.stopLoss ?? signal.suggestedStopLoss,
+        takeProfit: overrides?.takeProfit ?? signal.suggestedTakeProfit,
+        entryType: overrides?.orderType === 'limit' ? 'limit' : 'market',
+        price: overrides?.price ?? signal.suggestedPrice,
       });
       return response.json();
     },
@@ -1561,7 +1575,7 @@ export function SignalApprovalPanel({
                     key={signal.id}
                     signal={signal}
                     onApprove={(signalId, reason, overrides) => approveMutation.mutate({ signalId, reason, overrides })}
-                    onApproveDemo={(signalId, overrides) => approveDemoMutation.mutate({ signalId, overrides })}
+                    onApproveDemo={(signalId, sig, overrides) => approveDemoMutation.mutate({ signalId, signal: sig, overrides })}
                     onReject={(signalId, reason) => rejectMutation.mutate({ signalId, reason })}
                     onSendToTraining={(signalId) => createDatasetMutation.mutate({ signalId })}
                     isApproving={approvingSignalId === signal.id}
@@ -1842,7 +1856,7 @@ export function SignalApprovalPanel({
             <SignalCard
               signal={historyDetailSignal}
               onApprove={() => undefined}
-              onApproveDemo={() => undefined}
+              onApproveDemo={(_id, _sig, _ov) => { /* noop - read-only view */ }}
               onReject={() => undefined}
               onSendToTraining={() => undefined}
               isApproving={false}

@@ -307,8 +307,8 @@ export async function createDemoOrder(params: CreateDemoOrderParams): Promise<De
   const notionalValue = params.size * fillPrice;
   const requiredMargin = notionalValue / leverage;
 
-  // Verificar balance suficiente (considerando margem para futures)
-  if (params.side === 'buy' && orderStatus === 'filled') {
+  // Verificar balance suficiente (margem + fee se aplica a AMBOS buy e sell)
+  if (orderStatus === 'filled') {
     if (requiredMargin + fee > availableBalance) {
       throw new Error(
         `Saldo insuficiente. Requerido: ${(requiredMargin + fee).toFixed(2)} USDT, Disponível: ${availableBalance.toFixed(2)} USDT`
@@ -344,19 +344,17 @@ export async function createDemoOrder(params: CreateDemoOrderParams): Promise<De
 
   // Se ordem foi preenchida, criar/atualizar posição
   if (orderStatus === 'filled') {
-    // Atualizar balance (debitar margem + fee para compra)
-    if (params.side === 'buy') {
-      const newAvailable = availableBalance - requiredMargin - fee;
-      const currentFrozen = Number(balance.frozen);
-      await db
-        .update(schema.demoBalances)
-        .set({
-          available: String(newAvailable),
-          frozen: String(currentFrozen + requiredMargin),
-          updatedAt: new Date(),
-        })
-        .where(eq(schema.demoBalances.id, balance.id));
-    }
+    // Atualizar balance (debitar margem + fee para AMBOS buy e sell)
+    const newAvailable = availableBalance - requiredMargin - fee;
+    const currentFrozen = Number(balance.frozen);
+    await db
+      .update(schema.demoBalances)
+      .set({
+        available: String(newAvailable),
+        frozen: String(currentFrozen + requiredMargin),
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.demoBalances.id, balance.id));
 
     // Criar posição
     const positionSide = params.side === 'buy' ? 'long' : 'short';
