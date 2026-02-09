@@ -2725,7 +2725,7 @@ export async function closePositions(
             leverage,
             entryPrice,
             exitPrice,
-            size: Number(positionData.currentQty ?? 0),
+            size: Math.abs(Number(positionData.currentQty ?? 0)),
             realizedPnl: pnl,
             totalFees: 0, // KuCoin não fornece fees acumuladas por posição diretamente
             openedAt: positionData.openingTimestamp > 0
