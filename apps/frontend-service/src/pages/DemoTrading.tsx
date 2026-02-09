@@ -7,11 +7,14 @@
  * 
  * NUNCA executa ordens reais - total isolamento.
  * 
+ * Dados de mercado (cotações, símbolos, preços) são consumidos em tempo real
+ * das mesmas APIs e WebSockets da página Trading Real.
+ * 
  * @author Fillipe Guerra
  * @since 09/02/2026
  */
 
-import { useState } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import {
   TrendingUp,
@@ -27,6 +30,8 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   BookOpen,
+  RefreshCw,
+  Activity,
 } from 'lucide-react';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -40,6 +45,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { apiRequest, queryClient } from '@/lib/queryClient';
+import { useKucoinWebSocket } from '@/hooks/useKucoinWebSocket';
 
 // ============================================================================
 // Tipos
@@ -119,6 +125,66 @@ interface FundHistory {
   createdAt: string;
 }
 
+/** Resposta da API de símbolos (mesmo padrão Trading Real) */
+interface TradingSymbolsResponse {
+  symbols: string[];
+  defaultSymbol: string;
+  favorites?: string[];
+  featured?: string[];
+  topSymbols?: string[];
+}
+
+/** Resposta da API de status do trading (mesmo padrão Trading Real) */
+interface TradingStatus {
+  isConfigured: boolean;
+  requiresTenant?: boolean;
+}
+
+/** Resposta da API de dados de mercado (mesmo padrão Trading Real) */
+interface MarketData {
+  ticker: {
+    symbol: string;
+    price: string;
+    bestBidPrice: string;
+    bestAskPrice: string;
+    bestBidSize: number;
+    bestAskSize: number;
+    ts: number;
+  };
+  contract: {
+    symbol: string;
+    baseCurrency: string;
+    quoteCurrency: string;
+    maxLeverage: number;
+    markPrice: number;
+    indexPrice: number;
+    lastTradePrice: number;
+    volumeOf24h: number;
+    turnoverOf24h: number;
+    openInterest: string;
+    priceChgPct: number;
+    priceChg: number;
+    highPrice: number;
+    lowPrice: number;
+    fundingFeeRate: number;
+    nextFundingRateTime: number;
+    multiplier: number;
+  };
+}
+
+type MarketType = 'spot' | 'futures' | 'margin';
+
+// ============================================================================
+// Constantes
+// ============================================================================
+
+/** Intervalo de refetch para símbolos (5 minutos - mesma cache Redis do backend) */
+const SYMBOLS_REFETCH_INTERVAL = 300_000;
+/** Intervalo de refetch para dados de mercado com WS ativo */
+const MARKET_REFETCH_INTERVAL_WS = 15_000;
+/** Intervalo de refetch para dados de mercado sem WS */
+const MARKET_REFETCH_INTERVAL_REST = 5_000;
+
 // ============================================================================
 // Componente Principal
 // ============================================================================
@@ -128,13 +194,16 @@ export default function DemoTrading() {
   const [orderDialogOpen, setOrderDialogOpen] = useState(false);
   const [addFundsDialogOpen, setAddFundsDialogOpen] = useState(false);
 
+  // Seleção de mercado e símbolo (mesmo padrão Trading Real)
+  const [selectedMarketType, setSelectedMarketType] = useState<MarketType>('futures');
+  const [selectedSymbol, setSelectedSymbol] = useState('');
+
   // Formulário de ordem
   const [orderForm, setOrderForm] = useState({
-    symbol: 'XBTUSDTM',
-    marketType: 'futures' as 'spot' | 'futures' | 'margin',
     side: 'buy' as 'buy' | 'sell',
     orderType: 'market' as 'market' | 'limit' | 'stop',
     size: '',
+    usdtAmount: '', // Campo para valor em USDT (conversão automática)
     price: '',
     leverage: '10',
     stopLoss: '',
@@ -145,7 +214,104 @@ export default function DemoTrading() {
   const [fundsAmount, setFundsAmount] = useState('');
 
   // ============================================================================
-  // Queries
+  // Queries de dados de mercado (mesmas APIs da Trading Real)
+  // ============================================================================
+
+  /** Status do trading (verifica se KuCoin está configurado) */
+  const { data: statusData } = useQuery<{ success: boolean; data: TradingStatus }>({
+    queryKey: ['/api/integrations/trading/status'],
+    refetchInterval: 60_000,
+  });
+
+  const isConfigured = statusData?.data?.isConfigured ?? false;
+
+  /** Lista de símbolos disponíveis na KuCoin (mesma API da Trading Real) */
+  const { data: symbolsData, isLoading: isLoadingSymbols } = useQuery<{ success: boolean; data: TradingSymbolsResponse }>({
+    queryKey: ['/api/integrations/trading/symbols', selectedMarketType],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.set('marketType', selectedMarketType);
+      const res = await apiRequest('GET', `/api/integrations/trading/symbols?${params.toString()}`);
+      return res.json();
+    },
+    refetchInterval: SYMBOLS_REFETCH_INTERVAL,
+    enabled: isConfigured,
+  });
+
+  const availableSymbols = symbolsData?.data?.symbols ?? [];
+  const featuredOverride = symbolsData?.data?.featured ?? [];
+  const topSymbols = symbolsData?.data?.topSymbols ?? [];
+  const featuredSymbols = featuredOverride.length > 0 ? featuredOverride : topSymbols;
+
+  // Selecionar símbolo padrão quando dados carregarem
+  useEffect(() => {
+    if (!selectedSymbol && symbolsData?.data) {
+      const defaultSym = symbolsData.data.defaultSymbol;
+      if (defaultSym && availableSymbols.includes(defaultSym)) {
+        setSelectedSymbol(defaultSym);
+      } else if (availableSymbols.length > 0) {
+        setSelectedSymbol(availableSymbols[0]);
+      }
+    }
+  }, [symbolsData, availableSymbols, selectedSymbol]);
+
+  // Normalizar símbolo para request (padrão Trading Real)
+  const isFuturesMarket = selectedMarketType === 'futures';
+  const requestSymbol = useMemo(() => {
+    if (!selectedSymbol) return '';
+    // Futuros KuCoin usam sufixo M (ex: XBTUSDTM)
+    if (isFuturesMarket && selectedSymbol && !selectedSymbol.endsWith('M')) {
+      return `${selectedSymbol}M`;
+    }
+    return selectedSymbol;
+  }, [selectedSymbol, isFuturesMarket]);
+
+  const isSymbolValid = !!requestSymbol && availableSymbols.includes(selectedSymbol);
+
+  // WebSocket para cotações em tempo real (reusar hook da Trading Real)
+  const wsEnabled = isFuturesMarket && isSymbolValid && isConfigured;
+  const { ticker: wsTicker } = useKucoinWebSocket({
+    symbol: wsEnabled ? requestSymbol : '',
+    channels: wsEnabled ? ['ticker'] : [],
+    autoConnect: wsEnabled,
+    marketType: selectedMarketType,
+  });
+
+  /** Dados de mercado REST (fallback + dados complementares como high/low/volume) */
+  const { data: marketData, isLoading: isLoadingMarket } = useQuery<{ success: boolean; data: MarketData }>({
+    queryKey: ['/api/integrations/trading/market', requestSymbol, selectedMarketType],
+    queryFn: async () => {
+      const params = new URLSearchParams({ marketType: selectedMarketType });
+      const res = await apiRequest('GET', `/api/integrations/trading/market/${requestSymbol}?${params.toString()}`);
+      return res.json();
+    },
+    refetchInterval: wsEnabled ? MARKET_REFETCH_INTERVAL_WS : MARKET_REFETCH_INTERVAL_REST,
+    enabled: isConfigured && isSymbolValid,
+  });
+
+  const market = marketData?.data;
+
+  // Preço atual: WS tem prioridade, REST é fallback
+  const normalizedSymbol = requestSymbol.toUpperCase();
+  const wsTickerPrice = wsEnabled && wsTicker?.symbol?.toUpperCase() === normalizedSymbol
+    ? Number(wsTicker.price)
+    : NaN;
+  const fallbackPrice = isFuturesMarket
+    ? market?.contract?.lastTradePrice
+    : (market?.ticker?.price ? Number(market.ticker.price) : undefined);
+  const fallbackPriceValue = Number.isFinite(fallbackPrice ?? NaN) ? Number(fallbackPrice) : 0;
+  const currentPrice = Number.isFinite(wsTickerPrice) ? wsTickerPrice : fallbackPriceValue;
+
+  const priceChange = market?.contract?.priceChg ?? 0;
+  const priceChangePercent = market?.contract?.priceChgPct ?? 0;
+  const high24h = market?.contract?.highPrice ?? 0;
+  const low24h = market?.contract?.lowPrice ?? 0;
+  const volume24h = market?.contract?.volumeOf24h ?? 0;
+  const fundingRate = market?.contract?.fundingFeeRate ?? 0;
+  const maxLeverage = market?.contract?.maxLeverage ?? 0;
+
+  // ============================================================================
+  // Queries de dados demo
   // ============================================================================
 
   const balanceQuery = useQuery({
@@ -215,8 +381,8 @@ export default function DemoTrading() {
     mutationFn: async () => {
       const leverageValue = parseInt(orderForm.leverage);
       const body = {
-        symbol: orderForm.symbol,
-        marketType: orderForm.marketType,
+        symbol: selectedSymbol,
+        marketType: selectedMarketType,
         side: orderForm.side,
         orderType: orderForm.orderType,
         size: parseFloat(orderForm.size),
@@ -250,7 +416,6 @@ export default function DemoTrading() {
     onSuccess: () => {
       setAddFundsDialogOpen(false);
       setFundsAmount('');
-      // Fundos afetam: balance e histórico de fundos
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balance'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/funds/history'] });
     },
@@ -263,7 +428,6 @@ export default function DemoTrading() {
       return json.data;
     },
     onSuccess: () => {
-      // Fechar posição afeta: balance (margem devolvida + PnL), posições, post-mortems (novo enfileirado), fila
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balance'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/positions', 'all'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/postmortem', 'demo'] });
@@ -276,7 +440,6 @@ export default function DemoTrading() {
       await apiRequest('DELETE', `/api/integrations/demo-trading/orders/${orderId}`);
     },
     onSuccess: () => {
-      // Cancelar ordem afeta: balance (margem congelada devolvida) e ordens
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balance'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/orders'] });
     },
@@ -295,6 +458,43 @@ export default function DemoTrading() {
   const lossCount = closedPositions.filter(p => parseFloat(p.realizedPnl ?? '0') < 0).length;
   const winRate = closedPositions.length > 0 ? (winCount / closedPositions.length * 100) : 0;
 
+  // Conversão USDT ↔ Quantidade (usa preço atual em tempo real)
+  const handleUsdtAmountChange = useCallback((usdtValue: string) => {
+    setOrderForm(prev => {
+      const usdtNum = parseFloat(usdtValue);
+      if (currentPrice > 0 && Number.isFinite(usdtNum) && usdtNum > 0) {
+        // Para futuros KuCoin, o multiplier define quanto vale 1 contrato
+        const multiplier = market?.contract?.multiplier ?? 0.001;
+        // Quantidade = valor_usdt / (preço * multiplier)
+        const qty = usdtNum / (currentPrice * multiplier);
+        return { ...prev, usdtAmount: usdtValue, size: qty.toFixed(4) };
+      }
+      return { ...prev, usdtAmount: usdtValue, size: '' };
+    });
+  }, [currentPrice, market?.contract?.multiplier]);
+
+  const handleSizeChange = useCallback((sizeValue: string) => {
+    setOrderForm(prev => {
+      const sizeNum = parseFloat(sizeValue);
+      if (currentPrice > 0 && Number.isFinite(sizeNum) && sizeNum > 0) {
+        const multiplier = market?.contract?.multiplier ?? 0.001;
+        // Valor USDT = quantidade * preço * multiplier
+        const usdtVal = sizeNum * currentPrice * multiplier;
+        return { ...prev, size: sizeValue, usdtAmount: usdtVal.toFixed(2) };
+      }
+      return { ...prev, size: sizeValue, usdtAmount: '' };
+    });
+  }, [currentPrice, market?.contract?.multiplier]);
+
+  // Opções de símbolo ordenadas (featured primeiro, depois alfabético)
+  const symbolOptions = useMemo(() => {
+    if (availableSymbols.length === 0) return [];
+    const featuredSet = new Set(featuredSymbols);
+    const featured = featuredSymbols.filter(s => availableSymbols.includes(s));
+    const rest = [...availableSymbols].filter(s => !featuredSet.has(s)).sort((a, b) => a.localeCompare(b));
+    return [...featured, ...rest];
+  }, [availableSymbols, featuredSymbols]);
+
   // ============================================================================
   // Helpers de renderização
   // ============================================================================
@@ -306,6 +506,12 @@ export default function DemoTrading() {
 
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+  };
+
+  const formatVolume = (vol: number) => {
+    if (vol >= 1_000_000) return `${(vol / 1_000_000).toFixed(1)}M`;
+    if (vol >= 1_000) return `${(vol / 1_000).toFixed(0)}K`;
+    return vol.toLocaleString('pt-BR');
   };
 
   const getPnlColor = (pnl: number) => pnl >= 0 ? 'text-green-500' : 'text-red-500';
@@ -334,153 +540,199 @@ export default function DemoTrading() {
 
   return (
     <div className="flex flex-col gap-6 p-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Trading Demo</h1>
-          <p className="text-muted-foreground">
-            Simulação com dados reais de mercado. Sem risco financeiro.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Dialog open={addFundsDialogOpen} onOpenChange={setAddFundsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline">
-                <Wallet className="mr-2 h-4 w-4" />
-                Adicionar Fundos
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Adicionar Fundos Demo</DialogTitle>
-                <DialogDescription>Adicione USDT à sua conta demo.</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 pt-4">
-                <div>
-                  <Label>Quantidade (USDT)</Label>
-                  <Input
-                    type="number"
-                    value={fundsAmount}
-                    onChange={e => setFundsAmount(e.target.value)}
-                    placeholder="10000"
-                  />
-                </div>
-                <Button
-                  onClick={() => addFundsMutation.mutate()}
-                  disabled={!fundsAmount || parseFloat(fundsAmount) <= 0 || addFundsMutation.isPending}
-                  className="w-full"
-                >
-                  {addFundsMutation.isPending ? 'Adicionando...' : 'Confirmar'}
+      {/* Header com seleção de mercado e símbolo */}
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Trading Demo</h1>
+            <p className="text-muted-foreground">
+              Simulação com dados reais de mercado. Sem risco financeiro.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Dialog open={addFundsDialogOpen} onOpenChange={setAddFundsDialogOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline">
+                  <Wallet className="mr-2 h-4 w-4" />
+                  Adicionar Fundos
                 </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
-
-          <Dialog open={orderDialogOpen} onOpenChange={setOrderDialogOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="mr-2 h-4 w-4" />
-                Nova Ordem
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-md">
-              <DialogHeader>
-                <DialogTitle>Nova Ordem Demo</DialogTitle>
-                <DialogDescription>Crie uma ordem simulada com preço real de mercado.</DialogDescription>
-              </DialogHeader>
-              <ScrollArea className="max-h-[60vh] pr-4">
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Adicionar Fundos Demo</DialogTitle>
+                  <DialogDescription>Adicione USDT à sua conta demo.</DialogDescription>
+                </DialogHeader>
                 <div className="space-y-4 pt-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label>Símbolo</Label>
-                      <Input value={orderForm.symbol} onChange={e => setOrderForm(prev => ({ ...prev, symbol: e.target.value }))} />
-                    </div>
-                    <div>
-                      <Label>Mercado</Label>
-                      <Select value={orderForm.marketType} onValueChange={v => setOrderForm(prev => ({ ...prev, marketType: v as 'spot' | 'futures' | 'margin' }))}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="futures">Futures</SelectItem>
-                          <SelectItem value="spot">Spot</SelectItem>
-                          <SelectItem value="margin">Margin</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+                  <div>
+                    <Label>Quantidade (USDT)</Label>
+                    <Input
+                      type="number"
+                      value={fundsAmount}
+                      onChange={e => setFundsAmount(e.target.value)}
+                      placeholder="10000"
+                    />
                   </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label>Lado</Label>
-                      <Select value={orderForm.side} onValueChange={v => setOrderForm(prev => ({ ...prev, side: v as 'buy' | 'sell' }))}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="buy">Comprar (Long)</SelectItem>
-                          <SelectItem value="sell">Vender (Short)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label>Tipo</Label>
-                      <Select value={orderForm.orderType} onValueChange={v => setOrderForm(prev => ({ ...prev, orderType: v as 'market' | 'limit' | 'stop' }))}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="market">Market</SelectItem>
-                          <SelectItem value="limit">Limit</SelectItem>
-                          <SelectItem value="stop">Stop</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label>Tamanho</Label>
-                      <Input type="number" value={orderForm.size} onChange={e => setOrderForm(prev => ({ ...prev, size: e.target.value }))} placeholder="0.001" />
-                    </div>
-                    <div>
-                      <Label>Alavancagem</Label>
-                      <Input type="number" value={orderForm.leverage} onChange={e => setOrderForm(prev => ({ ...prev, leverage: e.target.value }))} />
-                    </div>
-                  </div>
-
-                  {orderForm.orderType !== 'market' && (
-                    <div>
-                      <Label>Preço</Label>
-                      <Input type="number" value={orderForm.price} onChange={e => setOrderForm(prev => ({ ...prev, price: e.target.value }))} placeholder="Preço alvo" />
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label>Stop Loss</Label>
-                      <Input type="number" value={orderForm.stopLoss} onChange={e => setOrderForm(prev => ({ ...prev, stopLoss: e.target.value }))} placeholder="Opcional" />
-                    </div>
-                    <div>
-                      <Label>Take Profit</Label>
-                      <Input type="number" value={orderForm.takeProfit} onChange={e => setOrderForm(prev => ({ ...prev, takeProfit: e.target.value }))} placeholder="Opcional" />
-                    </div>
-                  </div>
-
                   <Button
-                    onClick={() => createOrderMutation.mutate()}
-                    disabled={!orderForm.size || createOrderMutation.isPending}
+                    onClick={() => addFundsMutation.mutate()}
+                    disabled={!fundsAmount || parseFloat(fundsAmount) <= 0 || addFundsMutation.isPending}
                     className="w-full"
                   >
-                    {createOrderMutation.isPending ? 'Criando...' : `${orderForm.side === 'buy' ? 'Comprar' : 'Vender'} ${orderForm.symbol}`}
+                    {addFundsMutation.isPending ? 'Adicionando...' : 'Confirmar'}
                   </Button>
-
-                  {createOrderMutation.error && (
-                    <p className="text-sm text-destructive">{(createOrderMutation.error as Error).message}</p>
-                  )}
                 </div>
-              </ScrollArea>
-            </DialogContent>
-          </Dialog>
+              </DialogContent>
+            </Dialog>
+
+            <Button onClick={() => setOrderDialogOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Nova Ordem
+            </Button>
+          </div>
         </div>
+
+        {/* Barra de seleção: Mercado + Símbolo + Chips de Featured */}
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Tipo de Mercado */}
+          <Select
+            value={selectedMarketType}
+            onValueChange={(value: MarketType) => {
+              setSelectedSymbol('');
+              setSelectedMarketType(value);
+            }}
+          >
+            <SelectTrigger className="w-[140px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="futures">Futures</SelectItem>
+              <SelectItem value="spot">Spot</SelectItem>
+              <SelectItem value="margin">Margin</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* Símbolo (dropdown com todos os símbolos disponíveis) */}
+          <Select
+            value={selectedSymbol}
+            onValueChange={setSelectedSymbol}
+            disabled={isLoadingSymbols || symbolOptions.length === 0}
+          >
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder={isLoadingSymbols ? 'Carregando...' : 'Selecione'} />
+            </SelectTrigger>
+            <SelectContent className="max-h-60 overflow-y-auto">
+              {featuredSymbols.length > 0 && (
+                <>
+                  <SelectItem value="__featured_label__" disabled className="text-xs uppercase text-muted-foreground">
+                    Principais
+                  </SelectItem>
+                  {featuredSymbols.filter(s => availableSymbols.includes(s)).map(symbol => (
+                    <SelectItem key={`f-${symbol}`} value={symbol}>
+                      {symbol}
+                    </SelectItem>
+                  ))}
+                  <SelectItem value="__all_label__" disabled className="text-xs uppercase text-muted-foreground">
+                    Todos
+                  </SelectItem>
+                </>
+              )}
+              {symbolOptions.filter(s => !featuredSymbols.includes(s)).map(symbol => (
+                <SelectItem key={symbol} value={symbol}>
+                  {symbol}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Indicador WS */}
+          {wsEnabled && wsTicker && (
+            <Badge variant="outline" className="text-xs gap-1">
+              <Activity className="h-3 w-3 text-green-500" />
+              Tempo Real
+            </Badge>
+          )}
+
+          {/* Botão Atualizar */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/market'] });
+            }}
+          >
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+        </div>
+
+        {/* Chips de símbolos featured (acesso rápido) */}
+        {featuredSymbols.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            {featuredSymbols.filter(s => availableSymbols.includes(s)).map(symbol => (
+              <Button
+                key={symbol}
+                variant={symbol === selectedSymbol ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setSelectedSymbol(symbol)}
+                className="h-7 px-2 text-xs"
+              >
+                {symbol}
+              </Button>
+            ))}
+          </div>
+        )}
       </div>
 
+      {/* Card de Cotação em Tempo Real */}
+      {isSymbolValid && (
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-sm text-muted-foreground">{selectedSymbol} - Último Preço</span>
+                  {wsEnabled && wsTicker && (
+                    <Badge variant="outline" className="text-xs">WS: connected</Badge>
+                  )}
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-3xl font-bold tabular-nums">
+                    ${isLoadingMarket && currentPrice === 0 ? '---' : formatMoney(currentPrice)}
+                  </span>
+                  {priceChange !== 0 && (
+                    <div className={`flex items-center gap-1 text-sm ${priceChange >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                      {priceChange >= 0 ? <ArrowUpRight className="h-4 w-4" /> : <ArrowDownRight className="h-4 w-4" />}
+                      <span>{priceChange >= 0 ? '+' : ''}{formatMoney(priceChange)}</span>
+                      <span>({priceChange >= 0 ? '+' : ''}{(priceChangePercent * 100).toFixed(2)}%)</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+                <div>
+                  <span className="text-muted-foreground">Máxima 24h</span>
+                  <p className="font-mono font-medium">${formatMoney(high24h)}</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Mínima 24h</span>
+                  <p className="font-mono font-medium">${formatMoney(low24h)}</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Volume 24h</span>
+                  <p className="font-mono font-medium">{formatVolume(volume24h)}</p>
+                </div>
+                {isFuturesMarket && (
+                  <div>
+                    <span className="text-muted-foreground">Funding Rate</span>
+                    <p className="font-mono font-medium">{(fundingRate * 100).toFixed(4)}%</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Métricas Resumo */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-2">
@@ -525,7 +777,274 @@ export default function DemoTrading() {
             <p className="text-xs text-muted-foreground">{winCount}W / {lossCount}L</p>
           </CardContent>
         </Card>
+
+        {isFuturesMarket && maxLeverage > 0 && (
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-2">
+                <Activity className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">Alavancagem Máx.</span>
+              </div>
+              <p className="text-2xl font-bold mt-1">{maxLeverage}x</p>
+            </CardContent>
+          </Card>
+        )}
       </div>
+
+      {/* Dialog Nova Ordem - Estilo Exchange Real */}
+      <Dialog open={orderDialogOpen} onOpenChange={setOrderDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Target className="h-5 w-5" />
+              Nova Ordem Demo
+            </DialogTitle>
+            <DialogDescription>
+              Ordem simulada com preço real de mercado. Sem risco financeiro.
+            </DialogDescription>
+          </DialogHeader>
+
+          <ScrollArea className="max-h-[70vh] pr-4">
+            <div className="space-y-4 py-2">
+              {/* Cotação em Tempo Real (topo do diálogo) */}
+              {currentPrice > 0 && (
+                <div className="p-3 bg-muted rounded-lg space-y-1">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-lg">{selectedSymbol}</span>
+                      <Badge variant="outline" className="text-xs">{selectedMarketType}</Badge>
+                    </div>
+                    {wsEnabled && wsTicker && (
+                      <Badge variant="outline" className="text-xs gap-1">
+                        <Activity className="h-3 w-3 text-green-500" />
+                        Ao Vivo
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-2xl font-bold tabular-nums">${formatMoney(currentPrice)}</span>
+                    {priceChange !== 0 && (
+                      <span className={`text-sm ${priceChange >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                        {priceChange >= 0 ? '+' : ''}{(priceChangePercent * 100).toFixed(2)}%
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex gap-4 text-xs text-muted-foreground">
+                    <span>Máx: ${formatMoney(high24h)}</span>
+                    <span>Mín: ${formatMoney(low24h)}</span>
+                    <span>Vol: {formatVolume(volume24h)}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Lado: Comprar / Vender (botões grandes como KuCoin) */}
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant={orderForm.side === 'buy' ? 'default' : 'outline'}
+                  className={orderForm.side === 'buy' ? 'bg-green-600 hover:bg-green-700 h-12' : 'h-12'}
+                  onClick={() => setOrderForm(prev => ({ ...prev, side: 'buy' }))}
+                >
+                  <TrendingUp className="h-4 w-4 mr-2" />
+                  Comprar
+                </Button>
+                <Button
+                  type="button"
+                  variant={orderForm.side === 'sell' ? 'default' : 'outline'}
+                  className={orderForm.side === 'sell' ? 'bg-red-600 hover:bg-red-700 h-12' : 'h-12'}
+                  onClick={() => setOrderForm(prev => ({ ...prev, side: 'sell' }))}
+                >
+                  <TrendingDown className="h-4 w-4 mr-2" />
+                  Vender
+                </Button>
+              </div>
+
+              {/* Tipo de Ordem */}
+              <div className="space-y-2">
+                <Label>Tipo de Ordem</Label>
+                <Select value={orderForm.orderType} onValueChange={v => setOrderForm(prev => ({ ...prev, orderType: v as 'market' | 'limit' | 'stop' }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="market">Mercado</SelectItem>
+                    <SelectItem value="limit">Limite</SelectItem>
+                    <SelectItem value="stop">Stop</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Preço (apenas limit/stop) */}
+              {orderForm.orderType !== 'market' && (
+                <div className="space-y-2">
+                  <Label>Preço</Label>
+                  <Input
+                    type="number"
+                    value={orderForm.price}
+                    onChange={e => setOrderForm(prev => ({ ...prev, price: e.target.value }))}
+                    placeholder={currentPrice > 0 ? currentPrice.toString() : 'Preço alvo'}
+                  />
+                </div>
+              )}
+
+              {/* Quantidade (contratos) + Valor em USDT (conversão automática) */}
+              <div className="space-y-2">
+                <Label>Quantidade (contratos)</Label>
+                <Input
+                  type="number"
+                  value={orderForm.size}
+                  onChange={e => handleSizeChange(e.target.value)}
+                  placeholder="1"
+                />
+                {isFuturesMarket && (
+                  <p className="text-xs text-muted-foreground">
+                    1 contrato = {market?.contract?.multiplier ?? 0.001} BTC para {selectedSymbol}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label>Valor em USDT</Label>
+                <Input
+                  type="number"
+                  value={orderForm.usdtAmount}
+                  onChange={e => handleUsdtAmountChange(e.target.value)}
+                  placeholder="100.00"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Preencha contratos OU valor em USDT — a conversão é automática.
+                </p>
+              </div>
+
+              {/* Alavancagem (Futures) */}
+              {isFuturesMarket && (
+                <div className="space-y-2">
+                  <Label>Alavancagem</Label>
+                  <Select
+                    value={orderForm.leverage}
+                    onValueChange={v => setOrderForm(prev => ({ ...prev, leverage: v }))}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {[1, 2, 3, 5, 10, 20, 50, 100].filter(l => l <= (maxLeverage || 100)).map(lev => (
+                        <SelectItem key={lev} value={lev.toString()}>
+                          {lev}x
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {/* Stop Loss & Take Profit */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Stop Loss</Label>
+                  <Input
+                    type="number"
+                    value={orderForm.stopLoss}
+                    onChange={e => setOrderForm(prev => ({ ...prev, stopLoss: e.target.value }))}
+                    placeholder="Opcional"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Take Profit</Label>
+                  <Input
+                    type="number"
+                    value={orderForm.takeProfit}
+                    onChange={e => setOrderForm(prev => ({ ...prev, takeProfit: e.target.value }))}
+                    placeholder="Opcional"
+                  />
+                </div>
+              </div>
+
+              {/* Resumo da Ordem (mostra quando tem dados suficientes) */}
+              {orderForm.size && currentPrice > 0 && (
+                <Card className="bg-muted/50 border-dashed">
+                  <CardContent className="p-3 space-y-2">
+                    <p className="font-semibold text-sm flex items-center gap-1">
+                      <BookOpen className="h-4 w-4" />
+                      Resumo da Ordem
+                    </p>
+                    <Separator />
+                    <div className="grid grid-cols-2 gap-y-1.5 text-sm">
+                      <span className="text-muted-foreground">Símbolo</span>
+                      <span className="font-mono text-right">{selectedSymbol}</span>
+
+                      <span className="text-muted-foreground">Direção</span>
+                      <span className={`text-right font-medium ${orderForm.side === 'buy' ? 'text-green-500' : 'text-red-500'}`}>
+                        {orderForm.side === 'buy' ? 'COMPRA (Long)' : 'VENDA (Short)'}
+                      </span>
+
+                      <span className="text-muted-foreground">Tipo</span>
+                      <span className="text-right capitalize">{orderForm.orderType === 'market' ? 'Mercado' : orderForm.orderType === 'limit' ? 'Limite' : 'Stop'}</span>
+
+                      <span className="text-muted-foreground">Quantidade</span>
+                      <span className="font-mono text-right">{orderForm.size} contrato(s)</span>
+
+                      <span className="text-muted-foreground">Preço</span>
+                      <span className="font-mono text-right">
+                        {orderForm.orderType === 'market' ? `~$${formatMoney(currentPrice)} (mercado)` : `$${formatMoney(orderForm.price || currentPrice)}`}
+                      </span>
+
+                      <span className="text-muted-foreground">Valor Estimado</span>
+                      <span className="font-mono text-right font-medium">
+                        ~${orderForm.usdtAmount ? formatMoney(orderForm.usdtAmount) : '---'} USDT
+                      </span>
+
+                      {isFuturesMarket && (
+                        <>
+                          <span className="text-muted-foreground">Alavancagem</span>
+                          <span className="text-right">{orderForm.leverage}x</span>
+
+                          <span className="text-muted-foreground">Margem Requerida</span>
+                          <span className="font-mono text-right">
+                            ~${orderForm.usdtAmount ? formatMoney(parseFloat(orderForm.usdtAmount) / parseInt(orderForm.leverage || '1')) : '---'} USDT
+                          </span>
+                        </>
+                      )}
+
+                      {orderForm.stopLoss && (
+                        <>
+                          <span className="text-muted-foreground">Stop Loss</span>
+                          <span className="font-mono text-right text-red-500">${formatMoney(orderForm.stopLoss)}</span>
+                        </>
+                      )}
+
+                      {orderForm.takeProfit && (
+                        <>
+                          <span className="text-muted-foreground">Take Profit</span>
+                          <span className="font-mono text-right text-green-500">${formatMoney(orderForm.takeProfit)}</span>
+                        </>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {createOrderMutation.error && (
+                <p className="text-sm text-destructive">{(createOrderMutation.error as Error).message}</p>
+              )}
+            </div>
+          </ScrollArea>
+
+          {/* Footer com botões */}
+          <div className="flex gap-2 pt-2">
+            <Button
+              variant="outline"
+              onClick={() => setOrderDialogOpen(false)}
+              className="flex-1"
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => createOrderMutation.mutate()}
+              disabled={!orderForm.size || !selectedSymbol || createOrderMutation.isPending}
+              className={`flex-1 h-11 font-bold ${orderForm.side === 'buy' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}
+            >
+              {createOrderMutation.isPending ? 'Executando...' : `${orderForm.side === 'buy' ? '✓ Comprar' : '✓ Vender'} ${selectedSymbol}`}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -540,6 +1059,70 @@ export default function DemoTrading() {
         {/* Tab: Visão Geral */}
         <TabsContent value="overview" className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Trade Rápido */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5" />
+                  Trade Rápido
+                </CardTitle>
+                <CardDescription>Execute ordens demo rapidamente</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    className="h-16 bg-green-600 hover:bg-green-700"
+                    onClick={() => {
+                      setOrderForm(prev => ({ ...prev, side: 'buy' }));
+                      setOrderDialogOpen(true);
+                    }}
+                    disabled={!selectedSymbol}
+                  >
+                    <div className="flex flex-col items-center">
+                      <TrendingUp className="h-5 w-5 mb-1" />
+                      <span>Comprar (Long)</span>
+                    </div>
+                  </Button>
+                  <Button
+                    className="h-16 bg-red-600 hover:bg-red-700"
+                    onClick={() => {
+                      setOrderForm(prev => ({ ...prev, side: 'sell' }));
+                      setOrderDialogOpen(true);
+                    }}
+                    disabled={!selectedSymbol}
+                  >
+                    <div className="flex flex-col items-center">
+                      <TrendingDown className="h-5 w-5 mb-1" />
+                      <span>Vender (Short)</span>
+                    </div>
+                  </Button>
+                </div>
+                <Separator />
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Melhor Compra</span>
+                    <span className="font-mono text-green-500">
+                      {market?.ticker?.bestBidPrice ? `$${formatMoney(market.ticker.bestBidPrice)}` : '-'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Melhor Venda</span>
+                    <span className="font-mono text-red-500">
+                      {market?.ticker?.bestAskPrice ? `$${formatMoney(market.ticker.bestAskPrice)}` : '-'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Spread</span>
+                    <span className="font-mono">
+                      {market?.ticker?.bestAskPrice && market?.ticker?.bestBidPrice
+                        ? `$${formatMoney(parseFloat(market.ticker.bestAskPrice) - parseFloat(market.ticker.bestBidPrice))}`
+                        : '-'}
+                    </span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             {/* Posições Abertas */}
             <Card>
               <CardHeader>
@@ -581,33 +1164,32 @@ export default function DemoTrading() {
                 )}
               </CardContent>
             </Card>
-
-            {/* Fila Post-Mortem */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Status Post-Mortem</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm">Na fila</span>
-                    <Badge variant="outline">{queueStatsQuery.data?.pending ?? 0}</Badge>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm">DLQ (falhos)</span>
-                    <Badge variant={queueStatsQuery.data?.dlq ? 'destructive' : 'outline'}>
-                      {queueStatsQuery.data?.dlq ?? 0}
-                    </Badge>
-                  </div>
-                  <Separator />
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm">Total Completos</span>
-                    <Badge>{(postmortemsQuery.data ?? []).filter(pm => pm.status === 'completed').length}</Badge>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
           </div>
+
+          {/* Fila Post-Mortem */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Status Post-Mortem</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex gap-8">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm">Na fila</span>
+                  <Badge variant="outline">{queueStatsQuery.data?.pending ?? 0}</Badge>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm">DLQ (falhos)</span>
+                  <Badge variant={queueStatsQuery.data?.dlq ? 'destructive' : 'outline'}>
+                    {queueStatsQuery.data?.dlq ?? 0}
+                  </Badge>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm">Total Completos</span>
+                  <Badge>{(postmortemsQuery.data ?? []).filter(pm => pm.status === 'completed').length}</Badge>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* Tab: Posições */}

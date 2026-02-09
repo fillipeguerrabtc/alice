@@ -929,8 +929,24 @@ jobs:
         run: |
           set -euo pipefail
           if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
-            echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
-            echo "✅ Docker Hub autenticado"
+            # CORREÇÃO (09/02/2026): Retry logic para Docker Hub login
+            # CAUSA RAIZ: Latência Hetzner→Docker Hub causa timeouts intermitentes
+            attempt=1
+            max_attempts=5
+            delay=5
+            while [ $attempt -le $max_attempts ]; do
+              if echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin 2>&1; then
+                echo "✅ Docker Hub autenticado"
+                break
+              fi
+              echo "⚠️ Docker Hub login falhou (tentativa $attempt/$max_attempts). Aguardando ${delay}s..."
+              sleep "$delay"
+              delay=$((delay * 2))
+              attempt=$((attempt + 1))
+            done
+            if [ $attempt -gt $max_attempts ]; then
+              echo "⚠️ Docker Hub login falhou após $max_attempts tentativas - continuando sem auth"
+            fi
           else
             echo "⚠️ Docker Hub sem credenciais - validação pode sofrer rate limit"
           fi
@@ -3131,10 +3147,34 @@ jobs:
             DOCKERHUB_TOKEN="${{ secrets.DOCKERHUB_TOKEN }}"
             if [ -n "${DOCKERHUB_USER:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
               echo "🔐 Login Docker Hub (conta Pro)..."
-              if echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USER" --password-stdin 2>&1; then
+              # =================================================================
+              # CORREÇÃO (09/02/2026): Retry logic para Docker Hub login
+              # =================================================================
+              # CAUSA RAIZ: Docker Hub login fazia UMA única tentativa. Se auth.docker.io
+              #   desse timeout (latência Hetzner→Docker Hub ~2-11s), login falhava e
+              #   deploy continuava sem autenticação (100 pulls/6h anônimo).
+              #   GHCR já tinha retry com 8 tentativas, mas Docker Hub não.
+              # SOLUÇÃO: Retry com exponential backoff (mesmo padrão GHCR).
+              # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 2 (Não duplicar padrões)
+              # =================================================================
+              dockerhub_login_with_retry() {
+                local attempts=5
+                local delay=5
+                local attempt=1
+                while [ $attempt -le $attempts ]; do
+                  DH_LOGIN_ERROR=$(echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USER" --password-stdin 2>&1) && return 0
+                  echo "   ⚠️ Docker Hub login falhou (tentativa $attempt/$attempts). Aguardando ${delay}s..."
+                  echo "   Detalhe: ${DH_LOGIN_ERROR}"
+                  sleep "$delay"
+                  delay=$((delay * 2))
+                  attempt=$((attempt + 1))
+                done
+                return 1
+              }
+              if dockerhub_login_with_retry; then
                 echo "✅ Docker Hub autenticado (rate limits Pro)"
               else
-                echo "⚠️ Docker Hub login falhou - continuando sem auth (rate limits anônimos)"
+                echo "⚠️ Docker Hub login falhou após 5 tentativas - continuando sem auth (rate limits anônimos)"
               fi
             else
               echo "⚠️ Docker Hub sem credenciais - imagens externas com rate limit anônimo"
@@ -4311,10 +4351,34 @@ jobs:
             DOCKERHUB_TOKEN="${{ secrets.DOCKERHUB_TOKEN }}"
             if [ -n "${DOCKERHUB_USER:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
               echo "🔐 Login Docker Hub (conta Pro)..."
-              if echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USER" --password-stdin 2>&1; then
+              # =================================================================
+              # CORREÇÃO (09/02/2026): Retry logic para Docker Hub login
+              # =================================================================
+              # CAUSA RAIZ: Docker Hub login fazia UMA única tentativa. Se auth.docker.io
+              #   desse timeout (latência Hetzner→Docker Hub ~2-11s), login falhava e
+              #   deploy continuava sem autenticação (100 pulls/6h anônimo).
+              #   GHCR já tinha retry com 8 tentativas, mas Docker Hub não.
+              # SOLUÇÃO: Retry com exponential backoff (mesmo padrão GHCR).
+              # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 2 (Não duplicar padrões)
+              # =================================================================
+              dockerhub_login_with_retry() {
+                local attempts=5
+                local delay=5
+                local attempt=1
+                while [ $attempt -le $attempts ]; do
+                  DH_LOGIN_ERROR=$(echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USER" --password-stdin 2>&1) && return 0
+                  echo "   ⚠️ Docker Hub login falhou (tentativa $attempt/$attempts). Aguardando ${delay}s..."
+                  echo "   Detalhe: ${DH_LOGIN_ERROR}"
+                  sleep "$delay"
+                  delay=$((delay * 2))
+                  attempt=$((attempt + 1))
+                done
+                return 1
+              }
+              if dockerhub_login_with_retry; then
                 echo "✅ Docker Hub autenticado (rate limits Pro)"
               else
-                echo "⚠️ Docker Hub login falhou - continuando sem auth (rate limits anônimos)"
+                echo "⚠️ Docker Hub login falhou após 5 tentativas - continuando sem auth (rate limits anônimos)"
               fi
             else
               echo "⚠️ Docker Hub sem credenciais - imagens externas com rate limit anônimo"
@@ -5122,10 +5186,34 @@ jobs:
             DOCKERHUB_TOKEN="${{ secrets.DOCKERHUB_TOKEN }}"
             if [ -n "${DOCKERHUB_USER:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
               echo "🔐 Login Docker Hub (conta Pro)..."
-              if echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USER" --password-stdin 2>&1; then
+              # =================================================================
+              # CORREÇÃO (09/02/2026): Retry logic para Docker Hub login
+              # =================================================================
+              # CAUSA RAIZ: Docker Hub login fazia UMA única tentativa. Se auth.docker.io
+              #   desse timeout (latência Hetzner→Docker Hub ~2-11s), login falhava e
+              #   deploy continuava sem autenticação (100 pulls/6h anônimo).
+              #   GHCR já tinha retry com 8 tentativas, mas Docker Hub não.
+              # SOLUÇÃO: Retry com exponential backoff (mesmo padrão GHCR).
+              # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 2 (Não duplicar padrões)
+              # =================================================================
+              dockerhub_login_with_retry() {
+                local attempts=5
+                local delay=5
+                local attempt=1
+                while [ $attempt -le $attempts ]; do
+                  DH_LOGIN_ERROR=$(echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USER" --password-stdin 2>&1) && return 0
+                  echo "   ⚠️ Docker Hub login falhou (tentativa $attempt/$attempts). Aguardando ${delay}s..."
+                  echo "   Detalhe: ${DH_LOGIN_ERROR}"
+                  sleep "$delay"
+                  delay=$((delay * 2))
+                  attempt=$((attempt + 1))
+                done
+                return 1
+              }
+              if dockerhub_login_with_retry; then
                 echo "✅ Docker Hub autenticado (rate limits Pro)"
               else
-                echo "⚠️ Docker Hub login falhou - continuando sem auth (rate limits anônimos)"
+                echo "⚠️ Docker Hub login falhou após 5 tentativas - continuando sem auth (rate limits anônimos)"
               fi
             else
               echo "⚠️ Docker Hub sem credenciais - imagens externas com rate limit anônimo"
@@ -5851,10 +5939,34 @@ jobs:
             DOCKERHUB_TOKEN="${{ secrets.DOCKERHUB_TOKEN }}"
             if [ -n "${DOCKERHUB_USER:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
               echo "🔐 Login Docker Hub (conta Pro)..."
-              if echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USER" --password-stdin 2>&1; then
+              # =================================================================
+              # CORREÇÃO (09/02/2026): Retry logic para Docker Hub login
+              # =================================================================
+              # CAUSA RAIZ: Docker Hub login fazia UMA única tentativa. Se auth.docker.io
+              #   desse timeout (latência Hetzner→Docker Hub ~2-11s), login falhava e
+              #   deploy continuava sem autenticação (100 pulls/6h anônimo).
+              #   GHCR já tinha retry com 8 tentativas, mas Docker Hub não.
+              # SOLUÇÃO: Retry com exponential backoff (mesmo padrão GHCR).
+              # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 2 (Não duplicar padrões)
+              # =================================================================
+              dockerhub_login_with_retry() {
+                local attempts=5
+                local delay=5
+                local attempt=1
+                while [ $attempt -le $attempts ]; do
+                  DH_LOGIN_ERROR=$(echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USER" --password-stdin 2>&1) && return 0
+                  echo "   ⚠️ Docker Hub login falhou (tentativa $attempt/$attempts). Aguardando ${delay}s..."
+                  echo "   Detalhe: ${DH_LOGIN_ERROR}"
+                  sleep "$delay"
+                  delay=$((delay * 2))
+                  attempt=$((attempt + 1))
+                done
+                return 1
+              }
+              if dockerhub_login_with_retry; then
                 echo "✅ Docker Hub autenticado (rate limits Pro)"
               else
-                echo "⚠️ Docker Hub login falhou - continuando sem auth (rate limits anônimos)"
+                echo "⚠️ Docker Hub login falhou após 5 tentativas - continuando sem auth (rate limits anônimos)"
               fi
             else
               echo "⚠️ Docker Hub sem credenciais - imagens externas com rate limit anônimo"
@@ -6528,10 +6640,34 @@ jobs:
             DOCKERHUB_TOKEN="${{ secrets.DOCKERHUB_TOKEN }}"
             if [ -n "${DOCKERHUB_USER:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
               echo "🔐 Login Docker Hub (conta Pro)..."
-              if echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USER" --password-stdin 2>&1; then
+              # =================================================================
+              # CORREÇÃO (09/02/2026): Retry logic para Docker Hub login
+              # =================================================================
+              # CAUSA RAIZ: Docker Hub login fazia UMA única tentativa. Se auth.docker.io
+              #   desse timeout (latência Hetzner→Docker Hub ~2-11s), login falhava e
+              #   deploy continuava sem autenticação (100 pulls/6h anônimo).
+              #   GHCR já tinha retry com 8 tentativas, mas Docker Hub não.
+              # SOLUÇÃO: Retry com exponential backoff (mesmo padrão GHCR).
+              # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 2 (Não duplicar padrões)
+              # =================================================================
+              dockerhub_login_with_retry() {
+                local attempts=5
+                local delay=5
+                local attempt=1
+                while [ $attempt -le $attempts ]; do
+                  DH_LOGIN_ERROR=$(echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USER" --password-stdin 2>&1) && return 0
+                  echo "   ⚠️ Docker Hub login falhou (tentativa $attempt/$attempts). Aguardando ${delay}s..."
+                  echo "   Detalhe: ${DH_LOGIN_ERROR}"
+                  sleep "$delay"
+                  delay=$((delay * 2))
+                  attempt=$((attempt + 1))
+                done
+                return 1
+              }
+              if dockerhub_login_with_retry; then
                 echo "✅ Docker Hub autenticado (rate limits Pro)"
               else
-                echo "⚠️ Docker Hub login falhou - continuando sem auth (rate limits anônimos)"
+                echo "⚠️ Docker Hub login falhou após 5 tentativas - continuando sem auth (rate limits anônimos)"
               fi
             else
               echo "⚠️ Docker Hub sem credenciais - imagens externas com rate limit anônimo"

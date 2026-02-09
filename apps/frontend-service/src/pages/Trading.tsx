@@ -70,6 +70,7 @@ import {
   CandlestickChart,
   Link2,
   Wallet,
+  BookOpen,
 } from 'lucide-react';
 // CORREÇÃO 19/12/2025: Remover CardFooter não utilizado (no-unused-vars)
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -794,6 +795,7 @@ export default function Trading() {
     size: '',
     price: '',
     funds: '',
+    usdtAmount: '', // Valor estimado em USDT (conversão automática com contratos)
     leverage: '10',
     stopLoss: '',
     takeProfit: '',
@@ -1750,6 +1752,7 @@ export default function Trading() {
         size: '',
         price: '',
         funds: '',
+        usdtAmount: '',
         leverage: '10',
         stopLoss: '',
         takeProfit: '',
@@ -2472,6 +2475,8 @@ export default function Trading() {
     : isOrderMarketBuy
       ? hasOrderSize || hasOrderFunds
       : hasOrderSize;
+
+  // Conversão USDT ↔ Quantidade para formulário de ordem (padrão exchange)
   const orders = ordersData?.data || [];
   const allOrderHistorySelected = orderHistoryItems.length > 0 && orderHistorySelectedIds.size === orderHistoryItems.length;
   const hasOrderHistorySelection = orderHistorySelectedIds.size > 0;
@@ -2528,6 +2533,35 @@ export default function Trading() {
   const currentPrice = Number.isFinite(wsTickerPrice) ? wsTickerPrice : fallbackPriceValue;
   const priceChange = market?.contract?.priceChg || 0;
   const priceChangePercent = market?.contract?.priceChgPct || 0;
+
+  // Conversão USDT ↔ Quantidade para formulário de ordem (padrão exchange)
+  const contractMultiplier = market?.contract?.multiplier ?? 0.001;
+  const handleOrderSizeChange = useCallback((sizeValue: string) => {
+    setOrderForm(prev => {
+      const sizeNum = parseFloat(sizeValue);
+      if (currentPrice > 0 && Number.isFinite(sizeNum) && sizeNum > 0 && isFuturesMarket) {
+        const usdtVal = sizeNum * currentPrice * contractMultiplier;
+        return { ...prev, size: sizeValue, usdtAmount: usdtVal.toFixed(2) };
+      }
+      return { ...prev, size: sizeValue, usdtAmount: '' };
+    });
+  }, [currentPrice, contractMultiplier, isFuturesMarket]);
+
+  const handleOrderUsdtChange = useCallback((usdtValue: string) => {
+    setOrderForm(prev => {
+      const usdtNum = parseFloat(usdtValue);
+      if (currentPrice > 0 && Number.isFinite(usdtNum) && usdtNum > 0 && isFuturesMarket) {
+        const qty = usdtNum / (currentPrice * contractMultiplier);
+        return { ...prev, usdtAmount: usdtValue, size: qty.toFixed(4) };
+      }
+      return { ...prev, usdtAmount: usdtValue, size: '' };
+    });
+  }, [currentPrice, contractMultiplier, isFuturesMarket]);
+
+  // Preço efetivo para cálculos no resumo (limit usa preço da ordem, market usa preço atual)
+  const orderEffectivePrice = orderForm.orderType === 'limit' && orderForm.price
+    ? parseFloat(orderForm.price)
+    : currentPrice;
 
   // ============================================================================
   // RENDER - Main
@@ -4546,9 +4580,9 @@ export default function Trading() {
       {/* DIALOGS */}
       {/* ================================================================== */}
 
-      {/* New Order Dialog */}
+      {/* New Order Dialog - Estilo Exchange Real */}
       <Dialog open={showNewOrderDialog} onOpenChange={setShowNewOrderDialog}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[520px]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Rocket className="h-5 w-5" />
@@ -4558,174 +4592,288 @@ export default function Trading() {
               {t('trading.orders.newDialog.subtitle')}
             </DialogDescription>
           </DialogHeader>
-          
-          <div className="space-y-4 py-4">
-            {/* Side */}
-            <div className="grid grid-cols-2 gap-2">
-              <Button
-                type="button"
-                variant={orderForm.side === 'buy' ? 'default' : 'outline'}
-                className={orderForm.side === 'buy' ? 'bg-green-600 hover:bg-green-700' : ''}
-                onClick={() => setOrderForm({ ...orderForm, side: 'buy' })}
-              >
-                <TrendingUp className="h-4 w-4 mr-2" />
-                {t('trading.orders.buy')}
-              </Button>
-              <Button
-                type="button"
-                variant={orderForm.side === 'sell' ? 'default' : 'outline'}
-                className={orderForm.side === 'sell' ? 'bg-red-600 hover:bg-red-700' : ''}
-                onClick={() => setOrderForm({ ...orderForm, side: 'sell' })}
-              >
-                <TrendingDown className="h-4 w-4 mr-2" />
-                {t('trading.orders.sell')}
-              </Button>
-            </div>
 
-            {/* Order Type */}
-            <div className="space-y-2">
-              <Label>{t('trading.orders.form.orderType')}</Label>
-              <Select
-                value={orderForm.orderType}
-                onValueChange={(value: 'limit' | 'market') => setOrderForm({ ...orderForm, orderType: value })}
-              >
-                <SelectTrigger data-testid="select-order-type">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="market">{t('trading.orders.form.market')}</SelectItem>
-                  <SelectItem value="limit">{t('trading.orders.form.limit')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+          <ScrollArea className="max-h-[70vh] pr-4">
+            <div className="space-y-4 py-2">
+              {/* Cotação em Tempo Real (topo do diálogo como exchanges reais) */}
+              {currentPrice > 0 && (
+                <div className="p-3 bg-muted rounded-lg space-y-1">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-lg">{selectedSymbol || defaultSymbol}</span>
+                      <Badge variant="outline" className="text-xs">{selectedMarketType}</Badge>
+                    </div>
+                    {wsEnabled && (
+                      <Badge variant="outline" className="text-xs gap-1">
+                        <Activity className="h-3 w-3 text-green-500" />
+                        {t('trading.status.liveLabel')}
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-2xl font-bold tabular-nums">
+                      ${formatNumber(currentPrice, locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                    {priceChange !== 0 && (
+                      <span className={`text-sm ${priceChange >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                        {priceChange >= 0 ? '+' : ''}{(priceChangePercent * 100).toFixed(2)}%
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex gap-4 text-xs text-muted-foreground">
+                    <span>Máx: ${formatNumber(market?.contract?.highPrice || 0, locale, { minimumFractionDigits: 2 })}</span>
+                    <span>Mín: ${formatNumber(market?.contract?.lowPrice || 0, locale, { minimumFractionDigits: 2 })}</span>
+                    <span>Vol: {formatNumber(market?.contract?.volumeOf24h || 0, locale, { maximumFractionDigits: 0 })}</span>
+                  </div>
+                </div>
+              )}
 
-            {/* Size */}
-            <div className="space-y-2">
-              <Label>
-                {isFuturesMarket
-                  ? t('trading.orders.form.sizeContracts')
-                  : t('trading.orders.form.sizeAmount')}
-              </Label>
-              <Input
-                type="number"
-                placeholder="1"
-                value={orderForm.size}
-                onChange={(e) => setOrderForm({ ...orderForm, size: e.target.value })}
-                data-testid="input-order-size"
-              />
-              <p className="text-xs text-muted-foreground">
-                {isFuturesMarket
-                  ? t('trading.orders.form.sizeHint', { symbol: selectedSymbol || defaultSymbol })
-                  : t('trading.orders.form.sizeSpotHint')}
-              </p>
-            </div>
-
-            {/* Funds (somente Spot/Margin e ordem a mercado de compra) */}
-            {!isFuturesMarket && orderForm.orderType === 'market' && orderForm.side === 'buy' && (
-              <div className="space-y-2">
-                <Label>{t('trading.orders.form.funds')}</Label>
-                <Input
-                  type="number"
-                  placeholder="100"
-                  value={orderForm.funds}
-                  onChange={(e) => setOrderForm({ ...orderForm, funds: e.target.value })}
-                  data-testid="input-order-funds"
-                />
-                <p className="text-xs text-muted-foreground">
-                  {t('trading.orders.form.fundsHint')}
-                </p>
-              </div>
-            )}
-
-            {/* Price (only for limit) */}
-            {orderForm.orderType === 'limit' && (
-              <div className="space-y-2">
-                <Label>{t('trading.orders.form.price')}</Label>
-                <Input
-                  type="number"
-                  placeholder={currentPrice.toString()}
-                  value={orderForm.price}
-                  onChange={(e) => setOrderForm({ ...orderForm, price: e.target.value })}
-                  data-testid="input-order-price"
-                />
-              </div>
-            )}
-
-            {/* Leverage (apenas Futures) */}
-            {isFuturesMarket && (
-              <div className="space-y-2">
-                <Label>{t('trading.orders.form.leverage')}</Label>
-                <Select
-                  value={orderForm.leverage}
-                  onValueChange={(value) => setOrderForm({ ...orderForm, leverage: value })}
+              {/* Lado: Comprar / Vender (botões grandes como KuCoin) */}
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant={orderForm.side === 'buy' ? 'default' : 'outline'}
+                  className={orderForm.side === 'buy' ? 'bg-green-600 hover:bg-green-700 h-12' : 'h-12'}
+                  onClick={() => setOrderForm({ ...orderForm, side: 'buy' })}
                 >
-                  <SelectTrigger data-testid="select-leverage">
+                  <TrendingUp className="h-4 w-4 mr-2" />
+                  {t('trading.orders.buy')}
+                </Button>
+                <Button
+                  type="button"
+                  variant={orderForm.side === 'sell' ? 'default' : 'outline'}
+                  className={orderForm.side === 'sell' ? 'bg-red-600 hover:bg-red-700 h-12' : 'h-12'}
+                  onClick={() => setOrderForm({ ...orderForm, side: 'sell' })}
+                >
+                  <TrendingDown className="h-4 w-4 mr-2" />
+                  {t('trading.orders.sell')}
+                </Button>
+              </div>
+
+              {/* Tipo de Ordem */}
+              <div className="space-y-2">
+                <Label>{t('trading.orders.form.orderType')}</Label>
+                <Select
+                  value={orderForm.orderType}
+                  onValueChange={(value: 'limit' | 'market') => setOrderForm({ ...orderForm, orderType: value })}
+                >
+                  <SelectTrigger data-testid="select-order-type">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {[1, 2, 3, 5, 10, 20, 50, 100].map((lev) => (
-                      <SelectItem key={lev} value={lev.toString()} disabled={lev > (riskConfig?.maxLeverage || 20)}>
-                        {lev}x
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="market">{t('trading.orders.form.market')}</SelectItem>
+                    <SelectItem value="limit">{t('trading.orders.form.limit')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-            )}
 
-            {/* Stop Loss & Take Profit */}
-            <div className="grid grid-cols-2 gap-4">
+              {/* Preço (apenas limit) */}
+              {orderForm.orderType === 'limit' && (
+                <div className="space-y-2">
+                  <Label>{t('trading.orders.form.price')}</Label>
+                  <Input
+                    type="number"
+                    placeholder={currentPrice > 0 ? currentPrice.toString() : '0'}
+                    value={orderForm.price}
+                    onChange={(e) => setOrderForm({ ...orderForm, price: e.target.value })}
+                    data-testid="input-order-price"
+                  />
+                </div>
+              )}
+
+              {/* Quantidade (contratos) */}
               <div className="space-y-2">
-                <Label>{t('trading.orders.form.stopLoss')}</Label>
+                <Label>
+                  {isFuturesMarket
+                    ? t('trading.orders.form.sizeContracts')
+                    : t('trading.orders.form.sizeAmount')}
+                </Label>
                 <Input
                   type="number"
-                  placeholder={t('trading.orders.form.optional')}
-                  value={orderForm.stopLoss}
-                  onChange={(e) => setOrderForm({ ...orderForm, stopLoss: e.target.value })}
-                  data-testid="input-stop-loss"
+                  placeholder="1"
+                  value={orderForm.size}
+                  onChange={(e) => isFuturesMarket ? handleOrderSizeChange(e.target.value) : setOrderForm({ ...orderForm, size: e.target.value })}
+                  data-testid="input-order-size"
                 />
+                <p className="text-xs text-muted-foreground">
+                  {isFuturesMarket
+                    ? t('trading.orders.form.sizeHint', { symbol: selectedSymbol || defaultSymbol })
+                    : t('trading.orders.form.sizeSpotHint')}
+                </p>
               </div>
-              <div className="space-y-2">
-                <Label>{t('trading.orders.form.takeProfit')}</Label>
-                <Input
-                  type="number"
-                  placeholder={t('trading.orders.form.optional')}
-                  value={orderForm.takeProfit}
-                  onChange={(e) => setOrderForm({ ...orderForm, takeProfit: e.target.value })}
-                  data-testid="input-take-profit"
-                />
+
+              {/* Valor em USDT (conversão automática - apenas Futures) */}
+              {isFuturesMarket && (
+                <div className="space-y-2">
+                  <Label>Valor em USDT</Label>
+                  <Input
+                    type="number"
+                    placeholder="100.00"
+                    value={orderForm.usdtAmount}
+                    onChange={(e) => handleOrderUsdtChange(e.target.value)}
+                    data-testid="input-order-usdt"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Preencha contratos OU valor em USDT — a conversão é automática.
+                  </p>
+                </div>
+              )}
+
+              {/* Funds (somente Spot/Margin e ordem a mercado de compra) */}
+              {!isFuturesMarket && orderForm.orderType === 'market' && orderForm.side === 'buy' && (
+                <div className="space-y-2">
+                  <Label>{t('trading.orders.form.funds')}</Label>
+                  <Input
+                    type="number"
+                    placeholder="100"
+                    value={orderForm.funds}
+                    onChange={(e) => setOrderForm({ ...orderForm, funds: e.target.value })}
+                    data-testid="input-order-funds"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {t('trading.orders.form.fundsHint')}
+                  </p>
+                </div>
+              )}
+
+              {/* Alavancagem (apenas Futures) */}
+              {isFuturesMarket && (
+                <div className="space-y-2">
+                  <Label>{t('trading.orders.form.leverage')}</Label>
+                  <Select
+                    value={orderForm.leverage}
+                    onValueChange={(value) => setOrderForm({ ...orderForm, leverage: value })}
+                  >
+                    <SelectTrigger data-testid="select-leverage">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {[1, 2, 3, 5, 10, 20, 50, 100].map((lev) => (
+                        <SelectItem key={lev} value={lev.toString()} disabled={lev > (riskConfig?.maxLeverage || 20)}>
+                          {lev}x
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {/* Stop Loss & Take Profit */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>{t('trading.orders.form.stopLoss')}</Label>
+                  <Input
+                    type="number"
+                    placeholder={t('trading.orders.form.optional')}
+                    value={orderForm.stopLoss}
+                    onChange={(e) => setOrderForm({ ...orderForm, stopLoss: e.target.value })}
+                    data-testid="input-stop-loss"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('trading.orders.form.takeProfit')}</Label>
+                  <Input
+                    type="number"
+                    placeholder={t('trading.orders.form.optional')}
+                    value={orderForm.takeProfit}
+                    onChange={(e) => setOrderForm({ ...orderForm, takeProfit: e.target.value })}
+                    data-testid="input-take-profit"
+                  />
+                </div>
               </div>
+
+              {/* Resumo Detalhado da Ordem (estilo exchange) */}
+              {(orderForm.size || orderForm.funds) && currentPrice > 0 && (
+                <Card className="bg-muted/50 border-dashed">
+                  <CardContent className="p-3 space-y-2">
+                    <p className="font-semibold text-sm flex items-center gap-1">
+                      <BookOpen className="h-4 w-4" />
+                      {t('trading.orders.form.summary')}
+                    </p>
+                    <Separator />
+                    <div className="grid grid-cols-2 gap-y-1.5 text-sm">
+                      <span className="text-muted-foreground">Símbolo</span>
+                      <span className="font-mono text-right">{selectedSymbol || defaultSymbol}</span>
+
+                      <span className="text-muted-foreground">Direção</span>
+                      <span className={`text-right font-medium ${orderForm.side === 'buy' ? 'text-green-500' : 'text-red-500'}`}>
+                        {orderForm.side === 'buy' ? t('trading.orders.buying') : t('trading.orders.selling')}
+                      </span>
+
+                      <span className="text-muted-foreground">{t('trading.orders.form.orderType')}</span>
+                      <span className="text-right">
+                        {orderForm.orderType === 'market' ? t('trading.orders.form.market') : t('trading.orders.form.limit')}
+                      </span>
+
+                      {orderForm.size && (
+                        <>
+                          <span className="text-muted-foreground">Quantidade</span>
+                          <span className="font-mono text-right">
+                            {orderForm.size} {isFuturesMarket ? t('trading.orders.contracts') : t('trading.orders.amount')}
+                          </span>
+                        </>
+                      )}
+
+                      <span className="text-muted-foreground">{t('trading.orders.form.price')}</span>
+                      <span className="font-mono text-right">
+                        {orderForm.orderType === 'market'
+                          ? `~$${formatNumber(currentPrice, locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${t('trading.orders.form.marketPrice')})`
+                          : `$${formatNumber(orderEffectivePrice, locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                      </span>
+
+                      {isFuturesMarket && orderForm.usdtAmount && (
+                        <>
+                          <span className="text-muted-foreground">Valor Estimado</span>
+                          <span className="font-mono text-right font-medium">
+                            ~${formatNumber(parseFloat(orderForm.usdtAmount), locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT
+                          </span>
+                        </>
+                      )}
+
+                      {!isFuturesMarket && orderForm.funds && (
+                        <>
+                          <span className="text-muted-foreground">{t('trading.orders.form.funds')}</span>
+                          <span className="font-mono text-right">${orderForm.funds}</span>
+                        </>
+                      )}
+
+                      {isFuturesMarket && (
+                        <>
+                          <span className="text-muted-foreground">{t('trading.orders.form.leverage')}</span>
+                          <span className="text-right">{orderForm.leverage}x</span>
+
+                          {orderForm.usdtAmount && (
+                            <>
+                              <span className="text-muted-foreground">Margem Requerida</span>
+                              <span className="font-mono text-right">
+                                ~${formatNumber(parseFloat(orderForm.usdtAmount) / parseInt(orderForm.leverage || '1'), locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT
+                              </span>
+                            </>
+                          )}
+                        </>
+                      )}
+
+                      {orderForm.stopLoss && (
+                        <>
+                          <span className="text-muted-foreground">{t('trading.orders.form.stopLoss')}</span>
+                          <span className="font-mono text-right text-red-500">${orderForm.stopLoss}</span>
+                        </>
+                      )}
+
+                      {orderForm.takeProfit && (
+                        <>
+                          <span className="text-muted-foreground">{t('trading.orders.form.takeProfit')}</span>
+                          <span className="font-mono text-right text-green-500">${orderForm.takeProfit}</span>
+                        </>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
+          </ScrollArea>
 
-            {/* Order Summary */}
-            {(orderForm.size || orderForm.funds) && (
-              <Card className="bg-muted/50">
-                <CardContent className="p-3 text-sm">
-                  <p className="font-medium mb-2">{t('trading.orders.form.summary')}</p>
-                  <div className="space-y-1 text-muted-foreground">
-                    {orderForm.size && (
-                      <p>
-                        {orderForm.side === 'buy' ? t('trading.orders.buying') : t('trading.orders.selling')}{' '}
-                        {orderForm.size}{' '}
-                        {isFuturesMarket ? t('trading.orders.contracts') : t('trading.orders.amount')}
-                      </p>
-                    )}
-                    {!isFuturesMarket && orderForm.funds && (
-                      <p>
-                        {t('trading.orders.form.funds')}: {orderForm.funds}
-                      </p>
-                    )}
-                    <p>{t('trading.orders.form.at')} {orderForm.orderType === 'market' ? t('trading.orders.form.marketPrice') : `$${orderForm.price || currentPrice}`}</p>
-                    {isFuturesMarket && (
-                      <p>{t('trading.orders.form.withLeverage')} {orderForm.leverage}x</p>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-
-          <DialogFooter>
+          <DialogFooter className="gap-2 sm:gap-0">
             <Button
               variant="outline"
               onClick={() => setShowNewOrderDialog(false)}
@@ -4735,7 +4883,7 @@ export default function Trading() {
             <Button
               onClick={() => createOrderMutation.mutate(orderForm)}
               disabled={!canSubmitOrder || createOrderMutation.isPending}
-              className={orderForm.side === 'buy' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}
+              className={`font-bold ${orderForm.side === 'buy' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}
             >
               {createOrderMutation.isPending ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />

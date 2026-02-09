@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 09 de Fevereiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.95 - Demo Trading + Post-Mortem + Ecossistema LLM (LoRA + RAG + Feedback Loop)
+**Versão:** 10.96 - Order Dialog Enterprise (Demo + Real) com Cotação Ao Vivo, Conversão USDT e Resumo
 
 ---
 
@@ -27,6 +27,7 @@
 - Grafana: execução com `user: 472:472` para manter ownership correto em `/opt/alice/data/grafana`.
 - Segurança enterprise com hardening de containers, RLS no PostgreSQL e validação Zod em APIs.
 - Integração KuCoin auditada e corrigida conforme docs oficiais (auth HMAC v2/v3, time sync, stop orders, WS broadcast via Redis).
+- **Order Dialog Enterprise** (Trading Demo + Trading Real): cotação ao vivo com badge “Ao Vivo”, inputs duais (quantidade e USDT com conversão automática bidirecional via contract multiplier), resumo detalhado da ordem antes de confirmar (símbolo, direção, tipo, preço, valor estimado, margem requerida, leverage, SL/TP). UX alinhada com exchanges reais (KuCoin).
 - Trading UI: chamadas REST bloqueadas quando símbolo não está definido (evita 404 e tela “Algo deu errado”).
 - Trading UI: histórico de ordens evita chamadas duplicadas e loop de retry ao alternar para a aba Histórico.
 - Integrações UI: tipagem i18n alinhada para interpolação (build frontend sem erro TS2554).

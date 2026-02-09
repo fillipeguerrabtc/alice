@@ -2181,10 +2181,21 @@
         "takeProfit": "Take Profit",
         "optional": "Opcional",
         "summary": "Resumo da Ordem",
+        "summaryDetailed": "Resumo Detalhado da Ordem",
         "at": "a",
         "marketPrice": "preço de mercado",
         "withLeverage": "com alavancagem",
-        "submit": "Executar Ordem"
+        "submit": "Executar Ordem",
+        "usdtValue": "Valor (USDT)",
+        "usdtHint": "Preencha quantidade ou valor USDT — conversão automática",
+        "liveQuote": "Cotação em Tempo Real",
+        "liveLabel": "Ao Vivo",
+        "offlineLabel": "Offline",
+        "direction": "Direção",
+        "estimatedValue": "Valor Estimado",
+        "requiredMargin": "Margem Requerida",
+        "reviewBeforeSubmit": "Revise os dados acima antes de confirmar",
+        "confirmOrder": "Confirmar Ordem"
       }
     },
     "positions": {

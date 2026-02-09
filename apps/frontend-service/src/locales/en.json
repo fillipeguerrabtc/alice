@@ -2124,10 +2124,21 @@
         "takeProfit": "Take Profit",
         "optional": "Optional",
         "summary": "Order Summary",
+        "summaryDetailed": "Detailed Order Summary",
         "at": "at",
         "marketPrice": "market price",
         "withLeverage": "with leverage",
-        "submit": "Execute Order"
+        "submit": "Execute Order",
+        "usdtValue": "Value (USDT)",
+        "usdtHint": "Fill quantity or USDT value — auto conversion",
+        "liveQuote": "Real-time Quote",
+        "liveLabel": "Live",
+        "offlineLabel": "Offline",
+        "direction": "Direction",
+        "estimatedValue": "Estimated Value",
+        "requiredMargin": "Required Margin",
+        "reviewBeforeSubmit": "Review the details above before confirming",
+        "confirmOrder": "Confirm Order"
       }
     },
     "positions": {
