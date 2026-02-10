@@ -1,26 +1,26 @@
 /**
  * CandleChart - Gráfico de Candlestick para Trading
- * 
+ *
  * Componente enterprise-grade para visualização de preços em tempo real.
  * Usa lightweight-charts para renderização performática e profissional.
- * 
+ *
  * Features:
  * - Candlesticks com cores verde/vermelho
  * - Volume no eixo secundário
  * - Múltiplos timeframes (1m, 3m, 5m, 15m, 1h, 4h, 1d)
- * - Indicadores: SMA, EMA (opcionais)
- * - Atualização em tempo real via WebSocket
+ * - Atualização INCREMENTAL em tempo real via .update() (sem resetar zoom)
  * - Responsivo e touch-friendly
- * 
+ * - Não desmonta chart ao trocar timeframe (corrige bug de gráfico sumindo)
+ *
  * Regra 6 - SEM MOCKS: Dados reais da API KuCoin
  * Regra 8 - TypeScript strict
  * Regra 13 - i18n PT-BR/EN
- * 
+ *
  * Autor: Fillipe Guerra
- * Data: 17 de Dezembro de 2025
+ * Data: 10 de Fevereiro de 2026
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   createChart,
@@ -52,6 +52,7 @@ import {
   TrendingUp,
   TrendingDown,
   RefreshCw,
+  Loader2,
 } from 'lucide-react';
 
 // ============================================================================
@@ -126,9 +127,6 @@ function resolveTimestamp(raw: number): UTCTimestamp {
   return raw as UTCTimestamp;
 }
 
-/**
- * Formata valor monetário
- */
 function formatPrice(value: number, locale: string): string {
   return formatNumber(value, locale, {
     minimumFractionDigits: 2,
@@ -136,9 +134,6 @@ function formatPrice(value: number, locale: string): string {
   });
 }
 
-/**
- * Formata volume
- */
 // ============================================================================
 // COMPONENTE PRINCIPAL
 // ============================================================================
@@ -163,20 +158,26 @@ export function CandleChart({
   const [selectedInterval, setSelectedInterval] = useState(interval);
   const resolvedLocale = resolveLocale(locale);
   const resolvedTimeZone = resolveTimeZone(timeZone);
+
+  // Refs do chart
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const priceLineRef = useRef<ReturnType<ISeriesApi<'Candlestick'>['createPriceLine']> | null>(null);
   const tooltipRef = useRef<HTMLDivElement | null>(null);
-  
-  // BUG FIX 17/12/2025: Sincronizar selectedInterval quando prop interval mudar externamente
-  // Cenário: pai muda interval via prop mas selectedInterval local ficava dessincronizado
-  // Isso causava botão errado destacado enquanto gráfico mostrava dados corretos
+
+  // Refs para controle de updates incrementais
+  const prevDataLengthRef = useRef<number>(0);
+  const prevIntervalRef = useRef<string>(interval);
+  const initialFitDoneRef = useRef<boolean>(false);
+
+  // Sincronizar selectedInterval com prop
   useEffect(() => {
     setSelectedInterval(interval);
   }, [interval]);
-  
+
+  // Processar dados de candle
   const candleData = useMemo((): CandlestickData[] => {
     if (!data || data.length === 0) return [];
     const sorted = [...data].sort((a, b) => a.time - b.time);
@@ -189,6 +190,7 @@ export function CandleChart({
     }));
   }, [data]);
 
+  // Processar dados de volume
   const volumeData = useMemo((): HistogramData[] => {
     if (!data || data.length === 0) return [];
     const sorted = [...data].sort((a, b) => a.time - b.time);
@@ -202,26 +204,29 @@ export function CandleChart({
       };
     });
   }, [data]);
-  
+
   // Calcular mudança percentual
   const priceChange = useMemo(() => {
     if (candleData.length < 2) return { value: 0, percent: 0 };
     const first = candleData[0].open;
     const last = candleData[candleData.length - 1].close;
     const change = last - first;
-    const percent = (change / first) * 100;
-    
+    const percent = first !== 0 ? (change / first) * 100 : 0;
     return { value: change, percent };
   }, [candleData]);
-  
-  const handleIntervalChange = (newInterval: string) => {
+
+  const handleIntervalChange = useCallback((newInterval: string) => {
     setSelectedInterval(newInterval);
     onIntervalChange?.(newInterval);
-  };
+  }, [onIntervalChange]);
 
+  // ============================================================================
+  // CRIAÇÃO DO CHART — executado na montagem e quando layout muda
+  // ============================================================================
   useEffect(() => {
     if (!containerRef.current) return;
     const container = containerRef.current;
+
     const chart = createChart(container, {
       width: container.clientWidth,
       height,
@@ -275,6 +280,7 @@ export function CandleChart({
       });
     }
 
+    // Tooltip para crosshair
     const tooltip = document.createElement('div');
     tooltip.className = 'pointer-events-none absolute z-10 rounded-lg border border-border bg-background/95 p-3 text-xs shadow-lg';
     tooltip.style.display = 'none';
@@ -318,11 +324,17 @@ export function CandleChart({
       tooltipRef.current.style.display = 'block';
     });
 
+    // Resize observer
     const observer = new ResizeObserver(() => {
-      chart.applyOptions({ width: container.clientWidth, height });
-      chart.timeScale().fitContent();
+      if (chartRef.current) {
+        chartRef.current.applyOptions({ width: container.clientWidth, height });
+      }
     });
     observer.observe(container);
+
+    // Reset controles de update incremental
+    prevDataLengthRef.current = 0;
+    initialFitDoneRef.current = false;
 
     return () => {
       observer.disconnect();
@@ -330,25 +342,97 @@ export function CandleChart({
       chartRef.current = null;
       candleSeriesRef.current = null;
       volumeSeriesRef.current = null;
+      priceLineRef.current = null;
+      prevDataLengthRef.current = 0;
+      initialFitDoneRef.current = false;
     };
   }, [height, resolvedLocale, resolvedTimeZone, showVolume]);
 
+  // ============================================================================
+  // ATUALIZAÇÃO DE DADOS — incremental para real-time, full para mudança de interval
+  // ============================================================================
   useEffect(() => {
     if (!chartRef.current || !candleSeriesRef.current) return;
+    if (candleData.length === 0) {
+      // Limpar série quando não há dados (ex: durante troca de interval)
+      candleSeriesRef.current.setData([]);
+      if (showVolume && volumeSeriesRef.current) {
+        volumeSeriesRef.current.setData([]);
+      }
+      prevDataLengthRef.current = 0;
+      return;
+    }
+
+    const prevLength = prevDataLengthRef.current;
+    const currentLength = candleData.length;
+    const intervalChanged = prevIntervalRef.current !== interval;
+
+    // CASO 1: Mudança de interval ou primeira carga → setData completo + fitContent
+    if (intervalChanged || prevLength === 0) {
+      candleSeriesRef.current.setData(candleData);
+      if (showVolume && volumeSeriesRef.current) {
+        volumeSeriesRef.current.setData(volumeData);
+      }
+      chartRef.current.timeScale().fitContent();
+      prevDataLengthRef.current = currentLength;
+      prevIntervalRef.current = interval;
+      initialFitDoneRef.current = true;
+      return;
+    }
+
+    // CASO 2: Último candle atualizado (mesmo timestamp) → .update() incremental
+    // Isso acontece quando WS envia update do candle atual — NÃO reseta zoom
+    if (currentLength === prevLength && currentLength > 0) {
+      const lastCandle = candleData[currentLength - 1];
+      candleSeriesRef.current.update(lastCandle);
+      if (showVolume && volumeSeriesRef.current && volumeData.length > 0) {
+        volumeSeriesRef.current.update(volumeData[volumeData.length - 1]);
+      }
+      return;
+    }
+
+    // CASO 3: Novo candle adicionado (ex: novo período abriu) → .update() + sem fitContent
+    if (currentLength > prevLength) {
+      // Atualizar o penúltimo candle (pode ter sido atualizado) e adicionar o novo
+      const newCandles = candleData.slice(Math.max(0, prevLength - 1));
+      for (const candle of newCandles) {
+        candleSeriesRef.current.update(candle);
+      }
+      if (showVolume && volumeSeriesRef.current) {
+        const newVolumes = volumeData.slice(Math.max(0, prevLength - 1));
+        for (const vol of newVolumes) {
+          volumeSeriesRef.current.update(vol);
+        }
+      }
+      prevDataLengthRef.current = currentLength;
+      return;
+    }
+
+    // CASO 4: Dados menores (fallback raro) → setData completo
     candleSeriesRef.current.setData(candleData);
     if (showVolume && volumeSeriesRef.current) {
       volumeSeriesRef.current.setData(volumeData);
     }
-    chartRef.current.timeScale().fitContent();
-  }, [candleData, volumeData, showVolume]);
+    prevDataLengthRef.current = currentLength;
+  }, [candleData, volumeData, showVolume, interval]);
 
+  // ============================================================================
+  // LINHA DE PREÇO ATUAL
+  // ============================================================================
   useEffect(() => {
     if (!candleSeriesRef.current) return;
+
+    // Remover linha anterior
     if (priceLineRef.current) {
-      candleSeriesRef.current.removePriceLine(priceLineRef.current);
+      try {
+        candleSeriesRef.current.removePriceLine(priceLineRef.current);
+      } catch {
+        // Linha já foi removida (ex: chart recriado)
+      }
       priceLineRef.current = null;
     }
-    if (currentPrice) {
+
+    if (currentPrice && currentPrice > 0) {
       const lineOptions: PriceLineOptions = {
         price: currentPrice,
         color: COLORS.currentPrice,
@@ -363,9 +447,13 @@ export function CandleChart({
       priceLineRef.current = candleSeriesRef.current.createPriceLine(lineOptions);
     }
   }, [currentPrice]);
-  
-  // Loading state
-  if (isLoading) {
+
+  // ============================================================================
+  // RENDER — o chart container é SEMPRE renderizado (nunca desmontado)
+  // ============================================================================
+
+  // Loading state (apenas skeleton, sem desmontar chart)
+  if (isLoading && candleData.length === 0) {
     return (
       <Card>
         <CardHeader className="pb-2">
@@ -377,24 +465,7 @@ export function CandleChart({
       </Card>
     );
   }
-  
-  // Empty state
-  if (candleData.length === 0) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <BarChart3 className="h-5 w-5" />
-            {t('trading.chart.title')}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex items-center justify-center h-[400px]">
-          <p className="text-muted-foreground">{t('trading.chart.noData')}</p>
-        </CardContent>
-      </Card>
-    );
-  }
-  
+
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -419,13 +490,13 @@ export function CandleChart({
                 </SelectContent>
               </Select>
             ) : null}
-            
-            {currentPrice && (
+
+            {currentPrice ? (
               <div className="flex items-center gap-2">
                 <span className="text-2xl font-bold font-mono">
                   ${formatPrice(currentPrice, resolvedLocale)}
                 </span>
-                <Badge 
+                <Badge
                   variant={priceChange.percent >= 0 ? 'default' : 'destructive'}
                   className="flex items-center gap-1"
                 >
@@ -437,11 +508,11 @@ export function CandleChart({
                   {priceChange.percent >= 0 ? '+' : ''}{priceChange.percent.toFixed(2)}%
                 </Badge>
               </div>
-            )}
+            ) : null}
           </div>
-          
+
           <div className="flex items-center gap-2 flex-wrap max-w-full">
-            {/* Interval selector */}
+            {/* Seletor de interval */}
             <div className="flex flex-wrap gap-1 max-w-full">
               {intervalOptions.map((option) => (
                 <Button
@@ -455,7 +526,7 @@ export function CandleChart({
                 </Button>
               ))}
             </div>
-            
+
             {onRefresh && (
               <Button variant="outline" size="sm" onClick={onRefresh}>
                 <RefreshCw className="h-4 w-4" />
@@ -464,13 +535,31 @@ export function CandleChart({
           </div>
         </div>
       </CardHeader>
-      
+
       <CardContent>
         <div style={{ height }} className="relative overflow-hidden">
+          {/* Container do chart — SEMPRE montado */}
           <div ref={containerRef} className="h-full w-full" />
+
+          {/* Overlay de loading — exibido sobre o chart quando está carregando */}
+          {isLoading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-[1px] z-10">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin" />
+                <span className="text-sm">{t('trading.chart.loading', 'Carregando...')}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Overlay de "sem dados" — exibido sobre o chart quando não há dados e não está carregando */}
+          {!isLoading && candleData.length === 0 && (
+            <div className="absolute inset-0 flex items-center justify-center z-10">
+              <p className="text-muted-foreground text-sm">{t('trading.chart.noData')}</p>
+            </div>
+          )}
         </div>
-        
-        {/* Legend */}
+
+        {/* Legenda */}
         <div className="flex items-center justify-center gap-4 mt-4 text-xs text-muted-foreground">
           <div className="flex items-center gap-1">
             <div className="w-3 h-3 rounded" style={{ backgroundColor: COLORS.bullish }} />

@@ -296,15 +296,35 @@ export function useKucoinWebSocket(
           if (data.data?.interval && interval && data.data.interval !== interval) {
             break;
           }
+          const incomingKline = data.data as KlineData;
           setKlines(prev => {
-            const newKlines = [...prev, data.data as KlineData];
-            // Manter apenas os últimos MAX_KLINES_CACHE
+            // Normalizar timestamps para comparação (segundo)
+            const incomingTime = incomingKline.time > 10_000_000_000
+              ? Math.floor(incomingKline.time / 1000)
+              : incomingKline.time;
+
+            // Se o último candle tem o mesmo timestamp, ATUALIZAR (não duplicar)
+            // Isso acontece quando o WS envia updates do candle atual em tempo real
+            if (prev.length > 0) {
+              const lastTime = prev[prev.length - 1].time > 10_000_000_000
+                ? Math.floor(prev[prev.length - 1].time / 1000)
+                : prev[prev.length - 1].time;
+
+              if (lastTime === incomingTime) {
+                const updated = [...prev];
+                updated[updated.length - 1] = incomingKline;
+                return updated;
+              }
+            }
+
+            // Candle novo — append e manter limite de cache
+            const newKlines = [...prev, incomingKline];
             if (newKlines.length > MAX_KLINES_CACHE) {
               return newKlines.slice(-MAX_KLINES_CACHE);
             }
             return newKlines;
           });
-          onKline?.(data.data as KlineData);
+          onKline?.(incomingKline);
           break;
         }
 
@@ -582,8 +602,15 @@ export function useKucoinWebSocket(
 
   const previousSubscriptionKeyRef = useRef<string | null>(null);
 
+  // Limpar dados quando símbolo, mercado ou intervalo mudam
+  // Evita mostrar dados antigos de outro par/mercado/timeframe
   useEffect(() => {
     setKlines([]);
+    setTicker(null);
+    setOrderBook(null);
+    setLastTrade(null);
+    lastTickerSignatureRef.current = '';
+    lastOrderBookSequenceRef.current = null;
   }, [symbol, interval, marketType, marginMode]);
 
   // Resubscribe when symbol/interval changes

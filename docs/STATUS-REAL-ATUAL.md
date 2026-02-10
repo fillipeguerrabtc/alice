@@ -38,7 +38,7 @@
 - Análise técnica passa a retornar plano determinístico com operação, duração, TP/SL, RR e motivadores no painel.
 - Geração de sinais com LLM usa orçamento seguro de tokens (prompt truncado e max_tokens ajustado ao contexto).
 - Sinais com notícias: estimativa de tokens mais conservadora (regex + densidade) evita overflow de contexto.
-- Trading: rate limit dedicado para alta frequência de polling/WS evita 429 em produção.
+- Trading: dados de mercado (ticker/orderbook/klines/trades) 100% real-time via WebSocket — sem polling REST (Regra 6).
 - Trading: budget de prompt com margem conservadora evita erro 400 por contexto > 4096 tokens.
 - Chat/Trading: WebSocket do frontend alinhado com `/ws/chat` (rota correta no chat-service).
 - Trading: reparo de JSON mais robusto (aspas internas + string incompleta) evita falhas na geração de sinais.
@@ -117,7 +117,7 @@
 - Trading Chart: novo renderer com lightweight-charts (visual moderno e performance).
 - Trading multi‑market: favoritos/destaques por usuário, pares em destaque no seletor e troca de símbolo no gráfico.
 - Trading Chart: timeframes responsivos sem overflow horizontal e gráfico com layout estável (sem distorção).
-- Trading Chart: troca de intervalo força refetch de klines (REST/WS) para evitar gráfico vazio.
+- Trading Chart: troca de intervalo limpa klines e recarrega histórico via REST (dados real-time via WS, sem polling).
 - SearXNG News: integração corrigida com headers internos assinados (401 removido em Sinais IA e Análise).
 - Trading Risk Config: normalização de valores decimais (vírgula → ponto) e payload consistente para evitar erro "Dados inválidos" ao salvar.
 - Agentic Trading: prompts com exemplos e boas práticas no Modo Agentic; parser de chat agora reconhece análise técnica e sinais IA com timeframes e fontes de dados.

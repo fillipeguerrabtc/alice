@@ -23,7 +23,7 @@
 import { createClient, RedisClientType } from 'redis';
 import { createLogger } from '@alice/logger';
 import { TRADING_CHANNELS } from '@alice/shared-utils';
-import type { OrderUpdateData, PositionUpdateData, BalanceUpdateData } from './kucoinWebSocket.js';
+import type { OrderUpdateData, PositionUpdateData, BalanceUpdateData } from './kucoinUnifiedWebSocket.js';
 import type {
   TradingMarketType,
   TradingMarginMode,

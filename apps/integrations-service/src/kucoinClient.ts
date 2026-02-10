@@ -371,9 +371,29 @@ const kucoinFuturesRequester = createKucoinRequester({
   circuitBreakerPreset: CIRCUIT_BREAKER_PRESETS.kucoinFutures,
 });
 
+// URL base da API KuCoin Spot/Margin (produção)
+// Spot e Margin usam a mesma base URL — diferem apenas nos endpoints de conta/ordens
+const KUCOIN_SPOT_BASE_URL = process.env.KUCOIN_SPOT_BASE_URL || 'https://api.kucoin.com';
+
+const kucoinSpotRequester = createKucoinRequester({
+  name: 'kucoin-spot',
+  operationPrefix: 'spot',
+  baseUrl: KUCOIN_SPOT_BASE_URL,
+  circuitBreakerPreset: CIRCUIT_BREAKER_PRESETS.kucoinFutures, // Mesmo preset de resiliência
+});
+
+/** Tipo de mercado para roteamento de requisições REST */
+export type RestMarketType = 'futures' | 'spot' | 'margin';
+
+/** Seleciona o requester correto baseado no tipo de mercado */
+function _getRequester(marketType: RestMarketType = 'futures') {
+  return marketType === 'futures' ? kucoinFuturesRequester : kucoinSpotRequester;
+}
+
 export function initKucoinMetrics(prometheusMetrics: ReturnType<typeof createAlicePrometheus>['metrics']): void {
   kucoinFuturesRequester.initMetrics(prometheusMetrics);
-  logger.info('Métricas do circuit breaker KuCoin inicializadas');
+  kucoinSpotRequester.initMetrics(prometheusMetrics);
+  logger.info('Métricas dos circuit breakers KuCoin (Futures + Spot) inicializadas');
 }
 
 
@@ -382,7 +402,7 @@ export function initKucoinMetrics(prometheusMetrics: ReturnType<typeof createAli
 // ============================================================================
 
 /**
- * Executa requisição HTTP para API KuCoin com autenticação
+ * Executa requisição HTTP para API KuCoin Futures com autenticação
  */
 async function executeRequest<T>(
   method: 'GET' | 'POST' | 'DELETE',
@@ -391,6 +411,18 @@ async function executeRequest<T>(
   requiresAuth: boolean = true
 ): Promise<KucoinApiResponse<T>> {
   return kucoinFuturesRequester.executeRequest<T>(method, endpoint, body, requiresAuth);
+}
+
+/**
+ * Executa requisição HTTP para API KuCoin Spot/Margin com autenticação
+ */
+async function executeSpotRequest<T>(
+  method: 'GET' | 'POST' | 'DELETE',
+  endpoint: string,
+  body?: Record<string, unknown>,
+  requiresAuth: boolean = true
+): Promise<KucoinApiResponse<T>> {
+  return kucoinSpotRequester.executeRequest<T>(method, endpoint, body, requiresAuth);
 }
 
 // ============================================================================
@@ -919,6 +951,140 @@ export async function getTradeHistory(symbol: string): Promise<KucoinTrade[]> {
     false // Endpoint público
   );
   return response.data;
+}
+
+// ============================================================================
+// FUNÇÕES UNIFICADAS MULTI-MERCADO (10/02/2026)
+// Roteiam entre Futures e Spot/Margin automaticamente
+// Ref: https://www.kucoin.com/docs (Spot), https://www.kucoin.com/docs/futures (Futures)
+// ============================================================================
+
+/** Resposta de klines Spot: [time, open, close, high, low, volume, amount] */
+type SpotKlineRaw = [string, string, string, string, string, string, string];
+
+/**
+ * Obtém klines/candles para qualquer mercado
+ * Futures: GET /api/v1/kline/query (granularity em minutos)
+ * Spot/Margin: GET /api/v1/market/candles (type = string como "1min", "1hour", "1day")
+ */
+export async function getKlinesMultiMarket(
+  symbol: string,
+  granularity: number | string,
+  marketType: RestMarketType = 'futures',
+  from?: number,
+  to?: number
+): Promise<KucoinKline[]> {
+  if (marketType === 'futures') {
+    return getKlines(symbol, typeof granularity === 'string' ? parseInt(granularity, 10) : granularity, from, to);
+  }
+
+  // Spot/Margin: granularity é string (ex: "1min", "5min", "1hour", "1day")
+  const type = typeof granularity === 'number' ? granularityToSpotType(granularity) : granularity;
+  let endpoint = `/api/v1/market/candles?type=${type}&symbol=${symbol}`;
+  if (from) endpoint += `&startAt=${Math.floor(from / 1000)}`; // Spot usa segundos
+  if (to) endpoint += `&endAt=${Math.floor(to / 1000)}`;
+
+  const response = await executeSpotRequest<SpotKlineRaw[]>(
+    'GET',
+    endpoint,
+    undefined,
+    false
+  );
+
+  // Spot retorna [time(s), open, close, high, low, volume, amount] — converter para formato unificado
+  return response.data.map(([time, open, close, high, low, volume, amount]) => ({
+    time: parseInt(time, 10) * 1000, // Converter segundos para ms (consistente com Futures)
+    open,
+    close,
+    high,
+    low,
+    volume,
+    turnover: amount,
+  })).reverse(); // Spot retorna em ordem decrescente — reverter para cronológica
+}
+
+/**
+ * Obtém orderbook para qualquer mercado
+ * Futures: GET /api/v1/level2/depth{depth}
+ * Spot/Margin: GET /api/v1/market/orderbook/level2_{depth}
+ */
+export async function getOrderBookMultiMarket(
+  symbol: string,
+  depth: 20 | 100,
+  marketType: RestMarketType = 'futures'
+): Promise<KucoinOrderBook> {
+  if (marketType === 'futures') {
+    return getOrderBook(symbol, depth);
+  }
+
+  // Spot/Margin: depth 20 ou 100
+  const response = await executeSpotRequest<KucoinOrderBook>(
+    'GET',
+    `/api/v1/market/orderbook/level2_${depth}?symbol=${symbol}`,
+    undefined,
+    false
+  );
+  return response.data;
+}
+
+/**
+ * Obtém trades recentes para qualquer mercado
+ * Futures: GET /api/v1/trade/history
+ * Spot/Margin: GET /api/v1/market/histories
+ */
+export async function getTradeHistoryMultiMarket(
+  symbol: string,
+  marketType: RestMarketType = 'futures'
+): Promise<KucoinTrade[]> {
+  if (marketType === 'futures') {
+    return getTradeHistory(symbol);
+  }
+
+  const response = await executeSpotRequest<KucoinTrade[]>(
+    'GET',
+    `/api/v1/market/histories?symbol=${symbol}`,
+    undefined,
+    false
+  );
+  return response.data;
+}
+
+/**
+ * Obtém ticker para qualquer mercado
+ * Futures: GET /api/v1/ticker
+ * Spot/Margin: GET /api/v1/market/orderbook/level1 (best bid/ask + last price)
+ */
+export async function getTickerMultiMarket(
+  symbol: string,
+  marketType: RestMarketType = 'futures'
+): Promise<Record<string, unknown>> {
+  if (marketType === 'futures') {
+    const response = await executeRequest<Record<string, unknown>>(
+      'GET',
+      `/api/v1/ticker?symbol=${symbol}`,
+      undefined,
+      false
+    );
+    return response.data;
+  }
+
+  const response = await executeSpotRequest<Record<string, unknown>>(
+    'GET',
+    `/api/v1/market/orderbook/level1?symbol=${symbol}`,
+    undefined,
+    false
+  );
+  return response.data;
+}
+
+/** Converte granularity numérica (minutos) para tipo string do Spot API */
+function granularityToSpotType(minutes: number): string {
+  const map: Record<number, string> = {
+    1: '1min', 3: '3min', 5: '5min', 15: '15min', 30: '30min',
+    60: '1hour', 120: '2hour', 240: '4hour', 360: '6hour', 480: '8hour', 720: '12hour',
+    1440: '1day', 10080: '1week',
+  };
+  return map[minutes] || '1min';
 }
 
 // ============================================================================

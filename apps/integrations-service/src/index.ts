@@ -98,15 +98,13 @@ import {
   getPublicWebSocketClient,
   initializeWebSocketClients as initializeKucoinWebSocketClients,
   isWebSocketConfigured as isKucoinWebSocketConfigured,
-} from './kucoinWebSocket.js';
-import {
   buildSpotMarketTopic,
   closeSpotWebSocketClients,
   getSpotPrivateWebSocketClient,
   getSpotPublicWebSocketClient,
   initializeSpotWebSocketClients,
   isSpotWebSocketConfigured,
-} from './kucoinSpotWebSocket.js';
+} from './kucoinUnifiedWebSocket.js';
 import { initializeBroadcast, getPublisher, closeBroadcast } from './tradingBroadcast.js';
 import {
   normalizeTickerData,
@@ -3173,7 +3171,7 @@ const rateLimitWindowMs = RATE_LIMIT_CONFIG.windowMs;
 const apiRateLimitMax = RATE_LIMIT_CONFIG.limits.api;
 const tradingRateLimitMax = RATE_LIMIT_CONFIG.limits.trading;
 
-// Trading tem polling de alta frequência + WS, precisa limite específico
+// Trading usa WS para dados real-time + REST para carga inicial e operações — limite dedicado
 app.use('/api/integrations/trading', createRateLimiter({
   windowMs: rateLimitWindowMs,
   max: tradingRateLimitMax,
@@ -9091,7 +9089,7 @@ initWiseMetrics(metrics);
 // NOTA: conexão WS pode falhar por motivos transitórios (rede/upstream).
 // A estratégia é:
 // - Inicializar em background (não bloquear startup do serviço)
-// - Reconnect automático é responsabilidade do cliente (kucoinWebSocket.ts)
+// - Reconnect automático é responsabilidade do cliente (kucoinUnifiedWebSocket.ts)
 // - Expor status para o dashboard/UI e logs estruturados
 // ============================================================================
 if (kucoinClient.isKucoinConfigured()) {
@@ -11266,7 +11264,7 @@ app.post('/api/integrations/trading/ws/unsubscribe', requirePermission('integrat
       if (topic) {
         const shouldUnsubscribe = unregisterSpotWsMarketType(topic, marketType, marginMode);
         if (shouldUnsubscribe) {
-          publicWs.unsubscribe(topic, false);
+          publicWs.unsubscribe(topic);
         }
       }
 
@@ -15299,7 +15297,7 @@ app.get('/api/integrations/trading/mark-price/:symbol', requirePermission('integ
   }
 });
 
-// GET /api/integrations/trading/trades/:symbol - Histórico de Trades
+// GET /api/integrations/trading/trades/:symbol - Histórico de Trades (Futures + Spot + Margin)
 app.get('/api/integrations/trading/trades/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
   try {
     const authContext = extractAuthContext(req);
@@ -15310,6 +15308,7 @@ app.get('/api/integrations/trading/trades/:symbol', requirePermission('integrati
     const tradingAuth = { tenantId: authContext.tenantId, userId: authContext.userId };
 
     const { symbol } = req.params;
+    const marketType = (req.query.marketType as string) || 'futures';
 
     if (!kucoinClient.isKucoinConfigured()) {
       respondKucoinNotConfigured(res);
@@ -15319,12 +15318,15 @@ app.get('/api/integrations/trading/trades/:symbol', requirePermission('integrati
     const resolvedSymbol = await resolveTradingSymbolOrRespond(res, tradingAuth, symbol, { required: true });
     if (!resolvedSymbol) return;
 
-    const trades = await kucoinClient.getTradeHistory(resolvedSymbol);
+    const trades = marketType === 'spot' || marketType === 'margin'
+      ? await kucoinSpotClient.getSpotTrades(resolvedSymbol)
+      : await kucoinClient.getTradeHistory(resolvedSymbol);
 
     res.json({
       success: true,
       data: trades,
       symbol: resolvedSymbol,
+      marketType,
     });
   } catch (error) {
     if (sendKucoinErrorResponse(res, error)) return;

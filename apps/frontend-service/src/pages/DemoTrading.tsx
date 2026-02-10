@@ -8,10 +8,13 @@
  * NUNCA executa ordens reais - total isolamento.
  * 
  * Dados de mercado (cotações, símbolos, preços) são consumidos em tempo real
- * das mesmas APIs e WebSockets da página Trading Real.
+ * via WebSocket (fonte ÚNICA) — mesma infraestrutura da página Trading Real.
+ * REST é usado apenas para carga inicial. Sem polling fallback (Regra 6).
+ * Suporta todos os 3 mercados: Futures, Spot e Margin.
  * 
  * @author Fillipe Guerra
  * @since 09/02/2026
+ * @updated 10/02/2026
  */
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
@@ -30,7 +33,6 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   BookOpen,
-  RefreshCw,
   Activity,
 } from 'lucide-react';
 
@@ -180,10 +182,13 @@ type MarketType = 'spot' | 'futures' | 'margin';
 
 /** Intervalo de refetch para símbolos (5 minutos - mesma cache Redis do backend) */
 const SYMBOLS_REFETCH_INTERVAL = 300_000;
-/** Intervalo de refetch para dados de mercado com WS ativo */
-const MARKET_REFETCH_INTERVAL_WS = 15_000;
-/** Intervalo de refetch para dados de mercado sem WS */
-const MARKET_REFETCH_INTERVAL_REST = 5_000;
+
+/**
+ * ARQUITETURA REAL-TIME (10/02/2026):
+ * - Dados de mercado (ticker) vêm 100% via WebSocket — REST apenas carga inicial.
+ * - Sem polling fallback (Regra 6 — PROIBIDO workarounds).
+ * - DemoTrading reutiliza o mesmo hook useKucoinWebSocket da Trading Real.
+ */
 
 // ============================================================================
 // Componente Principal
@@ -273,14 +278,16 @@ export default function DemoTrading() {
 
   const isSymbolValid = !!requestSymbol && availableSymbols.includes(selectedSymbol);
 
-  // WebSocket para cotações em tempo real (reusar hook da Trading Real)
-  const wsEnabled = isFuturesMarket && isSymbolValid && isConfigured;
-  const { ticker: wsTicker } = useKucoinWebSocket({
+  // WebSocket para cotações em tempo real (reusar hook da Trading Real — 3 mercados)
+  const wsEnabled = isSymbolValid && isConfigured;
+  const { state: wsState, ticker: wsTicker } = useKucoinWebSocket({
     symbol: wsEnabled ? requestSymbol : '',
     channels: wsEnabled ? ['ticker'] : [],
     autoConnect: wsEnabled,
     marketType: selectedMarketType,
+    marginMode: selectedMarginMode,
   });
+  const wsHealthy = wsEnabled && wsState.connected && !wsState.error;
 
   /** Dados de mercado REST (mesma query key da Trading Real para reusar cache) */
   const marketQueryString = useMemo(() => {
@@ -298,25 +305,30 @@ export default function DemoTrading() {
       const res = await apiRequest('GET', `/api/integrations/trading/market/${requestSymbol}?${marketQueryString}`);
       return res.json();
     },
-    refetchInterval: wsEnabled ? MARKET_REFETCH_INTERVAL_WS : MARKET_REFETCH_INTERVAL_REST,
+    // REST apenas para carga inicial — ticker real-time vem exclusivamente via WebSocket
     enabled: isConfigured && isSymbolValid,
   });
 
   const market = marketData?.data;
 
-  // Preço atual: WS tem prioridade, REST é fallback
+  // Preço atual: WS é fonte principal (REST apenas carga inicial)
   const normalizedSymbol = requestSymbol.toUpperCase();
   const wsTickerPrice = wsEnabled && wsTicker?.symbol?.toUpperCase() === normalizedSymbol
     ? Number(wsTicker.price)
     : NaN;
-  const fallbackPrice = isFuturesMarket
+  const restPrice = isFuturesMarket
     ? market?.contract?.lastTradePrice
     : (market?.ticker?.price ? Number(market.ticker.price) : undefined);
-  const fallbackPriceValue = Number.isFinite(fallbackPrice ?? NaN) ? Number(fallbackPrice) : 0;
-  const currentPrice = Number.isFinite(wsTickerPrice) ? wsTickerPrice : fallbackPriceValue;
+  const restPriceValue = Number.isFinite(restPrice ?? NaN) ? Number(restPrice) : 0;
+  const currentPrice = Number.isFinite(wsTickerPrice) ? wsTickerPrice : restPriceValue;
 
-  const priceChange = market?.contract?.priceChg ?? 0;
-  const priceChangePercent = market?.contract?.priceChgPct ?? 0;
+  // Variação de preço: Futures usa contract, Spot/Margin usa ticker
+  const priceChange = isFuturesMarket
+    ? (market?.contract?.priceChg ?? 0)
+    : (market?.ticker ? Number((market.ticker as Record<string, unknown>).changePrice ?? 0) : 0);
+  const priceChangePercent = isFuturesMarket
+    ? (market?.contract?.priceChgPct ?? 0)
+    : (market?.ticker ? Number((market.ticker as Record<string, unknown>).changeRate ?? 0) * 100 : 0);
   const high24h = market?.contract?.highPrice ?? 0;
   const low24h = market?.contract?.lowPrice ?? 0;
   const volume24h = market?.contract?.volumeOf24h ?? 0;
@@ -655,24 +667,19 @@ export default function DemoTrading() {
             </SelectContent>
           </Select>
 
-          {/* Indicador WS */}
-          {wsEnabled && wsTicker && (
-            <Badge variant="outline" className="text-xs gap-1">
-              <Activity className="h-3 w-3 text-green-500" />
-              Tempo Real
-            </Badge>
+          {/* Indicador de status WebSocket — dados de mercado são 100% real-time via WS */}
+          {wsEnabled && (
+            <div className="flex items-center gap-1.5 text-xs px-2">
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  wsHealthy ? 'bg-green-500 animate-pulse' : (wsState.connecting ? 'bg-yellow-500' : 'bg-red-500')
+                }`}
+              />
+              <span className="text-muted-foreground">
+                {wsHealthy ? 'Live' : (wsState.connecting ? 'Connecting...' : 'Offline')}
+              </span>
+            </div>
           )}
-
-          {/* Botão Atualizar */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/market'] });
-            }}
-          >
-            <RefreshCw className="h-4 w-4" />
-          </Button>
         </div>
 
         {/* Chips de símbolos featured (acesso rápido) */}

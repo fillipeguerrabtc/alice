@@ -160,17 +160,13 @@ const SIGNALS_REFETCH_INTERVAL = 15_000;
 /** Intervalo de atualização de conta/posições/ordens (10s) */
 const ACCOUNT_REFETCH_INTERVAL = 10_000;
 
-/** Intervalo de atualização do ticker quando WS ativo (15s) vs inativo (5s) */
-const TICKER_REFETCH_INTERVAL_WS = 15_000;
-const TICKER_REFETCH_INTERVAL_REST = 5_000;
-
-/** Intervalo de atualização de klines quando WS ativo (2 min) vs inativo (1 min) */
-const KLINES_REFETCH_INTERVAL_WS = 120_000;
-const KLINES_REFETCH_INTERVAL_REST = 60_000;
-
-/** Intervalo de atualização do order book quando WS ativo (20s) vs inativo (5s) */
-const ORDERBOOK_REFETCH_INTERVAL_WS = 20_000;
-const ORDERBOOK_REFETCH_INTERVAL_REST = 5_000;
+/**
+ * ARQUITETURA REAL-TIME (10/02/2026):
+ * - Ticker, OrderBook, Klines, Trades: WebSocket é fonte ÚNICA. REST apenas para carga inicial.
+ * - Sem polling fallback (Regra 6 - PROIBIDO workarounds).
+ * - Se WS cair: indicador visual + auto-reconnect com backoff exponencial.
+ * - Posições/Ordens/Conta: polling periódico mantido (dados operacionais, não real-time market data).
+ */
 
 /** Intervalo padrão de candles */
 const DEFAULT_INTERVAL = '5m';
@@ -245,6 +241,9 @@ interface MarketData {
     bestBidSize: number;
     bestAskSize: number;
     ts: number;
+    // Campos Spot/Margin (KuCoin Spot Ticker API)
+    changePrice?: string;
+    changeRate?: string;
   };
   contract: {
     symbol: string;
@@ -1272,14 +1271,13 @@ export default function Trading() {
     data: marketData,
     isLoading: isLoadingMarket,
     error: marketError,
-    refetch: refetchMarket,
   } = useQuery<{ success: boolean; data: MarketData }>({
     queryKey: ['/api/integrations/trading/market', requestSymbol, selectedMarketType, selectedMarginMode],
     queryFn: async () => {
       const res = await apiRequest('GET', `/api/integrations/trading/market/${requestSymbol}?${marketQueryString}`);
       return res.json();
     },
-    refetchInterval: wsEnabled ? TICKER_REFETCH_INTERVAL_WS : TICKER_REFETCH_INTERVAL_REST,
+    // REST apenas para carga inicial — ticker real-time vem exclusivamente via WebSocket
     enabled: statusData?.data?.isConfigured && isSymbolValidForMarket,
   });
 
@@ -1505,6 +1503,7 @@ export default function Trading() {
   }, [wsEnabled, wsInterval]);
 
   const {
+    state: wsState,
     ticker: wsTicker,
     orderBook: wsOrderBook,
     klines: wsKlines,
@@ -1520,6 +1519,9 @@ export default function Trading() {
       frontendLogger.warn('WebSocket KuCoin indisponível - fallback REST ativo', { error });
     },
   });
+
+  // Flag derivada: WS está conectado e entregando ticker real-time
+  const wsHealthy = wsEnabled && wsState.connected && !wsState.error;
 
   // Query para Klines (gráfico de candlesticks)
   const {
@@ -1538,7 +1540,7 @@ export default function Trading() {
       const res = await apiRequest('GET', `/api/integrations/trading/klines/${requestSymbol}?${params.toString()}`);
       return res.json();
     },
-    refetchInterval: wsEnabled ? KLINES_REFETCH_INTERVAL_WS : KLINES_REFETCH_INTERVAL_REST,
+    // REST apenas para carga inicial (histórico) — updates real-time vêm exclusivamente via WebSocket
     enabled: statusData?.data?.isConfigured && !!granularityValue && isSymbolValidForMarket,
   });
 
@@ -1570,7 +1572,7 @@ export default function Trading() {
       const res = await apiRequest('GET', `/api/integrations/trading/orderbook/${requestSymbol}?${params.toString()}`);
       return res.json();
     },
-    refetchInterval: wsEnabled ? ORDERBOOK_REFETCH_INTERVAL_WS : ORDERBOOK_REFETCH_INTERVAL_REST,
+    // REST apenas para carga inicial — orderbook real-time vem exclusivamente via WebSocket
     enabled: statusData?.data?.isConfigured && !!restOrderBookDepth && isSymbolValidForMarket,
   });
 
@@ -2157,18 +2159,6 @@ export default function Trading() {
   // HANDLERS
   // ============================================================================
 
-  const handleRefreshAll = () => {
-    refetchStatus();
-    refetchMarket();
-    refetchAccount();
-    refetchPositions();
-    refetchSignals();
-    refetchOrders();
-    refetchRiskConfig();
-    refetchKlines();
-    refetchControlHistory();
-  };
-
   // Handler para mudança de intervalo do gráfico
   const handleIntervalChange = (newInterval: string) => {
     setSelectedInterval(newInterval);
@@ -2562,8 +2552,13 @@ export default function Trading() {
   ].filter((e): e is ApiError => e instanceof ApiError);
   const criticalApiError = apiErrors[0] ?? null;
 
-  const priceChange = market?.contract?.priceChg || 0;
-  const priceChangePercent = market?.contract?.priceChgPct || 0;
+  // Variação de preço: usar dados de contrato (Futures) ou ticker (Spot/Margin)
+  const priceChange = isFuturesMarket
+    ? (market?.contract?.priceChg || 0)
+    : (market?.ticker?.changePrice ? Number(market.ticker.changePrice) : 0);
+  const priceChangePercent = isFuturesMarket
+    ? (market?.contract?.priceChgPct || 0)
+    : (market?.ticker?.changeRate ? Number(market.ticker.changeRate) * 100 : 0);
 
   // Preço efetivo para cálculos no resumo (limit usa preço da ordem, market usa preço atual)
   const orderEffectivePrice = orderForm.orderType === 'limit' && orderForm.price
@@ -2724,16 +2719,19 @@ export default function Trading() {
               )}
             </Button>
 
-            {/* Actions */}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRefreshAll}
-              data-testid="button-refresh-all"
-            >
-              <RefreshCw className="h-4 w-4 mr-2" />
-              {t('common.refresh')}
-            </Button>
+            {/* Indicador de status WebSocket — dados de mercado são 100% real-time via WS */}
+            {wsEnabled && (
+              <div className="flex items-center gap-1.5 text-xs px-2">
+                <span
+                  className={`h-2 w-2 rounded-full ${
+                    wsHealthy ? 'bg-green-500 animate-pulse' : (wsState.connecting ? 'bg-yellow-500' : 'bg-red-500')
+                  }`}
+                />
+                <span className="text-muted-foreground">
+                  {wsHealthy ? 'Live' : (wsState.connecting ? 'Connecting...' : 'Offline')}
+                </span>
+              </div>
+            )}
 
             <Button
               variant="outline"

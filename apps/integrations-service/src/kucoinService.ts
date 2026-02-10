@@ -2443,7 +2443,7 @@ export async function syncOrdersStatus(
                   metadata: {
                     ...(updated.metadata ?? {}),
                     entrySnapshotId,
-                  },
+                  } as TradingOrderMetadata,
                 })
                 .where(eq(schema.tradingOrders.id, order.id));
               logger.info(
