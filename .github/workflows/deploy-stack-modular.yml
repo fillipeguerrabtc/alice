@@ -1034,8 +1034,6 @@ jobs:
           esac
           
           # Validar cada imagem pública (com timeout de 15s por imagem)
-          # NOTA (08/02/2026): docker manifest inspect vai direto ao registry
-          # (não usa mirror.gcr.io), então pode ser lento para Docker Hub.
           # Timeout de 15s evita que uma imagem lenta trave todo o workflow.
           MISSING=""
           TIMEOUT_IMGS=""
@@ -1045,10 +1043,9 @@ jobs:
               echo "✅ OK"
             else
               # Verificar se é timeout ou imagem realmente não existe
-              # Se timeout, não bloquear deploy (mirror.gcr.io vai resolver no pull)
               EXIT_CODE=$?
               if [ "$EXIT_CODE" -eq 124 ]; then
-                echo "⏱️ TIMEOUT (registry lento, pull via mirror resolverá)"
+                echo "⏱️ TIMEOUT (registry lento, pull resolverá)"
                 TIMEOUT_IMGS="$TIMEOUT_IMGS $img"
               else
                 echo "❌ FALHOU"
@@ -1059,7 +1056,7 @@ jobs:
           
           if [ -n "$TIMEOUT_IMGS" ]; then
             echo ""
-            echo "⚠️  Imagens com timeout na validação (serão baixadas via mirror.gcr.io no pull):"
+            echo "⚠️  Imagens com timeout na validação (serão baixadas diretamente no pull):"
             echo "  $TIMEOUT_IMGS"
           fi
           
@@ -1537,6 +1534,13 @@ jobs:
       # ECONOMIA: ~500 linhas removidas, deploy 5-10 min mais rápido.
       # REF: CLAUDE.md Regra 2 (Não duplicar), Regra 6 (Enterprise-grade)
       # =================================================================
+      # =================================================================
+      # LOGIN ÚNICO - Autenticação enterprise GHCR + Docker Hub
+      # Servidor configurado com IPv4 prioritário, DNS Hetzner + Google
+      # + Cloudflare fallback, e Docker daemon otimizado (daemon.json).
+      # Diagnósticos de rede desnecessários aqui - configuração persistente.
+      # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Cirúrgico)
+      # =================================================================
       - name: Autenticar registries no servidor (login único)
         uses: appleboy/ssh-action@v1.2.2
         with:
@@ -1544,115 +1548,42 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          command_timeout: 5m
+          command_timeout: 3m
           envs: GHCR_USER,GHCR_TOKEN,DOCKERHUB_USER,DOCKERHUB_TOKEN
           script: |
             set -euo pipefail
-            echo "🔐 LOGIN ÚNICO - Autenticando registries no servidor de produção..."
-            echo ""
-
-            # ─── Diagnóstico de rede (detecta problemas ANTES do login) ────
-            echo "🌐 Diagnóstico de rede..."
-            echo "   DNS resolver: $(cat /etc/resolv.conf 2>/dev/null | grep nameserver | head -3 | tr '\n' ' ')"
-            echo ""
-
-            # Testar conectividade com registries
-            check_registry() {
-              local registry="$1"
-              local ip
-              ip=$(getent hosts "$registry" 2>/dev/null | head -1 | awk '{print $1}') || ip=""
-              if [ -z "$ip" ]; then
-                echo "   ❌ DNS: $registry NÃO RESOLVE"
-                echo "   🔧 Tentando flush DNS e adicionar Google DNS..."
-                # Adicionar Google DNS como fallback se não resolver
-                if ! grep -q "8.8.8.8" /etc/resolv.conf 2>/dev/null; then
-                  echo "nameserver 8.8.8.8" | sudo tee -a /etc/resolv.conf >/dev/null 2>&1 || true
-                  echo "nameserver 8.8.4.4" | sudo tee -a /etc/resolv.conf >/dev/null 2>&1 || true
-                fi
-                # Retry DNS após adicionar Google DNS
-                ip=$(getent hosts "$registry" 2>/dev/null | head -1 | awk '{print $1}') || ip=""
-                if [ -z "$ip" ]; then
-                  echo "   ❌ DNS: $registry AINDA NÃO RESOLVE após fallback"
-                  return 1
-                fi
-              fi
-              echo "   ✅ DNS: $registry → $ip"
-
-              # Testar conectividade HTTPS (timeout 10s)
-              if timeout 10 bash -c "echo >/dev/tcp/$registry/443" 2>/dev/null; then
-                echo "   ✅ TCP: $registry:443 acessível"
-              else
-                echo "   ❌ TCP: $registry:443 NÃO acessível (timeout 10s)"
-                echo "   🔧 Diagnóstico: verificando rota..."
-                traceroute -m5 -w2 "$registry" 2>/dev/null | head -6 || true
-                return 1
-              fi
-              return 0
-            }
-
-            GHCR_REACHABLE=true
-            DH_REACHABLE=true
-
-            if ! check_registry "ghcr.io"; then
-              echo "   ⚠️ ghcr.io com problemas de rede - tentativas de login terão backoff longo"
-              GHCR_REACHABLE=false
-            fi
-            echo ""
-            if ! check_registry "index.docker.io"; then
-              # Docker Hub usa auth.docker.io e registry-1.docker.io
-              if ! check_registry "registry-1.docker.io"; then
-                echo "   ⚠️ Docker Hub com problemas de rede"
-                DH_REACHABLE=false
-              fi
-            fi
-            echo ""
-
-            # ─── Configurar Docker daemon DNS (se necessário) ──────────────
-            # Docker daemon pode usar DNS diferente do host
-            if [ -f /etc/docker/daemon.json ]; then
-              if ! grep -q '"dns"' /etc/docker/daemon.json 2>/dev/null; then
-                echo "   ℹ️ Docker daemon sem DNS explícito (usa DNS do host)"
-              fi
-            fi
-            echo ""
+            echo "🔐 LOGIN ÚNICO - Autenticando registries..."
 
             # ─── GHCR (GitHub Container Registry) ───────────────────────────
             echo "🔐 [1/2] Login GHCR (ghcr.io)..."
             GHCR_OK=false
-            for attempt in 1 2 3 4 5; do
+            for attempt in 1 2 3; do
               if echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>&1; then
                 GHCR_OK=true
                 break
               fi
-              WAIT=$((attempt * 10))
-              echo "   ⚠️ Tentativa $attempt/5 falhou. Aguardando ${WAIT}s..."
+              WAIT=$((attempt * 5))
+              echo "   ⚠️ Tentativa $attempt/3 falhou. Aguardando ${WAIT}s..."
               sleep $WAIT
             done
             if [ "$GHCR_OK" != "true" ]; then
-              echo "❌ ERRO: Falha no login GHCR após 5 tentativas"
-              echo ""
-              echo "🔍 DIAGNÓSTICO FINAL:"
-              echo "   IP servidor: $(hostname -I 2>/dev/null | awk '{print $1}')"
-              echo "   DNS ghcr.io: $(getent hosts ghcr.io 2>/dev/null | head -1 || echo 'NÃO RESOLVE')"
-              echo "   Curl ghcr.io: $(curl -sS --connect-timeout 10 -o /dev/null -w '%{http_code} (%{time_total}s)' https://ghcr.io/v2/ 2>&1 || echo 'FALHOU')"
-              echo "   Docker version: $(docker version --format '{{.Server.Version}}' 2>/dev/null || echo 'N/A')"
-              echo "   Uptime: $(uptime)"
+              echo "❌ ERRO: Falha no login GHCR após 3 tentativas"
+              echo "   DNS: $(getent hosts ghcr.io 2>/dev/null | head -1 || echo 'NÃO RESOLVE')"
               exit 1
             fi
             echo "✅ GHCR autenticado"
-            echo ""
 
             # ─── Docker Hub (conta Pro - rate limits altos) ─────────────────
             if [ -n "${DOCKERHUB_USER:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
               echo "🔐 [2/2] Login Docker Hub (conta Pro)..."
               DH_OK=false
-              for attempt in 1 2 3 4 5; do
+              for attempt in 1 2 3; do
                 if echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USER" --password-stdin 2>&1; then
                   DH_OK=true
                   break
                 fi
-                WAIT=$((attempt * 10))
-                echo "   ⚠️ Tentativa $attempt/5 falhou. Aguardando ${WAIT}s..."
+                WAIT=$((attempt * 5))
+                echo "   ⚠️ Tentativa $attempt/3 falhou. Aguardando ${WAIT}s..."
                 sleep $WAIT
               done
               if [ "$DH_OK" = "true" ]; then
@@ -1663,19 +1594,15 @@ jobs:
             else
               echo "⚠️ [2/2] Docker Hub sem credenciais - rate limits anônimos (100 pulls/6h)"
             fi
-            echo ""
 
             # ─── Validação final ────────────────────────────────────────────
-            echo "🔍 Validando credenciais salvas..."
             if [ -f ~/.docker/config.json ]; then
               AUTHS=$(grep -c '"auth"' ~/.docker/config.json 2>/dev/null || echo "0")
-              echo "   ✅ ~/.docker/config.json presente ($AUTHS registry(s) autenticado(s))"
+              echo "✅ Login único concluído ($AUTHS registries autenticados)"
             else
-              echo "   ❌ ~/.docker/config.json NÃO encontrado!"
+              echo "❌ ~/.docker/config.json NÃO encontrado!"
               exit 1
             fi
-            echo ""
-            echo "✅ Login único concluído - credenciais persistidas no servidor"
         env:
           GHCR_USER: ${{ github.repository_owner }}
           GHCR_TOKEN: ${{ secrets.GH_PAT }}
@@ -2149,108 +2076,13 @@ jobs:
             echo "   ✅ Docker com GPU OK"
             
             # =================================================================
-            # ESTÁGIO 3.5: Garantir daemon.json enterprise (registry mirror)
+            # NOTA (10/02/2026): registry-mirrors REMOVIDO permanentemente.
+            # mirror.gcr.io NÃO funciona de forma confiável da rede Hetzner,
+            # causando timeouts de ~15s por pull (Docker tenta mirror primeiro,
+            # timeout, depois faz fallback para registry real).
+            # daemon.json é configurado no servidor, não pelo workflow.
+            # REF: CLAUDE.md Regra 7 (Mudanças cirúrgicas)
             # =================================================================
-            # PROBLEMA (08/02/2026): Docker Hub tem latência alta (~2-11s TCP connect)
-            #   do Hetzner (Alemanha) para AWS US East. Com docker compose pull puxando
-            #   múltiplas imagens simultaneamente, cada uma com max-concurrent-downloads=10,
-            #   o daemon fica sobrecarregado e dá timeout/EOF em conexões.
-            #
-            # SOLUÇÃO ENTERPRISE:
-            #   1. mirror.gcr.io como registry mirror → Google CDN com latência <100ms
-            #   2. max-concurrent-downloads=3 → reduz contenção de conexões
-            #   3. max-concurrent-uploads=5 → equilibra uso de rede
-            #
-            # REF: https://docs.docker.com/engine/daemon/proxy/#use-a-registry-mirror
-            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 11 (Docs oficiais)
-            # =================================================================
-            echo ""
-            echo "🔧 ESTÁGIO 3.5: Verificando daemon.json enterprise..."
-            
-            DAEMON_JSON="/etc/docker/daemon.json"
-            NEEDS_RESTART=false
-            
-            # Verificar se registry-mirrors já está configurado
-            if [ -f "$DAEMON_JSON" ]; then
-              HAS_MIRROR=$(grep -c "mirror.gcr.io" "$DAEMON_JSON" 2>/dev/null || echo "0")
-              HAS_CONCURRENT=$(grep -c '"max-concurrent-downloads"' "$DAEMON_JSON" 2>/dev/null || echo "0")
-              
-              if [ "$HAS_MIRROR" -gt 0 ] && [ "$HAS_CONCURRENT" -gt 0 ]; then
-                CURRENT_CONCURRENT=$(grep '"max-concurrent-downloads"' "$DAEMON_JSON" | grep -o '[0-9]*' || echo "0")
-                if [ "$CURRENT_CONCURRENT" -le 5 ]; then
-                  echo "   ✅ daemon.json enterprise já configurado (mirror.gcr.io + downloads=$CURRENT_CONCURRENT)"
-                else
-                  NEEDS_RESTART=true
-                fi
-              else
-                NEEDS_RESTART=true
-              fi
-            else
-              NEEDS_RESTART=true
-            fi
-            
-            if [ "$NEEDS_RESTART" = true ]; then
-              echo "   ⚠️  daemon.json precisa ser atualizado..."
-              
-              # Backup do original
-              if [ -f "$DAEMON_JSON" ]; then
-                cp "$DAEMON_JSON" "${DAEMON_JSON}.bak.$(date +%Y%m%d%H%M%S)"
-                echo "   📋 Backup salvo"
-              fi
-              
-              # Ler configuração atual e mesclar com novas configurações
-              # Usa python3 (disponível no Ubuntu 24.04) para manipular JSON de forma segura
-              python3 -c "
-            import json, sys
-            
-            # Ler daemon.json existente ou criar vazio
-            try:
-                with open('$DAEMON_JSON', 'r') as f:
-                    config = json.load(f)
-            except (FileNotFoundError, json.JSONDecodeError):
-                config = {}
-            
-            # Garantir registry-mirrors (Google CDN - latência <100ms do Hetzner)
-            config['registry-mirrors'] = ['https://mirror.gcr.io']
-            
-            # Reduzir downloads paralelos (evita timeout em registries lentos)
-            config['max-concurrent-downloads'] = 3
-            config['max-concurrent-uploads'] = 5
-            
-            # Escrever de volta
-            with open('$DAEMON_JSON', 'w') as f:
-                json.dump(config, f, indent=4)
-            
-            print('   Configurações aplicadas:')
-            print(f'     registry-mirrors: {config[\"registry-mirrors\"]}')
-            print(f'     max-concurrent-downloads: {config[\"max-concurrent-downloads\"]}')
-            print(f'     max-concurrent-uploads: {config[\"max-concurrent-uploads\"]}')
-            "
-              
-              # Validar JSON
-              if ! python3 -c "import json; json.load(open('$DAEMON_JSON'))" 2>/dev/null; then
-                echo "   ❌ ERRO: daemon.json inválido! Restaurando backup..."
-                cp "${DAEMON_JSON}.bak."* "$DAEMON_JSON" 2>/dev/null
-                echo "   ⚠️  Continuando com configuração anterior"
-              else
-                echo "   🔄 Reiniciando Docker daemon..."
-                systemctl restart docker
-                sleep 5
-                
-                if docker info &>/dev/null; then
-                  echo "   ✅ Docker reiniciado com daemon.json enterprise"
-                  
-                  # Verificar que mirror está ativo
-                  MIRRORS=$(docker info 2>/dev/null | grep -A1 "Registry Mirrors" | tail -1 || echo "nenhum")
-                  echo "   📋 Registry Mirrors: $MIRRORS"
-                else
-                  echo "   ❌ ERRO: Docker não reiniciou! Restaurando backup..."
-                  cp "${DAEMON_JSON}.bak."* "$DAEMON_JSON" 2>/dev/null
-                  systemctl restart docker
-                  sleep 5
-                fi
-              fi
-            fi
             
             # =================================================================
             # ESTÁGIO 4: Verificar espaço em disco
