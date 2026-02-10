@@ -382,6 +382,10 @@
 
 - Pipeline: Push → CI → Release → Deploy.
 - Workflows: `ci.yml`, `release.yml`, `deploy-stack-modular.yml`.
+- Funções compartilhadas: `scripts/release-functions.sh` (build/retag) e `infra/scripts/deploy-functions.sh` (pull/credentials) — CLAUDE.md Regra 2.
+- CI valida todos os 8 microsserviços Node.js incluindo gpu-manager-service (express hardening + server timeouts).
+- Release: 16 imagens Docker (13 microservices + 3 GPU), build condicional com retag inteligente, smoke test PostgreSQL + pgvector com trap cleanup.
+- Deploy: Smart Pull com `pull_if_needed()` centralizada e `pull_with_retry()` consistente (3 retries, backoff linear 10/20/30s).
 - Cache enterprise: BuildKit/registry cache, pnpm cache e pip cache.
 - Rollback cirúrgico por stack.
 - Versionamento semântico automático via Conventional Commits.

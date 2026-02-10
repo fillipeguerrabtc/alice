@@ -242,7 +242,7 @@ Consulte [docs/SECRETS.md](docs/SECRETS.md) para a lista completa de secrets nec
 - ✅ **Retag Inteligente**: Imagens sem alterações são retagged (economiza tempo)
 - ✅ **Cache GHCR**: Registry cache por imagem (máxima eficiência BuildKit)
 - ✅ **Smoke Test**: PostgreSQL + pgvector (detecta SIGILL/AVX-512 antes do deploy)
-- ✅ **17 Imagens**: 12 microservices + 5 GPU (sequencial otimizado)
+- ✅ **16 Imagens**: 13 microservices + 3 GPU (sequencial otimizado)
 - ✅ **Disparo Automático**: Deploy disparado automaticamente após sucesso
 
 **Características Enterprise Deploy Modular (`deploy-stack-modular.yml`):**
@@ -259,7 +259,7 @@ Consulte [docs/SECRETS.md](docs/SECRETS.md) para a lista completa de secrets nec
 | Métrica | Descrição | Tempo |
 |---------|-----------|-------|
 | CI | Validação (typecheck, lint, trivy) | ~3min |
-| Release | Build 17 imagens + GitHub Release | ~5-10min |
+| Release | Build 16 imagens + GitHub Release | ~5-10min |
 | Deploy INFRA/OBSERVABILITY/ERPNEXT/BACKUP | 4 stacks standard | **~10min** |
 | Deploy ALICE | Stack com GPU images | **~20-25min** |
 | Rollback | Stack específico | **Cirúrgico** 🎯 |
@@ -274,7 +274,7 @@ Consulte [docs/SECRETS.md](docs/SECRETS.md) para a lista completa de secrets nec
 - Conventional Commits (BREAKING→MAJOR, feat→MINOR, fix→PATCH)
 - Tags criadas automaticamente pelo `release.yml`
 - Changelog gerado automaticamente com classificação de commits
-- Retag inteligente (só builda imagens com código alterado)
+- Retag inteligente (só builda imagens com código alterado) — funções centralizadas em `scripts/release-functions.sh`
 
 **Single Source of Truth (SSOT) - Versões de Imagens:**
 - Todas as versões de imagens públicas centralizadas em `infra/versions.env`
@@ -381,6 +381,12 @@ alice/
 │       ├── ci.yml                  # Validação de código (dispara release.yml)
 │       ├── release.yml             # Build imagens + Tag + GitHub Release
 │       └── deploy-stack-modular.yml # Deploy modular (5 stacks independentes)
+│
+├── scripts/
+│   └── release-functions.sh        # Funções compartilhadas de build/retag (Regra 2)
+│
+├── infra/scripts/
+│   └── deploy-functions.sh         # Funções compartilhadas de deploy (pull_if_needed, Regra 2)
 │
 └── server/
     └── index-dev.ts                # Gateway de desenvolvimento (integrações reais - sem preview/mocks)

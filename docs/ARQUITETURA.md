@@ -685,6 +685,8 @@ flowchart LR
 
 > **Server GPU Optimizations (28/12/2025):** Servidor de produção Hetzner GEX44 otimizado para máxima performance GPU. **Docker daemon:** default-runtime nvidia (GPU como runtime padrão), live-restore true, BuildKit GC 20GB. **NVIDIA:** Persistence Mode ENABLED (GPU sempre ativa, sem cold start), CDI configurado em /etc/cdi/nvidia.yaml (Container Device Interface - best practice 2025), Container Toolkit 1.18.1. **Kernel sysctl:** vm.swappiness=10 (prioriza RAM), vm.dirty_ratio=40 (I/O throughput), kernel.shmmax=64GB (CUDA shared memory), net.core.rmem_max=16MB (buffers rede), fs.file-max=2M. **Hardware:** RTX 4000 Ada 20GB, Driver 580.95.05, CUDA 13.0. Servidor 100% limpo, 1.7TB disponível.
 
+> **Pipeline Enterprise Pente Fino (10/02/2026):** Refatoração completa dos 3 workflows (ci.yml, release.yml, deploy-stack-modular.yml). **Funções Compartilhadas:** `scripts/release-functions.sh` (should_build, image_exists, retag_image, decide_build_or_retag — usadas por Build Microservices e Build GPU) e `infra/scripts/deploy-functions.sh` (verify_docker_credentials, pull_with_retry, pull_if_needed — usadas pelos 5 deploy jobs). Eliminação de ~660 linhas de duplicação (CLAUDE.md Regra 2). **Release:** 16 imagens Docker (13 microservices + 3 GPU), build condicional, smoke test com trap cleanup, release notes dinâmicas. **Deploy:** Smart Pull com detecção de retag via `built_images` da Release, retry consistente em todos os paths (3 tentativas, backoff linear 10/20/30s). **CI:** Compliance unificado com gpu-manager-service incluído.
+
 > **Deploy Enterprise Hardening (02/01/2026):** Workflow de deploy com validações enterprise completas. **Smoke Tests Pós-Deploy:** PostgreSQL (pg_isready), pgvector (operação vetorial real `SELECT '[1,2,3]'::vector <-> '[4,5,6]'::vector`), Redis (PING), Caddy (HTTP 80/443), GPU Manager (health endpoint), conectividade inter-serviços (Chat→GPU Manager via rede Docker). **Persistência de Logs:** Todos os logs de deploy salvos em `/opt/alice/logs/deploy-YYYYMMDD-HHMMSS.log` para troubleshooting futuro. **Validação pgBackRest:** Verifica existência do repositório, permissões (70:70 Alpine) via SSOT e corrige automaticamente se necessário. **pgBackRest Stanza Fix:** `pgbackrest-init` agora cria stanza sem precisar de `pg_control` (passa configs via CLI sem `pg1-*`), sincronizada após PostgreSQL iniciar. **Caddy Healthcheck:** Melhorado para verificar HTTP (portas 80/443) além de admin API (porta 2019). **SSOT Permissions (09/01/2026):** Permissões centralizadas em `infra/scripts/permissions-config.sh` para eliminar duplicação e inconsistências.
 
 ---
@@ -1020,8 +1022,8 @@ create-release:
   
 build-images:
   needs: create-release
-  # Build 17 imagens (12 microservices + 5 GPU)
-  # Retag inteligente (só builda o que mudou)
+  # Build 16 imagens (13 microservices + 3 GPU)
+  # Retag inteligente via scripts/release-functions.sh (só builda o que mudou)
   
 trigger-deploy:
   needs: build-images
@@ -1402,6 +1404,45 @@ A geração de sinais IA e análise post-mortem usavam apenas o modelo base (Qwe
 
 **REF:** CLAUDE.md Regra 6 (Enterprise-grade), Regra 11 (Best practices 2025), vLLM LoRA documentation
 
+### ADR-016: Funções Compartilhadas na Pipeline CI/CD (10/02/2026)
+
+**Status:** ✅ Aceito
+
+**Contexto:**
+Os 3 workflows da pipeline (ci.yml, release.yml, deploy-stack-modular.yml) continham lógica duplicada em larga escala: funções de build/retag repetidas 2x no release, funções de pull/credentials repetidas 5x no deploy (uma por stack), e arrays de serviços duplicados no CI. Violava Regra 2 (Não Duplicar) e Regra 6 (Enterprise-grade).
+
+**Problema:**
+- ~660 linhas de código duplicado nos workflows
+- Bug em `pull_if_needed()` com retry inconsistente (paths com e sem retry)
+- `BUILD_PATTERN` usando IMAGE ao invés de CONTEXT para GPU services (qwen-trainer)
+- `write_docker_auth()` vulnerável a injection via interpolação bash
+- Código morto: changelog duplicado, Compliance Summary cosmético, dead case entries
+
+**Alternativas Consideradas:**
+
+| Alternativa | Prós | Contras |
+|-------------|------|---------|
+| **Composite Actions** | Reutilizável, versionável | Overhead de manutenção, limites de outputs |
+| **Reusable Workflows** | Completo, compartilhável | Complexidade de inputs/outputs, requer repo |
+| **Scripts externos (.sh)** | Simples, source direto, testável localmente | Requer cópia para servidor |
+
+**Decisão:** Scripts externos bash com `source` (approach mais simples e enterprise)
+
+**Implementação:**
+1. `scripts/release-functions.sh` — `should_build()`, `image_exists()`, `retag_image()`, `decide_build_or_retag()`, `CHANGED_FILES`
+2. `infra/scripts/deploy-functions.sh` — `verify_docker_credentials()`, `pull_with_retry()`, `pull_if_needed()`
+3. Deploy copia `deploy-functions.sh` para `/opt/alice/scripts/` no job `prepare`
+4. Cada deploy job faz `source /opt/alice/scripts/deploy-functions.sh`
+
+**Benefícios:**
+- ✅ **Regra 2 cumprida**: ~660 linhas de duplicação eliminadas
+- ✅ **Retry consistente**: `pull_with_retry()` com 3 tentativas + backoff 10/20/30s em TODOS os paths
+- ✅ **Testável**: Scripts podem ser executados e testados independentemente
+- ✅ **Manutenível**: Correção em 1 lugar propaga para todos os consumidores
+- ✅ **Seguro**: `write_docker_auth()` usa env vars Python ao invés de interpolação bash
+
+**REF:** CLAUDE.md Regra 2 (Não Duplicar), Regra 6 (Enterprise-grade), Regra 7 (Mudanças Cirúrgicas)
+
 ---
 
 ## 10. Aderência às 18 Regras
@@ -1411,7 +1452,7 @@ A geração de sinais IA e análise post-mortem usavam apenas o modelo base (Qwe
 | # | Regra | Implementação | Status |
 |---|-------|---------------|--------|
 | 1 | **LER ANTES DE AGIR** | Workflow de diagnóstico em todas as features | ✅ |
-| 2 | **NÃO DUPLICAR** | `packages/shared-utils` para código comum | ✅ |
+| 2 | **NÃO DUPLICAR** | `packages/shared-utils` para código comum; `scripts/release-functions.sh` e `infra/scripts/deploy-functions.sh` para CI/CD | ✅ |
 | 3 | **WORKFLOW ESTRUTURADO** | Diagnóstico → Plano → Aprovação → Implementação | ✅ |
 | 4 | **APROVAÇÃO OBRIGATÓRIA** | PR review obrigatório para changes grandes | ✅ |
 | 5 | **NÃO MENTIR** | Logs estruturados, métricas reais | ✅ |

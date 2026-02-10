@@ -1257,6 +1257,11 @@ async function start(): Promise<void> {
     server.listen(PORT, () => {
       logger.info({ port: PORT }, 'GPU Manager Service iniciado');
     });
+
+    // SEGURANÇA: Timeouts para prevenir conexões pendentes (Node.js 20 LTS Best Practices)
+    server.timeout = 30000; // 30s timeout para requisições
+    server.keepAliveTimeout = 65000; // 65s (maior que ALB/Caddy timeout padrão de 60s)
+    server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
     
     // Graceful shutdown
     registerShutdownCallback('gpu-manager-server', async () => {

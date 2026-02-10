@@ -259,9 +259,11 @@ jobs:
             (echo "ERRO: Policies RLS não encontradas" && exit 1)
           echo "✅ Migrações RLS verificadas"
 
-      - name: Verify Express hardening in all services
+      - name: Verify Express hardening and server timeouts
         run: |
           set -e
+          # Array unificado de todos os microsserviços Node.js (CLAUDE.md Regra 2)
+          # NOTA: gpu-manager-service incluído (era faltante)
           SERVICES=(
             "apps/auth-service/src/index.ts"
             "apps/chat-service/src/index.ts"
@@ -270,53 +272,27 @@ jobs:
             "apps/integrations-service/src/index.ts"
             "apps/api-gateway/src/index.ts"
             "apps/observability-service/src/index.ts"
+            "apps/gpu-manager-service/src/index.ts"
           )
           
           for service in "${SERVICES[@]}"; do
             if [ -f "$service" ]; then
+              # Verificar express hardening
               if ! grep -q "@alice/shared-utils" "$service" || ! grep -q "createSecurityMiddleware\|createRateLimiter" "$service"; then
                 echo "ERRO: $service sem express-hardening!"
                 exit 1
               fi
-            fi
-          done
-          echo "✅ Express hardening verificado"
-
-      - name: Verify server timeouts
-        run: |
-          set -e
-          SERVICES=(
-            "apps/auth-service/src/index.ts"
-            "apps/chat-service/src/index.ts"
-            "apps/rag-service/src/index.ts"
-            "apps/training-service/src/index.ts"
-            "apps/integrations-service/src/index.ts"
-            "apps/api-gateway/src/index.ts"
-            "apps/observability-service/src/index.ts"
-          )
-          
-          for service in "${SERVICES[@]}"; do
-            if [ -f "$service" ]; then
+              # Verificar server timeouts
               if ! grep -q "server.timeout" "$service" || ! grep -q "keepAliveTimeout" "$service" || ! grep -q "headersTimeout" "$service"; then
                 echo "ERRO: $service sem timeouts!"
                 exit 1
               fi
             fi
           done
+          echo "✅ Express hardening verificado"
           echo "✅ Server timeouts verificados"
       
-      - name: Compliance Summary
-        run: |
-          echo ""
-          echo "==========================================="
-          echo "✅ SECURITY & COMPLIANCE - PASSED"
-          echo "==========================================="
-          echo "• Trivy vulnerability scan: OK"
-          echo "• Hardcoded secrets check: OK"
-          echo "• RLS migrations: OK"
-          echo "• Express hardening: OK"
-          echo "• Server timeouts: OK"
-          echo "==========================================="
+      # Compliance summary removido (zero valor diagnóstico - CLAUDE.md Regra 6)
 
   # ===========================================================================
   # Job 4: Trigger Release Automático

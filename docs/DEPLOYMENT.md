@@ -308,42 +308,39 @@ Configure `DOCKERHUB_USERNAME` e `DOCKERHUB_TOKEN` nos secrets do GitHub.
 
 O workflow `deploy-stack-modular.yml` utiliza **pull inteligente com detecção de retag** para evitar downloads desnecessários de imagens Docker que já existem no servidor de produção.
 
-**Arquitetura Enterprise (4 Casos):**
+**Arquitetura Enterprise — Funções Compartilhadas:**
 
-1. **Login Único (prepare job):** Autenticação no GHCR e Docker Hub é feita **uma única vez** no job `prepare`, com credenciais escritas diretamente em `~/.docker/config.json`. Os 5 deploy jobs apenas verificam se o arquivo de credenciais existe (sem fallback login).
+As funções de deploy são centralizadas em **`infra/scripts/deploy-functions.sh`** (CLAUDE.md Regra 2 — não duplicar). O script é copiado para `/opt/alice/scripts/deploy-functions.sh` no servidor pelo job `prepare` e importado via `source` pelos 5 deploy jobs (INFRA, ALICE, OBSERVABILITY, ERPNEXT, BACKUP).
 
-2. **Comunicação Release → Deploy:** O workflow `release.yml` rastreia quais imagens foram **buildadas** vs **retagged** durante o build. Essa lista (`built_images`) é passada como input para o `deploy-stack-modular.yml` via `workflow_dispatch`, eliminando a necessidade de `docker manifest inspect` (que era frágil com manifest lists). Quando TUDO é retagged, a Release envia `__NONE__` (sentinela) para diferenciar de deploy manual (string vazia).
+Funções disponíveis:
+- **`verify_docker_credentials()`** — Valida presença de `~/.docker/config.json` com credenciais ativas
+- **`pull_with_retry()`** — Pull com 3 retries e backoff linear (10s, 20s, 30s) — usada por TODOS os paths
+- **`pull_if_needed()`** — Pull inteligente com detecção de retag via `BUILT_IMAGES` da Release
 
-3. **Função `pull_if_needed()` — 5 casos de detecção:**
+De forma similar, o workflow `release.yml` centraliza funções de build/retag em **`scripts/release-functions.sh`**:
+- **`should_build()`** / **`image_exists()`** / **`retag_image()`** — Lógica condicional de build
+- **`decide_build_or_retag()`** — Decisão enterprise: BUILD ou RETAG
 
-   **CASO 1 — Tag exata existe localmente → SKIP (zero rede)**
-   - `docker image inspect ghcr.io/.../alice-auth:v3.52.1` encontra a imagem
-   - Resultado: `⏩ SKIP (tag v3.52.1 já existe localmente)`
+**Login Único (prepare job):** Autenticação no GHCR e Docker Hub é feita **uma única vez** no job `prepare`, com credenciais escritas diretamente em `~/.docker/config.json` via função `write_docker_auth()` (usa env vars Python para evitar injection). Os 5 deploy jobs apenas verificam se credenciais existem.
 
-   **CASO 2 — Imagem Docker Hub (terceiros) → pull simples**
-   - Imagens como `redis:7.4.7-alpine`, `qdrant/qdrant:v1.16.2` não são gerenciadas pela Release
-   - Pull direto com 3 retries (10s, 20s, 30s)
+**Comunicação Release → Deploy:** O `release.yml` rastreia quais imagens foram **buildadas** vs **retagged**. A lista (`built_images`) é passada como input para o `deploy-stack-modular.yml` via `workflow_dispatch`. Quando TUDO é retagged, a Release envia `__NONE__` (sentinela) para diferenciar de deploy manual (string vazia).
 
-   **CASO 3a — Release rodou, TUDO retagged (`__NONE__`) → retag local**
-   - Todas imagens são retag → `docker tag repo:v_anterior repo:v_nova` (instantâneo, ~0.1s)
-   - Se não existe tag anterior local → pull simples (primeiro deploy)
+**Função `pull_if_needed()` — 4 Casos:**
 
-   **CASO 3b — Imagem GHCR com info da Release → detecção precisa**
-   - Se `built_images` contém o serviço → `📥 PULL (build na Release)` — download real
-   - Se `built_images` NÃO contém o serviço → `🏷️ RETAG LOCAL` — zero download
-   - Retag local: `docker tag repo:v_anterior repo:v_nova` (instantâneo, ~0.1s)
-
-   **CASO 4 — Deploy manual (sem info da Release) → pull simples**
-   - Docker pull com layer caching (se retag, baixa apenas manifest ~1KB + reutiliza layers)
-   - 3 retries com backoff linear (10s, 20s, 30s)
+| Caso | Condição | Ação | Tempo |
+|------|----------|------|-------|
+| **1** | Tag exata existe localmente | SKIP | ~0s |
+| **2** | Imagem Docker Hub/Quay (terceiros) | `pull_with_retry()` | ~2-30s |
+| **3** | GHCR com info Release (build ou retag) | Retag local ou `pull_with_retry()` | ~0.1s ou ~2-30s |
+| **4** | Deploy manual (sem info Release) | `pull_with_retry()` | ~2-30s |
 
 **Benefícios:**
 - **ELIMINADO** `docker manifest inspect` (frágil com manifest lists, timeout 15s/imagem)
 - **ELIMINADO** fallback `docker login` nos deploy jobs (login único no prepare)
-- **ELIMINADO** retry loops excessivos (5 tentativas → 3 tentativas com backoff linear)
+- **ELIMINADO** retry inconsistente (todos os paths usam `pull_with_retry()` com 3 tentativas)
+- **ELIMINADO** duplicação (~610 linhas) — funções centralizadas em script compartilhado
 - Release informa explicitamente quais imagens foram buildadas → detecção 100% precisa
 - Deploys subsequentes com retag: ~30s ao invés de ~10min
-- Economia total de banda para imagens GPU (~11GB cada)
 
 **Secrets utilizados:**
 - `GH_PAT` — Token para GHCR (GitHub Container Registry)

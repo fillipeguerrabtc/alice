@@ -79,7 +79,6 @@ jobs:
     outputs:
       version: ${{ inputs.version }}
       previous_tag: ${{ steps.previous-tag.outputs.previous_tag }}
-      changelog: ${{ steps.changelog.outputs.changes }}
     
     steps:
       - name: Checkout código
@@ -115,41 +114,7 @@ jobs:
             echo "⚠️ Nenhuma tag anterior encontrada (primeiro release?)"
           fi
 
-      - name: Gerar changelog
-        id: changelog
-        run: |
-          PREVIOUS_TAG="${{ steps.previous-tag.outputs.previous_tag }}"
-          
-          if [ -z "$PREVIOUS_TAG" ]; then
-            COMMITS=$(git log --pretty=format:"%s (%h)" --no-merges | head -50)
-          else
-            COMMITS=$(git log $PREVIOUS_TAG..HEAD --pretty=format:"%s (%h)" --no-merges)
-          fi
-          
-          # BREAKING: Captura commits com ! (QUALQUER tipo!) e BREAKING CHANGE:
-          # Conventional Commits 1.0.0: feat!, fix!, chore!, refactor!, docs!, etc.
-          # CRÍTICO: Deve vir ANTES de FEATURES/FIXES para não duplicar
-          BREAKING=$(echo "$COMMITS" | grep -E "^[a-z]+(\(.+\))?!:|BREAKING CHANGE:" | sed 's/^/- /' || echo "")
-          
-          # FEATURES: feat sem ! (com ! vai para BREAKING)
-          FEATURES=$(echo "$COMMITS" | grep -E "^feat(\(.+\))?:" | grep -v "^feat(\(.+\))?!:" | sed 's/^/- /' || echo "")
-          
-          # FIXES: fix sem ! (com ! vai para BREAKING)
-          FIXES=$(echo "$COMMITS" | grep -E "^fix(\(.+\))?:" | grep -v "^fix(\(.+\))?!:" | sed 's/^/- /' || echo "")
-          
-          # OTHERS: tudo que não é feat/fix E não tem ! (breaking)
-          OTHERS=$(echo "$COMMITS" | grep -v -E "^(feat|fix)(\(.+\))?:" | grep -v -E "^[a-z]+(\(.+\))?!:" | grep -v "BREAKING CHANGE:" | sed 's/^/- /' || echo "")
-          
-          # Construir changelog com BREAKING primeiro (destaque máximo)
-          CHANGELOG=""
-          [ -n "$BREAKING" ] && CHANGELOG="$CHANGELOG\n#### ⚠️ Breaking Changes\n$BREAKING\n"
-          [ -n "$FEATURES" ] && CHANGELOG="$CHANGELOG\n#### ✨ Features\n$FEATURES\n"
-          [ -n "$FIXES" ] && CHANGELOG="$CHANGELOG\n#### 🐛 Bug Fixes\n$FIXES\n"
-          [ -n "$OTHERS" ] && CHANGELOG="$CHANGELOG\n#### 📦 Other Changes\n$OTHERS\n"
-          
-          echo "changes<<EOF" >> $GITHUB_OUTPUT
-          echo -e "$CHANGELOG" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+      # NOTA: Changelog gerado no job publish-release (não duplicar - CLAUDE.md Regra 2)
 
       - name: Criar Git Tag
         run: |
@@ -234,11 +199,15 @@ jobs:
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349
 
+      # Limpar cache antigo antes dos builds (libera espaço no runner)
+      - name: Docker prune
+        run: docker system prune -f --filter "until=24h" || true
+
       # Build de todos os microsserviços (apps/)
       - name: Build Microservices
         id: build-microservices
         run: |
-          set -e
+          set -euo pipefail
           VERSION="${{ needs.create-release.outputs.version }}"
           PREVIOUS_TAG="${{ needs.create-release.outputs.previous_tag }}"
           
@@ -250,39 +219,9 @@ jobs:
             echo "Previous tag for retagging: $PREVIOUS_TAG"
           fi
 
-          # Determinar arquivos alterados para builds condicionais (enterprise: evita rebuild desnecessário)
-          CHANGED_FILES=""
-          if [ -n "$PREVIOUS_TAG" ]; then
-            CHANGED_FILES=$(git diff --name-only "$PREVIOUS_TAG..$VERSION" || true)
-          else
-            CHANGED_FILES="__NO_PREVIOUS_TAG__"
-          fi
-
-          should_build() {
-            local pattern="$1"
-            echo "$CHANGED_FILES" | grep -qE "$pattern"
-          }
-
-          image_exists() {
-            local img="$1"
-            docker manifest inspect "$img" > /dev/null 2>&1
-          }
-
-          retag_image() {
-            local image_name="$1"
-            local from_tag="$2"
-            local to_tag="$3"
-            local full_from="${{ env.IMAGE_PREFIX }}-${image_name}:${from_tag}"
-            local full_to="${{ env.IMAGE_PREFIX }}-${image_name}:${to_tag}"
-
-            echo "Retagging $image_name: $from_tag -> $to_tag"
-            # ENTERPRISE: 1 operação única para atualizar a tag de release + 'latest'
-            # (reduz chamadas ao registry e acelera o workflow sem perder rastreabilidade)
-            docker buildx imagetools create \
-              -t "$full_to" \
-              -t "${{ env.IMAGE_PREFIX }}-${image_name}:latest" \
-              "$full_from"
-          }
+          # Funções compartilhadas: should_build, image_exists, retag_image, decide_build_or_retag
+          # CHANGED_FILES calculado automaticamente pelo script (CLAUDE.md Regra 2)
+          source scripts/release-functions.sh
           
           # ✅ CORREÇÃO CRÍTICA: Formato IMAGE:DOCKERFILE:CONTEXT
           # - Microservices Node.js: contexto raiz (precisam de packages/ compartilhados)
@@ -340,9 +279,7 @@ jobs:
                 rag) SERVICE_DIR_PATTERN="^apps/rag-service/" ;;
                 training) SERVICE_DIR_PATTERN="^apps/training-service/" ;;
                 gpu-manager) SERVICE_DIR_PATTERN="^apps/gpu-manager-service/" ;;
-                pgbackrest) SERVICE_DIR_PATTERN="^infra/backup/" ;;
-                postgres) SERVICE_DIR_PATTERN="^infra/postgres/" ;;
-                caddy) SERVICE_DIR_PATTERN="^infra/docker/" ;;
+                # NOTA: pgbackrest, postgres, caddy são tratados pelo if/elif acima (nunca chegam aqui)
                 *)
                   echo "❌ ERRO: serviço desconhecido no pipeline release: $IMAGE"
                   echo "Serviços válidos: api-gateway, auth, biometrics, chat, frontend, integrations, observability, rag, training, gpu-manager, pgbackrest, postgres, caddy"
@@ -353,20 +290,7 @@ jobs:
               BUILD_PATTERN="^(${SERVICE_DIR_PATTERN#^}|packages/|scripts/|pnpm-lock\\.yaml$|package\\.json$|tsconfig\\.|\\.npmrc$)"
             fi
 
-            NEEDS_BUILD=1
-            if [ -n "$PREVIOUS_TAG" ]; then
-              if should_build "$BUILD_PATTERN"; then
-                NEEDS_BUILD=1
-              else
-                # Sem mudanças relevantes: tentar retag do release anterior (garante imagem na tag nova sem rebuild)
-                FROM_IMG="${{ env.IMAGE_PREFIX }}-${IMAGE}:${PREVIOUS_TAG}"
-                if image_exists "$FROM_IMG"; then
-                  NEEDS_BUILD=0
-                else
-                  NEEDS_BUILD=1
-                fi
-              fi
-            fi
+            decide_build_or_retag "$IMAGE" "$BUILD_PATTERN"
 
             if [ "$NEEDS_BUILD" -eq 0 ]; then
               retag_image "$IMAGE" "$PREVIOUS_TAG" "$VERSION"
@@ -403,8 +327,16 @@ jobs:
       # ==========================================================================
       - name: Smoke Test PostgreSQL + pgvector
         run: |
-          set -e
+          set -euo pipefail
           VERSION="${{ needs.create-release.outputs.version }}"
+          
+          # Cleanup garantido mesmo em falha inesperada (CLAUDE.md Regra 6)
+          cleanup_smoke() {
+            echo "🧹 Cleanup smoke test container..."
+            docker stop postgres-smoke-test 2>/dev/null || true
+            docker rm postgres-smoke-test 2>/dev/null || true
+          }
+          trap cleanup_smoke EXIT
           
           echo "🧪 Iniciando smoke test da imagem PostgreSQL..."
           
@@ -427,9 +359,7 @@ jobs:
             if [ $i -eq 60 ]; then
               echo "❌ ERRO: PostgreSQL não iniciou após 60s"
               docker logs postgres-smoke-test
-              docker stop postgres-smoke-test || true
-              docker rm postgres-smoke-test || true
-              exit 1
+              exit 1  # trap EXIT faz cleanup
             fi
             sleep 1
           done
@@ -445,9 +375,7 @@ jobs:
             echo "❌ ERRO CRÍTICO: Extensão pgvector NÃO foi criada!"
             echo "Logs do PostgreSQL:"
             docker logs postgres-smoke-test
-            docker stop postgres-smoke-test || true
-            docker rm postgres-smoke-test || true
-            exit 1
+            exit 1  # trap EXIT faz cleanup
           fi
           echo "✅ Extensão pgvector criada"
           
@@ -466,15 +394,10 @@ jobs:
             echo "Logs do PostgreSQL:"
             docker logs postgres-smoke-test
             cat /tmp/pgvector-ops-test.log || true
-            docker stop postgres-smoke-test || true
-            docker rm postgres-smoke-test || true
-            exit 1
+            exit 1  # trap EXIT faz cleanup
           fi
           
-          # Cleanup
-          docker stop postgres-smoke-test
-          docker rm postgres-smoke-test
-          
+          # Cleanup via trap EXIT (cleanup_smoke)
           echo "✅ SMOKE TEST PostgreSQL + pgvector PASSOU!"
 
       # Build de serviços GPU (pesados - ~5-10GB cada)
@@ -494,16 +417,9 @@ jobs:
             echo "Previous tag for retagging: $PREVIOUS_TAG"
           fi
           
-          # Limpar cache antigo antes dos builds pesados
-          docker system prune -f --filter "until=24h" || true
-
-          # Arquivos alterados para builds condicionais
-          CHANGED_FILES=""
-          if [ -n "$PREVIOUS_TAG" ]; then
-            CHANGED_FILES=$(git diff --name-only "$PREVIOUS_TAG..$VERSION" || true)
-          else
-            CHANGED_FILES="__NO_PREVIOUS_TAG__"
-          fi
+          # Funções compartilhadas: should_build, image_exists, retag_image, decide_build_or_retag
+          # CHANGED_FILES calculado automaticamente pelo script (CLAUDE.md Regra 2)
+          source scripts/release-functions.sh
           
           echo "Changed files (GPU diff):"
           if [ -n "$CHANGED_FILES" ]; then
@@ -511,31 +427,6 @@ jobs:
           else
             echo "<none>"
           fi
-
-          should_build() {
-            local pattern="$1"
-            echo "$CHANGED_FILES" | grep -qE "$pattern"
-          }
-
-          image_exists() {
-            local img="$1"
-            docker manifest inspect "$img" > /dev/null 2>&1
-          }
-
-          retag_image() {
-            local image_name="$1"
-            local from_tag="$2"
-            local to_tag="$3"
-            local full_from="${{ env.IMAGE_PREFIX }}-${image_name}:${from_tag}"
-            local full_to="${{ env.IMAGE_PREFIX }}-${image_name}:${to_tag}"
-
-            echo "Retagging $image_name: $from_tag -> $to_tag"
-            # ENTERPRISE: 1 operação única para atualizar a tag de release + 'latest'
-            docker buildx imagetools create \
-              -t "$full_to" \
-              -t "${{ env.IMAGE_PREFIX }}-${image_name}:latest" \
-              "$full_from"
-          }
           
           # ARQUITETURA (22/01/2026+): 3 GPU services
           # - llm-qwen25: LLM texto (Qwen2.5 7B AWQ, contexto 8k)
@@ -552,21 +443,10 @@ jobs:
             CONTEXT="${entry#*:}"
             
             # Rebuild apenas se mudou o contexto específico do serviço GPU (enterprise: evita rebuild desnecessário)
-            BUILD_PATTERN="^docker/gpu/${IMAGE}/"
+            # CORREÇÃO CRÍTICA: usar CONTEXT ao invés de IMAGE — qwen-trainer usa diretório lora-trainer
+            BUILD_PATTERN="^${CONTEXT#./}/"
 
-            NEEDS_BUILD=1
-            if [ -n "$PREVIOUS_TAG" ]; then
-              if should_build "$BUILD_PATTERN"; then
-                NEEDS_BUILD=1
-              else
-                FROM_IMG="${{ env.IMAGE_PREFIX }}-${IMAGE}:${PREVIOUS_TAG}"
-                if image_exists "$FROM_IMG"; then
-                  NEEDS_BUILD=0
-                else
-                  NEEDS_BUILD=1
-                fi
-              fi
-            fi
+            decide_build_or_retag "$IMAGE" "$BUILD_PATTERN"
 
             echo "GPU service decision: image=$IMAGE context=$CONTEXT needs_build=$NEEDS_BUILD"
             if [ "$NEEDS_BUILD" -eq 0 ]; then
@@ -705,15 +585,11 @@ jobs:
             echo ""
             echo "### 🐳 Docker Images"
             echo '```'
-            echo "${{ env.IMAGE_PREFIX }}-auth:${VERSION}"
-            echo "${{ env.IMAGE_PREFIX }}-chat:${VERSION}"
-            echo "${{ env.IMAGE_PREFIX }}-frontend:${VERSION}"
-            echo "${{ env.IMAGE_PREFIX }}-rag:${VERSION}"
-            echo "${{ env.IMAGE_PREFIX }}-training:${VERSION}"
-            echo "${{ env.IMAGE_PREFIX }}-integrations:${VERSION}"
-            echo "${{ env.IMAGE_PREFIX }}-observability:${VERSION}"
-            echo "${{ env.IMAGE_PREFIX }}-gpu-manager:${VERSION}"
-            echo "${{ env.IMAGE_PREFIX }}-api-gateway:${VERSION}"
+            # Lista gerada dinamicamente a partir dos arrays SERVICES/GPU_SERVICES
+            # (CLAUDE.md Regra 2 - não duplicar lista hardcoded que fica desatualizada)
+            for svc in api-gateway auth biometrics chat frontend integrations observability rag training gpu-manager pgbackrest postgres caddy llm-qwen25 embeddings-gpu qwen-trainer; do
+              echo "${{ env.IMAGE_PREFIX }}-${svc}:${VERSION}"
+            done
             echo '```'
           } > "$NOTES_FILE"
           
