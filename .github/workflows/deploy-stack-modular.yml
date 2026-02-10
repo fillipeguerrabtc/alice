@@ -99,6 +99,11 @@ on:
         type: boolean
         required: false
         default: false
+      built_images:
+        description: 'Imagens buildadas na Release (comma-separated). Vazio = pull tudo. Ex: auth,chat,frontend'
+        type: string
+        required: false
+        default: ''
       pgbackrest_allow_stanza_reset:
         description: 'Permitir reset de stanza pgBackRest (uso emergencial)'
         type: boolean
@@ -928,27 +933,16 @@ jobs:
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
           set -euo pipefail
+          # Login simples no runner para validação de imagens públicas
+          # Sem retry excessivo - se Docker Hub está indisponível, validação falha e é OK
           if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
-            # CORREÇÃO (09/02/2026): Retry logic para Docker Hub login
-            # CAUSA RAIZ: Latência Hetzner→Docker Hub causa timeouts intermitentes
-            attempt=1
-            max_attempts=5
-            delay=5
-            while [ $attempt -le $max_attempts ]; do
-              if echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin 2>&1; then
-                echo "✅ Docker Hub autenticado"
-                break
-              fi
-              echo "⚠️ Docker Hub login falhou (tentativa $attempt/$max_attempts). Aguardando ${delay}s..."
-              sleep "$delay"
-              delay=$((delay * 2))
-              attempt=$((attempt + 1))
-            done
-            if [ $attempt -gt $max_attempts ]; then
-              echo "⚠️ Docker Hub login falhou após $max_attempts tentativas - continuando sem auth"
+            if echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin 2>&1; then
+              echo "✅ Docker Hub autenticado"
+            else
+              echo "⚠️ Docker Hub login falhou - continuando sem auth (rate limits anônimos)"
             fi
           else
-            echo "⚠️ Docker Hub sem credenciais - validação pode sofrer rate limit"
+            echo "⚠️ Docker Hub sem credenciais - rate limits anônimos (100 pulls/6h)"
           fi
 
       - name: Validar imagens públicas (Docker Hub + Quay.io)
@@ -1560,11 +1554,18 @@ jobs:
       # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Cirúrgico)
       # =================================================================
       # =================================================================
-      # LOGIN ENTERPRISE RESILIENTE (10/02/2026)
-      # Rede Hetzner → GitHub (ghcr.io) tem conectividade INTERMITENTE
-      # (peering Hetzner/Fastly CDN). Login pode falhar com "context
-      # deadline exceeded" por 15-60s e depois funcionar normalmente.
-      # Solução: retry agressivo com backoff + fallback config.json.
+      # LOGIN ENTERPRISE - CREDENCIAIS PRIMEIRO (10/02/2026)
+      # CAUSA RAIZ CORRIGIDA: wait_for_registry() queimava 9+ minutos
+      # fazendo 10 curl retries com backoff crescente (10s→60s),
+      # excedendo command_timeout do SSH. Enquanto isso, credenciais
+      # JÁ EXISTIAM em ~/.docker/config.json no servidor.
+      # SOLUÇÃO: Verificar credenciais existentes PRIMEIRO (0.1s).
+      # Se existem → validar com docker manifest inspect (max 15s).
+      # Se não existem → escrever config.json diretamente (0.1s).
+      # docker login é APENAS último recurso (1 tentativa, 30s max).
+      # ELIMINADO: wait_for_registry (causa raiz do timeout).
+      # ELIMINADO: retry loops de 10 tentativas com backoff.
+      # Tempo total máximo: ~60s (era 9+ minutos).
       # Secrets: GH_PAT (GHCR), DOCKERHUB_USERNAME/TOKEN (Docker Hub)
       # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Cirúrgico)
       # =================================================================
@@ -1575,119 +1576,104 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          command_timeout: 10m
+          command_timeout: 3m
           envs: GH_PAT,GH_USER,DOCKERHUB_USERNAME,DOCKERHUB_TOKEN
           script: |
             set -euo pipefail
             echo "🔐 LOGIN ÚNICO - Autenticando registries..."
-            echo "   (Rede Hetzner→GitHub pode ter quedas intermitentes de 15-60s)"
             echo ""
 
-            # ─── Função: aguardar conectividade com retry ──────────────────
-            wait_for_registry() {
+            # ─── Função: escrever auth em config.json (sem rede) ──────────
+            # Gera base64 das credenciais e escreve diretamente no arquivo
+            # Docker config.json. NÃO requer conectividade de rede.
+            write_docker_auth() {
               local registry="$1"
-              local max_attempts=10
-              local attempt=1
-              while [ $attempt -le $max_attempts ]; do
-                if curl -sS --connect-timeout 10 -o /dev/null -w '' "https://${registry}/v2/" 2>/dev/null; then
-                  return 0
-                fi
-                local wait=$((attempt * 10))
-                [ $wait -gt 60 ] && wait=60
-                echo "   ⏳ ${registry} inacessível (tentativa ${attempt}/${max_attempts}). Aguardando ${wait}s..."
-                sleep $wait
-                attempt=$((attempt + 1))
-              done
-              return 1
-            }
-
-            # ─── GHCR (GitHub Container Registry) ───────────────────────────
-            echo "🔐 [1/2] Login GHCR (ghcr.io)..."
-            GHCR_OK=false
-
-            # Passo 1: Aguardar conectividade com ghcr.io
-            if ! wait_for_registry "ghcr.io"; then
-              echo "   ⚠️ ghcr.io inacessível após 10 tentativas - tentando login direto..."
-            fi
-
-            # Passo 2: docker login com retry
-            for attempt in 1 2 3 4 5 6 7 8 9 10; do
-              if echo "$GH_PAT" | docker login ghcr.io -u "$GH_USER" --password-stdin 2>&1; then
-                GHCR_OK=true
-                break
-              fi
-              WAIT=$((attempt * 10))
-              [ $WAIT -gt 60 ] && WAIT=60
-              echo "   ⚠️ Tentativa $attempt/10 falhou. Aguardando ${WAIT}s..."
-              sleep $WAIT
-            done
-
-            # Passo 3: Fallback - escrever config.json diretamente
-            if [ "$GHCR_OK" != "true" ]; then
-              echo "   🔄 docker login falhou - escrevendo config.json diretamente..."
-              AUTH_B64=$(echo -n "${GH_USER}:${GH_PAT}" | base64 -w0)
+              local user="$2"
+              local token="$3"
+              local auth_b64
+              auth_b64=$(echo -n "${user}:${token}" | base64 -w0)
               mkdir -p ~/.docker
               if [ -f ~/.docker/config.json ]; then
-                # Preservar configuração existente, adicionar/atualizar ghcr.io
+                # Atualizar config existente preservando outros registries
                 python3 -c "
-            import json, sys
+            import json
             try:
                 with open('$HOME/.docker/config.json') as f:
                     cfg = json.load(f)
             except:
                 cfg = {}
             cfg.setdefault('auths', {})
-            cfg['auths']['ghcr.io'] = {'auth': '${AUTH_B64}'}
+            cfg['auths']['${registry}'] = {'auth': '${auth_b64}'}
             with open('$HOME/.docker/config.json', 'w') as f:
                 json.dump(cfg, f, indent=2)
-            print('OK')
-            " && GHCR_OK=true
+            "
               else
-                echo '{"auths":{"ghcr.io":{"auth":"'"${AUTH_B64}"'"}}}' > ~/.docker/config.json
-                GHCR_OK=true
+                echo '{"auths":{"'"${registry}"'":{"auth":"'"${auth_b64}"'"}}}' > ~/.docker/config.json
               fi
               chmod 600 ~/.docker/config.json
-              echo "   ✅ config.json escrito diretamente"
-            fi
+            }
 
-            if [ "$GHCR_OK" != "true" ]; then
-              echo "❌ ERRO: Falha no login GHCR após todas as tentativas"
-              echo "   DNS: $(getent hosts ghcr.io 2>/dev/null | head -1 || echo 'NÃO RESOLVE')"
-              echo "   Curl: $(curl -sS --connect-timeout 5 -o /dev/null -w '%{http_code} (%{time_total}s)' https://ghcr.io/v2/ 2>&1 || echo 'FALHOU')"
-              exit 1
-            fi
-            echo "✅ GHCR autenticado"
+            # ─── PASSO 1: Verificar credenciais existentes ────────────────
+            GHCR_OK=false
+            DH_OK=false
 
-            # ─── Docker Hub (conta Pro - rate limits altos) ─────────────────
-            if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
-              echo "🔐 [2/2] Login Docker Hub (conta Pro)..."
-              DH_OK=false
-              for attempt in 1 2 3 4 5; do
-                if echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin 2>&1; then
-                  DH_OK=true
-                  break
-                fi
-                WAIT=$((attempt * 10))
-                echo "   ⚠️ Tentativa $attempt/5 falhou. Aguardando ${WAIT}s..."
-                sleep $WAIT
-              done
-              if [ "$DH_OK" = "true" ]; then
-                echo "✅ Docker Hub autenticado (Pro - 5000 pulls/dia)"
-              else
-                echo "⚠️ Docker Hub login falhou - continuando com rate limits anônimos"
+            echo "🔍 [1/3] Verificando credenciais existentes em ~/.docker/config.json..."
+            if [ -f ~/.docker/config.json ]; then
+              if grep -q '"ghcr.io"' ~/.docker/config.json 2>/dev/null; then
+                echo "   ✅ GHCR: credenciais encontradas"
+                GHCR_OK=true
+              fi
+              if grep -q '"index.docker.io"' ~/.docker/config.json 2>/dev/null; then
+                echo "   ✅ Docker Hub: credenciais encontradas"
+                DH_OK=true
               fi
             else
-              echo "⚠️ [2/2] Docker Hub sem credenciais - rate limits anônimos (100 pulls/6h)"
+              echo "   📋 config.json não existe - será criado"
             fi
 
-            # ─── Validação final ────────────────────────────────────────────
-            if [ -f ~/.docker/config.json ]; then
-              AUTHS=$(grep -c '"auth"' ~/.docker/config.json 2>/dev/null || echo "0")
-              echo "✅ Login único concluído ($AUTHS registries autenticados)"
+            # ─── PASSO 2: Garantir GHCR autenticado ──────────────────────
+            echo ""
+            echo "🔐 [2/3] GHCR (ghcr.io)..."
+            if [ "$GHCR_OK" = "true" ]; then
+              # Credenciais existem - atualizar com token mais recente do workflow
+              echo "   🔄 Atualizando token GHCR com credenciais do workflow..."
+              write_docker_auth "ghcr.io" "$GH_USER" "$GH_PAT"
+              echo "   ✅ GHCR token atualizado"
+              GHCR_OK=true
             else
-              echo "❌ ~/.docker/config.json NÃO encontrado!"
+              # Credenciais não existem - escrever diretamente (sem curl, sem docker login)
+              echo "   📝 Escrevendo credenciais GHCR em config.json..."
+              write_docker_auth "ghcr.io" "$GH_USER" "$GH_PAT"
+              echo "   ✅ GHCR credenciais escritas"
+              GHCR_OK=true
+            fi
+
+            # ─── PASSO 3: Garantir Docker Hub autenticado ────────────────
+            echo ""
+            echo "🔐 [3/3] Docker Hub..."
+            if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
+              echo "   📝 Escrevendo credenciais Docker Hub em config.json..."
+              write_docker_auth "https://index.docker.io/v1/" "$DOCKERHUB_USERNAME" "$DOCKERHUB_TOKEN"
+              echo "   ✅ Docker Hub credenciais escritas"
+              DH_OK=true
+            else
+              echo "   ⚠️ Docker Hub sem credenciais - rate limits anônimos (100 pulls/6h)"
+            fi
+
+            # ─── VALIDAÇÃO: Verificar config.json final ──────────────────
+            echo ""
+            echo "🔍 Validação final..."
+            if [ ! -f ~/.docker/config.json ]; then
+              echo "❌ ERRO CRÍTICO: ~/.docker/config.json NÃO encontrado após escrita!"
               exit 1
             fi
+
+            AUTHS=$(grep -c '"auth"' ~/.docker/config.json 2>/dev/null || echo "0")
+            echo "   📋 config.json: $AUTHS registries autenticados"
+
+            echo "✅ Login único concluído - credenciais escritas em config.json"
+            echo "   GHCR: $([ "$GHCR_OK" = "true" ] && echo 'OK' || echo 'FALHOU')"
+            echo "   Docker Hub: $([ "$DH_OK" = "true" ] && echo 'OK' || echo 'Sem credenciais')"
         env:
           GH_USER: ${{ github.repository_owner }}
           GH_PAT: ${{ secrets.GH_PAT }}
@@ -3154,29 +3140,16 @@ jobs:
             echo ""
             
             # =================================================================
-            # Verificação de autenticação Docker (login feito no prepare job)
+            # Verificação de credenciais Docker (login feito no prepare job)
+            # Apenas verifica config.json - sem fallback login (Regra 2)
             # =================================================================
-            # Login GHCR + Docker Hub é feito UMA VEZ no job prepare.
-            # Aqui apenas verificamos que credenciais estão ativas.
-            # Se não estiverem, fazemos fallback com 1 tentativa.
-            # REF: CLAUDE.md Regra 2 (Não duplicar), Regra 6 (Enterprise-grade)
-            # =================================================================
-            echo "🔐 Verificando autenticação Docker (login feito no prepare)..."
-            if grep -q "ghcr.io" ~/.docker/config.json 2>/dev/null; then
-              echo "   ✅ GHCR autenticado"
+            echo "🔐 Verificando credenciais Docker (login feito no prepare)..."
+            if [ -f ~/.docker/config.json ] && grep -q '"auth"' ~/.docker/config.json 2>/dev/null; then
+              echo "   ✅ Credenciais Docker ativas"
             else
-              echo "   ⚠️ GHCR não encontrado - fallback login..."
-              echo "${{ secrets.GH_PAT }}" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin 2>&1 || {
-                echo "   ❌ ERRO: GHCR login falhou"; exit 1
-              }
-            fi
-            if grep -q "index.docker.io" ~/.docker/config.json 2>/dev/null; then
-              echo "   ✅ Docker Hub autenticado"
-            else
-              echo "   ⚠️ Docker Hub não encontrado - fallback login..."
-              echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin 2>&1 || {
-                echo "   ⚠️ Docker Hub fallback falhou - continuando com rate limits anônimos"
-              }
+              echo "   ❌ ERRO: ~/.docker/config.json não encontrado ou sem credenciais"
+              echo "   Verifique se o job 'prepare' executou corretamente"
+              exit 1
             fi
             echo ""
             
@@ -3190,6 +3163,23 @@ jobs:
             echo ""
             
             # Função pull inteligente com verificação de digest
+            # Variável recebida da Release: lista de imagens buildadas (não retagged)
+            BUILT_IMAGES="${{ github.event.inputs.built_images || '' }}"
+            
+            # =================================================================
+            # pull_if_needed() - Pull inteligente com detecção de retag
+            # =================================================================
+            # ARQUITETURA ENTERPRISE (10/02/2026):
+            # Release informa quais imagens foram BUILD vs RETAG via input
+            # built_images. Deploy usa essa info para:
+            #   CASO 1: Tag exata existe localmente → SKIP (zero rede)
+            #   CASO 2: Imagem Docker Hub (terceiros) → pull simples
+            #   CASO 3: Imagem GHCR com info Release → RETAG local ou pull
+            #   CASO 4: Sem info de Release → docker pull (backward compatible)
+            # ELIMINADO: docker manifest inspect (frágil com manifest lists,
+            #   timeout de 15s por imagem, grep quebrado para imagetools create)
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Cirúrgico)
+            # =================================================================
             pull_if_needed() {
               local image="$1"
               local repo="${image%:*}"
@@ -3201,48 +3191,78 @@ jobs:
                 return 0
               fi
 
-              # ─── CASO 2: Tag nova - verificar se é retag da Release ───
-              # Release faz retag (ex: v3.52.0→v3.52.1) sem rebuild.
-              # O Image ID (config digest) é idêntico. Se outra tag local
-              # do mesmo repo tem o mesmo Image ID → retag local (zero download).
-              local existing_tags
-              existing_tags=$(docker images "$repo" --format '{{.Tag}}' 2>/dev/null | head -10)
+              # ─── CASO 2: Imagem Docker Hub (terceiros) → pull simples ───
+              # BUILT_IMAGES só se aplica a imagens GHCR (nossas custom images)
+              # Docker Hub images (redis, qdrant, grafana, etc.) = pull direto
+              if ! echo "$repo" | grep -q "ghcr.io"; then
+                echo "   📥 PULL (imagem Docker Hub)"
+                for attempt in 1 2 3; do
+                  if docker pull "$image" 2>&1; then return 0; fi
+                  echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
+                  sleep $((attempt * 10))
+                done
+                return 1
+              fi
 
-              if [ -n "$existing_tags" ]; then
-                # Obter config digest remoto (= Image ID) via manifest
-                local remote_cfg=""
-                remote_cfg=$(timeout 15 docker manifest inspect "$image" 2>/dev/null \
-                  | grep -A4 '"config"' | grep '"digest"' | head -1 \
-                  | sed 's/.*"\(sha256:[a-f0-9]*\)".*/\1/') || remote_cfg=""
+              # ─── Extrair nome do serviço GHCR (ex: ghcr.io/.../alice-chat → chat) ───
+              local svc_name=""
+              svc_name=$(echo "$repo" | sed 's/.*alice-//')
 
-                # Fallback: verbose mode (para manifest lists / OCI index)
-                if [ -z "$remote_cfg" ]; then
-                  remote_cfg=$(timeout 15 docker manifest inspect -v "$image" 2>/dev/null \
-                    | grep -A4 '"config"' | grep '"digest"' | head -1 \
-                    | sed 's/.*"\(sha256:[a-f0-9]*\)".*/\1/') || remote_cfg=""
+              # ─── CASO 3: Release informou built_images → detecção precisa ───
+              # BUILT_IMAGES="" = deploy manual (sem info) → cai no CASO 4
+              # BUILT_IMAGES="__NONE__" = Release rodou, tudo retag → forçar retag local
+              # BUILT_IMAGES="auth,chat,..." = Release buildou essas → pull seletivo
+              if [ -n "${BUILT_IMAGES:-}" ] && [ "${BUILT_IMAGES}" != "" ]; then
+                # __NONE__ = Release confirmou que NADA foi buildado
+                if [ "${BUILT_IMAGES}" = "__NONE__" ]; then
+                  # Todas imagens foram retagged → forçar retag local
+                  local existing_tag
+                  existing_tag=$(docker images "$repo" --format '{{.Tag}}' 2>/dev/null | head -1)
+                  if [ -n "$existing_tag" ]; then
+                    echo "   🏷️ RETAG LOCAL ($existing_tag → $tag, Release fez retag de tudo)"
+                    docker tag "${repo}:${existing_tag}" "$image"
+                    return 0
+                  fi
+                  # Sem tag local → precisa pull
+                  echo "   📥 PULL (retag geral mas sem imagem local anterior)"
+                  docker pull "$image" 2>&1
+                  return $?
                 fi
-
-                if [ -n "$remote_cfg" ]; then
-                  for etag in $existing_tags; do
-                    local local_id
-                    local_id=$(docker image inspect "${repo}:${etag}" --format '{{.Id}}' 2>/dev/null) || continue
-                    if [ "$local_id" = "$remote_cfg" ]; then
-                      echo "   🏷️ RETAG LOCAL (${etag} → ${tag}, conteúdo idêntico)"
-                      docker tag "${repo}:${etag}" "$image"
-                      return 0
-                    fi
+                # Verificar se esta imagem específica foi buildada na Release
+                if echo ",$BUILT_IMAGES," | grep -q ",$svc_name,"; then
+                  # Foi buildada → pull real necessário
+                  echo "   📥 PULL (build na Release)"
+                  for attempt in 1 2 3; do
+                    if docker pull "$image" 2>&1; then return 0; fi
+                    echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
+                    sleep $((attempt * 10))
                   done
+                  return 1
+                else
+                  # NÃO foi buildada → foi retagged na Release → retag local
+                  # Procurar tag anterior do mesmo repo para retag local
+                  local existing_tag
+                  existing_tag=$(docker images "$repo" --format '{{.Tag}}' 2>/dev/null | head -1)
+                  if [ -n "$existing_tag" ]; then
+                    echo "   🏷️ RETAG LOCAL ($existing_tag → $tag, Release fez retag)"
+                    docker tag "${repo}:${existing_tag}" "$image"
+                    return 0
+                  fi
+                  # Sem tag local anterior → precisa pull mesmo sendo retag
+                  echo "   📥 PULL (retag mas sem imagem local anterior)"
+                  docker pull "$image" 2>&1
+                  return $?
                 fi
               fi
 
-              # ─── CASO 3: Pull necessário (imagem nova ou conteúdo atualizado) ───
-              echo "   📥 PULL (imagem nova ou conteúdo atualizado)"
-              for attempt in 1 2 3 4 5; do
+              # ─── CASO 4: Sem info de Release (deploy manual) → pull simples ───
+              # Docker pull com layer caching: se imagem é retag, apenas
+              # baixa manifest (~1KB) e reutiliza layers locais (~2-5s).
+              echo "   📥 PULL (deploy manual, sem info de build/retag)"
+              for attempt in 1 2 3; do
                 if docker pull "$image" 2>&1; then return 0; fi
-                WAIT=$((attempt * 15))
-                [ $WAIT -gt 60 ] && WAIT=60
-                echo "   ⚠️ Retry $attempt/5 (aguardando ${WAIT}s - rede Hetzner→GHCR intermitente)..."
-                sleep $WAIT
+                echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
+                sleep $((attempt * 10))
               done
               return 1
             }
@@ -4310,24 +4330,16 @@ jobs:
             echo ""
             
             # =================================================================
-            # Verificação de autenticação Docker (login feito no prepare job)
+            # Verificação de credenciais Docker (login feito no prepare job)
+            # Apenas verifica config.json - sem fallback login (Regra 2)
             # =================================================================
-            echo "🔐 Verificando autenticação Docker (login feito no prepare)..."
-            if grep -q "ghcr.io" ~/.docker/config.json 2>/dev/null; then
-              echo "   ✅ GHCR autenticado"
+            echo "🔐 Verificando credenciais Docker (login feito no prepare)..."
+            if [ -f ~/.docker/config.json ] && grep -q '"auth"' ~/.docker/config.json 2>/dev/null; then
+              echo "   ✅ Credenciais Docker ativas"
             else
-              echo "   ⚠️ GHCR não encontrado - fallback login..."
-              echo "${{ secrets.GH_PAT }}" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin 2>&1 || {
-                echo "   ❌ ERRO: GHCR login falhou"; exit 1
-              }
-            fi
-            if grep -q "index.docker.io" ~/.docker/config.json 2>/dev/null; then
-              echo "   ✅ Docker Hub autenticado"
-            else
-              echo "   ⚠️ Docker Hub não encontrado - fallback login..."
-              echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin 2>&1 || {
-                echo "   ⚠️ Docker Hub fallback falhou - continuando com rate limits anônimos"
-              }
+              echo "   ❌ ERRO: ~/.docker/config.json não encontrado ou sem credenciais"
+              echo "   Verifique se o job 'prepare' executou corretamente"
+              exit 1
             fi
             echo ""
             
@@ -4344,6 +4356,23 @@ jobs:
             #
             # REF: CLAUDE.md Regra 2 (Não duplicar), Regra 6 (Enterprise-grade)
             # =================================================================
+            # Variável recebida da Release: lista de imagens buildadas (não retagged)
+            BUILT_IMAGES="${{ github.event.inputs.built_images || '' }}"
+            
+            # =================================================================
+            # pull_if_needed() - Pull inteligente com detecção de retag
+            # =================================================================
+            # ARQUITETURA ENTERPRISE (10/02/2026):
+            # Release informa quais imagens foram BUILD vs RETAG via input
+            # built_images. Deploy usa essa info para:
+            #   CASO 1: Tag exata existe localmente → SKIP (zero rede)
+            #   CASO 2: Imagem Docker Hub (terceiros) → pull simples
+            #   CASO 3: Imagem GHCR com info Release → RETAG local ou pull
+            #   CASO 4: Sem info de Release → docker pull (backward compatible)
+            # ELIMINADO: docker manifest inspect (frágil com manifest lists,
+            #   timeout de 15s por imagem, grep quebrado para imagetools create)
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Cirúrgico)
+            # =================================================================
             pull_if_needed() {
               local image="$1"
               local repo="${image%:*}"
@@ -4355,48 +4384,78 @@ jobs:
                 return 0
               fi
 
-              # ─── CASO 2: Tag nova - verificar se é retag da Release ───
-              # Release faz retag (ex: v3.52.0→v3.52.1) sem rebuild.
-              # O Image ID (config digest) é idêntico. Se outra tag local
-              # do mesmo repo tem o mesmo Image ID → retag local (zero download).
-              local existing_tags
-              existing_tags=$(docker images "$repo" --format '{{.Tag}}' 2>/dev/null | head -10)
+              # ─── CASO 2: Imagem Docker Hub (terceiros) → pull simples ───
+              # BUILT_IMAGES só se aplica a imagens GHCR (nossas custom images)
+              # Docker Hub images (redis, qdrant, grafana, etc.) = pull direto
+              if ! echo "$repo" | grep -q "ghcr.io"; then
+                echo "   📥 PULL (imagem Docker Hub)"
+                for attempt in 1 2 3; do
+                  if docker pull "$image" 2>&1; then return 0; fi
+                  echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
+                  sleep $((attempt * 10))
+                done
+                return 1
+              fi
 
-              if [ -n "$existing_tags" ]; then
-                # Obter config digest remoto (= Image ID) via manifest
-                local remote_cfg=""
-                remote_cfg=$(timeout 15 docker manifest inspect "$image" 2>/dev/null \
-                  | grep -A4 '"config"' | grep '"digest"' | head -1 \
-                  | sed 's/.*"\(sha256:[a-f0-9]*\)".*/\1/') || remote_cfg=""
+              # ─── Extrair nome do serviço GHCR (ex: ghcr.io/.../alice-chat → chat) ───
+              local svc_name=""
+              svc_name=$(echo "$repo" | sed 's/.*alice-//')
 
-                # Fallback: verbose mode (para manifest lists / OCI index)
-                if [ -z "$remote_cfg" ]; then
-                  remote_cfg=$(timeout 15 docker manifest inspect -v "$image" 2>/dev/null \
-                    | grep -A4 '"config"' | grep '"digest"' | head -1 \
-                    | sed 's/.*"\(sha256:[a-f0-9]*\)".*/\1/') || remote_cfg=""
+              # ─── CASO 3: Release informou built_images → detecção precisa ───
+              # BUILT_IMAGES="" = deploy manual (sem info) → cai no CASO 4
+              # BUILT_IMAGES="__NONE__" = Release rodou, tudo retag → forçar retag local
+              # BUILT_IMAGES="auth,chat,..." = Release buildou essas → pull seletivo
+              if [ -n "${BUILT_IMAGES:-}" ] && [ "${BUILT_IMAGES}" != "" ]; then
+                # __NONE__ = Release confirmou que NADA foi buildado
+                if [ "${BUILT_IMAGES}" = "__NONE__" ]; then
+                  # Todas imagens foram retagged → forçar retag local
+                  local existing_tag
+                  existing_tag=$(docker images "$repo" --format '{{.Tag}}' 2>/dev/null | head -1)
+                  if [ -n "$existing_tag" ]; then
+                    echo "   🏷️ RETAG LOCAL ($existing_tag → $tag, Release fez retag de tudo)"
+                    docker tag "${repo}:${existing_tag}" "$image"
+                    return 0
+                  fi
+                  # Sem tag local → precisa pull
+                  echo "   📥 PULL (retag geral mas sem imagem local anterior)"
+                  docker pull "$image" 2>&1
+                  return $?
                 fi
-
-                if [ -n "$remote_cfg" ]; then
-                  for etag in $existing_tags; do
-                    local local_id
-                    local_id=$(docker image inspect "${repo}:${etag}" --format '{{.Id}}' 2>/dev/null) || continue
-                    if [ "$local_id" = "$remote_cfg" ]; then
-                      echo "   🏷️ RETAG LOCAL (${etag} → ${tag}, conteúdo idêntico)"
-                      docker tag "${repo}:${etag}" "$image"
-                      return 0
-                    fi
+                # Verificar se esta imagem específica foi buildada na Release
+                if echo ",$BUILT_IMAGES," | grep -q ",$svc_name,"; then
+                  # Foi buildada → pull real necessário
+                  echo "   📥 PULL (build na Release)"
+                  for attempt in 1 2 3; do
+                    if docker pull "$image" 2>&1; then return 0; fi
+                    echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
+                    sleep $((attempt * 10))
                   done
+                  return 1
+                else
+                  # NÃO foi buildada → foi retagged na Release → retag local
+                  # Procurar tag anterior do mesmo repo para retag local
+                  local existing_tag
+                  existing_tag=$(docker images "$repo" --format '{{.Tag}}' 2>/dev/null | head -1)
+                  if [ -n "$existing_tag" ]; then
+                    echo "   🏷️ RETAG LOCAL ($existing_tag → $tag, Release fez retag)"
+                    docker tag "${repo}:${existing_tag}" "$image"
+                    return 0
+                  fi
+                  # Sem tag local anterior → precisa pull mesmo sendo retag
+                  echo "   📥 PULL (retag mas sem imagem local anterior)"
+                  docker pull "$image" 2>&1
+                  return $?
                 fi
               fi
 
-              # ─── CASO 3: Pull necessário (imagem nova ou conteúdo atualizado) ───
-              echo "   📥 PULL (imagem nova ou conteúdo atualizado)"
-              for attempt in 1 2 3 4 5; do
+              # ─── CASO 4: Sem info de Release (deploy manual) → pull simples ───
+              # Docker pull com layer caching: se imagem é retag, apenas
+              # baixa manifest (~1KB) e reutiliza layers locais (~2-5s).
+              echo "   📥 PULL (deploy manual, sem info de build/retag)"
+              for attempt in 1 2 3; do
                 if docker pull "$image" 2>&1; then return 0; fi
-                WAIT=$((attempt * 15))
-                [ $WAIT -gt 60 ] && WAIT=60
-                echo "   ⚠️ Retry $attempt/5 (aguardando ${WAIT}s - rede Hetzner→GHCR intermitente)..."
-                sleep $WAIT
+                echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
+                sleep $((attempt * 10))
               done
               return 1
             }
@@ -5105,28 +5164,37 @@ jobs:
             echo "📝 Log persistido em: $LOG_FILE"
             
             # =================================================================
-            # Verificação de autenticação Docker (login feito no prepare job)
+            # Verificação de credenciais Docker (login feito no prepare job)
+            # Apenas verifica config.json - sem fallback login (Regra 2)
             # =================================================================
-            echo "🔐 Verificando autenticação Docker (login feito no prepare)..."
-            if grep -q "ghcr.io" ~/.docker/config.json 2>/dev/null; then
-              echo "   ✅ GHCR autenticado"
+            echo "🔐 Verificando credenciais Docker (login feito no prepare)..."
+            if [ -f ~/.docker/config.json ] && grep -q '"auth"' ~/.docker/config.json 2>/dev/null; then
+              echo "   ✅ Credenciais Docker ativas"
             else
-              echo "   ⚠️ GHCR não encontrado - fallback login..."
-              echo "${{ secrets.GH_PAT }}" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin 2>&1 || {
-                echo "   ❌ ERRO: GHCR login falhou"; exit 1
-              }
-            fi
-            if grep -q "index.docker.io" ~/.docker/config.json 2>/dev/null; then
-              echo "   ✅ Docker Hub autenticado"
-            else
-              echo "   ⚠️ Docker Hub não encontrado - fallback login..."
-              echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin 2>&1 || {
-                echo "   ⚠️ Docker Hub fallback falhou - continuando com rate limits anônimos"
-              }
+              echo "   ❌ ERRO: ~/.docker/config.json não encontrado ou sem credenciais"
+              echo "   Verifique se o job 'prepare' executou corretamente"
+              exit 1
             fi
             echo ""
             
             # Função pull inteligente com verificação de digest
+            # Variável recebida da Release: lista de imagens buildadas (não retagged)
+            BUILT_IMAGES="${{ github.event.inputs.built_images || '' }}"
+            
+            # =================================================================
+            # pull_if_needed() - Pull inteligente com detecção de retag
+            # =================================================================
+            # ARQUITETURA ENTERPRISE (10/02/2026):
+            # Release informa quais imagens foram BUILD vs RETAG via input
+            # built_images. Deploy usa essa info para:
+            #   CASO 1: Tag exata existe localmente → SKIP (zero rede)
+            #   CASO 2: Imagem Docker Hub (terceiros) → pull simples
+            #   CASO 3: Imagem GHCR com info Release → RETAG local ou pull
+            #   CASO 4: Sem info de Release → docker pull (backward compatible)
+            # ELIMINADO: docker manifest inspect (frágil com manifest lists,
+            #   timeout de 15s por imagem, grep quebrado para imagetools create)
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Cirúrgico)
+            # =================================================================
             pull_if_needed() {
               local image="$1"
               local repo="${image%:*}"
@@ -5138,48 +5206,78 @@ jobs:
                 return 0
               fi
 
-              # ─── CASO 2: Tag nova - verificar se é retag da Release ───
-              # Release faz retag (ex: v3.52.0→v3.52.1) sem rebuild.
-              # O Image ID (config digest) é idêntico. Se outra tag local
-              # do mesmo repo tem o mesmo Image ID → retag local (zero download).
-              local existing_tags
-              existing_tags=$(docker images "$repo" --format '{{.Tag}}' 2>/dev/null | head -10)
+              # ─── CASO 2: Imagem Docker Hub (terceiros) → pull simples ───
+              # BUILT_IMAGES só se aplica a imagens GHCR (nossas custom images)
+              # Docker Hub images (redis, qdrant, grafana, etc.) = pull direto
+              if ! echo "$repo" | grep -q "ghcr.io"; then
+                echo "   📥 PULL (imagem Docker Hub)"
+                for attempt in 1 2 3; do
+                  if docker pull "$image" 2>&1; then return 0; fi
+                  echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
+                  sleep $((attempt * 10))
+                done
+                return 1
+              fi
 
-              if [ -n "$existing_tags" ]; then
-                # Obter config digest remoto (= Image ID) via manifest
-                local remote_cfg=""
-                remote_cfg=$(timeout 15 docker manifest inspect "$image" 2>/dev/null \
-                  | grep -A4 '"config"' | grep '"digest"' | head -1 \
-                  | sed 's/.*"\(sha256:[a-f0-9]*\)".*/\1/') || remote_cfg=""
+              # ─── Extrair nome do serviço GHCR (ex: ghcr.io/.../alice-chat → chat) ───
+              local svc_name=""
+              svc_name=$(echo "$repo" | sed 's/.*alice-//')
 
-                # Fallback: verbose mode (para manifest lists / OCI index)
-                if [ -z "$remote_cfg" ]; then
-                  remote_cfg=$(timeout 15 docker manifest inspect -v "$image" 2>/dev/null \
-                    | grep -A4 '"config"' | grep '"digest"' | head -1 \
-                    | sed 's/.*"\(sha256:[a-f0-9]*\)".*/\1/') || remote_cfg=""
+              # ─── CASO 3: Release informou built_images → detecção precisa ───
+              # BUILT_IMAGES="" = deploy manual (sem info) → cai no CASO 4
+              # BUILT_IMAGES="__NONE__" = Release rodou, tudo retag → forçar retag local
+              # BUILT_IMAGES="auth,chat,..." = Release buildou essas → pull seletivo
+              if [ -n "${BUILT_IMAGES:-}" ] && [ "${BUILT_IMAGES}" != "" ]; then
+                # __NONE__ = Release confirmou que NADA foi buildado
+                if [ "${BUILT_IMAGES}" = "__NONE__" ]; then
+                  # Todas imagens foram retagged → forçar retag local
+                  local existing_tag
+                  existing_tag=$(docker images "$repo" --format '{{.Tag}}' 2>/dev/null | head -1)
+                  if [ -n "$existing_tag" ]; then
+                    echo "   🏷️ RETAG LOCAL ($existing_tag → $tag, Release fez retag de tudo)"
+                    docker tag "${repo}:${existing_tag}" "$image"
+                    return 0
+                  fi
+                  # Sem tag local → precisa pull
+                  echo "   📥 PULL (retag geral mas sem imagem local anterior)"
+                  docker pull "$image" 2>&1
+                  return $?
                 fi
-
-                if [ -n "$remote_cfg" ]; then
-                  for etag in $existing_tags; do
-                    local local_id
-                    local_id=$(docker image inspect "${repo}:${etag}" --format '{{.Id}}' 2>/dev/null) || continue
-                    if [ "$local_id" = "$remote_cfg" ]; then
-                      echo "   🏷️ RETAG LOCAL (${etag} → ${tag}, conteúdo idêntico)"
-                      docker tag "${repo}:${etag}" "$image"
-                      return 0
-                    fi
+                # Verificar se esta imagem específica foi buildada na Release
+                if echo ",$BUILT_IMAGES," | grep -q ",$svc_name,"; then
+                  # Foi buildada → pull real necessário
+                  echo "   📥 PULL (build na Release)"
+                  for attempt in 1 2 3; do
+                    if docker pull "$image" 2>&1; then return 0; fi
+                    echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
+                    sleep $((attempt * 10))
                   done
+                  return 1
+                else
+                  # NÃO foi buildada → foi retagged na Release → retag local
+                  # Procurar tag anterior do mesmo repo para retag local
+                  local existing_tag
+                  existing_tag=$(docker images "$repo" --format '{{.Tag}}' 2>/dev/null | head -1)
+                  if [ -n "$existing_tag" ]; then
+                    echo "   🏷️ RETAG LOCAL ($existing_tag → $tag, Release fez retag)"
+                    docker tag "${repo}:${existing_tag}" "$image"
+                    return 0
+                  fi
+                  # Sem tag local anterior → precisa pull mesmo sendo retag
+                  echo "   📥 PULL (retag mas sem imagem local anterior)"
+                  docker pull "$image" 2>&1
+                  return $?
                 fi
               fi
 
-              # ─── CASO 3: Pull necessário (imagem nova ou conteúdo atualizado) ───
-              echo "   📥 PULL (imagem nova ou conteúdo atualizado)"
-              for attempt in 1 2 3 4 5; do
+              # ─── CASO 4: Sem info de Release (deploy manual) → pull simples ───
+              # Docker pull com layer caching: se imagem é retag, apenas
+              # baixa manifest (~1KB) e reutiliza layers locais (~2-5s).
+              echo "   📥 PULL (deploy manual, sem info de build/retag)"
+              for attempt in 1 2 3; do
                 if docker pull "$image" 2>&1; then return 0; fi
-                WAIT=$((attempt * 15))
-                [ $WAIT -gt 60 ] && WAIT=60
-                echo "   ⚠️ Retry $attempt/5 (aguardando ${WAIT}s - rede Hetzner→GHCR intermitente)..."
-                sleep $WAIT
+                echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
+                sleep $((attempt * 10))
               done
               return 1
             }
@@ -5817,28 +5915,37 @@ jobs:
             echo "📝 Log persistido em: $LOG_FILE"
             
             # =================================================================
-            # Verificação de autenticação Docker (login feito no prepare job)
+            # Verificação de credenciais Docker (login feito no prepare job)
+            # Apenas verifica config.json - sem fallback login (Regra 2)
             # =================================================================
-            echo "🔐 Verificando autenticação Docker (login feito no prepare)..."
-            if grep -q "ghcr.io" ~/.docker/config.json 2>/dev/null; then
-              echo "   ✅ GHCR autenticado"
+            echo "🔐 Verificando credenciais Docker (login feito no prepare)..."
+            if [ -f ~/.docker/config.json ] && grep -q '"auth"' ~/.docker/config.json 2>/dev/null; then
+              echo "   ✅ Credenciais Docker ativas"
             else
-              echo "   ⚠️ GHCR não encontrado - fallback login..."
-              echo "${{ secrets.GH_PAT }}" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin 2>&1 || {
-                echo "   ❌ ERRO: GHCR login falhou"; exit 1
-              }
-            fi
-            if grep -q "index.docker.io" ~/.docker/config.json 2>/dev/null; then
-              echo "   ✅ Docker Hub autenticado"
-            else
-              echo "   ⚠️ Docker Hub não encontrado - fallback login..."
-              echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin 2>&1 || {
-                echo "   ⚠️ Docker Hub fallback falhou - continuando com rate limits anônimos"
-              }
+              echo "   ❌ ERRO: ~/.docker/config.json não encontrado ou sem credenciais"
+              echo "   Verifique se o job 'prepare' executou corretamente"
+              exit 1
             fi
             echo ""
             
             # Função pull inteligente com verificação de digest
+            # Variável recebida da Release: lista de imagens buildadas (não retagged)
+            BUILT_IMAGES="${{ github.event.inputs.built_images || '' }}"
+            
+            # =================================================================
+            # pull_if_needed() - Pull inteligente com detecção de retag
+            # =================================================================
+            # ARQUITETURA ENTERPRISE (10/02/2026):
+            # Release informa quais imagens foram BUILD vs RETAG via input
+            # built_images. Deploy usa essa info para:
+            #   CASO 1: Tag exata existe localmente → SKIP (zero rede)
+            #   CASO 2: Imagem Docker Hub (terceiros) → pull simples
+            #   CASO 3: Imagem GHCR com info Release → RETAG local ou pull
+            #   CASO 4: Sem info de Release → docker pull (backward compatible)
+            # ELIMINADO: docker manifest inspect (frágil com manifest lists,
+            #   timeout de 15s por imagem, grep quebrado para imagetools create)
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Cirúrgico)
+            # =================================================================
             pull_if_needed() {
               local image="$1"
               local repo="${image%:*}"
@@ -5850,48 +5957,78 @@ jobs:
                 return 0
               fi
 
-              # ─── CASO 2: Tag nova - verificar se é retag da Release ───
-              # Release faz retag (ex: v3.52.0→v3.52.1) sem rebuild.
-              # O Image ID (config digest) é idêntico. Se outra tag local
-              # do mesmo repo tem o mesmo Image ID → retag local (zero download).
-              local existing_tags
-              existing_tags=$(docker images "$repo" --format '{{.Tag}}' 2>/dev/null | head -10)
+              # ─── CASO 2: Imagem Docker Hub (terceiros) → pull simples ───
+              # BUILT_IMAGES só se aplica a imagens GHCR (nossas custom images)
+              # Docker Hub images (redis, qdrant, grafana, etc.) = pull direto
+              if ! echo "$repo" | grep -q "ghcr.io"; then
+                echo "   📥 PULL (imagem Docker Hub)"
+                for attempt in 1 2 3; do
+                  if docker pull "$image" 2>&1; then return 0; fi
+                  echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
+                  sleep $((attempt * 10))
+                done
+                return 1
+              fi
 
-              if [ -n "$existing_tags" ]; then
-                # Obter config digest remoto (= Image ID) via manifest
-                local remote_cfg=""
-                remote_cfg=$(timeout 15 docker manifest inspect "$image" 2>/dev/null \
-                  | grep -A4 '"config"' | grep '"digest"' | head -1 \
-                  | sed 's/.*"\(sha256:[a-f0-9]*\)".*/\1/') || remote_cfg=""
+              # ─── Extrair nome do serviço GHCR (ex: ghcr.io/.../alice-chat → chat) ───
+              local svc_name=""
+              svc_name=$(echo "$repo" | sed 's/.*alice-//')
 
-                # Fallback: verbose mode (para manifest lists / OCI index)
-                if [ -z "$remote_cfg" ]; then
-                  remote_cfg=$(timeout 15 docker manifest inspect -v "$image" 2>/dev/null \
-                    | grep -A4 '"config"' | grep '"digest"' | head -1 \
-                    | sed 's/.*"\(sha256:[a-f0-9]*\)".*/\1/') || remote_cfg=""
+              # ─── CASO 3: Release informou built_images → detecção precisa ───
+              # BUILT_IMAGES="" = deploy manual (sem info) → cai no CASO 4
+              # BUILT_IMAGES="__NONE__" = Release rodou, tudo retag → forçar retag local
+              # BUILT_IMAGES="auth,chat,..." = Release buildou essas → pull seletivo
+              if [ -n "${BUILT_IMAGES:-}" ] && [ "${BUILT_IMAGES}" != "" ]; then
+                # __NONE__ = Release confirmou que NADA foi buildado
+                if [ "${BUILT_IMAGES}" = "__NONE__" ]; then
+                  # Todas imagens foram retagged → forçar retag local
+                  local existing_tag
+                  existing_tag=$(docker images "$repo" --format '{{.Tag}}' 2>/dev/null | head -1)
+                  if [ -n "$existing_tag" ]; then
+                    echo "   🏷️ RETAG LOCAL ($existing_tag → $tag, Release fez retag de tudo)"
+                    docker tag "${repo}:${existing_tag}" "$image"
+                    return 0
+                  fi
+                  # Sem tag local → precisa pull
+                  echo "   📥 PULL (retag geral mas sem imagem local anterior)"
+                  docker pull "$image" 2>&1
+                  return $?
                 fi
-
-                if [ -n "$remote_cfg" ]; then
-                  for etag in $existing_tags; do
-                    local local_id
-                    local_id=$(docker image inspect "${repo}:${etag}" --format '{{.Id}}' 2>/dev/null) || continue
-                    if [ "$local_id" = "$remote_cfg" ]; then
-                      echo "   🏷️ RETAG LOCAL (${etag} → ${tag}, conteúdo idêntico)"
-                      docker tag "${repo}:${etag}" "$image"
-                      return 0
-                    fi
+                # Verificar se esta imagem específica foi buildada na Release
+                if echo ",$BUILT_IMAGES," | grep -q ",$svc_name,"; then
+                  # Foi buildada → pull real necessário
+                  echo "   📥 PULL (build na Release)"
+                  for attempt in 1 2 3; do
+                    if docker pull "$image" 2>&1; then return 0; fi
+                    echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
+                    sleep $((attempt * 10))
                   done
+                  return 1
+                else
+                  # NÃO foi buildada → foi retagged na Release → retag local
+                  # Procurar tag anterior do mesmo repo para retag local
+                  local existing_tag
+                  existing_tag=$(docker images "$repo" --format '{{.Tag}}' 2>/dev/null | head -1)
+                  if [ -n "$existing_tag" ]; then
+                    echo "   🏷️ RETAG LOCAL ($existing_tag → $tag, Release fez retag)"
+                    docker tag "${repo}:${existing_tag}" "$image"
+                    return 0
+                  fi
+                  # Sem tag local anterior → precisa pull mesmo sendo retag
+                  echo "   📥 PULL (retag mas sem imagem local anterior)"
+                  docker pull "$image" 2>&1
+                  return $?
                 fi
               fi
 
-              # ─── CASO 3: Pull necessário (imagem nova ou conteúdo atualizado) ───
-              echo "   📥 PULL (imagem nova ou conteúdo atualizado)"
-              for attempt in 1 2 3 4 5; do
+              # ─── CASO 4: Sem info de Release (deploy manual) → pull simples ───
+              # Docker pull com layer caching: se imagem é retag, apenas
+              # baixa manifest (~1KB) e reutiliza layers locais (~2-5s).
+              echo "   📥 PULL (deploy manual, sem info de build/retag)"
+              for attempt in 1 2 3; do
                 if docker pull "$image" 2>&1; then return 0; fi
-                WAIT=$((attempt * 15))
-                [ $WAIT -gt 60 ] && WAIT=60
-                echo "   ⚠️ Retry $attempt/5 (aguardando ${WAIT}s - rede Hetzner→GHCR intermitente)..."
-                sleep $WAIT
+                echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
+                sleep $((attempt * 10))
               done
               return 1
             }
@@ -6477,28 +6614,37 @@ jobs:
             echo "📝 Log persistido em: $LOG_FILE"
             
             # =================================================================
-            # Verificação de autenticação Docker (login feito no prepare job)
+            # Verificação de credenciais Docker (login feito no prepare job)
+            # Apenas verifica config.json - sem fallback login (Regra 2)
             # =================================================================
-            echo "🔐 Verificando autenticação Docker (login feito no prepare)..."
-            if grep -q "ghcr.io" ~/.docker/config.json 2>/dev/null; then
-              echo "   ✅ GHCR autenticado"
+            echo "🔐 Verificando credenciais Docker (login feito no prepare)..."
+            if [ -f ~/.docker/config.json ] && grep -q '"auth"' ~/.docker/config.json 2>/dev/null; then
+              echo "   ✅ Credenciais Docker ativas"
             else
-              echo "   ⚠️ GHCR não encontrado - fallback login..."
-              echo "${{ secrets.GH_PAT }}" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin 2>&1 || {
-                echo "   ❌ ERRO: GHCR login falhou"; exit 1
-              }
-            fi
-            if grep -q "index.docker.io" ~/.docker/config.json 2>/dev/null; then
-              echo "   ✅ Docker Hub autenticado"
-            else
-              echo "   ⚠️ Docker Hub não encontrado - fallback login..."
-              echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin 2>&1 || {
-                echo "   ⚠️ Docker Hub fallback falhou - continuando com rate limits anônimos"
-              }
+              echo "   ❌ ERRO: ~/.docker/config.json não encontrado ou sem credenciais"
+              echo "   Verifique se o job 'prepare' executou corretamente"
+              exit 1
             fi
             echo ""
             
             # Função pull inteligente com verificação de digest
+            # Variável recebida da Release: lista de imagens buildadas (não retagged)
+            BUILT_IMAGES="${{ github.event.inputs.built_images || '' }}"
+            
+            # =================================================================
+            # pull_if_needed() - Pull inteligente com detecção de retag
+            # =================================================================
+            # ARQUITETURA ENTERPRISE (10/02/2026):
+            # Release informa quais imagens foram BUILD vs RETAG via input
+            # built_images. Deploy usa essa info para:
+            #   CASO 1: Tag exata existe localmente → SKIP (zero rede)
+            #   CASO 2: Imagem Docker Hub (terceiros) → pull simples
+            #   CASO 3: Imagem GHCR com info Release → RETAG local ou pull
+            #   CASO 4: Sem info de Release → docker pull (backward compatible)
+            # ELIMINADO: docker manifest inspect (frágil com manifest lists,
+            #   timeout de 15s por imagem, grep quebrado para imagetools create)
+            # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Cirúrgico)
+            # =================================================================
             pull_if_needed() {
               local image="$1"
               local repo="${image%:*}"
@@ -6510,48 +6656,78 @@ jobs:
                 return 0
               fi
 
-              # ─── CASO 2: Tag nova - verificar se é retag da Release ───
-              # Release faz retag (ex: v3.52.0→v3.52.1) sem rebuild.
-              # O Image ID (config digest) é idêntico. Se outra tag local
-              # do mesmo repo tem o mesmo Image ID → retag local (zero download).
-              local existing_tags
-              existing_tags=$(docker images "$repo" --format '{{.Tag}}' 2>/dev/null | head -10)
+              # ─── CASO 2: Imagem Docker Hub (terceiros) → pull simples ───
+              # BUILT_IMAGES só se aplica a imagens GHCR (nossas custom images)
+              # Docker Hub images (redis, qdrant, grafana, etc.) = pull direto
+              if ! echo "$repo" | grep -q "ghcr.io"; then
+                echo "   📥 PULL (imagem Docker Hub)"
+                for attempt in 1 2 3; do
+                  if docker pull "$image" 2>&1; then return 0; fi
+                  echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
+                  sleep $((attempt * 10))
+                done
+                return 1
+              fi
 
-              if [ -n "$existing_tags" ]; then
-                # Obter config digest remoto (= Image ID) via manifest
-                local remote_cfg=""
-                remote_cfg=$(timeout 15 docker manifest inspect "$image" 2>/dev/null \
-                  | grep -A4 '"config"' | grep '"digest"' | head -1 \
-                  | sed 's/.*"\(sha256:[a-f0-9]*\)".*/\1/') || remote_cfg=""
+              # ─── Extrair nome do serviço GHCR (ex: ghcr.io/.../alice-chat → chat) ───
+              local svc_name=""
+              svc_name=$(echo "$repo" | sed 's/.*alice-//')
 
-                # Fallback: verbose mode (para manifest lists / OCI index)
-                if [ -z "$remote_cfg" ]; then
-                  remote_cfg=$(timeout 15 docker manifest inspect -v "$image" 2>/dev/null \
-                    | grep -A4 '"config"' | grep '"digest"' | head -1 \
-                    | sed 's/.*"\(sha256:[a-f0-9]*\)".*/\1/') || remote_cfg=""
+              # ─── CASO 3: Release informou built_images → detecção precisa ───
+              # BUILT_IMAGES="" = deploy manual (sem info) → cai no CASO 4
+              # BUILT_IMAGES="__NONE__" = Release rodou, tudo retag → forçar retag local
+              # BUILT_IMAGES="auth,chat,..." = Release buildou essas → pull seletivo
+              if [ -n "${BUILT_IMAGES:-}" ] && [ "${BUILT_IMAGES}" != "" ]; then
+                # __NONE__ = Release confirmou que NADA foi buildado
+                if [ "${BUILT_IMAGES}" = "__NONE__" ]; then
+                  # Todas imagens foram retagged → forçar retag local
+                  local existing_tag
+                  existing_tag=$(docker images "$repo" --format '{{.Tag}}' 2>/dev/null | head -1)
+                  if [ -n "$existing_tag" ]; then
+                    echo "   🏷️ RETAG LOCAL ($existing_tag → $tag, Release fez retag de tudo)"
+                    docker tag "${repo}:${existing_tag}" "$image"
+                    return 0
+                  fi
+                  # Sem tag local → precisa pull
+                  echo "   📥 PULL (retag geral mas sem imagem local anterior)"
+                  docker pull "$image" 2>&1
+                  return $?
                 fi
-
-                if [ -n "$remote_cfg" ]; then
-                  for etag in $existing_tags; do
-                    local local_id
-                    local_id=$(docker image inspect "${repo}:${etag}" --format '{{.Id}}' 2>/dev/null) || continue
-                    if [ "$local_id" = "$remote_cfg" ]; then
-                      echo "   🏷️ RETAG LOCAL (${etag} → ${tag}, conteúdo idêntico)"
-                      docker tag "${repo}:${etag}" "$image"
-                      return 0
-                    fi
+                # Verificar se esta imagem específica foi buildada na Release
+                if echo ",$BUILT_IMAGES," | grep -q ",$svc_name,"; then
+                  # Foi buildada → pull real necessário
+                  echo "   📥 PULL (build na Release)"
+                  for attempt in 1 2 3; do
+                    if docker pull "$image" 2>&1; then return 0; fi
+                    echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
+                    sleep $((attempt * 10))
                   done
+                  return 1
+                else
+                  # NÃO foi buildada → foi retagged na Release → retag local
+                  # Procurar tag anterior do mesmo repo para retag local
+                  local existing_tag
+                  existing_tag=$(docker images "$repo" --format '{{.Tag}}' 2>/dev/null | head -1)
+                  if [ -n "$existing_tag" ]; then
+                    echo "   🏷️ RETAG LOCAL ($existing_tag → $tag, Release fez retag)"
+                    docker tag "${repo}:${existing_tag}" "$image"
+                    return 0
+                  fi
+                  # Sem tag local anterior → precisa pull mesmo sendo retag
+                  echo "   📥 PULL (retag mas sem imagem local anterior)"
+                  docker pull "$image" 2>&1
+                  return $?
                 fi
               fi
 
-              # ─── CASO 3: Pull necessário (imagem nova ou conteúdo atualizado) ───
-              echo "   📥 PULL (imagem nova ou conteúdo atualizado)"
-              for attempt in 1 2 3 4 5; do
+              # ─── CASO 4: Sem info de Release (deploy manual) → pull simples ───
+              # Docker pull com layer caching: se imagem é retag, apenas
+              # baixa manifest (~1KB) e reutiliza layers locais (~2-5s).
+              echo "   📥 PULL (deploy manual, sem info de build/retag)"
+              for attempt in 1 2 3; do
                 if docker pull "$image" 2>&1; then return 0; fi
-                WAIT=$((attempt * 15))
-                [ $WAIT -gt 60 ] && WAIT=60
-                echo "   ⚠️ Retry $attempt/5 (aguardando ${WAIT}s - rede Hetzner→GHCR intermitente)..."
-                sleep $WAIT
+                echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
+                sleep $((attempt * 10))
               done
               return 1
             }

@@ -176,6 +176,8 @@ jobs:
     timeout-minutes: 90
     needs: create-release
     if: ${{ !inputs.prerelease }}
+    outputs:
+      built_images: ${{ steps.build-summary.outputs.built_images }}
 
     permissions:
       contents: read
@@ -234,10 +236,14 @@ jobs:
 
       # Build de todos os microsserviços (apps/)
       - name: Build Microservices
+        id: build-microservices
         run: |
           set -e
           VERSION="${{ needs.create-release.outputs.version }}"
           PREVIOUS_TAG="${{ needs.create-release.outputs.previous_tag }}"
+          
+          # Coletar imagens que foram realmente buildadas (não retagged)
+          BUILT_SERVICES=""
           
           echo "Building microservices for $VERSION"
           if [ -n "$PREVIOUS_TAG" ]; then
@@ -380,10 +386,12 @@ jobs:
                 --file "$DOCKERFILE" \
                 "$CONTEXT"
               echo "✅ $IMAGE (build)"
+              BUILT_SERVICES="${BUILT_SERVICES:+${BUILT_SERVICES},}$IMAGE"
             fi
           done
           
-          echo "✅ All 12 services built!"
+          echo "built_services=$BUILT_SERVICES" >> $GITHUB_OUTPUT
+          echo "✅ All microservices processed (built: ${BUILT_SERVICES:-none})"
 
       # ==========================================================================
       # SMOKE TEST: Validar imagem PostgreSQL + pgvector (CRÍTICO)
@@ -471,11 +479,15 @@ jobs:
 
       # Build de serviços GPU (pesados - ~5-10GB cada)
       - name: Build GPU Services
+        id: build-gpu
         run: |
           set -euo pipefail
           VERSION="${{ needs.create-release.outputs.version }}"
           PREVIOUS_TAG="${{ needs.create-release.outputs.previous_tag }}"
           export BUILDKIT_PROGRESS=plain
+          
+          # Coletar imagens GPU que foram realmente buildadas
+          BUILT_GPU=""
           
           echo "Building GPU services for $VERSION"
           if [ -n "$PREVIOUS_TAG" ]; then
@@ -576,10 +588,47 @@ jobs:
                 --file "${CONTEXT}/Dockerfile" \
                 "$CONTEXT"
               echo "✅ $IMAGE (build)"
+              BUILT_GPU="${BUILT_GPU:+${BUILT_GPU},}$IMAGE"
             fi
           done
           
-          echo "✅ All 16 images built (12 services + 4 GPU)"
+          echo "built_gpu=$BUILT_GPU" >> $GITHUB_OUTPUT
+          echo "✅ All GPU services processed (built: ${BUILT_GPU:-none})"
+
+      # Consolidar lista de imagens buildadas (microservices + GPU)
+      # Deploy usa essa lista para saber quais imagens precisam de pull real
+      - name: Consolidar build summary
+        id: build-summary
+        run: |
+          SERVICES="${{ steps.build-microservices.outputs.built_services }}"
+          GPU="${{ steps.build-gpu.outputs.built_gpu }}"
+          
+          # Concatenar listas (separadas por vírgula)
+          # Se NENHUMA imagem foi buildada, usar sentinela __NONE__
+          # para que Deploy saiba que Release rodou mas tudo foi retag
+          # (diferencia de BUILT_IMAGES="" que significa deploy manual)
+          if [ -n "$SERVICES" ] && [ -n "$GPU" ]; then
+            ALL="${SERVICES},${GPU}"
+          elif [ -n "$SERVICES" ]; then
+            ALL="$SERVICES"
+          elif [ -n "$GPU" ]; then
+            ALL="$GPU"
+          else
+            ALL="__NONE__"
+          fi
+          
+          echo "built_images=$ALL" >> $GITHUB_OUTPUT
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📋 BUILD SUMMARY"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          if [ -n "$ALL" ]; then
+            echo "   🔨 Imagens buildadas: $ALL"
+          else
+            echo "   🏷️ Todas as imagens foram retagged (zero builds)"
+          fi
+          echo "   📦 Deploy receberá esta lista para pull seletivo"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
   # ===========================================================================
   # Job 3: Publicar GitHub Release (APÓS build das imagens)
@@ -710,7 +759,7 @@ jobs:
     name: Trigger Deploy to Production
     runs-on: [self-hosted, linux, deploy]
     timeout-minutes: 1
-    needs: [create-release, publish-release]
+    needs: [create-release, build-images, publish-release]
     # Só dispara deploy para releases normais (não prereleases)
     if: needs.publish-release.result == 'success' && !inputs.prerelease
     
@@ -727,8 +776,10 @@ jobs:
           github-token: ${{ secrets.GH_PAT }}
           script: |
             const version = '${{ needs.create-release.outputs.version }}';
+            const builtImages = '${{ needs.build-images.outputs.built_images }}';
             console.log(`🚀 Disparando deploy para versão: ${version}`);
             console.log(`📦 Stack: all (todos os stacks)`);
+            console.log(`🔨 Imagens buildadas: ${builtImages || '(todas retagged)'}`);
             
             try {
               await github.rest.actions.createWorkflowDispatch({
@@ -741,7 +792,8 @@ jobs:
                   version: version,
                   rollback: 'false',
                   rollback_version: '',
-                  dry_run: 'false'
+                  dry_run: 'false',
+                  built_images: builtImages
                 }
               });
               
