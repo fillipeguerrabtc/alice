@@ -1887,9 +1887,11 @@ const TRADING_LLM_CITED_VALUES_SCHEMA = z.object({
 const TRADING_LLM_SIGNAL_SCHEMA = z.object({
   signalType: z.enum(['entry_long', 'entry_short', 'exit', 'adjust_sl', 'adjust_tp', 'hold', 'neutral']),
   operationType: TradingOperationTypeSchema,
-  expectedDurationMinutes: z.number().int().min(1).max(43200),
+  // CORREÇÃO: min(0) permite 0 para sinais neutros/hold (LLM retorna 0 quando não há duração estimada)
+  expectedDurationMinutes: z.number().int().min(0).max(43200),
   confidence: z.number().min(0).max(1),
-  tradeSummary: z.string().min(20),
+  // CORREÇÃO: min(1) ao invés de min(20) — sinais neutros podem ter resumo curto; fallback gera default
+  tradeSummary: z.string().min(1),
   motivators: z.array(z.string().min(2)).min(1),
   invalidationReasons: z.array(z.string().min(2)).min(1),
   reasoning: z.string().min(10),
@@ -1994,9 +1996,11 @@ const TRADING_LLM_SIGNAL_JSON_SCHEMA = {
 const TRADING_LLM_SIGNAL_PARTIAL_SCHEMA = z.object({
   signalType: z.enum(['entry_long', 'entry_short', 'exit', 'adjust_sl', 'adjust_tp', 'hold', 'neutral']).optional(),
   operationType: TradingOperationTypeSchema.optional(),
-  expectedDurationMinutes: z.number().int().min(1).max(43200).optional(),
+  // CORREÇÃO: min(0) permite 0 para sinais neutros/hold (LLM retorna 0 quando não há duração estimada)
+  expectedDurationMinutes: z.number().int().min(0).max(43200).optional(),
   confidence: z.number().min(0).max(1).optional(),
-  tradeSummary: z.string().min(10).optional(),
+  // CORREÇÃO: Aceita qualquer string (LLM pode retornar tradeSummary vazio para sinais neutros)
+  tradeSummary: z.string().optional(),
   motivators: z.array(z.string().min(2)).optional(),
   invalidationReasons: z.array(z.string().min(2)).optional(),
   reasoning: z.string().min(5).optional(),
@@ -10498,12 +10502,28 @@ function buildLlmSignalFromPartial(params: {
   const marketCondition = params.partial.marketCondition
     ?? (params.analysis.movingAverages?.trend ? `Tendência ${params.analysis.movingAverages.trend}` : undefined);
 
+  const resolvedSignalType = params.partial.signalType ?? resolveSignalTypeFromAnalysis(params.analysis);
+  const isNeutralOrHold = resolvedSignalType === 'neutral' || resolvedSignalType === 'hold';
+
+  // CORREÇÃO: expectedDurationMinutes pode ser 0 para sinais neutros/hold
+  // ?? não trata 0 como nullish (correto), mas precisamos garantir fallback para undefined
+  const rawDuration = params.partial.expectedDurationMinutes;
+  const resolvedDuration = rawDuration != null
+    ? rawDuration
+    : (isNeutralOrHold ? 0 : params.tradePlan.expectedDurationMinutes);
+
+  // CORREÇÃO: tradeSummary pode ser vazio/curto para sinais neutros — gerar default descritivo
+  const rawSummary = params.partial.tradeSummary;
+  const resolvedSummary = (rawSummary && rawSummary.trim().length > 0)
+    ? rawSummary
+    : (params.tradePlan.tradeSummary || `Sinal ${resolvedSignalType} — sem operação recomendada no momento`);
+
   const draft: TradingLlmSignal = {
-    signalType: params.partial.signalType ?? resolveSignalTypeFromAnalysis(params.analysis),
+    signalType: resolvedSignalType,
     operationType: params.partial.operationType ?? params.tradePlan.operationType,
-    expectedDurationMinutes: params.partial.expectedDurationMinutes ?? params.tradePlan.expectedDurationMinutes,
+    expectedDurationMinutes: resolvedDuration,
     confidence,
-    tradeSummary: params.partial.tradeSummary ?? params.tradePlan.tradeSummary,
+    tradeSummary: resolvedSummary,
     motivators,
     invalidationReasons,
     reasoning,

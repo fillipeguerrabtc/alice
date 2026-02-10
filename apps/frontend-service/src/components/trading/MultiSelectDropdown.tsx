@@ -85,11 +85,18 @@ export function MultiSelectDropdown({
     onChange(options.slice(0, max).map((option) => option.value));
   };
 
-  const canClear = !minSelected || minSelected <= 0;
+  // Quando minSelected é definido, "Limpar seleção" reseta para os primeiros N itens (mínimo obrigatório)
+  // Quando não definido, limpa completamente
+  const isAtMinimum = minSelected != null && minSelected > 0 && selectedValues.length <= minSelected;
 
   const handleClear = () => {
-    if (!canClear) return;
-    onChange([]);
+    if (minSelected != null && minSelected > 0) {
+      // Resetar para os primeiros N itens do mínimo obrigatório
+      const defaults = options.slice(0, minSelected).map((o) => o.value);
+      onChange(defaults);
+    } else {
+      onChange([]);
+    }
   };
 
   return (
@@ -121,7 +128,7 @@ export function MultiSelectDropdown({
           <DropdownMenuItem
             onClick={handleClear}
             onSelect={(event) => event.preventDefault()}
-            disabled={selectedValues.length === 0 || !canClear}
+            disabled={selectedValues.length === 0 || isAtMinimum}
           >
             {clearLabel}
           </DropdownMenuItem>

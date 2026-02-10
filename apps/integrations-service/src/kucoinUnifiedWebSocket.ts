@@ -828,10 +828,25 @@ export class KucoinUnifiedWSClient extends EventEmitter {
   // --------------------------------------------------------------------------
 
   private sendSubscribeRaw(topic: string, isResubscribe: boolean = false): void {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-    if (!isResubscribe && this.subscriptions.has(topic)) return;
-    if (!isResubscribe && this.subscriptions.size >= KUCOIN_WS_MAX_TOPICS) {
-      this.loggerInstance.warn({ topic, total: this.subscriptions.size }, 'Limite de tópicos WS atingido');
+    // CORREÇÃO CRÍTICA: Registrar tópico no Set ANTES de verificar readyState.
+    // Sem isso, subscriptions feitas antes do WS estar OPEN eram silenciosamente
+    // descartadas e NUNCA reenviadas em onOpen() (subscriptions.size === 0).
+    // Agora: tópico é registrado → onOpen() resubscreve todos os tópicos pendentes.
+    if (!isResubscribe) {
+      if (this.subscriptions.has(topic)) return;
+      if (this.subscriptions.size >= KUCOIN_WS_MAX_TOPICS) {
+        this.loggerInstance.warn({ topic, total: this.subscriptions.size }, 'Limite de tópicos WS atingido');
+        return;
+      }
+      this.subscriptions.add(topic);
+    }
+
+    // Se WS não está pronto, o tópico já foi registrado e será enviado em onOpen()
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.loggerInstance.info(
+        { topic, readyState: this.ws?.readyState ?? 'null' },
+        'Subscribe enfileirado — será enviado quando WebSocket abrir'
+      );
       return;
     }
 
@@ -843,10 +858,6 @@ export class KucoinUnifiedWSClient extends EventEmitter {
       privateChannel: isPrivateChannel,
       response: true,
     }));
-
-    if (!isResubscribe) {
-      this.subscriptions.add(topic);
-    }
     this.loggerInstance.debug({ topic }, 'Subscribe enviado');
   }
 
