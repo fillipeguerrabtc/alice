@@ -1106,7 +1106,18 @@ jobs:
           VERSION="${{ github.event.inputs.version }}"
           CADDY_IMAGE="${{ env.IMAGE_PREFIX }}-caddy:${VERSION}"
           
-          if ! docker pull "$CADDY_IMAGE" >/dev/null 2>&1; then
+          CADDY_PULLED=false
+          for attempt in 1 2 3 4 5; do
+            if docker pull "$CADDY_IMAGE" >/dev/null 2>&1; then
+              CADDY_PULLED=true
+              break
+            fi
+            WAIT=$((attempt * 15))
+            [ $WAIT -gt 60 ] && WAIT=60
+            echo "   ⚠️ Pull Caddy tentativa $attempt/5 falhou. Aguardando ${WAIT}s..."
+            sleep $WAIT
+          done
+          if [ "$CADDY_PULLED" != "true" ]; then
             echo ""
             echo "::error::❌ ERRO: Imagem Caddy não encontrada no GHCR (${CADDY_IMAGE})"
             echo "::error::A release deve construir a imagem antes do deploy."
@@ -1476,7 +1487,14 @@ jobs:
             GPU_TEST_IMAGE="nvidia/cuda:12.0.0-base-ubuntu22.04"
             if ! docker image inspect "$GPU_TEST_IMAGE" >/dev/null 2>&1; then
               echo "   🧪 Baixando imagem de teste GPU ($GPU_TEST_IMAGE)..."
-              if ! docker pull "$GPU_TEST_IMAGE" >/tmp/gpu-test-pull.log 2>&1; then
+              GPU_PULL_OK=false
+              for gpu_attempt in 1 2 3; do
+                if docker pull "$GPU_TEST_IMAGE" >/tmp/gpu-test-pull.log 2>&1; then
+                  GPU_PULL_OK=true; break
+                fi
+                sleep $((gpu_attempt * 10))
+              done
+              if [ "$GPU_PULL_OK" != "true" ]; then
                 echo "::error::❌ Falha ao baixar imagem de teste GPU ($GPU_TEST_IMAGE)"
                 echo "::error::Verifique conectividade com registry-1.docker.io"
                 tail -n 20 /tmp/gpu-test-pull.log || true
@@ -1541,6 +1559,15 @@ jobs:
       # Diagnósticos de rede desnecessários aqui - configuração persistente.
       # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Cirúrgico)
       # =================================================================
+      # =================================================================
+      # LOGIN ENTERPRISE RESILIENTE (10/02/2026)
+      # Rede Hetzner → GitHub (ghcr.io) tem conectividade INTERMITENTE
+      # (peering Hetzner/Fastly CDN). Login pode falhar com "context
+      # deadline exceeded" por 15-60s e depois funcionar normalmente.
+      # Solução: retry agressivo com backoff + fallback config.json.
+      # Secrets: GH_PAT (GHCR), DOCKERHUB_USERNAME/TOKEN (Docker Hub)
+      # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 7 (Cirúrgico)
+      # =================================================================
       - name: Autenticar registries no servidor (login único)
         uses: appleboy/ssh-action@v1.2.2
         with:
@@ -1548,42 +1575,100 @@ jobs:
           username: ${{ env.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           port: 22
-          command_timeout: 3m
-          envs: GHCR_USER,GHCR_TOKEN,DOCKERHUB_USER,DOCKERHUB_TOKEN
+          command_timeout: 10m
+          envs: GH_PAT,GH_USER,DOCKERHUB_USERNAME,DOCKERHUB_TOKEN
           script: |
             set -euo pipefail
             echo "🔐 LOGIN ÚNICO - Autenticando registries..."
+            echo "   (Rede Hetzner→GitHub pode ter quedas intermitentes de 15-60s)"
+            echo ""
+
+            # ─── Função: aguardar conectividade com retry ──────────────────
+            wait_for_registry() {
+              local registry="$1"
+              local max_attempts=10
+              local attempt=1
+              while [ $attempt -le $max_attempts ]; do
+                if curl -sS --connect-timeout 10 -o /dev/null -w '' "https://${registry}/v2/" 2>/dev/null; then
+                  return 0
+                fi
+                local wait=$((attempt * 10))
+                [ $wait -gt 60 ] && wait=60
+                echo "   ⏳ ${registry} inacessível (tentativa ${attempt}/${max_attempts}). Aguardando ${wait}s..."
+                sleep $wait
+                attempt=$((attempt + 1))
+              done
+              return 1
+            }
 
             # ─── GHCR (GitHub Container Registry) ───────────────────────────
             echo "🔐 [1/2] Login GHCR (ghcr.io)..."
             GHCR_OK=false
-            for attempt in 1 2 3; do
-              if echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>&1; then
+
+            # Passo 1: Aguardar conectividade com ghcr.io
+            if ! wait_for_registry "ghcr.io"; then
+              echo "   ⚠️ ghcr.io inacessível após 10 tentativas - tentando login direto..."
+            fi
+
+            # Passo 2: docker login com retry
+            for attempt in 1 2 3 4 5 6 7 8 9 10; do
+              if echo "$GH_PAT" | docker login ghcr.io -u "$GH_USER" --password-stdin 2>&1; then
                 GHCR_OK=true
                 break
               fi
-              WAIT=$((attempt * 5))
-              echo "   ⚠️ Tentativa $attempt/3 falhou. Aguardando ${WAIT}s..."
+              WAIT=$((attempt * 10))
+              [ $WAIT -gt 60 ] && WAIT=60
+              echo "   ⚠️ Tentativa $attempt/10 falhou. Aguardando ${WAIT}s..."
               sleep $WAIT
             done
+
+            # Passo 3: Fallback - escrever config.json diretamente
             if [ "$GHCR_OK" != "true" ]; then
-              echo "❌ ERRO: Falha no login GHCR após 3 tentativas"
+              echo "   🔄 docker login falhou - escrevendo config.json diretamente..."
+              AUTH_B64=$(echo -n "${GH_USER}:${GH_PAT}" | base64 -w0)
+              mkdir -p ~/.docker
+              if [ -f ~/.docker/config.json ]; then
+                # Preservar configuração existente, adicionar/atualizar ghcr.io
+                python3 -c "
+            import json, sys
+            try:
+                with open('$HOME/.docker/config.json') as f:
+                    cfg = json.load(f)
+            except:
+                cfg = {}
+            cfg.setdefault('auths', {})
+            cfg['auths']['ghcr.io'] = {'auth': '${AUTH_B64}'}
+            with open('$HOME/.docker/config.json', 'w') as f:
+                json.dump(cfg, f, indent=2)
+            print('OK')
+            " && GHCR_OK=true
+              else
+                echo '{"auths":{"ghcr.io":{"auth":"'"${AUTH_B64}"'"}}}' > ~/.docker/config.json
+                GHCR_OK=true
+              fi
+              chmod 600 ~/.docker/config.json
+              echo "   ✅ config.json escrito diretamente"
+            fi
+
+            if [ "$GHCR_OK" != "true" ]; then
+              echo "❌ ERRO: Falha no login GHCR após todas as tentativas"
               echo "   DNS: $(getent hosts ghcr.io 2>/dev/null | head -1 || echo 'NÃO RESOLVE')"
+              echo "   Curl: $(curl -sS --connect-timeout 5 -o /dev/null -w '%{http_code} (%{time_total}s)' https://ghcr.io/v2/ 2>&1 || echo 'FALHOU')"
               exit 1
             fi
             echo "✅ GHCR autenticado"
 
             # ─── Docker Hub (conta Pro - rate limits altos) ─────────────────
-            if [ -n "${DOCKERHUB_USER:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
+            if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
               echo "🔐 [2/2] Login Docker Hub (conta Pro)..."
               DH_OK=false
-              for attempt in 1 2 3; do
-                if echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USER" --password-stdin 2>&1; then
+              for attempt in 1 2 3 4 5; do
+                if echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin 2>&1; then
                   DH_OK=true
                   break
                 fi
-                WAIT=$((attempt * 5))
-                echo "   ⚠️ Tentativa $attempt/3 falhou. Aguardando ${WAIT}s..."
+                WAIT=$((attempt * 10))
+                echo "   ⚠️ Tentativa $attempt/5 falhou. Aguardando ${WAIT}s..."
                 sleep $WAIT
               done
               if [ "$DH_OK" = "true" ]; then
@@ -1604,9 +1689,9 @@ jobs:
               exit 1
             fi
         env:
-          GHCR_USER: ${{ github.repository_owner }}
-          GHCR_TOKEN: ${{ secrets.GH_PAT }}
-          DOCKERHUB_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+          GH_USER: ${{ github.repository_owner }}
+          GH_PAT: ${{ secrets.GH_PAT }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Preparar infraestrutura base (networks, volumes, permissões)
@@ -2061,7 +2146,14 @@ jobs:
             GPU_TEST_IMAGE="nvidia/cuda:12.0.0-base-ubuntu22.04"
             if ! docker image inspect "$GPU_TEST_IMAGE" >/dev/null 2>&1; then
               echo "   🧪 Baixando imagem de teste GPU ($GPU_TEST_IMAGE)..."
-              if ! docker pull "$GPU_TEST_IMAGE" >/tmp/gpu-test-pull.log 2>&1; then
+              GPU_PULL_OK=false
+              for gpu_attempt in 1 2 3; do
+                if docker pull "$GPU_TEST_IMAGE" >/tmp/gpu-test-pull.log 2>&1; then
+                  GPU_PULL_OK=true; break
+                fi
+                sleep $((gpu_attempt * 10))
+              done
+              if [ "$GPU_PULL_OK" != "true" ]; then
                 echo "❌ ERRO CRÍTICO: Falha ao baixar imagem de teste GPU ($GPU_TEST_IMAGE)"
                 echo "   Verifique conectividade com registry-1.docker.io"
                 tail -n 20 /tmp/gpu-test-pull.log || true
@@ -3145,10 +3237,12 @@ jobs:
 
               # ─── CASO 3: Pull necessário (imagem nova ou conteúdo atualizado) ───
               echo "   📥 PULL (imagem nova ou conteúdo atualizado)"
-              for attempt in 1 2 3; do
+              for attempt in 1 2 3 4 5; do
                 if docker pull "$image" 2>&1; then return 0; fi
-                echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
-                sleep $((attempt * 10))
+                WAIT=$((attempt * 15))
+                [ $WAIT -gt 60 ] && WAIT=60
+                echo "   ⚠️ Retry $attempt/5 (aguardando ${WAIT}s - rede Hetzner→GHCR intermitente)..."
+                sleep $WAIT
               done
               return 1
             }
@@ -4297,10 +4391,12 @@ jobs:
 
               # ─── CASO 3: Pull necessário (imagem nova ou conteúdo atualizado) ───
               echo "   📥 PULL (imagem nova ou conteúdo atualizado)"
-              for attempt in 1 2 3; do
+              for attempt in 1 2 3 4 5; do
                 if docker pull "$image" 2>&1; then return 0; fi
-                echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
-                sleep $((attempt * 10))
+                WAIT=$((attempt * 15))
+                [ $WAIT -gt 60 ] && WAIT=60
+                echo "   ⚠️ Retry $attempt/5 (aguardando ${WAIT}s - rede Hetzner→GHCR intermitente)..."
+                sleep $WAIT
               done
               return 1
             }
@@ -5078,10 +5174,12 @@ jobs:
 
               # ─── CASO 3: Pull necessário (imagem nova ou conteúdo atualizado) ───
               echo "   📥 PULL (imagem nova ou conteúdo atualizado)"
-              for attempt in 1 2 3; do
+              for attempt in 1 2 3 4 5; do
                 if docker pull "$image" 2>&1; then return 0; fi
-                echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
-                sleep $((attempt * 10))
+                WAIT=$((attempt * 15))
+                [ $WAIT -gt 60 ] && WAIT=60
+                echo "   ⚠️ Retry $attempt/5 (aguardando ${WAIT}s - rede Hetzner→GHCR intermitente)..."
+                sleep $WAIT
               done
               return 1
             }
@@ -5788,10 +5886,12 @@ jobs:
 
               # ─── CASO 3: Pull necessário (imagem nova ou conteúdo atualizado) ───
               echo "   📥 PULL (imagem nova ou conteúdo atualizado)"
-              for attempt in 1 2 3; do
+              for attempt in 1 2 3 4 5; do
                 if docker pull "$image" 2>&1; then return 0; fi
-                echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
-                sleep $((attempt * 10))
+                WAIT=$((attempt * 15))
+                [ $WAIT -gt 60 ] && WAIT=60
+                echo "   ⚠️ Retry $attempt/5 (aguardando ${WAIT}s - rede Hetzner→GHCR intermitente)..."
+                sleep $WAIT
               done
               return 1
             }
@@ -6446,10 +6546,12 @@ jobs:
 
               # ─── CASO 3: Pull necessário (imagem nova ou conteúdo atualizado) ───
               echo "   📥 PULL (imagem nova ou conteúdo atualizado)"
-              for attempt in 1 2 3; do
+              for attempt in 1 2 3 4 5; do
                 if docker pull "$image" 2>&1; then return 0; fi
-                echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
-                sleep $((attempt * 10))
+                WAIT=$((attempt * 15))
+                [ $WAIT -gt 60 ] && WAIT=60
+                echo "   ⚠️ Retry $attempt/5 (aguardando ${WAIT}s - rede Hetzner→GHCR intermitente)..."
+                sleep $WAIT
               done
               return 1
             }
