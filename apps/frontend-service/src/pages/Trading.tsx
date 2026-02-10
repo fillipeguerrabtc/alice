@@ -2301,6 +2301,45 @@ export default function Trading() {
     : (klinesData?.data && klinesData.data.length > 0 ? klinesData.data : lastKlines);
 
   // ============================================================================
+  // HOOKS QUE DEPENDEM DE DADOS DE MERCADO
+  // CORREÇÃO React error #310: hooks DEVEM ser chamados ANTES de qualquer
+  // early return condicional para manter ordem consistente entre renders.
+  // REF: CLAUDE.md Regra 7 (Mudanças cirúrgicas), React Rules of Hooks
+  // ============================================================================
+
+  const contractMultiplier = market?.contract?.multiplier ?? 0.001;
+  const wsTickerPrice = wsEnabled && wsTicker?.symbol?.toUpperCase() === normalizedSymbol
+    ? Number(wsTicker.price)
+    : NaN;
+  const fallbackPrice = isFuturesMarket
+    ? market?.contract?.lastTradePrice
+    : (market?.ticker?.price ? Number(market.ticker.price) : undefined);
+  const fallbackPriceValue = Number.isFinite(fallbackPrice ?? NaN) ? Number(fallbackPrice) : 0;
+  const currentPrice = Number.isFinite(wsTickerPrice) ? wsTickerPrice : fallbackPriceValue;
+
+  const handleOrderSizeChange = useCallback((sizeValue: string) => {
+    setOrderForm(prev => {
+      const sizeNum = parseFloat(sizeValue);
+      if (currentPrice > 0 && Number.isFinite(sizeNum) && sizeNum > 0 && isFuturesMarket) {
+        const usdtVal = sizeNum * currentPrice * contractMultiplier;
+        return { ...prev, size: sizeValue, usdtAmount: usdtVal.toFixed(2) };
+      }
+      return { ...prev, size: sizeValue, usdtAmount: '' };
+    });
+  }, [currentPrice, contractMultiplier, isFuturesMarket]);
+
+  const handleOrderUsdtChange = useCallback((usdtValue: string) => {
+    setOrderForm(prev => {
+      const usdtNum = parseFloat(usdtValue);
+      if (currentPrice > 0 && Number.isFinite(usdtNum) && usdtNum > 0 && isFuturesMarket) {
+        const qty = usdtNum / (currentPrice * contractMultiplier);
+        return { ...prev, usdtAmount: usdtValue, size: qty.toFixed(4) };
+      }
+      return { ...prev, usdtAmount: usdtValue, size: '' };
+    });
+  }, [currentPrice, contractMultiplier, isFuturesMarket]);
+
+  // ============================================================================
   // RENDER - Loading State
   // ============================================================================
 
@@ -2502,9 +2541,6 @@ export default function Trading() {
     setOrderHistorySelectedIds(new Set());
   };
   const riskConfig = riskConfigData?.data;
-  const wsTickerPrice = wsEnabled && wsTicker?.symbol?.toUpperCase() === normalizedSymbol
-    ? Number(wsTicker.price)
-    : NaN;
   const orderBookDepth = orderBookResponse?.depth ?? restOrderBookDepth ?? null;
   const controlHistory = controlHistoryData?.data || [];
   // `wsStatusData` já é o payload `{ success, data: KucoinWsStatus }`.
@@ -2526,37 +2562,8 @@ export default function Trading() {
   ].filter((e): e is ApiError => e instanceof ApiError);
   const criticalApiError = apiErrors[0] ?? null;
 
-  const fallbackPrice = isFuturesMarket
-    ? market?.contract?.lastTradePrice
-    : (market?.ticker?.price ? Number(market.ticker.price) : undefined);
-  const fallbackPriceValue = Number.isFinite(fallbackPrice ?? NaN) ? Number(fallbackPrice) : 0;
-  const currentPrice = Number.isFinite(wsTickerPrice) ? wsTickerPrice : fallbackPriceValue;
   const priceChange = market?.contract?.priceChg || 0;
   const priceChangePercent = market?.contract?.priceChgPct || 0;
-
-  // Conversão USDT ↔ Quantidade para formulário de ordem (padrão exchange)
-  const contractMultiplier = market?.contract?.multiplier ?? 0.001;
-  const handleOrderSizeChange = useCallback((sizeValue: string) => {
-    setOrderForm(prev => {
-      const sizeNum = parseFloat(sizeValue);
-      if (currentPrice > 0 && Number.isFinite(sizeNum) && sizeNum > 0 && isFuturesMarket) {
-        const usdtVal = sizeNum * currentPrice * contractMultiplier;
-        return { ...prev, size: sizeValue, usdtAmount: usdtVal.toFixed(2) };
-      }
-      return { ...prev, size: sizeValue, usdtAmount: '' };
-    });
-  }, [currentPrice, contractMultiplier, isFuturesMarket]);
-
-  const handleOrderUsdtChange = useCallback((usdtValue: string) => {
-    setOrderForm(prev => {
-      const usdtNum = parseFloat(usdtValue);
-      if (currentPrice > 0 && Number.isFinite(usdtNum) && usdtNum > 0 && isFuturesMarket) {
-        const qty = usdtNum / (currentPrice * contractMultiplier);
-        return { ...prev, usdtAmount: usdtValue, size: qty.toFixed(4) };
-      }
-      return { ...prev, usdtAmount: usdtValue, size: '' };
-    });
-  }, [currentPrice, contractMultiplier, isFuturesMarket]);
 
   // Preço efetivo para cálculos no resumo (limit usa preço da ordem, market usa preço atual)
   const orderEffectivePrice = orderForm.orderType === 'limit' && orderForm.price
