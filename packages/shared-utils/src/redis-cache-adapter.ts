@@ -58,17 +58,19 @@ export async function initializeRedisCache(): Promise<boolean> {
     const client = createClient({
       url: redisUrl,
       socket: {
-        connectTimeout: 5000,
+        connectTimeout: 10000,
         reconnectStrategy: (retries) => {
-          if (retries > 3) {
+          if (retries > 10) {
             if (isProductionEnv()) {
-              logger.fatal('CRÍTICO: Redis indisponível em produção - fail-fast (Regra 6)');
+              logger.fatal('CRÍTICO: Redis indisponível em produção após 10 tentativas - fail-fast (Regra 6)');
               throw new Error('Redis obrigatório em produção para cache distribuído');
             }
             logger.info('Redis: máximo de tentativas atingido (dev/test)');
             return new Error('Max retries reached');
           }
-          return Math.min(retries * 100, 2000);
+          const delayMs = Math.min(retries * 500, 10000);
+          logger.warn({ retries, delayMs }, 'Redis reconectando...');
+          return delayMs;
         },
       },
     });

@@ -108,13 +108,13 @@ class TradingBroadcastPublisher {
       this.client = createClient({
         url: REDIS_URL,
         socket: {
-          connectTimeout: 5000,
+          connectTimeout: 10000,
           reconnectStrategy: (retries) => {
-            if (retries > 5) {
-              logger.error('Máximo de tentativas de reconexão Redis atingido');
+            if (retries > 10) {
+              logger.error('Máximo de tentativas de reconexão Redis Publisher atingido');
               return new Error('Max retries reached');
             }
-            return Math.min(retries * 100, 3000);
+            return Math.min(retries * 500, 10000);
           },
         },
       });
@@ -332,12 +332,12 @@ class TradingBroadcastSubscriber {
       this.client = createClient({
         url: REDIS_URL,
         socket: {
-          connectTimeout: 5000,
+          connectTimeout: 10000,
           reconnectStrategy: (retries) => {
-            if (retries > 5) {
+            if (retries > 10) {
               return new Error('Max retries reached');
             }
-            return Math.min(retries * 100, 3000);
+            return Math.min(retries * 500, 10000);
           },
         },
       });

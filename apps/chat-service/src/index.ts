@@ -1056,8 +1056,16 @@ async function initializeTradingBroadcastSubscriber(): Promise<void> {
   tradingSubscriber = createClient({
     url: redisUrl,
     socket: {
-      connectTimeout: 5000,
-      reconnectStrategy: (retries) => Math.min(retries * 100, 3000),
+      connectTimeout: 10000,
+      reconnectStrategy: (retries) => {
+        if (retries > 10) {
+          if (process.env.NODE_ENV === 'production') {
+            throw new Error('Redis obrigatório em produção para broadcast de trading - max retries reached');
+          }
+          return new Error('Max retries reached');
+        }
+        return Math.min(retries * 500, 10000);
+      },
     },
   });
 

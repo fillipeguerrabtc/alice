@@ -61,18 +61,17 @@ async function getRedisClient(): Promise<RedisClientType | null> {
       const client = createClient({
         url: redisUrl,
         socket: {
-          connectTimeout: 5000,
+          connectTimeout: 10000,
           reconnectStrategy: (retries) => {
-            if (retries > 3) {
-              // REGRA 6: Em produção, fail-fast se Redis não disponível
+            if (retries > 10) {
               if (isProduction) {
-                logger.fatal('CRÍTICO: Redis indisponível em produção - fail-fast (Regra 6)');
+                logger.fatal('CRÍTICO: Redis indisponível em produção após 10 tentativas - fail-fast (Regra 6)');
                 throw new Error('Redis obrigatório em produção para rate limiting distribuído');
               }
               logger.warn('Redis: máximo de tentativas atingido (desenvolvimento)');
               return new Error('Max retries reached');
             }
-            return Math.min(retries * 100, 2000);
+            return Math.min(retries * 500, 10000);
           },
         },
       });

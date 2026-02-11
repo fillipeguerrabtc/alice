@@ -49,19 +49,26 @@ verify_docker_credentials() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════
-# pull_with_retry() - Pull com retry e backoff linear
+# pull_with_retry() - Pull com retry e backoff progressivo
 # ═══════════════════════════════════════════════════════════════════════
-# Retries: 3 tentativas com backoff 10/20/30s
+# Retries: 5 tentativas com backoff 15/30/60/90/120s para tolerar timeouts
+# intermitentes do GHCR (context deadline exceeded, Client.Timeout).
 # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 9 (Validação contínua)
+# REF: 11/02/2026 - Aumentado para 5 tentativas após falhas em produção
 # ═══════════════════════════════════════════════════════════════════════
 pull_with_retry() {
   local img="$1"
-  for attempt in 1 2 3; do
+  local delays="15 30 60 90 120"
+  local attempt=1
+  for delay in $delays; do
     if docker pull "$img" 2>&1; then
       return 0
     fi
-    echo "   ⚠️ Retry $attempt/3 (aguardando $((attempt * 10))s)..."
-    sleep $((attempt * 10))
+    if [ $attempt -lt 5 ]; then
+      echo "   ⚠️ Retry $attempt/5 (aguardando ${delay}s)..."
+      sleep "$delay"
+    fi
+    attempt=$((attempt + 1))
   done
   return 1
 }

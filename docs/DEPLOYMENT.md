@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 09 de Fevereiro de 2026  
-**Versão:** 11.15 - LoRA Adapters Volume + Demo Trading
+**Data:** 11 de Fevereiro de 2026  
+**Versão:** 11.16 - Resiliência Pull GHCR (5 tentativas) + Redis (10 tentativas reconexão)
 
 ## Visão geral
 
@@ -314,7 +314,7 @@ As funções de deploy são centralizadas em **`infra/scripts/deploy-functions.s
 
 Funções disponíveis:
 - **`verify_docker_credentials()`** — Valida presença de `~/.docker/config.json` com credenciais ativas
-- **`pull_with_retry()`** — Pull com 3 retries e backoff linear (10s, 20s, 30s) — usada por TODOS os paths
+- **`pull_with_retry()`** — Pull com 5 tentativas e backoff progressivo (15s, 30s, 60s, 90s, 120s) — usada por TODOS os paths; tolera timeouts intermitentes do GHCR (11/02/2026)
 - **`pull_if_needed()`** — Pull inteligente com detecção de retag via `BUILT_IMAGES` da Release
 
 De forma similar, o workflow `release.yml` centraliza funções de build/retag em **`scripts/release-functions.sh`**:
@@ -337,7 +337,7 @@ De forma similar, o workflow `release.yml` centraliza funções de build/retag e
 **Benefícios:**
 - **ELIMINADO** `docker manifest inspect` (frágil com manifest lists, timeout 15s/imagem)
 - **ELIMINADO** fallback `docker login` nos deploy jobs (login único no prepare)
-- **ELIMINADO** retry inconsistente (todos os paths usam `pull_with_retry()` com 3 tentativas)
+- **ELIMINADO** retry inconsistente (todos os paths usam `pull_with_retry()` com 5 tentativas e backoff progressivo)
 - **ELIMINADO** duplicação (~610 linhas) — funções centralizadas em script compartilhado
 - Release informa explicitamente quais imagens foram buildadas → detecção 100% precisa
 - Deploys subsequentes com retag: ~30s ao invés de ~10min
