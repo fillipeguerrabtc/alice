@@ -1942,10 +1942,19 @@ export const trainingSourceTypeEnum = pgEnum("training_source_type", [
   "chat",
   "trading_signal",
   "trading_order",
+  "trading_demo",
+  "trading_postmortem",
   "document",
+  "rag_document",
+  "upload",
   "external",
   "manual",
   "system",
+]);
+
+export const trainingScopeTypeEnum = pgEnum("training_scope_type", [
+  "namespace",
+  "agent",
 ]);
 
 export const trainingData = pgTable(
@@ -1954,11 +1963,23 @@ export const trainingData = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     tenantId: uuid("tenant_id").references(() => tenants.id),
     namespaceId: uuid("namespace_id").references(() => namespaces.id),
+    agentId: uuid("agent_id").references(() => agents.id),
     conversationId: uuid("conversation_id").references(() => conversations.id),
     source: varchar("source", { length: 50 }).notNull(),
     sourceType: trainingSourceTypeEnum("source_type").notNull().default("manual"),
     sourceId: varchar("source_id", { length: 255 }),
     sourceMetadata: jsonb("source_metadata").$type<GenericMetadata>().default({}),
+    inferredNamespaceId: uuid("inferred_namespace_id").references(() => namespaces.id),
+    inferredAgentId: uuid("inferred_agent_id").references(() => agents.id),
+    inferredDomain: varchar("inferred_domain", { length: 120 }),
+    inferenceConfidence: real("inference_confidence"),
+    inferenceTrace: jsonb("inference_trace").$type<GenericMetadata>().default({}),
+    scopeResolverVersion: varchar("scope_resolver_version", { length: 50 }),
+    profileVersion: integer("profile_version").default(1),
+    needsHumanReview: boolean("needs_human_review").default(false),
+    quarantineReason: text("quarantine_reason"),
+    scopeResolvedAt: timestamp("scope_resolved_at"),
+    quarantinedAt: timestamp("quarantined_at"),
     messages: jsonb("messages").$type<TrainingMessages>().notNull(),
     rating: integer("rating"),
     qualityScore: real("quality_score"),
@@ -1979,11 +2000,68 @@ export const trainingData = pgTable(
   (table) => ({
     idxTrainingTenant: index("idx_training_tenant").on(table.tenantId),
     idxTrainingNamespace: index("idx_training_namespace").on(table.namespaceId),
+    idxTrainingAgent: index("idx_training_agent").on(table.agentId),
     idxTrainingStatus: index("idx_training_status").on(table.status),
+    idxTrainingNeedsReview: index("idx_training_needs_review").on(table.needsHumanReview),
+    idxTrainingInferredNamespace: index("idx_training_inferred_namespace").on(table.inferredNamespaceId),
+    idxTrainingInferredAgent: index("idx_training_inferred_agent").on(table.inferredAgentId),
+    idxTrainingInferenceConfidence: index("idx_training_inference_confidence").on(table.inferenceConfidence),
     idxTrainingSemhash: index("idx_training_semhash").on(table.semhash),
     idxTrainingSource: index("idx_training_source").on(table.source),
     idxTrainingSourceType: index("idx_training_source_type").on(table.sourceType),
     idxTrainingSourceId: index("idx_training_source_id").on(table.sourceId),
+  })
+);
+
+export const trainingDatasetProfiles = pgTable(
+  "training_dataset_profiles",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
+    namespaceId: uuid("namespace_id").notNull().references(() => namespaces.id),
+    agentId: uuid("agent_id").references(() => agents.id),
+    domain: varchar("domain", { length: 120 }).notNull(),
+    weights: jsonb("weights").$type<GenericMetadata>().default({}),
+    keywords: jsonb("keywords").$type<string[]>().default([]),
+    exclusions: jsonb("exclusions").$type<string[]>().default([]),
+    samplingPolicy: jsonb("sampling_policy").$type<GenericMetadata>().default({}),
+    version: integer("version").notNull().default(1),
+    isActive: boolean("is_active").notNull().default(true),
+    createdBy: uuid("created_by").references(() => users.id),
+    criadoEm: timestamp("criado_em").defaultNow(),
+    atualizadoEm: timestamp("atualizado_em").defaultNow(),
+  },
+  (table) => ({
+    idxTrainingProfilesTenant: index("idx_training_profiles_tenant").on(table.tenantId),
+    idxTrainingProfilesNamespace: index("idx_training_profiles_namespace").on(table.namespaceId),
+    idxTrainingProfilesAgent: index("idx_training_profiles_agent").on(table.agentId),
+    idxTrainingProfilesDomain: index("idx_training_profiles_domain").on(table.domain),
+    idxTrainingProfilesActive: index("idx_training_profiles_active").on(table.isActive),
+    idxTrainingProfilesVersion: index("idx_training_profiles_version").on(table.version),
+  })
+);
+
+export const trainingScopeOverrides = pgTable(
+  "training_scope_overrides",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    trainingDataId: uuid("training_data_id").notNull().references(() => trainingData.id),
+    tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
+    oldNamespaceId: uuid("old_namespace_id").references(() => namespaces.id),
+    newNamespaceId: uuid("new_namespace_id").references(() => namespaces.id),
+    oldDomain: varchar("old_domain", { length: 120 }),
+    newDomain: varchar("new_domain", { length: 120 }),
+    oldAgentId: uuid("old_agent_id").references(() => agents.id),
+    newAgentId: uuid("new_agent_id").references(() => agents.id),
+    changedBy: uuid("changed_by").notNull().references(() => users.id),
+    reason: text("reason").notNull(),
+    source: varchar("source", { length: 50 }).default("manual_review"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    idxTrainingScopeOverridesTrainingData: index("idx_training_scope_overrides_training_data").on(table.trainingDataId),
+    idxTrainingScopeOverridesTenant: index("idx_training_scope_overrides_tenant").on(table.tenantId),
+    idxTrainingScopeOverridesCreated: index("idx_training_scope_overrides_created").on(table.createdAt),
   })
 );
 
@@ -3408,6 +3486,10 @@ export const tradingLoraJobs = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     tenantId: uuid("tenant_id").references(() => tenants.id),
+    scopeType: trainingScopeTypeEnum("scope_type").notNull().default("namespace"),
+    scopeNamespaceId: uuid("scope_namespace_id").references(() => namespaces.id),
+    scopeAgentId: uuid("scope_agent_id").references(() => agents.id),
+    profileVersion: integer("profile_version").notNull().default(1),
     
     // Identificação
     name: varchar("name", { length: 255 }).notNull(),
@@ -3447,6 +3529,7 @@ export const tradingLoraJobs = pgTable(
     // Apenas UM adapter pode estar ativo por vez (constraint gerenciada no código)
     // Ativação automática após aprovação do training job via activateLoraAdapter()
     isActiveAdapter: boolean("is_active_adapter").default(false),
+    isActiveByScope: boolean("is_active_by_scope").notNull().default(false),
     
     // Status de aprovação manual: adapter precisa ser aprovado antes de ser ativado
     approvedAt: timestamp("approved_at"),
@@ -3464,6 +3547,10 @@ export const tradingLoraJobs = pgTable(
   },
   (table) => ({
     idxLoraJobsTenant: index("idx_trading_lora_jobs_tenant").on(table.tenantId),
+    idxLoraJobsScopeType: index("idx_trading_lora_jobs_scope_type").on(table.scopeType),
+    idxLoraJobsScopeNamespace: index("idx_trading_lora_jobs_scope_namespace").on(table.scopeNamespaceId),
+    idxLoraJobsScopeAgent: index("idx_trading_lora_jobs_scope_agent").on(table.scopeAgentId),
+    idxLoraJobsActiveByScope: index("idx_trading_lora_jobs_active_by_scope").on(table.isActiveByScope),
     idxLoraJobsStatus: index("idx_trading_lora_jobs_status").on(table.status),
     idxLoraJobsCreated: index("idx_trading_lora_jobs_created").on(table.criadoEm),
   })
@@ -4817,6 +4904,10 @@ export type UsageMetric = typeof usageMetrics.$inferSelect;
 
 export type TrainingData = typeof trainingData.$inferSelect;
 export type InsertTrainingData = typeof trainingData.$inferInsert;
+export type TrainingDatasetProfile = typeof trainingDatasetProfiles.$inferSelect;
+export type InsertTrainingDatasetProfile = typeof trainingDatasetProfiles.$inferInsert;
+export type TrainingScopeOverride = typeof trainingScopeOverrides.$inferSelect;
+export type InsertTrainingScopeOverride = typeof trainingScopeOverrides.$inferInsert;
 
 export type FineTuningJob = typeof fineTuningJobs.$inferSelect;
 export type InsertFineTuningJob = typeof fineTuningJobs.$inferInsert;
@@ -4901,6 +4992,17 @@ export const insertTrainingDataSchema: z.ZodType<unknown> = createInsertSchema(t
   id: true,
   criadoEm: true,
   processadoEm: true,
+});
+
+export const insertTrainingDatasetProfileSchema: z.ZodType<unknown> = createInsertSchema(trainingDatasetProfiles).omit({
+  id: true,
+  criadoEm: true,
+  atualizadoEm: true,
+});
+
+export const insertTrainingScopeOverrideSchema: z.ZodType<unknown> = createInsertSchema(trainingScopeOverrides).omit({
+  id: true,
+  createdAt: true,
 });
 
 export const insertFineTuningJobSchema: z.ZodType<unknown> = createInsertSchema(fineTuningJobs).omit({

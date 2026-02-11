@@ -104,6 +104,31 @@ groups:
           description: "Mais de 5M tokens consumidos na última hora - verificar custos."
 
       # ========================================================================
+      # LORA RESOLVER (CHAT-SERVICE) - SEGREGAÇÃO POR ESCOPO
+      # ========================================================================
+      - alert: ChatLoraResolverHighErrorRate
+        expr: |
+          (sum(rate(alice_chat_lora_resolve_total{result="error"}[5m])) / (sum(rate(alice_chat_lora_resolve_total[5m])) + 0.001)) > 0.05
+          and sum(rate(alice_chat_lora_resolve_total[5m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          service: chat-service
+        annotations:
+          summary: "Alta taxa de erro no resolver LoRA do chat"
+          description: "Mais de 5% das resoluções de adapter no chat-service falharam nos últimos 10 minutos."
+
+      - alert: ChatLoraResolverCacheErrors
+        expr: increase(alice_chat_lora_cache_total{status="error"}[15m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          service: chat-service
+        annotations:
+          summary: "Erros no cache Redis do resolver LoRA (chat)"
+          description: "Foram detectados múltiplos erros de cache Redis no resolver LoRA do chat-service."
+
+      # ========================================================================
       # RAG SERVICE
       # ========================================================================
       - alert: RAGHighRetrievalTime

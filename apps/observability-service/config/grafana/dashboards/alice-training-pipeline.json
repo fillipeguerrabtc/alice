@@ -241,6 +241,54 @@
         { "expr": "histogram_quantile(0.5, sum(rate(alice_trading_dataset_quality_score_bucket[5m])) by (le))", "legendFormat": "P50", "refId": "A" },
         { "expr": "histogram_quantile(0.95, sum(rate(alice_trading_dataset_quality_score_bucket[5m])) by (le))", "legendFormat": "P95", "refId": "B" }
       ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 37 },
+      "id": 40,
+      "title": "Governança de Escopo",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "axisBorderShow": false, "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 15, "gradientMode": "opacity", "hideFrom": { "legend": false, "tooltip": false, "viz": false }, "lineInterpolation": "smooth", "lineWidth": 2, "pointSize": 5, "scaleDistribution": { "type": "linear" }, "showPoints": "never", "spanNulls": false, "stacking": { "group": "A", "mode": "none" }, "thresholdsStyle": { "mode": "line" } },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 38 },
+      "id": 41,
+      "options": { "legend": { "calcs": ["lastNotNull", "sum"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "title": "Quarentena por fonte/motivo (1h)",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "sum(increase(alice_training_scope_quarantine_total[1h])) by (source_type, reason)", "legendFormat": "{{ source_type }} / {{ reason }}", "refId": "A" }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "axisBorderShow": false, "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 15, "gradientMode": "opacity", "hideFrom": { "legend": false, "tooltip": false, "viz": false }, "lineInterpolation": "smooth", "lineWidth": 2, "pointSize": 5, "scaleDistribution": { "type": "linear" }, "showPoints": "never", "spanNulls": false, "stacking": { "group": "A", "mode": "none" }, "thresholdsStyle": { "mode": "line" } },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 38 },
+      "id": 42,
+      "options": { "legend": { "calcs": ["lastNotNull", "sum"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "title": "Overrides e resoluções manuais (1h)",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "sum(increase(alice_training_scope_override_total[1h])) by (source)", "legendFormat": "override / {{ source }}", "refId": "A" },
+        { "expr": "sum(increase(alice_training_scope_resolved_total[1h])) by (source)", "legendFormat": "resolved / {{ source }}", "refId": "B" }
+      ]
     }
   ],
   "schemaVersion": 39,
@@ -251,5 +299,5 @@
   "timezone": "browser",
   "title": "Training - Pipeline",
   "uid": "alice-training-pipeline",
-  "version": 1
+  "version": 2
 }

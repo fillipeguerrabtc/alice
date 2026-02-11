@@ -1189,13 +1189,24 @@ export function SignalApprovalPanel({
     onMutate: ({ signalId }) => {
       setApprovingSignalId(signalId);
     },
-    onSuccess: () => {
+    onSuccess: (result: {
+      data?: {
+        approvalType?: string;
+        message?: string;
+        dataset?: { id?: string; status?: string; created?: boolean };
+      };
+    }) => {
+      const isTrainingOnly = result?.data?.approvalType === 'training_only';
       toast({
-        title: 'Sinal Aprovado',
-        description: 'Ordem criada para revisão e aprovação final.',
+        title: isTrainingOnly ? 'Sinal aprovado para treinamento' : 'Sinal aprovado',
+        description: result?.data?.message
+          ?? (isTrainingOnly
+            ? 'Dataset enviado para revisão na página Training.'
+            : 'Ordem criada para revisão e aprovação final.'),
       });
       queryClient.invalidateQueries({ queryKey: ['trading-signals-pending'] });
       queryClient.invalidateQueries({ queryKey: ['trading-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/datasets'] });
     },
     onError: (error: Error) => {
       toast({

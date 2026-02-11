@@ -63,6 +63,8 @@ import { trainingServicePaths, trainingServiceSchemas } from './openapi-specs.js
 import { eq, and, or, desc, sql, isNull, not, inArray } from '@alice/database';
 import { z } from 'zod';
 import { processTradingLoraJob, activateLoraAdapter, getActiveAdapter, deactivateLoraAdapter } from './lora-job-manager.js';
+import { resolveScope } from './scope-resolver.js';
+import { selectExamplesByProfile } from './dataset-selection-engine.js';
 // Fine-tuning é executado localmente via GPU Manager Service (Regra 6 - sem stubs/migração)
 
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
@@ -101,6 +103,14 @@ function parseEnvInt(envValue: string | undefined, defaultValue: number, varName
   }
   
   return parsed;
+}
+
+function readUuidFromUnknown(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(trimmed)
+    ? trimmed
+    : null;
 }
 
 const PORT = parseEnvInt(process.env.PORT, 3004, 'PORT');
@@ -212,6 +222,24 @@ const trainingPipelineMetrics = {
     name: 'alice_training_scheduler_runs_total',
     help: 'Total de execuções do scheduler de auto-learning',
     labelNames: ['result'] as const,
+    registers: [metrics.registry],
+  }),
+  scopeQuarantineTotal: new PromCounter({
+    name: 'alice_training_scope_quarantine_total',
+    help: 'Total de itens em quarentena por escopo',
+    labelNames: ['source_type', 'reason'] as const,
+    registers: [metrics.registry],
+  }),
+  scopeOverrideTotal: new PromCounter({
+    name: 'alice_training_scope_override_total',
+    help: 'Total de overrides manuais de escopo durante aprovação',
+    labelNames: ['source'] as const,
+    registers: [metrics.registry],
+  }),
+  scopeResolvedTotal: new PromCounter({
+    name: 'alice_training_scope_resolved_total',
+    help: 'Total de itens de quarentena resolvidos manualmente',
+    labelNames: ['source'] as const,
     registers: [metrics.registry],
   }),
 };
@@ -517,7 +545,11 @@ const trainingSourceTypeSchema = z.enum([
   'chat',
   'trading_signal',
   'trading_order',
+  'trading_demo',
+  'trading_postmortem',
   'document',
+  'rag_document',
+  'upload',
   'external',
   'manual',
   'system',
@@ -576,7 +608,9 @@ const TRAINING_SCHEDULER_POLL_MS = parseEnvInt(
 
 const collectTrainingDataSchema = z.object({
   tenantId: z.string().uuid('Tenant ID deve ser UUID válido'),
-  namespaceId: z.string().uuid('Namespace ID deve ser UUID válido'),
+  namespaceId: z.string().uuid('Namespace ID deve ser UUID válido').optional(),
+  agentId: z.string().uuid('Agent ID deve ser UUID válido').optional(),
+  domain: z.string().min(1).max(120).optional(),
   conversationId: z.string().uuid('Conversation ID deve ser UUID válido').optional(),
   source: z.string().min(1, 'Fonte é obrigatória'),
   sourceType: trainingSourceTypeSchema.optional(),
@@ -594,6 +628,30 @@ app.post('/api/training/data', requirePermission('training:training_data:write')
     const createdBy = authContext?.userId ?? undefined;
 
     const messagesText = body.messages.map(m => m.content).join('\n');
+    const scope = await resolveScope({
+      tenantId: resolvedTenantId,
+      namespaceId: body.namespaceId ?? null,
+      agentId: body.agentId ?? null,
+      domain: body.domain ?? null,
+      sourceType: body.sourceType ?? null,
+      sourceId: body.sourceId ?? null,
+      sourceMetadata: body.sourceMetadata ?? {},
+      conversationId: body.conversationId ?? null,
+      messagesText,
+    });
+
+    const effectiveNamespaceId = body.namespaceId ?? scope.namespaceId ?? null;
+    const effectiveAgentId = body.agentId ?? scope.agentId ?? null;
+    const inferredStatusNotes: string[] = [];
+    if (scope.needsHumanReview) {
+      inferredStatusNotes.push(
+        `Escopo em quarentena automática: confidence=${scope.confidence.toFixed(2)}`
+      );
+      trainingPipelineMetrics.scopeQuarantineTotal.inc({
+        source_type: body.sourceType ?? 'unknown',
+        reason: 'low_confidence_or_missing_namespace',
+      });
+    }
     const semhash = computeSemHash(messagesText);
     const embedding = await generateEmbedding(messagesText);
     const qualityScore = computeQualityScore(body.messages);
@@ -636,12 +694,24 @@ app.post('/api/training/data', requirePermission('training:training_data:write')
 
     const [trainingData] = await db.insert(schema.trainingData).values({
       tenantId: resolvedTenantId,
-      namespaceId: body.namespaceId,
+      namespaceId: effectiveNamespaceId,
+      agentId: effectiveAgentId,
       conversationId: body.conversationId,
       source: body.source,
       sourceType: body.sourceType ?? 'manual',
       sourceId: body.sourceId ?? null,
       sourceMetadata: body.sourceMetadata ?? {},
+      inferredNamespaceId: scope.namespaceId,
+      inferredAgentId: scope.agentId,
+      inferredDomain: scope.domain,
+      inferenceConfidence: scope.confidence,
+      inferenceTrace: scope.trace,
+      scopeResolverVersion: 'v1',
+      profileVersion: 1,
+      needsHumanReview: scope.needsHumanReview,
+      quarantineReason: scope.needsHumanReview ? 'low_confidence_or_missing_namespace' : null,
+      scopeResolvedAt: new Date(),
+      quarantinedAt: scope.needsHumanReview ? new Date() : null,
       messages: body.messages,
       rating: body.rating,
       qualityScore,
@@ -652,7 +722,7 @@ app.post('/api/training/data', requirePermission('training:training_data:write')
       duplicateOfId,
       similarityScore: highestSimilarity > 0 ? highestSimilarity : null,
       status,
-      reviewNotes,
+      reviewNotes: [reviewNotes, ...inferredStatusNotes].filter(Boolean).join(' | ') || null,
     }).returning();
 
     const sourceTypeMetric = body.sourceType ?? 'manual';
@@ -666,10 +736,19 @@ app.post('/api/training/data', requirePermission('training:training_data:write')
       trainingPipelineMetrics.dataRejectedTotal.labels('quality', sourceTypeMetric).inc();
     }
 
-    logger.info({ 
+    logger.info({
       trainingDataId: trainingData.id, 
       isDuplicate, 
-      similarity: highestSimilarity 
+      similarity: highestSimilarity,
+      scope: {
+        namespaceId: effectiveNamespaceId,
+        agentId: effectiveAgentId,
+        inferredNamespaceId: scope.namespaceId,
+        inferredAgentId: scope.agentId,
+        inferredDomain: scope.domain,
+        confidence: scope.confidence,
+        needsHumanReview: scope.needsHumanReview,
+      },
     }, 'Dados de treinamento coletados');
 
     res.json({ 
@@ -690,12 +769,15 @@ app.get('/api/training/data', requirePermission('training:training_data:read'), 
   if (!queryResult.success) {
     return res.status(400).json({ error: 'Parâmetros inválidos', details: queryResult.error.format() });
   }
-  const { status, namespaceId, sourceType } = queryResult.data;
+  const { status, namespaceId, agentId, inferredDomain, needsHumanReview, sourceType } = queryResult.data;
 
   try {
     const conditions = [];
     if (status) conditions.push(eq(schema.trainingData.status, status as 'pending' | 'approved' | 'rejected' | 'used'));
     if (namespaceId) conditions.push(eq(schema.trainingData.namespaceId, namespaceId));
+    if (agentId) conditions.push(eq(schema.trainingData.agentId, agentId));
+    if (inferredDomain) conditions.push(eq(schema.trainingData.inferredDomain, inferredDomain));
+    if (needsHumanReview) conditions.push(eq(schema.trainingData.needsHumanReview, needsHumanReview === 'true'));
     if (sourceType) conditions.push(eq(schema.trainingData.sourceType, sourceType));
 
     const trainingData = await db.query.trainingData.findMany({
@@ -720,6 +802,12 @@ const uuidParamSchema = z.object({
 const statusUpdateSchema = z.object({
   status: z.enum(['approved', 'rejected']),
   reviewNotes: z.string().max(2000).optional(),
+  overrideScope: z.object({
+    namespaceId: z.string().uuid().optional().nullable(),
+    agentId: z.string().uuid().optional().nullable(),
+    domain: z.string().min(1).max(120).optional().nullable(),
+    reason: z.string().min(10).max(2000),
+  }).optional(),
 });
 
 app.patch('/api/training/data/:id/status', requirePermission('training:training_data:manage'), async (req: Request, res: Response) => {
@@ -735,11 +823,102 @@ app.patch('/api/training/data/:id/status', requirePermission('training:training_
   if (!bodyResult.success) {
     return res.status(400).json({ error: 'Status inválido', details: bodyResult.error.format() });
   }
-  const { status, reviewNotes } = bodyResult.data;
+  const { status, reviewNotes, overrideScope } = bodyResult.data;
   const authContext = extractAuthContext(req);
   const reviewedBy = authContext?.userId ?? undefined;
 
   try {
+    const existing = await db.query.trainingData.findFirst({
+      where: eq(schema.trainingData.id, id),
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Registro de treinamento não encontrado' });
+    }
+
+    if (!existing.namespaceId && status === 'approved' && !overrideScope?.namespaceId) {
+      return res.status(400).json({
+        error: 'Não é possível aprovar sem namespace definido. Resolva o escopo primeiro.',
+      });
+    }
+
+    if (existing.needsHumanReview && status === 'approved' && !overrideScope) {
+      return res.status(400).json({
+        error: 'Item em quarentena de escopo. Resolva o escopo antes de aprovar.',
+      });
+    }
+
+    let nextNamespaceId = existing.namespaceId;
+    let nextAgentId = existing.agentId;
+    let nextDomain = existing.inferredDomain;
+    const overrideApplied =
+      Boolean(overrideScope) &&
+      (
+        (overrideScope?.namespaceId ?? existing.namespaceId) !== existing.namespaceId ||
+        (overrideScope?.agentId ?? existing.agentId) !== existing.agentId ||
+        (overrideScope?.domain ?? existing.inferredDomain) !== existing.inferredDomain
+      );
+
+    if (overrideScope) {
+      if (!overrideScope.reason?.trim()) {
+        return res.status(400).json({ error: 'Motivo é obrigatório para override de escopo' });
+      }
+
+      if (overrideScope.namespaceId) {
+        const namespace = await db.query.namespaces.findFirst({
+          where: eq(schema.namespaces.id, overrideScope.namespaceId),
+          columns: { id: true, tenantId: true },
+        });
+        if (!namespace || namespace.tenantId !== existing.tenantId) {
+          return res.status(403).json({ error: 'Namespace de override inválido para o tenant do item' });
+        }
+        nextNamespaceId = namespace.id;
+      }
+
+      if (overrideScope.agentId) {
+        const agent = await db.query.agents.findFirst({
+          where: eq(schema.agents.id, overrideScope.agentId),
+          columns: { id: true, tenantId: true, namespaceId: true },
+        });
+        if (!agent || agent.tenantId !== existing.tenantId) {
+          return res.status(403).json({ error: 'Agente de override inválido para o tenant do item' });
+        }
+        if (nextNamespaceId && agent.namespaceId && agent.namespaceId !== nextNamespaceId) {
+          return res.status(403).json({ error: 'Agente selecionado não pertence ao namespace alvo' });
+        }
+        nextAgentId = agent.id;
+        if (!nextNamespaceId && agent.namespaceId) {
+          nextNamespaceId = agent.namespaceId;
+        }
+      }
+
+      if (overrideScope.domain) {
+        nextDomain = overrideScope.domain;
+      }
+
+      if (overrideApplied && reviewedBy) {
+        if (!existing.tenantId) {
+          return res.status(400).json({
+            error: 'Item sem tenant válido não pode receber override de escopo',
+          });
+        }
+        await db.insert(schema.trainingScopeOverrides).values({
+          trainingDataId: id,
+          tenantId: existing.tenantId,
+          oldNamespaceId: existing.namespaceId,
+          newNamespaceId: nextNamespaceId,
+          oldDomain: existing.inferredDomain,
+          newDomain: nextDomain,
+          oldAgentId: existing.agentId,
+          newAgentId: nextAgentId,
+          changedBy: reviewedBy,
+          reason: overrideScope.reason,
+          source: 'training_review',
+        });
+        trainingPipelineMetrics.scopeOverrideTotal.inc({ source: 'training_review' });
+      }
+    }
+
     const [updated] = await db.update(schema.trainingData)
       .set({ 
         status: status as 'approved' | 'rejected',
@@ -747,17 +926,117 @@ app.patch('/api/training/data/:id/status', requirePermission('training:training_
         reviewedBy,
         reviewedAt: new Date(),
         reviewNotes: reviewNotes ?? null,
+        namespaceId: nextNamespaceId,
+        agentId: nextAgentId,
+        inferredDomain: nextDomain,
+        needsHumanReview: false,
+        quarantineReason: null,
+        quarantinedAt: null,
       })
       .where(eq(schema.trainingData.id, id))
       .returning();
 
     trainingPipelineMetrics.reviewTotal.labels(status).inc();
 
-    logger.info({ trainingDataId: id, status }, 'Status de treinamento atualizado');
+    logger.info({ trainingDataId: id, status, overrideApplied }, 'Status de treinamento atualizado');
     res.json({ trainingData: updated });
   } catch (error) {
     logger.error({ error }, 'Falha ao atualizar status de treinamento');
     res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+const resolveScopeSchema = z.object({
+  namespaceId: z.string().uuid(),
+  agentId: z.string().uuid().optional().nullable(),
+  domain: z.string().min(1).max(120).optional().nullable(),
+  reason: z.string().min(10).max(2000),
+});
+
+app.patch('/api/training/data/:id/resolve-scope', requirePermission('training:training_data:manage'), async (req: Request, res: Response) => {
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID inválido', details: paramsResult.error.format() });
+  }
+  const bodyResult = resolveScopeSchema.safeParse(req.body);
+  if (!bodyResult.success) {
+    return res.status(400).json({ error: 'Payload inválido', details: bodyResult.error.format() });
+  }
+
+  const authContext = extractAuthContext(req);
+  const changedBy = authContext?.userId;
+  if (!changedBy) {
+    return res.status(403).json({ error: 'Usuário não identificado para resolver escopo' });
+  }
+
+  try {
+    const existing = await db.query.trainingData.findFirst({
+      where: eq(schema.trainingData.id, paramsResult.data.id),
+    });
+    if (!existing) {
+      return res.status(404).json({ error: 'Registro de treinamento não encontrado' });
+    }
+    if (!existing.tenantId) {
+      return res.status(400).json({ error: 'Item sem tenant válido não pode ser resolvido' });
+    }
+
+    const namespace = await db.query.namespaces.findFirst({
+      where: eq(schema.namespaces.id, bodyResult.data.namespaceId),
+      columns: { id: true, tenantId: true },
+    });
+    if (!namespace || namespace.tenantId !== existing.tenantId) {
+      return res.status(403).json({ error: 'Namespace não pertence ao tenant do item' });
+    }
+
+    const nextAgentId: string | null = bodyResult.data.agentId ?? null;
+    if (nextAgentId) {
+      const agent = await db.query.agents.findFirst({
+        where: eq(schema.agents.id, nextAgentId),
+        columns: { id: true, tenantId: true, namespaceId: true },
+      });
+      if (!agent || agent.tenantId !== existing.tenantId) {
+        return res.status(403).json({ error: 'Agente inválido para o tenant do item' });
+      }
+      if (agent.namespaceId && agent.namespaceId !== namespace.id) {
+        return res.status(403).json({ error: 'Agente não pertence ao namespace informado' });
+      }
+    }
+
+    await db.insert(schema.trainingScopeOverrides).values({
+      trainingDataId: existing.id,
+      tenantId: existing.tenantId,
+      oldNamespaceId: existing.namespaceId,
+      newNamespaceId: namespace.id,
+      oldDomain: existing.inferredDomain,
+      newDomain: bodyResult.data.domain ?? existing.inferredDomain,
+      oldAgentId: existing.agentId,
+      newAgentId: nextAgentId,
+      changedBy,
+      reason: bodyResult.data.reason,
+      source: 'quarantine_resolution',
+    });
+    trainingPipelineMetrics.scopeOverrideTotal.inc({ source: 'quarantine_resolution' });
+    trainingPipelineMetrics.scopeResolvedTotal.inc({ source: 'quarantine_resolution' });
+
+    const [updated] = await db.update(schema.trainingData)
+      .set({
+        namespaceId: namespace.id,
+        agentId: nextAgentId,
+        inferredDomain: bodyResult.data.domain ?? existing.inferredDomain,
+        needsHumanReview: false,
+        quarantineReason: null,
+        quarantinedAt: null,
+        scopeResolvedAt: new Date(),
+        reviewedBy: changedBy,
+        reviewedAt: new Date(),
+      })
+      .where(eq(schema.trainingData.id, existing.id))
+      .returning();
+
+    return res.json({ trainingData: updated });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao resolver escopo em quarentena');
+    return res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
 
@@ -786,6 +1065,9 @@ app.get('/api/training/jobs', requirePermission('training:fine_tuning_jobs:read'
 // Gate 2: Treinamento deve usar o MESMO modelo base do LLM (texto)
 const createJobSchema = z.object({
   tenantId: z.string().uuid().optional(),
+  namespaceId: z.string().uuid(),
+  agentId: z.string().uuid().optional(),
+  domain: z.string().min(1).max(120).optional(),
   name: z.string().min(1),
   baseModel: z.string().default(GPU_MANAGER_CONFIG.models.llm),
   hyperparameters: z.object({
@@ -811,16 +1093,53 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
   try {
     const body = createJobSchema.parse(req.body);
 
+    const namespace = await db.query.namespaces.findFirst({
+      where: eq(schema.namespaces.id, body.namespaceId),
+      columns: { id: true, tenantId: true },
+    });
+    if (!namespace) {
+      return res.status(404).json({ error: 'Namespace não encontrado' });
+    }
+    if (body.tenantId && namespace.tenantId !== body.tenantId) {
+      return res.status(403).json({ error: 'Namespace não pertence ao tenant informado' });
+    }
+    const tenantId = body.tenantId ?? namespace.tenantId;
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Tenant inválido para criação de job de treinamento' });
+    }
+
     const approvedConditions = [
       eq(schema.trainingData.status, 'approved'),
       eq(schema.trainingData.isDuplicate, false),
       isNull(schema.trainingData.usedInJobId),
+      eq(schema.trainingData.namespaceId, body.namespaceId),
     ];
-    if (body.tenantId) approvedConditions.push(eq(schema.trainingData.tenantId, body.tenantId));
+    approvedConditions.push(eq(schema.trainingData.tenantId, tenantId));
+    if (body.agentId) approvedConditions.push(eq(schema.trainingData.agentId, body.agentId));
     
-    const approvedData = await db.query.trainingData.findMany({
+    const approvedDataRaw = await db.query.trainingData.findMany({
       where: and(...approvedConditions),
     });
+
+    const profileSelection = await selectExamplesByProfile(
+      {
+        tenantId,
+        namespaceId: body.namespaceId,
+        agentId: body.agentId ?? null,
+        domain: body.domain ?? null,
+      },
+      'training_job',
+      approvedDataRaw.map((item) => ({
+        id: item.id,
+        sourceType: item.sourceType,
+        sourceMetadata: item.sourceMetadata as Record<string, unknown>,
+        qualityScore: item.qualityScore,
+        messages: item.messages as Array<{ role: 'user' | 'assistant' | 'system'; content: string }>,
+      }))
+    );
+
+    const approvedIds = new Set(profileSelection.selected.map((item) => item.id));
+    const approvedData = approvedDataRaw.filter((item) => approvedIds.has(item.id));
 
     if (approvedData.length < 10) {
       return res.status(400).json({ 
@@ -831,11 +1150,18 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
     }
 
     const [job] = await db.insert(schema.fineTuningJobs).values({
-      tenantId: body.tenantId,
+      tenantId,
       name: body.name,
       baseModel: body.baseModel,
       status: 'pending',
       trainingDataCount: approvedData.length,
+      metrics: {
+        scope: {
+          namespaceId: body.namespaceId,
+          agentId: body.agentId ?? null,
+          domain: body.domain ?? null,
+        },
+      },
       hyperparameters: body.hyperparameters || {
         epochs: 3,
         learningRate: 0.0001,
@@ -854,8 +1180,13 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
       logger.error({ error: err, jobId: job.id }, 'Job de fine-tuning falhou');
     });
 
-    logger.info({ jobId: job.id, dataCount: approvedData.length }, 'Job de fine-tuning criado');
-    res.json({ job });
+    logger.info({
+      jobId: job.id,
+      dataCount: approvedData.length,
+      scope: { tenantId, namespaceId: body.namespaceId, agentId: body.agentId ?? null },
+      profileVersion: profileSelection.profileVersion,
+    }, 'Job de fine-tuning criado');
+    res.json({ job, profileSelection: profileSelection.diagnostics });
   } catch (error) {
     logger.error({ error }, 'Falha ao criar job');
     res.status(500).json({ error: 'Erro interno do servidor' });
@@ -912,6 +1243,13 @@ app.post('/api/training/jobs/trading', requirePermission('training:fine_tuning_j
       baseModel: body.baseModel,
       status: 'pending',
       trainingDataCount: approvedData.length,
+      metrics: {
+        scope: {
+          namespaceId: body.namespaceId,
+          agentId: null,
+          domain: null,
+        },
+      },
       hyperparameters,
     }).returning();
 
@@ -919,7 +1257,15 @@ app.post('/api/training/jobs/trading', requirePermission('training:fine_tuning_j
       logger.error({ error: err, jobId: job.id }, 'Job de fine-tuning Trading falhou');
     });
 
-    logger.info({ jobId: job.id, namespaceId: body.namespaceId, dataCount: approvedData.length }, 'Job de fine-tuning Trading criado');
+    logger.info(
+      {
+        jobId: job.id,
+        namespaceId: body.namespaceId,
+        dataCount: approvedData.length,
+        scope: { tenantId, namespaceId: body.namespaceId, agentId: null, domain: null },
+      },
+      'Job de fine-tuning Trading criado'
+    );
     res.json({ job });
   } catch (error) {
     logger.error({ error }, 'Falha ao criar job de Trading');
@@ -956,15 +1302,45 @@ function buildChatMlText(messages: Array<{ role: string; content: string }>): st
   return messages.map((m) => `${m.role}: ${m.content}`).join('\n');
 }
 
-async function prepareFineTuningDatasetFiles(jobId: string, tenantId: string): Promise<{ trainPath: string; evalPath: string; outputDir: string; manifestPath: string; trainCount: number; evalCount: number; }> {
-  const approved = await db.query.trainingData.findMany({
-    where: and(
-      eq(schema.trainingData.status, 'approved'),
-      eq(schema.trainingData.tenantId, tenantId),
-      isNull(schema.trainingData.usedInJobId)
-    ),
+async function prepareFineTuningDatasetFiles(
+  jobId: string,
+  tenantId: string,
+  scope?: { namespaceId?: string | null; agentId?: string | null; domain?: string | null }
+): Promise<{ trainPath: string; evalPath: string; outputDir: string; manifestPath: string; trainCount: number; evalCount: number; }> {
+  const approvedConditions = [
+    eq(schema.trainingData.status, 'approved'),
+    eq(schema.trainingData.tenantId, tenantId),
+    isNull(schema.trainingData.usedInJobId),
+  ];
+  if (scope?.namespaceId) approvedConditions.push(eq(schema.trainingData.namespaceId, scope.namespaceId));
+  if (scope?.agentId) approvedConditions.push(eq(schema.trainingData.agentId, scope.agentId));
+  if (scope?.domain) approvedConditions.push(eq(schema.trainingData.inferredDomain, scope.domain));
+
+  const approvedRaw = await db.query.trainingData.findMany({
+    where: and(...approvedConditions),
     limit: 5000,
   });
+
+  const profileSelection = scope?.namespaceId
+    ? await selectExamplesByProfile(
+      {
+        tenantId,
+        namespaceId: scope.namespaceId,
+        agentId: scope.agentId ?? null,
+        domain: scope.domain ?? null,
+      },
+      'fine_tuning',
+      approvedRaw.map((item) => ({
+        id: item.id,
+        sourceType: item.sourceType,
+        sourceMetadata: item.sourceMetadata as Record<string, unknown>,
+        qualityScore: item.qualityScore,
+        messages: item.messages as Array<{ role: 'user' | 'assistant' | 'system'; content: string }>,
+      }))
+    )
+    : { selected: approvedRaw };
+  const approvedIds = new Set(profileSelection.selected.map((item) => item.id));
+  const approved = approvedRaw.filter((item) => approvedIds.has(item.id));
 
   if (approved.length < 10) {
     throw new Error(`Dados aprovados insuficientes para fine-tuning: ${approved.length}/10`);
@@ -1007,6 +1383,8 @@ async function prepareFineTuningDatasetFiles(jobId: string, tenantId: string): P
       trainIds: train.map((d) => d.id),
       evalIds: evalData.map((d) => d.id),
       sourceTypeCounts,
+      scope: scope ?? null,
+      profileVersion: scope?.namespaceId && 'profileVersion' in profileSelection ? profileSelection.profileVersion : null,
     }, null, 2),
     { encoding: 'utf-8' }
   );
@@ -1045,7 +1423,10 @@ async function processFineTuningJob(jobId: string, hyperparameters: FineTuningJo
     .set({ status: 'preparing', iniciadoEm: job.iniciadoEm ?? new Date() })
     .where(eq(schema.fineTuningJobs.id, jobId));
 
-  const { trainPath, evalPath, outputDir, manifestPath, trainCount, evalCount } = await prepareFineTuningDatasetFiles(jobId, job.tenantId);
+  const jobMetrics = (job.metrics ?? {}) as Record<string, unknown>;
+  const scope = (jobMetrics.scope ?? {}) as { namespaceId?: string | null; agentId?: string | null; domain?: string | null };
+  const { trainPath, evalPath, outputDir, manifestPath, trainCount, evalCount } =
+    await prepareFineTuningDatasetFiles(jobId, job.tenantId, scope);
   const targetSteps = computeTargetSteps(trainCount, hyperparameters);
 
   await db.update(schema.fineTuningJobs)
@@ -1055,6 +1436,7 @@ async function processFineTuningJob(jobId: string, hyperparameters: FineTuningJo
       validationDataCount: evalCount,
       progress: 0,
       metrics: {
+        scope,
         dataset: { trainPath, evalPath, outputDir, manifestPath, trainCount, evalCount, targetSteps },
         stepsCompleted: 0,
       },
@@ -1293,7 +1675,16 @@ app.post('/api/training/lora/activate/:jobId', requirePermission('training:fine_
  */
 app.get('/api/training/lora/active', requirePermission('training:fine_tuning_jobs:read'), async (_req: Request, res: Response) => {
   try {
-    const active = await getActiveAdapter();
+    const querySchema = z.object({
+      tenantId: z.string().uuid().optional(),
+      namespaceId: z.string().uuid().optional(),
+      agentId: z.string().uuid().optional(),
+    });
+    const parsed = querySchema.safeParse(_req.query);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Parâmetros inválidos', details: parsed.error.format() });
+    }
+    const active = await getActiveAdapter(parsed.data);
     res.json({ adapter: active });
   } catch (error) {
     logger.error({ error }, 'Falha ao consultar adapter ativo');
@@ -1307,7 +1698,16 @@ app.get('/api/training/lora/active', requirePermission('training:fine_tuning_job
  */
 app.delete('/api/training/lora/active', requirePermission('training:fine_tuning_jobs:start'), async (_req: Request, res: Response) => {
   try {
-    await deactivateLoraAdapter();
+    const bodySchema = z.object({
+      tenantId: z.string().uuid().optional(),
+      namespaceId: z.string().uuid().optional(),
+      agentId: z.string().uuid().optional(),
+    });
+    const parsed = bodySchema.safeParse(_req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Payload inválido', details: parsed.error.format() });
+    }
+    await deactivateLoraAdapter(parsed.data);
     res.json({ success: true, message: 'Adapter LoRA desativado. vLLM usará modelo base.' });
   } catch (error) {
     logger.error({ error }, 'Falha ao desativar adapter LoRA');
@@ -1321,6 +1721,9 @@ app.delete('/api/training/lora/active', requirePermission('training:fine_tuning_
 
 const bulkImportSchema = z.object({
   source: z.string().min(1).max(50),
+  namespaceId: z.string().uuid().optional(),
+  agentId: z.string().uuid().optional(),
+  domain: z.string().min(1).max(120).optional(),
   data: z.array(z.object({
     messages: z.array(z.object({
       role: z.enum(['user', 'assistant', 'system']),
@@ -1350,7 +1753,7 @@ app.post('/api/training/bulk-import', requirePermission('training:training_data:
       });
     }
 
-    const { source, data, autoApprove } = validation.data;
+    const { source, namespaceId, agentId, domain, data, autoApprove } = validation.data;
     const importedIds: string[] = [];
     const duplicatesSkipped: number[] = [];
 
@@ -1381,6 +1784,21 @@ app.post('/api/training/bulk-import', requirePermission('training:training_data:
       }
 
       const qualityScore = computeQualityScore(entry.messages);
+      const scope = await resolveScope({
+        tenantId,
+        namespaceId: namespaceId ?? null,
+        agentId: agentId ?? null,
+        domain: domain ?? null,
+        sourceType: 'external',
+        sourceMetadata: { bulkSource: source },
+        messagesText: entry.messages.map((m) => m.content).join('\n'),
+      });
+      if (scope.needsHumanReview) {
+        trainingPipelineMetrics.scopeQuarantineTotal.inc({
+          source_type: 'external',
+          reason: 'low_confidence_or_missing_namespace',
+        });
+      }
       const autoRejectedByQuality = qualityScore < TRAINING_DATA_MIN_QUALITY;
       const status = autoRejectedByQuality
         ? 'rejected'
@@ -1391,9 +1809,22 @@ app.post('/api/training/bulk-import', requirePermission('training:training_data:
 
       const [inserted] = await db.insert(schema.trainingData).values({
         tenantId,
+        namespaceId: scope.namespaceId,
+        agentId: scope.agentId,
         source: `bulk_import:${source}`,
         sourceType: 'external',
         sourceMetadata: { bulkSource: source },
+        inferredNamespaceId: scope.namespaceId,
+        inferredAgentId: scope.agentId,
+        inferredDomain: scope.domain,
+        inferenceConfidence: scope.confidence,
+        inferenceTrace: scope.trace,
+        scopeResolverVersion: 'v1',
+        profileVersion: 1,
+        needsHumanReview: scope.needsHumanReview,
+        quarantineReason: scope.needsHumanReview ? 'low_confidence_or_missing_namespace' : null,
+        scopeResolvedAt: new Date(),
+        quarantinedAt: scope.needsHumanReview ? new Date() : null,
         messages: entry.messages,
         rating: entry.rating,
         qualityScore,
@@ -1462,6 +1893,9 @@ const batchApproveSchema = z.object({
 const trainingDataQuerySchema = z.object({
   status: z.enum(['pending', 'approved', 'rejected', 'used']).optional(),
   namespaceId: z.string().uuid().optional(),
+  agentId: z.string().uuid().optional(),
+  inferredDomain: z.string().min(1).max(120).optional(),
+  needsHumanReview: z.enum(['true', 'false']).optional(),
   sourceType: trainingSourceTypeSchema.optional(),
 });
 
@@ -1534,6 +1968,16 @@ app.post('/api/training/webhook', async (req: Request, res: Response) => {
       const text = payload.messages.map(m => m.content).join(' ');
       let embedding: number[] | null = null;
       const semhash = computeSemHash(text);
+      const scope = await resolveScope({
+        tenantId,
+        namespaceId: readUuidFromUnknown(payload.metadata?.namespaceId),
+        agentId: readUuidFromUnknown(payload.metadata?.agentId),
+        domain: typeof payload.metadata?.domain === 'string' ? payload.metadata.domain : null,
+        sourceType: 'external',
+        sourceMetadata: payload.metadata as Record<string, unknown> ?? {},
+        conversationId: payload.conversationId ?? null,
+        messagesText: text,
+      });
 
       try {
         embedding = await gpuManagerEmbeddingsBreaker.fire(text) as number[];
@@ -1571,6 +2015,12 @@ app.post('/api/training/webhook', async (req: Request, res: Response) => {
       }
 
       const qualityScore = computeQualityScore(payload.messages);
+      if (scope.needsHumanReview) {
+        trainingPipelineMetrics.scopeQuarantineTotal.inc({
+          source_type: 'external',
+          reason: 'low_confidence_or_missing_namespace',
+        });
+      }
       const autoRejectedByQuality = !isDuplicate && qualityScore < TRAINING_DATA_MIN_QUALITY;
       const status = isDuplicate || autoRejectedByQuality ? 'rejected' : 'pending';
       const reviewNotes = autoRejectedByQuality
@@ -1578,9 +2028,22 @@ app.post('/api/training/webhook', async (req: Request, res: Response) => {
         : null;
       const [inserted] = await db.insert(schema.trainingData).values({
         tenantId,
+        namespaceId: scope.namespaceId,
+        agentId: scope.agentId,
         source: 'webhook',
         sourceType: 'external',
         sourceMetadata: { event },
+        inferredNamespaceId: scope.namespaceId,
+        inferredAgentId: scope.agentId,
+        inferredDomain: scope.domain,
+        inferenceConfidence: scope.confidence,
+        inferenceTrace: scope.trace,
+        scopeResolverVersion: 'v1',
+        profileVersion: 1,
+        needsHumanReview: scope.needsHumanReview,
+        quarantineReason: scope.needsHumanReview ? 'low_confidence_or_missing_namespace' : null,
+        scopeResolvedAt: new Date(),
+        quarantinedAt: scope.needsHumanReview ? new Date() : null,
         messages: payload.messages,
         rating: payload.rating,
         qualityScore,
@@ -1638,8 +2101,24 @@ app.post('/api/training/data/approve-batch', requirePermission('training:trainin
   try {
     const newStatus = action === 'approve' ? 'approved' : 'rejected';
     let updatedCount = 0;
+    let skippedByQuarantine = 0;
+    let skippedByMissingNamespace = 0;
 
     for (const id of ids) {
+      const current = await db.query.trainingData.findFirst({
+        where: eq(schema.trainingData.id, id),
+        columns: { needsHumanReview: true, namespaceId: true },
+      });
+
+      if (newStatus === 'approved' && current?.needsHumanReview) {
+        skippedByQuarantine += 1;
+        continue;
+      }
+      if (newStatus === 'approved' && !current?.namespaceId) {
+        skippedByMissingNamespace += 1;
+        continue;
+      }
+
       const [updated] = await db.update(schema.trainingData)
         .set({ 
           status: newStatus,
@@ -1647,6 +2126,9 @@ app.post('/api/training/data/approve-batch', requirePermission('training:trainin
           reviewedBy,
           reviewedAt: new Date(),
           reviewNotes: reviewNotes ?? null,
+          needsHumanReview: false,
+          quarantineReason: null,
+          quarantinedAt: null,
         })
         .where(eq(schema.trainingData.id, id))
         .returning();
@@ -1658,8 +2140,11 @@ app.post('/api/training/data/approve-batch', requirePermission('training:trainin
       trainingPipelineMetrics.reviewTotal.labels(newStatus).inc(updatedCount);
     }
 
-    logger.info({ action, count: updatedCount }, 'Aprovação em lote concluída');
-    res.json({ success: true, updated: updatedCount });
+    logger.info(
+      { action, count: updatedCount, skippedByQuarantine, skippedByMissingNamespace },
+      'Aprovação em lote concluída'
+    );
+    res.json({ success: true, updated: updatedCount, skippedByQuarantine, skippedByMissingNamespace });
   } catch (error) {
     logger.error({ error }, 'Falha na aprovação em lote');
     res.status(500).json({ error: 'Erro interno do servidor' });

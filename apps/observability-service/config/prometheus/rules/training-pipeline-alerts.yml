@@ -44,3 +44,25 @@ groups:
         annotations:
           summary: "Taxa alta de auto-rejeição de datasets de trading"
           description: "Mais de 60% dos datasets de trading foram auto-rejeitados na última hora. Verifique sinais e thresholds."
+
+      - alert: TrainingScopeQuarantineSpike
+        expr: |
+          sum(increase(alice_training_scope_quarantine_total[1h])) > 25
+        for: 15m
+        labels:
+          severity: warning
+          service: training-service
+        annotations:
+          summary: "Pico de quarentena de escopo no training"
+          description: "Muitos itens foram enviados para quarentena de escopo na última hora. Verifique inferência de namespace/agente/domínio."
+
+      - alert: TrainingScopeOverrideSpike
+        expr: |
+          sum(increase(alice_training_scope_override_total[1h])) > 20
+        for: 15m
+        labels:
+          severity: warning
+          service: training-service
+        annotations:
+          summary: "Pico de overrides manuais de escopo"
+          description: "A taxa de override manual de escopo está alta na última hora. Verifique qualidade da classificação automática."

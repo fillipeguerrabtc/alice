@@ -499,7 +499,10 @@ export async function executePhase2(params: {
     // Resolver modelo com adapter LoRA ativo (se disponível)
     // Post-mortem usa adapter treinado para gerar motivadores mais precisos
     const baseModel = 'Qwen/Qwen2.5-7B-Instruct-AWQ';
-    const resolvedModel = await resolveModelWithAdapter(baseModel);
+    const resolvedModel = await resolveModelWithAdapter(baseModel, {
+      tenantId: position.tenantId,
+      namespaceId: params.namespaceId ?? undefined,
+    });
 
     logger.info({
       positionId: position.id,

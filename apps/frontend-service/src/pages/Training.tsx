@@ -98,6 +98,13 @@ interface TrainingData {
   sourceId?: string | null;
   sourceMetadata?: Record<string, unknown> | null;
   namespaceId?: string | null;
+  agentId?: string | null;
+  inferredNamespaceId?: string | null;
+  inferredAgentId?: string | null;
+  inferredDomain?: string | null;
+  inferenceConfidence?: number | null;
+  needsHumanReview?: boolean | null;
+  quarantineReason?: string | null;
   messages: Array<{ role: string; content: string }>;
   rating: number | null;
   qualityScore?: number | null;
@@ -255,11 +262,12 @@ function getJobStatusBadge(status: FineTuningJob['status'], t: (key: string) => 
   }
 }
 
-function TrainingDataCard({ data, namespaceName, onApprove, onReject, isPending, t, locale, timeZone }: { 
+function TrainingDataCard({ data, namespaceName, onApprove, onReject, onResolveScope, isPending, t, locale, timeZone }: {
   data: TrainingData; 
   namespaceName?: string | null;
   onApprove: () => void;
   onReject: () => void;
+  onResolveScope: () => void;
   isPending: boolean;
   t: (key: string, options?: Record<string, unknown>) => string;
   locale: string;
@@ -283,6 +291,11 @@ function TrainingDataCard({ data, namespaceName, onApprove, onReject, isPending,
               {namespaceName && (
                 <Badge variant="secondary" className="text-xs">
                   {namespaceName}
+                </Badge>
+              )}
+              {data.needsHumanReview && (
+                <Badge variant="destructive" className="text-xs">
+                  Quarentena de escopo
                 </Badge>
               )}
             </div>
@@ -328,6 +341,21 @@ function TrainingDataCard({ data, namespaceName, onApprove, onReject, isPending,
                 <ChevronRight className="h-3 w-3 ml-1" />
               </Button>
             )}
+            {(data.inferredDomain || data.inferenceConfidence !== null && data.inferenceConfidence !== undefined) && (
+              <div className="text-xs text-muted-foreground">
+                {data.inferredDomain && (
+                  <span>Domínio inferido: {data.inferredDomain}</span>
+                )}
+                {data.inferenceConfidence !== null && data.inferenceConfidence !== undefined && (
+                  <span className="ml-2">Confiança: {Math.round(data.inferenceConfidence * 100)}%</span>
+                )}
+              </div>
+            )}
+            {data.quarantineReason && (
+              <div className="text-xs text-red-600">
+                {data.quarantineReason}
+              </div>
+            )}
             {data.reviewedAt && (
               <div className="text-xs text-muted-foreground">
                 {t('training.data.reviewedAt', { date: formatDateTime(data.reviewedAt, { locale, timeZone }) })}
@@ -344,12 +372,23 @@ function TrainingDataCard({ data, namespaceName, onApprove, onReject, isPending,
 
         {data.status === 'pending' && (
           <CardFooter className="pt-2 gap-2">
+            {data.needsHumanReview && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1"
+                onClick={onResolveScope}
+                disabled={isPending}
+              >
+                Resolver escopo
+              </Button>
+            )}
             <Button 
               variant="outline" 
               size="sm" 
               className="flex-1 text-green-600"
               onClick={onApprove}
-              disabled={isPending}
+              disabled={isPending || !!data.needsHumanReview}
               data-testid={`button-approve-${data.id}`}
             >
               <ThumbsUp className="h-3 w-3 mr-1" />
@@ -706,11 +745,68 @@ interface MediaUploadResult {
   processedAt?: string;
 }
 
+interface RagDocumentItem {
+  id: string;
+  namespaceId?: string | null;
+  titulo: string;
+  tipo?: string | null;
+  processado: boolean;
+  criadoEm: string;
+  atualizadoEm: string;
+}
+
 function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, unknown>) => string }) {
   const queryClient = useQueryClient();
   const [uploads, setUploads] = useState<MediaUpload[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [description, setDescription] = useState('');
+  const [promotingDocumentId, setPromotingDocumentId] = useState<string | null>(null);
+
+  const {
+    data: ragDocumentsData,
+    isLoading: isLoadingRagDocuments,
+    refetch: refetchRagDocuments,
+  } = useQuery<{ documents: RagDocumentItem[] }>({
+    queryKey: ['/api/rag/documents'],
+    queryFn: async () => {
+      const response = await apiRequest('GET', '/api/rag/documents');
+      return response.json();
+    },
+  });
+
+  const ragDocuments = ragDocumentsData?.documents ?? [];
+
+  const promoteDocumentToTraining = useMutation({
+    mutationFn: async (documentId: string) => {
+      const response = await apiRequest('POST', `/api/rag/documents/${documentId}/send-to-training`, {});
+      return response.json() as Promise<{
+        success: boolean;
+        data?: { attempted: number; sent: number; failed: number };
+        message?: string;
+      }>;
+    },
+    onMutate: (documentId) => {
+      setPromotingDocumentId(documentId);
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/training/data'] });
+      toast({
+        title: 'Documento promovido para treinamento',
+        description: result?.message ?? 'Datasets enviados para aprovação na página Training.',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Falha ao promover documento',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+    onSettled: () => {
+      setPromotingDocumentId(null);
+      refetchRagDocuments();
+    },
+  });
 
   // Tipos de arquivo aceitos para cada categoria
   // ATUALIZADO 23/12/2025: Removido suporte a vídeo (muito pesado para GPU)
@@ -1123,6 +1219,78 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
           </CardContent>
         </Card>
       )}
+
+      {/* Lista de documentos RAG com promoção explícita para treinamento */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Folder className="h-4 w-4 text-primary" />
+                Documentos da RAG
+              </CardTitle>
+              <CardDescription>
+                RAG e Treinamento são separados. A promoção para dataset de treinamento é explícita e auditável por documento.
+              </CardDescription>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => refetchRagDocuments()}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              {t('common.refresh')}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {isLoadingRagDocuments ? (
+            <Skeleton className="h-24" />
+          ) : ragDocuments.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nenhum documento RAG encontrado.</p>
+          ) : (
+            <div className="space-y-3">
+              {ragDocuments.map((doc) => {
+                const canPromote = doc.processado && Boolean(doc.namespaceId);
+                const isPromoting = promotingDocumentId === doc.id && promoteDocumentToTraining.isPending;
+
+                return (
+                  <div key={doc.id} className="rounded-lg border p-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div className="space-y-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{doc.titulo}</p>
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <Badge variant="outline">{doc.tipo ?? 'documento'}</Badge>
+                        <Badge variant={doc.processado ? 'default' : 'secondary'}>
+                          {doc.processado ? 'processado' : 'processando'}
+                        </Badge>
+                        {!doc.namespaceId && (
+                          <Badge variant="destructive">sem namespace</Badge>
+                        )}
+                        <span>Atualizado em {formatDate(doc.atualizadoEm)}</span>
+                      </div>
+                    </div>
+
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!canPromote || isPromoting}
+                      onClick={() => promoteDocumentToTraining.mutate(doc.id)}
+                    >
+                      {isPromoting ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Enviando...
+                        </>
+                      ) : (
+                        <>
+                          <FileCheck className="h-4 w-4 mr-2" />
+                          Enviar para Treinamento
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Informações sobre processamento */}
       <Card>
@@ -1685,8 +1853,13 @@ export default function Training() {
   const [tradingNamespaceId, setTradingNamespaceId] = useState<string>('');
   const [showOnDemandRun, setShowOnDemandRun] = useState(false);
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
-  const [reviewTarget, setReviewTarget] = useState<{ id: string; status: 'approved' | 'rejected' } | null>(null);
+  const [reviewTarget, setReviewTarget] = useState<{ id: string; status: 'approved' | 'rejected'; entry: TrainingData } | null>(null);
   const [reviewNotes, setReviewNotes] = useState('');
+  const [overrideScopeEnabled, setOverrideScopeEnabled] = useState(false);
+  const [overrideNamespaceId, setOverrideNamespaceId] = useState('');
+  const [overrideAgentId, setOverrideAgentId] = useState('');
+  const [overrideDomain, setOverrideDomain] = useState('');
+  const [overrideReason, setOverrideReason] = useState('');
 
   // Auto-learning (status + schedules) - Gate 2
   const autoLearningQueryKey = [
@@ -1905,8 +2078,23 @@ export default function Training() {
   });
 
   const updateStatus = useMutation({
-    mutationFn: async ({ id, status, reviewNotes }: { id: string; status: string; reviewNotes?: string }) => {
-      return apiRequest('PATCH', `/api/training/data/${id}/status`, { status, reviewNotes });
+    mutationFn: async ({
+      id,
+      status,
+      reviewNotes,
+      overrideScope,
+    }: {
+      id: string;
+      status: string;
+      reviewNotes?: string;
+      overrideScope?: {
+        namespaceId?: string | null;
+        agentId?: string | null;
+        domain?: string | null;
+        reason: string;
+      };
+    }) => {
+      return apiRequest('PATCH', `/api/training/data/${id}/status`, { status, reviewNotes, overrideScope });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/training/data'] });
@@ -1914,6 +2102,36 @@ export default function Training() {
     },
     onError: () => {
       toast({ title: t('training.errors.updateStatus'), variant: 'destructive' });
+    },
+  });
+
+  const resolveScopeMutation = useMutation({
+    mutationFn: async ({
+      id,
+      namespaceId,
+      agentId,
+      domain,
+      reason,
+    }: {
+      id: string;
+      namespaceId: string;
+      agentId?: string | null;
+      domain?: string | null;
+      reason: string;
+    }) => {
+      return apiRequest('PATCH', `/api/training/data/${id}/resolve-scope`, {
+        namespaceId,
+        agentId,
+        domain,
+        reason,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/training/data'] });
+      toast({ title: 'Escopo resolvido com sucesso' });
+    },
+    onError: () => {
+      toast({ title: 'Falha ao resolver escopo', variant: 'destructive' });
     },
   });
 
@@ -1969,21 +2187,98 @@ export default function Training() {
     used: tradingDatasetRows.filter((d) => (d as { status?: string }).status === 'used').length,
   };
 
-  const openReviewDialog = useCallback((id: string, status: 'approved' | 'rejected') => {
-    setReviewTarget({ id, status });
+  const resetReviewScopeOverride = useCallback(() => {
+    setOverrideScopeEnabled(false);
+    setOverrideNamespaceId('');
+    setOverrideAgentId('');
+    setOverrideDomain('');
+    setOverrideReason('');
+  }, []);
+
+  const openReviewDialog = useCallback((entry: TrainingData, status: 'approved' | 'rejected') => {
+    setReviewTarget({ id: entry.id, status, entry });
     setReviewNotes('');
+    setOverrideScopeEnabled(false);
+    setOverrideNamespaceId(entry.namespaceId ?? entry.inferredNamespaceId ?? '');
+    setOverrideAgentId(entry.agentId ?? entry.inferredAgentId ?? '');
+    setOverrideDomain(entry.inferredDomain ?? '');
+    setOverrideReason('');
     setReviewDialogOpen(true);
   }, []);
 
   const confirmReview = useCallback(() => {
     if (!reviewTarget) return;
+    if (reviewTarget.status === 'approved' && overrideScopeEnabled) {
+      if (overrideNamespaceId.trim().length === 0) {
+        toast({
+          title: 'Namespace é obrigatório no override',
+          description: 'Informe um namespace válido para concluir a aprovação com override.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      if (overrideReason.trim().length === 0) {
+        toast({
+          title: 'Motivo do override é obrigatório',
+          description: 'Informe o motivo para manter trilha de auditoria.',
+          variant: 'destructive',
+        });
+        return;
+      }
+    }
     updateStatus.mutate({
       id: reviewTarget.id,
       status: reviewTarget.status,
       reviewNotes: reviewNotes.trim().length > 0 ? reviewNotes.trim() : undefined,
+      overrideScope:
+        reviewTarget.status === 'approved' && overrideScopeEnabled
+          ? {
+              namespaceId: overrideNamespaceId.trim(),
+              agentId: overrideAgentId.trim().length > 0 ? overrideAgentId.trim() : null,
+              domain: overrideDomain.trim().length > 0 ? overrideDomain.trim() : null,
+              reason: overrideReason.trim(),
+            }
+          : undefined,
     });
     setReviewDialogOpen(false);
-  }, [reviewNotes, reviewTarget, updateStatus]);
+    resetReviewScopeOverride();
+  }, [
+    overrideAgentId,
+    overrideDomain,
+    overrideNamespaceId,
+    overrideReason,
+    overrideScopeEnabled,
+    resetReviewScopeOverride,
+    reviewNotes,
+    reviewTarget,
+    updateStatus,
+  ]);
+
+  const handleResolveScope = useCallback((entry: TrainingData) => {
+    const namespaceHint = (namespaces ?? [])
+      .map((ns) => `${ns.nome} (${ns.id})`)
+      .slice(0, 20)
+      .join('\n');
+    const namespaceInput = window.prompt(
+      `Informe o namespaceId de destino para resolver escopo.\n\nNamespaces disponíveis:\n${namespaceHint}`,
+      entry.namespaceId ?? entry.inferredNamespaceId ?? ''
+    );
+    if (!namespaceInput) return;
+    const reasonInput = window.prompt(
+      'Informe o motivo do override de escopo (obrigatório):',
+      'Correção manual do escopo inferido'
+    );
+    if (!reasonInput) return;
+    const domainInput = window.prompt('Domínio (opcional):', entry.inferredDomain ?? '') ?? undefined;
+    const agentInput = window.prompt('AgentId (opcional):', entry.agentId ?? entry.inferredAgentId ?? '') ?? undefined;
+    resolveScopeMutation.mutate({
+      id: entry.id,
+      namespaceId: namespaceInput.trim(),
+      domain: domainInput?.trim().length ? domainInput.trim() : null,
+      agentId: agentInput?.trim().length ? agentInput.trim() : null,
+      reason: reasonInput.trim(),
+    });
+  }, [namespaces, resolveScopeMutation]);
 
   return (
     <div className="flex flex-col h-full">
@@ -2216,8 +2511,9 @@ export default function Training() {
                     data={data}
                     namespaceName={data.namespaceId ? namespacesById.get(data.namespaceId) : null}
                     isPending={updateStatus.isPending}
-                    onApprove={() => openReviewDialog(data.id, 'approved')}
-                    onReject={() => openReviewDialog(data.id, 'rejected')}
+                    onApprove={() => openReviewDialog(data, 'approved')}
+                    onReject={() => openReviewDialog(data, 'rejected')}
+                    onResolveScope={() => handleResolveScope(data)}
                     t={t}
                     locale={locale}
                     timeZone={timeZone}
@@ -2616,7 +2912,15 @@ export default function Training() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={reviewDialogOpen} onOpenChange={setReviewDialogOpen}>
+      <Dialog
+        open={reviewDialogOpen}
+        onOpenChange={(open) => {
+          setReviewDialogOpen(open);
+          if (!open) {
+            resetReviewScopeOverride();
+          }
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>{t('training.reviewDialog.title')}</DialogTitle>
@@ -2631,8 +2935,59 @@ export default function Training() {
               placeholder={t('training.reviewDialog.notesPlaceholder')}
             />
           </div>
+          {reviewTarget?.status === 'approved' && (
+            <div className="grid gap-3 rounded-md border p-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Override de escopo</p>
+                  <p className="text-xs text-muted-foreground">
+                    Ajuste manual de namespace/agente/domínio antes de aprovar (auditável).
+                  </p>
+                </div>
+                <Switch checked={overrideScopeEnabled} onCheckedChange={setOverrideScopeEnabled} />
+              </div>
+              {overrideScopeEnabled && (
+                <div className="grid gap-2">
+                  <Label htmlFor="override-namespace">Namespace ID (obrigatório)</Label>
+                  <Input
+                    id="override-namespace"
+                    value={overrideNamespaceId}
+                    onChange={(event) => setOverrideNamespaceId(event.target.value)}
+                    placeholder="UUID do namespace"
+                  />
+                  <Label htmlFor="override-agent">Agent ID (opcional)</Label>
+                  <Input
+                    id="override-agent"
+                    value={overrideAgentId}
+                    onChange={(event) => setOverrideAgentId(event.target.value)}
+                    placeholder="UUID do agente"
+                  />
+                  <Label htmlFor="override-domain">Domínio (opcional)</Label>
+                  <Input
+                    id="override-domain"
+                    value={overrideDomain}
+                    onChange={(event) => setOverrideDomain(event.target.value)}
+                    placeholder="trading, fiscal, suporte..."
+                  />
+                  <Label htmlFor="override-reason">Motivo do override (obrigatório)</Label>
+                  <Input
+                    id="override-reason"
+                    value={overrideReason}
+                    onChange={(event) => setOverrideReason(event.target.value)}
+                    placeholder="Explique por que o escopo foi ajustado"
+                  />
+                </div>
+              )}
+            </div>
+          )}
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setReviewDialogOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setReviewDialogOpen(false);
+                resetReviewScopeOverride();
+              }}
+            >
               {t('training.createJob.cancel')}
             </Button>
             <Button onClick={confirmReview} disabled={!reviewTarget || updateStatus.isPending}>

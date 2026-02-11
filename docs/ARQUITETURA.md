@@ -2,7 +2,7 @@
 
 > **Autor:** Fillipe Guerra  
 > **Data:** 09 de Fevereiro de 2026  
-> **Versão:** 3.6.0 - Demo Trading + Post-Mortem + Ecossistema LLM (LoRA + RAG + Feedback Loop)  
+> **Versão:** 3.7.0 - Segregação de escopo Training/LoRA + Binding obrigatório por contexto  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 > 
@@ -539,18 +539,22 @@ O ecossistema LLM integra adapters LoRA, RAG contextual e feedback loop para evo
 │     → Próximos sinais/post-mortems usam learnings    │
 │                                                      │
 │  5. Training (aprovação manual)                      │
-│     → Dataset aprovado → QLoRA → Adapter global      │
-│     → activateLoraAdapter → vLLM carrega dinamicamente│
-│     → Próximos sinais/post-mortems usam adapter      │
+│     → Dataset aprovado → QLoRA → Adapter por escopo  │
+│     → activateLoraAdapter(namespace|agent)            │
+│     → Próximos fluxos LLM usam adapter do contexto    │
 └─────────────────────────────────────────────────────┘
 ```
 
 **LoRA Adapter:**
-- Escopo **global** (compartilhado entre todos os tenants)
+- Escopo por **namespace** com override opcional por **agent**
 - Treinado via QLoRA no gpu-trainer local
 - Carregado dinamicamente no vLLM (`--enable-lora`, `--max-lora-rank 64`)
-- Path: `/opt/alice/data/lora-adapters/trading-global`
-- Cache Redis: `alice:lora:active-adapter` (TTL 60s)
+- Paths:
+  - `/opt/alice/data/lora-adapters/namespaces/{namespaceId}`
+  - `/opt/alice/data/lora-adapters/agents/{agentId}`
+- Cache Redis contextual:
+  - `alice:lora:active-adapter:{tenant}:{namespace}:{agent}` (integrations-service)
+  - `alice:chat:lora:active-adapter:{tenant}:{namespace}:{agent}` (chat-service)
 
 **RAG Contextual:**
 - Consulta documentos/learnings do namespace do agente trading

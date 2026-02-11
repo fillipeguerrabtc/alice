@@ -1,56 +1,36 @@
 /**
- * LoRA Adapter Resolver - Alice Enterprise Platform
+ * LoRA Adapter Resolver (Chat Service) - Alice Enterprise Platform
  *
- * Resolve qual modelo usar nas chamadas LLM: modelo base ou adapter LoRA ativo.
- * Consulta o training-service para saber se há adapter ativo, com cache Redis
- * para minimizar chamadas HTTP entre serviços.
- *
- * Arquitetura:
- * - Cache Redis com TTL 60s para evitar consultas frequentes ao banco
- * - Fallback para modelo base se adapter não disponível
- * - vLLM suporta AWQ + LoRA (confirmado docs oficiais v0.12.0+)
- * - Adapter name: "trading-global" (filesystem resolver do vLLM)
- *
- * Autor: Fillipe Guerra
- * Data: 09 de Fevereiro de 2026
+ * Resolve adapter ativo por contexto (tenant/namespace/agent) para cumprir
+ * a política de binding obrigatório em fluxos de chat.
  */
 
 import { createLogger } from '@alice/logger';
 import { getRedisClient } from '@alice/shared-utils';
 import { Counter, Histogram } from 'prom-client';
 
-const logger = createLogger('lora-adapter-resolver');
+const logger = createLogger('chat-lora-adapter-resolver');
 
-// ============================================================================
-// Métricas Prometheus
-// ============================================================================
-
-/** Contador de resoluções de modelo por resultado (adapter|base|error) */
 const loraResolveCounter = new Counter({
-  name: 'alice_lora_resolve_total',
-  help: 'Total de resoluções de modelo LoRA por resultado',
+  name: 'alice_chat_lora_resolve_total',
+  help: 'Total de resoluções de modelo LoRA no chat-service por resultado',
   labelNames: ['result'] as const,
 });
 
-/** Histograma de latência de resolução de adapter */
 const loraResolveLatency = new Histogram({
-  name: 'alice_lora_resolve_duration_seconds',
-  help: 'Latência da resolução de adapter LoRA (incluindo cache/HTTP)',
+  name: 'alice_chat_lora_resolve_duration_seconds',
+  help: 'Latência de resolução de adapter LoRA no chat-service',
   buckets: [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5],
 });
 
-/** Contador de cache hits/misses */
 const loraCacheCounter = new Counter({
-  name: 'alice_lora_cache_total',
-  help: 'Total de acessos ao cache Redis de adapter LoRA',
+  name: 'alice_chat_lora_cache_total',
+  help: 'Total de acessos ao cache Redis de adapter LoRA no chat-service',
   labelNames: ['status'] as const,
 });
 
-/** TTL do cache em segundos (consulta ao training-service a cada 60s) */
 const CACHE_TTL_SECONDS = 60;
-/** URL do training-service para consultar adapter ativo */
 const TRAINING_SERVICE_URL = process.env.TRAINING_SERVICE_URL || 'http://alice-training:3004';
-/** Secret para comunicação interna entre serviços */
 const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET || '';
 const STRICT_BINDING_POLICY = process.env.LORA_STRICT_BINDING === 'true';
 
@@ -62,20 +42,12 @@ interface ActiveAdapterInfo {
   jobName: string;
 }
 
-interface AdapterResolveContext {
+export interface AdapterResolveContext {
   tenantId?: string;
   namespaceId?: string;
   agentId?: string;
 }
 
-/**
- * Resolve o nome do modelo a usar na chamada LLM.
- * Se houver adapter LoRA ativo, retorna o nome do adapter.
- * Caso contrário, retorna o modelo base fornecido.
- *
- * @param baseModel - Nome do modelo base (ex: "Qwen/Qwen2.5-7B-Instruct-AWQ")
- * @returns Nome do modelo a usar na requisição ao vLLM
- */
 export async function resolveModelWithAdapter(baseModel: string, context?: AdapterResolveContext): Promise<string> {
   const startTime = performance.now();
   try {
@@ -85,13 +57,16 @@ export async function resolveModelWithAdapter(baseModel: string, context?: Adapt
 
     if (adapter) {
       loraResolveCounter.inc({ result: 'adapter' });
-      logger.debug({
-        adapterName: adapter.adapterName,
-        jobId: adapter.jobId,
-        context,
-        baseModel,
-        durationMs: Math.round(durationSec * 1000),
-      }, 'Usando LoRA adapter ativo para inferência');
+      logger.debug(
+        {
+          adapterName: adapter.adapterName,
+          jobId: adapter.jobId,
+          context,
+          baseModel,
+          durationMs: Math.round(durationSec * 1000),
+        },
+        'Usando LoRA adapter ativo no chat-service'
+      );
       return adapter.adapterName;
     }
 
@@ -107,10 +82,12 @@ export async function resolveModelWithAdapter(baseModel: string, context?: Adapt
     if (STRICT_BINDING_POLICY && (context?.namespaceId || context?.agentId)) {
       throw error instanceof Error ? error : new Error(String(error));
     }
-    // Fallback para modelo base apenas quando política estrita não está habilitada
     logger.warn(
-      { error: error instanceof Error ? error.message : String(error), baseModel },
-      'Falha ao resolver adapter LoRA - usando modelo base como fallback'
+      {
+        error: error instanceof Error ? error.message : String(error),
+        baseModel,
+      },
+      'Falha ao resolver adapter LoRA no chat-service - fallback para modelo base'
     );
   }
 
@@ -124,9 +101,7 @@ async function resolveAdapterByPolicy(context?: AdapterResolveContext): Promise<
 
   if (context?.agentId) {
     const byAgent = await getActiveAdapterCached(context);
-    if (byAgent) {
-      return byAgent;
-    }
+    if (byAgent) return byAgent;
   }
 
   if (context?.namespaceId) {
@@ -134,39 +109,29 @@ async function resolveAdapterByPolicy(context?: AdapterResolveContext): Promise<
       tenantId: context.tenantId,
       namespaceId: context.namespaceId,
     });
-    if (byNamespace) {
-      return byNamespace;
-    }
+    if (byNamespace) return byNamespace;
   }
 
   return null;
 }
 
-/**
- * Consulta o adapter ativo com cache Redis.
- * Cache miss → consulta HTTP ao training-service → armazena no Redis.
- */
 export function buildCacheKey(context?: AdapterResolveContext): string {
   const tenant = context?.tenantId ?? 'none';
   const namespace = context?.namespaceId ?? 'none';
   const agent = context?.agentId ?? 'none';
-  return `alice:lora:active-adapter:${tenant}:${namespace}:${agent}`;
+  return `alice:chat:lora:active-adapter:${tenant}:${namespace}:${agent}`;
 }
 
 async function getActiveAdapterCached(context?: AdapterResolveContext): Promise<ActiveAdapterInfo | null> {
   const redis = getRedisClient();
   const cacheKey = buildCacheKey(context);
 
-  // 1. Verificar cache Redis
   if (redis) {
     try {
       const cached = await redis.get(cacheKey);
       if (cached !== null) {
         loraCacheCounter.inc({ status: 'hit' });
-        // Cache hit: "null" (string) = sem adapter, JSON = adapter ativo
-        if (cached === 'null') {
-          return null;
-        }
+        if (cached === 'null') return null;
         return JSON.parse(cached) as ActiveAdapterInfo;
       }
       loraCacheCounter.inc({ status: 'miss' });
@@ -174,15 +139,13 @@ async function getActiveAdapterCached(context?: AdapterResolveContext): Promise<
       loraCacheCounter.inc({ status: 'error' });
       logger.warn(
         { error: cacheError instanceof Error ? cacheError.message : String(cacheError) },
-        'Falha ao ler cache Redis de adapter LoRA (continuando com HTTP)'
+        'Falha ao ler cache Redis de adapter LoRA no chat-service'
       );
     }
   }
 
-  // 2. Cache miss - consultar training-service
   const adapter = await fetchActiveAdapterFromTrainingService(context);
 
-  // 3. Armazenar no cache Redis (mesmo se null, para evitar consultas repetidas)
   if (redis) {
     try {
       const cacheValue = adapter ? JSON.stringify(adapter) : 'null';
@@ -190,7 +153,7 @@ async function getActiveAdapterCached(context?: AdapterResolveContext): Promise<
     } catch (cacheError) {
       logger.warn(
         { error: cacheError instanceof Error ? cacheError.message : String(cacheError) },
-        'Falha ao gravar cache Redis de adapter LoRA (não bloqueante)'
+        'Falha ao gravar cache Redis de adapter LoRA no chat-service'
       );
     }
   }
@@ -198,16 +161,13 @@ async function getActiveAdapterCached(context?: AdapterResolveContext): Promise<
   return adapter;
 }
 
-/**
- * Consulta HTTP ao training-service para obter adapter ativo.
- * Timeout conservador de 5s para não impactar latência de geração de sinais.
- */
 async function fetchActiveAdapterFromTrainingService(context?: AdapterResolveContext): Promise<ActiveAdapterInfo | null> {
   try {
     const query = new URLSearchParams();
     if (context?.tenantId) query.set('tenantId', context.tenantId);
     if (context?.namespaceId) query.set('namespaceId', context.namespaceId);
     if (context?.agentId) query.set('agentId', context.agentId);
+
     const url = `${TRAINING_SERVICE_URL}/api/training/lora/active${query.size > 0 ? `?${query.toString()}` : ''}`;
     const response = await fetch(url, {
       method: 'GET',
@@ -220,41 +180,19 @@ async function fetchActiveAdapterFromTrainingService(context?: AdapterResolveCon
 
     if (!response.ok) {
       logger.warn(
-        { status: response.status },
-        'Resposta não-OK do training-service ao consultar adapter ativo'
+        { status: response.status, context },
+        'Training service retornou status não-OK ao consultar adapter ativo no chat-service'
       );
       return null;
     }
 
-    const data = await response.json() as { adapter: ActiveAdapterInfo | null };
+    const data = (await response.json()) as { adapter: ActiveAdapterInfo | null };
     return data.adapter ?? null;
   } catch (error) {
     logger.warn(
-      { error: error instanceof Error ? error.message : String(error) },
-      'Falha ao consultar training-service para adapter LoRA ativo'
+      { error: error instanceof Error ? error.message : String(error), context },
+      'Falha HTTP ao consultar adapter ativo no training-service (chat-service)'
     );
     return null;
-  }
-}
-
-/**
- * Invalida o cache de adapter ativo no Redis.
- * Chamado quando um novo adapter é ativado ou desativado.
- */
-export async function invalidateAdapterCache(): Promise<void> {
-  const redis = getRedisClient();
-  if (redis) {
-    try {
-      const keys = await redis.keys('alice:lora:active-adapter:*');
-      if (keys.length > 0) {
-        await redis.del(keys);
-      }
-      logger.info('Cache de adapter LoRA invalidado');
-    } catch (error) {
-      logger.warn(
-        { error: error instanceof Error ? error.message : String(error) },
-        'Falha ao invalidar cache de adapter LoRA'
-      );
-    }
   }
 }

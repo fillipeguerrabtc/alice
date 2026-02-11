@@ -1558,6 +1558,131 @@ async function buildTradingDatasetSeedFromSignal(params: {
   return { marketContext, prompt, responsePayload, interval, analysis };
 }
 
+type TradingSignalDatasetCreationResult = {
+  dataset: schema.TradingDataset;
+  created: boolean;
+  status: schema.TradingDataset['status'];
+  qualityScore: number;
+  duplicate: {
+    isDuplicate: boolean;
+    duplicateOfId?: string;
+    similarityScore?: number;
+  };
+};
+
+async function createTradingDatasetFromSignalSource(params: {
+  authContext: { tenantId: string; userId: string };
+  signal: schema.TradingSignal;
+  reviewNotes?: string;
+}): Promise<TradingSignalDatasetCreationResult> {
+  const db = getDatabase();
+
+  const existing = await db.query.tradingDataset.findFirst({
+    where: and(
+      eq(schema.tradingDataset.tenantId, params.authContext.tenantId),
+      eq(schema.tradingDataset.signalId, params.signal.id)
+    ),
+  });
+
+  if (existing) {
+    return {
+      dataset: existing,
+      created: false,
+      status: existing.status,
+      qualityScore: existing.qualityScore ?? 0,
+      duplicate: {
+        isDuplicate: existing.isDuplicate ?? false,
+        duplicateOfId: existing.duplicateOfId ?? undefined,
+        similarityScore: existing.similarityScore ?? undefined,
+      },
+    };
+  }
+
+  const seed = await buildTradingDatasetSeedFromSignal({
+    authContext: params.authContext,
+    signal: params.signal,
+  });
+
+  const responsePayload = seed.responsePayload;
+  const prompt = seed.prompt;
+  const responseText = JSON.stringify(responsePayload);
+  const semhash = computeSemHash(`${prompt}\n${responseText}`);
+  const embedding = await generateTradingDatasetEmbedding(`${prompt}\n${responseText}`);
+  const duplicateResult = await detectTradingDatasetDuplicate({
+    tenantId: params.authContext.tenantId,
+    semhash,
+    embedding,
+  });
+  const qualityScore = computeTradingDatasetQualityScore({
+    confidence: params.signal.confidence ?? undefined,
+    prompt,
+    response: responseText,
+  });
+  const autoRejectedByQuality = qualityScore < TRADING_DATASET_MIN_QUALITY;
+  const status: 'pending' | 'rejected' = duplicateResult.isDuplicate || autoRejectedByQuality ? 'rejected' : 'pending';
+  const reviewNotes = autoRejectedByQuality
+    ? `Auto-rejeitado: qualidade ${qualityScore.toFixed(2)} abaixo do mínimo (${TRADING_DATASET_MIN_QUALITY}).`
+    : params.reviewNotes ?? null;
+  const signalMetadata = (params.signal.metadata ?? {}) as TradingSignalMetadata;
+  const metadataNamespaceId = z.string().uuid().safeParse(signalMetadata.namespaceId).success
+    ? signalMetadata.namespaceId
+    : null;
+  const metadataAgentId = z.string().uuid().safeParse(signalMetadata.agentId).success
+    ? signalMetadata.agentId
+    : null;
+
+  const [created] = await db.insert(schema.tradingDataset).values({
+    tenantId: params.authContext.tenantId,
+    marketContext: seed.marketContext,
+    prompt,
+    response: responseText,
+    actionType: params.signal.signalType,
+    status,
+    reviewNotes,
+    signalId: params.signal.id,
+    orderId: params.signal.executedOrderId ?? null,
+    sourceType: 'signal',
+    sourceId: params.signal.id,
+    sourceMetadata: {
+      interval: seed.interval,
+      marketType: params.signal.marketType,
+      namespaceId: metadataNamespaceId,
+      agentId: metadataAgentId,
+    },
+    qualityScore,
+    embedding,
+    semhash,
+    isDuplicate: duplicateResult.isDuplicate,
+    duplicateOfId: duplicateResult.duplicateOfId ?? null,
+    similarityScore: duplicateResult.similarityScore ?? null,
+    criadoEm: new Date(),
+    atualizadoEm: new Date(),
+  }).returning();
+
+  const sourceTypeMetric = 'signal';
+  tradingDatasetMetrics.createdTotal.labels(sourceTypeMetric, status).inc();
+  tradingDatasetMetrics.qualityScore.observe(qualityScore);
+  if (duplicateResult.isDuplicate) {
+    tradingDatasetMetrics.duplicatesTotal.labels(sourceTypeMetric).inc();
+    tradingDatasetMetrics.rejectedTotal.labels('duplicate', sourceTypeMetric).inc();
+  }
+  if (autoRejectedByQuality) {
+    tradingDatasetMetrics.rejectedTotal.labels('quality', sourceTypeMetric).inc();
+  }
+
+  return {
+    dataset: created,
+    created: true,
+    status,
+    qualityScore,
+    duplicate: {
+      isDuplicate: duplicateResult.isDuplicate,
+      duplicateOfId: duplicateResult.duplicateOfId ?? undefined,
+      similarityScore: duplicateResult.similarityScore ?? undefined,
+    },
+  };
+}
+
 function resolveActionTypeFromOrder(order: schema.TradingOrder, signal?: schema.TradingSignal) {
   if (signal?.signalType) return signal.signalType;
   if ((order.metadata as TradingOrderMetadata | undefined)?.closePosition) {
@@ -12242,7 +12367,11 @@ async function generateTradingSignalFromLlm(params: {
   // Resolver modelo com adapter LoRA ativo (se disponível)
   // Se houver adapter treinado e ativo, usa-o ao invés do modelo base
   // Fallback automático para modelo base se adapter não disponível
-  const resolvedModel = await resolveModelWithAdapter(agentContext.llmConfig.model);
+  const resolvedModel = await resolveModelWithAdapter(agentContext.llmConfig.model, {
+    tenantId: params.tenantId,
+    namespaceId: agentContext.agent.namespaceId ?? agentContext.namespace?.id ?? undefined,
+    agentId: agentContext.agent.id ?? undefined,
+  });
 
   for (let attempt = 1; attempt <= MAX_GPU_RETRIES; attempt++) {
     try {
@@ -13042,6 +13171,12 @@ app.post('/api/integrations/trading/signals/:id/approve', requirePermission('int
     // Sinais neutral/hold: aprovar apenas para treinamento (sem criar ordem)
     const trainingOnlyTypes = ['neutral', 'hold'];
     if (trainingOnlyTypes.includes(signal.signalType)) {
+      const datasetResult = await createTradingDatasetFromSignalSource({
+        authContext: { tenantId: authContext.tenantId, userId: authContext.userId },
+        signal,
+        reviewNotes: bodyResult.data.reason,
+      });
+
       // Atualizar metadata do sinal com status de aprovação para treinamento
       const existingMetadata = (signal.metadata ?? {}) as Record<string, unknown>;
       const updatedMetadata = {
@@ -13056,13 +13191,28 @@ app.post('/api/integrations/trading/signals/:id/approve', requirePermission('int
         .update(schema.tradingSignals)
         .set({
           metadata: updatedMetadata as typeof signal.metadata,
+          isActive: false,
         })
         .where(eq(schema.tradingSignals.id, signal.id));
 
       logger.info(
-        { signalId: signal.id, signalType: signal.signalType, userId: authContext.userId },
-        'Sinal neutral/hold aprovado para treinamento (sem ordem criada)'
+        {
+          signalId: signal.id,
+          signalType: signal.signalType,
+          userId: authContext.userId,
+          datasetId: datasetResult.dataset.id,
+          datasetStatus: datasetResult.status,
+          datasetCreated: datasetResult.created,
+        },
+        'Sinal neutral/hold aprovado para treinamento com dataset gerado (sem ordem criada)'
       );
+
+      const datasetReviewMessage =
+        datasetResult.status === 'pending'
+          ? 'dataset enviado para revisão'
+          : datasetResult.status === 'rejected'
+            ? 'dataset rejeitado automaticamente por regras de qualidade/duplicidade'
+            : `dataset com status ${datasetResult.status}`;
 
       res.status(200).json({
         success: true,
@@ -13070,7 +13220,14 @@ app.post('/api/integrations/trading/signals/:id/approve', requirePermission('int
           signalId: signal.id,
           signalType: signal.signalType,
           approvalType: 'training_only',
-          message: `Sinal ${signal.signalType.toUpperCase()} aprovado para treinamento. Nenhuma ordem foi criada.`,
+          dataset: {
+            id: datasetResult.dataset.id,
+            status: datasetResult.status,
+            created: datasetResult.created,
+            qualityScore: datasetResult.qualityScore,
+            isDuplicate: datasetResult.duplicate.isDuplicate,
+          },
+          message: `Sinal ${signal.signalType.toUpperCase()} aprovado para treinamento e ${datasetReviewMessage}. Nenhuma ordem foi criada.`,
         },
       });
       return;
@@ -13867,70 +14024,22 @@ app.post('/api/integrations/trading/datasets/from-signal', requirePermission('in
       return;
     }
 
-    const seed = await buildTradingDatasetSeedFromSignal({
+    const result = await createTradingDatasetFromSignalSource({
       authContext: { tenantId: authContext.tenantId, userId: authContext.userId },
       signal,
+      reviewNotes: parsed.data.reviewNotes,
     });
 
-    const responsePayload = seed.responsePayload;
-    const prompt = seed.prompt;
-    const responseText = JSON.stringify(responsePayload);
-    const semhash = computeSemHash(`${prompt}\n${responseText}`);
-    const embedding = await generateTradingDatasetEmbedding(`${prompt}\n${responseText}`);
-    const duplicateResult = await detectTradingDatasetDuplicate({
-      tenantId: authContext.tenantId,
-      semhash,
-      embedding,
-    });
-    const qualityScore = computeTradingDatasetQualityScore({
-      confidence: signal.confidence ?? undefined,
-      prompt,
-      response: responseText,
-    });
-    const autoRejectedByQuality = qualityScore < TRADING_DATASET_MIN_QUALITY;
-    const status = duplicateResult.isDuplicate || autoRejectedByQuality ? 'rejected' : 'pending';
-    const reviewNotes = autoRejectedByQuality
-      ? `Auto-rejeitado: qualidade ${qualityScore.toFixed(2)} abaixo do mínimo (${TRADING_DATASET_MIN_QUALITY}).`
-      : parsed.data.reviewNotes ?? null;
-
-    const [created] = await db.insert(schema.tradingDataset).values({
-      tenantId: authContext.tenantId,
-      marketContext: seed.marketContext,
-      prompt,
-      response: responseText,
-      actionType: signal.signalType,
-      status,
-      reviewNotes,
-      signalId: signal.id,
-      orderId: signal.executedOrderId ?? null,
-      sourceType: 'signal',
-      sourceId: signal.id,
-      sourceMetadata: {
-        interval: seed.interval,
-        marketType: signal.marketType,
+    res.json({
+      success: true,
+      data: result.dataset,
+      meta: {
+        created: result.created,
+        status: result.status,
+        qualityScore: result.qualityScore,
+        duplicate: result.duplicate,
       },
-      qualityScore,
-      embedding,
-      semhash,
-      isDuplicate: duplicateResult.isDuplicate,
-      duplicateOfId: duplicateResult.duplicateOfId ?? null,
-      similarityScore: duplicateResult.similarityScore ?? null,
-      criadoEm: new Date(),
-      atualizadoEm: new Date(),
-    }).returning();
-
-    const sourceTypeMetric = 'signal';
-    tradingDatasetMetrics.createdTotal.labels(sourceTypeMetric, status).inc();
-    tradingDatasetMetrics.qualityScore.observe(qualityScore);
-    if (duplicateResult.isDuplicate) {
-      tradingDatasetMetrics.duplicatesTotal.labels(sourceTypeMetric).inc();
-      tradingDatasetMetrics.rejectedTotal.labels('duplicate', sourceTypeMetric).inc();
-    }
-    if (autoRejectedByQuality) {
-      tradingDatasetMetrics.rejectedTotal.labels('quality', sourceTypeMetric).inc();
-    }
-
-    res.json({ success: true, data: created });
+    });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao criar dataset de trading');

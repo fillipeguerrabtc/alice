@@ -450,6 +450,24 @@ interface TradingOrder {
   atualizadoEm: string;
 }
 
+interface TradingPostMortem {
+  id: string;
+  positionId: string | null;
+  symbol?: string | null;
+  marketType?: 'futures' | 'spot' | 'margin' | null;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  confidenceScore?: number | null;
+  qualityScore?: number | null;
+  summary?: string | null;
+  recommendation?: string | null;
+  motivators?: string[] | null;
+  successFactors?: string[] | null;
+  failureFactors?: string[] | null;
+  lessons?: string[] | null;
+  criadoEm: string;
+  atualizadoEm: string;
+}
+
 interface TradingProfileForm {
   kind: 'analysis' | 'signal';
   timeframes: string[];
@@ -1438,6 +1456,26 @@ export default function Trading() {
   });
 
   const {
+    data: postmortemsData,
+    isLoading: isLoadingPostmortems,
+    refetch: refetchPostmortems,
+  } = useQuery<{ success: boolean; data: TradingPostMortem[] }>({
+    queryKey: ['/api/integrations/postmortem', selectedMarketType, 'real'],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.set('isDemo', 'false');
+      if (selectedMarketType) {
+        params.set('marketType', selectedMarketType);
+      }
+      const response = await apiRequest('GET', `/api/integrations/postmortem?${params.toString()}`);
+      return response.json();
+    },
+    enabled: statusData?.data?.isConfigured && !statusData?.data?.requiresTenant,
+  });
+
+  const postmortems = postmortemsData?.data ?? [];
+
+  const {
     data: riskConfigData,
     error: riskConfigError,
     refetch: refetchRiskConfig,
@@ -1951,6 +1989,28 @@ export default function Trading() {
     onError: (error: Error) => {
       toast({
         title: t('trading.errors.riskConfigFailed'),
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const sendPostMortemToTrainingMutation = useMutation({
+    mutationFn: async (postmortemId: string) => {
+      const response = await apiRequest('POST', '/api/integrations/postmortem/send-to-training', { postmortemId });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/datasets'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/postmortem'] });
+      toast({
+        title: 'Post-mortem enviado para treinamento',
+        description: 'Dataset criado e enviado para aprovação na página Training.',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erro ao enviar post-mortem',
         description: error.message,
         variant: 'destructive',
       });
@@ -3005,7 +3065,7 @@ export default function Trading() {
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           {/* MOBILE-FIRST 12/01/2026: Tabs com scroll horizontal para caber em mobile */}
           <div className="overflow-x-auto pb-2 -mx-2 px-2 md:overflow-visible md:mx-0 md:px-0">
-            <TabsList className="grid w-full grid-cols-3 gap-1 sm:grid-cols-5 lg:grid-cols-10">
+            <TabsList className="grid w-full grid-cols-3 gap-1 sm:grid-cols-6 lg:grid-cols-11">
               <TabsTrigger value="overview" data-testid="tab-overview" className="whitespace-nowrap">
                 <BarChart3 className="h-4 w-4 md:mr-2" />
                 <span className="hidden md:inline">{t('trading.tabs.overview')}</span>
@@ -3037,6 +3097,10 @@ export default function Trading() {
               <TabsTrigger value="history" data-testid="tab-history" className="whitespace-nowrap">
                 <History className="h-4 w-4 md:mr-2" />
                 <span className="hidden md:inline">{t('trading.tabs.history')}</span>
+              </TabsTrigger>
+              <TabsTrigger value="postmortems" data-testid="tab-postmortems" className="whitespace-nowrap">
+                <FileCheck className="h-4 w-4 md:mr-2" />
+                <span className="hidden md:inline">Post-Mortems</span>
               </TabsTrigger>
               <TabsTrigger value="account" data-testid="tab-account" className="whitespace-nowrap">
                 <Wallet className="h-4 w-4 md:mr-2" />
@@ -4579,6 +4643,137 @@ export default function Trading() {
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* Post-Mortems Tab */}
+          <TabsContent value="postmortems" className="space-y-4 mt-6">
+            <div className="flex justify-between items-center">
+              <CardDescription>
+                Post-mortems das operações reais. O envio para treinamento é permitido somente quando o post-mortem está completo.
+              </CardDescription>
+              <Button variant="outline" onClick={() => refetchPostmortems()}>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                {t('common.refresh')}
+              </Button>
+            </div>
+
+            {isLoadingPostmortems ? (
+              <Skeleton className="h-64" />
+            ) : postmortems.length === 0 ? (
+              <Card>
+                <CardContent className="flex flex-col items-center justify-center py-12">
+                  <FileCheck className="h-12 w-12 text-muted-foreground mb-4" />
+                  <p className="text-muted-foreground">Nenhum post-mortem encontrado para operações reais.</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid gap-4">
+                {postmortems.map((pm) => {
+                  const motivators = Array.isArray(pm.motivators) ? pm.motivators : [];
+                  const lessons = Array.isArray(pm.lessons) ? pm.lessons : [];
+                  const canSendToTraining = pm.status === 'completed';
+
+                  return (
+                    <Card key={pm.id}>
+                      <CardContent className="pt-6 space-y-4">
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <div className="flex items-center gap-2 mb-2">
+                              <Badge variant="outline">{pm.symbol ?? 'N/A'}</Badge>
+                              <Badge
+                                variant={
+                                  pm.status === 'completed'
+                                    ? 'default'
+                                    : pm.status === 'processing'
+                                      ? 'secondary'
+                                      : pm.status === 'failed'
+                                        ? 'destructive'
+                                        : 'outline'
+                                }
+                              >
+                                {pm.status}
+                              </Badge>
+                              {pm.marketType && <Badge variant="outline">{pm.marketType}</Badge>}
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              Criado em {formatDateTime(pm.criadoEm, { locale, timeZone })}
+                            </p>
+                          </div>
+                          <div className="text-right text-sm space-y-1">
+                            {typeof pm.confidenceScore === 'number' && (
+                              <p>Confiança: {(pm.confidenceScore * 100).toFixed(0)}%</p>
+                            )}
+                            {typeof pm.qualityScore === 'number' && (
+                              <p>Qualidade: {pm.qualityScore.toFixed(2)}</p>
+                            )}
+                          </div>
+                        </div>
+
+                        {(pm.summary || pm.recommendation) && (
+                          <div className="space-y-2">
+                            {pm.summary && (
+                              <>
+                                <p className="text-sm font-medium">Resumo</p>
+                                <p className="text-sm text-muted-foreground">{pm.summary}</p>
+                              </>
+                            )}
+                            {pm.recommendation && (
+                              <>
+                                <p className="text-sm font-medium">Recomendação</p>
+                                <p className="text-sm text-muted-foreground">{pm.recommendation}</p>
+                              </>
+                            )}
+                          </div>
+                        )}
+
+                        {motivators.length > 0 && (
+                          <div>
+                            <p className="text-sm font-medium mb-2">Motivadores</p>
+                            <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
+                              {motivators.map((item, index) => (
+                                <li key={`${pm.id}-motivator-${index}`}>{item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {lessons.length > 0 && (
+                          <div>
+                            <p className="text-sm font-medium mb-2">Lições Aprendidas</p>
+                            <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
+                              {lessons.map((item, index) => (
+                                <li key={`${pm.id}-lesson-${index}`}>{item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        <div className="pt-2 border-t flex justify-end">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={!canSendToTraining || sendPostMortemToTrainingMutation.isPending}
+                            onClick={() => sendPostMortemToTrainingMutation.mutate(pm.id)}
+                          >
+                            {sendPostMortemToTrainingMutation.isPending ? (
+                              <>
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                Enviando...
+                              </>
+                            ) : (
+                              <>
+                                <FileCheck className="h-4 w-4 mr-2" />
+                                Enviar para Treinamento
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
           </TabsContent>
 
           {/* Chart Tab - Gráfico de Candlesticks */}

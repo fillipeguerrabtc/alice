@@ -34,6 +34,7 @@ import {
   ArrowDownRight,
   BookOpen,
   Activity,
+  FileCheck,
 } from 'lucide-react';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -48,6 +49,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useKucoinWebSocket } from '@/hooks/useKucoinWebSocket';
+import { useToast } from '@/hooks/use-toast';
 
 // ============================================================================
 // Tipos
@@ -196,6 +198,7 @@ const SYMBOLS_REFETCH_INTERVAL = 300_000;
 // ============================================================================
 
 export default function DemoTrading() {
+  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState('overview');
   const [orderDialogOpen, setOrderDialogOpen] = useState(false);
   const [addFundsDialogOpen, setAddFundsDialogOpen] = useState(false);
@@ -506,6 +509,28 @@ export default function DemoTrading() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balances'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/orders'] });
+    },
+  });
+
+  const sendPostMortemToTrainingMutation = useMutation({
+    mutationFn: async (postmortemId: string) => {
+      const res = await apiRequest('POST', '/api/integrations/postmortem/send-to-training', { postmortemId });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/trading/datasets'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/postmortem', 'demo'] });
+      toast({
+        title: 'Post-mortem enviado para treinamento',
+        description: 'Dataset criado e enviado para aprovação na página Training.',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erro ao enviar post-mortem',
+        description: error.message,
+        variant: 'destructive',
+      });
     },
   });
 
@@ -1616,6 +1641,26 @@ export default function DemoTrading() {
                               </ul>
                             </div>
                           )}
+                        </div>
+                      )}
+
+                      {pm.status === 'completed' && (
+                        <div className="pt-2 border-t flex justify-end">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={sendPostMortemToTrainingMutation.isPending}
+                            onClick={() => sendPostMortemToTrainingMutation.mutate(pm.id)}
+                          >
+                            {sendPostMortemToTrainingMutation.isPending ? (
+                              'Enviando...'
+                            ) : (
+                              <>
+                                <FileCheck className="h-4 w-4 mr-2" />
+                                Enviar para Treinamento
+                              </>
+                            )}
+                          </Button>
                         </div>
                       )}
                     </div>

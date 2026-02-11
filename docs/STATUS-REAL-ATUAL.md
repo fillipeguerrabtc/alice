@@ -23,6 +23,12 @@
 - **Demo Trading Multi-ativo**: saldos por moeda via API dedicada (`/api/integrations/demo-trading/balances`) e contabilização por ativo para Spot/Margin (compra/venda com débito/crédito correto por base/quote).
 - **Venda por Ativo (Real + Demo)**: ação direta “Vender” a partir da lista de ativos para pré-preencher ticket de ordem sem retrabalho operacional.
 - **Ecossistema LLM completo**: LoRA adapters globais (QLoRA) + RAG contextual + Feedback Loop automático para evolução contínua.
+- **Segregação enterprise de Training/LoRA por escopo**: inferência automática de `namespace/agent/domain` em todas as fontes, quarentena automática por baixa confiança e trilha de auditoria de overrides.
+- **Binding obrigatório de adapter por contexto**: resolução contextual `agent -> namespace -> base` com política estrita (`LORA_STRICT_BINDING`) em fluxos LLM de integrações e chat.
+- **Training governado por escopo**: aprovação com override controlado (motivo obrigatório), resolução manual de quarentena e seleção inteligente de exemplos por perfil semântico.
+- **Observabilidade de governança de escopo**: métricas de quarentena, overrides e resolução manual publicadas no training-service para monitoramento contínuo.
+- **Observabilidade LoRA no chat**: métricas `alice_chat_lora_*` integradas em dashboard LLM e alertas de erro/cache para detectar falhas de binding por escopo.
+- **Hardening de isolamento de escopo**: suíte de testes unitários cobre isolamento de cache keys e nomes/caminhos de adapters por `namespace/agent` para evitar contaminação cross-scope.
 - Status de Integrações no Dashboard/Integrações usa SSOT Prometheus via observability-service.
 - OpenAI Vision (Responses API) exibida com status operacional na página Integrações.
 - Prepare Infrastructure: preparação SSOT consolidada em sessão SSH única (menos conexões e menos timeouts).

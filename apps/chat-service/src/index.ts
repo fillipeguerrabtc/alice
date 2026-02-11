@@ -78,6 +78,7 @@ import { ProxyAgent } from 'undici';
 import { createClient } from 'redis';
 import type { AgenticDetectors } from '@alice/shared';
 import { isTradingCommand } from './trading-command-parser.js';
+import { resolveModelWithAdapter } from './lora-adapter-resolver.js';
 import { 
   buscarContextoRAG, 
   buscarContextoAgentic,
@@ -3281,6 +3282,12 @@ interface LLMConfig {
   model?: string;
 }
 
+interface LlmAdapterContext {
+  tenantId?: string;
+  namespaceId?: string;
+  agentId?: string;
+}
+
 interface LLMRequest {
   messages: LLMMessage[];
   stream: boolean;
@@ -4912,6 +4919,19 @@ function mapModelNameToGpuModel(modelName: string): string {
   );
 }
 
+async function applyScopedAdapterToConfig(config: LLMConfig | undefined, context?: LlmAdapterContext): Promise<LLMConfig> {
+  const baseModel = config?.model || DEFAULT_LLM_CONFIG.model;
+  const resolvedModel = await resolveModelWithAdapter(baseModel, {
+    tenantId: context?.tenantId,
+    namespaceId: context?.namespaceId,
+    agentId: context?.agentId,
+  });
+  return {
+    ...config,
+    model: resolvedModel,
+  };
+}
+
 const DEFAULT_VISION_IMAGE_PROMPT =
   'Você é um assistente especializado em Trading, Finanças, Contabilidade e Matemática. ' +
   'Analise a imagem enviada. Se for um gráfico (candles, indicadores), descreva padrões, tendência, suportes/resistências, ' +
@@ -6506,10 +6526,22 @@ async function executeAgenticTask(params: {
       `Instruções do usuário: ${params.instructions}`,
     ].join('\n');
 
-    const content = await callLlamaAPI([
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: taskInstructions },
-    ], false);
+    const scopedTaskConfig = await applyScopedAdapterToConfig(
+      undefined,
+      {
+        tenantId: params.tenantId,
+        namespaceId: params.namespaceId ?? undefined,
+        agentId: params.agentId ?? undefined,
+      }
+    );
+    const content = await callLlamaAPI(
+      [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: taskInstructions },
+      ],
+      false,
+      scopedTaskConfig
+    );
 
     if (typeof content !== 'string' || content.trim().length === 0) {
       throw new Error('Conteúdo vazio retornado pelo LLM para tarefa agentic');
@@ -7940,12 +7972,17 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       llmMessages,
       { conversationId: id, source: 'sync', profile: syncProfile }
     );
+    const scopedLlmConfig = await applyScopedAdapterToConfig(llmConfig, {
+      tenantId,
+      namespaceId: activeNamespaceId ?? undefined,
+      agentId: activeAgentId ?? undefined,
+    });
 
     const llmStartTime = Date.now();
     const response = await callLlamaAPI(
       llmMessages,
       false,
-      llmConfig,
+      scopedLlmConfig,
       getAdaptiveGpuPriority('sync', syncProfile)
     );
     const llmLatency = Date.now() - llmStartTime;
@@ -8747,6 +8784,11 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           mediaMessages,
           { conversationId, source: 'stream', profile: mediaProfile }
         );
+        const scopedLlmConfig = await applyScopedAdapterToConfig(llmConfig, {
+          tenantId,
+          namespaceId: namespaceIdForMedia ?? undefined,
+          agentId: conversation?.agentId ?? undefined,
+        });
         emitAgentEvent({
           phase: 'llm',
           action: 'llm_stream',
@@ -8754,9 +8796,9 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           message: 'Iniciando geração',
           correlationId: conversationId ?? undefined,
           payload: {
-            model: llmConfig.model,
-            maxTokens: llmConfig.maxTokens,
-            temperature: llmConfig.temperature,
+            model: scopedLlmConfig.model,
+            maxTokens: scopedLlmConfig.maxTokens,
+            temperature: scopedLlmConfig.temperature,
           },
         });
         let lastProgressAt = 0;
@@ -8911,7 +8953,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
               res.end();
             }
           },
-          llmConfig,
+          scopedLlmConfig,
           getAdaptiveGpuPriority('stream', mediaProfile)
         );
       } catch (streamError) {
@@ -11812,6 +11854,11 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         llmMessages,
         { conversationId, source: 'stream', profile: streamProfile }
       );
+      const scopedLlmConfig = await applyScopedAdapterToConfig(llmConfig, {
+        tenantId,
+        namespaceId: activeNamespaceId || namespaceId || undefined,
+        agentId: conversation?.agentId ?? undefined,
+      });
       emitAgentEvent({
         phase: 'llm',
         action: 'llm_stream',
@@ -11819,9 +11866,9 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         message: 'Iniciando geração',
         correlationId: conversationId ?? undefined,
         payload: {
-          model: llmConfig.model,
-          maxTokens: llmConfig.maxTokens,
-          temperature: llmConfig.temperature,
+          model: scopedLlmConfig.model,
+          maxTokens: scopedLlmConfig.maxTokens,
+          temperature: scopedLlmConfig.temperature,
         },
       });
       let lastProgressAt = 0;
@@ -12014,7 +12061,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
             }
           }
         },
-        llmConfig,
+        scopedLlmConfig,
         getAdaptiveGpuPriority('stream', streamProfile)
       );
     } catch (streamError) {
@@ -13633,6 +13680,11 @@ wss.on('connection', (ws, req) => {
           llmMessages,
           { conversationId, source: 'websocket', profile: websocketProfile }
         );
+        const scopedLlmConfig = await applyScopedAdapterToConfig(llmConfig, {
+          tenantId: safeTenantId,
+          namespaceId: namespaceId || undefined,
+          agentId: conversation?.agentId ?? undefined,
+        });
         
         // BUG FIX 26/12/2025: Prefixado com _ - resultado não usado pois callback onDone usa responseText diretamente
         let _fullResponse = '';
@@ -13644,9 +13696,9 @@ wss.on('connection', (ws, req) => {
             message: 'Iniciando geração',
             correlationId: conversationId ?? undefined,
             payload: {
-              model: llmConfig.model,
-              maxTokens: llmConfig.maxTokens,
-              temperature: llmConfig.temperature,
+              model: scopedLlmConfig.model,
+              maxTokens: scopedLlmConfig.maxTokens,
+              temperature: scopedLlmConfig.temperature,
             },
           });
           _fullResponse = await proxyStreamFromGpuManager(
@@ -13811,7 +13863,7 @@ wss.on('connection', (ws, req) => {
                 }, 'Escalação automática após resposta de baixa confiança do LLM');
               }
             },
-            llmConfig, // BUG FIX 02/01/2026: Passar configuração do agente
+            scopedLlmConfig, // BUG FIX 02/01/2026: Passar configuração do agente
             getAdaptiveGpuPriority('websocket', websocketProfile)
           );
         } catch (streamError) {
@@ -14127,6 +14179,11 @@ wss.on('connection', (ws, req) => {
           ],
           { conversationId: mediaMessage.conversationId, source: 'websocket-media', profile: mediaProfile }
         );
+        const scopedMediaLlmConfig = await applyScopedAdapterToConfig(mediaLlmConfig, {
+          tenantId,
+          namespaceId: namespaceId || undefined,
+          agentId: conversation.agentId ?? undefined,
+        });
         
         // LLM texto (Qwen2.5 7B) é SOMENTE TEXTO
         // Não envia imagens diretamente - usa contexto RAG via OpenAI Vision + embeddings de texto
@@ -14222,7 +14279,7 @@ wss.on('connection', (ws, req) => {
                 llmLatencyMs: llmLatency,
               }, 'Mensagem multimodal processada via WebSocket');
             },
-            mediaLlmConfig, // BUG FIX 02/01/2026: Passar configuração do agente
+            scopedMediaLlmConfig, // BUG FIX 02/01/2026: Passar configuração do agente
             getAdaptiveGpuPriority('websocket-media', mediaProfile)
           );
         } catch (streamError) {
@@ -16870,12 +16927,17 @@ app.post('/api/chat/message', asyncHandler(async (req: Request, res: Response) =
       llmMessages,
       { conversationId, source: 'external-channel', profile: externalProfile }
     );
+    const scopedExternalLlmConfig = await applyScopedAdapterToConfig(externalChannelLlmConfig, {
+      tenantId: safeTenantId,
+      namespaceId: conversation.namespaceId ?? undefined,
+      agentId: conversation.agentId ?? undefined,
+    });
     
     const llmStartTime = Date.now();
     const llmResponse = await callLlamaAPI(
       llmMessages,
       false,
-      externalChannelLlmConfig,
+      scopedExternalLlmConfig,
       getAdaptiveGpuPriority('external-channel', externalProfile)
     );
     const llmLatency = Date.now() - llmStartTime;

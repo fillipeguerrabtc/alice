@@ -177,6 +177,8 @@ Permitir que o Chat consulte e **atualize dashboards** do Grafana com RBAC, audi
 - **Circuit Breaker:** `alice_circuit_breaker_state{name=~".*llm.*"}`
 - **Response Cache Hit Rate:** `alice_response_cache_hit_rate`
 - **WebSocket Connections:** `alice_llm_active_sessions`
+- **LoRA Resolver Chat (resultado):** `sum(rate(alice_chat_lora_resolve_total[5m])) by (result)`
+- **LoRA Resolver Chat (cache):** `sum(rate(alice_chat_lora_cache_total[5m])) by (status)`
 
 **Painéis:**
 
@@ -190,6 +192,8 @@ Permitir que o Chat consulte e **atualize dashboards** do Grafana com RBAC, audi
 - Taxa de erros > 10% por 5min
 - Latência P95 > 5s por 5min
 - Circuit breaker OPEN > 5min
+- `ChatLoraResolverHighErrorRate`: erro do resolver LoRA no chat > 5% por 10min
+- `ChatLoraResolverCacheErrors`: erros de cache Redis do resolver LoRA no chat
 
 ---
 
@@ -416,6 +420,9 @@ Permitir que o Chat consulte e **atualize dashboards** do Grafana com RBAC, audi
 - **Auto-rejeições:** `alice_training_data_rejected_total{reason,source_type}`
 - **Qualidade (hist):** `alice_training_data_quality_score_bucket`
 - **Scheduler:** `alice_training_scheduler_runs_total{result}`
+- **Quarentena de escopo:** `alice_training_scope_quarantine_total{source_type,reason}`
+- **Overrides de escopo:** `alice_training_scope_override_total{source}`
+- **Resolução manual de quarentena:** `alice_training_scope_resolved_total{source}`
 - **Trading datasets:** `alice_trading_dataset_created_total`, `alice_trading_dataset_duplicates_total`, `alice_trading_dataset_quality_score_bucket`
 
 **Painéis:**
@@ -424,7 +431,8 @@ Permitir que o Chat consulte e **atualize dashboards** do Grafana com RBAC, audi
 2. **Deduplicação:** duplicados por fonte
 3. **Qualidade:** P50/P95 por janela
 4. **Scheduler:** execuções por resultado
-5. **Trading datasets:** criação, duplicados, qualidade
+5. **Governança de escopo:** quarentena, overrides e resoluções manuais
+6. **Trading datasets:** criação, duplicados, qualidade
 
 **Alertas:**
 

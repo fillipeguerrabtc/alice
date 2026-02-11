@@ -25,7 +25,7 @@ import path from 'path';
 import crypto from 'crypto';
 // CircuitBreaker via createCircuitBreaker de @alice/shared-utils
 import { getDatabase, getPool, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, validateEmbeddingDimension, EMBEDDING_DIMENSIONS, withTenantContext } from '@alice/database';
-import { eq, sql, desc, and } from '@alice/database';
+import { eq, sql, desc, and, asc } from '@alice/database';
 import { z } from 'zod';
 import {
   requirePermission,
@@ -113,35 +113,158 @@ function getAuthUser(req: Request): AuthUser {
   return typed.user ?? {};
 }
 
-function selectTrainingChunks(chunks: Array<{ id: string; conteudo: string; posicao: number }>): Array<{ id: string; conteudo: string; posicao: number }> {
-  const eligible = chunks.filter((chunk) => chunk.conteudo.trim().length >= TRAINING_DOC_MIN_CHARS);
-  if (eligible.length <= TRAINING_DOC_MAX_SAMPLES) return eligible;
+type TrainingChunk = { id: string; conteudo: string; posicao: number };
 
-  const step = Math.ceil(eligible.length / TRAINING_DOC_MAX_SAMPLES);
-  const selected: Array<{ id: string; conteudo: string; posicao: number }> = [];
-  for (let i = 0; i < eligible.length && selected.length < TRAINING_DOC_MAX_SAMPLES; i += step) {
-    selected.push(eligible[i]);
+type TrainingChunkSelectionOptions = {
+  maxSamples?: number;
+  minChars?: number;
+};
+
+const TRAINING_SALIENCE_KEYWORDS = [
+  'risco', 'risk', 'stop loss', 'take profit', 'sl', 'tp',
+  'leverage', 'alavancagem', 'entry', 'exit', 'breakout', 'pullback',
+  'liquidez', 'liquidity', 'volatilidade', 'volatility', 'drawdown',
+  'position sizing', 'size', 'hedge', 'arbitragem', 'arbitrage',
+  'funding rate', 'order book', 'book', 'spread', 'latency',
+  'compliance', 'governança', 'governance', 'auditoria', 'audit',
+  'pnl', 'roi', 'sharpe', 'win rate', 'probabilidade', 'probability',
+];
+
+function normalizeForScoring(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function computeChunkSalienceScore(
+  chunk: TrainingChunk,
+  totalChunks: number,
+  maxPosition: number
+): number {
+  const raw = chunk.conteudo.trim();
+  if (!raw) return 0;
+  const normalized = normalizeForScoring(raw);
+  const words = normalized.split(' ').filter(Boolean);
+  const wordCount = words.length;
+  const chars = raw.length;
+
+  const keywordMatches = TRAINING_SALIENCE_KEYWORDS.reduce((acc, keyword) => (
+    normalized.includes(keyword) ? acc + 1 : acc
+  ), 0);
+  const keywordScore = Math.min(keywordMatches / 6, 1);
+
+  const numericMatches = (raw.match(/\b\d+([.,]\d+)?%?\b/g) ?? []).length;
+  const numericDensity = wordCount > 0 ? numericMatches / wordCount : 0;
+  const numericScore = Math.min(numericDensity * 8, 1);
+
+  const structureHits = (raw.match(/(^|\n)\s*(#{1,6}\s|[-*]\s|[0-9]+\.\s|[A-Z][A-Z\s]{6,}:)/g) ?? []).length;
+  const structureScore = Math.min(structureHits / 3, 1);
+
+  const lengthScore = Math.min(chars / 900, 1);
+
+  // Valoriza início e fim do documento (normalmente contexto + conclusões/recomendações)
+  const posNorm = maxPosition > 0 ? chunk.posicao / maxPosition : 0;
+  const edgeDistance = Math.min(posNorm, 1 - posNorm);
+  const positionScore = 1 - Math.min(edgeDistance / 0.5, 1); // 0..1
+
+  // Peso final calibrado para documentos técnicos/operacionais de trading
+  const score =
+    (keywordScore * 0.38) +
+    (numericScore * 0.22) +
+    (structureScore * 0.15) +
+    (lengthScore * 0.15) +
+    (positionScore * 0.10);
+
+  // Bônus leve para chunks com termos muito acionáveis
+  const actionableBonus = /(?:stop loss|take profit|risk|risco|drawdown|entry|exit|hedge|alavancagem|leverage)/i.test(raw) ? 0.05 : 0;
+  return Math.min(score + actionableBonus, 1);
+}
+
+function selectTrainingChunks(
+  chunks: TrainingChunk[],
+  options: TrainingChunkSelectionOptions = {}
+): TrainingChunk[] {
+  const minChars = options.minChars ?? TRAINING_DOC_MIN_CHARS;
+  const maxSamples = options.maxSamples ?? TRAINING_DOC_MAX_SAMPLES;
+  const eligible = chunks
+    .filter((chunk) => chunk.conteudo.trim().length >= minChars)
+    .sort((a, b) => a.posicao - b.posicao);
+
+  if (eligible.length <= maxSamples) return eligible;
+
+  const maxPosition = Math.max(...eligible.map((chunk) => chunk.posicao), 1);
+  const scored = eligible.map((chunk) => ({
+    chunk,
+    score: computeChunkSalienceScore(chunk, eligible.length, maxPosition),
+  }));
+
+  // Diversidade posicional: evitar selecionar chunks adjacentes demais
+  const minDistance = Math.max(1, Math.floor(eligible.length / (maxSamples * 2)));
+  const selected: TrainingChunk[] = [];
+
+  // âncoras (início e fim) para manter contexto macro
+  const firstAnchor = scored.find((item) => item.chunk.posicao <= Math.ceil(maxPosition * 0.20));
+  const lastAnchor = [...scored].reverse().find((item) => item.chunk.posicao >= Math.floor(maxPosition * 0.80));
+  if (firstAnchor) selected.push(firstAnchor.chunk);
+  if (lastAnchor && !selected.some((s) => s.id === lastAnchor.chunk.id)) selected.push(lastAnchor.chunk);
+
+  const sortedByScore = [...scored].sort((a, b) => b.score - a.score);
+  for (const item of sortedByScore) {
+    if (selected.length >= maxSamples) break;
+    const alreadySelected = selected.some((s) => s.id === item.chunk.id);
+    if (alreadySelected) continue;
+    const tooClose = selected.some((s) => Math.abs(s.posicao - item.chunk.posicao) < minDistance);
+    if (tooClose) continue;
+    selected.push(item.chunk);
   }
-  return selected;
+
+  // Completa com melhor score remanescente caso a restrição de distância tenha sido rígida demais
+  if (selected.length < maxSamples) {
+    for (const item of sortedByScore) {
+      if (selected.length >= maxSamples) break;
+      if (!selected.some((s) => s.id === item.chunk.id)) {
+        selected.push(item.chunk);
+      }
+    }
+  }
+
+  return selected
+    .sort((a, b) => a.posicao - b.posicao)
+    .slice(0, maxSamples);
 }
 
 async function collectTrainingFromDocumentChunks(params: {
   tenantId: string;
   namespaceId: string;
+  agentId?: string;
+  domain?: string;
   documentId: string;
   titulo: string;
-  chunks: Array<{ id: string; conteudo: string; posicao: number }>;
+  chunks: TrainingChunk[];
   userId?: string;
   role?: string;
-}): Promise<void> {
-  if (!TRAINING_DOC_AUTO_COLLECT) return;
+  force?: boolean;
+  selection?: TrainingChunkSelectionOptions;
+  profile?: {
+    version?: number;
+    tags?: string[];
+  };
+}): Promise<{ attempted: number; sent: number; failed: number; selectedChunkIds: string[] }> {
+  if (!params.force && !TRAINING_DOC_AUTO_COLLECT) {
+    return { attempted: 0, sent: 0, failed: 0, selectedChunkIds: [] };
+  }
   if (!TRAINING_SERVICE_URL) {
     logger.warn({ documentId: params.documentId }, 'TRAINING_SERVICE_URL ausente - coleta de documentos para treinamento desabilitada');
-    return;
+    return { attempted: 0, sent: 0, failed: 0, selectedChunkIds: [] };
   }
 
-  const selected = selectTrainingChunks(params.chunks);
-  if (selected.length === 0) return;
+  const selected = selectTrainingChunks(params.chunks, params.selection);
+  if (selected.length === 0) {
+    return { attempted: 0, sent: 0, failed: 0, selectedChunkIds: [] };
+  }
 
   const headers = generateInternalAuthHeaders({
     userId: params.userId ?? 'system',
@@ -149,18 +272,24 @@ async function collectTrainingFromDocumentChunks(params: {
     role: (params.role as Role) || 'operator',
   });
 
+  let sent = 0;
+  let failed = 0;
   for (const chunk of selected) {
     const payload = {
       tenantId: params.tenantId,
       namespaceId: params.namespaceId,
+      agentId: params.agentId,
+      domain: params.domain,
       source: 'document-ingest',
-      sourceType: 'document',
+      sourceType: 'rag_document',
       sourceId: params.documentId,
       sourceMetadata: {
         documentId: params.documentId,
         chunkId: chunk.id,
         posicao: chunk.posicao,
         titulo: params.titulo,
+        profileVersion: params.profile?.version ?? null,
+        profileTags: params.profile?.tags ?? [],
       },
       messages: [
         {
@@ -190,14 +319,18 @@ async function collectTrainingFromDocumentChunks(params: {
 
       if (!response.ok) {
         const errorText = await response.text();
+        failed += 1;
         logger.warn({
           documentId: params.documentId,
           chunkId: chunk.id,
           status: response.status,
           error: errorText,
         }, 'Falha ao enviar chunk para treinamento');
+      } else {
+        sent += 1;
       }
     } catch (error) {
+      failed += 1;
       logger.warn({
         documentId: params.documentId,
         chunkId: chunk.id,
@@ -205,6 +338,13 @@ async function collectTrainingFromDocumentChunks(params: {
       }, 'Erro ao enviar chunk para treinamento');
     }
   }
+
+  return {
+    attempted: selected.length,
+    sent,
+    failed,
+    selectedChunkIds: selected.map((chunk) => chunk.id),
+  };
 }
 
 // ============================================================================
@@ -1543,6 +1683,141 @@ app.get('/api/rag/documents', requireAuth(), requirePermission('rag:documents:re
   } catch (error) {
     logger.error({ error }, 'Falha ao buscar documentos');
     res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+const promoteDocumentToTrainingSchema = z.object({
+  maxSamples: z.number().int().min(3).max(50).optional(),
+  minChars: z.number().int().min(80).max(4000).optional(),
+  scope: z.object({
+    namespaceId: z.string().uuid().optional(),
+    agentId: z.string().uuid().optional(),
+    domain: z.string().min(1).max(120).optional(),
+  }).optional(),
+  profile: z.object({
+    version: z.number().int().min(1).optional(),
+    tags: z.array(z.string()).max(20).optional(),
+  }).optional(),
+});
+
+app.post('/api/rag/documents/:id/send-to-training', requireAuth(), requirePermission('training:training_data:write'), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
+  const idValidation = z.object({ id: z.string().uuid('ID inválido') }).safeParse(req.params);
+  if (!idValidation.success) {
+    return res.status(400).json({ error: 'ID inválido', details: idValidation.error.format() });
+  }
+
+  const bodyValidation = promoteDocumentToTrainingSchema.safeParse(req.body ?? {});
+  if (!bodyValidation.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: bodyValidation.error.format() });
+  }
+
+  const tenantId = req.tenantId;
+  if (!tenantId) {
+    return res.status(401).json({ error: 'Tenant não identificado' });
+  }
+
+  try {
+    const documentId = idValidation.data.id;
+    const document = await db.query.documents.findFirst({
+      where: eq(schema.documents.id, documentId),
+      with: { namespace: true },
+    });
+
+    if (!document || document.namespace?.tenantId !== tenantId) {
+      return res.status(404).json({ error: 'Documento não encontrado para este tenant' });
+    }
+    if (!document.namespaceId) {
+      return res.status(422).json({ error: 'Documento sem namespace não pode ser promovido para treinamento' });
+    }
+    if (!document.processado) {
+      return res.status(422).json({ error: 'Documento ainda não foi processado para RAG' });
+    }
+
+    const targetNamespaceId = bodyValidation.data.scope?.namespaceId ?? document.namespaceId;
+
+    if (bodyValidation.data.scope?.namespaceId) {
+      const targetNamespace = await db.query.namespaces.findFirst({
+        where: eq(schema.namespaces.id, bodyValidation.data.scope.namespaceId),
+      });
+      if (!targetNamespace || targetNamespace.tenantId !== tenantId) {
+        return res.status(403).json({ error: 'Namespace de destino não pertence ao tenant' });
+      }
+    }
+    if (bodyValidation.data.scope?.agentId) {
+      const targetAgent = await db.query.agents.findFirst({
+        where: eq(schema.agents.id, bodyValidation.data.scope.agentId),
+      });
+      if (!targetAgent || targetAgent.tenantId !== tenantId) {
+        return res.status(403).json({ error: 'Agente de destino não pertence ao tenant' });
+      }
+      if (targetAgent.namespaceId !== targetNamespaceId) {
+        return res.status(403).json({ error: 'Agente informado não pertence ao namespace de destino' });
+      }
+    }
+
+    const chunks = await db.query.documentChunks.findMany({
+      where: eq(schema.documentChunks.documentId, documentId),
+      orderBy: [asc(schema.documentChunks.posicao)],
+    });
+
+    if (chunks.length === 0) {
+      return res.status(422).json({ error: 'Documento não possui chunks disponíveis para promoção' });
+    }
+
+    const user = getAuthUser(req);
+    const result = await collectTrainingFromDocumentChunks({
+      tenantId,
+      namespaceId: targetNamespaceId,
+      agentId: bodyValidation.data.scope?.agentId,
+      domain: bodyValidation.data.scope?.domain,
+      documentId: document.id,
+      titulo: document.titulo,
+      chunks: chunks.map((chunk) => ({ id: chunk.id, conteudo: chunk.conteudo, posicao: chunk.posicao })),
+      userId: user.id,
+      role: user.role,
+      force: true,
+      selection: {
+        maxSamples: bodyValidation.data.maxSamples,
+        minChars: bodyValidation.data.minChars,
+      },
+      profile: bodyValidation.data.profile,
+    });
+
+    if (result.attempted === 0) {
+      return res.status(422).json({
+        error: 'Nenhum chunk elegível para treinamento após critérios de qualidade',
+      });
+    }
+
+    if (result.sent === 0) {
+      return res.status(502).json({
+        error: 'Falha ao enviar chunks para o Training Service',
+        data: result,
+      });
+    }
+
+    logger.info({
+      tenantId,
+      documentId: document.id,
+      attempted: result.attempted,
+      sent: result.sent,
+      failed: result.failed,
+      selectedChunkIds: result.selectedChunkIds,
+    }, 'Documento promovido para treinamento com seleção de chunks relevantes');
+
+    return res.json({
+      success: true,
+      data: {
+        documentId: document.id,
+        attempted: result.attempted,
+        sent: result.sent,
+        failed: result.failed,
+      },
+      message: `${result.sent} dataset(s) gerado(s) para aprovação na página Training`,
+    });
+  } catch (error) {
+    logger.error({ error, documentId: req.params.id }, 'Falha ao promover documento para treinamento');
+    return res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
 

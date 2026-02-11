@@ -89,6 +89,9 @@ function fisherYatesShuffle<T>(array: T[]): T[] {
 
 interface CreateJobParams {
   tenantId: string;
+  namespaceId: string;
+  agentId?: string;
+  profileVersion?: number;
   name: string;
   description?: string;
   baseModel?: string;
@@ -131,6 +134,8 @@ interface PreparedDataset {
  */
 export async function prepareDataset(
   tenantId: string,
+  namespaceId: string,
+  agentId?: string,
   filter?: {
     minQualityScore?: number;
     actionTypes?: string[];
@@ -151,7 +156,23 @@ export async function prepareDataset(
       and(
         eq(schema.tradingDataset.tenantId, tenantId),
         eq(schema.tradingDataset.status, 'approved'),
-        eq(schema.tradingDataset.isDuplicate, false)
+        eq(schema.tradingDataset.isDuplicate, false),
+        // Incluir todas as fontes aprovadas (signal, order, postmortem etc.)
+        // para não reduzir artificialmente o corpus de treino.
+        // Scope por namespace/agente no metadata.
+        // Regra de segregação estrita:
+        // - namespaceId DEVE casar com o namespace alvo
+        // - sem fallback para NULL (evita contaminação cross-namespace)
+        // - para escopo de agente, agentId deve casar explicitamente
+        sql`(
+          (
+            (${schema.tradingDataset.sourceMetadata} ->> 'namespaceId') = ${namespaceId}
+          )
+          AND (
+            ${agentId ?? null} IS NULL
+            OR (${schema.tradingDataset.sourceMetadata} ->> 'agentId') = ${agentId ?? null}
+          )
+        )`,
       )
     )
     .orderBy(desc(schema.tradingDataset.criadoEm));
@@ -247,7 +268,7 @@ export async function createLoraJob(params: CreateJobParams): Promise<TradingLor
   const db = getDatabase();
 
   // Preparar dataset para obter contagens
-  const dataset = await prepareDataset(params.tenantId, params.datasetFilter);
+  const dataset = await prepareDataset(params.tenantId, params.namespaceId, params.agentId, params.datasetFilter);
 
   if (dataset.stats.total < MIN_DATASET_SIZE) {
     throw new Error(
@@ -264,6 +285,10 @@ export async function createLoraJob(params: CreateJobParams): Promise<TradingLor
   // Criar job
   const jobData: InsertTradingLoraJob = {
     tenantId: params.tenantId,
+    scopeType: params.agentId ? 'agent' : 'namespace',
+    scopeNamespaceId: params.namespaceId,
+    scopeAgentId: params.agentId ?? null,
+    profileVersion: params.profileVersion ?? 1,
     name: params.name,
     description: params.description,
     baseModel: params.baseModel || DEFAULT_BASE_MODEL,
@@ -489,8 +514,15 @@ export async function processTradingLoraJob(jobId: string): Promise<void> {
 
   await updateJobProgress(jobId, { status: 'preparing', progress: 0, currentStep: 0, totalSteps: job.totalSteps ?? null, metrics: job.metrics as TradingLoraMetrics });
 
-  const tenantId = job.tenantId ?? 'default-tenant';
-  const prepared = await prepareDataset(tenantId, undefined);
+  const tenantId = job.tenantId;
+  if (!tenantId) {
+    throw new Error('Job LoRA sem tenantId');
+  }
+  const namespaceId = job.scopeNamespaceId;
+  if (!namespaceId) {
+    throw new Error('Job LoRA sem scopeNamespaceId');
+  }
+  const prepared = await prepareDataset(tenantId, namespaceId, job.scopeAgentId ?? undefined, undefined);
   const jobDir = path.join(TRAINING_STORAGE_DIR, 'trading-lora', tenantId, jobId);
   await ensureDir(jobDir);
 
@@ -700,7 +732,23 @@ export async function getJobStats(tenantId: string): Promise<{
  * Volume montado como read-only no container gpu-llm
  */
 const LORA_ACTIVE_DIR = '/opt/alice/data/lora-adapters';
-const LORA_ACTIVE_ADAPTER_NAME = 'trading-global';
+
+export function getScopedAdapterName(job: TradingLoraJob): string {
+  if (job.scopeType === 'agent' && job.scopeAgentId) {
+    return `agent-${job.scopeAgentId}`;
+  }
+  if (job.scopeNamespaceId) {
+    return `namespace-${job.scopeNamespaceId}`;
+  }
+  return `job-${job.id}`;
+}
+
+export function getScopedAdapterTargetDir(job: TradingLoraJob): string {
+  if (job.scopeType === 'agent' && job.scopeAgentId) {
+    return path.join(LORA_ACTIVE_DIR, 'agents', job.scopeAgentId);
+  }
+  return path.join(LORA_ACTIVE_DIR, 'namespaces', job.scopeNamespaceId ?? 'unknown');
+}
 
 /**
  * Ativa um adapter LoRA aprovado, tornando-o disponível para inferência no vLLM.
@@ -751,7 +799,8 @@ export async function activateLoraAdapter(
   }
 
   // 3. Copiar adapter para diretório ativo do vLLM
-  const targetDir = path.join(LORA_ACTIVE_DIR, LORA_ACTIVE_ADAPTER_NAME);
+  const targetDir = getScopedAdapterTargetDir(job);
+  const adapterName = getScopedAdapterName(job);
   
   // Criar diretório base se não existir
   await fs.mkdir(LORA_ACTIVE_DIR, { recursive: true });
@@ -775,14 +824,29 @@ export async function activateLoraAdapter(
     throw new Error('Falha na validação pós-cópia do adapter');
   }
 
-  // 5. Desativar todos os adapters anteriores e marcar este como ativo
+  // 5. Desativar adapter anterior apenas do mesmo escopo e marcar este como ativo
+  if (!job.tenantId) {
+    throw new Error('Job sem tenant válido não pode ativar adapter LoRA');
+  }
+  const sameScopeConditions = [
+    eq(schema.tradingLoraJobs.tenantId, job.tenantId),
+    eq(schema.tradingLoraJobs.scopeType, job.scopeType),
+  ];
+  if (job.scopeNamespaceId) {
+    sameScopeConditions.push(eq(schema.tradingLoraJobs.scopeNamespaceId, job.scopeNamespaceId));
+  }
+  if (job.scopeAgentId) {
+    sameScopeConditions.push(eq(schema.tradingLoraJobs.scopeAgentId, job.scopeAgentId));
+  }
+
   await db.update(schema.tradingLoraJobs)
-    .set({ isActiveAdapter: false })
-    .where(eq(schema.tradingLoraJobs.isActiveAdapter, true));
+    .set({ isActiveAdapter: false, isActiveByScope: false })
+    .where(and(...sameScopeConditions));
 
   await db.update(schema.tradingLoraJobs)
     .set({
       isActiveAdapter: true,
+      isActiveByScope: true,
       approvedAt: new Date(),
       approvedBy,
     })
@@ -796,7 +860,7 @@ export async function activateLoraAdapter(
   return {
     success: true,
     adapterPath: targetDir,
-    message: `Adapter LoRA ativado: ${LORA_ACTIVE_ADAPTER_NAME}. vLLM carregará automaticamente via filesystem resolver.`,
+    message: `Adapter LoRA ativado: ${adapterName}. vLLM carregará automaticamente via filesystem resolver.`,
   };
 }
 
@@ -804,7 +868,11 @@ export async function activateLoraAdapter(
  * Retorna o adapter LoRA atualmente ativo, ou null se nenhum estiver ativo.
  * Usado pelo GPU Manager e integrations-service para determinar qual modelo solicitar.
  */
-export async function getActiveAdapter(): Promise<{
+export async function getActiveAdapter(scope?: {
+  tenantId?: string;
+  namespaceId?: string;
+  agentId?: string;
+}): Promise<{
   jobId: string;
   adapterName: string;
   adapterPath: string;
@@ -813,11 +881,24 @@ export async function getActiveAdapter(): Promise<{
   metrics: TradingLoraMetrics;
 } | null> {
   const db = getDatabase();
+  const agentScopeCondition = scope?.agentId
+    ? eq(schema.tradingLoraJobs.scopeAgentId, scope.agentId)
+    : scope?.namespaceId
+      ? sql`${schema.tradingLoraJobs.scopeAgentId} IS NULL`
+      : sql`TRUE`;
 
   const [active] = await db
     .select()
     .from(schema.tradingLoraJobs)
-    .where(eq(schema.tradingLoraJobs.isActiveAdapter, true))
+    .where(
+      and(
+        eq(schema.tradingLoraJobs.isActiveByScope, true),
+        scope?.tenantId ? eq(schema.tradingLoraJobs.tenantId, scope.tenantId) : sql`TRUE`,
+        scope?.namespaceId ? eq(schema.tradingLoraJobs.scopeNamespaceId, scope.namespaceId) : sql`TRUE`,
+        agentScopeCondition
+      )
+    )
+    .orderBy(desc(schema.tradingLoraJobs.criadoEm))
     .limit(1);
 
   if (!active || !active.resultAdapterPath) {
@@ -826,7 +907,7 @@ export async function getActiveAdapter(): Promise<{
 
   return {
     jobId: active.id,
-    adapterName: LORA_ACTIVE_ADAPTER_NAME,
+    adapterName: getScopedAdapterName(active),
     adapterPath: active.resultAdapterPath,
     activatedAt: active.approvedAt,
     jobName: active.name,
@@ -837,13 +918,29 @@ export async function getActiveAdapter(): Promise<{
 /**
  * Desativa o adapter LoRA ativo (volta a usar modelo base puro).
  */
-export async function deactivateLoraAdapter(): Promise<void> {
+export async function deactivateLoraAdapter(scope?: {
+  tenantId?: string;
+  namespaceId?: string;
+  agentId?: string;
+}): Promise<void> {
   const db = getDatabase();
 
   const [active] = await db
-    .select({ id: schema.tradingLoraJobs.id })
+    .select({
+      id: schema.tradingLoraJobs.id,
+      scopeType: schema.tradingLoraJobs.scopeType,
+      scopeNamespaceId: schema.tradingLoraJobs.scopeNamespaceId,
+      scopeAgentId: schema.tradingLoraJobs.scopeAgentId,
+    })
     .from(schema.tradingLoraJobs)
-    .where(eq(schema.tradingLoraJobs.isActiveAdapter, true))
+    .where(
+      and(
+        eq(schema.tradingLoraJobs.isActiveByScope, true),
+        scope?.tenantId ? eq(schema.tradingLoraJobs.tenantId, scope.tenantId) : sql`TRUE`,
+        scope?.namespaceId ? eq(schema.tradingLoraJobs.scopeNamespaceId, scope.namespaceId) : sql`TRUE`,
+        scope?.agentId ? eq(schema.tradingLoraJobs.scopeAgentId, scope.agentId) : sql`TRUE`
+      )
+    )
     .limit(1);
 
   if (!active) {
@@ -852,11 +949,13 @@ export async function deactivateLoraAdapter(): Promise<void> {
   }
 
   await db.update(schema.tradingLoraJobs)
-    .set({ isActiveAdapter: false })
+    .set({ isActiveAdapter: false, isActiveByScope: false })
     .where(eq(schema.tradingLoraJobs.id, active.id));
 
   // Remover adapter do diretório ativo (vLLM para de usar)
-  const targetDir = path.join(LORA_ACTIVE_DIR, LORA_ACTIVE_ADAPTER_NAME);
+  const targetDir = active.scopeType === 'agent' && active.scopeAgentId
+    ? path.join(LORA_ACTIVE_DIR, 'agents', active.scopeAgentId)
+    : path.join(LORA_ACTIVE_DIR, 'namespaces', active.scopeNamespaceId ?? 'unknown');
   try {
     await fs.rm(targetDir, { recursive: true, force: true });
   } catch {
