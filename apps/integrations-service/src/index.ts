@@ -19873,10 +19873,13 @@ app.get('/api/integrations/trading/account/fees/futures', requirePermission('int
 
 import {
   getOrCreateBalance as getDemoBalance,
+  getAllBalances as getDemoBalances,
   addFunds as addDemoFunds,
   getFundHistory as getDemoFundHistory,
   createDemoOrder,
   closeDemoPosition,
+  updateDemoPositionRisk,
+  addToDemoPosition,
   getOpenPositions as getDemoOpenPositions,
   getAllPositions as getDemoAllPositions,
   getOrders as getDemoOrders,
@@ -19905,6 +19908,20 @@ app.get('/api/integrations/demo-trading/balance', requirePermission('integration
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao buscar balance demo');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/demo-trading/balances - Listar todos os saldos demo por ativo
+app.get('/api/integrations/demo-trading/balances', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.tenantId;
+    if (!tenantId) { res.status(403).json({ error: 'Tenant não identificado' }); return; }
+    const balances = await getDemoBalances(tenantId);
+    res.json({ success: true, data: balances });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao buscar saldos demo');
     res.status(500).json({ error: errorMessage });
   }
 });
@@ -20105,10 +20122,20 @@ app.post('/api/integrations/demo-trading/positions/:id/close', requirePermission
     if (!tenantId) { res.status(403).json({ error: 'Tenant não identificado' }); return; }
     const positionId = req.params.id;
     if (!positionId) { res.status(400).json({ error: 'ID da posição é obrigatório' }); return; }
+    const closeSchema = z.object({
+      size: z.number().positive().optional(),
+    });
+    const closeParsed = closeSchema.safeParse(req.body ?? {});
+    if (!closeParsed.success) {
+      res.status(400).json({ error: 'Dados inválidos para fechamento', details: closeParsed.error.flatten() });
+      return;
+    }
+
     const result = await closeDemoPosition({
       tenantId,
       positionId,
       reason: 'manual',
+      size: closeParsed.data.size,
     });
     res.json({ success: true, data: result });
   } catch (error) {
@@ -20118,6 +20145,87 @@ app.post('/api/integrations/demo-trading/positions/:id/close', requirePermission
       return;
     }
     logger.error({ error: errorMessage }, 'Erro ao fechar posição demo');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// PATCH /api/integrations/demo-trading/positions/:id - Atualizar SL/TP de posição demo
+app.patch('/api/integrations/demo-trading/positions/:id', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.tenantId;
+    if (!tenantId) { res.status(403).json({ error: 'Tenant não identificado' }); return; }
+    const positionId = req.params.id;
+    if (!positionId) { res.status(400).json({ error: 'ID da posição é obrigatório' }); return; }
+
+    const bodySchema = z.object({
+      stopLoss: z.number().positive().nullable().optional(),
+      takeProfit: z.number().positive().nullable().optional(),
+    }).refine((data) => data.stopLoss !== undefined || data.takeProfit !== undefined, {
+      message: 'Informe stopLoss e/ou takeProfit para atualizar.',
+    });
+
+    const parsed = bodySchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
+      return;
+    }
+
+    const updated = await updateDemoPositionRisk({
+      tenantId,
+      positionId,
+      stopLoss: parsed.data.stopLoss,
+      takeProfit: parsed.data.takeProfit,
+    });
+
+    res.json({ success: true, data: updated });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    if (errorMessage.includes('não encontrada') || errorMessage.includes('deve ser')) {
+      res.status(400).json({ error: errorMessage });
+      return;
+    }
+    logger.error({ error: errorMessage }, 'Erro ao atualizar SL/TP da posição demo');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/demo-trading/positions/:id/add - Adicionar tamanho a posição demo
+app.post('/api/integrations/demo-trading/positions/:id/add', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const tenantId = req.tenantId;
+    if (!tenantId) { res.status(403).json({ error: 'Tenant não identificado' }); return; }
+    const positionId = req.params.id;
+    if (!positionId) { res.status(400).json({ error: 'ID da posição é obrigatório' }); return; }
+
+    const bodySchema = z.object({
+      size: z.number().positive(),
+      price: z.number().positive().optional(),
+      stopLoss: z.number().positive().nullable().optional(),
+      takeProfit: z.number().positive().nullable().optional(),
+    });
+    const parsed = bodySchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
+      return;
+    }
+
+    const result = await addToDemoPosition({
+      tenantId,
+      positionId,
+      size: parsed.data.size,
+      price: parsed.data.price,
+      stopLoss: parsed.data.stopLoss,
+      takeProfit: parsed.data.takeProfit,
+    });
+
+    res.json({ success: true, data: result });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    if (errorMessage.includes('Saldo insuficiente') || errorMessage.includes('não encontrada') || errorMessage.includes('invál')) {
+      res.status(400).json({ error: errorMessage });
+      return;
+    }
+    logger.error({ error: errorMessage }, 'Erro ao adicionar tamanho à posição demo');
     res.status(500).json({ error: errorMessage });
   }
 });

@@ -955,7 +955,9 @@ function buildTradingSubscriptionKey(params: {
 }): string {
   const normalizedSymbol = params.symbol.toUpperCase();
   const marketType = params.marketType ?? 'futures';
-  const marginMode = params.marginMode ?? 'cross';
+  // Futures não diferencia marginMode no broadcast público de market data.
+  // Normalizamos para "cross" para evitar mismatch de chave (isolated vs cross).
+  const marginMode = marketType === 'futures' ? 'cross' : (params.marginMode ?? 'cross');
   if (params.channel === 'klines') {
     const interval = params.interval ?? '';
     return `${params.channel}:${marketType}:${marginMode}:${normalizedSymbol}:${interval}`;
@@ -991,6 +993,7 @@ function shouldDeliverTradingMessage(
   );
 }
 
+let tradingBroadcastMessageCounter = 0;
 function broadcastTradingMessage(message: TradingBroadcastMessage): void {
   const symbol = extractTradingSymbol(message);
   const marketType = extractTradingMarketType(message);
@@ -1004,12 +1007,39 @@ function broadcastTradingMessage(message: TradingBroadcastMessage): void {
     timestamp: message.timestamp,
   };
 
+  let openClients = 0;
+  let clientsWithSubscriptions = 0;
+  let deliveredClients = 0;
+
   wss.clients.forEach((client) => {
     const wsClient = client as ExtendedWebSocket;
     if (client.readyState !== WebSocket.OPEN) return;
+    openClients++;
+    if (wsClient.tradingSubscriptions && wsClient.tradingSubscriptions.size > 0) {
+      clientsWithSubscriptions++;
+    }
     if (!shouldDeliverTradingMessage(wsClient, message, symbol)) return;
     client.send(JSON.stringify(payload));
+    deliveredClients++;
   });
+
+  tradingBroadcastMessageCounter++;
+  // Log periódico para troubleshooting em produção sem poluir logs
+  if (tradingBroadcastMessageCounter === 1 || tradingBroadcastMessageCounter % 100 === 0) {
+    logger.info(
+      {
+        messageType: message.type,
+        symbol,
+        marketType: marketType ?? null,
+        marginMode: marginMode ?? null,
+        openClients,
+        clientsWithSubscriptions,
+        deliveredClients,
+        totalMessagesProcessed: tradingBroadcastMessageCounter,
+      },
+      'Broadcast de trading processado'
+    );
+  }
 }
 
 async function initializeTradingBroadcastSubscriber(): Promise<void> {
@@ -12417,7 +12447,8 @@ wss.on('connection', (ws, req) => {
         const symbol = message.symbol?.trim();
         const interval = message.interval?.trim();
         const marketType = message.marketType || 'futures';
-        const marginMode = message.marginMode;
+        // Futures: normalizar marginMode para chave consistente no broadcast.
+        const marginMode = marketType === 'futures' ? 'cross' : message.marginMode;
         const depth = message.depth;
         if (!symbol) {
           ws.send(JSON.stringify({
@@ -12449,6 +12480,21 @@ wss.on('connection', (ws, req) => {
           marginMode,
         });
         extWs.tradingSubscriptions.add(subscriptionKey);
+
+        logger.info(
+          {
+            userId,
+            tenantId,
+            channel: tradingChannel,
+            symbol: symbol.toUpperCase(),
+            interval: interval ?? null,
+            marketType,
+            marginMode: marginMode ?? 'cross',
+            subscriptionKey,
+            totalSubscriptionsForClient: extWs.tradingSubscriptions.size,
+          },
+          'Cliente inscrito em canal de trading'
+        );
         
         ws.send(JSON.stringify({
           type: 'trading:subscribed',
@@ -12503,8 +12549,7 @@ wss.on('connection', (ws, req) => {
             clearTimeout(timeoutId);
           }
         }
-        
-        logger.debug({ userId, tenantId, channel: tradingChannel, symbol, interval, marketType }, 'Cliente inscrito em canal de trading');
+
         return;
       }
       
@@ -12513,7 +12558,7 @@ wss.on('connection', (ws, req) => {
         const symbol = message.symbol?.trim();
         const interval = message.interval?.trim();
         const marketType = message.marketType || 'futures';
-        const marginMode = message.marginMode;
+          const marginMode = marketType === 'futures' ? 'cross' : message.marginMode;
         const depth = message.depth;
         if (!symbol) {
           ws.send(JSON.stringify({

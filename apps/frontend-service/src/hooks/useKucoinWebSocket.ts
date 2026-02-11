@@ -199,7 +199,9 @@ export function useKucoinWebSocket(
   }): string => {
     const normalizedSymbol = data.symbol.toUpperCase();
     const resolvedMarketType = data.marketType ?? 'futures';
-    const resolvedMarginMode = data.marginMode ?? 'cross';
+    // Futures não distingue margem para broadcast de market data.
+    // Normalizar evita mismatch com backend (sempre cross em futures).
+    const resolvedMarginMode = resolvedMarketType === 'futures' ? 'cross' : (data.marginMode ?? 'cross');
     if (data.channel === 'klines') {
       return `${data.channel}:${resolvedMarketType}:${resolvedMarginMode}:${normalizedSymbol}:${data.interval ?? ''}`;
     }
@@ -248,6 +250,10 @@ export function useKucoinWebSocket(
             marginMode: data.marginMode,
           });
           subscriptionsRef.current.add(key);
+          frontendLogger.info('Trading WS subscribed', {
+            key,
+            totalSubscriptions: subscriptionsRef.current.size,
+          });
           break;
         }
 
@@ -260,6 +266,10 @@ export function useKucoinWebSocket(
             marginMode: data.marginMode,
           });
           subscriptionsRef.current.delete(key);
+          frontendLogger.info('Trading WS unsubscribed', {
+            key,
+            totalSubscriptions: subscriptionsRef.current.size,
+          });
           break;
         }
 
@@ -394,6 +404,10 @@ export function useKucoinWebSocket(
           error: null,
           lastPing: Date.now(),
         });
+        frontendLogger.info('Trading WS connected', {
+          symbol: symbol.toUpperCase(),
+          marketType,
+        });
         reconnectAttemptRef.current = 0;
 
         // Setup ping interval
@@ -408,14 +422,16 @@ export function useKucoinWebSocket(
         if (!symbol) {
           frontendLogger.warn('Auto-subscribe ignorado - símbolo não definido');
         } else {
+          const normalizedSymbol = symbol.toUpperCase();
+          const normalizedMarginMode = marketType === 'futures' ? 'cross' : marginMode;
           channels.forEach(channel => {
             ws.send(JSON.stringify({
               type: 'trading:subscribe',
               channel,
-              symbol,
+              symbol: normalizedSymbol,
               interval: channel === 'klines' ? interval : undefined,
               marketType,
-              marginMode,
+              marginMode: normalizedMarginMode,
               depth: channel === 'orderbook' ? orderBookDepth : undefined,
             }));
           });
@@ -534,13 +550,13 @@ export function useKucoinWebSocket(
     channelOrderBookDepth?: 5 | 50
   ) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      const targetSymbol = channelSymbol || symbol;
+      const targetSymbol = (channelSymbol || symbol)?.toUpperCase();
       if (!targetSymbol) {
         frontendLogger.warn('Assinatura ignorada - símbolo não definido', { channel });
         return;
       }
       const resolvedMarketType = channelMarketType ?? marketType;
-      const resolvedMarginMode = channelMarginMode ?? marginMode;
+      const resolvedMarginMode = resolvedMarketType === 'futures' ? 'cross' : (channelMarginMode ?? marginMode);
       wsRef.current.send(JSON.stringify({
         type: 'trading:subscribe',
         channel,
@@ -563,10 +579,10 @@ export function useKucoinWebSocket(
     channelOrderBookDepth?: 5 | 50
   ) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      const targetSymbol = channelSymbol || symbol;
+      const targetSymbol = (channelSymbol || symbol)?.toUpperCase();
       if (!targetSymbol) return;
       const resolvedMarketType = channelMarketType ?? marketType;
-      const resolvedMarginMode = channelMarginMode ?? marginMode;
+      const resolvedMarginMode = resolvedMarketType === 'futures' ? 'cross' : (channelMarginMode ?? marginMode);
       wsRef.current.send(JSON.stringify({
         type: 'trading:unsubscribe',
         channel,

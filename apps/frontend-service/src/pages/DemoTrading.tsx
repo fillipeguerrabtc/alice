@@ -55,6 +55,7 @@ import { useKucoinWebSocket } from '@/hooks/useKucoinWebSocket';
 
 interface DemoBalance {
   id: string;
+  currency: string;
   available: string;
   frozen: string;
 }
@@ -219,6 +220,12 @@ export default function DemoTrading() {
 
   // Formulário de fundos
   const [fundsAmount, setFundsAmount] = useState('');
+  const [positionDrafts, setPositionDrafts] = useState<Record<string, {
+    addSize: string;
+    closeSize: string;
+    stopLoss: string;
+    takeProfit: string;
+  }>>({});
 
   // ============================================================================
   // Queries de dados de mercado (mesmas APIs da Trading Real)
@@ -339,11 +346,11 @@ export default function DemoTrading() {
   // Queries de dados demo
   // ============================================================================
 
-  const balanceQuery = useQuery({
-    queryKey: ['/api/integrations/demo-trading/balance'],
+  const balancesQuery = useQuery({
+    queryKey: ['/api/integrations/demo-trading/balances'],
     queryFn: async () => {
-      const res = await apiRequest('GET', '/api/integrations/demo-trading/balance');
-      const json = await res.json() as { data: DemoBalance };
+      const res = await apiRequest('GET', '/api/integrations/demo-trading/balances');
+      const json = await res.json() as { data: DemoBalance[] };
       return json.data;
     },
     refetchInterval: 10_000,
@@ -406,7 +413,7 @@ export default function DemoTrading() {
     mutationFn: async () => {
       const leverageValue = parseInt(orderForm.leverage);
       const body = {
-        symbol: selectedSymbol,
+        symbol: requestSymbol || selectedSymbol,
         marketType: selectedMarketType,
         side: orderForm.side,
         orderType: orderForm.orderType,
@@ -423,7 +430,7 @@ export default function DemoTrading() {
     onSuccess: () => {
       setOrderDialogOpen(false);
       // Ordem criada afeta: balance (margem congelada), ordens, e posições (se fill imediato)
-      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balance'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balances'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/orders'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/positions', 'all'] });
     },
@@ -441,22 +448,54 @@ export default function DemoTrading() {
     onSuccess: () => {
       setAddFundsDialogOpen(false);
       setFundsAmount('');
-      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balance'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balances'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/funds/history'] });
     },
   });
 
   const closePositionMutation = useMutation({
-    mutationFn: async (positionId: string) => {
-      const res = await apiRequest('POST', `/api/integrations/demo-trading/positions/${positionId}/close`);
+    mutationFn: async (payload: { positionId: string; size?: number }) => {
+      const body = payload.size ? { size: payload.size } : undefined;
+      const res = await apiRequest('POST', `/api/integrations/demo-trading/positions/${payload.positionId}/close`, body);
       const json = await res.json();
       return json.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balance'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balances'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/positions', 'all'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/postmortem', 'demo'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/postmortem/queue/stats'] });
+    },
+  });
+
+  const updatePositionRiskMutation = useMutation({
+    mutationFn: async (payload: { positionId: string; stopLoss?: number | null; takeProfit?: number | null }) => {
+      const res = await apiRequest('PATCH', `/api/integrations/demo-trading/positions/${payload.positionId}`, {
+        stopLoss: payload.stopLoss,
+        takeProfit: payload.takeProfit,
+      });
+      const json = await res.json();
+      return json.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/positions', 'all'] });
+    },
+  });
+
+  const addToPositionMutation = useMutation({
+    mutationFn: async (payload: { positionId: string; size: number; stopLoss?: number | null; takeProfit?: number | null }) => {
+      const res = await apiRequest('POST', `/api/integrations/demo-trading/positions/${payload.positionId}/add`, {
+        size: payload.size,
+        stopLoss: payload.stopLoss,
+        takeProfit: payload.takeProfit,
+      });
+      const json = await res.json();
+      return json.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/positions', 'all'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/orders'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balances'] });
     },
   });
 
@@ -465,7 +504,7 @@ export default function DemoTrading() {
       await apiRequest('DELETE', `/api/integrations/demo-trading/orders/${orderId}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balance'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/balances'] });
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/demo-trading/orders'] });
     },
   });
@@ -476,7 +515,9 @@ export default function DemoTrading() {
 
   const openPositions = (positionsQuery.data ?? []).filter(p => p.status === 'open');
   const closedPositions = (positionsQuery.data ?? []).filter(p => p.status !== 'open');
-  const balance = balanceQuery.data;
+  const balances = balancesQuery.data ?? [];
+  const usdtBalance = balances.find((entry) => entry.currency.toUpperCase() === 'USDT');
+  const balancesWithFunds = balances.filter((entry) => Number(entry.available) > 0 || Number(entry.frozen) > 0);
 
   const totalPnl = closedPositions.reduce((acc, p) => acc + parseFloat(p.realizedPnl ?? '0'), 0);
   const winCount = closedPositions.filter(p => parseFloat(p.realizedPnl ?? '0') > 0).length;
@@ -518,6 +559,51 @@ export default function DemoTrading() {
     const rest = [...availableSymbols].filter(s => !featuredSet.has(s)).sort((a, b) => a.localeCompare(b));
     return [...featured, ...rest];
   }, [availableSymbols, featuredSymbols]);
+
+  const getPositionDraft = useCallback((position: DemoPosition) => {
+    const current = positionDrafts[position.id];
+    return {
+      addSize: current?.addSize ?? '',
+      closeSize: current?.closeSize ?? '',
+      stopLoss: current?.stopLoss ?? (position.stopLoss ?? ''),
+      takeProfit: current?.takeProfit ?? (position.takeProfit ?? ''),
+    };
+  }, [positionDrafts]);
+
+  const updatePositionDraft = useCallback((positionId: string, patch: Partial<{
+    addSize: string;
+    closeSize: string;
+    stopLoss: string;
+    takeProfit: string;
+  }>) => {
+    setPositionDrafts((prev) => ({
+      ...prev,
+      [positionId]: {
+        addSize: prev[positionId]?.addSize ?? '',
+        closeSize: prev[positionId]?.closeSize ?? '',
+        stopLoss: prev[positionId]?.stopLoss ?? '',
+        takeProfit: prev[positionId]?.takeProfit ?? '',
+        ...patch,
+      },
+    }));
+  }, []);
+
+  const prefillSellFromBalance = useCallback((currency: string) => {
+    if (!currency || currency.toUpperCase() === 'USDT') return;
+    const targetSymbol = `${currency.toUpperCase()}USDT`;
+    setSelectedMarketType('spot');
+    setSelectedSymbol(targetSymbol);
+    setOrderForm((prev) => ({
+      ...prev,
+      side: 'sell',
+      orderType: 'market',
+      price: '',
+      leverage: '1',
+      stopLoss: '',
+      takeProfit: '',
+    }));
+    setOrderDialogOpen(true);
+  }, []);
 
   // ============================================================================
   // Helpers de renderização
@@ -759,7 +845,7 @@ export default function DemoTrading() {
               <span className="text-sm text-muted-foreground">Saldo Disponível</span>
             </div>
             <p className="text-2xl font-bold mt-1">
-              ${balance ? formatMoney(balance.available) : '---'}
+              ${usdtBalance ? formatMoney(usdtBalance.available) : '---'}
             </p>
           </CardContent>
         </Card>
@@ -1183,12 +1269,15 @@ export default function DemoTrading() {
                           </div>
                           <p className="text-sm text-muted-foreground mt-1">
                             Entrada: ${formatMoney(pos.entryPrice)} | Tamanho: {pos.size}
+                            {pos.symbol.toUpperCase().includes('XBT') || pos.symbol.toUpperCase().includes('BTC')
+                              ? ` | Equiv. BTC: ${(Number(pos.size) * contractMultiplier).toFixed(6)} BTC`
+                              : ''}
                           </p>
                         </div>
                         <Button
                           variant="destructive"
                           size="sm"
-                          onClick={() => closePositionMutation.mutate(pos.id)}
+                          onClick={() => closePositionMutation.mutate({ positionId: pos.id })}
                           disabled={closePositionMutation.isPending}
                         >
                           Fechar
@@ -1200,6 +1289,39 @@ export default function DemoTrading() {
               </CardContent>
             </Card>
           </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Saldos por Ativo (Demo)</CardTitle>
+              <CardDescription>Visualize ativos disponíveis e envie venda direta para o ticket de ordem.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {balancesWithFunds.length === 0 ? (
+                <p className="text-muted-foreground text-center py-8">Nenhum saldo disponível.</p>
+              ) : (
+                <div className="space-y-2">
+                  {balancesWithFunds.map((entry) => (
+                    <div key={entry.id} className="flex items-center justify-between p-3 border rounded-lg">
+                      <div>
+                        <p className="font-medium">{entry.currency}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Disponível: {formatMoney(entry.available)} | Congelado: {formatMoney(entry.frozen)}
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={entry.currency.toUpperCase() === 'USDT' || Number(entry.available) <= 0}
+                        onClick={() => prefillSellFromBalance(entry.currency)}
+                      >
+                        Vender ativo
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Fila Post-Mortem */}
           <Card>
@@ -1238,44 +1360,139 @@ export default function DemoTrading() {
                 <p className="text-muted-foreground text-center py-8">Nenhuma posição aberta</p>
               ) : (
                 <div className="space-y-3">
-                  {openPositions.map(pos => (
-                    <div key={pos.id} className="p-4 border rounded-lg space-y-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          {pos.side === 'long' ? (
-                            <TrendingUp className="h-5 w-5 text-green-500" />
-                          ) : (
-                            <TrendingDown className="h-5 w-5 text-red-500" />
-                          )}
-                          <span className="font-bold text-lg">{pos.symbol}</span>
-                          <Badge variant={pos.side === 'long' ? 'default' : 'destructive'}>{pos.side.toUpperCase()}</Badge>
-                          {pos.leverage > 1 && <Badge variant="secondary">{pos.leverage}x</Badge>}
-                          <Badge variant="outline">{pos.marketType}</Badge>
+                  {openPositions.map((pos) => {
+                    const draft = getPositionDraft(pos);
+                    return (
+                      <div key={pos.id} className="p-4 border rounded-lg space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            {pos.side === 'long' ? (
+                              <TrendingUp className="h-5 w-5 text-green-500" />
+                            ) : (
+                              <TrendingDown className="h-5 w-5 text-red-500" />
+                            )}
+                            <span className="font-bold text-lg">{pos.symbol}</span>
+                            <Badge variant={pos.side === 'long' ? 'default' : 'destructive'}>{pos.side.toUpperCase()}</Badge>
+                            {pos.leverage > 1 && <Badge variant="secondary">{pos.leverage}x</Badge>}
+                            <Badge variant="outline">{pos.marketType}</Badge>
+                          </div>
+                          <Button
+                            variant="destructive"
+                            onClick={() => closePositionMutation.mutate({ positionId: pos.id })}
+                            disabled={closePositionMutation.isPending}
+                          >
+                            Fechar Posição
+                          </Button>
                         </div>
-                        <Button variant="destructive" onClick={() => closePositionMutation.mutate(pos.id)}>
-                          Fechar Posição
-                        </Button>
+
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                          <div>
+                            <span className="text-muted-foreground">Entrada</span>
+                            <p className="font-mono">${formatMoney(pos.entryPrice)}</p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Tamanho</span>
+                            <p className="font-mono">{pos.size}</p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Stop Loss</span>
+                            <p className="font-mono">{pos.stopLoss ? `$${formatMoney(pos.stopLoss)}` : '-'}</p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Take Profit</span>
+                            <p className="font-mono">{pos.takeProfit ? `$${formatMoney(pos.takeProfit)}` : '-'}</p>
+                          </div>
+                        </div>
+
+                        {pos.marketType === 'futures' && (
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2 border-t">
+                            <div className="space-y-2">
+                              <Label className="text-xs">Adicionar tamanho</Label>
+                              <Input
+                                type="number"
+                                value={draft.addSize}
+                                onChange={(e) => updatePositionDraft(pos.id, { addSize: e.target.value })}
+                                placeholder="Ex: 10"
+                              />
+                              <Button
+                                size="sm"
+                                className="w-full"
+                                disabled={!draft.addSize || addToPositionMutation.isPending}
+                                onClick={() => {
+                                  const size = Number(draft.addSize);
+                                  if (!Number.isFinite(size) || size <= 0) return;
+                                  addToPositionMutation.mutate({
+                                    positionId: pos.id,
+                                    size,
+                                    stopLoss: draft.stopLoss ? Number(draft.stopLoss) : null,
+                                    takeProfit: draft.takeProfit ? Number(draft.takeProfit) : null,
+                                  });
+                                }}
+                              >
+                                Adicionar à posição
+                              </Button>
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label className="text-xs">Fechamento parcial</Label>
+                              <Input
+                                type="number"
+                                value={draft.closeSize}
+                                onChange={(e) => updatePositionDraft(pos.id, { closeSize: e.target.value })}
+                                placeholder="Ex: 5"
+                              />
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="w-full"
+                                disabled={!draft.closeSize || closePositionMutation.isPending}
+                                onClick={() => {
+                                  const size = Number(draft.closeSize);
+                                  if (!Number.isFinite(size) || size <= 0) return;
+                                  closePositionMutation.mutate({ positionId: pos.id, size });
+                                }}
+                              >
+                                Fechar parcial
+                              </Button>
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label className="text-xs">Ajustar SL/TP</Label>
+                              <div className="grid grid-cols-2 gap-2">
+                                <Input
+                                  type="number"
+                                  value={draft.stopLoss}
+                                  onChange={(e) => updatePositionDraft(pos.id, { stopLoss: e.target.value })}
+                                  placeholder="SL"
+                                />
+                                <Input
+                                  type="number"
+                                  value={draft.takeProfit}
+                                  onChange={(e) => updatePositionDraft(pos.id, { takeProfit: e.target.value })}
+                                  placeholder="TP"
+                                />
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                className="w-full"
+                                disabled={updatePositionRiskMutation.isPending}
+                                onClick={() => {
+                                  updatePositionRiskMutation.mutate({
+                                    positionId: pos.id,
+                                    stopLoss: draft.stopLoss ? Number(draft.stopLoss) : null,
+                                    takeProfit: draft.takeProfit ? Number(draft.takeProfit) : null,
+                                  });
+                                }}
+                              >
+                                Atualizar SL/TP
+                              </Button>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      <div className="grid grid-cols-4 gap-4 text-sm">
-                        <div>
-                          <span className="text-muted-foreground">Entrada</span>
-                          <p className="font-mono">${formatMoney(pos.entryPrice)}</p>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Tamanho</span>
-                          <p className="font-mono">{pos.size}</p>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Stop Loss</span>
-                          <p className="font-mono">{pos.stopLoss ? `$${formatMoney(pos.stopLoss)}` : '-'}</p>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Take Profit</span>
-                          <p className="font-mono">{pos.takeProfit ? `$${formatMoney(pos.takeProfit)}` : '-'}</p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardContent>

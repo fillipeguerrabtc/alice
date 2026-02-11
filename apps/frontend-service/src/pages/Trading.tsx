@@ -1193,6 +1193,35 @@ export default function Trading() {
     return [...featuredList, ...favoritesList, ...remaining];
   }, [availableSymbols, favoriteSymbols, featuredSymbols]);
 
+  const resolveSpotLikeSymbol = useCallback((asset: string) => {
+    const normalized = asset.trim().toUpperCase();
+    const withDash = `${normalized}-USDT`;
+    const withoutDash = `${normalized}USDT`;
+    if (availableSymbols.includes(withDash)) return withDash;
+    if (availableSymbols.includes(withoutDash)) return withoutDash;
+    return withDash;
+  }, [availableSymbols]);
+
+  const prefillSellOrderFromAsset = useCallback((asset: string, availableAmount: number, marketType: 'spot' | 'margin', isolatedSymbol?: string) => {
+    const normalizedAsset = asset.trim().toUpperCase();
+    if (!normalizedAsset || normalizedAsset === 'USDT' || availableAmount <= 0) return;
+    const symbolToUse = isolatedSymbol || resolveSpotLikeSymbol(normalizedAsset);
+    setSelectedMarketType(marketType);
+    setSelectedSymbol(symbolToUse);
+    setActiveTab('orders');
+    setOrderForm((prev) => ({
+      ...prev,
+      side: 'sell',
+      orderType: 'market',
+      size: availableAmount.toString(),
+      funds: '',
+      price: '',
+      leverage: marketType === 'margin' ? prev.leverage : '1',
+      stopLoss: '',
+      takeProfit: '',
+    }));
+  }, [resolveSpotLikeSymbol]);
+
   const symbolSelectItems = useMemo(() => {
     const items: Array<{
       kind: 'label' | 'symbol';
@@ -3674,6 +3703,7 @@ export default function Trading() {
                         <TableHead>{t('trading.positions.balance')}</TableHead>
                         <TableHead>{t('trading.positions.available')}</TableHead>
                         <TableHead>{t('trading.positions.hold')}</TableHead>
+                        <TableHead>Ações</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -3685,6 +3715,16 @@ export default function Trading() {
                             <TableCell>{formatNumber(Number(entry.balance), locale)}</TableCell>
                             <TableCell>{formatNumber(Number(entry.available), locale)}</TableCell>
                             <TableCell>{formatNumber(Number(entry.holds), locale)}</TableCell>
+                            <TableCell>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={Number(entry.available) <= 0 || entry.currency.toUpperCase() === 'USDT'}
+                                onClick={() => prefillSellOrderFromAsset(entry.currency, Number(entry.available), 'spot')}
+                              >
+                                Vender
+                              </Button>
+                            </TableCell>
                           </TableRow>
                         ))}
                     </TableBody>
@@ -3700,6 +3740,7 @@ export default function Trading() {
                       <TableHead>{t('trading.positions.balance')}</TableHead>
                       <TableHead>{t('trading.positions.available')}</TableHead>
                       <TableHead>{t('trading.positions.liability')}</TableHead>
+                      <TableHead>Ações</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -3709,6 +3750,16 @@ export default function Trading() {
                         <TableCell>{formatNumber(Number(entry.total), locale)}</TableCell>
                         <TableCell>{formatNumber(Number(entry.available), locale)}</TableCell>
                         <TableCell>{formatNumber(Number(entry.liability), locale)}</TableCell>
+                        <TableCell>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={Number(entry.available) <= 0 || entry.currency.toUpperCase() === 'USDT'}
+                            onClick={() => prefillSellOrderFromAsset(entry.currency, Number(entry.available), 'margin')}
+                          >
+                            Vender
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     ))}
                     {marginIsolatedPositions?.assets.map((asset) => (
@@ -3722,6 +3773,21 @@ export default function Trading() {
                         </TableCell>
                         <TableCell>
                           {formatNumber(Number(asset.baseAsset.liability), locale)} {asset.baseAsset.currency} / {formatNumber(Number(asset.quoteAsset.liability), locale)} {asset.quoteAsset.currency}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={Number(asset.baseAsset.available) <= 0 || asset.baseAsset.currency.toUpperCase() === 'USDT'}
+                            onClick={() => prefillSellOrderFromAsset(
+                              asset.baseAsset.currency,
+                              Number(asset.baseAsset.available),
+                              'margin',
+                              asset.symbol
+                            )}
+                          >
+                            Vender
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))}

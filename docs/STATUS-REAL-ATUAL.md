@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 11 de Fevereiro de 2026  
 **Método:** Verificação direta do código-fonte + revisão sistemática completa  
-**Versão:** 10.98 - Fix 8 Bugs: Real-time WS, Sinais IA, Limpar Seleção, Chart Enterprise, Neutral Approve, Auto-learning Scheduler, TypeScript Errors
+**Versão:** 10.99 - Fix Enterprise Trading: realtime WS multi-mercado, posição demo futures lifecycle, saldos multi-ativo e venda por ativo
 
 ---
 
@@ -18,6 +18,10 @@
 - **Dataset Generator** automático: post-mortems completos geram datasets de treinamento com status pending.
 - **Snapshot Store** para evidências de mercado (entry/exit/candles/orderbook/news) em JSONB comprimido.
 - **Botão "Aprovar Demo"** na aba Sinais IA permite converter sinais em ordens Demo (complementar ao "Aprovar" Real).
+- **Realtime Trading/Demo**: normalização de chave de assinatura WS para Futures (`marginMode` consistente) no frontend e chat-service, eliminando mismatch de entrega de broadcast.
+- **Demo Futures Lifecycle**: endpoints para ajuste de SL/TP, adição de tamanho e fechamento parcial/total, com validação robusta de proteções versus preço de entrada.
+- **Demo Trading Multi-ativo**: saldos por moeda via API dedicada (`/api/integrations/demo-trading/balances`) e contabilização por ativo para Spot/Margin (compra/venda com débito/crédito correto por base/quote).
+- **Venda por Ativo (Real + Demo)**: ação direta “Vender” a partir da lista de ativos para pré-preencher ticket de ordem sem retrabalho operacional.
 - **Ecossistema LLM completo**: LoRA adapters globais (QLoRA) + RAG contextual + Feedback Loop automático para evolução contínua.
 - Status de Integrações no Dashboard/Integrações usa SSOT Prometheus via observability-service.
 - OpenAI Vision (Responses API) exibida com status operacional na página Integrações.
