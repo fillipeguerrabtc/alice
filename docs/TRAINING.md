@@ -10,16 +10,37 @@
 
 A página **Configurações do Sistema** (menu lateral) permite alterar limites de treinamento em tempo real, sem reiniciar serviços. Valores gravados no PostgreSQL têm precedência sobre variáveis de ambiente. Chaves disponíveis:
 
-| Chave | Descrição | Default |
-|-------|-----------|---------|
-| `DOCUMENT_MAX_CHUNKS` | Máximo de chunks por documento (RAG) | 50 |
-| `TRAINING_DOC_MAX_SAMPLES` | Máximo de chunks selecionados por documento para treino | 50 |
-| `TRAINING_CONVERSATION_MAX_MESSAGES` | Máximo de mensagens por conversa na coleta | 50 |
-| `CONVERSATION_SLICE_SIZE` | Tamanho da janela para fatiamento de conversas longas | 10 |
-| `MIN_ONDEMAND_DATASET_SIZE` | Mínimo de exemplos para treino on-demand | 10 |
-| `maxSeqLen` | Comprimento máximo de sequência no treino LoRA | 2048 |
+| Chave | Descrição | Default | Onde se aplica |
+|-------|-----------|---------|----------------|
+| `DOCUMENT_MAX_CHUNKS` | Máximo de chunks por documento (RAG) | 50 | document-processor (RAG) |
+| `TRAINING_DOC_MAX_SAMPLES` | Máximo de chunks selecionados por documento para treino (selectTrainingChunks) | 50 | rag-service |
+| `TRAINING_CONVERSATION_MAX_MESSAGES` | Máximo de mensagens por conversa na coleta | 50 | chat-service |
+| `CONVERSATION_SLICE_SIZE` | Tamanho da janela para fatiamento de conversas longas (janelas disjuntas) | 10 | chat-service |
+| `MIN_ONDEMAND_DATASET_SIZE` | Mínimo de exemplos para treino on-demand | 10 | training-service |
+| `maxSeqLen` | Comprimento máximo de sequência no treino LoRA | 2048 | lora-job-manager |
 
-Alterações são aplicadas imediatamente (cache invalidado no save). Ver `docs/TREINAMENTO-LIMITES-E-BOAS-PRATICAS.md` para detalhes técnicos.
+**Precedência:** PostgreSQL (Configurações do Sistema) > variáveis de ambiente > default. Alterações via UI são aplicadas imediatamente (cache invalidado no save).
+
+### Variáveis de ambiente (fallback)
+
+Quando não há valor em Configurações do Sistema, os serviços usam variáveis de ambiente:
+
+```env
+# Documentos (document-processor, RAG)
+DOCUMENT_MAX_CHUNKS=50
+
+# Treino - Documentos (rag-service)
+TRAINING_DOC_MAX_SAMPLES=50
+
+# Treino - Conversas (chat-service)
+TRAINING_CONVERSATION_MAX_MESSAGES=50
+CONVERSATION_SLICE_SIZE=10
+
+# Treino - On-demand (training-service)
+MIN_ONDEMAND_DATASET_SIZE=10
+```
+
+Ver `docs/TREINAMENTO-LIMITES-E-BOAS-PRATICAS.md` para detalhes técnicos e `docs/DEPLOYMENT.md` para deploy.
 
 ---
 
@@ -130,6 +151,49 @@ Todas as fontes abaixo entram na **coleta e contagem** usada para avaliar qualid
 - **Coleta** (`collectTrainingData`): retorna `approvedDataCount` (training_data), `tradingDatasetApprovedCount` (trading_dataset) e `approvedImagesCount`.
 - **Avaliação** (`evaluateDataQuality`): usa `approvedDataCount + tradingDatasetApprovedCount` para o mínimo de dados; considera `namespaceId` opcional para filtrar por namespace.
 - **Treino on-demand** (`startProgressiveLoRA`): filtra `training_data` por namespace (ou tenant-wide); opcionalmente inclui `trading_dataset` na contagem e no treino.
+
+---
+
+## Fluxo de namespace inteligente (scope-resolver)
+
+O **scope-resolver** determina o namespace e agente para cada item de treinamento. Ordem de resolução:
+
+1. **Input direto** — `namespaceId` e `agentId` vindos da requisição
+2. **Relacionamento por conversa** — consulta `conversations` para obter `namespaceId`/`agentId`
+3. **Relacionamento por source** — documento, sinal, ordem (lookup em tabelas)
+4. **Inferência semântica** — `inferDomainFromText()` analisa o texto (termos de trading, etc.) e infere domínio (`trading`, `general`)
+5. **Consistência multi-tenant** — valida que namespace/agente pertencem ao tenant
+6. **Fallback por sourceType** — ex.: `sourceType` começa com `trading` → domínio `trading`
+
+Quando **não há namespace** após todas as etapas, o scope-resolver retorna **sugestão de novo namespace** (`suggestedNewNamespace`):
+
+| Domínio inferido | Nome sugerido | Tema |
+|------------------|---------------|------|
+| `trading` | `trading-geral` | Trading e análise de mercado |
+| `general` | `geral` | Uso geral e assistente |
+| Outro | `conhecimento` | Documentos e conversas |
+
+O frontend (modal "Resolver escopo") exibe a opção **"Criar namespace: {{name}} ({{theme}})"** e, ao confirmar, chama a API de criação e associa ao `training_data`. O fluxo reutiliza `handleResolveScope` e `POST /api/training/data/resolve-scope`.
+
+**Métrica de observabilidade:** `alice_training_scope_suggested_new_namespace_total{source_type}` — incrementada sempre que `suggestedNewNamespace` é retornado.
+
+---
+
+## Fatiamento de conversas longas (janelas disjuntas)
+
+Conversas com mais de `CONVERSATION_SLICE_SIZE` mensagens são **fatiadas em janelas disjuntas** (TRL/SFT 2025 — evita overfitting, dataset menor e mais previsível).
+
+**Regras:**
+- `messages.length <= CONVERSATION_SLICE_SIZE` → 1 `training_data`
+- `messages.length > CONVERSATION_SLICE_SIZE` → `ceil(length / SLICE_SIZE)` `training_data` (janelas sem overlap)
+
+Cada janela inclui `sourceMetadata.conversationWindow: { startIndex, endIndex }` para rastreabilidade.
+
+**Endpoints afetados:**
+- `POST /api/chat/conversations/:id/training/collect` (single)
+- `POST /api/chat/training/collect-batch` (batch)
+
+**Métrica de observabilidade:** `alice_training_conversation_windows_created_total{tenant_id}` — incrementada quando `windows.length > 1`.
 
 ---
 

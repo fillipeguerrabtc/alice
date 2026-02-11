@@ -424,6 +424,8 @@ Permitir que o Chat consulte e **atualize dashboards** do Grafana com RBAC, audi
 - **Overrides de escopo:** `alice_training_scope_override_total{source}`
 - **Resolução manual de quarentena:** `alice_training_scope_resolved_total{source}`
 - **Trading datasets:** `alice_trading_dataset_created_total`, `alice_trading_dataset_duplicates_total`, `alice_trading_dataset_quality_score_bucket`
+- **Conversas longas fatiadas (Plano 11/02/2026):** `alice_training_conversation_windows_created_total{tenant_id}` — chat-service incrementa quando `CONVERSATION_SLICE_SIZE` gera múltiplas janelas
+- **Sugestão novo namespace (Plano 11/02/2026):** `alice_training_scope_suggested_new_namespace_total{source_type}` — scope-resolver sugere criação quando não há namespace inferido
 
 **Painéis:**
 
@@ -431,8 +433,10 @@ Permitir que o Chat consulte e **atualize dashboards** do Grafana com RBAC, audi
 2. **Deduplicação:** duplicados por fonte
 3. **Qualidade:** P50/P95 por janela
 4. **Scheduler:** execuções por resultado
-5. **Governança de escopo:** quarentena, overrides e resoluções manuais
+5. **Governança de escopo:** quarentena, overrides, resoluções manuais, **conversas fatiadas**, **sugestão novo namespace**
 6. **Trading datasets:** criação, duplicados, qualidade
+
+**Configurações de treino (Plano 11/02/2026):** `DOCUMENT_MAX_CHUNKS`, `TRAINING_DOC_MAX_SAMPLES`, `CONVERSATION_SLICE_SIZE`, `MIN_ONDEMAND_DATASET_SIZE` — editáveis via UI (Configurações do Sistema). Valores em PostgreSQL têm precedência sobre env. Ver `docs/TRAINING.md`.
 
 **Alertas:**
 

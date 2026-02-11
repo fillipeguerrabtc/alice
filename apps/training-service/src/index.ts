@@ -261,6 +261,13 @@ const trainingPipelineMetrics = {
     labelNames: ['source'] as const,
     registers: [metrics.registry],
   }),
+  /** Plano TREINAMENTO-LIMITES 11/02/2026: sugestão de novo namespace quando não há match */
+  scopeSuggestedNewNamespaceTotal: new PromCounter({
+    name: 'alice_training_scope_suggested_new_namespace_total',
+    help: 'Total de vezes que scope-resolver sugeriu criação de novo namespace (sem namespace inferido)',
+    labelNames: ['source_type'] as const,
+    registers: [metrics.registry],
+  }),
 };
 
 const TRAINING_METRICS_INTERVAL_MS = parseEnvInt(
@@ -715,6 +722,11 @@ app.post('/api/training/data', requirePermission('training:training_data:write')
       trainingPipelineMetrics.scopeQuarantineTotal.inc({
         source_type: body.sourceType ?? 'unknown',
         reason: 'low_confidence_or_missing_namespace',
+      });
+    }
+    if (scope.suggestedNewNamespace) {
+      trainingPipelineMetrics.scopeSuggestedNewNamespaceTotal.inc({
+        source_type: body.sourceType ?? 'unknown',
       });
     }
     const semhash = computeSemHash(messagesText);
@@ -1879,6 +1891,11 @@ app.post('/api/training/bulk-import', requirePermission('training:training_data:
           reason: 'low_confidence_or_missing_namespace',
         });
       }
+      if (scope.suggestedNewNamespace) {
+        trainingPipelineMetrics.scopeSuggestedNewNamespaceTotal.inc({
+          source_type: 'external',
+        });
+      }
       const autoRejectedByQuality = qualityScore < TRAINING_DATA_MIN_QUALITY;
       const status = autoRejectedByQuality
         ? 'rejected'
@@ -2099,6 +2116,11 @@ app.post('/api/training/webhook', async (req: Request, res: Response) => {
         trainingPipelineMetrics.scopeQuarantineTotal.inc({
           source_type: 'external',
           reason: 'low_confidence_or_missing_namespace',
+        });
+      }
+      if (scope.suggestedNewNamespace) {
+        trainingPipelineMetrics.scopeSuggestedNewNamespaceTotal.inc({
+          source_type: 'external',
         });
       }
       const autoRejectedByQuality = !isDuplicate && qualityScore < TRAINING_DATA_MIN_QUALITY;
@@ -2922,6 +2944,58 @@ app.use(createErrorHandler({
 // Previne crash loop quando PostgreSQL ainda está inicializando
 import { connectWithRetry } from '@alice/database';
 
+// SSOT validation (Plano 11/02/2026): TEXT_EMBEDDING_DIM (embeddings-gpu) = EMBEDDING_DIMENSIONS.TEXT
+const GPU_MANAGER_URL = process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager:3010';
+const INTERNAL_API_SECRET_FOR_VALIDATION = process.env.INTERNAL_API_SECRET;
+
+async function validateEmbeddingDimensionsSSOT(): Promise<void> {
+  if (!INTERNAL_API_SECRET_FOR_VALIDATION) return;
+  const maxAttempts = 3;
+  const delayMs = 2000;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), 5000);
+      const res = await fetch(`${GPU_MANAGER_URL}/api/gpu/embeddings/health`, {
+        signal: controller.signal,
+        headers: { 'X-Internal-Api-Secret': INTERNAL_API_SECRET_FOR_VALIDATION, Accept: 'application/json' },
+      });
+      clearTimeout(t);
+      if (!res.ok) {
+        if (attempt < maxAttempts) {
+          logger.warn({ attempt, status: res.status }, 'Embeddings health unreachable - retrying');
+          await new Promise((r) => setTimeout(r, delayMs));
+          continue;
+        }
+        logger.warn({ status: res.status }, 'Embeddings health unreachable após retries - continuando (readiness falhará)');
+        return;
+      }
+      const data = (await res.json()) as { text_dimensions?: number };
+      const dim = data.text_dimensions;
+      if (typeof dim !== 'number') {
+        logger.warn({ data }, 'Embeddings health não retornou text_dimensions');
+        return;
+      }
+      if (dim !== EMBEDDING_DIMENSIONS.TEXT) {
+        logger.error(
+          { text_dimensions: dim, expected: EMBEDDING_DIMENSIONS.TEXT },
+          'SSOT INCONSISTENTE: embeddings-gpu retorna dimensão diferente de @alice/database. Verifique configuração.'
+        );
+        process.exit(1);
+      }
+      logger.info({ text_dimensions: dim }, 'SSOT validado: embeddings-gpu = EMBEDDING_DIMENSIONS.TEXT');
+      return;
+    } catch (err) {
+      if (attempt < maxAttempts) {
+        logger.warn({ attempt, err: err instanceof Error ? err.message : String(err) }, 'Embeddings health unreachable - retrying');
+        await new Promise((r) => setTimeout(r, delayMs));
+      } else {
+        logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'Embeddings health unreachable após retries - continuando');
+      }
+    }
+  }
+}
+
 let server: ReturnType<typeof app.listen>;
 let autoLearningInterval: NodeJS.Timeout | null = null;
 
@@ -2939,6 +3013,9 @@ let autoLearningInterval: NodeJS.Timeout | null = null;
     // CORREÇÃO 11/02/2026: initAutoLearningScheduler NUNCA era chamada, causando
     // db=undefined → TypeError a cada 60s no processScheduledJobs → alerta Grafana
     initAutoLearningScheduler(getDatabase());
+
+    // SSOT validation (Plano 11/02/2026): embeddings-gpu text_dimensions = EMBEDDING_DIMENSIONS.TEXT
+    await validateEmbeddingDimensionsSSOT();
 
     // WS4: Redis cache + session-auth cache (evita queries repetitivas em PostgreSQL)
     // - Em produção: Redis é obrigatório (fail-fast dentro de initializeSessionAuthCache)

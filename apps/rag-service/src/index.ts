@@ -6,7 +6,7 @@
  * 
  * ARQUITETURA ENTERPRISE (25/12/2025):
  * - Texto: Qwen3-Embedding-0.6B (1024 dim) → Qdrant via GPU Manager Service
- * - Imagem: OpenAI Vision → descrição textual (sem embeddings de imagem)
+ * - Imagem: OpenAI Vision → descrição textual → embedding da descrição (1024 dim) → Qdrant
  * 
  * Autor: Fillipe Guerra
  * Data: 25 de Dezembro de 2025
@@ -85,6 +85,7 @@ import { createWebSearchClient, WebSearchOptions, WebSearchResult } from './web-
 import { createLearningTask, dequeueNextLearningTask, updateLearningTaskStatus } from './learning-orchestrator.js';
 import { startLearningWorker } from './workers/learning-worker.js';
 import { startWebCrawlWorker } from './workers/web-crawl-worker.js';
+import { selectTrainingChunks } from './training-chunk-selection.js';
 // Cliente Qdrant para busca de texto (1024 dim - Qwen3-Embedding-0.6B)
 // CORREÇÃO 17/12/2025: Adicionado upsertPoints para inserir documentos no Qdrant
 // Bug: Busca usava Qdrant mas inserção era apenas PostgreSQL - resultados sempre vazios
@@ -121,122 +122,6 @@ type TrainingChunkSelectionOptions = {
   minChars?: number;
 };
 
-const TRAINING_SALIENCE_KEYWORDS = [
-  'risco', 'risk', 'stop loss', 'take profit', 'sl', 'tp',
-  'leverage', 'alavancagem', 'entry', 'exit', 'breakout', 'pullback',
-  'liquidez', 'liquidity', 'volatilidade', 'volatility', 'drawdown',
-  'position sizing', 'size', 'hedge', 'arbitragem', 'arbitrage',
-  'funding rate', 'order book', 'book', 'spread', 'latency',
-  'compliance', 'governança', 'governance', 'auditoria', 'audit',
-  'pnl', 'roi', 'sharpe', 'win rate', 'probabilidade', 'probability',
-];
-
-function normalizeForScoring(text: string): string {
-  return text
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function computeChunkSalienceScore(
-  chunk: TrainingChunk,
-  totalChunks: number,
-  maxPosition: number
-): number {
-  const raw = chunk.conteudo.trim();
-  if (!raw) return 0;
-  const normalized = normalizeForScoring(raw);
-  const words = normalized.split(' ').filter(Boolean);
-  const wordCount = words.length;
-  const chars = raw.length;
-
-  const keywordMatches = TRAINING_SALIENCE_KEYWORDS.reduce((acc, keyword) => (
-    normalized.includes(keyword) ? acc + 1 : acc
-  ), 0);
-  const keywordScore = Math.min(keywordMatches / 6, 1);
-
-  const numericMatches = (raw.match(/\b\d+([.,]\d+)?%?\b/g) ?? []).length;
-  const numericDensity = wordCount > 0 ? numericMatches / wordCount : 0;
-  const numericScore = Math.min(numericDensity * 8, 1);
-
-  const structureHits = (raw.match(/(^|\n)\s*(#{1,6}\s|[-*]\s|[0-9]+\.\s|[A-Z][A-Z\s]{6,}:)/g) ?? []).length;
-  const structureScore = Math.min(structureHits / 3, 1);
-
-  const lengthScore = Math.min(chars / 900, 1);
-
-  // Valoriza início e fim do documento (normalmente contexto + conclusões/recomendações)
-  const posNorm = maxPosition > 0 ? chunk.posicao / maxPosition : 0;
-  const edgeDistance = Math.min(posNorm, 1 - posNorm);
-  const positionScore = 1 - Math.min(edgeDistance / 0.5, 1); // 0..1
-
-  // Peso final calibrado para documentos técnicos/operacionais de trading
-  const score =
-    (keywordScore * 0.38) +
-    (numericScore * 0.22) +
-    (structureScore * 0.15) +
-    (lengthScore * 0.15) +
-    (positionScore * 0.10);
-
-  // Bônus leve para chunks com termos muito acionáveis
-  const actionableBonus = /(?:stop loss|take profit|risk|risco|drawdown|entry|exit|hedge|alavancagem|leverage)/i.test(raw) ? 0.05 : 0;
-  return Math.min(score + actionableBonus, 1);
-}
-
-function selectTrainingChunks(
-  chunks: TrainingChunk[],
-  options: TrainingChunkSelectionOptions = {}
-): TrainingChunk[] {
-  const minChars = options.minChars ?? TRAINING_DOC_MIN_CHARS;
-  const maxSamples = options.maxSamples ?? TRAINING_DOC_MAX_SAMPLES;
-  const eligible = chunks
-    .filter((chunk) => chunk.conteudo.trim().length >= minChars)
-    .sort((a, b) => a.posicao - b.posicao);
-
-  if (eligible.length <= maxSamples) return eligible;
-
-  const maxPosition = Math.max(...eligible.map((chunk) => chunk.posicao), 1);
-  const scored = eligible.map((chunk) => ({
-    chunk,
-    score: computeChunkSalienceScore(chunk, eligible.length, maxPosition),
-  }));
-
-  // Diversidade posicional: evitar selecionar chunks adjacentes demais
-  const minDistance = Math.max(1, Math.floor(eligible.length / (maxSamples * 2)));
-  const selected: TrainingChunk[] = [];
-
-  // âncoras (início e fim) para manter contexto macro
-  const firstAnchor = scored.find((item) => item.chunk.posicao <= Math.ceil(maxPosition * 0.20));
-  const lastAnchor = [...scored].reverse().find((item) => item.chunk.posicao >= Math.floor(maxPosition * 0.80));
-  if (firstAnchor) selected.push(firstAnchor.chunk);
-  if (lastAnchor && !selected.some((s) => s.id === lastAnchor.chunk.id)) selected.push(lastAnchor.chunk);
-
-  const sortedByScore = [...scored].sort((a, b) => b.score - a.score);
-  for (const item of sortedByScore) {
-    if (selected.length >= maxSamples) break;
-    const alreadySelected = selected.some((s) => s.id === item.chunk.id);
-    if (alreadySelected) continue;
-    const tooClose = selected.some((s) => Math.abs(s.posicao - item.chunk.posicao) < minDistance);
-    if (tooClose) continue;
-    selected.push(item.chunk);
-  }
-
-  // Completa com melhor score remanescente caso a restrição de distância tenha sido rígida demais
-  if (selected.length < maxSamples) {
-    for (const item of sortedByScore) {
-      if (selected.length >= maxSamples) break;
-      if (!selected.some((s) => s.id === item.chunk.id)) {
-        selected.push(item.chunk);
-      }
-    }
-  }
-
-  return selected
-    .sort((a, b) => a.posicao - b.posicao)
-    .slice(0, maxSamples);
-}
-
 async function collectTrainingFromDocumentChunks(params: {
   tenantId: string;
   namespaceId: string;
@@ -262,6 +147,7 @@ async function collectTrainingFromDocumentChunks(params: {
   const selection = {
     ...params.selection,
     maxSamples: params.selection?.maxSamples ?? defaultMaxSamples,
+    minChars: params.selection?.minChars ?? TRAINING_DOC_MIN_CHARS,
   };
   if (!TRAINING_SERVICE_URL) {
     logger.warn({ documentId: params.documentId }, 'TRAINING_SERVICE_URL ausente - coleta de documentos para treinamento desabilitada');
@@ -1053,6 +939,56 @@ const mediaUpload = multer({
 /** GPU Manager Service gerencia embeddings GPU (Hetzner GEX44) */
 // GPU Manager Service - Gerenciamento centralizado de requisições GPU (25/12/2025)
 const GPU_MANAGER_URL = process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager:3010';
+
+/** SSOT validation (Plano 11/02/2026): TEXT_EMBEDDING_DIM (embeddings-gpu) = EMBEDDING_DIMENSIONS.TEXT */
+async function validateEmbeddingDimensionsSSOT(): Promise<void> {
+  const secret = process.env.INTERNAL_API_SECRET;
+  if (!secret) return;
+  const maxAttempts = 3;
+  const delayMs = 2000;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), 5000);
+      const res = await fetch(`${GPU_MANAGER_URL}/api/gpu/embeddings/health`, {
+        signal: controller.signal,
+        headers: { 'X-Internal-Api-Secret': secret, Accept: 'application/json' },
+      });
+      clearTimeout(t);
+      if (!res.ok) {
+        if (attempt < maxAttempts) {
+          logger.warn({ attempt, status: res.status }, 'Embeddings health unreachable - retrying');
+          await new Promise((r) => setTimeout(r, delayMs));
+          continue;
+        }
+        logger.warn({ status: res.status }, 'Embeddings health unreachable após retries - continuando');
+        return;
+      }
+      const data = (await res.json()) as { text_dimensions?: number };
+      const dim = data.text_dimensions;
+      if (typeof dim !== 'number') {
+        logger.warn({ data }, 'Embeddings health não retornou text_dimensions');
+        return;
+      }
+      if (dim !== EMBEDDING_DIMENSIONS.TEXT) {
+        logger.error(
+          { text_dimensions: dim, expected: EMBEDDING_DIMENSIONS.TEXT },
+          'SSOT INCONSISTENTE: embeddings-gpu retorna dimensão diferente de @alice/database'
+        );
+        process.exit(1);
+      }
+      logger.info({ text_dimensions: dim }, 'SSOT validado: embeddings-gpu = EMBEDDING_DIMENSIONS.TEXT');
+      return;
+    } catch (err) {
+      if (attempt < maxAttempts) {
+        logger.warn({ attempt, err: err instanceof Error ? err.message : String(err) }, 'Embeddings health unreachable - retrying');
+        await new Promise((r) => setTimeout(r, delayMs));
+      } else {
+        logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'Embeddings health unreachable após retries - continuando');
+      }
+    }
+  }
+}
 
 interface TextEmbeddingResponse {
   embedding: number[];
@@ -3131,6 +3067,27 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
           const visionDescription = result.visionDescription?.trim() || null;
           const visionModel = result.visionModel ?? null;
 
+          // Gate 2: Embedding da descrição textual (OpenAI Vision) → Qdrant
+          // Simetria enterprise: documento texto + transcrição áudio + descrição imagem → mesmo espaço vetorial
+          if (visionDescription && visionDescription.length > 0 && isQdrantConfigured()) {
+            const descriptionEmbedding = await generateEmbedding(visionDescription.slice(0, 8000));
+            validateEmbeddingDimension(descriptionEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
+            await upsertPoints(TEXT_COLLECTION_NAME, [{
+              id: mediaUploadRecord.id,
+              vector: descriptionEmbedding,
+              payload: {
+                type: 'media_image',
+                mediaUploadId: mediaUploadRecord.id,
+                mediaType: 'image',
+                tenantId: req.tenantId,
+                visionDescription: visionDescription.slice(0, 10000),
+                embeddingModel: visionModel ?? 'OpenAI-Vision',
+                criadoEm: new Date().toISOString(),
+              },
+            }]);
+            logger.debug({ uploadId: mediaUploadRecord.id }, 'Embedding de descrição de imagem inserido no Qdrant');
+          }
+
           // Atualizar registro com thumbnail, descrição e metadata
           await db.update(schema.mediaUploads)
             .set({
@@ -3511,6 +3468,27 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
 
           const visionDescription = result.visionDescription?.trim() || null;
           const visionModel = result.visionModel ?? null;
+
+          // Gate 2: Embedding da descrição textual (OpenAI Vision) → Qdrant
+          // Simetria enterprise: documento texto + transcrição áudio + descrição imagem → mesmo espaço vetorial
+          if (visionDescription && visionDescription.length > 0 && isQdrantConfigured()) {
+            const descriptionEmbedding = await generateEmbedding(visionDescription.slice(0, 8000));
+            validateEmbeddingDimension(descriptionEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
+            await upsertPoints(TEXT_COLLECTION_NAME, [{
+              id: mediaUploadRecord.id,
+              vector: descriptionEmbedding,
+              payload: {
+                type: 'media_image',
+                mediaUploadId: mediaUploadRecord.id,
+                mediaType: 'image',
+                tenantId: tenantId,
+                visionDescription: visionDescription.slice(0, 10000),
+                embeddingModel: visionModel ?? 'OpenAI-Vision',
+                criadoEm: new Date().toISOString(),
+              },
+            }]);
+            logger.debug({ uploadId: mediaUploadRecord.id }, 'Embedding de descrição de imagem inserido no Qdrant (JSON upload)');
+          }
 
           await db.update(schema.mediaUploads)
             .set({
@@ -4412,6 +4390,9 @@ registerShutdownCallback(
       logger.info('Cache RAG desabilitado (Redis indisponível)');
     }
     
+    // SSOT validation (Plano 11/02/2026): embeddings-gpu text_dimensions = EMBEDDING_DIMENSIONS.TEXT
+    await validateEmbeddingDimensionsSSOT();
+
     // BUG FIX 23/12/2025: Criar servidor HTTP mas NÃO iniciar ainda
     // Isso permite inicializar WebSocket ANTES de aceitar conexões
     // app.listen() começa a aceitar conexões imediatamente, causando race condition

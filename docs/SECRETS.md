@@ -158,6 +158,13 @@ Este documento lista os secrets obrigatórios e opcionais usados no deploy enter
 | `ACME_DNS_PRECHECK_RESOLVERS` | Lista de resolvers DoH (separada por espaço) |
 | `ACME_DNS_PRECHECK_REQUIRE_ALL_RESOLVERS` | `true` exige sucesso em todos os resolvers DoH |
 | `ACME_DNS_PRECHECK_HOSTS` | Lista de hosts para checagem (override do Caddyfile) |
+| `DOCUMENT_MAX_CHUNKS` | Máximo de chunks por documento (default 50). Ver `docs/DEPLOYMENT.md`. |
+| `TRAINING_DOC_MAX_SAMPLES` | Máximo de chunks selecionados por doc para treino (default 50). |
+| `TRAINING_CONVERSATION_MAX_MESSAGES` | Máximo de mensagens por conversa na coleta (default 50). |
+| `CONVERSATION_SLICE_SIZE` | Tamanho da janela para fatiamento de conversas longas (default 10). |
+| `MIN_ONDEMAND_DATASET_SIZE` | Mínimo de exemplos para treino on-demand (default 10). |
+
+> **Treino:** Valores editáveis via UI (Configurações do Sistema). PostgreSQL tem precedência sobre env. Ver `docs/TRAINING.md`.
 
 ## Geração recomendada
 

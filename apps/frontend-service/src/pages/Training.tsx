@@ -818,7 +818,7 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
 
   const ragDocuments = ragDocumentsData?.documents ?? [];
 
-  const [bookModePromote, setBookModePromote] = useState(false);
+  const [bookModeByDocument, setBookModeByDocument] = useState<Record<string, boolean>>({});
 
   const promoteDocumentToTraining = useMutation({
     mutationFn: async (params: { documentId: string; maxSamples?: number }) => {
@@ -1315,8 +1315,10 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
                       <div className="flex items-center gap-2">
                         <Switch
                           id={`book-mode-${doc.id}`}
-                          checked={bookModePromote}
-                          onCheckedChange={setBookModePromote}
+                          checked={bookModeByDocument[doc.id] ?? false}
+                          onCheckedChange={(checked) =>
+                            setBookModeByDocument((prev) => ({ ...prev, [doc.id]: checked }))
+                          }
                         />
                         <Label htmlFor={`book-mode-${doc.id}`} className="text-xs cursor-pointer">
                           {t('training.promoteDocument.bookMode')}
@@ -1329,7 +1331,7 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
                         onClick={() =>
                           promoteDocumentToTraining.mutate({
                             documentId: doc.id,
-                            maxSamples: bookModePromote ? 100 : undefined,
+                            maxSamples: (bookModeByDocument[doc.id] ?? false) ? 100 : undefined,
                           })
                         }
                       >
@@ -2427,16 +2429,22 @@ export default function Training() {
       },
       {
         onSuccess: (created) => {
-          resolveScopeMutation.mutate({
-            id: resolveScopeEntry.id,
-            namespaceId: created.id,
-            domain: resolveScopeEntry.inferredDomain?.trim().length ? resolveScopeEntry.inferredDomain : null,
-            agentId: resolveScopeEntry.agentId ?? resolveScopeEntry.inferredAgentId ?? null,
-            reason: resolveScopeReason.trim() || 'Namespace criado via sugestão de escopo',
-          });
-          setResolveScopeDialogOpen(false);
-          setResolveScopeEntry(null);
-          toast({ title: t('training.resolveScope.namespaceCreated') });
+          resolveScopeMutation.mutate(
+            {
+              id: resolveScopeEntry.id,
+              namespaceId: created.id,
+              domain: resolveScopeEntry.inferredDomain?.trim().length ? resolveScopeEntry.inferredDomain : null,
+              agentId: resolveScopeEntry.agentId ?? resolveScopeEntry.inferredAgentId ?? null,
+              reason: resolveScopeReason.trim() || 'Namespace criado via sugestão de escopo',
+            },
+            {
+              onSuccess: () => {
+                setResolveScopeDialogOpen(false);
+                setResolveScopeEntry(null);
+                toast({ title: t('training.resolveScope.namespaceCreated') });
+              },
+            }
+          );
         },
       }
     );

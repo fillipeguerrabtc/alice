@@ -4953,6 +4953,7 @@ jobs:
             cp -f "$DASH_SRC/alice-infrastructure.json" "$DASH_DST/infra-hosts/alice-infrastructure.json"
             cp -f "$DASH_SRC/alice-backup.json" "$DASH_DST/backup/alice-backup.json"
             cp -f "$DASH_SRC/alice-training.json" "$DASH_DST/training/alice-training.json"
+            cp -f "$DASH_SRC/alice-training-pipeline.json" "$DASH_DST/training/alice-training-pipeline.json"
 
             echo "✅ Dashboards sincronizados com sucesso"
             echo ""

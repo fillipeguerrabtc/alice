@@ -861,6 +861,37 @@ app.get('/health', (req: Request, res: Response) => {
   res.json({ status: 'healthy', service: 'gpu-manager' });
 });
 
+// Proxy para health do serviço de embeddings (SSOT validation - Plano 11/02/2026)
+// Permite que training-service e rag-service validem text_dimensions === EMBEDDING_DIMENSIONS.TEXT
+app.get('/api/gpu/embeddings/health', requireInternalAuth, asyncHandler(async (_req: Request, res: Response) => {
+  const url = GPU_SERVICE_URLS[GpuServiceType.EMBEDDINGS];
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const response = await fetch(`${url}/health`, {
+      signal: controller.signal,
+      headers: { 'Accept': 'application/json' },
+    });
+    clearTimeout(timeout);
+    if (!response.ok) {
+      return res.status(502).json({
+        error: 'Embeddings GPU health check failed',
+        status: response.status,
+        url,
+      });
+    }
+    const data = (await response.json()) as { text_dimensions?: number; status?: string; [k: string]: unknown };
+    res.json(data);
+  } catch (err) {
+    logger.warn({ err, url }, 'Falha ao obter health do embeddings GPU');
+    res.status(503).json({
+      error: 'Embeddings GPU unreachable',
+      url,
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+}));
+
 // Liveness probe
 app.get('/live', async (req: Request, res: Response) => {
   try {

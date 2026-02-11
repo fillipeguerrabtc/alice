@@ -69,21 +69,46 @@ Com servidor GPU dedicado, os serviços de inferência rodam simultaneamente (bu
 - Cada mensagem no chat é avaliada pelo usuário (1-5 estrelas)
 - Mensagens com rating >= 4 são candidatas a treinamento
 - Admin pode aprovar/reprovar no dashboard (`/training`)
-- **Conversas longas** (>10 mensagens) são fatiadas em janelas disjuntas; cada janela vira um `training_data` com `sourceMetadata.conversationWindow`
-- **Resolver escopo**: quando não há namespace inferido, o scope-resolver sugere criação de novo namespace (ex.: trading-geral, geral); o frontend oferece opção "Criar namespace sugerido"
+- **Conversas longas** (mais de `CONVERSATION_SLICE_SIZE` mensagens, default 10) são fatiadas em **janelas disjuntas** (sem overlap); cada janela vira um `training_data` distinto com `sourceMetadata.conversationWindow: { startIndex, endIndex }`
+- **Resolver escopo**: quando não há namespace inferido, o scope-resolver retorna `suggestedNewNamespace` (ex.: `{ name: 'trading-geral', theme: 'Trading e análise de mercado' }`); o frontend oferece opção "Criar namespace sugerido"
 - Dados aprovados entram no próximo ciclo de fine-tuning
 
-**Integração Implementada (chat-service/index.ts linha 3905):**
+**Fluxo Chat → Training (coleta manual "Enviar p/ Treino"):**
+
+```
+1. Usuário clica "Enviar p/ Treino" no Chat
+   ↓
+2. chat-service: POST /api/chat/conversations/:id/training/collect
+   - Ordena mensagens por posição
+   - sliceConversationIntoWindows(messages, CONVERSATION_SLICE_SIZE)
+   - Se windows.length > 1 → incrementa alice_training_conversation_windows_created_total
+   ↓
+3. Para cada janela: POST /api/training/data (training-service)
+   - sourceMetadata.conversationWindow: { startIndex, endIndex }
+   - scope-resolver: resolveScope(tenantId, conversationId, messagesText, ...)
+   ↓
+4. Se !namespaceId: needsHumanReview=true, suggestedNewNamespace preenchido
+   - Dados aparecem pendentes na página Training
+   - Admin resolve escopo (criar namespace sugerido ou associar existente)
+   ↓
+5. Aprovação → training_data com status approved → próximo ciclo LoRA
+```
+
+**Integração Implementada (chat-service/index.ts):**
 ```typescript
-// Quando usuário avalia mensagem com rating >= 4
-const trainingResponse = await fetch(`${TRAINING_SERVICE_URL}/api/training/data`, {
-  method: 'POST',
-  body: JSON.stringify({
-    source: 'chat',
-    messages: [...],
-    rating: finalRating,
-  }),
-});
+// Coleta manual: sliceConversationIntoWindows + POST /api/training/data por janela
+const windows = sliceConversationIntoWindows(ordered, limits.sliceSize);
+for (const { slice, startIndex, endIndex } of windows) {
+  await fetch(`${TRAINING_SERVICE_URL}/api/training/data`, {
+    method: 'POST',
+    body: JSON.stringify({
+      source: 'chat',
+      messages: slice,
+      sourceMetadata: { conversationWindow: { startIndex, endIndex } },
+      ...
+    }),
+  });
+}
 ```
 
 ### 2. WhatsApp (Automático) ✅

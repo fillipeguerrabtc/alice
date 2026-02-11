@@ -70,6 +70,7 @@ import {
   type AgentEvent,
   redactSensitivePayload,
   Gauge as PromGauge,
+  Counter as PromCounter,
 } from '@alice/shared-utils';
 import type { AuthContext } from '@alice/shared-utils';
 import type { Role } from '@alice/shared-utils';
@@ -80,6 +81,7 @@ import { createClient } from 'redis';
 import type { AgenticDetectors } from '@alice/shared';
 import { isTradingCommand } from './trading-command-parser.js';
 import { resolveModelWithAdapter } from './lora-adapter-resolver.js';
+import { sliceConversationIntoWindows } from './training-utils.js';
 import { 
   buscarContextoRAG, 
   buscarContextoAgentic,
@@ -298,6 +300,14 @@ const slaAvgFirstResponseGauge = new PromGauge({
 const slaAvgResolutionGauge = new PromGauge({
   name: 'alice_sla_avg_resolution_seconds',
   help: 'Tempo médio de resolução em segundos',
+  labelNames: ['tenant_id'] as const,
+  registers: [metrics.registry],
+});
+
+/** Métrica: janelas de fatiamento criadas (conversas longas → training) - Plano TREINAMENTO-LIMITES 11/02/2026 */
+const conversationWindowsCreatedCounter = new PromCounter({
+  name: 'alice_training_conversation_windows_created_total',
+  help: 'Total de vezes que conversas longas foram fatiadas em múltiplas janelas (CONVERSATION_SLICE_SIZE)',
   labelNames: ['tenant_id'] as const,
   registers: [metrics.registry],
 });
@@ -4725,26 +4735,6 @@ function buildTrainingMessagesFromStored(
   return { messages: trainingMessages };
 }
 
-/** Janelas disjuntas para conversas longas (TRL/SFT 2025). Cada janela → 1 training_data. */
-function sliceConversationIntoWindows<T>(
-  messages: T[],
-  sliceSize: number
-): Array<{ slice: T[]; startIndex: number; endIndex: number }> {
-  if (messages.length <= sliceSize) {
-    return [{ slice: messages, startIndex: 0, endIndex: messages.length - 1 }];
-  }
-  const windows: Array<{ slice: T[]; startIndex: number; endIndex: number }> = [];
-  for (let start = 0; start < messages.length; start += sliceSize) {
-    const end = Math.min(start + sliceSize, messages.length) - 1;
-    windows.push({
-      slice: messages.slice(start, end + 1),
-      startIndex: start,
-      endIndex: end,
-    });
-  }
-  return windows;
-}
-
 function shouldAutoCollectTraining(params: {
   profile: LlmContextProfile;
   namespaceId?: string | null;
@@ -7579,7 +7569,13 @@ app.post('/api/chat/conversations/:id/training/collect', requireAuth(), requireS
       return res.status(400).json({ error: 'Conversa não possui mensagens suficientes' });
     }
 
-    const windows = sliceConversationIntoWindows(ordered, limits.sliceSize);
+    // Consistência com /training/collect-batch: quando messageIds é fornecido, tratar como janela única (não fatiar)
+    const windows = messageIds && messageIds.length > 0
+      ? [{ slice: ordered, startIndex: 0, endIndex: ordered.length - 1 }]
+      : sliceConversationIntoWindows(ordered, limits.sliceSize);
+    if (windows.length > 1) {
+      conversationWindowsCreatedCounter.inc({ tenant_id: effectiveTenantId });
+    }
     let totalMessagesSent = 0;
     let allSent = true;
 
@@ -7725,6 +7721,10 @@ app.post('/api/chat/training/collect-batch', requireAuth(), requireSameTenant(ge
       const windows = item.messageIds?.length
         ? [{ slice: storedMessages, startIndex: 0, endIndex: storedMessages.length - 1 }]
         : sliceConversationIntoWindows(storedMessages, limitsBatch.sliceSize);
+
+      if (windows.length > 1) {
+        conversationWindowsCreatedCounter.inc({ tenant_id: requestTenantId });
+      }
 
       let batchSent = true;
       let batchMessages = 0;
