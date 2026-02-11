@@ -126,6 +126,8 @@ interface PreparedDataset {
     training: number;
     validation: number;
     byActionType: Record<string, number>;
+    /** Número de imagens aprovadas incluídas (quando includeImages=true). */
+    imagesUsed?: number;
   };
 }
 
@@ -280,6 +282,8 @@ export async function prepareDatasetFromChatAndTrading(
   namespaceId?: string | null,
   options?: {
     includeTradingDataset?: boolean;
+    /** Quando true, inclui contagem de imagens aprovadas (generated_images) em stats.imagesUsed. */
+    includeImages?: boolean;
     /** Quando true, retorna apenas stats e ids (para validação/criação de job sem carregar linhas). */
     countOnly?: boolean;
   }
@@ -308,6 +312,21 @@ export async function prepareDatasetFromChatAndTrading(
   for (const r of chatRows) {
     const k = r.sourceType ?? 'chat';
     byActionType[k] = (byActionType[k] ?? 0) + 1;
+  }
+
+  let imagesUsed = 0;
+  if (options?.includeImages) {
+    const [row] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(schema.generatedImages)
+      .where(
+        and(
+          eq(schema.generatedImages.tenantId, tenantId),
+          eq(schema.generatedImages.approvedForTraining, true),
+          eq(schema.generatedImages.usedInFineTuning, false)
+        )
+      );
+    imagesUsed = row?.count ?? 0;
   }
 
   let trainingData: string[] = [];
@@ -362,6 +381,7 @@ export async function prepareDatasetFromChatAndTrading(
     training: trainPart.length,
     validation: validationPart.length,
     byActionType,
+    imagesUsed,
   };
 
   logger.info(
@@ -487,10 +507,15 @@ export async function createScheduledRunLoraJob(
 ): Promise<LoraJob> {
   const db = getDatabase();
 
+  const includeImages = options?.includeImages ?? false;
   const prepared = await prepareDatasetFromChatAndTrading(
     tenantId,
     options?.namespaceId ?? undefined,
-    { includeTradingDataset: options?.includeTradingDataset ?? !!options?.namespaceId, countOnly: true }
+    {
+      includeTradingDataset: options?.includeTradingDataset ?? !!options?.namespaceId,
+      includeImages,
+      countOnly: true,
+    }
   );
 
   const name = options?.namespaceId
@@ -514,7 +539,8 @@ export async function createScheduledRunLoraJob(
     datasetCount: prepared.stats.training,
     validationCount: prepared.stats.validation,
     includeTradingDataset: includeTrading,
-    metrics: {},
+    includeImages,
+    metrics: { imagesUsed: prepared.stats.imagesUsed ?? 0 },
   };
 
   const [job] = await db.insert(schema.loraJobs).values(jobData).returning();
@@ -711,8 +737,9 @@ export async function processLoraJob(jobId: string): Promise<void> {
   }
 
   const includeTradingDataset = job.includeTradingDataset ?? !!namespaceId;
+  const includeImages = job.includeImages ?? false;
   const prepared = isScheduledRun
-    ? await prepareDatasetFromChatAndTrading(tenantId, namespaceId ?? undefined, { includeTradingDataset })
+    ? await prepareDatasetFromChatAndTrading(tenantId, namespaceId ?? undefined, { includeTradingDataset, includeImages })
     : await prepareDataset(tenantId, namespaceId!, job.scopeAgentId ?? undefined, undefined);
 
   const jobDir = path.join(TRAINING_STORAGE_DIR, 'trading-lora', tenantId, jobId);
@@ -727,7 +754,11 @@ export async function processLoraJob(jobId: string): Promise<void> {
   await writeJsonlFile(evalPath, prepared.validationData);
 
   const targetSteps = computeTargetSteps(prepared.stats.training, job.hyperparameters as TradingLoraHyperparams);
-  await updateJobProgress(jobId, { status: 'training', progress: 0, currentStep: 0, totalSteps: targetSteps, metrics: job.metrics as TradingLoraMetrics });
+  const mergedMetrics: TradingLoraMetrics = {
+    ...(job.metrics as TradingLoraMetrics),
+    imagesUsed: prepared.stats.imagesUsed ?? (job.metrics as TradingLoraMetrics)?.imagesUsed,
+  };
+  await updateJobProgress(jobId, { status: 'training', progress: 0, currentStep: 0, totalSteps: targetSteps, metrics: mergedMetrics });
 
   const sliceSteps = 5;
   let stepsCompleted = 0;

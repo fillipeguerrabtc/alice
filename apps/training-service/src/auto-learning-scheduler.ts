@@ -267,11 +267,13 @@ export async function startProgressiveLoRA(
 
   const trainingDataUsed = job.datasetCount ?? 0;
   const validationCount = job.validationCount ?? 0;
+  const imagesUsed = (job.metrics as { imagesUsed?: number } | null)?.imagesUsed ?? 0;
 
   logger.info({
     loraJobId: job.id,
     trainingData: trainingDataUsed,
     validation: validationCount,
+    imagesUsed,
   }, 'Job LoRA scheduled_run criado para Progressive LoRA');
 
   return {
@@ -279,7 +281,7 @@ export async function startProgressiveLoRA(
     modelVersionId: null,
     version: 0,
     trainingDataUsed: trainingDataUsed + validationCount,
-    imagesUsed: 0,
+    imagesUsed,
     status: 'started',
   };
 }

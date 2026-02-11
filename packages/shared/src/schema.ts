@@ -3385,6 +3385,8 @@ export const TradingLoraMetricsSchema = z.object({
   sharpeRatio: z.number().optional(),        // Específico de trading
   maxDrawdown: z.number().optional(),        // Específico de trading
   winRate: z.number().optional(),            // Específico de trading
+  /** Número de imagens aprovadas incluídas no job (scheduled_run, quando includeImages=true). */
+  imagesUsed: z.number().optional(),
 });
 export type TradingLoraMetrics = z.infer<typeof TradingLoraMetricsSchema>;
 
@@ -3530,7 +3532,9 @@ export const loraJobs = pgTable(
     validationCount: integer("validation_count").default(0),
     /** Incluir trading_dataset no treino (scheduled_run). NULL = inferir de scope_namespace_id (backward compat). */
     includeTradingDataset: boolean("include_trading_dataset"),
-    
+    /** Incluir contagem de imagens aprovadas (generated_images) e retornar imagesUsed. */
+    includeImages: boolean("include_images").default(false),
+
     // Métricas (atualizadas durante treinamento)
     metrics: jsonb("metrics").$type<TradingLoraMetrics>().default({}),
     
