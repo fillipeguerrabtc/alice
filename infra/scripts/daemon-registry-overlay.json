@@ -1,0 +1,4 @@
+{
+  "max-concurrent-downloads": 3,
+  "max-download-attempts": 10
+}

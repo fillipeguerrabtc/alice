@@ -770,9 +770,12 @@ Retenção Arquivo:   30 dias
 
 - `log-driver: json-file`
 - `log-opts: { max-size: "100m", max-file: "5" }`
-- `max-concurrent-downloads: 10`
+- `max-concurrent-downloads: 3` (overlay GHCR — aderência Docker docs, reduz timeouts)
+- `max-download-attempts: 10` (overlay — resilência pulls lentos)
 - `max-concurrent-uploads: 10`
 - `live-restore: true`
+
+Overlay aplicado idempotentemente pelo job `prepare` via `infra/scripts/daemon-registry-overlay.json` (merge sem sobrescrever configs existentes).
 
 #### GPU runtime (manual)
 

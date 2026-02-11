@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 11 de Fevereiro de 2026  
-**Versão:** 11.16 - Resiliência Pull GHCR (5 tentativas) + Redis (10 tentativas reconexão)
+**Versão:** 11.17 - Docker daemon overlay (GHCR/Docker docs) + wait pós-restart
 
 ## Visão geral
 
@@ -345,6 +345,25 @@ De forma similar, o workflow `release.yml` centraliza funções de build/retag e
 **Secrets utilizados:**
 - `GH_PAT` — Token para GHCR (GitHub Container Registry)
 - `DOCKERHUB_USERNAME` + `DOCKERHUB_TOKEN` — Conta Pro Docker Hub (5000 pulls/dia)
+
+### Docker daemon overlay (GHCR/Docker docs oficiais — 11/02/2026)
+
+O job `prepare` aplica um **overlay idempotente** em `/etc/docker/daemon.json` para aderência às documentações oficiais Docker e GHCR, reduzindo timeouts em pulls do GHCR.
+
+**Arquivo overlay:** `infra/scripts/daemon-registry-overlay.json`
+
+| Parâmetro | Valor | Justificativa (Docker docs) |
+|-----------|-------|----------------------------|
+| `max-concurrent-downloads` | 3 | Default oficial — reduz contenção e timeouts GHCR |
+| `max-download-attempts` | 10 | Aumenta resiliência (default 5) para pulls lentos |
+
+**Comportamento idempotente:**
+- Merge via `jq -s '.[0] * .[1]'` (config atual × overlay)
+- Restart **somente** quando `daemon.json` foi alterado
+- Aguarda Docker ficar pronto (`docker info` OK) antes de prosseguir (até 60s)
+- Evita falhas em jobs sucessivos (rsync, docker compose up) por restart em andamento
+
+**REF:** [Docker dockerd reference](https://docs.docker.com/reference/cli/dockerd/) — `--max-concurrent-downloads`, `--max-download-attempts`
 
 ## Validações pós-deploy
 

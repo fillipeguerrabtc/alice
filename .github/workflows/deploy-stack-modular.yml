@@ -1225,6 +1225,12 @@ jobs:
             echo "   ✅ Validado: $script ($(wc -c < "$script") bytes)"
           done
           
+          if [[ ! -f "infra/scripts/daemon-registry-overlay.json" ]]; then
+            echo "::error::❌ daemon-registry-overlay.json ausente"
+            exit 1
+          fi
+          echo "   ✅ Validado: infra/scripts/daemon-registry-overlay.json"
+          
           echo ""
           echo "✅ Todos os scripts SSOT validados"
           echo ""
@@ -1360,6 +1366,82 @@ jobs:
           
           # Cleanup local
           rm -f ~/.ssh/deploy_key /tmp/alice-scripts.tar.gz
+
+      # =======================================================================
+      # DOCKER DAEMON - Atualização idempotente (GHCR/Docker docs oficiais)
+      # =======================================================================
+      # ADERÊNCIA: Docker docs (max-concurrent-downloads default 3), max-download-attempts
+      # RESILIÊNCIA: max-concurrent-downloads 3 (vs 10) reduz timeouts GHCR
+      # IDEMPOTÊNCIA: Apenas escreve e reinicia quando daemon.json foi alterado
+      # REF: docs.docker.com/engine/reference/commandline/dockerd/
+      # REF: CLAUDE.md Regra 6 (Enterprise-grade), Regra 11 (Docs oficiais)
+      # =======================================================================
+      - name: Atualizar daemon.json (idempotente)
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ env.HETZNER_HOST }}
+          username: ${{ env.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          port: 22
+          command_timeout: 2m
+          script: |
+            set -euo pipefail
+            echo "🐳 Verificando daemon.json (aderência GHCR/Docker)..."
+            
+            if ! command -v jq &>/dev/null; then
+              echo "⚠️  jq não encontrado - tentando instalar..."
+              sudo apt-get update -qq 2>/dev/null && sudo apt-get install -y -qq jq 2>/dev/null || {
+                echo "   jq indisponível - pulando atualização daemon.json"
+                exit 0
+              }
+            fi
+            
+            OVERLAY="/tmp/scripts/daemon-registry-overlay.json"
+            if [ ! -f "$OVERLAY" ]; then
+              echo "⚠️  Overlay não encontrado em $OVERLAY - pulando (scripts não extraídos)"
+              exit 0
+            fi
+            
+            DAEMON_JSON="/etc/docker/daemon.json"
+            CURRENT=$(sudo cat "$DAEMON_JSON" 2>/dev/null || echo '{}')
+            
+            if ! echo "$CURRENT" | jq . >/dev/null 2>&1; then
+              echo "⚠️  daemon.json inválido - usando overlay como base"
+              CURRENT='{}'
+            fi
+            
+            NEW_JSON=$(echo "$CURRENT" | jq -s '.[0] * .[1]' - "$OVERLAY")
+            CURRENT_CANONICAL=$(echo "$CURRENT" | jq -cS . 2>/dev/null || echo "invalid")
+            NEW_CANONICAL=$(echo "$NEW_JSON" | jq -cS .)
+            
+            if [ "$CURRENT_CANONICAL" = "$NEW_CANONICAL" ]; then
+              echo "✅ daemon.json já está atualizado (max-concurrent-downloads, max-download-attempts)"
+              exit 0
+            fi
+            
+            echo "📝 Atualizando daemon.json (merge overlay)..."
+            sudo cp "$DAEMON_JSON" "${DAEMON_JSON}.bak" 2>/dev/null || true
+            echo "$NEW_JSON" | jq . | sudo tee "$DAEMON_JSON" >/dev/null
+            echo "🔄 Reiniciando Docker daemon (aplicar alterações)..."
+            sudo systemctl restart docker
+            
+            echo "⏳ Aguardando Docker ficar pronto (evitar falhas em jobs sucessivos)..."
+            MAX_WAIT=60
+            INTERVAL=2
+            ELAPSED=0
+            while [ $ELAPSED -lt $MAX_WAIT ]; do
+              if sudo docker info &>/dev/null; then
+                echo "✅ Docker pronto após ${ELAPSED}s"
+                break
+              fi
+              sleep $INTERVAL
+              ELAPSED=$((ELAPSED + INTERVAL))
+            done
+            if ! sudo docker info &>/dev/null; then
+              echo "::error::Docker não respondeu após ${MAX_WAIT}s"
+              exit 1
+            fi
+            echo "✅ daemon.json atualizado e Docker reiniciado"
 
       # =======================================================================
       # CORREÇÃO 09/01/2026: appleboy/scp-action@v0.1.7 tem bug conhecido
