@@ -232,113 +232,54 @@ export async function evaluateDataQuality(
 // ============================================================================
 
 interface ProgressiveLoRAResult {
-  modelVersionId: string;
+  /** Job LoRA criado (source=scheduled_run). Fonte de verdade para runs agendados/on-demand. */
+  loraJobId: string;
+  /** Compatibilidade legada; preferir loraJobId. */
+  modelVersionId: string | null;
   version: number;
   trainingDataUsed: number;
   imagesUsed: number;
   status: 'started' | 'failed';
 }
 
+/**
+ * Inicia Progressive LoRA para run agendado/on-demand.
+ * Cria apenas lora_jobs (source=scheduled_run); não grava em model_versions.
+ * O caller deve chamar processLoraJob(loraJobId) para executar o treino.
+ */
 export async function startProgressiveLoRA(
   tenantId: string,
   options?: {
     includeImages?: boolean;
     baseModelVersion?: number;
-    /** Escopo namespace: quando informado, filtra training_data por namespace e grava em model_versions. */
     namespaceId?: string;
-    /** Incluir exemplos aprovados de trading_dataset na contagem (e no treino quando suportado). */
     includeTradingDataset?: boolean;
   }
 ): Promise<ProgressiveLoRAResult> {
-  logger.info({ tenantId, options }, 'Iniciando Progressive LoRA');
+  logger.info({ tenantId, options }, 'Iniciando Progressive LoRA (lora_jobs)');
 
-  const scopeWhere = and(
-    eq(schema.modelVersions.tenantId, tenantId),
-    options?.namespaceId ? eq(schema.modelVersions.namespaceId, options.namespaceId) : isNull(schema.modelVersions.namespaceId),
-    eq(schema.modelVersions.isActive, true)
-  );
-
-  const latestVersion = await db.query.modelVersions.findFirst({
-    where: scopeWhere,
-    orderBy: [desc(schema.modelVersions.version)],
-  });
-
-  const newVersion = (latestVersion?.version || 0) + 1;
-
-  const trainingDataWhere = and(
-    eq(schema.trainingData.status, 'approved'),
-    eq(schema.trainingData.tenantId, tenantId),
-    isNull(schema.trainingData.usedInJobId),
-    options?.namespaceId
-      ? or(
-          eq(schema.trainingData.namespaceId, options.namespaceId),
-          eq(schema.trainingData.inferredNamespaceId, options.namespaceId)
-        )
-      : undefined
-  );
-
-  const approvedData = await db.query.trainingData.findMany({
-    where: trainingDataWhere,
-    limit: 1000,
-  });
-
-  let tradingCount = 0;
-  if (options?.includeTradingDataset) {
-    const tradingWhere = and(
-      eq(schema.tradingDataset.status, 'approved'),
-      eq(schema.tradingDataset.isDuplicate, false),
-      eq(schema.tradingDataset.tenantId, tenantId),
-      options?.namespaceId
-        ? sql`(${schema.tradingDataset.sourceMetadata} ->> 'namespaceId') = ${options.namespaceId}`
-        : undefined
-    );
-    const tradingRows = await db.query.tradingDataset.findMany({
-      where: tradingWhere,
-      columns: { id: true },
-    });
-    tradingCount = tradingRows.length;
-  }
-
-  const totalDataCount = approvedData.length + tradingCount;
-
-  let approvedImages: Array<typeof schema.generatedImages.$inferSelect> = [];
-  if (options?.includeImages) {
-    approvedImages = await db.query.generatedImages.findMany({
-      where: and(
-        eq(schema.generatedImages.approvedForTraining, true),
-        eq(schema.generatedImages.usedInFineTuning, false),
-        eq(schema.generatedImages.tenantId, tenantId)
-      ),
-      limit: 500,
-    });
-  }
-
-  // Gate 2: QLoRA para o MESMO modelo base do LLM. namespaceId gravado quando treino é por namespace.
-  const [modelVersion] = await db.insert(schema.modelVersions).values({
-    tenantId,
+  const { createScheduledRunLoraJob } = await import('./lora-job-manager.js');
+  const job = await createScheduledRunLoraJob(tenantId, {
     namespaceId: options?.namespaceId ?? null,
-    name: options?.namespaceId ? `alice-qlora-ns-${options.namespaceId.slice(0, 8)}-v${newVersion}` : `alice-qlora-v${newVersion}`,
-    version: newVersion,
-    baseModel: GPU_MANAGER_CONFIG.models.llm,
-    status: 'training',
-    trainingDataCount: totalDataCount,
-    imageDataCount: approvedImages.length,
-    baselineMetrics: latestVersion?.metrics || {},
-  }).returning();
+    includeTradingDataset: options?.includeTradingDataset,
+    includeImages: options?.includeImages,
+  });
+
+  const trainingDataUsed = job.datasetCount ?? 0;
+  const validationCount = job.validationCount ?? 0;
 
   logger.info({
-    modelVersionId: modelVersion.id,
-    version: newVersion,
-    trainingData: approvedData.length,
-    tradingData: tradingCount,
-    images: approvedImages.length,
-  }, 'Nova versão de modelo criada para Progressive LoRA');
+    loraJobId: job.id,
+    trainingData: trainingDataUsed,
+    validation: validationCount,
+  }, 'Job LoRA scheduled_run criado para Progressive LoRA');
 
   return {
-    modelVersionId: modelVersion.id,
-    version: newVersion,
-    trainingDataUsed: totalDataCount,
-    imagesUsed: approvedImages.length,
+    loraJobId: job.id,
+    modelVersionId: null,
+    version: 0,
+    trainingDataUsed: trainingDataUsed + validationCount,
+    imagesUsed: 0,
     status: 'started',
   };
 }
@@ -521,12 +462,26 @@ export async function processScheduledJobs(): Promise<number> {
 
         await db.update(schema.autoLearningSchedule)
           .set({
-            status: 'completed',
-            completedAt: new Date(),
-            modelVersionId: result.modelVersionId,
+            loraJobId: result.loraJobId,
             dataCollected: result.trainingDataUsed,
             imagesCollected: result.imagesUsed,
           })
+          .where(eq(schema.autoLearningSchedule.id, job.id));
+
+        const { processLoraJob } = await import('./lora-job-manager.js');
+        try {
+          await processLoraJob(result.loraJobId);
+        } catch (err) {
+          logger.error({ err, loraJobId: result.loraJobId }, 'Falha ao executar job LoRA agendado');
+          await db.update(schema.autoLearningSchedule)
+            .set({ status: 'failed', completedAt: new Date(), errorMessage: err instanceof Error ? err.message : 'processLoraJob falhou' })
+            .where(eq(schema.autoLearningSchedule.id, job.id));
+          await scheduleNextRun(job.scheduleType, job.tenantId || undefined);
+          continue;
+        }
+
+        await db.update(schema.autoLearningSchedule)
+          .set({ status: 'completed', completedAt: new Date() })
           .where(eq(schema.autoLearningSchedule.id, job.id));
 
         await scheduleNextRun(job.scheduleType, job.tenantId || undefined);
@@ -567,21 +522,46 @@ export async function processScheduledJobs(): Promise<number> {
 // ============================================================================
 
 export async function getAutoLearningStats(tenantId?: string) {
+  const scheduleStatus = await getScheduleStatus(tenantId);
+
+  const lastSchedule = await db.query.autoLearningSchedule.findFirst({
+    where: and(
+      eq(schema.autoLearningSchedule.status, 'completed'),
+      tenantId ? eq(schema.autoLearningSchedule.tenantId, tenantId) : undefined
+    ),
+    orderBy: [desc(schema.autoLearningSchedule.completedAt)],
+    columns: { loraJobId: true, dataCollected: true, imagesCollected: true },
+  });
+
+  let lastTrainingData = lastSchedule?.dataCollected ?? 0;
+  let lastImageData = lastSchedule?.imagesCollected ?? 0;
+  let activeModelName = 'baseline';
+
+  if (lastSchedule?.loraJobId) {
+    const loraJob = await db.query.loraJobs.findFirst({
+      where: eq(schema.loraJobs.id, lastSchedule.loraJobId),
+      columns: { name: true, datasetCount: true, isActiveByScope: true },
+    });
+    if (loraJob) {
+      activeModelName = loraJob.name ?? 'lora';
+      if (loraJob.datasetCount != null) lastTrainingData = loraJob.datasetCount;
+    }
+  }
+
   const modelVersions = await db.query.modelVersions.findMany({
     where: tenantId ? eq(schema.modelVersions.tenantId, tenantId) : undefined,
     orderBy: [desc(schema.modelVersions.version)],
   });
-
   const activeVersion = modelVersions.find((v: typeof schema.modelVersions.$inferSelect) => v.isActive);
-  const scheduleStatus = await getScheduleStatus(tenantId);
 
   return {
     totalVersions: modelVersions.length,
     activeVersion: activeVersion?.version || 0,
-    activeModelName: activeVersion?.name || 'baseline',
+    activeModelName: lastSchedule?.loraJobId ? activeModelName : (activeVersion?.name || 'baseline'),
     scheduledJobs: scheduleStatus.pending,
-    lastTrainingData: activeVersion?.trainingDataCount || 0,
-    lastImageData: activeVersion?.imageDataCount || 0,
+    lastTrainingData,
+    lastImageData,
     improvementPercent: activeVersion?.improvementPercent || 0,
+    lastLoraJobId: lastSchedule?.loraJobId ?? null,
   };
 }

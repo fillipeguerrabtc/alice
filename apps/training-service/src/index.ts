@@ -62,7 +62,7 @@ import {
 import { trainingServicePaths, trainingServiceSchemas } from './openapi-specs.js';
 import { eq, and, or, desc, sql, isNull, not, inArray } from '@alice/database';
 import { z } from 'zod';
-import { processTradingLoraJob, activateLoraAdapter, getActiveAdapter, deactivateLoraAdapter } from './lora-job-manager.js';
+import { processLoraJob, activateLoraAdapter, getActiveAdapter, deactivateLoraAdapter } from './lora-job-manager.js';
 import { resolveScope } from './scope-resolver.js';
 import { selectExamplesByProfile } from './dataset-selection-engine.js';
 // Fine-tuning é executado localmente via GPU Manager Service (Regra 6 - sem stubs/migração)
@@ -1541,23 +1541,23 @@ async function resumePendingFineTuningJobs(): Promise<void> {
   }
 }
 
-async function resumePendingTradingLoraJobs(): Promise<void> {
-  const pending = await db.query.tradingLoraJobs.findMany({
+async function resumePendingLoraJobs(): Promise<void> {
+  const pending = await db.query.loraJobs.findMany({
     where: and(
-      not(eq(schema.tradingLoraJobs.status, 'completed')),
-      not(eq(schema.tradingLoraJobs.status, 'failed')),
-      not(eq(schema.tradingLoraJobs.status, 'cancelled'))
+      not(eq(schema.loraJobs.status, 'completed')),
+      not(eq(schema.loraJobs.status, 'failed')),
+      not(eq(schema.loraJobs.status, 'cancelled'))
     ),
     limit: 5,
   });
 
   for (const job of pending) {
-    processTradingLoraJob(job.id).catch((err: unknown) => {
+    processLoraJob(job.id).catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
-      logger.error({ jobId: job.id, error: msg }, 'Falha ao retomar trading LoRA job');
-      db.update(schema.tradingLoraJobs)
+      logger.error({ jobId: job.id, error: msg }, 'Falha ao retomar LoRA job');
+      db.update(schema.loraJobs)
         .set({ status: 'failed', errorMessage: msg, completedAt: new Date() })
-        .where(eq(schema.tradingLoraJobs.id, job.id))
+        .where(eq(schema.loraJobs.id, job.id))
         .catch(() => {});
     });
   }
@@ -2474,7 +2474,7 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
       trainingDataCount: evaluation.dataCount,
     }).returning();
 
-    // Iniciar Progressive LoRA (namespaceId e includeTradingDataset repassados)
+    // Iniciar Progressive LoRA (cria lora_jobs source=scheduled_run; execução em background)
     const loraResult = await startProgressiveLoRA(tenantId, {
       includeImages,
       namespaceId,
@@ -2483,24 +2483,31 @@ app.post('/api/training/run/start', requirePermission('training:training_data:ma
 
     // Atualizar job com status training
     await db.update(schema.fineTuningJobs)
-      .set({ 
+      .set({
         status: 'training',
         iniciadoEm: new Date(),
       })
       .where(eq(schema.fineTuningJobs.id, job.id));
 
+    // Executar treino LoRA em background (processLoraJob)
+    const { processLoraJob } = await import('./lora-job-manager.js');
+    processLoraJob(loraResult.loraJobId).catch((err) => {
+      logger.error({ err, loraJobId: loraResult.loraJobId }, 'Falha ao executar job LoRA on-demand');
+    });
+
     logger.info({
       jobId: job.id,
+      loraJobId: loraResult.loraJobId,
       tenantId,
       trainingType,
       dataCount: evaluation.dataCount,
       imageCount: evaluation.imageCount,
-      modelVersionId: loraResult.modelVersionId,
     }, 'Treinamento on-demand iniciado');
 
     res.status(201).json({
       success: true,
       jobId: job.id,
+      loraJobId: loraResult.loraJobId,
       modelVersionId: loraResult.modelVersionId,
       version: loraResult.version,
       trainingDataUsed: loraResult.trainingDataUsed,
@@ -2868,7 +2875,7 @@ let autoLearningInterval: NodeJS.Timeout | null = null;
         const errObj = error instanceof Error ? error : new Error(String(error));
         logger.error({ err: errObj }, 'Falha ao retomar jobs de fine-tuning pendentes');
       });
-      resumePendingTradingLoraJobs().catch((error: unknown) => {
+      resumePendingLoraJobs().catch((error: unknown) => {
         const errObj = error instanceof Error ? error : new Error(String(error));
         logger.error({ err: errObj }, 'Falha ao retomar jobs de trading LoRA pendentes');
       });
@@ -2876,7 +2883,7 @@ let autoLearningInterval: NodeJS.Timeout | null = null;
       // Tick periódico: garante execução de jobs criados por scheduler/rotas mesmo após long uptimes
       setInterval(() => {
         resumePendingFineTuningJobs().catch(() => {});
-        resumePendingTradingLoraJobs().catch(() => {});
+        resumePendingLoraJobs().catch(() => {});
       }, 30000);
     });
 

@@ -7551,12 +7551,19 @@ app.post('/api/chat/conversations/:id/training/collect', requireAuth(), requireS
       role: userRole,
     });
 
-    if (sent) {
-      await db
-        .update(schema.conversations)
-        .set({ sentToTrainingAt: new Date(), atualizadoEm: new Date() })
-        .where(eq(schema.conversations.id, id));
+    if (!sent) {
+      return res.status(503).json({
+        success: false,
+        error: 'Serviço de treinamento indisponível ou não aceitou os dados.',
+        messages: trainingPayload.messages.length,
+        namespaceId,
+      });
     }
+
+    await db
+      .update(schema.conversations)
+      .set({ sentToTrainingAt: new Date(), atualizadoEm: new Date() })
+      .where(eq(schema.conversations.id, id));
 
     res.json({ success: true, messages: trainingPayload.messages.length, namespaceId });
   } catch (error) {
@@ -7664,12 +7671,18 @@ app.post('/api/chat/training/collect-batch', requireAuth(), requireSameTenant(ge
         role: userRole,
       });
 
-      if (sent) {
-        await db
-          .update(schema.conversations)
-          .set({ sentToTrainingAt: new Date(), atualizadoEm: new Date() })
-          .where(eq(schema.conversations.id, item.conversationId));
+      if (!sent) {
+        failures.push({
+          conversationId: item.conversationId,
+          error: 'Serviço de treinamento não aceitou os dados.',
+        });
+        continue;
       }
+
+      await db
+        .update(schema.conversations)
+        .set({ sentToTrainingAt: new Date(), atualizadoEm: new Date() })
+        .where(eq(schema.conversations.id, item.conversationId));
 
       results.push({
         conversationId: item.conversationId,

@@ -248,7 +248,7 @@
 
 ### Schema Trading
 
-- `trading_signals`, `trading_orders`, `trading_positions`, `trading_risk_config`, `trading_audit_log`, `trading_market_data`, `trading_dataset`, `trading_lora_jobs`.
+- `trading_signals`, `trading_orders`, `trading_positions`, `trading_risk_config`, `trading_audit_log`, `trading_market_data`, `trading_dataset`, `lora_jobs`.
 
 ### Schema Demo Trading + Post-Mortem (migration 0056)
 

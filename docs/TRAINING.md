@@ -118,11 +118,13 @@ Todas as fontes abaixo entram na **coleta e contagem** usada para avaliar qualid
 
 ## LoRA por Namespace
 
-A partir de 11/02/2026, o sistema suporta **adapters LoRA por namespace** além do adapter tenant-wide.
+A partir de 11/02/2026, o sistema suporta **adapters LoRA por namespace** além do adapter tenant-wide. A partir da **unificação enterprise (migration 0060)**, existe **uma única tabela** e **uma única lógica** de resolução.
 
-- **Schema:** `model_versions.namespace_id` (UUID, nullable). `NULL` = adapter do tenant inteiro; preenchido = adapter exclusivo daquele namespace.
-- **Treino on-demand:** O body de `POST /api/training/run/start` aceita `namespaceId` opcional. Quando informado, apenas dados do namespace (e, se `includeTradingDataset`, trading_dataset do namespace) entram no treino; o novo registro em `model_versions` é criado com `namespace_id` preenchido.
-- **Resolução do adapter ativo:** `GET /api/training/lora/active` aceita `tenantId`, `namespaceId` e `agentId`. O backend resolve na ordem: (1) adapter ativo de **trading LoRA** (tabela `trading_lora_jobs`) para o escopo tenant/namespace/agent; (2) se não houver, adapter ativo de **Progressive LoRA** (tabela `model_versions`) para tenant + namespace (ou tenant-wide quando `namespaceId` não é informado).
+- **Tabela única:** `lora_jobs` (fonte de verdade para adapter ativo por escopo). Coluna `source`: `explicit_job` (criado via API/UI, ex.: Pipeline Trading) ou `scheduled_run` (agendado/on-demand).
+- **Escopo:** `scope_type` (namespace | agent), `scope_namespace_id`, `scope_agent_id`; `is_active_by_scope = true` indica o adapter ativo para aquele escopo.
+- **Treino on-demand:** O body de `POST /api/training/run/start` aceita `namespaceId` opcional. Quando informado, apenas dados do namespace (e, se `includeTradingDataset`, trading_dataset do namespace) entram no treino; o resultado é registrado em `lora_jobs` com `source = 'scheduled_run'` quando aplicável.
+- **Resolução do adapter ativo:** `GET /api/training/lora/active` aceita `tenantId`, `namespaceId` e `agentId`. O backend consulta **somente** a tabela `lora_jobs` (registro com `is_active_by_scope = true` para o escopo). Não há fallback para outras tabelas.
+- **Runs agendados e on-demand:** Usam **somente** `lora_jobs` com `source = 'scheduled_run'`. O scheduler chama `startProgressiveLoRA` → cria registro em `lora_jobs` → executa `processLoraJob(loraJobId)`; ao concluir, marca `training_data`/`trading_dataset` como usados e ativa o adapter automaticamente. A tabela `auto_learning_schedule` armazena `lora_job_id` (e opcionalmente `model_version_id` legado). `model_versions` não é mais usado para determinar qual adapter está ativo.
 - **Chat, Trading e Integrations:** Em todas as chamadas ao LLM, o contexto (tenantId, namespaceId, agentId) é repassado ao resolver de adapter, garantindo uso do adapter treinado mais recente para aquele escopo.
 
 ---
@@ -131,7 +133,7 @@ A partir de 11/02/2026, o sistema suporta **adapters LoRA por namespace** além 
 
 1. **Requisição ao LLM** (chat, trading, postmortem, etc.): o serviço monta o contexto (tenantId, namespaceId, agentId) a partir da conversa, agente ou configuração de trading.
 2. **Resolução do modelo:** Chama-se o resolver (ex.: `resolveModelWithAdapter(baseModel, context)` no chat-service ou integrations-service), que por sua vez consulta `GET /api/training/lora/active?tenantId=...&namespaceId=...&agentId=...`.
-3. **Backend (training-service):** `getActiveAdapter(scope)` procura primeiro em `trading_lora_jobs` (adapter ativo por escopo); se não houver, procura em `model_versions` (Progressive LoRA por tenant/namespace).
+3. **Backend (training-service):** `getActiveAdapter(scope)` consulta **apenas** a tabela `lora_jobs` (registro com `is_active_by_scope = true` para o escopo). Uma única fonte de verdade; sem workarounds.
 4. **Retorno:** Nome do modelo (base ou adapter) é usado na requisição ao GPU Manager / vLLM. Assim, **em qualquer uso de LLM** (chat, Trading, postmortem), o adapter treinado mais recente para aquele namespace (e agente, quando aplicável) é usado quando disponível.
 
 ---
@@ -183,7 +185,7 @@ Content-Type: application/json
 }
 ```
 
-- **namespaceId** (opcional): quando informado, o treino é **por namespace** (LoRA por namespace): apenas `training_data` e, se `includeTradingDataset` for true, `trading_dataset` desse namespace entram no treino; o adapter gerado fica associado ao namespace em `model_versions.namespace_id`.
+- **namespaceId** (opcional): quando informado, o treino é **por namespace** (LoRA por namespace): apenas `training_data` e, se `includeTradingDataset` for true, `trading_dataset` desse namespace entram no treino; o adapter gerado é registrado em `lora_jobs` com o escopo correspondente.
 - **includeTradingDataset**: inclui exemplos aprovados de `trading_dataset` na coleta/contagem e no treino (quando suportado).
 
 ### Iniciar Treinamento Trading (Pipeline Específico)

@@ -752,7 +752,7 @@ CREATE POLICY "tenant_isolation" ON conversations
 -- conversations, messages, agents, documents, embeddings,
 -- training_data, fine_tuning_jobs, trading_signals,
 -- trading_orders, trading_positions, trading_risk_config,
--- trading_audit_log, trading_dataset, trading_lora_jobs,
+-- trading_audit_log, trading_dataset, lora_jobs,
 -- trading_control_history
 ```
 

@@ -15,13 +15,13 @@
  */
 
 import { createLogger } from '@alice/logger';
-import { getDatabase, schema, eq, and, desc, sql, inArray, isNull } from '@alice/database';
+import { getDatabase, schema, eq, and, desc, sql, inArray, isNull, or } from '@alice/database';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { requestGpu, GpuServiceType, GpuRequestPriority, GPU_MANAGER_CONFIG } from '@alice/shared-utils';
 import type {
-  TradingLoraJob,
-  InsertTradingLoraJob,
+  LoraJob,
+  InsertLoraJob,
   TradingDataset,
   TradingLoraHyperparams,
   TradingLoraMetrics,
@@ -49,8 +49,11 @@ const DEFAULT_HYPERPARAMS: TradingLoraHyperparams = {
   targetModules: ['q_proj', 'v_proj', 'k_proj', 'o_proj'],
 };
 
-// Mínimo de exemplos para treinar
+// Mínimo de exemplos para treinar (trading_dataset)
 const MIN_DATASET_SIZE = 100;
+
+/** Mínimo de exemplos para runs agendados (training_data + opcional trading). */
+const MIN_CHAT_DATASET_SIZE = 50;
 
 // ============================================================================
 // UTILITÁRIOS
@@ -115,7 +118,9 @@ interface JobProgress {
 interface PreparedDataset {
   trainingData: string[];    // Linhas JSONL ({text: string})
   validationData: string[];  // Linhas JSONL ({text: string})
-  datasetIds: string[];      // IDs dos datasets filtrados (para marcar como usados)
+  datasetIds: string[];      // IDs dos datasets filtrados (trading_dataset - para marcar como usados)
+  /** IDs de training_data usados (apenas quando source=scheduled_run). Marcar usedInJobId após sucesso. */
+  trainingDataIds?: string[];
   stats: {
     total: number;
     training: number;
@@ -257,6 +262,130 @@ export async function prepareDataset(
   };
 }
 
+/**
+ * Formato SFT para mensagens de chat (training_data): "role: content" por linha.
+ * Mesmo formato esperado pelo gpu-trainer (campo `text` no JSONL).
+ */
+function buildChatMlText(messages: Array<{ role: string; content: string }>): string {
+  return messages.map((m) => `${m.role}: ${m.content}`).join('\n');
+}
+
+/**
+ * Prepara dataset para runs agendados/on-demand: training_data (chat aprovado) + opcional trading_dataset.
+ * Retorna mesmo formato PreparedDataset para uso no mesmo pipeline de processLoraJob.
+ * Quando namespaceId é null (tenant-wide), apenas training_data é usado; trading exige namespace.
+ */
+export async function prepareDatasetFromChatAndTrading(
+  tenantId: string,
+  namespaceId?: string | null,
+  options?: {
+    includeTradingDataset?: boolean;
+    /** Quando true, retorna apenas stats e ids (para validação/criação de job sem carregar linhas). */
+    countOnly?: boolean;
+  }
+): Promise<PreparedDataset> {
+  const db = getDatabase();
+
+  const chatWhere = and(
+    eq(schema.trainingData.status, 'approved'),
+    eq(schema.trainingData.tenantId, tenantId),
+    isNull(schema.trainingData.usedInJobId),
+    namespaceId != null
+      ? or(
+          eq(schema.trainingData.namespaceId, namespaceId),
+          eq(schema.trainingData.inferredNamespaceId, namespaceId)
+        )
+      : undefined
+  );
+
+  const chatRows = await db.query.trainingData.findMany({
+    where: chatWhere,
+    columns: { id: true, messages: true, sourceType: true },
+    limit: 5000,
+  });
+
+  const byActionType: Record<string, number> = {};
+  for (const r of chatRows) {
+    const k = r.sourceType ?? 'chat';
+    byActionType[k] = (byActionType[k] ?? 0) + 1;
+  }
+
+  let trainingData: string[] = [];
+  let validationData: string[] = [];
+  let datasetIds: string[] = [];
+  const trainingDataIds = chatRows.map((r) => r.id);
+
+  const formatChatToJsonl = (row: { messages: unknown }): string => {
+    const messages = (row.messages ?? []) as Array<{ role: string; content: string }>;
+    const text = buildChatMlText(messages);
+    return JSON.stringify({ text });
+  };
+
+  let combined: Array<{ id: string; type: 'chat' | 'trading'; line: string }> = chatRows.map((r) => ({
+    id: r.id,
+    type: 'chat',
+    line: formatChatToJsonl(r),
+  }));
+
+  if (options?.includeTradingDataset && namespaceId) {
+    const tradingPrepared = await prepareDataset(tenantId, namespaceId, undefined, undefined);
+    datasetIds = tradingPrepared.datasetIds;
+    for (const line of tradingPrepared.trainingData) {
+      combined.push({ id: '', type: 'trading', line });
+    }
+    for (const line of tradingPrepared.validationData) {
+      combined.push({ id: '', type: 'trading', line });
+    }
+    Object.entries(tradingPrepared.stats.byActionType).forEach(([k, v]) => {
+      byActionType[`trading_${k}`] = (byActionType[`trading_${k}`] ?? 0) + v;
+    });
+  }
+
+  if (combined.length < MIN_CHAT_DATASET_SIZE) {
+    throw new Error(
+      `Dataset insuficiente para run agendado: ${combined.length} exemplos. Mínimo: ${MIN_CHAT_DATASET_SIZE}`
+    );
+  }
+
+  const shuffled = fisherYatesShuffle([...combined]);
+  const splitIndex = Math.floor(shuffled.length * 0.9);
+  const trainPart = shuffled.slice(0, splitIndex);
+  const validationPart = shuffled.slice(splitIndex);
+
+  if (!options?.countOnly) {
+    trainingData = trainPart.map((p) => p.line);
+    validationData = validationPart.map((p) => p.line);
+  }
+
+  const stats = {
+    total: combined.length,
+    training: trainPart.length,
+    validation: validationPart.length,
+    byActionType,
+  };
+
+  logger.info(
+    {
+      tenantId,
+      namespaceId: namespaceId ?? 'tenant-wide',
+      total: stats.total,
+      training: stats.training,
+      validation: stats.validation,
+      trainingDataIdsCount: trainingDataIds.length,
+      datasetIdsCount: datasetIds.length,
+    },
+    'Dataset chat+trading preparado para run agendado'
+  );
+
+  return {
+    trainingData,
+    validationData,
+    datasetIds,
+    trainingDataIds,
+    stats,
+  };
+}
+
 // ============================================================================
 // GERENCIAMENTO DE JOBS
 // ============================================================================
@@ -264,7 +393,7 @@ export async function prepareDataset(
 /**
  * Cria um novo job de treinamento LoRA
  */
-export async function createLoraJob(params: CreateJobParams): Promise<TradingLoraJob> {
+export async function createLoraJob(params: CreateJobParams): Promise<LoraJob> {
   const db = getDatabase();
 
   // Preparar dataset para obter contagens
@@ -282,13 +411,14 @@ export async function createLoraJob(params: CreateJobParams): Promise<TradingLor
     ...params.hyperparameters,
   };
 
-  // Criar job
-  const jobData: InsertTradingLoraJob = {
+  // Criar job (source: explicit_job = criado via API/UI)
+  const jobData: InsertLoraJob = {
     tenantId: params.tenantId,
     scopeType: params.agentId ? 'agent' : 'namespace',
     scopeNamespaceId: params.namespaceId,
     scopeAgentId: params.agentId ?? null,
     profileVersion: params.profileVersion ?? 1,
+    source: 'explicit_job',
     name: params.name,
     description: params.description,
     baseModel: params.baseModel || DEFAULT_BASE_MODEL,
@@ -302,7 +432,7 @@ export async function createLoraJob(params: CreateJobParams): Promise<TradingLor
   };
 
   const [job] = await db
-    .insert(schema.tradingLoraJobs)
+    .insert(schema.loraJobs)
     .values(jobData)
     .returning();
 
@@ -343,15 +473,71 @@ export async function createLoraJob(params: CreateJobParams): Promise<TradingLor
 }
 
 /**
+ * Cria um job LoRA para run agendado/on-demand (source=scheduled_run).
+ * Usa training_data + opcional trading_dataset; não marca datasets até processLoraJob concluir.
+ * Retorna o job criado para o caller disparar processLoraJob(job.id).
+ */
+export async function createScheduledRunLoraJob(
+  tenantId: string,
+  options?: {
+    namespaceId?: string | null;
+    includeTradingDataset?: boolean;
+    includeImages?: boolean;
+  }
+): Promise<LoraJob> {
+  const db = getDatabase();
+
+  const prepared = await prepareDatasetFromChatAndTrading(
+    tenantId,
+    options?.namespaceId ?? undefined,
+    { includeTradingDataset: options?.includeTradingDataset ?? !!options?.namespaceId, countOnly: true }
+  );
+
+  const name = options?.namespaceId
+    ? `alice-qlora-ns-${options.namespaceId.slice(0, 8)}-v${Date.now().toString(36)}`
+    : `alice-qlora-v${Date.now().toString(36)}`;
+
+  const includeTrading = options?.includeTradingDataset ?? !!options?.namespaceId;
+  const jobData: InsertLoraJob = {
+    tenantId,
+    scopeType: 'namespace',
+    scopeNamespaceId: options?.namespaceId ?? null,
+    scopeAgentId: null,
+    profileVersion: 1,
+    source: 'scheduled_run',
+    name,
+    baseModel: DEFAULT_BASE_MODEL,
+    hyperparameters: DEFAULT_HYPERPARAMS,
+    status: 'queued',
+    progress: 0,
+    currentStep: 0,
+    datasetCount: prepared.stats.training,
+    validationCount: prepared.stats.validation,
+    includeTradingDataset: includeTrading,
+    metrics: {},
+  };
+
+  const [job] = await db.insert(schema.loraJobs).values(jobData).returning();
+  if (!job) throw new Error('Falha ao criar job LoRA para run agendado');
+
+  logger.info(
+    { jobId: job.id, tenantId, namespaceId: options?.namespaceId, datasetCount: prepared.stats.training },
+    'Job LoRA scheduled_run criado'
+  );
+
+  return job;
+}
+
+/**
  * Obtém detalhes de um job
  */
-export async function getJob(jobId: string): Promise<TradingLoraJob | null> {
+export async function getJob(jobId: string): Promise<LoraJob | null> {
   const db = getDatabase();
 
   const [job] = await db
     .select()
-    .from(schema.tradingLoraJobs)
-    .where(eq(schema.tradingLoraJobs.id, jobId))
+    .from(schema.loraJobs)
+    .where(eq(schema.loraJobs.id, jobId))
     .limit(1);
 
   return job ?? null;
@@ -363,7 +549,7 @@ export async function getJob(jobId: string): Promise<TradingLoraJob | null> {
 export async function listJobs(
   tenantId: string,
   options?: { status?: string; limit?: number }
-): Promise<TradingLoraJob[]> {
+): Promise<LoraJob[]> {
   const db = getDatabase();
 
   // CORREÇÃO 18/12/2025: Drizzle não permite encadear .where() múltiplas vezes
@@ -371,16 +557,16 @@ export async function listJobs(
   // CORREÇÃO 19/12/2025: Remover query não utilizado (no-unused-vars)
   const conditions = options?.status
     ? and(
-        eq(schema.tradingLoraJobs.tenantId, tenantId),
-        eq(schema.tradingLoraJobs.status, options.status as 'queued' | 'preparing' | 'training' | 'validating' | 'completed' | 'failed' | 'cancelled')
+        eq(schema.loraJobs.tenantId, tenantId),
+        eq(schema.loraJobs.status, options.status as 'queued' | 'preparing' | 'training' | 'validating' | 'completed' | 'failed' | 'cancelled')
       )
-    : eq(schema.tradingLoraJobs.tenantId, tenantId);
+    : eq(schema.loraJobs.tenantId, tenantId);
 
   const jobs = await db
     .select()
-    .from(schema.tradingLoraJobs)
+    .from(schema.loraJobs)
     .where(conditions)
-    .orderBy(desc(schema.tradingLoraJobs.criadoEm))
+    .orderBy(desc(schema.loraJobs.criadoEm))
     .limit(options?.limit ?? 50);
 
   return jobs;
@@ -392,7 +578,7 @@ export async function listJobs(
 export async function updateJobProgress(
   jobId: string,
   progress: Partial<JobProgress>
-): Promise<TradingLoraJob | null> {
+): Promise<LoraJob | null> {
   const db = getDatabase();
 
   const updateData: Record<string, unknown> = {};
@@ -414,9 +600,9 @@ export async function updateJobProgress(
   if (progress.metrics) updateData.metrics = progress.metrics;
 
   const [updated] = await db
-    .update(schema.tradingLoraJobs)
+    .update(schema.loraJobs)
     .set(updateData)
-    .where(eq(schema.tradingLoraJobs.id, jobId))
+    .where(eq(schema.loraJobs.id, jobId))
     .returning();
 
   if (updated) {
@@ -432,13 +618,13 @@ export async function updateJobProgress(
  * Regra 6 CLAUDE.md: Integração real enterprise com Hetzner GPU GEX44
  * Em migração - funcionalidade temporariamente desabilitada
  */
-export async function cancelJob(jobId: string): Promise<TradingLoraJob | null> {
+export async function cancelJob(jobId: string): Promise<LoraJob | null> {
   const db = getDatabase();
 
   const [job] = await db
     .select()
-    .from(schema.tradingLoraJobs)
-    .where(eq(schema.tradingLoraJobs.id, jobId))
+    .from(schema.loraJobs)
+    .where(eq(schema.loraJobs.id, jobId))
     .limit(1);
 
   if (!job) {
@@ -460,12 +646,12 @@ export async function cancelJob(jobId: string): Promise<TradingLoraJob | null> {
   });
 
   const [updated] = await db
-    .update(schema.tradingLoraJobs)
+    .update(schema.loraJobs)
     .set({
       status: 'cancelled',
       completedAt: new Date(),
     })
-    .where(eq(schema.tradingLoraJobs.id, jobId))
+    .where(eq(schema.loraJobs.id, jobId))
     .returning();
 
   logger.info({ jobId }, 'Job cancelado');
@@ -506,7 +692,7 @@ function computeTargetSteps(trainCount: number, hyper: TradingLoraHyperparams): 
  * Executa um job LoRA (trading) de forma preemptível (slices curtas) via gpu-trainer.
  * Status e progresso são persistidos no PostgreSQL.
  */
-export async function processTradingLoraJob(jobId: string): Promise<void> {
+export async function processLoraJob(jobId: string): Promise<void> {
   const db = getDatabase();
   const job = await getJob(jobId);
   if (!job) throw new Error('Job LoRA não encontrado');
@@ -519,10 +705,16 @@ export async function processTradingLoraJob(jobId: string): Promise<void> {
     throw new Error('Job LoRA sem tenantId');
   }
   const namespaceId = job.scopeNamespaceId;
-  if (!namespaceId) {
-    throw new Error('Job LoRA sem scopeNamespaceId');
+  const isScheduledRun = job.source === 'scheduled_run';
+  if (!isScheduledRun && !namespaceId) {
+    throw new Error('Job LoRA explícito exige scopeNamespaceId');
   }
-  const prepared = await prepareDataset(tenantId, namespaceId, job.scopeAgentId ?? undefined, undefined);
+
+  const includeTradingDataset = job.includeTradingDataset ?? !!namespaceId;
+  const prepared = isScheduledRun
+    ? await prepareDatasetFromChatAndTrading(tenantId, namespaceId ?? undefined, { includeTradingDataset })
+    : await prepareDataset(tenantId, namespaceId!, job.scopeAgentId ?? undefined, undefined);
+
   const jobDir = path.join(TRAINING_STORAGE_DIR, 'trading-lora', tenantId, jobId);
   await ensureDir(jobDir);
 
@@ -572,9 +764,9 @@ export async function processTradingLoraJob(jobId: string): Promise<void> {
     await updateJobProgress(jobId, { status: stepsCompleted >= targetSteps ? 'validating' : 'training', progress: pct, currentStep: stepsCompleted, totalSteps: targetSteps, metrics: fresh.metrics as TradingLoraMetrics });
 
     if (data?.adapterPath) {
-      await db.update(schema.tradingLoraJobs)
+      await db.update(schema.loraJobs)
         .set({ resultAdapterPath: data.adapterPath })
-        .where(eq(schema.tradingLoraJobs.id, jobId));
+        .where(eq(schema.loraJobs.id, jobId));
     }
   }
 
@@ -584,6 +776,29 @@ export async function processTradingLoraJob(jobId: string): Promise<void> {
   const adapterSize = await getDirectorySizeBytes(adapterPath);
 
   await setJobResult(jobId, { adapterPath, adapterSize, metrics: (final?.metrics as TradingLoraMetrics) || {} });
+
+  // Runs agendados: marcar training_data e trading_dataset como usados; ativar adapter automaticamente
+  if (isScheduledRun) {
+    if (prepared.trainingDataIds?.length) {
+      await db
+        .update(schema.trainingData)
+        .set({ usedInJobId: jobId, processadoEm: new Date() })
+        .where(inArray(schema.trainingData.id, prepared.trainingDataIds));
+      logger.info({ jobId, count: prepared.trainingDataIds.length }, 'training_data marcados como usados');
+    }
+    if (prepared.datasetIds?.length) {
+      await db
+        .update(schema.tradingDataset)
+        .set({ status: 'used', usedInJobId: jobId, atualizadoEm: new Date() })
+        .where(inArray(schema.tradingDataset.id, prepared.datasetIds));
+      logger.info({ jobId, count: prepared.datasetIds.length }, 'trading_dataset marcados como usados');
+    }
+    try {
+      await activateLoraAdapter(jobId, undefined);
+    } catch (err) {
+      logger.warn({ err, jobId }, 'Ativação automática do adapter após run agendado falhou (não bloqueante)');
+    }
+  }
 }
 
 /**
@@ -596,11 +811,11 @@ export async function setJobResult(
     adapterSize: number;
     metrics: TradingLoraMetrics;
   }
-): Promise<TradingLoraJob | null> {
+): Promise<LoraJob | null> {
   const db = getDatabase();
 
   const [updated] = await db
-    .update(schema.tradingLoraJobs)
+    .update(schema.loraJobs)
     .set({
       status: 'completed',
       progress: 100,
@@ -609,7 +824,7 @@ export async function setJobResult(
       metrics: result.metrics,
       completedAt: new Date(),
     })
-    .where(eq(schema.tradingLoraJobs.id, jobId))
+    .where(eq(schema.loraJobs.id, jobId))
     .returning();
 
   if (updated) {
@@ -636,18 +851,18 @@ export async function setJobError(
     message: string;
     details?: Record<string, unknown>;
   }
-): Promise<TradingLoraJob | null> {
+): Promise<LoraJob | null> {
   const db = getDatabase();
 
   const [updated] = await db
-    .update(schema.tradingLoraJobs)
+    .update(schema.loraJobs)
     .set({
       status: 'failed',
       errorMessage: error.message,
       errorDetails: error.details ?? null,
       completedAt: new Date(),
     })
-    .where(eq(schema.tradingLoraJobs.id, jobId))
+    .where(eq(schema.loraJobs.id, jobId))
     .returning();
 
   if (updated) {
@@ -675,18 +890,18 @@ export async function getJobStats(tenantId: string): Promise<{
   // Total de jobs
   const [totalResult] = await db
     .select({ count: sql<number>`count(*)` })
-    .from(schema.tradingLoraJobs)
-    .where(eq(schema.tradingLoraJobs.tenantId, tenantId));
+    .from(schema.loraJobs)
+    .where(eq(schema.loraJobs.tenantId, tenantId));
 
   // Por status
   const statusResults = await db
     .select({
-      status: schema.tradingLoraJobs.status,
+      status: schema.loraJobs.status,
       count: sql<number>`count(*)`,
     })
-    .from(schema.tradingLoraJobs)
-    .where(eq(schema.tradingLoraJobs.tenantId, tenantId))
-    .groupBy(schema.tradingLoraJobs.status);
+    .from(schema.loraJobs)
+    .where(eq(schema.loraJobs.tenantId, tenantId))
+    .groupBy(schema.loraJobs.status);
 
   const byStatus: Record<string, number> = {};
   for (const row of statusResults) {
@@ -701,19 +916,19 @@ export async function getJobStats(tenantId: string): Promise<{
     .select({
       avgMinutes: sql<number>`AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) / 60)`,
     })
-    .from(schema.tradingLoraJobs)
+    .from(schema.loraJobs)
     .where(
       and(
-        eq(schema.tradingLoraJobs.tenantId, tenantId),
-        eq(schema.tradingLoraJobs.status, 'completed')
+        eq(schema.loraJobs.tenantId, tenantId),
+        eq(schema.loraJobs.status, 'completed')
       )
     );
 
   // Total de datasets usados
   const [datasetsResult] = await db
     .select({ sum: sql<number>`SUM(dataset_count)` })
-    .from(schema.tradingLoraJobs)
-    .where(eq(schema.tradingLoraJobs.tenantId, tenantId));
+    .from(schema.loraJobs)
+    .where(eq(schema.loraJobs.tenantId, tenantId));
 
   return {
     total: Number(totalResult?.count ?? 0),
@@ -733,7 +948,7 @@ export async function getJobStats(tenantId: string): Promise<{
  */
 const LORA_ACTIVE_DIR = '/opt/alice/data/lora-adapters';
 
-export function getScopedAdapterName(job: TradingLoraJob): string {
+export function getScopedAdapterName(job: LoraJob): string {
   if (job.scopeType === 'agent' && job.scopeAgentId) {
     return `agent-${job.scopeAgentId}`;
   }
@@ -743,7 +958,7 @@ export function getScopedAdapterName(job: TradingLoraJob): string {
   return `job-${job.id}`;
 }
 
-export function getScopedAdapterTargetDir(job: TradingLoraJob): string {
+export function getScopedAdapterTargetDir(job: LoraJob): string {
   if (job.scopeType === 'agent' && job.scopeAgentId) {
     return path.join(LORA_ACTIVE_DIR, 'agents', job.scopeAgentId);
   }
@@ -761,11 +976,11 @@ export function getScopedAdapterTargetDir(job: TradingLoraJob): string {
  * 5. O vLLM carrega automaticamente via filesystem resolver (sem restart)
  * 
  * @param jobId - ID do job de treinamento LoRA a ativar
- * @param approvedBy - ID do usuário que aprovou (para auditoria)
+ * @param approvedBy - ID do usuário que aprovou (para auditoria); undefined para ativação automática (ex.: run agendado)
  */
 export async function activateLoraAdapter(
   jobId: string,
-  approvedBy: string
+  approvedBy?: string | null
 ): Promise<{ success: boolean; adapterPath: string; message: string }> {
   const db = getDatabase();
 
@@ -829,28 +1044,28 @@ export async function activateLoraAdapter(
     throw new Error('Job sem tenant válido não pode ativar adapter LoRA');
   }
   const sameScopeConditions = [
-    eq(schema.tradingLoraJobs.tenantId, job.tenantId),
-    eq(schema.tradingLoraJobs.scopeType, job.scopeType),
+    eq(schema.loraJobs.tenantId, job.tenantId),
+    eq(schema.loraJobs.scopeType, job.scopeType),
   ];
   if (job.scopeNamespaceId) {
-    sameScopeConditions.push(eq(schema.tradingLoraJobs.scopeNamespaceId, job.scopeNamespaceId));
+    sameScopeConditions.push(eq(schema.loraJobs.scopeNamespaceId, job.scopeNamespaceId));
   }
   if (job.scopeAgentId) {
-    sameScopeConditions.push(eq(schema.tradingLoraJobs.scopeAgentId, job.scopeAgentId));
+    sameScopeConditions.push(eq(schema.loraJobs.scopeAgentId, job.scopeAgentId));
   }
 
-  await db.update(schema.tradingLoraJobs)
+  await db.update(schema.loraJobs)
     .set({ isActiveAdapter: false, isActiveByScope: false })
     .where(and(...sameScopeConditions));
 
-  await db.update(schema.tradingLoraJobs)
+  await db.update(schema.loraJobs)
     .set({
       isActiveAdapter: true,
       isActiveByScope: true,
       approvedAt: new Date(),
-      approvedBy,
+      approvedBy: approvedBy ?? null,
     })
-    .where(eq(schema.tradingLoraJobs.id, jobId));
+    .where(eq(schema.loraJobs.id, jobId));
 
   logger.info(
     { jobId, adapterPath: targetDir, approvedBy },
@@ -882,23 +1097,23 @@ export async function getActiveAdapter(scope?: {
 } | null> {
   const db = getDatabase();
   const agentScopeCondition = scope?.agentId
-    ? eq(schema.tradingLoraJobs.scopeAgentId, scope.agentId)
+    ? eq(schema.loraJobs.scopeAgentId, scope.agentId)
     : scope?.namespaceId
-      ? sql`${schema.tradingLoraJobs.scopeAgentId} IS NULL`
+      ? sql`${schema.loraJobs.scopeAgentId} IS NULL`
       : sql`TRUE`;
 
   const [active] = await db
     .select()
-    .from(schema.tradingLoraJobs)
+    .from(schema.loraJobs)
     .where(
       and(
-        eq(schema.tradingLoraJobs.isActiveByScope, true),
-        scope?.tenantId ? eq(schema.tradingLoraJobs.tenantId, scope.tenantId) : sql`TRUE`,
-        scope?.namespaceId ? eq(schema.tradingLoraJobs.scopeNamespaceId, scope.namespaceId) : sql`TRUE`,
+        eq(schema.loraJobs.isActiveByScope, true),
+        scope?.tenantId ? eq(schema.loraJobs.tenantId, scope.tenantId) : sql`TRUE`,
+        scope?.namespaceId ? eq(schema.loraJobs.scopeNamespaceId, scope.namespaceId) : sql`TRUE`,
         agentScopeCondition
       )
     )
-    .orderBy(desc(schema.tradingLoraJobs.criadoEm))
+    .orderBy(desc(schema.loraJobs.criadoEm))
     .limit(1);
 
   if (active?.resultAdapterPath) {
@@ -910,39 +1125,6 @@ export async function getActiveAdapter(scope?: {
       jobName: active.name,
       metrics: (active.metrics as TradingLoraMetrics) ?? {},
     };
-  }
-
-  // Fallback: adapter ativo de model_versions (Progressive LoRA por tenant/namespace)
-  if (scope?.tenantId) {
-    const mvWhere = and(
-      eq(schema.modelVersions.tenantId, scope.tenantId),
-      eq(schema.modelVersions.isActive, true),
-      scope.namespaceId
-        ? eq(schema.modelVersions.namespaceId, scope.namespaceId)
-        : isNull(schema.modelVersions.namespaceId)
-    );
-    const [progressive] = await db
-      .select({
-        id: schema.modelVersions.id,
-        name: schema.modelVersions.name,
-        loraPath: schema.modelVersions.loraPath,
-        ativadoEm: schema.modelVersions.ativadoEm,
-      })
-      .from(schema.modelVersions)
-      .where(mvWhere)
-      .orderBy(desc(schema.modelVersions.version))
-      .limit(1);
-
-    if (progressive?.loraPath) {
-      return {
-        jobId: progressive.id,
-        adapterName: progressive.name,
-        adapterPath: progressive.loraPath,
-        activatedAt: progressive.ativadoEm,
-        jobName: progressive.name,
-        metrics: {},
-      };
-    }
   }
 
   return null;
@@ -960,18 +1142,18 @@ export async function deactivateLoraAdapter(scope?: {
 
   const [active] = await db
     .select({
-      id: schema.tradingLoraJobs.id,
-      scopeType: schema.tradingLoraJobs.scopeType,
-      scopeNamespaceId: schema.tradingLoraJobs.scopeNamespaceId,
-      scopeAgentId: schema.tradingLoraJobs.scopeAgentId,
+      id: schema.loraJobs.id,
+      scopeType: schema.loraJobs.scopeType,
+      scopeNamespaceId: schema.loraJobs.scopeNamespaceId,
+      scopeAgentId: schema.loraJobs.scopeAgentId,
     })
-    .from(schema.tradingLoraJobs)
+    .from(schema.loraJobs)
     .where(
       and(
-        eq(schema.tradingLoraJobs.isActiveByScope, true),
-        scope?.tenantId ? eq(schema.tradingLoraJobs.tenantId, scope.tenantId) : sql`TRUE`,
-        scope?.namespaceId ? eq(schema.tradingLoraJobs.scopeNamespaceId, scope.namespaceId) : sql`TRUE`,
-        scope?.agentId ? eq(schema.tradingLoraJobs.scopeAgentId, scope.agentId) : sql`TRUE`
+        eq(schema.loraJobs.isActiveByScope, true),
+        scope?.tenantId ? eq(schema.loraJobs.tenantId, scope.tenantId) : sql`TRUE`,
+        scope?.namespaceId ? eq(schema.loraJobs.scopeNamespaceId, scope.namespaceId) : sql`TRUE`,
+        scope?.agentId ? eq(schema.loraJobs.scopeAgentId, scope.agentId) : sql`TRUE`
       )
     )
     .limit(1);
@@ -981,9 +1163,9 @@ export async function deactivateLoraAdapter(scope?: {
     return;
   }
 
-  await db.update(schema.tradingLoraJobs)
+  await db.update(schema.loraJobs)
     .set({ isActiveAdapter: false, isActiveByScope: false })
-    .where(eq(schema.tradingLoraJobs.id, active.id));
+    .where(eq(schema.loraJobs.id, active.id));
 
   // Remover adapter do diretório ativo (vLLM para de usar)
   const targetDir = active.scopeType === 'agent' && active.scopeAgentId
@@ -1001,7 +1183,8 @@ export async function deactivateLoraAdapter(scope?: {
 export default {
   // Dataset
   prepareDataset,
-  
+  prepareDatasetFromChatAndTrading,
+
   // Jobs
   createLoraJob,
   getJob,

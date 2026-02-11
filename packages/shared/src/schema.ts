@@ -3337,7 +3337,7 @@ export const tradingMarketDataTypeEnum = pgEnum("trading_market_data_type", [
   "open_interest", // Open interest
 ]);
 
-// Enum para status do job LoRA
+// Enum para status do job LoRA (tabela universal lora_jobs)
 export const tradingLoraJobStatusEnum = pgEnum("trading_lora_job_status", [
   "queued",      // Na fila
   "preparing",   // Preparando dataset
@@ -3347,6 +3347,9 @@ export const tradingLoraJobStatusEnum = pgEnum("trading_lora_job_status", [
   "failed",      // Falhou
   "cancelled",   // Cancelado
 ]);
+
+// Origem do job: explicit_job (UI/API) ou scheduled_run (agendado/on-demand)
+export const loraJobSourceEnum = pgEnum("lora_job_source", ["explicit_job", "scheduled_run"]);
 
 // Zod schemas para JSONB
 export const TradingCandleDataSchema = z.object({
@@ -3485,10 +3488,10 @@ export const tradingDataset = pgTable(
   })
 );
 
-// JOBS DE TREINAMENTO LORA (Executados no Hetzner GPU GEX44 - em migração)
-// Gerencia ciclo de vida do treinamento LoRA para trading
-export const tradingLoraJobs = pgTable(
-  "trading_lora_jobs",
+// JOBS DE TREINAMENTO LORA - Tabela universal (única fonte de verdade para adapter ativo por escopo)
+// Ref: 0060 - Unificação enterprise; zero workarounds; uma tabela, uma lógica
+export const loraJobs = pgTable(
+  "lora_jobs",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     tenantId: uuid("tenant_id").references(() => tenants.id),
@@ -3496,11 +3499,13 @@ export const tradingLoraJobs = pgTable(
     scopeNamespaceId: uuid("scope_namespace_id").references(() => namespaces.id),
     scopeAgentId: uuid("scope_agent_id").references(() => agents.id),
     profileVersion: integer("profile_version").notNull().default(1),
-    
+    /** Origem: explicit_job (criado via API/UI) ou scheduled_run (agendado/on-demand). */
+    source: loraJobSourceEnum("source").notNull().default("explicit_job"),
+
     // Identificação
     name: varchar("name", { length: 255 }).notNull(),
     description: text("description"),
-    
+
     // Modelo base e configuração (Gate 2 - LLM texto)
     baseModel: varchar("base_model", { length: 255 }).notNull().default("Qwen/Qwen2.5-7B-Instruct-AWQ"),
     // NOTA: Valores default devem corresponder ao TradingLoraHyperparamsSchema
@@ -3523,6 +3528,8 @@ export const tradingLoraJobs = pgTable(
     // Dados de treinamento
     datasetCount: integer("dataset_count").default(0),
     validationCount: integer("validation_count").default(0),
+    /** Incluir trading_dataset no treino (scheduled_run). NULL = inferir de scope_namespace_id (backward compat). */
+    includeTradingDataset: boolean("include_trading_dataset"),
     
     // Métricas (atualizadas durante treinamento)
     metrics: jsonb("metrics").$type<TradingLoraMetrics>().default({}),
@@ -3552,18 +3559,18 @@ export const tradingLoraJobs = pgTable(
     criadoEm: timestamp("criado_em").defaultNow(),
   },
   (table) => ({
-    idxLoraJobsTenant: index("idx_trading_lora_jobs_tenant").on(table.tenantId),
-    idxLoraJobsScopeType: index("idx_trading_lora_jobs_scope_type").on(table.scopeType),
-    idxLoraJobsScopeNamespace: index("idx_trading_lora_jobs_scope_namespace").on(table.scopeNamespaceId),
-    idxLoraJobsScopeAgent: index("idx_trading_lora_jobs_scope_agent").on(table.scopeAgentId),
-    idxLoraJobsActiveByScope: index("idx_trading_lora_jobs_active_by_scope").on(table.isActiveByScope),
-    idxLoraJobsStatus: index("idx_trading_lora_jobs_status").on(table.status),
-    idxLoraJobsCreated: index("idx_trading_lora_jobs_created").on(table.criadoEm),
+    idxLoraJobsTenant: index("idx_lora_jobs_tenant").on(table.tenantId),
+    idxLoraJobsScopeType: index("idx_lora_jobs_scope_type").on(table.scopeType),
+    idxLoraJobsScopeNamespace: index("idx_lora_jobs_scope_namespace").on(table.scopeNamespaceId),
+    idxLoraJobsScopeAgent: index("idx_lora_jobs_scope_agent").on(table.scopeAgentId),
+    idxLoraJobsActiveByScope: index("idx_lora_jobs_active_by_scope").on(table.isActiveByScope),
+    idxLoraJobsStatus: index("idx_lora_jobs_status").on(table.status),
+    idxLoraJobsCreated: index("idx_lora_jobs_created").on(table.criadoEm),
+    idxLoraJobsSource: index("idx_lora_jobs_source").on(table.source),
   })
 );
 
-// Relations de Trading LoRA
-// CORREÇÃO 19/12/2025: Usar _ para argumento não utilizado (no-empty-pattern)
+// Relations LoRA (tabela universal)
 export const tradingMarketDataRelations = relations(tradingMarketData, (_) => ({}));
 
 export const tradingDatasetRelations = relations(tradingDataset, ({ one }) => ({
@@ -3585,9 +3592,9 @@ export const tradingDatasetRelations = relations(tradingDataset, ({ one }) => ({
   }),
 }));
 
-export const tradingLoraJobsRelations = relations(tradingLoraJobs, ({ one }) => ({
+export const loraJobsRelations = relations(loraJobs, ({ one }) => ({
   tenant: one(tenants, {
-    fields: [tradingLoraJobs.tenantId],
+    fields: [loraJobs.tenantId],
     references: [tenants.id],
   }),
 }));
@@ -3989,6 +3996,7 @@ export const autoLearningSchedule = pgTable(
     startedAt: timestamp("started_at"),
     completedAt: timestamp("completed_at"),
     modelVersionId: uuid("model_version_id").references(() => modelVersions.id),
+    loraJobId: uuid("lora_job_id").references(() => loraJobs.id),
     dataCollected: integer("data_collected").default(0),
     imagesCollected: integer("images_collected").default(0),
     errorMessage: text("error_message"),
@@ -4970,8 +4978,8 @@ export type InsertTradingMarketData = typeof tradingMarketData.$inferInsert;
 export type TradingDataset = typeof tradingDataset.$inferSelect;
 export type InsertTradingDataset = typeof tradingDataset.$inferInsert;
 
-export type TradingLoraJob = typeof tradingLoraJobs.$inferSelect;
-export type InsertTradingLoraJob = typeof tradingLoraJobs.$inferInsert;
+export type LoraJob = typeof loraJobs.$inferSelect;
+export type InsertLoraJob = typeof loraJobs.$inferInsert;
 
 // Takeover/Handover Types (FASE 6.5)
 export type ConversationState = typeof conversationStates.$inferSelect;
@@ -5134,7 +5142,7 @@ export const insertTradingDatasetSchema: z.ZodType<unknown> = createInsertSchema
   atualizadoEm: true,
 });
 
-export const insertTradingLoraJobSchema: z.ZodType<unknown> = createInsertSchema(tradingLoraJobs).omit({
+export const insertLoraJobSchema: z.ZodType<unknown> = createInsertSchema(loraJobs).omit({
   id: true,
   criadoEm: true,
   queuedAt: true,
